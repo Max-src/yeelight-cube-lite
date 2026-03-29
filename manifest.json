@@ -11,7 +11,7 @@
   "codeowners": [
     "@Max-src"
   ],
-  "version": "1.0.1",
+  "version": "1.1.0",
   "iot_class": "local_push",
   "config_flow": true,
   "platforms": [
