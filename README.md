@@ -4,8 +4,9 @@
 
 A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**. This lamp features a **20×5 RGB LED matrix** (100 individually addressable pixels). This integration gives you full pixel-level control from your HA dashboard — draw pixel art, display scrolling text, apply gradients, color effects, transitions, and more.
 
+![Yeelight Cube Smart Lamp Lite](images/yeelight-cube-light.png)
+
 <!-- TODO: Add a photo of the physical lamp here -->
-<!-- ![Yeelight Cube Smart Lamp Lite](images/lamp-photo.jpg) -->
 
 ---
 
@@ -183,8 +184,8 @@ Each Yeelight Cube Lite device creates the following entities:
 
 ### Light
 
-| Entity            | Description                                       |
-| ----------------- | ------------------------------------------------- |
+| Entity                 | Description                                       |
+| ---------------------- | ------------------------------------------------- |
 | **Yeelight Cube Lite** | Main light entity — on/off, RGB color, brightness |
 
 ### Selectors
