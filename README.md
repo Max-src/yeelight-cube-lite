@@ -15,14 +15,11 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**. T
 ### Integration
 
 - **Full 20×5 RGB matrix control** — 100 individually addressable LEDs
-- **11 display modes** — solid color, 7 gradient types, text color sequences, panel color sequences, custom draw
-- **24 transition effects** between modes — fade, wipe, slide, curtain, gravity drop, pixel migration, and more
-- **10 live color adjustments** — hue shift, temperature, saturation, vibrance, contrast, glow, grayscale, invert, tint
+- **Display modes** — solid color, 7 gradient types, text color sequences, panel color sequences, custom draw
+- **Transition effects** between modes — fade, wipe, slide, curtain, gravity drop, pixel migration, and more
+- **Color effects adjustments** — hue shift, temperature, saturation, vibrance, contrast, glow, grayscale, invert, tint
 - **Scrolling text** with multiple fonts and alignment options
-- **Brightness** with hardware + software dual-mechanism and gamma correction
-- **Color accuracy correction** for hardware LED channel imbalance
-- **Live camera preview** — matrix state as a camera entity on the device page
-- **Conflict prevention** — blocks the built-in Yeelight integration from interfering
+- **Brightness control** with gamma correction
 - **Multi-lamp support** — add as many devices as you have
 
 ### Lovelace Cards
@@ -32,7 +29,6 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**. T
 - **Lamp Preview Card** — live matrix preview with brightness slider, power toggle, and force refresh
 - **Palette Card** — create, edit, reorder, and apply color palettes
 - **Color List Editor Card** — edit color sequences for text and panel modes with drag-and-drop
-- **Lettermap Card** — browse font character maps used for text rendering
 - **Angle Gradient Card** — rotary dial for angle-based gradient control
 
 ---
@@ -167,18 +163,6 @@ Edit color sequences used by the "Text Color Sequence" and "Panel Color Sequence
 - **Export/Import** — save and load color sequences
 - **Compact mode** — space-efficient layout
 
-### Letter Map Card — `custom:yeelight-cube-lettermap-card`
-
-View and browse the font character maps used for text display.
-
-<!-- TODO: Add screenshot of lettermap card here -->
-
-**Features:**
-
-- **Character grid** — see how each character looks on the 5-pixel-tall matrix
-- **Font switching** — browse different built-in fonts
-- **Sensor-backed** — reads from the Font Characters sensor entity
-
 ### Angle Gradient Card — `custom:yeelight-cube-angle-gradient-card`
 
 Dedicated angle control for gradient modes.
@@ -256,7 +240,7 @@ Each Yeelight Cube Lite device creates the following entities:
 | ------------------- | --------------------------------------------------------------- |
 | **Color Palettes**  | Stores all saved palettes (used by palette cards)               |
 | **Saved Drawings**  | Stores all saved pixel art designs (used by draw cards)         |
-| **Font Characters** | Exposes the bitmap font character maps (used by lettermap card) |
+| **Font Characters** | Exposes the bitmap font character maps |
 
 ---
 
