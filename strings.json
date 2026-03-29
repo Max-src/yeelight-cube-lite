@@ -7,13 +7,18 @@
                 "data": {
                     "Light IP Address": "IP Address"
                 }
+            },
+            "discovery_confirm": {
+                "title": "Yeelight Cube Lite Discovered",
+                "description": "A Yeelight Cube Lite was found at **{host}** ({name}).\n\nDo you want to set it up?"
             }
         },
         "error": {
             "invalid_ip": "Invalid IP address format"
         },
         "abort": {
-            "already_configured": "This device is already configured"
+            "already_configured": "This device is already configured",
+            "not_cube_device": "This device is not a Yeelight Cube Lite"
         }
     },
     "options": {

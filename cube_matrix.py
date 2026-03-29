@@ -66,11 +66,13 @@ class CubeMatrix:
         self._total_commands_sent = 0
 
         self._failed_commands_window = []  # Track recent failures for health monitoring
+        self.device_id = None  # Yeelight device ID (hex) — used for discovery suppression
 
         try:
             properties = self.device.get_capabilities()
             if properties and isinstance(properties, dict):
                 self.device_name = properties.get("name", self.device_name)
+                self.device_id = properties.get("id")
             else:
                 _LOGGER.debug("get_capabilities returned no data (device may not support it)")
         except Exception as e:

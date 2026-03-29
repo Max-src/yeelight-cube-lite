@@ -1,9 +1,11 @@
 import logging
 import os
-from homeassistant.core import HomeAssistant # type: ignore
+import asyncio
+from homeassistant.core import HomeAssistant, callback as ha_callback # type: ignore
 from homeassistant.config_entries import ConfigEntry # type: ignore
 from homeassistant.helpers.typing import ConfigType # type: ignore
 from homeassistant.helpers.storage import Store # type: ignore
+from homeassistant.helpers.event import async_call_later # type: ignore
 from .const import DOMAIN, CONF_IP
 from .conflict_prevention import get_conflict_prevention
 from .services import async_setup_services, async_remove_services
@@ -104,6 +106,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Set up platforms
     await hass.config_entries.async_forward_entry_setups(entry, ["light", "switch", "text", "select", "sensor", "number", "button", "camera"])
     
+    # Auto-dismiss built-in Yeelight discovery flows for this device.
+    # The built-in Yeelight integration discovers CubeLite devices via zeroconf/DHCP
+    # but cannot properly control them. Dismiss those flows so users aren't confused.
+    _schedule_dismiss_yeelight_discoveries(hass)
+    
     _LOGGER.debug(f"Set up Yeelight Cube Lite at {ip_address}")
     return True
 
@@ -163,4 +170,69 @@ async def async_remove(hass: HomeAssistant) -> None:
     """Remove the component."""
     # Remove services
     async_remove_services(hass)
+    # Cancel any pending dismiss timers
+    cancel = hass.data.get(DOMAIN, {}).pop("_dismiss_unsub", None)
+    if cancel:
+        cancel()
     _LOGGER.debug("Removed Yeelight Cube Lite component services")
+
+
+# ---------------------------------------------------------------------------
+#  Auto-dismiss built-in Yeelight discovery flows for managed CubeLite devices
+# ---------------------------------------------------------------------------
+
+def _get_managed_ips(hass: HomeAssistant) -> set:
+    """Get all IP addresses managed by this component."""
+    entries = hass.config_entries.async_entries(DOMAIN)
+    return {e.data.get(CONF_IP) for e in entries if e.data.get(CONF_IP)}
+
+
+@ha_callback
+def _schedule_dismiss_yeelight_discoveries(hass: HomeAssistant) -> None:
+    """Schedule multiple dismiss attempts to catch late-arriving discovery flows."""
+    if "_dismiss_unsub" in hass.data.get(DOMAIN, {}):
+        return  # already scheduled
+
+    cancel_handles = []
+
+    @ha_callback
+    def _run_dismiss(_now=None):
+        hass.async_create_task(_async_dismiss_yeelight_discoveries(hass))
+
+    # Run at 10s, 30s, 60s, and 120s after setup to catch flows that arrive later
+    for delay in (10, 30, 60, 120):
+        cancel_handles.append(async_call_later(hass, delay, _run_dismiss))
+
+    @ha_callback
+    def _cancel_all():
+        for cancel in cancel_handles:
+            cancel()
+
+    hass.data.setdefault(DOMAIN, {})["_dismiss_unsub"] = _cancel_all
+
+
+async def _async_dismiss_yeelight_discoveries(hass: HomeAssistant) -> None:
+    """Dismiss pending built-in Yeelight discovery flows for devices we manage."""
+    managed_ips = _get_managed_ips(hass)
+    if not managed_ips:
+        return
+
+    try:
+        flows = hass.config_entries.flow.async_progress_by_handler("yeelight")
+    except Exception:
+        return
+
+    for flow in flows:
+        context = flow.get("context", {})
+        placeholders = context.get("title_placeholders", {})
+        flow_host = placeholders.get("host", "")
+
+        if flow_host in managed_ips:
+            try:
+                hass.config_entries.flow.async_abort(flow["flow_id"])
+                _LOGGER.debug(
+                    "Auto-dismissed built-in Yeelight discovery for %s (managed by Yeelight Cube Lite)",
+                    flow_host,
+                )
+            except Exception as exc:
+                _LOGGER.debug("Could not abort Yeelight discovery flow: %s", exc)

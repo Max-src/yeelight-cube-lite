@@ -1,6 +1,7 @@
 # Yeelight Cube Lite for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-yellow?logo=buy-me-a-coffee&logoColor=white)](https://buymeacoffee.com/max.src)
 
 A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**. This lamp features a **20×5 RGB LED matrix** (100 individually addressable pixels). This integration gives you full pixel-level control from your HA dashboard — draw pixel art, display scrolling text, apply gradients, color effects, transitions, and more.
 
@@ -314,7 +315,7 @@ Configure the effect, step count and duration via the **Transition Effect**, **T
 | --------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | **Cards not showing**                   | Clear browser cache with `Ctrl+F5` after installing or updating                                           |
 | **Device not found**                    | Ensure the lamp is on the same network. Check the IP in the Yeelight mobile app                           |
-| **Conflicts with Yeelight integration** | This integration automatically blocks the built-in Yeelight integration from managing your cube device    |
+| **Conflicts with Yeelight integration** | This integration automatically dismisses built-in Yeelight discovery for your Cube devices and prevents it from managing them |
 | **Lamp appears stuck / unresponsive**   | Press the **Force Refresh** button entity, or use the force refresh button on the Lamp Preview card       |
 | **Colors look off on the hardware**     | Color accuracy correction is built-in and applied automatically. It compensates for LED channel imbalance |
 
@@ -323,3 +324,11 @@ Configure the effect, step count and duration via the **Transition Effect**, **T
 ## License
 
 See [LICENSE](LICENSE) for details.
+
+---
+
+## Support
+
+If you find this integration useful, consider supporting development:
+
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-yellow?logo=buy-me-a-coffee&logoColor=white&style=for-the-badge)](https://buymeacoffee.com/max.src)
