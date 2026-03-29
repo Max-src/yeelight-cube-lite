@@ -74,16 +74,22 @@ Before adding the lamp to Home Assistant, you must first set it up using the **Y
 
 ### Adding to Home Assistant
 
-1. Go to **Settings → Devices & Services → Add Integration**
-2. Search for **Yeelight Cube Lite**
-3. Enter the **IP address** you noted from the Yeelight Station app
-4. Click **Submit** — the integration will connect to the lamp and create a device with all entities automatically
+1. Go to **Settings → Devices & Services**
+2. Click **+ Add Integration** (bottom right)
+3. Search for **Yeelight Cube Lite** and select it
+4. Enter the **IP address** you noted from the Yeelight Station app (e.g. `192.168.4.139`)
+5. Click **Submit**
 
 <!-- TODO: Add screenshot of the Add Integration search showing Yeelight Cube Lite -->
 <!-- TODO: Add screenshot of the IP address entry form -->
+
+The integration will connect to the lamp over your local network and automatically create a device with all entities — light control, display mode selectors, color effect sliders, text input, transition settings, sensors, camera previews, and more (see [Entities Created](#entities-created) for the full list).
+
 <!-- TODO: Add screenshot of the device page after successful setup -->
 
 > **Note:** Each lamp (base unit) needs to be added separately. If you have multiple lamps, repeat the process for each one using their respective IP addresses.
+
+> **Conflict prevention:** If you also have the built-in Home Assistant **Yeelight** integration, this custom integration will automatically prevent it from managing your Cube device to avoid conflicts. No manual action needed.
 
 ---
 
