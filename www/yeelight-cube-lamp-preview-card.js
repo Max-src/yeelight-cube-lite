@@ -259,11 +259,6 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     this._expectedPowerState = expectedState;
     this._updatePowerButtonLoadingState(true);
 
-    // console.log(
-    // `[POWER BUTTON] Toggling from ${currentState ? "on" : "off"} to ${
-    // expectedState ? "on" : "off"
-    // }`
-    // );
 
     try {
       // Toggle the light (same as clicking toggle in HA light card)
@@ -2266,7 +2261,6 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       ".power-toggle-container button",
     );
     if (!powerButton) {
-      // console.log("[POWER BUTTON] Button not found in DOM");
       return;
     }
 
@@ -2286,18 +2280,10 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     // Clear loading state only when we reach the expected state
     if (this._powerToggling && this._expectedPowerState !== null) {
       if (isOn === this._expectedPowerState) {
-        // console.log(
-        // `[POWER BUTTON] Reached expected state: ${isOn ? "on" : "off"}`
-        // );
         this._powerToggling = false;
         this._expectedPowerState = null;
         powerButton.disabled = false;
       } else {
-        // console.log(
-        // `[POWER BUTTON] Intermediate state ${
-        // isOn ? "on" : "off"
-        // }, expecting ${this._expectedPowerState ? "on" : "off"}`
-        // );
         // Keep loading state - we haven't reached expected state yet
         return;
       }
@@ -5298,11 +5284,6 @@ customElements.define(
   YeelightCubeLampPreviewCard,
 );
 
-console.info(
-  `%c YEELIGHT-CUBE-LAMP-PREVIEW %c v${YeelightCubeLampPreviewCard.CARD_VERSION} `,
-  "background:#f9a825;color:#fff;font-weight:bold;padding:2px 6px;border-radius:4px 0 0 4px",
-  "background:#333;color:#fff;font-weight:bold;padding:2px 6px;border-radius:0 4px 4px 0",
-);
 
 // Register for Lovelace "Add Card" UI
 window.customCards = window.customCards || [];

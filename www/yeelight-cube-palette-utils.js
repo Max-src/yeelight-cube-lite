@@ -12,12 +12,10 @@ export function getPalettesFromSensor(hass, paletteSensorId) {
 
 export function forcePaletteSensorUpdate(hass, paletteSensorId) {
   if (!hass || !paletteSensorId) return;
-  // ...removed console.log...
   return hass.callService("homeassistant", "update_entity", {
     entity_id: paletteSensorId,
   });
 }
 
 export function logPaletteAction(action, details) {
-  // ...removed console.log...
 }

@@ -242,9 +242,6 @@ class YeelightCubePaletteCard extends HTMLElement {
           : [];
 
       if (sensorPalettes.length === this._localPalettes.length) {
-        console.log(
-          `[PALETTE-CARD-RENDER] Sensor caught up! Both have ${palettes.length} palettes, clearing local cache`,
-        );
         delete this._localPalettes;
         // Cancel any pending timer since sensor already caught up
         if (this._localPalettesClearTimer) {
@@ -1145,7 +1142,6 @@ class YeelightCubePaletteCard extends HTMLElement {
   handleGalleryTitleClick(event, idx) {
     // Palette card doesn't currently support title editing
     // This is a placeholder for future implementation
-    console.log("Palette title click not yet implemented", idx);
   }
 
   addEventListeners(palettes, allowTitleEdit, showCard) {
@@ -1381,7 +1377,6 @@ class YeelightCubePaletteCard extends HTMLElement {
               // Don't clear local cache yet - let sensor update trigger that
               setTimeout(() => {
                 this._deletionInProgress = false;
-                console.log(`[PALETTE-DELETE-FRONTEND] Deletion flag cleared`);
               }, 1500);
             })
             .catch((err) => {

@@ -2273,9 +2273,6 @@ class YeelightCubeGradientCard extends HTMLElement {
 
     if (wheelItemsInDOM === 0) {
       // Expected during connectedCallback before first render — not an error.
-      console.debug(
-        "[Gradient Card] _setupWheelNavigation: 0 items in DOM, will retry after render",
-      );
       controller.destroy();
       this._wheelNavigationController = null;
     } else {
@@ -2283,12 +2280,6 @@ class YeelightCubeGradientCard extends HTMLElement {
       this._wheelCenterIndex = controller.getCenterIndex();
     }
 
-    console.log("[Gradient Card] _setupWheelNavigation: complete", {
-      controllerCreated: !!this._wheelNavigationController,
-      centerIndex: this._wheelCenterIndex,
-      wheelItemsInDOM,
-      immediate: isReInitializing,
-    });
   }
 
   _getCachedPreviewGrid() {
@@ -2455,9 +2446,6 @@ class YeelightCubeGradientCard extends HTMLElement {
         this._previewRetryCount = retryCount;
         if (retryCount <= 5) {
           const delay = Math.min(retryCount * 2000, 10000); // 2s, 4s, 6s, 8s, 10s
-          console.debug(
-            `[Gradient Card] Preview load failed (${error?.error?.message || errorCode}, attempt ${retryCount}/5), retrying in ${delay / 1000}s...`,
-          );
           setTimeout(() => this._loadPreviews(), delay);
         } else {
           console.warn(

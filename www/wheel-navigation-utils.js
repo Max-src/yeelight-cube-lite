@@ -73,22 +73,8 @@ export function initializeWheelNavigation(options) {
     immediate = false,
   } = options;
 
-  console.log("[Wheel Init] initializeWheelNavigation called", {
-    hasRoot: !!shadowRoot,
-    displayMode,
-    wheelDisplayStyle: config?.wheel_display_style,
-    currentCenterIndex,
-    immediate,
-  });
 
   if (!shadowRoot || displayMode !== "wheel") {
-    console.log(
-      "[Wheel Init] Early exit — not in wheel mode or no shadow root",
-      {
-        hasRoot: !!shadowRoot,
-        displayMode,
-      },
-    );
     return { sync: () => {}, destroy: () => {}, getCenterIndex: () => 0 };
   }
 
@@ -99,22 +85,9 @@ export function initializeWheelNavigation(options) {
   const upBtn = shadowRoot.querySelector('[data-wheel-nav="up"]');
   const downBtn = shadowRoot.querySelector('[data-wheel-nav="down"]');
 
-  console.log("[Wheel Init] DOM query results", {
-    hasContainer: !!wheelContainer,
-    itemsFound: wheelItems.length,
-    hasUpBtn: !!upBtn,
-    hasDownBtn: !!downBtn,
-    itemModes: Array.from(wheelItems)
-      .map((i) => i.dataset.mode)
-      .slice(0, 10),
-  });
 
   if (!wheelContainer || wheelItems.length === 0) {
     // Expected when called before first render — caller will retry.
-    console.debug("[Wheel Init] Early exit - missing container or items", {
-      hasContainer: !!wheelContainer,
-      itemsCount: wheelItems.length,
-    });
     return { sync: () => {}, destroy: () => {}, getCenterIndex: () => 0 };
   }
 
@@ -426,14 +399,6 @@ export function initializeWheelNavigation(options) {
       }
     });
 
-    console.log("[Wheel Sync] syncWheelToMode", {
-      currentMode,
-      foundIndex,
-      previousIndex: wheelCenterIndex,
-      willUpdate: wheelCenterIndex !== foundIndex,
-      totalModes: allModes.length,
-      containerConnected: wheelContainer.isConnected,
-    });
 
     // Always update wheel state to ensure positioning is correct
     // (even when index matches, e.g. index 0 on first load)
@@ -592,29 +557,17 @@ export function initializeWheelNavigation(options) {
 
   // displayMode,
   // isCompact: (config.wheel_display_style || "default") === "compact",
-  console.log("[Wheel Init] Event listeners attached, initializing state", {
-    itemsCount: wheelItems.length,
-    currentCenterIndex,
-    immediate,
-    containerConnected: wheelContainer.isConnected,
-  });
 
   // Initialize wheel state
   if (immediate) {
     // Immediate initialization for re-initialization scenarios (preview updates)
-    console.log("[Wheel Init] Immediate sync (re-initialization)");
     syncWheelToMode();
   } else {
     // Deferred initialization for first load (ensure DOM is ready)
     // Double rAF: first lets browser layout elements, second ensures height
     // calculations are accurate before we position the wheel
-    console.log("[Wheel Init] Deferred sync (double-rAF for first load)");
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        console.log("[Wheel Init] Double-rAF fired, running syncWheelToMode", {
-          containerConnected: wheelContainer.isConnected,
-          firstItemHeight: wheelItems[0]?.offsetHeight,
-        });
         syncWheelToMode();
       });
     });
@@ -627,10 +580,6 @@ export function initializeWheelNavigation(options) {
     sync: syncWheelToMode,
     getCenterIndex: () => wheelCenterIndex,
     destroy: () => {
-      console.log("[Wheel] destroy: removing all event listeners", {
-        centerIndex: wheelCenterIndex,
-        containerConnected: wheelContainer.isConnected,
-      });
       // Remove all event listeners
       if (upBtn) {
         upBtn.removeEventListener("click", upClickHandler);

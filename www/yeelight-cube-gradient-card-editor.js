@@ -131,14 +131,9 @@ class YeelightCubeGradientCardEditor extends LitElement {
     // Create wrapper callback that handles the array from entity picker
     const handleEntityChange = (event) => {
       const newSelectedEntities = event.target.value; // This is an array
-      // console.log(
-        // `[Gradient Card Editor] Entity picker returned:`,
-        // newSelectedEntities
-      // );
 
       // Update config directly with the new array
       this._config = { ...this._config, target_entities: newSelectedEntities };
-      // console.log(`[Gradient Card Editor] Updated config:`, this._config);
 
       this._fireConfigChanged();
       this.requestUpdate();

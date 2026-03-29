@@ -74,9 +74,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
     // If this is the first time hass is set, flush any pending service calls
     if (!oldHass && hass && this._pendingServiceCalls.length > 0) {
-      // console.log(
-      // `[HASS READY] Flushing ${this._pendingServiceCalls.length} pending service call(s)`
-      // );
       this._pendingServiceCalls.forEach((call) => {
         this.callServiceOnTargetEntities(call.service, call.serviceData);
       });
@@ -137,14 +134,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
   }
 
   render() {
-    // console.log("[RENDER] Called. Flags:", {
-    // isDragging: this._isDragging,
-    // draggingRotary: this._draggingRotary,
-    // usingSlider: this._usingSlider,
-    // usingColorPicker: this._usingColorPicker,
-    // editingText: this._editingText,
-    // hasHass: !!this._hass,
-    // });
 
     if (
       this._isDragging ||
@@ -165,7 +154,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     const entityId = targetEntities[0]; // Use first entity as source
     const hass = this._hass;
     if (!hass || !entityId) {
-      // console.log("[RENDER] Early return: hass or entityId not available");
       return;
     }
     const stateObj = hass.states[entityId];
@@ -1822,7 +1810,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
         // Prevent multiple rapid clicks
         if (this._processingModeChange) {
-          // console.log("Mode change already in progress, ignoring click");
           return;
         }
         this._processingModeChange = true;
@@ -1851,7 +1838,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
             panel_mode: applyToPanel,
           });
 
-          // console.log(`Mode and panel_mode set successfully`);
           // Reduced wait time since only 1 call now
           await new Promise((resolve) => setTimeout(resolve, 100));
 
@@ -2020,21 +2006,9 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           const hex = e.target.value;
           const rgb = this.hexToRgb(hex);
           if (rgb) {
-            // console.log(
-            // `[COLOR PICKER] Changing color at index ${idx} to:`,
-            // rgb
-            // );
             // Get current colors (not stale closure)
             const currentColors = this._getCurrentColors();
-            // console.log(
-            // "[COLOR PICKER] Current colors before change:",
-            // JSON.stringify(currentColors)
-            // );
             currentColors[idx] = rgb;
-            // console.log(
-            // "[COLOR PICKER] Colors after change:",
-            // JSON.stringify(currentColors)
-            // );
 
             // Update UI immediately for instant feedback
             input.value = hex;
@@ -2261,9 +2235,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         // Get CURRENT colors (not stale closure variable)
         const currentColors = this._getCurrentColors();
 
-        // console.log(
-        // `[REMOVE COLOR] Button index: ${idx}, Current colors length: ${currentColors.length}`
-        // );
 
         if (isNaN(idx) || idx < 0 || idx >= currentColors.length) {
           console.error(
@@ -2271,9 +2242,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
               currentColors.length - 1
             }`,
           );
-          // console.log(
-          // `[REMOVE COLOR] This likely means the DOM has stale buttons. Forcing full re-render.`
-          // );
 
           // Disable the button to prevent multiple clicks
           button.disabled = true;
@@ -2287,16 +2255,10 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         }
 
         if (currentColors.length > 1) {
-          // console.log(`[REMOVE COLOR] Removing color at index ${idx}`);
           // Create a new array without the removed item (don't mutate the original)
           const newColors = currentColors.filter((_, i) => i !== idx);
-          // console.log(
-          // `[REMOVE COLOR] New colors after removal:`,
-          // JSON.stringify(newColors)
-          // );
           this.saveColors(newColors);
         } else {
-          // console.log(`[REMOVE COLOR] Cannot remove last color`);
         }
       });
     }
@@ -3367,14 +3329,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
   }
 
   _applyAngle(angle) {
-    // console.log(
-    // "_applyAngle called with:",
-    // angle,
-    // "entities:",
-    // this.config.target_entities || [this.config.entity],
-    // "hass:",
-    // !!this._hass
-    // );
     if (!this._hass) return;
 
     // Ensure angle is a valid number and convert to float
@@ -3387,7 +3341,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     // Normalize angle to 0-359 range
     const normalizedAngle = ((validAngle % 360) + 360) % 360;
 
-    // console.log("Calling yeelight_cube.set_angle with:", normalizedAngle);
     this.callServiceOnTargetEntities("set_angle", {
       angle: normalizedAngle,
     });
@@ -3726,7 +3679,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       (this.config.entity ? [this.config.entity] : []);
 
     if (targetEntities.length === 0) {
-      // console.log("[GET CURRENT COLORS] No target entities, using default");
       return [[255, 255, 255]]; // Default fallback
     }
 
@@ -3736,31 +3688,19 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     // Get the current colors from global pending state or entity state
     const pendingColors = PENDING_COLORS_STORE[entityId];
     if (pendingColors) {
-      // console.log(
-      // "[GET CURRENT COLORS] Using pending colors:",
-      // JSON.stringify(pendingColors)
-      // );
       return pendingColors.slice(); // Return a copy
     }
 
     if (!hass || !entityId) {
-      // console.log("[GET CURRENT COLORS] No hass/entity, using default");
       return [[255, 255, 255]]; // Default fallback
     }
 
     const stateObj = hass.states[entityId];
     if (!stateObj || !stateObj.attributes) {
-      // console.log(
-      // "[GET CURRENT COLORS] No state object or attributes, using default"
-      // );
       return [[255, 255, 255]]; // Default fallback
     }
 
     const sensorColors = stateObj.attributes.text_colors || [[255, 255, 255]];
-    // console.log(
-    // "[GET CURRENT COLORS] Using sensor colors:",
-    // JSON.stringify(sensorColors)
-    // );
     return sensorColors.slice(); // Return a copy
   }
 
@@ -3895,7 +3835,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
     // If hass not ready yet, queue the service call for later
     if (!this._hass) {
-      // console.log("[SAVE COLORS] Hass not ready, queuing service call");
       this._pendingServiceCalls.push({
         service: "set_text_colors",
         serviceData: { text_colors: textColors },

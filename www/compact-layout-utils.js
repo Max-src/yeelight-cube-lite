@@ -281,25 +281,14 @@ export function setupCompactDragDrop(
         const items = Array.from(root.querySelectorAll(itemSelector));
         const newOrder = items.map((i) => parseInt(i.dataset.idx));
 
-        // console.log("[DragDrop] dragend triggered");
-        // console.log(
-          // "[DragDrop] Current data-idx values:",
-          // items.map((i) => i.dataset.idx).join(", ")
-        // );
-        // console.log("[DragDrop] newOrder array:", newOrder);
 
         // Check if order actually changed
         const orderChanged = newOrder.some((pos, idx) => pos !== idx);
-        // console.log("[DragDrop] Order changed:", orderChanged);
 
         if (orderChanged) {
           // CRITICAL: Call onReorder FIRST with the old data-idx values
           // onReorder needs these to correctly map the backend array
           if (onReorder) {
-            // console.log(
-              // "[DragDrop] Calling onReorder with newOrder:",
-              // newOrder
-            // );
             onReorder(newOrder);
           }
 
@@ -308,15 +297,8 @@ export function setupCompactDragDrop(
           items.forEach((item, newIdx) => {
             const oldIdx = item.dataset.idx;
             item.dataset.idx = newIdx;
-            // console.log(
-              // `[DragDrop] Updated item data-idx: ${oldIdx} -> ${newIdx}`
-            // );
           });
 
-          // console.log(
-            // "[DragDrop] Final data-idx values:",
-            // items.map((i) => i.dataset.idx).join(", ")
-          // );
         }
       }
 

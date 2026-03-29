@@ -247,17 +247,12 @@ class YeelightCubePaletteCardEditor extends LitElement {
       // Catch async errors from the promise chain
       if (result && typeof result.catch === "function") {
         return result.catch((e) => {
-          console.debug(
-            "Editor performUpdate promise error (suppressed):",
-            e.message
-          );
           return Promise.resolve();
         });
       }
       return result;
     } catch (e) {
       // Catch synchronous errors
-      console.debug("Editor performUpdate error (suppressed):", e.message);
       return Promise.resolve();
     }
   }

@@ -174,7 +174,6 @@ export class MatrixOperations1D {
 
       this.card.previewFillArea = visited;
       this.card.requestUpdate();
-      // console.log(`[AreaFill] Preview area size: ${visited.size}`);
     } else {
       this.card.previewFillArea = new Set();
       this.card.lastHoveredIdx = null;
@@ -227,11 +226,6 @@ export class MatrixOperations1D {
         }
         this.card.previewFillArea = new Set();
         this.card.requestUpdate();
-        // console.log(
-        // `[AreaFill] Colored ${
-        // this.card.matrix.filter((c) => c === this.card.selectedColor).length
-        // } pixels with color ${this.card.selectedColor}`
-        // );
       }
       return;
     }
