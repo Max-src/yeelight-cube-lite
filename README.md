@@ -12,7 +12,7 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**. T
 
 ## Features
 
-### Integration
+### Light Integration
 
 - **Full 20×5 RGB matrix control** — 100 individually addressable LEDs
 - **Display modes** — solid color, 7 gradient types, text color sequences, panel color sequences, custom draw
@@ -22,7 +22,7 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**. T
 - **Brightness control** with gamma correction
 - **Multi-lamp support** — add as many devices as you have
 
-### Lovelace Cards
+### Custom Lovelace Cards
 
 - **Draw Card** — pixel art editor with pencil, eraser, fill, eyedropper, undo; gallery to save/load/rename/reorder/import/export designs
 - **Gradient Card** — pick and preview all gradient & color modes with a scrollable mode wheel
@@ -58,12 +58,32 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**. T
 
 ## Setup
 
+### Prerequisites — Yeelight Station App
+
+Before adding the lamp to Home Assistant, you must first set it up using the **Yeelight Station** app (not the standard Yeelight app). This is where you configure Wi-Fi, enable LAN control, and find the IP address needed for the integration.
+
+1. **Download the Yeelight Station app** from the App Store (iOS) or Google Play (Android)
+2. **Power on the lamp** — connect the base unit to power using the included adapter, then place the Cube on top of the base (it attaches magnetically via the ring/pin connectors)
+3. **Add the lamp to the app** — follow the in-app pairing instructions to connect the base unit to your **2.4 GHz Wi-Fi network**
+4. **Enable LAN Control** — in the app, go to your device's **Device Settings** and turn on **LAN Control**. This is required for the Home Assistant integration to communicate with the lamp over your local network
+5. **Find the lamp's IP address** — in the same Device Settings screen, locate the IP address assigned to the lamp on your network (e.g. `192.168.4.139`). Note this down — you will need it during the Home Assistant setup
+
+<!-- TODO: Add screenshot of Yeelight Station app — Device Settings showing LAN Control toggle and IP address -->
+
+> **Tip:** You can also find the lamp's IP address from your router's admin page or DHCP client list. Assigning a static IP / DHCP reservation for the lamp is recommended to prevent the address from changing.
+
+### Adding to Home Assistant
+
 1. Go to **Settings → Devices & Services → Add Integration**
 2. Search for **Yeelight Cube Lite**
-3. Enter the IP address of your Yeelight Cube Lite device (you can find it in the Yeelight app)
-4. The integration will create a device with all entities automatically
+3. Enter the **IP address** you noted from the Yeelight Station app
+4. Click **Submit** — the integration will connect to the lamp and create a device with all entities automatically
 
-<!-- TODO: Add screenshot of config flow here -->
+<!-- TODO: Add screenshot of the Add Integration search showing Yeelight Cube Lite -->
+<!-- TODO: Add screenshot of the IP address entry form -->
+<!-- TODO: Add screenshot of the device page after successful setup -->
+
+> **Note:** Each lamp (base unit) needs to be added separately. If you have multiple lamps, repeat the process for each one using their respective IP addresses.
 
 ---
 
@@ -236,11 +256,11 @@ Each Yeelight Cube Lite device creates the following entities:
 
 ### Sensors
 
-| Entity              | Description                                                     |
-| ------------------- | --------------------------------------------------------------- |
-| **Color Palettes**  | Stores all saved palettes (used by palette cards)               |
-| **Saved Drawings**  | Stores all saved pixel art designs (used by draw cards)         |
-| **Font Characters** | Exposes the bitmap font character maps |
+| Entity              | Description                                             |
+| ------------------- | ------------------------------------------------------- |
+| **Color Palettes**  | Stores all saved palettes (used by palette cards)       |
+| **Saved Drawings**  | Stores all saved pixel art designs (used by draw cards) |
+| **Font Characters** | Exposes the bitmap font character maps                  |
 
 ---
 
