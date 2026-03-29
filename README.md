@@ -311,13 +311,13 @@ Configure the effect, step count and duration via the **Transition Effect**, **T
 
 ## Troubleshooting
 
-| Problem                                 | Solution                                                                                                  |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------- |
-| **Cards not showing**                   | Clear browser cache with `Ctrl+F5` after installing or updating                                           |
-| **Device not found**                    | Ensure the lamp is on the same network. Check the IP in the Yeelight mobile app                           |
+| Problem                                 | Solution                                                                                                                      |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| **Cards not showing**                   | Clear browser cache with `Ctrl+F5` after installing or updating                                                               |
+| **Device not found**                    | Ensure the lamp is on the same network. Check the IP in the Yeelight mobile app                                               |
 | **Conflicts with Yeelight integration** | This integration automatically dismisses built-in Yeelight discovery for your Cube devices and prevents it from managing them |
-| **Lamp appears stuck / unresponsive**   | Press the **Force Refresh** button entity, or use the force refresh button on the Lamp Preview card       |
-| **Colors look off on the hardware**     | Color accuracy correction is built-in and applied automatically. It compensates for LED channel imbalance |
+| **Lamp appears stuck / unresponsive**   | Press the **Force Refresh** button entity, or use the force refresh button on the Lamp Preview card                           |
+| **Colors look off on the hardware**     | Color accuracy correction is built-in and applied automatically. It compensates for LED channel imbalance                     |
 
 ---
 
