@@ -33,6 +33,9 @@ deploy_to_homeassistant.ps1
 debug_text_width.py
 generate_fontmap.py
 
+# Source font files (bitmap font maps are pre-generated in layout.py)
+*.ttf
+
 # Unused cards kept for reference
 www/unused-cards/
 www/yeelight-cube-lettermap-card.js
