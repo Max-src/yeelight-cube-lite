@@ -76,6 +76,7 @@ The main pixel art editor card.
 <!-- TODO: Add screenshot of draw card here -->
 
 **Features:**
+
 - **20×5 interactive matrix** — click or drag to paint pixels
 - **Drawing tools** — color picker, pencil, eyedropper, eraser, area fill, fill all, undo
 - **Tool bar customization** — reorder, show/hide individual tools via the card editor
@@ -95,6 +96,7 @@ Control the lamp's gradient and color modes from a single card.
 <!-- TODO: Add screenshot of gradient card here -->
 
 **Features:**
+
 - **9 gradient/color modes:**
   - Solid Color
   - Letter Gradient
@@ -118,6 +120,7 @@ A live preview of the lamp's current state, with controls.
 <!-- TODO: Add screenshot of lamp preview card here -->
 
 **Features:**
+
 - **Live 20×5 matrix preview** — reflects the lamp's actual pixel colors in real time
 - **Brightness slider** — control lamp brightness with multiple slider styles (slider, bar, rotary)
 - **Brightness label** — display as text, icon, icon+text, or hidden
@@ -134,6 +137,7 @@ Create, manage, and apply color palettes.
 <!-- TODO: Add screenshot of palette card here -->
 
 **Features:**
+
 - **Visual palette display** — see all palette colors as swatches (round or square style)
 - **Create & edit palettes** — add colors, rename, reorder, delete
 - **Apply palette** — load a palette's colors onto the lamp
@@ -148,6 +152,7 @@ Edit color sequences used by the "Text Color Sequence" and "Panel Color Sequence
 <!-- TODO: Add screenshot of color list editor card here -->
 
 **Features:**
+
 - **Visual color list** — add, remove, reorder colors in a sequence
 - **Drag-and-drop reordering** — rearrange colors by dragging
 - **Rotary color picker** — precise color selection
@@ -161,6 +166,7 @@ View and browse the font character maps used for text display.
 <!-- TODO: Add screenshot of lettermap card here -->
 
 **Features:**
+
 - **Character grid** — see how each character looks on the 5-pixel-tall matrix
 - **Font switching** — browse different built-in fonts
 - **Sensor-backed** — reads from the Font Characters sensor entity
@@ -177,71 +183,71 @@ Each Yeelight Cube device creates the following entities:
 
 ### Light
 
-| Entity | Description |
-|--------|-------------|
+| Entity            | Description                                       |
+| ----------------- | ------------------------------------------------- |
 | **Yeelight Cube** | Main light entity — on/off, RGB color, brightness |
 
 ### Selectors
 
-| Entity | Description |
-|--------|-------------|
-| **Display Mode** | Switch between: Solid Color, Letter Gradient, Column Gradient, Row Gradient, Angle Gradient, Radial Gradient, Letter Vertical Gradient, Letter Angle Gradient, Text Color Sequence, Panel Color Sequence, Custom Draw |
-| **Palette** | Select from saved color palettes to apply to the lamp |
-| **Pixel Art** | Select from saved pixel art designs to load onto the matrix |
-| **Text Alignment** | Text alignment: left, center, right |
-| **Font** | Choose the text font (multiple built-in bitmap fonts) |
-| **Transition Effect** | Choose from 24 transition animations when switching display modes |
+| Entity                | Description                                                                                                                                                                                                           |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Display Mode**      | Switch between: Solid Color, Letter Gradient, Column Gradient, Row Gradient, Angle Gradient, Radial Gradient, Letter Vertical Gradient, Letter Angle Gradient, Text Color Sequence, Panel Color Sequence, Custom Draw |
+| **Palette**           | Select from saved color palettes to apply to the lamp                                                                                                                                                                 |
+| **Pixel Art**         | Select from saved pixel art designs to load onto the matrix                                                                                                                                                           |
+| **Text Alignment**    | Text alignment: left, center, right                                                                                                                                                                                   |
+| **Font**              | Choose the text font (multiple built-in bitmap fonts)                                                                                                                                                                 |
+| **Transition Effect** | Choose from 24 transition animations when switching display modes                                                                                                                                                     |
 
 ### Numbers (Sliders)
 
-| Entity | Description |
-|--------|-------------|
-| **Gradient Angle** | Angle for angle-based gradient modes (0°–360°) |
-| **Transition Steps** | Number of animation steps for transitions (1–10) |
-| **Transition Duration** | Total transition time in seconds (0.2–10s) |
-| **Color: Hue Shift** | Shift all colors around the color wheel (−180° to +180°) |
-| **Color: Temperature** | Warm/cool color temperature adjustment (−100 to +100) |
-| **Intensity: Saturation** | Color saturation level (0–200%) |
-| **Intensity: Vibrance** | Vibrance / adaptive saturation (0–200%) |
-| **Tone: Contrast** | Contrast level (0–200%) |
-| **Tone: Glow** | Bloom / glow effect strength (0–100%) |
-| **Effects: Grayscale** | Grayscale intensity (0–100%) |
-| **Effects: Invert** | Color inversion intensity (0–100%) |
-| **Effects: Tint Hue** | Tint color hue (0°–360°) |
-| **Effects: Tint Strength** | Tint overlay intensity (0–100%) |
+| Entity                     | Description                                              |
+| -------------------------- | -------------------------------------------------------- |
+| **Gradient Angle**         | Angle for angle-based gradient modes (0°–360°)           |
+| **Transition Steps**       | Number of animation steps for transitions (1–10)         |
+| **Transition Duration**    | Total transition time in seconds (0.2–10s)               |
+| **Color: Hue Shift**       | Shift all colors around the color wheel (−180° to +180°) |
+| **Color: Temperature**     | Warm/cool color temperature adjustment (−100 to +100)    |
+| **Intensity: Saturation**  | Color saturation level (0–200%)                          |
+| **Intensity: Vibrance**    | Vibrance / adaptive saturation (0–200%)                  |
+| **Tone: Contrast**         | Contrast level (0–200%)                                  |
+| **Tone: Glow**             | Bloom / glow effect strength (0–100%)                    |
+| **Effects: Grayscale**     | Grayscale intensity (0–100%)                             |
+| **Effects: Invert**        | Color inversion intensity (0–100%)                       |
+| **Effects: Tint Hue**      | Tint color hue (0°–360°)                                 |
+| **Effects: Tint Strength** | Tint overlay intensity (0–100%)                          |
 
 ### Switches
 
-| Entity | Description |
-|--------|-------------|
-| **Auto Turn On** | Automatically turn on the lamp when a new mode or drawing is applied |
+| Entity               | Description                                                              |
+| -------------------- | ------------------------------------------------------------------------ |
+| **Auto Turn On**     | Automatically turn on the lamp when a new mode or drawing is applied     |
 | **Flip Orientation** | Flip the matrix display horizontally (for mounting the lamp upside-down) |
 
 ### Text
 
-| Entity | Description |
-|--------|-------------|
+| Entity           | Description                                                           |
+| ---------------- | --------------------------------------------------------------------- |
 | **Display Text** | Text input for custom text display on the matrix (supports scrolling) |
 
 ### Button
 
-| Entity | Description |
-|--------|-------------|
+| Entity            | Description                                               |
+| ----------------- | --------------------------------------------------------- |
 | **Force Refresh** | Recover a stuck lamp by re-activating FX mode via raw TCP |
 
 ### Camera
 
-| Entity | Description |
-|--------|-------------|
-| **Matrix Preview (Square)** | Live camera feed of the matrix state, rendered with square pixels |
-| **Matrix Preview (Round)** | Live camera feed of the matrix state, rendered with round LED-style pixels |
+| Entity                      | Description                                                                |
+| --------------------------- | -------------------------------------------------------------------------- |
+| **Matrix Preview (Square)** | Live camera feed of the matrix state, rendered with square pixels          |
+| **Matrix Preview (Round)**  | Live camera feed of the matrix state, rendered with round LED-style pixels |
 
 ### Sensors
 
-| Entity | Description |
-|--------|-------------|
-| **Color Palettes** | Stores all saved palettes (used by palette cards) |
-| **Saved Drawings** | Stores all saved pixel art designs (used by draw cards) |
+| Entity              | Description                                                     |
+| ------------------- | --------------------------------------------------------------- |
+| **Color Palettes**  | Stores all saved palettes (used by palette cards)               |
+| **Saved Drawings**  | Stores all saved pixel art designs (used by draw cards)         |
 | **Font Characters** | Exposes the bitmap font character maps (used by lettermap card) |
 
 ---
@@ -250,19 +256,19 @@ Each Yeelight Cube device creates the following entities:
 
 The lamp supports the following display modes, selectable via the **Display Mode** entity or the Gradient Card:
 
-| Mode | Description |
-|------|-------------|
-| **Solid Color** | Fill the entire matrix with a single color |
-| **Letter Gradient** | Apply a horizontal gradient to each character of the displayed text |
-| **Column Gradient** | Vertical gradient across the 20 columns |
-| **Row Gradient** | Horizontal gradient across the 5 rows |
-| **Angle Gradient** | Gradient at a configurable angle (use the angle slider) |
-| **Radial Gradient** | Gradient radiating outward from the center |
-| **Letter Vertical Gradient** | Vertical gradient applied per character |
-| **Letter Angle Gradient** | Angled gradient applied per character |
-| **Text Color Sequence** | Each character gets a different color from the sequence |
-| **Panel Color Sequence** | Color sequence applied across all pixels |
-| **Custom Draw** | Pixel art mode — use the Draw Card to paint individual pixels |
+| Mode                         | Description                                                         |
+| ---------------------------- | ------------------------------------------------------------------- |
+| **Solid Color**              | Fill the entire matrix with a single color                          |
+| **Letter Gradient**          | Apply a horizontal gradient to each character of the displayed text |
+| **Column Gradient**          | Vertical gradient across the 20 columns                             |
+| **Row Gradient**             | Horizontal gradient across the 5 rows                               |
+| **Angle Gradient**           | Gradient at a configurable angle (use the angle slider)             |
+| **Radial Gradient**          | Gradient radiating outward from the center                          |
+| **Letter Vertical Gradient** | Vertical gradient applied per character                             |
+| **Letter Angle Gradient**    | Angled gradient applied per character                               |
+| **Text Color Sequence**      | Each character gets a different color from the sequence             |
+| **Panel Color Sequence**     | Color sequence applied across all pixels                            |
+| **Custom Draw**              | Pixel art mode — use the Draw Card to paint individual pixels       |
 
 ---
 
@@ -286,13 +292,13 @@ Configure the effect, step count and duration via the **Transition Effect**, **T
 
 ## Troubleshooting
 
-| Problem | Solution |
-|---------|----------|
-| **Cards not showing** | Clear browser cache with `Ctrl+F5` after installing or updating |
-| **Device not found** | Ensure the lamp is on the same network. Check the IP in the Yeelight mobile app |
-| **Conflicts with Yeelight integration** | This integration automatically blocks the built-in Yeelight integration from managing your cube device |
-| **Lamp appears stuck / unresponsive** | Press the **Force Refresh** button entity, or use the force refresh button on the Lamp Preview card |
-| **Colors look off on the hardware** | Color accuracy correction is built-in and applied automatically. It compensates for LED channel imbalance |
+| Problem                                 | Solution                                                                                                  |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| **Cards not showing**                   | Clear browser cache with `Ctrl+F5` after installing or updating                                           |
+| **Device not found**                    | Ensure the lamp is on the same network. Check the IP in the Yeelight mobile app                           |
+| **Conflicts with Yeelight integration** | This integration automatically blocks the built-in Yeelight integration from managing your cube device    |
+| **Lamp appears stuck / unresponsive**   | Press the **Force Refresh** button entity, or use the force refresh button on the Lamp Preview card       |
+| **Colors look off on the hardware**     | Color accuracy correction is built-in and applied automatically. It compensates for LED channel imbalance |
 
 ---
 
