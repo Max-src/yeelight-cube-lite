@@ -29,13 +29,13 @@ class YeelightConflictPrevention:
     def add_managed_device(self, ip_address: str):
         """Add a device to the managed list."""
         self._managed_ips.add(ip_address)
-        _LOGGER.info(f"Added {ip_address} to managed Yeelight Cube devices")
+        _LOGGER.debug(f"Added {ip_address} to managed Yeelight Cube devices")
     
     @callback
     def remove_managed_device(self, ip_address: str):
         """Remove a device from the managed list."""
         self._managed_ips.discard(ip_address)
-        _LOGGER.info(f"Removed {ip_address} from managed Yeelight Cube devices")
+        _LOGGER.debug(f"Removed {ip_address} from managed Yeelight Cube devices")
     
     @callback
     def is_device_managed(self, ip_address: str) -> bool:

@@ -26,7 +26,7 @@ RECOVERY_CONNECT_TIMEOUT = 1.5  # Longer timeout when recovering — LAN still c
 class CubeMatrix:
     """Handles communication with the Yeelight Cube device."""
     def __init__(self, ip: str, port: int):
-        _LOGGER.info(f"Connecting to Yeelight Cube at {ip}:{port}")
+        _LOGGER.debug(f"Connecting to Yeelight Cube at {ip}:{port}")
         self.device = Bulb(ip, port)
         self._ip = ip
         self._port = port
@@ -76,7 +76,7 @@ class CubeMatrix:
         except Exception as e:
             _LOGGER.debug(f"Could not retrieve capabilities (expected for some devices): {e}")
         
-        _LOGGER.info(
+        _LOGGER.debug(
             f"[INIT] CubeMatrix initialized: ip={ip}, port={port}, timeout={self.device._timeout}s, "
             f"cooldown={self._reconnect_cooldown}s, cooldown_max={RECONNECT_COOLDOWN_MAX}s, "
             f"max_failures={MAX_CONSECUTIVE_FAILURES}, id={id(self)}"
@@ -95,7 +95,7 @@ class CubeMatrix:
         """
         if self._just_reconnected:
             self._just_reconnected = False
-            _LOGGER.info("[FLAG] consume_reconnected_flag → True (will restore FX mode + brightness)")
+            _LOGGER.debug("[FLAG] consume_reconnected_flag → True (will restore FX mode + brightness)")
             return True
         return False
 
@@ -200,7 +200,7 @@ class CubeMatrix:
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, _struct.pack('ii', 1, 0))
                 await asyncio.to_thread(sock.connect, (self._ip, self._port))
                 sock.close()
-                _LOGGER.info(
+                _LOGGER.debug(
                     f"[RECONNECT] [{self._ip}] TCP probe succeeded — device is reachable"
                 )
             except (socket.timeout, OSError, ConnectionRefusedError) as e:
@@ -277,13 +277,13 @@ class CubeMatrix:
         for attempt in range(3):
             try:
                 await asyncio.to_thread(self.device.turn_on)
-                _LOGGER.info(f"Successfully connected to {self.device_name}!")
+                _LOGGER.debug(f"Successfully connected to {self.device_name}!")
                 return
             except BulbException as e:
                 error_msg = str(e)
                 if "closed the connection" in error_msg.lower():
                     # recv() failed after send() succeeded — command was sent
-                    _LOGGER.info(f"Connected to {self.device_name} (device closed connection after command — expected)")
+                    _LOGGER.debug(f"Connected to {self.device_name} (device closed connection after command — expected)")
                     return
                 _LOGGER.warning(f"Connection attempt {attempt + 1} failed: {e}")
                 await asyncio.sleep(2)
@@ -339,10 +339,10 @@ class CubeMatrix:
     async def enable_music_mode_recovery(self):
         """Enable music mode as a recovery mechanism when getting 'illegal request' errors"""
         try:
-            _LOGGER.info("Attempting to enable music mode for recovery...")
+            _LOGGER.debug("Attempting to enable music mode for recovery...")
             # Try to enable music mode - this typically requires the device IP and a local port
             await asyncio.to_thread(self.device.start_music, port=54321)
-            _LOGGER.info("Music mode enabled successfully for recovery")
+            _LOGGER.debug("Music mode enabled successfully for recovery")
             return True
         except Exception as e:
             _LOGGER.error(f"Failed to enable music mode: {e}")
@@ -392,7 +392,7 @@ class CubeMatrix:
             try:
                 sock.connect((self._ip, self._port))
                 sock.sendall(request)
-                _LOGGER.info(
+                _LOGGER.debug(
                     f"[RAW] [{self._ip}] Sent {command} on fresh TCP "
                     f"({len(request)} bytes)"
                 )
@@ -633,7 +633,7 @@ class CubeMatrix:
                 self._consecutive_failures = 0
                 self._last_success_time = time.time()
                 if self._device_unreachable:
-                    _LOGGER.info(
+                    _LOGGER.debug(
                         f"[FAST #{cmd_id}] ✓ RECONNECTED ({command}) after {prev_failures} failures!"
                     )
                     self._device_unreachable = False
@@ -681,7 +681,7 @@ class CubeMatrix:
                 if self._consecutive_failures == 1 and time_since_success < 60:
                     # First failure after recent success → transient-friendly cooldown
                     self._reconnect_cooldown = 2.0
-                    _LOGGER.info(
+                    _LOGGER.debug(
                         f"[FAST #{cmd_id}] Using short cooldown (2s) — device was online "
                         f"{time_since_success:.0f}s ago"
                     )
@@ -824,14 +824,14 @@ class CubeMatrix:
                 prev_cooldown = self._reconnect_cooldown
                 self._consecutive_failures = 0
                 if self._device_unreachable:
-                    _LOGGER.info(
+                    _LOGGER.debug(
                         f"[COMMAND #{cmd_id}] ✓ RECONNECTED after {prev_failures} failures! "
                         f"Resetting backoff {prev_cooldown:.0f}s → {RECONNECT_COOLDOWN_INITIAL}s"
                     )
                     self._device_unreachable = False
                     self._reconnect_cooldown = RECONNECT_COOLDOWN_INITIAL
                 elif self._reconnect_cooldown != RECONNECT_COOLDOWN_INITIAL:
-                    _LOGGER.info(
+                    _LOGGER.debug(
                         f"[COMMAND #{cmd_id}] ✓ SUCCESS — resetting cooldown {prev_cooldown:.0f}s → {RECONNECT_COOLDOWN_INITIAL}s"
                     )
                     self._reconnect_cooldown = RECONNECT_COOLDOWN_INITIAL
@@ -863,13 +863,13 @@ class CubeMatrix:
                     self._consecutive_failures = 0
                     # Reset backoff — device is alive
                     if self._device_unreachable:
-                        _LOGGER.info(
+                        _LOGGER.debug(
                             f"[COMMAND #{cmd_id}] ✓ RECONNECTED (closed conn) after {prev_failures} failures! "
                             f"Resetting backoff {prev_cooldown:.0f}s → {RECONNECT_COOLDOWN_INITIAL}s"
                         )
                         self._device_unreachable = False
                     elif prev_failures > 0:
-                        _LOGGER.info(
+                        _LOGGER.debug(
                             f"[COMMAND #{cmd_id}] ✓ OK (closed conn, {command} was sent) — "
                             f"cleared {prev_failures} failure(s)"
                         )
@@ -961,7 +961,7 @@ class CubeMatrix:
                 self._consecutive_failures += 1
                 self._failed_commands_window.append(time.time())
                 if "'NoneType' object has no attribute" in error_msg:
-                    _LOGGER.info(
+                    _LOGGER.debug(
                         f"[COMMAND #{cmd_id}] ✗ SOCKET GONE ({command}) — "
                         f"NoneType AttributeError [{self._state_summary()}]"
                     )

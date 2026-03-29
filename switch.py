@@ -31,7 +31,7 @@ async def async_setup_entry(
     ]
     
     async_add_entities(switches)
-    _LOGGER.info(f"Added {len(switches)} switch entities for Yeelight Cube")
+    _LOGGER.debug(f"Added {len(switches)} switch entities for Yeelight Cube")
 
 
 class YeelightCubeAutoTurnOnSwitch(SwitchEntity):
@@ -73,7 +73,7 @@ class YeelightCubeAutoTurnOnSwitch(SwitchEntity):
         )
         
         self.async_write_ha_state()
-        _LOGGER.info("Auto-turn-on enabled: Lamp will turn on automatically when receiving commands while off")
+        _LOGGER.debug("Auto-turn-on enabled: Lamp will turn on automatically when receiving commands while off")
 
     async def async_turn_off(self, **kwargs):
         """Turn off auto-turn-on (disable automatic lamp activation on commands)."""
@@ -87,7 +87,7 @@ class YeelightCubeAutoTurnOnSwitch(SwitchEntity):
         )
         
         self.async_write_ha_state()
-        _LOGGER.info("Auto-turn-on disabled: Commands will be ignored when lamp is off")
+        _LOGGER.debug("Auto-turn-on disabled: Commands will be ignored when lamp is off")
 
     @property
     def available(self) -> bool:
@@ -136,7 +136,7 @@ class YeelightCubeFlipOrientationSwitch(SwitchEntity):
             )
             
             self.async_write_ha_state()
-            _LOGGER.info("Flip orientation enabled: Display rotated 180°")
+            _LOGGER.debug("Flip orientation enabled: Display rotated 180°")
 
     async def async_turn_off(self, **kwargs):
         """Turn off flip orientation (normal display orientation)."""
@@ -152,7 +152,7 @@ class YeelightCubeFlipOrientationSwitch(SwitchEntity):
             )
             
             self.async_write_ha_state()
-            _LOGGER.info("Flip orientation disabled: Display in normal orientation")
+            _LOGGER.debug("Flip orientation disabled: Display in normal orientation")
 
     @property
     def available(self) -> bool:
@@ -172,4 +172,4 @@ class YeelightCubeFlipOrientationSwitch(SwitchEntity):
         if self._light_entity:
             orientation = "flipped" if self._attr_is_on else "normal"
             await self._light_entity.set_orientation(orientation)
-            _LOGGER.info(f"Restored flip orientation from saved state: {orientation}")
+            _LOGGER.debug(f"Restored flip orientation from saved state: {orientation}")

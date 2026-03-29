@@ -15,7 +15,7 @@ async def force_rediscovery(hass: HomeAssistant, ip_address: str):
         zeroconf_instance = await zeroconf.async_get_async_instance(hass)
         if hasattr(zeroconf_instance, 'cache'):
             # Clear relevant cache entries
-            _LOGGER.info(f"Attempting to clear zeroconf cache for {ip_address}")
+            _LOGGER.debug(f"Attempting to clear zeroconf cache for {ip_address}")
         
         # Clear config flow cache 
         flows_to_remove = []
@@ -28,10 +28,10 @@ async def force_rediscovery(hass: HomeAssistant, ip_address: str):
         for flow_id in flows_to_remove:
             if flow_id in hass.config_entries.flow._flows:
                 del hass.config_entries.flow._flows[flow_id]
-                _LOGGER.info(f"Removed cached discovery flow for {ip_address}")
+                _LOGGER.debug(f"Removed cached discovery flow for {ip_address}")
         
         # Force a new discovery scan
-        _LOGGER.info(f"Forced rediscovery cleanup completed for {ip_address}")
+        _LOGGER.debug(f"Forced rediscovery cleanup completed for {ip_address}")
         
     except Exception as e:
         _LOGGER.error(f"Error during forced rediscovery: {e}")
@@ -40,7 +40,7 @@ async def trigger_manual_discovery(hass: HomeAssistant, ip_address: str, device_
     """Manually trigger discovery for both integrations to test interception."""
     
     # Trigger discovery for built-in yeelight integration
-    _LOGGER.info(f"Manually triggering Yeelight discovery for {ip_address}")
+    _LOGGER.debug(f"Manually triggering Yeelight discovery for {ip_address}")
     try:
         await discovery_flow.async_create_flow(
             hass,
@@ -56,12 +56,12 @@ async def trigger_manual_discovery(hass: HomeAssistant, ip_address: str, device_
                 }
             }
         )
-        _LOGGER.info("Yeelight discovery flow created successfully")
+        _LOGGER.debug("Yeelight discovery flow created successfully")
     except Exception as e:
         _LOGGER.error(f"Failed to create Yeelight discovery flow: {e}")
     
     # Trigger discovery for our custom component
-    _LOGGER.info(f"Manually triggering Yeelight Cube discovery for {ip_address}")
+    _LOGGER.debug(f"Manually triggering Yeelight Cube discovery for {ip_address}")
     try:
         await discovery_flow.async_create_flow(
             hass,
@@ -75,6 +75,6 @@ async def trigger_manual_discovery(hass: HomeAssistant, ip_address: str, device_
                 "discovered": True
             }
         )
-        _LOGGER.info("Yeelight Cube discovery flow created successfully")
+        _LOGGER.debug("Yeelight Cube discovery flow created successfully")
     except Exception as e:
         _LOGGER.error(f"Failed to create Yeelight Cube discovery flow: {e}")

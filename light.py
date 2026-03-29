@@ -987,7 +987,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 self._maybe_schedule_retry()
             return
         
-        _LOGGER.info(
+        _LOGGER.debug(
             f"[OP #{op_id}] [{self._ip}] â–¶ {op_name} "
             f"(is_on={self._is_on}, fx_direct={self._fx_mode_is_direct}) "
             f"[{self._cube_matrix._state_summary()}]"
@@ -1019,7 +1019,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                         self._maybe_schedule_retry()
                     return
             # Success
-            _LOGGER.info(f"[OP #{op_id}] [{self._ip}] âœ“ {op_name} complete")
+            _LOGGER.debug(f"[OP #{op_id}] [{self._ip}] âœ“ {op_name} complete")
             # Only reset display retry state on display op success
             if is_display_op:
                 self._display_retry_count = 0
@@ -1031,7 +1031,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             self._hard_timeout_times.clear()
         except AttributeError as e:
             if "'NoneType'" in str(e):
-                _LOGGER.info(
+                _LOGGER.debug(
                     f"[OP #{op_id}] [{self._ip}] Socket gone â€” resetting FX mode"
                 )
                 self._connection_error = True
@@ -1057,7 +1057,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     f"[OP #{op_id}] [{self._ip}] BulbException: {error_message}"
                 )
         except TimeoutError:
-            _LOGGER.info(
+            _LOGGER.debug(
                 f"[OP #{op_id}] [{self._ip}] Timeout â€” device unreachable"
             )
             self._connection_error = True
@@ -1151,14 +1151,14 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         
         async def _delayed_retry():
             try:
-                _LOGGER.info(
+                _LOGGER.debug(
                     f"[RETRY] [{self._ip}] Attempt {self._display_retry_count}/{self.MAX_DISPLAY_RETRIES} â€” "
                     f"waiting {delay:.1f}s before retry "
                     f"[{self._cube_matrix._state_summary()}]"
                 )
                 await asyncio.sleep(delay)
                 
-                _LOGGER.info(
+                _LOGGER.debug(
                     f"[RETRY] [{self._ip}] Retrying display update now (attempt {self._display_retry_count}) "
                     f"[{self._cube_matrix._state_summary()}]"
                 )
@@ -1170,7 +1170,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 _LOGGER.warning(f"[RETRY] [{self._ip}] Unexpected error in display retry: {e}")
         
         self._retry_display_task = asyncio.create_task(_delayed_retry())
-        _LOGGER.info(
+        _LOGGER.debug(
             f"[RETRY] [{self._ip}] Scheduled retry {self._display_retry_count}/{self.MAX_DISPLAY_RETRIES} "
             f"in {delay:.1f}s (cooldown={cooldown:.0f}s, failures={self._cube_matrix._consecutive_failures})"
         )
@@ -1195,7 +1195,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
           4. If reachable â†’ reset all failure counters and trigger a fresh display update
           5. If still unreachable â†’ log at debug level, try again next cycle
         """
-        _LOGGER.info(f"[HEALTH] [{self._ip}] Health check started (adaptive interval)")
+        _LOGGER.debug(f"[HEALTH] [{self._ip}] Health check started (adaptive interval)")
         while True:
             try:
                 # ADAPTIVE INTERVAL:
@@ -1314,7 +1314,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             except Exception as e:
                 _LOGGER.debug(f"[HEALTH] [{self._ip}] Health check error: {e}")
         
-        _LOGGER.info(f"[HEALTH] [{self._ip}] Health check stopped")
+        _LOGGER.debug(f"[HEALTH] [{self._ip}] Health check stopped")
 
         
     # Removed duplicate/empty __init__ definition
@@ -1475,7 +1475,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         return attrs
 
     async def async_added_to_hass(self):
-        _LOGGER.info(f"[INIT] async_added_to_hass called for {self._attr_name}")
+        _LOGGER.debug(f"[INIT] async_added_to_hass called for {self._attr_name}")
         await super().async_added_to_hass()
         self.async_on_remove(async_track_state_change_event(self.hass, self.entity_id, self.async_update))
         
@@ -1493,16 +1493,16 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         if self._ip in _ENTITY_REGISTRY:
             del _ENTITY_REGISTRY[self._ip]
         _ENTITY_REGISTRY[self.entity_id] = self
-        _LOGGER.info(f"[SETUP] Registered entity {self.entity_id} in registry. Registry now contains: {list(_ENTITY_REGISTRY.keys())}")
+        _LOGGER.debug(f"[SETUP] Registered entity {self.entity_id} in registry. Registry now contains: {list(_ENTITY_REGISTRY.keys())}")
         
-        _LOGGER.info(f"[INIT] Initial state - custom_text: '{self._custom_text}', mode: '{self._mode}', is_on: {self._is_on}, brightness: {self._brightness}")
+        _LOGGER.debug(f"[INIT] Initial state - custom_text: '{self._custom_text}', mode: '{self._mode}', is_on: {self._is_on}, brightness: {self._brightness}")
         old_state = await self.async_get_last_state()
-        _LOGGER.info(f"[RESTORE] old_state exists: {old_state is not None}")
+        _LOGGER.debug(f"[RESTORE] old_state exists: {old_state is not None}")
         if old_state:
-            _LOGGER.info(f"[RESTORE] old_state.state: {old_state.state}")
-            _LOGGER.info(f"[RESTORE] old_state.attributes keys: {list(old_state.attributes.keys())}")
-            _LOGGER.info(f"[RESTORE] Brightness in attributes: {old_state.attributes.get('brightness')}")
-            _LOGGER.info(f"[RESTORE] Full attributes: {old_state.attributes}")
+            _LOGGER.debug(f"[RESTORE] old_state.state: {old_state.state}")
+            _LOGGER.debug(f"[RESTORE] old_state.attributes keys: {list(old_state.attributes.keys())}")
+            _LOGGER.debug(f"[RESTORE] Brightness in attributes: {old_state.attributes.get('brightness')}")
+            _LOGGER.debug(f"[RESTORE] Full attributes: {old_state.attributes}")
             
             # Restore effect values (preview adjustments)
             # Note: preview_darken is no longer saved in state attributes (removed from UI)
@@ -1536,7 +1536,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             # color_accuracy_enabled: no longer restored from old state.
             # It defaults to True and there's no UI toggle anymore.
             # The set_color_accuracy service still exists for advanced/automation use.
-            _LOGGER.info(f"[RESTORE] Restored effect values - hue_shift={self._preview_hue_shift}, temperature={self._preview_temperature}, saturation={self._preview_saturation}")
+            _LOGGER.debug(f"[RESTORE] Restored effect values - hue_shift={self._preview_hue_shift}, temperature={self._preview_temperature}, saturation={self._preview_saturation}")
             
             if old_state.attributes.get("brightness") is not None:
                 restored_brightness = int(old_state.attributes["brightness"])
@@ -1559,7 +1559,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 )
             if old_state.attributes.get("text_colors") is not None:
                 self._text_colors = [tuple(c) for c in old_state.attributes["text_colors"]]
-                _LOGGER.info(f"[RESTORE] Restored text_colors: {self._text_colors}")
+                _LOGGER.debug(f"[RESTORE] Restored text_colors: {self._text_colors}")
                 # Synchronize _rgb_color with the first text color
                 self._sync_rgb_color()
             else:
@@ -1567,15 +1567,15 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 rgb = old_state.attributes.get("rgb_color")
                 grad_start = old_state.attributes.get("gradient_start")
                 grad_end = old_state.attributes.get("gradient_end")
-                _LOGGER.info(f"[RESTORE] Fallback values - rgb: {rgb}, grad_start: {grad_start}, grad_end: {grad_end}")
+                _LOGGER.debug(f"[RESTORE] Fallback values - rgb: {rgb}, grad_start: {grad_start}, grad_end: {grad_end}")
                 if rgb and grad_start and grad_end:
                     self._text_colors = [tuple(rgb), tuple(grad_end)]
                     self._sync_rgb_color()
-                    _LOGGER.info(f"[RESTORE] Used gradient fallback: {self._text_colors}")
+                    _LOGGER.debug(f"[RESTORE] Used gradient fallback: {self._text_colors}")
                 elif rgb:
                     self._text_colors = [tuple(rgb)]
                     self._sync_rgb_color()
-                    _LOGGER.info(f"[RESTORE] Used rgb fallback: {self._text_colors}")
+                    _LOGGER.debug(f"[RESTORE] Used rgb fallback: {self._text_colors}")
                 else:
                     _LOGGER.warning(f"[RESTORE] No fallback values available, keeping defaults: {self._text_colors}")
             # Restore mode and custom_draw_active
@@ -1629,19 +1629,19 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 self._scroll_enabled = bool(old_state.attributes["scroll_enabled"])
         # Palettes and pixel arts are accessed via @property from global storage
         # No restoration needed - __init__.py loads from Store into hass.data[DOMAIN]
-        _LOGGER.info(f"[RESTORE] Entity initialized. Palettes: {len(self._palettes)}, Pixel Arts: {len(self._pixel_arts)}")
+        _LOGGER.debug(f"[RESTORE] Entity initialized. Palettes: {len(self._palettes)}, Pixel Arts: {len(self._pixel_arts)}")
             # Note: No need to copy back to hass.data - we're using shared references now
         self.async_schedule_update_ha_state()
         
-        _LOGGER.info(f"[INIT] After state restoration - custom_text: '{self._custom_text}', mode: '{self._mode}', is_on: {self._is_on}")
-        _LOGGER.info(f"[INIT] Calling initial async_apply_display_mode to display HELLO...")
+        _LOGGER.debug(f"[INIT] After state restoration - custom_text: '{self._custom_text}', mode: '{self._mode}', is_on: {self._is_on}")
+        _LOGGER.debug(f"[INIT] Calling initial async_apply_display_mode to display HELLO...")
         
         # Apply initial display mode to show HELLO
         # Use 'turn_on' type so this isn't blocked by the retry limit after HA restart
         if self._is_on:
             await self.async_apply_display_mode(update_type='turn_on')
         else:
-            _LOGGER.info(f"[INIT] Light is off, not applying display mode")
+            _LOGGER.debug(f"[INIT] Light is off, not applying display mode")
 
     async def async_will_remove_from_hass(self):
         """Clean up when entity is removed"""
@@ -1668,7 +1668,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 pass
             self._background_tasks.clear()
         
-        _LOGGER.info("[CLEANUP] Stopped scroll timer and background tasks on entity removal")
+        _LOGGER.debug("[CLEANUP] Stopped scroll timer and background tasks on entity removal")
 
     # Pixel Art service handlers are now registered in async_setup_entry
 
@@ -1695,7 +1695,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         """
         cm = self._cube_matrix
         
-        _LOGGER.info(
+        _LOGGER.debug(
             f"[ENSURE_FX] [{self._ip}] Activating FX mode via raw TCP "
             f"[{cm._state_summary()}]"
         )
@@ -1744,7 +1744,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         self._last_fx_mode_time = time.time()
         self._last_hardware_brightness = hardware_brightness
         
-        _LOGGER.info(
+        _LOGGER.debug(
             f"[ENSURE_FX] [{self._ip}] âœ“ FX ready â€” brightness={hardware_brightness}%"
         )
 
@@ -1780,7 +1780,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
 
     async def async_turn_on(self, **kwargs):
         """Turn on the light."""
-        _LOGGER.info(f"[TURN_ON] async_turn_on called with kwargs: {kwargs}")
+        _LOGGER.debug(f"[TURN_ON] async_turn_on called with kwargs: {kwargs}")
         
         # Update HA state IMMEDIATELY for responsive UI
         self._is_on = True
@@ -1798,34 +1798,34 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
     
     async def _internal_turn_on(self, **kwargs):
         """Internal turn_on implementation â€” runs under the global lock."""
-        _LOGGER.info(f"[TURN_ON] Executing - is_on: {self._is_on}, custom_text: '{self._custom_text}', mode: '{self._mode}'")
+        _LOGGER.debug(f"[TURN_ON] Executing - is_on: {self._is_on}, custom_text: '{self._custom_text}', mode: '{self._mode}'")
         
         # Ensure FX mode is active using raw TCP (proven reliable).
         # ensure_fx_ready() handles activate_fx_mode + set_bright atomically.
         if not self._fx_mode_is_direct:
-            _LOGGER.info(f"[TURN_ON] Activating FX mode via raw TCP")
+            _LOGGER.debug(f"[TURN_ON] Activating FX mode via raw TCP")
             await self.ensure_fx_ready()
         
         self._is_on = True
         
         # Handle colors from kwargs
         if "text_colors" in kwargs:
-            _LOGGER.info(f"[TURN_ON] Setting text_colors from kwargs: {kwargs['text_colors']}")
+            _LOGGER.debug(f"[TURN_ON] Setting text_colors from kwargs: {kwargs['text_colors']}")
             self._text_colors = [tuple(c) for c in kwargs["text_colors"]]
             self._sync_rgb_color()
         
         if "rgb_color" in kwargs:
             rgb_color = kwargs["rgb_color"]
-            _LOGGER.info(f"[TURN_ON] RGB color selected: {rgb_color}")
+            _LOGGER.debug(f"[TURN_ON] RGB color selected: {rgb_color}")
             self._text_colors = [tuple(rgb_color)]
             self._sync_rgb_color()
         
-        _LOGGER.info(f"[TURN_ON] Current state - text_colors: {self._text_colors}, background: {self._background_color}")
+        _LOGGER.debug(f"[TURN_ON] Current state - text_colors: {self._text_colors}, background: {self._background_color}")
         
         try:
             if "brightness" in kwargs:
                 new_brightness = kwargs["brightness"]
-                _LOGGER.info(f"[TURN_ON] Setting brightness to {new_brightness}")
+                _LOGGER.debug(f"[TURN_ON] Setting brightness to {new_brightness}")
                 # Call internal directly â€” we're already under the global lock
                 call_id = int(time.time() * 1000) % 100000
                 await self._internal_set_brightness(new_brightness, call_id)
@@ -1849,13 +1849,13 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         
         if self.hass is not None:
             self.async_schedule_update_ha_state()
-        _LOGGER.info(f"[TURN_ON] Turn on complete")
+        _LOGGER.debug(f"[TURN_ON] Turn on complete")
         
-        _LOGGER.info(f"[TURN_ON] Turn on complete")
+        _LOGGER.debug(f"[TURN_ON] Turn on complete")
 
     async def async_turn_off(self, **kwargs):
         """Turn off the light."""
-        _LOGGER.info(f"[TURN_OFF] async_turn_off called")
+        _LOGGER.debug(f"[TURN_OFF] async_turn_off called")
         
         # Update HA state IMMEDIATELY for responsive UI
         self._is_on = False
@@ -1869,7 +1869,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
     
     async def _internal_turn_off(self, **kwargs):
         """Internal turn_off implementation that executes in the queue."""
-        _LOGGER.info(f"[TURN_OFF] Executing turn_off")
+        _LOGGER.debug(f"[TURN_OFF] Executing turn_off")
         await self.erase_all()
         await self.apply()
         self._is_on = False
@@ -1887,7 +1887,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         self._last_apply_time = 0  # Reset cooldown timer to ensure turn_on will work immediately
         if self.hass is not None:
             self.async_schedule_update_ha_state()
-        _LOGGER.info(f"[TURN_OFF] Turn off complete")
+        _LOGGER.debug(f"[TURN_OFF] Turn off complete")
 
     async def set_brightness(self, brightness: int, **kwargs):
         """
@@ -1966,7 +1966,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             # Calculate BOTH hardware brightness and darkness percentage
             hardware_brightness, darken_percent = self._calculate_brightness_values(self._brightness)
             
-            _LOGGER.info(
+            _LOGGER.debug(
                 f"[BRIGHTNESS #{call_id}] User brightness {self._brightness} (1-255) â†’ "
                 f"hardware={hardware_brightness}%, darkness={darken_percent}%"
             )
@@ -1997,7 +1997,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 
                 # OPTIMIZATION: Execute hardware and display updates optimally
                 if hardware_changed and darken_changed:
-                    _LOGGER.info(
+                    _LOGGER.debug(
                         f"[BRIGHTNESS #{call_id}] BOTH changed - "
                         f"hardware: {self._last_hardware_brightness}% â†’ {hardware_brightness}%, "
                         f"darkness: {old_darken}% â†’ {darken_percent}% - sequential hw then display"
@@ -2013,7 +2013,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     if not self._cube_matrix.is_connected():
                         _LOGGER.debug(f"[BRIGHTNESS] Skipping hardware command - connection down")
                         self._pending_brightness = (self._brightness, time.time())
-                        _LOGGER.info(f"[BRIGHTNESS] Queued brightness {self._brightness} for retry")
+                        _LOGGER.debug(f"[BRIGHTNESS] Queued brightness {self._brightness} for retry")
                         self._start_brightness_retry_task()
                     else:
                         try:
@@ -2062,7 +2062,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     
                 elif hardware_changed:
                     # Only hardware changed - send command and await it
-                    _LOGGER.info(
+                    _LOGGER.debug(
                         f"[BRIGHTNESS #{call_id}] Hardware brightness changed: "
                         f"{self._last_hardware_brightness}% â†’ {hardware_brightness}%, sending..."
                     )
@@ -2070,7 +2070,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     if not self._cube_matrix.is_connected():
                         _LOGGER.debug(f"[BRIGHTNESS] Skipping hardware command - connection down")
                         self._pending_brightness = (self._brightness, time.time())
-                        _LOGGER.info(f"[BRIGHTNESS] Queued brightness {self._brightness} for retry")
+                        _LOGGER.debug(f"[BRIGHTNESS] Queued brightness {self._brightness} for retry")
                         self._start_brightness_retry_task()
                     else:
                         try:
@@ -2097,7 +2097,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     
                 elif darken_changed:
                     # Only darkness changed - use FAST PATH (no full re-render)
-                    _LOGGER.info(
+                    _LOGGER.debug(
                         f"[BRIGHTNESS #{call_id}] Darkness changed: {old_darken}% â†’ {darken_percent}%, "
                         f"using fast brightness path..."
                     )
@@ -2124,7 +2124,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                         self._preview_tint_strength != 0
                     )
                     if has_active_effects:
-                        _LOGGER.info(
+                        _LOGGER.debug(
                             f"[BRIGHTNESS #{call_id}] Values unchanged but effects active "
                             f"â€” forcing display update to preserve effects"
                         )
@@ -2160,7 +2160,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         - Drops stale queued brightness if user changed brightness since failure
         - Example: Brightness 20% queued â†’ User sets 60% successfully â†’ Drop queued 20%
         """
-        _LOGGER.info("[BRIGHTNESS RETRY] Retry processor started")
+        _LOGGER.debug("[BRIGHTNESS RETRY] Retry processor started")
         
         while self._pending_brightness is not None:
             # Wait for connection to be available
@@ -2183,7 +2183,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 
                 # If a newer brightness succeeded AFTER this one was queued, drop it
                 if last_success_time > queued_timestamp:
-                    _LOGGER.info(
+                    _LOGGER.debug(
                         f"[BRIGHTNESS RETRY] Dropping stale brightness {pending_value} - "
                         f"newer brightness {last_success_value} already applied "
                         f"(queued at {queued_timestamp:.2f}, superseded at {last_success_time:.2f})"
@@ -2193,7 +2193,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             
             # Try to re-apply the complete brightness through the queue
             try:
-                _LOGGER.info(f"[BRIGHTNESS RETRY] Retrying brightness {pending_value} via queue")
+                _LOGGER.debug(f"[BRIGHTNESS RETRY] Retrying brightness {pending_value} via queue")
                 # Queue through the proper channel so it's serialized with other operations
                 await self.set_brightness(pending_value)
                 # Success - clear pending
@@ -2213,7 +2213,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             # Small delay between retry attempts
             await asyncio.sleep(0.1)
         
-        _LOGGER.info("[BRIGHTNESS RETRY] Retry processor finished (no pending brightness)")
+        _LOGGER.debug("[BRIGHTNESS RETRY] Retry processor finished (no pending brightness)")
 
     async def async_update(self, *args, **kwargs):
         # No-op: do not call async_schedule_update_ha_state here to avoid NoEntitySpecifiedError
@@ -2274,7 +2274,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         is_user_action = update_type in user_action_types
         if not is_retry and self._display_retry_count >= self.MAX_DISPLAY_RETRIES:
             if is_user_action:
-                _LOGGER.info(
+                _LOGGER.debug(
                     f"[DISPLAY] [{self._ip}] User action '{update_type}' reset retry counter "
                     f"({self._display_retry_count} â†’ 0) â€” retries will resume"
                 )
@@ -2398,7 +2398,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             # If we don't have base colors yet, fall back to the full path
             base_colors = getattr(self, '_base_matrix_colors', None)
             if not base_colors or len(base_colors) != len(self._layout.device_layout):
-                _LOGGER.info(f"[BRIGHTNESS_FAST] No base colors â€” falling back to full apply")
+                _LOGGER.debug(f"[BRIGHTNESS_FAST] No base colors â€” falling back to full apply")
                 await self._apply_display_mode_internal(skip_post_delay=True)
                 return
             
@@ -2415,13 +2415,13 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
 
             # If FX mode isn't set, fall back to the full path which handles activation
             if not self._fx_mode_is_direct:
-                _LOGGER.info(f"[BRIGHTNESS_FAST] FX mode not set â€” falling back to full apply")
+                _LOGGER.debug(f"[BRIGHTNESS_FAST] FX mode not set â€” falling back to full apply")
                 await self._apply_display_mode_internal(skip_post_delay=True)
                 return
             
             # Check if reconnection happened
             if self._cube_matrix.consume_reconnected_flag():
-                _LOGGER.info(f"[BRIGHTNESS_FAST] Reconnection detected â€” falling back to full apply")
+                _LOGGER.debug(f"[BRIGHTNESS_FAST] Reconnection detected â€” falling back to full apply")
                 self._fx_mode_is_direct = False
                 await self._apply_display_mode_internal(skip_post_delay=True)
                 return
@@ -2575,13 +2575,13 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             # This resets the Cube's FX-mode timer (which counts from activation,
             # not from last command) and gives us a pristine persistent socket for
             # the burst of transition frames that follows.
-            _LOGGER.info(
+            _LOGGER.debug(
                 f"[TRANSITION] [{self._ip}] Re-activating FX mode via clean TCP "
                 f"before transition (fx_age={time.time() - self._last_fx_mode_time:.0f}s)"
             )
             await self.ensure_fx_ready()
             
-            _LOGGER.info(
+            _LOGGER.debug(
                 f"[TRANSITION] [{self._ip}] Starting '{self._transition_type}' "
                 f"({steps} steps, {duration:.1f}s, {step_delay*1000:.0f}ms/frame)"
             )
@@ -3086,7 +3086,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                         break
                     await asyncio.sleep(step_delay)
             
-            _LOGGER.info(
+            _LOGGER.debug(
                 f"[TRANSITION] [{self._ip}] Completed '{self._transition_type}' "
                 f"({steps} steps, {duration:.1f}s)"
             )
@@ -3470,7 +3470,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     self.stop_scroll_timer()
             # Handle Panel Color Sequence mode (applies colors to all modules, not just text)
             elif self._mode == "Panel Color Sequence":
-                _LOGGER.info(f"[Panel Color Sequence] Applying mode with {len(self._text_colors) if self._text_colors else 0} colors")
+                _LOGGER.debug(f"[Panel Color Sequence] Applying mode with {len(self._text_colors) if self._text_colors else 0} colors")
                 if self._text_colors:
                     colors = self._text_colors
                     for i, module in enumerate(self._layout.device_layout):
@@ -3489,16 +3489,16 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     default_color = '#ff0000'
                     for module in self._layout.device_layout:
                         module.set_colors([default_color])
-                _LOGGER.info("[Panel Color Sequence] About to apply changes to lamp")
+                _LOGGER.debug("[Panel Color Sequence] About to apply changes to lamp")
                 await self.apply(skip_post_delay=skip_post_delay)
-                _LOGGER.info("[Panel Color Sequence] Changes applied successfully")
+                _LOGGER.debug("[Panel Color Sequence] Changes applied successfully")
             else:
                 # No text, no panel mode, no pixel art, no special mode.
                 # All modules were already set to background color above.
                 # Push that background-only display to the Cube so the lamp
                 # actually shows it (e.g., when panel mode is turned OFF with
                 # no text set â€” without this, the lamp stays on the old display).
-                _LOGGER.info(
+                _LOGGER.debug(
                     f"[DISPLAY] [{self._ip}] No content to render "
                     f"(text='{self._custom_text}', panel={self._panel_mode}, "
                     f"draw_active={getattr(self, '_custom_draw_active', False)}, "
@@ -3904,7 +3904,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             # IMPORTANT: When we send pixel data, the lamp automatically turns on
             # So we must update our internal state to match the hardware state
             if not self._is_on:
-                _LOGGER.info(f"[APPLY] Lamp auto-turned on by pixel data, updating state")
+                _LOGGER.debug(f"[APPLY] Lamp auto-turned on by pixel data, updating state")
                 self._is_on = True
             
             # Render camera images + push camera state FIRST so the image
@@ -4039,7 +4039,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     # Diagnostic: log all config entries to detect duplicates
     all_entries = hass.config_entries.async_entries(DOMAIN)
     same_ip_entries = [e for e in all_entries if e.data.get(CONF_IP) == ip]
-    _LOGGER.info(
+    _LOGGER.debug(
         f"[SETUP] Setting up entry {entry.entry_id} for IP {ip} "
         f"(total entries: {len(all_entries)}, entries for this IP: {len(same_ip_entries)})"
     )
@@ -4056,7 +4056,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     
     # Register the entity in our global registry using IP as key
     _ENTITY_REGISTRY[ip] = light_entity
-    _LOGGER.info(f"[SETUP] Registered entity by IP {ip} in registry. Registry now contains: {list(_ENTITY_REGISTRY.keys())}")
+    _LOGGER.debug(f"[SETUP] Registered entity by IP {ip} in registry. Registry now contains: {list(_ENTITY_REGISTRY.keys())}")
     
     async_add_entities([light_entity], update_before_add=True)
     
@@ -4073,10 +4073,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     # Services should only be registered ONCE (not per device)
     # Skip ALL service registration if already registered to avoid duplicate handlers
     if hass.services.has_service(DOMAIN, "save_pixel_art"):
-        _LOGGER.info(f"[SERVICES] Services already registered, skipping service registration for device {ip}")
+        _LOGGER.debug(f"[SERVICES] Services already registered, skipping service registration for device {ip}")
         return True
     
-    _LOGGER.info(f"[SERVICES] First device ({ip}) - registering all Yeelight Cube services")
+    _LOGGER.debug(f"[SERVICES] First device ({ip}) - registering all Yeelight Cube services")
     
     # Deduplication tracker for palette/pixel art deletions
     # Since cards can have multiple target entities, the same deletion service can be called multiple times
@@ -4171,7 +4171,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             idx = service_call.data.get("idx")
             entity_id = service_call.data.get("entity_id")
             
-            _LOGGER.info(f"[LOAD_PALETTE] Called: idx={idx}, entity_id={entity_id}")
+            _LOGGER.debug(f"[LOAD_PALETTE] Called: idx={idx}, entity_id={entity_id}")
         except Exception as e:
             _LOGGER.error(f"[LOAD_PALETTE] Error at start: {e}", exc_info=True)
             return
@@ -4208,7 +4208,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     hex_color = rgb_to_hex(tuple(color))
                     module.set_colors([hex_color])
             await target_entity.async_apply_display_mode(update_type='pixel_art')
-            _LOGGER.info(f"[palette-backend] Applied palette idx {idx} to {target_entity._ip}")
+            _LOGGER.debug(f"[palette-backend] Applied palette idx {idx} to {target_entity._ip}")
 
         _fire_and_forget(*[_apply_one(t) for t in targets])
 
@@ -4472,7 +4472,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             return {}
         
         # Log current entity state for debugging
-        _LOGGER.info(f"[PREVIEW] Generating previews for entity with text='{target_entity._custom_text}', angle={target_entity._angle}, colors={len(target_entity._text_colors or [])} colors")
+        _LOGGER.debug(f"[PREVIEW] Generating previews for entity with text='{target_entity._custom_text}', angle={target_entity._angle}, colors={len(target_entity._text_colors or [])} colors")
         
         # Generate previews for all modes using entity's actual state
         modes = [
@@ -4493,7 +4493,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             # Convert to list of lists for JSON serialization
             previews[mode] = [list(color) for color in preview_colors]
         
-        _LOGGER.info(f"[PREVIEW] Generated {len(modes)} previews, each with 100 pixels (5x20)")
+        _LOGGER.debug(f"[PREVIEW] Generated {len(modes)} previews, each with 100 pixels (5x20)")
         
         # Fire event with preview data
         hass.bus.async_fire(
@@ -4568,7 +4568,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         # Save to persistent storage
         await async_save_data(hass)
         
-        _LOGGER.info(f"[pixelart-backend] Imported {len(valid_pixel_arts)} pixel arts via import_pixel_arts service.")
+        _LOGGER.debug(f"[pixelart-backend] Imported {len(valid_pixel_arts)} pixel arts via import_pixel_arts service.")
 
     async def handle_update_pixel_arts(service_call):
         """Update the full list of pixel arts (for reordering or bulk updates)."""
@@ -4602,7 +4602,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         # Save to persistent storage
         await async_save_data(hass)
         
-        _LOGGER.info(f"[pixelart-backend] Updated pixel arts list with {len(valid_pixel_arts)} items via update_pixel_arts service.")
+        _LOGGER.debug(f"[pixelart-backend] Updated pixel arts list with {len(valid_pixel_arts)} items via update_pixel_arts service.")
 
 
 
@@ -4662,11 +4662,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         # Save to persistent storage
         await async_save_data(hass)
         
-        _LOGGER.info(f"[PIXELART-SAVE] Saved '{name}' with {len(pixels)} pixels, new count: {len(pixel_arts)}")
+        _LOGGER.debug(f"[PIXELART-SAVE] Saved '{name}' with {len(pixels)} pixels, new count: {len(pixel_arts)}")
 
     async def handle_remove_pixel_art(service_call):
         idx = service_call.data.get("idx")
-        _LOGGER.info(f"[PIXELART-DELETE] Service called with idx={idx}")
+        _LOGGER.debug(f"[PIXELART-DELETE] Service called with idx={idx}")
         
         # No duplicate detection - rapid successive deletions are valid
         # (indices shift after each deletion, so same idx can refer to different pixel arts)
@@ -4677,11 +4677,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             return
         
         pixel_arts = hass.data[DOMAIN]["pixel_arts"]
-        _LOGGER.info(f"[PIXELART-DELETE] Current pixel art count={len(pixel_arts)}")
+        _LOGGER.debug(f"[PIXELART-DELETE] Current pixel art count={len(pixel_arts)}")
         
         if isinstance(idx, int) and 0 <= idx < len(pixel_arts):
             removed = pixel_arts.pop(idx)
-            _LOGGER.info(f"[PIXELART-DELETE] Deleted pixel art at idx {idx}: {removed.get('name', 'Unnamed')}")
+            _LOGGER.debug(f"[PIXELART-DELETE] Deleted pixel art at idx {idx}: {removed.get('name', 'Unnamed')}")
             
             # Pixel arts are global (not per-light), only need to:
             # 1. Fire event for sensor to pick up
@@ -4689,11 +4689,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             # No need to update light entities - pixel arts are independent
             
             hass.bus.async_fire(f"{DOMAIN}_pixel_arts_updated", {"count": len(pixel_arts)})
-            _LOGGER.info(f"[PIXELART-DELETE] Fired event, new count: {len(pixel_arts)}")
+            _LOGGER.debug(f"[PIXELART-DELETE] Fired event, new count: {len(pixel_arts)}")
             
             # Save to persistent storage
             await async_save_data(hass)
-            _LOGGER.info(f"[PIXELART-DELETE] Saved to storage. New pixel art count: {len(pixel_arts)}")
+            _LOGGER.debug(f"[PIXELART-DELETE] Saved to storage. New pixel art count: {len(pixel_arts)}")
         else:
             _LOGGER.error(f"[PIXELART-DELETE] Invalid idx {idx} (pixel art count: {len(pixel_arts)})")
 
@@ -4720,7 +4720,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             # Save to persistent storage
             await async_save_data(hass)
             
-            _LOGGER.info(f"[PIXELART-RENAME] Renamed idx {idx} to '{new_name}'")
+            _LOGGER.debug(f"[PIXELART-RENAME] Renamed idx {idx} to '{new_name}'")
 
 
 
@@ -4741,7 +4741,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 _LOGGER.error(f"[pixelart-backend] apply_pixel_art: No valid pixels for idx {idx}.")
                 return
             if not target_entity._is_on and not target_entity._should_auto_turn_on():
-                _LOGGER.info(f"[AUTO-TURN-ON] apply_pixel_art command ignored - lamp is off and auto-turn-on is disabled")
+                _LOGGER.debug(f"[AUTO-TURN-ON] apply_pixel_art command ignored - lamp is off and auto-turn-on is disabled")
                 return
             target_entity._custom_pixels = art["pixels"]
             target_entity._custom_draw_active = True
@@ -4751,7 +4751,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             await target_entity.async_apply_display_mode(update_type='pixel_art')
             if target_entity._pixel_art_select_entity:
                 target_entity._pixel_art_select_entity.async_update_from_light()
-            _LOGGER.info(f"[pixelart-backend] Applied pixel art idx {idx} to {target_entity._ip}.")
+            _LOGGER.debug(f"[pixelart-backend] Applied pixel art idx {idx} to {target_entity._ip}.")
 
         _fire_and_forget(*[_apply_one(t) for t in targets])
 
@@ -4768,7 +4768,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
         async def _apply_one(target_entity):
             if not target_entity._is_on and not target_entity._should_auto_turn_on():
-                _LOGGER.info(f"[AUTO-TURN-ON] apply_custom_pixels command ignored - lamp is off and auto-turn-on is disabled")
+                _LOGGER.debug(f"[AUTO-TURN-ON] apply_custom_pixels command ignored - lamp is off and auto-turn-on is disabled")
                 return
             target_entity._custom_pixels = pixels
             target_entity._custom_draw_active = True
@@ -4877,7 +4877,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         ha_brightness = round(3 + ((brightness_pct - 1) * 252) / 99)
         ha_brightness = max(3, min(255, ha_brightness))
         
-        _LOGGER.info(f"[SET_BRIGHTNESS] Setting brightness to {brightness_pct}% (HA value: {ha_brightness}) for {target_entity.entity_id}")
+        _LOGGER.debug(f"[SET_BRIGHTNESS] Setting brightness to {brightness_pct}% (HA value: {ha_brightness}) for {target_entity.entity_id}")
         
         try:
             # Use standard Home Assistant light.turn_on service
@@ -4890,7 +4890,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 },
                 blocking=True
             )
-            _LOGGER.info(f"[SET_BRIGHTNESS] Successfully set brightness to {brightness_pct}%")
+            _LOGGER.debug(f"[SET_BRIGHTNESS] Successfully set brightness to {brightness_pct}%")
         except Exception as e:
             _LOGGER.error(f"[SET_BRIGHTNESS] Failed to set brightness: {e}")
     
@@ -4915,7 +4915,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         
         # Check auto-turn-on setting
         if not target_entity._is_on and not target_entity._should_auto_turn_on():
-            _LOGGER.info(f"[AUTO-TURN-ON] set_orientation command ignored - lamp is off and auto-turn-on is disabled")
+            _LOGGER.debug(f"[AUTO-TURN-ON] set_orientation command ignored - lamp is off and auto-turn-on is disabled")
             return
         
         await target_entity.set_orientation(orientation)
@@ -4943,7 +4943,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         
         # Check auto-turn-on setting
         if not target_entity._is_on and not target_entity._should_auto_turn_on():
-            _LOGGER.info(f"[AUTO-TURN-ON] set_font command ignored - lamp is off and auto-turn-on is disabled")
+            _LOGGER.debug(f"[AUTO-TURN-ON] set_font command ignored - lamp is off and auto-turn-on is disabled")
             return
         
         await target_entity.set_font(font)
@@ -4972,7 +4972,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         
         # Check auto-turn-on setting
         if not target_entity._is_on and not target_entity._should_auto_turn_on():
-            _LOGGER.info(f"[AUTO-TURN-ON] set_alignment command ignored - lamp is off and auto-turn-on is disabled")
+            _LOGGER.debug(f"[AUTO-TURN-ON] set_alignment command ignored - lamp is off and auto-turn-on is disabled")
             return
         
         await target_entity.set_alignment(alignment)
@@ -5050,7 +5050,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             _LOGGER.debug(f"[SAVE_PALETTE] DUPLICATE CALL DETECTED - skipping save of '{name}' (already saved)")
             return
         
-        _LOGGER.info(f"[SAVE_PALETTE] Received entity_id: {entity_id}, palette length: {len(palette) if palette else 0}, name: {name}")
+        _LOGGER.debug(f"[SAVE_PALETTE] Received entity_id: {entity_id}, palette length: {len(palette) if palette else 0}, name: {name}")
         
         target_entity = _resolve_entity(service_call, "SAVE_PALETTE")
         if not target_entity:
@@ -5083,7 +5083,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             
             # Save to persistent storage
             await async_save_data(hass)
-            _LOGGER.info(f"[SAVE_PALETTE] Palette '{name}' saved. Total palettes: {len(palettes)}")
+            _LOGGER.debug(f"[SAVE_PALETTE] Palette '{name}' saved. Total palettes: {len(palettes)}")
 
     hass.services.async_register(
         DOMAIN,
@@ -5158,12 +5158,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
         async def _apply_one(target_entity):
             if not target_entity._is_on and not target_entity._should_auto_turn_on():
-                _LOGGER.info(f"[AUTO-TURN-ON] set_custom_pixels command ignored - lamp is off and auto-turn-on is disabled")
+                _LOGGER.debug(f"[AUTO-TURN-ON] set_custom_pixels command ignored - lamp is off and auto-turn-on is disabled")
                 return
             target_entity._custom_pixels = valid_pixels
             target_entity._custom_draw_active = True
             target_entity._custom_text = None
-            _LOGGER.info(f"[SET_CUSTOM_PIXELS] Set {len(valid_pixels)} pixels, custom_draw_active: True")
+            _LOGGER.debug(f"[SET_CUSTOM_PIXELS] Set {len(valid_pixels)} pixels, custom_draw_active: True")
             await target_entity.async_apply_display_mode(update_type='pixel_art')
 
         _fire_and_forget(*[_apply_one(t) for t in targets])
@@ -5201,9 +5201,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
         async def _apply_one(target_entity):
             if not target_entity._is_on and not target_entity._should_auto_turn_on():
-                _LOGGER.info(f"[AUTO-TURN-ON] set_custom_text command ignored - lamp is off and auto-turn-on is disabled")
+                _LOGGER.debug(f"[AUTO-TURN-ON] set_custom_text command ignored - lamp is off and auto-turn-on is disabled")
                 return
-            _LOGGER.info(f"[SET_TEXT] Setting custom text to: '{text}' for entity {target_entity.entity_id}")
+            _LOGGER.debug(f"[SET_TEXT] Setting custom text to: '{text}' for entity {target_entity.entity_id}")
             target_entity._custom_text = text
             target_entity._custom_pixels = None
             target_entity._custom_draw_active = False
@@ -5218,7 +5218,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             target_entity._scroll_direction = 1
             target_entity.stop_scroll_timer()
             await target_entity.async_apply_display_mode(update_type='text_change')
-            _LOGGER.info(f"[SET_TEXT] Display mode applied successfully for entity {target_entity.entity_id}")
+            _LOGGER.debug(f"[SET_TEXT] Display mode applied successfully for entity {target_entity.entity_id}")
 
         _fire_and_forget(*[_apply_one(t) for t in targets])
         
@@ -5247,7 +5247,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
         async def _apply_one(target_entity):
             if not target_entity._is_on and not target_entity._should_auto_turn_on():
-                _LOGGER.info(f"[AUTO-TURN-ON] set_angle command ignored - lamp is off and auto-turn-on is disabled")
+                _LOGGER.debug(f"[AUTO-TURN-ON] set_angle command ignored - lamp is off and auto-turn-on is disabled")
                 return
             target_entity._angle = angle
             await target_entity.async_apply_display_mode(update_type='color_change')
@@ -5281,7 +5281,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
         async def _apply_one(target_entity):
             if not target_entity._is_on and not target_entity._should_auto_turn_on():
-                _LOGGER.info(f"[AUTO-TURN-ON] Command ignored - lamp is off and auto-turn-on is disabled")
+                _LOGGER.debug(f"[AUTO-TURN-ON] Command ignored - lamp is off and auto-turn-on is disabled")
                 return
             target_entity._text_colors = converted_colors
             if target_entity._text_colors:
@@ -5338,7 +5338,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
         async def _apply_one(target_entity):
             if not target_entity._is_on and not target_entity._should_auto_turn_on():
-                _LOGGER.info(f"[AUTO-TURN-ON] display_image command ignored - lamp is off and auto-turn-on is disabled")
+                _LOGGER.debug(f"[AUTO-TURN-ON] display_image command ignored - lamp is off and auto-turn-on is disabled")
                 return
             target_entity._custom_pixels = custom_pixels
             target_entity._custom_draw_active = True
@@ -5390,7 +5390,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
         async def _apply_one(target_entity):
             if not target_entity._is_on and not target_entity._should_auto_turn_on():
-                _LOGGER.info(f"[AUTO-TURN-ON] set_mode command ignored - lamp is off and auto-turn-on is disabled")
+                _LOGGER.debug(f"[AUTO-TURN-ON] set_mode command ignored - lamp is off and auto-turn-on is disabled")
                 return
             if panel_mode is not None:
                 target_entity._panel_mode = panel_mode
@@ -5533,7 +5533,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             
             # Save to persistent storage
             await async_save_data(hass)
-            _LOGGER.info(f"[PALETTE-DELETE] Palette '{removed.get('name', 'Unnamed')}' deleted. Remaining: {len(palettes)}")
+            _LOGGER.debug(f"[PALETTE-DELETE] Palette '{removed.get('name', 'Unnamed')}' deleted. Remaining: {len(palettes)}")
         else:
             _LOGGER.error(f"[PALETTE-DELETE] Invalid idx {idx} (palette count: {len(palettes)}, valid range: 0-{len(palettes)-1})")
 
@@ -5550,27 +5550,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         if not target_entity:
             return
         
-        _LOGGER.info("[TEST] handle_test_display called")
-        _LOGGER.info(f"[TEST] Testing entity: {target_entity._attr_name}")
-        _LOGGER.info(f"[TEST] Current state - text: '{target_entity._custom_text}', mode: '{target_entity._mode}', is_on: {target_entity._is_on}")
-        _LOGGER.info(f"[TEST] Text colors: {target_entity._text_colors}")
-        _LOGGER.info(f"[TEST] Background color: {target_entity._background_color}")
-        _LOGGER.info(f"[TEST] Brightness: {target_entity._brightness}")
-        _LOGGER.info(f"[TEST] Alignment: {target_entity._alignment}")
-        _LOGGER.info(f"[TEST] Font: {target_entity._font}")
-        _LOGGER.info(f"[TEST] Connection status - has_error: {getattr(target_entity, '_connection_error', False)}, last_error: {getattr(target_entity, '_last_connection_error', 'None')}")
+        _LOGGER.debug("[TEST] handle_test_display called")
+        _LOGGER.debug(f"[TEST] Testing entity: {target_entity._attr_name}")
+        _LOGGER.debug(f"[TEST] Current state - text: '{target_entity._custom_text}', mode: '{target_entity._mode}', is_on: {target_entity._is_on}")
+        _LOGGER.debug(f"[TEST] Text colors: {target_entity._text_colors}")
+        _LOGGER.debug(f"[TEST] Background color: {target_entity._background_color}")
+        _LOGGER.debug(f"[TEST] Brightness: {target_entity._brightness}")
+        _LOGGER.debug(f"[TEST] Alignment: {target_entity._alignment}")
+        _LOGGER.debug(f"[TEST] Font: {target_entity._font}")
+        _LOGGER.debug(f"[TEST] Connection status - has_error: {getattr(target_entity, '_connection_error', False)}, last_error: {getattr(target_entity, '_last_connection_error', 'None')}")
         
         # Force the light to be on and apply display mode.
         # Reset _fx_mode_is_direct so _apply_impl calls ensure_fx_ready()
         # to re-establish FX mode via raw TCP.
         target_entity._is_on = True
         target_entity._fx_mode_is_direct = False
-        _LOGGER.info("[TEST] About to call async_apply_display_mode...")
+        _LOGGER.debug("[TEST] About to call async_apply_display_mode...")
         await target_entity.async_apply_display_mode(update_type='color_change')
-        _LOGGER.info("[TEST] Display mode applied")
+        _LOGGER.debug("[TEST] Display mode applied")
         
         # Report final connection status
-        _LOGGER.info(f"[TEST] After apply - connection_error: {getattr(target_entity, '_connection_error', False)}")
+        _LOGGER.debug(f"[TEST] After apply - connection_error: {getattr(target_entity, '_connection_error', False)}")
 
     hass.services.async_register(
         DOMAIN,
@@ -5682,7 +5682,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
         async def _apply_one(target_entity):
             target_entity._color_accuracy_enabled = enabled
-            _LOGGER.info(
+            _LOGGER.debug(
                 f"[COLOR_ACCURACY] [{target_entity._ip}] "
                 f"Color accuracy {'enabled' if enabled else 'disabled'}"
             )

@@ -27,7 +27,7 @@ class YeelightCubeDiscoveryManager:
             # Replace with our intercepting version
             discovery_flow.async_create_flow = self._intercept_discovery_flow
             
-            _LOGGER.info("Discovery interception set up successfully")
+            _LOGGER.debug("Discovery interception set up successfully")
         except Exception as e:
             _LOGGER.error(f"Failed to set up discovery interception: {e}")
     
@@ -53,7 +53,7 @@ class YeelightCubeDiscoveryManager:
             
             # Check if this should be handled by our cube component
             if is_cube_device(device_model, device_name, device_id):
-                _LOGGER.info(f"Intercepting Yeelight discovery for cube device at {host}")
+                _LOGGER.debug(f"Intercepting Yeelight discovery for cube device at {host}")
                 
                 # Check if already configured in our component
                 existing_entries = hass.config_entries.async_entries(DOMAIN)
@@ -86,7 +86,7 @@ class YeelightCubeDiscoveryManager:
         """Restore original discovery flow function."""
         if self._original_create_flow:
             discovery_flow.async_create_flow = self._original_create_flow
-            _LOGGER.info("Discovery interception cleaned up")
+            _LOGGER.debug("Discovery interception cleaned up")
 
 # Global instance
 _discovery_manager = None

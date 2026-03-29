@@ -160,11 +160,11 @@ class YeelightCubeGradientAngleNumber(NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         """Set the gradient angle and apply to the lamp."""
-        _LOGGER.info(f"[ANGLE NUMBER] User set angle to {value}° for {self._light_entity._ip}")
+        _LOGGER.debug(f"[ANGLE NUMBER] User set angle to {value}° for {self._light_entity._ip}")
 
         # Check auto-turn-on setting
         if not self._light_entity._is_on and not self._light_entity._should_auto_turn_on():
-            _LOGGER.info("[ANGLE NUMBER] Lamp is off and auto-turn-on is disabled, ignoring")
+            _LOGGER.debug("[ANGLE NUMBER] Lamp is off and auto-turn-on is disabled, ignoring")
             return
 
         self._light_entity._angle = value
@@ -190,7 +190,7 @@ class YeelightCubeGradientAngleNumber(NumberEntity):
 
         # Register ourselves with the light entity so it can notify us
         self._light_entity._angle_number_entity = self
-        _LOGGER.info(f"[ANGLE NUMBER] Registered for {self._light_entity._ip}, current angle={self._light_entity._angle}")
+        _LOGGER.debug(f"[ANGLE NUMBER] Registered for {self._light_entity._ip}, current angle={self._light_entity._angle}")
 
 
 class YeelightCubePreviewAdjustmentNumber(NumberEntity):
@@ -234,7 +234,7 @@ class YeelightCubePreviewAdjustmentNumber(NumberEntity):
     async def async_set_native_value(self, value: float) -> None:
         """Set the adjustment value and re-render the lamp display."""
         int_val = max(self._spec["min"], min(self._spec["max"], int(value)))
-        _LOGGER.info(f"[{self._spec['key'].upper()}] Set to {int_val} for {self._light_entity._ip}")
+        _LOGGER.debug(f"[{self._spec['key'].upper()}] Set to {int_val} for {self._light_entity._ip}")
 
         setattr(self._light_entity, self._attr_key, int_val)
 
@@ -261,7 +261,7 @@ class YeelightCubePreviewAdjustmentNumber(NumberEntity):
         if not hasattr(self._light_entity, '_preview_number_entities'):
             self._light_entity._preview_number_entities = {}
         self._light_entity._preview_number_entities[self._spec["key"]] = self
-        _LOGGER.info(f"[{self._spec['key'].upper()}] Registered for {self._light_entity._ip}")
+        _LOGGER.debug(f"[{self._spec['key'].upper()}] Registered for {self._light_entity._ip}")
 
 
 # ── Transition Step Count ──────────────────────────────────────────────
@@ -301,7 +301,7 @@ class YeelightCubeTransitionStepsNumber(NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         int_val = max(1, min(10, int(value)))
-        _LOGGER.info(f"[TRANSITION STEPS] Set to {int_val} for {self._light_entity._ip}")
+        _LOGGER.debug(f"[TRANSITION STEPS] Set to {int_val} for {self._light_entity._ip}")
         self._light_entity._transition_steps = int_val
 
         if self.hass is not None:
@@ -317,7 +317,7 @@ class YeelightCubeTransitionStepsNumber(NumberEntity):
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
         self._light_entity._transition_steps_entity = self
-        _LOGGER.info(
+        _LOGGER.debug(
             f"[TRANSITION STEPS] Registered for {self._light_entity._ip}, "
             f"current steps={self._light_entity._transition_steps}"
         )
@@ -360,7 +360,7 @@ class YeelightCubeTransitionDurationNumber(NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         clamped = max(0.2, min(10.0, round(value, 1)))
-        _LOGGER.info(f"[TRANSITION DURATION] Set to {clamped}s for {self._light_entity._ip}")
+        _LOGGER.debug(f"[TRANSITION DURATION] Set to {clamped}s for {self._light_entity._ip}")
         self._light_entity._transition_duration = clamped
 
         if self.hass is not None:
@@ -376,7 +376,7 @@ class YeelightCubeTransitionDurationNumber(NumberEntity):
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
         self._light_entity._transition_duration_entity = self
-        _LOGGER.info(
+        _LOGGER.debug(
             f"[TRANSITION DURATION] Registered for {self._light_entity._ip}, "
             f"current duration={self._light_entity._transition_duration}s"
         )

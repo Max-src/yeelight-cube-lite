@@ -92,7 +92,7 @@ async def async_setup_entry(
     cam_round = YeelightCubeMatrixCameraRound(light_entity, entry)
     light_entity._camera_entities = [cam_square, cam_round]
     async_add_entities([cam_square, cam_round])
-    _LOGGER.info(
+    _LOGGER.debug(
         "Matrix preview cameras (square + round) created for %s",
         light_entity._attr_name,
     )

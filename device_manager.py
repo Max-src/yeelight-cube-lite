@@ -50,7 +50,7 @@ class YeelightCubeDeviceManager:
                 new_connections=connections
             )
         
-        _LOGGER.info(f"Registered Yeelight Cube device: {name} ({ip_address})")
+        _LOGGER.debug(f"Registered Yeelight Cube device: {name} ({ip_address})")
         return device
     
     @callback

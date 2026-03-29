@@ -29,7 +29,7 @@ class YeelightCubeScanner:
             return
             
         self._running = True
-        _LOGGER.info("Starting Yeelight Cube active scanner")
+        _LOGGER.debug("Starting Yeelight Cube active scanner")
         
         # Scan immediately
         await self._scan_for_devices()
@@ -47,7 +47,7 @@ class YeelightCubeScanner:
             self._cancel_timer()
             self._cancel_timer = None
         self._running = False
-        _LOGGER.info("Stopped Yeelight Cube active scanner")
+        _LOGGER.debug("Stopped Yeelight Cube active scanner")
     
     async def _scan_for_devices(self, now=None):
         """Scan for Yeelight devices and create discovery flows for cube devices."""
@@ -103,7 +103,7 @@ class YeelightCubeScanner:
             
             # Check if this is a cube device
             if is_cube_device(device_model, device_name, device_id):
-                _LOGGER.info(f"Found Yeelight Cube device via active scan: {device_name} ({device_model}) at {host}")
+                _LOGGER.debug(f"Found Yeelight Cube device via active scan: {device_name} ({device_model}) at {host}")
                 
                 # Add to seen devices to avoid duplicates
                 self._seen_devices.add(device_key)
@@ -137,7 +137,7 @@ class YeelightCubeScanner:
                     }
                 )
                 
-                _LOGGER.info(f"Created discovery flow for Yeelight Cube at {host}")
+                _LOGGER.debug(f"Created discovery flow for Yeelight Cube at {host}")
                 
         except Exception as e:
             _LOGGER.debug(f"Error checking service: {e}")

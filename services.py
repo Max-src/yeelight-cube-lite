@@ -146,7 +146,7 @@ def async_setup_services(hass: HomeAssistant):
                     host = flow.get("context", {}).get("unique_id", "")
                     if ip_address in host or host == ip_address:
                         await hass.config_entries.flow.async_abort(flow["flow_id"])
-                        _LOGGER.info(f"Aborted Yeelight discovery flow for {ip_address}")
+                        _LOGGER.debug(f"Aborted Yeelight discovery flow for {ip_address}")
             
             # Fire success event
             hass.bus.async_fire(f"{DOMAIN}_yeelight_discovery_ignored", {
@@ -208,7 +208,7 @@ def async_setup_services(hass: HomeAssistant):
                 }
             )
             
-            _LOGGER.info(f"Created discovery flow for Yeelight Cube component at {ip_address}")
+            _LOGGER.debug(f"Created discovery flow for Yeelight Cube component at {ip_address}")
             
             hass.bus.async_fire(f"{DOMAIN}_cube_discovery_created", {
                 "ip_address": ip_address,
@@ -243,7 +243,7 @@ def async_setup_services(hass: HomeAssistant):
             conflict_prevention = get_conflict_prevention(hass)
             conflict_prevention.add_managed_device(ip_address)
             
-            _LOGGER.info(f"Ignored {ip_address} in Yeelight integration and added to managed devices")
+            _LOGGER.debug(f"Ignored {ip_address} in Yeelight integration and added to managed devices")
             
             hass.bus.async_fire(f"{DOMAIN}_yeelight_device_ignored", {
                 "ip_address": ip_address,

@@ -204,7 +204,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     
     # Only create sensors once (they're global, not per-device)
     if "sensors_created" in hass.data[DOMAIN]:
-        _LOGGER.info("Sensors already created, skipping duplicate creation")
+        _LOGGER.debug("Sensors already created, skipping duplicate creation")
         return
     
     # Mark sensors as created
@@ -227,4 +227,4 @@ async def async_setup_entry(hass, entry, async_add_entities):
         elif isinstance(sensor, PixelArtSensor):
             hass.data[DOMAIN]["pixelart_sensor_entity"] = sensor
     
-    _LOGGER.info(f"✅ Created Yeelight Cube sensors: {[s.name for s in sensors]}")
+    _LOGGER.debug(f"✅ Created Yeelight Cube sensors: {[s.name for s in sensors]}")

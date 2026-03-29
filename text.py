@@ -75,7 +75,7 @@ class YeelightCubeCustomTextInput(TextEntity):
     
     async def async_set_value(self, value: str) -> None:
         """Update the text and apply to the lamp."""
-        _LOGGER.info(f"[TEXT INPUT] Setting custom text to: '{value}'")
+        _LOGGER.debug(f"[TEXT INPUT] Setting custom text to: '{value}'")
         
         # Check if light entity is ready
         if not self._light_entity.hass:

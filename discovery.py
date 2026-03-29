@@ -36,6 +36,6 @@ def is_cube_device(device_model: str, device_name: str, device_id: str = "") -> 
     is_cube = model_match or name_match or any(yeelight_cube_indicators) or any(matrix_indicators)
     
     if is_cube:
-        _LOGGER.info(f"Device identified as cube/matrix device - Model: '{device_model}', Name: '{device_name}', ID: '{device_id}'")
+        _LOGGER.debug(f"Device identified as cube/matrix device - Model: '{device_model}', Name: '{device_name}', ID: '{device_id}'")
     
     return is_cube
