@@ -4305,7 +4305,7 @@ if (typeof window !== "undefined") {
   window.customCards = window.customCards || [];
   window.customCards.push({
     type: "yeelight-cube-gradient-card",
-    name: "Yeelight Cube Gradient Card",
-    description: "Control gradient settings for Yeelight Cube matrix display",
+    name: "Yeelight Cube Lite Gradient Card",
+    description: "Control gradient settings for Yeelight Cube Lite matrix display",
   });
 }

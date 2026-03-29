@@ -1,4 +1,4 @@
-// Palette management helpers for Yeelight Cube Draw Card
+// Palette management helpers for Yeelight Cube Lite Draw Card
 import { hexToRgb, rgbToHex } from "./draw_utils.js";
 
 export function savePalette(hass, paletteSensor, colors) {

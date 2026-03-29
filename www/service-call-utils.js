@@ -1,5 +1,5 @@
 /**
- * Shared utility for calling Yeelight Cube services on multiple target entities.
+ * Shared utility for calling Yeelight Cube Lite services on multiple target entities.
  *
  * Sends a SINGLE service call with entity_id as a list so the Python backend
  * can dispatch to all lamps in parallel via asyncio.gather.  This avoids the
@@ -9,7 +9,7 @@
  */
 
 /**
- * Call a Yeelight Cube service on every configured target entity.
+ * Call a Yeelight Cube Lite service on every configured target entity.
  *
  * When multiple entities are targeted, they are sent as a list inside ONE
  * service call (`entity_id: ["light.a", "light.b"]`).  The Python handler

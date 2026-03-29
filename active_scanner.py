@@ -1,4 +1,4 @@
-"""Active discovery scanner for Yeelight Cube devices."""
+"""Active discovery scanner for Yeelight Cube Lite devices."""
 import asyncio
 import logging
 from typing import Set
@@ -14,7 +14,7 @@ from .conflict_prevention import get_conflict_prevention
 _LOGGER = logging.getLogger(__name__)
 
 class YeelightCubeScanner:
-    """Scanner that actively looks for Yeelight Cube devices."""
+    """Scanner that actively looks for Yeelight Cube Lite devices."""
     
     def __init__(self, hass: HomeAssistant):
         """Initialize the scanner."""
@@ -29,7 +29,7 @@ class YeelightCubeScanner:
             return
             
         self._running = True
-        _LOGGER.debug("Starting Yeelight Cube active scanner")
+        _LOGGER.debug("Starting Yeelight Cube Lite active scanner")
         
         # Scan immediately
         await self._scan_for_devices()
@@ -47,7 +47,7 @@ class YeelightCubeScanner:
             self._cancel_timer()
             self._cancel_timer = None
         self._running = False
-        _LOGGER.debug("Stopped Yeelight Cube active scanner")
+        _LOGGER.debug("Stopped Yeelight Cube Lite active scanner")
     
     async def _scan_for_devices(self, now=None):
         """Scan for Yeelight devices and create discovery flows for cube devices."""
@@ -103,7 +103,7 @@ class YeelightCubeScanner:
             
             # Check if this is a cube device
             if is_cube_device(device_model, device_name, device_id):
-                _LOGGER.debug(f"Found Yeelight Cube device via active scan: {device_name} ({device_model}) at {host}")
+                _LOGGER.debug(f"Found Yeelight Cube Lite device via active scan: {device_name} ({device_model}) at {host}")
                 
                 # Add to seen devices to avoid duplicates
                 self._seen_devices.add(device_key)
@@ -137,7 +137,7 @@ class YeelightCubeScanner:
                     }
                 )
                 
-                _LOGGER.debug(f"Created discovery flow for Yeelight Cube at {host}")
+                _LOGGER.debug(f"Created discovery flow for Yeelight Cube Lite at {host}")
                 
         except Exception as e:
             _LOGGER.debug(f"Error checking service: {e}")

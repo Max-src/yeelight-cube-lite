@@ -61,7 +61,7 @@ async def trigger_manual_discovery(hass: HomeAssistant, ip_address: str, device_
         _LOGGER.error(f"Failed to create Yeelight discovery flow: {e}")
     
     # Trigger discovery for our custom component
-    _LOGGER.debug(f"Manually triggering Yeelight Cube discovery for {ip_address}")
+    _LOGGER.debug(f"Manually triggering Yeelight Cube Lite discovery for {ip_address}")
     try:
         await discovery_flow.async_create_flow(
             hass,
@@ -75,6 +75,6 @@ async def trigger_manual_discovery(hass: HomeAssistant, ip_address: str, device_
                 "discovered": True
             }
         )
-        _LOGGER.debug("Yeelight Cube discovery flow created successfully")
+        _LOGGER.debug("Yeelight Cube Lite discovery flow created successfully")
     except Exception as e:
-        _LOGGER.error(f"Failed to create Yeelight Cube discovery flow: {e}")
+        _LOGGER.error(f"Failed to create Yeelight Cube Lite discovery flow: {e}")

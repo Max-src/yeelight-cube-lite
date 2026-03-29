@@ -1,4 +1,4 @@
-"""Text platform for Yeelight Cube - provides text input control for custom text display."""
+"""Text platform for Yeelight Cube Lite - provides text input control for custom text display."""
 
 import logging
 from homeassistant.components.text import TextEntity # type: ignore
@@ -14,7 +14,7 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> bool:
-    """Set up Yeelight Cube text entity from a config entry."""
+    """Set up Yeelight Cube Lite text entity from a config entry."""
     
     ip = entry.data[CONF_IP]
     
@@ -34,7 +34,7 @@ async def async_setup_entry(
 
 
 class YeelightCubeCustomTextInput(TextEntity):
-    """Text input entity for controlling custom text displayed on the Yeelight Cube."""
+    """Text input entity for controlling custom text displayed on the Yeelight Cube Lite."""
     
     def __init__(self, light_entity, ip: str, config_entry: ConfigEntry):
         """Initialize the text input entity."""

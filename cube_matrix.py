@@ -24,13 +24,13 @@ RECOVERY_CONNECT_TIMEOUT = 1.5  # Longer timeout when recovering — LAN still c
 
 
 class CubeMatrix:
-    """Handles communication with the Yeelight Cube device."""
+    """Handles communication with the Yeelight Cube Lite device."""
     def __init__(self, ip: str, port: int):
-        _LOGGER.debug(f"Connecting to Yeelight Cube at {ip}:{port}")
+        _LOGGER.debug(f"Connecting to Yeelight Cube Lite at {ip}:{port}")
         self.device = Bulb(ip, port)
         self._ip = ip
         self._port = port
-        self.device_name = "Yeelight Cube"
+        self.device_name = "Yeelight Cube Lite"
         self.device._timeout = CONNECT_TIMEOUT  # Keep low — LAN connects take <10ms, 0.5s is plenty
         self._last_command_time = 0
         self._min_command_interval = SAFE_SUSTAINED_INTERVAL
@@ -290,7 +290,7 @@ class CubeMatrix:
             except Exception as e:
                 _LOGGER.warning(f"Connection attempt {attempt + 1} failed: {e}")
                 await asyncio.sleep(2)
-        _LOGGER.error(f"Could not connect to Yeelight Cube after retries.")
+        _LOGGER.error(f"Could not connect to Yeelight Cube Lite after retries.")
 
     def draw_matrices_async(self, rgb_data: str):
         """Queue matrix draw operation (fire-and-forget, legacy).
@@ -409,7 +409,7 @@ class CubeMatrix:
 
     async def send_command_fast(self, command: str, params: list = None):
         """
-        Send command to Yeelight Cube using a PERSISTENT socket (send-only).
+        Send command to Yeelight Cube Lite using a PERSISTENT socket (send-only).
         
         The Cube accepts multiple commands on the same TCP connection in direct
         FX mode.  Reusing a single socket avoids TIME_WAIT exhaustion: when we
@@ -723,7 +723,7 @@ class CubeMatrix:
         Send command to Yeelight lamp with automatic error recovery.
         
         All commands are serialized through _command_lock to prevent concurrent
-        TCP connections which overwhelm the Yeelight Cube (error 6).
+        TCP connections which overwhelm the Yeelight Cube Lite (error 6).
         
         Features:
         - Command serialization: Only one TCP command at a time
@@ -742,7 +742,7 @@ class CubeMatrix:
         cmd_id = int(time.time() * 1000) % 100000
         _LOGGER.debug(f"[COMMAND #{cmd_id}] Queued: {command} [{self._state_summary()}]")
         
-        # Serialize all commands through the lock — the Yeelight Cube cannot
+        # Serialize all commands through the lock — the Yeelight Cube Lite cannot
         # handle concurrent TCP connections and returns error 6 ("illegal request")
         # or drops connections when overwhelmed.
         async with self._command_lock:

@@ -1,4 +1,4 @@
-// Shared palette sensor utilities for Yeelight Cube cards
+// Shared palette sensor utilities for Yeelight Cube Lite cards
 
 export function getPalettesFromSensor(hass, paletteSensorId) {
   if (!hass || !paletteSensorId || !hass.states[paletteSensorId]) {

@@ -1675,7 +1675,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
         <div
           style="padding: 12px 16px 8px 16px; font-weight: 500; color: #333; border-bottom: 1px solid #e8e8e8; background: #f5f5f5; border-radius: 8px 8px 0 0;"
         >
-          Yeelight Cube Entities (${ourComponentEntities.length})
+          Yeelight Cube Lite Entities (${ourComponentEntities.length})
         </div>
 
         <!-- Entity list -->
@@ -1685,10 +1685,10 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 style="color: #666; font-style: italic; text-align: center; padding: 20px;"
               >
                 <div style="margin-bottom: 8px;">
-                  No Yeelight Cube entities found
+                  No Yeelight Cube Lite entities found
                 </div>
                 <div style="font-size: 0.85em; color: #999;">
-                  Make sure you have Yeelight Cube devices configured in this
+                  Make sure you have Yeelight Cube Lite devices configured in this
                   integration
                 </div>
               </div>`

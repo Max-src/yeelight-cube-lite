@@ -1,4 +1,4 @@
-"""Select platform for Yeelight Cube - provides dropdown controls for palette and pixel art selection."""
+"""Select platform for Yeelight Cube Lite - provides dropdown controls for palette and pixel art selection."""
 
 import logging
 from homeassistant.components.select import SelectEntity # type: ignore
@@ -16,7 +16,7 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> bool:
-    """Set up Yeelight Cube select entities from a config entry."""
+    """Set up Yeelight Cube Lite select entities from a config entry."""
     
     ip = entry.data[CONF_IP]
     
@@ -41,7 +41,7 @@ async def async_setup_entry(
 
 
 class YeelightCubePaletteSelect(SelectEntity):
-    """Select entity for choosing a palette to apply to the Yeelight Cube."""
+    """Select entity for choosing a palette to apply to the Yeelight Cube Lite."""
     
     def __init__(self, light_entity, ip: str, config_entry: ConfigEntry, hass: HomeAssistant):
         """Initialize the palette selector entity."""
@@ -209,7 +209,7 @@ class YeelightCubePaletteSelect(SelectEntity):
 
 
 class YeelightCubePixelArtSelect(SelectEntity):
-    """Select entity for choosing a saved pixel art to display on the Yeelight Cube."""
+    """Select entity for choosing a saved pixel art to display on the Yeelight Cube Lite."""
 
     def __init__(self, light_entity, ip: str, config_entry: ConfigEntry, hass: HomeAssistant):
         """Initialize the pixel art selector entity."""
@@ -404,7 +404,7 @@ ALIGNMENT_OPTIONS = ["left", "center", "right"]
 
 
 class YeelightCubeDisplayModeSelect(SelectEntity):
-    """Select entity for choosing the display mode on the Yeelight Cube."""
+    """Select entity for choosing the display mode on the Yeelight Cube Lite."""
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
         """Initialize the display mode selector entity."""
@@ -493,7 +493,7 @@ class YeelightCubeDisplayModeSelect(SelectEntity):
 
 
 class YeelightCubeAlignmentSelect(SelectEntity):
-    """Select entity for choosing text alignment (left/center/right) on the Yeelight Cube."""
+    """Select entity for choosing text alignment (left/center/right) on the Yeelight Cube Lite."""
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
         """Initialize the text alignment selector entity."""
@@ -571,7 +571,7 @@ _LABEL_TO_KEY = {v: k for k, v in _FONT_LABELS.items()}   # reverse lookup
 
 
 class YeelightCubeFontSelect(SelectEntity):
-    """Select entity for choosing the matrix font on the Yeelight Cube."""
+    """Select entity for choosing the matrix font on the Yeelight Cube Lite."""
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
         self._light_entity = light_entity
@@ -669,7 +669,7 @@ _TRANSITION_LABEL_TO_KEY = {v: k for k, v in _TRANSITION_TYPES.items()}
 
 
 class YeelightCubeTransitionSelect(SelectEntity):
-    """Select entity for choosing the display transition effect on the Yeelight Cube."""
+    """Select entity for choosing the display transition effect on the Yeelight Cube Lite."""
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
         self._light_entity = light_entity

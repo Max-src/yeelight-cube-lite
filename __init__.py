@@ -27,12 +27,12 @@ FRONTEND_CARD_FILES = [
 FRONTEND_URL_BASE = f"/{DOMAIN}"
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up the Yeelight Cube component."""
-    _LOGGER.debug("Yeelight Cube async_setup() called")
+    """Set up the Yeelight Cube Lite component."""
+    _LOGGER.debug("Yeelight Cube Lite async_setup() called")
     return True
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Yeelight Cube from a config entry."""
+    """Set up Yeelight Cube Lite from a config entry."""
     _LOGGER.debug("[SETUP-ENTRY] async_setup_entry() called for entry: %s", entry.entry_id)
     
     # Initialize domain data dict immediately (synchronous, no yield point)
@@ -76,7 +76,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         www_path = os.path.join(os.path.dirname(__file__), "www")
         if os.path.isdir(www_path):
             hass.http.register_static_path(FRONTEND_URL_BASE, www_path, True)
-            _LOGGER.debug("Yeelight Cube: Registered frontend at %s", FRONTEND_URL_BASE)
+            _LOGGER.debug("Yeelight Cube Lite: Registered frontend at %s", FRONTEND_URL_BASE)
             
             # Auto-register Lovelace resources so cards work without manual config
             try:
@@ -84,14 +84,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 for card_file in FRONTEND_CARD_FILES:
                     card_url = f"{FRONTEND_URL_BASE}/{card_file}"
                     add_extra_js_url(hass, card_url)
-                    _LOGGER.debug("Yeelight Cube: Registered card resource %s", card_url)
+                    _LOGGER.debug("Yeelight Cube Lite: Registered card resource %s", card_url)
             except ImportError:
                 _LOGGER.warning(
                     "Could not auto-register Lovelace resources. "
                     "Add them manually as /yeelight_cube/<card-name>.js"
                 )
         
-        _LOGGER.debug("Yeelight Cube: Storage, conflict prevention, and services initialized")
+        _LOGGER.debug("Yeelight Cube Lite: Storage, conflict prevention, and services initialized")
     
     # Register this device as managed by our component (for all entries)
     ip_address = entry.data[CONF_IP]
@@ -105,7 +105,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Set up platforms
     await hass.config_entries.async_forward_entry_setups(entry, ["light", "switch", "text", "select", "sensor", "number", "button", "camera"])
     
-    _LOGGER.debug(f"Set up Yeelight Cube at {ip_address}")
+    _LOGGER.debug(f"Set up Yeelight Cube Lite at {ip_address}")
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -126,13 +126,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # If no more entries remain, clean up global state so sensors get recreated on re-add
     remaining_entries = hass.config_entries.async_entries(DOMAIN)
     if not remaining_entries or (len(remaining_entries) == 1 and remaining_entries[0].entry_id == entry.entry_id):
-        _LOGGER.debug("Last Yeelight Cube entry unloaded - clearing global state")
+        _LOGGER.debug("Last Yeelight Cube Lite entry unloaded - clearing global state")
         if DOMAIN in hass.data:
             hass.data[DOMAIN].pop("sensors_created", None)
             hass.data[DOMAIN].pop("palette_sensor_entity", None)
             hass.data[DOMAIN].pop("pixelart_sensor_entity", None)
     
-    _LOGGER.debug(f"Unloaded Yeelight Cube at {ip_address}")
+    _LOGGER.debug(f"Unloaded Yeelight Cube Lite at {ip_address}")
     return unload_ok
 
 async def async_save_data(hass: HomeAssistant):
@@ -164,4 +164,4 @@ async def async_remove(hass: HomeAssistant) -> None:
     """Remove the component."""
     # Remove services
     async_remove_services(hass)
-    _LOGGER.debug("Removed Yeelight Cube component services")
+    _LOGGER.debug("Removed Yeelight Cube Lite component services")

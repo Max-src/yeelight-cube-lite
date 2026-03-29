@@ -1,4 +1,4 @@
-"""Button platform for Yeelight Cube - provides action buttons."""
+"""Button platform for Yeelight Cube Lite - provides action buttons."""
 
 import logging
 from homeassistant.components.button import ButtonEntity  # type: ignore
@@ -15,7 +15,7 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> bool:
-    """Set up Yeelight Cube button entities from a config entry."""
+    """Set up Yeelight Cube Lite button entities from a config entry."""
     if DOMAIN not in hass.data or entry.entry_id not in hass.data[DOMAIN]:
         return False
 
@@ -31,7 +31,7 @@ async def async_setup_entry(
 
 
 class YeelightCubeForceRefreshButton(ButtonEntity):
-    """Button entity that triggers a force refresh via raw TCP on the Yeelight Cube.
+    """Button entity that triggers a force refresh via raw TCP on the Yeelight Cube Lite.
 
     This bypasses the persistent socket, re-activates FX mode, and re-sends
     the current pixel data — recovering stuck lamps without a full power cycle.

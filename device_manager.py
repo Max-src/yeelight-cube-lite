@@ -1,4 +1,4 @@
-"""Device registry integration for Yeelight Cube."""
+"""Device registry integration for Yeelight Cube Lite."""
 import logging
 from typing import Any, Dict
 from homeassistant.core import HomeAssistant, callback # type: ignore
@@ -9,7 +9,7 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 class YeelightCubeDeviceManager:
-    """Manage Yeelight Cube devices in the device registry."""
+    """Manage Yeelight Cube Lite devices in the device registry."""
     
     def __init__(self, hass: HomeAssistant):
         """Initialize the device manager."""
@@ -18,13 +18,13 @@ class YeelightCubeDeviceManager:
     
     @callback
     def register_device(self, ip_address: str, device_info: Dict[str, Any]) -> dr.DeviceEntry:
-        """Register a Yeelight Cube device in the device registry."""
+        """Register a Yeelight Cube Lite device in the device registry."""
         
         # Create unique identifiers for the device
         identifiers = {(DOMAIN, ip_address)}
         
         # Extract device information
-        name = device_info.get("name", f"Yeelight Cube {ip_address}")
+        name = device_info.get("name", f"Yeelight Cube Lite {ip_address}")
         model = device_info.get("model", "Cube Lite")
         manufacturer = device_info.get("manufacturer", "Yeelight")
         sw_version = device_info.get("sw_version")
@@ -50,7 +50,7 @@ class YeelightCubeDeviceManager:
                 new_connections=connections
             )
         
-        _LOGGER.debug(f"Registered Yeelight Cube device: {name} ({ip_address})")
+        _LOGGER.debug(f"Registered Yeelight Cube Lite device: {name} ({ip_address})")
         return device
     
     @callback
@@ -76,14 +76,14 @@ class YeelightCubeDeviceManager:
             identifiers={(DOMAIN, ip_address)},
             manufacturer="Yeelight",
             model="Cube Lite",
-            name=f"Yeelight Cube {ip_address}",
+            name=f"Yeelight Cube Lite {ip_address}",
             configuration_url=f"http://{ip_address}",
             entry_type=dr.DeviceEntryType.SERVICE,
         )
 
 @callback
 def async_get_device_manager(hass: HomeAssistant) -> YeelightCubeDeviceManager:
-    """Get the device manager for Yeelight Cube."""
+    """Get the device manager for Yeelight Cube Lite."""
     if "device_manager" not in hass.data.get(DOMAIN, {}):
         if DOMAIN not in hass.data:
             hass.data[DOMAIN] = {}

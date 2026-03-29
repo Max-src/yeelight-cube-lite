@@ -1,4 +1,4 @@
-// State and config helpers for Yeelight Cube Draw Card
+// State and config helpers for Yeelight Cube Lite Draw Card
 
 export function getInitialMatrix(rows = 5, cols = 20) {
   return Array(rows * cols).fill(null);

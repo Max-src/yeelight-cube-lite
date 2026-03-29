@@ -3,7 +3,7 @@ from .layout import FONT_MAPS
 from .const import DOMAIN
 
 class YeelightCubeBaseSensor(Entity):
-    """Base class for Yeelight Cube sensors."""
+    """Base class for Yeelight Cube Lite sensors."""
     def __init__(self, hass):
         self.hass = hass
         self._attr_should_poll = False
@@ -14,7 +14,7 @@ class YeelightCubeBaseSensor(Entity):
         return None
 
 class PaletteSensor(YeelightCubeBaseSensor):
-    """Sensor exposing the current palettes_v2 list for the Yeelight Cube."""
+    """Sensor exposing the current palettes_v2 list for the Yeelight Cube Lite."""
     
     def __init__(self, hass):
         super().__init__(hass)
@@ -92,7 +92,7 @@ class PaletteSensor(YeelightCubeBaseSensor):
         }
 
 class LetterMapSensor(YeelightCubeBaseSensor):
-    """Sensor exposing the static letter map for the Yeelight Cube."""
+    """Sensor exposing the static letter map for the Yeelight Cube Lite."""
     
     def __init__(self, hass):
         super().__init__(hass)
@@ -110,7 +110,7 @@ class LetterMapSensor(YeelightCubeBaseSensor):
         return {"font_maps": FONT_MAPS}
 
 class PixelArtSensor(YeelightCubeBaseSensor):
-    """Sensor exposing the current pixel art list for the Yeelight Cube."""
+    """Sensor exposing the current pixel art list for the Yeelight Cube Lite."""
     
     def __init__(self, hass):
         super().__init__(hass)
@@ -194,7 +194,7 @@ class PixelArtSensor(YeelightCubeBaseSensor):
         }
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    """Set up sensors for Yeelight Cube."""
+    """Set up sensors for Yeelight Cube Lite."""
     import logging
     _LOGGER = logging.getLogger(__name__)
     
@@ -227,4 +227,4 @@ async def async_setup_entry(hass, entry, async_add_entities):
         elif isinstance(sensor, PixelArtSensor):
             hass.data[DOMAIN]["pixelart_sensor_entity"] = sensor
     
-    _LOGGER.debug(f"✅ Created Yeelight Cube sensors: {[s.name for s in sensors]}")
+    _LOGGER.debug(f"✅ Created Yeelight Cube Lite sensors: {[s.name for s in sensors]}")

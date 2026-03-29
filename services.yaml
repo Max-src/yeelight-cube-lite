@@ -1,6 +1,6 @@
 display_word:
   name: Display Word
-  description: Display a word on the Yeelight Cube
+  description: Display a word on the Yeelight Cube Lite
   fields:
     word:
       description: The word to display on the cube
@@ -109,7 +109,7 @@ trigger_manual_discovery:
 
 create_cube_discovery:
   name: Create Cube Discovery
-  description: Create a discovery flow specifically for the Yeelight Cube component
+  description: Create a discovery flow specifically for the Yeelight Cube Lite component
   fields:
     ip_address:
       description: IP address of your CubeLite device

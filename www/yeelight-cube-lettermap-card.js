@@ -128,7 +128,7 @@ class YeelightCubeLetterMapCard extends HTMLElement {
           background: var(--card-background-color, #fafbfc);
         }
       </style>
-      <ha-card header="Yeelight Cube LetterMap">
+      <ha-card header="Yeelight Cube Lite LetterMap">
         <div style="padding:16px;">
           <div class="cube-controls">
             <label class="cube-input-label" for="textinput">Text:</label>
@@ -566,6 +566,6 @@ customElements.define(
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "yeelight-cube-lettermap-card",
-  name: "Yeelight Cube Letter Map",
-  description: "Show a letter map for your Yeelight Cube.",
+  name: "Yeelight Cube Lite Letter Map",
+  description: "Show a letter map for your Yeelight Cube Lite.",
 });

@@ -8,7 +8,7 @@ from .const import DOMAIN, CONF_IP
 _LOGGER = logging.getLogger(__name__)
 
 class YeelightConflictPrevention:
-    """Prevent conflicts between Yeelight Cube and built-in Yeelight integration."""
+    """Prevent conflicts between Yeelight Cube Lite and built-in Yeelight integration."""
     
     def __init__(self, hass: HomeAssistant):
         """Initialize the conflict prevention manager."""
@@ -29,17 +29,17 @@ class YeelightConflictPrevention:
     def add_managed_device(self, ip_address: str):
         """Add a device to the managed list."""
         self._managed_ips.add(ip_address)
-        _LOGGER.debug(f"Added {ip_address} to managed Yeelight Cube devices")
+        _LOGGER.debug(f"Added {ip_address} to managed Yeelight Cube Lite devices")
     
     @callback
     def remove_managed_device(self, ip_address: str):
         """Remove a device from the managed list."""
         self._managed_ips.discard(ip_address)
-        _LOGGER.debug(f"Removed {ip_address} from managed Yeelight Cube devices")
+        _LOGGER.debug(f"Removed {ip_address} from managed Yeelight Cube Lite devices")
     
     @callback
     def is_device_managed(self, ip_address: str) -> bool:
-        """Check if a device is managed by the Yeelight Cube component."""
+        """Check if a device is managed by the Yeelight Cube Lite component."""
         return ip_address in self._managed_ips
     
     @callback
@@ -60,7 +60,7 @@ def get_conflict_prevention(hass: HomeAssistant) -> YeelightConflictPrevention:
 
 @callback 
 def is_yeelight_cube_managed(hass: HomeAssistant, ip_address: str) -> bool:
-    """Check if an IP address is managed by Yeelight Cube component.
+    """Check if an IP address is managed by Yeelight Cube Lite component.
     
     This function can be called by other integrations to check if they
     should skip discovering a device.

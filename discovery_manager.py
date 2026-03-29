@@ -1,4 +1,4 @@
-"""Advanced discovery blocking for Yeelight Cube devices."""
+"""Advanced discovery blocking for Yeelight Cube Lite devices."""
 import logging
 from typing import Any, Dict
 from homeassistant.core import HomeAssistant, callback # type: ignore

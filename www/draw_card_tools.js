@@ -1,4 +1,4 @@
-// Tool Management Module for Yeelight Cube Draw Card
+// Tool Management Module for Yeelight Cube Lite Draw Card
 import { html } from "https://unpkg.com/lit@2.8.0/index.js?module";
 import {
   getExportImportButtonClass,
@@ -460,7 +460,7 @@ export class ToolManager {
   }
 }
 
-// Action Management Module for Yeelight Cube Draw Card Action Buttons
+// Action Management Module for Yeelight Cube Lite Draw Card Action Buttons
 export class ActionManager {
   constructor(card) {
     this.card = card;

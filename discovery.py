@@ -1,4 +1,4 @@
-"""Discovery support for Yeelight Cube devices."""
+"""Discovery support for Yeelight Cube Lite devices."""
 import logging
 from .const import DOMAIN, DEFAULT_CUBE_MODELS, CUBE_NAME_PATTERNS
 

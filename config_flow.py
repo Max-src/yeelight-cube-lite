@@ -8,7 +8,7 @@ from .const import DOMAIN, CONF_IP
 _LOGGER = logging.getLogger(__name__)
 
 class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Yeelight Cube."""
+    """Handle a config flow for Yeelight Cube Lite."""
 
     VERSION = 1
 
@@ -28,7 +28,7 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors[CONF_IP] = "invalid_ip"
             else:
                 return self.async_create_entry(
-                    title=f"Yeelight Cube ({ip_address})", 
+                    title=f"Yeelight Cube Lite ({ip_address})", 
                     data={CONF_IP: ip_address}
                 )
 
@@ -55,7 +55,7 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class YeelightCubeOptionsFlow(config_entries.OptionsFlow):
-    """Handle Yeelight Cube options."""
+    """Handle Yeelight Cube Lite options."""
 
     def __init__(self, config_entry):
         """Initialize options flow."""

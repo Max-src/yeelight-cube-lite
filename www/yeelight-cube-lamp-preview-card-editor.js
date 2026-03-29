@@ -27,7 +27,7 @@ function fireEvent(node, type, detail, options) {
   node.dispatchEvent(event);
 }
 
-// Editor class for the Yeelight Cube Lamp Preview Card
+// Editor class for the Yeelight Cube Lite Lamp Preview Card
 class YeelightCubeLampPreviewCardEditor extends LitElement {
   static get properties() {
     return {

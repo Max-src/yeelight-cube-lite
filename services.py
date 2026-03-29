@@ -1,4 +1,4 @@
-"""Service definitions for Yeelight Cube component."""
+"""Service definitions for Yeelight Cube Lite component."""
 import logging
 import voluptuous as vol # type: ignore
 from homeassistant.core import HomeAssistant, ServiceCall, callback # type: ignore
@@ -72,7 +72,7 @@ SERVICE_IGNORE_SPECIFIC_YEELIGHT_SCHEMA = vol.Schema({
 
 @callback
 def async_setup_services(hass: HomeAssistant):
-    """Set up services for Yeelight Cube component."""
+    """Set up services for Yeelight Cube Lite component."""
     
     async def add_managed_device(call: ServiceCall):
         """Add a device to the managed list."""
@@ -188,9 +188,9 @@ def async_setup_services(hass: HomeAssistant):
         })
     
     async def create_cube_discovery(call: ServiceCall):
-        """Create a discovery flow specifically for our Yeelight Cube component."""
+        """Create a discovery flow specifically for our Yeelight Cube Lite component."""
         ip_address = call.data[ATTR_IP_ADDRESS]
-        device_name = call.data.get(ATTR_DEVICE_NAME) or f"Yeelight Cube {ip_address}"
+        device_name = call.data.get(ATTR_DEVICE_NAME) or f"Yeelight Cube Lite {ip_address}"
         
         try:
             # Create discovery flow directly for our component
@@ -208,7 +208,7 @@ def async_setup_services(hass: HomeAssistant):
                 }
             )
             
-            _LOGGER.debug(f"Created discovery flow for Yeelight Cube component at {ip_address}")
+            _LOGGER.debug(f"Created discovery flow for Yeelight Cube Lite component at {ip_address}")
             
             hass.bus.async_fire(f"{DOMAIN}_cube_discovery_created", {
                 "ip_address": ip_address,
@@ -330,7 +330,7 @@ def async_setup_services(hass: HomeAssistant):
 
 @callback
 def async_remove_services(hass: HomeAssistant):
-    """Remove services for Yeelight Cube component."""
+    """Remove services for Yeelight Cube Lite component."""
     hass.services.async_remove(DOMAIN, SERVICE_ADD_MANAGED_DEVICE)
     hass.services.async_remove(DOMAIN, SERVICE_REMOVE_MANAGED_DEVICE)
     hass.services.async_remove(DOMAIN, SERVICE_IS_DEVICE_MANAGED)

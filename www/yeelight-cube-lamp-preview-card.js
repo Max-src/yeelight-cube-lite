@@ -5289,6 +5289,6 @@ customElements.define(
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "yeelight-cube-lamp-preview-card",
-  name: "Yeelight Cube Lamp Preview",
-  description: "Preview the Yeelight Cube lamp matrix and settings.",
+  name: "Yeelight Cube Lite Lamp Preview",
+  description: "Preview the Yeelight Cube Lite lamp matrix and settings.",
 });

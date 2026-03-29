@@ -1,5 +1,5 @@
 /**
- * Shared constants for the Yeelight Cube Draw Card ecosystem.
+ * Shared constants for the Yeelight Cube Lite Draw Card ecosystem.
  *
  * Centralizes grid dimensions, default orders, localStorage keys,
  * event names, and color constants used across multiple files.

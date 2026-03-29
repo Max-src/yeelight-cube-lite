@@ -1,4 +1,4 @@
-// Matrix logic helpers for Yeelight Cube Draw Card
+// Matrix logic helpers for Yeelight Cube Lite Draw Card
 import { normalizeHex, rgbToHex } from "./draw_utils.js";
 import { updateRecentColors } from "./draw_card_state.js";
 

@@ -1,4 +1,4 @@
-// UI rendering helpers for Yeelight Cube Draw Card
+// UI rendering helpers for Yeelight Cube Lite Draw Card
 import { html } from "https://unpkg.com/lit@2.8.0/index.js?module";
 import { isBlackPixel } from "./draw_utils.js";
 

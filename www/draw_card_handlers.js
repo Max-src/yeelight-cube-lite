@@ -1,4 +1,4 @@
-// Event and selection handlers for Yeelight Cube Draw Card
+// Event and selection handlers for Yeelight Cube Lite Draw Card
 import {
   setPixel,
   clearMatrix,

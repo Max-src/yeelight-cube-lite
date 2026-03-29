@@ -30,7 +30,7 @@ from .color_utils import hex_to_rgb, rgb_to_hex
 from .image_utils import image_to_matrix
 
 _LOGGER = logging.getLogger(__name__)
-_LOGGER.debug("Yeelight Cube light.py module loaded")
+_LOGGER.debug("Yeelight Cube Lite light.py module loaded")
 
 # Timing constants
 APPLY_POST_DELAY = 0.0        # No post-delay needed â€” send_command_fast doesn't wait for responses
@@ -568,7 +568,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
 
         return (r_out, g_out, b_out)
 
-    """Home Assistant LightEntity for the Yeelight Cube."""
+    """Home Assistant LightEntity for the Yeelight Cube Lite."""
     
     # UNIFIED BRIGHTNESS CONTROL CONFIGURATION
     # This system combines TWO brightness mechanisms for extended range:
@@ -1675,7 +1675,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
     async def ensure_fx_ready(self):
         """Ensure FX mode is active using raw TCP (fresh connection per command).
         
-        This is the proven-reliable approach: the Yeelight Cube firmware
+        This is the proven-reliable approach: the Yeelight Cube Lite firmware
         always processes activate_fx_mode correctly on a FRESH TCP connection,
         but sometimes silently ignores it on a reused/persistent socket.
         
@@ -4076,7 +4076,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         _LOGGER.debug(f"[SERVICES] Services already registered, skipping service registration for device {ip}")
         return True
     
-    _LOGGER.debug(f"[SERVICES] First device ({ip}) - registering all Yeelight Cube services")
+    _LOGGER.debug(f"[SERVICES] First device ({ip}) - registering all Yeelight Cube Lite services")
     
     # Deduplication tracker for palette/pixel art deletions
     # Since cards can have multiple target entities, the same deletion service can be called multiple times

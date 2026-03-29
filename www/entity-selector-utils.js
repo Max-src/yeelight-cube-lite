@@ -176,9 +176,9 @@ export function getSensorEntities(hass) {
 }
 
 /**
- * Get only Yeelight Cube entities from our custom component
+ * Get only Yeelight Cube Lite entities from our custom component
  * @param {Object} hass - Home Assistant object
- * @returns {Array} Array of Yeelight Cube entity IDs
+ * @returns {Array} Array of Yeelight Cube Lite entity IDs
  */
 export function getYeelightCubeEntities(hass) {
   if (!hass || !hass.states) return [];
@@ -201,7 +201,7 @@ export function getYeelightCubeEntities(hass) {
 }
 
 /**
- * Creates a multi-select entity picker for Yeelight Cube entities
+ * Creates a multi-select entity picker for Yeelight Cube Lite entities
  * @param {Object} hass - Home Assistant object
  * @param {Array} selectedEntities - Currently selected entity IDs
  * @param {Function} onChange - Change handler function
@@ -229,14 +229,14 @@ export function createYeelightCubeEntityPicker(
       <div
         style="padding: 12px 16px 8px 16px; font-weight: 500; color: #333; border-bottom: 1px solid #e8e8e8; background: #f5f5f5; border-radius: 8px 8px 0 0;"
       >
-        Yeelight Cube Entities (0)
+        Yeelight Cube Lite Entities (0)
       </div>
       <div
         style="color: #666; font-style: italic; text-align: center; padding: 20px;"
       >
-        <div style="margin-bottom: 8px;">No Yeelight Cube entities found</div>
+        <div style="margin-bottom: 8px;">No Yeelight Cube Lite entities found</div>
         <div style="font-size: 0.85em; color: #999;">
-          Make sure you have Yeelight Cube devices configured in this
+          Make sure you have Yeelight Cube Lite devices configured in this
           integration
         </div>
       </div>
@@ -258,7 +258,7 @@ export function createYeelightCubeEntityPicker(
         <div
           style="padding: 12px 16px 8px 16px; font-weight: 500; color: #333; border-bottom: 1px solid #e8e8e8; background: #f5f5f5; border-radius: 8px 8px 0 0;"
         >
-          Yeelight Cube Entities (${entities.length})
+          Yeelight Cube Lite Entities (${entities.length})
         </div>
 
         <div style="max-height: 200px; overflow-y: auto; padding: 8px;">
@@ -345,7 +345,7 @@ export function createYeelightCubeEntityPicker(
       <div
         style="padding: 12px 16px 8px 16px; font-weight: 500; color: #333; border-bottom: 1px solid #e8e8e8; background: #f5f5f5; border-radius: 8px 8px 0 0;"
       >
-        Yeelight Cube Entities (${entities.length})
+        Yeelight Cube Lite Entities (${entities.length})
       </div>
 
       <div style="max-height: 200px; overflow-y: auto; padding: 8px;">

@@ -1,4 +1,4 @@
-"""Switch platform for Yeelight Cube Matrix."""
+"""Switch platform for Yeelight Cube Lite Matrix."""
 import logging
 
 from homeassistant.components.switch import SwitchEntity # type: ignore
@@ -16,7 +16,7 @@ async def async_setup_entry(
     config_entry: ConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up Yeelight Cube switch entities from a config entry."""
+    """Set up Yeelight Cube Lite switch entities from a config entry."""
     # Get the light entity data
     light_data = hass.data[DOMAIN].get(config_entry.entry_id)
     
@@ -31,11 +31,11 @@ async def async_setup_entry(
     ]
     
     async_add_entities(switches)
-    _LOGGER.debug(f"Added {len(switches)} switch entities for Yeelight Cube")
+    _LOGGER.debug(f"Added {len(switches)} switch entities for Yeelight Cube Lite")
 
 
 class YeelightCubeAutoTurnOnSwitch(SwitchEntity):
-    """Switch to control auto-turn-on behavior for Yeelight Cube."""
+    """Switch to control auto-turn-on behavior for Yeelight Cube Lite."""
 
     def __init__(self, config_entry: ConfigEntry, light_data):
         """Initialize the switch."""
@@ -56,7 +56,7 @@ class YeelightCubeAutoTurnOnSwitch(SwitchEntity):
         """Return device info to group with the light entity."""
         return {
             "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._config_entry.data.get("name", "Yeelight Cube"),
+            "name": self._config_entry.data.get("name", "Yeelight Cube Lite"),
             "manufacturer": "Yeelight",
             "model": "Cube Matrix",
         }
@@ -96,7 +96,7 @@ class YeelightCubeAutoTurnOnSwitch(SwitchEntity):
 
 
 class YeelightCubeFlipOrientationSwitch(SwitchEntity):
-    """Switch to control flip orientation (180° rotation) for Yeelight Cube."""
+    """Switch to control flip orientation (180° rotation) for Yeelight Cube Lite."""
 
     def __init__(self, config_entry: ConfigEntry, light_data):
         """Initialize the switch."""
@@ -117,7 +117,7 @@ class YeelightCubeFlipOrientationSwitch(SwitchEntity):
         """Return device info to group with the light entity."""
         return {
             "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._config_entry.data.get("name", "Yeelight Cube"),
+            "name": self._config_entry.data.get("name", "Yeelight Cube Lite"),
             "manufacturer": "Yeelight",
             "model": "Cube Matrix",
         }

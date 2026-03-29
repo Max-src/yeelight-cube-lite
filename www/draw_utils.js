@@ -80,7 +80,7 @@ export function rgbArrayToHex(rgbArray) {
   return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
 }
 
-// Utility functions for Yeelight Cube Draw Card
+// Utility functions for Yeelight Cube Lite Draw Card
 
 // Normalize hex color to 6-digit lowercase
 export function normalizeHex(hex) {

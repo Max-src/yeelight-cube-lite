@@ -350,7 +350,7 @@ customElements.define(
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "yeelight-cube-angle-gradient-card",
-  name: "Yeelight Cube Angle Gradient",
+  name: "Yeelight Cube Lite Angle Gradient",
   description:
     "Visualize and set the angle and colors for your angle gradient.",
 });

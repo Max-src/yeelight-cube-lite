@@ -1896,7 +1896,7 @@ if (typeof window !== "undefined") {
   window.customCards = window.customCards || [];
   window.customCards.push({
     type: "yeelight-cube-palette-card",
-    name: "Yeelight Cube Palette Card",
-    description: "View and manage palettes for the Yeelight Cube.",
+    name: "Yeelight Cube Lite Palette Card",
+    description: "View and manage palettes for the Yeelight Cube Lite.",
   });
 }

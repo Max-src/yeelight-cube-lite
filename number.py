@@ -1,4 +1,4 @@
-"""Number platform for Yeelight Cube - provides numeric slider controls."""
+"""Number platform for Yeelight Cube Lite - provides numeric slider controls."""
 
 import logging
 from homeassistant.components.number import NumberEntity, NumberMode  # type: ignore
@@ -15,7 +15,7 @@ _LOGGER = logging.getLogger(__name__)
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> bool:
-    """Set up Yeelight Cube number entities from a config entry."""
+    """Set up Yeelight Cube Lite number entities from a config entry."""
     if DOMAIN not in hass.data or entry.entry_id not in hass.data[DOMAIN]:
         return False
 
@@ -124,7 +124,7 @@ PREVIEW_ADJUSTMENT_SPECS = [
 
 
 class YeelightCubeGradientAngleNumber(NumberEntity):
-    """Number entity for controlling the gradient angle (0-360°) on the Yeelight Cube."""
+    """Number entity for controlling the gradient angle (0-360°) on the Yeelight Cube Lite."""
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
         """Initialize the gradient angle number entity."""

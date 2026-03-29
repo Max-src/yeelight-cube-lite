@@ -1,4 +1,4 @@
-// Matrix Operations Module for Yeelight Cube Draw Card (1D Array with Hex Colors)
+// Matrix Operations Module for Yeelight Cube Lite Draw Card (1D Array with Hex Colors)
 import {
   normalizeHex,
   createEmptyMatrix as _createEmptyMatrix,

@@ -1,4 +1,4 @@
-"""Camera platform for Yeelight Cube - live matrix preview on HA device page.
+"""Camera platform for Yeelight Cube Lite - live matrix preview on HA device page.
 
 Two camera entities per lamp:
   • **Square** — fast rendering with rectangles, ideal for dashboards.

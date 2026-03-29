@@ -1,5 +1,5 @@
 /**
- * Centralized slider and button group utilities for Yeelight Cube Draw Card Editor
+ * Centralized slider and button group utilities for Yeelight Cube Lite Draw Card Editor
  * Provides consistent rendering and handling for all UI components
  */
 

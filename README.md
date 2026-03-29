@@ -1,4 +1,4 @@
-# Yeelight Cube for Home Assistant
+# Yeelight Cube Lite for Home Assistant
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
 
@@ -25,7 +25,7 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**. T
 - **Live camera preview** — see the matrix state as a camera entity on your HA device page
 - **7 custom Lovelace cards** — each with a visual editor
 - **Conflict prevention** — automatically prevents the built-in Yeelight integration from interfering
-- **Multiple lamps** — add as many Yeelight Cube devices as you have
+- **Multiple lamps** — add as many Yeelight Cube Lite devices as you have
 
 ---
 
@@ -41,7 +41,7 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**. T
    ```
 4. Category: **Integration**
 5. Click **Add**
-6. Search for **Yeelight Cube** in HACS and install it
+6. Search for **Yeelight Cube Lite** in HACS and install it
 7. **Restart Home Assistant**
 
 ### Manual Installation
@@ -55,8 +55,8 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**. T
 ## Setup
 
 1. Go to **Settings → Devices & Services → Add Integration**
-2. Search for **Yeelight Cube**
-3. Enter the IP address of your Yeelight Cube device (you can find it in the Yeelight app)
+2. Search for **Yeelight Cube Lite**
+3. Enter the IP address of your Yeelight Cube Lite device (you can find it in the Yeelight app)
 4. The integration will create a device with all entities automatically
 
 <!-- TODO: Add screenshot of config flow here -->
@@ -179,13 +179,13 @@ Dedicated angle control for gradient modes.
 
 ## Entities Created
 
-Each Yeelight Cube device creates the following entities:
+Each Yeelight Cube Lite device creates the following entities:
 
 ### Light
 
 | Entity            | Description                                       |
 | ----------------- | ------------------------------------------------- |
-| **Yeelight Cube** | Main light entity — on/off, RGB color, brightness |
+| **Yeelight Cube Lite** | Main light entity — on/off, RGB color, brightness |
 
 ### Selectors
 

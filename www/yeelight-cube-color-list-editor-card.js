@@ -5183,7 +5183,7 @@ if (typeof window !== "undefined") {
   window.customCards = window.customCards || [];
   window.customCards.push({
     type: "yeelight-cube-color-list-editor-card",
-    name: "Yeelight Cube Color List Editor",
-    description: "Edit the list of text colors for the Yeelight Cube.",
+    name: "Yeelight Cube Lite Color List Editor",
+    description: "Edit the list of text colors for the Yeelight Cube Lite.",
   });
 }
