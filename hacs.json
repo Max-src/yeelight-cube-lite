@@ -1,0 +1,7 @@
+{
+    "name": "Yeelight Cube",
+    "content_in_root": true,
+    "render_readme": true,
+    "homeassistant": "2023.1.0",
+    "zip_release": false
+}

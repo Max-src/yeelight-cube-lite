@@ -1,0 +1,744 @@
+display_word:
+  name: Display Word
+  description: Display a word on the Yeelight Cube
+  fields:
+    word:
+      description: The word to display on the cube
+      example: "Hello"
+
+set_scroll_speed:
+  name: Set Scroll Speed
+  description: Set the speed of text scrolling for long text
+  fields:
+    speed:
+      description: Scroll speed in seconds per step (0.1 to 10.0)
+      example: 1.0
+      selector:
+        number:
+          min: 0.1
+          max: 10.0
+          step: 0.1
+
+add_managed_device:
+  name: Add Managed Device
+  description: Add a device IP to the managed devices list to prevent discovery conflicts
+  fields:
+    ip_address:
+      description: IP address of the device to manage
+      example: "192.168.1.100"
+      required: true
+
+remove_managed_device:
+  name: Remove Managed Device
+  description: Remove a device IP from the managed devices list
+  fields:
+    ip_address:
+      description: IP address of the device to remove
+      example: "192.168.1.100"
+      required: true
+
+is_device_managed:
+  name: Check Device Managed
+  description: Check if a device IP is managed by this component
+  fields:
+    ip_address:
+      description: IP address to check
+      example: "192.168.1.100"
+      required: true
+
+list_managed_devices:
+  name: List Managed Devices
+  description: List all devices managed by this component to prevent discovery conflicts. Returns a list of IP addresses.
+  fields: {}
+
+test_device_detection:
+  name: Test Device Detection
+  description: Test if a device would be detected as a cube device based on its properties
+  fields:
+    device_model:
+      description: Device model string (md property)
+      example: "cubelite"
+      required: false
+    device_name:
+      description: Device name string (fn property)
+      example: "Yeelight Cube Lite"
+      required: false
+    device_id:
+      description: Device ID string (id property)
+      example: "0x12345678"
+      required: false
+
+ignore_yeelight_discovery:
+  name: Ignore Yeelight Discovery
+  description: Force ignore a specific IP address from the built-in Yeelight integration
+  fields:
+    ip_address:
+      description: IP address to ignore in Yeelight integration
+      example: "192.168.4.139"
+      required: true
+
+force_rediscovery:
+  name: Force Rediscovery
+  description: Clear discovery caches and force rediscovery of a device
+  fields:
+    ip_address:
+      description: IP address to force rediscovery for
+      example: "192.168.4.139"
+      required: true
+
+trigger_manual_discovery:
+  name: Trigger Manual Discovery
+  description: Manually trigger discovery for both integrations to test interception
+  fields:
+    ip_address:
+      description: IP address to discover
+      example: "192.168.4.139"
+      required: true
+    device_name:
+      description: Device name to use
+      example: "CubeLite Test"
+      required: false
+    device_model:
+      description: Device model to use
+      example: "cubelite"
+      required: false
+    device_id:
+      description: Device ID to use
+      example: "0x12345678"
+      required: false
+
+create_cube_discovery:
+  name: Create Cube Discovery
+  description: Create a discovery flow specifically for the Yeelight Cube component
+  fields:
+    ip_address:
+      description: IP address of your CubeLite device
+      example: "192.168.4.139"
+      required: true
+    device_name:
+      description: Friendly name for the device
+      example: "My CubeLite"
+      required: false
+
+ignore_specific_yeelight:
+  name: Ignore Specific Yeelight Device
+  description: Ignore only a specific IP address in the Yeelight integration (keeps other devices working)
+  fields:
+    ip_address:
+      description: IP address to ignore in Yeelight integration
+      example: "192.168.4.139"
+      required: true
+
+set_scroll_enabled:
+  name: Set Scroll Enabled
+  description: Enable or disable automatic scrolling for long text
+  fields:
+    enabled:
+      description: Whether to enable scrolling
+      example: true
+      selector:
+        boolean:
+
+reset_scroll:
+  name: Reset Scroll
+  description: Reset scroll position to the beginning
+  fields: {}
+
+load_palette:
+  name: Load Palette
+  description: Load a palette by index and apply it to the specified entity or all entities
+  fields:
+    idx:
+      description: Index of the palette to load (0-based)
+      example: 0
+      required: true
+      selector:
+        number:
+          min: 0
+          mode: box
+    entity_id:
+      description: Specific entity ID to apply the palette to (optional, applies to all if not specified)
+      example: "light.yeelight_cube_192_168_1_100"
+      required: false
+      selector:
+        entity:
+          domain: light
+
+preview_gradient_modes:
+  name: Preview Gradient Modes
+  description: Generate full 5x20 preview matrices for all gradient modes using the entity's current text, colors, and angle. Returns previews via event bus.
+  fields:
+    entity_id:
+      description: Entity ID to generate previews for (uses entity's current text, colors, and angle)
+      example: "light.yeelight_cube_192_168_1_100"
+      required: false
+      selector:
+        entity:
+          domain: light
+
+set_custom_text:
+  name: Set Custom Text
+  description: Set text to display on the cube matrix. Clears any existing pixel art and resets scroll position.
+  fields:
+    text:
+      description: Text to display on the cube matrix
+      example: "HELLO"
+      required: true
+      selector:
+        text:
+    entity_id:
+      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
+      example: "light.cubelite_192_168_4_139"
+      required: false
+      selector:
+        entity:
+          domain: light
+
+set_text_colors:
+  name: Set Text Colors
+  description: Set the colors used for text display. Supports gradients with multiple colors.
+  fields:
+    text_colors:
+      description: Array of RGB color arrays, e.g. [[255,0,0], [0,255,0]] for red to green gradient
+      example: "[[255, 0, 0], [0, 255, 0], [0, 0, 255]]"
+      required: true
+      selector:
+        object:
+    entity_id:
+      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
+      example: "light.cubelite_192_168_4_247"
+      required: false
+      selector:
+        entity:
+          domain: light
+    save_as_palette:
+      description: Save these colors as a palette for later use
+      example: false
+      required: false
+      default: false
+      selector:
+        boolean:
+
+apply_custom_pixels:
+  name: Apply Custom Pixels
+  description: Apply pixel art to the cube by setting individual pixel colors on the 10x10 matrix.
+  fields:
+    pixels:
+      description: Array of 100 RGB color arrays representing the 10x10 matrix pixels, e.g. [[255,0,0], [0,255,0], ...]
+      example: "[[255,0,0], [0,255,0], [0,0,255], ...]"
+      required: true
+      selector:
+        object:
+    entity_id:
+      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
+      example: "light.cubelite_192_168_4_139"
+      required: false
+      selector:
+        entity:
+          domain: light
+
+set_custom_pixels:
+  name: Set Custom Pixels
+  description: Set individual pixels on the cube matrix using position and color data.
+  fields:
+    pixels:
+      description: Array of pixel objects with position (0-99) and RGB color
+      example: '[{"position": 0, "color": [255, 0, 0]}, {"position": 1, "color": [0, 255, 0]}]'
+      required: true
+      selector:
+        object:
+
+set_mode:
+  name: Set Display Mode
+  description: Set the display mode for text and gradients on the cube.
+  fields:
+    mode:
+      description: Display mode for text/gradients
+      example: "Angle Gradient"
+      required: true
+      selector:
+        select:
+          options:
+            - "Solid Color"
+            - "Letter Gradient"
+            - "Column Gradient"
+            - "Row Gradient"
+            - "Angle Gradient"
+            - "Radial Gradient"
+            - "Letter Vertical Gradient"
+            - "Letter Angle Gradient"
+            - "Text Color Sequence"
+            - "Panel Color Sequence"
+            - "Custom Draw"
+    panel_mode:
+      description: Whether to apply gradients to entire panel (true) or just text areas (false). If provided, sets both panel_mode and mode in one call to avoid redundant updates.
+      example: true
+      required: false
+      selector:
+        boolean:
+    entity_id:
+      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
+      example: "light.cubelite_192_168_4_247"
+      required: false
+      selector:
+        entity:
+          domain: light
+
+set_angle:
+  name: Set Gradient Angle
+  description: Set the gradient angle in degrees for angle-based gradient modes.
+  fields:
+    angle:
+      description: Gradient angle in degrees (0-360). Used for angle-based gradient modes.
+      example: 45.0
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 360
+          step: 1
+          mode: slider
+    entity_id:
+      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
+      example: "light.cubelite_192_168_4_139"
+      required: false
+      selector:
+        entity:
+          domain: light
+
+set_panel_mode:
+  name: Set Panel Mode
+  description: Set whether gradients apply to the entire panel or just text areas.
+  fields:
+    panel_mode:
+      description: Whether to apply gradients to entire panel (true) or just text areas (false)
+      example: true
+      required: true
+      selector:
+        boolean:
+    entity_id:
+      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
+      example: "light.cubelite_192_168_4_247"
+      required: false
+      selector:
+        entity:
+          domain: light
+
+set_brightness:
+  name: Set Brightness
+  description: Set the lamp brightness using a simple percentage (1-100%). This is a convenience service that wraps the standard light.turn_on brightness control, converting percentage values to Home Assistant's 1-255 brightness range.
+  fields:
+    brightness:
+      description: Brightness percentage (1-100%)
+      example: 75
+      required: true
+      selector:
+        number:
+          min: 1
+          max: 100
+          step: 1
+          mode: slider
+    entity_id:
+      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
+      example: "light.cubelite_192_168_4_139"
+      required: false
+      selector:
+        entity:
+          domain: light
+
+# === PIXEL ART MANAGEMENT ===
+
+save_pixel_art:
+  name: Save Pixel Art
+  description: Save current drawing as a named pixel art for later reuse.
+  fields:
+    pixels:
+      description: Array of pixel objects with position and color
+      example: '[{"position": 0, "color": [255, 0, 0]}, {"position": 1, "color": [0, 255, 0]}]'
+      required: true
+      selector:
+        object:
+    name:
+      description: Name for the saved pixel art
+      example: "My Drawing"
+      required: false
+      selector:
+        text:
+
+apply_pixel_art:
+  name: Apply Pixel Art
+  description: Apply a saved pixel art by index to the cube.
+  fields:
+    idx:
+      description: Index of the saved pixel art to apply (0-based)
+      example: 0
+      required: true
+      selector:
+        number:
+          min: 0
+          mode: box
+    entity_id:
+      description: Target specific cube entity (e.g., light.cubelite_192_168_4_139). If not provided, uses default entity.
+      required: false
+      selector:
+        entity:
+          domain: light
+
+remove_pixel_art:
+  name: Remove Pixel Art
+  description: Remove a saved pixel art by index.
+  fields:
+    idx:
+      description: Index of the pixel art to remove (0-based)
+      example: 0
+      required: true
+      selector:
+        number:
+          min: 0
+          mode: box
+
+rename_pixel_art:
+  name: Rename Pixel Art
+  description: Rename a saved pixel art.
+  fields:
+    idx:
+      description: Index of the pixel art to rename (0-based)
+      example: 0
+      required: true
+      selector:
+        number:
+          min: 0
+          mode: box
+    name:
+      description: New name for the pixel art
+      example: "Updated Drawing"
+      required: true
+      selector:
+        text:
+
+get_pixel_art:
+  name: Get Pixel Art
+  description: Retrieve a saved pixel art by index.
+  fields:
+    idx:
+      description: Index of the pixel art to retrieve (0-based)
+      example: 0
+      required: true
+      default: 0
+      selector:
+        number:
+          min: 0
+          mode: box
+
+import_pixel_arts:
+  name: Import Pixel Arts
+  description: Import multiple pixel arts from a list (typically from file import).
+  fields:
+    pixel_arts:
+      description: Array of pixel art objects with name and pixels
+      example: '[{"name": "Art1", "pixels": [[255,0,0], [0,255,0], ...]}, {"name": "Art2", "pixels": [...]}]'
+      required: true
+      selector:
+        object:
+
+update_pixel_arts:
+  name: Update Pixel Arts
+  description: Update the full list of pixel arts (used for reordering or bulk modifications).
+  fields:
+    pixel_arts:
+      description: Array of pixel art objects with name and pixels
+      example: '[{"name": "Art1", "pixels": [[255,0,0], [0,255,0], ...]}, {"name": "Art2", "pixels": [...]}]'
+      required: true
+      selector:
+        object:
+
+# === PALETTE MANAGEMENT ===
+
+save_palette:
+  name: Save Palette
+  description: Save a color palette for later use in gradients and text coloring.
+  fields:
+    palette:
+      description: Array of RGB color arrays
+      example: "[[255, 0, 0], [0, 255, 0], [0, 0, 255]]"
+      required: true
+      selector:
+        object:
+    name:
+      description: Name for the saved palette
+      example: "Rainbow Colors"
+      required: false
+      selector:
+        text:
+    entity_id:
+      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
+      example: "light.cubelite_192_168_4_139"
+      required: false
+      selector:
+        entity:
+          domain: light
+
+remove_palette:
+  name: Remove Palette
+  description: Remove a saved palette by index.
+  fields:
+    idx:
+      description: Index of the palette to remove (0-based)
+      example: 0
+      required: true
+      selector:
+        number:
+          min: 0
+          mode: box
+
+rename_palette:
+  name: Rename Palette
+  description: Rename a saved palette.
+  fields:
+    idx:
+      description: Index of the palette to rename (0-based)
+      example: 0
+      required: true
+      selector:
+        number:
+          min: 0
+          mode: box
+    name:
+      description: New name for the palette
+      example: "Updated Palette"
+      required: true
+      selector:
+        text:
+
+set_palettes:
+  name: Set Palettes
+  description: Replace all palettes with a new set of palettes.
+  fields:
+    palettes:
+      description: Array of palette objects with name and colors
+      example: '[{"name": "Palette1", "colors": [[255,0,0], [0,255,0]]}, {"name": "Palette2", "colors": [[0,0,255], [255,255,0]]}]'
+      required: true
+      selector:
+        object:
+
+# === DISPLAY SETTINGS ===
+
+set_orientation:
+  name: Set Orientation
+  description: Set the display orientation of the cube matrix.
+  fields:
+    orientation:
+      description: Display orientation
+      example: "normal"
+      required: true
+      selector:
+        select:
+          options:
+            - "normal"
+            - "flipped"
+
+set_font:
+  name: Set Font
+  description: Set the font used for text display.
+  fields:
+    font:
+      description: Font name to use for text display
+      example: "basic"
+      required: true
+      selector:
+        select:
+          options:
+            - "basic"
+            - "koubit"
+            - "josefin"
+
+set_alignment:
+  name: Set Text Alignment
+  description: Set the text alignment for displayed text.
+  fields:
+    alignment:
+      description: Text alignment
+      example: "center"
+      required: true
+      selector:
+        select:
+          options:
+            - "left"
+            - "center"
+            - "right"
+
+# === IMAGE DISPLAY ===
+
+display_image:
+  name: Display Image
+  description: Display a base64-encoded image on the cube matrix (resized to 20x5).
+  fields:
+    image_b64:
+      description: Base64-encoded image data
+      example: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+      required: true
+      selector:
+        text:
+          multiline: true
+
+# === TESTING AND DEBUGGING ===
+
+test_display:
+  name: Test Display
+  description: Test service to manually trigger display mode application for debugging.
+  fields: {}
+
+set_preview_adjustments:
+  name: Set Color Effects
+  description: Apply real-time color effects to the lamp output. Note - Use the light brightness control for overall brightness adjustment.
+  fields:
+    # === COLOR ADJUSTMENTS ===
+    hue_shift:
+      description: "[Color] Hue Shift - rotate colors through the spectrum (-180 to +180°). 0=no change"
+      example: 0
+      required: false
+      default: 0
+      selector:
+        number:
+          min: -180
+          max: 180
+          mode: slider
+    temperature:
+      description: "[Color] Temperature - color warmth (-100 to +100). Negative=cool/blue, Positive=warm/orange"
+      example: 0
+      required: false
+      default: 0
+      selector:
+        number:
+          min: -100
+          max: 100
+          mode: slider
+    # === SATURATION & INTENSITY ===
+    saturation:
+      description: "[Intensity] Saturation - color richness (0-200). 0=grayscale, 100=normal, 200=hyper-saturated"
+      example: 100
+      required: false
+      default: 100
+      selector:
+        number:
+          min: 0
+          max: 200
+          mode: slider
+    vibrance:
+      description: "[Intensity] Vibrance - smart saturation (0-200). Like saturation but protects already-saturated colors"
+      example: 100
+      required: false
+      default: 100
+      selector:
+        number:
+          min: 0
+          max: 200
+          mode: slider
+    # === TONE & CONTRAST ===
+    contrast:
+      description: "[Tone] Contrast - separation between light and dark (0-200). 0=flat gray, 100=normal, 200=high contrast"
+      example: 100
+      required: false
+      default: 100
+      selector:
+        number:
+          min: 0
+          max: 200
+          mode: slider
+    glow:
+      description: "[Tone] Glow - boost bright pixels (0-100). Creates a luminous glowing effect on highlights"
+      example: 0
+      required: false
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 100
+          mode: slider
+    # === SPECIAL EFFECTS ===
+    grayscale:
+      description: "[Effect] Grayscale - convert to black & white (0-100). 0=full color, 100=monochrome"
+      example: 0
+      required: false
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 100
+          mode: slider
+    invert:
+      description: "[Effect] Invert - negative/inverse colors (0-100). 0=normal, 100=fully inverted"
+      example: 0
+      required: false
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 100
+          mode: slider
+    tint_hue:
+      description: "[Effect] Tint Color - hue for color overlay (0-360°). 0=red, 120=green, 240=blue. Requires tint_strength"
+      example: 0
+      required: false
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 360
+          mode: slider
+    tint_strength:
+      description: "[Effect] Tint Strength - intensity of color tint (0-100). Use with tint_hue"
+      example: 0
+      required: false
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 100
+          mode: slider
+    entity_id:
+      description: Target specific cube entity. If not provided, uses default entity.
+      example: "light.yeelight_cube_192_168_1_100"
+      required: false
+      selector:
+        entity:
+          domain: light
+
+force_refresh:
+  name: Force Refresh
+  description: >
+    Force refresh using raw TCP connections (bypasses the persistent socket).
+    Opens a fresh TCP connection for each command, exactly like the working
+    yeelight_matrix library script. Use this when the lamp is stuck and
+    normal display updates are not reaching it.
+  fields:
+    entity_id:
+      description: Target specific cube entity. If not provided, uses default entity.
+      example: "light.yeelight_cube_192_168_1_100"
+      required: false
+      selector:
+        entity:
+          domain: light
+
+set_color_accuracy:
+  name: Set Color Accuracy
+  description: >
+    Toggle hardware colour accuracy correction.  Applies per-channel gain to
+    compensate for LED colour rendering differences vs. a computer monitor.
+    Reduces green and blue channels slightly so yellows, cyans, and whites
+    look neutral rather than greenish, and blues/purples appear deeper instead
+    of washed out.  The preview card is NOT affected.
+  fields:
+    enabled:
+      description: Enable or disable colour accuracy correction.
+      example: true
+      required: true
+      selector:
+        boolean:
+    entity_id:
+      description: Target specific cube entity. If not provided, uses default entity.
+      example: "light.yeelight_cube_192_168_1_100"
+      required: false
+      selector:
+        entity:
+          domain: light

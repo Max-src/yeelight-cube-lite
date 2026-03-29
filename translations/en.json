@@ -1,0 +1,26 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "title": "Yeelight Cube Setup",
+                "description": "Enter the IP address of your Yeelight Cube device.\nExample: {example_ip}",
+                "data": {
+                    "Light IP Address": "IP Address"
+                }
+            }
+        },
+        "error": {
+            "invalid_ip": "Invalid IP address format"
+        },
+        "abort": {
+            "already_configured": "This device is already configured"
+        }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "title": "Yeelight Cube Options"
+            }
+        }
+    }
+}
