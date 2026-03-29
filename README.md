@@ -10,23 +10,30 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**. T
 
 ---
 
-## Features at a Glance
+## Features
 
-- **Full 20×5 pixel-level control** — draw on every one of the 100 RGB LEDs
-- **Pixel art editor** with undo, eyedropper, fill, eraser, and more
-- **Pixel art gallery** — save, load, rename, reorder, import/export designs (JSON)
-- **9 display modes** — solid color, gradients, text, color sequences, custom draw
-- **9 gradient types** — column, row, angle, radial, letter gradients with live angle control
-- **Scrolling text** — display custom text with configurable font, alignment, speed, and color
-- **24 transition effects** — fade, wipe, slide, curtain, gravity drop, pixel migration, and more
-- **10 color adjustments** — hue shift, temperature, saturation, vibrance, contrast, glow, grayscale, invert, tint
-- **Color accuracy correction** — compensates for hardware LED channel imbalance
-- **Palette system** — create, name, edit, and reuse color palettes across cards
-- **Brightness control** — seamless dual-mechanism (hardware + RGB darkening) with gamma correction
-- **Live camera preview** — see the matrix state as a camera entity on your HA device page
-- **7 custom Lovelace cards** — each with a visual editor
-- **Conflict prevention** — automatically prevents the built-in Yeelight integration from interfering
-- **Multiple lamps** — add as many Yeelight Cube Lite devices as you have
+### Integration
+
+- **Full 20×5 RGB matrix control** — 100 individually addressable LEDs
+- **11 display modes** — solid color, 7 gradient types, text color sequences, panel color sequences, custom draw
+- **24 transition effects** between modes — fade, wipe, slide, curtain, gravity drop, pixel migration, and more
+- **10 live color adjustments** — hue shift, temperature, saturation, vibrance, contrast, glow, grayscale, invert, tint
+- **Scrolling text** with multiple fonts and alignment options
+- **Brightness** with hardware + software dual-mechanism and gamma correction
+- **Color accuracy correction** for hardware LED channel imbalance
+- **Live camera preview** — matrix state as a camera entity on the device page
+- **Conflict prevention** — blocks the built-in Yeelight integration from interfering
+- **Multi-lamp support** — add as many devices as you have
+
+### Lovelace Cards
+
+- **Draw Card** — pixel art editor with pencil, eraser, fill, eyedropper, undo; gallery to save/load/rename/reorder/import/export designs
+- **Gradient Card** — pick and preview all gradient & color modes with a scrollable mode wheel
+- **Lamp Preview Card** — live matrix preview with brightness slider, power toggle, and force refresh
+- **Palette Card** — create, edit, reorder, and apply color palettes
+- **Color List Editor Card** — edit color sequences for text and panel modes with drag-and-drop
+- **Lettermap Card** — browse font character maps used for text rendering
+- **Angle Gradient Card** — rotary dial for angle-based gradient control
 
 ---
 
