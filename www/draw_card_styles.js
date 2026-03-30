@@ -1213,19 +1213,6 @@ export const drawCardStyles = css`
   }
 
   /* Gallery Container Styles */
-  .pixelart-gallery-card {
-    background: var(--card-background-color, #ffffff);
-    border: 1px solid var(--divider-color, #e0e0e0);
-    border-radius: 12px;
-    padding: 16px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    transition: all 0.2s ease;
-  }
-
-  .pixelart-gallery-card:hover {
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-  }
-
   .pixelart-gallery-plain {
     background: transparent;
     border: none;
@@ -1233,42 +1220,8 @@ export const drawCardStyles = css`
     box-shadow: none;
   }
 
-  /* Individual item card styling - HIGH SPECIFICITY to override container styles */
-  .pixelart-item.pixelart-item-card,
-  .pixelart-gallery-card .pixelart-item.pixelart-item-card,
-  .pixelart-gallery-plain .pixelart-item.pixelart-item-card {
-    background: var(--card-background-color, #ffffff) !important;
-    border: 1px solid var(--divider-color, #e0e0e0) !important;
-    border-radius: 8px !important;
-    transition: all 0.2s ease !important;
-    padding: 4px 12px !important;
-  }
-
-  .pixelart-item.pixelart-item-card:hover,
-  .pixelart-gallery-card .pixelart-item.pixelart-item-card:hover,
-  .pixelart-gallery-plain .pixelart-item.pixelart-item-card:hover {
-    transform: translateY(-2px) !important;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12) !important;
-    border-color: var(--primary-color, #03a9f4) !important;
-  }
-
-  /* Carousel items: no transform on hover to prevent clipping */
-  .pixelart-item-carousel.pixelart-item-card:hover,
-  .pixelart-gallery-card .pixelart-item-carousel.pixelart-item-card:hover,
-  .pixelart-gallery-plain .pixelart-item-carousel.pixelart-item-card:hover {
-    transform: none !important;
-  }
-
-  .pixelart-item-list.pixelart-item-card,
-  .pixelart-gallery-card .pixelart-item-list.pixelart-item-card,
-  .pixelart-gallery-plain .pixelart-item-list.pixelart-item-card {
-    width: fit-content !important;
-    width: calc(var(--pixelart-size-percent, 100%) * 0.9) !important;
-  }
-
-  /* Individual item plain styling - HIGH SPECIFICITY to override container styles */
+  /* Individual item plain styling */
   .pixelart-item.pixelart-item-plain,
-  .pixelart-gallery-card .pixelart-item.pixelart-item-plain,
   .pixelart-gallery-plain .pixelart-item.pixelart-item-plain {
     background: transparent !important;
     border: none !important;
@@ -1276,14 +1229,12 @@ export const drawCardStyles = css`
   }
 
   .pixelart-item.pixelart-item-plain:hover,
-  .pixelart-gallery-card .pixelart-item.pixelart-item-plain:hover,
   .pixelart-gallery-plain .pixelart-item.pixelart-item-plain:hover {
     transform: none !important;
     box-shadow: none !important;
   }
 
   .pixelart-item-list.pixelart-item-plain,
-  .pixelart-gallery-card .pixelart-item-list.pixelart-item-plain,
   .pixelart-gallery-plain .pixelart-item-list.pixelart-item-plain {
     width: calc(var(--pixelart-size-percent, 100%) * 0.5) !important;
   }

@@ -424,10 +424,6 @@ class YeelightCubeDrawCardEditor extends LitElement {
       this.config.pixel_art_matrix_box_shadow = true;
     if (typeof this.config.pixel_art_pixel_box_shadow !== "boolean")
       this.config.pixel_art_pixel_box_shadow = true;
-    if (typeof this.config.pixel_art_gallery_container_card !== "boolean")
-      this.config.pixel_art_gallery_container_card = true;
-    if (typeof this.config.pixel_art_items_as_cards !== "boolean")
-      this.config.pixel_art_items_as_cards = true;
     if (typeof this.config.pixel_art_show_titles !== "boolean")
       this.config.pixel_art_show_titles = true;
     if (typeof this.config.pixel_art_allow_rename !== "boolean")
@@ -1237,20 +1233,6 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 : ""
             }
 
-            <!-- GROUP 3: Visual Styling - Container & Cards -->
-            ${createToggleRow(
-              "Show Gallery Container as Card",
-              "pixel_art_gallery_container_card",
-              this.config.pixel_art_gallery_container_card !== false,
-              (e) =>
-                this._onSwitchChange(e, "pixel_art_gallery_container_card"),
-            )}
-            ${createToggleRow(
-              "Show Pixel Art Items as Cards",
-              "pixel_art_items_as_cards",
-              this.config.pixel_art_items_as_cards !== false,
-              (e) => this._onSwitchChange(e, "pixel_art_items_as_cards"),
-            )}
             <div class="form-row">
               <label>Gallery Background Color</label>
               ${createButtonGroup(

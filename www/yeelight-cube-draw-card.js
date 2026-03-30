@@ -99,8 +99,6 @@ class YeelightCubeDrawCard extends LitElement {
       matrix_box_shadow: true,
       pixel_art_matrix_box_shadow: true,
       pixel_art_pixel_box_shadow: true,
-      pixel_art_gallery_container_card: true,
-      pixel_art_items_as_cards: true,
       pixel_art_show_titles: true,
       pixel_art_allow_rename: false,
       matrix_size: "large",
@@ -1531,23 +1529,15 @@ class YeelightCubeDrawCard extends LitElement {
       cfg.pixel_art_remove_button_always_visible !== false;
     const bgColor = cfg.pixel_art_background_color || "transparent";
     const autoApplyToLamp = cfg.pixel_art_auto_apply_to_lamp === true;
-    const showGalleryContainerAsCard =
-      cfg.pixel_art_gallery_container_card !== false; // Default to true
-    const showItemsAsCards = cfg.pixel_art_items_as_cards !== false; // Default to true
     const showTitles = cfg.pixel_art_show_titles !== false; // Default to true
     const allowRename = cfg.pixel_art_allow_rename === true; // Default to false
 
     if (!this._galleryCarouselIndex) this._galleryCarouselIndex = 0;
 
-    // Apply card styling conditionally to gallery container
-    const galleryCardClass = showGalleryContainerAsCard
-      ? "pixelart-gallery-card"
-      : "pixelart-gallery-plain";
-
     return html`
       <div class="pixelart-gallery">
         <div
-          class="pixelart-gallery-content ${currentMode} ${galleryCardClass}"
+          class="pixelart-gallery-content ${currentMode} pixelart-gallery-plain"
           @click=${this._handleGalleryClick}
           style="--pixelart-bg-color: ${resolveBgColor(bgColor)}"
         >
@@ -1559,7 +1549,6 @@ class YeelightCubeDrawCard extends LitElement {
             autoApplyToLamp,
             showTitles,
             allowRename,
-            showItemsAsCards,
             removeButtonStyle,
             removeButtonAlwaysVisible,
           )}
@@ -1687,7 +1676,6 @@ class YeelightCubeDrawCard extends LitElement {
     autoApplyToLamp,
     showTitles = true,
     allowRename = false,
-    showItemsAsCards = true,
     removeButtonStyle = "default",
     removeButtonAlwaysVisible = true,
   ) {
@@ -1731,7 +1719,6 @@ class YeelightCubeDrawCard extends LitElement {
           autoApplyToLamp,
           showTitles,
           allowRename,
-          showItemsAsCards,
           removeButtonStyle,
           removeButtonAlwaysVisible,
         );
@@ -1746,7 +1733,6 @@ class YeelightCubeDrawCard extends LitElement {
           autoApplyToLamp,
           showTitles,
           allowRename,
-          showItemsAsCards,
           removeButtonStyle,
           removeButtonAlwaysVisible,
         );
@@ -1775,7 +1761,6 @@ class YeelightCubeDrawCard extends LitElement {
           autoApplyToLamp,
           showTitles,
           allowRename,
-          showItemsAsCards,
           removeButtonStyle,
           removeButtonAlwaysVisible,
         );
@@ -1796,7 +1781,6 @@ class YeelightCubeDrawCard extends LitElement {
     autoApplyToLamp,
     showTitles,
     allowRename,
-    showItemsAsCards,
     removeButtonStyle = "default",
     removeButtonAlwaysVisible = true,
   ) {
@@ -2222,7 +2206,6 @@ class YeelightCubeDrawCard extends LitElement {
     autoApplyToLamp,
     showTitles,
     allowRename,
-    showItemsAsCards,
     removeButtonStyle = "default",
     removeButtonAlwaysVisible = true,
   ) {
@@ -2260,6 +2243,7 @@ class YeelightCubeDrawCard extends LitElement {
           align-items: center;
           gap: 12px;
           cursor: pointer;
+          flex-wrap: wrap-reverse;
         }
 
         .list-item-preview {
@@ -2300,7 +2284,10 @@ class YeelightCubeDrawCard extends LitElement {
         .list-item-name {
           font-weight: 500;
           color: #333;
-          flex: 1;
+          flex: 1 1 120px;
+          min-width: 0;
+          word-break: break-word;
+          overflow-wrap: break-word;
           cursor: ${allowRename ? "pointer" : "default"};
         }
 
@@ -2423,7 +2410,6 @@ class YeelightCubeDrawCard extends LitElement {
     autoApplyToLamp,
     showTitles,
     allowRename,
-    showItemsAsCards,
     removeButtonStyle = "default",
     removeButtonAlwaysVisible = true,
   ) {
@@ -2467,7 +2453,6 @@ class YeelightCubeDrawCard extends LitElement {
               autoApplyToLamp,
               showTitles,
               allowRename,
-              showItemsAsCards,
             )}
           </div>
           <div class="carousel-indicators">
@@ -2524,7 +2509,6 @@ class YeelightCubeDrawCard extends LitElement {
     autoApplyToLamp,
     showTitles,
     allowRename,
-    showItemsAsCards,
     removeButtonStyle = "default",
     removeButtonAlwaysVisible = true,
   ) {
@@ -2562,7 +2546,6 @@ class YeelightCubeDrawCard extends LitElement {
           autoApplyToLamp,
           showTitles,
           allowRename,
-          showItemsAsCards,
         );
       },
     });
@@ -2615,12 +2598,8 @@ class YeelightCubeDrawCard extends LitElement {
     autoApplyToLamp = false,
     showTitles = true,
     allowRename = false,
-    showItemsAsCards = true,
   ) {
-    const cardClass = showItemsAsCards
-      ? "pixelart-item-card"
-      : "pixelart-item-plain";
-    const itemClass = `pixelart-item pixelart-item-${displayMode} ${cardClass}`;
+    const itemClass = `pixelart-item pixelart-item-${displayMode} pixelart-item-plain`;
     const nameClass = `pixelart-name pixelart-name-${displayMode}${
       allowRename ? " clickable" : ""
     }`;
