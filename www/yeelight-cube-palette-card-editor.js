@@ -382,6 +382,33 @@ class YeelightCubePaletteCardEditor extends LitElement {
                   )
                 : ""
             }
+            ${config.display_mode === "list" || config.display_mode === "gallery"
+              ? html`
+                  <div class="form-row">
+                    <label>Items Per Page (0 = no pagination)</label>
+                    <div
+                      style="display: flex; align-items: center; gap: 8px;"
+                    >
+                      <input
+                        id="items_per_page"
+                        type="range"
+                        min="0"
+                        max="50"
+                        step="1"
+                        .value="${config.items_per_page || 0}"
+                        @input="${this._onItemsPerPageInput}"
+                        style="flex: 1;"
+                      />
+                      <span
+                        id="items_per_page_display"
+                        style="min-width: 35px; text-align: right; font-size: 0.9em; color: #666;"
+                      >
+                        ${config.items_per_page || 0}
+                      </span>
+                    </div>
+                  </div>
+                `
+              : ""}
 
             <!-- Global Remove Button Settings -->
             ${this._renderButtonGroup(
@@ -776,6 +803,16 @@ class YeelightCubePaletteCardEditor extends LitElement {
       display.textContent = `${value}%`;
     }
 
+    this._fireConfigChanged();
+  }
+
+  _onItemsPerPageInput(e) {
+    const value = parseInt(e.target.value);
+    this.config.items_per_page = value;
+    const display = this.shadowRoot.getElementById("items_per_page_display");
+    if (display) {
+      display.textContent = `${value}`;
+    }
     this._fireConfigChanged();
   }
 

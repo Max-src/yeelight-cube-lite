@@ -205,6 +205,7 @@ export function renderGalleryMode(items, renderContent, options = {}) {
     isStripes = false,
     isGradientBar = false,
     roundedCards = true,
+    globalOffset = 0,
   } = options;
 
   // Safety check for items
@@ -213,7 +214,8 @@ export function renderGalleryMode(items, renderContent, options = {}) {
   }
 
   const itemsHtml = items
-    .map((item, idx) => {
+    .map((item, localIdx) => {
+      const idx = localIdx + globalOffset;
       const title = item.name || item.title || `Item ${idx + 1}`;
       const gradientStyle =
         isGradientBg && item.gradientBg
