@@ -259,7 +259,6 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     this._expectedPowerState = expectedState;
     this._updatePowerButtonLoadingState(true);
 
-
     try {
       // Toggle the light (same as clicking toggle in HA light card)
       await this._hass.callService("light", "toggle", {
@@ -5283,7 +5282,6 @@ customElements.define(
   "yeelight-cube-lamp-preview-card",
   YeelightCubeLampPreviewCard,
 );
-
 
 // Register for Lovelace "Add Card" UI
 window.customCards = window.customCards || [];

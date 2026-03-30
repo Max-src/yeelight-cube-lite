@@ -134,7 +134,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
   }
 
   render() {
-
     if (
       this._isDragging ||
       this._draggingRotary ||
@@ -2234,7 +2233,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
         // Get CURRENT colors (not stale closure variable)
         const currentColors = this._getCurrentColors();
-
 
         if (isNaN(idx) || idx < 0 || idx >= currentColors.length) {
           console.error(

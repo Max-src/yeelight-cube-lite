@@ -2279,7 +2279,6 @@ class YeelightCubeGradientCard extends HTMLElement {
       this._wheelNavigationController = controller;
       this._wheelCenterIndex = controller.getCenterIndex();
     }
-
   }
 
   _getCachedPreviewGrid() {
@@ -4306,6 +4305,7 @@ if (typeof window !== "undefined") {
   window.customCards.push({
     type: "yeelight-cube-gradient-card",
     name: "Yeelight Gradient Card",
-    description: "Control gradient settings for Yeelight Cube Lite matrix display",
+    description:
+      "Control gradient settings for Yeelight Cube Lite matrix display",
   });
 }
