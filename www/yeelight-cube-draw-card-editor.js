@@ -877,12 +877,14 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 }),
               )}
             </div>
-            ${(this.config.matrix_bg || "black") !== "black" ? createToggleRow(
-              "Ignore Black Pixels",
-              "matrix_ignore_black_pixels",
-              this.config.matrix_ignore_black_pixels === true,
-              (e) => this._onSwitchChange(e, "matrix_ignore_black_pixels"),
-            ) : ''}
+            ${(this.config.matrix_bg || "black") !== "black"
+              ? createToggleRow(
+                  "Ignore Black Pixels",
+                  "matrix_ignore_black_pixels",
+                  this.config.matrix_ignore_black_pixels === true,
+                  (e) => this._onSwitchChange(e, "matrix_ignore_black_pixels"),
+                )
+              : ""}
             ${createToggleRow(
               "Matrix Box Shadow",
               "matrix_box_shadow",
@@ -1267,12 +1269,15 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 ),
               )}
             </div>
-            ${(this.config.pixel_art_background_color || "transparent") !== "black" ? createToggleRow(
-              "Ignore Black Pixels",
-              "gallery_ignore_black_pixels",
-              this.config.gallery_ignore_black_pixels === true,
-              (e) => this._onSwitchChange(e, "gallery_ignore_black_pixels"),
-            ) : ''}
+            ${(this.config.pixel_art_background_color || "transparent") !==
+            "black"
+              ? createToggleRow(
+                  "Ignore Black Pixels",
+                  "gallery_ignore_black_pixels",
+                  this.config.gallery_ignore_black_pixels === true,
+                  (e) => this._onSwitchChange(e, "gallery_ignore_black_pixels"),
+                )
+              : ""}
 
             <!-- GROUP 4: Preview Appearance -->
             <div class="form-row">
@@ -1634,8 +1639,8 @@ class YeelightCubeDrawCardEditor extends LitElement {
                   No Yeelight Cube Lite entities found
                 </div>
                 <div style="font-size: 0.85em; color: #999;">
-                  Make sure you have Yeelight Cube Lite devices configured in this
-                  integration
+                  Make sure you have Yeelight Cube Lite devices configured in
+                  this integration
                 </div>
               </div>`
             : ourComponentEntities.map((entityId) => {

@@ -17,7 +17,8 @@ import {
 
 // localStorage key and event for gradient mode visibility
 const LS_GRADIENT_MODE_VISIBILITY = "yeelight-gradient-mode-visibility";
-const EVT_GRADIENT_MODE_VISIBILITY_RESET = "yeelight-gradient-mode-visibility-reset";
+const EVT_GRADIENT_MODE_VISIBILITY_RESET =
+  "yeelight-gradient-mode-visibility-reset";
 
 // Inline fireEvent helper for Home Assistant custom cards
 function fireEvent(node, type, detail, options) {
@@ -85,11 +86,14 @@ class YeelightCubeGradientCardEditor extends LitElement {
         new CustomEvent(EVT_GRADIENT_MODE_VISIBILITY_RESET, {
           bubbles: true,
           composed: true,
-        })
+        }),
       );
       this.requestUpdate();
     } catch (error) {
-      console.error("[Gradient Editor] Error resetting mode visibility:", error);
+      console.error(
+        "[Gradient Editor] Error resetting mode visibility:",
+        error,
+      );
     }
   }
 
@@ -98,9 +102,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
   }
 
   static getConfigElement() {
-    return document.createElement(
-      "yeelight-cube-gradient-card-editor"
-    );
+    return document.createElement("yeelight-cube-gradient-card-editor");
   }
 
   _valueChanged(ev) {
@@ -143,7 +145,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
       this.hass,
       this._config.target_entities || [],
       handleEntityChange,
-      message
+      message,
     );
   }
 
@@ -245,7 +247,9 @@ class YeelightCubeGradientCardEditor extends LitElement {
           user-select: none;
         }
         .editor-card-content {
-          transition: max-height 0.3s, opacity 0.3s;
+          transition:
+            max-height 0.3s,
+            opacity 0.3s;
           overflow: hidden;
         }
         .editor-card-collapsed .editor-card-content {
@@ -538,7 +542,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
                     color_mode_style: value,
                   };
                   this._fireConfigChanged();
-                })
+                }),
               )}
             </div>
             <div class="form-row">
@@ -555,7 +559,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
                     button_text_color: value,
                   };
                   this._fireConfigChanged();
-                })
+                }),
               )}
             </div>
             <div class="form-row">
@@ -575,8 +579,8 @@ class YeelightCubeGradientCardEditor extends LitElement {
                       panel_toggle_style: value,
                     };
                     this._fireConfigChanged();
-                  }
-                )
+                  },
+                ),
               )}
             </div>
           </div>
@@ -692,8 +696,8 @@ class YeelightCubeGradientCardEditor extends LitElement {
                           rotary_unified_style: value,
                         };
                         this._fireConfigChanged();
-                      }
-                    )
+                      },
+                    ),
                   )}
                 </div>
                 <div class="button-group-second-row">
@@ -720,8 +724,8 @@ class YeelightCubeGradientCardEditor extends LitElement {
                           rotary_unified_style: value,
                         };
                         this._fireConfigChanged();
-                      }
-                    )
+                      },
+                    ),
                   )}
                 </div>
               </div>
@@ -779,7 +783,10 @@ class YeelightCubeGradientCardEditor extends LitElement {
                     id="edit_gradient_modes"
                     .checked="${this._config.edit_gradient_modes ?? false}"
                     @change="${(e) => {
-                      this._config = { ...this._config, edit_gradient_modes: e.target.checked };
+                      this._config = {
+                        ...this._config,
+                        edit_gradient_modes: e.target.checked,
+                      };
                       this._fireConfigChanged();
                     }}"
                   />
@@ -787,9 +794,12 @@ class YeelightCubeGradientCardEditor extends LitElement {
                 </label>
               </div>
             </div>
-            <div style="font-size:0.85em;color:#666;margin-top:2px;margin-bottom:8px;">
-              Enable mode editing: show/hide toggles appear on each gradient preview.
-              Toggle visibility by clicking the eye icon (👁) on each mode.
+            <div
+              style="font-size:0.85em;color:#666;margin-top:2px;margin-bottom:8px;"
+            >
+              Enable mode editing: show/hide toggles appear on each gradient
+              preview. Toggle visibility by clicking the eye icon (👁) on each
+              mode.
             </div>
 
             <div class="config-row">
@@ -823,27 +833,29 @@ class YeelightCubeGradientCardEditor extends LitElement {
                           gallery_background_color: value,
                         };
                         this._fireConfigChanged();
-                      }
-                    )
+                      },
+                    ),
                   )}
                 </div>
               </div>
             </div>
 
-            ${(cfg.gallery_background_color || "#000000") !== "#000000" ? html`
-            <div class="toggle-row">
-              <label class="toggle-label">Ignore Black Pixels</label>
-              <label class="toggle-switch">
-                <input
-                  id="gallery_ignore_black_pixels"
-                  type="checkbox"
-                  .checked="${cfg.gallery_ignore_black_pixels === true}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            ` : ''}
+            ${(cfg.gallery_background_color || "#000000") !== "#000000"
+              ? html`
+                  <div class="toggle-row">
+                    <label class="toggle-label">Ignore Black Pixels</label>
+                    <label class="toggle-switch">
+                      <input
+                        id="gallery_ignore_black_pixels"
+                        type="checkbox"
+                        .checked="${cfg.gallery_ignore_black_pixels === true}"
+                        @change="${this._valueChanged}"
+                      />
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                `
+              : ""}
 
             <div class="config-row">
               <label class="config-label">Gallery Pixel Style</label>
@@ -876,8 +888,8 @@ class YeelightCubeGradientCardEditor extends LitElement {
                           gallery_pixel_style: value,
                         };
                         this._fireConfigChanged();
-                      }
-                    )
+                      },
+                    ),
                   )}
                 </div>
               </div>
@@ -951,7 +963,11 @@ class YeelightCubeGradientCardEditor extends LitElement {
                         title: "iOS-style rotating picker",
                       },
                     ],
-                    ({"inline": "list", "grid": "list", "gallery": "list"}[cfg.preview_display_mode] || cfg.preview_display_mode) || "list",
+                    { inline: "list", grid: "list", gallery: "list" }[
+                      cfg.preview_display_mode
+                    ] ||
+                      cfg.preview_display_mode ||
+                      "list",
                     createButtonGroupChangeHandler(
                       "preview_display_mode",
                       (value) => {
@@ -960,8 +976,8 @@ class YeelightCubeGradientCardEditor extends LitElement {
                           preview_display_mode: value,
                         };
                         this._fireConfigChanged();
-                      }
-                    )
+                      },
+                    ),
                   )}
                 </div>
               </div>
@@ -1014,8 +1030,8 @@ class YeelightCubeGradientCardEditor extends LitElement {
                               wheel_nav_position: value,
                             };
                             this._fireConfigChanged();
-                          }
-                        )
+                          },
+                        ),
                       )}
                     </div>
                   </div>
@@ -1055,8 +1071,6 @@ class YeelightCubeGradientCardEditor extends LitElement {
                 <span class="toggle-slider"></span>
               </label>
             </div>
-
-
           </div>
         </div>
       </div>
@@ -1067,6 +1081,6 @@ class YeelightCubeGradientCardEditor extends LitElement {
 if (!customElements.get("yeelight-cube-gradient-card-editor")) {
   customElements.define(
     "yeelight-cube-gradient-card-editor",
-    YeelightCubeGradientCardEditor
+    YeelightCubeGradientCardEditor,
   );
 }

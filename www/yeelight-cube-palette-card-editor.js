@@ -74,7 +74,9 @@ class YeelightCubePaletteCardEditor extends LitElement {
           user-select: none;
         }
         .editor-card-content {
-          transition: max-height 0.3s, opacity 0.3s;
+          transition:
+            max-height 0.3s,
+            opacity 0.3s;
           overflow: hidden;
         }
         .editor-card-collapsed .editor-card-content {
@@ -262,7 +264,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
       return html`<div style="padding: 20px; color: #666;">Loading...</div>`;
     const config = this.config || {};
     const sensors = Object.keys(this._hass.states || {}).filter((eid) =>
-      eid.startsWith("sensor.")
+      eid.startsWith("sensor."),
     );
 
     const chevronIcon = (folded) => {
@@ -310,7 +312,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
             ${this._renderSwitch(
               "Show Card Background",
               "show_card_background",
-              config.show_card_background !== false
+              config.show_card_background !== false,
             )}
           </div>
         </div>
@@ -330,17 +332,17 @@ class YeelightCubePaletteCardEditor extends LitElement {
             ${this._renderSwitch(
               "Show Palette Title",
               "show_palette_title",
-              config.show_palette_title !== false
+              config.show_palette_title !== false,
             )}
             ${this._renderSwitch(
               "Show Color Count",
               "show_color_count",
-              config.show_color_count !== false
+              config.show_color_count !== false,
             )}
             ${this._renderSwitch(
               "Allow Title Edit",
               "allow_title_edit",
-              config.allow_title_edit === true
+              config.allow_title_edit === true,
             )}
             ${this._renderButtonGroup(
               "Swatch Style",
@@ -352,7 +354,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
                 { value: "gradient", label: "Gradient Bar" },
                 { value: "gradient-bg", label: "Gradient Background" },
                 { value: "stripes", label: "Color Stripes" },
-              ]
+              ],
             )}
             ${this._renderButtonGroup(
               "Palette List Display Mode",
@@ -363,7 +365,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
                 { value: "gallery", label: "Gallery" },
                 { value: "carousel", label: "Carousel" },
                 { value: "album", label: "Album" },
-              ]
+              ],
             )}
             ${
               // Gallery-specific settings
@@ -374,9 +376,9 @@ class YeelightCubePaletteCardEditor extends LitElement {
                       ${this._renderSwitch(
                         "Rounded Cards",
                         "gallery_rounded_cards",
-                        config.gallery_rounded_cards !== false
+                        config.gallery_rounded_cards !== false,
                       )}
-                    `
+                    `,
                   )
                 : ""
             }
@@ -392,13 +394,13 @@ class YeelightCubePaletteCardEditor extends LitElement {
                 { value: "red", label: "Red" },
                 { value: "black", label: "Black" },
                 { value: "trash", label: "Trash" },
-              ]
+              ],
             )}
             ${config.remove_button_style !== "none"
               ? this._renderSwitch(
                   "Remove Button Always Visible",
                   "remove_button_always_visible",
-                  config.remove_button_always_visible !== false
+                  config.remove_button_always_visible !== false,
                 )
               : ""}
 
@@ -443,21 +445,21 @@ class YeelightCubePaletteCardEditor extends LitElement {
                           (value) => {
                             this.config.palette_carousel_button_shape = value;
                             this._fireConfigChanged();
-                          }
-                        )
+                          },
+                        ),
                       )}
                     </div>
                     ${this._renderSwitch(
                       "Wrap Navigation (Infinite Loop)",
                       "palette_carousel_wrap_navigation",
-                      config.palette_carousel_wrap_navigation === true
+                      config.palette_carousel_wrap_navigation === true,
                     )}
                     ${this._renderSwitch(
                       "Show Indicators Outside Card",
                       "palette_carousel_indicators_outside",
-                      config.palette_carousel_indicators_outside === true
+                      config.palette_carousel_indicators_outside === true,
                     )}
-                  `
+                  `,
                 )
               : ""}
 
@@ -469,12 +471,12 @@ class YeelightCubePaletteCardEditor extends LitElement {
                     ${this._renderSwitch(
                       "3D Effect (Perspective)",
                       "album_3d_effect",
-                      config.album_3d_effect !== false
+                      config.album_3d_effect !== false,
                     )}
                     ${this._renderSwitch(
                       "Rounded Cards",
                       "album_card_rounded",
-                      config.album_card_rounded !== false
+                      config.album_card_rounded !== false,
                     )}
                     ${this._renderButtonGroup(
                       "Delete Button Position",
@@ -484,18 +486,18 @@ class YeelightCubePaletteCardEditor extends LitElement {
                         { value: "outside", label: "Outside" },
                         { value: "inside", label: "Inside" },
                         { value: "square", label: "Square" },
-                      ]
+                      ],
                     )}
-                  `
+                  `,
                 )
               : config.display_mode === "compact"
-              ? renderModeSettingsSection(
-                  "Compact Mode Settings",
-                  renderModeInfoMessage(
-                    "No additional compact mode settings available."
+                ? renderModeSettingsSection(
+                    "Compact Mode Settings",
+                    renderModeInfoMessage(
+                      "No additional compact mode settings available.",
+                    ),
                   )
-                )
-              : ""}
+                : ""}
           </div>
         </div>
 
@@ -515,12 +517,12 @@ class YeelightCubePaletteCardEditor extends LitElement {
             ${this._renderSwitch(
               "Show Export Button",
               "show_export_button",
-              config.show_export_button !== false
+              config.show_export_button !== false,
             )}
             ${this._renderSwitch(
               "Show Import Button",
               "show_import_button",
-              config.show_import_button !== false
+              config.show_import_button !== false,
             )}
             ${this._renderButtonGroup(
               "Button Style",
@@ -533,7 +535,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
                 { value: "gradient", label: "Gradient" },
                 { value: "icon", label: "Icon" },
                 { value: "pill", label: "Pill" },
-              ]
+              ],
             )}
             ${(config.buttons_style || "modern") !== "icon"
               ? this._renderButtonGroup(
@@ -544,7 +546,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
                     { value: "icon", label: "Icon" },
                     { value: "text", label: "Text" },
                     { value: "icon_text", label: "Icon + Text" },
-                  ]
+                  ],
                 )
               : html`
                   <div class="form-row" style="opacity: 0.5;">
@@ -559,8 +561,6 @@ class YeelightCubePaletteCardEditor extends LitElement {
       </div>
     `;
   }
-
-
 
   _onTitleInput(e) {
     this.localTitle = e.target.value;
@@ -601,7 +601,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
               >
                 ${option.label}
               </button>
-            `
+            `,
           )}
         </div>
       </div>
@@ -658,8 +658,8 @@ class YeelightCubePaletteCardEditor extends LitElement {
                   No Yeelight Cube Lite entities found
                 </div>
                 <div style="font-size: 0.85em; color: #999;">
-                  Make sure you have Yeelight Cube Lite devices configured in this
-                  integration
+                  Make sure you have Yeelight Cube Lite devices configured in
+                  this integration
                 </div>
               </div>`
             : entitiesToShow.map((entityId) => {
@@ -687,7 +687,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
                         e.stopPropagation();
                         this._onEntitySelectionChange(
                           entityId,
-                          e.target.checked
+                          e.target.checked,
                         );
                       }}"
                       style="margin-right: 12px; transform: scale(1.1);"
@@ -743,7 +743,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
     } else {
       // Remove entity
       this.config.target_entities = currentEntities.filter(
-        (id) => id !== entityId
+        (id) => id !== entityId,
       );
     }
 
@@ -785,12 +785,12 @@ class YeelightCubePaletteCardEditor extends LitElement {
         detail: { config: this.config },
         bubbles: true,
         composed: true,
-      })
+      }),
     );
   }
 }
 
 customElements.define(
   "yeelight-cube-palette-card-editor",
-  YeelightCubePaletteCardEditor
+  YeelightCubePaletteCardEditor,
 );

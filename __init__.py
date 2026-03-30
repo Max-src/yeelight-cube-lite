@@ -89,10 +89,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.debug("Yeelight Cube Lite: Registered frontend at %s", FRONTEND_URL_BASE)
             
             # Auto-register Lovelace resources so cards work without manual config
+            # Append version query string to bust browser/HA cache on updates
+            try:
+                import json as _json
+                _manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
+                with open(_manifest_path, encoding="utf-8") as _mf:
+                    _version = _json.load(_mf).get("version", "0")
+            except Exception:
+                _version = "0"
             try:
                 from homeassistant.components.frontend import add_extra_js_url  # type: ignore
                 for card_file in FRONTEND_CARD_FILES:
-                    card_url = f"{FRONTEND_URL_BASE}/{card_file}"
+                    card_url = f"{FRONTEND_URL_BASE}/{card_file}?v={_version}"
                     add_extra_js_url(hass, card_url)
                     _LOGGER.debug("Yeelight Cube Lite: Registered card resource %s", card_url)
             except ImportError:

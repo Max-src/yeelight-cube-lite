@@ -59,7 +59,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
 
   static getConfigElement() {
     return document.createElement(
-      "yeelight-cube-color-list-editor-card-editor"
+      "yeelight-cube-color-list-editor-card-editor",
     );
   }
 
@@ -95,8 +95,6 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
     }
     this._fireConfigChanged();
   };
-
-
 
   _fireConfigChanged() {
     const config = {
@@ -148,7 +146,9 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
           user-select: none;
         }
         .editor-card-content {
-          transition: max-height 0.3s, opacity 0.3s;
+          transition:
+            max-height 0.3s,
+            opacity 0.3s;
           overflow: hidden;
         }
         .editor-card-collapsed .editor-card-content {
@@ -282,7 +282,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                 this.hass,
                 cfg.target_entities || (cfg.entity ? [cfg.entity] : []),
                 this._entityChanged,
-                "multiple"
+                "multiple",
               )}
             </div>
 
@@ -392,8 +392,8 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                       remove_button_style: value,
                     };
                     this._fireConfigChanged();
-                  }
-                )
+                  },
+                ),
               )}
             </div>
             <div class="toggle-row">
@@ -425,8 +425,8 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                       color_info_display: value,
                     };
                     this._fireConfigChanged();
-                  }
-                )
+                  },
+                ),
               )}
             </div>
             <div class="form-row">
@@ -448,7 +448,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                     list_layout: value,
                   };
                   this._fireConfigChanged();
-                })
+                }),
               )}
             </div>
             ${[
@@ -472,7 +472,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                     };
                     this._fireConfigChanged();
                   },
-                  { min: 30, max: 100, step: 5 }
+                  { min: 30, max: 100, step: 5 },
                 )
               : ""}
             ${cfg.list_layout === "cards" || cfg.list_layout === "spread"
@@ -514,8 +514,8 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                               card_button_position: value,
                             };
                             this._fireConfigChanged();
-                          }
-                        )
+                          },
+                        ),
                       )}
                     </div>
                   </div>
@@ -591,7 +591,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                     buttons_style: value,
                   };
                   this._fireConfigChanged();
-                })
+                }),
               )}
             </div>
             ${(cfg.buttons_style || "modern") !== "icon"
@@ -613,8 +613,8 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                             buttons_content_mode: value,
                           };
                           this._fireConfigChanged();
-                        }
-                      )
+                        },
+                      ),
                     )}
                   </div>
                 `
@@ -636,6 +636,6 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
 if (!customElements.get("yeelight-cube-color-list-editor-card-editor")) {
   customElements.define(
     "yeelight-cube-color-list-editor-card-editor",
-    YeelightCubeColorListEditorCardEditor
+    YeelightCubeColorListEditorCardEditor,
   );
 }

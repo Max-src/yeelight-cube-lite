@@ -122,7 +122,11 @@ class YeelightCubePaletteCard extends HTMLElement {
       Object.keys(hass?.states || {}).find(
         (e) => e.startsWith("sensor.") && e.includes("color_palettes"),
       ) || "";
-    return { type: "custom:yeelight-cube-palette-card", entity, palette_sensor };
+    return {
+      type: "custom:yeelight-cube-palette-card",
+      entity,
+      palette_sensor,
+    };
   }
 
   /**
