@@ -343,15 +343,15 @@ class YeelightCubePaletteCard extends HTMLElement {
           const endPage = Math.min(totalPages, startPage + maxDisplay);
           let pageButtons = "";
           for (let p = startPage; p < endPage; p++) {
-            pageButtons += `<button class="draw-btn save${p === this._currentPalettePage ? " active" : ""}" data-palette-page="${p}" title="Page ${p + 1}" style="min-width:29px;height:29px;">${p + 1}</button>`;
+            pageButtons += `<button class="draw-btn save${p === this._currentPalettePage ? " active" : ""}" data-palette-page="${p}" title="Page ${p + 1}" style="min-width:29px;height:29px;display:inline-flex;align-items:center;justify-content:center;padding:0;">${p + 1}</button>`;
           }
           paginationHtml = `
             <div class="palette-pagination-container">
-              <button class="draw-btn save${this._currentPalettePage === 0 ? " disabled" : ""}" data-palette-page-action="prev" title="Previous page"${this._currentPalettePage === 0 ? " disabled" : ""}>
+              <button class="draw-btn save${this._currentPalettePage === 0 ? " disabled" : ""}" data-palette-page-action="prev" title="Previous page"${this._currentPalettePage === 0 ? " disabled" : ""} style="min-width:29px;height:29px;display:inline-flex;align-items:center;justify-content:center;padding:0;">
                 <ha-icon icon="mdi:chevron-left"></ha-icon>
               </button>
               ${pageButtons}
-              <button class="draw-btn save${this._currentPalettePage >= totalPages - 1 ? " disabled" : ""}" data-palette-page-action="next" title="Next page"${this._currentPalettePage >= totalPages - 1 ? " disabled" : ""}>
+              <button class="draw-btn save${this._currentPalettePage >= totalPages - 1 ? " disabled" : ""}" data-palette-page-action="next" title="Next page"${this._currentPalettePage >= totalPages - 1 ? " disabled" : ""} style="min-width:29px;height:29px;display:inline-flex;align-items:center;justify-content:center;padding:0;">
                 <ha-icon icon="mdi:chevron-right"></ha-icon>
               </button>
             </div>
