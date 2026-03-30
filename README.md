@@ -94,29 +94,27 @@ The integration will connect to the lamp over your local network and automatical
 
 ## Lovelace Cards
 
-All cards are **auto-registered** when the integration loads — no manual resource configuration needed. Each card includes a **visual editor** for configuration.
+All cards are **auto-registered** when the integration loads — no manual resource configuration needed.
+
+Every card comes with a **visual configuration editor** — click the pencil icon in the dashboard editor to customize any card without writing YAML. Each section of a card (colors, tools, gallery, buttons, matrix preview, etc.) can be **shown, hidden, restyled, or reordered** directly from the editor. Most sections offer **multiple display styles and layout modes**, so you can tailor the look and density of every card to fit your dashboard.
 
 > After installing or updating, do a hard refresh (`Ctrl+F5`) in your browser if cards don't appear.
 
 ### Draw Card: `custom:yeelight-cube-draw-card`
 
-The main pixel art editor card.
+The main pixel art editor card. Every section is independently configurable.
 
 <!-- TODO: Add screenshot of draw card here -->
 
 **Features:**
 
-- **20×5 interactive matrix**: click or drag to paint pixels
-- **Drawing tools**: color picker, pencil, eyedropper, eraser, area fill, fill all, undo
-- **Tool bar customization**: reorder, show/hide individual tools via the card editor
-- **Palette section**: quick color selection with recent colors (up to 10)
-- **Pixel art gallery**: save drawings with custom names, load them back, delete unwanted ones
-- **Gallery view modes**: list, grid, compact (with drag-to-reorder), album (coverflow), carousel, gallery
-- **Import/Export**: export pixel art collections to JSON, import them back
-- **Apply to lamp**: send the current drawing to the physical lamp instantly
-- **Upload from image**: upload bitmap images and convert to the 20×5 matrix
+- **20×5 interactive matrix**: click or drag to paint pixels — configurable pixel gap, pixel style (round/square), background color (transparent/white/black), box shadow, and size
+- **Drawing tools**: color picker, pencil, eyedropper, eraser, area fill, fill all, undo — tools can be reordered, shown/hidden, with 6 button styles (modern, classic, outline, gradient, icon, pill) and content modes (icon, text, icon+text)
+- **Palette section**: quick color selection with recent colors, lamp palette, and image palette — 5 layout modes (side-by-side, stacked, tabs, dropdown, preview-hover), swatch shapes (round/square), and configurable palette display (row, grid, expandable)
+- **Pixel art gallery**: save, load, rename, reorder, import/export pixel art — 4 gallery view modes (gallery, list, carousel, album/coverflow), each with its own style settings (rounded cards, 3D album effect, carousel indicators, wrap navigation)
+- **Upload from image**: upload bitmap images and auto-convert to the 20×5 matrix
 - **Multi-entity support**: target multiple lamps simultaneously
-- **Customizable appearance**: pixel gap, background color, pixel style, box shadow
+- **Import/Export**: export full pixel art collections to JSON, import them back — button style customizable
 
 ### Gradient Card: `custom:yeelight-cube-gradient-card`
 
@@ -126,20 +124,11 @@ Control the lamp's gradient and color modes from a single card.
 
 **Features:**
 
-- **9 gradient/color modes:**
-  - Solid Color
-  - Letter Gradient
-  - Column Gradient
-  - Row Gradient
-  - Angle Gradient (with interactive angle slider)
-  - Radial Gradient
-  - Letter Angle Gradient
-  - Letter Vertical Gradient
-  - Text Color Sequence
+- **9 gradient/color modes**: Solid Color, Letter Gradient, Column Gradient, Row Gradient, Angle Gradient, Radial Gradient, Letter Angle Gradient, Letter Vertical Gradient, Text Color Sequence — modes can be reordered and individually shown/hidden
+- **Color mode selector**: 5 display styles (buttons, colorized buttons, dropdown, compact, pills)
 - **Two-color gradient control**: pick start and end colors per mode
-- **Angle slider**: real-time angle adjustment for angle-based gradients
-- **Mode visibility**: show/hide individual modes to declutter the card
-- **Mode reordering**: drag-and-drop to rearrange mode order
+- **Angle control**: real-time angle slider, number input, and rotary preview — 6 rotary styles (turning rectangle, arrow, star, wheel, rectangle, square), configurable size, and option to place in the header
+- **Gradient preview**: 3 display modes (list, compact, wheel/carousel) with configurable pixel style (square/rounded/circle), gap, background, and preview size
 - **Multi-entity support**: apply gradients to multiple lamps at once
 
 ### Lamp Preview Card: `custom:yeelight-cube-lamp-preview-card`
@@ -150,14 +139,11 @@ A live preview of the lamp's current state, with controls.
 
 **Features:**
 
-- **Live 20×5 matrix preview**: reflects the lamp's actual pixel colors in real time
-- **Brightness slider**: control lamp brightness with multiple slider styles (slider, bar, rotary)
-- **Brightness label**: display as text, icon, icon+text, or hidden
-- **Power toggle button**: turn the lamp on/off
-- **Force refresh button**: recover a stuck lamp via raw TCP (bypasses the persistent socket)
+- **Live 20×5 matrix preview**: reflects the lamp's actual pixel colors — configurable pixel style (round/square), gap, background, box shadow, and size
+- **Brightness slider**: 4 slider styles (slider, bar, rotary, capsule) — slider appearance (default/thick/thin), capsule theme (light/dark/transparent) with optional sun/moon icons, and label mode (text, icon, icon+text, hidden)
+- **Power toggle & force refresh buttons**: 6 button styles (modern, classic, outline, gradient, icon, pill) with content modes
+- **Color adjustments panel**: built-in color effect controls with 5 layout modes (compact, tabbed, grouped, radial, categories) — change indicators and configurable reset button visibility
 - **Black dot handling**: optionally hide or show black (off) pixels for a cleaner preview
-- **Customizable appearance**: pixel gap, background, pixel style (round/square), box shadow, size (percentage), alignment
-- **Button styles**: classic or modern appearance for toggle/refresh buttons
 
 ### Palette Card: `custom:yeelight-cube-palette-card`
 
@@ -167,11 +153,11 @@ Create, manage, and apply color palettes.
 
 **Features:**
 
-- **Visual palette display**: see all palette colors as swatches (round or square style)
-- **Create & edit palettes**: add colors, rename, reorder, delete
+- **Visual palette display**: 5 swatch styles (round, square, gradient bar, gradient background, color stripes)
+- **4 display modes**: list, gallery (with rounded card option), carousel (with configurable navigation), album/coverflow (with 3D effect)
+- **Create & edit palettes**: add colors, rename, reorder, delete — configurable remove button style (default, red, black, trash, hidden)
 - **Apply palette**: load a palette's colors onto the lamp
-- **Palette title and color count**: configurable display options
-- **Background style**: toggle card background visibility
+- **Import/Export**: save and load palette collections — button style customizable
 - **Multi-entity support**: apply palettes to multiple lamps
 
 ### Color List Editor Card: `custom:yeelight-cube-color-list-editor-card`
@@ -182,15 +168,16 @@ Edit color sequences used by the "Text Color Sequence" and "Panel Color Sequence
 
 **Features:**
 
-- **Visual color list**: add, remove, reorder colors in a sequence
-- **Drag-and-drop reordering**: rearrange colors by dragging
-- **Rotary color picker**: precise color selection
-- **Export/Import**: save and load color sequences
-- **Compact mode**: space-efficient layout
+- **Visual color list**: add, remove, reorder colors in a sequence with drag-and-drop
+- **7 layout modes**: compact, chips, tiles, rows, grid, cards, spread — each with its own density and look, configurable card size
+- **Color picker**: rotary color picker with optional hex input and color name display
+- **Configurable remove buttons**: 5 styles (default, red, black, trash, hidden), and for cards/spread layouts: button position (outside, inside, square)
+- **Save & shuffle**: save as a named palette, randomize colors — action button styles customizable
+- **Multi-entity support**: apply color sequences to multiple lamps
 
 ### Angle Gradient Card: `custom:yeelight-cube-angle-gradient-card`
 
-Dedicated angle control for gradient modes.
+Dedicated angle control for angle-based gradient modes. Provides a rotary canvas with drag interaction and a number input. Configure via YAML.
 
 ---
 
