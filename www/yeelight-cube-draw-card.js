@@ -3377,6 +3377,6 @@ customElements.define("yeelight-cube-draw-card", YeelightCubeDrawCard);
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "yeelight-cube-draw-card",
-  name: "Yeelight Cube Lite Draw Card",
+  name: "Yeelight Draw Card",
   description: "Draw pixel art and control your Yeelight Cube Lite matrix display.",
 });

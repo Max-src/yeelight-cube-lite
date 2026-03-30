@@ -14,21 +14,20 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**. T
 ### Light Integration
 
 - **Full 20×5 RGB matrix control**
+- **Brightness control**
 - **Gradient colors**
 - **Transition effects**
 - **Color effects**
 - **Scrolling text**
-- **Brightness control**
 - **Multi-lamp support**
 
-### Custom Lovelace Cards
+### Customizable Lovelace Cards
 
 - **Draw Card**: pixel art editor with pencil, eraser, fill, eyedropper, undo; gallery to save/load/rename/reorder/import/export designs
 - **Gradient Card**: pick and preview all gradient & color modes with a scrollable mode wheel
-- **Lamp Preview Card**: live matrix preview with brightness slider, power toggle, and force refresh
-- **Palette Card**: create, edit, reorder, and apply color palettes
-- **Color List Editor Card**: edit color sequences for text and panel modes with drag-and-drop
-- **Angle Gradient Card**: rotary dial for angle-based gradient control
+- **Preview Card**: live matrix preview with brightness slider, power toggle, and force refresh
+- **Palettes Card**: create, edit, reorder, and apply color palettes
+- **Colors Card**: edit color sequences for text and panel modes with drag-and-drop
 
 ---
 
@@ -100,7 +99,7 @@ Every card comes with a **visual configuration editor** — click the pencil ico
 
 > After installing or updating, do a hard refresh (`Ctrl+F5`) in your browser if cards don't appear.
 
-### Draw Card: `custom:yeelight-cube-draw-card`
+### Yeelight Draw Card: `custom:yeelight-cube-draw-card`
 
 The main pixel art editor card. Every section is independently configurable.
 
@@ -116,7 +115,7 @@ The main pixel art editor card. Every section is independently configurable.
 - **Multi-entity support**: target multiple lamps simultaneously
 - **Import/Export**: export full pixel art collections to JSON, import them back — button style customizable
 
-### Gradient Card: `custom:yeelight-cube-gradient-card`
+### Yeelight Gradient Card: `custom:yeelight-cube-gradient-card`
 
 Control the lamp's gradient and color modes from a single card.
 
@@ -131,7 +130,7 @@ Control the lamp's gradient and color modes from a single card.
 - **Gradient preview**: 3 display modes (list, compact, wheel/carousel) with configurable pixel style (square/rounded/circle), gap, background, and preview size
 - **Multi-entity support**: apply gradients to multiple lamps at once
 
-### Lamp Preview Card: `custom:yeelight-cube-lamp-preview-card`
+### Yeelight Preview Card: `custom:yeelight-cube-lamp-preview-card`
 
 A live preview of the lamp's current state, with controls.
 
@@ -145,7 +144,7 @@ A live preview of the lamp's current state, with controls.
 - **Color adjustments panel**: built-in color effect controls with 5 layout modes (compact, tabbed, grouped, radial, categories) — change indicators and configurable reset button visibility
 - **Black dot handling**: optionally hide or show black (off) pixels for a cleaner preview
 
-### Palette Card: `custom:yeelight-cube-palette-card`
+### Yeelight Palettes Card: `custom:yeelight-cube-palette-card`
 
 Create, manage, and apply color palettes.
 
@@ -160,7 +159,7 @@ Create, manage, and apply color palettes.
 - **Import/Export**: save and load palette collections — button style customizable
 - **Multi-entity support**: apply palettes to multiple lamps
 
-### Color List Editor Card: `custom:yeelight-cube-color-list-editor-card`
+### Yeelight Colors Card: `custom:yeelight-cube-color-list-editor-card`
 
 Edit color sequences used by the "Text Color Sequence" and "Panel Color Sequence" display modes.
 
@@ -174,10 +173,6 @@ Edit color sequences used by the "Text Color Sequence" and "Panel Color Sequence
 - **Configurable remove buttons**: 5 styles (default, red, black, trash, hidden), and for cards/spread layouts: button position (outside, inside, square)
 - **Save & shuffle**: save as a named palette, randomize colors — action button styles customizable
 - **Multi-entity support**: apply color sequences to multiple lamps
-
-### Angle Gradient Card: `custom:yeelight-cube-angle-gradient-card`
-
-Dedicated angle control for angle-based gradient modes. Provides a rotary canvas with drag interaction and a number input. Configure via YAML.
 
 ---
 
