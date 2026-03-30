@@ -83,11 +83,19 @@ class YeelightCubeDrawCard extends LitElement {
     return document.createElement("yeelight-cube-draw-card-editor");
   }
 
-  static getStubConfig() {
+  static getStubConfig(hass) {
+    const entity = Object.keys(hass?.states || {}).find(
+      (e) => e.startsWith("light.yeelight_cube"),
+    ) || "";
+    const sensor = entity
+      ? Object.keys(hass.states).find(
+          (e) => e.startsWith("sensor.") && e.includes("pixel_art"),
+        ) || ""
+      : "";
     return {
       type: "custom:yeelight-cube-draw-card",
-      entity: "",
-      pixelart_sensor: "",
+      entity,
+      pixelart_sensor: sensor,
     };
   }
 
@@ -3380,4 +3388,5 @@ window.customCards.push({
   name: "Yeelight Draw Card",
   description:
     "Draw pixel art and control your Yeelight Cube Lite matrix display.",
+  preview: true,
 });

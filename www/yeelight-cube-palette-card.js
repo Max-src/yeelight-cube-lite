@@ -100,8 +100,11 @@ class YeelightCubePaletteCard extends HTMLElement {
     }
     return document.createElement("yeelight-cube-palette-card-editor");
   }
-  static getStubConfig() {
-    return { type: "custom:yeelight-cube-palette-card" };
+  static getStubConfig(hass) {
+    const entity = Object.keys(hass?.states || {}).find(
+      (e) => e.startsWith("light.yeelight_cube"),
+    ) || "";
+    return { type: "custom:yeelight-cube-palette-card", entity };
   }
 
   /**
@@ -1898,5 +1901,6 @@ if (typeof window !== "undefined") {
     type: "yeelight-cube-palette-card",
     name: "Yeelight Palettes Card",
     description: "View and manage palettes for the Yeelight Cube Lite.",
+    preview: true,
   });
 }

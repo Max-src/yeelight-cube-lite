@@ -379,8 +379,11 @@ class YeelightCubeGradientCard extends HTMLElement {
     }
     return document.createElement("yeelight-cube-gradient-card-editor");
   }
-  static getStubConfig() {
-    return { type: "custom:yeelight-cube-gradient-card" };
+  static getStubConfig(hass) {
+    const entity = Object.keys(hass?.states || {}).find(
+      (e) => e.startsWith("light.yeelight_cube"),
+    ) || "";
+    return { type: "custom:yeelight-cube-gradient-card", entity };
   }
 
   set hass(hass) {
@@ -4307,5 +4310,6 @@ if (typeof window !== "undefined") {
     name: "Yeelight Gradient Card",
     description:
       "Control gradient settings for Yeelight Cube Lite matrix display",
+    preview: true,
   });
 }

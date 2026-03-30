@@ -64,8 +64,11 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       "yeelight-cube-color-list-editor-card-editor",
     );
   }
-  static getStubConfig() {
-    return { type: "custom:yeelight-cube-color-list-editor-card" };
+  static getStubConfig(hass) {
+    const entity = Object.keys(hass?.states || {}).find(
+      (e) => e.startsWith("light.yeelight_cube"),
+    ) || "";
+    return { type: "custom:yeelight-cube-color-list-editor-card", entity };
   }
 
   set hass(hass) {
@@ -5183,5 +5186,6 @@ if (typeof window !== "undefined") {
     type: "yeelight-cube-color-list-editor-card",
     name: "Yeelight Colors Card",
     description: "Edit the list of text colors for the Yeelight Cube Lite.",
+    preview: true,
   });
 }

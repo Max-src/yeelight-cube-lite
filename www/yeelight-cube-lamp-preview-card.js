@@ -19,6 +19,13 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     }
     return document.createElement("yeelight-cube-lamp-preview-card-editor");
   }
+  static getStubConfig(hass) {
+    const entity = Object.keys(hass?.states || {}).find(
+      (e) => e.startsWith("light.yeelight_cube"),
+    ) || "";
+    return { type: "custom:yeelight-cube-lamp-preview-card", entity };
+  }
+
   constructor() {
     super();
     this.config = {};
@@ -5289,4 +5296,5 @@ window.customCards.push({
   type: "yeelight-cube-lamp-preview-card",
   name: "Yeelight Preview Card",
   description: "Preview the Yeelight Cube Lite lamp matrix and settings.",
+  preview: true,
 });
