@@ -85,8 +85,10 @@ class YeelightCubeDrawCard extends LitElement {
 
   static getStubConfig(hass) {
     const entity =
-      Object.keys(hass?.states || {}).find((e) =>
-        e.startsWith("light.yeelight_cube") || e.startsWith("light.cubelite_"),
+      Object.keys(hass?.states || {}).find(
+        (e) =>
+          e.startsWith("light.yeelight_cube") ||
+          e.startsWith("light.cubelite_"),
       ) || "";
     const sensor = entity
       ? Object.keys(hass.states).find(

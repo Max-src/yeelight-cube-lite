@@ -35,6 +35,16 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
   setConfig(config) {
     this.config = config;
+
+    // Auto-resolve palette_sensor if not explicitly configured
+    if (!this.config.palette_sensor && this._hass) {
+      const autoSensor = Object.keys(this._hass.states || {}).find(
+        (e) => e.startsWith("sensor.") && e.includes("color_palettes"),
+      );
+      if (autoSensor) {
+        this.config = { ...this.config, palette_sensor: autoSensor };
+      }
+    }
     if (!this.shadowRoot) {
       this.attachShadow({ mode: "open" });
     }
@@ -66,15 +76,32 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
   }
   static getStubConfig(hass) {
     const entity =
-      Object.keys(hass?.states || {}).find((e) =>
-        e.startsWith("light.yeelight_cube") || e.startsWith("light.cubelite_"),
+      Object.keys(hass?.states || {}).find(
+        (e) =>
+          e.startsWith("light.yeelight_cube") ||
+          e.startsWith("light.cubelite_"),
       ) || "";
-    return { type: "custom:yeelight-cube-color-list-editor-card", entity };
+    const palette_sensor =
+      Object.keys(hass?.states || {}).find(
+        (e) =>
+          e.startsWith("sensor.") && e.includes("color_palettes"),
+      ) || "";
+    return { type: "custom:yeelight-cube-color-list-editor-card", entity, palette_sensor };
   }
 
   set hass(hass) {
     const oldHass = this._hass;
     this._hass = hass;
+
+    // Auto-resolve palette_sensor on first hass set (setConfig may run before hass is available)
+    if (this.config && !this.config.palette_sensor && hass) {
+      const autoSensor = Object.keys(hass.states || {}).find(
+        (e) => e.startsWith("sensor.") && e.includes("color_palettes"),
+      );
+      if (autoSensor) {
+        this.config = { ...this.config, palette_sensor: autoSensor };
+      }
+    }
 
     // If this is the first time hass is set, flush any pending service calls
     if (!oldHass && hass && this._pendingServiceCalls.length > 0) {
