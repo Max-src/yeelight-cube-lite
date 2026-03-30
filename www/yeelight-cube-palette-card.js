@@ -321,29 +321,37 @@ class YeelightCubePaletteCard extends HTMLElement {
     } else {
       // Pagination: slice palettes for list/gallery modes
       const itemsPerPage = parseInt(this.config.items_per_page) || 0;
-      const usePagination = itemsPerPage > 0 && (displayMode === "list" || displayMode === "gallery");
+      const usePagination =
+        itemsPerPage > 0 &&
+        (displayMode === "list" || displayMode === "gallery");
       let displayPalettes = palettes;
       let paginationHtml = "";
       if (usePagination) {
         const totalPages = Math.ceil(palettes.length / itemsPerPage);
-        this._currentPalettePage = Math.max(0, Math.min(this._currentPalettePage, totalPages - 1));
+        this._currentPalettePage = Math.max(
+          0,
+          Math.min(this._currentPalettePage, totalPages - 1),
+        );
         const startIdx = this._currentPalettePage * itemsPerPage;
         displayPalettes = palettes.slice(startIdx, startIdx + itemsPerPage);
         if (totalPages > 1) {
           const maxDisplay = 5;
-          const startPage = Math.max(0, this._currentPalettePage - Math.floor(maxDisplay / 2));
+          const startPage = Math.max(
+            0,
+            this._currentPalettePage - Math.floor(maxDisplay / 2),
+          );
           const endPage = Math.min(totalPages, startPage + maxDisplay);
           let pageButtons = "";
           for (let p = startPage; p < endPage; p++) {
-            pageButtons += `<button class="pagination-btn${p === this._currentPalettePage ? " active" : ""}" data-palette-page="${p}" title="Page ${p + 1}" style="min-width:29px;height:29px;">${p + 1}</button>`;
+            pageButtons += `<button class="draw-btn save${p === this._currentPalettePage ? " active" : ""}" data-palette-page="${p}" title="Page ${p + 1}" style="min-width:29px;height:29px;">${p + 1}</button>`;
           }
           paginationHtml = `
             <div class="palette-pagination-container">
-              <button class="pagination-btn nav" data-palette-page-action="prev" title="Previous page"${this._currentPalettePage === 0 ? " disabled" : ""}>
+              <button class="draw-btn save${this._currentPalettePage === 0 ? " disabled" : ""}" data-palette-page-action="prev" title="Previous page"${this._currentPalettePage === 0 ? " disabled" : ""}>
                 <ha-icon icon="mdi:chevron-left"></ha-icon>
               </button>
               ${pageButtons}
-              <button class="pagination-btn nav" data-palette-page-action="next" title="Next page"${this._currentPalettePage >= totalPages - 1 ? " disabled" : ""}>
+              <button class="draw-btn save${this._currentPalettePage >= totalPages - 1 ? " disabled" : ""}" data-palette-page-action="next" title="Next page"${this._currentPalettePage >= totalPages - 1 ? " disabled" : ""}>
                 <ha-icon icon="mdi:chevron-right"></ha-icon>
               </button>
             </div>
@@ -357,7 +365,9 @@ class YeelightCubePaletteCard extends HTMLElement {
         showColorCount,
         removeBtnClass,
         swatchStyle: this.config.swatch_style || "square",
-        globalOffset: usePagination ? this._currentPalettePage * itemsPerPage : 0,
+        globalOffset: usePagination
+          ? this._currentPalettePage * itemsPerPage
+          : 0,
       });
       contentHtml += paginationHtml;
     }
@@ -962,38 +972,58 @@ class YeelightCubePaletteCard extends HTMLElement {
           margin-top: 16px;
           gap: 8px;
           flex-wrap: wrap;
-        }
-        .pagination-btn {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          border: 1px solid var(--divider-color, #e0e0e0);
           border-radius: 8px;
-          background: var(--card-background-color, #fff);
-          color: var(--primary-text-color, #333);
+        }
+        .draw-btn {
+          background: #e6f7ff;
+          color: #0077cc;
+          border: none;
+          border-radius: 8px;
+          padding: 10px 0;
           cursor: pointer;
+          font-size: 1em;
+          font-weight: 500;
+          min-width: 120px;
+          transition: background 0.2s;
+          box-shadow: 0 1px 4px #0003;
+          text-align: center;
+        }
+        .draw-btn:hover {
+          background: #b3e6ff;
+        }
+        .draw-btn.save {
+          background: #e6f7ff;
+          color: #0077cc;
+          box-shadow: none;
+        }
+        .draw-btn.save:hover {
+          background: #b3e6ff;
+        }
+        .draw-btn:disabled,
+        .draw-btn.disabled {
+          background: var(--disabled-text-color, #bdbdbd) !important;
+          color: #ffffff !important;
+          cursor: not-allowed !important;
+          opacity: 0.6;
+        }
+        .draw-btn:disabled:hover,
+        .draw-btn.disabled:hover {
+          background: var(--disabled-text-color, #bdbdbd) !important;
+        }
+        .draw-btn.active {
+          background: #0077cc !important;
+          color: white !important;
+        }
+        .palette-pagination-container .draw-btn {
+          min-width: 40px;
+          padding: 8px 12px;
           font-size: 0.9em;
-          padding: 4px 8px;
-          transition: background 0.2s, color 0.2s, box-shadow 0.2s;
         }
-        .pagination-btn:hover:not([disabled]) {
-          background: var(--primary-color, #03a9f4);
-          color: #fff;
+        .palette-pagination-container .draw-btn.save {
+          min-width: 40px;
+          padding: 8px;
         }
-        .pagination-btn.active {
-          background: var(--primary-color, #03a9f4);
-          color: #fff;
-          font-weight: bold;
-          box-shadow: 0 2px 6px rgba(0,0,0,0.15);
-        }
-        .pagination-btn[disabled] {
-          opacity: 0.35;
-          cursor: default;
-        }
-        .pagination-btn.nav {
-          padding: 4px;
-        }
-        .pagination-btn ha-icon {
+        .palette-pagination-container .draw-btn ha-icon {
           width: 18px;
           height: 18px;
           display: flex;
@@ -1002,10 +1032,13 @@ class YeelightCubePaletteCard extends HTMLElement {
           .palette-pagination-container {
             gap: 4px;
           }
-          .pagination-btn {
-            padding: 4px 6px;
+          .palette-pagination-container .draw-btn {
+            padding: 6px 8px;
             font-size: 0.85em;
-            min-width: 28px;
+            min-width: 32px;
+          }
+          .palette-pagination-container .draw-btn.save {
+            padding: 6px;
           }
         }
         }
@@ -1280,14 +1313,19 @@ class YeelightCubePaletteCard extends HTMLElement {
     if (contentDiv) {
       contentDiv.addEventListener("click", (e) => {
         // Handle pagination navigation
-        const paginationBtn = e.target.closest("[data-palette-page], [data-palette-page-action]");
+        const paginationBtn = e.target.closest(
+          "[data-palette-page], [data-palette-page-action]",
+        );
         if (paginationBtn) {
           const directPage = paginationBtn.dataset.palettePage;
           const action = paginationBtn.dataset.palettePageAction;
           if (directPage !== undefined) {
             this._currentPalettePage = parseInt(directPage);
           } else if (action === "prev") {
-            this._currentPalettePage = Math.max(0, this._currentPalettePage - 1);
+            this._currentPalettePage = Math.max(
+              0,
+              this._currentPalettePage - 1,
+            );
           } else if (action === "next") {
             this._currentPalettePage += 1;
           }
