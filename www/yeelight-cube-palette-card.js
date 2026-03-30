@@ -22,6 +22,11 @@ import {
 import { gridModeStyles, renderGridMode } from "./grid-mode-utils.js";
 import { galleryModeStyles, renderGalleryMode } from "./gallery-mode-utils.js";
 import { callServiceOnTargetEntities as callServiceSequentially } from "./service-call-utils.js?v=2";
+import {
+  paginationStyles,
+  renderPagination,
+  attachPaginationListeners,
+} from "./pagination-utils.js";
 
 class YeelightCubePaletteCard extends HTMLElement {
   constructor() {
@@ -327,36 +332,14 @@ class YeelightCubePaletteCard extends HTMLElement {
       let displayPalettes = palettes;
       let paginationHtml = "";
       if (usePagination) {
-        const totalPages = Math.ceil(palettes.length / itemsPerPage);
-        this._currentPalettePage = Math.max(
-          0,
-          Math.min(this._currentPalettePage, totalPages - 1),
-        );
-        const startIdx = this._currentPalettePage * itemsPerPage;
-        displayPalettes = palettes.slice(startIdx, startIdx + itemsPerPage);
-        if (totalPages > 1) {
-          const maxDisplay = 5;
-          const startPage = Math.max(
-            0,
-            this._currentPalettePage - Math.floor(maxDisplay / 2),
-          );
-          const endPage = Math.min(totalPages, startPage + maxDisplay);
-          let pageButtons = "";
-          for (let p = startPage; p < endPage; p++) {
-            pageButtons += `<button class="draw-btn save${p === this._currentPalettePage ? " active" : ""}" data-palette-page="${p}" title="Page ${p + 1}" style="min-width:29px;height:29px;display:inline-flex;align-items:center;justify-content:center;padding:0;">${p + 1}</button>`;
-          }
-          paginationHtml = `
-            <div class="palette-pagination-container">
-              <button class="draw-btn save${this._currentPalettePage === 0 ? " disabled" : ""}" data-palette-page-action="prev" title="Previous page"${this._currentPalettePage === 0 ? " disabled" : ""} style="min-width:29px;height:29px;display:inline-flex;align-items:center;justify-content:center;padding:0;">
-                <ha-icon icon="mdi:chevron-left"></ha-icon>
-              </button>
-              ${pageButtons}
-              <button class="draw-btn save${this._currentPalettePage >= totalPages - 1 ? " disabled" : ""}" data-palette-page-action="next" title="Next page"${this._currentPalettePage >= totalPages - 1 ? " disabled" : ""} style="min-width:29px;height:29px;display:inline-flex;align-items:center;justify-content:center;padding:0;">
-                <ha-icon icon="mdi:chevron-right"></ha-icon>
-              </button>
-            </div>
-          `;
-        }
+        const result = renderPagination({
+          items: palettes,
+          currentPage: this._currentPalettePage,
+          itemsPerPage,
+        });
+        displayPalettes = result.items;
+        paginationHtml = result.html;
+        this._currentPalettePage = result.currentPage;
       }
       contentHtml += this._renderPalettes(displayPalettes, displayMode, {
         showRemove,
@@ -965,82 +948,7 @@ class YeelightCubePaletteCard extends HTMLElement {
         }
 
         /* PAGINATION STYLES */
-        .palette-pagination-container {
-          display: flex;
-          justify-content: center;
-          align-items: center;
-          margin-top: 16px;
-          gap: 8px;
-          flex-wrap: wrap;
-          border-radius: 8px;
-        }
-        .draw-btn {
-          background: #e6f7ff;
-          color: #0077cc;
-          border: none;
-          border-radius: 8px;
-          padding: 10px 0;
-          cursor: pointer;
-          font-size: 1em;
-          font-weight: 500;
-          min-width: 120px;
-          transition: background 0.2s;
-          box-shadow: 0 1px 4px #0003;
-          text-align: center;
-        }
-        .draw-btn:hover {
-          background: #b3e6ff;
-        }
-        .draw-btn.save {
-          background: #e6f7ff;
-          color: #0077cc;
-          box-shadow: none;
-        }
-        .draw-btn.save:hover {
-          background: #b3e6ff;
-        }
-        .draw-btn:disabled,
-        .draw-btn.disabled {
-          background: var(--disabled-text-color, #bdbdbd) !important;
-          color: #ffffff !important;
-          cursor: not-allowed !important;
-          opacity: 0.6;
-        }
-        .draw-btn:disabled:hover,
-        .draw-btn.disabled:hover {
-          background: var(--disabled-text-color, #bdbdbd) !important;
-        }
-        .draw-btn.active {
-          background: #0077cc !important;
-          color: white !important;
-        }
-        .palette-pagination-container .draw-btn {
-          min-width: 40px;
-          padding: 8px 12px;
-          font-size: 0.9em;
-        }
-        .palette-pagination-container .draw-btn.save {
-          min-width: 40px;
-          padding: 8px;
-        }
-        .palette-pagination-container .draw-btn ha-icon {
-          width: 18px;
-          height: 18px;
-          display: flex;
-        }
-        @media (max-width: 600px) {
-          .palette-pagination-container {
-            gap: 4px;
-          }
-          .palette-pagination-container .draw-btn {
-            padding: 6px 8px;
-            font-size: 0.85em;
-            min-width: 32px;
-          }
-          .palette-pagination-container .draw-btn.save {
-            padding: 6px;
-          }
-        }
+        ${paginationStyles}
         }
       </style>
       ${
@@ -1311,28 +1219,19 @@ class YeelightCubePaletteCard extends HTMLElement {
     const contentDiv = showCard ? root.querySelector(".card-content") : root;
 
     if (contentDiv) {
-      contentDiv.addEventListener("click", (e) => {
-        // Handle pagination navigation
-        const paginationBtn = e.target.closest(
-          "[data-palette-page], [data-palette-page-action]",
-        );
-        if (paginationBtn) {
-          const directPage = paginationBtn.dataset.palettePage;
-          const action = paginationBtn.dataset.palettePageAction;
-          if (directPage !== undefined) {
-            this._currentPalettePage = parseInt(directPage);
-          } else if (action === "prev") {
-            this._currentPalettePage = Math.max(
-              0,
-              this._currentPalettePage - 1,
-            );
-          } else if (action === "next") {
-            this._currentPalettePage += 1;
-          }
-          this.render();
-          return;
+      // Attach pagination listeners via shared utility
+      attachPaginationListeners(contentDiv, (pageOrAction) => {
+        if (pageOrAction === "prev") {
+          this._currentPalettePage = Math.max(0, this._currentPalettePage - 1);
+        } else if (pageOrAction === "next") {
+          this._currentPalettePage += 1;
+        } else {
+          this._currentPalettePage = pageOrAction;
         }
+        this.render();
+      });
 
+      contentDiv.addEventListener("click", (e) => {
         // Handle carousel navigation
         const carouselBtn = e.target.closest("[data-carousel-id][data-action]");
         if (carouselBtn) {
