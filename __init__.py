@@ -1,8 +1,10 @@
 import logging
 import os
 import asyncio
+import socket as _socket_module
 from homeassistant.core import HomeAssistant, callback as ha_callback # type: ignore
 from homeassistant.config_entries import ConfigEntry # type: ignore
+from homeassistant.exceptions import ConfigEntryNotReady # type: ignore
 from homeassistant.helpers.typing import ConfigType # type: ignore
 from homeassistant.helpers.storage import Store # type: ignore
 from homeassistant.helpers.event import async_call_later # type: ignore
@@ -95,6 +97,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     # Register this device as managed by our component (for all entries)
     ip_address = entry.data[CONF_IP]
+    port = entry.data.get('port', 55443)
     conflict_prevention = get_conflict_prevention(hass)
     conflict_prevention.add_managed_device(ip_address)
     
@@ -102,8 +105,37 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if entry.entry_id not in hass.data[DOMAIN]:
         hass.data[DOMAIN][entry.entry_id] = {}
     
-    # Set up platforms
-    await hass.config_entries.async_forward_entry_setups(entry, ["light", "switch", "text", "select", "sensor", "number", "button", "camera"])
+    # Quick TCP probe to verify the device is reachable before proceeding.
+    # ConfigEntryNotReady MUST be raised here (component-level setup) for
+    # HA's automatic retry with exponential back-off to work.
+    probe_timeout = 3.0  # Generous timeout — device may still be booting
+    try:
+        _LOGGER.debug("[SETUP] Probing %s:%s (timeout=%ss)", ip_address, port, probe_timeout)
+        sock = _socket_module.socket(_socket_module.AF_INET, _socket_module.SOCK_STREAM)
+        sock.settimeout(probe_timeout)
+        await hass.async_add_executor_job(sock.connect, (ip_address, port))
+        _LOGGER.debug("[SETUP] Probe OK — %s:%s is reachable", ip_address, port)
+    except (OSError, ConnectionRefusedError, TimeoutError) as err:
+        _LOGGER.warning(
+            "[SETUP] Device at %s:%s is not reachable: %s. Will retry automatically.",
+            ip_address, port, err,
+        )
+        raise ConfigEntryNotReady(
+            f"Yeelight Cube Lite at {ip_address} is not reachable — will retry automatically"
+        ) from err
+    finally:
+        try:
+            sock.close()
+        except Exception:
+            pass
+    
+    # Set up light platform FIRST — it creates the CubeMatrix and stores the
+    # light entity in hass.data[DOMAIN][entry.entry_id]["light"], which the
+    # other platforms (switch, camera, …) depend on.
+    await hass.config_entries.async_forward_entry_setups(entry, ["light"])
+    
+    # Now set up all dependent platforms (they can safely read the light entity)
+    await hass.config_entries.async_forward_entry_setups(entry, ["switch", "text", "select", "sensor", "number", "button", "camera"])
     
     # Auto-dismiss built-in Yeelight discovery flows for this device.
     # The built-in Yeelight integration discovers CubeLite devices via zeroconf/DHCP
