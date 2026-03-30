@@ -75,20 +75,21 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     );
   }
   static getStubConfig(hass) {
-    const entity =
+    const firstEntity =
       Object.keys(hass?.states || {}).find(
         (e) =>
           e.startsWith("light.yeelight_cube") ||
           e.startsWith("light.cubelite_"),
       ) || "";
-    const palette_sensor =
-      Object.keys(hass?.states || {}).find(
-        (e) => e.startsWith("sensor.") && e.includes("color_palettes"),
-      ) || "";
     return {
       type: "custom:yeelight-cube-color-list-editor-card",
-      entity,
-      palette_sensor,
+      target_entities: firstEntity ? [firstEntity] : [],
+      remove_button_style: "none",
+      list_layout: "rows",
+      color_info_display: "name",
+      show_hex_input: false,
+      buttons_style: "icon",
+      buttons_content_mode: "icon",
     };
   }
 

@@ -112,20 +112,15 @@ class YeelightCubePaletteCard extends HTMLElement {
     return document.createElement("yeelight-cube-palette-card-editor");
   }
   static getStubConfig(hass) {
-    const entity =
+    const firstEntity =
       Object.keys(hass?.states || {}).find(
         (e) =>
           e.startsWith("light.yeelight_cube") ||
           e.startsWith("light.cubelite_"),
       ) || "";
-    const palette_sensor =
-      Object.keys(hass?.states || {}).find(
-        (e) => e.startsWith("sensor.") && e.includes("color_palettes"),
-      ) || "";
     return {
       type: "custom:yeelight-cube-palette-card",
-      entity,
-      palette_sensor,
+      target_entities: firstEntity ? [firstEntity] : [],
     };
   }
 

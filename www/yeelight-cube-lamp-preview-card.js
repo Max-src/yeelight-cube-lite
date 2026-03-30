@@ -20,13 +20,16 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     return document.createElement("yeelight-cube-lamp-preview-card-editor");
   }
   static getStubConfig(hass) {
-    const entity =
+    const firstEntity =
       Object.keys(hass?.states || {}).find(
         (e) =>
           e.startsWith("light.yeelight_cube") ||
           e.startsWith("light.cubelite_"),
       ) || "";
-    return { type: "custom:yeelight-cube-lamp-preview-card", entity };
+    return {
+      type: "custom:yeelight-cube-lamp-preview-card",
+      entity: firstEntity,
+    };
   }
 
   constructor() {
