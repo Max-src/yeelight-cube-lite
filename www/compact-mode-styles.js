@@ -114,7 +114,7 @@ export const compactModeStyles = `
   /* LEGACY: Delete Button in Grid Compact Mode */
   .pixelart-compact-item .delete-btn-cross,
   .palette-compact-item .delete-btn-cross {
-    position: static !important;
+    position: relative !important;
     flex-shrink: 0;
     margin-left: auto;
     top: auto !important;

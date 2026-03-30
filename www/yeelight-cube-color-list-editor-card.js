@@ -1100,7 +1100,9 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           display: flex;
           align-items: center;
           justify-content: center;
-          position: static !important;
+          position: relative !important;
+          top: auto !important;
+          right: auto !important;
           margin-left: auto;
         }
         /* Hover-only support for tiles mode */
