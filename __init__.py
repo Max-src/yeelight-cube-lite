@@ -77,7 +77,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Register static path to serve frontend JS card files
         www_path = os.path.join(os.path.dirname(__file__), "www")
         if os.path.isdir(www_path):
-            hass.http.register_static_path(FRONTEND_URL_BASE, www_path, True)
+            try:
+                # HA 2024.7+ uses async_register_static_paths
+                from homeassistant.components.http import StaticPathConfig  # type: ignore
+                await hass.http.async_register_static_paths(
+                    [StaticPathConfig(FRONTEND_URL_BASE, www_path, True)]
+                )
+            except (ImportError, AttributeError):
+                # Fallback for older HA versions
+                hass.http.register_static_path(FRONTEND_URL_BASE, www_path, True)
             _LOGGER.debug("Yeelight Cube Lite: Registered frontend at %s", FRONTEND_URL_BASE)
             
             # Auto-register Lovelace resources so cards work without manual config
