@@ -101,9 +101,10 @@ class YeelightCubePaletteCard extends HTMLElement {
     return document.createElement("yeelight-cube-palette-card-editor");
   }
   static getStubConfig(hass) {
-    const entity = Object.keys(hass?.states || {}).find(
-      (e) => e.startsWith("light.yeelight_cube"),
-    ) || "";
+    const entity =
+      Object.keys(hass?.states || {}).find((e) =>
+        e.startsWith("light.yeelight_cube"),
+      ) || "";
     return { type: "custom:yeelight-cube-palette-card", entity };
   }
 

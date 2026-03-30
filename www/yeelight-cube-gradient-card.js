@@ -380,9 +380,10 @@ class YeelightCubeGradientCard extends HTMLElement {
     return document.createElement("yeelight-cube-gradient-card-editor");
   }
   static getStubConfig(hass) {
-    const entity = Object.keys(hass?.states || {}).find(
-      (e) => e.startsWith("light.yeelight_cube"),
-    ) || "";
+    const entity =
+      Object.keys(hass?.states || {}).find((e) =>
+        e.startsWith("light.yeelight_cube"),
+      ) || "";
     return { type: "custom:yeelight-cube-gradient-card", entity };
   }
 

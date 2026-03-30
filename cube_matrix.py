@@ -67,7 +67,19 @@ class CubeMatrix:
 
         self._failed_commands_window = []  # Track recent failures for health monitoring
         self.device_id = None  # Yeelight device ID (hex) — used for discovery suppression
+        
+        _LOGGER.debug(
+            f"[INIT] CubeMatrix initialized: ip={ip}, port={port}, timeout={self.device._timeout}s, "
+            f"cooldown={self._reconnect_cooldown}s, cooldown_max={RECONNECT_COOLDOWN_MAX}s, "
+            f"max_failures={MAX_CONSECUTIVE_FAILURES}, id={id(self)}"
+        )
 
+    def fetch_capabilities(self):
+        """Fetch device capabilities (blocking network call).
+        
+        Must be called from an executor or at a point where blocking is acceptable.
+        This is separated from __init__ to avoid blocking the HA event loop.
+        """
         try:
             properties = self.device.get_capabilities()
             if properties and isinstance(properties, dict):
@@ -77,12 +89,6 @@ class CubeMatrix:
                 _LOGGER.debug("get_capabilities returned no data (device may not support it)")
         except Exception as e:
             _LOGGER.debug(f"Could not retrieve capabilities (expected for some devices): {e}")
-        
-        _LOGGER.debug(
-            f"[INIT] CubeMatrix initialized: ip={ip}, port={port}, timeout={self.device._timeout}s, "
-            f"cooldown={self._reconnect_cooldown}s, cooldown_max={RECONNECT_COOLDOWN_MAX}s, "
-            f"max_failures={MAX_CONSECUTIVE_FAILURES}, id={id(self)}"
-        )
 
     def get_bulb(self):
         return self.device

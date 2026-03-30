@@ -4,6 +4,7 @@ import logging
 import asyncio
 import math
 import random
+import socket as _socket_module
 import time
 import traceback
 import colorsys
@@ -17,6 +18,7 @@ from homeassistant.helpers.restore_state import RestoreEntity # type: ignore
 from homeassistant.core import HomeAssistant # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 from homeassistant.config_entries import ConfigEntry # type: ignore
+from homeassistant.exceptions import ConfigEntryNotReady # type: ignore
 from homeassistant.helpers.event import async_track_state_change_event # type: ignore
 from homeassistant.helpers import config_validation as cv # type: ignore
 from homeassistant.helpers import entity_registry as er # type: ignore
@@ -4051,7 +4053,35 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             f"remove the duplicate in Settings â†’ Integrations."
         )
     
+    # Quick TCP probe to verify the device is reachable before proceeding.
+    # This prevents blocking the event loop with a long library timeout
+    # and lets HA auto-retry via ConfigEntryNotReady.
+    probe_timeout = 3.0  # Generous timeout — device may still be booting
+    try:
+        _LOGGER.debug(f"[SETUP] Probing {ip}:{port} (timeout={probe_timeout}s)")
+        sock = _socket_module.socket(_socket_module.AF_INET, _socket_module.SOCK_STREAM)
+        sock.settimeout(probe_timeout)
+        await hass.async_add_executor_job(sock.connect, (ip, port))
+        _LOGGER.debug(f"[SETUP] Probe OK — {ip}:{port} is reachable")
+    except (OSError, ConnectionRefusedError, TimeoutError) as err:
+        _LOGGER.warning(
+            f"[SETUP] Device at {ip}:{port} is not reachable: {err}. "
+            f"Will retry automatically."
+        )
+        raise ConfigEntryNotReady(
+            f"Yeelight Cube Lite at {ip} is not reachable — will retry automatically"
+        ) from err
+    finally:
+        try:
+            sock.close()
+        except Exception:
+            pass
+    
     cube_matrix = CubeMatrix(ip, port)
+    
+    # Fetch capabilities in executor to avoid blocking the event loop
+    await hass.async_add_executor_job(cube_matrix.fetch_capabilities)
+    
     light_entity = YeelightCubeLight(cube_matrix, ip, entry)
     
     # Register the entity in our global registry using IP as key
