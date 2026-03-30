@@ -29,6 +29,26 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     return {
       type: "custom:yeelight-cube-lamp-preview-card",
       entity: firstEntity,
+      show_card_background: true,
+      size: "medium",
+      size_pct: 100,
+      align: "center",
+      matrix_pixel_gap: 4,
+      matrix_background: "black",
+      matrix_box_shadow: true,
+      matrix_pixel_style: "round",
+      lamp_dot_shadow: true,
+      show_force_refresh_button: false,
+      buttons_style: "gradient",
+      show_brightness_slider: true,
+      brightness_slider_style: "capsule",
+      brightness_slider_appearance: "default",
+      brightness_label_mode: "text",
+      show_power_toggle: false,
+      show_capsule_moon_icon: true,
+      show_adjustment_controls: true,
+      adjustments_layout: "grouped",
+      reset_button_mode: "changed",
     };
   }
 
