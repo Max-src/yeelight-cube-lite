@@ -28,6 +28,63 @@ FRONTEND_CARD_FILES = [
 
 FRONTEND_URL_BASE = f"/{DOMAIN}"
 
+# Unique prefix to tag resources we manage so we can update/identify them
+_RESOURCE_TAG = "yeelight_cube_auto"
+
+
+async def _async_register_lovelace_resources(
+    hass: HomeAssistant, card_files: list, url_base: str, version: str
+) -> None:
+    """Register card JS files as Lovelace dashboard resources.
+
+    This uses the same mechanism as HACS for registering frontend plugins,
+    ensuring cards load the same way as Mushroom, card-mod, and other
+    well-known custom cards (via the lovelace_resources storage collection).
+    """
+    try:
+        # The Lovelace resource collection is stored here by HA core
+        resource_collection = hass.data.get("lovelace_resources")
+        if resource_collection is None:
+            _LOGGER.debug(
+                "Lovelace resources collection not available yet – "
+                "cards may need to be added manually or will load via add_extra_js_url"
+            )
+            return
+
+        # Build a lookup of existing resources by their base URL (without query params)
+        existing_items = resource_collection.async_items()
+        existing_by_base = {}
+        for item in existing_items:
+            base = item["url"].split("?")[0]
+            existing_by_base[base] = item
+
+        for card_file in card_files:
+            card_url_base = f"{url_base}/{card_file}"
+            card_url = f"{card_url_base}?v={version}"
+
+            if card_url_base in existing_by_base:
+                existing = existing_by_base[card_url_base]
+                if existing["url"] != card_url:
+                    # Version changed – update the URL to bust cache
+                    await resource_collection.async_update_item(
+                        existing["id"], {"url": card_url}
+                    )
+                    _LOGGER.debug("Updated Lovelace resource: %s", card_url)
+            else:
+                # Register new resource as JS module
+                await resource_collection.async_create_item(
+                    {"url": card_url, "res_type": "module"}
+                )
+                _LOGGER.debug("Added Lovelace resource: %s", card_url)
+
+    except Exception:
+        _LOGGER.warning(
+            "Could not register Lovelace resources automatically. "
+            "You may need to add them manually: Settings → Dashboards → Resources",
+            exc_info=True,
+        )
+
+
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Yeelight Cube Lite component."""
     _LOGGER.debug("Yeelight Cube Lite async_setup() called")
@@ -90,8 +147,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 hass.http.register_static_path(FRONTEND_URL_BASE, www_path, False)
             _LOGGER.debug("Yeelight Cube Lite: Registered frontend at %s", FRONTEND_URL_BASE)
             
-            # Auto-register Lovelace resources so cards work without manual config
-            # Append version query string to bust browser/HA cache on updates
+            # Read version from manifest.json for cache-busting query params
             try:
                 import json as _json
                 _manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
@@ -99,17 +155,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     _version = _json.load(_mf).get("version", "0")
             except Exception:
                 _version = "0"
+            
+            # Register cards as Lovelace resources (same mechanism as HACS plugins).
+            # This is more reliable than add_extra_js_url because HA loads these
+            # resources the same way as Mushroom, card-mod, and other HACS cards.
+            await _async_register_lovelace_resources(
+                hass, FRONTEND_CARD_FILES, FRONTEND_URL_BASE, _version
+            )
+            
+            # Also register via add_extra_js_url as a fallback
             try:
                 from homeassistant.components.frontend import add_extra_js_url  # type: ignore
                 for card_file in FRONTEND_CARD_FILES:
                     card_url = f"{FRONTEND_URL_BASE}/{card_file}?v={_version}"
                     add_extra_js_url(hass, card_url)
-                    _LOGGER.debug("Yeelight Cube Lite: Registered card resource %s", card_url)
-            except ImportError:
-                _LOGGER.warning(
-                    "Could not auto-register Lovelace resources. "
-                    "Add them manually as /yeelight_cube/<card-name>.js"
-                )
+            except (ImportError, Exception):
+                pass
         
         _LOGGER.debug("Yeelight Cube Lite: Storage, conflict prevention, and services initialized")
     

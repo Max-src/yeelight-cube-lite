@@ -10,6 +10,10 @@
   "dependencies": [
     "zeroconf"
   ],
+  "after_dependencies": [
+    "frontend",
+    "lovelace"
+  ],
   "zeroconf": [
     {
       "type": "_miio._udp.local.",
