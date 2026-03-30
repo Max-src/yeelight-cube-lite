@@ -390,6 +390,23 @@ class YeelightCubeGradientCard extends HTMLElement {
       type: "custom:yeelight-cube-gradient-card",
       entity: firstEntity,
       target_entities: firstEntity ? [firstEntity] : [],
+      show_color_mode_selector: true,
+      rotary_unified_style: "rectangle",
+      show_angle_section: true,
+      show_angle_input: false,
+      show_angle_slider: false,
+      color_mode_style: "colorized",
+      button_text_color: "white",
+      panel_toggle_style: "card",
+      rotary_size: "100",
+      gallery_background_color: "#ffffff",
+      preview_display_mode: "wheel",
+      wheel_nav_position: "sides",
+      preview_show_titles: false,
+      gallery_pixel_style: "square",
+      gallery_ignore_black_pixels: true,
+      gallery_preview_size: "200",
+      gallery_pixel_gap: "0",
     };
   }
 
