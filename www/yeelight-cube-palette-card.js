@@ -103,7 +103,7 @@ class YeelightCubePaletteCard extends HTMLElement {
   static getStubConfig(hass) {
     const entity =
       Object.keys(hass?.states || {}).find((e) =>
-        e.startsWith("light.yeelight_cube"),
+        e.startsWith("light.yeelight_cube") || e.startsWith("light.cubelite_"),
       ) || "";
     return { type: "custom:yeelight-cube-palette-card", entity };
   }
