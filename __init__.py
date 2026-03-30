@@ -132,7 +132,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Set up light platform FIRST — it creates the CubeMatrix and stores the
     # light entity in hass.data[DOMAIN][entry.entry_id]["light"], which the
     # other platforms (switch, camera, …) depend on.
-    await hass.config_entries.async_forward_entry_setups(entry, ["light"])
+    # Wrap in try/except: if ANY platform raises an unhandled exception,
+    # convert it to ConfigEntryNotReady so HA auto-retries instead of
+    # permanently failing the entry.
+    try:
+        await hass.config_entries.async_forward_entry_setups(entry, ["light"])
+    except ConfigEntryNotReady:
+        raise  # Already a retry — let it through
+    except Exception as exc:
+        _LOGGER.warning(
+            "[SETUP] Light platform setup failed for %s — will retry: %s",
+            ip_address, exc, exc_info=True,
+        )
+        raise ConfigEntryNotReady(
+            f"Light platform setup failed for {ip_address}: {exc}"
+        ) from exc
     
     # Now set up all dependent platforms (they can safely read the light entity)
     await hass.config_entries.async_forward_entry_setups(entry, ["switch", "text", "select", "sensor", "number", "button", "camera"])

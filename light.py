@@ -4053,10 +4053,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     
     # TCP reachability has already been verified in __init__.py's
     # async_setup_entry (which is where ConfigEntryNotReady is effective).
+    _LOGGER.debug(f"[SETUP] Creating CubeMatrix for {ip}:{port}")
     cube_matrix = CubeMatrix(ip, port)
     
     # Fetch capabilities in executor to avoid blocking the event loop
+    _LOGGER.debug(f"[SETUP] Fetching capabilities for {ip} in executor")
     await hass.async_add_executor_job(cube_matrix.fetch_capabilities)
+    _LOGGER.debug(f"[SETUP] Capabilities fetched for {ip}, creating light entity")
     
     light_entity = YeelightCubeLight(cube_matrix, ip, entry)
     
