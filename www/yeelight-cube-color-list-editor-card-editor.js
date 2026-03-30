@@ -9,10 +9,7 @@ import {
   buttonGroupStyles,
 } from "./button-group-utils.js";
 import {
-  createEntitySelector,
-  createSearchableEntitySelector,
   getLightEntities,
-  getSensorEntities,
   createYeelightCubeEntityPicker,
   getYeelightCubeEntities,
   entitySelectorStyles,
@@ -99,10 +96,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
     this._fireConfigChanged();
   };
 
-  _paletteSensorChanged = (ev) => {
-    this._config = { ...this._config, palette_sensor: ev.target.value };
-    this._fireConfigChanged();
-  };
+
 
   _fireConfigChanged() {
     const config = {
@@ -291,17 +285,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                 "multiple"
               )}
             </div>
-            <div class="form-row">
-              <label>Palette Sensor (optional)</label>
-              ${createEntitySelector(
-                this.hass,
-                "sensor",
-                cfg.palette_sensor || "",
-                "Select palette sensor...",
-                this._paletteSensorChanged,
-                "palette_sensor"
-              )}
-            </div>
+
             <div class="toggle-row">
               <label class="toggle-label">Show Card Background</label>
               <label class="toggle-switch">

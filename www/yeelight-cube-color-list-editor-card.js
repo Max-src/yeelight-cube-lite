@@ -83,10 +83,13 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       ) || "";
     const palette_sensor =
       Object.keys(hass?.states || {}).find(
-        (e) =>
-          e.startsWith("sensor.") && e.includes("color_palettes"),
+        (e) => e.startsWith("sensor.") && e.includes("color_palettes"),
       ) || "";
-    return { type: "custom:yeelight-cube-color-list-editor-card", entity, palette_sensor };
+    return {
+      type: "custom:yeelight-cube-color-list-editor-card",
+      entity,
+      palette_sensor,
+    };
   }
 
   set hass(hass) {

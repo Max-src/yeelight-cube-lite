@@ -88,6 +88,17 @@ class YeelightCubePaletteCard extends HTMLElement {
       target_entities: config.target_entities || [], // Array of entity IDs to control
       ...config,
     };
+
+    // Auto-resolve palette_sensor if not explicitly configured
+    if (!this.config.palette_sensor && this._hass) {
+      const autoSensor = Object.keys(this._hass.states || {}).find(
+        (e) => e.startsWith("sensor.") && e.includes("color_palettes"),
+      );
+      if (autoSensor) {
+        this.config = { ...this.config, palette_sensor: autoSensor };
+      }
+    }
+
     if (!this.shadowRoot) {
       this.attachShadow({ mode: "open" });
     }
@@ -107,7 +118,11 @@ class YeelightCubePaletteCard extends HTMLElement {
           e.startsWith("light.yeelight_cube") ||
           e.startsWith("light.cubelite_"),
       ) || "";
-    return { type: "custom:yeelight-cube-palette-card", entity };
+    const palette_sensor =
+      Object.keys(hass?.states || {}).find(
+        (e) => e.startsWith("sensor.") && e.includes("color_palettes"),
+      ) || "";
+    return { type: "custom:yeelight-cube-palette-card", entity, palette_sensor };
   }
 
   /**
@@ -135,6 +150,17 @@ class YeelightCubePaletteCard extends HTMLElement {
    */
   set hass(hass) {
     this._hass = hass;
+
+    // Auto-resolve palette_sensor on first hass set (setConfig may run before hass is available)
+    if (this.config && !this.config.palette_sensor && hass) {
+      const autoSensor = Object.keys(hass.states || {}).find(
+        (e) => e.startsWith("sensor.") && e.includes("color_palettes"),
+      );
+      if (autoSensor) {
+        this.config = { ...this.config, palette_sensor: autoSensor };
+      }
+    }
+
     const entityId = this.config?.palette_sensor;
     if (!entityId || !hass) return;
 

@@ -652,6 +652,27 @@ class YeelightCubeDrawCard extends LitElement {
   set hass(hass) {
     const oldHass = this._hass;
 
+    // Auto-resolve sensors on first hass set (setConfig may run before hass is available)
+    if (this.config && hass) {
+      if (!this.config.pixelart_sensor) {
+        const autoSensor = Object.keys(hass.states || {}).find(
+          (e) => e.startsWith("sensor.") && e.includes("pixel_art"),
+        );
+        if (autoSensor) {
+          this.config = { ...this.config, pixelart_sensor: autoSensor };
+        }
+      }
+      if (!this.config.palette_sensor) {
+        const autoSensor = Object.keys(hass.states || {}).find(
+          (e) => e.startsWith("sensor.") && e.includes("color_palettes"),
+        );
+        if (autoSensor) {
+          this.config = { ...this.config, palette_sensor: autoSensor };
+          this.paletteSensor = autoSensor;
+        }
+      }
+    }
+
     const pixelartSensor = this.config?.pixelart_sensor;
     if (!pixelartSensor || !hass) {
       this._hass = hass;
@@ -815,6 +836,26 @@ class YeelightCubeDrawCard extends LitElement {
   setConfig(config) {
     // Create a mutable copy of the config to allow adding new properties
     this.config = { ...config };
+
+    // Auto-resolve pixelart_sensor if not explicitly configured
+    if (!this.config.pixelart_sensor && this._hass) {
+      const autoSensor = Object.keys(this._hass.states || {}).find(
+        (e) => e.startsWith("sensor.") && e.includes("pixel_art"),
+      );
+      if (autoSensor) {
+        this.config.pixelart_sensor = autoSensor;
+      }
+    }
+
+    // Auto-resolve palette_sensor if not explicitly configured
+    if (!this.config.palette_sensor && this._hass) {
+      const autoSensor = Object.keys(this._hass.states || {}).find(
+        (e) => e.startsWith("sensor.") && e.includes("color_palettes"),
+      );
+      if (autoSensor) {
+        this.config.palette_sensor = autoSensor;
+      }
+    }
 
     // Ensure tools_order exists with default value
     if (!this.config.tools_order) {

@@ -493,14 +493,6 @@ class YeelightCubeDrawCardEditor extends LitElement {
   }
 
   render() {
-    const lights = this._hass
-      ? Object.keys(this._hass.states).filter((eid) => eid.startsWith("light."))
-      : [];
-    const sensors = this._hass
-      ? Object.keys(this._hass.states).filter((eid) =>
-          eid.startsWith("sensor."),
-        )
-      : [];
     const chevronIcon = (folded) => html`
       <ha-icon
         icon="mdi:chevron-down"
@@ -546,42 +538,6 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 }
                 return this._renderEntityPicker();
               })()}
-            </div>
-            <div class="form-row">
-              <label>Pixel Art Sensor</label>
-              <select
-                id="pixelart_sensor"
-                @change="${this._onPixelArtSensorSelect}"
-              >
-                <option value="">Select sensor...</option>
-                ${sensors.map(
-                  (eid) =>
-                    html`<option
-                      value="${eid}"
-                      ?selected="${this.config.pixelart_sensor === eid}"
-                    >
-                      ${eid}
-                    </option>`,
-                )}
-              </select>
-            </div>
-            <div class="form-row">
-              <label>Palette Sensor Entity (for palette saving)</label>
-              <select
-                id="palette_sensor"
-                @change="${this._onPaletteSensorSelect}"
-              >
-                <option value="">Select sensor...</option>
-                ${sensors.map(
-                  (eid) =>
-                    html`<option
-                      value="${eid}"
-                      ?selected="${this.config.palette_sensor === eid}"
-                    >
-                      ${eid}
-                    </option>`,
-                )}
-              </select>
             </div>
             ${createToggleRow(
               "Show Card Background",
@@ -1512,16 +1468,6 @@ class YeelightCubeDrawCardEditor extends LitElement {
       this.config.entity = e.target.value;
       this.config.target_entities = e.target.value ? [e.target.value] : [];
     }
-    this._fireConfigChanged();
-  }
-
-  _onPixelArtSensorSelect(e) {
-    this.config.pixelart_sensor = e.target.value;
-    this._fireConfigChanged();
-  }
-
-  _onPaletteSensorSelect(e) {
-    this.config.palette_sensor = e.target.value;
     this._fireConfigChanged();
   }
 

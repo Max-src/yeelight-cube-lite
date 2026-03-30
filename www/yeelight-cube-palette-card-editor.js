@@ -300,10 +300,6 @@ class YeelightCubePaletteCardEditor extends LitElement {
               />
             </div>
             <div class="form-row column">
-              <label>Palette Sensor Entity</label>
-              ${this._renderPaletteSensorPicker()}
-            </div>
-            <div class="form-row column">
               <label>Target Entities (optional)</label>
               <div style="font-size: 0.9em; color: #666; margin-bottom: 8px;">
                 Select which Yeelight Cube Lite lights should receive palette
@@ -564,15 +560,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
     `;
   }
 
-  _onSensorChange(e) {
-    this.config.palette_sensor = e.target.value;
-    this._fireConfigChanged();
-  }
 
-  _onPaletteSensorSelection(entityId) {
-    this.config.palette_sensor = entityId;
-    this._fireConfigChanged();
-  }
 
   _onTitleInput(e) {
     this.localTitle = e.target.value;
@@ -615,101 +603,6 @@ class YeelightCubePaletteCardEditor extends LitElement {
               </button>
             `
           )}
-        </div>
-      </div>
-    `;
-  }
-
-  _renderPaletteSensorPicker() {
-    if (!this._hass || !this._hass.states) {
-      return html`<div style="color: #666; font-style: italic; padding: 8px;">
-        Loading sensors...
-      </div>`;
-    }
-
-    // Get all sensor entities and filter for palette sensors
-    const allSensorEntities = Object.keys(this._hass.states)
-      .filter((entityId) => entityId.startsWith("sensor."))
-      .sort();
-
-    // Filter to only show palette sensors (those with palettes_v2 or palettes attributes)
-    const paletteSensors = allSensorEntities.filter((entityId) => {
-      const state = this._hass.states[entityId];
-      const attributes = state?.attributes || {};
-      return (
-        attributes.palettes_v2 !== undefined ||
-        attributes.palettes !== undefined
-      );
-    });
-
-    const selectedSensor = this.config.palette_sensor || "";
-
-    return html`
-      <div
-        style="border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa;"
-      >
-        <!-- Header -->
-        <div
-          style="padding: 12px 16px 8px 16px; font-weight: 500; color: #333; border-bottom: 1px solid #e8e8e8; background: #f5f5f5; border-radius: 8px 8px 0 0;"
-        >
-          Palette Sensors (${paletteSensors.length})
-        </div>
-
-        <!-- Sensor list -->
-        <div style="max-height: 200px; overflow-y: auto; padding: 8px;">
-          ${paletteSensors.length === 0
-            ? html`<div
-                style="color: #666; font-style: italic; text-align: center; padding: 20px;"
-              >
-                <div style="margin-bottom: 8px;">No palette sensors found</div>
-                <div style="font-size: 0.85em; color: #999;">
-                  Make sure you have Yeelight Cube Lite devices configured in this
-                  integration
-                </div>
-              </div>`
-            : paletteSensors.map((entityId) => {
-                const isSelected = selectedSensor === entityId;
-                const state = this._hass.states[entityId];
-                const friendlyName =
-                  state?.attributes?.friendly_name || entityId;
-                const paletteCount = state?.attributes?.count || 0;
-
-                return html`
-                  <div
-                    style="display: flex; align-items: center; padding: 8px 12px; margin: 4px 0; border-radius: 6px; background: ${isSelected
-                      ? "#e3f2fd"
-                      : "white"}; border: 1px solid ${isSelected
-                      ? "#90caf9"
-                      : "#e0e0e0"}; transition: all 0.2s ease; cursor: pointer;"
-                    @click="${() => this._onPaletteSensorSelection(entityId)}"
-                  >
-                    <input
-                      type="radio"
-                      name="palette_sensor"
-                      id="sensor_${entityId.replace(/[^a-zA-Z0-9]/g, "_")}"
-                      .checked="${isSelected}"
-                      @change="${(e) => {
-                        e.stopPropagation();
-                        if (e.target.checked) {
-                          this._onPaletteSensorSelection(entityId);
-                        }
-                      }}"
-                      style="margin-right: 12px; transform: scale(1.1);"
-                    />
-                    <div style="flex: 1;">
-                      <div
-                        style="font-weight: 500; color: #333; margin-bottom: 2px;"
-                      >
-                        ${friendlyName}
-                      </div>
-                      <div style="font-size: 0.85em; color: #666;">
-                        ${entityId} • ${paletteCount}
-                        palette${paletteCount !== 1 ? "s" : ""}
-                      </div>
-                    </div>
-                  </div>
-                `;
-              })}
         </div>
       </div>
     `;

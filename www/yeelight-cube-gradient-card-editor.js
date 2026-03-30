@@ -482,16 +482,6 @@ class YeelightCubeGradientCardEditor extends LitElement {
               <label>Light Entities</label>
               ${this._renderEntityPicker()}
             </div>
-            <div class="form-row">
-              <label>Palette Sensor (optional)</label>
-              <input
-                id="palette_sensor"
-                type="text"
-                .value="${cfg.palette_sensor || ""}"
-                placeholder="sensor.your_palette"
-                @input="${this._valueChanged}"
-              />
-            </div>
             <div class="toggle-row">
               <label class="toggle-label">Show Card Background</label>
               <label class="toggle-switch">
