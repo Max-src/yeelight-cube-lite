@@ -129,10 +129,7 @@ export function renderPagination({
 
   let html = "";
   if (totalPages > 1) {
-    const startPage = Math.max(
-      0,
-      safePage - Math.floor(maxDisplayPages / 2),
-    );
+    const startPage = Math.max(0, safePage - Math.floor(maxDisplayPages / 2));
     const endPage = Math.min(totalPages, startPage + maxDisplayPages);
 
     let pageButtons = "";

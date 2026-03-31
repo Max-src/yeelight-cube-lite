@@ -1524,8 +1524,6 @@ class YeelightCubeDrawCard extends LitElement {
     const currentMode = cfg.pixel_art_gallery_mode || "gallery";
     const removeButtonStyle = cfg.pixel_art_remove_button_style || "default";
     const allowDelete = removeButtonStyle !== "none";
-    const removeButtonAlwaysVisible =
-      cfg.pixel_art_remove_button_always_visible !== false;
     const bgColor = cfg.pixel_art_background_color || "transparent";
     const autoApplyToLamp = cfg.pixel_art_auto_apply_to_lamp === true;
     const showTitles = cfg.pixel_art_show_titles !== false; // Default to true
@@ -1549,7 +1547,6 @@ class YeelightCubeDrawCard extends LitElement {
             showTitles,
             allowRename,
             removeButtonStyle,
-            removeButtonAlwaysVisible,
           )}
         </div>
       </div>
@@ -1564,8 +1561,8 @@ class YeelightCubeDrawCard extends LitElement {
     const itemsPerPage = parseInt(cfg.pixel_art_items_per_page) || 12;
     const buttonShape = cfg.button_shape || "rect";
 
-    // Carousel mode doesn't need pagination (shows one item)
-    if (mode === "carousel") {
+    // Carousel and album modes don't need pagination
+    if (mode === "carousel" || mode === "album") {
       return { items: pixelArts, pagination: null };
     }
 
@@ -1676,7 +1673,6 @@ class YeelightCubeDrawCard extends LitElement {
     showTitles = true,
     allowRename = false,
     removeButtonStyle = "default",
-    removeButtonAlwaysVisible = true,
   ) {
     const cfg = this.config || {};
     const pixelStyle = cfg.pixel_art_pixel_style || "round";
@@ -1704,7 +1700,6 @@ class YeelightCubeDrawCard extends LitElement {
           showTitles,
           allowRename,
           removeButtonStyle,
-          removeButtonAlwaysVisible,
         );
         break;
       case "list":
@@ -1719,7 +1714,6 @@ class YeelightCubeDrawCard extends LitElement {
           showTitles,
           allowRename,
           removeButtonStyle,
-          removeButtonAlwaysVisible,
         );
         break;
       case "carousel":
@@ -1733,7 +1727,6 @@ class YeelightCubeDrawCard extends LitElement {
           showTitles,
           allowRename,
           removeButtonStyle,
-          removeButtonAlwaysVisible,
         );
         break;
       case "gallery":
@@ -1761,7 +1754,6 @@ class YeelightCubeDrawCard extends LitElement {
           showTitles,
           allowRename,
           removeButtonStyle,
-          removeButtonAlwaysVisible,
         );
         break;
     }
@@ -1781,7 +1773,6 @@ class YeelightCubeDrawCard extends LitElement {
     showTitles,
     allowRename,
     removeButtonStyle = "default",
-    removeButtonAlwaysVisible = true,
   ) {
     const cfg = this.config || {};
     const previewSizePercent = cfg.pixel_art_preview_size || 100;
@@ -1793,10 +1784,7 @@ class YeelightCubeDrawCard extends LitElement {
       autoApplyToLamp,
     };
 
-    const baseRemoveBtnClass = getDeleteButtonClass(removeButtonStyle);
-    const removeBtnClass = removeButtonAlwaysVisible
-      ? baseRemoveBtnClass
-      : `${baseRemoveBtnClass} hover-only`;
+    const removeBtnClass = getDeleteButtonClass(removeButtonStyle);
 
     // Render function for pixel art content
     const renderPixelArtContent = (art, idx) => {
@@ -1883,12 +1871,6 @@ class YeelightCubeDrawCard extends LitElement {
         .grid-item .pixelart-pixel.square {
           border-radius: 0;
         }
-
-        /* Show delete button on hover when not always visible */
-        .grid-item:hover .hover-only {
-          opacity: 1 !important;
-          pointer-events: auto !important;
-        }
       </style>
       ${unsafeHTML(gridHTML)}
     `;
@@ -1908,16 +1890,11 @@ class YeelightCubeDrawCard extends LitElement {
     const cfg = this.config || {};
     const previewSizePercent = cfg.pixel_art_preview_size || 100;
     const removeButtonStyle = cfg.pixel_art_remove_button_style || "default";
-    const removeButtonAlwaysVisible =
-      cfg.pixel_art_remove_button_always_visible !== false;
     // Use pixel_art_preview_size to control card size in gallery mode
     const cardSizeMultiplier = previewSizePercent / 100;
 
-    // Get delete button class with hover-only support
-    const baseRemoveBtnClass = getDeleteButtonClass(removeButtonStyle);
-    const removeBtnClass = removeButtonAlwaysVisible
-      ? baseRemoveBtnClass
-      : `${baseRemoveBtnClass} hover-only`;
+    // Get delete button class
+    const removeBtnClass = getDeleteButtonClass(removeButtonStyle);
 
     // Store context for event handlers
     this._gridContext = {
@@ -2022,7 +1999,6 @@ class YeelightCubeDrawCard extends LitElement {
     showTitles,
     allowRename,
     removeButtonStyle = "default",
-    removeButtonAlwaysVisible = true,
   ) {
     const cfg = this.config || {};
     const previewSizePercent = cfg.pixel_art_preview_size || 100;
@@ -2035,7 +2011,6 @@ class YeelightCubeDrawCard extends LitElement {
       show_remove_button: allowDelete,
       card_size: cfg.pixel_art_preview_size || 50,
       pixel_art_remove_button_style: removeButtonStyle,
-      pixel_art_remove_button_always_visible: removeButtonAlwaysVisible,
     };
 
     // Render function for each pixel art item content
@@ -2196,16 +2171,12 @@ class YeelightCubeDrawCard extends LitElement {
     showTitles,
     allowRename,
     removeButtonStyle = "default",
-    removeButtonAlwaysVisible = true,
   ) {
     const cfg = this.config || {};
     const previewSizePercent = cfg.pixel_art_preview_size || 100;
     const scaleValue = previewSizePercent / 100;
 
-    const baseRemoveBtnClass = getDeleteButtonClass(removeButtonStyle);
-    const removeBtnClass = removeButtonAlwaysVisible
-      ? baseRemoveBtnClass
-      : `${baseRemoveBtnClass} hover-only`;
+    const removeBtnClass = getDeleteButtonClass(removeButtonStyle);
 
     return html`
       <style>
@@ -2394,7 +2365,6 @@ class YeelightCubeDrawCard extends LitElement {
     showTitles,
     allowRename,
     removeButtonStyle = "default",
-    removeButtonAlwaysVisible = true,
   ) {
     const cfg = this.config || {};
     const buttonShape = cfg.carousel_button_shape || "rect";
@@ -2493,7 +2463,6 @@ class YeelightCubeDrawCard extends LitElement {
     showTitles,
     allowRename,
     removeButtonStyle = "default",
-    removeButtonAlwaysVisible = true,
   ) {
     const cfg = this.config || {};
     const buttonShape = cfg.carousel_button_shape || "rect";
@@ -2510,7 +2479,6 @@ class YeelightCubeDrawCard extends LitElement {
       buttonShape,
       showAsCard: true, // Always show as card for carousel
       wrapNavigation: cfg.carousel_wrap_navigation === true,
-      indicatorsOutside: cfg.carousel_indicators_outside === true,
       onNavigate: (direction, maxLength) => {
         this._navigateCarousel(direction, maxLength);
       },
@@ -2591,14 +2559,9 @@ class YeelightCubeDrawCard extends LitElement {
     // Get delete button class based on style setting
     const cfg = this.config || {};
     const removeButtonStyle = cfg.pixel_art_remove_button_style || "default";
-    const removeButtonAlwaysVisible =
-      cfg.pixel_art_remove_button_always_visible !== false;
-    const baseDeleteBtnClass = `pixelart-btn-cross ${getDeleteButtonClass(
+    const deleteBtnClass = `pixelart-btn-cross ${getDeleteButtonClass(
       removeButtonStyle,
     )}`;
-    const deleteBtnClass = removeButtonAlwaysVisible
-      ? baseDeleteBtnClass
-      : `${baseDeleteBtnClass} hover-only`;
 
     // Get preview size percentage (matching matrix size approach)
     const previewSizePercent = cfg.pixel_art_preview_size || 100;

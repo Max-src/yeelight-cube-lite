@@ -92,12 +92,6 @@ export const compactLayoutStyles = `
     /* z-index: 10 !important; */
   }
   
-  /* Hover-only support for compact mode */
-  .compact-item:hover .hover-only {
-    opacity: 1 !important;
-    pointer-events: auto !important;
-  }
-  
   /* Container for multiple compact items */
   .compact-container {
     display: flex;

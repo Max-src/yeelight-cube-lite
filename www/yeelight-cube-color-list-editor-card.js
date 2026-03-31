@@ -230,8 +230,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
     // Remove button styling configuration
     const removeButtonStyle = this.config.remove_button_style || "default";
-    const removeButtonAlwaysVisible =
-      this.config.remove_button_always_visible !== false;
 
     // Card-specific styling configuration (for cards/spread modes)
     const cardRounded = this.config.card_rounded !== false;
@@ -281,7 +279,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                 showHexInput,
                 allowDragDrop,
                 removeButtonStyle,
-                removeButtonAlwaysVisible,
                 cardRounded,
                 cardButtonPosition,
               })}
@@ -326,7 +323,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                 showHexInput,
                 allowDragDrop,
                 removeButtonStyle,
-                removeButtonAlwaysVisible,
                 cardRounded,
                 cardButtonPosition,
               })}
@@ -376,7 +372,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                 showHexInput,
                 allowDragDrop,
                 removeButtonStyle,
-                removeButtonAlwaysVisible,
                 cardRounded,
                 cardButtonPosition,
               })}
@@ -413,7 +408,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
               showHexInput,
               allowDragDrop,
               removeButtonStyle,
-              removeButtonAlwaysVisible,
               cardRounded,
               cardButtonPosition,
             })}
@@ -478,7 +472,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
             showHexInput,
             allowDragDrop,
             removeButtonStyle,
-            removeButtonAlwaysVisible,
             cardRounded,
             cardButtonPosition,
           })}
@@ -552,7 +545,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
             showHexInput,
             allowDragDrop,
             removeButtonStyle,
-            removeButtonAlwaysVisible,
             cardRounded,
             cardButtonPosition,
           })}
@@ -872,10 +864,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           right: calc(-11.43px * var(--card-size-multiplier, 0.7)); 
           z-index: 10; 
         }
-        /* Hover-only support for grid mode */
-        .color-grid-swatch:hover .hover-only { 
-          opacity: 1 !important; 
-        }
         .color-grid-info { font-size: calc(0.85em * var(--card-size-multiplier, 0.7)); color: #666; text-align: center; margin-top: 8px; }
         .grid-hex-input { 
           width: 100%; 
@@ -1019,10 +1007,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           position: relative !important;
           flex-shrink: 0;
         }
-        /* Hover-only support for chips mode */
-        .chip-item:hover .hover-only {
-          opacity: 1 !important;
-        }
         
         /* TILES MODE - Card-like items */
         .tile-item {
@@ -1104,10 +1088,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           top: auto !important;
           right: auto !important;
           margin-left: auto;
-        }
-        /* Hover-only support for tiles mode */
-        .tile-item:hover .hover-only {
-          opacity: 1 !important;
         }
         
         /* ROWS MODE - Full-width gradients */
@@ -1203,10 +1183,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         .row-remove {
           /* Positioning only - styles come from deleteButtonStyles */
           flex-shrink: 0;
-        }
-        /* Hover-only support for rows mode */
-        .row-item:hover .hover-only {
-          opacity: 1 !important;
         }
         
         /* Spread Layout - Cards spread on table */
@@ -1446,10 +1422,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           font-size: 1.5em;
         }
         /* Trash style inherits from delete-button-styles.js */
-        /* Hover-only support for cards mode */
-        .card-item:hover .hover-only {
-          opacity: 1 !important;
-        }
         
         /* Hide remove button during drag */
         .dragging-active .card-remove,
@@ -4260,14 +4232,9 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       allowDragDrop,
       allowDelete,
       removeButtonStyle = "default",
-      removeButtonAlwaysVisible = true,
     } = options;
 
-    // Get delete button class with hover-only support
-    const baseDeleteBtnClass = getDeleteButtonClass(removeButtonStyle);
-    const deleteBtnClass = removeButtonAlwaysVisible
-      ? baseDeleteBtnClass
-      : `${baseDeleteBtnClass} hover-only`;
+    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle);
 
     return textColors
       .map((color, idx) =>
@@ -4318,14 +4285,9 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       allowDragDrop,
       allowDelete,
       removeButtonStyle = "default",
-      removeButtonAlwaysVisible = true,
     } = options;
 
-    // Get delete button class with hover-only support
-    const baseDeleteBtnClass = getDeleteButtonClass(removeButtonStyle);
-    const deleteBtnClass = removeButtonAlwaysVisible
-      ? baseDeleteBtnClass
-      : `${baseDeleteBtnClass} hover-only`;
+    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle);
 
     return `<div class="chips-container">
       ${textColors
@@ -4386,14 +4348,9 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       allowDragDrop,
       allowDelete,
       removeButtonStyle = "default",
-      removeButtonAlwaysVisible = true,
     } = options;
 
-    // Get delete button class with hover-only support
-    const baseDeleteBtnClass = getDeleteButtonClass(removeButtonStyle);
-    const deleteBtnClass = removeButtonAlwaysVisible
-      ? baseDeleteBtnClass
-      : `${baseDeleteBtnClass} hover-only`;
+    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle);
 
     return textColors
       .map((color, idx) =>
@@ -4449,14 +4406,9 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       allowDragDrop,
       allowDelete,
       removeButtonStyle = "default",
-      removeButtonAlwaysVisible = true,
     } = options;
 
-    // Get delete button class with hover-only support
-    const baseDeleteBtnClass = getDeleteButtonClass(removeButtonStyle);
-    const deleteBtnClass = removeButtonAlwaysVisible
-      ? baseDeleteBtnClass
-      : `${baseDeleteBtnClass} hover-only`;
+    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle);
 
     return textColors
       .map((color, idx) =>
@@ -4526,14 +4478,9 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     const {
       allowDragDrop,
       removeButtonStyle = "default",
-      removeButtonAlwaysVisible = true,
     } = options;
 
-    // Get delete button class with hover-only support
-    const baseDeleteBtnClass = getDeleteButtonClass(removeButtonStyle);
-    const deleteBtnClass = removeButtonAlwaysVisible
-      ? baseDeleteBtnClass
-      : `${baseDeleteBtnClass} hover-only`;
+    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle);
 
     return textColors
       .map((color, idx) =>
@@ -4578,14 +4525,8 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
   }
 
   _generateCardsLayout(textColors, options) {
-    // Get delete button class with hover-only support
     const removeButtonStyle = options.removeButtonStyle || "default";
-    const removeButtonAlwaysVisible =
-      options.removeButtonAlwaysVisible !== false;
-    const baseDeleteBtnClass = getDeleteButtonClass(removeButtonStyle);
-    const deleteBtnClass = removeButtonAlwaysVisible
-      ? baseDeleteBtnClass
-      : `${baseDeleteBtnClass} hover-only`;
+    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle);
 
     // Card styling options
     const cardRounded = options.cardRounded !== false;
@@ -4684,14 +4625,8 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
   }
 
   _generateSpreadLayout(textColors, options) {
-    // Get delete button class with hover-only support
     const removeButtonStyle = options.removeButtonStyle || "default";
-    const removeButtonAlwaysVisible =
-      options.removeButtonAlwaysVisible !== false;
-    const baseDeleteBtnClass = getDeleteButtonClass(removeButtonStyle);
-    const deleteBtnClass = removeButtonAlwaysVisible
-      ? baseDeleteBtnClass
-      : `${baseDeleteBtnClass} hover-only`;
+    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle);
 
     // Card styling options
     const cardRounded = options.cardRounded !== false;

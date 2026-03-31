@@ -79,31 +79,6 @@ export const deleteButtonStyles = `
     display: none !important;
   }
 
-  /* Delete Button - Hover Only Visibility */
-  .delete-btn-cross.hover-only {
-    opacity: 0 !important;
-    pointer-events: none !important;
-    transition: opacity 0.2s ease !important;
-  }
-
-  /* Parent hover reveals button */
-  .compact-item:hover .delete-btn-cross.hover-only,
-  .palette-row:hover .delete-btn-cross.hover-only,
-  .palette-grid-item:hover .delete-btn-cross.hover-only,
-  .palette-compact-item:hover .delete-btn-cross.hover-only,
-  .pixelart-compact-item:hover .delete-btn-cross.hover-only,
-  .pixelart-grid-item:hover .delete-btn-cross.hover-only,
-  .pixelart-list-item:hover .delete-btn-cross.hover-only,
-  .pixelart-carousel-item:hover .delete-btn-cross.hover-only,
-  .palettes-album-item:hover .delete-btn-cross.hover-only,
-  .pixelart-album-item:hover .delete-btn-cross.hover-only,
-  .palettes-album-item.active:hover .delete-btn-cross.hover-only,
-  .pixelart-album-item.active:hover .delete-btn-cross.hover-only,
-  .gallery-item:hover .delete-btn-cross.hover-only {
-    opacity: 1 !important;
-    pointer-events: auto !important;
-  }
-
   /* Delete Button - Base Styles (Default Variant) */
   .delete-btn-cross {
     background: #ffeaea;

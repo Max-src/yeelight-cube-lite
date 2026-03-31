@@ -7,7 +7,7 @@
  * Key Features:
  * - 3D coverflow carousel with smooth transitions
  * - Supports both palette items and pixel art items
- * - Configurable delete/remove buttons with hover-only mode
+ * - Configurable delete/remove buttons
  * - Touch and keyboard navigation support
  * - Position persistence across re-renders
  *
@@ -17,8 +17,8 @@
  * 3. Call setupAlbumNavigation() to attach event listeners
  *
  * Configuration:
- * - Palette cards use: config.remove_button_style, config.remove_button_always_visible
- * - Draw cards use: config.pixel_art_remove_button_style, config.pixel_art_remove_button_always_visible
+ * - Palette cards use: config.remove_button_style
+ * - Draw cards use: config.pixel_art_remove_button_style
  *
  * Pure JavaScript - no external dependencies
  */
@@ -140,8 +140,7 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
      * 
      * In album/carousel mode, delete buttons have special visibility logic:
      * 1. Non-active (side) cards: buttons always hidden
-     * 2. Active (center) card without hover-only: buttons always visible
-     * 3. Active (center) card with hover-only: buttons hidden until hover
+     * 2. Active (center) card: buttons always visible
      * 
      * The !important flags ensure these rules override base button styles
      */
@@ -151,20 +150,6 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
     .${classPrefix}-album-item:not(.active) .album-remove-btn {
       opacity: 0 !important;
       pointer-events: none !important;
-    }
-
-    /* Rule 2: Hide hover-only buttons on active card by default */
-    .${classPrefix}-album-item.active .delete-btn-cross.hover-only,
-    .${classPrefix}-album-item.active .album-remove-btn.hover-only {
-      opacity: 0 !important;
-      pointer-events: none !important;
-    }
-
-    /* Rule 3: Reveal hover-only buttons when hovering the active card */
-    .${classPrefix}-album-item.active:hover .delete-btn-cross.hover-only,
-    .${classPrefix}-album-item.active:hover .album-remove-btn.hover-only {
-      opacity: 1 !important;
-      pointer-events: auto !important;
     }
     
     .${classPrefix}-album-item .delete-btn-cross:hover,
@@ -262,9 +247,7 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
  * @returns {string} HTML string for the album view
  *
  * Button Visibility Logic:
- * - Checks config.remove_button_always_visible for palette cards
- * - Checks config.pixel_art_remove_button_always_visible for draw cards
- * - If setting is false, adds "hover-only" class to hide buttons until hover
+ * - If setting is "none", no delete button is rendered
  * - Album mode only shows buttons on the active (centered) card
  */
 export function renderAlbumView(
@@ -280,25 +263,8 @@ export function renderAlbumView(
     "default";
   const showRemove = removeButtonStyle !== "none";
 
-  // Determine if buttons should always be visible or only on hover
-  // Priority: use whichever setting is actually defined (palette or pixel art)
-  // Default to true (always visible) if neither is specified
-  let removeButtonAlwaysVisible = true;
-  if (config.remove_button_always_visible !== undefined) {
-    // Palette card setting takes precedence if defined
-    removeButtonAlwaysVisible = config.remove_button_always_visible;
-  } else if (config.pixel_art_remove_button_always_visible !== undefined) {
-    // Fall back to pixel art card setting if defined
-    removeButtonAlwaysVisible = config.pixel_art_remove_button_always_visible;
-  }
-
   // Build button CSS classes
-  // Base class includes style (default, red, black, trash)
-  // Add "hover-only" class if buttons should only appear on hover
-  const baseDeleteBtnClass = getDeleteButtonClass(removeButtonStyle);
-  const deleteBtnClass = removeButtonAlwaysVisible
-    ? baseDeleteBtnClass
-    : `${baseDeleteBtnClass} hover-only`;
+  const deleteBtnClass = getDeleteButtonClass(removeButtonStyle);
 
   return `
     <div class="${classPrefix}-album-wrapper">

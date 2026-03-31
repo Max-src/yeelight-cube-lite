@@ -143,19 +143,6 @@ export const galleryModeStyles = `
     flex-shrink: 0;
   }
 
-  /* Hover-only behavior */
-  .gallery-item-footer button.hover-only,
-  .gallery-item-footer .hover-only {
-    opacity: 0 !important;
-    pointer-events: none !important;
-  }
-
-  .gallery-item:hover .gallery-item-footer button.hover-only,
-  .gallery-item:hover .gallery-item-footer .hover-only {
-    opacity: 1 !important;
-    pointer-events: auto !important;
-  }
-
   .gallery-delete-btn:hover,
   .gallery-item-footer .delete-btn-cross:hover,
   .gallery-item-footer .delete-btn-minimal:hover,
@@ -226,8 +213,8 @@ export function renderGalleryMode(items, renderContent, options = {}) {
         <div class="gallery-item${
           isGradientBg ? " gallery-item-gradient" : ""
         }${isStripes ? " gallery-item-stripes" : ""}${
-        isGradientBar ? " gallery-item-gradient-bar" : ""
-      }${!roundedCards ? " gallery-item-square" : ""}" data-idx="${idx}">
+          isGradientBar ? " gallery-item-gradient-bar" : ""
+        }${!roundedCards ? " gallery-item-square" : ""}" data-idx="${idx}">
           <div class="gallery-item-image" ${gradientStyle}
                ${
                  onItemClick

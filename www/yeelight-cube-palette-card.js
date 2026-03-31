@@ -298,8 +298,6 @@ class YeelightCubePaletteCard extends HTMLElement {
     const showCard = this.config.show_card_background !== false;
     const removeButtonStyle = this.config.remove_button_style || "default";
     const showRemove = removeButtonStyle !== "none";
-    const removeButtonAlwaysVisible =
-      this.config.remove_button_always_visible !== false;
     const showExport = this.config.show_export_button !== false;
     const showImport = this.config.show_import_button !== false;
     const showPaletteTitle = this.config.show_palette_title !== false;
@@ -308,10 +306,7 @@ class YeelightCubePaletteCard extends HTMLElement {
       showPaletteTitle && this.config.allow_title_edit === true;
 
     // Use shared utility function to get delete button class
-    const baseRemoveBtnClass = getDeleteButtonClass(removeButtonStyle);
-    const removeBtnClass = removeButtonAlwaysVisible
-      ? baseRemoveBtnClass
-      : `${baseRemoveBtnClass} hover-only`;
+    const removeBtnClass = getDeleteButtonClass(removeButtonStyle);
     const cardTitle =
       typeof this.config.title === "string" ? this.config.title : "";
     const displayMode = this.config.display_mode || "list";
@@ -867,12 +862,6 @@ class YeelightCubePaletteCard extends HTMLElement {
           right: -10px !important;
           z-index: 100 !important;
           margin: 0 !important;
-          pointer-events: auto !important;
-        }
-        
-        /* Show delete button on hover when not always visible */
-        .carousel-content-card:hover .hover-only {
-          opacity: 1 !important;
           pointer-events: auto !important;
         }
         
@@ -1819,7 +1808,6 @@ class YeelightCubePaletteCard extends HTMLElement {
       buttonShape,
       showAsCard: true,
       wrapNavigation: cfg.palette_carousel_wrap_navigation === true,
-      indicatorsOutside: cfg.palette_carousel_indicators_outside === true,
       carouselId: "palette-carousel",
       containerGradient: containerGradient,
       renderItemString: (palette, idx) => {

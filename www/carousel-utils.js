@@ -99,7 +99,6 @@ function getVisibleDots(totalItems, currentIndex, maxVisible = 11) {
  * @param {string} options.buttonShape - Button shape for navigation ('rect', 'circle', etc.)
  * @param {boolean} options.showAsCard - Whether to show content in a card container (default: false)
  * @param {boolean} options.wrapNavigation - Whether to wrap around at first/last items (default: false)
- * @param {boolean} options.indicatorsOutside - Whether to show indicators outside the card (default: false)
  * @returns {TemplateResult} LitElement HTML template
  */
 export function renderCarousel(options) {
@@ -113,7 +112,6 @@ export function renderCarousel(options) {
     buttonShape = "rect",
     showAsCard = false,
     wrapNavigation = false,
-    indicatorsOutside = false,
   } = options;
 
   if (!items || items.length === 0) {
@@ -149,26 +147,6 @@ export function renderCarousel(options) {
           class="carousel-content ${showAsCard ? "carousel-content-card" : ""}"
         >
           ${renderItem ? renderItem(items[validIndex], validIndex) : ""}
-          ${!indicatorsOutside
-            ? html`
-                <div class="carousel-indicators">
-                  ${getVisibleDots(items.length, validIndex).map((dot) =>
-                    dot.isEllipsis
-                      ? html`<span class="carousel-dot-ellipsis">⋯</span>`
-                      : html`
-                          <span
-                            class="carousel-dot ${dot.index === validIndex
-                              ? "active"
-                              : ""}"
-                            title="${items[dot.index]?.name ||
-                            `Item ${dot.index + 1}`}"
-                            @click=${() => onSetIndex && onSetIndex(dot.index)}
-                          ></span>
-                        `
-                  )}
-                </div>
-              `
-            : ""}
         </div>
         <button
           class="carousel-nav-btn carousel-nav-external nav-btn-${buttonShape} ${validIndex ===
@@ -187,8 +165,7 @@ export function renderCarousel(options) {
           <ha-icon icon="mdi:chevron-right"></ha-icon>
         </button>
       </div>
-      ${indicatorsOutside
-        ? html`
+      ${html`
             <div class="carousel-indicators carousel-indicators-outside">
               ${getVisibleDots(items.length, validIndex).map((dot) =>
                 dot.isEllipsis
@@ -205,8 +182,7 @@ export function renderCarousel(options) {
                     `
               )}
             </div>
-          `
-        : ""}
+          `}
     </div>
   `;
 }
@@ -347,12 +323,6 @@ export const carouselStyles = `
     overflow: visible;
   }
 
-  /* Show delete button on hover when not always visible */
-  .carousel-content-card:hover .hover-only {
-    opacity: 1 !important;
-    pointer-events: auto !important;
-  }
-
   /* Delete button positioning for card mode - outside top right corner */
   .carousel-content-card .pixelart-item-carousel {
     position: static;
@@ -452,7 +422,6 @@ export function setCarouselIndex(index, maxLength) {
  * @param {string} options.buttonShape - Button shape for navigation ('rect', 'circle', etc.)
  * @param {boolean} options.showAsCard - Whether to show content in a card container (default: false)
  * @param {boolean} options.wrapNavigation - Whether to wrap around at first/last items (default: false)
- * @param {boolean} options.indicatorsOutside - Whether to show indicators outside the card (default: false)
  * @param {string} options.carouselId - Unique ID for this carousel instance (required for event handling)
  * @returns {string} HTML string
  */
@@ -464,7 +433,6 @@ export function renderCarouselString(options) {
     buttonShape = "rect",
     showAsCard = false,
     wrapNavigation = false,
-    indicatorsOutside = false,
     carouselId = "carousel",
     containerGradient = null,
   } = options;
@@ -526,11 +494,6 @@ export function renderCarouselString(options) {
       : ""
   }>
           ${content}
-          ${
-            !indicatorsOutside
-              ? `<div class="carousel-indicators">${indicatorsHtml}</div>`
-              : ""
-          }
         </div>
         <button
           class="carousel-nav-btn carousel-nav-external nav-btn-${buttonShape} ${
@@ -546,11 +509,7 @@ export function renderCarouselString(options) {
           <ha-icon icon="mdi:chevron-right"></ha-icon>
         </button>
       </div>
-      ${
-        indicatorsOutside
-          ? `<div class="carousel-indicators carousel-indicators-outside">${indicatorsHtml}</div>`
-          : ""
-      }
+      ${`<div class="carousel-indicators carousel-indicators-outside">${indicatorsHtml}</div>`}
     </div>
   `;
 }

@@ -396,18 +396,6 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                 ),
               )}
             </div>
-            <div class="toggle-row">
-              <label class="toggle-label">Remove Button Always Visible</label>
-              <label class="toggle-switch">
-                <input
-                  id="remove_button_always_visible"
-                  type="checkbox"
-                  .checked="${cfg.remove_button_always_visible !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
             <div class="form-row">
               <label>Color Info Display</label>
               ${createButtonGroup(

@@ -382,13 +382,12 @@ class YeelightCubePaletteCardEditor extends LitElement {
                   )
                 : ""
             }
-            ${config.display_mode === "list" || config.display_mode === "gallery"
+            ${config.display_mode === "list" ||
+            config.display_mode === "gallery"
               ? html`
                   <div class="form-row">
                     <label>Items Per Page (0 = no pagination)</label>
-                    <div
-                      style="display: flex; align-items: center; gap: 8px;"
-                    >
+                    <div style="display: flex; align-items: center; gap: 8px;">
                       <input
                         id="items_per_page"
                         type="range"
@@ -423,13 +422,6 @@ class YeelightCubePaletteCardEditor extends LitElement {
                 { value: "trash", label: "Trash" },
               ],
             )}
-            ${config.remove_button_style !== "none"
-              ? this._renderSwitch(
-                  "Remove Button Always Visible",
-                  "remove_button_always_visible",
-                  config.remove_button_always_visible !== false,
-                )
-              : ""}
 
             <div class="form-row">
               <label>Display Card Size</label>
@@ -480,11 +472,6 @@ class YeelightCubePaletteCardEditor extends LitElement {
                       "Wrap Navigation (Infinite Loop)",
                       "palette_carousel_wrap_navigation",
                       config.palette_carousel_wrap_navigation === true,
-                    )}
-                    ${this._renderSwitch(
-                      "Show Indicators Outside Card",
-                      "palette_carousel_indicators_outside",
-                      config.palette_carousel_indicators_outside === true,
                     )}
                   `,
                 )

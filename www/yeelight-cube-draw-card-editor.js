@@ -1101,18 +1101,6 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 ),
               )}
             </div>
-            ${this.config.pixel_art_remove_button_style !== "none"
-              ? createToggleRow(
-                  "Remove Button Always Visible",
-                  "pixel_art_remove_button_always_visible",
-                  this.config.pixel_art_remove_button_always_visible !== false,
-                  (e) =>
-                    this._onSwitchChange(
-                      e,
-                      "pixel_art_remove_button_always_visible",
-                    ),
-                )
-              : ""}
             ${
               // Album-specific settings - styled section
               this.config.pixel_art_gallery_mode === "album"
@@ -1185,16 +1173,6 @@ class YeelightCubeDrawCardEditor extends LitElement {
                           this.config.carousel_wrap_navigation === true,
                           (e) =>
                             this._onSwitchChange(e, "carousel_wrap_navigation"),
-                        )}
-                        ${createToggleRow(
-                          "Show Indicators Outside Card",
-                          "carousel_indicators_outside",
-                          this.config.carousel_indicators_outside === true,
-                          (e) =>
-                            this._onSwitchChange(
-                              e,
-                              "carousel_indicators_outside",
-                            ),
                         )}
                       `,
                     )
