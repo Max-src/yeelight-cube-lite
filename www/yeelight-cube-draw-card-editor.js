@@ -420,8 +420,6 @@ class YeelightCubeDrawCardEditor extends LitElement {
     if (!this.config.matrix_bg) this.config.matrix_bg = "black";
     if (typeof this.config.matrix_box_shadow !== "boolean")
       this.config.matrix_box_shadow = true;
-    if (typeof this.config.pixel_art_matrix_box_shadow !== "boolean")
-      this.config.pixel_art_matrix_box_shadow = true;
     if (typeof this.config.pixel_art_pixel_box_shadow !== "boolean")
       this.config.pixel_art_pixel_box_shadow = true;
     if (typeof this.config.pixel_art_show_titles !== "boolean")
@@ -1300,12 +1298,6 @@ class YeelightCubeDrawCardEditor extends LitElement {
               },
               this._onPixelArtPreviewSizeChange.bind(this),
               "%",
-            )}
-            ${createToggleRow(
-              "Pixel Art Matrix Box Shadow",
-              "pixel_art_matrix_box_shadow",
-              this.config.pixel_art_matrix_box_shadow === true,
-              (e) => this._onSwitchChange(e, "pixel_art_matrix_box_shadow"),
             )}
             ${createToggleRow(
               "Pixel Art Pixel Box Shadow",

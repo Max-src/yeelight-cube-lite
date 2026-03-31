@@ -97,7 +97,6 @@ class YeelightCubeDrawCard extends LitElement {
       pixel_gap: 2,
       matrix_bg: "black",
       matrix_box_shadow: true,
-      pixel_art_matrix_box_shadow: true,
       pixel_art_pixel_box_shadow: true,
       pixel_art_show_titles: true,
       pixel_art_allow_rename: false,
@@ -1802,11 +1801,7 @@ class YeelightCubeDrawCard extends LitElement {
     // Render function for pixel art content
     const renderPixelArtContent = (art, idx) => {
       const pixelMatrix = this._convertPixelArtToDisplayMatrix(art);
-      const pixelArtMatrixBoxShadow = cfg.pixel_art_matrix_box_shadow !== false;
       const pixelArtPixelBoxShadow = cfg.pixel_art_pixel_box_shadow !== false;
-      const matrixShadowStyle = pixelArtMatrixBoxShadow
-        ? "box-shadow: 0 2px 8px #0008;"
-        : "";
 
       const scaledPixelSize = 10 * scaleValue;
       const scaledPadding = 6 * scaleValue;
@@ -1818,8 +1813,7 @@ class YeelightCubeDrawCard extends LitElement {
                     width: fit-content;
                     --pixelart-bg-color: ${resolveBgColor(bgColor)};
                     --pixelart-gap: ${scaledGap}px;
-                    --pixel-size: ${scaledPixelSize}px;
-                    ${matrixShadowStyle}">
+                    --pixel-size: ${scaledPixelSize}px;">
             <div class="pixelart-matrix ${pixelStyle}">
               ${pixelMatrix
                 .map((color) => {
@@ -2047,11 +2041,7 @@ class YeelightCubeDrawCard extends LitElement {
     // Render function for each pixel art item content
     const renderPixelArtContent = (art, idx) => {
       const pixelMatrix = this._convertPixelArtToDisplayMatrix(art);
-      const pixelArtMatrixBoxShadow = cfg.pixel_art_matrix_box_shadow !== false;
       const pixelArtPixelBoxShadow = cfg.pixel_art_pixel_box_shadow !== false;
-      const matrixShadowStyle = pixelArtMatrixBoxShadow
-        ? "box-shadow: 0 2px 8px #0008;"
-        : "";
 
       return `
         <div class="album-content-container">
@@ -2071,8 +2061,7 @@ class YeelightCubeDrawCard extends LitElement {
           <div class="album-preview pixelart-preview-album"
                style="padding: ${proportionalPadding}px;
                       --pixelart-bg-color: ${resolveBgColor(bgColor, "#ffffff")};
-                      --pixelart-gap: ${proportionalGap}px;
-                      ${matrixShadowStyle}"
+                      --pixelart-gap: ${proportionalGap}px;"
                data-index="${idx}">
             <div class="pixelart-matrix ${pixelStyle}">
               ${pixelMatrix
@@ -2308,13 +2297,8 @@ class YeelightCubeDrawCard extends LitElement {
           (art, idx) => `${art.name || "untitled"}-${globalOffset + idx}`,
           (art, idx) => {
             const pixelMatrix = this._convertPixelArtToDisplayMatrix(art);
-            const pixelArtMatrixBoxShadow =
-              cfg.pixel_art_matrix_box_shadow !== false;
             const pixelArtPixelBoxShadow =
               cfg.pixel_art_pixel_box_shadow !== false;
-            const matrixShadowStyle = pixelArtMatrixBoxShadow
-              ? "box-shadow: 0 1px 3px rgba(0,0,0,0.15);"
-              : "";
             const globalIdx = globalOffset + idx;
 
             return html`
@@ -2346,8 +2330,7 @@ class YeelightCubeDrawCard extends LitElement {
                       class="pixelart-preview"
                       style="width: fit-content;
                              --pixelart-bg-color: ${resolveBgColor(bgColor)};
-                             --pixelart-gap: ${pixelGap}px;
-                             ${matrixShadowStyle}"
+                             --pixelart-gap: ${pixelGap}px;"
                       title="Click to apply to drawing matrix${autoApplyToLamp
                         ? " and lamp"
                         : ""}"
@@ -2630,12 +2613,7 @@ class YeelightCubeDrawCard extends LitElement {
     const pixelMatrix = this._convertPixelArtToDisplayMatrix(art);
 
     // Box shadow settings for pixel art previews
-    const pixelArtMatrixBoxShadow = cfg.pixel_art_matrix_box_shadow !== false;
     const pixelArtPixelBoxShadow = cfg.pixel_art_pixel_box_shadow !== false;
-
-    const matrixShadowStyle = pixelArtMatrixBoxShadow
-      ? "box-shadow: 0 2px 8px #0008;"
-      : "";
 
     // Determine if title should be on top (for grid, carousel)
     const titleOnTop = displayMode !== "list";
@@ -2691,7 +2669,6 @@ class YeelightCubeDrawCard extends LitElement {
                 --pixelart-size-percent: ${previewSizePercent}%;
                 --pixelart-bg-color: ${resolveBgColor(bgColor, "#ffffff")};
                 --pixelart-gap: ${proportionalGap}px;
-                ${matrixShadowStyle}
               "
                 @click=${() =>
                   this._handlePixelArtCanvasClick(idx, autoApplyToLamp)}
@@ -2734,7 +2711,6 @@ class YeelightCubeDrawCard extends LitElement {
                 --pixelart-size-percent: ${previewSizePercent}%;
                 --pixelart-bg-color: ${resolveBgColor(bgColor, "#ffffff")};
                 --pixelart-gap: ${proportionalGap}px;
-                ${matrixShadowStyle};
                 position: relative;
               "
               @click=${() =>
