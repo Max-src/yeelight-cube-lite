@@ -166,23 +166,22 @@ export function renderCarousel(options) {
         </button>
       </div>
       ${html`
-            <div class="carousel-indicators carousel-indicators-outside">
-              ${getVisibleDots(items.length, validIndex).map((dot) =>
-                dot.isEllipsis
-                  ? html`<span class="carousel-dot-ellipsis">⋯</span>`
-                  : html`
-                      <span
-                        class="carousel-dot ${dot.index === validIndex
-                          ? "active"
-                          : ""}"
-                        title="${items[dot.index]?.name ||
-                        `Item ${dot.index + 1}`}"
-                        @click=${() => onSetIndex && onSetIndex(dot.index)}
-                      ></span>
-                    `
-              )}
-            </div>
-          `}
+        <div class="carousel-indicators carousel-indicators-outside">
+          ${getVisibleDots(items.length, validIndex).map((dot) =>
+            dot.isEllipsis
+              ? html`<span class="carousel-dot-ellipsis">⋯</span>`
+              : html`
+                  <span
+                    class="carousel-dot ${dot.index === validIndex
+                      ? "active"
+                      : ""}"
+                    title="${items[dot.index]?.name || `Item ${dot.index + 1}`}"
+                    @click=${() => onSetIndex && onSetIndex(dot.index)}
+                  ></span>
+                `,
+          )}
+        </div>
+      `}
     </div>
   `;
 }
@@ -475,8 +474,8 @@ export function renderCarouselString(options) {
       }">
         <button
           class="carousel-nav-btn carousel-nav-external nav-btn-${buttonShape} ${
-    leftDisabled ? "disabled" : ""
-  }"
+            leftDisabled ? "disabled" : ""
+          }"
           title="Previous"
           data-carousel-id="${carouselId}"
           data-action="navigate"
@@ -489,16 +488,16 @@ export function renderCarouselString(options) {
         <div class="carousel-content ${
           showAsCard ? "carousel-content-card" : ""
         }${containerGradient ? " gradient-bg-mode" : ""}" ${
-    containerGradient
-      ? `style="--carousel-gradient-bg: ${containerGradient};"`
-      : ""
-  }>
+          containerGradient
+            ? `style="--carousel-gradient-bg: ${containerGradient};"`
+            : ""
+        }>
           ${content}
         </div>
         <button
           class="carousel-nav-btn carousel-nav-external nav-btn-${buttonShape} ${
-    rightDisabled ? "disabled" : ""
-  }"
+            rightDisabled ? "disabled" : ""
+          }"
           title="Next"
           data-carousel-id="${carouselId}"
           data-action="navigate"

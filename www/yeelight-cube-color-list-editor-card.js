@@ -4475,10 +4475,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
   }
 
   _generateGridLayout(textColors, options) {
-    const {
-      allowDragDrop,
-      removeButtonStyle = "default",
-    } = options;
+    const { allowDragDrop, removeButtonStyle = "default" } = options;
 
     const deleteBtnClass = getDeleteButtonClass(removeButtonStyle);
 

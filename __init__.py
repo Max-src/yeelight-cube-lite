@@ -8,7 +8,7 @@ from homeassistant.exceptions import ConfigEntryNotReady # type: ignore
 from homeassistant.helpers.typing import ConfigType # type: ignore
 from homeassistant.helpers.storage import Store # type: ignore
 from homeassistant.helpers.event import async_call_later # type: ignore
-from .const import DOMAIN, CONF_IP
+from .const import DOMAIN, CONF_IP, CONF_DEVICE_ID
 from .conflict_prevention import get_conflict_prevention
 from .services import async_setup_services, async_remove_services
 
@@ -85,9 +85,26 @@ async def _async_register_lovelace_resources(
         )
 
 
+def _is_cubelite_model(model: str) -> bool:
+    """Check if a SSDP model string represents a CubeLite device."""
+    m = model.lower()
+    return "cubelite" in m or "cube_lite" in m or "cube-lite" in m or "clt" in m
+
+
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Yeelight Cube Lite component."""
     _LOGGER.debug("Yeelight Cube Lite async_setup() called")
+
+    # Schedule an SSDP scan for CubeLite devices after HA is fully started.
+    # This creates discovery flows so CubeLite devices show up in the
+    # "Discovered" section of the Integrations page under our integration.
+    @ha_callback
+    def _discover_cubelite_devices(_event=None):
+        """Fired once after HA startup — kick off SSDP scan."""
+        hass.async_create_task(_async_ssdp_discover_cubelite(hass))
+
+    hass.bus.async_listen_once("homeassistant_started", _discover_cubelite_devices)
+
     return True
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -180,6 +197,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     conflict_prevention = get_conflict_prevention(hass)
     conflict_prevention.add_managed_device(ip_address)
     
+    # Listen for config entry updates (e.g. IP change from zeroconf rediscovery)
+    entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
+    
     # Initialize entry data storage for sharing between platforms
     if entry.entry_id not in hass.data[DOMAIN]:
         hass.data[DOMAIN][entry.entry_id] = {}
@@ -196,9 +216,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.debug("[SETUP] Probe OK — %s:%s is reachable", ip_address, port)
     except (OSError, ConnectionRefusedError, TimeoutError) as err:
         _LOGGER.warning(
-            "[SETUP] Device at %s:%s is not reachable: %s. Will retry automatically.",
+            "[SETUP] Device at %s:%s is not reachable: %s. "
+            "Scanning network for CubeLite devices...",
             ip_address, port, err,
         )
+        # Device unreachable — try to find it at a new IP via Yeelight SSDP
+        new_ip = await _async_try_rediscover(hass, entry, ip_address)
+        if new_ip:
+            # Entry data already updated inside _async_try_rediscover.
+            # Raise ConfigEntryNotReady so HA retries immediately with the new IP.
+            raise ConfigEntryNotReady(
+                f"Yeelight Cube Lite moved from {ip_address} to {new_ip} — retrying"
+            ) from err
         raise ConfigEntryNotReady(
             f"Yeelight Cube Lite at {ip_address} is not reachable — will retry automatically"
         ) from err
@@ -237,6 +266,150 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     
     _LOGGER.debug(f"Set up Yeelight Cube Lite at {ip_address}")
     return True
+
+
+async def _async_ssdp_discover_cubelite(hass: HomeAssistant) -> None:
+    """Scan the LAN for CubeLite devices and create discovery flows.
+
+    CubeLite devices do NOT advertise via _miio._udp.local. mDNS, so HA's
+    built-in zeroconf never triggers our config flow for them.  Instead we
+    use the yeelight library's SSDP scan (same mechanism as the built-in
+    Yeelight integration) and initiate discovery flows ourselves.
+    """
+    try:
+        from yeelight import discover_bulbs  # type: ignore
+
+        _LOGGER.warning("[SSDP-SCAN] Scanning for CubeLite devices...")
+        bulbs = await hass.async_add_executor_job(discover_bulbs, 5)
+        _LOGGER.warning("[SSDP-SCAN] Found %d Yeelight devices total", len(bulbs))
+
+        for bulb in bulbs:
+            capabilities = bulb.get("capabilities", {})
+            model = (capabilities.get("model") or "").lower()
+            bulb_ip = bulb.get("ip", "")
+            device_id = str(capabilities.get("id", ""))
+            device_name = capabilities.get("name", "") or model
+
+            _LOGGER.warning(
+                "[SSDP-SCAN]   Device: ip=%s model=%s id=%s name=%s",
+                bulb_ip, model, device_id, device_name,
+            )
+
+            if not _is_cubelite_model(model):
+                continue  # Not a CubeLite
+
+            _LOGGER.warning(
+                "[SSDP-SCAN] Found CubeLite: ip=%s model=%s id=%s — creating discovery flow",
+                bulb_ip, model, device_id,
+            )
+            try:
+                await hass.config_entries.flow.async_init(
+                    DOMAIN,
+                    context={"source": "discovery"},
+                    data={
+                        "ip": bulb_ip,
+                        "model": model,
+                        "device_id": device_id,
+                        "name": device_name or f"CubeLite ({bulb_ip})",
+                    },
+                )
+            except Exception as exc:
+                # Flow may abort if already configured — that's fine
+                _LOGGER.debug("[SSDP-SCAN] Flow init result: %s", exc)
+
+        # After creating our discovery flows, dismiss the built-in Yeelight
+        # integration's discovery flows for the same CubeLite devices so
+        # users see them only under our integration.
+        await _async_dismiss_yeelight_cubelite_discoveries(hass)
+
+    except Exception as exc:
+        _LOGGER.warning("[SSDP-SCAN] Scan failed: %s", exc)
+
+
+async def _async_try_rediscover(
+    hass: HomeAssistant, entry: ConfigEntry, old_ip: str
+) -> str | None:
+    """Scan the LAN for CubeLite devices that may have changed IP.
+
+    Uses the ``yeelight`` library's SSDP discovery (multicast to
+    239.255.255.250:1982) which is the same mechanism the built-in
+    Yeelight integration uses.  CubeLite devices do NOT advertise
+    via ``_miio._udp.local.`` mDNS, so zeroconf never sees them —
+    this is the reliable alternative.
+
+    Returns the new IP if a matching device was found and the config
+    entry was updated, otherwise ``None``.
+    """
+    try:
+        from yeelight import discover_bulbs  # type: ignore
+
+        _LOGGER.warning("[REDISCOVER] Scanning for CubeLite devices via SSDP...")
+        bulbs = await hass.async_add_executor_job(discover_bulbs, 5)
+        _LOGGER.warning("[REDISCOVER] Found %d Yeelight devices on the network", len(bulbs))
+
+        # Collect all IPs already configured in our integration
+        configured_ips: set[str] = set()
+        for e in hass.config_entries.async_entries(DOMAIN):
+            ip = e.data.get(CONF_IP)
+            if ip:
+                configured_ips.add(ip)
+
+        # Filter for CubeLite devices
+        for bulb in bulbs:
+            capabilities = bulb.get("capabilities", {})
+            model = (capabilities.get("model") or "").lower()
+            bulb_ip = bulb.get("ip", "")
+            device_id = capabilities.get("id", "")
+
+            _LOGGER.warning(
+                "[REDISCOVER]   Device: ip=%s model=%s id=%s is_cubelite=%s",
+                bulb_ip, model, device_id, _is_cubelite_model(model),
+            )
+
+            if not _is_cubelite_model(model):
+                continue  # Not a CubeLite
+
+            if bulb_ip in configured_ips:
+                continue  # This IP is already assigned to an entry
+
+            # Found a CubeLite at an IP we don't have — update this entry
+            _LOGGER.warning(
+                "[REDISCOVER] CubeLite found at %s (was %s). "
+                "Updating entry %s (device_id=%s, model=%s)",
+                bulb_ip, old_ip, entry.entry_id, device_id, model,
+            )
+            new_data = {**entry.data, CONF_IP: bulb_ip}
+            if device_id:
+                new_data[CONF_DEVICE_ID] = device_id
+            hass.config_entries.async_update_entry(
+                entry,
+                data=new_data,
+                title=f"Yeelight Cube ({bulb_ip})",
+            )
+            return bulb_ip
+
+        _LOGGER.warning("[REDISCOVER] No unmapped CubeLite devices found on the network")
+        return None
+
+    except Exception as exc:
+        _LOGGER.warning("[REDISCOVER] Scan failed: %s", exc)
+        return None
+
+
+async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Handle config entry updates (e.g. IP changed via zeroconf rediscovery).
+    
+    When a device gets a new IP via DHCP, zeroconf rediscovery calls
+    _abort_if_unique_id_configured(updates={CONF_IP: new_ip}) which updates
+    entry.data. HA then calls this listener, and we reload the entry so the
+    CubeMatrix reconnects to the new IP.
+    """
+    _LOGGER.info(
+        "Config entry updated for %s — reloading (new IP: %s)",
+        entry.title, entry.data.get(CONF_IP),
+    )
+    await hass.config_entries.async_reload(entry.entry_id)
+
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
@@ -322,6 +495,7 @@ def _schedule_dismiss_yeelight_discoveries(hass: HomeAssistant) -> None:
     @ha_callback
     def _run_dismiss(_now=None):
         hass.async_create_task(_async_dismiss_yeelight_discoveries(hass))
+        hass.async_create_task(_async_dismiss_yeelight_cubelite_discoveries(hass))
 
     # Run at 10s, 30s, 60s, and 120s after setup to catch flows that arrive later
     for delay in (10, 30, 60, 120):
@@ -356,6 +530,36 @@ async def _async_dismiss_yeelight_discoveries(hass: HomeAssistant) -> None:
                 hass.config_entries.flow.async_abort(flow["flow_id"])
                 _LOGGER.debug(
                     "Auto-dismissed built-in Yeelight discovery for %s (managed by Yeelight Cube Lite)",
+                    flow_host,
+                )
+            except Exception as exc:
+                _LOGGER.debug("Could not abort Yeelight discovery flow: %s", exc)
+
+
+async def _async_dismiss_yeelight_cubelite_discoveries(hass: HomeAssistant) -> None:
+    """Dismiss built-in Yeelight discovery flows for ANY CubeLite device.
+
+    Unlike _async_dismiss_yeelight_discoveries (which only dismisses for
+    configured IPs), this dismisses flows whose name contains 'cubelite'
+    or 'clt' — i.e. any CubeLite on the network, whether or not it's
+    already configured in our integration.
+    """
+    try:
+        flows = hass.config_entries.flow.async_progress_by_handler("yeelight")
+    except Exception:
+        return
+
+    for flow in flows:
+        context = flow.get("context", {})
+        placeholders = context.get("title_placeholders", {})
+        flow_name = (placeholders.get("name", "") or "").lower()
+        flow_host = placeholders.get("host", "")
+
+        if "cubelite" in flow_name or "clt" in flow_name or "cube_lite" in flow_name:
+            try:
+                hass.config_entries.flow.async_abort(flow["flow_id"])
+                _LOGGER.warning(
+                    "[DISMISS] Dismissed built-in Yeelight discovery for CubeLite at %s",
                     flow_host,
                 )
             except Exception as exc:

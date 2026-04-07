@@ -239,7 +239,7 @@ export function setupCompactDragDrop(
   root,
   itemSelector,
   onReorder,
-  options = {}
+  options = {},
 ) {
   const { shouldPreventDrag = null, context = null } = options;
 
@@ -275,7 +275,6 @@ export function setupCompactDragDrop(
         const items = Array.from(root.querySelectorAll(itemSelector));
         const newOrder = items.map((i) => parseInt(i.dataset.idx));
 
-
         // Check if order actually changed
         const orderChanged = newOrder.some((pos, idx) => pos !== idx);
 
@@ -292,7 +291,6 @@ export function setupCompactDragDrop(
             const oldIdx = item.dataset.idx;
             item.dataset.idx = newIdx;
           });
-
         }
       }
 

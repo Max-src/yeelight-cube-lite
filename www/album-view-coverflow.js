@@ -254,7 +254,7 @@ export function renderAlbumView(
   items,
   renderItemContent,
   config = {},
-  classPrefix = "album"
+  classPrefix = "album",
 ) {
   // Determine button style (supports both palette and pixel art configs)
   const removeButtonStyle =
@@ -298,7 +298,7 @@ export async function setupAlbumNavigation(
   classPrefix,
   onItemClick,
   onItemRemove,
-  context
+  context,
 ) {
   if (!shadowRoot) return;
 
@@ -319,7 +319,7 @@ export async function setupAlbumNavigation(
   }
 
   const items = Array.from(
-    container.querySelectorAll(`.${classPrefix}-album-item`)
+    container.querySelectorAll(`.${classPrefix}-album-item`),
   );
   let currentIndex = context._currentAlbumIndex;
 
