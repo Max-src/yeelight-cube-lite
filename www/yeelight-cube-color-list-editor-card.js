@@ -155,6 +155,13 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     }
   }
 
+  // Resolve the primary entity: first from target_entities, fallback to legacy entity.
+  _getPrimaryEntity() {
+    const targetEntities = this.config?.target_entities || [];
+    if (targetEntities.length > 0) return targetEntities[0];
+    return this.config?.entity || null;
+  }
+
   // Helper method for calling services on multiple entities.
   // Delegates to the shared utility.  The Python backend holds per-IP locks,
   // so different lamps execute in parallel.
@@ -1814,7 +1821,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     modeSelectors.forEach((btn) => {
       btn.addEventListener("click", async (e) => {
         const mode = e.target.dataset.mode;
-        if (!this._hass || !this.config.entity) return;
+        if (!this._hass || !this._getPrimaryEntity()) return;
 
         // Prevent multiple rapid clicks
         if (this._processingModeChange) {
@@ -1878,7 +1885,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     if (modeDropdown) {
       modeDropdown.addEventListener("change", async (e) => {
         const mode = e.target.value;
-        if (!this._hass || !this.config.entity || this._processingModeChange)
+        if (!this._hass || !this._getPrimaryEntity() || this._processingModeChange)
           return;
 
         this._processingModeChange = true;
@@ -3303,7 +3310,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     }
   } // Always get the current textColors from the entity state
   _getCurrentTextColors() {
-    const entityId = this.config?.entity;
+    const entityId = this._getPrimaryEntity();
     const hass = this._hass;
     if (hass && entityId && hass.states[entityId]) {
       const stateObj = hass.states[entityId];
