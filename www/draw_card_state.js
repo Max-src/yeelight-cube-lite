@@ -7,7 +7,8 @@ export function getInitialMatrix(rows = 5, cols = 20) {
 export function parseConfig(config) {
   // Resolve primary entity: prefer target_entities[0], fall back to legacy entity
   const targetEntities = config.target_entities || [];
-  const primaryEntity = targetEntities.length > 0 ? targetEntities[0] : (config.entity || "");
+  const primaryEntity =
+    targetEntities.length > 0 ? targetEntities[0] : config.entity || "";
   return {
     entity: primaryEntity,
     paletteSensor: config.palette_sensor || null,

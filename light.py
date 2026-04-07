@@ -408,38 +408,45 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
           drop out first at low duty cycles.
         - Green LEDs (~2.2 V) and Red LEDs (~1.8 V) have lower thresholds
           but still lose accuracy.
-        - Visible symptoms: white→yellow, magenta→red, cyan→green.
+        - Visible symptoms: white->yellow, magenta->red, cyan->green.
 
         HOW IT WORKS:
-        1. Per-channel inverse gamma (gamma < 1 ⇒ boosts low values).
-        2. Correction strength ramps with darken%: zero at high brightness,
-           full at very low brightness.
+        1. Per-channel inverse gamma (gamma < 1 => boosts low values).
+        2. Correction strength ramps with HARDWARE brightness: zero when the
+           LEDs run at high duty cycle, full at very low duty cycle.
         3. Only affects hardware-bound values; the preview card always shows
            the original intended colours.
 
+        IMPORTANT: The strength must be driven by the actual hardware
+        brightness (PWM duty cycle), NOT the software darken%.  In the
+        dual-brightness system, mid-range user brightness (e.g. 59%) has
+        hardware=100% but darken=72%: the LEDs are at full power so there
+        is NO non-linearity to compensate for.  Using darken% here would
+        over-correct and desaturate colours ("faded / merged with white").
+        
         ═══════════════════════════════════════════════════════════════════
-        TUNING PARAMETERS — adjust these if colours still look off:
+        TUNING PARAMETERS - adjust these if colours still look off:
         ═══════════════════════════════════════════════════════════════════
 
-        DARKEN_THRESHOLD  (default 15)
-            Darken % below which NO correction is applied.  If colours look
-            wrong at brighter levels, lower this.  Range: 0-50.
+        HW_BRIGHT_THRESHOLD  (default 50)
+            Hardware brightness % ABOVE which correction is skipped.
+            At these levels, LEDs behave linearly - no correction needed.
 
-        DARKEN_FULL       (default 90)
-            Darken % at which correction reaches full strength.  The ramp
-            is linear between DARKEN_THRESHOLD and DARKEN_FULL.
+        HW_BRIGHT_FULL       (default 10)
+            Hardware brightness % at or below which correction is at 100%.
+            Below this, LEDs are deeply non-linear and need full boost.
 
         GAMMA_R           (default 0.85)
             Red channel gamma.  Lower = more boost for dim reds.
-            Typical range: 0.60 – 1.00.  1.0 = no change.
+            Typical range: 0.60 - 1.00.  1.0 = no change.
 
-        GAMMA_G           (default 0.85)
+        GAMMA_G           (default 0.75)
             Green channel gamma.  Same logic as red.
 
         GAMMA_B           (default 0.65)
             Blue channel gamma.  Lowest value because blue LEDs need the
-            most help.  If blues are still too dark, try 0.50–0.55.
-            If blues are over-boosted, try 0.70–0.80.
+            most help.  If blues are still too dark, try 0.50-0.55.
+            If blues are over-boosted, try 0.70-0.80.
         ═══════════════════════════════════════════════════════════════════
         """
         r, g, b = rgb_color
@@ -447,19 +454,23 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             return (0, 0, 0)
 
         # ── Tuning knobs ────────────────────────────────────────────────
-        DARKEN_THRESHOLD = 15   # darken% below which correction is skipped
-        DARKEN_FULL      = 90   # darken% at which correction is at 100%
-        GAMMA_R          = 0.85 # red   inverse gamma (lower = more boost)
-        GAMMA_G          = 0.75 # green inverse gamma
-        GAMMA_B          = 0.65 # blue  inverse gamma (most aggressive)
+        HW_BRIGHT_THRESHOLD = 50   # hw brightness% above which correction is OFF
+        HW_BRIGHT_FULL      = 10   # hw brightness% at/below which correction is 100%
+        GAMMA_R             = 0.85 # red   inverse gamma (lower = more boost)
+        GAMMA_G             = 0.75 # green inverse gamma
+        GAMMA_B             = 0.65 # blue  inverse gamma (most aggressive)
         # ────────────────────────────────────────────────────────────────
 
-        darken = self._preview_darken
-        if darken < DARKEN_THRESHOLD:
-            return rgb_color  # Not needed at high brightness
+        # Use HARDWARE brightness to decide correction strength.
+        # High hardware brightness (LEDs at high duty cycle) = no correction.
+        # Low hardware brightness (LEDs at low duty cycle) = full correction.
+        hw_bright = getattr(self, '_last_hardware_brightness', 100)
+        if hw_bright >= HW_BRIGHT_THRESHOLD:
+            return rgb_color  # LEDs at high duty cycle, no non-linearity
 
-        # Correction strength ramps linearly from 0 → 1
-        strength = min(1.0, (darken - DARKEN_THRESHOLD) / max(1, DARKEN_FULL - DARKEN_THRESHOLD))
+        # Correction strength ramps linearly from 0 -> 1 as hw brightness
+        # drops from HW_BRIGHT_THRESHOLD down to HW_BRIGHT_FULL.
+        strength = min(1.0, (HW_BRIGHT_THRESHOLD - hw_bright) / max(1, HW_BRIGHT_THRESHOLD - HW_BRIGHT_FULL))
 
         def gamma_correct(val, gamma):
             """Apply inverse gamma to a single 0-255 channel value."""

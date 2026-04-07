@@ -1885,7 +1885,11 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     if (modeDropdown) {
       modeDropdown.addEventListener("change", async (e) => {
         const mode = e.target.value;
-        if (!this._hass || !this._getPrimaryEntity() || this._processingModeChange)
+        if (
+          !this._hass ||
+          !this._getPrimaryEntity() ||
+          this._processingModeChange
+        )
           return;
 
         this._processingModeChange = true;
