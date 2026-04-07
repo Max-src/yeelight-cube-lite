@@ -2017,13 +2017,23 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 
                 # Update the darken value (affects next display render)
                 old_darken = self._last_applied_darken
+                old_hardware = self._last_hardware_brightness
                 self._preview_darken = darken_percent
+                
+                # CRITICAL: Update _last_hardware_brightness BEFORE any branch
+                # that calls _apply_brightness_only() or _apply_color_correction().
+                # _apply_color_correction() reads this to determine correction
+                # strength — if updated AFTER _apply_brightness_only(), the
+                # correction uses the OLD hardware brightness → wrong colors.
+                # (In non-hardware_changed branches, this is a no-op since the
+                # value hasn't changed.)
+                self._last_hardware_brightness = hardware_brightness
                 
                 # OPTIMIZATION: Execute hardware and display updates optimally
                 if hardware_changed and darken_changed:
                     _LOGGER.debug(
                         f"[BRIGHTNESS #{call_id}] BOTH changed - "
-                        f"hardware: {self._last_hardware_brightness}% â†’ {hardware_brightness}%, "
+                        f"hardware: {old_hardware}% â†’ {hardware_brightness}%, "
                         f"darkness: {old_darken}% â†’ {darken_percent}% - sequential hw then display"
                     )
                     # IMPORTANT: Send hardware brightness FIRST, then update display.
@@ -2081,14 +2091,14 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                         f"{self._brightness} (hardware={hardware_brightness}%, darkness={darken_percent}%)"
                     )
                     
-                    self._last_hardware_brightness = hardware_brightness
+                    # _last_hardware_brightness already set above (before branches)
                     self._last_applied_darken = darken_percent
                     
                 elif hardware_changed:
                     # Only hardware changed - send command and await it
                     _LOGGER.debug(
                         f"[BRIGHTNESS #{call_id}] Hardware brightness changed: "
-                        f"{self._last_hardware_brightness}% â†’ {hardware_brightness}%, sending..."
+                        f"{old_hardware}% â†’ {hardware_brightness}%, sending..."
                     )
                     # Pre-flight check: skip if connection is down
                     if not self._cube_matrix.is_connected():
@@ -2114,10 +2124,17 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                             if not is_known_error:
                                 _LOGGER.warning(f"[BRIGHTNESS] Unexpected error sending hardware brightness: {e}")
                     
+                    # _last_hardware_brightness already set above (before branches)
+                    
+                    # IMPORTANT: Re-render pixels with updated color correction.
+                    # _apply_color_correction() uses _last_hardware_brightness which
+                    # just changed — existing pixels have stale correction baked in.
+                    # Without this, low-brightness color correction would be wrong
+                    # until the next full re-render.
+                    await self._apply_brightness_only()
+                    
                     # Track successful brightness change (hardware only, darkness unchanged)
                     self._last_successful_brightness = (time.time(), self._brightness)
-                    
-                    self._last_hardware_brightness = hardware_brightness
                     
                 elif darken_changed:
                     # Only darkness changed - use FAST PATH (no full re-render)
