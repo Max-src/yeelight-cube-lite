@@ -1749,22 +1749,35 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         )
 
     async def _force_refresh_impl(self):
-        """Force refresh implementation â€” runs inside _execute_hardware_op lock.
+        """Force refresh implementation - runs inside _execute_hardware_op lock.
         
         Closes persistent socket, re-activates FX mode via raw TCP,
-        and re-sends current pixel data on a fresh TCP connection.
+        and re-renders the display through the full pipeline.
+        
+        IMPORTANT: We must NOT read raw pixel data from self._layout and
+        send it directly, because _apply_impl() applies software brightness
+        darkening IN PLACE to module.data.  Sending those already-darkened
+        pixels while also setting hardware brightness via set_bright would
+        result in double-darkening (dimmer than intended).
+        
+        Instead, we re-render through _apply_display_mode_internal() which:
+          1. Fills the layout with fresh un-darkened colours (text/drawing)
+          2. Calls _apply_impl() which applies colour effects + brightness
+             darkening correctly, then sends the final pixel data.
+        Since ensure_fx_ready() already set _fx_mode_is_direct=True,
+        _apply_impl() will skip redundant FX activation.
         """
         # Steps 1-3: Close persistent socket, activate FX via raw TCP, set brightness
         await self.ensure_fx_ready()
         _LOGGER.warning(f"[FORCE REFRESH] [{self._ip}] ensure_fx_ready complete")
         
-        # Step 4: Get current pixel data and send on a fresh TCP connection
-        cm = self._cube_matrix
-        raw_rgb_data = self._layout.get_raw_rgb_data()
-        await cm.send_raw_command("update_leds", [raw_rgb_data])
+        # Step 4: Re-render through the full display pipeline so brightness
+        # darkening is applied once (not double-applied on stale pixel data).
+        await self._apply_display_mode_internal(skip_post_delay=True)
         _LOGGER.warning(
-            f"[FORCE REFRESH] [{self._ip}] âœ“ Complete â€” "
-            f"FX mode active, brightness={self._last_hardware_brightness}%, pixels sent"
+            f"[FORCE REFRESH] [{self._ip}] Complete - "
+            f"FX mode active, brightness={self._last_hardware_brightness}%, "
+            f"display re-rendered"
         )
 
     async def async_force_refresh(self):

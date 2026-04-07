@@ -447,14 +447,20 @@ class YeelightCubeGradientCard extends HTMLElement {
     const ignoreUpdateWindow = 2000; // Ignore sensor updates for 2 seconds after mode change
 
     // Skip if config not set yet (hass can be set before config)
-    if (!this.config || !this.config.entity) {
+    if (!this.config) {
+      return;
+    }
+
+    // Use the primary entity (first target_entity, or fallback to config.entity)
+    const _primaryEntityId = this._getPrimaryEntity();
+    if (!_primaryEntityId) {
       return;
     }
 
     // Check if the entities we care about actually changed
-    const entity = this._hass.states[this.config.entity];
+    const entity = this._hass.states[_primaryEntityId];
     const oldEntity = this._previousHass
-      ? this._previousHass.states[this.config.entity]
+      ? this._previousHass.states[_primaryEntityId]
       : null;
 
     // Only render if our entity changed or this is the first hass update
@@ -1592,7 +1598,11 @@ class YeelightCubeGradientCard extends HTMLElement {
       btn.addEventListener("click", (e) => {
         // Use currentTarget to get the button, not the clicked child element
         const mode = e.currentTarget.dataset.mode;
-        if (!this._hass || !this.config.entity || this._processingModeChange)
+        if (
+          !this._hass ||
+          !this._getPrimaryEntity() ||
+          this._processingModeChange
+        )
           return;
 
         // OPTIMISTIC UI UPDATE - immediately show selection
@@ -2442,12 +2452,10 @@ class YeelightCubeGradientCard extends HTMLElement {
   }
 
   async _loadPreviews() {
-    if (!this._hass || !this.config.entity) return;
+    const entityId = this._getPrimaryEntity();
+    if (!this._hass || !entityId) return;
 
     try {
-      // Get target entity
-      const entityId = this._getPrimaryEntity();
-
       // Track request time in global cache
       window._yeelightPreviewCache.timestamp = Date.now();
 
@@ -2784,7 +2792,7 @@ class YeelightCubeGradientCard extends HTMLElement {
     }
   } // Always get the current textColors from the entity state
   _getCurrentTextColors() {
-    const entityId = this.config?.entity;
+    const entityId = this._getPrimaryEntity();
     const hass = this._hass;
     if (hass && entityId && hass.states[entityId]) {
       const stateObj = hass.states[entityId];
