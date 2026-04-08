@@ -742,3 +742,198 @@ set_color_accuracy:
       selector:
         entity:
           domain: light
+
+set_color_calibration:
+  name: Set Color Calibration (Debug)
+  description: >
+    Adjust color correction and accuracy calibration values at runtime.
+    All fields are optional — only provided values are updated.
+    Changes are NOT persisted across restarts (set new defaults in code).
+  fields:
+    gamma_r:
+      description: "System 1 — Red inverse gamma (0.1–1.0, lower = more boost). Default: 0.85"
+      example: 0.85
+      required: false
+      selector:
+        number:
+          min: 0.1
+          max: 1.0
+          step: 0.01
+          mode: slider
+    gamma_g:
+      description: "System 1 — Green inverse gamma. Default: 0.75"
+      example: 0.75
+      required: false
+      selector:
+        number:
+          min: 0.1
+          max: 1.0
+          step: 0.01
+          mode: slider
+    gamma_b:
+      description: "System 1 — Blue inverse gamma. Default: 0.65"
+      example: 0.65
+      required: false
+      selector:
+        number:
+          min: 0.1
+          max: 1.0
+          step: 0.01
+          mode: slider
+    hw_threshold:
+      description: "System 1 — HW brightness % above which gamma correction is OFF. Default: 50"
+      example: 50
+      required: false
+      selector:
+        number:
+          min: 10
+          max: 100
+          step: 1
+          mode: slider
+    hw_full:
+      description: "System 1 — HW brightness % at/below which gamma correction is 100%. Default: 10"
+      example: 10
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 50
+          step: 1
+          mode: slider
+    gain_r:
+      description: "System 2 — Red channel gain multiplier (0.5–1.5). Default: 1.00"
+      example: 1.00
+      required: false
+      selector:
+        number:
+          min: 0.5
+          max: 1.5
+          step: 0.01
+          mode: slider
+    gain_g:
+      description: "System 2 — Green channel gain multiplier. Default: 0.87"
+      example: 0.87
+      required: false
+      selector:
+        number:
+          min: 0.5
+          max: 1.5
+          step: 0.01
+          mode: slider
+    gain_b:
+      description: "System 2 — Blue channel gain multiplier. Default: 0.72"
+      example: 0.72
+      required: false
+      selector:
+        number:
+          min: 0.5
+          max: 1.5
+          step: 0.01
+          mode: slider
+    brightness_transition:
+      description: "System 3 — User brightness % where low/high modes switch. Default: 25"
+      example: 25
+      required: false
+      selector:
+        number:
+          min: 5
+          max: 80
+          step: 1
+          mode: slider
+    min_hw_brightness:
+      description: "System 3 — Minimum hardware brightness % at lowest user brightness. Default: 1"
+      example: 1
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 50
+          step: 1
+          mode: slider
+    max_hw_brightness:
+      description: "System 3 — Hardware brightness % at transition point. Default: 100"
+      example: 100
+      required: false
+      selector:
+        number:
+          min: 50
+          max: 100
+          step: 1
+          mode: slider
+    max_darken:
+      description: "System 3 — Maximum RGB darkening % at transition point. Default: 94"
+      example: 94
+      required: false
+      selector:
+        number:
+          min: 50
+          max: 100
+          step: 1
+          mode: slider
+    min_darken:
+      description: "System 3 — Minimum RGB darkening % at 100% user brightness. Default: 0"
+      example: 0
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 50
+          step: 1
+          mode: slider
+    dark_at_20:
+      description: "System 3 — Darkness % at 20% into high range. Default: 85"
+      example: 85
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+    dark_at_50:
+      description: "System 3 — Darkness % at 50% into high range. Default: 70"
+      example: 70
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+    dark_at_80:
+      description: "System 3 — Darkness % at 80% into high range. Default: 40"
+      example: 40
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+    channel_balance:
+      description: "System 1 — Blend between uniform (0=hue-safe) and per-channel (1=blue fix) correction. Default: 0.5"
+      example: 0.7
+      required: false
+      selector:
+        number:
+          min: 0.0
+          max: 1.0
+          step: 0.05
+          mode: slider
+    low_min_darken:
+      description: "System 3 — Darken % at very bottom of low range (0% brightness). Lower = more pixel precision. Default: 80"
+      example: 80
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+    entity_id:
+      description: Target specific cube entity.
+      example: "light.yeelight_cube_192_168_1_100"
+      required: false
+      selector:
+        entity:
+          domain: light

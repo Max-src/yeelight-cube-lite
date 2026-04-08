@@ -453,24 +453,47 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         if r == 0 and g == 0 and b == 0:
             return (0, 0, 0)
 
-        # ── Tuning knobs ────────────────────────────────────────────────
-        HW_BRIGHT_THRESHOLD = 50   # hw brightness% above which correction is OFF
-        HW_BRIGHT_FULL      = 10   # hw brightness% at/below which correction is 100%
-        GAMMA_R             = 0.85 # red   inverse gamma (lower = more boost)
-        GAMMA_G             = 0.75 # green inverse gamma
-        GAMMA_B             = 0.65 # blue  inverse gamma (most aggressive)
+        # ── Tuning knobs (read from instance for runtime calibration) ──
+        HW_BRIGHT_THRESHOLD = self._calib_hw_threshold
+        HW_BRIGHT_FULL      = self._calib_hw_full
+        GAMMA_R             = self._calib_gamma_r
+        GAMMA_G             = self._calib_gamma_g
+        GAMMA_B             = self._calib_gamma_b
         # ────────────────────────────────────────────────────────────────
 
-        # Use HARDWARE brightness to decide correction strength.
-        # High hardware brightness (LEDs at high duty cycle) = no correction.
-        # Low hardware brightness (LEDs at low duty cycle) = full correction.
+        # Compute EFFECTIVE brightness that accounts for both dimming mechanisms:
+        #   1. Hardware brightness (global LED current/PWM)
+        #   2. RGB darkening (per-pixel value crushing via _preview_darken)
+        #
+        # The LED sees: pixel_value/255 * hw_bright/100 as its actual duty cycle.
+        # Both low pixel values AND low hw contribute to non-linearity.
         hw_bright = getattr(self, '_last_hardware_brightness', 100)
-        if hw_bright >= HW_BRIGHT_THRESHOLD:
-            return rgb_color  # LEDs at high duty cycle, no non-linearity
+        darken = getattr(self, '_preview_darken', 0)
+        effective_bright = hw_bright * (100 - darken) / 100
 
-        # Correction strength ramps linearly from 0 -> 1 as hw brightness
-        # drops from HW_BRIGHT_THRESHOLD down to HW_BRIGHT_FULL.
-        strength = min(1.0, (HW_BRIGHT_THRESHOLD - hw_bright) / max(1, HW_BRIGHT_THRESHOLD - HW_BRIGHT_FULL))
+        if effective_bright >= HW_BRIGHT_THRESHOLD:
+            return rgb_color  # Pixels at sufficient brightness, no non-linearity
+
+        # Correction strength has TWO components:
+        #
+        # 1. eff_strength: how much correction the effective brightness demands
+        #    (ramps 0→1 as effective drops from threshold→full)
+        #
+        # 2. hw_damping: keeps VISUAL IMPACT of correction constant across
+        #    brightness levels.  A pixel boost of Δ produces visible change
+        #    proportional to Δ × hw/100.  At hw=4% (1% user), even a large Δ
+        #    is invisible.  At hw=96% (24% user), even small Δ washes colors.
+        #
+        #    hw_damping = HW_FULL / hw  (capped at 1.0)
+        #    This ensures:  Δ × hw × (HW_FULL/hw) = Δ × HW_FULL = constant.
+        #
+        #    Result: correction is strongest at very low hw (where it's needed
+        #    AND invisible), and scales down proportionally at higher hw.
+        #
+        # Combined: strength = eff_strength * hw_damping
+        eff_strength = min(1.0, (HW_BRIGHT_THRESHOLD - effective_bright) / max(1, HW_BRIGHT_THRESHOLD - HW_BRIGHT_FULL))
+        hw_damping = min(1.0, HW_BRIGHT_FULL / max(1.0, hw_bright))
+        strength = eff_strength * hw_damping
 
         def gamma_correct(val, gamma):
             """Apply inverse gamma to a single 0-255 channel value."""
@@ -484,12 +507,54 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         g_corr = gamma_correct(g, GAMMA_G)
         b_corr = gamma_correct(b, GAMMA_B)
 
-        # Blend between original and corrected based on darken level
-        r_out = round(r + (r_corr - r) * strength)
-        g_out = round(g + (g_corr - g) * strength)
-        b_out = round(b + (b_corr - b) * strength)
+        # ── HYBRID LUMINANCE + CHANNEL-BALANCE scaling ──────────────────
+        # Pure per-channel gamma (R=0.85, G=0.75, B=0.65) destroys hue:
+        #   pink (10,3,6) → (16,9,22) = massive shift pink→purple!
+        #   white (10,10,10) → (16,19,22) = blue tint
+        #
+        # Pure uniform luminance scaling preserves hue perfectly but
+        # CANNOT compensate for physical per-channel LED non-linearity
+        # (blue LEDs have higher forward voltage → less output at low duty).
+        # Result: whites look brown/orange, blues look grayish.
+        #
+        # HYBRID approach: blend between uniform and per-channel.
+        #   channel_balance = 0.0 → pure uniform (perfect hue, no blue fix)
+        #   channel_balance = 1.0 → pure per-channel (blue fixed, hue shifts)
+        #   channel_balance = 0.5 → 50/50 blend (moderate blue boost, mild shift)
+        #
+        # At 0.5 default:
+        #   white (10,10,10) → ~(17,18,20): subtle blue boost → neutral on LED
+        #   pink  (10,3,6)  → keeps pink character with modest blue nudge
+        # ──────────────────────────────────────────────────────────────────
+        CHANNEL_BALANCE = getattr(self, '_calib_channel_balance', 0.7)
 
-        return (max(0, min(255, r_out)), max(0, min(255, g_out)), max(0, min(255, b_out)))
+        orig_lum = 0.299 * r + 0.587 * g + 0.114 * b
+        corr_lum = 0.299 * r_corr + 0.587 * g_corr + 0.114 * b_corr
+
+        if orig_lum <= 0:
+            return rgb_color
+
+        lum_scale = corr_lum / orig_lum
+        # Blend between 1.0 (no correction) and lum_scale based on strength
+        final_scale = 1.0 + (lum_scale - 1.0) * strength
+
+        # Uniform result (hue-preserving)
+        r_uni = r * final_scale
+        g_uni = g * final_scale
+        b_uni = b * final_scale
+
+        # Per-channel result (physically accurate but hue-shifting)
+        r_pc = r + (r_corr - r) * strength
+        g_pc = g + (g_corr - g) * strength
+        b_pc = b + (b_corr - b) * strength
+
+        # Blend: 0 = pure uniform, 1 = pure per-channel
+        bal = max(0.0, min(1.0, CHANNEL_BALANCE))
+        r_out = min(255, max(0, round(r_uni + (r_pc - r_uni) * bal)))
+        g_out = min(255, max(0, round(g_uni + (g_pc - g_uni) * bal)))
+        b_out = min(255, max(0, round(b_uni + (b_pc - b_uni) * bal)))
+
+        return (r_out, g_out, b_out)
 
     def _apply_color_accuracy(self, rgb_color):
         """
@@ -555,10 +620,10 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         if r == 0 and g == 0 and b == 0:
             return (0, 0, 0)
 
-        # ── Tuning knobs ────────────────────────────────────────────────
-        GAIN_R = 1.00  # red:   accurate on this lamp, no change
-        GAIN_G = 0.87  # green: over-efficient, reduce to fix green shift
-        GAIN_B = 0.72  # blue:  slightly over-bright, reduce for deeper blues
+        # ── Tuning knobs (read from instance for runtime calibration) ──
+        GAIN_R = self._calib_gain_r
+        GAIN_G = self._calib_gain_g
+        GAIN_B = self._calib_gain_b
         # ────────────────────────────────────────────────────────────────
 
         # ── Brightness-based fade ───────────────────────────────────────
@@ -618,8 +683,11 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
     # When user brightness is ABOVE transition point:
     # - Hardware brightness is fixed at 100%
     # - Darkness scales from MAX to MIN based on user brightness
-    MAX_DARKEN_PERCENT = 94  # Maximum darkness % at transition point (safe limit: 91-94%)
+    MAX_DARKEN_PERCENT = 97  # Maximum darkness % at transition point (safe limit: 91-97%)
     MIN_DARKEN_PERCENT = 0   # Minimum darkness % at 100% brightness (0 = no darkening)
+    LOW_MIN_DARKEN_PERCENT = 95  # Darken % at the very bottom of the low range (0% brightness)
+                                  # Lower = more pixel headroom & color precision at very dim levels
+                                  # Darken ramps from LOW_MIN_DARKEN (bottom) to MAX_DARKEN (transition)
     
     # DARKNESS CURVE CONTROL POINTS (high brightness range only)
     # Fine-tune the darkness curve for brightness values ABOVE transition point
@@ -693,26 +761,33 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         # Convert to percentage (1-255 â†’ 1-100%)
         user_brightness_pct = (user_brightness / 255) * 100
         
-        transition_point = self.BRIGHTNESS_TRANSITION_POINT
+        transition_point = self._calib_brightness_transition
+        min_hw = self._calib_min_hw_brightness
+        max_hw = self._calib_max_hw_brightness
+        max_dark = self._calib_max_darken
+        min_dark = self._calib_min_darken
+        dark_20 = self._calib_dark_at_20
+        dark_50 = self._calib_dark_at_50
+        dark_80 = self._calib_dark_at_80
+        low_min_dark = self._calib_low_min_darken
         
         # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         # LOW BRIGHTNESS RANGE: Use hardware dimming + maximum darkness
         # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if user_brightness_pct <= transition_point:
-            # Darkness is fixed at maximum
-            darken_percent = self.MAX_DARKEN_PERCENT
-            
-            # Hardware brightness scales linearly from MIN to MAX
-            # At 0%: MIN_HARDWARE_BRIGHTNESS
-            # At transition_point: MAX_HARDWARE_BRIGHTNESS
+            # Darken ramps from low_min_dark (at 0%) to max_dark (at transition)
+            # This preserves pixel precision at low brightness instead of crushing values
             if transition_point > 0:
-                hw_range = self.MAX_HARDWARE_BRIGHTNESS - self.MIN_HARDWARE_BRIGHTNESS
-                hw_position = user_brightness_pct / transition_point  # 0.0 to 1.0
-                hardware_brightness = self.MIN_HARDWARE_BRIGHTNESS + (hw_range * hw_position)
+                position = user_brightness_pct / transition_point  # 0.0 to 1.0
+                darken_percent = low_min_dark + (max_dark - low_min_dark) * position
+                hw_range = max_hw - min_hw
+                hardware_brightness = min_hw + (hw_range * position)
             else:
-                hardware_brightness = self.MAX_HARDWARE_BRIGHTNESS
+                hardware_brightness = max_hw
+                darken_percent = max_dark
             
             hardware_brightness = int(round(max(1, min(100, hardware_brightness))))
+            darken_percent = int(round(max(0, min(100, darken_percent))))
             
             _LOGGER.debug(
                 f"[BRIGHTNESS] LOW range: user={user_brightness_pct:.1f}% â†’ "
@@ -739,15 +814,15 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             cp3 = transition_point + (high_range * 0.8)  # 80% into high range
             
             control_points = [
-                (transition_point, self.MAX_DARKEN_PERCENT),  # At transition: max darkness
-                (cp1, self.DARKNESS_AT_20_PCT_HIGH),         # 20% into high range
-                (cp2, self.DARKNESS_AT_50_PCT_HIGH),         # 50% into high range
-                (cp3, self.DARKNESS_AT_80_PCT_HIGH),         # 80% into high range
-                (100, self.MIN_DARKEN_PERCENT),               # At 100%: no darkness
+                (transition_point, max_dark),  # At transition: max darkness
+                (cp1, dark_20),         # 20% into high range
+                (cp2, dark_50),         # 50% into high range
+                (cp3, dark_80),         # 80% into high range
+                (100, min_dark),               # At 100%: no darkness
             ]
             
             # Find the two control points to interpolate between
-            darken_percent = self.MIN_DARKEN_PERCENT  # Default fallback
+            darken_percent = min_dark  # Default fallback
             
             for i in range(len(control_points) - 1):
                 brightness_low, darken_low = control_points[i]
@@ -847,6 +922,29 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         # by applying per-channel gain that fades with brightness.  The service
         # set_color_accuracy still exists to toggle at runtime but the default is ON.
         self._color_accuracy_enabled = True  # Per-channel gain to match monitor colours
+        
+        # ── Calibration overrides (runtime-tunable via set_color_calibration) ──
+        # System 1: Low-brightness gamma correction
+        self._calib_gamma_r = 0.85
+        self._calib_gamma_g = 0.75
+        self._calib_gamma_b = 0.65
+        self._calib_hw_threshold = 50  # hw% above which correction is OFF
+        self._calib_hw_full = 10       # hw% at/below which correction is 100%
+        self._calib_channel_balance = 0.7  # 0=pure uniform (hue-safe), 1=per-channel (blue fix)
+        # System 2: Monitor-matching per-channel gain
+        self._calib_gain_r = 1.00
+        self._calib_gain_g = 1.00
+        self._calib_gain_b = 1.00
+        # System 3: Brightness curve parameters (override class-level constants)
+        self._calib_brightness_transition = self.BRIGHTNESS_TRANSITION_POINT
+        self._calib_min_hw_brightness = self.MIN_HARDWARE_BRIGHTNESS
+        self._calib_max_hw_brightness = self.MAX_HARDWARE_BRIGHTNESS
+        self._calib_max_darken = self.MAX_DARKEN_PERCENT
+        self._calib_min_darken = self.MIN_DARKEN_PERCENT
+        self._calib_dark_at_20 = self.DARKNESS_AT_20_PCT_HIGH
+        self._calib_dark_at_50 = self.DARKNESS_AT_50_PCT_HIGH
+        self._calib_dark_at_80 = self.DARKNESS_AT_80_PCT_HIGH
+        self._calib_low_min_darken = self.LOW_MIN_DARKEN_PERCENT
         
         # Retry task: schedules a display retry after connection errors
         # so the lamp eventually recovers when the device becomes reachable.
@@ -1446,6 +1544,27 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             "preview_tint_strength": self._preview_tint_strength,
             "preview_darken": self._preview_darken,
             "color_accuracy_enabled": self._color_accuracy_enabled,
+            # Calibration values (for debug calibration card)
+            "calib_gamma_r": self._calib_gamma_r,
+            "calib_gamma_g": self._calib_gamma_g,
+            "calib_gamma_b": self._calib_gamma_b,
+            "calib_hw_threshold": self._calib_hw_threshold,
+            "calib_hw_full": self._calib_hw_full,
+            "calib_channel_balance": self._calib_channel_balance,
+            "calib_gain_r": self._calib_gain_r,
+            "calib_gain_g": self._calib_gain_g,
+            "calib_gain_b": self._calib_gain_b,
+            # Brightness curve calibration
+            "calib_brightness_transition": self._calib_brightness_transition,
+            "calib_min_hw_brightness": self._calib_min_hw_brightness,
+            "calib_max_hw_brightness": self._calib_max_hw_brightness,
+            "calib_max_darken": self._calib_max_darken,
+            "calib_min_darken": self._calib_min_darken,
+            "calib_dark_at_20": self._calib_dark_at_20,
+            "calib_dark_at_50": self._calib_dark_at_50,
+            "calib_dark_at_80": self._calib_dark_at_80,
+            "calib_low_min_darken": self._calib_low_min_darken,
+            "last_hardware_brightness": self._last_hardware_brightness,
             # Transition settings
             "transition_type": self._transition_type,
             "transition_steps": self._transition_steps,
@@ -5752,5 +5871,84 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             vol.Optional("entity_id"): _entity_id_or_list,
         })
     )
+
+    # ── DEBUG: Color calibration service ─────────────────────────────
+    async def handle_set_color_calibration(service_call):
+        """Set color correction / accuracy calibration values at runtime.
+        All fields are optional — only provided values are updated."""
+        targets = _resolve_entities(service_call, "SET_COLOR_CALIBRATION")
+        if not targets:
+            return
+
+        data = service_call.data
+        mapping = {
+            "gamma_r": "_calib_gamma_r",
+            "gamma_g": "_calib_gamma_g",
+            "gamma_b": "_calib_gamma_b",
+            "hw_threshold": "_calib_hw_threshold",
+            "hw_full": "_calib_hw_full",
+            "channel_balance": "_calib_channel_balance",
+            "gain_r": "_calib_gain_r",
+            "gain_g": "_calib_gain_g",
+            "gain_b": "_calib_gain_b",
+            # System 3: Brightness curve
+            "brightness_transition": "_calib_brightness_transition",
+            "min_hw_brightness": "_calib_min_hw_brightness",
+            "max_hw_brightness": "_calib_max_hw_brightness",
+            "max_darken": "_calib_max_darken",
+            "min_darken": "_calib_min_darken",
+            "dark_at_20": "_calib_dark_at_20",
+            "dark_at_50": "_calib_dark_at_50",
+            "dark_at_80": "_calib_dark_at_80",
+            "low_min_darken": "_calib_low_min_darken",
+        }
+
+        async def _apply_one(target_entity):
+            changed = []
+            for key, attr in mapping.items():
+                if key in data:
+                    old_val = getattr(target_entity, attr)
+                    new_val = data[key]
+                    setattr(target_entity, attr, new_val)
+                    changed.append(f"{key}: {old_val} → {new_val}")
+            if changed:
+                _LOGGER.info(
+                    f"[CALIBRATION] [{target_entity._ip}] Updated: {', '.join(changed)}"
+                )
+                if target_entity.hass is not None:
+                    target_entity.async_schedule_update_ha_state()
+                # Re-render so new calibration takes effect immediately
+                hass.async_create_task(target_entity.async_apply_display_mode())
+
+        _fire_and_forget(*[_apply_one(t) for t in targets])
+
+    hass.services.async_register(
+        DOMAIN,
+        "set_color_calibration",
+        handle_set_color_calibration,
+        schema=vol.Schema({
+            vol.Optional("gamma_r"): vol.Coerce(float),
+            vol.Optional("gamma_g"): vol.Coerce(float),
+            vol.Optional("gamma_b"): vol.Coerce(float),
+            vol.Optional("hw_threshold"): vol.Coerce(int),
+            vol.Optional("hw_full"): vol.Coerce(int),
+            vol.Optional("channel_balance"): vol.Coerce(float),
+            vol.Optional("gain_r"): vol.Coerce(float),
+            vol.Optional("gain_g"): vol.Coerce(float),
+            vol.Optional("gain_b"): vol.Coerce(float),
+            # System 3: Brightness curve
+            vol.Optional("brightness_transition"): vol.Coerce(int),
+            vol.Optional("min_hw_brightness"): vol.Coerce(int),
+            vol.Optional("max_hw_brightness"): vol.Coerce(int),
+            vol.Optional("max_darken"): vol.Coerce(int),
+            vol.Optional("min_darken"): vol.Coerce(int),
+            vol.Optional("dark_at_20"): vol.Coerce(int),
+            vol.Optional("dark_at_50"): vol.Coerce(int),
+            vol.Optional("dark_at_80"): vol.Coerce(int),
+            vol.Optional("low_min_darken"): vol.Coerce(int),
+            vol.Optional("entity_id"): _entity_id_or_list,
+        })
+    )
+    # ─────────────────────────────────────────────────────────────────
     
     return True
