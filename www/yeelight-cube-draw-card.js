@@ -2089,13 +2089,13 @@ class YeelightCubeDrawCard extends LitElement {
           flex-direction: column;
           gap: 8px;
           box-sizing: border-box;
-          background: white;
+          background: var(--card-background-color, white);
         }
 
         .pixelarts-album-item .album-title {
           font-size: 0.9em;
           font-weight: 600;
-          color: #333;
+          color: var(--primary-text-color, #333);
           text-align: center;
           margin-bottom: 4px;
           overflow: hidden;
@@ -2109,7 +2109,7 @@ class YeelightCubeDrawCard extends LitElement {
         }
 
         .pixelarts-album-item .album-title .title-text.editable:hover {
-          color: #1e90ff;
+          color: var(--primary-color, #1e90ff);
         }
 
         .pixelarts-album-item .album-preview {
@@ -2185,8 +2185,8 @@ class YeelightCubeDrawCard extends LitElement {
           display: flex;
           flex-direction: column;
           padding: 12px;
-          background: #fafbfc;
-          border: 1.5px solid #d0d7de;
+          background: var(--secondary-background-color, #fafbfc);
+          border: 1.5px solid var(--divider-color, #d0d7de);
           border-radius: 14px;
           box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
           margin-bottom: 10px;
@@ -2195,7 +2195,7 @@ class YeelightCubeDrawCard extends LitElement {
 
         .pixelart-list-item:hover {
           box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-          border-color: #bcc5d0;
+          border-color: var(--divider-color, #bcc5d0);
         }
 
         .list-item-content {
@@ -2243,7 +2243,7 @@ class YeelightCubeDrawCard extends LitElement {
 
         .list-item-name {
           font-weight: 500;
-          color: #333;
+          color: var(--primary-text-color, #333);
           flex: 1 1 120px;
           min-width: 0;
           word-break: break-word;

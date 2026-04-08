@@ -317,7 +317,7 @@ class YeelightCubePaletteCard extends HTMLElement {
       contentHtml += `<div class="card-title" id="card-title">${cardTitle}</div>`;
     }
     if (palettes.length === 0) {
-      contentHtml += `<div style='padding:16px;color:#888;'>No palettes found. Add palettes to see them here.</div>`;
+      contentHtml += `<div style='padding:16px;color:var(--secondary-text-color, #888);'>No palettes found. Add palettes to see them here.</div>`;
     } else {
       // Pagination: slice palettes for list/gallery modes
       const itemsPerPage = parseInt(this.config.items_per_page) || 0;
@@ -375,7 +375,7 @@ class YeelightCubePaletteCard extends HTMLElement {
         :host {
           --card-size-multiplier: ${(this.config.card_size || 50) / 100};
         }
-        .card-title { font-size: 1.3em; font-weight: bold; margin-bottom: 18px; margin-top: 2px; color: #222; cursor: ${
+        .card-title { font-size: 1.3em; font-weight: bold; margin-bottom: 18px; margin-top: 2px; color: var(--primary-text-color, #222); cursor: ${
           allowTitleEdit ? "pointer" : "default"
         }; }
         .palette-row {
@@ -383,7 +383,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           flex-direction: column;
           align-items: flex-start;
           margin: 0 auto 10px auto;
-          background: #fafbfc;
+          background: var(--secondary-background-color, #fafbfc);
           border: 1.5px solid #d0d7de;
           border-radius: 14px;
           box-shadow: 0 2px 8px rgba(0,0,0,0.04);
@@ -396,7 +396,7 @@ class YeelightCubePaletteCard extends HTMLElement {
         }
         .palette-title {
           font-weight: 500;
-          color: #333;
+          color: var(--primary-text-color, #333);
           cursor: default;
           margin-bottom: 4px;
         }
@@ -423,7 +423,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           width: 24px;
           height: 24px;
           border-radius: 6px;
-          border: 1px solid #ccc;
+          border: 1px solid var(--divider-color, #ccc);
         }
         /* Swatch Styles */
         .square-swatch {
@@ -431,7 +431,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           height: calc(28px * var(--card-size-multiplier));
           border-radius: 6px;
           display: inline-block;
-          border: 1px solid #ddd;
+          border: 1px solid var(--divider-color, #ddd);
           margin: 1px;
           transition: width 0.2s ease, height 0.2s ease;
         }
@@ -440,7 +440,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           height: calc(28px * var(--card-size-multiplier));
           border-radius: 50%;
           display: inline-block;
-          border: 1px solid #ddd;
+          border: 1px solid var(--divider-color, #ddd);
           margin: 1px;
           transition: width 0.2s ease, height 0.2s ease;
         }
@@ -448,7 +448,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           width: 100%;
           height: calc(28px * var(--card-size-multiplier));
           border-radius: 14px;
-          border: 1px solid #ddd;
+          border: 1px solid var(--divider-color, #ddd);
           margin: 2px 0;
           transition: height 0.2s ease;
         }
@@ -456,13 +456,13 @@ class YeelightCubePaletteCard extends HTMLElement {
           width: 100%;
           height: calc(28px * var(--card-size-multiplier));
           border-radius: 6px;
-          border: 1px solid #ddd;
+          border: 1px solid var(--divider-color, #ddd);
           margin: 2px 0;
           transition: height 0.2s ease;
         }
         /* Gradient background styles - Modern and cool design */
         .palette-row[style*="background: linear-gradient"] {
-          color: white;
+          color: var(--text-primary-color, #fff);
           border: none !important;
           box-shadow: 0 4px 12px rgba(0,0,0,0.15), inset 0 1px 0 rgba(255,255,255,0.2) !important;
           border-radius: 16px !important;
@@ -486,7 +486,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           background-color: transparent !important;
         }
         .palette-row[style*="background: linear-gradient"] .palette-title {
-          color: white;
+          color: var(--text-primary-color, #fff);
           font-weight: 700;
           font-size: 1.1em;
           text-shadow: 0 2px 4px rgba(0,0,0,0.3);
@@ -510,7 +510,7 @@ class YeelightCubePaletteCard extends HTMLElement {
         .palette-row[style*="background: linear-gradient"] .remove-btn {
           background: rgba(255,255,255,0.25);
           backdrop-filter: blur(8px);
-          color: white;
+          color: var(--text-primary-color, #fff);
           font-weight: 600;
           border: 1px solid rgba(255,255,255,0.3);
           border-radius: 8px;
@@ -526,7 +526,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           transform: scale(1.05);
         }
         .palette-row[style*="background: linear-gradient"] .remove-btn-cross {
-          color: white;
+          color: var(--text-primary-color, #fff);
           background: rgba(0,0,0,0.2);
           backdrop-filter: blur(8px);
           border: 1px solid rgba(255,255,255,0.25);
@@ -565,8 +565,8 @@ class YeelightCubePaletteCard extends HTMLElement {
           gap: 12px;
           margin-bottom: 4px;
         }
-        .remove-btn { background: #ffeaea; border: none; border-radius: 6px; color: #b00; padding: 6px 18px; cursor: pointer; font-size: 1em; font-weight: 500; transition: background 0.2s; }
-        .remove-btn:hover { background: #ffd6d6; }
+        .remove-btn { background: color-mix(in srgb, var(--error-color, #db4437) 15%, var(--card-background-color, #fff)); border: none; border-radius: 6px; color: var(--error-color, #db4437); padding: 6px 18px; cursor: pointer; font-size: 1em; font-weight: 500; transition: background 0.2s; }
+        .remove-btn:hover { background: color-mix(in srgb, var(--error-color, #db4437) 25%, var(--card-background-color, #fff)); }
         /* Base button styles inherited from delete-button-styles.js */
         .remove-btn-cross.black-style:hover {
           background: linear-gradient(135deg, #3a3a3a 0%, #252525 50%, #101010 100%) !important;
@@ -576,7 +576,7 @@ class YeelightCubePaletteCard extends HTMLElement {
         .remove-btn-cross.trash-style {
           background: rgba(255, 255, 255, 0.95) !important;
           border: 1px solid rgba(211, 47, 47, 0.25) !important;
-          color: #d32f2f !important;
+          color: var(--error-color, #d32f2f) !important;
           font-size: 0 !important;
           width: 28px !important;
           height: 28px !important;
@@ -590,14 +590,14 @@ class YeelightCubePaletteCard extends HTMLElement {
           filter: drop-shadow(0 0 2px rgba(211, 47, 47, 0.3)) !important;
         }
         .remove-btn-cross.trash-style:hover {
-          background: white !important;
+          background: var(--card-background-color, white) !important;
           border-color: rgba(211, 47, 47, 0.4) !important;
         }
         .remove-btn-cross.trash-style:hover::before {
           filter: drop-shadow(0 0 4px rgba(211, 47, 47, 0.5)) !important;
         }
         .remove-btn-cross:hover {
-          background: #ffd6d6;
+          background: color-mix(in srgb, var(--error-color, #db4437) 25%, var(--card-background-color, #fff));
           transform: scale(1.1);
         }
 
@@ -632,7 +632,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           box-sizing: border-box;
         }
         .palette-compact-item:hover {
-          background: #f6f8fa;
+          background: var(--secondary-background-color, #f6f8fa);
         }
         .palette-compact-item .compact-info {
           display: flex;
@@ -650,12 +650,12 @@ class YeelightCubePaletteCard extends HTMLElement {
         }
         .palette-compact-item .compact-name {
           font-weight: 500;
-          color: #24292f;
+          color: var(--primary-text-color, #24292f);
           font-size: 0.95em;
         }
         .palette-compact-item .compact-meta {
           font-size: 0.8em;
-          color: #57606a;
+          color: var(--secondary-text-color, #57606a);
           white-space: nowrap;
         }
         .palette-compact-item .compact-colors-display {
@@ -669,7 +669,7 @@ class YeelightCubePaletteCard extends HTMLElement {
         }
         .palette-compact-item .compact-more {
           font-size: 0.75em;
-          color: #57606a;
+          color: var(--secondary-text-color, #57606a);
           margin-left: 4px;
         }
         /* Legacy compact swatches (not used anymore but kept for compatibility) */
@@ -682,7 +682,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           width: 28px;
           height: 28px;
           border-radius: 6px;
-          border: 1.5px solid rgba(0,0,0,0.1);
+          border: 1.5px solid var(--divider-color, rgba(0,0,0,0.1));
           box-shadow: 0 1px 3px rgba(0,0,0,0.1);
         }
         /* Compact gradient mode */
@@ -704,7 +704,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           pointer-events: none;
         }
         .palette-compact-gradient .compact-name {
-          color: white;
+          color: var(--text-primary-color, #fff);
           text-shadow: 1px 1px 3px rgba(0,0,0,0.5);
           font-weight: 600;
           font-size: 1em;
@@ -754,7 +754,7 @@ class YeelightCubePaletteCard extends HTMLElement {
         .palette-compact-gradient .remove-btn-cross:hover {
           background: rgba(0, 0, 0, 0.25);
           border-color: rgba(0,0,0,0.4);
-          color: white;
+          color: var(--text-primary-color, #fff);
           opacity: 1;
         }
 
@@ -776,7 +776,7 @@ class YeelightCubePaletteCard extends HTMLElement {
         .palettes-album-item .album-content {
           padding: max(4px, 5%) max(4px, 4%);
           min-height: 40px;
-          background: white;
+          background: var(--card-background-color, white);
           border-radius: ${
             this.config.album_card_rounded !== false ? "0 0 16px 16px" : "0"
           };
@@ -797,13 +797,13 @@ class YeelightCubePaletteCard extends HTMLElement {
           flex-direction: column;
           gap: 8px;
           box-sizing: border-box;
-          background: white;
+          background: var(--card-background-color, white);
         }
         
         .palettes-album-item .album-title {
           font-size: 0.9em;
           font-weight: 600;
-          color: #333;
+          color: var(--primary-text-color, #333);
           text-align: center;
           margin-bottom: 4px;
         }
@@ -835,7 +835,7 @@ class YeelightCubePaletteCard extends HTMLElement {
         
         .palettes-album-item .album-meta {
           font-size: 0.75em;
-          color: #666;
+          color: var(--secondary-text-color, #666);
           text-align: center;
         }
         
@@ -852,7 +852,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           font-weight: 600;
           text-align: center;
           margin-bottom: calc(20px * var(--card-size-multiplier));
-          color: #333;
+          color: var(--primary-text-color, #333);
           transition: margin-bottom 0.2s ease;
         }
         
@@ -881,7 +881,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           width: calc(40px * var(--card-size-multiplier));
           height: calc(40px * var(--card-size-multiplier));
           box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-          border: 1px solid #ddd;
+          border: 1px solid var(--divider-color, #ddd);
           transition: width 0.2s ease, height 0.2s ease;
         }
         
@@ -911,7 +911,7 @@ class YeelightCubePaletteCard extends HTMLElement {
         }
         
         .carousel-content-card.gradient-bg-mode .palette-title {
-          color: white;
+          color: var(--text-primary-color, #fff);
           text-shadow: 0 2px 4px rgba(0,0,0,0.3);
           font-weight: 700;
         }
@@ -929,7 +929,7 @@ class YeelightCubePaletteCard extends HTMLElement {
         .palette-item-carousel .color-count {
           text-align: center;
           font-size: calc(0.85em * var(--card-size-multiplier));
-          color: #666;
+          color: var(--secondary-text-color, #666);
           margin-top: calc(16px * var(--card-size-multiplier));
           padding-top: calc(12px * var(--card-size-multiplier));
           border-top: 1px solid #eee;
@@ -1085,7 +1085,7 @@ class YeelightCubePaletteCard extends HTMLElement {
                     }">${palette.name || "Palette " + (idx + 1)}</span>
                     ${
                       removeButtonCross
-                        ? `<button class="remove-btn-cross" data-idx="${idx}" title="Remove" style="background:none;border:none;color:#b00;font-size:1.4em;cursor:pointer;position:absolute;top:8px;right:8px;">&#10006;</button>`
+                        ? `<button class="remove-btn-cross" data-idx="${idx}" title="Remove" style="background:none;border:none;color:var(--error-color, #db4437);font-size:1.4em;cursor:pointer;position:absolute;top:8px;right:8px;">&#10006;</button>`
                         : ""
                     }
                   </div>`
@@ -1590,7 +1590,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           <div style="width: 100%; height: 100%; background: linear-gradient(to right, ${gradientColors});"></div>
           ${
             showColorCount
-              ? `<div style="text-align: center; margin-top: 8px; font-size: 12px; color: #666;">${colorCount}</div>`
+              ? `<div style="text-align: center; margin-top: 8px; font-size: 12px; color: var(--secondary-text-color, #666);">${colorCount}</div>`
               : ""
           }
         `;
@@ -1604,7 +1604,7 @@ class YeelightCubePaletteCard extends HTMLElement {
             <div style="width: 90%; height: ${scaledGradientBarHeight}px; background: linear-gradient(to right, ${gradientColors}); border-radius: 8px;"></div>
             ${
               showColorCount
-                ? `<div style="text-align: center; font-size: 12px; color: #666;">${colorCount}</div>`
+                ? `<div style="text-align: center; font-size: 12px; color: var(--secondary-text-color, #666);">${colorCount}</div>`
                 : ""
             }
           </div>
@@ -1623,7 +1623,7 @@ class YeelightCubePaletteCard extends HTMLElement {
             <div style="width: 100%; height: ${scaledStripesHeight}px; background: linear-gradient(to right, ${stripeGradient});"></div>
             ${
               showColorCount
-                ? `<div style="text-align: center; font-size: 12px; color: #666;">${colorCount}</div>`
+                ? `<div style="text-align: center; font-size: 12px; color: var(--secondary-text-color, #666);">${colorCount}</div>`
                 : ""
             }
           </div>
@@ -1638,7 +1638,7 @@ class YeelightCubePaletteCard extends HTMLElement {
                                 height: ${scaledSwatchSize}px; 
                                 background: ${cssColor}; 
                                 border-radius: ${borderRadius}; 
-                                border: 1px solid rgba(0,0,0,0.1);
+                                border: 1px solid var(--divider-color, rgba(0,0,0,0.1));
                                 flex-shrink: 0;">
                     </div>`;
           })
@@ -1651,7 +1651,7 @@ class YeelightCubePaletteCard extends HTMLElement {
             </div>
             ${
               showColorCount
-                ? `<div style="text-align: center; font-size: 12px; color: #666;">${colorCount}</div>`
+                ? `<div style="text-align: center; font-size: 12px; color: var(--secondary-text-color, #666);">${colorCount}</div>`
                 : ""
             }
           </div>

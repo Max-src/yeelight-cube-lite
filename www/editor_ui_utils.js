@@ -44,7 +44,7 @@ export const sharedEditorStyles = css`
 
   label {
     font-weight: 500;
-    color: #333;
+    color: var(--primary-text-color, #333);
     font-size: 1em;
     margin-bottom: 6px;
   }
@@ -55,9 +55,9 @@ export const sharedEditorStyles = css`
     flex: 1;
     padding: 8px 12px;
     border-radius: 8px;
-    border: 1px solid #cfd8dc;
+    border: 1px solid var(--divider-color, #cfd8dc);
     font-size: 1em;
-    background: #f7f8fa;
+    background: var(--secondary-background-color, #f7f8fa);
     box-sizing: border-box;
   }
 
@@ -68,7 +68,7 @@ export const sharedEditorStyles = css`
     appearance: none;
     height: 4px;
     border-radius: 2px;
-    background: #e0e0e0;
+    background: var(--divider-color, #e0e0e0);
     outline: none;
     cursor: pointer;
   }
@@ -78,7 +78,7 @@ export const sharedEditorStyles = css`
     height: 20px;
     width: 20px;
     border-radius: 50%;
-    background: #1976d2;
+    background: var(--primary-color, #1976d2);
     cursor: pointer;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
     border: none;
@@ -88,7 +88,7 @@ export const sharedEditorStyles = css`
     height: 20px;
     width: 20px;
     border-radius: 50%;
-    background: #1976d2;
+    background: var(--primary-color, #1976d2);
     cursor: pointer;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
     border: none;
@@ -116,7 +116,7 @@ export const sharedEditorStyles = css`
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: #ccc;
+    background-color: var(--divider-color, #ccc);
     transition: 0.2s;
     border-radius: 24px;
   }
@@ -128,14 +128,14 @@ export const sharedEditorStyles = css`
     width: 18px;
     left: 3px;
     bottom: 3px;
-    background-color: white;
+    background-color: var(--card-background-color, white);
     transition: 0.2s;
     border-radius: 50%;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
   }
 
   input:checked + .slider {
-    background-color: #1976d2;
+    background-color: var(--primary-color, #1976d2);
   }
 
   input:checked + .slider:before {
@@ -167,8 +167,8 @@ export const sharedEditorStyles = css`
   }
 
   .button-group button {
-    background: #e3eaf2;
-    border: 1px solid #b6c2d2;
+    background: var(--secondary-background-color, #e3eaf2);
+    border: 1px solid var(--divider-color, #b6c2d2);
     border-radius: 8px;
     padding: 7px 18px;
     font-size: 1em;
@@ -178,29 +178,30 @@ export const sharedEditorStyles = css`
   }
 
   .button-group button.active {
-    background: #1976d2;
-    color: white;
-    border-color: #1976d2;
+    background: var(--primary-color, #1976d2);
+    color: var(--text-primary-color, white);
+    border-color: var(--primary-color, #1976d2);
   }
 
   .button-group button:hover {
-    background: #d1d9e0;
+    background: var(--divider-color, #d1d9e0);
   }
 
   .button-group button.active:hover {
-    background: #1565c0;
+    background: var(--primary-color, #1565c0);
+    filter: brightness(0.9);
   }
 
   /* Foldable section styles */
   .foldable-section {
-    border: 1px solid #e0e0e0;
+    border: 1px solid var(--divider-color, #e0e0e0);
     border-radius: 8px;
     margin-bottom: 16px;
     overflow: hidden;
   }
 
   .foldable-header {
-    background: #f5f5f5;
+    background: var(--secondary-background-color, #f5f5f5);
     padding: 12px 16px;
     cursor: pointer;
     display: flex;
@@ -210,12 +211,13 @@ export const sharedEditorStyles = css`
   }
 
   .foldable-header:hover {
-    background: #eeeeee;
+    background: var(--secondary-background-color, #eeeeee);
+    filter: brightness(0.95);
   }
 
   .foldable-content {
     padding: 16px;
-    background: white;
+    background: var(--card-background-color, white);
   }
 
   .foldable-content.collapsed {
@@ -439,10 +441,10 @@ export class EditorConfigManager {
 export function renderModeSettingsSection(title, content) {
   return html`
     <div
-      style="margin-top: 20px; padding: 16px; background: #f0f8ff; border-radius: 8px; border-left: 4px solid #0077cc;"
+      style="margin-top: 20px; padding: 16px; background: var(--secondary-background-color, #f0f8ff); border-radius: 8px; border-left: 4px solid var(--primary-color, #0077cc);"
     >
       <div
-        style="font-weight: 600; font-size: 1.05em; margin-bottom: 12px; color: #0077cc;"
+        style="font-weight: 600; font-size: 1.05em; margin-bottom: 12px; color: var(--primary-color, #0077cc);"
       >
         ${title}
       </div>
@@ -461,7 +463,7 @@ export function renderModeSettingsSection(title, content) {
 export function renderModeInfoMessage(message) {
   return html`
     <div
-      style="padding: 12px; background: #f0f8ff; border-radius: 6px; color: #666;"
+      style="padding: 12px; background: var(--secondary-background-color, #f0f8ff); border-radius: 6px; color: var(--secondary-text-color, #666);"
     >
       ${message}
     </div>

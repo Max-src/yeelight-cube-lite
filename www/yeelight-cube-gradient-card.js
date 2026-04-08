@@ -193,7 +193,7 @@ class YeelightCubeGradientCard extends HTMLElement {
             top: 4px;
             right: 4px;
             font-size: 16px;
-            color: ${isVisible ? "#0077cc" : "#ccc"};
+            color: ${isVisible ? "var(--primary-color, #0077cc)" : "var(--divider-color, #ccc)"};
             cursor: pointer;
             z-index: 100;
             user-select: none;
@@ -216,7 +216,7 @@ class YeelightCubeGradientCard extends HTMLElement {
             left: 50%;
             transform: translateX(-50%);
             font-size: 16px;
-            color: ${isVisible ? "#0077cc" : "#ccc"};
+            color: ${isVisible ? "var(--primary-color, #0077cc)" : "var(--divider-color, #ccc)"};
             cursor: pointer;
             z-index: 10;
             user-select: none;
@@ -747,7 +747,7 @@ class YeelightCubeGradientCard extends HTMLElement {
           font-weight: bold;
           margin-bottom: 18px;
           margin-top: 2px;
-          color: #222;
+          color: var(--primary-text-color, #222);
         }
         
         /* Header rotary styling - sized for 88px height */
@@ -797,8 +797,8 @@ class YeelightCubeGradientCard extends HTMLElement {
           display: flex;
           align-items: center;
           margin-bottom: 10px;
-          background: #fafbfc;
-          border: 1.5px solid #d0d7de;
+          background: var(--secondary-background-color, #fafbfc);
+          border: 1.5px solid var(--disabled-text-color, #d0d7de);
           border-radius: 14px;
           box-shadow: 0 2px 8px rgba(0,0,0,0.04);
           padding: 6px 12px;
@@ -827,7 +827,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         
         .color-row.full-row-color .color-main span,
         .color-row.full-row-color .color-main .hex-input {
-          color: #fff;
+          color: var(--text-primary-color, #fff);
         }
         
         .color-row.full-row-color .hex-input {
@@ -888,13 +888,13 @@ class YeelightCubeGradientCard extends HTMLElement {
         .color-row input[type="text"].hex-input {
           width: 70px;
           margin-left: 8px;
-          border: 1px solid #ccc;
+          border: 1px solid var(--divider-color, #ccc);
           border-radius: 6px;
           padding: 6px 10px;
           font-size: 1em;
           font-family: inherit;
-          background: #fff;
-          color: #222;
+          background: var(--card-background-color, #fff);
+          color: var(--primary-text-color, #222);
           box-shadow: 0 1px 2px rgba(0,0,0,0.04);
           transition: border 0.2s, box-shadow 0.2s;
         }
@@ -903,8 +903,8 @@ class YeelightCubeGradientCard extends HTMLElement {
           outline: none;
           box-shadow: 2px 2px 2px 2px transparent;
         }
-        .remove-btn { background: #ffeaea; border: none; border-radius: 6px; color: #b00; padding: 6px 18px; cursor: pointer; font-size: 1em; font-weight: 500; margin-left: 0; transition: background 0.2s; }
-        .remove-btn:hover { background: #ffd6d6; }
+        .remove-btn { background: color-mix(in srgb, var(--error-color, #db4437) 15%, var(--card-background-color, #fff)); border: none; border-radius: 6px; color: var(--error-color, #db4437); padding: 6px 18px; cursor: pointer; font-size: 1em; font-weight: 500; margin-left: 0; transition: background 0.2s; }
+        .remove-btn:hover { background: color-mix(in srgb, var(--error-color, #db4437) 25%, var(--card-background-color, #fff)); }
         
         /* Red cross style remove button */
         .color-btn-cross.remove-btn-cross {
@@ -913,7 +913,7 @@ class YeelightCubeGradientCard extends HTMLElement {
           right: 8px;
           background: none;
           border: none;
-          color: #b00;
+          color: var(--error-color, #db4437);
           cursor: pointer;
           padding: 4px;
           border-radius: 4px;
@@ -929,7 +929,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         
         .color-btn-cross.remove-btn-cross:hover {
           background: rgba(187, 0, 0, 0.1);
-          color: #d32f2f;
+          color: var(--error-color, #d32f2f);
           transform: scale(1.1);
         }
         
@@ -942,7 +942,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         .color-row.has-cross {
           padding-right: 40px;
         }
-        .drag-handle { margin-left: 0; cursor: grab; font-size: 1.5em; color: #888; user-select: none; }
+        .drag-handle { margin-left: 0; cursor: grab; font-size: 1.5em; color: var(--secondary-text-color, #888); user-select: none; }
         .drag-handle::after { content: "\\2630"; }
         
         /* Drag handle styles for Full Row Color Mode */
@@ -962,10 +962,10 @@ class YeelightCubeGradientCard extends HTMLElement {
           width: 100%;
         }
         .add-btn {
-          background: #d4edda;
+          background: color-mix(in srgb, var(--success-color, #43a047) 15%, var(--card-background-color, #fff));
           border: none;
           border-radius: 8px;
-          color: #218838;
+          color: var(--success-color, #43a047);
           padding: 10px 0;
           cursor: pointer;
           font-size: 1em;
@@ -974,12 +974,12 @@ class YeelightCubeGradientCard extends HTMLElement {
           transition: background 0.2s;
           width: 100%;
         }
-        .add-btn:hover { background: #b3e6c3; }
+        .add-btn:hover { background: color-mix(in srgb, var(--success-color, #43a047) 25%, var(--card-background-color, #fff)); }
         .save-btn {
-          background: #e6f7ff;
+          background: color-mix(in srgb, var(--primary-color) 15%, var(--card-background-color, #fff));
           border: none;
           border-radius: 8px;
-          color: #0077cc;
+          color: var(--primary-color, #0077cc);
           padding: 10px 0;
           cursor: pointer;
           font-size: 1em;
@@ -988,7 +988,7 @@ class YeelightCubeGradientCard extends HTMLElement {
           transition: background 0.2s;
           width: 100%;
         }
-        .save-btn:hover { background: #b3e6ff; }
+        .save-btn:hover { background: color-mix(in srgb, var(--primary-color) 25%, var(--card-background-color, #fff)); }
         
         /* Angle section styles */
         .angle-section {
@@ -1004,7 +1004,7 @@ class YeelightCubeGradientCard extends HTMLElement {
           font-size: 1.1em;
           font-weight: 600;
           margin-bottom: 12px;
-          color: #333;
+          color: var(--primary-text-color, #333);
         }
         .angle-row {
           display: flex;
@@ -1019,7 +1019,7 @@ class YeelightCubeGradientCard extends HTMLElement {
           appearance: none;
           height: 4px;
           border-radius: 2px;
-          background: #e0e0e0;
+          background: var(--divider-color, #e0e0e0);
           outline: none;
           cursor: pointer;
           margin: 8px 0;
@@ -1030,7 +1030,7 @@ class YeelightCubeGradientCard extends HTMLElement {
           height: 20px;
           width: 20px;
           border-radius: 50%;
-          background: #1976d2;
+          background: var(--primary-color, #1976d2);
           cursor: pointer;
           box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
           border: none;
@@ -1040,7 +1040,7 @@ class YeelightCubeGradientCard extends HTMLElement {
           height: 20px;
           width: 20px;
           border-radius: 50%;
-          background: #1976d2;
+          background: var(--primary-color, #1976d2);
           cursor: pointer;
           box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
           border: none;
@@ -1048,7 +1048,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         }
         .angle-input {
           width: 60px;
-          border: 1px solid #ccc;
+          border: 1px solid var(--divider-color, #ccc);
           border-radius: 4px;
           padding: 4px 6px;
           text-align: center;
@@ -1162,7 +1162,7 @@ class YeelightCubeGradientCard extends HTMLElement {
           left: 0;
           right: 0;
           bottom: 0;
-          background-color: #ccc;
+          background-color: var(--divider-color, #ccc);
           transition: 0.3s;
           border-radius: 24px;
         }
@@ -1173,12 +1173,12 @@ class YeelightCubeGradientCard extends HTMLElement {
           width: 18px;
           left: 3px;
           bottom: 3px;
-          background-color: white;
+          background-color: var(--card-background-color, white);
           transition: 0.3s;
           border-radius: 50%;
         }
         .panel-toggle.switch input:checked + .switch-slider {
-          background-color: #2196F3;
+          background-color: var(--primary-color, #2196F3);
         }
         .panel-toggle.switch input:checked + .switch-slider:before {
           transform: translateX(20px);
@@ -1194,19 +1194,19 @@ class YeelightCubeGradientCard extends HTMLElement {
           align-items: center;
           justify-content: space-between;
           padding: 12px 16px;
-          border: 2px solid #e1e4e8;
+          border: 2px solid var(--divider-color, #e1e4e8);
           border-radius: 8px;
-          background: #f6f8fa;
+          background: var(--secondary-background-color, #f6f8fa);
           cursor: pointer;
           transition: all 0.2s ease;
         }
         .panel-toggle.card:hover {
-          border-color: #0969da;
-          background: #f1f3f4;
+          border-color: var(--primary-color, #0969da);
+          background: var(--secondary-background-color, #f1f3f4);
         }
         .panel-toggle.card.active {
-          border-color: #0969da;
-          background: #dbeafe;
+          border-color: var(--primary-color, #0969da);
+          background: color-mix(in srgb, var(--primary-color) 20%, var(--card-background-color, #fff));
         }
         .panel-toggle.card input[type="checkbox"] {
           display: none;
@@ -1219,7 +1219,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         .panel-toggle.card .card-indicator {
           width: 20px;
           height: 20px;
-          border: 2px solid #6b7280;
+          border: 2px solid var(--secondary-text-color, #6b7280);
           border-radius: 4px;
           display: flex;
           align-items: center;
@@ -1227,9 +1227,9 @@ class YeelightCubeGradientCard extends HTMLElement {
           transition: all 0.2s ease;
         }
         .panel-toggle.card.active .card-indicator {
-          background: #0969da;
-          border-color: #0969da;
-          color: white;
+          background: var(--primary-color, #0969da);
+          border-color: var(--primary-color, #0969da);
+          color: var(--text-primary-color, #fff);
         }
         .panel-toggle.card .card-indicator::after {
           content: "✓";
@@ -1244,12 +1244,12 @@ class YeelightCubeGradientCard extends HTMLElement {
         /* Scroll Controls */
         .scroll-info {
           font-family: monospace;
-          color: #656d76;
+          color: var(--secondary-text-color, #656d76);
         }
         
         .scroll-controls input[type="range"] {
           height: 4px;
-          background: #d0d7de;
+          background: var(--disabled-text-color, #d0d7de);
           border-radius: 2px;
           outline: none;
         }
@@ -1259,14 +1259,14 @@ class YeelightCubeGradientCard extends HTMLElement {
           width: 16px;
           height: 16px;
           border-radius: 50%;
-          background: #0969da;
+          background: var(--primary-color, #0969da);
           cursor: pointer;
         }
         
         .control-button {
           padding: 4px 8px;
-          border: 1px solid #d0d7de;
-          background: white;
+          border: 1px solid var(--disabled-text-color, #d0d7de);
+          background: var(--card-background-color, white);
           border-radius: 4px;
           cursor: pointer;
           font-size: 0.85em;
@@ -1274,13 +1274,13 @@ class YeelightCubeGradientCard extends HTMLElement {
         }
         
         .control-button:hover {
-          background: #f6f8fa;
+          background: var(--secondary-background-color, #f6f8fa);
         }
 
         .mode-btn {
           padding: 6px 10px;
-          border: 1px solid #d0d7de;
-          background: white;
+          border: 1px solid var(--disabled-text-color, #d0d7de);
+          background: var(--card-background-color, white);
           border-radius: 6px;
           cursor: pointer;
           font-size: 0.85em;
@@ -1289,13 +1289,13 @@ class YeelightCubeGradientCard extends HTMLElement {
         }
 
         .mode-btn:hover {
-          background: #f6f8fa;
+          background: var(--secondary-background-color, #f6f8fa);
         }
 
         .mode-btn.active {
-          background: #0969da;
-          color: white;
-          border-color: #0969da;
+          background: var(--primary-color, #0969da);
+          color: var(--text-primary-color, #fff);
+          border-color: var(--primary-color, #0969da);
         }
 
         /* Colorized style */
@@ -1321,7 +1321,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         .mode-btn-colorized.active {
           transform: scale(1.05);
           box-shadow: 0 6px 20px rgba(0,0,0,0.25);
-          border-color: white;
+          border-color: var(--card-background-color, white);
         }
 
         .mode-btn-colorized::before {
@@ -1343,8 +1343,8 @@ class YeelightCubeGradientCard extends HTMLElement {
         /* Compact style - smaller, tight grid */
         .mode-btn-compact {
           padding: 4px 6px;
-          border: 1px solid #d0d7de;
-          background: white;
+          border: 1px solid var(--disabled-text-color, #d0d7de);
+          background: var(--card-background-color, white);
           border-radius: 4px;
           cursor: pointer;
           font-size: 0.75em;
@@ -1353,14 +1353,14 @@ class YeelightCubeGradientCard extends HTMLElement {
         }
 
         .mode-btn-compact:hover {
-          background: #f6f8fa;
-          border-color: #0969da;
+          background: var(--secondary-background-color, #f6f8fa);
+          border-color: var(--primary-color, #0969da);
         }
 
         .mode-btn-compact.active {
-          background: #0969da;
-          color: white;
-          border-color: #0969da;
+          background: var(--primary-color, #0969da);
+          color: var(--text-primary-color, #fff);
+          border-color: var(--primary-color, #0969da);
           font-weight: 600;
         }
 
@@ -1368,23 +1368,23 @@ class YeelightCubeGradientCard extends HTMLElement {
         .mode-btn-pill {
           padding: 6px 14px;
           border: none;
-          background: #e7ecf0;
+          background: var(--secondary-background-color, #e7ecf0);
           border-radius: 20px;
           cursor: pointer;
           font-size: 0.85em;
           font-weight: 500;
           transition: all 0.25s ease;
-          color: #24292f;
+          color: var(--primary-text-color, #24292f);
         }
 
         .mode-btn-pill:hover {
-          background: #d0d7de;
+          background: var(--disabled-text-color, #d0d7de);
           transform: scale(1.05);
         }
 
         .mode-btn-pill.active {
-          background: linear-gradient(135deg, #0969da 0%, #0550ae 100%);
-          color: white;
+          background: linear-gradient(135deg, var(--primary-color, #0969da) 0%, var(--accent-color, #0550ae) 100%);
+          color: var(--text-primary-color, #fff);
           box-shadow: 0 2px 8px rgba(9, 105, 218, 0.3);
           transform: scale(1.05);
         }
@@ -1393,16 +1393,16 @@ class YeelightCubeGradientCard extends HTMLElement {
         .mode-select {
           width: 100%;
           padding: 8px 12px;
-          border: 1px solid #d0d7de;
+          border: 1px solid var(--disabled-text-color, #d0d7de);
           border-radius: 6px;
-          background: white;
+          background: var(--card-background-color, white);
           font-size: 0.9em;
           cursor: pointer;
         }
 
         .mode-select:focus {
           outline: none;
-          border-color: #0969da;
+          border-color: var(--primary-color, #0969da);
           box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.1);
         }
 
@@ -1419,8 +1419,8 @@ class YeelightCubeGradientCard extends HTMLElement {
         .preview-toggle-btn {
           width: 100%;
           padding: 10px 16px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
+          background: linear-gradient(135deg, var(--primary-color) 0%, var(--accent-color, #764ba2) 100%);
+          color: var(--text-primary-color, #fff);
           border: none;
           border-radius: 6px;
           cursor: pointer;
@@ -1448,7 +1448,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         }
 
         .preview-title {
-          color: #fff;
+          color: var(--text-primary-color, #fff);
           text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
         }
 
@@ -1462,9 +1462,9 @@ class YeelightCubeGradientCard extends HTMLElement {
         /* Wheel navigation button styles */
         .wheel-nav-down:hover,
         .wheel-nav-up:hover {
-          background: white !important;
+          background: var(--card-background-color, white) !important;
           box-shadow: 0 6px 16px rgba(0,0,0,0.2) !important;
-          color: #000 !important;
+          color: var(--primary-text-color, #000) !important;
         }
 
       </style>
@@ -3089,7 +3089,7 @@ class YeelightCubeGradientCard extends HTMLElement {
                   wheelRadius * 2
                 }" fill="url(#wheelGradient)" mask="url(#circleMask)"/>
               </g>
-              <circle cx="50" cy="50" r="${wheelRadius}" fill="none" stroke="#ddd" stroke-width="1"/>
+              <circle cx="50" cy="50" r="${wheelRadius}" fill="none" stroke="var(--divider-color, #ddd)" stroke-width="1"/>
               ${
                 this.config.show_selector_dot !== false
                   ? `<circle cx="${selectorX}" cy="${selectorY}" r="4" class="wheel-selector" fill="#fff" stroke="#333" stroke-width="2"/>`
@@ -3201,7 +3201,7 @@ class YeelightCubeGradientCard extends HTMLElement {
                 }deg, ${rectTextColors
                   .map((color) => `rgb(${color.join(",")})`)
                   .join(", ")});
-                border: 1px solid #ddd;
+                border: 1px solid var(--divider-color, #ddd);
                 border-radius: 6px;
                 margin: 0 auto;
                 position: relative;
@@ -3333,7 +3333,7 @@ class YeelightCubeGradientCard extends HTMLElement {
                 }deg, ${squareTextColors
                   .map((color) => `rgb(${color.join(",")})`)
                   .join(", ")});
-                border: 1px solid #ddd;
+                border: 1px solid var(--divider-color, #ddd);
                 border-radius: 6px;
                 margin: 0 auto;
                 position: relative;

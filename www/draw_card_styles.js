@@ -51,7 +51,7 @@ export const drawCardStyles = css`
   .palette-group-card.fold .palette-group-title {
     cursor: pointer;
     z-index: 2;
-    background: #fff;
+    background: var(--card-background-color, #fff);
     border-radius: 12px;
     padding: 6px 18px;
     box-shadow: 0 2px 8px #0001;
@@ -64,7 +64,7 @@ export const drawCardStyles = css`
     top: 48px;
     width: 100%;
     z-index: 10;
-    background: #fff;
+    background: var(--card-background-color, #fff);
     box-shadow: 0 4px 24px #0002;
     border-radius: 12px;
     padding: 12px 0 12px 0;
@@ -77,7 +77,7 @@ export const drawCardStyles = css`
   }
   .palette-group-card.fold .palette-fold-content::-webkit-scrollbar {
     height: 8px;
-    background: #eee;
+    background: var(--secondary-background-color, #eee);
     border-radius: 8px;
   }
   .palette-group-card.fold .palette-fold-content::-webkit-scrollbar-thumb {
@@ -375,8 +375,8 @@ export const drawCardStyles = css`
     transition: border 0.1s;
   }
   .draw-btn {
-    background: #e6f7ff;
-    color: #0077cc;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
+    color: var(--primary-color, #0077cc);
     border: none;
     border-radius: 8px;
     padding: 10px 0;
@@ -389,22 +389,22 @@ export const drawCardStyles = css`
     text-align: center;
   }
   .draw-btn:hover {
-    background: #b3e6ff;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
   }
   .draw-btn.clear {
-    background: #ffeaea;
-    color: #b00;
+    background: color-mix(in srgb, var(--error-color, #db4437) 15%, var(--card-background-color, #fff));
+    color: var(--error-color, #db4437);
   }
   .draw-btn.clear:hover {
-    background: #ffd6d6;
+    background: color-mix(in srgb, var(--error-color, #db4437) 25%, var(--card-background-color, #fff));
   }
   .draw-btn.save {
-    background: #e6f7ff;
-    color: #0077cc;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
+    color: var(--primary-color, #0077cc);
     box-shadow: none;
   }
   .draw-btn.save:hover {
-    background: #b3e6ff;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
   }
   .draw-btn:disabled,
   .draw-btn.disabled {
@@ -420,8 +420,8 @@ export const drawCardStyles = css`
 
   /* Draw button active state for pagination */
   .draw-btn.active {
-    background: #0077cc !important;
-    color: white !important;
+    background: var(--primary-color, #0077cc) !important;
+    color: var(--text-primary-color, #fff) !important;
   }
 
   /* Pagination button sizing adjustments */
@@ -658,7 +658,7 @@ export const drawCardStyles = css`
     box-sizing: border-box;
   }
   .palette-group-card {
-    background: #fff;
+    background: var(--card-background-color, #fff);
     border-radius: 8px;
     box-shadow: 0 2px 8px #0002;
     padding: 10px;
@@ -671,7 +671,7 @@ export const drawCardStyles = css`
   .palette-group-title {
     font-size: 1em;
     font-weight: 500;
-    color: #444;
+    color: var(--primary-text-color, #444);
     margin: 0;
     width: auto;
     flex: 1 1 auto;
@@ -735,7 +735,7 @@ export const drawCardStyles = css`
     font-size: 1.1em;
     font-weight: 600;
     margin-bottom: 8px;
-    color: #222;
+    color: var(--primary-text-color, #222);
     text-align: center;
   }
   .color-section-list {
@@ -770,19 +770,19 @@ export const drawCardStyles = css`
     margin-bottom: 6px;
   }
   .palette-tab-btn {
-    background: #e6f7ff;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
     border: none;
     border-radius: 6px 6px 0 0;
     padding: 6px 18px;
     font-size: 1em;
     cursor: pointer;
     font-weight: 500;
-    color: #0077cc;
+    color: var(--primary-color, #0077cc);
     transition: background 0.2s;
   }
   .palette-tab-btn.active {
-    background: #b3e6ff;
-    color: #222;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
+    color: var(--primary-text-color, #222);
     font-weight: 600;
     box-shadow: 0 2px 8px #0002;
   }
@@ -806,7 +806,7 @@ export const drawCardStyles = css`
     transition: color 0.2s;
   }
   .palette-group-title[style*="cursor:pointer"]:hover {
-    color: #0077cc;
+    color: var(--primary-color, #0077cc);
   }
   .palette-dropdown {
     display: flex;
@@ -818,10 +818,10 @@ export const drawCardStyles = css`
   .palette-dropdown select {
     padding: 12px 12px;
     border-radius: 6px;
-    border: 1px solid #b3e6ff;
+    border: 1px solid color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
     font-size: 1em;
-    background: #e6f7ff;
-    color: #0077cc;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
+    color: var(--primary-color, #0077cc);
     font-weight: 500;
     cursor: pointer;
   }
@@ -840,11 +840,11 @@ export const drawCardStyles = css`
     flex-wrap: wrap;
   }
   .palette-floating-btn {
-    background: #e6f7ff;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
     border-radius: 6px;
     padding: 6px 14px;
     font-size: 1em;
-    color: #0077cc;
+    color: var(--primary-color, #0077cc);
     font-weight: 500;
     cursor: pointer;
     margin-bottom: 6px;
@@ -852,7 +852,7 @@ export const drawCardStyles = css`
     transition: background 0.2s;
   }
   .palette-floating-btn:hover {
-    background: #b3e6ff;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
   }
   .palette-group-card.floating {
     position: absolute;
@@ -860,8 +860,8 @@ export const drawCardStyles = css`
     min-width: 180px;
     max-width: 220px;
     box-shadow: 0 4px 16px #0003;
-    background: #fff;
-    border: 1px solid #b3e6ff;
+    background: var(--card-background-color, #fff);
+    border: 1px solid color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
     margin-top: 32px;
     left: 0;
   }
@@ -890,7 +890,7 @@ export const drawCardStyles = css`
     max-width: 100%;
     align-items: center;
     scrollbar-width: thin;
-    scrollbar-color: #b3e6ff #fff;
+    scrollbar-color: color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff)) var(--card-background-color, #fff);
     height: 100%;
     cursor: grab;
     user-select: none;
@@ -912,10 +912,10 @@ export const drawCardStyles = css`
   }
   .palette-row-scroll::-webkit-scrollbar {
     height: 6px;
-    background: #fff;
+    background: var(--card-background-color, #fff);
   }
   .palette-row-scroll::-webkit-scrollbar-thumb {
-    background: #b3e6ff;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
     border-radius: 3px;
   }
   .palette-row-scroll > :first-child {
@@ -939,11 +939,11 @@ export const drawCardStyles = css`
     flex: 0 0 auto;
     margin-left: 8px;
     /* Match paint tool button style */
-    background: #eaf3fa;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 12%, var(--card-background-color, #fff));
     border: none;
     border-radius: 8px;
     box-shadow: 0 1px 4px #0001;
-    color: #0077cc;
+    color: var(--primary-color, #0077cc);
     font-size: 18px;
     padding: 6px 12px;
     cursor: pointer;
@@ -987,7 +987,7 @@ export const drawCardStyles = css`
     position: relative;
     width: auto;
 
-    background: #fff;
+    background: var(--card-background-color, #fff);
     border-radius: 14px;
     box-shadow: 0 2px 12px #0002;
     transition: box-shadow 0.3s, transform 0.4s cubic-bezier(0.4, 0, 0.2, 1),
@@ -1043,7 +1043,7 @@ export const drawCardStyles = css`
   }
   .palette-stacked-nav button:hover {
     background: rgba(100, 100, 255, 0.22);
-    color: #3333cc;
+    color: var(--primary-color, #3333cc);
   }
   .palette-stacked-title {
     font-size: 1rem;
@@ -1178,7 +1178,7 @@ export const drawCardStyles = css`
     font-weight: bold;
     margin-bottom: 18px;
     margin-top: 2px;
-    color: #222;
+    color: var(--primary-text-color, #222);
   }
 
   /* Pixel Art Gallery Styles */
@@ -1198,7 +1198,7 @@ export const drawCardStyles = css`
 
   .pixelart-count {
     background: var(--primary-color, #03a9f4);
-    color: white;
+    color: var(--text-primary-color, #fff);
     padding: 2px 8px;
     border-radius: 12px;
     font-size: 0.8em;
@@ -1410,7 +1410,7 @@ export const drawCardStyles = css`
 
   .pixelart-compact-item {
     background: transparent;
-    border: 1px solid #e1e4e8;
+    border: 1px solid var(--divider-color, #e1e4e8);
     padding: calc(12px * var(--preview-size-percent, 100%) / 100)
       calc(10px * var(--preview-size-percent, 100%) / 100);
     display: flex;
@@ -1423,7 +1423,7 @@ export const drawCardStyles = css`
   }
 
   .pixelart-compact-item:hover {
-    background: #f6f8fa;
+    background: var(--secondary-background-color, #f6f8fa);
   }
 
   .pixelart-compact-item .compact-content {
@@ -1455,7 +1455,7 @@ export const drawCardStyles = css`
 
   .pixelart-compact-item .compact-title {
     font-weight: 500;
-    color: #24292f;
+    color: var(--primary-text-color, #24292f);
     font-size: calc(0.95em * var(--preview-size-percent, 100%) / 100);
     white-space: nowrap;
     overflow: hidden;
@@ -1466,7 +1466,7 @@ export const drawCardStyles = css`
 
   .pixelart-compact-item .compact-meta {
     font-size: calc(0.8em * var(--preview-size-percent, 100%) / 100);
-    color: #57606a;
+    color: var(--secondary-text-color, #57606a);
     white-space: nowrap;
   }
 
@@ -1665,7 +1665,7 @@ export const drawCardStyles = css`
     padding: 6px 12px;
     transition: all 0.2s ease;
     background: var(--primary-color, #03a9f4);
-    color: white;
+    color: var(--text-primary-color, #fff);
   }
 
   .pixelart-btn:hover {
@@ -1704,7 +1704,7 @@ export const drawCardStyles = css`
   }
 
   .pixelart-delete-title-row {
-    background: rgba(255, 255, 255, 0.9);
+    background: var(--card-background-color, rgba(255, 255, 255, 0.9));
     border-radius: 50%;
     width: 24px;
     height: 24px;
@@ -1714,7 +1714,7 @@ export const drawCardStyles = css`
   }
 
   .pixelart-delete-title-row:hover {
-    background: rgba(255, 255, 255, 1);
+    background: var(--card-background-color, rgba(255, 255, 255, 1));
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
     transform: scale(1.05);
   }
@@ -1750,7 +1750,7 @@ export const drawCardStyles = css`
     top: calc(4px * var(--preview-size-percent, 100%) / 100);
     right: calc(4px * var(--preview-size-percent, 100%) / 100);
     z-index: 10;
-    background: rgba(255, 255, 255, 0.9);
+    background: var(--card-background-color, rgba(255, 255, 255, 0.9));
     border-radius: 50%;
     width: calc(24px * var(--preview-size-percent, 100%) / 100);
     height: calc(24px * var(--preview-size-percent, 100%) / 100);
@@ -1763,7 +1763,7 @@ export const drawCardStyles = css`
   }
 
   .pixelart-delete-overlay-grid:hover {
-    background: rgba(255, 255, 255, 1);
+    background: var(--card-background-color, rgba(255, 255, 255, 1));
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
     transform: scale(1.05);
   }
@@ -1781,7 +1781,7 @@ export const drawCardStyles = css`
     top: 4px;
     right: 4px;
     z-index: 10;
-    background: rgba(255, 255, 255, 0.9);
+    background: var(--card-background-color, rgba(255, 255, 255, 0.9));
     border-radius: 50%;
     width: 24px;
     height: 24px;
@@ -1793,7 +1793,7 @@ export const drawCardStyles = css`
   }
 
   .pixelart-delete-overlay:hover {
-    background: rgba(255, 255, 255, 1);
+    background: var(--card-background-color, rgba(255, 255, 255, 1));
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
     transform: scale(1.05);
   }
@@ -1818,7 +1818,7 @@ export const drawCardStyles = css`
 
   .apply-pixelart-btn {
     background: var(--primary-color, #03a9f4);
-    color: white;
+    color: var(--text-primary-color, #fff);
   }
 
   .apply-pixelart-btn:hover {
@@ -1828,7 +1828,7 @@ export const drawCardStyles = css`
 
   .apply-to-matrix-btn {
     background: #ff9800;
-    color: white;
+    color: var(--text-primary-color, #fff);
   }
 
   .apply-to-matrix-btn:hover {
@@ -1838,7 +1838,7 @@ export const drawCardStyles = css`
 
   .delete-pixelart-btn {
     background: #f44336;
-    color: white;
+    color: var(--text-primary-color, #fff);
   }
 
   .delete-pixelart-btn:hover {
@@ -1921,7 +1921,7 @@ export const drawCardStyles = css`
   }
 
   .toolbar-container[data-allow-drag="true"] {
-    border: 2px dashed #0077cc;
+    border: 2px dashed var(--primary-color, #0077cc);
     border-radius: 8px;
     padding: 8px;
     background: rgba(0, 119, 204, 0.05);
@@ -1933,14 +1933,14 @@ export const drawCardStyles = css`
     display: block;
     text-align: center;
     font-size: 0.8em;
-    color: #0077cc;
+    color: var(--primary-color, #0077cc);
     margin-bottom: 8px;
     font-weight: 600;
   }
 
   .tool-item.tool-placeholder {
-    background: #e1e5e9;
-    border: 2px dashed #0077cc !important;
+    background: var(--secondary-background-color, #e1e5e9);
+    border: 2px dashed var(--primary-color, #0077cc) !important;
     border-radius: 6px;
     opacity: 0.5;
     min-height: 40px;
@@ -1969,14 +1969,14 @@ export const drawCardStyles = css`
     margin: 0 4px;
     border-radius: 4px;
     user-select: none;
-    color: #666;
+    color: var(--secondary-text-color, #666);
     font-size: 16px;
   }
 
   .tool-order-handle:hover,
   .layout-section-handle:hover {
-    background: #f0f0f0;
-    color: #333;
+    background: var(--secondary-background-color, #f0f0f0);
+    color: var(--primary-text-color, #333);
   }
 
   .tool-order-handle:active,
@@ -1992,7 +1992,7 @@ export const drawCardStyles = css`
   .tool-drag-handle {
     cursor: grab;
     user-select: none;
-    color: #666;
+    color: var(--secondary-text-color, #666);
     font-size: 8px;
     position: absolute;
     top: 2px;
@@ -2005,12 +2005,12 @@ export const drawCardStyles = css`
     align-items: center;
     justify-content: center;
     border-radius: 2px;
-    background: rgba(255, 255, 255, 0.8);
+    background: var(--card-background-color, rgba(255, 255, 255, 0.8));
   }
 
   .tool-drag-handle:hover {
-    background: rgba(255, 255, 255, 0.95);
-    color: #333;
+    background: var(--card-background-color, rgba(255, 255, 255, 0.95));
+    color: var(--primary-text-color, #333);
   }
 
   .tool-drag-handle:active {
@@ -2028,16 +2028,16 @@ export const drawCardStyles = css`
     display: flex;
     align-items: center;
     padding: 12px;
-    background: #f8f9fa;
-    border: 1px solid #e0e4e7;
+    background: var(--secondary-background-color, #f8f9fa);
+    border: 1px solid var(--divider-color, #e0e4e7);
     border-radius: 8px;
     transition: all 0.2s ease;
     cursor: default;
   }
 
   .tool-order-item:hover {
-    background: #f0f2f5;
-    border-color: #d1d6db;
+    background: var(--secondary-background-color, #f0f2f5);
+    border-color: var(--divider-color, #d1d6db);
   }
 
   .tool-order-item.dragging {
@@ -2060,13 +2060,13 @@ export const drawCardStyles = css`
 
   .tool-order-info > div:first-child {
     font-weight: 600;
-    color: #333;
+    color: var(--primary-text-color, #333);
     margin-bottom: 2px;
   }
 
   .tool-order-info > div:last-child {
     font-size: 0.85em;
-    color: #666;
+    color: var(--secondary-text-color, #666);
   }
 
 `;

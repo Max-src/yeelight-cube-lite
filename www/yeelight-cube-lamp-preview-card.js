@@ -3587,7 +3587,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
         .brightness-capsule-light {
-          background: #fff;
+          background: var(--card-background-color, #fff);
         }
         .brightness-capsule-dark {
           background: #2c2c2c;
@@ -3611,13 +3611,13 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           overflow: visible;
         }
         .brightness-capsule-light .capsule-track {
-          background: #d0d0d0;
+          background: var(--divider-color, #d0d0d0);
         }
         .brightness-capsule-dark .capsule-track {
           background: #1a1a1a;
         }
         .brightness-capsule-transparent .capsule-track {
-          background: #d0d0d0;
+          background: var(--divider-color, #d0d0d0);
         }
         .capsule-fill {
           position: absolute;
@@ -3642,19 +3642,19 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           transition: left 0.1s ease;
           pointer-events: none;
           z-index: 2;
-          border: 2px solid rgba(0, 0, 0, 0.1);
+          border: 2px solid var(--divider-color, rgba(0, 0, 0, 0.1));
         }
         .brightness-capsule-light .capsule-thumb {
-          background: white;
-          border-color: rgba(0, 0, 0, 0.1);
+          background: var(--card-background-color, white);
+          border-color: var(--divider-color, rgba(0, 0, 0, 0.1));
         }
         .brightness-capsule-dark .capsule-thumb {
           background: #1a1a1a;
           border-color: rgba(255, 255, 255, 0.2);
         }
         .brightness-capsule-transparent .capsule-thumb {
-          background: white;
-          border-color: rgba(0, 0, 0, 0.1);
+          background: var(--card-background-color, white);
+          border-color: var(--divider-color, rgba(0, 0, 0, 0.1));
         }
         .brightness-slider-capsule {
           position: absolute;
