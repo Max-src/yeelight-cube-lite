@@ -12,6 +12,148 @@ import {
   renderButtonContent,
 } from "./export-import-button-utils.js?v=4";
 
+// ==============  EFFECTS REGISTRY  ==============
+// Single source of truth for all effect metadata.
+// All effect definitions throughout this card derive from these two tables.
+// To add/remove/change an effect, edit ONLY here.
+
+const EFFECTS_REGISTRY = {
+  hue_shift: {
+    label: "Hue Shift",
+    icon: "🔄",
+    min: -180,
+    max: 180,
+    default: 0,
+    unit: "°",
+    hint: null,
+  },
+  temperature: {
+    label: "Temperature",
+    icon: "🌡️",
+    min: -100,
+    max: 100,
+    default: 0,
+    unit: "",
+    hint: "Cool ❄ → Warm",
+  },
+  saturation: {
+    label: "Saturation",
+    icon: "🎨",
+    min: 0,
+    max: 200,
+    default: 100,
+    unit: "",
+    hint: null,
+  },
+  vibrance: {
+    label: "Vibrance",
+    icon: "💥",
+    min: 0,
+    max: 200,
+    default: 100,
+    unit: "",
+    hint: "Smart saturation",
+  },
+  contrast: {
+    label: "Contrast",
+    icon: "◐",
+    min: 0,
+    max: 200,
+    default: 100,
+    unit: "",
+    hint: null,
+  },
+  glow: {
+    label: "Glow",
+    icon: "✨",
+    min: 0,
+    max: 100,
+    default: 0,
+    unit: "%",
+    hint: "Boost bright pixels",
+  },
+  grayscale: {
+    label: "Grayscale",
+    icon: "⬜",
+    min: 0,
+    max: 100,
+    default: 0,
+    unit: "%",
+    hint: null,
+  },
+  invert: {
+    label: "Invert",
+    icon: "🔃",
+    min: 0,
+    max: 100,
+    default: 0,
+    unit: "%",
+    hint: null,
+  },
+  tint_hue: {
+    label: "Tint Hue",
+    icon: "🎯",
+    min: 0,
+    max: 360,
+    default: 0,
+    unit: "°",
+    hint: "Color for tint",
+  },
+  tint_strength: {
+    label: "Tint Strength",
+    icon: "💧",
+    min: 0,
+    max: 100,
+    default: 0,
+    unit: "%",
+    hint: "Tint intensity",
+  },
+};
+
+const SECTIONS_REGISTRY = [
+  {
+    id: "color_adjustments",
+    title: "Color",
+    icon: "🎨",
+    description: "Hue and tone",
+    effects: ["hue_shift", "temperature"],
+  },
+  {
+    id: "saturation_intensity",
+    title: "Intensity",
+    icon: "💎",
+    description: "Color richness",
+    effects: ["saturation", "vibrance"],
+  },
+  {
+    id: "tone_contrast",
+    title: "Tone",
+    icon: "🌓",
+    description: "Light/dark balance",
+    effects: ["contrast", "glow"],
+  },
+  {
+    id: "special_effects",
+    title: "Effects",
+    icon: "✨",
+    description: "Creative transforms",
+    effects: ["grayscale", "invert", "tint_hue", "tint_strength"],
+  },
+];
+
+// Derived lookup tables (computed once at load time)
+const EFFECT_ATTR_MAP = Object.fromEntries(
+  Object.keys(EFFECTS_REGISTRY).map((name) => [name, `preview_${name}`]),
+);
+
+const EFFECT_DEFAULTS = Object.fromEntries(
+  Object.entries(EFFECTS_REGISTRY).map(([name, def]) => [name, def.default]),
+);
+
+const EFFECT_NAMES = Object.keys(EFFECTS_REGISTRY);
+
+// ================================================
+
 class YeelightCubeLampPreviewCard extends HTMLElement {
   static async getConfigElement() {
     if (!customElements.get("yeelight-cube-lamp-preview-card-editor")) {
@@ -169,20 +311,6 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       this.config.entity &&
       hass.states[this.config.entity]
     ) {
-      const stateObj = hass.states[this.config.entity];
-      const effectMappings = {
-        hue_shift: "preview_hue_shift",
-        temperature: "preview_temperature",
-        saturation: "preview_saturation",
-        vibrance: "preview_vibrance",
-        contrast: "preview_contrast",
-        glow: "preview_glow",
-        grayscale: "preview_grayscale",
-        invert: "preview_invert",
-        tint_hue: "preview_tint_hue",
-        tint_strength: "preview_tint_strength",
-      };
-
       // Don't clear _localEffects when entity state matches!
       // We need to keep tracking values that differ from defaults
       // for the change indicator system to work properly.
@@ -624,46 +752,13 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         // Get all current effect values
         const stateObj = this._hass.states[this.config.entity];
         const _tSvc = performance.now();
-        const effects = {
-          hue_shift:
-            this._localEffects.hue_shift ??
-            stateObj?.attributes?.preview_hue_shift ??
-            0,
-          temperature:
-            this._localEffects.temperature ??
-            stateObj?.attributes?.preview_temperature ??
-            0,
-          saturation:
-            this._localEffects.saturation ??
-            stateObj?.attributes?.preview_saturation ??
-            100,
-          vibrance:
-            this._localEffects.vibrance ??
-            stateObj?.attributes?.preview_vibrance ??
-            100,
-          contrast:
-            this._localEffects.contrast ??
-            stateObj?.attributes?.preview_contrast ??
-            100,
-          glow:
-            this._localEffects.glow ?? stateObj?.attributes?.preview_glow ?? 0,
-          grayscale:
-            this._localEffects.grayscale ??
-            stateObj?.attributes?.preview_grayscale ??
-            0,
-          invert:
-            this._localEffects.invert ??
-            stateObj?.attributes?.preview_invert ??
-            0,
-          tint_hue:
-            this._localEffects.tint_hue ??
-            stateObj?.attributes?.preview_tint_hue ??
-            0,
-          tint_strength:
-            this._localEffects.tint_strength ??
-            stateObj?.attributes?.preview_tint_strength ??
-            0,
-        };
+        const effects = {};
+        for (const name of EFFECT_NAMES) {
+          effects[name] =
+            this._localEffects[name] ??
+            stateObj?.attributes?.[EFFECT_ATTR_MAP[name]] ??
+            EFFECT_DEFAULTS[name];
+        }
 
         // Track when we make the service call
         this._lastServiceCallTime = Date.now();
@@ -822,132 +917,24 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     const stateObj = hass.states[entityId];
     if (!stateObj) return;
 
-    const effects = stateObj.attributes.effects || {};
-    const effectsData = this._generateAdjustmentControlsHtml(effects).match(
-      /effects-categories-container/,
-    );
-
-    // Just get the sections data
-    const sections = [
-      {
-        id: "color_adjustments",
-        title: "Color",
-        icon: "🎨",
-        effects: [
-          {
-            name: "hue_shift",
-            label: "Hue Shift",
-            min: -180,
-            max: 180,
-            value: stateObj.attributes.preview_hue_shift || 0,
-            unit: "°",
-            default: 0,
-          },
-          {
-            name: "temperature",
-            label: "Temperature",
-            min: -100,
-            max: 100,
-            value: stateObj.attributes.preview_temperature || 0,
-            unit: "",
-            default: 0,
-          },
-        ],
-      },
-      {
-        id: "saturation_intensity",
-        title: "Intensity",
-        icon: "💎",
-        effects: [
-          {
-            name: "saturation",
-            label: "Saturation",
-            min: 0,
-            max: 200,
-            value: stateObj.attributes.preview_saturation || 100,
-            unit: "",
-            default: 100,
-          },
-          {
-            name: "vibrance",
-            label: "Vibrance",
-            min: 0,
-            max: 200,
-            value: stateObj.attributes.preview_vibrance || 100,
-            unit: "",
-            default: 100,
-          },
-        ],
-      },
-      {
-        id: "tone_contrast",
-        title: "Tone",
-        icon: "🌓",
-        effects: [
-          {
-            name: "contrast",
-            label: "Contrast",
-            min: 0,
-            max: 200,
-            value: stateObj.attributes.preview_contrast || 100,
-            unit: "",
-            default: 100,
-          },
-          {
-            name: "glow",
-            label: "Glow",
-            min: 0,
-            max: 100,
-            value: stateObj.attributes.preview_glow || 0,
-            unit: "%",
-            default: 0,
-          },
-        ],
-      },
-      {
-        id: "special_effects",
-        title: "Effects",
-        icon: "✨",
-        effects: [
-          {
-            name: "grayscale",
-            label: "Grayscale",
-            min: 0,
-            max: 100,
-            value: stateObj.attributes.preview_grayscale || 0,
-            unit: "%",
-            default: 0,
-          },
-          {
-            name: "invert",
-            label: "Invert",
-            min: 0,
-            max: 100,
-            value: stateObj.attributes.preview_invert || 0,
-            unit: "%",
-            default: 0,
-          },
-          {
-            name: "tint_hue",
-            label: "Tint Hue",
-            min: 0,
-            max: 360,
-            value: stateObj.attributes.preview_tint_hue || 0,
-            unit: "°",
-            default: 0,
-          },
-          {
-            name: "tint_strength",
-            label: "Tint Strength",
-            min: 0,
-            max: 100,
-            value: stateObj.attributes.preview_tint_strength || 0,
-            unit: "%",
-            default: 0,
-          },
-        ],
-      },
-    ];
+    // Derive sections from registry
+    const sections = SECTIONS_REGISTRY.map((section) => ({
+      id: section.id,
+      title: section.title,
+      icon: section.icon,
+      effects: section.effects.map((name) => {
+        const def = EFFECTS_REGISTRY[name];
+        return {
+          name,
+          label: def.label,
+          min: def.min,
+          max: def.max,
+          value: stateObj.attributes[EFFECT_ATTR_MAP[name]] || def.default,
+          unit: def.unit,
+          default: def.default,
+        };
+      }),
+    }));
 
     const activeSection =
       sections.find((s) => s.id === categoryId) || sections[0];
@@ -1053,32 +1040,15 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   }
 
   async resetSection(sectionId) {
-    // Simple, clean reset: Define default values for each section
-    const sectionDefaults = {
-      color_adjustments: {
-        hue_shift: 0,
-        temperature: 0,
-      },
-      saturation_intensity: {
-        saturation: 100,
-        vibrance: 100,
-      },
-      tone_contrast: {
-        contrast: 100,
-        glow: 0,
-      },
-      special_effects: {
-        grayscale: 0,
-        invert: 0,
-        tint_hue: 0,
-        tint_strength: 0,
-      },
-    };
-
-    const defaultValues = sectionDefaults[sectionId];
-    if (!defaultValues) {
+    // Derive section defaults from SECTIONS_REGISTRY + EFFECT_DEFAULTS
+    const section = SECTIONS_REGISTRY.find((s) => s.id === sectionId);
+    if (!section) {
       console.error("? Unknown section ID:", sectionId);
       return;
+    }
+    const defaultValues = {};
+    for (const name of section.effects) {
+      defaultValues[name] = EFFECT_DEFAULTS[name];
     }
 
     // Get current state from entity
@@ -1088,28 +1058,18 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     // Build the effects object: Start with current values from entity state OR local changes
     const getCurrentValue = (effectName) => {
       // Priority: 1) Local changes (if user is dragging), 2) Entity state, 3) Default
-      const attrName = `preview_${effectName}`;
       return (
         this._localEffects[effectName] ??
-        stateObj.attributes?.[attrName] ??
-        (defaultValues[effectName] !== undefined
-          ? defaultValues[effectName]
-          : 100)
+        stateObj.attributes?.[EFFECT_ATTR_MAP[effectName]] ??
+        EFFECT_DEFAULTS[effectName] ??
+        0
       );
     };
 
-    const allEffects = {
-      hue_shift: getCurrentValue("hue_shift"),
-      temperature: getCurrentValue("temperature"),
-      saturation: getCurrentValue("saturation"),
-      vibrance: getCurrentValue("vibrance"),
-      contrast: getCurrentValue("contrast"),
-      glow: getCurrentValue("glow"),
-      grayscale: getCurrentValue("grayscale"),
-      invert: getCurrentValue("invert"),
-      tint_hue: getCurrentValue("tint_hue"),
-      tint_strength: getCurrentValue("tint_strength"),
-    };
+    const allEffects = {};
+    for (const name of EFFECT_NAMES) {
+      allEffects[name] = getCurrentValue(name);
+    }
 
     // Override ONLY the effects in this section with their defaults
     Object.keys(defaultValues).forEach((effectName) => {
@@ -1172,23 +1132,10 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     const stateObj = this._hass?.states?.[this.config.entity];
     if (!stateObj) return;
 
-    const effectMappings = {
-      hue_shift: "preview_hue_shift",
-      temperature: "preview_temperature",
-      saturation: "preview_saturation",
-      vibrance: "preview_vibrance",
-      contrast: "preview_contrast",
-      glow: "preview_glow",
-      grayscale: "preview_grayscale",
-      invert: "preview_invert",
-      tint_hue: "preview_tint_hue",
-      tint_strength: "preview_tint_strength",
-    };
-
     // Build the effects object with all current values
     const allEffects = {};
-    Object.keys(effectMappings).forEach((effect) => {
-      const attrName = effectMappings[effect];
+    Object.keys(EFFECT_ATTR_MAP).forEach((effect) => {
+      const attrName = EFFECT_ATTR_MAP[effect];
       if (attrName && stateObj.attributes[attrName] !== undefined) {
         allEffects[effect] =
           this._localEffects[effect] ?? stateObj.attributes[attrName];
@@ -1416,27 +1363,13 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       return false;
     }
 
-    // Effect name to attribute name mapping (effects are stored as individual attributes)
-    const effectMappings = {
-      hue_shift: "preview_hue_shift",
-      temperature: "preview_temperature",
-      saturation: "preview_saturation",
-      vibrance: "preview_vibrance",
-      contrast: "preview_contrast",
-      glow: "preview_glow",
-      grayscale: "preview_grayscale",
-      invert: "preview_invert",
-      tint_hue: "preview_tint_hue",
-      tint_strength: "preview_tint_strength",
-    };
-
     // Check each effect in this section
     let hasChanges = false;
 
     for (const effect of section.effects) {
       const effectName = effect.name;
-      const defaultValue = this._getDefaultValue(effectName);
-      const attrName = effectMappings[effectName];
+      const defaultValue = EFFECT_DEFAULTS[effectName] ?? 0;
+      const attrName = EFFECT_ATTR_MAP[effectName];
 
       // Check _localEffects first (for pending changes), then entity attribute
       let currentValue;
@@ -1469,21 +1402,8 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       return false;
     }
 
-    const effectMappings = {
-      hue_shift: "preview_hue_shift",
-      temperature: "preview_temperature",
-      saturation: "preview_saturation",
-      vibrance: "preview_vibrance",
-      contrast: "preview_contrast",
-      glow: "preview_glow",
-      grayscale: "preview_grayscale",
-      invert: "preview_invert",
-      tint_hue: "preview_tint_hue",
-      tint_strength: "preview_tint_strength",
-    };
-
-    const defaultValue = this._getDefaultValue(effectName);
-    const attrName = effectMappings[effectName];
+    const defaultValue = EFFECT_DEFAULTS[effectName] ?? 0;
+    const attrName = EFFECT_ATTR_MAP[effectName];
 
     // Check _localEffects first (for pending changes), then entity attribute
     let currentValue;
@@ -1538,8 +1458,8 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   }
 
   _getEffectsDataForAllLayouts() {
-    // Returns section definitions that work across all layouts
-    // This maps section IDs to their effects
+    // Returns section definitions that work across all layouts.
+    // Derives from SECTIONS_REGISTRY plus legacy aliases for backward compatibility.
     const entityId = this.config.entity;
     const hass = this._hass;
     if (!hass || !entityId) return [];
@@ -1547,68 +1467,38 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     const stateObj = hass.states[entityId];
     if (!stateObj) return [];
 
-    const effects = stateObj.attributes.effects || {};
+    // Build from registry
+    const sections = SECTIONS_REGISTRY.map((s) => ({
+      id: s.id,
+      effects: s.effects.map((name) => ({ name })),
+    }));
 
-    // Map all possible section IDs to their effects
-    // This works for both categories layout and other layouts
-    return [
-      {
-        id: "color_adjustments",
-        effects: [{ name: "hue_shift" }, { name: "temperature" }],
-      },
-      {
-        id: "color_shift", // Categories layout uses this
-        effects: [{ name: "hue_shift" }, { name: "temperature" }],
-      },
-      {
-        id: "tone_adjustments",
-        effects: [
-          { name: "contrast" },
-          { name: "vibrance" },
-          { name: "saturation" },
-          { name: "glow" },
-        ],
-      },
-      {
-        id: "saturation_intensity", // Categories layout uses this
-        effects: [{ name: "saturation" }, { name: "vibrance" }],
-      },
-      {
-        id: "tone_contrast", // Categories layout uses this
-        effects: [{ name: "contrast" }, { name: "glow" }],
-      },
-      {
-        id: "special_effects",
-        effects: [
-          { name: "grayscale" },
-          { name: "invert" },
-          { name: "tint_hue" },
-          { name: "tint_strength" },
-        ],
-      },
-    ];
+    // Legacy aliases (old layouts may use these section IDs)
+    const SECTION_ALIASES = {
+      color_shift: "color_adjustments",
+      tone_adjustments: ["saturation_intensity", "tone_contrast"],
+    };
+
+    for (const [alias, targets] of Object.entries(SECTION_ALIASES)) {
+      const targetIds = Array.isArray(targets) ? targets : [targets];
+      const combinedEffects = targetIds.flatMap(
+        (tid) => SECTIONS_REGISTRY.find((s) => s.id === tid)?.effects || [],
+      );
+      sections.push({
+        id: alias,
+        effects: combinedEffects.map((name) => ({ name })),
+      });
+    }
+
+    return sections;
   }
 
   _getDefaultValue(effectName) {
-    // Returns the default value for an effect based on its name
-    const defaults = {
-      hue_shift: 0,
-      temperature: 0,
-      saturation: 100,
-      vibrance: 100,
-      contrast: 100,
-      glow: 0,
-      grayscale: 0,
-      invert: 0,
-      tint_hue: 0,
-      tint_strength: 0,
-    };
-
-    return defaults[effectName] !== undefined ? defaults[effectName] : 0;
+    return EFFECT_DEFAULTS[effectName] ?? 0;
   }
 
   _getEffectsData() {
-    // Helper to get current effects data structure
+    // Derives section data from EFFECTS_REGISTRY + SECTIONS_REGISTRY
     const entityId = this.config.entity;
     const hass = this._hass;
     if (!hass || !entityId) return [];
@@ -1616,191 +1506,44 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     const stateObj = hass.states[entityId];
     if (!stateObj) return [];
 
-    const effects = stateObj.attributes.effects || {};
-
     // Helper to get value: prioritize _localEffects over entity state FOR DISPLAY
-    const getValue = (effectName) => {
-      return this._localEffects[effectName] !== undefined
-        ? this._localEffects[effectName]
-        : effects[effectName];
-    };
+    const getValue = (name) =>
+      this._localEffects[name] !== undefined
+        ? this._localEffects[name]
+        : stateObj.attributes?.[EFFECT_ATTR_MAP[name]];
 
     // Helper to get ENTITY value (not local effects) for change detection
-    // Returns the actual entity value or undefined if not set
-    const getEntityValue = (effectName) => {
-      return effects[effectName];
-    };
+    const getEntityValue = (name) =>
+      stateObj.attributes?.[EFFECT_ATTR_MAP[name]];
 
-    return [
-      {
-        id: "color_adjustments",
-        title: "Color",
-        icon: "🎨",
-        description: "Hue and tone",
-        effects: [
-          {
-            name: "hue_shift",
-            label: "Hue Shift",
-            icon: "🔄",
-            min: -180,
-            max: 180,
-            value: getValue("hue_shift"),
-            entityValue: getEntityValue("hue_shift"),
-            unit: "°",
-            default: 0,
-          },
-          {
-            name: "temperature",
-            label: "Temperature",
-            icon: "🌡️",
-            min: -100,
-            max: 100,
-            value: getValue("temperature"),
-            entityValue: getEntityValue("temperature"),
-            unit: "",
-            default: 0,
-          },
-          {
-            name: "tint_hue",
-            label: "Tint Hue",
-            icon: "🎯",
-            min: 0,
-            max: 360,
-            value: getValue("tint_hue"),
-            entityValue: getEntityValue("tint_hue"),
-            unit: "°",
-            default: 0,
-            hint: "Color for tint",
-          },
-          {
-            name: "tint_strength",
-            label: "Tint Strength",
-            icon: "💧",
-            min: 0,
-            max: 100,
-            value: getValue("tint_strength"),
-            entityValue: getEntityValue("tint_strength"),
-            unit: "%",
-            default: 0,
-            hint: "Tint intensity",
-          },
-        ],
-      },
-      {
-        id: "tone_adjustments",
-        title: "Tone",
-        icon: "🌓",
-        description: "Light and contrast",
-        effects: [
-          {
-            name: "contrast",
-            label: "Contrast",
-            icon: "◐",
-            min: -100,
-            max: 100,
-            value: getValue("contrast"),
-            entityValue: getEntityValue("contrast"),
-            unit: "",
-            default: 0,
-          },
-          {
-            name: "vibrance",
-            label: "Vibrance",
-            icon: "💥",
-            min: -100,
-            max: 100,
-            value: getValue("vibrance"),
-            entityValue: getEntityValue("vibrance"),
-            unit: "",
-            default: 0,
-          },
-          {
-            name: "saturation",
-            label: "Saturation",
-            icon: "🎨",
-            min: -100,
-            max: 100,
-            value: getValue("saturation"),
-            entityValue: getEntityValue("saturation"),
-            unit: "",
-            default: 0,
-          },
-          {
-            name: "glow",
-            label: "Glow",
-            icon: "✨",
-            min: 0,
-            max: 100,
-            value: getValue("glow"),
-            entityValue: getEntityValue("glow"),
-            unit: "%",
-            default: 0,
-          },
-        ],
-      },
-      {
-        id: "special_effects",
-        title: "Effects",
-        icon: "✨",
-        description: "Special filters",
-        effects: [
-          {
-            name: "grayscale",
-            label: "Grayscale",
-            icon: "⬜",
-            min: 0,
-            max: 100,
-            value: getValue("grayscale"),
-            entityValue: getEntityValue("grayscale"),
-            unit: "%",
-            default: 0,
-          },
-          {
-            name: "invert",
-            label: "Invert",
-            icon: "🔃",
-            min: 0,
-            max: 100,
-            value: getValue("invert"),
-            entityValue: getEntityValue("invert"),
-            unit: "%",
-            default: 0,
-          },
-        ],
-      },
-    ];
+    return SECTIONS_REGISTRY.map((section) => ({
+      id: section.id,
+      title: section.title,
+      icon: section.icon,
+      description: section.description,
+      effects: section.effects.map((name) => {
+        const def = EFFECTS_REGISTRY[name];
+        return {
+          name,
+          label: def.label,
+          icon: def.icon,
+          min: def.min,
+          max: def.max,
+          value: getValue(name),
+          entityValue: getEntityValue(name),
+          unit: def.unit,
+          default: def.default,
+          ...(def.hint && { hint: def.hint }),
+        };
+      }),
+    }));
   }
 
   _updateEffectLabel(effectName, value) {
-    // Get the unit for this effect
-    const units = {
-      contrast: "",
-      glow: "%",
-      saturation: "",
-      vibrance: "",
-      hue_shift: "°",
-      temperature: "",
-      grayscale: "%",
-      invert: "%",
-      tint_hue: "°",
-      tint_strength: "%",
-    };
-    const unit = units[effectName] || "";
-
-    // Get the label text
-    const labelNames = {
-      contrast: "Contrast",
-      glow: "Glow",
-      saturation: "Saturation",
-      vibrance: "Vibrance",
-      hue_shift: "Hue Shift",
-      temperature: "Temperature",
-      grayscale: "Grayscale",
-      invert: "Invert",
-      tint_hue: "Tint Hue",
-      tint_strength: "Tint Strength",
-    };
-    const labelText = labelNames[effectName] || effectName;
+    // Look up unit and label from the registry
+    const def = EFFECTS_REGISTRY[effectName];
+    const unit = def?.unit || "";
+    const labelText = def?.label || effectName;
 
     // Update labels for all layout modes using direct data-effect selectors
 
@@ -1909,43 +1652,13 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     }
 
     // Get all effect values (local or entity state)
-    const effects = {
-      hue_shift:
-        this._localEffects.hue_shift ??
-        stateObj?.attributes?.preview_hue_shift ??
-        0,
-      temperature:
-        this._localEffects.temperature ??
-        stateObj?.attributes?.preview_temperature ??
-        0,
-      saturation:
-        this._localEffects.saturation ??
-        stateObj?.attributes?.preview_saturation ??
-        100,
-      vibrance:
-        this._localEffects.vibrance ??
-        stateObj?.attributes?.preview_vibrance ??
-        100,
-      contrast:
-        this._localEffects.contrast ??
-        stateObj?.attributes?.preview_contrast ??
-        100,
-      glow: this._localEffects.glow ?? stateObj?.attributes?.preview_glow ?? 0,
-      grayscale:
-        this._localEffects.grayscale ??
-        stateObj?.attributes?.preview_grayscale ??
-        0,
-      invert:
-        this._localEffects.invert ?? stateObj?.attributes?.preview_invert ?? 0,
-      tint_hue:
-        this._localEffects.tint_hue ??
-        stateObj?.attributes?.preview_tint_hue ??
-        0,
-      tint_strength:
-        this._localEffects.tint_strength ??
-        stateObj?.attributes?.preview_tint_strength ??
-        0,
-    };
+    const effects = {};
+    for (const name of EFFECT_NAMES) {
+      effects[name] =
+        this._localEffects[name] ??
+        stateObj?.attributes?.[EFFECT_ATTR_MAP[name]] ??
+        EFFECT_DEFAULTS[name];
+    }
 
     // Render the card (pass entity brightness for color calculations, slider brightness for slider display)
     this._renderCard(
@@ -2820,145 +2533,27 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
 
     const layoutMode = this.config.adjustments_layout || "grouped";
 
-    const effectsData = [
-      {
-        id: "color_adjustments",
-        title: "Color",
-        icon: "🎨",
-        description: "Hue and tone",
-        effects: [
-          {
-            name: "hue_shift",
-            label: "Hue Shift",
-            icon: "🔄",
-            min: -180,
-            max: 180,
-            value: effects.hue_shift,
-            unit: "°",
-            default: 0,
-          },
-          {
-            name: "temperature",
-            label: "Temperature",
-            icon: "🌡️",
-            min: -100,
-            max: 100,
-            value: effects.temperature,
-            unit: "",
-            default: 0,
-            hint: "Cool ❄ → Warm",
-          },
-        ],
-      },
-      {
-        id: "saturation_intensity",
-        title: "Intensity",
-        icon: "💎",
-        description: "Color richness",
-        effects: [
-          {
-            name: "saturation",
-            label: "Saturation",
-            icon: "🎨",
-            min: 0,
-            max: 200,
-            value: effects.saturation,
-            unit: "",
-            default: 100,
-          },
-          {
-            name: "vibrance",
-            label: "Vibrance",
-            icon: "💥",
-            min: 0,
-            max: 200,
-            value: effects.vibrance,
-            unit: "",
-            default: 100,
-            hint: "Smart saturation",
-          },
-        ],
-      },
-      {
-        id: "tone_contrast",
-        title: "Tone",
-        icon: "🌓",
-        description: "Light/dark balance",
-        effects: [
-          {
-            name: "contrast",
-            label: "Contrast",
-            icon: "◐",
-            min: 0,
-            max: 200,
-            value: effects.contrast,
-            unit: "",
-            default: 100,
-          },
-          {
-            name: "glow",
-            label: "Glow",
-            icon: "✨",
-            min: 0,
-            max: 100,
-            value: effects.glow,
-            unit: "%",
-            default: 0,
-            hint: "Boost bright pixels",
-          },
-        ],
-      },
-      {
-        id: "special_effects",
-        title: "Effects",
-        icon: "✨",
-        description: "Creative transforms",
-        effects: [
-          {
-            name: "grayscale",
-            label: "Grayscale",
-            icon: "⬜",
-            min: 0,
-            max: 100,
-            value: effects.grayscale,
-            unit: "%",
-            default: 0,
-          },
-          {
-            name: "invert",
-            label: "Invert",
-            icon: "🔃",
-            min: 0,
-            max: 100,
-            value: effects.invert,
-            unit: "%",
-            default: 0,
-          },
-          {
-            name: "tint_hue",
-            label: "Tint Hue",
-            icon: "🎯",
-            min: 0,
-            max: 360,
-            value: effects.tint_hue,
-            unit: "°",
-            default: 0,
-            hint: "Color for tint",
-          },
-          {
-            name: "tint_strength",
-            label: "Tint Strength",
-            icon: "💧",
-            min: 0,
-            max: 100,
-            value: effects.tint_strength,
-            unit: "%",
-            default: 0,
-            hint: "Tint intensity",
-          },
-        ],
-      },
-    ];
+    // Derive effectsData from SECTIONS_REGISTRY + EFFECTS_REGISTRY
+    const effectsData = SECTIONS_REGISTRY.map((section) => ({
+      id: section.id,
+      title: section.title,
+      icon: section.icon,
+      description: section.description,
+      effects: section.effects.map((name) => {
+        const def = EFFECTS_REGISTRY[name];
+        return {
+          name,
+          label: def.label,
+          icon: def.icon,
+          min: def.min,
+          max: def.max,
+          value: effects[name],
+          unit: def.unit,
+          default: def.default,
+          ...(def.hint && { hint: def.hint }),
+        };
+      }),
+    }));
 
     // Generate HTML based on layout mode
     if (layoutMode === "compact") {

@@ -4,6 +4,22 @@
 import { html, css } from "https://unpkg.com/lit@2.8.0/index.js?module";
 
 /**
+ * Dispatch a custom event, compatible with Home Assistant's event system.
+ * Shared across all editor cards to avoid duplicating this helper.
+ */
+export function fireEvent(node, type, detail, options) {
+  options = options || {};
+  detail = detail === null || detail === undefined ? {} : detail;
+  const event = new Event(type, {
+    bubbles: options.bubbles === undefined ? true : options.bubbles,
+    cancelable: Boolean(options.cancelable),
+    composed: options.composed === undefined ? true : options.composed,
+  });
+  event.detail = detail;
+  node.dispatchEvent(event);
+}
+
+/**
  * Common CSS styles for form elements
  */
 export const sharedEditorStyles = css`
@@ -273,7 +289,7 @@ export class FormElementRenderer {
               >
                 ${option.label}
               </option>
-            `
+            `,
           )}
         </select>
       </div>
@@ -323,7 +339,7 @@ export class FormElementRenderer {
                 />
                 ${option.label}
               </label>
-            `
+            `,
           )}
         </div>
       </div>
@@ -347,7 +363,7 @@ export class FormElementRenderer {
               >
                 ${option.label}
               </button>
-            `
+            `,
           )}
         </div>
       </div>

@@ -14,24 +14,12 @@ import {
   entitySelectorStyles,
   createYeelightCubeEntityPicker,
 } from "./entity-selector-utils.js";
+import { fireEvent } from "./editor_ui_utils.js";
 
 // localStorage key and event for gradient mode visibility
 const LS_GRADIENT_MODE_VISIBILITY = "yeelight-gradient-mode-visibility";
 const EVT_GRADIENT_MODE_VISIBILITY_RESET =
   "yeelight-gradient-mode-visibility-reset";
-
-// Inline fireEvent helper for Home Assistant custom cards
-function fireEvent(node, type, detail, options) {
-  options = options || {};
-  detail = detail === null || detail === undefined ? {} : detail;
-  const event = new Event(type, {
-    bubbles: options.bubbles === undefined ? true : options.bubbles,
-    cancelable: Boolean(options.cancelable),
-    composed: options.composed === undefined ? true : options.composed,
-  });
-  event.detail = detail;
-  node.dispatchEvent(event);
-}
 
 class YeelightCubeGradientCardEditor extends LitElement {
   static get properties() {

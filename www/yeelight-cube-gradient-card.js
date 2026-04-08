@@ -319,6 +319,13 @@ class YeelightCubeGradientCard extends HTMLElement {
         this._onVisibilityReset,
       );
     }
+    // Clean up global preview cache to prevent memory leaks
+    // when cards are removed from the dashboard
+    if (window._yeelightPreviewCache) {
+      window._yeelightPreviewCache.data = null;
+      window._yeelightPreviewCache.timestamp = 0;
+      window._yeelightPreviewCache.responseHash = null;
+    }
   }
 
   setConfig(config) {

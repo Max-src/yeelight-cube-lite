@@ -15,17 +15,7 @@ import {
   getYeelightCubeEntities,
   entitySelectorStyles,
 } from "./entity-selector-utils.js";
-
-// Inline fireEvent helper for Home Assistant custom cards
-function fireEvent(node, type, detail, options) {
-  const event = new Event(type, {
-    bubbles: options?.bubbles !== undefined ? options.bubbles : true,
-    cancelable: options?.cancelable !== undefined ? options.cancelable : false,
-    composed: options?.composed !== undefined ? options.composed : true,
-  });
-  event.detail = detail;
-  node.dispatchEvent(event);
-}
+import { fireEvent } from "./editor_ui_utils.js";
 
 // Editor class for the Yeelight Cube Lite Lamp Preview Card
 class YeelightCubeLampPreviewCardEditor extends LitElement {

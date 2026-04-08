@@ -15,19 +15,7 @@ import {
   entitySelectorStyles,
 } from "./entity-selector-utils.js";
 import { renderPercentageSlider, sliderStyles } from "./slider_utils.js";
-
-// Inline fireEvent helper for Home Assistant custom cards
-function fireEvent(node, type, detail, options) {
-  options = options || {};
-  detail = detail === null || detail === undefined ? {} : detail;
-  const event = new Event(type, {
-    bubbles: options.bubbles === undefined ? true : options.bubbles,
-    cancelable: Boolean(options.cancelable),
-    composed: options.composed === undefined ? true : options.composed,
-  });
-  event.detail = detail;
-  node.dispatchEvent(event);
-}
+import { fireEvent } from "./editor_ui_utils.js";
 
 class YeelightCubeColorListEditorCardEditor extends LitElement {
   static get properties() {
