@@ -116,7 +116,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
           padding: 18px 8px 8px 8px;
         }
         .editor-card {
-          background: #f7fafd;
+          background: var(--secondary-background-color, #f7fafd);
           border-radius: 14px;
           box-shadow: 0 2px 8px #0001;
           padding: 16px 18px 12px 18px;
@@ -171,7 +171,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
           margin-top: 2px;
           margin-bottom: 10px;
           box-sizing: border-box;
-          background: #f7f8fa;
+          background: var(--secondary-background-color, #f7f8fa);
         }
         .toggle-row {
           display: flex;
@@ -202,7 +202,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
           left: 0;
           right: 0;
           bottom: 0;
-          background-color: #cfd8dc;
+          background-color: var(--divider-color, #cfd8dc);
           transition: 0.2s;
           border-radius: 24px;
         }
@@ -219,7 +219,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
           box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
         }
         input:checked + .toggle-slider {
-          background-color: #1976d2;
+          background-color: var(--primary-color, #1976d2);
         }
         input:checked + .toggle-slider:before {
           transform: translateX(20px);
@@ -457,7 +457,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                     style="margin-top: 20px; padding-top: 16px; border-top: 2px solid #e0e0e0;"
                   >
                     <div
-                      style="font-weight: 600; font-size: 1.05em; margin-bottom: 12px; color: #0077cc;"
+                      style="font-weight: 600; font-size: 1.05em; margin-bottom: 12px; color: var(--primary-color, #0077cc);"
                     >
                       Card Style Settings
                     </div>

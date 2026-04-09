@@ -15,8 +15,8 @@
 export const paginationStyles = `
   /* Pagination button base */
   .draw-btn {
-    background: #e6f7ff;
-    color: #0077cc;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
+    color: var(--primary-color, #0077cc);
     border: none;
     border-radius: 8px;
     padding: 10px 0;
@@ -29,15 +29,15 @@ export const paginationStyles = `
     text-align: center;
   }
   .draw-btn:hover {
-    background: #b3e6ff;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
   }
   .draw-btn.save {
-    background: #e6f7ff;
-    color: #0077cc;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
+    color: var(--primary-color, #0077cc);
     box-shadow: none;
   }
   .draw-btn.save:hover {
-    background: #b3e6ff;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
   }
   .draw-btn:disabled,
   .draw-btn.disabled {
@@ -51,8 +51,8 @@ export const paginationStyles = `
     background: var(--disabled-text-color, #bdbdbd) !important;
   }
   .draw-btn.active {
-    background: #0077cc !important;
-    color: white !important;
+    background: var(--primary-color, #0077cc) !important;
+    color: var(--text-primary-color, #fff) !important;
   }
 
   /* Pagination container */

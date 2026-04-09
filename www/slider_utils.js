@@ -62,7 +62,7 @@ export function renderPixelGapSlider(label, value, onChange) {
       valueWidth: "32px",
     },
     onChange,
-    "px"
+    "px",
   );
 }
 
@@ -144,7 +144,7 @@ export const sliderStyles = css`
     width: 140px;
     height: 4px;
     border-radius: 2px;
-    background: #e0e0e0;
+    background: var(--divider-color, #e0e0e0);
     outline: none;
     cursor: pointer;
     margin: 8px 0;
@@ -156,7 +156,7 @@ export const sliderStyles = css`
     height: 20px;
     width: 20px;
     border-radius: 50%;
-    background: #1976d2;
+    background: var(--primary-color, #1976d2);
     cursor: pointer;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
     border: none;
@@ -167,7 +167,7 @@ export const sliderStyles = css`
     height: 20px;
     width: 20px;
     border-radius: 50%;
-    background: #1976d2;
+    background: var(--primary-color, #1976d2);
     cursor: pointer;
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
     border: none;
@@ -199,14 +199,14 @@ export const sliderStyles = css`
   }
 
   .form-row input[type="range"]::-moz-range-track {
-    background: #e0e0e0;
+    background: var(--divider-color, #e0e0e0);
     height: 4px;
     border-radius: 2px;
     border: none;
   }
 
   .form-row input[type="range"]::-moz-range-progress {
-    background: #1976d2;
+    background: var(--primary-color, #1976d2);
     height: 4px;
     border-radius: 2px;
     border: none;
@@ -274,7 +274,7 @@ export function renderButtonGroup(
   options,
   currentValue,
   onChange,
-  groupClass = "palette-mode-group"
+  groupClass = "palette-mode-group",
 ) {
   return html`
     <div class="form-row">
@@ -292,7 +292,7 @@ export function renderButtonGroup(
             >
               ${option.label}
             </button>
-          `
+          `,
         )}
       </div>
     </div>
@@ -363,7 +363,7 @@ export function renderMatrixPixelStyleGroup(label, currentValue, onChange) {
 export function renderGalleryBackgroundColorGroup(
   label,
   currentValue,
-  onChange
+  onChange,
 ) {
   const galleryBgOptions = [
     { value: "transparent", label: "Transparent" },
@@ -392,7 +392,7 @@ export function renderGalleryPixelStyleGroup(label, currentValue, onChange) {
     label,
     galleryPixelStyleOptions,
     currentValue,
-    onChange
+    onChange,
   );
 }
 
@@ -432,7 +432,7 @@ export function renderPaletteCardModeGroup(label, currentValue, onChange) {
     label,
     paletteCardModeOptions,
     currentValue,
-    onChange
+    onChange,
   );
 }
 
@@ -454,7 +454,7 @@ export function renderPaletteDisplayModeGroup(label, currentValue, onChange) {
     label,
     paletteDisplayModeOptions,
     currentValue,
-    onChange
+    onChange,
   );
 }
 
@@ -476,7 +476,7 @@ export function renderPaintButtonShapeGroup(label, currentValue, onChange) {
     label,
     paintButtonShapeOptions,
     currentValue,
-    onChange
+    onChange,
   );
 }
 
@@ -498,7 +498,7 @@ export function renderGalleryDisplayModeGroup(label, currentValue, onChange) {
     label,
     galleryDisplayModeOptions,
     currentValue,
-    onChange
+    onChange,
   );
 }
 
@@ -527,7 +527,7 @@ export function renderRadioGroup(
   options,
   currentValue,
   onChange,
-  groupName
+  groupName,
 ) {
   return html`
     <div class="form-row">
@@ -545,7 +545,7 @@ export function renderRadioGroup(
               />
               ${option.label}
             </label>
-          `
+          `,
         )}
       </div>
     </div>
@@ -588,13 +588,13 @@ export const buttonGroupStyles = css`
 
   .palette-mode-btn:hover {
     background: #e9ecef;
-    border-color: #0077cc;
+    border-color: var(--primary-color, #0077cc);
   }
 
   .palette-mode-btn.selected {
-    background: #0077cc;
+    background: var(--primary-color, #0077cc);
     color: var(--text-primary-color, #fff);
-    border-color: #0077cc;
+    border-color: var(--primary-color, #0077cc);
   }
 
   .form-row label {
@@ -620,7 +620,7 @@ export const buttonGroupStyles = css`
 export function renderGalleryPaginationModeGroup(
   label,
   currentValue,
-  onChange
+  onChange,
 ) {
   const paginationModeOptions = [
     { value: "pages", label: "Pages" },
@@ -631,6 +631,6 @@ export function renderGalleryPaginationModeGroup(
     label,
     paginationModeOptions,
     currentValue,
-    onChange
+    onChange,
   );
 }

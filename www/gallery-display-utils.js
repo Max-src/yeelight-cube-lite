@@ -84,10 +84,19 @@ function getMetadataFontSize(previewSize) {
 function getWheelModeConfig(wheelDisplayStyle, userPreviewSize) {
   const isCompact = wheelDisplayStyle === "compact";
   // Use user's slider value; fall back to defaults
-  const previewSize = userPreviewSize || (isCompact ? WHEEL_MODE.COMPACT_PREVIEW_SIZE : WHEEL_MODE.DEFAULT_PREVIEW_SIZE);
+  const previewSize =
+    userPreviewSize ||
+    (isCompact
+      ? WHEEL_MODE.COMPACT_PREVIEW_SIZE
+      : WHEEL_MODE.DEFAULT_PREVIEW_SIZE);
   // Scale item height to fit the preview (ratio 5:20 = 0.25, plus padding)
-  const baseItemHeight = isCompact ? WHEEL_MODE.COMPACT_ITEM_HEIGHT : WHEEL_MODE.DEFAULT_ITEM_HEIGHT;
-  const scaledItemHeight = Math.max(baseItemHeight, Math.round(previewSize * 0.25) + (isCompact ? 40 : 55));
+  const baseItemHeight = isCompact
+    ? WHEEL_MODE.COMPACT_ITEM_HEIGHT
+    : WHEEL_MODE.DEFAULT_ITEM_HEIGHT;
+  const scaledItemHeight = Math.max(
+    baseItemHeight,
+    Math.round(previewSize * 0.25) + (isCompact ? 40 : 55),
+  );
 
   return {
     isCompact,
@@ -164,7 +173,10 @@ export function renderMatrixPreview(colorData, options = {}) {
 
         if (Array.isArray(color)) {
           // RGB array format [r, g, b]
-          isBlack = color[0] <= BLACK_THRESHOLD && color[1] <= BLACK_THRESHOLD && color[2] <= BLACK_THRESHOLD;
+          isBlack =
+            color[0] <= BLACK_THRESHOLD &&
+            color[1] <= BLACK_THRESHOLD &&
+            color[2] <= BLACK_THRESHOLD;
           bgColor = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
         } else {
           // Hex string format "#RRGGBB"
@@ -172,7 +184,10 @@ export function renderMatrixPreview(colorData, options = {}) {
           const r = parseInt(hex.substring(0, 2), 16);
           const g = parseInt(hex.substring(2, 4), 16);
           const b = parseInt(hex.substring(4, 6), 16);
-          isBlack = r <= BLACK_THRESHOLD && g <= BLACK_THRESHOLD && b <= BLACK_THRESHOLD;
+          isBlack =
+            r <= BLACK_THRESHOLD &&
+            g <= BLACK_THRESHOLD &&
+            b <= BLACK_THRESHOLD;
           bgColor = color || "#000000";
         }
 
@@ -209,7 +224,9 @@ export function renderGalleryMode(items, options = {}) {
 
   const cardClass = showCards ? "gallery-item-card" : "gallery-item-plain";
   const cursorStyle = onClickEnabled ? "cursor: pointer;" : "";
-  const itemBg = bgColor || (showCards ? "var(--card-background-color, #fff)" : "transparent");
+  const itemBg =
+    bgColor ||
+    (showCards ? "var(--card-background-color, #fff)" : "transparent");
   const titleColor = bgColor === "#000000" ? "color: #fff;" : "";
   const isBgTransparent = bgColor === "transparent";
 
@@ -224,10 +241,10 @@ export function renderGalleryMode(items, options = {}) {
       padding: 4px;
     ">
       ${items
-        .map(
-          (item, idx) => {
-            const isActive = highlightActive && currentMode && item.dataMode === currentMode;
-            return `
+        .map((item, idx) => {
+          const isActive =
+            highlightActive && currentMode && item.dataMode === currentMode;
+          return `
         <div class="gallery-item ${cardClass}" 
              data-idx="${idx}"
              ${item.dataMode ? `data-mode="${item.dataMode}"` : ""}
@@ -279,8 +296,7 @@ export function renderGalleryMode(items, options = {}) {
           }
         </div>
       `;
-          }
-        )
+        })
         .join("")}
     </div>
   `;
@@ -308,7 +324,9 @@ export function renderGridMode(items, options = {}) {
 
   const cardClass = showCards ? "gallery-item-card" : "gallery-item-plain";
   const cursorStyle = onClickEnabled ? "cursor: pointer;" : "";
-  const itemBg = bgColor || (showCards ? "var(--card-background-color, #fff)" : "transparent");
+  const itemBg =
+    bgColor ||
+    (showCards ? "var(--card-background-color, #fff)" : "transparent");
   const titleColor = bgColor === "#000000" ? "color: #fff;" : "";
   const isBgTransparent = bgColor === "transparent";
 
@@ -322,10 +340,10 @@ export function renderGridMode(items, options = {}) {
       padding: 4px;
     ">
       ${items
-        .map(
-          (item, idx) => {
-            const isActive = highlightActive && currentMode && item.dataMode === currentMode;
-            return `
+        .map((item, idx) => {
+          const isActive =
+            highlightActive && currentMode && item.dataMode === currentMode;
+          return `
         <div class="gallery-item ${cardClass}" 
              data-idx="${idx}"
              ${item.dataMode ? `data-mode="${item.dataMode}"` : ""}
@@ -378,8 +396,7 @@ export function renderGridMode(items, options = {}) {
           }
         </div>
       `;
-          }
-        )
+        })
         .join("")}
     </div>
   `;
@@ -404,7 +421,9 @@ export function renderCompactMode(items, options = {}) {
   } = options;
 
   const cursorStyle = onClickEnabled ? "cursor: pointer;" : "";
-  const itemBg = bgColor || (showCards ? "var(--card-background-color, #fff)" : "transparent");
+  const itemBg =
+    bgColor ||
+    (showCards ? "var(--card-background-color, #fff)" : "transparent");
   const titleColor = bgColor === "#000000" ? "color: #fff;" : "";
   const isBgTransparent = bgColor === "transparent";
 
@@ -420,11 +439,11 @@ export function renderCompactMode(items, options = {}) {
       padding: 4px;
     ">
       ${items
-        .map(
-          (item, idx) => {
-            const isActive = highlightActive && currentMode && item.dataMode === currentMode;
-            return `
-        <div class="gallery-item gallery-compact-item${showCards ? '' : ' gallery-compact-plain'}" 
+        .map((item, idx) => {
+          const isActive =
+            highlightActive && currentMode && item.dataMode === currentMode;
+          return `
+        <div class="gallery-item gallery-compact-item${showCards ? "" : " gallery-compact-plain"}" 
              data-idx="${idx}"
              ${item.dataMode ? `data-mode="${item.dataMode}"` : ""}
              ${isActive ? 'data-active-mode="true"' : ""}
@@ -436,10 +455,10 @@ export function renderCompactMode(items, options = {}) {
                flex-direction: column;
                align-items: center;
                gap: 4px;
-               padding: ${showCards ? '6px' : '2px'};
-               border-radius: ${showCards ? '6px' : '4px'};
+               padding: ${showCards ? "6px" : "2px"};
+               border-radius: ${showCards ? "6px" : "4px"};
                background: ${itemBg};
-               border: ${showCards ? '1px solid var(--divider-color, #e0e0e0)' : 'none'};
+               border: ${showCards ? "1px solid var(--divider-color, #e0e0e0)" : "none"};
                transition: all 0.2s ease;
                max-width: 100%;
                box-sizing: border-box;
@@ -464,8 +483,7 @@ export function renderCompactMode(items, options = {}) {
           }
         </div>
       `;
-          }
-        )
+        })
         .join("")}
     </div>
   `;
@@ -531,7 +549,7 @@ export function renderInlineMode(items, options = {}) {
             })}
           </div>
         </div>
-      `
+      `,
         )
         .join("")}
     </div>
@@ -570,14 +588,17 @@ export function renderWheelMode(items, options = {}) {
   const paddingTop = halfVisible * itemStep;
   let initialCenterIndex = 0;
   if (matrixOptions.currentMode) {
-    const foundIdx = items.findIndex(item => item.dataMode === matrixOptions.currentMode);
+    const foundIdx = items.findIndex(
+      (item) => item.dataMode === matrixOptions.currentMode,
+    );
     if (foundIdx >= 0) initialCenterIndex = foundIdx;
   }
-  const initialBaseOffset = paddingTop + config.itemHeight / 2 - wheelHeight / 2;
+  const initialBaseOffset =
+    paddingTop + config.itemHeight / 2 - wheelHeight / 2;
   const initialOffset = initialBaseOffset + initialCenterIndex * itemStep;
 
   return `
-    <div class="wheel-display" ${matrixOptions.bgColor === "transparent" ? 'data-bg-transparent="true"' : ''} style="
+    <div class="wheel-display" ${matrixOptions.bgColor === "transparent" ? 'data-bg-transparent="true"' : ""} style="
       position: relative;
       width: 100%;
       max-width: ${outerMaxWidth}px;
@@ -654,13 +675,25 @@ function getInitialWheelItemStyle(idx, centerIndex) {
  * Render individual wheel items
  * @private
  */
-function renderWheelItems(items, config, cursorStyle, matrixOptions, initialCenterIndex = 0) {
-  const { currentMode = null, highlightActive = false, showCards = true, bgColor = "#000000" } = matrixOptions;
+function renderWheelItems(
+  items,
+  config,
+  cursorStyle,
+  matrixOptions,
+  initialCenterIndex = 0,
+) {
+  const {
+    currentMode = null,
+    highlightActive = false,
+    showCards = true,
+    bgColor = "#000000",
+  } = matrixOptions;
   const isBgBlack = bgColor === "#000000";
   const isBgTransparent = bgColor === "transparent";
   const itemBg = isBgTransparent
     ? "rgba(255,255,255,0.08)"
-    : bgColor || (showCards ? "var(--card-background-color, #fff)" : "transparent");
+    : bgColor ||
+      (showCards ? "var(--card-background-color, #fff)" : "transparent");
   const titleColor = isBgBlack ? "color: #fff;" : "";
   // Border: white subtle border on black bg, standard on others
   const borderStyle = showCards
@@ -673,11 +706,11 @@ function renderWheelItems(items, config, cursorStyle, matrixOptions, initialCent
     ? "backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);"
     : "";
   return items
-    .map(
-      (item, idx) => {
-        const isActive = highlightActive && currentMode && item.dataMode === currentMode;
-        const initStyle = getInitialWheelItemStyle(idx, initialCenterIndex);
-        return `
+    .map((item, idx) => {
+      const isActive =
+        highlightActive && currentMode && item.dataMode === currentMode;
+      const initStyle = getInitialWheelItemStyle(idx, initialCenterIndex);
+      return `
       <div class="wheel-item" 
            data-idx="${idx}"
            ${item.dataMode ? `data-mode="${item.dataMode}"` : ""}
@@ -690,8 +723,8 @@ function renderWheelItems(items, config, cursorStyle, matrixOptions, initialCent
            }
            style="
              ${cursorStyle}
-             padding: ${showCards ? config.cardPadding : '4px'};
-             border-radius: ${showCards ? '10px' : '6px'};
+             padding: ${showCards ? config.cardPadding : "4px"};
+             border-radius: ${showCards ? "10px" : "6px"};
              background: ${itemBg};
              border: ${borderStyle};
              ${backdropBlur}
@@ -706,7 +739,7 @@ function renderWheelItems(items, config, cursorStyle, matrixOptions, initialCent
              height: ${config.itemHeight}px;
              box-sizing: border-box;
              overflow: hidden;
-             box-shadow: ${isBgBlack ? '0 1px 4px rgba(255,255,255,0.08)' : '0 1px 3px rgba(0,0,0,0.1)'};
+             box-shadow: ${isBgBlack ? "0 1px 4px rgba(255,255,255,0.08)" : "0 1px 3px rgba(0,0,0,0.1)"};
              backface-visibility: hidden;
              -webkit-backface-visibility: hidden;
              position: relative;
@@ -714,7 +747,7 @@ function renderWheelItems(items, config, cursorStyle, matrixOptions, initialCent
              display: flex;
              flex-direction: column;
              justify-content: center;
-             margin-top: ${idx === 0 ? '0' : `-${Math.round(config.itemHeight * 0.35)}px`};
+             margin-top: ${idx === 0 ? "0" : `-${Math.round(config.itemHeight * 0.35)}px`};
            ">
         ${renderWheelItemTitle(item.title, config, titleColor)}
         <div style="
@@ -731,8 +764,7 @@ function renderWheelItems(items, config, cursorStyle, matrixOptions, initialCent
         </div>
       </div>
     `;
-      }
-    )
+    })
     .join("");
 }
 
@@ -883,13 +915,13 @@ function renderWheelNavButtons(options) {
 export function renderGalleryDisplay(
   items,
   displayMode = "list",
-  options = {}
+  options = {},
 ) {
   switch (displayMode) {
     case "list":
     case "gallery": // Legacy alias used by draw-card / palette-card
-    case "grid":    // Removed mode – falls back to list
-    case "inline":  // Legacy alias for "grid"
+    case "grid": // Removed mode – falls back to list
+    case "inline": // Legacy alias for "grid"
       return renderGalleryMode(items, options);
     case "compact":
       return renderCompactMode(items, options);

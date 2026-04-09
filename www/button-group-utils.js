@@ -16,7 +16,7 @@ export function createButtonGroup(choices, selectedValue, changeHandler) {
           >
             ${choice.label}
           </button>
-        `
+        `,
       )}
     </div>
   `;

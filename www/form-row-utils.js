@@ -34,8 +34,8 @@ export const formRowStyles = css`
   }
   .config-row select:focus {
     outline: none;
-    border-color: #0969da;
-    box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.1);
+    border-color: var(--primary-color, #0969da);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color, #0969da) 10%, transparent);
   }
   .toggle-switch {
     position: relative;
@@ -55,7 +55,7 @@ export const formRowStyles = css`
     left: 0;
     right: 0;
     bottom: 0;
-    background-color: #cfd8dc;
+    background-color: var(--divider-color, #cfd8dc);
     transition: 0.2s;
     border-radius: 24px;
   }
@@ -72,7 +72,7 @@ export const formRowStyles = css`
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
   }
   input:checked + .toggle-slider {
-    background-color: #1976d2;
+    background-color: var(--primary-color, #1976d2);
   }
   input:checked + .toggle-slider:before {
     transform: translateX(20px);
@@ -103,7 +103,7 @@ export function createConfigRow(label, id, options, value, changeHandler) {
     (opt) =>
       html`<option value="${opt.value}" ?selected="${opt.value === value}">
         ${opt.label}
-      </option>`
+      </option>`,
   );
 
   return html`

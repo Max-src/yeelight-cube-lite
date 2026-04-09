@@ -187,10 +187,10 @@ export const exportImportButtonStyles = `
   .upload-btn,
   .apply-btn,
   .tool-btn {
-    background: #e6f7ff;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
     border: none;
     border-radius: 8px;
-    color: #0077cc;
+    color: var(--primary-color, #0077cc);
     padding: 10px 16px;
     cursor: pointer;
     font-size: 1em;
@@ -215,9 +215,9 @@ export const exportImportButtonStyles = `
 
   /* Active tool state */
   .tool-btn.tool-active {
-    background: #0077cc !important;
+    background: var(--primary-color, #0077cc) !important;
     color: white !important;
-    box-shadow: 0 0 0 2px #0077cc, 0 2px 8px rgba(0,119,204,0.3);
+    box-shadow: 0 0 0 2px var(--primary-color, #0077cc), 0 2px 8px rgba(0,119,204,0.3);
   }
 
   /* Tool button style-specific active states */
@@ -244,15 +244,15 @@ export const exportImportButtonStyles = `
   }
 
   .tool-btn.tool-active.btn-style-icon {
-    background: #0077cc !important;
+    background: var(--primary-color, #0077cc) !important;
     color: white !important;
     box-shadow: 0 0 0 3px rgba(0,119,204,0.4);
   }
 
   .tool-btn.tool-active.btn-style-pill {
-    background: #0077cc !important;
+    background: var(--primary-color, #0077cc) !important;
     color: white !important;
-    box-shadow: 0 0 0 2px #0077cc;
+    box-shadow: 0 0 0 2px var(--primary-color, #0077cc);
   }
 
   /* Button Type-Specific Colors (Modern Style) */
@@ -266,12 +266,12 @@ export const exportImportButtonStyles = `
   }
 
   .save-btn {
-    background: #e6f7ff;
-    color: #0077cc;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
+    color: var(--primary-color, #0077cc);
   }
 
   .save-btn:hover {
-    background: #b3e6ff;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
   }
 
   .randomize-btn {
@@ -293,25 +293,25 @@ export const exportImportButtonStyles = `
   }
 
   .power-btn {
-    background: #e6f7ff;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
     color: var(--primary-color, #03a9f4);
   }
 
   .power-btn:hover {
-    background: #b3e6ff;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
   }
 
   .power-btn.off {
-    background: #f5f5f5;
+    background: var(--secondary-background-color, #f5f5f5);
     color: #757575;
   }
 
   .power-btn.off:hover {
-    background: #e0e0e0;
+    background: var(--divider-color, #e0e0e0);
   }
 
   .clear-btn {
-    background: #ffeaea;
+    background: color-mix(in srgb, var(--error-color, #db4437) 15%, var(--card-background-color, #fff));
     color: #c62828;
   }
 
@@ -329,18 +329,18 @@ export const exportImportButtonStyles = `
   }
 
   .apply-btn {
-    background: #e6f7ff;
-    color: #0077cc;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
+    color: var(--primary-color, #0077cc);
     font-weight: 600;
   }
 
   .apply-btn:hover {
-    background: #b3e6ff;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
   }
 
   .export-btn:hover,
   .import-btn:hover {
-    background: #b3e6ff;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
   }
 
   .export-btn:active,
@@ -638,19 +638,19 @@ export const exportImportButtonStyles = `
   }
 
   .tool-btn.btn-style-icon {
-    background: #e6f7ff;
-    color: #0077cc;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
+    color: var(--primary-color, #0077cc);
     width: 44px;
     height: 44px;
     flex: 0 0 44px;
   }
 
   .tool-btn.btn-style-icon:hover {
-    background: #b3e6ff;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
   }
 
   .tool-btn.tool-active.btn-style-icon {
-    background: #0077cc;
+    background: var(--primary-color, #0077cc);
     color: white;
   }
 

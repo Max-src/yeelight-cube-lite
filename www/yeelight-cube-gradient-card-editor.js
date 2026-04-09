@@ -217,7 +217,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
           padding: 18px 8px 8px 8px;
         }
         .editor-card {
-          background: #f7fafd;
+          background: var(--secondary-background-color, #f7fafd);
           border-radius: 14px;
           box-shadow: 0 2px 8px #0001;
           padding: 16px 18px 12px 18px;
@@ -272,7 +272,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
           margin-top: 2px;
           margin-bottom: 10px;
           box-sizing: border-box;
-          background: #f7f8fa;
+          background: var(--secondary-background-color, #f7f8fa);
         }
         .toggle-row {
           display: flex;
@@ -328,7 +328,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
           left: 0;
           right: 0;
           bottom: 0;
-          background-color: #cfd8dc;
+          background-color: var(--divider-color, #cfd8dc);
           transition: 0.2s;
           border-radius: 24px;
         }
@@ -345,7 +345,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
           box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
         }
         input:checked + .toggle-slider {
-          background-color: #1976d2;
+          background-color: var(--primary-color, #1976d2);
         }
         input:checked + .toggle-slider:before {
           transform: translateX(20px);
@@ -357,7 +357,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
           appearance: none;
           height: 4px;
           border-radius: 2px;
-          background: #e0e0e0;
+          background: var(--divider-color, #e0e0e0);
           outline: none;
           cursor: pointer;
           margin: 8px 0;
@@ -368,7 +368,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
           height: 20px;
           width: 20px;
           border-radius: 50%;
-          background: #1976d2;
+          background: var(--primary-color, #1976d2);
           cursor: pointer;
           box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
           border: none;
@@ -378,7 +378,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
           height: 20px;
           width: 20px;
           border-radius: 50%;
-          background: #1976d2;
+          background: var(--primary-color, #1976d2);
           cursor: pointer;
           box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
           border: none;
@@ -423,7 +423,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
         }
 
         .color-info-btn.active:hover {
-          background: #0860ca;
+          background: var(--primary-color, #0860ca);
         }
 
         /* Override margin for second row of button groups */

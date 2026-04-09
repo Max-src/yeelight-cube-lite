@@ -193,8 +193,8 @@ export function renderCarousel(options) {
 export const carouselStyles = `
   /* Carousel Navigation Button Styles */
   .carousel-nav-btn {
-    background: #e6f7ff;
-    color: #0077cc;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
+    color: var(--primary-color, #0077cc);
     border: none;
     border-radius: 8px;
     cursor: pointer;
@@ -208,7 +208,7 @@ export const carouselStyles = `
   }
 
   .carousel-nav-btn:hover:not(:disabled) {
-    background: #b3e6ff;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
   }
 
   .carousel-nav-btn:disabled,
@@ -266,7 +266,7 @@ export const carouselStyles = `
     top: 50%;
     transform: translateY(-50%);
     z-index: 10;
-    background: rgba(255, 255, 255, 0.9);
+    background: var(--card-background-color, rgba(255, 255, 255, 0.9));
     border: none;
     border-radius: 50%;
     width: 40px;
@@ -280,7 +280,7 @@ export const carouselStyles = `
   }
 
   .carousel-nav:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 1);
+    background: var(--card-background-color, rgba(255, 255, 255, 1));
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
   }
 
@@ -365,7 +365,7 @@ export const carouselStyles = `
   }
 
   .carousel-dot:hover {
-    background: #999;
+    background: var(--secondary-text-color, #999);
   }
 
   .carousel-dot.active {
@@ -376,7 +376,7 @@ export const carouselStyles = `
 
   /* Ellipsis for hidden dots */
   .carousel-dot-ellipsis {
-    color: #999;
+    color: var(--secondary-text-color, #999);
     font-size: 16px;
     line-height: 10px;
     padding: 0 4px;

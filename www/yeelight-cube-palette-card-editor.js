@@ -56,7 +56,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
           padding: 18px 8px 8px 8px;
         }
         .editor-card {
-          background: #f7fafd;
+          background: var(--secondary-background-color, #f7fafd);
           border-radius: 14px;
           box-shadow: 0 2px 8px #0001;
           padding: 16px 18px 12px 18px;
@@ -111,7 +111,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
           border-radius: 8px;
           border: 1px solid #cfd8dc;
           font-size: 1em;
-          background: #f7f8fa;
+          background: var(--secondary-background-color, #f7f8fa);
           box-sizing: border-box;
         }
         .form-row.column input[type="text"],
@@ -154,7 +154,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
           box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
         }
         input:checked + .slider {
-          background-color: #0077cc;
+          background-color: var(--primary-color, #0077cc);
         }
         input:checked + .slider:before {
           transform: translateX(20px);
@@ -164,7 +164,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
           width: 100%;
           height: 6px;
           border-radius: 3px;
-          background: #e0e0e0;
+          background: var(--divider-color, #e0e0e0);
           outline: none;
         }
         input[type="range"]::-webkit-slider-thumb {
@@ -173,7 +173,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
           width: 18px;
           height: 18px;
           border-radius: 50%;
-          background: #0077cc;
+          background: var(--primary-color, #0077cc);
           cursor: pointer;
           box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
         }
@@ -181,7 +181,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
           width: 18px;
           height: 18px;
           border-radius: 50%;
-          background: #0077cc;
+          background: var(--primary-color, #0077cc);
           cursor: pointer;
           border: none;
           box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
@@ -195,7 +195,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
           gap: 1px;
         }
         .button-group-btn {
-          background: #f7f8fa;
+          background: var(--secondary-background-color, #f7f8fa);
           border: none;
           padding: 8px 12px;
           cursor: pointer;
@@ -205,10 +205,10 @@ class YeelightCubePaletteCardEditor extends LitElement {
           min-width: 80px;
         }
         .button-group-btn:hover {
-          background: #e8f0fe;
+          background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
         }
         .button-group-btn.active {
-          background: #0077cc;
+          background: var(--primary-color, #0077cc);
           color: white;
         }
       `,
@@ -653,7 +653,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
 
     return html`
       <div
-        style="border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa;"
+        style="border: 1px solid var(--divider-color, #e0e0e0); border-radius: 8px; background: var(--secondary-background-color, #fafafa);"
       >
         <!-- Header -->
         <div

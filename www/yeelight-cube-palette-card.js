@@ -556,7 +556,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           transition: background-color 0.1s ease, box-shadow 0.1s ease;
         }
         .palette-row:hover {
-          background-color: #f0f4f8;
+          background-color: var(--secondary-background-color, #f0f4f8);
           box-shadow: 0 3px 12px rgba(0,0,0,0.08);
         }
         .palette-actions {

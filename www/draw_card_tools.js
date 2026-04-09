@@ -340,8 +340,8 @@ export class ToolManager {
     this.dragState.placeholder.style.cssText = `
       width: ${toolItem.offsetWidth}px;
       height: ${toolItem.offsetHeight}px;
-      background: #f0f0f0;
-      border: 2px dashed #999;
+      background: var(--secondary-background-color, #f0f0f0);
+      border: 2px dashed var(--secondary-text-color, #999);
       opacity: 0.5;
       margin: ${getComputedStyle(toolItem).margin};
     `;

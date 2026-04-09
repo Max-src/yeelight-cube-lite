@@ -59,7 +59,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
           padding: 18px 8px 8px 8px;
         }
         .editor-card {
-          background: #f7fafd;
+          background: var(--secondary-background-color, #f7fafd);
           border-radius: 14px;
           box-shadow: 0 2px 8px #0001;
           padding: 16px 18px 12px 18px;
@@ -104,14 +104,14 @@ class YeelightCubeDrawCardEditor extends LitElement {
           display: flex;
           align-items: center;
           padding: 12px 16px;
-          background: #f8f9fa;
+          background: var(--secondary-background-color, #f8f9fa);
           border: 2px solid #e1e5e9;
           border-radius: 8px;
           transition: all 0.2s ease;
           user-select: none;
         }
         .layout-section:hover {
-          background: #e9ecef;
+          background: var(--secondary-background-color, #e9ecef);
           border-color: #ced4da;
         }
         .layout-section-icon {
@@ -142,7 +142,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
         }
         .layout-section.section-hidden {
           opacity: 0.5;
-          background: #f0f0f0;
+          background: var(--secondary-background-color, #f0f0f0);
         }
         .layout-section.section-hidden .layout-section-title {
           text-decoration: line-through;
@@ -1061,10 +1061,10 @@ class YeelightCubeDrawCardEditor extends LitElement {
               this.config.pixel_art_gallery_mode === "gallery"
                 ? html`
                     <div
-                      style="margin-top: 20px; padding: 16px; background: #f0f8ff; border-radius: 8px; border-left: 4px solid #0077cc;"
+                      style="margin-top: 20px; padding: 16px; background: color-mix(in srgb, var(--primary-color, #1976d2) 10%, var(--card-background-color, #fff)); border-radius: 8px; border-left: 4px solid var(--primary-color, #0077cc);"
                     >
                       <div
-                        style="font-weight: 600; font-size: 1.05em; margin-bottom: 12px; color: #0077cc;"
+                        style="font-weight: 600; font-size: 1.05em; margin-bottom: 12px; color: var(--primary-color, #0077cc);"
                       >
                         Gallery Mode Settings
                       </div>
@@ -1106,10 +1106,10 @@ class YeelightCubeDrawCardEditor extends LitElement {
               this.config.pixel_art_gallery_mode === "album"
                 ? html`
                     <div
-                      style="margin-top: 20px; padding: 16px; background: #f0f8ff; border-radius: 8px; border-left: 4px solid #0077cc;"
+                      style="margin-top: 20px; padding: 16px; background: color-mix(in srgb, var(--primary-color, #1976d2) 10%, var(--card-background-color, #fff)); border-radius: 8px; border-left: 4px solid var(--primary-color, #0077cc);"
                     >
                       <div
-                        style="font-weight: 600; font-size: 1.05em; margin-bottom: 12px; color: #0077cc;"
+                        style="font-weight: 600; font-size: 1.05em; margin-bottom: 12px; color: var(--primary-color, #0077cc);"
                       >
                         Album Mode Settings
                       </div>
@@ -1572,7 +1572,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
 
     return html`
       <div
-        style="border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa;"
+        style="border: 1px solid var(--divider-color, #e0e0e0); border-radius: 8px; background: var(--secondary-background-color, #fafafa);"
       >
         <!-- Header -->
         <div
@@ -1632,7 +1632,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
         <!-- Footer with selection count -->
         ${selectedEntities.length > 0
           ? html`<div
-              style="padding: 8px 16px; background: #f0f8ff; border-top: 1px solid var(--divider-color, #e8e8e8); border-radius: 0 0 8px 8px; font-size: 0.9em; color: #1976d2;"
+              style="padding: 8px 16px; background: color-mix(in srgb, var(--primary-color, #1976d2) 10%, var(--card-background-color, #fff)); border-top: 1px solid var(--divider-color, #e8e8e8); border-radius: 0 0 8px 8px; font-size: 0.9em; color: var(--primary-color, #1976d2);"
             >
               ${selectedEntities.length} entities selected for drawing
               operations

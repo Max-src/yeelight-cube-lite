@@ -57,13 +57,13 @@ export const galleryModeStyles = `
   }
 
   .gallery-title-gradient {
-    color: #212529;
+    color: var(--primary-text-color, #212529);
     font-weight: 600;
   }
 
   .gallery-item-image {
     /* width: 100%; */
-    background: #f8f9fa;
+    background: var(--secondary-background-color, #f8f9fa);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -93,7 +93,7 @@ export const galleryModeStyles = `
     /* padding: 12px 16px; */
     padding: 0 12px;
     background: var(--card-background-color, #ffffff);
-    border-top: 1px solid #e9ecef;
+    border-top: 1px solid var(--divider-color, #e9ecef);
     display: flex;
     justify-content: space-between;
     align-items: center;

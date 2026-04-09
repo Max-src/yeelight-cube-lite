@@ -184,7 +184,7 @@ export function renderGridMode(items, renderItemContent, options = {}) {
                    title="Delete" 
                    onclick="event.stopPropagation(); ${getFunctionCall(
                      onDeleteClick,
-                     idx
+                     idx,
                    )}"
                    style="position:absolute;top:10px;right:10px;z-index:1000;pointer-events:auto;">×</button>`
         : "";
@@ -210,7 +210,7 @@ export function renderGridMode(items, renderItemContent, options = {}) {
                           allowTitleEdit && onTitleClick
                             ? `onclick="event.stopPropagation(); ${getFunctionCall(
                                 onTitleClick,
-                                idx
+                                idx,
                               )}"`
                             : ""
                         }
@@ -244,7 +244,7 @@ export function renderGridMode(items, renderItemContent, options = {}) {
                       allowTitleEdit && onTitleClick
                         ? `onclick="event.stopPropagation(); ${getFunctionCall(
                             onTitleClick,
-                            idx
+                            idx,
                           )}"`
                         : ""
                     }

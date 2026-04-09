@@ -762,11 +762,11 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           transition: all 0.2s ease;
         }
         .color-row input[type="text"].hex-input:focus {
-          border: 2px solid #1976d2 !important;
+          border: 2px solid var(--primary-color, #1976d2) !important;
           outline: none;
           box-shadow: 
-            0 0 0 2px rgba(25, 118, 210, 0.2),
-            0 2px 8px rgba(25, 118, 210, 0.15) !important;
+            0 0 0 2px color-mix(in srgb, var(--primary-color, #1976d2) 20%, transparent),
+            0 2px 8px color-mix(in srgb, var(--primary-color, #1976d2) 15%, transparent) !important;
           background: var(--card-background-color, #fff) !important;
           transform: scale(1.02);
           z-index: 10;

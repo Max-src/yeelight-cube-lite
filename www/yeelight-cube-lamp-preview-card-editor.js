@@ -128,7 +128,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
         padding: 18px 8px 8px 8px;
       }
       .editor-card {
-        background: #f7fafd;
+        background: var(--secondary-background-color, #f7fafd);
         border-radius: 14px;
         box-shadow: 0 2px 8px #0001;
         padding: 16px 18px 12px 18px;
@@ -179,11 +179,11 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
         padding: 8px 12px;
         font-size: 1em;
         border-radius: 8px;
-        border: 1px solid #cfd8dc;
+        border: 1px solid var(--divider-color, #cfd8dc);
         margin-top: 2px;
         margin-bottom: 10px;
         box-sizing: border-box;
-        background: #f7f8fa;
+        background: var(--secondary-background-color, #f7f8fa);
       }
       .config-row {
         display: flex;
@@ -224,7 +224,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
         left: 0;
         right: 0;
         bottom: 0;
-        background-color: #cfd8dc;
+        background-color: var(--divider-color, #cfd8dc);
         transition: 0.2s;
         border-radius: 24px;
       }
@@ -241,7 +241,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
         box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
       }
       input:checked + .toggle-slider {
-        background-color: #1976d2;
+        background-color: var(--primary-color, #1976d2);
       }
       input:checked + .toggle-slider:before {
         transform: translateX(20px);
@@ -253,10 +253,10 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
         border-radius: 2px;
         background: linear-gradient(
           to right,
-          #1976d2 0%,
-          #1976d2 var(--value, 0%),
-          #e0e0e0 var(--value, 0%),
-          #e0e0e0 100%
+          var(--primary-color, #1976d2) 0%,
+          var(--primary-color, #1976d2) var(--value, 0%),
+          var(--divider-color, #e0e0e0) var(--value, 0%),
+          var(--divider-color, #e0e0e0) 100%
         );
         outline: none;
         cursor: pointer;
@@ -267,7 +267,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
         height: 20px;
         width: 20px;
         border-radius: 50%;
-        background: #1976d2;
+        background: var(--primary-color, #1976d2);
         cursor: pointer;
         box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
         border: none;
@@ -277,7 +277,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
         height: 20px;
         width: 20px;
         border-radius: 50%;
-        background: #1976d2;
+        background: var(--primary-color, #1976d2);
         cursor: pointer;
         box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
         border: none;
@@ -571,7 +571,9 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
               : html`
                   <div class="form-row" style="opacity: 0.5;">
                     <label>Content Mode</label>
-                    <div style="font-size: 0.85em; color: var(--secondary-text-color, #888);">
+                    <div
+                      style="font-size: 0.85em; color: var(--secondary-text-color, #888);"
+                    >
                       Icon style always uses icon-only
                     </div>
                   </div>
