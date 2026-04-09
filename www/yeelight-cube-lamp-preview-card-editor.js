@@ -793,6 +793,41 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
                       ),
                     )}
                   </div>
+                  <div class="form-row">
+                    <label>Section Style</label>
+                    ${createButtonGroup(
+                      [
+                        {
+                          value: "flat",
+                          label: "Flat",
+                          icon: "▬",
+                        },
+                        {
+                          value: "subtle",
+                          label: "Subtle",
+                          icon: "🔲",
+                        },
+                        {
+                          value: "filled",
+                          label: "Filled",
+                          icon: "■",
+                        },
+                      ],
+                      cfg.section_style ||
+                        cfg.grouped_section_style ||
+                        "subtle",
+                      createButtonGroupChangeHandler(
+                        "section_style",
+                        (value) => {
+                          this._config = {
+                            ...this._config,
+                            section_style: value,
+                          };
+                          this._fireConfigChanged();
+                        },
+                      ),
+                    )}
+                  </div>
                   <div class="toggle-row">
                     <label class="toggle-label">Show Change Indicator</label>
                     <label class="toggle-switch">

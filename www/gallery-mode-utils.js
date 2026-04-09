@@ -52,7 +52,7 @@ export const galleryModeStyles = `
   }
 
   .gallery-footer-gradient {
-    background: rgba(255, 255, 255, 0.95);
+    background: var(--card-background-color, rgba(255, 255, 255, 0.95));
     backdrop-filter: blur(10px);
   }
 
@@ -104,7 +104,7 @@ export const galleryModeStyles = `
   .gallery-item-title {
     font-size: 14px;
     font-weight: 500;
-    color: #212529;
+    color: var(--primary-text-color, #212529);
     flex: 1;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -114,7 +114,7 @@ export const galleryModeStyles = `
   }
 
   .gallery-item-title:hover {
-    color: #0d6efd;
+    color: var(--primary-color, #0d6efd);
   }
 
   /* All delete button styles */

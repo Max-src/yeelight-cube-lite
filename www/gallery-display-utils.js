@@ -227,7 +227,10 @@ export function renderGalleryMode(items, options = {}) {
   const itemBg =
     bgColor ||
     (showCards ? "var(--card-background-color, #fff)" : "transparent");
-  const titleColor = bgColor === "#000000" ? "color: #fff;" : "";
+  const titleColor =
+    bgColor === "#000000"
+      ? "color: #fff;"
+      : "color: var(--primary-text-color);";
   const isBgTransparent = bgColor === "transparent";
 
   return `

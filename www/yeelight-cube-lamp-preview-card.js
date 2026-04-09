@@ -2628,9 +2628,13 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   _generateCompactLayout(sections) {
     const showIndicators = this.config?.show_change_indicators ?? true;
     const resetButtonMode = this.config.reset_button_mode || "always";
+    const sectionStyle =
+      this.config.section_style ||
+      this.config.grouped_section_style ||
+      "subtle";
 
-    // Add class to container based on reset button mode for CSS styling
-    let html = `<div class="effects-compact-container reset-mode-${resetButtonMode}">`;
+    // Add class to container based on reset button mode and section style for CSS styling
+    let html = `<div class="effects-compact-container reset-mode-${resetButtonMode} style-${sectionStyle}">`;
 
     // Render all effects in a compact grid
     sections.forEach((section) => {
@@ -2701,8 +2705,12 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   // Tabbed Layout: Effects organized in tabs with smooth transitions
   _generateTabbedLayout(sections) {
     const activeTab = this._activeTab || sections[0].id;
+    const sectionStyle =
+      this.config.section_style ||
+      this.config.grouped_section_style ||
+      "subtle";
 
-    let html = '<div class="effects-tabbed-container">';
+    let html = `<div class="effects-tabbed-container style-${sectionStyle}">`;
 
     // Tab headers
     html += '<div class="tab-headers">';
@@ -2802,6 +2810,10 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
 
   // Grouped Layout: Modern collapsible cards with better spacing (default)
   _generateGroupedLayout(sections) {
+    const sectionStyle =
+      this.config.section_style ||
+      this.config.grouped_section_style ||
+      "subtle";
     let html = '<div class="effects-grouped-container">';
 
     sections.forEach((section, index) => {
@@ -2819,7 +2831,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       // resetButtonMode === "never" ? stays "none"
 
       html += `
-        <div class="grouped-section ${
+        <div class="grouped-section style-${sectionStyle} ${
           isExpanded ? "expanded" : "collapsed"
         }" data-section-id="${section.id}" style="z-index: ${
           isExpanded ? 100 : 10 - index
@@ -2914,7 +2926,12 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     const selectedEffect =
       this._selectedRadialEffect || activeSection?.effects[0]?.name || null;
 
-    let html = '<div class="effects-radial-container">';
+    const sectionStyle =
+      this.config.section_style ||
+      this.config.grouped_section_style ||
+      "subtle";
+
+    let html = `<div class="effects-radial-container style-${sectionStyle}">`;
 
     // Left side: Half-circle selector (facing right, positioned at left edge)
     html += '<div class="radial-wheel-container">';
@@ -3011,8 +3028,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         <line 
           x1="${x1}" y1="${y1}" 
           x2="${x2}" y2="${y2}" 
-          stroke="rgba(255, 255, 255, 0.7)"
-          stroke-width="1.5"
+          class="radial-separator"
           pointer-events="none"
         />
       `;
@@ -3024,7 +3040,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     } A ${outerRadius} ${outerRadius} 0 0 1 ${centerX} ${
       centerY + outerRadius
     }`;
-    html += `<path d="${outerArcPath}" stroke="rgba(255, 255, 255, 0.7)" stroke-width="1.5" fill="none" pointer-events="none" />`;
+    html += `<path d="${outerArcPath}" class="radial-outer-border" pointer-events="none" />`;
 
     if (activeSection) {
       // Position icon in the center of the visible half circle (at half the radius)
@@ -3117,7 +3133,12 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       sections.find((s) => s.id === this._activeRadialSection) || sections[0];
     this._activeRadialSection = activeSection.id;
 
-    let html = '<div class="effects-categories-container">';
+    const sectionStyle =
+      this.config.section_style ||
+      this.config.grouped_section_style ||
+      "subtle";
+
+    let html = `<div class="effects-categories-container style-${sectionStyle}">`;
 
     // Left side: Vertical icon column
     html += '<div class="categories-icon-column">';
@@ -3890,7 +3911,6 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           gap: 8px;
           align-items: center;
           padding: 6px;
-          background: var(--secondary-background-color, rgba(255, 255, 255, 0.03));
           border-radius: 6px;
           transition: background 0.2s;
         }
@@ -3898,8 +3918,26 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         .reset-mode-never .compact-slider-row {
           grid-template-columns: 30px 100px 1fr 60px;
         }
-        .compact-slider-row:hover {
-          background: var(--secondary-background-color, rgba(255, 255, 255, 0.06));
+        /* Compact: Flat */
+        .effects-compact-container.style-flat .compact-slider-row {
+          background: transparent;
+        }
+        .effects-compact-container.style-flat .compact-slider-row:hover {
+          background: transparent;
+        }
+        /* Compact: Subtle */
+        .effects-compact-container.style-subtle .compact-slider-row {
+          background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 40%, var(--card-background-color, #fff) 60%);
+        }
+        .effects-compact-container.style-subtle .compact-slider-row:hover {
+          background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 60%, var(--card-background-color, #fff) 40%);
+        }
+        /* Compact: Filled */
+        .effects-compact-container.style-filled .compact-slider-row {
+          background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
+        }
+        .effects-compact-container.style-filled .compact-slider-row:hover {
+          background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
         }
         .compact-icon {
           font-size: 18px;
@@ -3947,7 +3985,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           width: 100%;
           height: 6px;
           border-radius: 3px;
-          background: linear-gradient(to right, #555, #aaa);
+          background: var(--disabled-text-color, #bbb);
           outline: none;
           -webkit-appearance: none;
           cursor: pointer;
@@ -3982,7 +4020,6 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         .effects-tabbed-container {
           /* width: 100%; */
           padding: 12px;
-          background: var(--card-background-color, #1c1c1c);
           border-radius: 8px;
         }
         .tab-headers {
@@ -4043,9 +4080,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         .tabbed-content-header {
           display: flex;
           align-items: center;
-          background: rgba(255, 255, 255, 0.03);
           border-radius: 8px;
-          border: 1px solid rgba(255, 255, 255, 0.08);
         }
         .tabbed-content-title {
           margin: 0;
@@ -4080,8 +4115,19 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           flex-direction: column;
           gap: 8px;
           padding: 10px;
-          background: var(--secondary-background-color, rgba(255, 255, 255, 0.03));
           border-radius: 6px;
+        }
+        /* Tabbed: Flat */
+        .effects-tabbed-container.style-flat .tabbed-slider-row {
+          background: transparent;
+        }
+        /* Tabbed: Subtle */
+        .effects-tabbed-container.style-subtle .tabbed-slider-row {
+          background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 40%, var(--card-background-color, #fff) 60%);
+        }
+        /* Tabbed: Filled */
+        .effects-tabbed-container.style-filled .tabbed-slider-row {
+          background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
         }
         .tabbed-label-row {
           display: flex;
@@ -4107,7 +4153,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           width: 100%;
           height: 8px;
           border-radius: 4px;
-          background: linear-gradient(to right, #555, #aaa);
+          background: var(--disabled-text-color, #bbb);
           outline: none;
           -webkit-appearance: none;
           cursor: pointer;
@@ -4143,19 +4189,32 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         .grouped-section {
           border-radius: 10px;
           overflow: hidden;
-          background: linear-gradient(145deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
-          border: 1px solid rgba(255, 255, 255, 0.08);
+          border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.08));
           transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1),
                       margin 0.4s cubic-bezier(0.4, 0, 0.2, 1),
                       opacity 0.3s ease,
                       border-color 0.3s ease,
                       box-shadow 0.3s ease,
                       transform 0.3s ease;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
           position: relative;
           max-height: 1000px;
           opacity: 1;
           margin-bottom: 10px;
+        }
+        /* Subtle: gentle tinted background */
+        .grouped-section.style-subtle {
+          background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 40%, var(--card-background-color, #fff) 60%);
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+        /* Flat: transparent, blends with card/dashboard background */
+        .grouped-section.style-flat {
+          background: transparent;
+          box-shadow: none;
+        }
+        /* Filled: full secondary background for strong separation */
+        .grouped-section.style-filled {
+          background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
+          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
         .grouped-section.hidden {
           max-height: 0;
@@ -4167,8 +4226,14 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         }
         .grouped-section:hover {
           border-color: rgba(3, 169, 244, 0.4);
-          box-shadow: 0 4px 16px rgba(3, 169, 244, 0.15);
           transform: translateY(-2px);
+        }
+        .grouped-section.style-subtle:hover,
+        .grouped-section.style-filled:hover {
+          box-shadow: 0 4px 16px rgba(3, 169, 244, 0.15);
+        }
+        .grouped-section.style-flat:hover {
+          box-shadow: none;
         }
         .grouped-section.expanded {
           border-color: rgba(3, 169, 244, 0.3);
@@ -4178,13 +4243,13 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           align-items: center;
           justify-content: space-between;
           padding: 4px 10px 2px;
-          background: linear-gradient(135deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.04));
+          background: transparent;
           cursor: pointer;
           user-select: none;
           transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         }
         .grouped-header:hover {
-          background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.06));
+          background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
         }
         .grouped-header:active {
           transform: scale(0.99);
@@ -4255,7 +4320,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           flex-direction: column;
           gap: 10px;
           /* background: rgba(0, 0, 0, 0.2); */
-          border-top: 1px solid rgba(255, 255, 255, 0.05);
+          border-top: 1px solid var(--divider-color, rgba(0, 0, 0, 0.08));
           padding: 0 14px 0 14px;
           transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1),
                       padding 0.3s ease;
@@ -4269,14 +4334,13 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           flex-direction: column;
           gap: 6px;
           /* padding: 10px; */
-          background: rgba(255, 255, 255, 0.03);
+          background: transparent;
           border-radius: 6px;
-          border: 1px solid rgba(255, 255, 255, 0.06);
+          border: none;
           transition: all 0.2s ease;
         }
         .grouped-slider-row:hover {
-          background: rgba(255, 255, 255, 0.05);
-          border-color: rgba(255, 255, 255, 0.1);
+          background: transparent;
         }
         .grouped-label-row {
           display: flex;
@@ -4305,7 +4369,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           width: 100%;
           height: 8px;
           border-radius: 4px;
-          background: linear-gradient(to right, #444, #888);
+          background: var(--disabled-text-color, #bbb);
           outline: none;
           -webkit-appearance: none;
           cursor: pointer;
@@ -4475,8 +4539,8 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
 
         /* Center circle */
         .radial-center {
-          fill: var(--card-background-color, #1c1c1c);
-          stroke: rgba(255, 255, 255, 0.08);
+          fill: var(--card-background-color, #fff);
+          stroke: var(--divider-color, rgba(0, 0, 0, 0.12));
           stroke-width: 1;
         }
 
@@ -4507,7 +4571,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           justify-content: space-between;
           align-items: center;
           padding-bottom: 8px;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+          border-bottom: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
           margin-bottom: 4px;
         }
 
@@ -4544,20 +4608,34 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         .radial-effect-row {
           /* padding: 8px; */
           border-radius: 6px;
-          background: rgba(255, 255, 255, 0.03);
-          border: 1px solid rgba(255, 255, 255, 0.06);
+          border: none;
           transition: all 0.2s ease;
           cursor: default;
         }
-
-        .radial-effect-row:hover {
-          background: rgba(255, 255, 255, 0.03);
-          border-color: rgba(255, 255, 255, 0.06);
+        /* Radial: Flat */
+        .effects-radial-container.style-flat .radial-effect-row {
+          background: transparent;
+        }
+        .effects-radial-container.style-flat .radial-effect-row:hover {
+          background: transparent;
+        }
+        /* Radial: Subtle */
+        .effects-radial-container.style-subtle .radial-effect-row {
+          background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 40%, var(--card-background-color, #fff) 60%);
+        }
+        .effects-radial-container.style-subtle .radial-effect-row:hover {
+          background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 60%, var(--card-background-color, #fff) 40%);
+        }
+        /* Radial: Filled */
+        .effects-radial-container.style-filled .radial-effect-row {
+          background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
+        }
+        .effects-radial-container.style-filled .radial-effect-row:hover {
+          background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
         }
 
         .radial-effect-row.selected {
-          background: rgba(255, 255, 255, 0.03);
-          border-color: rgba(255, 255, 255, 0.06);
+          background: transparent;
           box-shadow: none;
         }
 
@@ -4592,7 +4670,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           width: 100%;
           height: 5px;
           border-radius: 2.5px;
-          background: linear-gradient(to right, #444, #888);
+          background: var(--disabled-text-color, linear-gradient(to right, #444, #888));
           outline: none;
           -webkit-appearance: none;
           cursor: pointer;
@@ -4799,14 +4877,29 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         .categories-effect-row {
           padding: 8px;
           border-radius: 6px;
-          background: rgba(255, 255, 255, 0.03);
-          border: 1px solid rgba(255, 255, 255, 0.06);
+          border: none;
           transition: all 0.2s ease;
         }
-
-        .categories-effect-row:hover {
-          background: rgba(255, 255, 255, 0.05);
-          border-color: rgba(255, 255, 255, 0.1);
+        /* Categories: Flat */
+        .effects-categories-container.style-flat .categories-effect-row {
+          background: transparent;
+        }
+        .effects-categories-container.style-flat .categories-effect-row:hover {
+          background: transparent;
+        }
+        /* Categories: Subtle */
+        .effects-categories-container.style-subtle .categories-effect-row {
+          background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 40%, var(--card-background-color, #fff) 60%);
+        }
+        .effects-categories-container.style-subtle .categories-effect-row:hover {
+          background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 60%, var(--card-background-color, #fff) 40%);
+        }
+        /* Categories: Filled */
+        .effects-categories-container.style-filled .categories-effect-row {
+          background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
+        }
+        .effects-categories-container.style-filled .categories-effect-row:hover {
+          background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
         }
 
         .categories-effect-row-header {
@@ -4837,7 +4930,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           width: 100%;
           height: 6px;
           border-radius: 3px;
-          background: linear-gradient(to right, #444, #888);
+          background: var(--disabled-text-color, #bbb);
           outline: none;
           -webkit-appearance: none;
           cursor: pointer;
