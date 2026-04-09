@@ -35,7 +35,8 @@ export const formRowStyles = css`
   .config-row select:focus {
     outline: none;
     border-color: var(--primary-color, #0969da);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color, #0969da) 10%, transparent);
+    box-shadow: 0 0 0 3px
+      color-mix(in srgb, var(--primary-color, #0969da) 10%, transparent);
   }
   .toggle-switch {
     position: relative;

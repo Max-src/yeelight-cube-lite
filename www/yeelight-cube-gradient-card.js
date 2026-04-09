@@ -319,48 +319,53 @@ class YeelightCubeGradientCard extends HTMLElement {
         this._onVisibilityReset,
       );
     }
-    // Clean up global preview cache to prevent memory leaks
-    // when cards are removed from the dashboard
-    if (window._yeelightPreviewCache) {
-      window._yeelightPreviewCache.data = null;
-      window._yeelightPreviewCache.timestamp = 0;
-      window._yeelightPreviewCache.responseHash = null;
-    }
+    // NOTE: Do NOT clear window._yeelightPreviewCache here.
+    // The global cache is designed to survive card recreation (see top of file).
+    // HA's card-mod and editor destroy/recreate the entire element on every
+    // config change — clearing the cache here causes the new instance to render
+    // an empty wheel (no preview data), leading to the wheel-disappearing bug.
+    // The cache is lightweight and will be naturally refreshed by _loadPreviews().
   }
 
   setConfig(config) {
-    // hasEntity: !!config.entity,
-    // targetEntitiesCount: config.target_entities?.length || 0,
-    // shadowRootExists: !!this.shadowRoot,
-    // hadPreviousConfig: !!this.config,
-    // previewElementExists: !!this._previewElement,
-    // timestamp: Date.now(),
-    // });
-
     // Check if wheel-affecting settings changed
     // Skip change detection on first init — this.config is undefined so every
     // comparison fires as "changed", causing a wasteful teardown/rebuild cycle
     // that races with preview loading and leaves a no-op wheel controller.
-    const wheelModeChanged = this.config
+
+    // Structural changes require full preview element rebuild
+    const wheelStructureChanged = this.config
       ? this.config.preview_display_mode !== config?.preview_display_mode ||
         this.config.wheel_nav_position !== config?.wheel_nav_position ||
-        this.config.preview_show_titles !== config?.preview_show_titles ||
-        this.config.wheel_height !== config?.wheel_height
+        this.config.preview_show_titles !== config?.preview_show_titles
       : false;
 
-    if (wheelModeChanged) {
-      // Clean up previous wheel controller when config changes
+    // Height-only changes can be handled with an in-place content refresh
+    // (avoids destroy/recreate race condition when slider is dragged rapidly)
+    const wheelHeightChanged = this.config
+      ? this.config.wheel_height !== config?.wheel_height
+      : false;
+
+    if (wheelStructureChanged) {
+      // Full rebuild: display mode, nav position, or titles changed
       if (this._wheelNavigationController) {
         this._wheelNavigationController.destroy();
         this._wheelNavigationController = null;
       }
-      // Force full DOM rebuild by invalidating cached preview HTML
       this._lastPreviewDataHash = null;
       this._cachedPreviewHtml = null;
-      // Reset the persistent preview element so it gets recreated with new structure
       if (this._previewElement) {
         this._previewElement = null;
       }
+    } else if (wheelHeightChanged) {
+      // Height-only change: keep preview element alive, refresh content in-place
+      if (this._wheelNavigationController) {
+        this._wheelNavigationController.destroy();
+        this._wheelNavigationController = null;
+      }
+      this._lastPreviewDataHash = null;
+      this._cachedPreviewHtml = null;
+      this._pendingWheelHeightUpdate = true;
     }
 
     this.config = config;
@@ -1540,6 +1545,46 @@ class YeelightCubeGradientCard extends HTMLElement {
       }
       cardContentDiv.appendChild(this._previewElement);
 
+      // Handle pending wheel height update (preview element kept alive,
+      // container content needs refresh with new height)
+      if (this._pendingWheelHeightUpdate) {
+        this._pendingWheelHeightUpdate = false;
+        const container = this._previewElement.querySelector(
+          ".preview-grid-container",
+        );
+        if (container) {
+          const newPreviewHtml = this._renderPreviewGrid();
+          container.style.overflow =
+            this._getDisplayMode() === "wheel" ? "visible" : "hidden";
+          container.innerHTML = newPreviewHtml;
+          this._cachedPreviewHtml = newPreviewHtml;
+          // Sync the preview-data hash so _getCachedPreviewGrid won't
+          // regenerate with stale values on the next call
+          this._lastPreviewDataHash = window._yeelightPreviewCache.data
+            ? JSON.stringify({
+                text: window._yeelightPreviewCache.data.text,
+                angle:
+                  Math.round(window._yeelightPreviewCache.data.angle * 10) / 10,
+                bgColor: this.config.gallery_background_color,
+                pixelStyle: this.config.gallery_pixel_style,
+                pixelGap: this.config.gallery_pixel_gap,
+                previewSize: this.config.gallery_preview_size,
+                ignoreBlack: this.config.gallery_ignore_black_pixels,
+                displayMode: this.config.preview_display_mode,
+                showTitles: this.config.preview_show_titles,
+                editGradientModes: this.config.edit_gradient_modes,
+                modeVisibility: JSON.stringify(this._modeVisibility),
+                wheelHeight: this.config.wheel_height,
+                wheelNavPosition: this.config.wheel_nav_position,
+              })
+            : null;
+          // Use immediate mode for wheel re-init (skip double-rAF delay)
+          this._wheelReInitializing = true;
+          // Re-attach listeners and wheel controller for the new content
+          this._attachPreviewEventListeners();
+        }
+      }
+
       // Safety net: after re-appending preview element, ensure wheel controller
       // is alive if we're in wheel display mode (fixes disconnect/reconnect)
       if (
@@ -2346,6 +2391,8 @@ class YeelightCubeGradientCard extends HTMLElement {
           showTitles: this.config.preview_show_titles,
           editGradientModes: this.config.edit_gradient_modes,
           modeVisibility: JSON.stringify(this._modeVisibility),
+          wheelHeight: this.config.wheel_height,
+          wheelNavPosition: this.config.wheel_nav_position,
         })
       : null;
 

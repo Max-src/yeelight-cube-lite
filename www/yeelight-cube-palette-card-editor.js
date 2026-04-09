@@ -205,7 +205,11 @@ class YeelightCubePaletteCardEditor extends LitElement {
           min-width: 80px;
         }
         .button-group-btn:hover {
-          background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
+          background: color-mix(
+            in srgb,
+            var(--primary-color, #1976d2) 15%,
+            var(--card-background-color, #fff)
+          );
         }
         .button-group-btn.active {
           background: var(--primary-color, #0077cc);
@@ -261,7 +265,11 @@ class YeelightCubePaletteCardEditor extends LitElement {
 
   render() {
     if (!this._hass || !this._hass.states)
-      return html`<div style="padding: 20px; color: var(--secondary-text-color, #666);">Loading...</div>`;
+      return html`<div
+        style="padding: 20px; color: var(--secondary-text-color, #666);"
+      >
+        Loading...
+      </div>`;
     const config = this.config || {};
     const sensors = Object.keys(this._hass.states || {}).filter((eid) =>
       eid.startsWith("sensor."),
@@ -303,7 +311,9 @@ class YeelightCubePaletteCardEditor extends LitElement {
             </div>
             <div class="form-row column">
               <label>Target Entities (optional)</label>
-              <div style="font-size: 0.9em; color: var(--secondary-text-color, #666); margin-bottom: 8px;">
+              <div
+                style="font-size: 0.9em; color: var(--secondary-text-color, #666); margin-bottom: 8px;"
+              >
                 Select which Yeelight Cube Lite lights should receive palette
                 applications. Leave empty to affect all lights.
               </div>
@@ -565,7 +575,9 @@ class YeelightCubePaletteCardEditor extends LitElement {
               : html`
                   <div class="form-row" style="opacity: 0.5;">
                     <label>Content Mode</label>
-                    <div style="font-size: 0.85em; color: var(--secondary-text-color, #888);">
+                    <div
+                      style="font-size: 0.85em; color: var(--secondary-text-color, #888);"
+                    >
                       Icon style always uses icon-only
                     </div>
                   </div>
@@ -624,7 +636,9 @@ class YeelightCubePaletteCardEditor extends LitElement {
 
   _renderEntityPicker() {
     if (!this._hass || !this._hass.states) {
-      return html`<div style="color: var(--secondary-text-color, #666); font-style: italic; padding: 8px;">
+      return html`<div
+        style="color: var(--secondary-text-color, #666); font-style: italic; padding: 8px;"
+      >
         Loading entities...
       </div>`;
     }

@@ -327,7 +327,10 @@ export function renderGridMode(items, options = {}) {
   const itemBg =
     bgColor ||
     (showCards ? "var(--card-background-color, #fff)" : "transparent");
-  const titleColor = bgColor === "#000000" ? "color: #fff;" : "";
+  const titleColor =
+    bgColor === "#000000"
+      ? "color: #fff;"
+      : "color: var(--primary-text-color);";
   const isBgTransparent = bgColor === "transparent";
 
   return `
@@ -424,7 +427,10 @@ export function renderCompactMode(items, options = {}) {
   const itemBg =
     bgColor ||
     (showCards ? "var(--card-background-color, #fff)" : "transparent");
-  const titleColor = bgColor === "#000000" ? "color: #fff;" : "";
+  const titleColor =
+    bgColor === "#000000"
+      ? "color: #fff;"
+      : "color: var(--primary-text-color);";
   const isBgTransparent = bgColor === "transparent";
 
   return `
@@ -694,7 +700,9 @@ function renderWheelItems(
     ? "rgba(255,255,255,0.08)"
     : bgColor ||
       (showCards ? "var(--card-background-color, #fff)" : "transparent");
-  const titleColor = isBgBlack ? "color: #fff;" : "";
+  const titleColor = isBgBlack
+    ? "color: #fff;"
+    : "color: var(--primary-text-color);";
   // Border: white subtle border on black bg, standard on others
   const borderStyle = showCards
     ? isBgBlack

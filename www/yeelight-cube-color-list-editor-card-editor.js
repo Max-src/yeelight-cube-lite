@@ -597,7 +597,9 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
               : html`
                   <div class="form-row" style="opacity: 0.5;">
                     <label>Content Mode</label>
-                    <div style="font-size: 0.85em; color: var(--secondary-text-color, #888);">
+                    <div
+                      style="font-size: 0.85em; color: var(--secondary-text-color, #888);"
+                    >
                       Icon style always uses icon-only
                     </div>
                   </div>

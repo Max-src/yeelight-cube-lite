@@ -62,10 +62,10 @@ export function getCardButtonPositionStyles(position = "outside") {
   if (position === "inside") {
     return "top: 6px; right: 6px; background: transparent; border: none; font-size: 2.2em;";
   } else if (position === "square") {
-    return "top: -8px; right: -8px; border-radius: 0; background: rgba(255,255,255,0.95); border: 2px solid #f0f0f0; box-shadow: 0 2px 8px rgba(0,0,0,0.15);";
+    return "top: -8px; right: -8px; border-radius: 0; background: var(--card-background-color, rgba(255,255,255,0.95)); border: 2px solid var(--divider-color, #f0f0f0); box-shadow: 0 2px 8px rgba(0,0,0,0.15);";
   } else {
     // outside (default)
-    return "top: -8px; right: -8px; border-radius: 50%; background: rgba(255,255,255,0.95); border: 2px solid #f0f0f0; box-shadow: 0 2px 8px rgba(0,0,0,0.15);";
+    return "top: -8px; right: -8px; border-radius: 50%; background: var(--card-background-color, rgba(255,255,255,0.95)); border: 2px solid var(--divider-color, #f0f0f0); box-shadow: 0 2px 8px rgba(0,0,0,0.15));";
   }
 }
 
@@ -119,7 +119,7 @@ export const deleteButtonStyles = `
   .delete-btn-cross.red-style::after {
     content: '' !important;
     position: absolute !important;
-    background: var(--card-background-color, white) !important;
+    background: #fff !important;
     box-shadow: 0 0 6px rgba(255, 255, 255, 0.8) !important;
     top: 50% !important;
     left: 50% !important;
@@ -158,7 +158,7 @@ export const deleteButtonStyles = `
   .delete-btn-cross.black-style::after {
     content: '' !important;
     position: absolute !important;
-    background: var(--card-background-color, white) !important;
+    background: #fff !important;
     box-shadow: 0 0 4px rgba(255, 255, 255, 0.5) !important;
     top: 50% !important;
     left: 50% !important;
@@ -185,7 +185,7 @@ export const deleteButtonStyles = `
 
   /* Trash Style Variant - Sleek minimal with icon glow */
   .delete-btn-cross.trash-style {
-    background: rgba(255, 255, 255, 0.95) !important;
+    background: var(--card-background-color, rgba(255, 255, 255, 0.95)) !important;
     border: 1px solid rgba(211, 47, 47, 0.25) !important;
     color: #d32f2f !important;
     font-size: 0 !important;

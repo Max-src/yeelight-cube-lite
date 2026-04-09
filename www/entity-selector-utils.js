@@ -239,7 +239,9 @@ export function createYeelightCubeEntityPicker(
         <div style="margin-bottom: 8px;">
           No Yeelight Cube Lite entities found
         </div>
-        <div style="font-size: 0.85em; color: var(--secondary-text-color, #999);">
+        <div
+          style="font-size: 0.85em; color: var(--secondary-text-color, #999);"
+        >
           Make sure you have Yeelight Cube Lite devices configured in this
           integration
         </div>
@@ -432,7 +434,8 @@ export const entitySelectorStyles = css`
   .entity-dropdown:focus {
     outline: none;
     border-color: var(--primary-color, #007bff);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color, #007bff) 25%, transparent);
+    box-shadow: 0 0 0 2px
+      color-mix(in srgb, var(--primary-color, #007bff) 25%, transparent);
   }
 
   .entity-dropdown.searchable {
@@ -453,7 +456,8 @@ export const entitySelectorStyles = css`
   .entity-search:focus {
     outline: none;
     border-color: var(--primary-color, #007bff);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color, #007bff) 25%, transparent);
+    box-shadow: 0 0 0 2px
+      color-mix(in srgb, var(--primary-color, #007bff) 25%, transparent);
   }
 
   .searchable-entity-selector .entity-dropdown {

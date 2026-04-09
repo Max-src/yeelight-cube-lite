@@ -4393,7 +4393,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
 
         /* Single ring segments - clearly defined clickable areas */
         .radial-segment {
-          fill: rgba(255, 255, 255, 1);
+          fill: var(--card-background-color, #fff);
           stroke: none;
           cursor: pointer;
           transition: fill 0.3s cubic-bezier(0.4, 0, 0.2, 1), 
@@ -4404,7 +4404,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         }
 
         .radial-segment:hover {
-          fill: rgba(255, 255, 255, 0.08);
+          fill: var(--secondary-background-color, rgba(200, 200, 200, 0.3));
         }
 
         .radial-segment.active-category {
@@ -4434,7 +4434,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
 
         .radial-separator {
           display: block;
-          stroke: rgba(255, 255, 255, 0.6);
+          stroke: var(--divider-color, rgba(200, 200, 200, 0.3));
           stroke-width: 1.5;
           pointer-events: none;
         }
@@ -4443,7 +4443,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         .radial-outer-border {
           display: block;
           fill: none;
-          stroke: rgba(255, 255, 255, 0.6);
+          stroke: var(--divider-color, rgba(200, 200, 200, 0.3));
           stroke-width: 1.5;
           pointer-events: none;
         }
@@ -4457,7 +4457,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
 
         .radial-icon {
           font-size: 14px;
-          fill: rgba(255, 255, 255, 0.5);
+          fill: var(--secondary-text-color, rgba(128, 128, 128, 0.7));
           transition: all 0.3s ease;
           pointer-events: none;
         }
@@ -4699,17 +4699,17 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           flex-shrink: 0;
           /* gap: 12px;
           padding: 12px; */
-          background: rgba(255, 255, 255, 0.02);
+          background: transparent;
           border-radius: 8px;
-          border: 1px solid rgba(255, 255, 255, 0.08);
+          border: none;
         }
 
         .categories-icon-button {
           width: 40px;
           height: 40px;
           border-radius: 50%;
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid rgba(255, 255, 255, 0.1);
+          background: transparent;
+          border: 1px solid transparent;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -4719,8 +4719,8 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         }
 
         .categories-icon-button:hover {
-          background: rgba(255, 255, 255, 0.08);
-          border-color: rgba(255, 255, 255, 0.2);
+          background: var(--secondary-background-color, rgba(200, 200, 200, 0.15));
+          border-color: var(--divider-color, rgba(200, 200, 200, 0.2));
           transform: scale(1.1);
         }
 
@@ -4754,9 +4754,9 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           flex-direction: column;
           /* gap: 10px;
           padding: 12px; */
-          background: rgba(255, 255, 255, 0.02);
+          background: transparent;
           border-radius: 8px;
-          border: 1px solid rgba(255, 255, 255, 0.08);
+          border: none;
         }
 
         .categories-category-header {
@@ -4764,7 +4764,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           justify-content: space-between;
           align-items: center;
           padding-bottom: 10px;
-          border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+          border-bottom: 1px solid var(--divider-color, rgba(200, 200, 200, 0.15));
           margin-bottom: 6px;
         }
 

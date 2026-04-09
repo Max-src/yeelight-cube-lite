@@ -81,7 +81,7 @@ export const compactModeStyles = `
   .pixelart-compact-item .compact-title,
   .palette-compact-item .compact-title {
     font-weight: 500;
-    color: #24292f;
+    color: var(--primary-text-color, #24292f);
     font-size: calc(0.95em * var(--preview-size-percent, 100%) / 100);
     white-space: nowrap;
     overflow: hidden;
@@ -94,7 +94,7 @@ export const compactModeStyles = `
   .pixelart-compact-item .compact-meta,
   .palette-compact-item .compact-meta {
     font-size: calc(0.8em * var(--preview-size-percent, 100%) / 100);
-    color: #57606a;
+    color: var(--secondary-text-color, #57606a);
     white-space: nowrap;
   }
 
