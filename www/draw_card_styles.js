@@ -118,11 +118,10 @@ export const drawCardStyles = css`
     width: 100%;
     margin-bottom: 8px;
   }
-  .palette-dropdown select:focus {
-    outline: none;
-    box-shadow: 0 1px 4px #0003;
+  /* Palette card container modes */
+  .palette-tabs {
+    width: 100%;
   }
-  /* Floating mode: center card below button */
   .palette-group-card.floating.hide {
     opacity: 0;
     pointer-events: none;
@@ -141,12 +140,19 @@ export const drawCardStyles = css`
     flex: 1 1 0;
     min-width: 48px;
     max-width: 180px;
-    height: 100%; /* Fill the row height */
-    transition: box-shadow 0.2s, transform 0.3s;
+    height: 100%;
+    transition: box-shadow 0.2s, transform 0.2s ease;
     overflow: visible;
     display: flex;
     align-items: center;
     justify-content: center;
+    border-radius: 10px;
+    padding: 4px;
+    cursor: pointer;
+  }
+  .palette-preview-card:not(.expanded):hover {
+    background: color-mix(in srgb, var(--primary-color, #0077cc) 5%, var(--card-background-color, #fff));
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
   }
   /* Slide-out animation for non-expanded preview cards */
   .palette-preview-hover.expanded-mode .palette-preview-card:not(.expanded) {
@@ -202,13 +208,17 @@ export const drawCardStyles = css`
     padding: 4px 0;
   }
   .palette-preview-dot {
-    width: 12px;
-    height: 12px;
+    width: 14px;
+    height: 14px;
     border-radius: 50%;
     background: var(--divider-color, #ccc);
-    box-shadow: 0 1px 2px #0002;
-    margin: 0 1px;
-    border: 1px solid #fff8;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    margin: 0 2px;
+    border: 1.5px solid var(--card-background-color, #fff);
+    transition: transform 0.2s ease;
+  }
+  .palette-preview-card:hover .palette-preview-dot {
+    transform: scale(1.15);
   }
   .palette-preview-dot.round {
     border-radius: 50%;
@@ -765,33 +775,39 @@ export const drawCardStyles = css`
   .palette-tab-bar {
     display: flex;
     flex-direction: row;
-    gap: 8px;
+    gap: 0;
     justify-content: center;
-    margin-bottom: 6px;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 8%, var(--card-background-color, #fff));
+    border-radius: 10px;
+    padding: 3px;
+    margin-bottom: 10px;
   }
   .palette-tab-btn {
-    background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
+    flex: 1;
+    background: transparent;
     border: none;
-    border-radius: 6px 6px 0 0;
-    padding: 6px 18px;
-    font-size: 1em;
+    border-radius: 8px;
+    padding: 6px 14px;
+    font-size: 0.9em;
     cursor: pointer;
     font-weight: 500;
-    color: var(--primary-color, #0077cc);
-    transition: background 0.2s;
+    color: var(--secondary-text-color, #666);
+    transition: all 0.2s ease;
+  }
+  .palette-tab-btn:hover:not(.active) {
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 6%, var(--card-background-color, #fff));
   }
   .palette-tab-btn.active {
-    background: color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
+    background: var(--card-background-color, #fff);
     color: var(--primary-text-color, #222);
     font-weight: 600;
-    box-shadow: 0 2px 8px #0002;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.1);
   }
   .palette-tab-content {
     width: 100%;
     display: flex;
     justify-content: center;
-    position: absolute;
-    margin-top: 12px;
+    position: relative;
   }
   .palette-fold {
     display: flex;
@@ -808,27 +824,41 @@ export const drawCardStyles = css`
   .palette-group-title[style*="cursor:pointer"]:hover {
     color: var(--primary-color, #0077cc);
   }
-  .palette-dropdown {
+  .palette-dropdown-wrapper {
     display: flex;
-    flex-direction: row;
-    align-items: center;
+    flex-direction: column;
+    gap: 10px;
     width: 100%;
-    width: fit-content;
   }
-  .palette-dropdown select {
-    padding: 12px 12px;
-    border-radius: 6px;
-    border: 1px solid color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
-    font-size: 1em;
-    background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
-    color: var(--primary-color, #0077cc);
+  .palette-dropdown-select {
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--divider-color, #d0d7de);
+    font-size: 0.9em;
+    background: var(--card-background-color, #fff);
+    color: var(--primary-text-color, #333);
     font-weight: 500;
     cursor: pointer;
+    width: fit-content;
+    transition: border-color 0.2s;
+  }
+  .palette-dropdown-select:focus {
+    outline: none;
+    border-color: var(--primary-color, #0077cc);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color, #0077cc) 15%, transparent);
   }
   .palette-dropdown-content {
     width: 100%;
     display: flex;
     justify-content: center;
+  }
+  .palette-empty-hint {
+    font-size: 0.85em;
+    color: var(--secondary-text-color, #888);
+    font-style: italic;
+    padding: 8px 0;
+    text-align: center;
+    width: 100%;
   }
   .palette-floating {
     display: flex;
@@ -973,6 +1003,23 @@ export const drawCardStyles = css`
     align-items: center;
     justify-content: center;
     gap: 12px;
+  }
+  .palette-stacked-nav-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 8;
+    width: 38px !important;
+    max-width: 38px !important;
+    min-width: 38px !important;
+    height: 38px;
+    padding: 0;
+  }
+  .palette-stacked-nav-prev {
+    left: 0;
+  }
+  .palette-stacked-nav-next {
+    right: 0;
   }
   .palette-stacked-cards {
     position: relative;

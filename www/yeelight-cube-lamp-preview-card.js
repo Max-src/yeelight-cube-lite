@@ -2191,6 +2191,8 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         this.config.brightness_slider_appearance || "default";
       const labelMode = this.config.brightness_label_mode || "text";
       const brightnessPercent = brightness;
+      const brightnessTheme =
+        this.config.brightness_theme || this.config.capsule_theme || "light";
 
       // Generate label content based on mode
       let labelContent = "";
@@ -2202,7 +2204,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         labelContent = "💡 Brightness";
       }
 
-      html += `<div class="brightness-slider-container brightness-style-${sliderStyle}" onwheel="this.getRootNode().host.handleBrightnessWheel(event)">`;
+      html += `<div class="brightness-slider-container brightness-style-${sliderStyle} brightness-theme-${brightnessTheme}" onwheel="this.getRootNode().host.handleBrightnessWheel(event)">`;
 
       if (sliderStyle === "bar") {
         // Mushroom-style bar with different label layouts
@@ -2343,7 +2345,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           html += `<div class="brightness-label-with-icon">${labelContent}</div>`;
         }
 
-        const capsuleTheme = this.config.capsule_theme || "light";
+        const capsuleTheme = brightnessTheme;
         const showMoonIcon = this.config.show_capsule_moon_icon !== false;
         const showSunIcon = this.config.show_capsule_sun_icon !== false;
 
@@ -3687,6 +3689,108 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           cursor: pointer;
         }
         
+        /* ===== Brightness Theme: Container-level styles ===== */
+        /* Light theme container — subtle card bg, matches section style-subtle */
+        .brightness-slider-container.brightness-theme-light {
+          background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 40%, var(--card-background-color, #fff) 60%);
+          border-radius: 12px;
+          padding: 12px 14px;
+          border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.08));
+        }
+        /* Dark theme container — deeper bg, good contrast on both HA light/dark */
+        .brightness-slider-container.brightness-theme-dark {
+          background: var(--secondary-background-color, #2c2c2c);
+          border-radius: 12px;
+          padding: 12px 14px;
+          border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.08));
+        }
+        /* Transparent theme container — blends with card background */
+        .brightness-slider-container.brightness-theme-transparent {
+          background: transparent;
+          padding: 10px 0;
+        }
+
+        /* ===== Slider Style themed variants ===== */
+        /* Dark theme: reversed gradient, glow thumb */
+        .brightness-theme-dark .brightness-slider-default,
+        .brightness-theme-dark .brightness-slider-thick,
+        .brightness-theme-dark .brightness-slider-thin {
+          background: linear-gradient(to right, var(--primary-background-color, #111), var(--secondary-background-color, #444));
+        }
+        .brightness-theme-dark .brightness-slider-default::-webkit-slider-thumb,
+        .brightness-theme-dark .brightness-slider-thick::-webkit-slider-thumb,
+        .brightness-theme-dark .brightness-slider-thin::-webkit-slider-thumb {
+          box-shadow: 0 0 8px rgba(255, 152, 0, 0.5), 0 2px 4px rgba(0,0,0,0.4);
+        }
+        .brightness-theme-dark .brightness-slider-default::-moz-range-thumb,
+        .brightness-theme-dark .brightness-slider-thick::-moz-range-thumb,
+        .brightness-theme-dark .brightness-slider-thin::-moz-range-thumb {
+          box-shadow: 0 0 8px rgba(255, 152, 0, 0.5), 0 2px 4px rgba(0,0,0,0.4);
+        }
+        /* Transparent theme: subtle track with no strong gradient */
+        .brightness-theme-transparent .brightness-slider-default,
+        .brightness-theme-transparent .brightness-slider-thick,
+        .brightness-theme-transparent .brightness-slider-thin {
+          background: var(--divider-color, #d0d0d0);
+        }
+        .brightness-theme-transparent .brightness-slider-default::-webkit-slider-thumb,
+        .brightness-theme-transparent .brightness-slider-thick::-webkit-slider-thumb,
+        .brightness-theme-transparent .brightness-slider-thin::-webkit-slider-thumb {
+          box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+        .brightness-theme-transparent .brightness-slider-default::-moz-range-thumb,
+        .brightness-theme-transparent .brightness-slider-thick::-moz-range-thumb,
+        .brightness-theme-transparent .brightness-slider-thin::-moz-range-thumb {
+          box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+        /* Light theme labels */
+        .brightness-theme-light .brightness-label,
+        .brightness-theme-light .brightness-label-with-icon,
+        .brightness-theme-light .brightness-value-slider,
+        .brightness-theme-light .brightness-value-right {
+          color: var(--primary-text-color);
+        }
+        /* Dark theme labels */
+        .brightness-theme-dark .brightness-label,
+        .brightness-theme-dark .brightness-label-with-icon,
+        .brightness-theme-dark .brightness-value-slider,
+        .brightness-theme-dark .brightness-value-right {
+          color: var(--text-primary-color, #fff);
+        }
+        /* Transparent theme labels — inherit from parent */
+        .brightness-theme-transparent .brightness-label,
+        .brightness-theme-transparent .brightness-label-with-icon {
+          color: var(--primary-text-color);
+        }
+
+        /* ===== Bar Style themed variants ===== */
+        .brightness-theme-light .brightness-bar-track {
+          background: var(--divider-color, rgba(0, 0, 0, 0.08));
+        }
+        .brightness-theme-dark .brightness-bar-track {
+          background: var(--primary-background-color, rgba(0, 0, 0, 0.3));
+        }
+        .brightness-theme-transparent .brightness-bar-track {
+          background: var(--divider-color, rgba(0, 0, 0, 0.06));
+        }
+
+        /* ===== Rotary Style themed variants ===== */
+        .brightness-theme-light .rotary-bg {
+          stroke: var(--divider-color, rgba(0, 0, 0, 0.1));
+        }
+        .brightness-theme-dark .rotary-bg {
+          stroke: var(--primary-background-color, rgba(0, 0, 0, 0.3));
+        }
+        .brightness-theme-transparent .rotary-bg {
+          stroke: var(--divider-color, rgba(0, 0, 0, 0.08));
+        }
+        .brightness-theme-dark .rotary-label {
+          color: var(--text-primary-color, rgba(255,255,255,0.7));
+        }
+        .brightness-theme-dark .rotary-value {
+          color: var(--text-primary-color, #fff);
+        }
+
         .brightness-value {
           font-size: 12px;
           color: var(--secondary-text-color);

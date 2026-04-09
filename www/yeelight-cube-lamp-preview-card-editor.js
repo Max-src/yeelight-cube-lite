@@ -57,6 +57,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
       show_brightness_slider: true, // Show brightness slider by default
       brightness_slider_style: "slider", // Default brightness slider style
       brightness_slider_appearance: "default", // Default slider appearance
+      brightness_theme: "light", // Default brightness theme (applies to all slider styles)
       brightness_label_mode: "text", // Default brightness label mode
       ...config,
     };
@@ -688,29 +689,27 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
                   </div>
                 `
               : ""}
+            <div class="form-row">
+              <label>Brightness Theme</label>
+              ${createButtonGroup(
+                [
+                  { value: "light", label: "Light" },
+                  { value: "dark", label: "Dark" },
+                  { value: "transparent", label: "Transparent" },
+                ],
+                cfg.brightness_theme || cfg.capsule_theme || "light",
+                createButtonGroupChangeHandler("brightness_theme", (value) => {
+                  this._config = {
+                    ...this._config,
+                    brightness_theme: value,
+                    capsule_theme: value,
+                  };
+                  this._fireConfigChanged();
+                }),
+              )}
+            </div>
             ${cfg.brightness_slider_style === "capsule"
               ? html`
-                  <div class="form-row">
-                    <label>Capsule Theme</label>
-                    ${createButtonGroup(
-                      [
-                        { value: "light", label: "Light" },
-                        { value: "dark", label: "Dark" },
-                        { value: "transparent", label: "Transparent" },
-                      ],
-                      cfg.capsule_theme || "light",
-                      createButtonGroupChangeHandler(
-                        "capsule_theme",
-                        (value) => {
-                          this._config = {
-                            ...this._config,
-                            capsule_theme: value,
-                          };
-                          this._fireConfigChanged();
-                        },
-                      ),
-                    )}
-                  </div>
                   <div class="toggle-row">
                     <label class="toggle-label">Show Moon Icon (🌙)</label>
                     <label class="toggle-switch">

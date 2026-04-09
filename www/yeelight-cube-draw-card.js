@@ -322,13 +322,13 @@ class YeelightCubeDrawCard extends LitElement {
     const buttonShape = cfg.button_shape || "rect";
     const cards = [];
     if (showRecentColors) {
-      const btnMode = cfg.save_palette_button_content;
-      let saveBtn = null;
+      const palette = this.recentColors || [];
       cards.push({
         key: "recent",
         title: "Recent Colors",
+        palette,
         content: renderPaletteSection(
-          this.recentColors,
+          palette,
           "recent",
           (color) => handleColorSelect(this, color),
           cfg.palette_display_mode || "row",
@@ -336,17 +336,16 @@ class YeelightCubeDrawCard extends LitElement {
           "icon",
           buttonShape,
         ),
-        button: saveBtn,
       });
     }
     if (showLampPalette) {
-      const btnMode = cfg.save_palette_button_content;
-      let saveBtn = null;
+      const palette = this.getLampGradientColors() || [];
       cards.push({
         key: "lamp",
         title: "Lamp Palette",
+        palette,
         content: renderPaletteSection(
-          this.getLampGradientColors(),
+          palette,
           "lamp",
           (color) => handleColorSelect(this, color),
           cfg.palette_display_mode || "row",
@@ -354,17 +353,16 @@ class YeelightCubeDrawCard extends LitElement {
           "icon",
           buttonShape,
         ),
-        button: saveBtn,
       });
     }
     if (showImagePalette) {
-      const btnMode = cfg.save_palette_button_content;
-      let saveBtn = null;
+      const palette = this.imagePalette || [];
       cards.push({
         key: "image",
         title: "Image Palette",
+        palette,
         content: renderPaletteSection(
-          this.imagePalette,
+          palette,
           "image",
           (color) => handleColorSelect(this, color),
           cfg.palette_display_mode || "row",
@@ -372,9 +370,14 @@ class YeelightCubeDrawCard extends LitElement {
           "icon",
           buttonShape,
         ),
-        button: saveBtn,
       });
     }
+
+    if (!cards.length) return html``;
+
+    const emptyHint = html`<div class="palette-empty-hint">No colors</div>`;
+    const cardContent = (card) =>
+      card.palette.length ? card.content : emptyHint;
 
     // Side-by-side (default)
     if (mode === "side") {
@@ -384,9 +387,8 @@ class YeelightCubeDrawCard extends LitElement {
             <div class="palette-group-card">
               <div class="palette-card-top-row">
                 <div class="palette-group-title">${card.title}</div>
-                ${card.button}
               </div>
-              ${card.content}
+              ${cardContent(card)}
             </div>
           `,
         )}
@@ -400,20 +402,14 @@ class YeelightCubeDrawCard extends LitElement {
       const prevIdx = (activeIdx - 1 + total) % total;
       const nextIdx = (activeIdx + 1) % total;
       return html`
-        <div class="palette-stacked-deck" style="position:relative;">
+        <div class="palette-stacked-deck">
           <button
-            class="draw-btn save icon-mode nav-btn-${buttonShape}"
+            class="palette-stacked-nav-btn palette-stacked-nav-prev draw-btn save icon-mode nav-btn-${buttonShape}"
             @click="${() => {
               this._activeStackedIdx = prevIdx;
               this.requestUpdate();
             }}"
             title="Previous palette"
-            style="position:absolute;left:0px;top:50%;transform:translateY(-50%);z-index:8;
-                width: 38px !important;
-                max-width: 38px !important;
-                min-width: 38px !important;
-                height: 38px;
-                padding: 0;"
           >
             <ha-icon icon="mdi:chevron-left"></ha-icon>
           </button>
@@ -422,31 +418,29 @@ class YeelightCubeDrawCard extends LitElement {
               <div class="palette-stacked-title-row">
                 <div class="palette-group-title">${cards[activeIdx].title}</div>
               </div>
-              ${cards[activeIdx].content}
+              ${cardContent(cards[activeIdx])}
             </div>
           </div>
           <button
-            class="draw-btn save icon-mode nav-btn-${buttonShape}"
+            class="palette-stacked-nav-btn palette-stacked-nav-next draw-btn save icon-mode nav-btn-${buttonShape}"
             @click="${() => {
               this._activeStackedIdx = nextIdx;
               this.requestUpdate();
             }}"
             title="Next palette"
-            style="position:absolute;right:0px;top:50%;transform:translateY(-50%);z-index:8;
-                width: 38px !important;
-                max-width: 38px !important;
-                min-width: 38px !important;
-                height: 38px;
-                padding: 0;"
           >
             <ha-icon icon="mdi:chevron-right"></ha-icon>
           </button>
         </div>
       `;
     }
-    // Tabs
+    // Tabs (segmented control)
     if (mode === "tabs") {
+      if (!this._activePaletteTab && cards.length) {
+        this._activePaletteTab = cards[0].key;
+      }
       const activeTab = this._activePaletteTab;
+      const activeCard = cards.find((c) => c.key === activeTab);
       return html`
         <div class="palette-tabs">
           <div class="palette-tab-bar">
@@ -458,11 +452,7 @@ class YeelightCubeDrawCard extends LitElement {
                     : ""}"
                   title="${card.title}"
                   @click="${() => {
-                    if (this._activePaletteTab === card.key) {
-                      this._activePaletteTab = null;
-                    } else {
-                      this._activePaletteTab = card.key;
-                    }
+                    this._activePaletteTab = card.key;
                     this.requestUpdate();
                   }}"
                 >
@@ -471,12 +461,13 @@ class YeelightCubeDrawCard extends LitElement {
               `,
             )}
           </div>
-          <div
-            class="palette-tab-content"
-            style="position:relative;z-index:20;"
-          >
-            ${cards.find((c) => c.key === activeTab)?.content || ""}
-          </div>
+          ${activeCard
+            ? html`
+                <div class="palette-tab-content">
+                  ${cardContent(activeCard)}
+                </div>
+              `
+            : ""}
         </div>
       `;
     }
@@ -485,10 +476,7 @@ class YeelightCubeDrawCard extends LitElement {
       const activeDrop = this._activePaletteDropdown || cards[0]?.key;
       const activeCard = cards.find((c) => c.key === activeDrop);
       return html`
-        <div
-          class="palette-dropdown"
-          style="display: flex; align-items: center; gap: 12px;"
-        >
+        <div class="palette-dropdown-wrapper">
           <select
             class="palette-dropdown-select"
             @change="${(e) => {
@@ -506,14 +494,14 @@ class YeelightCubeDrawCard extends LitElement {
                 </option>`,
             )}
           </select>
+          ${activeCard
+            ? html`
+                <div class="palette-dropdown-content">
+                  ${cardContent(activeCard)}
+                </div>
+              `
+            : ""}
         </div>
-        ${activeCard
-          ? html`
-              <div class="palette-group-card compact">
-                ${activeCard.content}
-              </div>
-            `
-          : ""}
       `;
     }
     // Preview-hover mode
@@ -529,40 +517,41 @@ class YeelightCubeDrawCard extends LitElement {
       ) {
         dotCount = parseInt(cfg.palette_preview_dot_count);
       }
-      // Find expanded index
-      const expandedIndex = cards.findIndex(
+      // Filter out empty palette groups to prevent hover bug on zero-content cards
+      const visibleCards = cards.filter((c) => c.palette.length > 0);
+      if (!visibleCards.length) {
+        return html`<div class="palette-empty-hint">
+          No palette colors available
+        </div>`;
+      }
+      const expandedIndex = visibleCards.findIndex(
         (card) => this._previewStates[card.key],
       );
-      // Expanded mode if any card is expanded
       const expandedMode = expandedIndex !== -1;
       return html`<div
         class="palette-preview-hover${expandedMode ? " expanded-mode" : ""}"
       >
-        ${cards.map((card, idx) => {
-          // If any card is expanded, hide all others (display: none), show only expanded
+        ${visibleCards.map((card) => {
           let displayStyle = "display: flex;";
           if (expandedMode && !this._previewStates[card.key]) {
             displayStyle = "display: none;";
           }
-          // Debounce logic
-          if (!this._previewDebounce) this._previewDebounce = false;
-          const handleExpand = (e) => {
-            if (this._previewDebounce) return;
-            this._previewDebounce = true;
+          // Timer-based expand/collapse to prevent stuck states
+          const handleExpand = () => {
+            if (this._previewCollapseTimer) {
+              clearTimeout(this._previewCollapseTimer);
+              this._previewCollapseTimer = null;
+            }
             this._previewStates[card.key] = true;
             this.requestUpdate();
-            setTimeout(() => {
-              this._previewDebounce = false;
-            }, 300);
           };
-          const handleCollapse = (e) => {
-            if (this._previewDebounce) return;
-            this._previewDebounce = true;
-            this._previewStates[card.key] = false;
-            this.requestUpdate();
-            setTimeout(() => {
-              this._previewDebounce = false;
-            }, 300);
+          const handleCollapse = () => {
+            const key = card.key;
+            this._previewCollapseTimer = setTimeout(() => {
+              this._previewStates[key] = false;
+              this._previewCollapseTimer = null;
+              this.requestUpdate();
+            }, 200);
           };
           return html`
             <div
@@ -576,12 +565,7 @@ class YeelightCubeDrawCard extends LitElement {
               @touchend="${handleCollapse}"
             >
               <div class="palette-preview-dots">
-                ${(card.key === "recent"
-                  ? this.recentColors
-                  : card.key === "lamp"
-                    ? this.getLampGradientColors()
-                    : this.imagePalette
-                )
+                ${card.palette
                   .slice(0, dotCount)
                   .map(
                     (color) =>
@@ -606,7 +590,7 @@ class YeelightCubeDrawCard extends LitElement {
         (card) => html`
           <div class="palette-group-card">
             <div class="palette-group-title">${card.title}</div>
-            ${card.content} ${card.button}
+            ${cardContent(card)}
           </div>
         `,
       )}

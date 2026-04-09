@@ -123,9 +123,14 @@ class YeelightCubeDrawCardEditor extends LitElement {
           display: flex;
           align-items: center;
           justify-content: center;
-          background: color-mix(in srgb, var(--primary-color, #0077cc) 10%, transparent);
+          background: color-mix(
+            in srgb,
+            var(--primary-color, #0077cc) 10%,
+            transparent
+          );
           border-radius: 6px;
-          border: 2px solid color-mix(in srgb, var(--primary-color, #0077cc) 20%, transparent);
+          border: 2px solid
+            color-mix(in srgb, var(--primary-color, #0077cc) 20%, transparent);
         }
         .layout-section-info {
           flex: 1;
