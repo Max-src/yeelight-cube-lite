@@ -167,7 +167,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
           padding: 8px 12px;
           font-size: 1em;
           border-radius: 8px;
-          border: 1px solid #cfd8dc;
+          border: 1px solid var(--divider-color, #cfd8dc);
           margin-top: 2px;
           margin-bottom: 10px;
           box-sizing: border-box;
@@ -454,7 +454,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
             ${cfg.list_layout === "cards" || cfg.list_layout === "spread"
               ? html`
                   <div
-                    style="margin-top: 20px; padding-top: 16px; border-top: 2px solid #e0e0e0;"
+                    style="margin-top: 20px; padding-top: 16px; border-top: 2px solid var(--divider-color, #e0e0e0);"
                   >
                     <div
                       style="font-weight: 600; font-size: 1.05em; margin-bottom: 12px; color: var(--primary-color, #0077cc);"

@@ -202,10 +202,10 @@ class YeelightCubeGradientCard extends HTMLElement {
             cursor: pointer;
             z-index: 100;
             user-select: none;
-            background: ${isVisible ? "rgba(0, 119, 204, 0.15)" : "rgba(200, 200, 200, 0.3)"};
+            background: ${isVisible ? "color-mix(in srgb, var(--primary-color, #0077cc) 15%, transparent)" : "color-mix(in srgb, var(--divider-color, #ccc) 30%, transparent)"};
             border-radius: 4px;
             padding: 4px;
-            border: 2px solid ${isVisible ? "rgba(0, 119, 204, 0.4)" : "rgba(200, 200, 200, 0.5)"};
+            border: 2px solid ${isVisible ? "color-mix(in srgb, var(--primary-color, #0077cc) 40%, transparent)" : "color-mix(in srgb, var(--divider-color, #ccc) 50%, transparent)"};
             line-height: 1;
             width: 22px;
             height: 22px;
@@ -225,10 +225,10 @@ class YeelightCubeGradientCard extends HTMLElement {
             cursor: pointer;
             z-index: 10;
             user-select: none;
-            background: ${isVisible ? "rgba(0, 119, 204, 0.1)" : "rgba(200, 200, 200, 0.2)"};
+            background: ${isVisible ? "color-mix(in srgb, var(--primary-color, #0077cc) 10%, transparent)" : "color-mix(in srgb, var(--divider-color, #ccc) 20%, transparent)"};
             border-radius: 4px;
             padding: 4px;
-            border: 2px solid ${isVisible ? "rgba(0, 119, 204, 0.3)" : "rgba(200, 200, 200, 0.4)"};
+            border: 2px solid ${isVisible ? "color-mix(in srgb, var(--primary-color, #0077cc) 30%, transparent)" : "color-mix(in srgb, var(--divider-color, #ccc) 40%, transparent)"};
             line-height: 1;
             width: 22px;
             height: 22px;

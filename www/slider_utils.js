@@ -587,7 +587,11 @@ export const buttonGroupStyles = css`
   }
 
   .palette-mode-btn:hover {
-    background: color-mix(in srgb, var(--primary-color, #0077cc) 10%, var(--secondary-background-color, #e9ecef));
+    background: color-mix(
+      in srgb,
+      var(--primary-color, #0077cc) 10%,
+      var(--secondary-background-color, #e9ecef)
+    );
     border-color: var(--primary-color, #0077cc);
   }
 

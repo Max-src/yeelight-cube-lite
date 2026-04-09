@@ -7,54 +7,54 @@
 
 ## Summary Table
 
-| # | File | Status | Colors | A11y | Perf | Dupl | Resp | Errors | UX | Maint | Compat | Sec | **Total** |
-|---|------|--------|--------|------|------|------|------|--------|----|-------|--------|-----|-----------|
-| 1 | yeelight-cube-gradient-card.js | ⚠️ | 3 | 4 | 1 | 3 | 1 | 0 | 1 | 3 | 1 | 2 | **19** |
-| 2 | yeelight-cube-lamp-preview-card.js | ⚠️ | 0 | 4 | 1 | 1 | 0 | 0 | 0 | 3 | 1 | 2 | **12** |
-| 3 | yeelight-cube-lamp-preview-card-editor.js | ✅ | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **1** |
-| 4 | yeelight-cube-palette-card.js | ⚠️ | 2 | 3 | 1 | 1 | 1 | 0 | 1 | 2 | 1 | 2 | **14** |
-| 5 | yeelight-cube-color-list-editor-card.js | ⚠️ | 3 | 4 | 1 | 3 | 1 | 0 | 1 | 3 | 1 | 3 | **20** |
-| 6 | yeelight-cube-calibration-card.js | ✅ | 0 | 2 | 0 | 0 | 1 | 0 | 0 | 1 | 0 | 1 | **5** |
-| 7 | yeelight-cube-palette-card-editor.js | ⚠️ | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **2** |
-| 8 | yeelight-cube-gradient-card-editor.js | ✅ | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **1** |
-| 9 | yeelight-cube-draw-card.js | ⚠️ | 0 | 3 | 0 | 1 | 0 | 0 | 0 | 2 | 0 | 1 | **7** |
-| 10 | yeelight-cube-draw-card-editor.js | ✅ | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **1** |
-| 11 | yeelight-cube-color-list-editor-card-editor.js | ⚠️ | 2 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **3** |
-| 12 | draw_card_palette_ui.js | ✅ | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | **2** |
-| 13 | draw_card_styles.js | ⚠️ | 1 | 0 | 0 | 1 | 0 | 0 | 1 | 0 | 0 | 0 | **3** |
-| 14 | draw_card_palette.js | ✅ | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| 15 | draw_card_ui.js | ✅ | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| 16 | draw_card_state.js | ✅ | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| 17 | draw_card_storage.js | ✅ | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| 18 | draw_card_events.js | ✅ | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| 19 | draw_card_handlers.js | ✅ | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| 20 | draw_card_tools.js | ✅ | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| 21 | draw_card_const.js | ✅ | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| 22 | draw_utils.js | ✅ | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| 23 | draw_card_matrix.js | ✅ | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| 24 | draw_card_matrix_1d.js | ✅ᴵ | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| 25 | draw_card_gallery_manager.js | ✅ᴵ | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| 26 | yeelight-cube-dotmatrix.js | ✅ᴵ | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| 27 | yeelight-cube-palette-utils.js | ✅ᴵ | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| 28 | service-call-utils.js | ✅ᴵ | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| 29 | slider_utils.js | ✅ᴵ | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| 30 | carousel-utils.js | ⚠️ | 1 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **2** |
-| 31 | compact-mode-styles.js | 🗑️ | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | **2** |
-| 32 | compact-layout-utils.js | ✅ | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 1 | 0 | **1** |
-| 33 | wheel-navigation-utils.js | ✅ | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| 34 | entity-selector-utils.js | ✅ | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| 35 | form-row-utils.js | ⚠️ | 1 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **1** |
-| 36 | pagination-utils.js | ⚠️ | 1 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | **2** |
-| 37 | button-group-utils.js | ✅ | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| 38 | editor_ui_utils.js | ✅ | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| 39 | gallery-mode-utils.js | ⚠️ | 2 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **2** |
-| 40 | gallery-display-utils.js | ⚠️ | 2 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | **3** |
-| 41 | grid-mode-utils.js | ⚠️ | 2 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | **3** |
-| 42 | list-mode-utils.js | ⚠️ | 2 | 0 | 0 | 1 | 0 | 0 | 0 | 0 | 0 | 0 | **3** |
-| 43 | album-view-coverflow.js | ✅ | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **0** |
-| 44 | delete-button-styles.js | ⚠️ | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **3** |
-| 45 | export-import-button-utils.js | ⚠️ | 3 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | **3** |
-| | **TOTALS** | | **30** | **26** | **4** | **14** | **4** | **0** | **4** | **15** | **5** | **12** | **114** |
+| #   | File                                           | Status | Colors | A11y   | Perf  | Dupl   | Resp  | Errors | UX    | Maint  | Compat | Sec    | **Total** |
+| --- | ---------------------------------------------- | ------ | ------ | ------ | ----- | ------ | ----- | ------ | ----- | ------ | ------ | ------ | --------- |
+| 1   | yeelight-cube-gradient-card.js                 | ⚠️     | 3      | 4      | 1     | 3      | 1     | 0      | 1     | 3      | 1      | 2      | **19**    |
+| 2   | yeelight-cube-lamp-preview-card.js             | ⚠️     | 0      | 4      | 1     | 1      | 0     | 0      | 0     | 3      | 1      | 2      | **12**    |
+| 3   | yeelight-cube-lamp-preview-card-editor.js      | ✅     | 0      | 1      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **1**     |
+| 4   | yeelight-cube-palette-card.js                  | ⚠️     | 2      | 3      | 1     | 1      | 1     | 0      | 1     | 2      | 1      | 2      | **14**    |
+| 5   | yeelight-cube-color-list-editor-card.js        | ⚠️     | 3      | 4      | 1     | 3      | 1     | 0      | 1     | 3      | 1      | 3      | **20**    |
+| 6   | yeelight-cube-calibration-card.js              | ✅     | 0      | 2      | 0     | 0      | 1     | 0      | 0     | 1      | 0      | 1      | **5**     |
+| 7   | yeelight-cube-palette-card-editor.js           | ⚠️     | 1      | 1      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **2**     |
+| 8   | yeelight-cube-gradient-card-editor.js          | ✅     | 0      | 1      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **1**     |
+| 9   | yeelight-cube-draw-card.js                     | ⚠️     | 0      | 3      | 0     | 1      | 0     | 0      | 0     | 2      | 0      | 1      | **7**     |
+| 10  | yeelight-cube-draw-card-editor.js              | ✅     | 0      | 1      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **1**     |
+| 11  | yeelight-cube-color-list-editor-card-editor.js | ⚠️     | 2      | 1      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **3**     |
+| 12  | draw_card_palette_ui.js                        | ✅     | 0      | 1      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 1      | **2**     |
+| 13  | draw_card_styles.js                            | ⚠️     | 1      | 0      | 0     | 1      | 0     | 0      | 1     | 0      | 0      | 0      | **3**     |
+| 14  | draw_card_palette.js                           | ✅     | 0      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **0**     |
+| 15  | draw_card_ui.js                                | ✅     | 0      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **0**     |
+| 16  | draw_card_state.js                             | ✅     | 0      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **0**     |
+| 17  | draw_card_storage.js                           | ✅     | 0      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **0**     |
+| 18  | draw_card_events.js                            | ✅     | 0      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **0**     |
+| 19  | draw_card_handlers.js                          | ✅     | 0      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **0**     |
+| 20  | draw_card_tools.js                             | ✅     | 0      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **0**     |
+| 21  | draw_card_const.js                             | ✅     | 0      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **0**     |
+| 22  | draw_utils.js                                  | ✅     | 0      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **0**     |
+| 23  | draw_card_matrix.js                            | ✅     | 0      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **0**     |
+| 24  | draw_card_matrix_1d.js                         | ✅ᴵ    | 0      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **0**     |
+| 25  | draw_card_gallery_manager.js                   | ✅ᴵ    | 0      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **0**     |
+| 26  | yeelight-cube-dotmatrix.js                     | ✅ᴵ    | 0      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **0**     |
+| 27  | yeelight-cube-palette-utils.js                 | ✅ᴵ    | 0      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **0**     |
+| 28  | service-call-utils.js                          | ✅ᴵ    | 0      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **0**     |
+| 29  | slider_utils.js                                | ✅ᴵ    | 0      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **0**     |
+| 30  | carousel-utils.js                              | ⚠️     | 1      | 1      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **2**     |
+| 31  | compact-mode-styles.js                         | 🗑️     | 1      | 0      | 0     | 0      | 0     | 0      | 0     | 1      | 0      | 0      | **2**     |
+| 32  | compact-layout-utils.js                        | ✅     | 0      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 1      | 0      | **1**     |
+| 33  | wheel-navigation-utils.js                      | ✅     | 0      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **0**     |
+| 34  | entity-selector-utils.js                       | ✅     | 0      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **0**     |
+| 35  | form-row-utils.js                              | ⚠️     | 1      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **1**     |
+| 36  | pagination-utils.js                            | ⚠️     | 1      | 0      | 0     | 1      | 0     | 0      | 0     | 0      | 0      | 0      | **2**     |
+| 37  | button-group-utils.js                          | ✅     | 0      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **0**     |
+| 38  | editor_ui_utils.js                             | ✅     | 0      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **0**     |
+| 39  | gallery-mode-utils.js                          | ⚠️     | 2      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **2**     |
+| 40  | gallery-display-utils.js                       | ⚠️     | 2      | 0      | 0     | 1      | 0     | 0      | 0     | 0      | 0      | 0      | **3**     |
+| 41  | grid-mode-utils.js                             | ⚠️     | 2      | 0      | 0     | 1      | 0     | 0      | 0     | 0      | 0      | 0      | **3**     |
+| 42  | list-mode-utils.js                             | ⚠️     | 2      | 0      | 0     | 1      | 0     | 0      | 0     | 0      | 0      | 0      | **3**     |
+| 43  | album-view-coverflow.js                        | ✅     | 0      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **0**     |
+| 44  | delete-button-styles.js                        | ⚠️     | 3      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **3**     |
+| 45  | export-import-button-utils.js                  | ⚠️     | 3      | 0      | 0     | 0      | 0     | 0      | 0     | 0      | 0      | 0      | **3**     |
+|     | **TOTALS**                                     |        | **30** | **26** | **4** | **14** | **4** | **0**  | **4** | **15** | **5**  | **12** | **114**   |
 
 Legend: ✅ = Clean, ✅ᴵ = INTENTIONAL hardcoded colors (device/pixel-art), ⚠️ = Has issues, 🗑️ = Deprecated
 
@@ -62,18 +62,18 @@ Legend: ✅ = Clean, ✅ᴵ = INTENTIONAL hardcoded colors (device/pixel-art), �
 
 ## Category Totals (ranked by severity)
 
-| Rank | Category | Issue Count | Severity |
-|------|----------|-------------|----------|
-| 1 | **Colors** (hardcoded, not themed) | 30 | Medium |
-| 2 | **Accessibility** | 26 | **Critical** |
-| 3 | **Maintainability** | 15 | Medium |
-| 4 | **Duplication** | 14 | Low-Medium |
-| 5 | **Security** (innerHTML) | 12 | Medium |
-| 6 | **Browser Compat** | 5 | Low |
-| 7 | **Performance** | 4 | Low |
-| 8 | **Responsiveness** | 4 | Low |
-| 9 | **UX Polish** | 4 | Low |
-| 10 | **Error Handling** | 0 | ✅ Good |
+| Rank | Category                           | Issue Count | Severity     |
+| ---- | ---------------------------------- | ----------- | ------------ |
+| 1    | **Colors** (hardcoded, not themed) | 30          | Medium       |
+| 2    | **Accessibility**                  | 26          | **Critical** |
+| 3    | **Maintainability**                | 15          | Medium       |
+| 4    | **Duplication**                    | 14          | Low-Medium   |
+| 5    | **Security** (innerHTML)           | 12          | Medium       |
+| 6    | **Browser Compat**                 | 5           | Low          |
+| 7    | **Performance**                    | 4           | Low          |
+| 8    | **Responsiveness**                 | 4           | Low          |
+| 9    | **UX Polish**                      | 4           | Low          |
+| 10   | **Error Handling**                 | 0           | ✅ Good      |
 
 ---
 
@@ -619,6 +619,7 @@ All colors in `var()` fallbacks. ✅
 ### CRITICAL: Accessibility Gap (26 issues, affects ALL card files)
 
 Across **45 files and ~25,000+ lines of JavaScript**, the audit found:
+
 - **1 single `tabindex` attribute** (across all files)
 - **0 `aria-label` attributes**
 - **0 `role` attributes**
@@ -628,6 +629,7 @@ Across **45 files and ~25,000+ lines of JavaScript**, the audit found:
 This means the entire frontend is **inaccessible to screen readers, keyboard-only users, and assistive technologies**.
 
 **Recommended fix priority:**
+
 1. Add `aria-label` to ALL buttons, sliders, and interactive elements
 2. Add `role="button"` to clickable `<div>`/`<span>` elements
 3. Add `tabindex="0"` to interactive elements not natively focusable
@@ -640,15 +642,15 @@ This means the entire frontend is **inaccessible to screen readers, keyboard-onl
 
 The same hardcoded border pattern appears across 7 files with 4 different hex values:
 
-| File | Border Color |
-|------|-------------|
-| compact-mode-styles.js | `#e1e4e8` |
-| form-row-utils.js | `#d0d7de` |
-| grid-mode-utils.js | `#d0d7de` |
-| list-mode-utils.js | `#d0d7de` / `#bcc5d0` |
-| yeelight-cube-palette-card-editor.js | `#cfd8dc` |
-| yeelight-cube-color-list-editor-card-editor.js | `#cfd8dc` / `#e0e0e0` |
-| editor_ui_utils.js | `#cfd8dc` (in var() ✅) |
+| File                                           | Border Color            |
+| ---------------------------------------------- | ----------------------- |
+| compact-mode-styles.js                         | `#e1e4e8`               |
+| form-row-utils.js                              | `#d0d7de`               |
+| grid-mode-utils.js                             | `#d0d7de`               |
+| list-mode-utils.js                             | `#d0d7de` / `#bcc5d0`   |
+| yeelight-cube-palette-card-editor.js           | `#cfd8dc`               |
+| yeelight-cube-color-list-editor-card-editor.js | `#cfd8dc` / `#e0e0e0`   |
+| editor_ui_utils.js                             | `#cfd8dc` (in var() ✅) |
 
 **Fix:** Standardize ALL borders to `var(--divider-color, #d0d7de)` — pick one fallback value.
 
@@ -656,16 +658,17 @@ The same hardcoded border pattern appears across 7 files with 4 different hex va
 
 ### Security: innerHTML Usage (25 occurrences)
 
-| File | Count | Risk Level |
-|------|-------|------------|
-| yeelight-cube-color-list-editor-card.js | 8 | Medium — some interpolate state data |
-| yeelight-cube-gradient-card.js | 6 | Low — mostly static templates |
-| yeelight-cube-lamp-preview-card.js | 6 | Medium — interpolates entity state values |
-| yeelight-cube-palette-card.js | 2 | Low |
-| yeelight-cube-calibration-card.js | 1 | Low |
-| draw_card_palette_ui.js | 1 | Medium — interpolates palette names |
+| File                                    | Count | Risk Level                                |
+| --------------------------------------- | ----- | ----------------------------------------- |
+| yeelight-cube-color-list-editor-card.js | 8     | Medium — some interpolate state data      |
+| yeelight-cube-gradient-card.js          | 6     | Low — mostly static templates             |
+| yeelight-cube-lamp-preview-card.js      | 6     | Medium — interpolates entity state values |
+| yeelight-cube-palette-card.js           | 2     | Low                                       |
+| yeelight-cube-calibration-card.js       | 1     | Low                                       |
+| draw_card_palette_ui.js                 | 1     | Medium — interpolates palette names       |
 
 **Recommendation:** For HTMLElement-based cards, `innerHTML` is the primary rendering mechanism. The risk is low since data comes from HA state (trusted), but consider:
+
 1. Using `textContent` for single text assignments (e.g., `overlay.innerHTML = "👁"`)
 2. Sanitizing any user-editable strings (palette names, pixel art names) before interpolation
 3. Long-term: migrate HTMLElement cards to LitElement for template safety
@@ -674,10 +677,10 @@ The same hardcoded border pattern appears across 7 files with 4 different hex va
 
 ### Architecture: Mixed HTMLElement vs LitElement
 
-| Base Class | Cards | Concerns |
-|------------|-------|----------|
-| **HTMLElement** | gradient-card, lamp-preview-card, palette-card, color-list-editor-card, calibration-card, draw_card_palette_ui | No reactive properties, imperative innerHTML, manual lifecycle |
-| **LitElement** | draw-card, draw-card-editor, gradient-card-editor, lamp-preview-card-editor, palette-card-editor, color-list-editor-card-editor | Reactive, template-based, proper lifecycle |
+| Base Class      | Cards                                                                                                                           | Concerns                                                       |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| **HTMLElement** | gradient-card, lamp-preview-card, palette-card, color-list-editor-card, calibration-card, draw_card_palette_ui                  | No reactive properties, imperative innerHTML, manual lifecycle |
+| **LitElement**  | draw-card, draw-card-editor, gradient-card-editor, lamp-preview-card-editor, palette-card-editor, color-list-editor-card-editor | Reactive, template-based, proper lifecycle                     |
 
 The HTMLElement cards are the ones with the most issues (maintainability, security, performance). Consider gradual migration to LitElement.
 
@@ -685,20 +688,20 @@ The HTMLElement cards are the ones with the most issues (maintainability, securi
 
 ## Priority Action Plan
 
-| Priority | Action | Files Affected | Est. Effort |
-|----------|--------|---------------|-------------|
-| **P0** | Fix remaining hardcoded borders → `var(--divider-color)` | 7 utils + 2 editors | 30 min |
-| **P0** | Fix `#dc3545`/`#fee` in gallery-mode-utils | 1 file | 5 min |
-| **P1** | Fix hardcoded `#ffffff` in disabled states | 3 files | 10 min |
-| **P1** | Fix delete-button-styles.js gradients → `var(--error-color)` | 1 file | 15 min |
-| **P1** | Fix export-import-button-utils.js active states | 1 file | 15 min |
-| **P1** | Fix `rgba(255,255,255,*)` overlays → `color-mix()` | 3 card files | 20 min |
-| **P2** | Add basic ARIA labels to all interactive elements | All card files | 2-3 hours |
-| **P2** | Extract duplicated angle-wheel code to shared module | gradient-card + color-list-editor | 1 hour |
-| **P2** | Consolidate pagination styles | draw_card_styles + pagination-utils | 30 min |
-| **P3** | Add `disconnectedCallback` to HTMLElement cards | 4 card files | 30 min |
-| **P3** | Guard `console.*` calls with debug flag | 8 files | 30 min |
-| **P3** | Add keyboard support to interactive elements | All card files | 4-6 hours |
-| **P4** | Add `@media` queries to large cards | 3 card files | 2 hours |
-| **P4** | Split large files (>3000 lines) | 3 card files | Day+ |
-| **P4** | Delete deprecated compact-mode-styles.js | 1 file | 5 min |
+| Priority | Action                                                       | Files Affected                      | Est. Effort |
+| -------- | ------------------------------------------------------------ | ----------------------------------- | ----------- |
+| **P0**   | Fix remaining hardcoded borders → `var(--divider-color)`     | 7 utils + 2 editors                 | 30 min      |
+| **P0**   | Fix `#dc3545`/`#fee` in gallery-mode-utils                   | 1 file                              | 5 min       |
+| **P1**   | Fix hardcoded `#ffffff` in disabled states                   | 3 files                             | 10 min      |
+| **P1**   | Fix delete-button-styles.js gradients → `var(--error-color)` | 1 file                              | 15 min      |
+| **P1**   | Fix export-import-button-utils.js active states              | 1 file                              | 15 min      |
+| **P1**   | Fix `rgba(255,255,255,*)` overlays → `color-mix()`           | 3 card files                        | 20 min      |
+| **P2**   | Add basic ARIA labels to all interactive elements            | All card files                      | 2-3 hours   |
+| **P2**   | Extract duplicated angle-wheel code to shared module         | gradient-card + color-list-editor   | 1 hour      |
+| **P2**   | Consolidate pagination styles                                | draw_card_styles + pagination-utils | 30 min      |
+| **P3**   | Add `disconnectedCallback` to HTMLElement cards              | 4 card files                        | 30 min      |
+| **P3**   | Guard `console.*` calls with debug flag                      | 8 files                             | 30 min      |
+| **P3**   | Add keyboard support to interactive elements                 | All card files                      | 4-6 hours   |
+| **P4**   | Add `@media` queries to large cards                          | 3 card files                        | 2 hours     |
+| **P4**   | Split large files (>3000 lines)                              | 3 card files                        | Day+        |
+| **P4**   | Delete deprecated compact-mode-styles.js                     | 1 file                              | 5 min       |

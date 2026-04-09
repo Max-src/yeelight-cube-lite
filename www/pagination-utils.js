@@ -42,7 +42,7 @@ export const paginationStyles = `
   .draw-btn:disabled,
   .draw-btn.disabled {
     background: var(--disabled-text-color, #bdbdbd) !important;
-    color: #ffffff !important;
+    color: var(--text-primary-color, #fff) !important;
     cursor: not-allowed !important;
     opacity: 0.6;
   }

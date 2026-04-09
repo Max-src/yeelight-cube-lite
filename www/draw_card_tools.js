@@ -194,7 +194,7 @@ export class ToolManager {
             title="${isVisible ? "Hide tool" : "Show tool"}"
             style="position: absolute; top: -12px; left: 50%; transform: translateX(-50%); font-size: 16px; color: ${isVisible
               ? "var(--primary-color, #0077cc)"
-              : "var(--divider-color, #ccc)"}; cursor: pointer; z-index: 10; user-select: none; background: rgba(0, 119, 204, 0.1); border-radius: 4px; padding: 4px; border: 2px solid rgba(0, 119, 204, 0.3); line-height: 1; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;"
+              : "var(--divider-color, #ccc)"}; cursor: pointer; z-index: 10; user-select: none; background: color-mix(in srgb, var(--primary-color, #0077cc) 10%, transparent); border-radius: 4px; padding: 4px; border: 2px solid color-mix(in srgb, var(--primary-color, #0077cc) 30%, transparent); line-height: 1; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;"
             @click="${(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -556,7 +556,7 @@ export class ActionManager {
                 <div
                   class="action-spacer-indicator"
                   title="Spacer item (for alignment)"
-                  style="position: absolute; top: -12px; left: 50%; transform: translateX(-50%); font-size: 12px; color: #999; cursor: default; z-index: 10; user-select: none; background: rgba(153, 153, 153, 0.1); border-radius: 4px; padding: 2px 4px; border: 1px dashed #999; line-height: 1; display: flex; align-items: center; justify-content: center;"
+                  style="position: absolute; top: -12px; left: 50%; transform: translateX(-50%); font-size: 12px; color: var(--secondary-text-color, #999); cursor: default; z-index: 10; user-select: none; background: color-mix(in srgb, var(--divider-color, #999) 10%, transparent); border-radius: 4px; padding: 2px 4px; border: 1px dashed var(--divider-color, #999); line-height: 1; display: flex; align-items: center; justify-content: center;"
                 >
                   ⬜
                 </div>
@@ -594,7 +594,7 @@ export class ActionManager {
                 title="${isVisible ? "Hide action" : "Show action"}"
                 style="position: absolute; top: -12px; left: 50%; transform: translateX(-50%); font-size: 16px; color: ${isVisible
                   ? "var(--primary-color, #0077cc)"
-                  : "var(--divider-color, #ccc)"}; cursor: pointer; z-index: 10; user-select: none; background: rgba(0, 119, 204, 0.1); border-radius: 4px; padding: 4px; border: 2px solid rgba(0, 119, 204, 0.3); line-height: 1; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;"
+                  : "var(--divider-color, #ccc)"}; cursor: pointer; z-index: 10; user-select: none; background: color-mix(in srgb, var(--primary-color, #0077cc) 10%, transparent); border-radius: 4px; padding: 4px; border: 2px solid color-mix(in srgb, var(--primary-color, #0077cc) 30%, transparent); line-height: 1; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;"
                 @click="${(e) => {
                   e.preventDefault();
                   e.stopPropagation();

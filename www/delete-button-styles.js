@@ -119,7 +119,7 @@ export const deleteButtonStyles = `
   .delete-btn-cross.red-style::after {
     content: '' !important;
     position: absolute !important;
-    background: #fff !important;
+    background: var(--card-background-color, #fff) !important;
     box-shadow: 0 0 6px rgba(255, 255, 255, 0.8) !important;
     top: 50% !important;
     left: 50% !important;
@@ -158,7 +158,7 @@ export const deleteButtonStyles = `
   .delete-btn-cross.black-style::after {
     content: '' !important;
     position: absolute !important;
-    background: #fff !important;
+    background: var(--card-background-color, #fff) !important;
     box-shadow: 0 0 4px rgba(255, 255, 255, 0.5) !important;
     top: 50% !important;
     left: 50% !important;

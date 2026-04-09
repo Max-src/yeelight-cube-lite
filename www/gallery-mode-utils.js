@@ -133,7 +133,7 @@ export const galleryModeStyles = `
   .gallery-item-footer .delete-btn-icon {
     background: transparent;
     border: none;
-    color: #dc3545;
+    color: var(--error-color, #dc3545);
     font-size: 20px;
     line-height: 1;
     cursor: pointer;
@@ -148,7 +148,7 @@ export const galleryModeStyles = `
   .gallery-item-footer .delete-btn-minimal:hover,
   .gallery-item-footer .delete-btn-rounded:hover,
   .gallery-item-footer .delete-btn-icon:hover {
-    background: #fee;
+    background: color-mix(in srgb, var(--error-color, #dc3545) 7%, var(--card-background-color, #fff));
     transform: scale(1.1);
   }
 

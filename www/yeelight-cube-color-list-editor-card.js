@@ -661,7 +661,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           align-items: center;
           margin-bottom: 10px;
           background: var(--secondary-background-color, #fafbfc);
-          border: 1.5px solid #d0d7de;
+          border: 1.5px solid var(--divider-color, #d0d7de);
           border-radius: 14px;
           box-shadow: 0 2px 8px rgba(0,0,0,0.04);
           padding: 6px 12px;
@@ -707,7 +707,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         
         .color-row.full-row-color .hex-input:focus {
           background: rgba(255, 255, 255, 0.95) !important;
-          color: #000000 !important;
+          color: var(--primary-text-color, #000) !important;
           border: 2px solid rgba(255, 255, 255, 0.9) !important;
           outline: none;
           box-shadow: 
@@ -931,7 +931,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         }
         .compact-hex-input {
           padding: calc(4.29px * var(--card-size-multiplier, 0.7)) calc(8.57px * var(--card-size-multiplier, 0.7));
-          border: 1px solid #dee2e6;
+          border: 1px solid var(--divider-color, #dee2e6);
           border-radius: calc(5.71px * var(--card-size-multiplier, 0.7));
           font-family: monospace;
           font-size: calc(0.85em * var(--card-size-multiplier, 0.7));
@@ -1080,7 +1080,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         }
         .tile-hex-input {
           padding: 4px 8px;
-          border: 1px solid #dee2e6;
+          border: 1px solid var(--divider-color, #dee2e6);
           border-radius: 4px;
           width: 100px;
         }
@@ -1452,7 +1452,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           padding-top: 16px;
         }
         .angle-section.with-separator {
-          border-top: 1px solid #e6e6e6;
+          border-top: 1px solid var(--divider-color, #e6e6e6);
         }
         .angle-section.no-separator {
           border-top: none;
@@ -1591,7 +1591,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
         /* Runtime Controls */
         .runtime-controls {
-          border: 1.5px solid #d0d7de;
+          border: 1.5px solid var(--divider-color, #d0d7de);
           border-radius: 8px;
           padding: 12px;
           background: var(--secondary-background-color, #f7f8fa);
@@ -1621,7 +1621,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         
         .control-button {
           padding: 4px 8px;
-          border: 1px solid #d0d7de;
+          border: 1px solid var(--divider-color, #d0d7de);
           background: var(--card-background-color, white);
           border-radius: 4px;
           cursor: pointer;
@@ -1635,7 +1635,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
         .mode-btn {
           padding: 6px 10px;
-          border: 1px solid #d0d7de;
+          border: 1px solid var(--divider-color, #d0d7de);
           background: var(--card-background-color, white);
           border-radius: 6px;
           cursor: pointer;
@@ -1677,7 +1677,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         .mode-btn-colorized.active {
           transform: scale(1.05);
           box-shadow: 0 6px 20px rgba(0,0,0,0.25);
-          border-color: white;
+          border-color: var(--card-background-color, white);
         }
 
         .mode-btn-colorized::before {
@@ -1700,7 +1700,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         .mode-select {
           width: 100%;
           padding: 8px 12px;
-          border: 1px solid #d0d7de;
+          border: 1px solid var(--divider-color, #d0d7de);
           border-radius: 6px;
           background: var(--card-background-color, white);
           font-size: 0.9em;

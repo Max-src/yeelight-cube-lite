@@ -224,7 +224,7 @@ export const exportImportButtonStyles = `
   .tool-btn.tool-active.btn-style-classic {
     background: var(--primary-color-dark, #01579b) !important;
     color: var(--text-primary-color, #fff) !important;
-    border: 2px solid #fff !important;
+    border: 2px solid var(--card-background-color, #fff) !important;
     box-shadow: 0 0 0 3px var(--primary-color-dark, #01579b), 0 2px 10px rgba(1,87,155,0.45);
     transform: scale(1.06);
   }
@@ -239,7 +239,7 @@ export const exportImportButtonStyles = `
   .tool-btn.tool-active.btn-style-gradient {
     background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%) !important;
     border: 2px solid rgba(255,255,255,0.85) !important;
-    box-shadow: 0 0 0 3px #0d47a1, 0 3px 12px rgba(13,71,161,0.5);
+    box-shadow: 0 0 0 3px var(--primary-color-dark, #0d47a1), 0 3px 12px rgba(13,71,161,0.5);
     transform: scale(1.08);
   }
 
@@ -285,7 +285,7 @@ export const exportImportButtonStyles = `
 
   .force-refresh-btn {
     background: color-mix(in srgb, #ff9800 12%, var(--card-background-color, #fff));
-    color: #f9a825;
+    color: color-mix(in srgb, #ff9800 80%, var(--primary-text-color, #333));
   }
 
   .force-refresh-btn:hover {

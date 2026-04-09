@@ -213,7 +213,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
         }
         .button-group-btn.active {
           background: var(--primary-color, #0077cc);
-          color: white;
+          color: var(--text-primary-color, white);
         }
       `,
     ];
@@ -685,7 +685,9 @@ class YeelightCubePaletteCardEditor extends LitElement {
                 <div style="margin-bottom: 8px;">
                   No Yeelight Cube Lite entities found
                 </div>
-                <div style="font-size: 0.85em; color: var(--secondary-text-color, #999);">
+                <div
+                  style="font-size: 0.85em; color: var(--secondary-text-color, #999);"
+                >
                   Make sure you have Yeelight Cube Lite devices configured in
                   this integration
                 </div>

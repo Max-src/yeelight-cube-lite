@@ -3611,7 +3611,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           background: var(--card-background-color, #fff);
         }
         .brightness-capsule-dark {
-          background: #2c2c2c;
+          background: var(--secondary-background-color, #2c2c2c);
         }
         .brightness-capsule-transparent {
           background: transparent;
@@ -3635,7 +3635,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           background: var(--divider-color, #d0d0d0);
         }
         .brightness-capsule-dark .capsule-track {
-          background: #1a1a1a;
+          background: var(--primary-background-color, #1a1a1a);
         }
         .brightness-capsule-transparent .capsule-track {
           background: var(--divider-color, #d0d0d0);
@@ -3670,7 +3670,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           border-color: var(--divider-color, rgba(0, 0, 0, 0.1));
         }
         .brightness-capsule-dark .capsule-thumb {
-          background: #1a1a1a;
+          background: var(--primary-background-color, #1a1a1a);
           border-color: rgba(255, 255, 255, 0.2);
         }
         .brightness-capsule-transparent .capsule-thumb {
@@ -4383,7 +4383,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           width: 20px;
           height: 20px;
           border-radius: 50%;
-          background: linear-gradient(145deg, var(--primary-color, #03a9f4), #0288d1);
+          background: linear-gradient(145deg, var(--primary-color, #03a9f4), var(--primary-color-dark, #0288d1));
           cursor: pointer;
           box-shadow: 0 2px 8px rgba(3, 169, 244, 0.5), 0 0 12px rgba(3, 169, 244, 0.3);
           transition: all 0.2s ease;
@@ -4397,7 +4397,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           width: 20px;
           height: 20px;
           border-radius: 50%;
-          background: linear-gradient(145deg, var(--primary-color, #03a9f4), #0288d1);
+          background: linear-gradient(145deg, var(--primary-color, #03a9f4), var(--primary-color-dark, #0288d1));
           cursor: pointer;
           border: none;
           box-shadow: 0 2px 8px rgba(3, 169, 244, 0.5), 0 0 12px rgba(3, 169, 244, 0.3);
@@ -4533,7 +4533,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
 
         .radial-icon.selected {
           font-size: 16px;
-          fill: #ffffff;
+          fill: var(--text-primary-color, #fff);
           filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.9));
         }
 

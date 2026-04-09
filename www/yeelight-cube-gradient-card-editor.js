@@ -268,7 +268,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
           padding: 8px 12px;
           font-size: 1em;
           border-radius: 8px;
-          border: 1px solid #cfd8dc;
+          border: 1px solid var(--divider-color, #cfd8dc);
           margin-top: 2px;
           margin-bottom: 10px;
           box-sizing: border-box;
@@ -293,7 +293,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
         }
         .config-row select {
           padding: 6px 12px;
-          border: 1.5px solid #d0d7de;
+          border: 1.5px solid var(--divider-color, #d0d7de);
           border-radius: 8px;
           background: var(--card-background-color, white);
           font-size: 0.9em;
@@ -302,7 +302,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
         }
         .config-row select:focus {
           outline: none;
-          border-color: #0969da;
+          border-color: var(--primary-color, #0969da);
           box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.1);
         }
         .toggle-label {
@@ -390,7 +390,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
           display: flex;
           border-radius: 8px;
           overflow: hidden;
-          border: 1.5px solid #d0d7de;
+          border: 1.5px solid var(--divider-color, #d0d7de);
           margin-top: 8px;
         }
 
@@ -404,7 +404,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
           font-weight: 500;
           cursor: pointer;
           transition: all 0.2s ease;
-          border-right: 1px solid #d0d7de;
+          border-right: 1px solid var(--divider-color, #d0d7de);
           text-align: center;
           white-space: nowrap;
         }

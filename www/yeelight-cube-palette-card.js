@@ -384,7 +384,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           align-items: flex-start;
           margin: 0 auto 10px auto;
           background: var(--secondary-background-color, #fafbfc);
-          border: 1.5px solid #d0d7de;
+          border: 1.5px solid var(--divider-color, #d0d7de);
           border-radius: 14px;
           box-shadow: 0 2px 8px rgba(0,0,0,0.04);
           padding: 6px 12px;
@@ -549,7 +549,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           background: rgba(255,255,255,0.25);
           border-color: rgba(255,255,255,0.4);
           transform: scale(1.1);
-          color: #ffe6e6;
+          color: color-mix(in srgb, var(--error-color, #f44336) 15%, var(--text-primary-color, #fff));
         }
         .palette-row {
           cursor: pointer;
@@ -621,7 +621,7 @@ class YeelightCubePaletteCard extends HTMLElement {
         .palette-compact-item {
           background: transparent;
           border: none;
-          border: 1px solid #e1e4e8;
+          border: 1px solid var(--divider-color, #e1e4e8);
           padding: calc(10px * var(--card-size-multiplier)) calc(8px * var(--card-size-multiplier));
           display: flex;
           align-items: center;
@@ -728,7 +728,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           align-items: center;
           justify-content: center;
           cursor: pointer;
-          color: #d73a49;
+          color: var(--error-color, #d73a49);
           font-size: 1.4em;
           font-weight: bold;
           transition: opacity 0.15s, background 0.15s;

@@ -123,9 +123,9 @@ class YeelightCubeDrawCardEditor extends LitElement {
           display: flex;
           align-items: center;
           justify-content: center;
-          background: rgba(0, 119, 204, 0.1);
+          background: color-mix(in srgb, var(--primary-color, #0077cc) 10%, transparent);
           border-radius: 6px;
-          border: 2px solid rgba(0, 119, 204, 0.2);
+          border: 2px solid color-mix(in srgb, var(--primary-color, #0077cc) 20%, transparent);
         }
         .layout-section-info {
           flex: 1;
@@ -1606,7 +1606,9 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 <div style="margin-bottom: 8px;">
                   No Yeelight Cube Lite entities found
                 </div>
-                <div style="font-size: 0.85em; color: var(--secondary-text-color, #999);">
+                <div
+                  style="font-size: 0.85em; color: var(--secondary-text-color, #999);"
+                >
                   Make sure you have Yeelight Cube Lite devices configured in
                   this integration
                 </div>

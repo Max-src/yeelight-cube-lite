@@ -111,8 +111,8 @@ export const gridModeStyles = `
     position: absolute;
     top: 10px;
     right: 10px;
-    background: rgba(255,255,255,0.95);
-    border: 1px solid rgba(0,0,0,0.1);
+    background: var(--card-background-color, rgba(255,255,255,0.95));
+    border: 1px solid color-mix(in srgb, var(--primary-text-color, #000) 10%, transparent);
     border-radius: 50%;
     width: 24px;
     height: 24px;
