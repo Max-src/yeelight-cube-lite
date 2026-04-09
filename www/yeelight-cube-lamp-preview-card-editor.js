@@ -57,8 +57,8 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
       show_brightness_slider: true, // Show brightness slider by default
       brightness_slider_style: "slider", // Default brightness slider style
       brightness_slider_appearance: "default", // Default slider appearance
-      brightness_theme: "light", // Default brightness theme (applies to all slider styles)
-      brightness_label_mode: "text", // Default brightness label mode
+      brightness_theme: "subtle", // Default brightness theme (matches section_style naming)
+      show_brightness_label: true, // Show "Brightness" label above slider
       ...config,
     };
   }
@@ -618,27 +618,17 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
                 <span class="toggle-slider"></span>
               </label>
             </div>
-            <div class="form-row">
-              <label>Brightness Label</label>
-              ${createButtonGroup(
-                [
-                  { value: "none", label: "None" },
-                  { value: "text", label: "Text" },
-                  { value: "icon", label: "Icon" },
-                  { value: "icon_text", label: "Icon + Text" },
-                ],
-                cfg.brightness_label_mode || "text",
-                createButtonGroupChangeHandler(
-                  "brightness_label_mode",
-                  (value) => {
-                    this._config = {
-                      ...this._config,
-                      brightness_label_mode: value,
-                    };
-                    this._fireConfigChanged();
-                  },
-                ),
-              )}
+            <div class="toggle-row">
+              <label class="toggle-label">Show Brightness Label</label>
+              <label class="toggle-switch">
+                <input
+                  id="show_brightness_label"
+                  type="checkbox"
+                  .checked="${cfg.show_brightness_label !== false}"
+                  @change="${this._valueChanged}"
+                />
+                <span class="toggle-slider"></span>
+              </label>
             </div>
             <div class="form-row">
               <label>Brightness Slider Style</label>
@@ -693,16 +683,27 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
               <label>Brightness Theme</label>
               ${createButtonGroup(
                 [
-                  { value: "light", label: "Light" },
-                  { value: "dark", label: "Dark" },
-                  { value: "transparent", label: "Transparent" },
+                  {
+                    value: "flat",
+                    label: "Flat",
+                    icon: "▬",
+                  },
+                  {
+                    value: "subtle",
+                    label: "Subtle",
+                    icon: "🔲",
+                  },
+                  {
+                    value: "filled",
+                    label: "Filled",
+                    icon: "■",
+                  },
                 ],
-                cfg.brightness_theme || cfg.capsule_theme || "light",
+                cfg.brightness_theme || (cfg.capsule_theme === "dark" ? "filled" : cfg.capsule_theme === "transparent" ? "flat" : "subtle"),
                 createButtonGroupChangeHandler("brightness_theme", (value) => {
                   this._config = {
                     ...this._config,
                     brightness_theme: value,
-                    capsule_theme: value,
                   };
                   this._fireConfigChanged();
                 }),

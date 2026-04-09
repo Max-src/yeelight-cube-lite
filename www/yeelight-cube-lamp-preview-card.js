@@ -2189,110 +2189,53 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       const sliderStyle = this.config.brightness_slider_style || "slider";
       const sliderAppearance =
         this.config.brightness_slider_appearance || "default";
-      const labelMode = this.config.brightness_label_mode || "text";
       const brightnessPercent = brightness;
-      const brightnessTheme =
-        this.config.brightness_theme || this.config.capsule_theme || "light";
 
-      // Generate label content based on mode
-      let labelContent = "";
-      if (labelMode === "text") {
-        labelContent = "Brightness";
-      } else if (labelMode === "icon") {
-        labelContent = "💡";
-      } else if (labelMode === "icon_text") {
-        labelContent = "💡 Brightness";
+      // Resolve brightness theme (migrate old values to section_style naming)
+      let brightnessTheme =
+        this.config.brightness_theme || this.config.capsule_theme || "subtle";
+      if (brightnessTheme === "light") brightnessTheme = "subtle";
+      else if (brightnessTheme === "dark") brightnessTheme = "filled";
+      else if (brightnessTheme === "transparent") brightnessTheme = "flat";
+
+      // Brightness label: simple show/hide (backward compat with old label modes)
+      let showLabel = this.config.show_brightness_label;
+      if (showLabel === undefined) {
+        showLabel = (this.config.brightness_label_mode || "text") !== "none";
       }
+      const labelContent = showLabel ? "Brightness" : "";
 
       html += `<div class="brightness-slider-container brightness-style-${sliderStyle} brightness-theme-${brightnessTheme}" onwheel="this.getRootNode().host.handleBrightnessWheel(event)">`;
 
       if (sliderStyle === "bar") {
-        // Mushroom-style bar with different label layouts
-        if (labelMode === "text" || labelMode === "icon_text") {
-          // Text or icon+text: show above, bar takes full width
-          html += `
-            ${
-              labelMode === "text"
-                ? `<div class="brightness-label">${labelContent}</div>`
-                : `<div class="brightness-label-with-icon">${labelContent}</div>`
-            }
-            <div class="brightness-bar-wrapper brightness-bar-full">
-              <div class="brightness-bar-track">
-                <div class="brightness-bar-fill" style="width: ${brightnessPercent}%"></div>
-                <input 
-                  type="range" 
-                  min="1" 
-                  max="100" 
-                  value="${brightness}" 
-                  class="brightness-slider brightness-slider-bar"
-                  onmousedown="this.getRootNode().host._startDrag()"
-                  ontouchstart="this.getRootNode().host._startDrag()"
-                  onmouseup="this.getRootNode().host._endDrag()"
-                  ontouchend="this.getRootNode().host._endDrag()"
-                  oninput="this.getRootNode().host.handleBrightnessChange(event)"
-                />
-              </div>
-              ${
-                this.config.show_brightness_percentage !== false
-                  ? `<div class="brightness-value-right">${brightnessPercent}%</div>`
-                  : ""
-              }
-            </div>
-          `;
-        } else if (labelMode === "icon") {
-          // Icon only: show large icon on left
-          html += `
-            <div class="brightness-bar-wrapper">
-              <span class="brightness-icon-large">${labelContent}</span>
-              <div class="brightness-bar-track">
-                <div class="brightness-bar-fill" style="width: ${brightnessPercent}%"></div>
-                <input 
-                  type="range" 
-                  min="1" 
-                  max="100" 
-                  value="${brightness}" 
-                  class="brightness-slider brightness-slider-bar"
-                  onmousedown="this.getRootNode().host._startDrag()"
-                  ontouchstart="this.getRootNode().host._startDrag()"
-                  onmouseup="this.getRootNode().host._endDrag()"
-                  ontouchend="this.getRootNode().host._endDrag()"
-                  oninput="this.getRootNode().host.handleBrightnessChange(event)"
-                />
-              </div>
-              ${
-                this.config.show_brightness_percentage !== false
-                  ? `<div class="brightness-value-right">${brightnessPercent}%</div>`
-                  : ""
-              }
-            </div>
-          `;
-        } else {
-          // None: just bar with percentage
-          html += `
-            <div class="brightness-bar-wrapper brightness-bar-full">
-              <div class="brightness-bar-track">
-                <div class="brightness-bar-fill" style="width: ${brightnessPercent}%"></div>
-                <input 
-                  type="range" 
-                  min="1" 
-                  max="100" 
-                  value="${brightness}" 
-                  class="brightness-slider brightness-slider-bar"
-                  onmousedown="this.getRootNode().host._startDrag()"
-                  ontouchstart="this.getRootNode().host._startDrag()"
-                  onmouseup="this.getRootNode().host._endDrag()"
-                  ontouchend="this.getRootNode().host._endDrag()"
-                  oninput="this.getRootNode().host.handleBrightnessChange(event)"
-                />
-              </div>
-              ${
-                this.config.show_brightness_percentage !== false
-                  ? `<div class="brightness-value-right">${brightnessPercent}%</div>`
-                  : ""
-              }
-            </div>
-          `;
+        // Mushroom-style bar
+        if (showLabel) {
+          html += `<div class="brightness-label">${labelContent}</div>`;
         }
+        html += `
+            <div class="brightness-bar-wrapper brightness-bar-full">
+              <div class="brightness-bar-track">
+                <div class="brightness-bar-fill" style="width: ${brightnessPercent}%"></div>
+                <input 
+                  type="range" 
+                  min="1" 
+                  max="100" 
+                  value="${brightness}" 
+                  class="brightness-slider brightness-slider-bar"
+                  onmousedown="this.getRootNode().host._startDrag()"
+                  ontouchstart="this.getRootNode().host._startDrag()"
+                  onmouseup="this.getRootNode().host._endDrag()"
+                  ontouchend="this.getRootNode().host._endDrag()"
+                  oninput="this.getRootNode().host.handleBrightnessChange(event)"
+                />
+              </div>
+              ${
+                this.config.show_brightness_percentage !== false
+                  ? `<div class="brightness-value-right">${brightnessPercent}%</div>`
+                  : ""
+              }
+            </div>
+          `;
       } else if (sliderStyle === "rotary") {
         // Rotary/circular dial style - 270 degree arc
         const angle = ((brightnessPercent - 1) / 99) * 270; // Map 1-100% to 0-270 degrees
@@ -2314,7 +2257,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
               </svg>
               <div class="rotary-center-content">
                 ${
-                  labelMode !== "none"
+                  showLabel
                     ? `<div class="rotary-label">${labelContent}</div>`
                     : ""
                 }
@@ -2337,12 +2280,8 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         `;
       } else if (sliderStyle === "capsule") {
         // Capsule/pill style with moon and sun icons - label always above
-        if (labelMode === "text") {
+        if (showLabel) {
           html += `<div class="brightness-label">${labelContent}</div>`;
-        } else if (labelMode === "icon") {
-          html += `<div class="brightness-label">${labelContent}</div>`;
-        } else if (labelMode === "icon_text") {
-          html += `<div class="brightness-label-with-icon">${labelContent}</div>`;
         }
 
         const capsuleTheme = brightnessTheme;
@@ -2387,141 +2326,49 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           </div>
         `;
       } else {
-        // Slider (default) style - unified minimal/compact with appearance options
+        // Slider (default) style
         const sliderClass = `brightness-slider-${sliderAppearance}`;
-
-        if (labelMode === "icon") {
-          // Icon only - show large icon on left
-          html += `
-            <div class="brightness-slider-wrapper">
-              <span class="brightness-icon-large">${labelContent}</span>
-              <input 
-                type="range" 
-                min="1" 
-                max="100" 
-                value="${brightness}" 
-                class="brightness-slider ${sliderClass}"
-                onmousedown="this.getRootNode().host._startDrag()"
-                ontouchstart="this.getRootNode().host._startDrag()"
-                onmouseup="this.getRootNode().host._endDrag()"
-                ontouchend="this.getRootNode().host._endDrag()"
-                oninput="this.getRootNode().host.handleBrightnessChange(event)"
-              />
-              ${
-                this.config.show_brightness_percentage !== false
-                  ? `<span class="brightness-value-slider">${brightnessPercent}%</span>`
-                  : ""
-              }
-            </div>
-          `;
-        } else if (labelMode === "icon_text") {
-          // Icon + text - show larger icon and text above slider
-          html += `
-            <div class="brightness-label-with-icon">${labelContent}</div>
-            <div class="brightness-slider-wrapper${
-              this.config.show_brightness_percentage !== false
-                ? ""
-                : " brightness-slider-full"
-            }">
-              <input 
-                type="range" 
-                min="1" 
-                max="100" 
-                value="${brightness}" 
-                class="brightness-slider ${sliderClass}"
-                onmousedown="this.getRootNode().host._startDrag()"
-                ontouchstart="this.getRootNode().host._startDrag()"
-                onmouseup="this.getRootNode().host._endDrag()"
-                ontouchend="this.getRootNode().host._endDrag()"
-                oninput="this.getRootNode().host.handleBrightnessChange(event)"
-              />
-              ${
-                this.config.show_brightness_percentage !== false
-                  ? `<span class="brightness-value-slider">${brightnessPercent}%</span>`
-                  : ""
-              }
-            </div>
-          `;
-        } else if (labelMode === "text") {
-          // Text only - show above slider
-          html += `
-            <div class="brightness-label">${labelContent}</div>
-            <div class="brightness-slider-wrapper${
-              this.config.show_brightness_percentage !== false
-                ? ""
-                : " brightness-slider-full"
-            }">
-              <input 
-                type="range" 
-                min="1" 
-                max="100" 
-                value="${brightness}" 
-                class="brightness-slider ${sliderClass}"
-                onmousedown="this.getRootNode().host._startDrag()"
-                ontouchstart="this.getRootNode().host._startDrag()"
-                onmouseup="this.getRootNode().host._endDrag()"
-                ontouchend="this.getRootNode().host._endDrag()"
-                oninput="this.getRootNode().host.handleBrightnessChange(event)"
-              />
-              ${
-                this.config.show_brightness_percentage !== false
-                  ? `<span class="brightness-value-slider">${brightnessPercent}%</span>`
-                  : ""
-              }
-            </div>
-          `;
-        } else {
-          // None - just slider
-          html += `
-            <div class="brightness-slider-wrapper${
-              this.config.show_brightness_percentage !== false
-                ? ""
-                : " brightness-slider-full"
-            }">
-              <input 
-                type="range" 
-                min="1" 
-                max="100" 
-                value="${brightness}" 
-                class="brightness-slider ${sliderClass}"
-                onmousedown="this.getRootNode().host._startDrag()"
-                ontouchstart="this.getRootNode().host._startDrag()"
-                onmouseup="this.getRootNode().host._endDrag()"
-                ontouchend="this.getRootNode().host._endDrag()"
-                oninput="this.getRootNode().host.handleBrightnessChange(event)"
-              />
-              ${
-                this.config.show_brightness_percentage !== false
-                  ? `<span class="brightness-value-slider">${brightnessPercent}%</span>`
-                  : ""
-              }
-            </div>
-          `;
+        if (showLabel) {
+          html += `<div class="brightness-label">${labelContent}</div>`;
         }
+        html += `
+            <div class="brightness-slider-wrapper${
+              this.config.show_brightness_percentage !== false
+                ? ""
+                : " brightness-slider-full"
+            }">
+              <input 
+                type="range" 
+                min="1" 
+                max="100" 
+                value="${brightness}" 
+                class="brightness-slider ${sliderClass}"
+                onmousedown="this.getRootNode().host._startDrag()"
+                ontouchstart="this.getRootNode().host._startDrag()"
+                onmouseup="this.getRootNode().host._endDrag()"
+                ontouchend="this.getRootNode().host._endDrag()"
+                oninput="this.getRootNode().host.handleBrightnessChange(event)"
+              />
+              ${
+                this.config.show_brightness_percentage !== false
+                  ? `<span class="brightness-value-slider">${brightnessPercent}%</span>`
+                  : ""
+              }
+            </div>
+          `;
       }
 
       html += `</div>`;
     } else if (this.config.show_brightness_percentage !== false) {
       // Slider is hidden but percentage should be shown
-      const labelMode = this.config.brightness_label_mode || "text";
-      let labelContent = "";
-      if (labelMode === "text") {
-        labelContent = "Brightness";
-      } else if (labelMode === "icon") {
-        labelContent = `<ha-icon icon="mdi:brightness-6"></ha-icon>`;
-      } else if (labelMode === "icon_text") {
-        labelContent = `<ha-icon icon="mdi:brightness-6"></ha-icon> Brightness`;
+      let showLabel = this.config.show_brightness_label;
+      if (showLabel === undefined) {
+        showLabel = (this.config.brightness_label_mode || "text") !== "none";
       }
 
       html += `<div class="brightness-controls">`;
-      if (labelMode !== "none") {
-        if (labelMode === "icon_text") {
-          html += `<div class="brightness-label-with-icon">${labelContent}</div>`;
-        } else if (labelMode === "text") {
-          html += `<div class="brightness-label">${labelContent}</div>`;
-        } else if (labelMode === "icon") {
-          html += `<span class="brightness-icon-large">${labelContent}</span>`;
-        }
+      if (showLabel) {
+        html += `<div class="brightness-label">Brightness</div>`;
       }
       html += `<div class="brightness-percentage-standalone">${brightness}%</div>`;
       html += `</div>`;
@@ -3331,16 +3178,6 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           color: var(--primary-text-color);
           text-align: left;
         }
-        .brightness-label-with-icon {
-          font-size: 18px;
-          font-weight: 600;
-          margin-bottom: 10px;
-          color: var(--primary-text-color);
-          text-align: left;
-          display: flex;
-          align-items: center;
-          gap: 6px;
-        }
         .brightness-slider-wrapper {
           display: flex;
           align-items: center;
@@ -3364,11 +3201,6 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           color: var(--primary-text-color);
           text-align: center;
           padding: 8px 0;
-        }
-        .brightness-icon-large {
-          font-size: 28px;
-          min-width: 32px;
-          text-align: center;
         }
         
         /* Slider Style - Default Appearance */
@@ -3609,13 +3441,13 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           border-radius: 50px;
           box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
-        .brightness-capsule-light {
+        .brightness-capsule-subtle {
           background: var(--card-background-color, #fff);
         }
-        .brightness-capsule-dark {
+        .brightness-capsule-filled {
           background: var(--secondary-background-color, #2c2c2c);
         }
-        .brightness-capsule-transparent {
+        .brightness-capsule-flat {
           background: transparent;
           box-shadow: none;
         }
@@ -3633,13 +3465,13 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           border-radius: 10px;
           overflow: visible;
         }
-        .brightness-capsule-light .capsule-track {
+        .brightness-capsule-subtle .capsule-track {
           background: var(--divider-color, #d0d0d0);
         }
-        .brightness-capsule-dark .capsule-track {
+        .brightness-capsule-filled .capsule-track {
           background: var(--primary-background-color, #1a1a1a);
         }
-        .brightness-capsule-transparent .capsule-track {
+        .brightness-capsule-flat .capsule-track {
           background: var(--divider-color, #d0d0d0);
         }
         .capsule-fill {
@@ -3667,15 +3499,15 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           z-index: 2;
           border: 2px solid var(--divider-color, rgba(0, 0, 0, 0.1));
         }
-        .brightness-capsule-light .capsule-thumb {
+        .brightness-capsule-subtle .capsule-thumb {
           background: var(--card-background-color, white);
           border-color: var(--divider-color, rgba(0, 0, 0, 0.1));
         }
-        .brightness-capsule-dark .capsule-thumb {
+        .brightness-capsule-filled .capsule-thumb {
           background: var(--primary-background-color, #1a1a1a);
           border-color: rgba(255, 255, 255, 0.2);
         }
-        .brightness-capsule-transparent .capsule-thumb {
+        .brightness-capsule-flat .capsule-thumb {
           background: var(--card-background-color, white);
           border-color: var(--divider-color, rgba(0, 0, 0, 0.1));
         }
@@ -3690,104 +3522,109 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         }
         
         /* ===== Brightness Theme: Container-level styles ===== */
-        /* Light theme container — subtle card bg, matches section style-subtle */
-        .brightness-slider-container.brightness-theme-light {
+        /* Flat — no bg, blends with card */
+        .brightness-slider-container.brightness-theme-flat {
+          background: transparent;
+          padding: 10px 0;
+        }
+        /* Subtle — light tinted bg, thin border */
+        .brightness-slider-container.brightness-theme-subtle {
           background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 40%, var(--card-background-color, #fff) 60%);
           border-radius: 12px;
           padding: 12px 14px;
           border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.08));
         }
-        /* Dark theme container — deeper bg, good contrast on both HA light/dark */
-        .brightness-slider-container.brightness-theme-dark {
+        /* Filled — deeper bg, strong contrast */
+        .brightness-slider-container.brightness-theme-filled {
           background: var(--secondary-background-color, #2c2c2c);
           border-radius: 12px;
           padding: 12px 14px;
           border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.08));
         }
-        /* Transparent theme container — blends with card background */
-        .brightness-slider-container.brightness-theme-transparent {
+        /* Capsule has its own inner chrome, reset outer container */
+        .brightness-style-capsule.brightness-theme-subtle,
+        .brightness-style-capsule.brightness-theme-filled {
           background: transparent;
+          border: none;
+          border-radius: 0;
           padding: 10px 0;
         }
 
         /* ===== Slider Style themed variants ===== */
-        /* Dark theme: reversed gradient, glow thumb */
-        .brightness-theme-dark .brightness-slider-default,
-        .brightness-theme-dark .brightness-slider-thick,
-        .brightness-theme-dark .brightness-slider-thin {
+        /* Filled theme: reversed gradient, glow thumb */
+        .brightness-theme-filled .brightness-slider-default,
+        .brightness-theme-filled .brightness-slider-thick,
+        .brightness-theme-filled .brightness-slider-thin {
           background: linear-gradient(to right, var(--primary-background-color, #111), var(--secondary-background-color, #444));
         }
-        .brightness-theme-dark .brightness-slider-default::-webkit-slider-thumb,
-        .brightness-theme-dark .brightness-slider-thick::-webkit-slider-thumb,
-        .brightness-theme-dark .brightness-slider-thin::-webkit-slider-thumb {
+        .brightness-theme-filled .brightness-slider-default::-webkit-slider-thumb,
+        .brightness-theme-filled .brightness-slider-thick::-webkit-slider-thumb,
+        .brightness-theme-filled .brightness-slider-thin::-webkit-slider-thumb {
           box-shadow: 0 0 8px rgba(255, 152, 0, 0.5), 0 2px 4px rgba(0,0,0,0.4);
         }
-        .brightness-theme-dark .brightness-slider-default::-moz-range-thumb,
-        .brightness-theme-dark .brightness-slider-thick::-moz-range-thumb,
-        .brightness-theme-dark .brightness-slider-thin::-moz-range-thumb {
+        .brightness-theme-filled .brightness-slider-default::-moz-range-thumb,
+        .brightness-theme-filled .brightness-slider-thick::-moz-range-thumb,
+        .brightness-theme-filled .brightness-slider-thin::-moz-range-thumb {
           box-shadow: 0 0 8px rgba(255, 152, 0, 0.5), 0 2px 4px rgba(0,0,0,0.4);
         }
-        /* Transparent theme: subtle track with no strong gradient */
-        .brightness-theme-transparent .brightness-slider-default,
-        .brightness-theme-transparent .brightness-slider-thick,
-        .brightness-theme-transparent .brightness-slider-thin {
+        /* Flat theme: subtle track with no strong gradient */
+        .brightness-theme-flat .brightness-slider-default,
+        .brightness-theme-flat .brightness-slider-thick,
+        .brightness-theme-flat .brightness-slider-thin {
           background: var(--divider-color, #d0d0d0);
         }
-        .brightness-theme-transparent .brightness-slider-default::-webkit-slider-thumb,
-        .brightness-theme-transparent .brightness-slider-thick::-webkit-slider-thumb,
-        .brightness-theme-transparent .brightness-slider-thin::-webkit-slider-thumb {
+        .brightness-theme-flat .brightness-slider-default::-webkit-slider-thumb,
+        .brightness-theme-flat .brightness-slider-thick::-webkit-slider-thumb,
+        .brightness-theme-flat .brightness-slider-thin::-webkit-slider-thumb {
           box-shadow: 0 1px 3px rgba(0,0,0,0.2);
         }
-        .brightness-theme-transparent .brightness-slider-default::-moz-range-thumb,
-        .brightness-theme-transparent .brightness-slider-thick::-moz-range-thumb,
-        .brightness-theme-transparent .brightness-slider-thin::-moz-range-thumb {
+        .brightness-theme-flat .brightness-slider-default::-moz-range-thumb,
+        .brightness-theme-flat .brightness-slider-thick::-moz-range-thumb,
+        .brightness-theme-flat .brightness-slider-thin::-moz-range-thumb {
           box-shadow: 0 1px 3px rgba(0,0,0,0.2);
         }
-        /* Light theme labels */
-        .brightness-theme-light .brightness-label,
-        .brightness-theme-light .brightness-label-with-icon,
-        .brightness-theme-light .brightness-value-slider,
-        .brightness-theme-light .brightness-value-right {
+        /* Subtle theme labels */
+        .brightness-theme-subtle .brightness-label,
+        .brightness-theme-subtle .brightness-value-slider,
+        .brightness-theme-subtle .brightness-value-right {
           color: var(--primary-text-color);
         }
-        /* Dark theme labels */
-        .brightness-theme-dark .brightness-label,
-        .brightness-theme-dark .brightness-label-with-icon,
-        .brightness-theme-dark .brightness-value-slider,
-        .brightness-theme-dark .brightness-value-right {
+        /* Filled theme labels */
+        .brightness-theme-filled .brightness-label,
+        .brightness-theme-filled .brightness-value-slider,
+        .brightness-theme-filled .brightness-value-right {
           color: var(--text-primary-color, #fff);
         }
-        /* Transparent theme labels — inherit from parent */
-        .brightness-theme-transparent .brightness-label,
-        .brightness-theme-transparent .brightness-label-with-icon {
+        /* Flat theme labels — inherit from parent */
+        .brightness-theme-flat .brightness-label {
           color: var(--primary-text-color);
         }
 
         /* ===== Bar Style themed variants ===== */
-        .brightness-theme-light .brightness-bar-track {
+        .brightness-theme-subtle .brightness-bar-track {
           background: var(--divider-color, rgba(0, 0, 0, 0.08));
         }
-        .brightness-theme-dark .brightness-bar-track {
+        .brightness-theme-filled .brightness-bar-track {
           background: var(--primary-background-color, rgba(0, 0, 0, 0.3));
         }
-        .brightness-theme-transparent .brightness-bar-track {
+        .brightness-theme-flat .brightness-bar-track {
           background: var(--divider-color, rgba(0, 0, 0, 0.06));
         }
 
         /* ===== Rotary Style themed variants ===== */
-        .brightness-theme-light .rotary-bg {
+        .brightness-theme-subtle .rotary-bg {
           stroke: var(--divider-color, rgba(0, 0, 0, 0.1));
         }
-        .brightness-theme-dark .rotary-bg {
+        .brightness-theme-filled .rotary-bg {
           stroke: var(--primary-background-color, rgba(0, 0, 0, 0.3));
         }
-        .brightness-theme-transparent .rotary-bg {
+        .brightness-theme-flat .rotary-bg {
           stroke: var(--divider-color, rgba(0, 0, 0, 0.08));
         }
-        .brightness-theme-dark .rotary-label {
+        .brightness-theme-filled .rotary-label {
           color: var(--text-primary-color, rgba(255,255,255,0.7));
         }
-        .brightness-theme-dark .rotary-value {
+        .brightness-theme-filled .rotary-value {
           color: var(--text-primary-color, #fff);
         }
 
