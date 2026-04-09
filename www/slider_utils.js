@@ -175,13 +175,13 @@ export const sliderStyles = css`
   }
 
   .form-row input[type="range"]::-webkit-slider-thumb:hover {
-    background: #1565c0;
+    background: var(--primary-color-dark, #1565c0);
     box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
     transform: scale(1.1);
   }
 
   .form-row input[type="range"]::-moz-range-thumb:hover {
-    background: #1565c0;
+    background: var(--primary-color-dark, #1565c0);
     box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3);
     transform: scale(1.1);
   }
@@ -189,10 +189,10 @@ export const sliderStyles = css`
   .form-row input[type="range"]::-webkit-slider-track {
     background: linear-gradient(
       to right,
-      #1976d2 0%,
-      #1976d2 var(--value-percent, 50%),
-      #e0e0e0 var(--value-percent, 50%),
-      #e0e0e0 100%
+      var(--primary-color, #1976d2) 0%,
+      var(--primary-color, #1976d2) var(--value-percent, 50%),
+      var(--divider-color, #e0e0e0) var(--value-percent, 50%),
+      var(--divider-color, #e0e0e0) 100%
     );
     height: 4px;
     border-radius: 2px;
@@ -579,7 +579,7 @@ export const buttonGroupStyles = css`
   .palette-mode-btn {
     padding: 6px 12px;
     border: 1px solid var(--divider-color, #ccc);
-    background: #f8f9fa;
+    background: var(--secondary-background-color, #f8f9fa);
     border-radius: 4px;
     cursor: pointer;
     font-size: 0.9em;
@@ -587,7 +587,7 @@ export const buttonGroupStyles = css`
   }
 
   .palette-mode-btn:hover {
-    background: #e9ecef;
+    background: color-mix(in srgb, var(--primary-color, #0077cc) 10%, var(--secondary-background-color, #e9ecef));
     border-color: var(--primary-color, #0077cc);
   }
 

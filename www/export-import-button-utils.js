@@ -222,10 +222,10 @@ export const exportImportButtonStyles = `
 
   /* Tool button style-specific active states */
   .tool-btn.tool-active.btn-style-classic {
-    background: #01579b !important;
+    background: var(--primary-color-dark, #01579b) !important;
     color: var(--text-primary-color, #fff) !important;
     border: 2px solid #fff !important;
-    box-shadow: 0 0 0 3px #01579b, 0 2px 10px rgba(1,87,155,0.45);
+    box-shadow: 0 0 0 3px var(--primary-color-dark, #01579b), 0 2px 10px rgba(1,87,155,0.45);
     transform: scale(1.06);
   }
 
@@ -258,7 +258,7 @@ export const exportImportButtonStyles = `
   /* Button Type-Specific Colors (Modern Style) */
   .add-btn {
     background: color-mix(in srgb, #4caf50 15%, var(--card-background-color, #fff));
-    color: #218838;
+    color: color-mix(in srgb, #4caf50 80%, var(--primary-text-color, #333));
   }
 
   .add-btn:hover {
@@ -276,7 +276,7 @@ export const exportImportButtonStyles = `
 
   .randomize-btn {
     background: color-mix(in srgb, #ff9800 15%, var(--card-background-color, #fff));
-    color: #e65100;
+    color: color-mix(in srgb, #ff9800 80%, var(--primary-text-color, #333));
   }
 
   .randomize-btn:hover {
@@ -321,7 +321,7 @@ export const exportImportButtonStyles = `
 
   .upload-btn {
     background: color-mix(in srgb, #4caf50 15%, var(--card-background-color, #fff));
-    color: #2e7d32;
+    color: color-mix(in srgb, #4caf50 80%, var(--primary-text-color, #333));
   }
 
   .upload-btn:hover {

@@ -90,7 +90,7 @@ export const drawCardStyles = css`
     height: 28px;
     margin: 0 4px;
     box-shadow: 0 1px 4px #0002;
-    border: 2px solid #fff;
+    border: 2px solid var(--card-background-color, #fff);
     cursor: pointer;
     transition: box-shadow 0.2s, border 0.2s;
     display: inline-block;
@@ -101,7 +101,7 @@ export const drawCardStyles = css`
     height: 28px;
     margin: 0 4px;
     box-shadow: 0 1px 4px #0002;
-    border: 2px solid #fff;
+    border: 2px solid var(--card-background-color, #fff);
     cursor: pointer;
     transition: box-shadow 0.2s, border 0.2s;
     display: inline-block;
@@ -745,12 +745,12 @@ export const drawCardStyles = css`
     justify-content: center;
   }
   .selected {
-    background: #d0ffe6 !important;
-    border: 2px solid #00ff99 !important;
+    background: color-mix(in srgb, var(--primary-color, #00ff99) 15%, var(--card-background-color, #fff)) !important;
+    border: 2px solid var(--primary-color, #00ff99) !important;
   }
   .paint-btn-circle.selected {
     border: none !important;
-    outline: 2.5px solid #00ff99;
+    outline: 2.5px solid var(--primary-color, #00ff99);
     outline-offset: 2px;
   }
   /* Palette card container modes */
@@ -1034,7 +1034,7 @@ export const drawCardStyles = css`
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #6464ff;
+    color: var(--primary-color, #6464ff);
     font-size: 1.2em;
     cursor: pointer;
     transition: background 0.2s, color 0.2s;
@@ -1827,22 +1827,22 @@ export const drawCardStyles = css`
   }
 
   .apply-to-matrix-btn {
-    background: #ff9800;
+    background: var(--accent-color, #ff9800);
     color: var(--text-primary-color, #fff);
   }
 
   .apply-to-matrix-btn:hover {
-    background: #f57c00;
+    background: color-mix(in srgb, var(--accent-color, #ff9800) 85%, black);
     transform: translateY(-1px);
   }
 
   .delete-pixelart-btn {
-    background: #f44336;
+    background: var(--error-color, #f44336);
     color: var(--text-primary-color, #fff);
   }
 
   .delete-pixelart-btn:hover {
-    background: #d32f2f;
+    background: color-mix(in srgb, var(--error-color, #f44336) 85%, black);
     transform: translateY(-1px);
   }
 
@@ -1924,7 +1924,7 @@ export const drawCardStyles = css`
     border: 2px dashed var(--primary-color, #0077cc);
     border-radius: 8px;
     padding: 8px;
-    background: rgba(0, 119, 204, 0.05);
+    background: color-mix(in srgb, var(--primary-color, #0077cc) 5%, transparent);
     margin: 4px 0;
   }
 
@@ -2042,7 +2042,7 @@ export const drawCardStyles = css`
 
   .tool-order-item.dragging {
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-    background: color-mix(in srgb, #ff9800 12%, var(--card-background-color, #fff));
+    background: color-mix(in srgb, var(--accent-color, #ff9800) 12%, var(--card-background-color, #fff));
     transform: scale(1.04);
     z-index: 1000;
   }

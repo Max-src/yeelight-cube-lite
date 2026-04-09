@@ -109,7 +109,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
           flex: 1;
           padding: 8px 12px;
           border-radius: 8px;
-          border: 1px solid #cfd8dc;
+          border: 1px solid var(--divider-color, #cfd8dc);
           font-size: 1em;
           background: var(--secondary-background-color, #f7f8fa);
           box-sizing: border-box;
@@ -191,7 +191,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
           flex-wrap: wrap;
           border-radius: 8px;
           overflow: hidden;
-          border: 1px solid #cfd8dc;
+          border: 1px solid var(--divider-color, #cfd8dc);
           gap: 1px;
         }
         .button-group-btn {
@@ -685,7 +685,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
                 <div style="margin-bottom: 8px;">
                   No Yeelight Cube Lite entities found
                 </div>
-                <div style="font-size: 0.85em; color: #999;">
+                <div style="font-size: 0.85em; color: var(--secondary-text-color, #999);">
                   Make sure you have Yeelight Cube Lite devices configured in
                   this integration
                 </div>
@@ -701,10 +701,10 @@ class YeelightCubePaletteCardEditor extends LitElement {
                 return html`
                   <div
                     style="display: flex; align-items: center; padding: 8px 12px; margin: 4px 0; border-radius: 6px; background: ${isSelected
-                      ? "#e3f2fd"
-                      : "white"}; border: 1px solid ${isSelected
-                      ? "#90caf9"
-                      : "#e0e0e0"}; transition: all 0.2s ease; cursor: pointer;"
+                      ? "color-mix(in srgb, var(--primary-color, #2196f3) 15%, var(--card-background-color, #fff))"
+                      : "var(--card-background-color, white)"}; border: 1px solid ${isSelected
+                      ? "var(--primary-color, #90caf9)"
+                      : "var(--divider-color, #e0e0e0)"}; transition: all 0.2s ease; cursor: pointer;"
                     @click="${() => this._toggleEntitySelection(entityId)}"
                   >
                     <input
@@ -746,7 +746,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
               applications
             </div>`
           : html`<div
-              style="padding: 8px 16px; font-size: 0.9em; color: #999; border-top: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f9f9f9); border-radius: 0 0 8px 8px; font-style: italic;"
+              style="padding: 8px 16px; font-size: 0.9em; color: var(--secondary-text-color, #999); border-top: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f9f9f9); border-radius: 0 0 8px 8px; font-style: italic;"
             >
               No entities selected - palettes will not be applied
             </div>`}

@@ -25,7 +25,7 @@ export const formRowStyles = css`
   }
   .config-row select {
     padding: 6px 12px;
-    border: 1.5px solid #d0d7de;
+    border: 1.5px solid var(--divider-color, #d0d7de);
     border-radius: 8px;
     background: var(--card-background-color, white);
     font-size: 0.9em;

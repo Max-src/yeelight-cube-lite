@@ -34,7 +34,7 @@ export const compactModeStyles = `
   .pixelart-compact-item,
   .palette-compact-item {
     background: transparent;
-    border: 1px solid #e1e4e8;
+    border: 1px solid var(--divider-color, #e1e4e8);
     padding: calc(12px * var(--preview-size-percent, 100%) / 100)
       calc(10px * var(--preview-size-percent, 100%) / 100);
     display: flex;

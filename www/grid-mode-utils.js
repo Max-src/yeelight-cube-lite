@@ -20,7 +20,7 @@ export const gridModeStyles = `
 
   .grid-item {
     background: var(--secondary-background-color, #fafbfc);
-    border: 1.5px solid #d0d7de;
+    border: 1.5px solid var(--divider-color, #d0d7de);
     border-radius: 12px;
     padding: 16px;
     position: relative;

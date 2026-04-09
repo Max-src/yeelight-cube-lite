@@ -105,14 +105,14 @@ class YeelightCubeDrawCardEditor extends LitElement {
           align-items: center;
           padding: 12px 16px;
           background: var(--secondary-background-color, #f8f9fa);
-          border: 2px solid #e1e5e9;
+          border: 2px solid var(--divider-color, #e1e5e9);
           border-radius: 8px;
           transition: all 0.2s ease;
           user-select: none;
         }
         .layout-section:hover {
           background: var(--secondary-background-color, #e9ecef);
-          border-color: #ced4da;
+          border-color: var(--divider-color, #ced4da);
         }
         .layout-section-icon {
           font-size: 32px !important;
@@ -736,7 +736,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
 
             <!-- Tool button appearance settings -->
             <div
-              style="margin-top:16px;border-top:1px solid #e0e0e0;padding-top:16px;"
+              style="margin-top:16px;border-top:1px solid var(--divider-color, #e0e0e0);padding-top:16px;"
             >
               <div class="config-row">
                 <label class="config-label">Button Shape</label>
@@ -959,7 +959,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
 
             <!-- Action button appearance settings -->
             <div
-              style="margin-top:16px;border-top:1px solid #e0e0e0;padding-top:16px;"
+              style="margin-top:16px;border-top:1px solid var(--divider-color, #e0e0e0);padding-top:16px;"
             >
               <div class="config-row">
                 <label class="config-label">Button Style</label>
@@ -1606,7 +1606,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 <div style="margin-bottom: 8px;">
                   No Yeelight Cube Lite entities found
                 </div>
-                <div style="font-size: 0.85em; color: #999;">
+                <div style="font-size: 0.85em; color: var(--secondary-text-color, #999);">
                   Make sure you have Yeelight Cube Lite devices configured in
                   this integration
                 </div>
@@ -1619,10 +1619,10 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 return html`
                   <div
                     style="display: flex; align-items: center; padding: 8px 12px; margin: 4px 0; border-radius: 6px; background: ${isSelected
-                      ? "#e3f2fd"
-                      : "#fff"}; cursor: pointer; border: 1px solid ${isSelected
-                      ? "#2196f3"
-                      : "#e0e0e0"};"
+                      ? "color-mix(in srgb, var(--primary-color, #2196f3) 15%, var(--card-background-color, #fff))"
+                      : "var(--card-background-color, #fff)"}; cursor: pointer; border: 1px solid ${isSelected
+                      ? "var(--primary-color, #2196f3)"
+                      : "var(--divider-color, #e0e0e0)"};"
                     @click="${() => this._toggleEntitySelection(entityId)}"
                   >
                     <input

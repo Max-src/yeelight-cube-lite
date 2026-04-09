@@ -35,7 +35,7 @@ export function renderListMode(items, options) {
         : "";
 
       return `
-        <div class="list-item ${itemClass}" data-index="${idx}" style="position:relative;padding:8px 12px;box-sizing:border-box;margin-bottom:10px;background:var(--secondary-background-color, #fafbfc);border:1.5px solid #d0d7de;border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,0.04);">
+        <div class="list-item ${itemClass}" data-index="${idx}" style="position:relative;padding:8px 12px;box-sizing:border-box;margin-bottom:10px;background:var(--secondary-background-color, #fafbfc);border:1.5px solid var(--divider-color, #d0d7de);border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,0.04);">
           <div style="display:flex;flex-direction:column;width:100%;${
             showDelete ? "padding-right:40px;" : ""
           }">
@@ -79,7 +79,7 @@ export const listModeStyles = `
     position: relative;
     padding: 8px 12px;
     background: var(--secondary-background-color, #fafbfc);
-    border: 1.5px solid #d0d7de;
+    border: 1.5px solid var(--divider-color, #d0d7de);
     border-radius: 14px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.04);
     transition: all 0.2s ease;
@@ -88,7 +88,7 @@ export const listModeStyles = `
 
   .list-item:hover {
     box-shadow: 0 4px 12px rgba(0,0,0,0.08);
-    border-color: #bcc5d0;
+    border-color: var(--divider-color, #bcc5d0);
   }
 
   /* List Item Title */
