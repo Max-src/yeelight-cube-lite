@@ -81,7 +81,7 @@ export const deleteButtonStyles = `
 
   /* Delete Button - Base Styles (Default Variant) */
   .delete-btn-cross {
-    background: #ffeaea;
+    background: color-mix(in srgb, var(--error-color, #db4437) 12%, var(--card-background-color, #fff));
     border: none;
     border-radius: 50%;
     color: var(--error-color, #db4437);
@@ -102,7 +102,7 @@ export const deleteButtonStyles = `
   }
 
   .delete-btn-cross:hover {
-    background: #ffd6d6;
+    background: color-mix(in srgb, var(--error-color, #db4437) 20%, var(--card-background-color, #fff));
     transform: scale(1.1);
   }
 
@@ -187,7 +187,7 @@ export const deleteButtonStyles = `
   .delete-btn-cross.trash-style {
     background: var(--card-background-color, rgba(255, 255, 255, 0.95)) !important;
     border: 1px solid rgba(211, 47, 47, 0.25) !important;
-    color: #d32f2f !important;
+    color: var(--error-color, #d32f2f) !important;
     font-size: 0 !important;
     width: 28px !important;
     height: 28px !important;

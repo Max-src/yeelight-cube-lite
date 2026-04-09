@@ -37,7 +37,7 @@ export const compactLayoutStyles = `
     
     padding: calc(4.29px * var(--card-size-multiplier, 0.7)) calc(8.57px * var(--card-size-multiplier, 0.7));
     border-radius: calc(8.57px * var(--card-size-multiplier, 0.7));
-    background: #f8f9fa;
+    background: var(--secondary-background-color, #f8f9fa);
     transition: all 0.2s;
     cursor: grab;
     width: fit-content;
@@ -47,7 +47,7 @@ export const compactLayoutStyles = `
   }
   
   .compact-item:hover {
-    background: #e9ecef;
+    background: color-mix(in srgb, var(--primary-text-color, #000) 8%, var(--secondary-background-color, #e9ecef));
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
   }
   
@@ -110,7 +110,7 @@ export const compactLayoutStyles = `
   
   .compact-title {
     font-weight: 500;
-    color: #24292f;
+    color: var(--primary-text-color, #24292f);
     font-size: calc(0.95em * var(--card-size-multiplier, 0.7));
     white-space: nowrap;
     overflow: hidden;

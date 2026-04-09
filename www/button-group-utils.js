@@ -39,7 +39,7 @@ export const buttonGroupStyles = css`
     display: flex !important;
     border-radius: 8px !important;
     overflow: hidden !important;
-    border: 1.5px solid #d0d7de !important;
+    border: 1.5px solid var(--divider-color, #d0d7de) !important;
     margin-top: 8px !important;
     gap: 0px !important;
   }
@@ -55,7 +55,7 @@ export const buttonGroupStyles = css`
     font-weight: 500 !important;
     cursor: pointer !important;
     transition: all 0.2s ease !important;
-    border-right: 1px solid #d0d7de !important;
+    border-right: 1px solid var(--divider-color, #d0d7de) !important;
     text-align: center !important;
     white-space: nowrap !important;
   }
@@ -69,11 +69,11 @@ export const buttonGroupStyles = css`
   }
 
   .btn-group-item.active {
-    background: #0969da !important;
+    background: var(--primary-color, #0969da) !important;
     color: var(--text-primary-color, #fff) !important;
   }
 
   .btn-group-item.active:hover {
-    background: #0860ca !important;
+    background: var(--primary-color, #0860ca) !important;
   }
 `;

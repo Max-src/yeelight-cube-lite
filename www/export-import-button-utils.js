@@ -216,14 +216,14 @@ export const exportImportButtonStyles = `
   /* Active tool state */
   .tool-btn.tool-active {
     background: var(--primary-color, #0077cc) !important;
-    color: white !important;
+    color: var(--text-primary-color, #fff) !important;
     box-shadow: 0 0 0 2px var(--primary-color, #0077cc), 0 2px 8px rgba(0,119,204,0.3);
   }
 
   /* Tool button style-specific active states */
   .tool-btn.tool-active.btn-style-classic {
     background: #01579b !important;
-    color: #fff !important;
+    color: var(--text-primary-color, #fff) !important;
     border: 2px solid #fff !important;
     box-shadow: 0 0 0 3px #01579b, 0 2px 10px rgba(1,87,155,0.45);
     transform: scale(1.06);
@@ -231,7 +231,7 @@ export const exportImportButtonStyles = `
 
   .tool-btn.tool-active.btn-style-outline {
     background: var(--primary-color, #03a9f4) !important;
-    color: white !important;
+    color: var(--text-primary-color, #fff) !important;
     border-color: var(--primary-color-dark, #0288d1) !important;
     box-shadow: 0 0 0 2px var(--primary-color-dark, #0288d1);
   }
@@ -245,24 +245,24 @@ export const exportImportButtonStyles = `
 
   .tool-btn.tool-active.btn-style-icon {
     background: var(--primary-color, #0077cc) !important;
-    color: white !important;
+    color: var(--text-primary-color, #fff) !important;
     box-shadow: 0 0 0 3px rgba(0,119,204,0.4);
   }
 
   .tool-btn.tool-active.btn-style-pill {
     background: var(--primary-color, #0077cc) !important;
-    color: white !important;
+    color: var(--text-primary-color, #fff) !important;
     box-shadow: 0 0 0 2px var(--primary-color, #0077cc);
   }
 
   /* Button Type-Specific Colors (Modern Style) */
   .add-btn {
-    background: #d4edda;
+    background: color-mix(in srgb, #4caf50 15%, var(--card-background-color, #fff));
     color: #218838;
   }
 
   .add-btn:hover {
-    background: #b3e6c3;
+    background: color-mix(in srgb, #4caf50 25%, var(--card-background-color, #fff));
   }
 
   .save-btn {
@@ -280,7 +280,7 @@ export const exportImportButtonStyles = `
   }
 
   .randomize-btn:hover {
-    background: #ffe0b2;
+    background: color-mix(in srgb, #ff9800 20%, var(--card-background-color, #fff));
   }
 
   .force-refresh-btn {
@@ -289,7 +289,7 @@ export const exportImportButtonStyles = `
   }
 
   .force-refresh-btn:hover {
-    background: #ffecb3;
+    background: color-mix(in srgb, #ff9800 18%, var(--card-background-color, #fff));
   }
 
   .power-btn {
@@ -303,7 +303,7 @@ export const exportImportButtonStyles = `
 
   .power-btn.off {
     background: var(--secondary-background-color, #f5f5f5);
-    color: #757575;
+    color: var(--secondary-text-color, #757575);
   }
 
   .power-btn.off:hover {
@@ -312,20 +312,20 @@ export const exportImportButtonStyles = `
 
   .clear-btn {
     background: color-mix(in srgb, var(--error-color, #db4437) 15%, var(--card-background-color, #fff));
-    color: #c62828;
+    color: var(--error-color, #c62828);
   }
 
   .clear-btn:hover {
-    background: #ffd6d6;
+    background: color-mix(in srgb, var(--error-color, #db4437) 25%, var(--card-background-color, #fff));
   }
 
   .upload-btn {
-    background: #e8f5e9;
+    background: color-mix(in srgb, #4caf50 15%, var(--card-background-color, #fff));
     color: #2e7d32;
   }
 
   .upload-btn:hover {
-    background: #c8e6c9;
+    background: color-mix(in srgb, #4caf50 25%, var(--card-background-color, #fff));
   }
 
   .apply-btn {
@@ -365,7 +365,7 @@ export const exportImportButtonStyles = `
   /* Classic Style */
   .btn-style-classic {
     background: var(--primary-color, #03a9f4);
-    color: white;
+    color: var(--text-primary-color, #fff);
     border: 2px solid transparent;
   }
 
@@ -382,13 +382,13 @@ export const exportImportButtonStyles = `
 
   .btn-style-outline:hover {
     background: var(--primary-color, #03a9f4);
-    color: white;
+    color: var(--text-primary-color, #fff);
   }
 
   /* Gradient Style */
   .btn-style-gradient {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
+    color: var(--text-primary-color, #fff);
     border: 2px solid transparent;
     box-shadow: 0 2px 8px rgba(118, 75, 162, 0.3);
   }
@@ -451,7 +451,7 @@ export const exportImportButtonStyles = `
   .force-refresh-btn.btn-style-gradient {
     background: linear-gradient(135deg, #fdd835 0%, #f9a825 100%);
     box-shadow: 0 2px 8px rgba(249, 168, 37, 0.3);
-    color: #fff;
+    color: var(--text-primary-color, #fff);
   }
 
   .force-refresh-btn.btn-style-gradient:hover {
@@ -481,7 +481,7 @@ export const exportImportButtonStyles = `
   .clear-btn.btn-style-gradient {
     background: linear-gradient(135deg, #ef5350 0%, #c62828 100%);
     box-shadow: 0 2px 8px rgba(198, 40, 40, 0.3);
-    color: white;
+    color: var(--text-primary-color, #fff);
   }
 
   .clear-btn.btn-style-gradient:hover {
@@ -492,7 +492,7 @@ export const exportImportButtonStyles = `
   .upload-btn.btn-style-gradient {
     background: linear-gradient(135deg, #66bb6a 0%, #43a047 100%);
     box-shadow: 0 2px 8px rgba(67, 160, 71, 0.3);
-    color: white;
+    color: var(--text-primary-color, #fff);
   }
 
   .upload-btn.btn-style-gradient:hover {
@@ -503,7 +503,7 @@ export const exportImportButtonStyles = `
   .apply-btn.btn-style-gradient {
     background: linear-gradient(135deg, #42a5f5 0%, #1e88e5 100%);
     box-shadow: 0 2px 8px rgba(30, 136, 229, 0.3);
-    color: white;
+    color: var(--text-primary-color, #fff);
   }
 
   .apply-btn.btn-style-gradient:hover {
@@ -514,7 +514,7 @@ export const exportImportButtonStyles = `
   .tool-btn.btn-style-gradient {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     box-shadow: 0 2px 8px rgba(118, 75, 162, 0.3);
-    color: white;
+    color: var(--text-primary-color, #fff);
   }
 
   .tool-btn.btn-style-gradient:hover {
@@ -540,7 +540,7 @@ export const exportImportButtonStyles = `
 
   .export-btn.btn-style-icon {
     background: #03a9f4;
-    color: white;
+    color: var(--text-primary-color, #fff);
   }
 
   .export-btn.btn-style-icon:hover {
@@ -549,7 +549,7 @@ export const exportImportButtonStyles = `
 
   .import-btn.btn-style-icon {
     background: #66bb6a;
-    color: white;
+    color: var(--text-primary-color, #fff);
   }
 
   .import-btn.btn-style-icon:hover {
@@ -558,7 +558,7 @@ export const exportImportButtonStyles = `
 
   .add-btn.btn-style-icon {
     background: #66bb6a;
-    color: white;
+    color: var(--text-primary-color, #fff);
   }
 
   .add-btn.btn-style-icon:hover {
@@ -567,7 +567,7 @@ export const exportImportButtonStyles = `
 
   .save-btn.btn-style-icon {
     background: #03a9f4;
-    color: white;
+    color: var(--text-primary-color, #fff);
   }
 
   .save-btn.btn-style-icon:hover {
@@ -576,7 +576,7 @@ export const exportImportButtonStyles = `
 
   .randomize-btn.btn-style-icon {
     background: #ff9800;
-    color: white;
+    color: var(--text-primary-color, #fff);
   }
 
   .randomize-btn.btn-style-icon:hover {
@@ -585,7 +585,7 @@ export const exportImportButtonStyles = `
 
   .force-refresh-btn.btn-style-icon {
     background: #f9a825;
-    color: white;
+    color: var(--text-primary-color, #fff);
   }
 
   .force-refresh-btn.btn-style-icon:hover {
@@ -594,7 +594,7 @@ export const exportImportButtonStyles = `
 
   .power-btn.btn-style-icon {
     background: var(--primary-color, #03a9f4);
-    color: white;
+    color: var(--text-primary-color, #fff);
   }
 
   .power-btn.btn-style-icon:hover {
@@ -602,17 +602,17 @@ export const exportImportButtonStyles = `
   }
 
   .power-btn.btn-style-icon.off {
-    background: #757575;
-    color: white;
+    background: var(--disabled-text-color, #757575);
+    color: var(--text-primary-color, #fff);
   }
 
   .power-btn.btn-style-icon.off:hover {
-    background: #616161;
+    background: var(--disabled-text-color, #616161);
   }
 
   .clear-btn.btn-style-icon {
     background: #ef5350;
-    color: white;
+    color: var(--text-primary-color, #fff);
   }
 
   .clear-btn.btn-style-icon:hover {
@@ -621,7 +621,7 @@ export const exportImportButtonStyles = `
 
   .upload-btn.btn-style-icon {
     background: #66bb6a;
-    color: white;
+    color: var(--text-primary-color, #fff);
   }
 
   .upload-btn.btn-style-icon:hover {
@@ -630,7 +630,7 @@ export const exportImportButtonStyles = `
 
   .apply-btn.btn-style-icon {
     background: #03a9f4;
-    color: white;
+    color: var(--text-primary-color, #fff);
   }
 
   .apply-btn.btn-style-icon:hover {
@@ -651,7 +651,7 @@ export const exportImportButtonStyles = `
 
   .tool-btn.tool-active.btn-style-icon {
     background: var(--primary-color, #0077cc);
-    color: white;
+    color: var(--text-primary-color, #fff);
   }
 
   /* Pill Style */

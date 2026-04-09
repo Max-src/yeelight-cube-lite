@@ -117,9 +117,9 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
       background: ${
         removeButtonStyle === "inside"
           ? "transparent"
-          : "rgba(255,255,255,0.95)"
+          : "var(--card-background-color, rgba(255,255,255,0.95))"
       };
-      border: ${removeButtonStyle === "inside" ? "none" : "2px solid #f0f0f0"};
+      border: ${removeButtonStyle === "inside" ? "none" : "2px solid var(--divider-color, #e0e0e0)"};
       border-radius: ${removeButtonStyle === "square" ? "0" : "50%"};
       box-shadow: ${
         removeButtonStyle === "inside" ? "none" : "0 2px 8px rgba(0,0,0,0.15)"
@@ -131,7 +131,7 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
       justify-content: center;
       font-size: ${removeButtonStyle === "inside" ? "2.2em" : "1.5em"};
       font-weight: bold;
-      color: #ff4444;
+      color: var(--error-color, #ff4444);
       cursor: pointer;
     }
 
@@ -154,11 +154,11 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
     
     .${classPrefix}-album-item .delete-btn-cross:hover,
     .${classPrefix}-album-item .album-remove-btn:hover {
-      color: #cc0000;
+      color: var(--error-color, #cc0000);
       background: ${
         removeButtonStyle === "inside"
           ? "rgba(255,255,255,0.1)"
-          : "rgba(255,255,255,1)"
+          : "var(--card-background-color, #fff)"
       };
     }
     
@@ -220,7 +220,7 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
     .album-nav-btn:hover {
       background: var(--card-background-color, white);
       box-shadow: 0 6px 16px rgba(0,0,0,0.2);
-      color: #000;
+      color: var(--primary-text-color, #000);
     }
     
     .album-nav-btn:active {

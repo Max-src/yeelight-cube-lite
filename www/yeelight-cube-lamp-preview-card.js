@@ -3374,7 +3374,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           width: 100%;
           height: 6px;
           border-radius: 3px;
-          background: linear-gradient(to right, #333, #fff);
+          background: linear-gradient(to right, var(--disabled-text-color, #333), var(--card-background-color, #fff));
           outline: none;
           -webkit-appearance: none;
           cursor: pointer;
@@ -3385,7 +3385,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           width: 18px;
           height: 18px;
           border-radius: 50%;
-          background: #ff9800;
+          background: var(--accent-color, #ff9800);
           cursor: pointer;
           box-shadow: 0 2px 4px rgba(0,0,0,0.3);
         }
@@ -3393,7 +3393,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           width: 18px;
           height: 18px;
           border-radius: 50%;
-          background: #ff9800;
+          background: var(--accent-color, #ff9800);
           cursor: pointer;
           border: none;
           box-shadow: 0 2px 4px rgba(0,0,0,0.3);
@@ -3404,7 +3404,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           width: 100%;
           height: 12px;
           border-radius: 6px;
-          background: linear-gradient(to right, #333, #fff);
+          background: linear-gradient(to right, var(--disabled-text-color, #333), var(--card-background-color, #fff));
           outline: none;
           -webkit-appearance: none;
           cursor: pointer;
@@ -3415,7 +3415,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           width: 24px;
           height: 24px;
           border-radius: 50%;
-          background: #ff9800;
+          background: var(--accent-color, #ff9800);
           cursor: pointer;
           box-shadow: 0 3px 6px rgba(0,0,0,0.4);
         }
@@ -3423,7 +3423,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           width: 24px;
           height: 24px;
           border-radius: 50%;
-          background: #ff9800;
+          background: var(--accent-color, #ff9800);
           cursor: pointer;
           border: none;
           box-shadow: 0 3px 6px rgba(0,0,0,0.4);
@@ -3434,7 +3434,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           width: 100%;
           height: 3px;
           border-radius: 2px;
-          background: linear-gradient(to right, #333, #fff);
+          background: linear-gradient(to right, var(--disabled-text-color, #333), var(--card-background-color, #fff));
           outline: none;
           -webkit-appearance: none;
           cursor: pointer;
@@ -3445,7 +3445,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           width: 14px;
           height: 14px;
           border-radius: 50%;
-          background: #ff9800;
+          background: var(--accent-color, #ff9800);
           cursor: pointer;
           box-shadow: 0 1px 3px rgba(0,0,0,0.3);
         }
@@ -3453,7 +3453,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           width: 14px;
           height: 14px;
           border-radius: 50%;
-          background: #ff9800;
+          background: var(--accent-color, #ff9800);
           cursor: pointer;
           border: none;
           box-shadow: 0 1px 3px rgba(0,0,0,0.3);
@@ -3562,7 +3562,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         }
         .rotary-progress {
           fill: none;
-          stroke: #ff9800;
+          stroke: var(--accent-color, #ff9800);
           stroke-width: 12;
           stroke-linecap: round;
           transition: stroke-dasharray 0.1s ease;
@@ -3784,7 +3784,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           width: 100%;
           height: 6px;
           border-radius: 3px;
-          background: linear-gradient(to right, #555, #aaa);
+          background: linear-gradient(to right, var(--disabled-text-color, #555), var(--divider-color, #aaa));
           outline: none;
           -webkit-appearance: none;
           cursor: pointer;
@@ -3795,7 +3795,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           width: 16px;
           height: 16px;
           border-radius: 50%;
-          background: #2196f3;
+          background: var(--primary-color, #2196f3);
           cursor: pointer;
           box-shadow: 0 2px 4px rgba(0,0,0,0.3);
         }
@@ -3803,7 +3803,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           width: 16px;
           height: 16px;
           border-radius: 50%;
-          background: #2196f3;
+          background: var(--primary-color, #2196f3);
           cursor: pointer;
           border: none;
           box-shadow: 0 2px 4px rgba(0,0,0,0.3);
@@ -3838,7 +3838,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           width: 8px;
           height: 8px;
           border-radius: 50%;
-          background: #ff9800;
+          background: var(--accent-color, #ff9800);
           margin-left: 6px;
           opacity: 0;
           transform: scale(0);
@@ -3959,7 +3959,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           width: 6px;
           height: 6px;
           border-radius: 50%;
-          background: #ff9800;
+          background: var(--accent-color, #ff9800);
           opacity: 0;
           transform: scale(0);
           transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
