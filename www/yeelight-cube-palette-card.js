@@ -932,7 +932,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           color: var(--secondary-text-color, #666);
           margin-top: calc(16px * var(--card-size-multiplier));
           padding-top: calc(12px * var(--card-size-multiplier));
-          border-top: 1px solid #eee;
+          border-top: 1px solid var(--divider-color, #eee);
           transition: font-size 0.2s ease, margin-top 0.2s ease, padding-top 0.2s ease;
         }
 

@@ -15,21 +15,21 @@ export const formRowStyles = css`
   }
   .config-label {
     font-weight: 500;
-    color: #333;
+    color: var(--primary-text-color, #333);
     font-size: 1em;
   }
   .toggle-label {
     font-weight: 500;
-    color: #333;
+    color: var(--primary-text-color, #333);
     font-size: 1em;
   }
   .config-row select {
     padding: 6px 12px;
     border: 1.5px solid #d0d7de;
     border-radius: 8px;
-    background: white;
+    background: var(--card-background-color, white);
     font-size: 0.9em;
-    color: #333;
+    color: var(--primary-text-color, #333);
     min-width: 140px;
   }
   .config-row select:focus {
@@ -66,7 +66,7 @@ export const formRowStyles = css`
     width: 18px;
     left: 3px;
     bottom: 3px;
-    background-color: white;
+    background-color: var(--card-background-color, white);
     transition: 0.2s;
     border-radius: 50%;
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
@@ -143,7 +143,7 @@ export function createSliderRow(label, value, config, onChange, unit = "") {
           style="flex: 1;"
         />
         <span
-          style="min-width: 45px; text-align: right; font-size: 0.9em; color: #666;"
+          style="min-width: 45px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
         >
           ${value}${unit}
         </span>

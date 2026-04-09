@@ -81,7 +81,7 @@ export const drawCardStyles = css`
     border-radius: 8px;
   }
   .palette-group-card.fold .palette-fold-content::-webkit-scrollbar-thumb {
-    background: #ccc;
+    background: var(--divider-color, #ccc);
     border-radius: 8px;
   }
   .color-swatch.round {
@@ -205,7 +205,7 @@ export const drawCardStyles = css`
     width: 12px;
     height: 12px;
     border-radius: 50%;
-    background: #ccc;
+    background: var(--divider-color, #ccc);
     box-shadow: 0 1px 2px #0002;
     margin: 0 1px;
     border: 1px solid #fff8;
@@ -2042,7 +2042,7 @@ export const drawCardStyles = css`
 
   .tool-order-item.dragging {
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-    background: #fffbe6;
+    background: color-mix(in srgb, #ff9800 12%, var(--card-background-color, #fff));
     transform: scale(1.04);
     z-index: 1000;
   }

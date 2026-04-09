@@ -101,7 +101,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
         }
         label {
           font-weight: 500;
-          color: #333;
+          color: var(--primary-text-color, #333);
           font-size: 1em;
         }
         input[type="text"],
@@ -137,7 +137,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
           left: 0;
           right: 0;
           bottom: 0;
-          background-color: #ccc;
+          background-color: var(--divider-color, #ccc);
           transition: 0.2s;
           border-radius: 24px;
         }
@@ -148,7 +148,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
           width: 18px;
           left: 3px;
           bottom: 3px;
-          background-color: white;
+          background-color: var(--card-background-color, white);
           transition: 0.2s;
           border-radius: 50%;
           box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
@@ -261,7 +261,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
 
   render() {
     if (!this._hass || !this._hass.states)
-      return html`<div style="padding: 20px; color: #666;">Loading...</div>`;
+      return html`<div style="padding: 20px; color: var(--secondary-text-color, #666);">Loading...</div>`;
     const config = this.config || {};
     const sensors = Object.keys(this._hass.states || {}).filter((eid) =>
       eid.startsWith("sensor."),
@@ -303,7 +303,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
             </div>
             <div class="form-row column">
               <label>Target Entities (optional)</label>
-              <div style="font-size: 0.9em; color: #666; margin-bottom: 8px;">
+              <div style="font-size: 0.9em; color: var(--secondary-text-color, #666); margin-bottom: 8px;">
                 Select which Yeelight Cube Lite lights should receive palette
                 applications. Leave empty to affect all lights.
               </div>
@@ -400,7 +400,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
                       />
                       <span
                         id="items_per_page_display"
-                        style="min-width: 35px; text-align: right; font-size: 0.9em; color: #666;"
+                        style="min-width: 35px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
                       >
                         ${config.items_per_page || 0}
                       </span>
@@ -438,7 +438,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
                 />
                 <span
                   id="card_size_display"
-                  style="min-width: 45px; text-align: right; font-size: 0.9em; color: #666;"
+                  style="min-width: 45px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
                 >
                   ${config.card_size || 50}%
                 </span>
@@ -565,7 +565,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
               : html`
                   <div class="form-row" style="opacity: 0.5;">
                     <label>Content Mode</label>
-                    <div style="font-size: 0.85em; color: #888;">
+                    <div style="font-size: 0.85em; color: var(--secondary-text-color, #888);">
                       Icon style always uses icon-only
                     </div>
                   </div>
@@ -624,7 +624,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
 
   _renderEntityPicker() {
     if (!this._hass || !this._hass.states) {
-      return html`<div style="color: #666; font-style: italic; padding: 8px;">
+      return html`<div style="color: var(--secondary-text-color, #666); font-style: italic; padding: 8px;">
         Loading entities...
       </div>`;
     }
@@ -657,7 +657,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
       >
         <!-- Header -->
         <div
-          style="padding: 12px 16px 8px 16px; font-weight: 500; color: #333; border-bottom: 1px solid #e8e8e8; background: #f5f5f5; border-radius: 8px 8px 0 0;"
+          style="padding: 12px 16px 8px 16px; font-weight: 500; color: var(--primary-text-color, #333); border-bottom: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f5f5f5); border-radius: 8px 8px 0 0;"
         >
           Yeelight Cube Lite Entities (${ourComponentEntities.length})
         </div>
@@ -666,7 +666,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
         <div style="max-height: 200px; overflow-y: auto; padding: 8px;">
           ${entitiesToShow.length === 0
             ? html`<div
-                style="color: #666; font-style: italic; text-align: center; padding: 20px;"
+                style="color: var(--secondary-text-color, #666); font-style: italic; text-align: center; padding: 20px;"
               >
                 <div style="margin-bottom: 8px;">
                   No Yeelight Cube Lite entities found
@@ -708,12 +708,12 @@ class YeelightCubePaletteCardEditor extends LitElement {
                     />
                     <div style="flex: 1;">
                       <div
-                        style="font-weight: 500; color: #333; margin-bottom: 2px;"
+                        style="font-weight: 500; color: var(--primary-text-color, #333); margin-bottom: 2px;"
                       >
                         ${friendlyName}
                       </div>
                       <div
-                        style="font-size: 0.85em; color: #666; font-family: monospace;"
+                        style="font-size: 0.85em; color: var(--secondary-text-color, #666); font-family: monospace;"
                       >
                         ${entityId}
                       </div>
@@ -726,13 +726,13 @@ class YeelightCubePaletteCardEditor extends LitElement {
         <!-- Footer info -->
         ${selectedEntities.length > 0
           ? html`<div
-              style="padding: 8px 16px; font-size: 0.9em; color: #666; border-top: 1px solid #e8e8e8; background: #f9f9f9; border-radius: 0 0 8px 8px;"
+              style="padding: 8px 16px; font-size: 0.9em; color: var(--secondary-text-color, #666); border-top: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f9f9f9); border-radius: 0 0 8px 8px;"
             >
               ${selectedEntities.length} entities selected for palette
               applications
             </div>`
           : html`<div
-              style="padding: 8px 16px; font-size: 0.9em; color: #999; border-top: 1px solid #e8e8e8; background: #f9f9f9; border-radius: 0 0 8px 8px; font-style: italic;"
+              style="padding: 8px 16px; font-size: 0.9em; color: #999; border-top: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f9f9f9); border-radius: 0 0 8px 8px; font-style: italic;"
             >
               No entities selected - palettes will not be applied
             </div>`}

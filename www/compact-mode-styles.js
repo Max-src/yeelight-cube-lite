@@ -48,7 +48,7 @@ export const compactModeStyles = `
 
   .pixelart-compact-item:hover,
   .palette-compact-item:hover {
-    background: #f6f8fa;
+    background: var(--secondary-background-color, #f6f8fa);
   }
 
   /* LEGACY: Compact Content Layout */

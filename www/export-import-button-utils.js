@@ -275,7 +275,7 @@ export const exportImportButtonStyles = `
   }
 
   .randomize-btn {
-    background: #fff3e0;
+    background: color-mix(in srgb, #ff9800 15%, var(--card-background-color, #fff));
     color: #e65100;
   }
 
@@ -284,7 +284,7 @@ export const exportImportButtonStyles = `
   }
 
   .force-refresh-btn {
-    background: #fff8e1;
+    background: color-mix(in srgb, #ff9800 12%, var(--card-background-color, #fff));
     color: #f9a825;
   }
 

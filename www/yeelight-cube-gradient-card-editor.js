@@ -259,7 +259,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
         }
         label {
           font-weight: 500;
-          color: #333;
+          color: var(--primary-text-color, #333);
           font-size: 1em;
         }
         input[type="text"],
@@ -288,16 +288,16 @@ class YeelightCubeGradientCardEditor extends LitElement {
         }
         .config-label {
           font-weight: 500;
-          color: #333;
+          color: var(--primary-text-color, #333);
           font-size: 1em;
         }
         .config-row select {
           padding: 6px 12px;
           border: 1.5px solid #d0d7de;
           border-radius: 8px;
-          background: white;
+          background: var(--card-background-color, white);
           font-size: 0.9em;
-          color: #333;
+          color: var(--primary-text-color, #333);
           min-width: 140px;
         }
         .config-row select:focus {
@@ -307,7 +307,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
         }
         .toggle-label {
           font-weight: 500;
-          color: #333;
+          color: var(--primary-text-color, #333);
           font-size: 1em;
         }
         .toggle-switch {
@@ -339,7 +339,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
           width: 18px;
           left: 3px;
           bottom: 3px;
-          background-color: white;
+          background-color: var(--card-background-color, white);
           transition: 0.2s;
           border-radius: 50%;
           box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
@@ -398,8 +398,8 @@ class YeelightCubeGradientCardEditor extends LitElement {
           flex: 1;
           padding: 8px 12px;
           border: none;
-          background: white;
-          color: #333;
+          background: var(--card-background-color, white);
+          color: var(--primary-text-color, #333);
           font-size: 0.85em;
           font-weight: 500;
           cursor: pointer;
@@ -414,12 +414,12 @@ class YeelightCubeGradientCardEditor extends LitElement {
         }
 
         .color-info-btn:hover {
-          background: #f6f8fa;
+          background: var(--secondary-background-color, #f6f8fa);
         }
 
         .color-info-btn.active {
-          background: #0969da;
-          color: white;
+          background: var(--primary-color, #0969da);
+          color: var(--text-primary-color, #fff);
         }
 
         .color-info-btn.active:hover {
@@ -732,7 +732,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
                   style="flex: 1;"
                 />
                 <span
-                  style="min-width: 45px; text-align: right; font-size: 0.9em; color: #666;"
+                  style="min-width: 45px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
                 >
                   ${cfg.rotary_size || 80}%
                 </span>
@@ -758,7 +758,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
                       <button
                         type="button"
                         @click="${this._resetGradientModeVisibility}"
-                        style="padding:4px 10px;border:1px solid #ddd;border-radius:4px;background:#f5f5f5;color:#666;cursor:pointer;font-size:0.8em;white-space:nowrap;"
+                        style="padding:4px 10px;border:1px solid var(--divider-color, #ddd);border-radius:4px;background:var(--secondary-background-color, #f5f5f5);color:var(--secondary-text-color, #666);cursor:pointer;font-size:0.8em;white-space:nowrap;"
                         title="Show all modes (reset visibility to all visible)"
                       >
                         👁 Reset
@@ -783,7 +783,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
               </div>
             </div>
             <div
-              style="font-size:0.85em;color:#666;margin-top:2px;margin-bottom:8px;"
+              style="font-size:0.85em;color:var(--secondary-text-color, #666);margin-top:2px;margin-bottom:8px;"
             >
               Enable mode editing: show/hide toggles appear on each gradient
               preview. Toggle visibility by clicking the eye icon (👁) on each
@@ -899,7 +899,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
                   style="flex: 1;"
                 />
                 <span
-                  style="min-width: 45px; text-align: right; font-size: 0.9em; color: #666;"
+                  style="min-width: 45px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
                 >
                   ${cfg.gallery_pixel_gap !== undefined
                     ? cfg.gallery_pixel_gap
@@ -922,7 +922,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
                   style="flex: 1;"
                 />
                 <span
-                  style="min-width: 45px; text-align: right; font-size: 0.9em; color: #666;"
+                  style="min-width: 45px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
                 >
                   ${cfg.gallery_preview_size || 200}px
                 </span>
@@ -1038,7 +1038,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
                         style="flex: 1;"
                       />
                       <span
-                        style="min-width: 45px; text-align: right; font-size: 0.9em; color: #666;"
+                        style="min-width: 45px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
                       >
                         ${cfg.wheel_height || 300}px
                       </span>

@@ -357,7 +357,7 @@ export const carouselStyles = `
     height: 10px;
     border-radius: 50%;
     border: none;
-    background: #ccc;
+    background: var(--divider-color, #ccc);
     cursor: pointer;
     transition: all 0.2s;
     padding: 0;

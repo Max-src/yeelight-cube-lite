@@ -117,7 +117,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
         .layout-section-icon {
           font-size: 32px !important;
           margin-right: 16px !important;
-          color: #333 !important;
+          color: var(--primary-text-color, #333) !important;
           min-width: 32px;
           min-height: 32px;
           display: flex;
@@ -133,12 +133,12 @@ class YeelightCubeDrawCardEditor extends LitElement {
         .layout-section-title {
           font-weight: 600;
           font-size: 1.1em;
-          color: #333;
+          color: var(--primary-text-color, #333);
           margin-bottom: 2px;
         }
         .layout-section-desc {
           font-size: 0.9em;
-          color: #666;
+          color: var(--secondary-text-color, #666);
         }
         .layout-section.section-hidden {
           opacity: 0.5;
@@ -146,7 +146,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
         }
         .layout-section.section-hidden .layout-section-title {
           text-decoration: line-through;
-          color: #888;
+          color: var(--secondary-text-color, #888);
         }
       `,
     ];
@@ -281,7 +281,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
 
     return html`
       <div class="layout-sections">
-        <p style="margin: 8px 0; color: #666; font-size: 0.9em;">
+        <p style="margin: 8px 0; color: var(--secondary-text-color, #666); font-size: 0.9em;">
           Sections to display:
         </p>
         ${sectionOrder.map((sectionId) => {
@@ -492,7 +492,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
         icon="mdi:chevron-down"
         style="transition:transform 0.4s;transform:rotate(${folded
           ? 0
-          : 180}deg);width:22px;height:22px;color:#666;"
+          : 180}deg);width:22px;height:22px;color:var(--secondary-text-color, #666);"
       ></ha-icon>
     `;
     return html`
@@ -703,7 +703,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                       <button
                         type="button"
                         @click="${this._resetToolVisibility}"
-                        style="padding:4px 10px;border:1px solid #ddd;border-radius:4px;background:#f5f5f5;color:#666;cursor:pointer;font-size:0.8em;white-space:nowrap;"
+                        style="padding:4px 10px;border:1px solid var(--divider-color, #ddd);border-radius:4px;background:var(--secondary-background-color, #f5f5f5);color:var(--secondary-text-color, #666);cursor:pointer;font-size:0.8em;white-space:nowrap;"
                         title="Show all tools (reset visibility to all visible)"
                       >
                         👁 Reset
@@ -724,7 +724,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 </label>
               </div>
             </div>
-            <div style="font-size:0.85em;color:#666;margin-top:4px;">
+            <div style="font-size:0.85em;color:var(--secondary-text-color, #666);margin-top:4px;">
               Enable tool editing mode: show/hide toggles appear above each
               tool. Toggle tool visibility by clicking the eye icon (👁) above
               each tool.
@@ -806,7 +806,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 : html`
                     <div class="config-row" style="opacity: 0.5;">
                       <label class="config-label">Content Mode</label>
-                      <div style="font-size: 0.85em; color: #888;">
+                      <div style="font-size: 0.85em; color: var(--secondary-text-color, #888);">
                         Icon style always uses icon-only
                       </div>
                     </div>
@@ -924,7 +924,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                       <button
                         type="button"
                         @click="${this._resetActionVisibility}"
-                        style="padding:4px 10px;border:1px solid #ddd;border-radius:4px;background:#f5f5f5;color:#666;cursor:pointer;font-size:0.8em;white-space:nowrap;"
+                        style="padding:4px 10px;border:1px solid var(--divider-color, #ddd);border-radius:4px;background:var(--secondary-background-color, #f5f5f5);color:var(--secondary-text-color, #666);cursor:pointer;font-size:0.8em;white-space:nowrap;"
                         title="Show all actions (reset visibility to all visible)"
                       >
                         👁 Reset
@@ -943,7 +943,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 </label>
               </div>
             </div>
-            <div style="font-size:0.85em;color:#666;margin-top:4px;">
+            <div style="font-size:0.85em;color:var(--secondary-text-color, #666);margin-top:4px;">
               Enable action editing mode: show/hide toggles appear above each
               action button. Toggle action visibility by clicking the eye icon
               (👁) above each button.
@@ -1006,7 +1006,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 : html`
                     <div class="config-row" style="opacity: 0.5;">
                       <label class="config-label">Content Mode</label>
-                      <div style="font-size: 0.85em; color: #888;">
+                      <div style="font-size: 0.85em; color: var(--secondary-text-color, #888);">
                         Icon style always uses icon-only
                       </div>
                     </div>
@@ -1379,7 +1379,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
               : html`
                   <div class="config-row" style="opacity: 0.5;">
                     <label class="config-label">Content Mode</label>
-                    <div style="font-size: 0.85em; color: #888;">
+                    <div style="font-size: 0.85em; color: var(--secondary-text-color, #888);">
                       Icon style always uses icon-only
                     </div>
                   </div>
@@ -1538,13 +1538,13 @@ class YeelightCubeDrawCardEditor extends LitElement {
 
   _renderEntityPicker() {
     if (!this._hass) {
-      return html`<div style="color: #666; font-style: italic; padding: 8px;">
+      return html`<div style="color: var(--secondary-text-color, #666); font-style: italic; padding: 8px;">
         Loading entities...
       </div>`;
     }
 
     if (!this._hass.states) {
-      return html`<div style="color: #666; font-style: italic; padding: 8px;">
+      return html`<div style="color: var(--secondary-text-color, #666); font-style: italic; padding: 8px;">
         No entities available
       </div>`;
     }
@@ -1576,7 +1576,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
       >
         <!-- Header -->
         <div
-          style="padding: 12px 16px 8px 16px; font-weight: 500; color: #333; border-bottom: 1px solid #e8e8e8; background: #f5f5f5; border-radius: 8px 8px 0 0;"
+          style="padding: 12px 16px 8px 16px; font-weight: 500; color: var(--primary-text-color, #333); border-bottom: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f5f5f5); border-radius: 8px 8px 0 0;"
         >
           Yeelight Cube Lite Entities (${ourComponentEntities.length})
         </div>
@@ -1585,7 +1585,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
         <div style="max-height: 200px; overflow-y: auto; padding: 8px;">
           ${ourComponentEntities.length === 0
             ? html`<div
-                style="color: #666; font-style: italic; text-align: center; padding: 20px;"
+                style="color: var(--secondary-text-color, #666); font-style: italic; text-align: center; padding: 20px;"
               >
                 <div style="margin-bottom: 8px;">
                   No Yeelight Cube Lite entities found
@@ -1617,10 +1617,10 @@ class YeelightCubeDrawCardEditor extends LitElement {
                       style="margin-right: 12px; transform: scale(1.2);"
                     />
                     <div style="flex: 1;">
-                      <div style="font-weight: 500; color: #333;">
+                      <div style="font-weight: 500; color: var(--primary-text-color, #333);">
                         ${friendlyName}
                       </div>
-                      <div style="font-size: 0.85em; color: #666;">
+                      <div style="font-size: 0.85em; color: var(--secondary-text-color, #666);">
                         ${entityId}
                       </div>
                     </div>
@@ -1632,7 +1632,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
         <!-- Footer with selection count -->
         ${selectedEntities.length > 0
           ? html`<div
-              style="padding: 8px 16px; background: #f0f8ff; border-top: 1px solid #e8e8e8; border-radius: 0 0 8px 8px; font-size: 0.9em; color: #1976d2;"
+              style="padding: 8px 16px; background: #f0f8ff; border-top: 1px solid var(--divider-color, #e8e8e8); border-radius: 0 0 8px 8px; font-size: 0.9em; color: #1976d2;"
             >
               ${selectedEntities.length} entities selected for drawing
               operations

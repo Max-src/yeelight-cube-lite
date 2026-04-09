@@ -215,7 +215,7 @@ export const sliderStyles = css`
   /* Value display styling - clean and minimal */
   .slider-value {
     font-weight: 600;
-    color: #333;
+    color: var(--primary-text-color, #333);
     text-align: center;
     min-width: 45px;
     font-size: 0.9em;
@@ -224,7 +224,7 @@ export const sliderStyles = css`
   /* Legacy support for inline styled spans - clean style */
   .form-row span {
     font-weight: 600;
-    color: #333;
+    color: var(--primary-text-color, #333);
     text-align: center;
     min-width: 45px;
     font-size: 0.9em;
@@ -578,7 +578,7 @@ export const buttonGroupStyles = css`
 
   .palette-mode-btn {
     padding: 6px 12px;
-    border: 1px solid #ccc;
+    border: 1px solid var(--divider-color, #ccc);
     background: #f8f9fa;
     border-radius: 4px;
     cursor: pointer;
@@ -593,7 +593,7 @@ export const buttonGroupStyles = css`
 
   .palette-mode-btn.selected {
     background: #0077cc;
-    color: white;
+    color: var(--text-primary-color, #fff);
     border-color: #0077cc;
   }
 

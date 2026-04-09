@@ -3217,8 +3217,8 @@ class YeelightCubeGradientCard extends HTMLElement {
                   position: absolute;
                   width: 12px;
                   height: 12px;
-                  background: #fff;
-                  border: 2px solid #333;
+                  background: var(--card-background-color, #fff);
+                  border: 2px solid var(--primary-text-color, #333);
                   border-radius: 50%;
                   transform: translate(-50%, -50%);
                   left: ${rectSelectorX}%;
@@ -3349,8 +3349,8 @@ class YeelightCubeGradientCard extends HTMLElement {
                   position: absolute;
                   width: 12px;
                   height: 12px;
-                  background: #fff;
-                  border: 2px solid #333;
+                  background: var(--card-background-color, #fff);
+                  border: 2px solid var(--primary-text-color, #333);
                   border-radius: 50%;
                   transform: translate(-50%, -50%);
                   left: ${squareSelectorX}%;

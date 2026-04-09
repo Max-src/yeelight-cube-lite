@@ -170,7 +170,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
       }
       label {
         font-weight: 500;
-        color: #333;
+        color: var(--primary-text-color, #333);
         font-size: 1em;
       }
       input[type="text"],
@@ -193,7 +193,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
       }
       .config-label {
         font-weight: 500;
-        color: #333;
+        color: var(--primary-text-color, #333);
         font-size: 1em;
       }
       .toggle-row {
@@ -204,7 +204,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
       }
       .toggle-label {
         font-weight: 500;
-        color: #333;
+        color: var(--primary-text-color, #333);
         font-size: 1em;
       }
       .toggle-switch {
@@ -235,7 +235,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
         width: 18px;
         left: 3px;
         bottom: 3px;
-        background-color: white;
+        background-color: var(--card-background-color, white);
         transition: 0.2s;
         border-radius: 50%;
         box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
@@ -384,7 +384,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
                   style="flex: 1;"
                 />
                 <span
-                  style="min-width: 45px; text-align: right; font-size: 0.9em; color: #666;"
+                  style="min-width: 45px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
                 >
                   ${cfg.size_pct || 100}%
                 </span>
@@ -403,7 +403,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
                   style="flex: 1;"
                 />
                 <span
-                  style="min-width: 45px; text-align: right; font-size: 0.9em; color: #666;"
+                  style="min-width: 45px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
                 >
                   ${cfg.matrix_pixel_gap ?? 4}px
                 </span>
@@ -571,7 +571,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
               : html`
                   <div class="form-row" style="opacity: 0.5;">
                     <label>Content Mode</label>
-                    <div style="font-size: 0.85em; color: #888;">
+                    <div style="font-size: 0.85em; color: var(--secondary-text-color, #888);">
                       Icon style always uses icon-only
                     </div>
                   </div>

@@ -193,8 +193,8 @@ export class ToolManager {
             class="tool-visibility-toggle"
             title="${isVisible ? "Hide tool" : "Show tool"}"
             style="position: absolute; top: -12px; left: 50%; transform: translateX(-50%); font-size: 16px; color: ${isVisible
-              ? "#0077cc"
-              : "#ccc"}; cursor: pointer; z-index: 10; user-select: none; background: rgba(0, 119, 204, 0.1); border-radius: 4px; padding: 4px; border: 2px solid rgba(0, 119, 204, 0.3); line-height: 1; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;"
+              ? "var(--primary-color, #0077cc)"
+              : "var(--divider-color, #ccc)"}; cursor: pointer; z-index: 10; user-select: none; background: rgba(0, 119, 204, 0.1); border-radius: 4px; padding: 4px; border: 2px solid rgba(0, 119, 204, 0.3); line-height: 1; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;"
             @click="${(e) => {
               e.preventDefault();
               e.stopPropagation();
@@ -593,8 +593,8 @@ export class ActionManager {
                 class="action-visibility-toggle"
                 title="${isVisible ? "Hide action" : "Show action"}"
                 style="position: absolute; top: -12px; left: 50%; transform: translateX(-50%); font-size: 16px; color: ${isVisible
-                  ? "#0077cc"
-                  : "#ccc"}; cursor: pointer; z-index: 10; user-select: none; background: rgba(0, 119, 204, 0.1); border-radius: 4px; padding: 4px; border: 2px solid rgba(0, 119, 204, 0.3); line-height: 1; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;"
+                  ? "var(--primary-color, #0077cc)"
+                  : "var(--divider-color, #ccc)"}; cursor: pointer; z-index: 10; user-select: none; background: rgba(0, 119, 204, 0.1); border-radius: 4px; padding: 4px; border: 2px solid rgba(0, 119, 204, 0.3); line-height: 1; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center;"
                 @click="${(e) => {
                   e.preventDefault();
                   e.stopPropagation();

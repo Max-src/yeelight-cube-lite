@@ -19,7 +19,7 @@ export const gridModeStyles = `
   }
 
   .grid-item {
-    background: #fafbfc;
+    background: var(--secondary-background-color, #fafbfc);
     border: 1.5px solid #d0d7de;
     border-radius: 12px;
     padding: 16px;
@@ -36,7 +36,7 @@ export const gridModeStyles = `
 
   .grid-item .item-title {
     font-weight: 500;
-    color: #333;
+    color: var(--primary-text-color, #333);
     margin-bottom: 12px;
     font-size: 0.95em;
     width: 100%;
@@ -64,7 +64,7 @@ export const gridModeStyles = `
 
   .grid-item .item-meta {
     font-size: 0.8em;
-    color: #666;
+    color: var(--secondary-text-color, #666);
     margin-top: 8px;
   }
 
@@ -81,7 +81,7 @@ export const gridModeStyles = `
 
   .grid-item-gradient .grid-gradient-content {
     padding: 12px 16px;
-    background: white;
+    background: var(--card-background-color, white);
   }
 
   .grid-item-gradient .item-title {
@@ -91,7 +91,7 @@ export const gridModeStyles = `
 
   .grid-item-gradient .item-meta {
     font-size: 0.8em;
-    color: #666;
+    color: var(--secondary-text-color, #666);
     margin-top: 4px;
   }
 
@@ -120,7 +120,7 @@ export const gridModeStyles = `
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    color: #b00;
+    color: var(--error-color, #db4437);
     font-size: 1.2em;
     font-weight: bold;
     z-index: 100;

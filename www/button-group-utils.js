@@ -49,8 +49,8 @@ export const buttonGroupStyles = css`
     padding: 8px 12px !important;
     border: none !important;
     border-radius: 0 !important;
-    background: white !important;
-    color: #333 !important;
+    background: var(--card-background-color, white) !important;
+    color: var(--primary-text-color, #333) !important;
     font-size: 0.85em !important;
     font-weight: 500 !important;
     cursor: pointer !important;
@@ -65,12 +65,12 @@ export const buttonGroupStyles = css`
   }
 
   .btn-group-item:hover {
-    background: #f6f8fa !important;
+    background: var(--secondary-background-color, #f6f8fa) !important;
   }
 
   .btn-group-item.active {
     background: #0969da !important;
-    color: white !important;
+    color: var(--text-primary-color, #fff) !important;
   }
 
   .btn-group-item.active:hover {

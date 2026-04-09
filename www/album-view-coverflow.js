@@ -56,7 +56,7 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
       width: 240px;
       max-height: 420px;
       cursor: pointer;
-      background: white;
+      background: var(--card-background-color, white);
       border-radius: ${borderRadius};
       box-shadow: 0 8px 24px rgba(0,0,0,0.2);
       overflow: ${removeButtonStyle === "inside" ? "hidden" : "visible"};
@@ -94,7 +94,7 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
     
     .album-title {
       font-weight: 600;
-      color: #333;
+      color: var(--primary-text-color, #333);
       font-size: 0.9em;
       margin-bottom: 4px;
       overflow: hidden;
@@ -104,7 +104,7 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
     
     .album-meta {
       font-size: 0.75em;
-      color: #666;
+      color: var(--secondary-text-color, #666);
     }
     
     .${classPrefix}-album-item .delete-btn-cross,
@@ -202,12 +202,12 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
       transform: translateY(-50%);
       width: 48px;
       height: 48px;
-      background: #FFF;
+      background: var(--card-background-color, #FFF);
       border: 1px solid rgba(0,0,0,0.1);
       border-radius: 50%;
       cursor: pointer;
       font-size: 2em;
-      color: #333;
+      color: var(--primary-text-color, #333);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -218,7 +218,7 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
     }
     
     .album-nav-btn:hover {
-      background: white;
+      background: var(--card-background-color, white);
       box-shadow: 0 6px 16px rgba(0,0,0,0.2);
       color: #000;
     }

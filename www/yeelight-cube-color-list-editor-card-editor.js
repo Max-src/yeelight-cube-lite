@@ -158,7 +158,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
         }
         label {
           font-weight: 500;
-          color: #333;
+          color: var(--primary-text-color, #333);
           font-size: 1em;
         }
         input[type="text"],
@@ -181,7 +181,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
         }
         .toggle-label {
           font-weight: 500;
-          color: #333;
+          color: var(--primary-text-color, #333);
           font-size: 1em;
         }
         .toggle-switch {
@@ -213,7 +213,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
           width: 18px;
           left: 3px;
           bottom: 3px;
-          background-color: white;
+          background-color: var(--card-background-color, white);
           transition: 0.2s;
           border-radius: 50%;
           box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
@@ -597,7 +597,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
               : html`
                   <div class="form-row" style="opacity: 0.5;">
                     <label>Content Mode</label>
-                    <div style="font-size: 0.85em; color: #888;">
+                    <div style="font-size: 0.85em; color: var(--secondary-text-color, #888);">
                       Icon style always uses icon-only
                     </div>
                   </div>

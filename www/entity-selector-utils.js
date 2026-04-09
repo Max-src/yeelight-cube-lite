@@ -215,7 +215,7 @@ export function createYeelightCubeEntityPicker(
   mode = "multiple"
 ) {
   if (!hass || !hass.states) {
-    return html`<div style="color: #666; font-style: italic; padding: 8px;">
+    return html`<div style="color: var(--secondary-text-color, #666); font-style: italic; padding: 8px;">
       Loading entities...
     </div>`;
   }
@@ -227,12 +227,12 @@ export function createYeelightCubeEntityPicker(
       style="border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa;"
     >
       <div
-        style="padding: 12px 16px 8px 16px; font-weight: 500; color: #333; border-bottom: 1px solid #e8e8e8; background: #f5f5f5; border-radius: 8px 8px 0 0;"
+        style="padding: 12px 16px 8px 16px; font-weight: 500; color: var(--primary-text-color, #333); border-bottom: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f5f5f5); border-radius: 8px 8px 0 0;"
       >
         Yeelight Cube Lite Entities (0)
       </div>
       <div
-        style="color: #666; font-style: italic; text-align: center; padding: 20px;"
+        style="color: var(--secondary-text-color, #666); font-style: italic; text-align: center; padding: 20px;"
       >
         <div style="margin-bottom: 8px;">No Yeelight Cube Lite entities found</div>
         <div style="font-size: 0.85em; color: #999;">
@@ -256,7 +256,7 @@ export function createYeelightCubeEntityPicker(
         style="border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa;"
       >
         <div
-          style="padding: 12px 16px 8px 16px; font-weight: 500; color: #333; border-bottom: 1px solid #e8e8e8; background: #f5f5f5; border-radius: 8px 8px 0 0;"
+          style="padding: 12px 16px 8px 16px; font-weight: 500; color: var(--primary-text-color, #333); border-bottom: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f5f5f5); border-radius: 8px 8px 0 0;"
         >
           Yeelight Cube Lite Entities (${entities.length})
         </div>
@@ -274,7 +274,7 @@ export function createYeelightCubeEntityPicker(
               <div
                 style="display: flex; align-items: center; padding: 8px 12px; margin: 4px 0; border-radius: 6px; background: ${isSelected
                   ? "#e3f2fd"
-                  : "white"}; border: 1px solid ${isSelected
+                  : "var(--card-background-color, white)"}; border: 1px solid ${isSelected
                   ? "#90caf9"
                   : "#e0e0e0"}; transition: all 0.2s ease; cursor: pointer;"
                 @click="${() => toggleEntity(entityId)}"
@@ -291,12 +291,12 @@ export function createYeelightCubeEntityPicker(
                 />
                 <div style="flex: 1;">
                   <div
-                    style="font-weight: 500; color: #333; margin-bottom: 2px;"
+                    style="font-weight: 500; color: var(--primary-text-color, #333); margin-bottom: 2px;"
                   >
                     ${friendlyName}
                   </div>
                   <div
-                    style="font-size: 0.85em; color: #666; font-family: monospace;"
+                    style="font-size: 0.85em; color: var(--secondary-text-color, #666); font-family: monospace;"
                   >
                     ${entityId}
                   </div>
@@ -308,12 +308,12 @@ export function createYeelightCubeEntityPicker(
 
         ${selectedEntities.length > 0
           ? html`<div
-              style="padding: 8px 16px; font-size: 0.9em; color: #666; border-top: 1px solid #e8e8e8; background: #f9f9f9; border-radius: 0 0 8px 8px;"
+              style="padding: 8px 16px; font-size: 0.9em; color: var(--secondary-text-color, #666); border-top: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f9f9f9); border-radius: 0 0 8px 8px;"
             >
               1 entity selected
             </div>`
           : html`<div
-              style="padding: 8px 16px; font-size: 0.9em; color: #999; border-top: 1px solid #e8e8e8; background: #f9f9f9; border-radius: 0 0 8px 8px; font-style: italic;"
+              style="padding: 8px 16px; font-size: 0.9em; color: #999; border-top: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f9f9f9); border-radius: 0 0 8px 8px; font-style: italic;"
             >
               No entity selected
             </div>`}
@@ -343,7 +343,7 @@ export function createYeelightCubeEntityPicker(
       style="border: 1px solid #e0e0e0; border-radius: 8px; background: #fafafa;"
     >
       <div
-        style="padding: 12px 16px 8px 16px; font-weight: 500; color: #333; border-bottom: 1px solid #e8e8e8; background: #f5f5f5; border-radius: 8px 8px 0 0;"
+        style="padding: 12px 16px 8px 16px; font-weight: 500; color: var(--primary-text-color, #333); border-bottom: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f5f5f5); border-radius: 8px 8px 0 0;"
       >
         Yeelight Cube Lite Entities (${entities.length})
       </div>
@@ -360,7 +360,7 @@ export function createYeelightCubeEntityPicker(
             <div
               style="display: flex; align-items: center; padding: 8px 12px; margin: 4px 0; border-radius: 6px; background: ${isSelected
                 ? "#e3f2fd"
-                : "white"}; border: 1px solid ${isSelected
+                : "var(--card-background-color, white)"}; border: 1px solid ${isSelected
                 ? "#90caf9"
                 : "#e0e0e0"}; transition: all 0.2s ease; cursor: pointer;"
               @click="${() => toggleEntity(entityId)}"
@@ -375,11 +375,11 @@ export function createYeelightCubeEntityPicker(
                 style="margin-right: 12px; transform: scale(1.1);"
               />
               <div style="flex: 1;">
-                <div style="font-weight: 500; color: #333; margin-bottom: 2px;">
+                <div style="font-weight: 500; color: var(--primary-text-color, #333); margin-bottom: 2px;">
                   ${friendlyName}
                 </div>
                 <div
-                  style="font-size: 0.85em; color: #666; font-family: monospace;"
+                  style="font-size: 0.85em; color: var(--secondary-text-color, #666); font-family: monospace;"
                 >
                   ${entityId}
                 </div>
@@ -391,12 +391,12 @@ export function createYeelightCubeEntityPicker(
 
       ${selectedEntities.length > 0
         ? html`<div
-            style="padding: 8px 16px; font-size: 0.9em; color: #666; border-top: 1px solid #e8e8e8; background: #f9f9f9; border-radius: 0 0 8px 8px;"
+            style="padding: 8px 16px; font-size: 0.9em; color: var(--secondary-text-color, #666); border-top: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f9f9f9); border-radius: 0 0 8px 8px;"
           >
             ${selectedEntities.length} entities selected
           </div>`
         : html`<div
-            style="padding: 8px 16px; font-size: 0.9em; color: #999; border-top: 1px solid #e8e8e8; background: #f9f9f9; border-radius: 0 0 8px 8px; font-style: italic;"
+            style="padding: 8px 16px; font-size: 0.9em; color: #999; border-top: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f9f9f9); border-radius: 0 0 8px 8px; font-style: italic;"
           >
             No entities selected
           </div>`}
@@ -416,10 +416,10 @@ export const entitySelectorStyles = css`
   .entity-dropdown {
     width: 100%;
     padding: 8px 12px;
-    border: 1px solid #ccc;
+    border: 1px solid var(--divider-color, #ccc);
     border-radius: 4px;
     font-size: 14px;
-    background-color: white;
+    background-color: var(--card-background-color, white);
     cursor: pointer;
   }
 
@@ -438,7 +438,7 @@ export const entitySelectorStyles = css`
   .entity-search {
     width: 100%;
     padding: 8px 12px;
-    border: 1px solid #ccc;
+    border: 1px solid var(--divider-color, #ccc);
     border-radius: 4px 4px 0 0;
     font-size: 14px;
     margin-bottom: 0;

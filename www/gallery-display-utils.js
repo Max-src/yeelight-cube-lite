@@ -42,7 +42,7 @@ const WHEEL_MODE = {
     SIZE: "48px",
     FONT_SIZE: "2em",
     BORDER_RADIUS: "50%",
-    BACKGROUND: "#FFF",
+    BACKGROUND: "var(--card-background-color, #FFF)",
     BORDER: "1px solid rgba(0,0,0,0.1)",
     BOX_SHADOW: "0 4px 12px rgba(0,0,0,0.15)",
     GAP: "18px",
@@ -766,7 +766,7 @@ function renderWheelItemTitle(title, config, titleColor = "") {
         left: 50%;
         transform: translate(-50%, -50%);
         background: rgba(0, 0, 0, 0.8);
-        color: white;
+        color: var(--text-primary-color, #fff);
         padding: 8px 16px;
         border-radius: 6px;
         font-size: 14px;
@@ -832,7 +832,7 @@ function renderWheelNavButtons(options) {
                 height: ${BUTTON.SIZE};
                 cursor: pointer;
                 font-size: ${BUTTON.FONT_SIZE};
-                color: #333;
+                color: var(--primary-text-color, #333);
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -856,7 +856,7 @@ function renderWheelNavButtons(options) {
                 height: ${BUTTON.SIZE};
                 cursor: pointer;
                 font-size: ${BUTTON.FONT_SIZE};
-                color: #333;
+                color: var(--primary-text-color, #333);
                 display: flex;
                 align-items: center;
                 justify-content: center;

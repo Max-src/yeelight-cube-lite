@@ -13,7 +13,7 @@ export const galleryModeStyles = `
   }
 
   .gallery-item {
-    background: #ffffff;
+    background: var(--card-background-color, #ffffff);
     border-radius: 12px;
     overflow: hidden;
     box-shadow: 0 2px 8px rgba(0,0,0,0.08);
@@ -92,7 +92,7 @@ export const galleryModeStyles = `
   .gallery-item-footer {
     /* padding: 12px 16px; */
     padding: 0 12px;
-    background: #ffffff;
+    background: var(--card-background-color, #ffffff);
     border-top: 1px solid #e9ecef;
     display: flex;
     justify-content: space-between;
