@@ -126,6 +126,15 @@ export const galleryModeStyles = `
     right: auto !important;
   }
 
+  /* Dot style: float over the card image instead of sitting in the footer */
+  .gallery-item .delete-btn-cross.dot-style {
+    position: absolute !important;
+    top: 8px !important;
+    right: 8px !important;
+    z-index: 10;
+    margin-left: 0;
+  }
+
   .gallery-delete-btn,
   .gallery-item-footer .delete-btn-cross,
   .gallery-item-footer .delete-btn-minimal,

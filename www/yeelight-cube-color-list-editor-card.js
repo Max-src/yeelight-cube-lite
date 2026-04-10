@@ -848,9 +848,13 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         .grid-remove-btn { 
           /* Positioning only - styles come from deleteButtonStyles */
           position: absolute; 
-          top: calc(-11.43px * var(--card-size-multiplier, 0.7)); 
-          right: calc(-11.43px * var(--card-size-multiplier, 0.7)); 
+          top: -10px; 
+          right: -10px; 
           z-index: 10; 
+        }
+        .grid-remove-btn.dot-style {
+          top: 6px;
+          right: 6px;
         }
         .color-grid-info { font-size: calc(0.85em * var(--card-size-multiplier, 0.7)); color: var(--secondary-text-color, #666); text-align: center; margin-top: 8px; }
         .grid-hex-input { 

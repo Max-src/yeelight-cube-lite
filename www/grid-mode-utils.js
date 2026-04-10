@@ -99,8 +99,8 @@ export const gridModeStyles = `
   .grid-item .delete-btn,
   .grid-item .remove-btn {
     position: absolute;
-    top: 10px;
-    right: 10px;
+    top: 4px;
+    right: 4px;
     padding: 4px 10px;
     font-size: 0.7em;
     z-index: 100;
@@ -109,8 +109,8 @@ export const gridModeStyles = `
   .grid-item .delete-btn-cross,
   .grid-item .remove-btn-cross {
     position: absolute;
-    top: 10px;
-    right: 10px;
+    top: 4px;
+    right: 4px;
     background: var(--card-background-color, rgba(255,255,255,0.95));
     border: 1px solid color-mix(in srgb, var(--primary-text-color, #000) 10%, transparent);
     border-radius: 50%;
@@ -125,6 +125,12 @@ export const gridModeStyles = `
     font-weight: bold;
     z-index: 100;
     pointer-events: auto;
+  }
+
+  /* Dot style inside grid: more inset for the small dot */
+  .grid-item .delete-btn-cross.dot-style {
+    top: 8px !important;
+    right: 8px !important;
   }
 `;
 
@@ -185,8 +191,7 @@ export function renderGridMode(items, renderItemContent, options = {}) {
                    onclick="event.stopPropagation(); ${getFunctionCall(
                      onDeleteClick,
                      idx,
-                   )}"
-                   style="position:absolute;top:10px;right:10px;z-index:1000;pointer-events:auto;">×</button>`
+                   )}"></button>`
         : "";
 
       // Gradient mode

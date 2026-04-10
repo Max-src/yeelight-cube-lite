@@ -1101,7 +1101,6 @@ class YeelightCubeDrawCardEditor extends LitElement {
                   { value: "black", label: "Black" },
                   { value: "dot", label: "Dot" },
                   { value: "glass", label: "Glass" },
-                  { value: "neon", label: "Neon" },
                 ],
                 this.config.pixel_art_remove_button_style || "default",
                 createButtonGroupChangeHandler(

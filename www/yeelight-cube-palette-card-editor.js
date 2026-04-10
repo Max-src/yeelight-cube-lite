@@ -427,7 +427,6 @@ class YeelightCubePaletteCardEditor extends LitElement {
                 { value: "black", label: "Black" },
                 { value: "dot", label: "Dot" },
                 { value: "glass", label: "Glass" },
-                { value: "neon", label: "Neon" },
               ],
             )}
 
