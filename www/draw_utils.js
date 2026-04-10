@@ -55,20 +55,21 @@ export function updateRecentColors(recentColors, newColor) {
 }
 
 // Coordinate transformation utilities
+
 export function lampToMatrixCoords(lampPos) {
   // Transform lamp coordinates (0=bottom-left) to matrix coordinates (0=top-left)
-  const lampRow = Math.floor(lampPos / 10);
-  const lampCol = lampPos % 10;
-  const matrixRow = 9 - lampRow; // Flip vertically
-  return matrixRow * 10 + lampCol;
+  const lampRow = Math.floor(lampPos / GRID_COLS);
+  const lampCol = lampPos % GRID_COLS;
+  const matrixRow = (GRID_ROWS - 1) - lampRow; // Flip vertically
+  return matrixRow * GRID_COLS + lampCol;
 }
 
 export function matrixToLampCoords(matrixPos) {
   // Transform matrix coordinates to lamp coordinates
-  const matrixRow = Math.floor(matrixPos / 10);
-  const matrixCol = matrixPos % 10;
-  const lampRow = 9 - matrixRow; // Flip vertically
-  return lampRow * 10 + matrixCol;
+  const matrixRow = Math.floor(matrixPos / GRID_COLS);
+  const matrixCol = matrixPos % GRID_COLS;
+  const lampRow = (GRID_ROWS - 1) - matrixRow; // Flip vertically
+  return lampRow * GRID_COLS + matrixCol;
 }
 
 // Color validation and conversion utilities

@@ -10,12 +10,12 @@ import { html, css } from "./lib/lit-all.js";
 export function fireEvent(node, type, detail, options) {
   options = options || {};
   detail = detail === null || detail === undefined ? {} : detail;
-  const event = new Event(type, {
+  const event = new CustomEvent(type, {
     bubbles: options.bubbles === undefined ? true : options.bubbles,
     cancelable: Boolean(options.cancelable),
     composed: options.composed === undefined ? true : options.composed,
+    detail,
   });
-  event.detail = detail;
   node.dispatchEvent(event);
 }
 

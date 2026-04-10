@@ -90,6 +90,25 @@ def _get_device_lock(ip: str) -> asyncio.Lock:
         _DEVICE_LOCKS[ip] = asyncio.Lock()
     return _DEVICE_LOCKS[ip]
 
+
+def cleanup_module_state(ip: str) -> None:
+    """Remove module-level state for a device being unloaded.
+
+    Called from __init__.async_unload_entry to prevent stale references
+    from persisting across integration reloads.
+    """
+    # Remove IP-keyed entry (set during initial setup)
+    _ENTITY_REGISTRY.pop(ip, None)
+    # Remove entity_id-keyed entries whose entity references this IP
+    stale_keys = [
+        key for key, entity in _ENTITY_REGISTRY.items()
+        if hasattr(entity, "_ip") and entity._ip == ip
+    ]
+    for key in stale_keys:
+        del _ENTITY_REGISTRY[key]
+    # Remove per-device lock
+    _DEVICE_LOCKS.pop(ip, None)
+
 ORIENTATION_NORMAL = "normal"
 ORIENTATION_FLIPPED = "flipped"
 

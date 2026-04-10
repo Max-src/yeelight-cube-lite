@@ -30,9 +30,8 @@ export function parseConfig(config) {
 
 export function updateRecentColors(recentColors, selectedColor) {
   if (!selectedColor) return recentColors;
-  if (!recentColors.includes(selectedColor)) {
-    recentColors.unshift(selectedColor);
-    if (recentColors.length > 10) recentColors.pop();
-  }
-  return recentColors;
+  // Return a NEW array — never mutate the caller's array (breaks LitElement change detection)
+  const filtered = recentColors.filter((c) => c !== selectedColor);
+  const updated = [selectedColor, ...filtered];
+  return updated.slice(0, 10);
 }

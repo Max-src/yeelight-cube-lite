@@ -73,13 +73,6 @@ import { callServiceOnTargetEntities as callServiceSequentially } from "./servic
 const MAX_IMAGE_PALETTE_COLORS = 15;
 
 class YeelightCubeDrawCard extends LitElement {
-  static async getConfigElement() {
-    if (!customElements.get("yeelight-cube-draw-card-editor")) {
-      await import("./yeelight-cube-draw-card-editor.js");
-    }
-    return document.createElement("yeelight-cube-draw-card-editor");
-  }
-
   static getStubConfig(hass) {
     const firstEntity =
       Object.keys(hass?.states || {}).find(
@@ -169,33 +162,35 @@ class YeelightCubeDrawCard extends LitElement {
       setTimeout(() => this._setupPixelArtAlbumNavigation(), 0);
     }
 
-    document.addEventListener("mousedown", (e) => {
-      if (!this.config || this.config.palette_card_mode !== "floating") return;
-      const openKeys = Object.keys(this._floatingStates || {}).filter(
-        (k) => this._floatingStates[k],
-      );
-      if (!openKeys.length) return;
-      // Check if click is inside any floating card or button
-      const btns = this.shadowRoot.querySelectorAll(".palette-floating-btn");
-      const cards = this.shadowRoot.querySelectorAll(
-        ".palette-group-card.floating",
-      );
-      let inside = false;
-      btns.forEach((btn) => {
-        if (btn.contains(e.target)) inside = true;
-      });
-      cards.forEach((card) => {
-        if (card.contains(e.target)) inside = true;
-      });
-      if (!inside) {
-        openKeys.forEach((k) => (this._floatingStates[k] = false));
-        this.requestUpdate();
-      }
-    });
+    document.addEventListener("mousedown", this._handleFloatingOutsideClick);
 
     // Drag-to-scroll is now setup in _setupPaletteRowDragScroll(), called from updated()
     this._setupPaletteRowDragScroll();
   }
+
+  _handleFloatingOutsideClick = (e) => {
+    if (!this.config || this.config.palette_card_mode !== "floating") return;
+    const openKeys = Object.keys(this._floatingStates || {}).filter(
+      (k) => this._floatingStates[k],
+    );
+    if (!openKeys.length) return;
+    // Check if click is inside any floating card or button
+    const btns = this.shadowRoot.querySelectorAll(".palette-floating-btn");
+    const cards = this.shadowRoot.querySelectorAll(
+      ".palette-group-card.floating",
+    );
+    let inside = false;
+    btns.forEach((btn) => {
+      if (btn.contains(e.target)) inside = true;
+    });
+    cards.forEach((card) => {
+      if (card.contains(e.target)) inside = true;
+    });
+    if (!inside) {
+      openKeys.forEach((k) => (this._floatingStates[k] = false));
+      this.requestUpdate();
+    }
+  };
 
   /**
    * Attach drag-to-scroll (mouse + touch) to a single scrollable element.
@@ -775,6 +770,10 @@ class YeelightCubeDrawCard extends LitElement {
       EVT_ACTION_VISIBILITY_RESET,
       this._onActionVisibilityReset,
     );
+
+    // Remove document-level listeners added in connectedCallback / firstUpdated
+    document.removeEventListener("mousedown", this._handleTabsOutsideClick);
+    document.removeEventListener("mousedown", this._handleFloatingOutsideClick);
 
     // Clean up drag utility
     if (this._toolDragUtil) {

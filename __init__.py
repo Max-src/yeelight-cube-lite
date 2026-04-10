@@ -209,11 +209,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # ConfigEntryNotReady MUST be raised here (component-level setup) for
     # HA's automatic retry with exponential back-off to work.
     probe_timeout = 3.0  # Generous timeout — device may still be booting
+
+    def _tcp_probe(host, p, timeout):
+        """Synchronous TCP probe — runs in executor thread."""
+        s = _socket_module.socket(_socket_module.AF_INET, _socket_module.SOCK_STREAM)
+        try:
+            s.settimeout(timeout)
+            s.connect((host, p))
+        finally:
+            s.close()
+
     try:
         _LOGGER.debug("[SETUP] Probing %s:%s (timeout=%ss)", ip_address, port, probe_timeout)
-        sock = _socket_module.socket(_socket_module.AF_INET, _socket_module.SOCK_STREAM)
-        sock.settimeout(probe_timeout)
-        await hass.async_add_executor_job(sock.connect, (ip_address, port))
+        await hass.async_add_executor_job(_tcp_probe, ip_address, port, probe_timeout)
         _LOGGER.debug("[SETUP] Probe OK — %s:%s is reachable", ip_address, port)
     except (OSError, ConnectionRefusedError, TimeoutError) as err:
         _LOGGER.warning(
@@ -232,12 +240,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady(
             f"Yeelight Cube Lite at {ip_address} is not reachable — will retry automatically"
         ) from err
-    finally:
-        try:
-            sock.close()
-        except Exception:
-            pass
-    
+
     # Set up light platform FIRST — it creates the CubeMatrix and stores the
     # light entity in hass.data[DOMAIN][entry.entry_id]["light"], which the
     # other platforms (switch, camera, …) depend on.
@@ -415,7 +418,13 @@ async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
     ip_address = entry.data[CONF_IP]
-    
+
+    # Clean up module-level state in light.py (entity registry + device locks)
+    # so stale references don't persist across integration reloads.
+    # Import lazily to avoid circular import (light.py imports from __init__).
+    from .light import cleanup_module_state  # noqa: E402
+    cleanup_module_state(ip_address)
+
     # Remove device from managed list
     conflict_prevention = get_conflict_prevention(hass)
     conflict_prevention.remove_managed_device(ip_address)
