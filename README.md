@@ -182,7 +182,7 @@ Create, manage, and apply color palettes.
 
 - **Visual palette display**: 5 swatch styles (round, square, gradient bar, gradient background, color stripes)
 - **4 display modes**: list, gallery (with rounded card option), carousel (with configurable navigation), album/coverflow (with 3D effect)
-- **Create & edit palettes**: add colors, rename, reorder, delete — configurable remove button style (default, red, black, outline, glass, hidden)
+- **Create & edit palettes**: add colors, rename, reorder, delete — configurable remove button style (default, red, black, dot, glass, neon, hidden)
 - **Apply palette**: load a palette's colors onto the lamp
 - **Import/Export**: save and load palette collections — button style customizable
 - **Multi-entity support**: apply palettes to multiple lamps
@@ -198,7 +198,7 @@ Edit color sequences used by the "Text Color Sequence" and "Panel Color Sequence
 - **Visual color list**: add, remove, reorder colors in a sequence with drag-and-drop
 - **7 layout modes**: compact, chips, tiles, rows, grid, cards, spread — each with its own density and look, configurable card size
 - **Color picker**: rotary color picker with optional hex input and color name display
-- **Configurable remove buttons**: 6 styles (default, red, black, outline, glass, hidden), and for cards/spread layouts: button position (outside, inside, square)
+- **Configurable remove buttons**: 7 styles (default, red, black, dot, glass, neon, hidden), and for cards/spread layouts: button position (outside, inside, square)
 - **Save & shuffle**: save as a named palette, randomize colors — action button styles customizable
 - **Multi-entity support**: apply color sequences to multiple lamps
 
