@@ -158,7 +158,7 @@ class PaletteExpandable extends HTMLElement {
             ? buttonMode === "icon"
               ? `<button
                 class="draw-btn expand-btn save icon-mode nav-btn-${buttonShape}"
-                title="${expanded ? 'Show less colors' : 'Show more colors'}"
+                title="${expanded ? "Show less colors" : "Show more colors"}"
                 style="   width: 29px !important;
                           height: 29px !important;
                           max-width: 29px !important;
@@ -167,7 +167,7 @@ class PaletteExpandable extends HTMLElement {
                               ? '<ha-icon icon="mdi:chevron-left"></ha-icon>'
                               : '<ha-icon icon="mdi:chevron-right"></ha-icon>'
                           }</button>`
-              : `<button class="draw-btn expand-btn save nav-btn-${buttonShape}" title="${expanded ? 'Show less colors' : 'Show more colors'}">${
+              : `<button class="draw-btn expand-btn save nav-btn-${buttonShape}" title="${expanded ? "Show less colors" : "Show more colors"}">${
                   expanded ? "Less" : "More"
                 }</button>`
             : ""

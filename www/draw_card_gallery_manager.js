@@ -1,6 +1,11 @@
 import { html } from "./lib/lit-all.js";
 import { trimStaleArray } from "./draw_utils.js";
-import { GRID_COLS, GRID_ROWS, MATRIX_SIZE, BLACK_THRESHOLD } from "./draw_card_const.js";
+import {
+  GRID_COLS,
+  GRID_ROWS,
+  MATRIX_SIZE,
+  BLACK_THRESHOLD,
+} from "./draw_card_const.js";
 
 export class GalleryManager {
   constructor(cardInstance) {
@@ -381,7 +386,10 @@ export class GalleryManager {
       // Uses shared BLACK_THRESHOLD from draw_card_const.js
       if (ignoreBlackPixels) {
         const rgb = this.hexToRgb(color);
-        const isBlack = rgb.r <= BLACK_THRESHOLD && rgb.g <= BLACK_THRESHOLD && rgb.b <= BLACK_THRESHOLD;
+        const isBlack =
+          rgb.r <= BLACK_THRESHOLD &&
+          rgb.g <= BLACK_THRESHOLD &&
+          rgb.b <= BLACK_THRESHOLD;
         if (isBlack) continue; // Skip black pixels
       }
 

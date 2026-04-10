@@ -5011,7 +5011,10 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
     // Clean up document-level drag listeners if disconnected mid-drag
     if (this._dragCleanup) {
-      document.removeEventListener("mousemove", this._dragCleanup.handleMouseMove);
+      document.removeEventListener(
+        "mousemove",
+        this._dragCleanup.handleMouseMove,
+      );
       document.removeEventListener("mouseup", this._dragCleanup.handleMouseUp);
       this._dragCleanup = null;
     }
