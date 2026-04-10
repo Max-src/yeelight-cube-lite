@@ -13,21 +13,25 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**. T
 
 ### Light Integration
 
-- **Full 20×5 RGB matrix control**
+- **Full 20×5 RGB matrix control** — individual pixel-level color
 - **Brightness control**
-- **Gradient colors**
-- **Transition effects**
-- **Color effects**
-- **Scrolling text**
-- **Multi-lamp support**
+- **11 gradient & color modes** — solid, column/row/angle/radial gradients, letter gradients, color sequences
+- **24 transition effects** — animated transitions between modes
+- **13 color adjustment sliders** — hue shift, temperature, saturation, vibrance, contrast, glow, grayscale, invert, tint
+- **Scrolling text** with configurable fonts and alignment
+- **Multi-lamp support** — control multiple lamps in parallel from a single card
+- **Auto-discovery** via Zeroconf (mDNS) — lamps advertising `_miio._udp.local.` are detected automatically
+- **Auto-rediscovery** — if a lamp changes IP address, the integration automatically re-discovers it on the network
+- **Local-only** — all communication stays on your LAN, no cloud dependency
+- **Bundled Lit runtime** — frontend cards ship with a local Lit build, no CDN calls
 
 ### Customizable Lovelace Cards
 
 - **Draw Card**: pixel art editor with pencil, eraser, fill, eyedropper, undo; gallery to save/load/rename/reorder/import/export designs
 - **Gradient Card**: pick and preview all gradient & color modes with a scrollable mode wheel
-- **Preview Card**: live matrix preview with brightness slider, power toggle, and force refresh
+- **Preview Card**: live matrix preview with brightness slider, power toggle, force refresh, and color adjustments panel (5 layout modes)
 - **Palettes Card**: create, edit, reorder, and apply color palettes
-- **Colors Card**: edit color sequences for text and panel modes with drag-and-drop
+- **Colors Card**: edit color sequences for Text Color Sequence and Panel Color Sequence modes with drag-and-drop
 
 ---
 
@@ -142,6 +146,7 @@ A live preview of the lamp's current state, with controls.
 - **Brightness slider**: 4 slider styles (slider, bar, rotary, capsule) — slider appearance (default/thick/thin), capsule theme (light/dark/transparent) with optional sun/moon icons, and label mode (text, icon, icon+text, hidden)
 - **Power toggle & force refresh buttons**: 6 button styles (modern, classic, outline, gradient, icon, pill) with content modes
 - **Color adjustments panel**: built-in color effect controls with 5 layout modes (compact, tabbed, grouped, radial, categories) — change indicators and configurable reset button visibility
+- **Section styles**: 3 styles for each card section — flat (no outline), subtle (light border), filled (background tint) — plus full dark-mode support
 - **Black dot handling**: optionally hide or show black (off) pixels for a cleaner preview
 
 ### Yeelight Palettes Card: `custom:yeelight-cube-palette-card`
@@ -283,7 +288,7 @@ Configure the effect, step count and duration via the **Transition Effect**, **T
 
 ## Requirements
 
-- **Home Assistant** 2023.1.0 or newer
+- **Home Assistant** 2024.1.0 or newer
 - **Yeelight Cube Smart Lamp Lite** (or compatible matrix/panel device) on the same local network
 - Python packages `yeelight` and `Pillow` (installed automatically by HA)
 
@@ -294,10 +299,11 @@ Configure the effect, step count and duration via the **Transition Effect**, **T
 | Problem                                 | Solution                                                                                                                      |
 | --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | **Cards not showing**                   | Clear browser cache with `Ctrl+F5` after installing or updating                                                               |
-| **Device not found**                    | Ensure the lamp is on the same network. Check the IP in the Yeelight mobile app                                               |
+| **Device not found**                    | Ensure the lamp is on the same network. Check the IP in the Yeelight Station app. The integration also auto-discovers lamps via Zeroconf |
 | **Conflicts with Yeelight integration** | This integration automatically dismisses built-in Yeelight discovery for your Cube devices and prevents it from managing them |
 | **Lamp appears stuck / unresponsive**   | Press the **Force Refresh** button entity, or use the force refresh button on the Lamp Preview card                           |
 | **Colors look off on the hardware**     | Color accuracy correction is built-in and applied automatically. It compensates for LED channel imbalance                     |
+| **Lamp changed IP address**             | The integration automatically re-discovers lamps on the network. You can also update the IP from the integration's Configure page |
 
 ---
 
