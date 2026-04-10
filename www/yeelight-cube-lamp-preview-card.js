@@ -3019,25 +3019,22 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       '">';
 
     if (activeSection) {
-      const showResetButton = this._shouldShowResetButton(activeSection.id);
+      const resetButtonVisible = this._shouldShowResetButton(activeSection.id)
+        ? "block"
+        : "none";
 
       html += `
         <div class="categories-category-header">
           <div class="categories-category-title">${activeSection.title}</div>
-          ${
-            showResetButton
-              ? `
           <button 
             class="categories-reset-button" 
             data-section-id="${activeSection.id}"
             title="Reset ${activeSection.title}"
             onclick="this.getRootNode().host.resetSection('${activeSection.id}')"
+            style="display: ${resetButtonVisible};"
           >
             🔄 Reset
           </button>
-          `
-              : ""
-          }
         </div>
       `;
 
