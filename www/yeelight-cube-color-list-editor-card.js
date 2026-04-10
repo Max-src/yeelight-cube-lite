@@ -783,33 +783,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         .remove-btn { background: color-mix(in srgb, var(--error-color, #db4437) 15%, var(--card-background-color, #fff)); border: none; border-radius: 6px; color: var(--error-color, #db4437); padding: 6px 18px; cursor: pointer; font-size: 1em; font-weight: 500; margin-left: 0; transition: background 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
         .remove-btn:hover { background: color-mix(in srgb, var(--error-color, #db4437) 25%, var(--card-background-color, #fff)); }
         
-        /* Red cross style remove button */
-        .color-btn-cross.remove-btn-cross {
-          position: absolute;
-          top: 8px;
-          right: 8px;
-          background: none;
-          border: none;
-          color: var(--error-color, #db4437);
-          cursor: pointer;
-          padding: 4px;
-          border-radius: 4px;
-          transition: all 0.2s ease;
-          min-width: auto;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 16px;
-          font-weight: bold;
-          z-index: 2;
-        }
-        
-        .color-btn-cross.remove-btn-cross:hover {
-          background: rgba(187, 0, 0, 0.1);
-          color: var(--error-color, #d32f2f);
-          transform: scale(1.1);
-        }
-        
         /* Make color-row relative for absolute positioning of cross */
         .color-row {
           position: relative;
@@ -1436,7 +1409,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           height: 28px;
           font-size: 1.5em;
         }
-        /* Trash style inherits from delete-button-styles.js */
         
         /* Hide remove button during drag */
         .dragging-active .card-remove,
@@ -4132,7 +4104,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
               </div>
               ${
                 allowDelete !== false
-                  ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} compact-remove" title="Remove">×</button>`
+                  ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} compact-remove" title="Remove"></button>`
                   : ""
               }
             </div>`
@@ -4192,9 +4164,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                 </span>
                 ${
                   allowDelete !== false
-                    ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} chip-remove" title="Remove" style="color: ${this.getContrastTextColor(
-                        color,
-                      )};">×</button>`
+                    ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} chip-remove" title="Remove"></button>`
                     : ""
                 }
               </div>`
@@ -4253,7 +4223,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
               </div>
               ${
                 allowDelete !== false
-                  ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} tile-remove" title="Remove">×</button>`
+                  ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} tile-remove" title="Remove"></button>`
                   : ""
               }
             </div>`
@@ -4323,13 +4293,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
               </div>
               ${
                 allowDelete
-                  ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} row-remove" title="Remove" 
-                      style="color: ${this.getContrastTextColor(color)}; 
-                             background: rgba(${
-                               this.getContrastTextColor(color) === "#ffffff"
-                                 ? "255,255,255"
-                                 : "0,0,0"
-                             }, 0.15);">×</button>`
+                  ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} row-remove" title="Remove"></button>`
                   : ""
               }
             </div>`
@@ -4364,7 +4328,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                 }
                 ${
                   options.allowDelete
-                    ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} grid-remove-btn" title="Remove">×</button>`
+                    ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} grid-remove-btn" title="Remove"></button>`
                     : ""
                 }
               </div>
@@ -4469,7 +4433,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                         </div>
                         ${
                           options.allowDelete
-                            ? `<button data-action="remove" data-idx="${globalIdx}" class="${deleteBtnClass} card-remove" style="${buttonPositionStyles}" title="Remove">×</button>`
+                            ? `<button data-action="remove" data-idx="${globalIdx}" class="${deleteBtnClass} card-remove" style="${buttonPositionStyles}" title="Remove"></button>`
                             : ""
                         }
                       </div>
@@ -4546,7 +4510,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                   </div>
                   ${
                     options.allowDelete
-                      ? `<button data-action="remove" data-idx="${globalIdx}" class="${deleteBtnClass} card-remove" style="${buttonPositionStyles}" title="Remove">×</button>`
+                      ? `<button data-action="remove" data-idx="${globalIdx}" class="${deleteBtnClass} card-remove" style="${buttonPositionStyles}" title="Remove"></button>`
                       : ""
                   }
                 </div>

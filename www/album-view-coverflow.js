@@ -178,20 +178,6 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
       width: 26px !important;
       height: 26px !important;
     }
-    
-    .${classPrefix}-album-item .delete-btn-cross.trash-style,
-    .${classPrefix}-album-item .album-remove-btn.trash-style {
-      width: auto !important;
-      height: auto !important;
-      background: transparent !important;
-      border: none !important;
-      font-size: 0 !important;
-    }
-    
-    .${classPrefix}-album-item .delete-btn-cross.trash-style::before,
-    .${classPrefix}-album-item .album-remove-btn.trash-style::before {
-      font-size: 22px !important;
-    }
     `
         : ""
     }

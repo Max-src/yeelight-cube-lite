@@ -365,7 +365,8 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                   { value: "default", label: "Default" },
                   { value: "red", label: "Red" },
                   { value: "black", label: "Black" },
-                  { value: "trash", label: "Trash" },
+                  { value: "outline", label: "Outline" },
+                  { value: "glass", label: "Glass" },
                 ],
                 cfg.remove_button_style || "default",
                 createButtonGroupChangeHandler(

@@ -62,19 +62,42 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**. T
 
 ### Prerequisites — Yeelight Station App
 
-Before adding the lamp to Home Assistant, you must first set it up using the **Yeelight Station** app (not the standard Yeelight app). This is where you configure Wi-Fi, enable LAN control, and find the IP address needed for the integration.
+Before adding the lamp to Home Assistant, you must first set it up using the **Yeelight Station app** (not the standard Yeelight app). This is where you configure Wi-Fi access and enable LAN control.
 
 1. **Download the Yeelight Station app** from the App Store (iOS) or Google Play (Android)
-2. **Power on the lamp**: connect the base unit to power using the included adapter, then place the Cube on top of the base (it attaches magnetically via the ring/pin connectors)
-3. **Add the lamp to the app**: follow the in-app pairing instructions to connect the base unit to your **2.4 GHz Wi-Fi network**
-4. **Enable LAN Control**: in the app, go to your device's **Device Settings** and turn on **LAN Control**. This is required for the Home Assistant integration to communicate with the lamp over your local network
-5. **Find the lamp's IP address**: in the same Device Settings screen, locate the IP address assigned to the lamp on your network (e.g. `192.168.4.139`). Note this down — you will need it during the Home Assistant setup
+2. **Power on the lamp**
+3. **Add the lamp to the app**: follow the in-app instructions to connect the lamp to your **2.4 GHz Wi-Fi network**
+4. **Enable LAN Control**: in the app, go to your lamp's **Device Settings** and activate **LAN Control**. This is required for the Home Assistant integration to communicate with the lamp over your local network
+5. **Find the lamp's IP address**: still in the Device Settings screen, go to **Device info** to find the IP address assigned to the lamp on your network (e.g. `192.168.4.139`).
+
+<table>
+  <tr>
+    <td><img src="images/App_Device_Settings.jpg" width="250" alt="Device Settings"></td>
+    <td><img src="images/App_LAN_Control.jpg" width="250" alt="LAN Control"></td>
+    <td><img src="images/App_Device_Info.jpg" width="250" alt="Device Info"></td>
+  </tr>
+</table>
 
 <!-- TODO: Add screenshot of Yeelight Station app — Device Settings showing LAN Control toggle and IP address -->
 
 > **Tip:** You can also find the lamp's IP address from your router's admin page or DHCP client list. Assigning a static IP / DHCP reservation for the lamp is recommended to prevent the address from changing.
 
 ### Adding to Home Assistant
+
+#### Automatic Discovery (recommended)
+
+Once the lamp is on your network with LAN Control enabled, Home Assistant will **automatically detect it** via Zeroconf (mDNS). You'll see a notification on the **Settings → Devices & Services** page:
+
+1. Look for the **Yeelight Cube Lite** discovery notification
+2. Click **Configure**
+3. Confirm to set up the device
+4. Done — the integration creates all entities automatically
+
+<!-- TODO: Add screenshot of the auto-discovery notification -->
+
+#### Manual Setup (alternative)
+
+If the lamp is not discovered automatically (e.g. it's on a different subnet or mDNS is blocked), you can add it manually:
 
 1. Go to **Settings → Devices & Services**
 2. Click **+ Add Integration** (bottom right)
@@ -89,7 +112,7 @@ The integration will connect to the lamp over your local network and automatical
 
 <!-- TODO: Add screenshot of the device page after successful setup -->
 
-> **Note:** Each lamp (base unit) needs to be added separately. If you have multiple lamps, repeat the process for each one using their respective IP addresses.
+> **Note:** Each lamp (base unit) needs to be added separately. If you have multiple lamps, repeat the process for each one.
 
 > **Conflict prevention:** If you also have the built-in Home Assistant **Yeelight** integration, this custom integration will automatically prevent it from managing your Cube device to avoid conflicts. No manual action needed.
 
@@ -127,10 +150,10 @@ Control the lamp's gradient and color modes from a single card.
 
 **Features:**
 
-- **9 gradient/color modes**: Solid Color, Letter Gradient, Column Gradient, Row Gradient, Angle Gradient, Radial Gradient, Letter Angle Gradient, Letter Vertical Gradient, Text Color Sequence — modes can be reordered and individually shown/hidden
+- **9 gradient/color modes**: Solid Color, Letter Gradient, Column Gradient, Row Gradient, Angle Gradient, Radial Gradient, Letter Angle Gradient, Letter Vertical Gradient, Text Color Sequence. Modes can be reordered and individually shown/hidden
 - **Color mode selector**: 5 display styles (buttons, colorized buttons, dropdown, compact, pills)
 - **Two-color gradient control**: pick start and end colors per mode
-- **Angle control**: real-time angle slider, number input, and rotary preview — 6 rotary styles (turning rectangle, arrow, star, wheel, rectangle, square), configurable size, and option to place in the header
+- **Angle control**: real-time angle slider, number input, and rotary preview with 6 rotary styles (turning rectangle, arrow, star, wheel, rectangle, square), configurable size, and option to place in the header
 - **Gradient preview**: 3 display modes (list, compact, wheel/carousel) with configurable pixel style (square/rounded/circle), gap, background, and preview size
 - **Multi-entity support**: apply gradients to multiple lamps at once
 
@@ -159,7 +182,7 @@ Create, manage, and apply color palettes.
 
 - **Visual palette display**: 5 swatch styles (round, square, gradient bar, gradient background, color stripes)
 - **4 display modes**: list, gallery (with rounded card option), carousel (with configurable navigation), album/coverflow (with 3D effect)
-- **Create & edit palettes**: add colors, rename, reorder, delete — configurable remove button style (default, red, black, trash, hidden)
+- **Create & edit palettes**: add colors, rename, reorder, delete — configurable remove button style (default, red, black, outline, glass, hidden)
 - **Apply palette**: load a palette's colors onto the lamp
 - **Import/Export**: save and load palette collections — button style customizable
 - **Multi-entity support**: apply palettes to multiple lamps
@@ -175,7 +198,7 @@ Edit color sequences used by the "Text Color Sequence" and "Panel Color Sequence
 - **Visual color list**: add, remove, reorder colors in a sequence with drag-and-drop
 - **7 layout modes**: compact, chips, tiles, rows, grid, cards, spread — each with its own density and look, configurable card size
 - **Color picker**: rotary color picker with optional hex input and color name display
-- **Configurable remove buttons**: 5 styles (default, red, black, trash, hidden), and for cards/spread layouts: button position (outside, inside, square)
+- **Configurable remove buttons**: 6 styles (default, red, black, outline, glass, hidden), and for cards/spread layouts: button position (outside, inside, square)
 - **Save & shuffle**: save as a named palette, randomize colors — action button styles customizable
 - **Multi-entity support**: apply color sequences to multiple lamps
 
@@ -296,14 +319,14 @@ Configure the effect, step count and duration via the **Transition Effect**, **T
 
 ## Troubleshooting
 
-| Problem                                 | Solution                                                                                                                      |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| **Cards not showing**                   | Clear browser cache with `Ctrl+F5` after installing or updating                                                               |
+| Problem                                 | Solution                                                                                                                                 |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| **Cards not showing**                   | Clear browser cache with `Ctrl+F5` after installing or updating                                                                          |
 | **Device not found**                    | Ensure the lamp is on the same network. Check the IP in the Yeelight Station app. The integration also auto-discovers lamps via Zeroconf |
-| **Conflicts with Yeelight integration** | This integration automatically dismisses built-in Yeelight discovery for your Cube devices and prevents it from managing them |
-| **Lamp appears stuck / unresponsive**   | Press the **Force Refresh** button entity, or use the force refresh button on the Lamp Preview card                           |
-| **Colors look off on the hardware**     | Color accuracy correction is built-in and applied automatically. It compensates for LED channel imbalance                     |
-| **Lamp changed IP address**             | The integration automatically re-discovers lamps on the network. You can also update the IP from the integration's Configure page |
+| **Conflicts with Yeelight integration** | This integration automatically dismisses built-in Yeelight discovery for your Cube devices and prevents it from managing them            |
+| **Lamp appears stuck / unresponsive**   | Press the **Force Refresh** button entity, or use the force refresh button on the Lamp Preview card                                      |
+| **Colors look off on the hardware**     | Color accuracy correction is built-in and applied automatically. It compensates for LED channel imbalance                                |
+| **Lamp changed IP address**             | The integration automatically re-discovers lamps on the network. You can also update the IP from the integration's Configure page        |
 
 ---
 

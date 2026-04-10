@@ -567,39 +567,7 @@ class YeelightCubePaletteCard extends HTMLElement {
         }
         .remove-btn { background: color-mix(in srgb, var(--error-color, #db4437) 15%, var(--card-background-color, #fff)); border: none; border-radius: 6px; color: var(--error-color, #db4437); padding: 6px 18px; cursor: pointer; font-size: 1em; font-weight: 500; transition: background 0.2s; }
         .remove-btn:hover { background: color-mix(in srgb, var(--error-color, #db4437) 25%, var(--card-background-color, #fff)); }
-        /* Base button styles inherited from delete-button-styles.js */
-        .remove-btn-cross.black-style:hover {
-          background: linear-gradient(135deg, #3a3a3a 0%, #252525 50%, #101010 100%) !important;
-          border-color: rgba(255, 255, 255, 0.5) !important;
-          box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
-        }
-        .remove-btn-cross.trash-style {
-          background: rgba(255, 255, 255, 0.95) !important;
-          border: 1px solid rgba(211, 47, 47, 0.25) !important;
-          color: var(--error-color, #d32f2f) !important;
-          font-size: 0 !important;
-          width: 28px !important;
-          height: 28px !important;
-        }
-        .remove-btn-cross.trash-style::before {
-          content: "🗑" !important;
-          font-size: 13px !important;
-          display: flex !important;
-          align-items: center !important;
-          justify-content: center !important;
-          filter: drop-shadow(0 0 2px rgba(211, 47, 47, 0.3)) !important;
-        }
-        .remove-btn-cross.trash-style:hover {
-          background: var(--card-background-color, white) !important;
-          border-color: rgba(211, 47, 47, 0.4) !important;
-        }
-        .remove-btn-cross.trash-style:hover::before {
-          filter: drop-shadow(0 0 4px rgba(211, 47, 47, 0.5)) !important;
-        }
-        .remove-btn-cross:hover {
-          background: color-mix(in srgb, var(--error-color, #db4437) 25%, var(--card-background-color, #fff));
-          transform: scale(1.1);
-        }
+        /* Style variants inherited from delete-button-styles.js */
 
         /* Display Mode Styles */
         /* Palette-specific grid styles (base grid styles from grid-mode-utils.js) */
