@@ -597,6 +597,14 @@ class YeelightCubeCalibrationCard extends HTMLElement {
   getCardSize() {
     return 10;
   }
+
+  disconnectedCallback() {
+    // Clear all per-slider debounce timers
+    if (this._debounceTimers) {
+      Object.values(this._debounceTimers).forEach((t) => clearTimeout(t));
+      this._debounceTimers = {};
+    }
+  }
 }
 
 if (!customElements.get("yeelight-cube-calibration-card")) {

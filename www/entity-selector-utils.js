@@ -3,7 +3,7 @@
  * Provides consistent entity selection dropdowns across all editor cards
  */
 
-import { html, css } from "https://unpkg.com/lit@2.8.0/index.js?module";
+import { html, css } from "./lib/lit-all.js";
 
 /**
  * Creates a searchable entity selector dropdown

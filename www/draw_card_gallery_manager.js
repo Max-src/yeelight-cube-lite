@@ -1,4 +1,4 @@
-import { html } from "https://unpkg.com/lit?module";
+import { html } from "./lib/lit-all.js";
 import { trimStaleArray } from "./draw_utils.js";
 import { GRID_COLS, GRID_ROWS, MATRIX_SIZE, BLACK_THRESHOLD } from "./draw_card_const.js";
 

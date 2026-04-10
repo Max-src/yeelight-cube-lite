@@ -1,4 +1,4 @@
-import { html, css } from "https://unpkg.com/lit@2.8.0/index.js?module";
+import { html, css } from "./lib/lit-all.js";
 
 // Reusable Button Group Component Utilities
 export function createButtonGroup(choices, selectedValue, changeHandler) {

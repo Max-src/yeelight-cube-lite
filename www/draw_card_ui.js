@@ -1,5 +1,5 @@
 // UI rendering helpers for Yeelight Cube Lite Draw Card
-import { html } from "https://unpkg.com/lit@2.8.0/index.js?module";
+import { html } from "./lib/lit-all.js";
 import { isBlackPixel } from "./draw_utils.js";
 
 export function renderColorSwatch(color, onClick) {

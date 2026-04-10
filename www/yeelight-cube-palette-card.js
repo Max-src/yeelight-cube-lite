@@ -1960,6 +1960,21 @@ class YeelightCubePaletteCard extends HTMLElement {
       </div>
     `;
   }
+
+  disconnectedCallback() {
+    // Clear palette cache timer
+    clearTimeout(this._localPalettesClearTimer);
+    this._localPalettesClearTimer = null;
+
+    // Reset render/interaction flags
+    this._renderScheduled = false;
+    this._deletionInProgress = false;
+    this._importStatus = { active: false, success: false };
+
+    // Clear local palette cache
+    delete this._localPalettes;
+    delete this._localPalettesTimestamp;
+  }
 }
 customElements.define("yeelight-cube-palette-card", YeelightCubePaletteCard);
 

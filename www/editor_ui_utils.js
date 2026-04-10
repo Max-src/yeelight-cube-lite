@@ -1,7 +1,7 @@
 // Shared UI utilities for Home Assistant card editors
 // Provides consistent form elements and styles
 
-import { html, css } from "https://unpkg.com/lit@2.8.0/index.js?module";
+import { html, css } from "./lib/lit-all.js";
 
 /**
  * Dispatch a custom event, compatible with Home Assistant's event system.

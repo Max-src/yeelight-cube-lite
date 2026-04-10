@@ -1,4 +1,4 @@
-import { css, html } from "https://unpkg.com/lit@2.8.0/index.js?module";
+import { css, html } from "./lib/lit-all.js";
 
 export const formRowStyles = css`
   .toggle-row {

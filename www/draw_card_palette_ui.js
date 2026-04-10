@@ -1,5 +1,5 @@
 // Generic palette rendering for Yeelight Cube Lite Draw Card
-import { html } from "https://unpkg.com/lit@2.8.0/index.js?module";
+import { html } from "./lib/lit-all.js";
 import { renderPaletteList } from "./draw_card_ui.js";
 
 export function renderPaletteSection(

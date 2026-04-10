@@ -1,6 +1,4 @@
-import { LitElement, html } from "https://unpkg.com/lit@2.8.0/index.js?module";
-import { repeat } from "https://unpkg.com/lit@2.8.0/directives/repeat.js?module";
-import { unsafeHTML } from "https://unpkg.com/lit@2.8.0/directives/unsafe-html.js?module";
+import { LitElement, html, repeat, unsafeHTML } from "./lib/lit-all.js";
 import { getInitialMatrix, parseConfig } from "./draw_card_state.js";
 import { drawCardStyles } from "./draw_card_styles.js";
 import { compactModeStyles } from "./compact-mode-styles.js";
@@ -20,7 +18,6 @@ import {
 } from "./export-import-button-utils.js";
 import { renderCarousel } from "./carousel-utils.js";
 import { listModeStyles } from "./list-mode-utils.js";
-import { gridModeStyles, renderGridMode } from "./grid-mode-utils.js";
 import { galleryModeStyles, renderGalleryMode } from "./gallery-mode-utils.js";
 import { savePalette, getLampPalette } from "./draw_card_palette.js";
 import { ToolManager, ActionManager } from "./draw_card_tools.js";
@@ -1744,120 +1741,6 @@ class YeelightCubeDrawCard extends LitElement {
 
     // Return gallery content with pagination
     return html` ${galleryContent} ${pagination || ""} `;
-  }
-
-  _renderPixelArtGalleryMode(
-    pixelArts,
-    globalOffset,
-    allowDelete,
-    bgColor,
-    pixelStyle,
-    pixelGap,
-    autoApplyToLamp,
-    showTitles,
-    allowRename,
-    removeButtonStyle = "default",
-  ) {
-    const cfg = this.config || {};
-    const previewSizePercent = cfg.pixel_art_preview_size || 100;
-    const scaleValue = previewSizePercent / 100;
-
-    // Store context for event handlers
-    this._gridContext = {
-      globalOffset,
-      autoApplyToLamp,
-    };
-
-    const removeBtnClass = getDeleteButtonClass(removeButtonStyle);
-
-    // Render function for pixel art content
-    const renderPixelArtContent = (art, idx) => {
-      const pixelMatrix = this._convertPixelArtToDisplayMatrix(art);
-      const pixelArtPixelBoxShadow = cfg.pixel_art_pixel_box_shadow !== false;
-
-      const scaledPixelSize = 10 * scaleValue;
-      const scaledPadding = 6 * scaleValue;
-      const scaledGap = pixelGap * scaleValue;
-
-      return `
-        <div class="pixelart-preview"
-             style="padding: ${scaledPadding}px;
-                    width: fit-content;
-                    --pixelart-bg-color: ${resolveBgColor(bgColor)};
-                    --pixelart-gap: ${scaledGap}px;
-                    --pixel-size: ${scaledPixelSize}px;">
-            <div class="pixelart-matrix ${pixelStyle}">
-              ${pixelMatrix
-                .map((color) => {
-                  const pixelShadowStyle = pixelArtPixelBoxShadow
-                    ? "box-shadow: 0 0 2px #0008;"
-                    : "";
-                  // Check if pixel is black and should be ignored
-                  const shouldIgnore =
-                    cfg.gallery_ignore_black_pixels && isBlackPixel(color);
-                  return `
-                  <div class="pixelart-pixel ${pixelStyle} ${
-                    color !== "#000000" ? "active" : ""
-                  } ${shouldIgnore ? "pixelart-pixel-empty" : ""}"
-                       style="background: ${
-                         shouldIgnore ? "transparent" : color || "#000000"
-                       }; ${pixelShadowStyle}">
-                  </div>
-                `;
-                })
-                .join("")}
-            </div>
-          </div>
-      `;
-    };
-
-    // Use grid mode utility
-    const gridHTML = renderGridMode(pixelArts, renderPixelArtContent, {
-      showTitle: showTitles,
-      allowTitleEdit: allowRename,
-      showMeta: false,
-      showDelete: allowDelete,
-      deleteButtonClass: removeBtnClass,
-      onDeleteClick: "handleGridDelete",
-      onItemClick: "handleGridItemClick",
-      onTitleClick: allowRename ? "handleGridTitleClick" : null,
-    });
-
-    return html`
-      <style>
-        ${gridModeStyles}
-        
-        /* Pixel art specific grid styles */
-        .grid-item .pixelart-preview {
-          background: var(--pixelart-bg-color, transparent);
-          border-radius: 8px;
-          display: inline-block;
-        }
-
-        .grid-item .pixelart-matrix {
-          display: grid;
-          grid-template-columns: repeat(20, 1fr);
-          gap: var(--pixelart-gap, 0px);
-          width: fit-content;
-        }
-
-        .grid-item .pixelart-pixel {
-          width: var(--pixel-size, 10px);
-          height: var(--pixel-size, 10px);
-          background: #000;
-          transition: background 0.15s ease;
-        }
-
-        .grid-item .pixelart-pixel.round {
-          border-radius: 50%;
-        }
-
-        .grid-item .pixelart-pixel.square {
-          border-radius: 0;
-        }
-      </style>
-      ${unsafeHTML(gridHTML)}
-    `;
   }
 
   _renderPixelArtGalleryMode(

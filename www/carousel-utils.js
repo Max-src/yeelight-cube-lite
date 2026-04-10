@@ -5,7 +5,7 @@
  * to be reused across different modes and contexts.
  */
 
-import { html } from "https://unpkg.com/lit@2.8.0/index.js?module";
+import { html } from "./lib/lit-all.js";
 
 /**
  * Calculate which indicator dots to show with ellipsis for large item counts

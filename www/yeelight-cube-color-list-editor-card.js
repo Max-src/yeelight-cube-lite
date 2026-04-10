@@ -2486,6 +2486,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           const handleMouseUp = () => {
             document.removeEventListener("mousemove", handleMouseMove);
             document.removeEventListener("mouseup", handleMouseUp);
+            self._dragCleanup = null;
             self._isDragging = false;
             if (!draggingElem) return;
             draggingElem.classList.remove("dragging");
@@ -2518,6 +2519,9 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
               });
             }
           };
+          // Store references so disconnectedCallback can clean up mid-drag
+          self._dragCleanup = { handleMouseMove, handleMouseUp };
+
           document.addEventListener("mousemove", handleMouseMove);
           document.addEventListener("mouseup", handleMouseUp);
         });
@@ -4998,6 +5002,38 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
   getCardSize() {
     return 4;
+  }
+
+  disconnectedCallback() {
+    // Clear angle debounce timer
+    clearTimeout(this._angleDebounceTimer);
+    this._angleDebounceTimer = null;
+
+    // Clean up document-level drag listeners if disconnected mid-drag
+    if (this._dragCleanup) {
+      document.removeEventListener("mousemove", this._dragCleanup.handleMouseMove);
+      document.removeEventListener("mouseup", this._dragCleanup.handleMouseUp);
+      this._dragCleanup = null;
+    }
+
+    // Remove any temp color picker inputs left on document.body
+    document.querySelectorAll('input[type="color"]').forEach((input) => {
+      if (
+        input.style.opacity === "0" &&
+        input.style.pointerEvents === "none" &&
+        input.parentNode === document.body
+      ) {
+        document.body.removeChild(input);
+      }
+    });
+
+    // Reset interaction flags
+    this._renderScheduled = false;
+    this._isDragging = false;
+    this._draggingRotary = false;
+    this._processingModeChange = false;
+    this._usingColorPicker = false;
+    this._isReordering = false;
   }
 }
 

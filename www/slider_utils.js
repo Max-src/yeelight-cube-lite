@@ -3,7 +3,7 @@
  * Provides consistent rendering and handling for all UI components
  */
 
-import { html, css } from "https://unpkg.com/lit@2.8.0/index.js?module";
+import { html, css } from "./lib/lit-all.js";
 
 /**
  * Renders a standardized slider with label and value display

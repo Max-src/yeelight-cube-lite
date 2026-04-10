@@ -544,7 +544,11 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       document.removeEventListener("mouseup", handleEnd);
       document.removeEventListener("touchmove", handleMove);
       document.removeEventListener("touchend", handleEnd);
+      this._dragCleanup = null;
     };
+
+    // Store references so disconnectedCallback can clean up mid-drag
+    this._dragCleanup = { handleMove, handleEnd };
 
     document.addEventListener("mousemove", handleMove);
     document.addEventListener("mouseup", handleEnd);
@@ -4933,6 +4937,39 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         }
       </style>
     `;
+  }
+
+  disconnectedCallback() {
+    // Clear all stored debounce/timeout timers
+    clearTimeout(this._brightnessDebounceTimer);
+    clearTimeout(this._realBrightnessDebounceTimer);
+    clearTimeout(this._effectDebounceTimer);
+    clearTimeout(this._renderDebounceTimer);
+    clearTimeout(this._oscillationResetTimeout);
+    clearTimeout(this._userBrightnessTimeout);
+
+    this._brightnessDebounceTimer = null;
+    this._realBrightnessDebounceTimer = null;
+    this._effectDebounceTimer = null;
+    this._renderDebounceTimer = null;
+    this._oscillationResetTimeout = null;
+    this._userBrightnessTimeout = null;
+
+    // Clean up document-level drag listeners if disconnected mid-drag
+    if (this._dragCleanup) {
+      document.removeEventListener("mousemove", this._dragCleanup.handleMove);
+      document.removeEventListener("mouseup", this._dragCleanup.handleEnd);
+      document.removeEventListener("touchmove", this._dragCleanup.handleMove);
+      document.removeEventListener("touchend", this._dragCleanup.handleEnd);
+      this._dragCleanup = null;
+    }
+
+    // Reset drag/interaction flags
+    this._renderScheduled = false;
+    this._isDragging = false;
+    this._anySliderDragging = false;
+    this._rotaryDragging = false;
+    this._powerToggling = false;
   }
 
   getCardSize() {
