@@ -60,7 +60,7 @@ export function lampToMatrixCoords(lampPos) {
   // Transform lamp coordinates (0=bottom-left) to matrix coordinates (0=top-left)
   const lampRow = Math.floor(lampPos / GRID_COLS);
   const lampCol = lampPos % GRID_COLS;
-  const matrixRow = (GRID_ROWS - 1) - lampRow; // Flip vertically
+  const matrixRow = GRID_ROWS - 1 - lampRow; // Flip vertically
   return matrixRow * GRID_COLS + lampCol;
 }
 
@@ -68,7 +68,7 @@ export function matrixToLampCoords(matrixPos) {
   // Transform matrix coordinates to lamp coordinates
   const matrixRow = Math.floor(matrixPos / GRID_COLS);
   const matrixCol = matrixPos % GRID_COLS;
-  const lampRow = (GRID_ROWS - 1) - matrixRow; // Flip vertically
+  const lampRow = GRID_ROWS - 1 - matrixRow; // Flip vertically
   return lampRow * GRID_COLS + matrixCol;
 }
 
