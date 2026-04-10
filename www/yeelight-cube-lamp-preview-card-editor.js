@@ -699,7 +699,12 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
                     icon: "■",
                   },
                 ],
-                cfg.brightness_theme || (cfg.capsule_theme === "dark" ? "filled" : cfg.capsule_theme === "transparent" ? "flat" : "subtle"),
+                cfg.brightness_theme ||
+                  (cfg.capsule_theme === "dark"
+                    ? "filled"
+                    : cfg.capsule_theme === "transparent"
+                      ? "flat"
+                      : "subtle"),
                 createButtonGroupChangeHandler("brightness_theme", (value) => {
                   this._config = {
                     ...this._config,
