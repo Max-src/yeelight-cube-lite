@@ -193,38 +193,56 @@ class PixelArtSensor(YeelightCubeBaseSensor):
             "last_updated": time.time()
         }
 
-async def async_setup_entry(hass, entry, async_add_entities):
-    """Set up sensors for Yeelight Cube Lite."""
+def _create_and_register_sensors(hass, async_add_entities, owner_entry_id):
+    """Create global sensors and register them under the given entry's platform.
+
+    Called during initial setup AND when the owning entry is removed so sensors
+    can be re-created under a remaining entry's platform.
+    """
     import logging
     _LOGGER = logging.getLogger(__name__)
-    
-    # Initialize domain data if needed
-    if DOMAIN not in hass.data:
-        hass.data[DOMAIN] = {}
-    
-    # Only create sensors once (they're global, not per-device)
-    if "sensors_created" in hass.data[DOMAIN]:
-        _LOGGER.debug("Sensors already created, skipping duplicate creation")
-        return
-    
-    # Mark sensors as created
-    hass.data[DOMAIN]["sensors_created"] = True
-    
-    # Create global sensors
+
     sensors = [
         LetterMapSensor(hass),
         PaletteSensor(hass),
-        PixelArtSensor(hass)
+        PixelArtSensor(hass),
     ]
-    
-    # Add them
+
     async_add_entities(sensors, update_before_add=True)
-    
-    # Store references for the backend
+
+    hass.data[DOMAIN]["sensors_created"] = True
+    hass.data[DOMAIN]["_sensor_owner_entry"] = owner_entry_id
+
+    # Store references so the backend can force state-writes on sensors
     for sensor in sensors:
         if isinstance(sensor, PaletteSensor):
             hass.data[DOMAIN]["palette_sensor_entity"] = sensor
         elif isinstance(sensor, PixelArtSensor):
             hass.data[DOMAIN]["pixelart_sensor_entity"] = sensor
-    
-    _LOGGER.debug(f"✅ Created Yeelight Cube Lite sensors: {[s.name for s in sensors]}")
+
+    _LOGGER.debug(
+        "Created Yeelight Cube Lite sensors (owner entry: %s): %s",
+        owner_entry_id,
+        [s.name for s in sensors],
+    )
+
+
+async def async_setup_entry(hass, entry, async_add_entities):
+    """Set up sensors for Yeelight Cube Lite."""
+    import logging
+    _LOGGER = logging.getLogger(__name__)
+
+    # Initialize domain data if needed
+    if DOMAIN not in hass.data:
+        hass.data[DOMAIN] = {}
+
+    # Store this entry's async_add_entities callback so sensors can be
+    # re-created under a surviving entry when the owning entry is removed.
+    hass.data[DOMAIN].setdefault("_sensor_callbacks", {})[entry.entry_id] = async_add_entities
+
+    # Only create sensors once (they're global, not per-device)
+    if "sensors_created" in hass.data[DOMAIN]:
+        _LOGGER.debug("Sensors already created, skipping for entry %s", entry.entry_id)
+        return
+
+    _create_and_register_sensors(hass, async_add_entities, entry.entry_id)

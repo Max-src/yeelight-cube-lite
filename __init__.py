@@ -429,23 +429,60 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     conflict_prevention = get_conflict_prevention(hass)
     conflict_prevention.remove_managed_device(ip_address)
     
-    # Unload platforms
+    # Unload platforms (removes entities tied to this entry, including sensors
+    # if this entry was the one that created them).
     unload_ok = await hass.config_entries.async_unload_platforms(entry, ["light", "switch", "text", "select", "sensor", "number", "button", "camera"])
     
     # Clean up entry-specific data
     if DOMAIN in hass.data and entry.entry_id in hass.data[DOMAIN]:
         del hass.data[DOMAIN][entry.entry_id]
     
-    # If no more entries remain, clean up global state so sensors get recreated on re-add
-    remaining_entries = hass.config_entries.async_entries(DOMAIN)
-    if not remaining_entries or (len(remaining_entries) == 1 and remaining_entries[0].entry_id == entry.entry_id):
-        _LOGGER.debug("Last Yeelight Cube Lite entry unloaded - clearing global state")
+    # --- Global sensor lifecycle ------------------------------------------------
+    # Sensors are global (shared across all lamps) but HA ties entities to the
+    # config entry whose async_setup_entry created them.  When that entry is
+    # removed the sensors vanish.  We detect this and re-create them under a
+    # surviving entry's platform callback so they stay available.
+    # ---------------------------------------------------------------------------
+    sensor_callbacks = hass.data.get(DOMAIN, {}).get("_sensor_callbacks", {})
+    sensor_callbacks.pop(entry.entry_id, None)  # this entry is going away
+
+    sensor_owner = hass.data.get(DOMAIN, {}).get("_sensor_owner_entry")
+    this_owned_sensors = (
+        sensor_owner == entry.entry_id
+        or (sensor_owner is None and hass.data.get(DOMAIN, {}).get("sensors_created"))
+    )
+
+    if this_owned_sensors and DOMAIN in hass.data:
+        # Clear stale sensor state
+        hass.data[DOMAIN].pop("sensors_created", None)
+        hass.data[DOMAIN].pop("palette_sensor_entity", None)
+        hass.data[DOMAIN].pop("pixelart_sensor_entity", None)
+        hass.data[DOMAIN].pop("_sensor_owner_entry", None)
+
+        # Re-create under a remaining entry's callback (if any)
+        if sensor_callbacks:
+            from .sensor import _create_and_register_sensors  # noqa: E402
+            new_owner_id, callback = next(iter(sensor_callbacks.items()))
+            try:
+                _create_and_register_sensors(hass, callback, new_owner_id)
+                _LOGGER.debug(
+                    "Global sensors transferred to entry %s", new_owner_id
+                )
+            except Exception as exc:
+                _LOGGER.warning(
+                    "Failed to recreate sensors after entry removal: %s", exc
+                )
+        else:
+            _LOGGER.debug("Last entry unloaded — sensors will be recreated on next add")
+    elif not sensor_callbacks:
+        # Last entry and it didn't own sensors (edge case) — clean up anyway
         if DOMAIN in hass.data:
             hass.data[DOMAIN].pop("sensors_created", None)
             hass.data[DOMAIN].pop("palette_sensor_entity", None)
             hass.data[DOMAIN].pop("pixelart_sensor_entity", None)
+            hass.data[DOMAIN].pop("_sensor_owner_entry", None)
     
-    _LOGGER.debug(f"Unloaded Yeelight Cube Lite at {ip_address}")
+    _LOGGER.debug("Unloaded Yeelight Cube Lite at %s", ip_address)
     return unload_ok
 
 async def async_save_data(hass: HomeAssistant):
