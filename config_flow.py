@@ -289,15 +289,11 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @callback
     def async_get_options_flow(config_entry):
         """Get the options flow for this handler."""
-        return YeelightCubeOptionsFlow(config_entry)
+        return YeelightCubeOptionsFlow()
 
 
 class YeelightCubeOptionsFlow(config_entries.OptionsFlow):
     """Handle Yeelight Cube Lite options."""
-
-    def __init__(self, config_entry):
-        """Initialize options flow."""
-        self.config_entry = config_entry
 
     async def async_step_init(self, user_input=None):
         """Manage the options."""
