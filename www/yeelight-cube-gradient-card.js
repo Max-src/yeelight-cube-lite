@@ -87,6 +87,8 @@ class YeelightCubeGradientCard extends HTMLElement {
     this._lastModeChangeTime = 0; // Track when mode was last changed
     this._optimisticMode = null; // Store the optimistic mode selection
     this._renderScheduled = false;
+    this._pendingHassRender = false; // Track if a render was blocked by interaction flags
+    this._interactionSafetyTimer = null; // Safety timer to flush pending renders
     this._previewEventListenerRegistered = false; // Track event listener for global preview cache
     this._cachedPreviewHtml = null; // Cache rendered preview HTML
     this._lastPreviewDataHash = null; // Track if preview data changed
@@ -330,6 +332,13 @@ class YeelightCubeGradientCard extends HTMLElement {
     // config change — clearing the cache here causes the new instance to render
     // an empty wheel (no preview data), leading to the wheel-disappearing bug.
     // The cache is lightweight and will be naturally refreshed by _loadPreviews().
+
+    // Reset interaction flags and cleanup safety timer
+    this._pendingHassRender = false;
+    if (this._interactionSafetyTimer) {
+      clearInterval(this._interactionSafetyTimer);
+      this._interactionSafetyTimer = null;
+    }
   }
 
   setConfig(config) {
@@ -565,6 +574,7 @@ class YeelightCubeGradientCard extends HTMLElement {
       !this._dropdownOpen &&
       timeSinceLastModeChange > ignoreUpdateWindow
     ) {
+      this._pendingHassRender = false;
       if (!this._renderScheduled) {
         this._renderScheduled = true;
         requestAnimationFrame(() => {
@@ -572,7 +582,55 @@ class YeelightCubeGradientCard extends HTMLElement {
           this.render();
         });
       }
+    } else {
+      // Interaction in progress — remember that a state-driven render was blocked
+      this._pendingHassRender = true;
+      this._startInteractionSafety();
     }
+  }
+
+  // Flush any render that was blocked while interaction flags were set.
+  // Called when an interaction flag is cleared to recover missed state updates.
+  _flushPendingRender() {
+    if (!this._pendingHassRender) return;
+    if (
+      this._draggingRotary ||
+      this._isDragging ||
+      this._usingSlider ||
+      this._dropdownOpen
+    )
+      return; // Another flag still active
+    this._pendingHassRender = false;
+    if (this._interactionSafetyTimer) {
+      clearInterval(this._interactionSafetyTimer);
+      this._interactionSafetyTimer = null;
+    }
+    if (!this._renderScheduled) {
+      this._renderScheduled = true;
+      requestAnimationFrame(() => {
+        this._renderScheduled = false;
+        this.render();
+      });
+    }
+  }
+
+  // Safety timer: periodically check if all interaction flags have cleared
+  // and flush the pending render. Covers edge cases where flag-clearing code
+  // paths don't explicitly call _flushPendingRender().
+  _startInteractionSafety() {
+    if (this._interactionSafetyTimer) return; // Already running
+    this._interactionSafetyTimer = setInterval(() => {
+      if (
+        !this._draggingRotary &&
+        !this._isDragging &&
+        !this._usingSlider &&
+        !this._dropdownOpen
+      ) {
+        clearInterval(this._interactionSafetyTimer);
+        this._interactionSafetyTimer = null;
+        this._flushPendingRender();
+      }
+    }, 1000);
   }
 
   render() {
@@ -1710,10 +1768,12 @@ class YeelightCubeGradientCard extends HTMLElement {
 
       modeDropdown.addEventListener("blur", () => {
         this._dropdownOpen = false;
+        this._flushPendingRender();
       });
 
       modeDropdown.addEventListener("change", (e) => {
         this._dropdownOpen = false; // Close flag when selection made
+        this._flushPendingRender();
         const mode = e.target.value;
         if (!this._hass || this._processingModeChange) return;
 
@@ -2668,11 +2728,19 @@ class YeelightCubeGradientCard extends HTMLElement {
       angleSlider.addEventListener("mouseup", () => {
         setTimeout(() => {
           this._usingSlider = false;
+          this._flushPendingRender();
         }, 100);
       });
       angleSlider.addEventListener("touchend", () => {
         setTimeout(() => {
           this._usingSlider = false;
+          this._flushPendingRender();
+        }, 100);
+      });
+      angleSlider.addEventListener("touchcancel", () => {
+        setTimeout(() => {
+          this._usingSlider = false;
+          this._flushPendingRender();
         }, 100);
       });
 
@@ -2680,6 +2748,7 @@ class YeelightCubeGradientCard extends HTMLElement {
       angleSlider.addEventListener("mouseleave", () => {
         setTimeout(() => {
           this._usingSlider = false;
+          this._flushPendingRender();
         }, 200);
       });
     }
@@ -2700,6 +2769,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         this._draggingRotary = false;
         this._isDragging = false;
         this._pendingAngle = undefined;
+        this._flushPendingRender();
 
         // Clean up document listeners
         document.removeEventListener("mousemove", handleMouseMove);
@@ -2720,10 +2790,12 @@ class YeelightCubeGradientCard extends HTMLElement {
         this._draggingRotary = false;
         this._isDragging = false;
         this._pendingAngle = undefined;
+        this._flushPendingRender();
 
         // Clean up document listeners
         document.removeEventListener("touchmove", handleTouchMove);
         document.removeEventListener("touchend", handleTouchEnd);
+        document.removeEventListener("touchcancel", handleTouchEnd);
       }
     };
 
@@ -2747,6 +2819,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         // Add document listeners for touch move and end
         document.addEventListener("touchmove", handleTouchMove);
         document.addEventListener("touchend", handleTouchEnd);
+        document.addEventListener("touchcancel", handleTouchEnd);
       });
 
       rotary.addEventListener("click", (e) => {
@@ -2781,6 +2854,7 @@ class YeelightCubeGradientCard extends HTMLElement {
           this._handleRotaryDrag(e.touches[0]);
           document.addEventListener("touchmove", handleTouchMove);
           document.addEventListener("touchend", handleTouchEnd);
+          document.addEventListener("touchcancel", handleTouchEnd);
         });
 
         wheelSelector.addEventListener("click", (e) => {
@@ -2811,6 +2885,7 @@ class YeelightCubeGradientCard extends HTMLElement {
           this._handleRotaryDrag(e.touches[0]);
           document.addEventListener("touchmove", handleTouchMove);
           document.addEventListener("touchend", handleTouchEnd);
+          document.addEventListener("touchcancel", handleTouchEnd);
         });
 
         rectSelector.addEventListener("click", (e) => {

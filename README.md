@@ -100,7 +100,7 @@ Once the lamp is on your network with LAN Control enabled, Home Assistant will *
 
 <img src="images/Home-Assistant-Integrations-Discovered-Create-Device.png" alt="Device Created">
 
-4. Done — the integration creates all entities automatically
+4. Done. The integration creates all entities automatically.
 
 <img src="images/Home-Assistant-Integrations-Detail-Page.png" alt="Integration Detail Page">
 

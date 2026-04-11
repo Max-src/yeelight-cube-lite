@@ -322,18 +322,6 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
               </label>
             </div>
             <div class="toggle-row">
-              <label class="toggle-label">Allow Delete</label>
-              <label class="toggle-switch">
-                <input
-                  id="allow_delete"
-                  type="checkbox"
-                  .checked="${cfg.allow_delete !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="toggle-row">
               <label class="toggle-label">Show Hex Input Field</label>
               <label class="toggle-switch">
                 <input
@@ -381,6 +369,55 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                 ),
               )}
             </div>
+            ${(cfg.remove_button_style || "default") !== "none"
+              ? html`
+                  <div class="form-row">
+                    <label>Button Shape</label>
+                    ${createButtonGroup(
+                      [
+                        { value: "round", label: "Round" },
+                        { value: "rounded", label: "Rounded" },
+                        { value: "square", label: "Square" },
+                      ],
+                      cfg.delete_button_shape || "round",
+                      createButtonGroupChangeHandler(
+                        "delete_button_shape",
+                        (value) => {
+                          this._config = {
+                            ...this._config,
+                            delete_button_shape: value,
+                          };
+                          this._fireConfigChanged();
+                        },
+                      ),
+                    )}
+                  </div>
+                  <div class="toggle-row">
+                    <label class="toggle-label">Button Inside</label>
+                    <label class="toggle-switch">
+                      <input
+                        id="delete_button_inside"
+                        type="checkbox"
+                        .checked="${cfg.delete_button_inside === true}"
+                        @change="${this._valueChanged}"
+                      />
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                  <div class="toggle-row">
+                    <label class="toggle-label">Button Left Side</label>
+                    <label class="toggle-switch">
+                      <input
+                        id="delete_button_left"
+                        type="checkbox"
+                        .checked="${cfg.delete_button_left === true}"
+                        @change="${this._valueChanged}"
+                      />
+                      <span class="toggle-slider"></span>
+                    </label>
+                  </div>
+                `
+              : ""}
             <div class="form-row">
               <label>Color Info Display</label>
               ${createButtonGroup(
@@ -447,52 +484,6 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                   },
                   { min: 30, max: 100, step: 5 },
                 )
-              : ""}
-            ${cfg.list_layout === "cards" || cfg.list_layout === "spread"
-              ? html`
-                  <div
-                    style="margin-top: 20px; padding-top: 16px; border-top: 2px solid var(--divider-color, #e0e0e0);"
-                  >
-                    <div
-                      style="font-weight: 600; font-size: 1.05em; margin-bottom: 12px; color: var(--primary-color, #0077cc);"
-                    >
-                      Card Style Settings
-                    </div>
-                    <div class="toggle-row">
-                      <label class="toggle-label">Rounded Cards</label>
-                      <label class="toggle-switch">
-                        <input
-                          id="card_rounded"
-                          type="checkbox"
-                          .checked="${cfg.card_rounded !== false}"
-                          @change="${this._valueChanged}"
-                        />
-                        <span class="toggle-slider"></span>
-                      </label>
-                    </div>
-                    <div class="form-row">
-                      <label>Delete Button Position</label>
-                      ${createButtonGroup(
-                        [
-                          { value: "outside", label: "Outside" },
-                          { value: "inside", label: "Inside" },
-                          { value: "square", label: "Square" },
-                        ],
-                        cfg.card_button_position || "outside",
-                        createButtonGroupChangeHandler(
-                          "card_button_position",
-                          (value) => {
-                            this._config = {
-                              ...this._config,
-                              card_button_position: value,
-                            };
-                            this._fireConfigChanged();
-                          },
-                        ),
-                      )}
-                    </div>
-                  </div>
-                `
               : ""}
           </div>
         </div>

@@ -89,7 +89,60 @@ export const compactLayoutStyles = `
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    /* z-index: 10 !important; */
+  }
+  
+  /* Outside: absolute top-right corner */
+  .compact-item .delete-btn-cross.btn-pos-outside {
+    position: absolute !important;
+    top: -8px !important;
+    right: -8px !important;
+    left: auto !important;
+    margin-left: 0 !important;
+    z-index: 10;
+  }
+  
+  /* Dot-style in compact mode: just set size, let position classes handle placement */
+  .compact-item .delete-btn-cross.dot-style {
+    width: 14px !important;
+    height: 14px !important;
+  }
+  /* Dot outside: absolute corner */
+  .compact-item .delete-btn-cross.dot-style.btn-pos-outside {
+    position: absolute !important;
+    top: -4px !important;
+    right: -4px !important;
+    left: auto !important;
+    margin-left: 0 !important;
+  }
+  
+  /* Extra padding when button protrudes outside */
+  .compact-item:has(.btn-pos-outside) {
+    padding-top: calc(10px * var(--card-size-multiplier, 0.7));
+    padding-right: calc(10px * var(--card-size-multiplier, 0.7));
+  }
+  
+  /* ---- Left-side button overrides ---- */
+  /* Inside (flex child): move to start of row */
+  .compact-item .delete-btn-cross.btn-side-left {
+    order: -1;
+    margin-left: 0 !important;
+    margin-right: calc(12px * var(--card-size-multiplier, 0.7));
+  }
+  /* Outside: top-left corner instead of top-right */
+  .compact-item .delete-btn-cross.btn-pos-outside.btn-side-left {
+    right: auto !important;
+    left: -8px !important;
+    margin-right: 0 !important;
+  }
+  /* Dot outside top-left */
+  .compact-item .delete-btn-cross.dot-style.btn-pos-outside.btn-side-left {
+    right: auto !important;
+    left: -4px !important;
+  }
+  /* Swap padding when outside-left */
+  .compact-item:has(.btn-pos-outside.btn-side-left) {
+    padding-right: 0;
+    padding-left: calc(10px * var(--card-size-multiplier, 0.7));
   }
   
   /* Container for multiple compact items */

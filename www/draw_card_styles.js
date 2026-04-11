@@ -3,7 +3,10 @@
 import { css, unsafeCSS } from "./lib/lit-all.js";
 import { compactModeStyles } from "./compact-mode-styles.js";
 import { compactLayoutStyles } from "./compact-layout-utils.js";
-import { deleteButtonStyles } from "./delete-button-styles.js";
+import {
+  deleteButtonStyles,
+  deleteButtonPositionStyles,
+} from "./delete-button-styles.js";
 import { exportImportButtonStyles } from "./export-import-button-utils.js";
 import { carouselStyles } from "./carousel-utils.js";
 
@@ -16,6 +19,9 @@ export const drawCardStyles = css`
 
   /* Shared Delete Button Styles */
   ${unsafeCSS(deleteButtonStyles)}
+
+  /* Shared Delete Button Position Styles */
+  ${unsafeCSS(deleteButtonPositionStyles)}
 
   /* Shared Export/Import Button Styles */
   ${unsafeCSS(exportImportButtonStyles)}

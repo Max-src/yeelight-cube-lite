@@ -3,6 +3,10 @@
  *
  * Extracted from yeelight-cube-palette-card.js to allow grid mode functionality
  * to be reused across different cards (palette, draw, etc.).
+ *
+ * Delete button style/shape/position is configured via getDeleteButtonConfig()
+ * from delete-button-styles.js.  The caller passes deleteButtonClass, posClass,
+ * and sideClass through the options bag.
  */
 
 /**
@@ -75,6 +79,15 @@ export const gridModeStyles = `
     overflow: hidden;
   }
 
+  /* Allow outside buttons to overflow gradient card bounds */
+  .grid-item-gradient:has(.btn-pos-outside) {
+    overflow: visible;
+  }
+  .grid-item-gradient:has(.btn-pos-outside) .grid-gradient-bg {
+    border-radius: 12px 12px 0 0;
+    overflow: hidden;
+  }
+
   .grid-item-gradient .grid-gradient-bg {
     height: 100px;
   }
@@ -132,6 +145,44 @@ export const gridModeStyles = `
     top: 8px !important;
     right: 8px !important;
   }
+
+  /* ── Grid: position class overrides ── */
+  .grid-item .delete-btn-cross.btn-pos-outside {
+    top: -8px;
+    right: -8px;
+  }
+  .grid-item .delete-btn-cross.btn-pos-inside {
+    top: 6px;
+    right: 6px;
+  }
+  .grid-item .delete-btn-cross.dot-style.btn-pos-outside {
+    top: -4px !important;
+    right: -4px !important;
+  }
+  .grid-item .delete-btn-cross.dot-style.btn-pos-inside {
+    top: 4px !important;
+    right: 4px !important;
+  }
+  /* Left side */
+  .grid-item .delete-btn-cross.btn-side-left {
+    right: auto !important;
+    left: 4px;
+  }
+  .grid-item .delete-btn-cross.btn-pos-outside.btn-side-left {
+    left: -8px;
+  }
+  .grid-item .delete-btn-cross.btn-pos-inside.btn-side-left {
+    left: 6px;
+  }
+  .grid-item .delete-btn-cross.dot-style.btn-side-left {
+    left: 8px;
+  }
+  .grid-item .delete-btn-cross.dot-style.btn-pos-outside.btn-side-left {
+    left: -4px !important;
+  }
+  .grid-item .delete-btn-cross.dot-style.btn-pos-inside.btn-side-left {
+    left: 4px !important;
+  }
 `;
 
 /**
@@ -147,6 +198,8 @@ export const gridModeStyles = `
  * @param {Function} options.getMetaText - Function to get meta text (receives: item, index)
  * @param {boolean} options.showDelete - Whether to show delete button
  * @param {string} options.deleteButtonClass - CSS class for delete button
+ * @param {string} [options.posClass] - "btn-pos-inside" | "btn-pos-outside" (default "")
+ * @param {string} [options.sideClass] - "btn-side-left" or "" (default "")
  * @param {string|Function} options.onDeleteClick - Function name or handler for delete (receives: event, index)
  * @param {string|Function} options.onItemClick - Function name or handler for item click (receives: event, index)
  * @param {string|Function} options.onTitleClick - Function name or handler for title click (receives: event, index)
@@ -162,6 +215,8 @@ export function renderGridMode(items, renderItemContent, options = {}) {
     getMetaText = null,
     showDelete = false,
     deleteButtonClass = "delete-btn-cross",
+    posClass = "",
+    sideClass = "",
     onDeleteClick = null,
     onItemClick = null,
     onTitleClick = null,
@@ -185,7 +240,7 @@ export function renderGridMode(items, renderItemContent, options = {}) {
 
       // Build delete button HTML
       const deleteButtonHtml = showDelete
-        ? `<button class="${deleteButtonClass}" 
+        ? `<button class="${deleteButtonClass} ${posClass} ${sideClass}" 
                    data-idx="${idx}" 
                    title="Delete" 
                    onclick="event.stopPropagation(); ${getFunctionCall(

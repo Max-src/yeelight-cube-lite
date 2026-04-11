@@ -429,6 +429,44 @@ class YeelightCubePaletteCardEditor extends LitElement {
                 { value: "glass", label: "Glass" },
               ],
             )}
+            ${(config.remove_button_style || "default") !== "none"
+              ? html`
+                  ${this._renderButtonGroup(
+                    "Button Shape",
+                    "delete_button_shape",
+                    config.delete_button_shape || "round",
+                    [
+                      { value: "round", label: "Round" },
+                      { value: "rounded", label: "Rounded" },
+                      { value: "square", label: "Square" },
+                    ],
+                  )}
+                  <div class="form-row">
+                    <label>Button Inside</label>
+                    <label class="switch">
+                      <input
+                        type="checkbox"
+                        .checked="${config.delete_button_inside === true}"
+                        @change="${(e) =>
+                          this._onSwitchChange(e, "delete_button_inside")}"
+                      />
+                      <span class="slider"></span>
+                    </label>
+                  </div>
+                  <div class="form-row">
+                    <label>Button Left Side</label>
+                    <label class="switch">
+                      <input
+                        type="checkbox"
+                        .checked="${config.delete_button_left === true}"
+                        @change="${(e) =>
+                          this._onSwitchChange(e, "delete_button_left")}"
+                      />
+                      <span class="slider"></span>
+                    </label>
+                  </div>
+                `
+              : ""}
 
             <div class="form-row">
               <label>Display Card Size</label>
@@ -498,16 +536,6 @@ class YeelightCubePaletteCardEditor extends LitElement {
                       "Rounded Cards",
                       "album_card_rounded",
                       config.album_card_rounded !== false,
-                    )}
-                    ${this._renderButtonGroup(
-                      "Delete Button Position",
-                      "album_remove_button_style",
-                      config.album_remove_button_style || "outside",
-                      [
-                        { value: "outside", label: "Outside" },
-                        { value: "inside", label: "Inside" },
-                        { value: "square", label: "Square" },
-                      ],
                     )}
                   `,
                 )

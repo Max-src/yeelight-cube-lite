@@ -1,8 +1,10 @@
 /**
  * Delete/Remove Button Styles and Utilities
  *
- * Provides consistent delete button styling and helper functions.
- * All variants draw the cross exclusively via CSS ::before / ::after
+ * THE single source of truth for delete button styling, positioning, and
+ * configuration across ALL cards (color-list-editor, palette, draw, etc.).
+ *
+ * Every variant draws the cross exclusively via CSS ::before / ::after
  * pseudo-elements, so inline `color` or `style` on the host element
  * never leaks into the cross.  This guarantees correct contrast in
  * every layout mode, theme (light/dark), and parent background color.
@@ -17,24 +19,77 @@
  *
  * Usage:
  *   1. Import:
- *      import { deleteButtonStyles, getDeleteButtonClass } from './delete-button-styles.js';
+ *      import { deleteButtonStyles, getDeleteButtonClass,
+ *               getDeleteButtonConfig, deleteButtonPositionStyles } from './delete-button-styles.js';
  *
  *   2. Include in CSS template:
  *      ${deleteButtonStyles}
+ *      ${deleteButtonPositionStyles}
  *
- *   3. Get CSS class:
- *      const cls = getDeleteButtonClass(config.remove_button_style);
+ *   3. Read config (works with any card's config object):
+ *      const btnCfg = getDeleteButtonConfig(config);
+ *      // btnCfg = { style, shape, inside, left, classes, posClass, sideClass, allowDelete }
  *
  *   4. Render — leave content empty (cross is drawn by CSS):
- *      <button class="${cls}" @click=${handler}></button>
+ *      <button class="${btnCfg.classes} my-layout-btn ${btnCfg.posClass} ${btnCfg.sideClass}" ...></button>
  */
 
+/* ─────────────────────────────────────────────────────────────────────────────
+ * CONFIG HELPERS
+ * ───────────────────────────────────────────────────────────────────────────*/
+
 /**
- * Map style name → CSS class string.
+ * Normalised delete-button configuration reader.
+ * Accepts ANY card's config object and returns a consistent bag of values.
+ *
+ * Config key lookup order (first found wins):
+ *   style  → remove_button_style | pixel_art_remove_button_style
+ *   shape  → delete_button_shape
+ *   inside → delete_button_inside
+ *   left   → delete_button_left
+ *
+ * @param {Object} config - Card configuration object
+ * @param {Object} [overrides] - Optional overrides for specific values
+ * @returns {Object} { style, shape, inside, left, classes, posClass, sideClass, allowDelete }
+ */
+export function getDeleteButtonConfig(config = {}, overrides = {}) {
+  const style =
+    overrides.style ??
+    config.remove_button_style ??
+    config.pixel_art_remove_button_style ??
+    "default";
+  const shape = overrides.shape ?? config.delete_button_shape ?? "round";
+  const inside = overrides.inside ?? config.delete_button_inside === true;
+  const left = overrides.left ?? config.delete_button_left === true;
+
+  const classes = getDeleteButtonClass(style, shape);
+  const posClass = inside ? "btn-pos-inside" : "btn-pos-outside";
+  const sideClass = left ? "btn-side-left" : "";
+  const allowDelete = style !== "none";
+
+  return {
+    style,
+    shape,
+    inside,
+    left,
+    classes,
+    posClass,
+    sideClass,
+    allowDelete,
+  };
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * CLASS HELPERS
+ * ───────────────────────────────────────────────────────────────────────────*/
+
+/**
+ * Map style name → CSS class string, optionally including a shape modifier.
  * @param {string} style - "none" | "default" | "red" | "black" | "dot" | "glass"
+ * @param {string} [shape] - "round" | "rounded" | "square" (default: "round")
  * @returns {string}
  */
-export function getDeleteButtonClass(style) {
+export function getDeleteButtonClass(style, shape) {
   if (style === "none") return "delete-btn-cross hidden-style";
   const map = {
     red: "red-style",
@@ -46,23 +101,36 @@ export function getDeleteButtonClass(style) {
     trash: "dot-style", // migrate legacy "trash" → dot
     neon: "dot-style", // migrate legacy "neon" → dot
   };
-  return `delete-btn-cross${map[style] ? ` ${map[style]}` : ""}`;
+  const shapeMap = {
+    rounded: "btn-shape-rounded",
+    square: "btn-shape-square",
+  };
+  let cls = `delete-btn-cross${map[style] ? ` ${map[style]}` : ""}`;
+  if (shape && shapeMap[shape]) cls += ` ${shapeMap[shape]}`;
+  return cls;
 }
 
 /**
- * Inline styles for delete-button positioning on card/spread layouts.
- * @param {string} position - "outside" | "inside" | "square"
+ * Inline styles for delete-button positioning (works for all layouts).
+ * @param {boolean} inside - true = inside the element, false = protruding outside
+ * @param {boolean} left - true = left side, false = right side (default)
  * @returns {string}
  */
+export function getButtonPositionStyles(inside = false, left = false) {
+  const hSide = left ? "left" : "right";
+  if (inside) {
+    return `top: 6px; ${hSide}: 6px;`;
+  }
+  // outside (default) — protrudes from corner
+  return `top: -8px; ${hSide}: -8px;`;
+}
+
+/**
+ * @deprecated Use getButtonPositionStyles(inside) instead.
+ * Kept for backward compatibility.
+ */
 export function getCardButtonPositionStyles(position = "outside") {
-  if (position === "inside") {
-    return "top: 6px; right: 6px;";
-  }
-  if (position === "square") {
-    return "top: -8px; right: -8px; border-radius: 0; background: var(--card-background-color, rgba(255,255,255,0.95)); border: 2px solid var(--divider-color, #f0f0f0); box-shadow: 0 2px 8px rgba(0,0,0,0.15);";
-  }
-  // outside (default)
-  return "top: -8px; right: -8px;";
+  return getButtonPositionStyles(position === "inside");
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
@@ -74,6 +142,21 @@ export function getCardButtonPositionStyles(position = "outside") {
 export const deleteButtonStyles = `
   /* ── Hidden ── */
   .delete-btn-cross.hidden-style { display: none !important; }
+
+  /* ── Shape modifiers ── */
+  .delete-btn-cross.btn-shape-rounded {
+    border-radius: 6px !important;
+  }
+  .delete-btn-cross.btn-shape-square {
+    border-radius: 0 !important;
+  }
+  /* Dot shape — smaller radius since dot is 14px */
+  .delete-btn-cross.dot-style.btn-shape-rounded {
+    border-radius: 3px !important;
+  }
+  .delete-btn-cross.dot-style.btn-shape-square {
+    border-radius: 0 !important;
+  }
 
   /* ── Base (shared by every visible variant) ── */
   .delete-btn-cross {
@@ -172,8 +255,6 @@ export const deleteButtonStyles = `
     border: 1px solid rgba(0, 0, 0, 0.12) !important;
     box-shadow: inset 0 0.5px 1px rgba(255, 255, 255, 0.35),
                 0 0.5px 1px rgba(0, 0, 0, 0.12) !important;
-    top: 8px;
-    right: 8px;
   }
   /* Hide cross entirely — dot only */
   .delete-btn-cross.dot-style::before,
@@ -214,5 +295,83 @@ export const deleteButtonStyles = `
     position: absolute;
     top: 8px;
     right: 8px;
+  }
+`;
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * POSITION CSS — inside/outside × left/right, usable by any layout.
+ *
+ * Apply alongside deleteButtonStyles.  These use the CSS classes:
+ *   .btn-pos-inside  / .btn-pos-outside  (default if neither is set = outside)
+ *   .btn-side-left   (omit = right side, which is the default)
+ *
+ * Each layout may scope these under its own container selector for specificity,
+ * but these generic rules cover the common absolute-positioned case
+ * (gallery, grid, list, compact, etc.)
+ * ───────────────────────────────────────────────────────────────────────────*/
+export const deleteButtonPositionStyles = `
+  /* ── Generic position rules (absolute-positioned buttons) ── */
+
+  /* Outside (default) — protrudes from top-right corner */
+  .delete-btn-cross.btn-pos-outside {
+    position: absolute !important;
+    top: -8px;
+    right: -8px;
+    z-index: 10;
+  }
+
+  /* Inside — sits inside the element's top-right corner */
+  .delete-btn-cross.btn-pos-inside {
+    position: absolute !important;
+    top: 6px;
+    right: 6px;
+    z-index: 10;
+  }
+
+  /* Dot outside — smaller offset */
+  .delete-btn-cross.dot-style.btn-pos-outside {
+    top: -4px;
+    right: -4px;
+  }
+
+  /* Dot inside — smaller offset */
+  .delete-btn-cross.dot-style.btn-pos-inside {
+    top: 4px;
+    right: 4px;
+  }
+
+  /* ── Left side overrides ── */
+  .delete-btn-cross.btn-side-left {
+    right: auto !important;
+  }
+  .delete-btn-cross.btn-pos-outside.btn-side-left {
+    left: -8px;
+  }
+  .delete-btn-cross.btn-pos-inside.btn-side-left {
+    left: 6px;
+  }
+  .delete-btn-cross.dot-style.btn-pos-outside.btn-side-left {
+    left: -4px;
+  }
+  .delete-btn-cross.dot-style.btn-pos-inside.btn-side-left {
+    left: 4px;
+  }
+
+  /* ── Flex-child mode (used by chips, tiles, rows where button is a flex child when inside) ── */
+  .delete-btn-cross.btn-flex-inside {
+    position: relative !important;
+    top: auto !important;
+    right: auto !important;
+    left: auto !important;
+    flex-shrink: 0;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    margin-left: auto;
+  }
+  .delete-btn-cross.btn-flex-inside.btn-side-left {
+    order: -1;
+    margin-left: 0 !important;
+    margin-right: auto;
   }
 `;

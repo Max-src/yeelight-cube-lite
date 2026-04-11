@@ -1113,6 +1113,42 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 ),
               )}
             </div>
+            ${(this.config.pixel_art_remove_button_style || "default") !==
+            "none"
+              ? html`
+                  <div class="form-row">
+                    <label>Button Shape</label>
+                    ${createButtonGroup(
+                      [
+                        { value: "round", label: "Round" },
+                        { value: "rounded", label: "Rounded" },
+                        { value: "square", label: "Square" },
+                      ],
+                      this.config.delete_button_shape || "round",
+                      createButtonGroupChangeHandler(
+                        "delete_button_shape",
+                        (value) => {
+                          this.config.delete_button_shape = value;
+                          this._fireConfigChanged();
+                          this.requestUpdate();
+                        },
+                      ),
+                    )}
+                  </div>
+                  ${createToggleRow(
+                    "Button Inside",
+                    "delete_button_inside",
+                    this.config.delete_button_inside === true,
+                    (e) => this._onSwitchChange(e, "delete_button_inside"),
+                  )}
+                  ${createToggleRow(
+                    "Button Left Side",
+                    "delete_button_left",
+                    this.config.delete_button_left === true,
+                    (e) => this._onSwitchChange(e, "delete_button_left"),
+                  )}
+                `
+              : ""}
             ${
               // Album-specific settings - styled section
               this.config.pixel_art_gallery_mode === "album"
@@ -1137,24 +1173,6 @@ class YeelightCubeDrawCardEditor extends LitElement {
                         this.config.album_card_rounded !== false,
                         (e) => this._onSwitchChange(e, "album_card_rounded"),
                       )}
-                      <div class="form-row">
-                        <label>Remove Button Style</label>
-                        ${createButtonGroup(
-                          [
-                            { value: "outside", label: "Outside" },
-                            { value: "inside", label: "Inside" },
-                            { value: "square", label: "Square" },
-                          ],
-                          this.config.album_remove_button_style || "outside",
-                          createButtonGroupChangeHandler(
-                            "album_remove_button_style",
-                            (value) => {
-                              this.config.album_remove_button_style = value;
-                              this._fireConfigChanged();
-                            },
-                          ),
-                        )}
-                      </div>
                     </div>
                   `
                 : this.config.pixel_art_gallery_mode === "carousel"

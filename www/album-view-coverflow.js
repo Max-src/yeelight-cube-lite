@@ -17,16 +17,18 @@
  * 3. Call setupAlbumNavigation() to attach event listeners
  *
  * Configuration:
+ * - Uses centralized getDeleteButtonConfig() for button styling
  * - Palette cards use: config.remove_button_style
  * - Draw cards use: config.pixel_art_remove_button_style
  *
  * Pure JavaScript - no external dependencies
  */
 
-import { getDeleteButtonClass } from "./delete-button-styles.js";
+import { getDeleteButtonConfig } from "./delete-button-styles.js";
 
 export function getAlbumStyles(config = {}, classPrefix = "album") {
-  const removeButtonStyle = config.album_remove_button_style || "outside";
+  const btnCfg = getDeleteButtonConfig(config);
+  const isInside = btnCfg.inside;
   const cardRounded = config.album_card_rounded !== false;
   const enable3D = config.album_3d_effect !== false;
   const borderRadius = cardRounded ? "16px" : "0";
@@ -41,8 +43,7 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
     .${classPrefix}-album-container {
       min-height: 200px;
       max-height: 500px;
-      /* padding: 40px 0; */
-      padding: 12px 0;
+      padding: ${isInside ? "12px" : "20px"} 0;
       position: relative;
       display: flex;
       align-items: center;
@@ -59,7 +60,7 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
       background: var(--card-background-color, white);
       border-radius: ${borderRadius};
       box-shadow: 0 8px 24px rgba(0,0,0,0.2);
-      overflow: ${removeButtonStyle === "inside" ? "hidden" : "visible"};
+      overflow: visible;
       position: absolute;
       left: 50%;
       top: 50%;
@@ -107,32 +108,41 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
       color: var(--secondary-text-color, #666);
     }
     
+    /* Album delete button positioning - uses centralized CSS classes for appearance */
     .${classPrefix}-album-item .delete-btn-cross,
     .${classPrefix}-album-item .album-remove-btn {
       position: absolute;
-      top: ${removeButtonStyle === "inside" ? "6px" : "-8px"};
-      right: ${removeButtonStyle === "inside" ? "6px" : "-8px"};
+      top: -8px;
+      right: -8px;
       z-index: 15;
       transition: opacity 0.3s ease;
-      background: ${
-        removeButtonStyle === "inside"
-          ? "transparent"
-          : "var(--card-background-color, rgba(255,255,255,0.95))"
-      };
-      border: ${removeButtonStyle === "inside" ? "none" : "2px solid var(--divider-color, #e0e0e0)"};
-      border-radius: ${removeButtonStyle === "square" ? "0" : "50%"};
-      box-shadow: ${
-        removeButtonStyle === "inside" ? "none" : "0 2px 8px rgba(0,0,0,0.15)"
-      };
-      width: ${removeButtonStyle === "inside" ? "auto" : "28px"};
-      height: ${removeButtonStyle === "inside" ? "auto" : "28px"};
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: ${removeButtonStyle === "inside" ? "2.2em" : "1.5em"};
-      font-weight: bold;
-      color: var(--error-color, #ff4444);
       cursor: pointer;
+    }
+    .${classPrefix}-album-item .btn-pos-inside {
+      top: 6px !important;
+      right: 6px !important;
+    }
+    .${classPrefix}-album-item .btn-side-left {
+      right: auto !important;
+      left: -8px;
+    }
+    .${classPrefix}-album-item .btn-pos-inside.btn-side-left {
+      left: 6px !important;
+    }
+    .${classPrefix}-album-item .dot-style:not(.btn-pos-inside) {
+      top: -4px;
+      right: -4px;
+    }
+    .${classPrefix}-album-item .dot-style.btn-pos-inside {
+      top: 4px !important;
+      right: 4px !important;
+    }
+    .${classPrefix}-album-item .dot-style.btn-side-left:not(.btn-pos-inside) {
+      right: auto !important;
+      left: -4px;
+    }
+    .${classPrefix}-album-item .dot-style.btn-pos-inside.btn-side-left {
+      left: 4px !important;
     }
 
     /* 
@@ -154,16 +164,11 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
     
     .${classPrefix}-album-item .delete-btn-cross:hover,
     .${classPrefix}-album-item .album-remove-btn:hover {
-      color: var(--error-color, #cc0000);
-      background: ${
-        removeButtonStyle === "inside"
-          ? "rgba(255,255,255,0.1)"
-          : "var(--card-background-color, #fff)"
-      };
+      opacity: 1;
     }
     
     ${
-      removeButtonStyle === "inside"
+      isInside
         ? `
     /* VISUAL TUNING - Album view specific size adjustments (not duplicates) */
     /* Red/black buttons: 26px (smaller than default 28px) for tighter spacing in album cards */
@@ -242,15 +247,12 @@ export function renderAlbumView(
   config = {},
   classPrefix = "album",
 ) {
-  // Determine button style (supports both palette and pixel art configs)
-  const removeButtonStyle =
-    config.remove_button_style ||
-    config.pixel_art_remove_button_style ||
-    "default";
-  const showRemove = removeButtonStyle !== "none";
+  // Determine button style using centralized config
+  const btnCfg = getDeleteButtonConfig(config);
+  const showRemove = btnCfg.allowDelete;
 
   // Build button CSS classes
-  const deleteBtnClass = getDeleteButtonClass(removeButtonStyle);
+  const deleteBtnClass = `${btnCfg.classes} ${btnCfg.posClass} ${btnCfg.sideClass}`;
 
   return `
     <div class="${classPrefix}-album-wrapper">
@@ -262,12 +264,12 @@ export function renderAlbumView(
             const itemContent = renderItemContent(item, idx, config);
             return `
             <div class="${classPrefix}-album-item" data-idx="${idx}">
+              ${
+                showRemove
+                  ? `<button class="${deleteBtnClass} album-remove-btn" data-idx="${idx}" title="Remove">×</button>`
+                  : ""
+              }
               <div class="album-card">
-                ${
-                  showRemove
-                    ? `<button class="${deleteBtnClass} album-remove-btn" data-idx="${idx}" title="Remove">×</button>`
-                    : ""
-                }
                 ${itemContent}
               </div>
             </div>

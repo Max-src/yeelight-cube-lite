@@ -2,7 +2,9 @@ import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
 import { compactModeStyles } from "./compact-mode-styles.js";
 import {
   deleteButtonStyles,
+  deleteButtonPositionStyles,
   getDeleteButtonClass,
+  getDeleteButtonConfig,
 } from "./delete-button-styles.js";
 import {
   exportImportButtonStyles,
@@ -297,8 +299,9 @@ class YeelightCubePaletteCard extends HTMLElement {
     }
 
     const showCard = this.config.show_card_background !== false;
-    const removeButtonStyle = this.config.remove_button_style || "default";
-    const showRemove = removeButtonStyle !== "none";
+    const btnCfg = getDeleteButtonConfig(this.config);
+    const showRemove = btnCfg.allowDelete;
+    const removeBtnClass = btnCfg.classes;
     const showExport = this.config.show_export_button !== false;
     const showImport = this.config.show_import_button !== false;
     const showPaletteTitle = this.config.show_palette_title !== false;
@@ -306,8 +309,7 @@ class YeelightCubePaletteCard extends HTMLElement {
     const allowTitleEdit =
       showPaletteTitle && this.config.allow_title_edit === true;
 
-    // Use shared utility function to get delete button class
-    const removeBtnClass = getDeleteButtonClass(removeButtonStyle);
+    // Use centralized utility — btnCfg computed above
     const cardTitle =
       typeof this.config.title === "string" ? this.config.title : "";
     const displayMode = this.config.display_mode || "list";
@@ -343,6 +345,8 @@ class YeelightCubePaletteCard extends HTMLElement {
         allowTitleEdit,
         showColorCount,
         removeBtnClass,
+        posClass: btnCfg.posClass,
+        sideClass: btnCfg.sideClass,
         swatchStyle: this.config.swatch_style || "square",
         globalOffset: usePagination
           ? this._currentPalettePage * itemsPerPage
@@ -363,6 +367,7 @@ class YeelightCubePaletteCard extends HTMLElement {
 
         /* Shared Delete Button Styles */
         ${deleteButtonStyles}
+        ${deleteButtonPositionStyles}
 
         /* Shared Export/Import Button Styles */
         ${exportImportButtonStyles}
@@ -569,6 +574,75 @@ class YeelightCubePaletteCard extends HTMLElement {
         .remove-btn { background: color-mix(in srgb, var(--error-color, #db4437) 15%, var(--card-background-color, #fff)); border: none; border-radius: 6px; color: var(--error-color, #db4437); padding: 6px 18px; cursor: pointer; font-size: 1em; font-weight: 500; transition: background 0.2s; }
         .remove-btn:hover { background: color-mix(in srgb, var(--error-color, #db4437) 25%, var(--card-background-color, #fff)); }
         /* Style variants inherited from delete-button-styles.js */
+
+        /* ── Palette list & carousel: remove button position ── */
+        .palette-list-remove {
+          position: absolute;
+          top: 8px;
+          right: 8px;
+          z-index: 10;
+        }
+        .palette-list-remove.btn-pos-inside {
+          top: 6px;
+          right: 6px;
+        }
+        .palette-list-remove.btn-pos-outside {
+          top: -8px;
+          right: -8px;
+        }
+        .palette-list-remove.dot-style.btn-pos-outside {
+          top: -4px;
+          right: -4px;
+        }
+        .palette-list-remove.btn-side-left {
+          right: auto !important;
+          left: 8px;
+        }
+        .palette-list-remove.btn-pos-inside.btn-side-left {
+          left: 6px;
+        }
+        .palette-list-remove.btn-pos-outside.btn-side-left {
+          left: -8px;
+        }
+        .palette-list-remove.dot-style.btn-pos-outside.btn-side-left {
+          left: -4px;
+        }
+        /* Allow outside buttons to overflow list item bounds */
+        .palette-list-item:has(.btn-pos-outside) {
+          overflow: visible !important;
+        }
+
+        .palette-remove-btn {
+          position: absolute;
+          top: 8px;
+          right: 8px;
+          z-index: 10;
+        }
+        .palette-remove-btn.btn-pos-inside {
+          top: 6px;
+          right: 6px;
+        }
+        .palette-remove-btn.btn-pos-outside {
+          top: -8px;
+          right: -8px;
+        }
+        .palette-remove-btn.dot-style.btn-pos-outside {
+          top: -4px;
+          right: -4px;
+        }
+        .palette-remove-btn.btn-side-left {
+          right: auto !important;
+          left: 8px;
+        }
+        .palette-remove-btn.btn-pos-inside.btn-side-left {
+          left: 6px;
+        }
+        .palette-remove-btn.btn-pos-outside.btn-side-left {
+          left: -8px;
+        }
+        .palette-remove-btn.dot-style.btn-pos-outside.btn-side-left {
+          left: -4px;
+        }
 
         /* Display Mode Styles */
         /* Palette-specific grid styles (base grid styles from grid-mode-utils.js) */
@@ -832,6 +906,36 @@ class YeelightCubePaletteCard extends HTMLElement {
           z-index: 100 !important;
           margin: 0 !important;
           pointer-events: auto !important;
+        }
+        /* Make palette-item-carousel static so button positions relative to carousel-content-card */
+        .carousel-content-card .palette-item-carousel {
+          position: static;
+        }
+        .carousel-content-card .palette-remove-btn.btn-pos-inside {
+          top: 8px !important;
+          right: 8px !important;
+        }
+        .carousel-content-card .palette-remove-btn.btn-side-left {
+          right: auto !important;
+          left: -10px !important;
+        }
+        .carousel-content-card .palette-remove-btn.btn-pos-inside.btn-side-left {
+          left: 8px !important;
+        }
+        .carousel-content-card .palette-remove-btn.dot-style {
+          top: -4px !important;
+          right: -4px !important;
+        }
+        .carousel-content-card .palette-remove-btn.dot-style.btn-pos-inside {
+          top: 4px !important;
+          right: 4px !important;
+        }
+        .carousel-content-card .palette-remove-btn.dot-style.btn-side-left {
+          right: auto !important;
+          left: -4px !important;
+        }
+        .carousel-content-card .palette-remove-btn.dot-style.btn-pos-inside.btn-side-left {
+          left: 4px !important;
         }
         
         .palette-item-carousel .palette-colors {
@@ -1466,6 +1570,8 @@ class YeelightCubePaletteCard extends HTMLElement {
       allowTitleEdit,
       showColorCount,
       removeBtnClass,
+      posClass = "",
+      sideClass = "",
       globalOffset = 0,
     } = options;
 
@@ -1486,17 +1592,18 @@ class YeelightCubePaletteCard extends HTMLElement {
             : `${palette.colors.length} colors`;
 
         const removeButtonHtml = showRemove
-          ? `<button class="${removeBtnClass}" data-idx="${idx}" title="Remove" onclick="event.stopPropagation(); this.getRootNode().host._deletePalette(${idx});" style="position:absolute;top:${
-              showPaletteTitle ? "12px" : "8px"
-            };right:${showPaletteTitle ? "12px" : "8px"};">${"×"}</button>`
+          ? `<button class="${removeBtnClass} palette-list-remove ${posClass} ${sideClass}" data-idx="${idx}" title="Remove" onclick="event.stopPropagation(); this.getRootNode().host._deletePalette(${idx});"></button>`
           : "";
 
+        const padSide = sideClass.includes("btn-side-left")
+          ? "padding-left"
+          : "padding-right";
         return `
         <div class="palette-row palette-list-item" data-idx="${idx}" style="position:relative;padding:${
           isGradientBg ? "14px 16px" : "8px 12px"
         };box-sizing:border-box;${rowBgStyle}; min-height: ${minHeight};">
           <div style="display:flex;flex-direction:column;width:100%;${
-            showRemove ? "padding-right:40px;" : ""
+            showRemove ? `${padSide}:40px;` : ""
           };pointer-events:none;">
             ${
               showPaletteTitle
@@ -1544,6 +1651,8 @@ class YeelightCubePaletteCard extends HTMLElement {
       allowTitleEdit,
       showColorCount,
       removeBtnClass,
+      posClass = "",
+      sideClass = "",
     } = options;
     const swatchStyle = this.config.swatch_style || "square";
     const swatchSize = this.config.swatch_size || 32;
@@ -1659,6 +1768,8 @@ class YeelightCubePaletteCard extends HTMLElement {
         showTitle: showPaletteTitle,
         showDelete: showRemove,
         deleteButtonClass: removeBtnClass,
+        posClass,
+        sideClass,
         onDeleteClick: "handleGalleryDelete",
         onItemClick: "handleGalleryItemClick",
         onTitleClick: allowTitleEdit ? "handleGalleryTitleClick" : null,
@@ -1762,6 +1873,8 @@ class YeelightCubePaletteCard extends HTMLElement {
       allowTitleEdit,
       showColorCount,
       removeBtnClass,
+      posClass = "",
+      sideClass = "",
       swatchStyle,
     } = options;
 
@@ -1800,6 +1913,8 @@ class YeelightCubePaletteCard extends HTMLElement {
           allowTitleEdit,
           showColorCount,
           removeBtnClass,
+          posClass,
+          sideClass,
           swatchStyle,
         );
       },
@@ -1848,6 +1963,8 @@ class YeelightCubePaletteCard extends HTMLElement {
     allowTitleEdit,
     showColorCount,
     removeBtnClass,
+    posClass,
+    sideClass,
     swatchStyle,
   ) {
     const isGradientBg = swatchStyle === "gradient-bg";
@@ -1869,13 +1986,11 @@ class YeelightCubePaletteCard extends HTMLElement {
           showRemove
             ? `
               <button
-                class="palette-remove-btn ${removeBtnClass}"
+                class="palette-remove-btn ${removeBtnClass} ${posClass} ${sideClass}"
                 data-idx="${idx}"
                 title="Delete palette"
                 onclick="event.stopPropagation(); this.getRootNode().host._deletePalette(${idx});"
-              >
-                ×
-              </button>
+              ></button>
             `
             : ""
         }

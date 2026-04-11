@@ -9,7 +9,9 @@ import {
 } from "./compact-layout-utils.js";
 import {
   deleteButtonStyles,
+  deleteButtonPositionStyles,
   getDeleteButtonClass,
+  getDeleteButtonConfig,
 } from "./delete-button-styles.js";
 import {
   exportImportButtonStyles,
@@ -1502,8 +1504,8 @@ class YeelightCubeDrawCard extends LitElement {
     }
 
     const currentMode = cfg.pixel_art_gallery_mode || "gallery";
-    const removeButtonStyle = cfg.pixel_art_remove_button_style || "default";
-    const allowDelete = removeButtonStyle !== "none";
+    const btnCfg = getDeleteButtonConfig(cfg);
+    const allowDelete = btnCfg.allowDelete;
     const bgColor = cfg.pixel_art_background_color || "transparent";
     const autoApplyToLamp = cfg.pixel_art_auto_apply_to_lamp === true;
     const showTitles = cfg.pixel_art_show_titles !== false; // Default to true
@@ -1526,7 +1528,7 @@ class YeelightCubeDrawCard extends LitElement {
             autoApplyToLamp,
             showTitles,
             allowRename,
-            removeButtonStyle,
+            btnCfg,
           )}
         </div>
       </div>
@@ -1652,9 +1654,10 @@ class YeelightCubeDrawCard extends LitElement {
     autoApplyToLamp,
     showTitles = true,
     allowRename = false,
-    removeButtonStyle = "default",
+    btnCfg = null,
   ) {
     const cfg = this.config || {};
+    if (!btnCfg) btnCfg = getDeleteButtonConfig(cfg);
     const pixelStyle = cfg.pixel_art_pixel_style || "round";
     const pixelGap = parseInt(cfg.pixel_art_pixel_gap) || 0;
 
@@ -1679,7 +1682,7 @@ class YeelightCubeDrawCard extends LitElement {
           autoApplyToLamp,
           showTitles,
           allowRename,
-          removeButtonStyle,
+          btnCfg,
         );
         break;
       case "list":
@@ -1693,7 +1696,7 @@ class YeelightCubeDrawCard extends LitElement {
           autoApplyToLamp,
           showTitles,
           allowRename,
-          removeButtonStyle,
+          btnCfg,
         );
         break;
       case "carousel":
@@ -1706,7 +1709,7 @@ class YeelightCubeDrawCard extends LitElement {
           autoApplyToLamp,
           showTitles,
           allowRename,
-          removeButtonStyle,
+          btnCfg,
         );
         break;
       case "gallery":
@@ -1720,6 +1723,7 @@ class YeelightCubeDrawCard extends LitElement {
           autoApplyToLamp,
           showTitles,
           allowRename,
+          btnCfg,
         );
         break;
       default:
@@ -1733,7 +1737,7 @@ class YeelightCubeDrawCard extends LitElement {
           autoApplyToLamp,
           showTitles,
           allowRename,
-          removeButtonStyle,
+          btnCfg,
         );
         break;
     }
@@ -1752,15 +1756,16 @@ class YeelightCubeDrawCard extends LitElement {
     autoApplyToLamp,
     showTitles,
     allowRename,
+    btnCfg = null,
   ) {
     const cfg = this.config || {};
+    if (!btnCfg) btnCfg = getDeleteButtonConfig(cfg);
     const previewSizePercent = cfg.pixel_art_preview_size || 100;
-    const removeButtonStyle = cfg.pixel_art_remove_button_style || "default";
     // Use pixel_art_preview_size to control card size in gallery mode
     const cardSizeMultiplier = previewSizePercent / 100;
 
     // Get delete button class
-    const removeBtnClass = getDeleteButtonClass(removeButtonStyle);
+    const removeBtnClass = btnCfg.classes;
 
     // Store context for event handlers
     this._gridContext = {
@@ -1836,6 +1841,8 @@ class YeelightCubeDrawCard extends LitElement {
       showTitle: showTitles,
       showDelete: allowDelete,
       deleteButtonClass: removeBtnClass,
+      posClass: btnCfg.posClass,
+      sideClass: btnCfg.sideClass,
       onDeleteClick: "handleGridDelete",
       onItemClick: "handleGridItemClick",
       onTitleClick: allowRename ? "handleGridTitleClick" : null,
@@ -1864,9 +1871,10 @@ class YeelightCubeDrawCard extends LitElement {
     autoApplyToLamp,
     showTitles,
     allowRename,
-    removeButtonStyle = "default",
+    btnCfg = null,
   ) {
     const cfg = this.config || {};
+    if (!btnCfg) btnCfg = getDeleteButtonConfig(cfg);
     const previewSizePercent = cfg.pixel_art_preview_size || 100;
     const proportionalGap = (pixelGap * previewSizePercent) / 100;
     const proportionalPadding = (8 * previewSizePercent) / 100;
@@ -1876,7 +1884,10 @@ class YeelightCubeDrawCard extends LitElement {
       ...cfg,
       show_remove_button: allowDelete,
       card_size: cfg.pixel_art_preview_size || 50,
-      pixel_art_remove_button_style: removeButtonStyle,
+      pixel_art_remove_button_style: btnCfg.style,
+      delete_button_shape: btnCfg.shape,
+      delete_button_inside: btnCfg.inside,
+      delete_button_left: btnCfg.left,
     };
 
     // Render function for each pixel art item content
@@ -2036,13 +2047,14 @@ class YeelightCubeDrawCard extends LitElement {
     autoApplyToLamp,
     showTitles,
     allowRename,
-    removeButtonStyle = "default",
+    btnCfg = null,
   ) {
     const cfg = this.config || {};
+    if (!btnCfg) btnCfg = getDeleteButtonConfig(cfg);
     const previewSizePercent = cfg.pixel_art_preview_size || 100;
     const scaleValue = previewSizePercent / 100;
 
-    const removeBtnClass = getDeleteButtonClass(removeButtonStyle);
+    const removeBtnClass = btnCfg.classes;
 
     return html`
       <style>
@@ -2125,7 +2137,43 @@ class YeelightCubeDrawCard extends LitElement {
           position: absolute !important;
           top: 8px !important;
           right: 8px !important;
-          /* z-index: 10 !important; */
+        }
+        .list-delete-btn.btn-pos-inside {
+          top: 6px !important;
+          right: 6px !important;
+        }
+        .list-delete-btn.btn-pos-outside {
+          top: -8px !important;
+          right: -8px !important;
+        }
+        .list-delete-btn.dot-style.btn-pos-outside {
+          top: -4px !important;
+          right: -4px !important;
+        }
+        .list-delete-btn.btn-side-left {
+          right: auto !important;
+          left: 8px !important;
+        }
+        .list-delete-btn.btn-pos-inside.btn-side-left {
+          left: 6px !important;
+        }
+        .list-delete-btn.btn-pos-outside.btn-side-left {
+          left: -8px !important;
+        }
+        .list-delete-btn.dot-style.btn-pos-outside.btn-side-left {
+          left: -4px !important;
+        }
+        .pixelart-list-item:has(.btn-pos-outside) {
+          overflow: visible;
+        }
+        /* Push content away from inside delete button */
+        .pixelart-list-item:has(.list-delete-btn:not(.btn-side-left))
+          .list-item-content {
+          padding-right: 30px;
+        }
+        .pixelart-list-item:has(.list-delete-btn.btn-side-left)
+          .list-item-content {
+          padding-left: 30px;
         }
       </style>
       <div class="pixelart-gallery-list">
@@ -2142,7 +2190,7 @@ class YeelightCubeDrawCard extends LitElement {
               <div class="pixelart-list-item" data-index="${globalIdx}">
                 ${allowDelete
                   ? html`<button
-                      class="${removeBtnClass} list-delete-btn"
+                      class="${removeBtnClass} list-delete-btn ${btnCfg.posClass} ${btnCfg.sideClass}"
                       data-index="${globalIdx}"
                       title="Delete pixel art"
                       @click=${(e) => {
@@ -2150,9 +2198,7 @@ class YeelightCubeDrawCard extends LitElement {
                         e.stopPropagation();
                         this._handleGalleryClick(e);
                       }}
-                    >
-                      ×
-                    </button>`
+                    ></button>`
                   : ""}
                 <div
                   class="list-item-content"
@@ -2233,9 +2279,10 @@ class YeelightCubeDrawCard extends LitElement {
     autoApplyToLamp,
     showTitles,
     allowRename,
-    removeButtonStyle = "default",
+    btnCfg = null,
   ) {
     const cfg = this.config || {};
+    if (!btnCfg) btnCfg = getDeleteButtonConfig(cfg);
     const buttonShape = cfg.carousel_button_shape || "rect";
 
     // Initialize carousel index and slide direction
@@ -2327,12 +2374,10 @@ class YeelightCubeDrawCard extends LitElement {
     }`;
     const buttonsClass = `pixelart-buttons pixelart-buttons-${displayMode}`;
 
-    // Get delete button class based on style setting
+    // Get delete button config from centralized helper
     const cfg = this.config || {};
-    const removeButtonStyle = cfg.pixel_art_remove_button_style || "default";
-    const deleteBtnClass = `pixelart-btn-cross ${getDeleteButtonClass(
-      removeButtonStyle,
-    )}`;
+    const itemBtnCfg = getDeleteButtonConfig(cfg);
+    const deleteBtnClass = `pixelart-btn-cross ${itemBtnCfg.classes} ${itemBtnCfg.posClass} ${itemBtnCfg.sideClass}`;
 
     // Get preview size percentage (matching matrix size approach)
     const previewSizePercent = cfg.pixel_art_preview_size || 100;

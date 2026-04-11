@@ -2,6 +2,9 @@
  * List Mode Utilities - Reusable list mode rendering
  *
  * Provides consistent list mode layout for gallery items.
+ * Delete button style/shape/position is configured via getDeleteButtonConfig()
+ * from delete-button-styles.js.  The caller passes deleteBtnClass, posClass,
+ * and sideClass through the options bag.
  */
 
 /**
@@ -13,6 +16,8 @@
  * @param {boolean} options.allowTitleEdit - Whether titles are editable
  * @param {boolean} options.showDelete - Whether to show delete buttons
  * @param {string} options.deleteBtnClass - CSS class for delete button
+ * @param {string} [options.posClass] - "btn-pos-inside" | "btn-pos-outside" (default "")
+ * @param {string} [options.sideClass] - "btn-side-left" or "" (default "")
  * @param {Function} options.onDeleteClick - Callback for delete button click (receives: index)
  * @param {string} options.itemClass - Additional CSS class for list items
  * @returns {string} HTML string
@@ -24,6 +29,8 @@ export function renderListMode(items, options) {
     allowTitleEdit = false,
     showDelete = true,
     deleteBtnClass = "delete-btn-cross",
+    posClass = "",
+    sideClass = "",
     onDeleteClick,
     itemClass = "",
   } = options;
@@ -31,7 +38,7 @@ export function renderListMode(items, options) {
   return items
     .map((item, idx) => {
       const deleteButtonHtml = showDelete
-        ? `<button class="${deleteBtnClass} list-delete-btn" data-index="${idx}" title="Delete" style="position:absolute;top:8px;right:8px;z-index:10;">×</button>`
+        ? `<button class="${deleteBtnClass} list-delete-btn ${posClass} ${sideClass}" data-index="${idx}" title="Delete"></button>`
         : "";
 
       return `
@@ -120,5 +127,37 @@ export const listModeStyles = `
     top: 8px !important;
     right: 8px !important;
     /* z-index: 10 !important; */
+  }
+  /* Inside: use default abs position (top-right inside) */
+  .list-delete-btn.btn-pos-inside {
+    top: 6px !important;
+    right: 6px !important;
+  }
+  /* Outside: protrude from corner */
+  .list-delete-btn.btn-pos-outside {
+    top: -8px !important;
+    right: -8px !important;
+  }
+  .list-delete-btn.dot-style.btn-pos-outside {
+    top: -4px !important;
+    right: -4px !important;
+  }
+  /* Allow outside buttons to overflow list item bounds */
+  .list-item:has(.btn-pos-outside) {
+    overflow: visible;
+  }
+  /* Left side */
+  .list-delete-btn.btn-side-left {
+    right: auto !important;
+    left: 8px !important;
+  }
+  .list-delete-btn.btn-pos-inside.btn-side-left {
+    left: 6px !important;
+  }
+  .list-delete-btn.btn-pos-outside.btn-side-left {
+    left: -8px !important;
+  }
+  .list-delete-btn.dot-style.btn-pos-outside.btn-side-left {
+    left: -4px !important;
   }
 `;

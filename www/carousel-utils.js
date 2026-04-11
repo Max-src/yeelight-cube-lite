@@ -369,6 +369,17 @@ export const carouselStyles = `
   .carousel-content-card .pixelart-item-carousel {
     position: static;
   }
+  .carousel-content-card .pixelart-title-row {
+    position: static;
+  }
+
+  /* Push card content away from inside delete button */
+  .carousel-content-card:has(.btn-pos-inside:not(.btn-side-left)) {
+    padding-right: 40px;
+  }
+  .carousel-content-card:has(.btn-pos-inside.btn-side-left) {
+    padding-left: 40px;
+  }
 
   .carousel-content-card .pixelart-delete-title-row,
   .carousel-content-card .pixelart-btn-cross {
@@ -378,6 +389,38 @@ export const carouselStyles = `
     z-index: 100 !important;
     margin: 0 !important;
     pointer-events: auto !important;
+  }
+  /* Inside position */
+  .carousel-content-card .pixelart-delete-title-row.btn-pos-inside,
+  .carousel-content-card .pixelart-btn-cross.btn-pos-inside {
+    top: 8px !important;
+    right: 8px !important;
+  }
+  /* Left side */
+  .carousel-content-card .pixelart-delete-title-row.btn-side-left,
+  .carousel-content-card .pixelart-btn-cross.btn-side-left {
+    right: auto !important;
+    left: -10px !important;
+  }
+  .carousel-content-card .pixelart-delete-title-row.btn-pos-inside.btn-side-left,
+  .carousel-content-card .pixelart-btn-cross.btn-pos-inside.btn-side-left {
+    left: 8px !important;
+  }
+  /* Dot outside: smaller offset */
+  .carousel-content-card .pixelart-btn-cross.dot-style {
+    top: -4px !important;
+    right: -4px !important;
+  }
+  .carousel-content-card .pixelart-btn-cross.dot-style.btn-pos-inside {
+    top: 4px !important;
+    right: 4px !important;
+  }
+  .carousel-content-card .pixelart-btn-cross.dot-style.btn-side-left {
+    right: auto !important;
+    left: -4px !important;
+  }
+  .carousel-content-card .pixelart-btn-cross.dot-style.btn-pos-inside.btn-side-left {
+    left: 4px !important;
   }
 
   /* Carousel Indicators (dots) */

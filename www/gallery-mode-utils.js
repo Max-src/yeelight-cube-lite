@@ -1,6 +1,10 @@
 /**
  * Gallery Mode - Clean, modern gallery layout
  * Responsive masonry-style grid with hover effects
+ *
+ * Delete button style/shape/position is configured via getDeleteButtonConfig()
+ * from delete-button-styles.js.  The caller passes deleteButtonClass, posClass,
+ * and sideClass through the options bag.
  */
 
 export const galleryModeStyles = `
@@ -117,52 +121,56 @@ export const galleryModeStyles = `
     color: var(--primary-color, #0d6efd);
   }
 
-  /* All delete button styles */
-  .gallery-item-footer button {
-    flex-shrink: 0;
-    margin-left: auto;
+  /* ── Delete button position: INSIDE (flex child in footer) ── */
+  .gallery-item-footer .delete-btn-cross.btn-pos-inside {
     position: relative !important;
     top: auto !important;
     right: auto !important;
-  }
-
-  /* Dot style: float over the card image instead of sitting in the footer */
-  .gallery-item .delete-btn-cross.dot-style {
-    position: absolute !important;
-    top: 8px !important;
-    right: 8px !important;
-    z-index: 10;
-    margin-left: 0;
-  }
-
-  .gallery-delete-btn,
-  .gallery-item-footer .delete-btn-cross,
-  .gallery-item-footer .delete-btn-minimal,
-  .gallery-item-footer .delete-btn-rounded,
-  .gallery-item-footer .delete-btn-icon {
-    background: transparent;
-    border: none;
-    color: var(--error-color, #dc3545);
-    font-size: 20px;
-    line-height: 1;
-    cursor: pointer;
-    padding: 4px 8px;
-    border-radius: 4px;
-    transition: background 0.2s, transform 0.1s, opacity 0.2s;
+    left: auto !important;
+    bottom: auto !important;
     flex-shrink: 0;
+    margin-left: auto;
+  }
+  /* Inside + left: reorder before title */
+  .gallery-item-footer .delete-btn-cross.btn-pos-inside.btn-side-left {
+    order: -1;
+    margin-left: 0;
+    margin-right: 8px;
   }
 
-  .gallery-delete-btn:hover,
-  .gallery-item-footer .delete-btn-cross:hover,
-  .gallery-item-footer .delete-btn-minimal:hover,
-  .gallery-item-footer .delete-btn-rounded:hover,
-  .gallery-item-footer .delete-btn-icon:hover {
-    background: color-mix(in srgb, var(--error-color, #dc3545) 7%, var(--card-background-color, #fff));
-    transform: scale(1.1);
+  /* ── Delete button position: OUTSIDE (float over card corner) ── */
+  .gallery-item-footer .delete-btn-cross.btn-pos-outside {
+    position: absolute !important;
+    top: -8px !important;
+    right: -8px !important;
+    left: auto !important;
+    z-index: 10;
+    margin: 0;
+  }
+  .gallery-item-footer .delete-btn-cross.btn-pos-outside.btn-side-left {
+    right: auto !important;
+    left: -8px !important;
+  }
+  .gallery-item-footer .delete-btn-cross.dot-style.btn-pos-outside {
+    top: -4px !important;
+    right: -4px !important;
+  }
+  .gallery-item-footer .delete-btn-cross.dot-style.btn-pos-outside.btn-side-left {
+    right: auto !important;
+    left: -4px !important;
   }
 
-  .gallery-delete-btn:active {
-    transform: scale(0.95);
+  /* Allow outside buttons to overflow card bounds */
+  .gallery-item:has(.btn-pos-outside) {
+    overflow: visible;
+  }
+  /* Preserve rounded corners on image content when overflow is visible */
+  .gallery-item:has(.btn-pos-outside) > .gallery-item-image {
+    border-radius: 12px 12px 0 0;
+    overflow: hidden;
+  }
+  .gallery-item.gallery-item-square:has(.btn-pos-outside) > .gallery-item-image {
+    border-radius: 0;
   }
 
   /* Responsive adjustments */
@@ -186,6 +194,8 @@ export const galleryModeStyles = `
  * @param {Array} items - Array of items to render
  * @param {Function} renderContent - Function to render item content (receives item, index)
  * @param {Object} options - Configuration options
+ * @param {string} [options.posClass]  - "btn-pos-inside" | "btn-pos-outside" (default "")
+ * @param {string} [options.sideClass] - "btn-side-left" or "" (default "")
  * @returns {string} HTML string
  */
 export function renderGalleryMode(items, renderContent, options = {}) {
@@ -193,6 +203,8 @@ export function renderGalleryMode(items, renderContent, options = {}) {
     showTitle = true,
     showDelete = false,
     deleteButtonClass = "gallery-delete-btn",
+    posClass = "",
+    sideClass = "",
     onDeleteClick = null,
     onItemClick = null,
     onTitleClick = null,
@@ -253,9 +265,9 @@ export function renderGalleryMode(items, renderContent, options = {}) {
             }
             ${
               showDelete && onDeleteClick
-                ? `<button class="${deleteButtonClass}" 
+                ? `<button class="${deleteButtonClass} ${posClass} ${sideClass}" 
                      onclick="event.stopPropagation(); this.getRootNode().host.${onDeleteClick}(event, ${idx});" 
-                     title="Delete">×</button>`
+                     title="Delete"></button>`
                 : ""
             }
           </div>

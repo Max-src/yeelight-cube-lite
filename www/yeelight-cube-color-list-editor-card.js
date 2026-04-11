@@ -7,7 +7,7 @@ import {
 import {
   deleteButtonStyles,
   getDeleteButtonClass,
-  getCardButtonPositionStyles,
+  getButtonPositionStyles,
 } from "./delete-button-styles.js";
 import { compactModeStyles } from "./compact-mode-styles.js";
 import { compactLayoutStyles } from "./compact-layout-utils.js";
@@ -39,6 +39,8 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     this._isReordering = false; // Flag to skip animations during drag-and-drop
     this._renderScheduled = false; // Track if render is scheduled
     this._pendingServiceCalls = []; // Queue service calls if hass not ready
+    this._pendingHassRender = false; // Track if a render was blocked by interaction flags
+    this._interactionSafetyTimer = null; // Safety timer to flush pending renders
   }
 
   setConfig(config) {
@@ -153,6 +155,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       !this._usingColorPicker &&
       !this._editingText
     ) {
+      this._pendingHassRender = false;
       // Use requestAnimationFrame to batch renders
       if (this._renderScheduled) return;
       this._renderScheduled = true;
@@ -160,7 +163,57 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         this._renderScheduled = false;
         this.render();
       });
+    } else {
+      // Interaction in progress — remember that a state-driven render was blocked
+      this._pendingHassRender = true;
+      this._startInteractionSafety();
     }
+  }
+
+  // Flush any render that was blocked while interaction flags were set.
+  // Called when an interaction flag is cleared to recover missed state updates.
+  _flushPendingRender() {
+    if (!this._pendingHassRender) return;
+    if (
+      this._isDragging ||
+      this._draggingRotary ||
+      this._usingSlider ||
+      this._usingColorPicker ||
+      this._editingText
+    )
+      return; // Another flag still active
+    this._pendingHassRender = false;
+    if (this._interactionSafetyTimer) {
+      clearInterval(this._interactionSafetyTimer);
+      this._interactionSafetyTimer = null;
+    }
+    if (!this._renderScheduled) {
+      this._renderScheduled = true;
+      requestAnimationFrame(() => {
+        this._renderScheduled = false;
+        this.render();
+      });
+    }
+  }
+
+  // Safety timer: periodically check if all interaction flags have cleared
+  // and flush the pending render. Covers edge cases where flag-clearing code
+  // paths don't explicitly call _flushPendingRender().
+  _startInteractionSafety() {
+    if (this._interactionSafetyTimer) return; // Already running
+    this._interactionSafetyTimer = setInterval(() => {
+      if (
+        !this._isDragging &&
+        !this._draggingRotary &&
+        !this._usingSlider &&
+        !this._usingColorPicker &&
+        !this._editingText
+      ) {
+        clearInterval(this._interactionSafetyTimer);
+        this._interactionSafetyTimer = null;
+        this._flushPendingRender();
+      }
+    }, 1000);
   }
 
   // Resolve the primary entity: first from target_entities, fallback to legacy entity.
@@ -234,7 +287,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
     const showCard = this.config.show_card_background !== false;
     const showSavePalette = this.config.show_save_palette !== false;
-    const allowDelete = this.config.allow_delete !== false;
     const enableColorPicker = this.config.enable_color_picker !== false;
     const showHexInput = this.config.show_hex_input !== false;
     const allowDragDrop = this.config.allow_drag_drop !== false;
@@ -245,10 +297,12 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
     // Remove button styling configuration
     const removeButtonStyle = this.config.remove_button_style || "default";
+    const allowDelete = removeButtonStyle !== "none";
 
-    // Card-specific styling configuration (for cards/spread modes)
-    const cardRounded = this.config.card_rounded !== false;
-    const cardButtonPosition = this.config.card_button_position || "outside";
+    // Universal button shape & position configuration
+    const buttonShape = this.config.delete_button_shape || "round";
+    const buttonInside = this.config.delete_button_inside === true;
+    const buttonLeft = this.config.delete_button_left === true;
 
     const cardTitle =
       typeof this.config.title === "string" ? this.config.title : "";
@@ -294,8 +348,9 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                 showHexInput,
                 allowDragDrop,
                 removeButtonStyle,
-                cardRounded,
-                cardButtonPosition,
+                buttonShape,
+                buttonInside,
+                buttonLeft,
               })}
             `;
             this._attachColorListEventListeners();
@@ -338,8 +393,9 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                 showHexInput,
                 allowDragDrop,
                 removeButtonStyle,
-                cardRounded,
-                cardButtonPosition,
+                buttonShape,
+                buttonInside,
+                buttonLeft,
               })}
             `;
             this._attachColorListEventListeners();
@@ -387,8 +443,9 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                 showHexInput,
                 allowDragDrop,
                 removeButtonStyle,
-                cardRounded,
-                cardButtonPosition,
+                buttonShape,
+                buttonInside,
+                buttonLeft,
               })}
             `;
 
@@ -423,8 +480,9 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
               showHexInput,
               allowDragDrop,
               removeButtonStyle,
-              cardRounded,
-              cardButtonPosition,
+              buttonShape,
+              buttonInside,
+              buttonLeft,
             })}
           `;
           this._attachColorListEventListeners();
@@ -487,8 +545,9 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
             showHexInput,
             allowDragDrop,
             removeButtonStyle,
-            cardRounded,
-            cardButtonPosition,
+            buttonShape,
+            buttonInside,
+            buttonLeft,
           })}
         `;
 
@@ -560,8 +619,9 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
             showHexInput,
             allowDragDrop,
             removeButtonStyle,
-            cardRounded,
-            cardButtonPosition,
+            buttonShape,
+            buttonInside,
+            buttonLeft,
           })}
         </div>
         <div class="action-row${
@@ -852,9 +912,35 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           right: -10px; 
           z-index: 10; 
         }
-        .grid-remove-btn.dot-style {
+        .grid-remove-btn.btn-pos-inside {
           top: 6px;
           right: 6px;
+        }
+        /* Dot on grid: same position logic, smaller button */
+        .grid-remove-btn.dot-style {
+          top: -4px;
+          right: -4px;
+        }
+        .grid-remove-btn.dot-style.btn-pos-inside {
+          top: 4px;
+          right: 4px;
+        }
+        /* ---- Grid: left-side button overrides ---- */
+        .grid-remove-btn.btn-side-left {
+          right: auto;
+          left: -10px;
+        }
+        .grid-remove-btn.btn-pos-inside.btn-side-left {
+          right: auto;
+          left: 6px;
+        }
+        .grid-remove-btn.dot-style.btn-side-left {
+          right: auto;
+          left: -4px;
+        }
+        .grid-remove-btn.dot-style.btn-pos-inside.btn-side-left {
+          right: auto;
+          left: 4px;
         }
         .color-grid-info { font-size: calc(0.85em * var(--card-size-multiplier, 0.7)); color: var(--secondary-text-color, #666); text-align: center; margin-top: 8px; }
         .grid-hex-input { 
@@ -991,13 +1077,51 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           border-color: currentColor;
         }
         .chip-remove {
-          /* Positioning only - styles come from deleteButtonStyles */
+          /* Default: inside (relative, flex child) */
           padding: 0;
           display: flex;
           align-items: center;
           justify-content: center;
           position: relative !important;
           flex-shrink: 0;
+        }
+        /* Outside: absolute top-right corner */
+        .chip-remove.btn-pos-outside {
+          position: absolute !important;
+          top: -6px !important;
+          right: -6px !important;
+          z-index: 10;
+        }
+        /* Dot-style chips: size only, position from btn-pos classes */
+        .chip-remove.dot-style {
+          top: auto !important;
+          right: auto !important;
+        }
+        .chip-remove.dot-style.btn-pos-outside {
+          position: absolute !important;
+          top: -4px !important;
+          right: -4px !important;
+        }
+        /* Extra padding when button protrudes outside */
+        .chip-item:has(.btn-pos-outside) {
+          padding-top: calc(10px * var(--card-size-multiplier, 0.7));
+          padding-right: calc(10px * var(--card-size-multiplier, 0.7));
+        }
+        /* ---- Chips: left-side button overrides ---- */
+        .chip-remove.btn-side-left {
+          order: -1;
+        }
+        .chip-remove.btn-pos-outside.btn-side-left {
+          right: auto !important;
+          left: -6px !important;
+        }
+        .chip-remove.dot-style.btn-pos-outside.btn-side-left {
+          right: auto !important;
+          left: -4px !important;
+        }
+        .chip-item:has(.btn-pos-outside.btn-side-left) {
+          padding-right: 0;
+          padding-left: calc(10px * var(--card-size-multiplier, 0.7));
         }
         
         /* TILES MODE - Card-like items */
@@ -1071,7 +1195,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           color: var(--secondary-text-color, #6c757d);
         }
         .tile-remove {
-          /* Positioning only - styles come from deleteButtonStyles */
+          /* Default: inside (relative, flex child) */
           flex-shrink: 0;
           display: flex;
           align-items: center;
@@ -1080,6 +1204,36 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           top: auto !important;
           right: auto !important;
           margin-left: auto;
+        }
+        /* Outside: absolute top-right corner */
+        .tile-remove.btn-pos-outside {
+          position: absolute !important;
+          top: -8px !important;
+          right: -8px !important;
+          margin-left: 0 !important;
+          z-index: 10;
+        }
+        /* Dot-style tiles: inside is default (relative); outside needs explicit absolute */
+        .tile-remove.dot-style.btn-pos-outside {
+          position: absolute !important;
+          top: -4px !important;
+          right: -4px !important;
+          margin-left: 0 !important;
+        }
+        /* ---- Tiles: left-side button overrides ---- */
+        .tile-remove.btn-side-left {
+          order: -1;
+          margin-left: 0 !important;
+          margin-right: auto;
+        }
+        .tile-remove.btn-pos-outside.btn-side-left {
+          right: auto !important;
+          left: -8px !important;
+          margin-right: 0 !important;
+        }
+        .tile-remove.dot-style.btn-pos-outside.btn-side-left {
+          right: auto !important;
+          left: -4px !important;
         }
         
         /* ROWS MODE - Full-width gradients */
@@ -1096,6 +1250,10 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           min-height: calc(80px * var(--card-size-multiplier, 0.7));
           display: flex;
           align-items: center;
+        }
+        /* Allow button to overflow when positioned outside */
+        .row-item:has(.btn-pos-outside) {
+          overflow: visible;
         }
         .row-item:hover {
           transform: translateX(4px);
@@ -1191,8 +1349,42 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         }
 
         .row-remove {
-          /* Positioning only - styles come from deleteButtonStyles */
+          /* Default: inside (relative, flex child at right end) */
           flex-shrink: 0;
+          position: relative !important;
+          top: auto !important;
+          right: auto !important;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin-left: auto;
+        }
+        /* Outside: absolute top-right corner */
+        .row-remove.btn-pos-outside {
+          position: absolute !important;
+          top: -8px !important;
+          right: -8px !important;
+          margin-left: 0 !important;
+          z-index: 10;
+        }
+        .row-remove.dot-style.btn-pos-outside {
+          top: -4px !important;
+          right: -4px !important;
+        }
+        /* ---- Rows: left-side button overrides ---- */
+        .row-remove.btn-side-left {
+          order: -1;
+          margin-left: 0 !important;
+          margin-right: auto;
+        }
+        .row-remove.btn-pos-outside.btn-side-left {
+          right: auto !important;
+          left: -8px !important;
+          margin-right: 0 !important;
+        }
+        .row-remove.dot-style.btn-pos-outside.btn-side-left {
+          right: auto !important;
+          left: -4px !important;
         }
         
         /* Spread Layout - Cards spread on table */
@@ -1420,7 +1612,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           box-sizing: border-box;
         }
         .card-remove {
-          /* Positioning comes from inline styles via getCardButtonPositionStyles() */
+          /* Positioning comes from inline styles via getButtonPositionStyles() */
           position: absolute;
           z-index: 10;
           display: flex;
@@ -1430,6 +1622,10 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           width: 28px;
           height: 28px;
           font-size: 1.5em;
+        }
+        /* Dot-style on cards/spread: position from inline styles */
+        .card-remove.dot-style {
+          /* No position override — inline styles from getButtonPositionStyles() apply */
         }
         
         /* Hide remove button during drag */
@@ -2050,6 +2246,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
               document.body.removeChild(tempInput);
             }
             this._usingColorPicker = false; // Re-enable re-renders
+            this._flushPendingRender();
           }, 100);
         });
 
@@ -2060,6 +2257,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
               document.body.removeChild(tempInput);
             }
             this._usingColorPicker = false; // Re-enable re-renders
+            this._flushPendingRender();
           }, 100);
         });
 
@@ -2095,6 +2293,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
       input.addEventListener("blur", (e) => {
         this._editingText = false;
+        this._flushPendingRender();
       }); // Handle Enter/Escape keys to finish editing
       input.addEventListener("keydown", (e) => {
         if (e.key === "Enter" || e.key === "Escape") {
@@ -2185,6 +2384,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                 document.body.removeChild(tempInput);
               }
               this._usingColorPicker = false; // Re-enable re-renders
+              this._flushPendingRender();
             }, 100);
           });
 
@@ -2195,6 +2395,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                 document.body.removeChild(tempInput);
               }
               this._usingColorPicker = false; // Re-enable re-renders
+              this._flushPendingRender();
             }, 100);
           });
 
@@ -2349,6 +2550,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           draggedItem = null;
           draggedIndex = null;
           self._isDragging = false;
+          self._flushPendingRender();
         });
 
         item.addEventListener("dragover", (e) => {
@@ -2524,6 +2726,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
             draggedIndex = null;
             touchIsDragging = false;
             self._isDragging = false;
+            self._flushPendingRender();
           },
           { passive: true },
         );
@@ -2539,6 +2742,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
             draggedIndex = null;
             touchIsDragging = false;
             self._isDragging = false;
+            self._flushPendingRender();
           },
           { passive: true },
         );
@@ -2652,6 +2856,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
             document.removeEventListener("mouseup", handleMouseUp);
             self._dragCleanup = null;
             self._isDragging = false;
+            self._flushPendingRender();
             if (!draggingElem) return;
             draggingElem.classList.remove("dragging");
             const colorList = root.getElementById("color-list");
@@ -2736,6 +2941,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
               document.removeEventListener("touchend", handleTouchEnd);
               document.removeEventListener("touchcancel", handleTouchEnd);
               self._isDragging = false;
+              self._flushPendingRender();
               if (!draggingElem) return;
               draggingElem.classList.remove("dragging");
 
@@ -3286,6 +3492,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       const performGridDrop = () => {
         // Re-enable rendering
         self._isDragging = false;
+        self._flushPendingRender();
 
         if (draggedItem) {
           // Get new order from DOM
@@ -3564,6 +3771,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
               draggedItem = null;
               draggedIndex = null;
               self._isDragging = false;
+              self._flushPendingRender();
             }
             gridTouchDragging = false;
           },
@@ -3583,6 +3791,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
             draggedIndex = null;
             gridTouchDragging = false;
             self._isDragging = false;
+            self._flushPendingRender();
           },
           { passive: true },
         );
@@ -3651,11 +3860,19 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       angleSlider.addEventListener("mouseup", () => {
         setTimeout(() => {
           this._usingSlider = false;
+          this._flushPendingRender();
         }, 100);
       });
       angleSlider.addEventListener("touchend", () => {
         setTimeout(() => {
           this._usingSlider = false;
+          this._flushPendingRender();
+        }, 100);
+      });
+      angleSlider.addEventListener("touchcancel", () => {
+        setTimeout(() => {
+          this._usingSlider = false;
+          this._flushPendingRender();
         }, 100);
       });
 
@@ -3663,6 +3880,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       angleSlider.addEventListener("mouseleave", () => {
         setTimeout(() => {
           this._usingSlider = false;
+          this._flushPendingRender();
         }, 200);
       });
     }
@@ -3685,12 +3903,14 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         this._draggingRotary = false;
         this._isDragging = false;
         this._pendingAngle = undefined;
+        this._flushPendingRender();
       });
       rotary.addEventListener("mouseleave", (e) => {
         e.preventDefault(); // Prevent text selection
         this._draggingRotary = false;
         this._isDragging = false;
         this._pendingAngle = undefined;
+        this._flushPendingRender();
       });
       rotary.addEventListener("touchstart", (e) => {
         e.preventDefault(); // Prevent text selection
@@ -3708,6 +3928,14 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         this._draggingRotary = false;
         this._isDragging = false;
         this._pendingAngle = undefined;
+        this._flushPendingRender();
+      });
+      rotary.addEventListener("touchcancel", (e) => {
+        e.preventDefault();
+        this._draggingRotary = false;
+        this._isDragging = false;
+        this._pendingAngle = undefined;
+        this._flushPendingRender();
       });
       rotary.addEventListener("click", (e) => {
         e.preventDefault(); // Prevent text selection
@@ -4326,7 +4554,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
   }
 
   formatColorInfo(color, displayMode) {
-    if (!displayMode || displayMode === "hidden") {
+    if (!displayMode || displayMode === "hidden" || displayMode === "none") {
       return "";
     }
 
@@ -4486,9 +4714,14 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       allowDragDrop,
       allowDelete,
       removeButtonStyle = "default",
+      buttonShape = "round",
+      buttonInside = false,
+      buttonLeft = false,
     } = options;
 
-    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle);
+    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
+    const posClass = buttonInside ? "btn-pos-inside" : "btn-pos-outside";
+    const sideClass = buttonLeft ? "btn-side-left" : "";
 
     return textColors
       .map((color, idx) =>
@@ -4522,7 +4755,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
               </div>
               ${
                 allowDelete !== false
-                  ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} compact-remove" title="Remove"></button>`
+                  ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} compact-remove ${posClass} ${sideClass}" title="Remove"></button>`
                   : ""
               }
             </div>`
@@ -4539,9 +4772,14 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       allowDragDrop,
       allowDelete,
       removeButtonStyle = "default",
+      buttonShape = "round",
+      buttonInside = false,
+      buttonLeft = false,
     } = options;
 
-    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle);
+    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
+    const posClass = buttonInside ? "btn-pos-inside" : "btn-pos-outside";
+    const sideClass = buttonLeft ? "btn-side-left" : "";
 
     return `<div class="chips-container">
       ${textColors
@@ -4582,7 +4820,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                 </span>
                 ${
                   allowDelete !== false
-                    ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} chip-remove" title="Remove"></button>`
+                    ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} chip-remove ${posClass} ${sideClass}" title="Remove"></button>`
                     : ""
                 }
               </div>`
@@ -4600,9 +4838,14 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       allowDragDrop,
       allowDelete,
       removeButtonStyle = "default",
+      buttonShape = "round",
+      buttonInside = false,
+      buttonLeft = false,
     } = options;
 
-    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle);
+    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
+    const posClass = buttonInside ? "btn-pos-inside" : "btn-pos-outside";
+    const sideClass = buttonLeft ? "btn-side-left" : "";
 
     return textColors
       .map((color, idx) =>
@@ -4641,7 +4884,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
               </div>
               ${
                 allowDelete !== false
-                  ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} tile-remove" title="Remove"></button>`
+                  ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} tile-remove ${posClass} ${sideClass}" title="Remove"></button>`
                   : ""
               }
             </div>`
@@ -4658,9 +4901,14 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       allowDragDrop,
       allowDelete,
       removeButtonStyle = "default",
+      buttonShape = "round",
+      buttonInside = false,
+      buttonLeft = false,
     } = options;
 
-    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle);
+    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
+    const posClass = buttonInside ? "btn-pos-inside" : "btn-pos-outside";
+    const sideClass = buttonLeft ? "btn-side-left" : "";
 
     return textColors
       .map((color, idx) =>
@@ -4711,7 +4959,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
               </div>
               ${
                 allowDelete
-                  ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} row-remove" title="Remove"></button>`
+                  ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} row-remove ${posClass} ${sideClass}" title="Remove"></button>`
                   : ""
               }
             </div>`
@@ -4721,9 +4969,17 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
   }
 
   _generateGridLayout(textColors, options) {
-    const { allowDragDrop, removeButtonStyle = "default" } = options;
+    const {
+      allowDragDrop,
+      removeButtonStyle = "default",
+      buttonShape = "round",
+      buttonInside = false,
+      buttonLeft = false,
+    } = options;
 
-    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle);
+    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
+    const posClass = buttonInside ? "btn-pos-inside" : "btn-pos-outside";
+    const sideClass = buttonLeft ? "btn-side-left" : "";
 
     return textColors
       .map((color, idx) =>
@@ -4746,7 +5002,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                 }
                 ${
                   options.allowDelete
-                    ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} grid-remove-btn" title="Remove"></button>`
+                    ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} grid-remove-btn ${posClass} ${sideClass}" title="Remove"></button>`
                     : ""
                 }
               </div>
@@ -4769,16 +5025,17 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
   _generateCardsLayout(textColors, options) {
     const removeButtonStyle = options.removeButtonStyle || "default";
-    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle);
+    const buttonShape = options.buttonShape || "round";
+    const buttonInside = options.buttonInside === true;
+    const buttonLeft = options.buttonLeft === true;
+    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
 
-    // Card styling options
-    const cardRounded = options.cardRounded !== false;
-    const cardButtonPosition = options.cardButtonPosition || "outside";
-    const borderRadius = cardRounded
-      ? "calc(11.43px * var(--card-size-multiplier, 0.7))"
-      : "0";
-    const buttonPositionStyles =
-      getCardButtonPositionStyles(cardButtonPosition);
+    // Card styling
+    const borderRadius = "calc(11.43px * var(--card-size-multiplier, 0.7))";
+    const buttonPositionStyles = getButtonPositionStyles(
+      buttonInside,
+      buttonLeft,
+    );
 
     // Calculate cards per row based on card size
     // At 70% (default): 120px cards, 4 per row fits in ~600px
@@ -4869,16 +5126,17 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
   _generateSpreadLayout(textColors, options) {
     const removeButtonStyle = options.removeButtonStyle || "default";
-    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle);
+    const buttonShape = options.buttonShape || "round";
+    const buttonInside = options.buttonInside === true;
+    const buttonLeft = options.buttonLeft === true;
+    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
 
-    // Card styling options
-    const cardRounded = options.cardRounded !== false;
-    const cardButtonPosition = options.cardButtonPosition || "outside";
-    const borderRadius = cardRounded
-      ? "calc(11.43px * var(--card-size-multiplier, 0.7))"
-      : "0";
-    const buttonPositionStyles =
-      getCardButtonPositionStyles(cardButtonPosition);
+    // Card styling
+    const borderRadius = "calc(11.43px * var(--card-size-multiplier, 0.7))";
+    const buttonPositionStyles = getButtonPositionStyles(
+      buttonInside,
+      buttonLeft,
+    );
 
     return `<div class="cards-container">
       ${textColors
@@ -5419,6 +5677,11 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     this._processingModeChange = false;
     this._usingColorPicker = false;
     this._isReordering = false;
+    this._pendingHassRender = false;
+    if (this._interactionSafetyTimer) {
+      clearInterval(this._interactionSafetyTimer);
+      this._interactionSafetyTimer = null;
+    }
   }
 }
 
