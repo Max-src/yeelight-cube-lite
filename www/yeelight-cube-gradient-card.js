@@ -2205,8 +2205,10 @@ class YeelightCubeGradientCard extends HTMLElement {
       });
       await new Promise((resolve) => setTimeout(resolve, 100));
       this._optimisticMode = null;
-      // For wheel mode, skip full render to avoid blink — just update active highlight
+      // For wheel mode, sync wheel position to the new mode and update highlight
       if (this._getDisplayMode() === "wheel") {
+        this._lastWheelMode = mode;
+        this._syncWheelToCurrentMode();
         this._markActiveMode();
       } else {
         this.render();
@@ -2215,6 +2217,7 @@ class YeelightCubeGradientCard extends HTMLElement {
       console.error("Error changing mode:", error);
       this._optimisticMode = null;
       if (this._getDisplayMode() === "wheel") {
+        this._syncWheelToCurrentMode();
         this._markActiveMode();
       } else {
         this.render();

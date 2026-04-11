@@ -384,6 +384,64 @@ export async function setupAlbumNavigation(
     });
   }
 
+  // Touch swipe navigation on album container
+  {
+    let swipeStartX = 0;
+    let swipeStartY = 0;
+    let swiping = false;
+
+    container.addEventListener(
+      "touchstart",
+      (e) => {
+        // Ignore if touching a button or delete control
+        if (e.target.closest("button, .album-remove-btn")) return;
+        const touch = e.touches[0];
+        swipeStartX = touch.clientX;
+        swipeStartY = touch.clientY;
+        swiping = false;
+      },
+      { passive: true },
+    );
+
+    container.addEventListener(
+      "touchmove",
+      (e) => {
+        if (!e.touches[0] || swipeStartX === 0) return;
+        const dx = e.touches[0].clientX - swipeStartX;
+        const dy = Math.abs(e.touches[0].clientY - swipeStartY);
+        if (Math.abs(dx) > 20 && Math.abs(dx) > dy * 1.5) {
+          swiping = true;
+          e.preventDefault();
+        }
+      },
+      { passive: false },
+    );
+
+    container.addEventListener(
+      "touchend",
+      (e) => {
+        if (!swiping) {
+          swipeStartX = 0;
+          return;
+        }
+        const touch = e.changedTouches[0];
+        const dx = touch.clientX - swipeStartX;
+        if (Math.abs(dx) > 50) {
+          if (dx < 0 && currentIndex < items.length - 1) {
+            currentIndex++;
+            updateCoverflow();
+          } else if (dx > 0 && currentIndex > 0) {
+            currentIndex--;
+            updateCoverflow();
+          }
+        }
+        swiping = false;
+        swipeStartX = 0;
+      },
+      { passive: true },
+    );
+  }
+
   // Item clicks
   items.forEach((item, idx) => {
     item.addEventListener("click", (e) => {

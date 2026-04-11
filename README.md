@@ -86,14 +86,25 @@ Before adding the lamp to Home Assistant, you must first set it up using the **Y
 
 #### Automatic Discovery (recommended)
 
-Once the lamp is on your network with LAN Control enabled, Home Assistant will **automatically detect it** via Zeroconf (mDNS). You'll see a notification on the **Settings → Devices & Services** page:
+Once the lamp is on your network with LAN Control enabled, Home Assistant will **automatically detect it**. You'll see a notification on the **Settings → Devices & Services** page:
 
 1. Look for the **Yeelight Cube Lite** discovery notification
-2. Click **Configure**
+
+<img src="images/Home-Assistant-Integrations-Discovered.png" alt="Device Discovered">
+
+2. Click **Add**
+
+<img src="images/Home-Assistant-Integrations-Discovered-Confirmation.png" alt="Confirmation Popup">
+
 3. Confirm to set up the device
+
+<img src="images/Home-Assistant-Integrations-Discovered-Create-Device.png" alt="Device Created">
+
 4. Done — the integration creates all entities automatically
 
-<!-- TODO: Add screenshot of the auto-discovery notification -->
+<img src="images/Home-Assistant-Integrations-Detail-Page.png" alt="Integration Detail Page">
+
+Note: If you also use the official Yeelight integration, it will also be detected by this integration too. The lamp will not work if added using this integration, you can ignore this notification.
 
 #### Manual Setup (alternative)
 
@@ -102,8 +113,17 @@ If the lamp is not discovered automatically (e.g. it's on a different subnet or 
 1. Go to **Settings → Devices & Services**
 2. Click **+ Add Integration** (bottom right)
 3. Search for **Yeelight Cube Lite** and select it
-4. Enter the **IP address** you noted from the Yeelight Station app (e.g. `192.168.4.139`)
-5. Click **Submit**
+4. On this integration detail page, click on the button **Add entry**
+
+<img src="images/Home-Assistant-Integrations-Add-Entry.png" alt="Integration Detail Page - Add entry">
+
+5. Enter the **IP address** you noted from the Yeelight Station app (e.g. `192.168.4.139`)
+
+<img src="images/Home-Assistant-Integrations-Add-Entry-Device-IP.png" alt="Add entry - Device IP">
+
+6. Click **Submit**. Your light has been added to the list of integration entries.
+
+<img src="images/Home-Assistant-Integrations-Detail-Page.png" alt="Integration Detail Page">
 
 <!-- TODO: Add screenshot of the Add Integration search showing Yeelight Cube Lite -->
 <!-- TODO: Add screenshot of the IP address entry form -->

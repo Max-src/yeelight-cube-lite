@@ -341,5 +341,135 @@ export function setupCompactDragDrop(
 
       return false;
     });
+
+    // --- Touch drag support (mobile) ---
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchDragging = false;
+    let touchClone = null;
+
+    item.addEventListener(
+      "touchstart",
+      (e) => {
+        if (shouldPreventDrag && shouldPreventDrag(e)) return;
+        if (e.target.closest(".compact-remove, .pixelart-btn-cross")) return;
+
+        const touch = e.touches[0];
+        touchStartX = touch.clientX;
+        touchStartY = touch.clientY;
+        touchDragging = false;
+
+        draggedItem = item;
+        draggedIndex = parseInt(item.dataset.idx);
+      },
+      { passive: true },
+    );
+
+    item.addEventListener(
+      "touchmove",
+      (e) => {
+        if (!draggedItem || draggedItem !== item) return;
+        const touch = e.touches[0];
+        const dx = Math.abs(touch.clientX - touchStartX);
+        const dy = Math.abs(touch.clientY - touchStartY);
+
+        if (!touchDragging && (dx > 8 || dy > 8)) {
+          touchDragging = true;
+          if (context) context._isDragging = true;
+          item.classList.add("dragging");
+
+          const rect = item.getBoundingClientRect();
+          touchClone = item.cloneNode(true);
+          touchClone.style.cssText = `
+            position: fixed; z-index: 99999; pointer-events: none;
+            width: ${rect.width}px; opacity: 0.85;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+            transform: scale(1.03); transition: none;
+            left: ${touch.clientX - rect.width / 2}px;
+            top: ${touch.clientY - 20}px;
+          `;
+          document.body.appendChild(touchClone);
+        }
+
+        if (touchDragging) {
+          e.preventDefault();
+          if (touchClone) {
+            const rect = item.getBoundingClientRect();
+            touchClone.style.left = touch.clientX - rect.width / 2 + "px";
+            touchClone.style.top = touch.clientY - 20 + "px";
+          }
+
+          const elemBelow = document.elementFromPoint(
+            touch.clientX,
+            touch.clientY,
+          );
+          if (elemBelow) {
+            const target = elemBelow.closest(itemSelector);
+            if (
+              target &&
+              target !== draggedItem &&
+              target.parentNode === draggedItem.parentNode
+            ) {
+              const allItems = Array.from(root.querySelectorAll(itemSelector));
+              const dIdx = allItems.indexOf(draggedItem);
+              const tIdx = allItems.indexOf(target);
+              if (dIdx !== -1 && tIdx !== -1) {
+                if (dIdx < tIdx) {
+                  const next = target.nextElementSibling;
+                  if (next) target.parentNode.insertBefore(draggedItem, next);
+                  else target.parentNode.appendChild(draggedItem);
+                } else {
+                  target.parentNode.insertBefore(draggedItem, target);
+                }
+              }
+            }
+          }
+        }
+      },
+      { passive: false },
+    );
+
+    item.addEventListener(
+      "touchend",
+      () => {
+        if (touchClone && touchClone.parentNode)
+          touchClone.parentNode.removeChild(touchClone);
+        touchClone = null;
+
+        if (touchDragging && draggedItem) {
+          draggedItem.classList.remove("dragging");
+          const items = Array.from(root.querySelectorAll(itemSelector));
+          const newOrder = items.map((i) => parseInt(i.dataset.idx));
+          const orderChanged = newOrder.some((pos, idx) => pos !== idx);
+          if (orderChanged && onReorder) {
+            onReorder(newOrder);
+            items.forEach((item, newIdx) => {
+              item.dataset.idx = newIdx;
+            });
+          }
+        }
+
+        draggedItem = null;
+        draggedIndex = null;
+        touchDragging = false;
+        if (context) context._isDragging = false;
+      },
+      { passive: true },
+    );
+
+    item.addEventListener(
+      "touchcancel",
+      () => {
+        if (touchClone && touchClone.parentNode)
+          touchClone.parentNode.removeChild(touchClone);
+        touchClone = null;
+        if (draggedItem) draggedItem.classList.remove("dragging");
+        draggedItem = null;
+        draggedIndex = null;
+        touchDragging = false;
+        if (context) context._isDragging = false;
+      },
+      { passive: true },
+    );
   });
 }

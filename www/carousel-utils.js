@@ -120,8 +120,51 @@ export function renderCarousel(options) {
 
   const validIndex = Math.max(0, Math.min(currentIndex, items.length - 1));
 
+  // Touch swipe state (closures)
+  let _swipeStartX = 0;
+  let _swipeStartY = 0;
+  let _swiping = false;
+
+  const _onTouchStart = (e) => {
+    const touch = e.touches[0];
+    _swipeStartX = touch.clientX;
+    _swipeStartY = touch.clientY;
+    _swiping = false;
+
+    const wrapper = e.currentTarget;
+
+    const _moveHandler = (ev) => {
+      if (!ev.touches[0]) return;
+      const dx = ev.touches[0].clientX - _swipeStartX;
+      const dy = Math.abs(ev.touches[0].clientY - _swipeStartY);
+      if (Math.abs(dx) > 20 && Math.abs(dx) > dy * 1.5) {
+        _swiping = true;
+        ev.preventDefault();
+      }
+    };
+
+    const _cleanup = (ev) => {
+      wrapper.removeEventListener("touchmove", _moveHandler);
+      wrapper.removeEventListener("touchend", _cleanup);
+      wrapper.removeEventListener("touchcancel", _cleanup);
+
+      if (_swiping && ev.type === "touchend") {
+        const touch = ev.changedTouches[0];
+        const dx = touch.clientX - _swipeStartX;
+        if (Math.abs(dx) > 50) {
+          onNavigate && onNavigate(dx < 0 ? 1 : -1, items.length);
+        }
+      }
+      _swiping = false;
+    };
+
+    wrapper.addEventListener("touchmove", _moveHandler, { passive: false });
+    wrapper.addEventListener("touchend", _cleanup, { passive: true });
+    wrapper.addEventListener("touchcancel", _cleanup, { passive: true });
+  };
+
   return html`
-    <div class="carousel-wrapper">
+    <div class="carousel-wrapper" @touchstart=${_onTouchStart}>
       <div
         class="pixelart-gallery-carousel ${showAsCard
           ? "carousel-with-card"
@@ -511,4 +554,62 @@ export function renderCarouselString(options) {
       ${`<div class="carousel-indicators carousel-indicators-outside">${indicatorsHtml}</div>`}
     </div>
   `;
+}
+
+/**
+ * Attaches horizontal swipe gesture support to a carousel rendered with renderCarouselString.
+ * Call this after innerHTML is set and the carousel wrapper is in the DOM.
+ *
+ * @param {HTMLElement} container - The element containing the carousel (e.g., shadowRoot)
+ * @param {string} carouselId - The carouselId used in renderCarouselString
+ * @param {Function} onSwipeNavigate - Callback(direction) where direction is -1 (prev) or 1 (next)
+ */
+export function attachCarouselSwipe(container, carouselId, onSwipeNavigate) {
+  const wrapper = container.querySelector(".carousel-wrapper");
+  if (!wrapper || wrapper._swipeAttached) return;
+
+  let startX = 0;
+  let startY = 0;
+  let swiping = false;
+
+  wrapper.addEventListener(
+    "touchstart",
+    (e) => {
+      const touch = e.touches[0];
+      startX = touch.clientX;
+      startY = touch.clientY;
+      swiping = false;
+    },
+    { passive: true },
+  );
+
+  wrapper.addEventListener(
+    "touchmove",
+    (e) => {
+      if (!e.touches[0]) return;
+      const dx = e.touches[0].clientX - startX;
+      const dy = Math.abs(e.touches[0].clientY - startY);
+      if (Math.abs(dx) > 20 && Math.abs(dx) > dy * 1.5) {
+        swiping = true;
+        e.preventDefault();
+      }
+    },
+    { passive: false },
+  );
+
+  wrapper.addEventListener(
+    "touchend",
+    (e) => {
+      if (!swiping) return;
+      const touch = e.changedTouches[0];
+      const dx = touch.clientX - startX;
+      if (Math.abs(dx) > 50) {
+        onSwipeNavigate(dx < 0 ? 1 : -1);
+      }
+      swiping = false;
+    },
+    { passive: true },
+  );
+
+  wrapper._swipeAttached = true;
 }

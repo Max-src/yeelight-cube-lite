@@ -18,6 +18,7 @@ import {
   renderCarousel,
   renderCarouselString,
   carouselStyles,
+  attachCarouselSwipe,
 } from "./carousel-utils.js";
 import { gridModeStyles, renderGridMode } from "./grid-mode-utils.js";
 import { galleryModeStyles, renderGalleryMode } from "./gallery-mode-utils.js";
@@ -1186,6 +1187,18 @@ class YeelightCubePaletteCard extends HTMLElement {
           this._currentPalettePage = pageOrAction;
         }
         this.render();
+      });
+
+      // Attach carousel swipe gesture support for touch devices
+      attachCarouselSwipe(contentDiv, "palette-carousel", (direction) => {
+        const cfg = this.config || {};
+        const stateObj = this._hass?.states?.[cfg.palette_sensor];
+        const palettes = Array.isArray(stateObj?.attributes?.palettes_v2)
+          ? stateObj.attributes.palettes_v2
+          : Array.isArray(stateObj?.attributes?.palettes)
+            ? stateObj.attributes.palettes
+            : [];
+        this._navigatePaletteCarousel(direction, palettes.length);
       });
 
       contentDiv.addEventListener("click", (e) => {

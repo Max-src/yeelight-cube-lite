@@ -1112,10 +1112,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           inset: 0;
           opacity: 0;
           cursor: pointer;
-          pointer-events: none; /* Don't interfere with drag events */
-        }
-        .row-color-input:hover {
-          pointer-events: auto; /* Re-enable on hover for color picking */
         }
         .row-content {
           display: flex;
@@ -1125,7 +1121,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           z-index: 1;
           flex: 1;
           min-width: 0;
-          pointer-events: none; /* Don't block drag on row */
         }
         .row-content > * {
           pointer-events: auto; /* Re-enable for children that need interaction */
@@ -1137,7 +1132,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           cursor: grab;
           line-height: 1;
           flex-shrink: 0;
-          pointer-events: none; /* Don't interfere with row drag */
         }
         .row-hex-display, .row-hex-input {
           font-family: monospace;
@@ -1152,12 +1146,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           border-radius: 6px;
           cursor: text;
         }
-        .row-hex-input:not(:focus) {
-          pointer-events: none; /* Don't block drag events when not editing */
-        }
-        .row-item:hover .row-hex-input:not(:focus) {
-          pointer-events: auto; /* Re-enable when hovering to allow clicking to focus */
-        }
         .row-hex-input:focus {
           outline: none;
           box-shadow: 0 0 0 3px rgba(255,255,255,0.3);
@@ -1170,8 +1158,38 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           overflow: hidden;
           text-overflow: ellipsis;
           min-width: 0;
-          pointer-events: none; /* Don't block drag events */
         }
+
+        /* On devices with hover (desktop), disable pointer-events on row children
+           to avoid interfering with HTML5 drag. Re-enable on hover.
+           On touch devices (no hover), leave pointer-events enabled. */
+        @media (hover: hover) {
+          .row-color-input {
+            pointer-events: none;
+          }
+          .row-color-input:hover {
+            pointer-events: auto;
+          }
+          .row-content {
+            pointer-events: none;
+          }
+          .row-content > * {
+            pointer-events: auto;
+          }
+          .row-drag-indicator {
+            pointer-events: none;
+          }
+          .row-hex-input:not(:focus) {
+            pointer-events: none;
+          }
+          .row-item:hover .row-hex-input:not(:focus) {
+            pointer-events: auto;
+          }
+          .row-color-name {
+            pointer-events: none;
+          }
+        }
+
         .row-remove {
           /* Positioning only - styles come from deleteButtonStyles */
           flex-shrink: 0;
@@ -2373,6 +2391,157 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
           return false;
         });
+
+        // --- Touch drag support (mobile) ---
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let touchIsDragging = false;
+        let touchClone = null;
+
+        item.addEventListener(
+          "touchstart",
+          (e) => {
+            // Don't start if input is focused or on remove buttons
+            const focused = document.activeElement;
+            if (focused && focused.classList.contains("hex-input")) return;
+            if (
+              e.target.closest(
+                ".chip-remove, .compact-remove, .tile-remove, .row-remove",
+              )
+            )
+              return;
+
+            const touch = e.touches[0];
+            touchStartX = touch.clientX;
+            touchStartY = touch.clientY;
+            touchIsDragging = false;
+
+            draggedItem = item;
+            draggedIndex = parseInt(item.dataset.idx);
+          },
+          { passive: true },
+        );
+
+        item.addEventListener(
+          "touchmove",
+          (e) => {
+            if (!draggedItem || draggedItem !== item) return;
+            const touch = e.touches[0];
+            const dx = Math.abs(touch.clientX - touchStartX);
+            const dy = Math.abs(touch.clientY - touchStartY);
+
+            if (!touchIsDragging && (dx > 8 || dy > 8)) {
+              touchIsDragging = true;
+              self._isDragging = true;
+              item.classList.add("dragging");
+
+              // Create clone to follow finger
+              const rect = item.getBoundingClientRect();
+              touchClone = item.cloneNode(true);
+              touchClone.style.cssText = `
+                position: fixed; z-index: 99999; pointer-events: none;
+                width: ${rect.width}px; opacity: 0.85;
+                box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+                transform: scale(1.03); transition: none;
+                left: ${touch.clientX - rect.width / 2}px;
+                top: ${touch.clientY - 20}px;
+              `;
+              document.body.appendChild(touchClone);
+            }
+
+            if (touchIsDragging) {
+              e.preventDefault();
+              // Move clone
+              if (touchClone) {
+                const rect = item.getBoundingClientRect();
+                touchClone.style.left = touch.clientX - rect.width / 2 + "px";
+                touchClone.style.top = touch.clientY - 20 + "px";
+              }
+
+              // Find element under finger and reorder
+              const elemBelow = document.elementFromPoint(
+                touch.clientX,
+                touch.clientY,
+              );
+              if (elemBelow) {
+                const targetItem = elemBelow.closest(itemSelector);
+                if (
+                  targetItem &&
+                  targetItem !== draggedItem &&
+                  targetItem.parentNode === draggedItem.parentNode
+                ) {
+                  const allItems = Array.from(
+                    root.querySelectorAll(itemSelector),
+                  );
+                  const dIdx = allItems.indexOf(draggedItem);
+                  const tIdx = allItems.indexOf(targetItem);
+                  if (dIdx !== -1 && tIdx !== -1) {
+                    if (dIdx < tIdx) {
+                      const next = targetItem.nextElementSibling;
+                      if (next)
+                        targetItem.parentNode.insertBefore(draggedItem, next);
+                      else targetItem.parentNode.appendChild(draggedItem);
+                    } else {
+                      targetItem.parentNode.insertBefore(
+                        draggedItem,
+                        targetItem,
+                      );
+                    }
+                  }
+                }
+              }
+            }
+          },
+          { passive: false },
+        );
+
+        item.addEventListener(
+          "touchend",
+          (e) => {
+            if (!draggedItem || draggedItem !== item) return;
+
+            // Remove clone
+            if (touchClone && touchClone.parentNode) {
+              touchClone.parentNode.removeChild(touchClone);
+              touchClone = null;
+            }
+
+            if (touchIsDragging) {
+              draggedItem.classList.remove("dragging");
+              const items = Array.from(root.querySelectorAll(itemSelector));
+              const newOrder = items.map((i) => parseInt(i.dataset.idx));
+              const newColors = newOrder
+                .map((idx) => textColors[idx])
+                .filter((color) => Array.isArray(color) && color.length === 3);
+              const orderChanged = newOrder.some((pos, idx) => pos !== idx);
+              if (orderChanged && newColors.length === textColors.length) {
+                self._isReordering = true;
+                self.saveColors(newColors);
+              }
+            }
+
+            draggedItem = null;
+            draggedIndex = null;
+            touchIsDragging = false;
+            self._isDragging = false;
+          },
+          { passive: true },
+        );
+
+        item.addEventListener(
+          "touchcancel",
+          () => {
+            if (touchClone && touchClone.parentNode)
+              touchClone.parentNode.removeChild(touchClone);
+            touchClone = null;
+            if (draggedItem) draggedItem.classList.remove("dragging");
+            draggedItem = null;
+            draggedIndex = null;
+            touchIsDragging = false;
+            self._isDragging = false;
+          },
+          { passive: true },
+        );
       });
 
       // TILES MODE: Add color picker click handler for tile-color-preview
@@ -2406,6 +2575,25 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
             colorPreview.addEventListener("mousemove", () => {
               hasMoved = true;
             });
+
+            // Touch equivalents for tile color picker detection
+            colorPreview.addEventListener(
+              "touchstart",
+              (e) => {
+                if (e.target.closest(".tile-remove")) return;
+                mouseDownTime = Date.now();
+                hasMoved = false;
+              },
+              { passive: true },
+            );
+
+            colorPreview.addEventListener(
+              "touchmove",
+              () => {
+                hasMoved = true;
+              },
+              { passive: true },
+            );
           }
         });
       }
@@ -2501,6 +2689,95 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           document.addEventListener("mousemove", handleMouseMove);
           document.addEventListener("mouseup", handleMouseUp);
         });
+
+        // --- Touch support for list drag handles (mobile) ---
+        handle.addEventListener(
+          "touchstart",
+          (e) => {
+            const focused = document.activeElement;
+            if (focused && focused.classList.contains("hex-input")) return;
+
+            const touch = e.touches[0];
+            self._isDragging = true;
+            dragStartIndex = parseInt(handle.dataset.idx);
+            draggingElem = handle.closest(".color-row");
+            if (draggingElem) draggingElem.classList.add("dragging");
+
+            let lastTouchY = touch.clientY;
+
+            const handleTouchMove = (e) => {
+              if (!draggingElem) return;
+              e.preventDefault();
+              const t = e.touches[0];
+              lastTouchY = t.clientY;
+
+              const colorList = root.getElementById("color-list");
+              const actionRow = root.querySelector(".action-row");
+
+              if (actionRow) {
+                const actionRowRect = actionRow.getBoundingClientRect();
+                if (t.clientY >= actionRowRect.top) {
+                  colorList.appendChild(draggingElem);
+                  return;
+                }
+              }
+
+              const afterElement = getDragAfterElement(colorList, t.clientY);
+              if (afterElement == null) {
+                if (actionRow) colorList.insertBefore(draggingElem, actionRow);
+                else colorList.appendChild(draggingElem);
+              } else {
+                colorList.insertBefore(draggingElem, afterElement);
+              }
+            };
+
+            const handleTouchEnd = () => {
+              document.removeEventListener("touchmove", handleTouchMove);
+              document.removeEventListener("touchend", handleTouchEnd);
+              document.removeEventListener("touchcancel", handleTouchEnd);
+              self._isDragging = false;
+              if (!draggingElem) return;
+              draggingElem.classList.remove("dragging");
+
+              const colorList = root.getElementById("color-list");
+              const newOrder = [
+                ...colorList.querySelectorAll(".color-row[data-idx]"),
+              ].map((row) => parseInt(row.dataset.idx));
+              let dragColors = newOrder.map((i) => textColors[i]);
+              if (dragColors && dragColors.length > 0) {
+                dragColors = dragColors.filter(
+                  (c) =>
+                    Array.isArray(c) &&
+                    c.length === 3 &&
+                    c.every((v) => typeof v === "number"),
+                );
+                draggingElem = null;
+                self._isReordering = true;
+                self.saveColors(dragColors);
+              } else {
+                draggingElem = null;
+              }
+              if (!self._renderScheduled) {
+                self._renderScheduled = true;
+                requestAnimationFrame(() => {
+                  self._renderScheduled = false;
+                  self.render();
+                });
+              }
+            };
+
+            document.addEventListener("touchmove", handleTouchMove, {
+              passive: false,
+            });
+            document.addEventListener("touchend", handleTouchEnd, {
+              passive: true,
+            });
+            document.addEventListener("touchcancel", handleTouchEnd, {
+              passive: true,
+            });
+          },
+          { passive: true },
+        );
       });
       function getDragAfterElement(container, y) {
         const draggableElements = [
@@ -3101,6 +3378,34 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
             }
           });
 
+          // Touch equivalents for grid swatch click vs drag detection
+          swatch.addEventListener(
+            "touchstart",
+            (e) => {
+              if (e.target.classList.contains("grid-remove-btn")) return;
+              const touch = e.touches[0];
+              dragStartX = touch.pageX;
+              dragStartY = touch.pageY;
+              mouseDownTime = Date.now();
+              hasMoved = false;
+            },
+            { passive: true },
+          );
+
+          swatch.addEventListener(
+            "touchmove",
+            (e) => {
+              if (mouseDownTime > 0 && e.touches[0]) {
+                const dx = Math.abs(e.touches[0].pageX - dragStartX);
+                const dy = Math.abs(e.touches[0].pageY - dragStartY);
+                if (dx > 5 || dy > 5) {
+                  hasMoved = true;
+                }
+              }
+            },
+            { passive: true },
+          );
+
           colorPicker.addEventListener("mousedown", (e) => {
             e.stopPropagation();
           });
@@ -3172,6 +3477,115 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           }
           return false;
         });
+
+        // --- Touch drag support for grid items (mobile) ---
+        let gridTouchStartX = 0;
+        let gridTouchStartY = 0;
+        let gridTouchDragging = false;
+        let gridTouchClone = null;
+
+        item.addEventListener(
+          "touchstart",
+          (e) => {
+            if (e.target.closest(".grid-remove-btn, .grid-color-picker"))
+              return;
+            const focused = document.activeElement;
+            if (focused && focused.classList.contains("hex-input")) return;
+
+            const touch = e.touches[0];
+            gridTouchStartX = touch.clientX;
+            gridTouchStartY = touch.clientY;
+            gridTouchDragging = false;
+
+            draggedItem = item;
+            draggedIndex = parseInt(item.dataset.idx);
+          },
+          { passive: true },
+        );
+
+        item.addEventListener(
+          "touchmove",
+          (e) => {
+            if (!draggedItem || draggedItem !== item) return;
+            const touch = e.touches[0];
+            const dx = Math.abs(touch.clientX - gridTouchStartX);
+            const dy = Math.abs(touch.clientY - gridTouchStartY);
+
+            if (!gridTouchDragging && (dx > 8 || dy > 8)) {
+              gridTouchDragging = true;
+              self._isDragging = true;
+              item.classList.add("dragging");
+              if (gridContainer) gridContainer.classList.add("dragging-active");
+
+              const rect = item.getBoundingClientRect();
+              gridTouchClone = item.cloneNode(true);
+              gridTouchClone.style.cssText = `
+                position: fixed; z-index: 99999; pointer-events: none;
+                width: ${rect.width}px; height: ${rect.height}px;
+                opacity: 0.85; box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+                transform: scale(1.03); transition: none;
+                left: ${touch.clientX - rect.width / 2}px;
+                top: ${touch.clientY - rect.height / 2}px;
+              `;
+              document.body.appendChild(gridTouchClone);
+            }
+
+            if (gridTouchDragging) {
+              e.preventDefault();
+              if (gridTouchClone) {
+                const rect = item.getBoundingClientRect();
+                gridTouchClone.style.left =
+                  touch.clientX - rect.width / 2 + "px";
+                gridTouchClone.style.top =
+                  touch.clientY - rect.height / 2 + "px";
+              }
+
+              const now = Date.now();
+              if (now - lastGridUpdateTime > 16) {
+                lastGridUpdateTime = now;
+                updateGridPositions(touch.clientX, touch.clientY);
+              }
+            }
+          },
+          { passive: false },
+        );
+
+        item.addEventListener(
+          "touchend",
+          () => {
+            if (gridTouchClone && gridTouchClone.parentNode) {
+              gridTouchClone.parentNode.removeChild(gridTouchClone);
+              gridTouchClone = null;
+            }
+            if (gridTouchDragging) {
+              performGridDrop();
+            } else {
+              if (draggedItem) draggedItem.classList.remove("dragging");
+              draggedItem = null;
+              draggedIndex = null;
+              self._isDragging = false;
+            }
+            gridTouchDragging = false;
+          },
+          { passive: true },
+        );
+
+        item.addEventListener(
+          "touchcancel",
+          () => {
+            if (gridTouchClone && gridTouchClone.parentNode)
+              gridTouchClone.parentNode.removeChild(gridTouchClone);
+            gridTouchClone = null;
+            if (draggedItem) draggedItem.classList.remove("dragging");
+            if (gridContainer)
+              gridContainer.classList.remove("dragging-active");
+            draggedItem = null;
+            draggedIndex = null;
+            gridTouchDragging = false;
+            self._isDragging = false;
+          },
+          { passive: true },
+        );
       });
 
       if (gridContainer) {

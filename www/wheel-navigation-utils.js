@@ -73,7 +73,6 @@ export function initializeWheelNavigation(options) {
     immediate = false,
   } = options;
 
-
   if (!shadowRoot || displayMode !== "wheel") {
     return { sync: () => {}, destroy: () => {}, getCenterIndex: () => 0 };
   }
@@ -84,7 +83,6 @@ export function initializeWheelNavigation(options) {
   );
   const upBtn = shadowRoot.querySelector('[data-wheel-nav="up"]');
   const downBtn = shadowRoot.querySelector('[data-wheel-nav="down"]');
-
 
   if (!wheelContainer || wheelItems.length === 0) {
     // Expected when called before first render — caller will retry.
@@ -399,7 +397,6 @@ export function initializeWheelNavigation(options) {
       }
     });
 
-
     // Always update wheel state to ensure positioning is correct
     // (even when index matches, e.g. index 0 on first load)
     wheelCenterIndex = foundIndex;
@@ -464,9 +461,13 @@ export function initializeWheelNavigation(options) {
 
   const touchStartHandler = (e) => {
     startDrag(e.touches[0].clientY);
+    e.preventDefault();
   };
 
   const touchMoveHandler = (e) => {
+    if (isDragging) {
+      e.preventDefault();
+    }
     handleDrag(e.touches[0].clientY);
   };
 
@@ -515,10 +516,10 @@ export function initializeWheelNavigation(options) {
 
   // Touch drag events
   wheelContainer.addEventListener("touchstart", touchStartHandler, {
-    passive: true,
+    passive: false,
   });
   wheelContainer.addEventListener("touchmove", touchMoveHandler, {
-    passive: true,
+    passive: false,
   });
   wheelContainer.addEventListener("touchend", touchEndHandler, {
     passive: true,
