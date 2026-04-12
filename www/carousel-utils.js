@@ -238,7 +238,7 @@ export const carouselStyles = `
   .carousel-nav-btn {
     background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
     color: var(--primary-color, #0077cc);
-    border: none;
+    border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.1));
     border-radius: 8px;
     cursor: pointer;
     font-size: 1em;
@@ -301,6 +301,7 @@ export const carouselStyles = `
   /* Card Mode - Buttons outside, content in card */
   .carousel-with-card {
     gap: 12px;
+    padding-top: 14px; /* Room for outside delete button */
   }
 
   /* Navigation Buttons */
@@ -310,7 +311,7 @@ export const carouselStyles = `
     transform: translateY(-50%);
     z-index: 10;
     background: var(--card-background-color, rgba(255, 255, 255, 0.9));
-    border: none;
+    border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.1));
     border-radius: 50%;
     width: 40px;
     height: 40px;
@@ -390,11 +391,11 @@ export const carouselStyles = `
     margin: 0 !important;
     pointer-events: auto !important;
   }
-  /* Inside position */
+  /* Inside position - offset to clear 12px border-radius */
   .carousel-content-card .pixelart-delete-title-row.btn-pos-inside,
   .carousel-content-card .pixelart-btn-cross.btn-pos-inside {
-    top: 8px !important;
-    right: 8px !important;
+    top: 12px !important;
+    right: 12px !important;
   }
   /* Left side */
   .carousel-content-card .pixelart-delete-title-row.btn-side-left,
@@ -404,7 +405,7 @@ export const carouselStyles = `
   }
   .carousel-content-card .pixelart-delete-title-row.btn-pos-inside.btn-side-left,
   .carousel-content-card .pixelart-btn-cross.btn-pos-inside.btn-side-left {
-    left: 8px !important;
+    left: 12px !important;
   }
   /* Dot outside: smaller offset */
   .carousel-content-card .pixelart-btn-cross.dot-style {

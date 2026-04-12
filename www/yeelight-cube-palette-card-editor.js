@@ -490,6 +490,17 @@ class YeelightCubePaletteCardEditor extends LitElement {
               </div>
             </div>
 
+            ${this._renderButtonGroup(
+              "Item Card Border",
+              "item_card_border",
+              config.item_card_border || "auto",
+              [
+                { value: "none", label: "None" },
+                { value: "auto", label: "Auto" },
+                { value: "always", label: "Always" },
+              ],
+            )}
+
             <!-- Carousel Mode Settings -->
             ${config.display_mode === "carousel"
               ? renderModeSettingsSection(

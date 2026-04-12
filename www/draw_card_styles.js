@@ -11,6 +11,14 @@ import { exportImportButtonStyles } from "./export-import-button-utils.js";
 import { carouselStyles } from "./carousel-utils.js";
 
 export const drawCardStyles = css`
+  /* Allow outside delete buttons to overflow ha-card */
+  :host {
+    overflow: visible !important;
+  }
+  ha-card {
+    overflow: visible !important;
+  }
+
   /* Shared Compact Mode Styles */
   ${unsafeCSS(compactModeStyles)}
 
@@ -1239,6 +1247,17 @@ export const drawCardStyles = css`
     width: 100%;
   }
 
+  /* Item card border for dark mode visibility */
+  .item-card-border .gallery-item {
+    border: 1px solid var(--divider-color, rgba(255,255,255,0.15));
+  }
+  .item-card-border .carousel-content-card {
+    border: 1px solid var(--divider-color, rgba(255,255,255,0.15));
+  }
+  .item-card-border .pixelarts-album-item {
+    border: 1px solid var(--divider-color, rgba(255,255,255,0.15));
+  }
+
   .pixelart-gallery-header {
     display: flex;
     align-items: center;
@@ -1304,23 +1323,21 @@ export const drawCardStyles = css`
     padding: 2px;
     width: 100%;
     height: auto;
-    aspect-ratio: 3.5/1; /* 20:5.7 ratio for better proportions */
   }
 
   .pixelart-matrix {
     display: grid;
     grid-template-columns: repeat(20, 1fr);
-    grid-template-rows: repeat(5, 1fr);
     gap: var(--pixelart-gap, 2px);
-    background: transparent;
+    background-color: var(--pixelart-bg-color, transparent);
     border-radius: 4px;
     width: 100%;
-    height: 100%;
     min-height: 25px;
   }
 
   .pixelart-pixel {
     width: 100%;
+    aspect-ratio: 1 / 1;
     background: #000000;
     border: none;
     transition: background 0.1s;
@@ -1534,7 +1551,7 @@ export const drawCardStyles = css`
     display: flex;
     flex-direction: column;
     align-items: center;
-    overflow: hidden;
+    overflow: visible;
   }
 
   .carousel-slide-container {

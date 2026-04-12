@@ -1090,6 +1090,22 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 : ""
             }
 
+            <div class="form-row">
+              <label>Item Card Border</label>
+              ${createButtonGroup(
+                [
+                  { value: "none", label: "None" },
+                  { value: "auto", label: "Auto" },
+                  { value: "always", label: "Always" },
+                ],
+                this.config.item_card_border || "auto",
+                createButtonGroupChangeHandler("item_card_border", (value) => {
+                  this.config.item_card_border = value;
+                  this._fireConfigChanged();
+                }),
+              )}
+            </div>
+
             <!-- Global Remove Button Settings -->
             <div class="form-row">
               <label>Remove Button Style</label>

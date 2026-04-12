@@ -313,6 +313,13 @@ class YeelightCubePaletteCard extends HTMLElement {
     const cardTitle =
       typeof this.config.title === "string" ? this.config.title : "";
     const displayMode = this.config.display_mode || "list";
+    const borderMode = this.config.item_card_border || "auto";
+    const isDark =
+      this._hass?.themes?.darkMode ??
+      window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ??
+      false;
+    const showItemBorder =
+      borderMode === "always" || (borderMode === "auto" && isDark);
 
     let contentHtml = "";
     // Add card title at the top if present
@@ -380,6 +387,10 @@ class YeelightCubePaletteCard extends HTMLElement {
 
         :host {
           --card-size-multiplier: ${(this.config.card_size || 50) / 100};
+          overflow: visible !important;
+        }
+        ha-card {
+          overflow: visible !important;
         }
         .card-title { font-size: 1.3em; font-weight: bold; margin-bottom: 18px; margin-top: 2px; color: var(--primary-text-color, #222); cursor: ${
           allowTitleEdit ? "pointer" : "default"
@@ -912,15 +923,15 @@ class YeelightCubePaletteCard extends HTMLElement {
           position: static;
         }
         .carousel-content-card .palette-remove-btn.btn-pos-inside {
-          top: 8px !important;
-          right: 8px !important;
+          top: 12px !important;
+          right: 12px !important;
         }
         .carousel-content-card .palette-remove-btn.btn-side-left {
           right: auto !important;
           left: -10px !important;
         }
         .carousel-content-card .palette-remove-btn.btn-pos-inside.btn-side-left {
-          left: 8px !important;
+          left: 12px !important;
         }
         .carousel-content-card .palette-remove-btn.dot-style {
           top: -4px !important;
@@ -1011,12 +1022,23 @@ class YeelightCubePaletteCard extends HTMLElement {
 
         /* PAGINATION STYLES */
         ${paginationStyles}
+
+        /* Item card border for dark mode visibility */
+        .item-card-border .gallery-item {
+          border: 1px solid var(--divider-color, rgba(255,255,255,0.15));
+        }
+        .item-card-border .carousel-content-card {
+          border: 1px solid var(--divider-color, rgba(255,255,255,0.15));
+        }
+        .item-card-border .palettes-album-item {
+          border: 1px solid var(--divider-color, rgba(255,255,255,0.15));
+        }
         }
       </style>
       ${
         showCard
-          ? `<ha-card><div class="card-content">${contentHtml}</div></ha-card>`
-          : `<div class="card-content">${contentHtml}</div>`
+          ? `<ha-card><div class="card-content${showItemBorder ? " item-card-border" : ""}">${contentHtml}</div></ha-card>`
+          : `<div class="card-content${showItemBorder ? " item-card-border" : ""}">${contentHtml}</div>`
       }
     `;
 

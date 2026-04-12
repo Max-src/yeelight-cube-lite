@@ -286,6 +286,13 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     const currentAngle = stateObj.attributes.angle ?? 0;
 
     const showCard = this.config.show_card_background !== false;
+    const borderMode = this.config.item_card_border || "auto";
+    const isDark =
+      this._hass?.themes?.darkMode ??
+      window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ??
+      false;
+    const showItemBorder =
+      borderMode === "always" || (borderMode === "auto" && isDark);
     const showSavePalette = this.config.show_save_palette !== false;
     const enableColorPicker = this.config.enable_color_picker !== false;
     const showHexInput = this.config.show_hex_input !== false;
@@ -535,7 +542,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       const actionRowElement = this.shadowRoot.querySelector(".action-row");
       if (colorListElement) {
         // Update layout class in case it changed
-        colorListElement.className = `layout-${currentLayout}`;
+        colorListElement.className = `layout-${currentLayout}${showItemBorder ? " item-card-border" : ""}`;
 
         colorListElement.innerHTML = `
           ${this._generateColorList(textColors, {
@@ -609,7 +616,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
             ? `
         <div id="color-list" class="layout-${
           this.config.list_layout || "list"
-        }" style="--card-size-multiplier: ${
+        }${showItemBorder ? " item-card-border" : ""}" style="--card-size-multiplier: ${
           (this.config.card_size || 70) / 100
         };">
           ${this._generateColorList(textColors, {
@@ -669,7 +676,10 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           display: block;
           max-width: 100%;
           box-sizing: border-box;
-          overflow: hidden;
+          overflow: visible;
+        }
+        ha-card {
+          overflow: visible;
         }
         * {
           box-sizing: border-box;
@@ -1487,6 +1497,10 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           transform-origin: bottom center;
           flex-shrink: 0;
           overflow: visible;
+        }
+        /* Item card border for dark mode visibility */
+        .item-card-border .card-item {
+          border: 1px solid var(--divider-color, rgba(255,255,255,0.15));
         }
         .cards-container:not(.dragging-active) .card-item:hover::before,
         .cards-poker-container:not(.dragging-active) .card-item:hover::before {

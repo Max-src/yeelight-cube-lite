@@ -43,7 +43,7 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
     .${classPrefix}-album-container {
       min-height: 200px;
       max-height: 500px;
-      padding: ${isInside ? "12px" : "20px"} 0;
+      padding: ${isInside ? "12px" : "28px"} ${isInside ? "0" : "14px"};
       position: relative;
       display: flex;
       align-items: center;
@@ -194,7 +194,7 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
       width: 48px;
       height: 48px;
       background: var(--card-background-color, #FFF);
-      border: 1px solid rgba(0,0,0,0.1);
+      border: 1px solid var(--divider-color, rgba(0,0,0,0.1));
       border-radius: 50%;
       cursor: pointer;
       font-size: 2em;

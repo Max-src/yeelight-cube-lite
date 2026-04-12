@@ -485,6 +485,24 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                   { min: 30, max: 100, step: 5 },
                 )
               : ""}
+            <div class="form-row">
+              <label>Item Card Border</label>
+              ${createButtonGroup(
+                [
+                  { value: "none", label: "None" },
+                  { value: "auto", label: "Auto" },
+                  { value: "always", label: "Always" },
+                ],
+                cfg.item_card_border || "auto",
+                createButtonGroupChangeHandler("item_card_border", (value) => {
+                  this._config = {
+                    ...this._config,
+                    item_card_border: value,
+                  };
+                  this._fireConfigChanged();
+                }),
+              )}
+            </div>
           </div>
         </div>
 

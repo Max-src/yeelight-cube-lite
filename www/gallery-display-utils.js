@@ -43,7 +43,7 @@ const WHEEL_MODE = {
     FONT_SIZE: "2em",
     BORDER_RADIUS: "50%",
     BACKGROUND: "var(--card-background-color, #FFF)",
-    BORDER: "1px solid rgba(0,0,0,0.1)",
+    BORDER: "1px solid var(--divider-color, rgba(0,0,0,0.1))",
     BOX_SHADOW: "0 4px 12px rgba(0,0,0,0.15)",
     GAP: "18px",
   },

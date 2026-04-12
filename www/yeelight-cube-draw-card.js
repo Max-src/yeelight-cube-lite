@@ -1504,6 +1504,13 @@ class YeelightCubeDrawCard extends LitElement {
     }
 
     const currentMode = cfg.pixel_art_gallery_mode || "gallery";
+    const borderMode = cfg.item_card_border || "auto";
+    const isDark =
+      this.hass?.themes?.darkMode ??
+      window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ??
+      false;
+    const showItemBorder =
+      borderMode === "always" || (borderMode === "auto" && isDark);
     const btnCfg = getDeleteButtonConfig(cfg);
     const allowDelete = btnCfg.allowDelete;
     const bgColor = cfg.pixel_art_background_color || "transparent";
@@ -1516,7 +1523,9 @@ class YeelightCubeDrawCard extends LitElement {
     return html`
       <div class="pixelart-gallery">
         <div
-          class="pixelart-gallery-content ${currentMode} pixelart-gallery-plain"
+          class="pixelart-gallery-content ${currentMode} pixelart-gallery-plain${showItemBorder
+            ? " item-card-border"
+            : ""}"
           @click=${this._handleGalleryClick}
           style="--pixelart-bg-color: ${resolveBgColor(bgColor)}"
         >
@@ -2007,19 +2016,19 @@ class YeelightCubeDrawCard extends LitElement {
           /* Hover effect without conflicting with coverflow transitions */
           filter: brightness(1.1);
         }
-        .pixelart-matrix {
+        .pixelart-preview-album .pixelart-matrix {
           display: grid;
           grid-template-columns: repeat(20, 1fr);
-          grid-template-rows: repeat(5, 1fr);
           gap: var(--pixelart-gap, 0px);
           background-color: var(--pixelart-bg-color, transparent);
-          border-radius: 4px;
+          border-radius: 8px;
+          padding: 8px;
           width: 100%;
-          aspect-ratio: 3.5 / 1;
+          box-sizing: border-box;
         }
-        .pixelart-pixel {
+        .pixelart-preview-album .pixelart-pixel {
           width: 100%;
-          height: 100%;
+          aspect-ratio: 1 / 1;
           background-color: #000;
           transition: background-color 0.1s ease;
         }
