@@ -411,6 +411,12 @@ class YeelightCubePaletteCard extends HTMLElement {
           box-sizing: border-box;
           transition: max-width 0.2s ease;
         }
+        .palette-row.palette-row-square {
+          border-radius: 0;
+        }
+        .palette-row.palette-row-rounded {
+          border-radius: 4px;
+        }
         .palette-title {
           font-weight: 500;
           color: var(--primary-text-color, #333);
@@ -440,7 +446,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           width: 24px;
           height: 24px;
           border-radius: 6px;
-          border: 1px solid var(--divider-color, #ccc);
+          box-shadow: 0 0 0 1px var(--divider-color, #ccc);
         }
         /* Swatch Styles */
         .square-swatch {
@@ -448,7 +454,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           height: calc(28px * var(--card-size-multiplier));
           border-radius: 6px;
           display: inline-block;
-          border: 1px solid var(--divider-color, #ddd);
+          box-shadow: 0 0 0 1px var(--divider-color, #ddd);
           margin: 1px;
           transition: width 0.2s ease, height 0.2s ease;
         }
@@ -457,7 +463,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           height: calc(28px * var(--card-size-multiplier));
           border-radius: 50%;
           display: inline-block;
-          border: 1px solid var(--divider-color, #ddd);
+          box-shadow: 0 0 0 1px var(--divider-color, #ddd);
           margin: 1px;
           transition: width 0.2s ease, height 0.2s ease;
         }
@@ -465,7 +471,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           width: 100%;
           height: calc(28px * var(--card-size-multiplier));
           border-radius: 14px;
-          border: 1px solid var(--divider-color, #ddd);
+          box-shadow: 0 0 0 1px var(--divider-color, #ddd);
           margin: 2px 0;
           transition: height 0.2s ease;
         }
@@ -473,7 +479,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           width: 100%;
           height: calc(28px * var(--card-size-multiplier));
           border-radius: 6px;
-          border: 1px solid var(--divider-color, #ddd);
+          box-shadow: 0 0 0 1px var(--divider-color, #ddd);
           margin: 2px 0;
           transition: height 0.2s ease;
         }
@@ -822,18 +828,40 @@ class YeelightCubePaletteCard extends HTMLElement {
           position: relative;
           transition: height 0.2s ease;
           flex-shrink: 1;
-          border-radius: ${
-            this.config.album_card_rounded !== false ? "16px 16px 0 0" : "0"
-          };
+          border-radius: ${(() => {
+            const v = this.config.rounded_cards;
+            const s =
+              v === true || v === undefined || v === "round"
+                ? "round"
+                : v === false || v === "square"
+                  ? "square"
+                  : v;
+            return s === "square"
+              ? "0"
+              : s === "rounded"
+                ? "4px 4px 0 0"
+                : "16px 16px 0 0";
+          })()};
           overflow: hidden;
         }
         .palettes-album-item .album-content {
           padding: max(4px, 5%) max(4px, 4%);
           min-height: 40px;
           background: var(--card-background-color, white);
-          border-radius: ${
-            this.config.album_card_rounded !== false ? "0 0 16px 16px" : "0"
-          };
+          border-radius: ${(() => {
+            const v = this.config.rounded_cards;
+            const s =
+              v === true || v === undefined || v === "round"
+                ? "round"
+                : v === false || v === "square"
+                  ? "square"
+                  : v;
+            return s === "square"
+              ? "0"
+              : s === "rounded"
+                ? "0 0 4px 4px"
+                : "0 0 16px 16px";
+          })()};
           transition: padding 0.2s ease;
           flex: 1;
           display: flex;
@@ -964,8 +992,7 @@ class YeelightCubePaletteCard extends HTMLElement {
         .palette-item-carousel .round-swatch {
           width: calc(40px * var(--card-size-multiplier));
           height: calc(40px * var(--card-size-multiplier));
-          box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-          border: 1px solid var(--divider-color, #ddd);
+          box-shadow: 0 2px 4px rgba(0,0,0,0.1), 0 0 0 1px var(--divider-color, #ddd);
           transition: width 0.2s ease, height 0.2s ease;
         }
         
@@ -1596,6 +1623,19 @@ class YeelightCubePaletteCard extends HTMLElement {
       sideClass = "",
       globalOffset = 0,
     } = options;
+    const rcVal = this.config.rounded_cards;
+    const roundedCards =
+      rcVal === true || rcVal === undefined || rcVal === "round"
+        ? "round"
+        : rcVal === false || rcVal === "square"
+          ? "square"
+          : rcVal;
+    const squareClass =
+      roundedCards === "square"
+        ? " palette-row-square"
+        : roundedCards === "rounded"
+          ? " palette-row-rounded"
+          : "";
 
     return palettes
       .map((palette, localIdx) => {
@@ -1621,7 +1661,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           ? "padding-left"
           : "padding-right";
         return `
-        <div class="palette-row palette-list-item" data-idx="${idx}" style="position:relative;padding:${
+        <div class="palette-row palette-list-item${squareClass}" data-idx="${idx}" style="position:relative;padding:${
           isGradientBg ? "14px 16px" : "8px 12px"
         };box-sizing:border-box;${rowBgStyle}; min-height: ${minHeight};">
           <div style="display:flex;flex-direction:column;width:100%;${
@@ -1750,7 +1790,7 @@ class YeelightCubePaletteCard extends HTMLElement {
                                 height: ${scaledSwatchSize}px; 
                                 background: ${cssColor}; 
                                 border-radius: ${borderRadius}; 
-                                border: 1px solid var(--divider-color, rgba(0,0,0,0.1));
+                                box-shadow: 0 0 0 1px var(--divider-color, rgba(0,0,0,0.1));
                                 flex-shrink: 0;">
                     </div>`;
           })
@@ -1800,7 +1840,7 @@ class YeelightCubePaletteCard extends HTMLElement {
         isStripes: isStripes,
         isGradientBar: isGradientBar,
         globalOffset: options.globalOffset || 0,
-        roundedCards: this.config.gallery_rounded_cards !== false,
+        roundedCards: this.config.rounded_cards,
       },
     );
 
@@ -1926,6 +1966,7 @@ class YeelightCubePaletteCard extends HTMLElement {
       wrapNavigation: cfg.palette_carousel_wrap_navigation === true,
       carouselId: "palette-carousel",
       containerGradient: containerGradient,
+      roundedCards: cfg.rounded_cards,
       renderItemString: (palette, idx) => {
         return this._renderPaletteItemString(
           palette,

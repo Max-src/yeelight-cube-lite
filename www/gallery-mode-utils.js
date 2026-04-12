@@ -31,6 +31,22 @@ export const galleryModeStyles = `
   .gallery-item.gallery-item-square {
     border-radius: 0;
   }
+  .gallery-item.gallery-item-square > .gallery-item-footer {
+    border-radius: 0;
+  }
+  .gallery-item.gallery-item-square > .gallery-item-image {
+    border-radius: 0;
+  }
+
+  .gallery-item.gallery-item-rounded {
+    border-radius: 4px;
+  }
+  .gallery-item.gallery-item-rounded > .gallery-item-footer {
+    border-radius: 0 0 4px 4px;
+  }
+  .gallery-item.gallery-item-rounded > .gallery-item-image {
+    border-radius: 4px 4px 0 0;
+  }
 
   .gallery-item:hover {
     transform: translateY(-4px);
@@ -75,6 +91,7 @@ export const galleryModeStyles = `
     /* min-height: calc(120px * var(--gallery-size-multiplier, 1)); */
     position: relative;
     height: 100%;
+    border-radius: 12px 12px 0 0;
   }
 
   .gallery-item-content {
@@ -103,6 +120,7 @@ export const galleryModeStyles = `
     align-items: center;
     gap: 8px;
     min-height: 48px;
+    border-radius: 0 0 12px 12px;
   }
 
   .gallery-item-title {
@@ -172,6 +190,9 @@ export const galleryModeStyles = `
   .gallery-item.gallery-item-square:has(.btn-pos-outside) > .gallery-item-image {
     border-radius: 0;
   }
+  .gallery-item.gallery-item-rounded:has(.btn-pos-outside) > .gallery-item-image {
+    border-radius: 4px 4px 0 0;
+  }
 
   /* Responsive adjustments */
   @media (max-width: 768px) {
@@ -186,6 +207,26 @@ export const galleryModeStyles = `
       grid-template-columns: repeat(auto-fill, minmax(calc(120px * var(--gallery-size-multiplier, 1)), 1fr));
       gap: 8px;
     }
+  }
+
+  /* ── Item card border: ensure inner children follow parent border-radius ── */
+  .item-card-border .gallery-item > .gallery-item-image {
+    border-radius: 11px 11px 0 0;
+  }
+  .item-card-border .gallery-item > .gallery-item-footer {
+    border-radius: 0 0 11px 11px;
+  }
+  /* Square variant: no rounding */
+  .item-card-border .gallery-item.gallery-item-square > .gallery-item-image,
+  .item-card-border .gallery-item.gallery-item-square > .gallery-item-footer {
+    border-radius: 0;
+  }
+  /* Rounded variant: moderate rounding */
+  .item-card-border .gallery-item.gallery-item-rounded > .gallery-item-image {
+    border-radius: 3px 3px 0 0;
+  }
+  .item-card-border .gallery-item.gallery-item-rounded > .gallery-item-footer {
+    border-radius: 0 0 3px 3px;
   }
 `;
 
@@ -216,6 +257,20 @@ export function renderGalleryMode(items, renderContent, options = {}) {
     globalOffset = 0,
   } = options;
 
+  // Normalize shape: true/undefined → "round", false → "square", string passed through
+  const shape =
+    roundedCards === true || roundedCards === undefined
+      ? "round"
+      : roundedCards === false
+        ? "square"
+        : roundedCards;
+  const shapeClass =
+    shape === "square"
+      ? " gallery-item-square"
+      : shape === "rounded"
+        ? " gallery-item-rounded"
+        : "";
+
   // Safety check for items
   if (!items || !Array.isArray(items)) {
     return '<div class="gallery-grid"><!-- No items to display --></div>';
@@ -235,7 +290,7 @@ export function renderGalleryMode(items, renderContent, options = {}) {
           isGradientBg ? " gallery-item-gradient" : ""
         }${isStripes ? " gallery-item-stripes" : ""}${
           isGradientBar ? " gallery-item-gradient-bar" : ""
-        }${!roundedCards ? " gallery-item-square" : ""}" data-idx="${idx}">
+        }${shapeClass}" data-idx="${idx}">
           <div class="gallery-item-image" ${gradientStyle}
                ${
                  onItemClick

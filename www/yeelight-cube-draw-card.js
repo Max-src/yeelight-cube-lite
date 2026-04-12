@@ -1856,7 +1856,7 @@ class YeelightCubeDrawCard extends LitElement {
       onItemClick: "handleGridItemClick",
       onTitleClick: allowRename ? "handleGridTitleClick" : null,
       cardSizeMultiplier: cardSizeMultiplier,
-      roundedCards: cfg.gallery_rounded_cards !== false,
+      roundedCards: cfg.rounded_cards,
     });
 
     return html`
@@ -2080,6 +2080,14 @@ class YeelightCubeDrawCard extends LitElement {
           transition: all 0.2s ease;
         }
 
+        .pixelart-list-item.pixelart-list-item-square {
+          border-radius: 0;
+        }
+
+        .pixelart-list-item.pixelart-list-item-rounded {
+          border-radius: 4px;
+        }
+
         .pixelart-list-item:hover {
           box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
           border-color: var(--divider-color, #bcc5d0);
@@ -2196,7 +2204,23 @@ class YeelightCubeDrawCard extends LitElement {
             const globalIdx = globalOffset + idx;
 
             return html`
-              <div class="pixelart-list-item" data-index="${globalIdx}">
+              <div
+                class="pixelart-list-item${(() => {
+                  const v = cfg.rounded_cards;
+                  const s =
+                    v === true || v === undefined || v === "round"
+                      ? "round"
+                      : v === false || v === "square"
+                        ? "square"
+                        : v;
+                  return s === "square"
+                    ? " pixelart-list-item-square"
+                    : s === "rounded"
+                      ? " pixelart-list-item-rounded"
+                      : "";
+                })()}"
+                data-index="${globalIdx}"
+              >
                 ${allowDelete
                   ? html`<button
                       class="${removeBtnClass} list-delete-btn ${btnCfg.posClass} ${btnCfg.sideClass}"
@@ -2306,6 +2330,7 @@ class YeelightCubeDrawCard extends LitElement {
       buttonShape,
       showAsCard: true, // Always show as card for carousel
       wrapNavigation: cfg.carousel_wrap_navigation === true,
+      roundedCards: cfg.rounded_cards,
       onNavigate: (direction, maxLength) => {
         this._navigateCarousel(direction, maxLength);
       },

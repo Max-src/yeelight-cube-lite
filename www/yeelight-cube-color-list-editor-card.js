@@ -1553,6 +1553,8 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           display: flex;
           flex-direction: column;
           position: relative;
+          overflow: hidden;
+          border-radius: inherit;
         }
         .card-color-bar {
           flex: 1;
@@ -1925,6 +1927,24 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           margin: 0;
           cursor: pointer;
         }
+
+        /* Rounded Cards override — square variants */
+        .compact-item.square-item { border-radius: 0 !important; }
+        .chip-item.square-item { border-radius: 0 !important; }
+        .tile-item.square-item { border-radius: 0 !important; }
+        .row-item.square-item { border-radius: 0 !important; }
+        .color-grid-swatch.square-item { border-radius: 0 !important; }
+        .card-item.square-item { border-radius: 0 !important; }
+        .card-item.square-item .card-face { border-radius: 0 !important; }
+
+        /* Rounded Cards override — rounded variants */
+        .compact-item.rounded-item { border-radius: 4px !important; }
+        .chip-item.rounded-item { border-radius: 4px !important; }
+        .tile-item.rounded-item { border-radius: 4px !important; }
+        .row-item.rounded-item { border-radius: 4px !important; }
+        .color-grid-swatch.rounded-item { border-radius: 4px !important; }
+        .card-item.rounded-item { border-radius: 4px !important; }
+        .card-item.rounded-item .card-face { border-radius: 4px !important; }
 
         /* Shared Delete Button Styles */
         ${deleteButtonStyles}
@@ -4353,6 +4373,30 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     // Note: Pending colors will be cleared automatically in render()
     // when the sensor value matches, providing seamless sync
   }
+  _getShapeClass() {
+    const v = this.config.rounded_cards;
+    const s =
+      v === true || v === undefined || v === "round"
+        ? "round"
+        : v === false || v === "square"
+          ? "square"
+          : v;
+    return s === "square"
+      ? " square-item"
+      : s === "rounded"
+        ? " rounded-item"
+        : "";
+  }
+  _getShapeBorderRadius(roundVal) {
+    const v = this.config.rounded_cards;
+    const s =
+      v === true || v === undefined || v === "round"
+        ? "round"
+        : v === false || v === "square"
+          ? "square"
+          : v;
+    return s === "square" ? "0" : s === "rounded" ? "4px" : roundVal;
+  }
   rgbToHex(rgb) {
     return (
       "#" +
@@ -4737,10 +4781,12 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     const posClass = buttonInside ? "btn-pos-inside" : "btn-pos-outside";
     const sideClass = buttonLeft ? "btn-side-left" : "";
 
+    const squareClass = this._getShapeClass();
+
     return textColors
       .map((color, idx) =>
         Array.isArray(color) && color.length === 3
-          ? `<div class="compact-item" data-idx="${idx}" ${
+          ? `<div class="compact-item${squareClass}" data-idx="${idx}" ${
               allowDragDrop !== false ? 'draggable="true"' : ""
             }>
               <div class="compact-swatch" style="background: ${this.rgbToHex(
@@ -4795,11 +4841,13 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     const posClass = buttonInside ? "btn-pos-inside" : "btn-pos-outside";
     const sideClass = buttonLeft ? "btn-side-left" : "";
 
+    const squareClass = this._getShapeClass();
+
     return `<div class="chips-container">
       ${textColors
         .map((color, idx) =>
           Array.isArray(color) && color.length === 3
-            ? `<div class="chip-item" data-idx="${idx}" ${
+            ? `<div class="chip-item${squareClass}" data-idx="${idx}" ${
                 allowDragDrop !== false ? 'draggable="true"' : ""
               } style="background: ${this.rgbToHex(
                 color,
@@ -4861,10 +4909,12 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     const posClass = buttonInside ? "btn-pos-inside" : "btn-pos-outside";
     const sideClass = buttonLeft ? "btn-side-left" : "";
 
+    const squareClass = this._getShapeClass();
+
     return textColors
       .map((color, idx) =>
         Array.isArray(color) && color.length === 3
-          ? `<div class="tile-item" data-idx="${idx}" ${
+          ? `<div class="tile-item${squareClass}" data-idx="${idx}" ${
               allowDragDrop !== false ? 'draggable="true"' : ""
             }>
               ${
@@ -4924,10 +4974,12 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     const posClass = buttonInside ? "btn-pos-inside" : "btn-pos-outside";
     const sideClass = buttonLeft ? "btn-side-left" : "";
 
+    const squareClass = this._getShapeClass();
+
     return textColors
       .map((color, idx) =>
         Array.isArray(color) && color.length === 3
-          ? `<div class="row-item" data-idx="${idx}" ${
+          ? `<div class="row-item${squareClass}" data-idx="${idx}" ${
               allowDragDrop !== false ? 'draggable="true"' : ""
             } 
                 style="background: linear-gradient(135deg, ${this.rgbToHex(
@@ -5001,7 +5053,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           ? `<div class="color-grid-item" data-idx="${idx}" ${
               allowDragDrop !== false ? 'draggable="true"' : ""
             }>
-              <div class="color-grid-swatch" style="background-color: ${this.rgbToHex(
+              <div class="color-grid-swatch${this._getShapeClass()}" style="background-color: ${this.rgbToHex(
                 color,
               )};" title="${this.formatColorInfo(
                 color,
@@ -5045,7 +5097,10 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
 
     // Card styling
-    const borderRadius = "calc(11.43px * var(--card-size-multiplier, 0.7))";
+    const borderRadius = this._getShapeBorderRadius(
+      "calc(11.43px * var(--card-size-multiplier, 0.7))",
+    );
+    const squareClass = this._getShapeClass();
     const buttonPositionStyles = getButtonPositionStyles(
       buttonInside,
       buttonLeft,
@@ -5089,7 +5144,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                   const horizontalOffset = offset * -15; // Overlap
 
                   return `<div class="card-wrapper poker-card" data-position="${globalIdx}">
-                    <div class="card-item" data-idx="${globalIdx}" 
+                    <div class="card-item${squareClass}" data-idx="${globalIdx}" 
                       style="
                         transform: rotate(${rotationDeg}deg) translateY(${verticalOffset}px) translateX(${horizontalOffset}px);
                         z-index: ${idx};
@@ -5120,12 +5175,12 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                             this.config.color_info_display || "hex",
                           )}</div>
                         </div>
-                        ${
-                          options.allowDelete
-                            ? `<button data-action="remove" data-idx="${globalIdx}" class="${deleteBtnClass} card-remove" style="${buttonPositionStyles}" title="Remove"></button>`
-                            : ""
-                        }
                       </div>
+                      ${
+                        options.allowDelete
+                          ? `<button data-action="remove" data-idx="${globalIdx}" class="${deleteBtnClass} card-remove" style="${buttonPositionStyles}" title="Remove"></button>`
+                          : ""
+                      }
                     </div>
                   </div>`;
                 }
@@ -5146,7 +5201,10 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
 
     // Card styling
-    const borderRadius = "calc(11.43px * var(--card-size-multiplier, 0.7))";
+    const borderRadius = this._getShapeBorderRadius(
+      "calc(11.43px * var(--card-size-multiplier, 0.7))",
+    );
+    const squareClass = this._getShapeClass();
     const buttonPositionStyles = getButtonPositionStyles(
       buttonInside,
       buttonLeft,
@@ -5167,7 +5225,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
             const verticalOffset = (seed2 % 12) - 6;
 
             return `<div class="card-wrapper" data-position="${globalIdx}">
-              <div class="card-item" data-idx="${globalIdx}" 
+              <div class="card-item${squareClass}" data-idx="${globalIdx}" 
                 style="
                   transform: rotate(${rotationDeg}deg) translateY(${verticalOffset}px);
                   z-index: ${globalIdx};
@@ -5198,12 +5256,12 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                       this.config.color_info_display || "hex",
                     )}</div>
                   </div>
-                  ${
-                    options.allowDelete
-                      ? `<button data-action="remove" data-idx="${globalIdx}" class="${deleteBtnClass} card-remove" style="${buttonPositionStyles}" title="Remove"></button>`
-                      : ""
-                  }
                 </div>
+                ${
+                  options.allowDelete
+                    ? `<button data-action="remove" data-idx="${globalIdx}" class="${deleteBtnClass} card-remove" style="${buttonPositionStyles}" title="Remove"></button>`
+                    : ""
+                }
               </div>
             </div>`;
           }

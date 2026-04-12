@@ -29,9 +29,20 @@ import { getDeleteButtonConfig } from "./delete-button-styles.js";
 export function getAlbumStyles(config = {}, classPrefix = "album") {
   const btnCfg = getDeleteButtonConfig(config);
   const isInside = btnCfg.inside;
-  const cardRounded = config.album_card_rounded !== false;
+  // Normalize shape: backward compat for boolean + legacy album_card_rounded
+  const rawShape =
+    config.rounded_cards !== undefined
+      ? config.rounded_cards
+      : config.album_card_rounded !== false;
+  const cardShape =
+    rawShape === true || rawShape === undefined
+      ? "round"
+      : rawShape === false
+        ? "square"
+        : rawShape;
   const enable3D = config.album_3d_effect !== false;
-  const borderRadius = cardRounded ? "16px" : "0";
+  const borderRadius =
+    cardShape === "square" ? "0" : cardShape === "rounded" ? "4px" : "16px";
 
   return `
     .${classPrefix}-album-wrapper {

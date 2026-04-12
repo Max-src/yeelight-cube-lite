@@ -1048,7 +1048,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
 
             <!-- GROUP 2: Gallery Layout & Display -->
             <div class="form-row">
-              <label>Gallery Display Mode</label>
+              <label>Display Mode</label>
               ${createButtonGroup(
                 [
                   { value: "gallery", label: "Gallery" },
@@ -1067,28 +1067,26 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 ),
               )}
             </div>
-            ${
-              // Gallery-specific settings
-              this.config.pixel_art_gallery_mode === "gallery"
-                ? html`
-                    <div
-                      style="margin-top: 20px; padding: 16px; background: color-mix(in srgb, var(--primary-color, #1976d2) 10%, var(--card-background-color, #fff)); border-radius: 8px; border-left: 4px solid var(--primary-color, #0077cc);"
-                    >
-                      <div
-                        style="font-weight: 600; font-size: 1.05em; margin-bottom: 12px; color: var(--primary-color, #0077cc);"
-                      >
-                        Gallery Mode Settings
-                      </div>
-                      ${createToggleRow(
-                        "Rounded Cards",
-                        "gallery_rounded_cards",
-                        this.config.gallery_rounded_cards !== false,
-                        (e) => this._onSwitchChange(e, "gallery_rounded_cards"),
-                      )}
-                    </div>
-                  `
-                : ""
-            }
+            <div class="form-row">
+              <label>Card Shape</label>
+              ${createButtonGroup(
+                [
+                  { value: "round", label: "Round" },
+                  { value: "rounded", label: "Rounded" },
+                  { value: "square", label: "Square" },
+                ],
+                this.config.rounded_cards === "rounded"
+                  ? "rounded"
+                  : this.config.rounded_cards === "square" ||
+                      this.config.rounded_cards === false
+                    ? "square"
+                    : "round",
+                createButtonGroupChangeHandler("rounded_cards", (value) => {
+                  this.config.rounded_cards = value;
+                  this._fireConfigChanged();
+                }),
+              )}
+            </div>
 
             <div class="form-row">
               <label>Item Card Border</label>
@@ -1106,9 +1104,9 @@ class YeelightCubeDrawCardEditor extends LitElement {
               )}
             </div>
 
-            <!-- Global Remove Button Settings -->
+            <!-- Global Delete Button Settings -->
             <div class="form-row">
-              <label>Remove Button Style</label>
+              <label>Delete Button Style</label>
               ${createButtonGroup(
                 [
                   { value: "none", label: "None" },
@@ -1151,18 +1149,46 @@ class YeelightCubeDrawCardEditor extends LitElement {
                       ),
                     )}
                   </div>
-                  ${createToggleRow(
-                    "Button Inside",
-                    "delete_button_inside",
-                    this.config.delete_button_inside === true,
-                    (e) => this._onSwitchChange(e, "delete_button_inside"),
-                  )}
-                  ${createToggleRow(
-                    "Button Left Side",
-                    "delete_button_left",
-                    this.config.delete_button_left === true,
-                    (e) => this._onSwitchChange(e, "delete_button_left"),
-                  )}
+                  <div class="form-row">
+                    <label>Button Position</label>
+                    ${createButtonGroup(
+                      [
+                        { value: "inside", label: "Inside" },
+                        { value: "outside", label: "Outside" },
+                      ],
+                      this.config.delete_button_inside === true
+                        ? "inside"
+                        : "outside",
+                      createButtonGroupChangeHandler(
+                        "delete_button_inside",
+                        (value) => {
+                          this.config.delete_button_inside = value === "inside";
+                          this._fireConfigChanged();
+                          this.requestUpdate();
+                        },
+                      ),
+                    )}
+                  </div>
+                  <div class="form-row">
+                    <label>Delete Button Position</label>
+                    ${createButtonGroup(
+                      [
+                        { value: "left", label: "Left" },
+                        { value: "right", label: "Right" },
+                      ],
+                      this.config.delete_button_left === true
+                        ? "left"
+                        : "right",
+                      createButtonGroupChangeHandler(
+                        "delete_button_left",
+                        (value) => {
+                          this.config.delete_button_left = value === "left";
+                          this._fireConfigChanged();
+                          this.requestUpdate();
+                        },
+                      ),
+                    )}
+                  </div>
                 `
               : ""}
             ${
@@ -1182,12 +1208,6 @@ class YeelightCubeDrawCardEditor extends LitElement {
                         "album_3d_effect",
                         this.config.album_3d_effect !== false,
                         (e) => this._onSwitchChange(e, "album_3d_effect"),
-                      )}
-                      ${createToggleRow(
-                        "Rounded Cards",
-                        "album_card_rounded",
-                        this.config.album_card_rounded !== false,
-                        (e) => this._onSwitchChange(e, "album_card_rounded"),
                       )}
                     </div>
                   `

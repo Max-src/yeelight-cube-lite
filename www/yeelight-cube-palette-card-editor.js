@@ -363,31 +363,31 @@ class YeelightCubePaletteCardEditor extends LitElement {
               ],
             )}
             ${this._renderButtonGroup(
-              "Palette List Display Mode",
+              "Display Mode",
               "display_mode",
               config.display_mode || "list",
               [
-                { value: "list", label: "List" },
                 { value: "gallery", label: "Gallery" },
+                { value: "list", label: "List" },
                 { value: "carousel", label: "Carousel" },
                 { value: "album", label: "Album" },
               ],
             )}
-            ${
-              // Gallery-specific settings
-              config.display_mode === "gallery"
-                ? renderModeSettingsSection(
-                    "Gallery Mode Settings",
-                    html`
-                      ${this._renderSwitch(
-                        "Rounded Cards",
-                        "gallery_rounded_cards",
-                        config.gallery_rounded_cards !== false,
-                      )}
-                    `,
-                  )
-                : ""
-            }
+            ${this._renderButtonGroup(
+              "Card Shape",
+              "rounded_cards",
+              config.rounded_cards === "rounded"
+                ? "rounded"
+                : config.rounded_cards === "square" ||
+                    config.rounded_cards === false
+                  ? "square"
+                  : "round",
+              [
+                { value: "round", label: "Round" },
+                { value: "rounded", label: "Rounded" },
+                { value: "square", label: "Square" },
+              ],
+            )}
             ${config.display_mode === "list" ||
             config.display_mode === "gallery"
               ? html`
@@ -415,9 +415,9 @@ class YeelightCubePaletteCardEditor extends LitElement {
                 `
               : ""}
 
-            <!-- Global Remove Button Settings -->
+            <!-- Global Delete Button Settings -->
             ${this._renderButtonGroup(
-              "Remove Button Style",
+              "Delete Button Style",
               "remove_button_style",
               config.remove_button_style || "default",
               [
@@ -441,30 +441,24 @@ class YeelightCubePaletteCardEditor extends LitElement {
                       { value: "square", label: "Square" },
                     ],
                   )}
-                  <div class="form-row">
-                    <label>Button Inside</label>
-                    <label class="switch">
-                      <input
-                        type="checkbox"
-                        .checked="${config.delete_button_inside === true}"
-                        @change="${(e) =>
-                          this._onSwitchChange(e, "delete_button_inside")}"
-                      />
-                      <span class="slider"></span>
-                    </label>
-                  </div>
-                  <div class="form-row">
-                    <label>Button Left Side</label>
-                    <label class="switch">
-                      <input
-                        type="checkbox"
-                        .checked="${config.delete_button_left === true}"
-                        @change="${(e) =>
-                          this._onSwitchChange(e, "delete_button_left")}"
-                      />
-                      <span class="slider"></span>
-                    </label>
-                  </div>
+                  ${this._renderButtonGroup(
+                    "Button Position",
+                    "delete_button_inside",
+                    config.delete_button_inside === true ? "inside" : "outside",
+                    [
+                      { value: "inside", label: "Inside" },
+                      { value: "outside", label: "Outside" },
+                    ],
+                  )}
+                  ${this._renderButtonGroup(
+                    "Delete Button Position",
+                    "delete_button_left",
+                    config.delete_button_left === true ? "left" : "right",
+                    [
+                      { value: "left", label: "Left" },
+                      { value: "right", label: "Right" },
+                    ],
+                  )}
                 `
               : ""}
 
@@ -542,11 +536,6 @@ class YeelightCubePaletteCardEditor extends LitElement {
                       "3D Effect (Perspective)",
                       "album_3d_effect",
                       config.album_3d_effect !== false,
-                    )}
-                    ${this._renderSwitch(
-                      "Rounded Cards",
-                      "album_card_rounded",
-                      config.album_card_rounded !== false,
                     )}
                   `,
                 )
@@ -817,7 +806,14 @@ class YeelightCubePaletteCardEditor extends LitElement {
   }
 
   _onButtonGroupChange(key, value) {
-    this.config[key] = value;
+    // Convert boolean-backed button groups from string to boolean
+    if (key === "delete_button_left") {
+      this.config[key] = value === "left";
+    } else if (key === "delete_button_inside") {
+      this.config[key] = value === "inside";
+    } else {
+      this.config[key] = value;
+    }
     // Force re-render to update conditional sections (like album settings)
     this.config = { ...this.config };
     this.requestUpdate();

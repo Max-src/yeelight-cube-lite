@@ -11,6 +11,7 @@ import {
   entitySelectorStyles,
 } from "./entity-selector-utils.js";
 import { renderPercentageSlider, sliderStyles } from "./slider_utils.js";
+import { createToggleRow } from "./form-row-utils.js";
 import { fireEvent } from "./editor_ui_utils.js";
 
 class YeelightCubeColorListEditorCardEditor extends LitElement {
@@ -346,7 +347,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
               </label>
             </div>
             <div class="form-row">
-              <label>Remove Button Style</label>
+              <label>Delete Button Style</label>
               ${createButtonGroup(
                 [
                   { value: "none", label: "None" },
@@ -392,29 +393,45 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                       ),
                     )}
                   </div>
-                  <div class="toggle-row">
-                    <label class="toggle-label">Button Inside</label>
-                    <label class="toggle-switch">
-                      <input
-                        id="delete_button_inside"
-                        type="checkbox"
-                        .checked="${cfg.delete_button_inside === true}"
-                        @change="${this._valueChanged}"
-                      />
-                      <span class="toggle-slider"></span>
-                    </label>
+                  <div class="form-row">
+                    <label>Button Position</label>
+                    ${createButtonGroup(
+                      [
+                        { value: "inside", label: "Inside" },
+                        { value: "outside", label: "Outside" },
+                      ],
+                      cfg.delete_button_inside === true ? "inside" : "outside",
+                      createButtonGroupChangeHandler(
+                        "delete_button_inside",
+                        (value) => {
+                          this._config = {
+                            ...this._config,
+                            delete_button_inside: value === "inside",
+                          };
+                          this._fireConfigChanged();
+                        },
+                      ),
+                    )}
                   </div>
-                  <div class="toggle-row">
-                    <label class="toggle-label">Button Left Side</label>
-                    <label class="toggle-switch">
-                      <input
-                        id="delete_button_left"
-                        type="checkbox"
-                        .checked="${cfg.delete_button_left === true}"
-                        @change="${this._valueChanged}"
-                      />
-                      <span class="toggle-slider"></span>
-                    </label>
+                  <div class="form-row">
+                    <label>Delete Button Position</label>
+                    ${createButtonGroup(
+                      [
+                        { value: "left", label: "Left" },
+                        { value: "right", label: "Right" },
+                      ],
+                      cfg.delete_button_left === true ? "left" : "right",
+                      createButtonGroupChangeHandler(
+                        "delete_button_left",
+                        (value) => {
+                          this._config = {
+                            ...this._config,
+                            delete_button_left: value === "left",
+                          };
+                          this._fireConfigChanged();
+                        },
+                      ),
+                    )}
                   </div>
                 `
               : ""}
@@ -456,6 +473,29 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                   this._config = {
                     ...this._config,
                     list_layout: value,
+                  };
+                  this._fireConfigChanged();
+                }),
+              )}
+            </div>
+            <div class="form-row">
+              <label>Card Shape</label>
+              ${createButtonGroup(
+                [
+                  { value: "round", label: "Round" },
+                  { value: "rounded", label: "Rounded" },
+                  { value: "square", label: "Square" },
+                ],
+                cfg.rounded_cards === "rounded"
+                  ? "rounded"
+                  : cfg.rounded_cards === "square" ||
+                      cfg.rounded_cards === false
+                    ? "square"
+                    : "round",
+                createButtonGroupChangeHandler("rounded_cards", (value) => {
+                  this._config = {
+                    ...this._config,
+                    rounded_cards: value,
                   };
                   this._fireConfigChanged();
                 }),

@@ -112,7 +112,22 @@ export function renderCarousel(options) {
     buttonShape = "rect",
     showAsCard = false,
     wrapNavigation = false,
+    roundedCards = true,
   } = options;
+
+  // Normalize shape
+  const shape =
+    roundedCards === true || roundedCards === undefined
+      ? "round"
+      : roundedCards === false
+        ? "square"
+        : roundedCards;
+  const shapeClass =
+    shape === "square"
+      ? " carousel-card-square"
+      : shape === "rounded"
+        ? " carousel-card-rounded"
+        : "";
 
   if (!items || items.length === 0) {
     return html`<div class="no-pixel-arts">No items available</div>`;
@@ -187,7 +202,9 @@ export function renderCarousel(options) {
           <ha-icon icon="mdi:chevron-left"></ha-icon>
         </button>
         <div
-          class="carousel-content ${showAsCard ? "carousel-content-card" : ""}"
+          class="carousel-content ${showAsCard
+            ? "carousel-content-card"
+            : ""}${showAsCard ? shapeClass : ""}"
         >
           ${renderItem ? renderItem(items[validIndex], validIndex) : ""}
         </div>
@@ -366,6 +383,14 @@ export const carouselStyles = `
     overflow: visible;
   }
 
+  .carousel-content-card.carousel-card-square {
+    border-radius: 0;
+  }
+
+  .carousel-content-card.carousel-card-rounded {
+    border-radius: 4px;
+  }
+
   /* Delete button positioning for card mode - outside top right corner */
   .carousel-content-card .pixelart-item-carousel {
     position: static;
@@ -521,7 +546,22 @@ export function renderCarouselString(options) {
     wrapNavigation = false,
     carouselId = "carousel",
     containerGradient = null,
+    roundedCards = true,
   } = options;
+
+  // Normalize shape
+  const shape =
+    roundedCards === true || roundedCards === undefined
+      ? "round"
+      : roundedCards === false
+        ? "square"
+        : roundedCards;
+  const shapeClass =
+    shape === "square"
+      ? " carousel-card-square"
+      : shape === "rounded"
+        ? " carousel-card-rounded"
+        : "";
 
   if (!items || items.length === 0) {
     return `<div class="no-items">No items available</div>`;
@@ -574,7 +614,7 @@ export function renderCarouselString(options) {
         </button>
         <div class="carousel-content ${
           showAsCard ? "carousel-content-card" : ""
-        }${containerGradient ? " gradient-bg-mode" : ""}" ${
+        }${showAsCard ? shapeClass : ""}${containerGradient ? " gradient-bg-mode" : ""}" ${
           containerGradient
             ? `style="--carousel-gradient-bg: ${containerGradient};"`
             : ""
