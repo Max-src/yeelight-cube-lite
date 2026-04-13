@@ -252,12 +252,12 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
           </div>
           <div class="editor-card-content">
             <div class="form-row">
-              <label>Title (optional)</label>
+              <label>Card Title (optional)</label>
               <input
                 id="title"
                 type="text"
                 .value="${cfg.title || ""}"
-                placeholder="Color List Editor"
+                placeholder="Colors"
                 @input="${this._valueChanged}"
               />
             </div>

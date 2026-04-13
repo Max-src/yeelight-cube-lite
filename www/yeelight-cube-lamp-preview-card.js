@@ -1789,7 +1789,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
 
     // Generate final template
     const showCard = this.config.show_card_background !== false;
-    const cardTitle = this.config.card_title || "";
+    const cardTitle = this.config.title || this.config.card_title || "";
     const usingFallbackMatrix = !stateObj.attributes.matrix_colors;
 
     // Smart update: Only rebuild DOM if not initialized or if dragging just ended
@@ -2364,19 +2364,6 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           `;
       }
 
-      html += `</div>`;
-    } else if (this.config.show_brightness_percentage !== false) {
-      // Slider is hidden but percentage should be shown
-      let showLabel = this.config.show_brightness_label;
-      if (showLabel === undefined) {
-        showLabel = (this.config.brightness_label_mode || "text") !== "none";
-      }
-
-      html += `<div class="brightness-controls">`;
-      if (showLabel) {
-        html += `<div class="brightness-label">Brightness</div>`;
-      }
-      html += `<div class="brightness-percentage-standalone">${brightness}%</div>`;
       html += `</div>`;
     }
 

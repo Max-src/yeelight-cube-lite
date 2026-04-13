@@ -471,7 +471,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 type="text"
                 id="title"
                 .value="${this.localTitle}"
-                placeholder="Draw card"
+                placeholder="Draw"
                 @input="${this._onTitleInput}"
               />
             </div>
@@ -1353,7 +1353,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
 
   _onTitleInput(e) {
     this.localTitle = e.target.value;
-    this.config.title = this.localTitle;
+    this.config.title = this.localTitle || undefined;
     this._fireConfigChanged();
   }
 

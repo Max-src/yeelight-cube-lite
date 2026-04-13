@@ -1241,7 +1241,13 @@ class YeelightCubeDrawCard extends LitElement {
 
     const content = html`
       <div style="padding:18px 12px;margin:0 auto;">
-        ${cardTitle ? html`<div class="card-title">${cardTitle}</div>` : ""}
+        ${!showCard && cardTitle
+          ? html`<div
+              style="font-weight:600;font-size:1.1em;margin-bottom:8px;"
+            >
+              ${cardTitle}
+            </div>`
+          : ""}
         <div class="draw-container">
           ${showColors
             ? this._renderColorsSection(
@@ -1271,7 +1277,11 @@ class YeelightCubeDrawCard extends LitElement {
         </div>
       </div>
     `;
-    return showCard ? html`<ha-card>${content}</ha-card>` : content;
+    return showCard
+      ? cardTitle
+        ? html`<ha-card header="${cardTitle}">${content}</ha-card>`
+        : html`<ha-card>${content}</ha-card>`
+      : content;
   }
 
   _selectTool(tool) {
@@ -2415,10 +2425,36 @@ class YeelightCubeDrawCard extends LitElement {
 
     // Determine if title should be on top (for grid, carousel)
     const titleOnTop = displayMode !== "list";
+    const isCarousel = displayMode === "carousel";
 
     return html`
       <div class="${itemClass}">
-        ${titleOnTop && showTitles
+        ${isCarousel && showTitles
+          ? html`<div class="pixelart-title-row">
+              <div
+                class="${nameClass}"
+                data-index="${idx}"
+                title=${allowRename ? "Click to rename" : ""}
+              >
+                ${art.name || "Unnamed"}
+              </div>
+            </div>`
+          : ""}
+        ${isCarousel && allowDelete
+          ? html`<button
+              class="${deleteBtnClass} pixelart-delete-title-row"
+              data-index="${idx}"
+              title="Delete pixel art"
+              @click=${(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                this._handleGalleryClick(e);
+              }}
+            >
+              &#10006;
+            </button>`
+          : ""}
+        ${!isCarousel && titleOnTop && showTitles
           ? html`<div class="pixelart-title-row">
               <div
                 class="${nameClass}"
@@ -2443,7 +2479,7 @@ class YeelightCubeDrawCard extends LitElement {
                 : ""}
             </div>`
           : ""}
-        ${titleOnTop && !showTitles && allowDelete
+        ${!isCarousel && titleOnTop && !showTitles && allowDelete
           ? html`<div class="pixel-btn-cross-container">
               <button
                 class="${deleteBtnClass} pixelart-delete-overlay-grid"

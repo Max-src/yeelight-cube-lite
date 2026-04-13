@@ -457,12 +457,12 @@ class YeelightCubeGradientCardEditor extends LitElement {
           </div>
           <div class="editor-card-content">
             <div class="form-row">
-              <label>Title (optional)</label>
+              <label>Card Title (optional)</label>
               <input
                 id="title"
                 type="text"
                 .value="${cfg.title || ""}"
-                placeholder="Gradient Controls"
+                placeholder="Gradient"
                 @input="${this._valueChanged}"
               />
             </div>

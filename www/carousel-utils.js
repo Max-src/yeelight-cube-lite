@@ -377,22 +377,23 @@ export const carouselStyles = `
     overflow: visible;
   }
 
-  /* Delete button positioning for card mode - outside top right corner */
+  /* Delete button positioning for card mode */
   .carousel-content-card .pixelart-item-carousel {
     position: static;
   }
+
+  /* Title row stays in normal flow — pushes pixel art down naturally */
   .carousel-content-card .pixelart-title-row {
     position: static;
+    margin-bottom: 8px;
   }
 
-  /* Push card content away from inside delete button */
-  .carousel-content-card:has(.btn-pos-inside:not(.btn-side-left)) {
-    padding-right: 40px;
-  }
-  .carousel-content-card:has(.btn-pos-inside.btn-side-left) {
-    padding-left: 40px;
+  /* When button is inside on the LEFT, give title row left padding so text doesn't collide */
+  .carousel-content-card:has(.pixelart-delete-title-row.btn-pos-inside.btn-side-left) .pixelart-title-row {
+    padding-left: 36px;
   }
 
+  /* Delete button: absolutely positioned relative to carousel-content-card */
   .carousel-content-card .pixelart-delete-title-row,
   .carousel-content-card .pixelart-btn-cross {
     position: absolute !important;
@@ -402,18 +403,19 @@ export const carouselStyles = `
     margin: 0 !important;
     pointer-events: auto !important;
   }
-  /* Inside position - offset to clear 12px border-radius */
+  /* Inside position - inside the card, respecting border-radius */
   .carousel-content-card .pixelart-delete-title-row.btn-pos-inside,
   .carousel-content-card .pixelart-btn-cross.btn-pos-inside {
     top: 12px !important;
     right: 12px !important;
   }
-  /* Left side */
+  /* Left side - outside */
   .carousel-content-card .pixelart-delete-title-row.btn-side-left,
   .carousel-content-card .pixelart-btn-cross.btn-side-left {
     right: auto !important;
     left: -10px !important;
   }
+  /* Left side - inside */
   .carousel-content-card .pixelart-delete-title-row.btn-pos-inside.btn-side-left,
   .carousel-content-card .pixelart-btn-cross.btn-pos-inside.btn-side-left {
     left: 12px !important;
@@ -433,6 +435,13 @@ export const carouselStyles = `
   }
   .carousel-content-card .pixelart-btn-cross.dot-style.btn-pos-inside.btn-side-left {
     left: 4px !important;
+  }
+
+  /* Override grid-overlay button sizing in carousel — always use fixed size */
+  .carousel-content-card .pixelart-delete-overlay-grid {
+    width: 24px !important;
+    height: 24px !important;
+    font-size: 1em !important;
   }
 
   /* Carousel Indicators (dots) */

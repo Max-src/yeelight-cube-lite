@@ -93,6 +93,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
     } else {
       value = target.value;
     }
+    if (key === "title" && value === "") value = undefined;
     this._config = { ...this._config, [key]: value };
     this._fireConfigChanged();
   }
@@ -159,10 +160,10 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
             <div class="form-row">
               <label>Card Title (optional)</label>
               <input
-                id="card_title"
+                id="title"
                 type="text"
-                placeholder="Lamp Preview"
-                .value="${cfg.card_title || ""}"
+                placeholder="Lamp"
+                .value="${cfg.title ?? cfg.card_title ?? ""}"
                 @input="${this._valueChanged}"
               />
             </div>
@@ -378,15 +379,15 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
               (e) => this._onToggleChange(e),
             )}
             ${createToggleRow(
-              "Show Brightness Percentage",
-              "show_brightness_percentage",
-              cfg.show_brightness_percentage !== false,
-              (e) => this._onToggleChange(e),
-            )}
-            ${createToggleRow(
               "Show Brightness Label",
               "show_brightness_label",
               cfg.show_brightness_label !== false,
+              (e) => this._onToggleChange(e),
+            )}
+            ${createToggleRow(
+              "Show Brightness Percentage",
+              "show_brightness_percentage",
+              cfg.show_brightness_percentage !== false,
               (e) => this._onToggleChange(e),
             )}
             <div class="form-row">

@@ -601,15 +601,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     // Full render for initial load
     const cardContent = `
       <div style="padding:16px; box-sizing: border-box; max-width: 100%;">
-        ${
-          cardTitle
-            ? `
-          <div class="card-header" style="margin-bottom: 16px;">
-            <div class="card-title">${cardTitle}</div>
-          </div>
-        `
-            : ""
-        }
+        ${!showCard && cardTitle ? `<div style="font-weight:600;font-size:1.1em;margin-bottom:8px;">${cardTitle}</div>` : ""}
         
         ${
           showColorSection
@@ -1953,7 +1945,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       </style>
       ${
         showCard
-          ? `<ha-card><div class="card-content">${cardContent}</div></ha-card>`
+          ? `<ha-card${cardTitle ? ` header="${cardTitle}"` : ""}><div class="card-content">${cardContent}</div></ha-card>`
           : `<div class="card-content">${cardContent}</div>`
       }
     `;

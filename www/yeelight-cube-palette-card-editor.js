@@ -132,12 +132,12 @@ class YeelightCubePaletteCardEditor extends LitElement {
           </div>
           <div class="editor-card-content">
             <div class="form-row">
-              <label>Title (optional)</label>
+              <label>Card Title (optional)</label>
               <input
                 type="text"
                 id="title"
                 .value="${this.localTitle}"
-                placeholder="Optional title"
+                placeholder="Palettes"
                 @input="${this._onTitleInput}"
               />
             </div>
@@ -507,7 +507,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
 
   _onTitleInput(e) {
     this.localTitle = e.target.value;
-    this.config.title = this.localTitle;
+    this.config.title = this.localTitle || undefined;
     this._fireConfigChanged();
   }
 

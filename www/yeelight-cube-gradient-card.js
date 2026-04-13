@@ -670,9 +670,7 @@ class YeelightCubeGradientCard extends HTMLElement {
     const showAngleRotary = this.config.show_angle_rotary !== false;
 
     const cardTitle =
-      typeof this.config.title === "string" && this.config.title.trim()
-        ? this.config.title
-        : null;
+      typeof this.config.title === "string" ? this.config.title.trim() : "";
 
     // Get current lamp state for runtime controls
     const currentMode = this._getCurrentMode() || "Solid Color";
@@ -700,23 +698,15 @@ class YeelightCubeGradientCard extends HTMLElement {
 
     const cardContent = `
       <div style="padding:16px;">
+        ${!showCard && cardTitle ? `<div style="font-weight:600;font-size:1.1em;margin-bottom:8px;">${cardTitle}</div>` : ""}
         ${
-          cardTitle || rotaryInHeader
+          rotaryInHeader && showAngleSection && showAngleRotary
             ? `
-          <div class="card-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-            ${
-              cardTitle
-                ? `<div class="card-title">${cardTitle}</div>`
-                : "<div></div>"
-            }
-            ${
-              rotaryInHeader && showAngleSection && showAngleRotary
-                ? `<div class="header-rotary">${this._renderAngleRotary(
-                    currentAngle,
-                    true,
-                  )}</div>`
-                : ""
-            }
+          <div class="card-header" style="display: flex; justify-content: flex-end; align-items: center; margin-bottom: 16px;">
+            <div class="header-rotary">${this._renderAngleRotary(
+              currentAngle,
+              true,
+            )}</div>
           </div>
         `
             : ""
@@ -1538,7 +1528,7 @@ class YeelightCubeGradientCard extends HTMLElement {
       </style>
       ${
         showCard
-          ? `<ha-card><div class="card-content">${cardContent}</div></ha-card>`
+          ? `<ha-card${cardTitle ? ` header="${cardTitle}"` : ""}><div class="card-content">${cardContent}</div></ha-card>`
           : `<div class="card-content">${cardContent}</div>`
       }
     `;

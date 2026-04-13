@@ -322,10 +322,6 @@ class YeelightCubePaletteCard extends HTMLElement {
       borderMode === "always" || (borderMode === "auto" && isDark);
 
     let contentHtml = "";
-    // Add card title at the top if present
-    if (cardTitle) {
-      contentHtml += `<div class="card-title" id="card-title">${cardTitle}</div>`;
-    }
     if (palettes.length === 0) {
       contentHtml += `<div style='padding:16px;color:var(--secondary-text-color, #888);'>No palettes found. Add palettes to see them here.</div>`;
     } else {
@@ -1065,8 +1061,8 @@ class YeelightCubePaletteCard extends HTMLElement {
       </style>
       ${
         showCard
-          ? `<ha-card><div class="card-content${showItemBorder ? " item-card-border" : ""}">${contentHtml}</div></ha-card>`
-          : `<div class="card-content${showItemBorder ? " item-card-border" : ""}">${contentHtml}</div>`
+          ? `<ha-card${cardTitle ? ` header="${cardTitle}"` : ""}><div class="card-content${showItemBorder ? " item-card-border" : ""}">${contentHtml}</div></ha-card>`
+          : `${cardTitle ? `<div id="card-title" style="font-weight:600;font-size:1.1em;margin-bottom:8px;padding:16px 16px 0;">${cardTitle}</div>` : ""}<div class="card-content${showItemBorder ? " item-card-border" : ""}">${contentHtml}</div>`
       }
     `;
 
@@ -1191,11 +1187,6 @@ class YeelightCubePaletteCard extends HTMLElement {
     allowTitleEdit,
   ) {
     return `
-      ${
-        cardTitle
-          ? `<div class="card-title" id="card-title">${cardTitle}</div>`
-          : ""
-      }
       ${palettes
         .map(
           (palette, idx) => `
@@ -1490,8 +1481,13 @@ class YeelightCubePaletteCard extends HTMLElement {
     }
     // Edit card title
     if (allowTitleEdit) {
-      const titleElem = root.getElementById("card-title");
+      // Try ha-card header (when show_card_background is on)
+      const haCard = root.querySelector("ha-card");
+      let titleElem = haCard?.shadowRoot?.querySelector(".card-header") || null;
+      // Fallback to inline title div (when show_card_background is off)
+      if (!titleElem) titleElem = root.getElementById("card-title");
       if (titleElem) {
+        titleElem.style.cursor = "pointer";
         titleElem.addEventListener("click", () => {
           const newTitle = prompt(
             "Enter new card title:",
