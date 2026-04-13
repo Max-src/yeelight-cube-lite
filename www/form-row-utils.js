@@ -7,36 +7,10 @@ export const formRowStyles = css`
     justify-content: space-between;
     margin-bottom: 16px;
   }
-  .config-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 16px;
-  }
-  .config-label {
-    font-weight: 500;
-    color: var(--primary-text-color, #333);
-    font-size: 1em;
-  }
   .toggle-label {
     font-weight: 500;
     color: var(--primary-text-color, #333);
     font-size: 1em;
-  }
-  .config-row select {
-    padding: 6px 12px;
-    border: 1.5px solid var(--divider-color, #d0d7de);
-    border-radius: 8px;
-    background: var(--card-background-color, white);
-    font-size: 0.9em;
-    color: var(--primary-text-color, #333);
-    min-width: 140px;
-  }
-  .config-row select:focus {
-    outline: none;
-    border-color: var(--primary-color, #0969da);
-    box-shadow: 0 0 0 3px
-      color-mix(in srgb, var(--primary-color, #0969da) 10%, transparent);
   }
   .toggle-switch {
     position: relative;
@@ -118,7 +92,7 @@ export function createConfigRow(label, id, options, value, changeHandler) {
 }
 
 /**
- * Creates a premium slider row with inline layout matching color list editor style
+ * Creates a slider row with column layout matching the unified editor style
  * @param {string} label - The slider label text
  * @param {number} value - Current slider value
  * @param {Object} config - Slider configuration (min, max, step)
@@ -130,8 +104,8 @@ export function createSliderRow(label, value, config, onChange, unit = "") {
   const { min = 0, max = 100, step = 1 } = config;
 
   return html`
-    <div class="config-row">
-      <label class="config-label">${label}</label>
+    <div class="form-row">
+      <label>${label}</label>
       <div style="display: flex; align-items: center; gap: 8px;">
         <input
           type="range"
@@ -143,11 +117,7 @@ export function createSliderRow(label, value, config, onChange, unit = "") {
           @click="${(e) => e.stopPropagation()}"
           style="flex: 1;"
         />
-        <span
-          style="min-width: 45px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
-        >
-          ${value}${unit}
-        </span>
+        <span class="slider-value"> ${value}${unit} </span>
       </div>
     </div>
   `;
@@ -155,13 +125,9 @@ export function createSliderRow(label, value, config, onChange, unit = "") {
 
 export function createButtonGroupRow(label, buttonGroupHtml) {
   return html`
-    <div class="config-row">
-      <label class="config-label">${label}</label>
-      <div
-        style="display: flex; flex-direction: column; align-items: flex-end;"
-      >
-        ${buttonGroupHtml}
-      </div>
+    <div class="form-row">
+      <label>${label}</label>
+      ${buttonGroupHtml}
     </div>
   `;
 }

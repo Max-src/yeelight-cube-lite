@@ -11,7 +11,7 @@ import {
   entitySelectorStyles,
 } from "./entity-selector-utils.js";
 import { renderPercentageSlider, sliderStyles } from "./slider_utils.js";
-import { createToggleRow } from "./form-row-utils.js";
+import { createToggleRow, createSliderRow } from "./form-row-utils.js";
 import { fireEvent } from "./editor_ui_utils.js";
 
 class YeelightCubeColorListEditorCardEditor extends LitElement {
@@ -346,6 +346,113 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                 <span class="toggle-slider"></span>
               </label>
             </div>
+            <!-- Card/Layout settings first (containers before content on them) -->
+            <div class="form-row">
+              <label>Color Info Display</label>
+              ${createButtonGroup(
+                [
+                  { value: "none", label: "None" },
+                  { value: "hex", label: "Hex" },
+                  { value: "name", label: "Name" },
+                ],
+                cfg.color_info_display || "hex",
+                createButtonGroupChangeHandler(
+                  "color_info_display",
+                  (value) => {
+                    this._config = {
+                      ...this._config,
+                      color_info_display: value,
+                    };
+                    this._fireConfigChanged();
+                  },
+                ),
+              )}
+            </div>
+            <div class="form-row">
+              <label>Colors Layout Mode</label>
+              ${createButtonGroup(
+                [
+                  { value: "compact", label: "Compact", icon: "≡" },
+                  { value: "chips", label: "Chips", icon: "◐" },
+                  { value: "tiles", label: "Tiles", icon: "▢" },
+                  { value: "rows", label: "Rows", icon: "▬" },
+                  { value: "grid", label: "Grid", icon: "▦" },
+                  { value: "cards", label: "Cards", icon: "🂠" },
+                  { value: "spread", label: "Spread", icon: "🃏" },
+                ],
+                cfg.list_layout || "compact",
+                createButtonGroupChangeHandler("list_layout", (value) => {
+                  this._config = {
+                    ...this._config,
+                    list_layout: value,
+                  };
+                  this._fireConfigChanged();
+                }),
+              )}
+            </div>
+            ${createSliderRow(
+              "Card Roundness",
+              (() => {
+                const v = cfg.rounded_cards;
+                if (v === undefined || v === true || v === "round") return 16;
+                if (v === false || v === "square") return 0;
+                if (v === "rounded") return 4;
+                return typeof v === "number" ? v : parseInt(v, 10) || 16;
+              })(),
+              { min: 0, max: 28, step: 1 },
+              (e) => {
+                this._config = {
+                  ...this._config,
+                  rounded_cards: parseInt(e.target.value),
+                };
+                this._fireConfigChanged();
+              },
+              "px",
+            )}
+            ${[
+              "cards",
+              "spread",
+              "grid",
+              "rows",
+              "tiles",
+              "chips",
+              "compact",
+            ].includes(cfg.list_layout)
+              ? renderPercentageSlider(
+                  cfg.list_layout === "cards" || cfg.list_layout === "spread"
+                    ? "Card Size"
+                    : "Element Size",
+                  cfg.card_size || 70,
+                  (e) => {
+                    this._config = {
+                      ...this._config,
+                      card_size: parseInt(e.target.value),
+                    };
+                    this._fireConfigChanged();
+                  },
+                  { min: 30, max: 100, step: 5 },
+                )
+              : ""}
+            <div class="form-row">
+              <label>Item Card Border</label>
+              ${createButtonGroup(
+                [
+                  { value: "none", label: "None" },
+                  { value: "auto", label: "Auto" },
+                  { value: "always", label: "Always" },
+                ],
+                cfg.item_card_border || "auto",
+                createButtonGroupChangeHandler("item_card_border", (value) => {
+                  this._config = {
+                    ...this._config,
+                    item_card_border: value,
+                  };
+                  this._fireConfigChanged();
+                }),
+              )}
+            </div>
+
+            <!-- Delete button settings last (button lives on the cards) -->
             <div class="form-row">
               <label>Delete Button Style</label>
               ${createButtonGroup(
@@ -435,114 +542,6 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                   </div>
                 `
               : ""}
-            <div class="form-row">
-              <label>Color Info Display</label>
-              ${createButtonGroup(
-                [
-                  { value: "none", label: "None" },
-                  { value: "hex", label: "Hex" },
-                  { value: "name", label: "Name" },
-                ],
-                cfg.color_info_display || "hex",
-                createButtonGroupChangeHandler(
-                  "color_info_display",
-                  (value) => {
-                    this._config = {
-                      ...this._config,
-                      color_info_display: value,
-                    };
-                    this._fireConfigChanged();
-                  },
-                ),
-              )}
-            </div>
-            <div class="form-row">
-              <label>Colors Layout Mode</label>
-              ${createButtonGroup(
-                [
-                  { value: "compact", label: "Compact", icon: "≡" },
-                  { value: "chips", label: "Chips", icon: "◐" },
-                  { value: "tiles", label: "Tiles", icon: "▢" },
-                  { value: "rows", label: "Rows", icon: "▬" },
-                  { value: "grid", label: "Grid", icon: "▦" },
-                  { value: "cards", label: "Cards", icon: "🂠" },
-                  { value: "spread", label: "Spread", icon: "🃏" },
-                ],
-                cfg.list_layout || "compact",
-                createButtonGroupChangeHandler("list_layout", (value) => {
-                  this._config = {
-                    ...this._config,
-                    list_layout: value,
-                  };
-                  this._fireConfigChanged();
-                }),
-              )}
-            </div>
-            <div class="form-row">
-              <label>Card Shape</label>
-              ${createButtonGroup(
-                [
-                  { value: "round", label: "Round" },
-                  { value: "rounded", label: "Rounded" },
-                  { value: "square", label: "Square" },
-                ],
-                cfg.rounded_cards === "rounded"
-                  ? "rounded"
-                  : cfg.rounded_cards === "square" ||
-                      cfg.rounded_cards === false
-                    ? "square"
-                    : "round",
-                createButtonGroupChangeHandler("rounded_cards", (value) => {
-                  this._config = {
-                    ...this._config,
-                    rounded_cards: value,
-                  };
-                  this._fireConfigChanged();
-                }),
-              )}
-            </div>
-            ${[
-              "cards",
-              "spread",
-              "grid",
-              "rows",
-              "tiles",
-              "chips",
-              "compact",
-            ].includes(cfg.list_layout)
-              ? renderPercentageSlider(
-                  cfg.list_layout === "cards" || cfg.list_layout === "spread"
-                    ? "Card Size"
-                    : "Element Size",
-                  cfg.card_size || 70,
-                  (e) => {
-                    this._config = {
-                      ...this._config,
-                      card_size: parseInt(e.target.value),
-                    };
-                    this._fireConfigChanged();
-                  },
-                  { min: 30, max: 100, step: 5 },
-                )
-              : ""}
-            <div class="form-row">
-              <label>Item Card Border</label>
-              ${createButtonGroup(
-                [
-                  { value: "none", label: "None" },
-                  { value: "auto", label: "Auto" },
-                  { value: "always", label: "Always" },
-                ],
-                cfg.item_card_border || "auto",
-                createButtonGroupChangeHandler("item_card_border", (value) => {
-                  this._config = {
-                    ...this._config,
-                    item_card_border: value,
-                  };
-                  this._fireConfigChanged();
-                }),
-              )}
-            </div>
           </div>
         </div>
 

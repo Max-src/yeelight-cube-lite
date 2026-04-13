@@ -29,20 +29,19 @@ import { getDeleteButtonConfig } from "./delete-button-styles.js";
 export function getAlbumStyles(config = {}, classPrefix = "album") {
   const btnCfg = getDeleteButtonConfig(config);
   const isInside = btnCfg.inside;
-  // Normalize shape: backward compat for boolean + legacy album_card_rounded
+  // Normalize shape: backward compat for boolean + legacy album_card_rounded + numeric slider
   const rawShape =
     config.rounded_cards !== undefined
       ? config.rounded_cards
       : config.album_card_rounded !== false;
-  const cardShape =
-    rawShape === true || rawShape === undefined
-      ? "round"
-      : rawShape === false
-        ? "square"
-        : rawShape;
   const enable3D = config.album_3d_effect !== false;
-  const borderRadius =
-    cardShape === "square" ? "0" : cardShape === "rounded" ? "4px" : "16px";
+  const borderRadius = (() => {
+    const v = rawShape;
+    if (v === undefined || v === true || v === "round") return "16px";
+    if (v === false || v === "square") return "0";
+    if (v === "rounded") return "4px";
+    return typeof v === "number" ? `${v}px` : "16px";
+  })();
 
   return `
     .${classPrefix}-album-wrapper {
@@ -298,6 +297,7 @@ export async function setupAlbumNavigation(
   onItemClick,
   onItemRemove,
   context,
+  config = {},
 ) {
   if (!shadowRoot) return;
 
@@ -327,6 +327,8 @@ export async function setupAlbumNavigation(
   context._currentAlbumIndex = currentIndex;
 
   // Coverflow update function
+  const enable3D = config.album_3d_effect !== false;
+
   const updateCoverflow = (skipAnimation = false) => {
     // Temporarily disable transitions if requested
     if (skipAnimation) {
@@ -348,18 +350,16 @@ export async function setupAlbumNavigation(
         item.classList.add("active");
       } else {
         item.classList.remove("active");
-        if (offset < 0) {
-          // Items on the left
-          const angle = 45;
-          const translateX = -150 * absOffset;
+        if (enable3D) {
+          // 3D coverflow: rotateY + translateZ for depth
+          const angle = offset < 0 ? 45 : -45;
+          const translateX = (offset < 0 ? -150 : 150) * absOffset;
           const translateZ = -100 * absOffset;
           transform = `translateY(-50%) translateX(${translateX}px) translateZ(${translateZ}px) rotateY(${angle}deg) scale(0.7)`;
         } else {
-          // Items on the right
-          const angle = -45;
-          const translateX = 150 * absOffset;
-          const translateZ = -100 * absOffset;
-          transform = `translateY(-50%) translateX(${translateX}px) translateZ(${translateZ}px) rotateY(${angle}deg) scale(0.7)`;
+          // Flat mode: no rotateY/translateZ to avoid stretching
+          const translateX = (offset < 0 ? -150 : 150) * absOffset;
+          transform = `translateY(-50%) translateX(${translateX}px) scale(0.7)`;
         }
       }
 

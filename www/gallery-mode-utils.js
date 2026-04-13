@@ -28,26 +28,6 @@ export const galleryModeStyles = `
     flex-direction: column;
   }
 
-  .gallery-item.gallery-item-square {
-    border-radius: 0;
-  }
-  .gallery-item.gallery-item-square > .gallery-item-footer {
-    border-radius: 0;
-  }
-  .gallery-item.gallery-item-square > .gallery-item-image {
-    border-radius: 0;
-  }
-
-  .gallery-item.gallery-item-rounded {
-    border-radius: 4px;
-  }
-  .gallery-item.gallery-item-rounded > .gallery-item-footer {
-    border-radius: 0 0 4px 4px;
-  }
-  .gallery-item.gallery-item-rounded > .gallery-item-image {
-    border-radius: 4px 4px 0 0;
-  }
-
   .gallery-item:hover {
     transform: translateY(-4px);
     box-shadow: 0 8px 24px rgba(0,0,0,0.15);
@@ -184,14 +164,8 @@ export const galleryModeStyles = `
   }
   /* Preserve rounded corners on image content when overflow is visible */
   .gallery-item:has(.btn-pos-outside) > .gallery-item-image {
-    border-radius: 12px 12px 0 0;
+    border-radius: var(--gi-radius, 12px) var(--gi-radius, 12px) 0 0;
     overflow: hidden;
-  }
-  .gallery-item.gallery-item-square:has(.btn-pos-outside) > .gallery-item-image {
-    border-radius: 0;
-  }
-  .gallery-item.gallery-item-rounded:has(.btn-pos-outside) > .gallery-item-image {
-    border-radius: 4px 4px 0 0;
   }
 
   /* Responsive adjustments */
@@ -211,22 +185,10 @@ export const galleryModeStyles = `
 
   /* ── Item card border: ensure inner children follow parent border-radius ── */
   .item-card-border .gallery-item > .gallery-item-image {
-    border-radius: 11px 11px 0 0;
+    border-radius: var(--gi-radius, 12px) var(--gi-radius, 12px) 0 0;
   }
   .item-card-border .gallery-item > .gallery-item-footer {
-    border-radius: 0 0 11px 11px;
-  }
-  /* Square variant: no rounding */
-  .item-card-border .gallery-item.gallery-item-square > .gallery-item-image,
-  .item-card-border .gallery-item.gallery-item-square > .gallery-item-footer {
-    border-radius: 0;
-  }
-  /* Rounded variant: moderate rounding */
-  .item-card-border .gallery-item.gallery-item-rounded > .gallery-item-image {
-    border-radius: 3px 3px 0 0;
-  }
-  .item-card-border .gallery-item.gallery-item-rounded > .gallery-item-footer {
-    border-radius: 0 0 3px 3px;
+    border-radius: 0 0 var(--gi-radius, 12px) var(--gi-radius, 12px);
   }
 `;
 
@@ -257,19 +219,14 @@ export function renderGalleryMode(items, renderContent, options = {}) {
     globalOffset = 0,
   } = options;
 
-  // Normalize shape: true/undefined → "round", false → "square", string passed through
-  const shape =
-    roundedCards === true || roundedCards === undefined
-      ? "round"
-      : roundedCards === false
-        ? "square"
-        : roundedCards;
-  const shapeClass =
-    shape === "square"
-      ? " gallery-item-square"
-      : shape === "rounded"
-        ? " gallery-item-rounded"
-        : "";
+  // Normalize rounded_cards to px value
+  const galleryBorderRadius = (() => {
+    const v = roundedCards;
+    if (v === undefined || v === true || v === "round") return 12;
+    if (v === false || v === "square") return 0;
+    if (v === "rounded") return 4;
+    return typeof v === "number" ? v : 12;
+  })();
 
   // Safety check for items
   if (!items || !Array.isArray(items)) {
@@ -290,7 +247,7 @@ export function renderGalleryMode(items, renderContent, options = {}) {
           isGradientBg ? " gallery-item-gradient" : ""
         }${isStripes ? " gallery-item-stripes" : ""}${
           isGradientBar ? " gallery-item-gradient-bar" : ""
-        }${shapeClass}" data-idx="${idx}">
+        }" data-idx="${idx}" style="--gi-radius: ${galleryBorderRadius}px; border-radius: var(--gi-radius);">
           <div class="gallery-item-image" ${gradientStyle}
                ${
                  onItemClick

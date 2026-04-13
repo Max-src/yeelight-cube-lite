@@ -387,6 +387,13 @@ class YeelightCubePaletteCard extends HTMLElement {
 
         :host {
           --card-size-multiplier: ${(this.config.card_size || 50) / 100};
+          --rounded-cards-radius: ${(() => {
+            const v = this.config.rounded_cards;
+            if (v === undefined || v === true || v === "round") return 16;
+            if (v === false || v === "square") return 0;
+            if (v === "rounded") return 4;
+            return typeof v === "number" ? v : parseInt(v, 10) || 16;
+          })()}px;
           overflow: visible !important;
         }
         ha-card {
@@ -402,7 +409,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           margin: 0 auto 10px auto;
           background: var(--secondary-background-color, #fafbfc);
           border: 1.5px solid var(--divider-color, #d0d7de);
-          border-radius: 14px;
+          border-radius: var(--rounded-cards-radius, 16px);
           box-shadow: 0 2px 8px rgba(0,0,0,0.04);
           padding: 6px 12px;
           position: relative;
@@ -410,12 +417,6 @@ class YeelightCubePaletteCard extends HTMLElement {
           max-width: calc(100% * var(--card-size-multiplier) * 2);
           box-sizing: border-box;
           transition: max-width 0.2s ease;
-        }
-        .palette-row.palette-row-square {
-          border-radius: 0;
-        }
-        .palette-row.palette-row-rounded {
-          border-radius: 4px;
         }
         .palette-title {
           font-weight: 500;
@@ -830,17 +831,17 @@ class YeelightCubePaletteCard extends HTMLElement {
           flex-shrink: 1;
           border-radius: ${(() => {
             const v = this.config.rounded_cards;
-            const s =
-              v === true || v === undefined || v === "round"
-                ? "round"
+            const r =
+              v === undefined || v === true || v === "round"
+                ? 16
                 : v === false || v === "square"
-                  ? "square"
-                  : v;
-            return s === "square"
-              ? "0"
-              : s === "rounded"
-                ? "4px 4px 0 0"
-                : "16px 16px 0 0";
+                  ? 0
+                  : v === "rounded"
+                    ? 4
+                    : typeof v === "number"
+                      ? v
+                      : parseInt(v, 10) || 16;
+            return `${r}px ${r}px 0 0`;
           })()};
           overflow: hidden;
         }
@@ -850,17 +851,17 @@ class YeelightCubePaletteCard extends HTMLElement {
           background: var(--card-background-color, white);
           border-radius: ${(() => {
             const v = this.config.rounded_cards;
-            const s =
-              v === true || v === undefined || v === "round"
-                ? "round"
+            const r =
+              v === undefined || v === true || v === "round"
+                ? 16
                 : v === false || v === "square"
-                  ? "square"
-                  : v;
-            return s === "square"
-              ? "0"
-              : s === "rounded"
-                ? "0 0 4px 4px"
-                : "0 0 16px 16px";
+                  ? 0
+                  : v === "rounded"
+                    ? 4
+                    : typeof v === "number"
+                      ? v
+                      : parseInt(v, 10) || 16;
+            return `0 0 ${r}px ${r}px`;
           })()};
           transition: padding 0.2s ease;
           flex: 1;
@@ -1591,6 +1592,8 @@ class YeelightCubePaletteCard extends HTMLElement {
         },
         // Context object to store state
         this,
+        // Config for 3D mode detection
+        this.config,
       );
     }
   }
@@ -1623,19 +1626,6 @@ class YeelightCubePaletteCard extends HTMLElement {
       sideClass = "",
       globalOffset = 0,
     } = options;
-    const rcVal = this.config.rounded_cards;
-    const roundedCards =
-      rcVal === true || rcVal === undefined || rcVal === "round"
-        ? "round"
-        : rcVal === false || rcVal === "square"
-          ? "square"
-          : rcVal;
-    const squareClass =
-      roundedCards === "square"
-        ? " palette-row-square"
-        : roundedCards === "rounded"
-          ? " palette-row-rounded"
-          : "";
 
     return palettes
       .map((palette, localIdx) => {
@@ -1661,7 +1651,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           ? "padding-left"
           : "padding-right";
         return `
-        <div class="palette-row palette-list-item${squareClass}" data-idx="${idx}" style="position:relative;padding:${
+        <div class="palette-row palette-list-item" data-idx="${idx}" style="position:relative;padding:${
           isGradientBg ? "14px 16px" : "8px 12px"
         };box-sizing:border-box;${rowBgStyle}; min-height: ${minHeight};">
           <div style="display:flex;flex-direction:column;width:100%;${

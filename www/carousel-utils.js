@@ -115,19 +115,14 @@ export function renderCarousel(options) {
     roundedCards = true,
   } = options;
 
-  // Normalize shape
-  const shape =
-    roundedCards === true || roundedCards === undefined
-      ? "round"
-      : roundedCards === false
-        ? "square"
-        : roundedCards;
-  const shapeClass =
-    shape === "square"
-      ? " carousel-card-square"
-      : shape === "rounded"
-        ? " carousel-card-rounded"
-        : "";
+  // Normalize rounded_cards to px value
+  const cardBorderRadius = (() => {
+    const v = roundedCards;
+    if (v === undefined || v === true || v === "round") return "12px";
+    if (v === false || v === "square") return "0";
+    if (v === "rounded") return "4px";
+    return typeof v === "number" ? `${v}px` : "12px";
+  })();
 
   if (!items || items.length === 0) {
     return html`<div class="no-pixel-arts">No items available</div>`;
@@ -202,9 +197,8 @@ export function renderCarousel(options) {
           <ha-icon icon="mdi:chevron-left"></ha-icon>
         </button>
         <div
-          class="carousel-content ${showAsCard
-            ? "carousel-content-card"
-            : ""}${showAsCard ? shapeClass : ""}"
+          class="carousel-content ${showAsCard ? "carousel-content-card" : ""}"
+          style="${showAsCard ? `border-radius: ${cardBorderRadius};` : ""}"
         >
           ${renderItem ? renderItem(items[validIndex], validIndex) : ""}
         </div>
@@ -383,14 +377,6 @@ export const carouselStyles = `
     overflow: visible;
   }
 
-  .carousel-content-card.carousel-card-square {
-    border-radius: 0;
-  }
-
-  .carousel-content-card.carousel-card-rounded {
-    border-radius: 4px;
-  }
-
   /* Delete button positioning for card mode - outside top right corner */
   .carousel-content-card .pixelart-item-carousel {
     position: static;
@@ -549,19 +535,14 @@ export function renderCarouselString(options) {
     roundedCards = true,
   } = options;
 
-  // Normalize shape
-  const shape =
-    roundedCards === true || roundedCards === undefined
-      ? "round"
-      : roundedCards === false
-        ? "square"
-        : roundedCards;
-  const shapeClass =
-    shape === "square"
-      ? " carousel-card-square"
-      : shape === "rounded"
-        ? " carousel-card-rounded"
-        : "";
+  // Normalize rounded_cards to px value
+  const cardBorderRadius = (() => {
+    const v = roundedCards;
+    if (v === undefined || v === true || v === "round") return "12px";
+    if (v === false || v === "square") return "0";
+    if (v === "rounded") return "4px";
+    return typeof v === "number" ? `${v}px` : "12px";
+  })();
 
   if (!items || items.length === 0) {
     return `<div class="no-items">No items available</div>`;
@@ -614,11 +595,13 @@ export function renderCarouselString(options) {
         </button>
         <div class="carousel-content ${
           showAsCard ? "carousel-content-card" : ""
-        }${showAsCard ? shapeClass : ""}${containerGradient ? " gradient-bg-mode" : ""}" ${
-          containerGradient
-            ? `style="--carousel-gradient-bg: ${containerGradient};"`
-            : ""
-        }>
+        }${containerGradient ? " gradient-bg-mode" : ""}" ${(() => {
+          const styles = [];
+          if (showAsCard) styles.push(`border-radius: ${cardBorderRadius}`);
+          if (containerGradient)
+            styles.push(`--carousel-gradient-bg: ${containerGradient}`);
+          return styles.length ? `style="${styles.join("; ")};"` : "";
+        })()}>
           ${content}
         </div>
         <button

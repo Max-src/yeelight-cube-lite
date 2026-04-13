@@ -264,7 +264,8 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       show_brightness_slider: true, // NEW: Show brightness slider by default
       show_brightness_percentage: true, // NEW: Show brightness percentage value
       brightness_slider_style: "slider", // NEW: Style for brightness slider (slider, bar, rotary)
-      brightness_slider_appearance: "default", // NEW: Appearance for slider mode (default, thick, thin)
+      brightness_slider_appearance: "default", // Legacy: Appearance for slider mode (migrated to thickness)
+      brightness_slider_thickness: 6, // Track thickness in px (2-20, replaces appearance)
       brightness_label_mode: "text", // NEW: Brightness label mode (none, text, icon, icon_text)
       brightness_max: 500, // NEW: Maximum brightness value (default 500 to test beyond 255)
       show_power_toggle: true, // NEW: Show on/off toggle button by default
@@ -2191,8 +2192,10 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     // Brightness slider (brightness parameter is already converted to 1-100 scale)
     if (this.config.show_brightness_slider === true) {
       const sliderStyle = this.config.brightness_slider_style || "slider";
-      const sliderAppearance =
-        this.config.brightness_slider_appearance || "default";
+      // Migrate old appearance to numeric thickness
+      const sliderThickness =
+        this.config.brightness_slider_thickness ??
+        ({ thick: 12, thin: 3 }[this.config.brightness_slider_appearance] || 6);
       const brightnessPercent = brightness;
 
       // Resolve brightness theme (migrate old values to section_style naming)
@@ -2209,7 +2212,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       }
       const labelContent = showLabel ? "Brightness" : "";
 
-      html += `<div class="brightness-slider-container brightness-style-${sliderStyle} brightness-theme-${brightnessTheme}" onwheel="this.getRootNode().host.handleBrightnessWheel(event)">`;
+      html += `<div class="brightness-slider-container brightness-style-${sliderStyle} brightness-theme-${brightnessTheme}" style="--slider-thickness: ${sliderThickness}px;" onwheel="this.getRootNode().host.handleBrightnessWheel(event)">`;
 
       if (sliderStyle === "bar") {
         // Mushroom-style bar
@@ -2252,7 +2255,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
             <div class="brightness-rotary-container" 
                  onmousedown="this.getRootNode().host.handleRotaryDragStart(event)"
                  ontouchstart="this.getRootNode().host.handleRotaryDragStart(event)"
-                 style="position: relative; z-index: 10;">
+                 style="position: relative; z-index: 10; --rotary-stroke: ${sliderThickness * 2};">
               <svg class="brightness-rotary-svg" viewBox="0 0 100 100">
                 <circle cx="50" cy="50" r="${radius}" class="rotary-bg"
                   style="stroke-dasharray: ${arcLength} ${circumference};" />
@@ -2330,8 +2333,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           </div>
         `;
       } else {
-        // Slider (default) style
-        const sliderClass = `brightness-slider-${sliderAppearance}`;
+        // Slider (default) style — thickness driven by --slider-thickness CSS variable
         if (showLabel) {
           html += `<div class="brightness-label">${labelContent}</div>`;
         }
@@ -2346,7 +2348,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
                 min="1" 
                 max="100" 
                 value="${brightness}" 
-                class="brightness-slider ${sliderClass}"
+                class="brightness-slider brightness-slider-variable"
                 onmousedown="this.getRootNode().host._startDrag()"
                 ontouchstart="this.getRootNode().host._startDrag()"
                 onmouseup="this.getRootNode().host._endDrag()"
@@ -3204,94 +3206,34 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           padding: 8px 0;
         }
         
-        /* Slider Style - Default Appearance */
-        .brightness-slider-default {
+        /* Slider Style - Variable Thickness (driven by --slider-thickness) */
+        .brightness-slider-variable {
           width: 100%;
-          height: 6px;
-          border-radius: 3px;
+          height: var(--slider-thickness, 6px);
+          border-radius: calc(var(--slider-thickness, 6px) / 2);
           background: linear-gradient(to right, var(--disabled-text-color, #333), var(--card-background-color, #fff));
           outline: none;
           -webkit-appearance: none;
           cursor: pointer;
         }
-        .brightness-slider-default::-webkit-slider-thumb {
+        .brightness-slider-variable::-webkit-slider-thumb {
           -webkit-appearance: none;
           appearance: none;
-          width: 18px;
-          height: 18px;
+          width: calc(var(--slider-thickness, 6px) * 3);
+          height: calc(var(--slider-thickness, 6px) * 3);
           border-radius: 50%;
           background: var(--accent-color, #ff9800);
           cursor: pointer;
           box-shadow: 0 2px 4px rgba(0,0,0,0.3);
         }
-        .brightness-slider-default::-moz-range-thumb {
-          width: 18px;
-          height: 18px;
+        .brightness-slider-variable::-moz-range-thumb {
+          width: calc(var(--slider-thickness, 6px) * 3);
+          height: calc(var(--slider-thickness, 6px) * 3);
           border-radius: 50%;
           background: var(--accent-color, #ff9800);
           cursor: pointer;
           border: none;
           box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
-        
-        /* Slider Style - Thick Appearance */
-        .brightness-slider-thick {
-          width: 100%;
-          height: 12px;
-          border-radius: 6px;
-          background: linear-gradient(to right, var(--disabled-text-color, #333), var(--card-background-color, #fff));
-          outline: none;
-          -webkit-appearance: none;
-          cursor: pointer;
-        }
-        .brightness-slider-thick::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          appearance: none;
-          width: 24px;
-          height: 24px;
-          border-radius: 50%;
-          background: var(--accent-color, #ff9800);
-          cursor: pointer;
-          box-shadow: 0 3px 6px rgba(0,0,0,0.4);
-        }
-        .brightness-slider-thick::-moz-range-thumb {
-          width: 24px;
-          height: 24px;
-          border-radius: 50%;
-          background: var(--accent-color, #ff9800);
-          cursor: pointer;
-          border: none;
-          box-shadow: 0 3px 6px rgba(0,0,0,0.4);
-        }
-        
-        /* Slider Style - Thin Appearance */
-        .brightness-slider-thin {
-          width: 100%;
-          height: 3px;
-          border-radius: 2px;
-          background: linear-gradient(to right, var(--disabled-text-color, #333), var(--card-background-color, #fff));
-          outline: none;
-          -webkit-appearance: none;
-          cursor: pointer;
-        }
-        .brightness-slider-thin::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          appearance: none;
-          width: 14px;
-          height: 14px;
-          border-radius: 50%;
-          background: var(--accent-color, #ff9800);
-          cursor: pointer;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.3);
-        }
-        .brightness-slider-thin::-moz-range-thumb {
-          width: 14px;
-          height: 14px;
-          border-radius: 50%;
-          background: var(--accent-color, #ff9800);
-          cursor: pointer;
-          border: none;
-          box-shadow: 0 1px 3px rgba(0,0,0,0.3);
         }
         
         /* Bar Style (Mushroom-like) */
@@ -3322,9 +3264,9 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         .brightness-bar-track {
           position: relative;
           flex: 1;
-          height: 40px;
+          height: calc(var(--slider-thickness, 6px) * 5.5);
           background: var(--disabled-color, rgba(255,255,255,0.1));
-          border-radius: 12px;
+          border-radius: calc(var(--slider-thickness, 6px) * 2);
           overflow: hidden;
         }
         .brightness-bar-fill {
@@ -3392,13 +3334,13 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         .rotary-bg {
           fill: none;
           stroke: var(--disabled-color, rgba(255,255,255,0.1));
-          stroke-width: 12;
+          stroke-width: var(--rotary-stroke, 12);
           stroke-linecap: round;
         }
         .rotary-progress {
           fill: none;
           stroke: var(--accent-color, #ff9800);
-          stroke-width: 12;
+          stroke-width: var(--rotary-stroke, 12);
           stroke-linecap: round;
           transition: stroke-dasharray 0.1s ease;
         }
@@ -3462,8 +3404,8 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         .capsule-track {
           position: relative;
           flex: 1;
-          height: 8px;
-          border-radius: 10px;
+          height: calc(var(--slider-thickness, 6px) * 1.33);
+          border-radius: calc(var(--slider-thickness, 6px) * 1.67);
           overflow: visible;
         }
         .brightness-capsule-subtle .capsule-track {
@@ -3491,8 +3433,8 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           top: 50%;
           left: calc(var(--brightness-percent, 0) * 1%);
           transform: translate(-50%, -50%);
-          width: 24px;
-          height: 24px;
+          width: calc(var(--slider-thickness, 6px) * 4);
+          height: calc(var(--slider-thickness, 6px) * 4);
           border-radius: 50%;
           box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
           transition: left 0.1s ease;
@@ -3553,35 +3495,23 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
 
         /* ===== Slider Style themed variants ===== */
         /* Filled theme: reversed gradient, glow thumb */
-        .brightness-theme-filled .brightness-slider-default,
-        .brightness-theme-filled .brightness-slider-thick,
-        .brightness-theme-filled .brightness-slider-thin {
+        .brightness-theme-filled .brightness-slider-variable {
           background: linear-gradient(to right, var(--primary-background-color, #111), var(--secondary-background-color, #444));
         }
-        .brightness-theme-filled .brightness-slider-default::-webkit-slider-thumb,
-        .brightness-theme-filled .brightness-slider-thick::-webkit-slider-thumb,
-        .brightness-theme-filled .brightness-slider-thin::-webkit-slider-thumb {
+        .brightness-theme-filled .brightness-slider-variable::-webkit-slider-thumb {
           box-shadow: 0 0 8px rgba(255, 152, 0, 0.5), 0 2px 4px rgba(0,0,0,0.4);
         }
-        .brightness-theme-filled .brightness-slider-default::-moz-range-thumb,
-        .brightness-theme-filled .brightness-slider-thick::-moz-range-thumb,
-        .brightness-theme-filled .brightness-slider-thin::-moz-range-thumb {
+        .brightness-theme-filled .brightness-slider-variable::-moz-range-thumb {
           box-shadow: 0 0 8px rgba(255, 152, 0, 0.5), 0 2px 4px rgba(0,0,0,0.4);
         }
         /* Flat theme: subtle track with no strong gradient */
-        .brightness-theme-flat .brightness-slider-default,
-        .brightness-theme-flat .brightness-slider-thick,
-        .brightness-theme-flat .brightness-slider-thin {
+        .brightness-theme-flat .brightness-slider-variable {
           background: var(--divider-color, #d0d0d0);
         }
-        .brightness-theme-flat .brightness-slider-default::-webkit-slider-thumb,
-        .brightness-theme-flat .brightness-slider-thick::-webkit-slider-thumb,
-        .brightness-theme-flat .brightness-slider-thin::-webkit-slider-thumb {
+        .brightness-theme-flat .brightness-slider-variable::-webkit-slider-thumb {
           box-shadow: 0 1px 3px rgba(0,0,0,0.2);
         }
-        .brightness-theme-flat .brightness-slider-default::-moz-range-thumb,
-        .brightness-theme-flat .brightness-slider-thick::-moz-range-thumb,
-        .brightness-theme-flat .brightness-slider-thin::-moz-range-thumb {
+        .brightness-theme-flat .brightness-slider-variable::-moz-range-thumb {
           box-shadow: 0 1px 3px rgba(0,0,0,0.2);
         }
         /* Subtle theme labels */

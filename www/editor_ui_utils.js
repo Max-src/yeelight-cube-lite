@@ -20,9 +20,12 @@ export function fireEvent(node, type, detail, options) {
 }
 
 /**
- * Common CSS styles for form elements
+ * Unified CSS styles for all editor cards.
+ * Matches the color list editor card editor (the reference).
+ * All editors should import this for consistent appearance.
  */
 export const sharedEditorStyles = css`
+  /* Base editor layout */
   .editor-root {
     display: flex;
     flex-direction: column;
@@ -30,40 +33,127 @@ export const sharedEditorStyles = css`
     padding: 18px 8px 8px 8px;
   }
 
-  .form-row {
+  /* Foldable card sections */
+  .editor-card {
+    background: var(--secondary-background-color, #f7fafd);
+    border-radius: 14px;
+    box-shadow: 0 2px 8px #0001;
+    padding: 16px 18px 12px 18px;
+    margin-bottom: 10px;
+    position: relative;
+  }
+  .editor-card-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 2px;
+    font-size: 1.15em;
+    font-weight: 600;
+    margin-bottom: 8px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .editor-card-content {
+    transition:
+      max-height 0.3s,
+      opacity 0.3s;
+    overflow: hidden;
+  }
+  .editor-card-collapsed .editor-card-content {
+    max-height: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .editor-card:not(.editor-card-collapsed) .editor-card-content {
+    max-height: 2000px;
+    opacity: 1;
+    pointer-events: auto;
   }
 
-  .form-row.column {
+  /* Form rows — column layout: label above, control below (full-width) */
+  .form-row {
+    display: flex;
     flex-direction: column;
     align-items: stretch;
+    gap: 6px;
+    margin-bottom: 16px;
   }
 
+  /* Labels */
   label {
     font-weight: 500;
     color: var(--primary-text-color, #333);
     font-size: 1em;
-    margin-bottom: 6px;
   }
 
+  /* Text inputs and selects */
   input[type="text"],
   input[type="number"],
   select {
-    flex: 1;
+    width: 100%;
     padding: 8px 12px;
+    font-size: 1em;
     border-radius: 8px;
     border: 1px solid var(--divider-color, #cfd8dc);
-    font-size: 1em;
-    background: var(--secondary-background-color, #f7f8fa);
+    margin-top: 2px;
     box-sizing: border-box;
+    background: var(--secondary-background-color, #f7f8fa);
   }
 
+  /* Toggle switches — horizontal row: label left, toggle right */
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+  }
+  .toggle-label {
+    font-weight: 500;
+    color: var(--primary-text-color, #333);
+    font-size: 1em;
+  }
+  .toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 44px;
+    height: 24px;
+  }
+  .toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--divider-color, #cfd8dc);
+    transition: 0.2s;
+    border-radius: 24px;
+  }
+  .toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: var(--card-background-color, white);
+    transition: 0.2s;
+    border-radius: 50%;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+  }
+  input:checked + .toggle-slider {
+    background-color: var(--primary-color, #1976d2);
+  }
+  input:checked + .toggle-slider:before {
+    transform: translateX(20px);
+  }
+
+  /* Range slider styles */
   input[type="range"] {
-    width: 140px;
-    margin: 0 10px;
     -webkit-appearance: none;
     appearance: none;
     height: 4px;
@@ -95,141 +185,13 @@ export const sharedEditorStyles = css`
     transition: all 0.2s ease;
   }
 
-  /* Switch/Toggle styles */
-  .switch {
-    position: relative;
-    display: inline-block;
-    width: 44px;
-    height: 24px;
-  }
-
-  .switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-
-  .slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: var(--divider-color, #ccc);
-    transition: 0.2s;
-    border-radius: 24px;
-  }
-
-  .slider:before {
-    position: absolute;
-    content: "";
-    height: 18px;
-    width: 18px;
-    left: 3px;
-    bottom: 3px;
-    background-color: var(--card-background-color, white);
-    transition: 0.2s;
-    border-radius: 50%;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
-  }
-
-  input:checked + .slider {
-    background-color: var(--primary-color, #1976d2);
-  }
-
-  input:checked + .slider:before {
-    transform: translateX(20px);
-  }
-
-  /* Radio button styles */
-  .radio-group {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-    margin-top: 8px;
-  }
-
-  .radio-label {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-weight: normal;
-    margin-bottom: 0;
-  }
-
-  /* Button group styles */
-  .button-group {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    margin-top: 8px;
-  }
-
-  .button-group button {
-    background: var(--secondary-background-color, #e3eaf2);
-    border: 1px solid var(--divider-color, #b6c2d2);
-    border-radius: 8px;
-    padding: 7px 18px;
-    font-size: 1em;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-
-  .button-group button.active {
-    background: var(--primary-color, #1976d2);
-    color: var(--text-primary-color, white);
-    border-color: var(--primary-color, #1976d2);
-  }
-
-  .button-group button:hover {
-    background: var(--divider-color, #d1d9e0);
-  }
-
-  .button-group button.active:hover {
-    background: var(--primary-color, #1565c0);
-    filter: brightness(0.9);
-  }
-
-  /* Foldable section styles */
-  .foldable-section {
-    border: 1px solid var(--divider-color, #e0e0e0);
-    border-radius: 8px;
-    margin-bottom: 16px;
-    overflow: hidden;
-  }
-
-  .foldable-header {
-    background: var(--secondary-background-color, #f5f5f5);
-    padding: 12px 16px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    user-select: none;
-  }
-
-  .foldable-header:hover {
-    background: var(--secondary-background-color, #eeeeee);
-    filter: brightness(0.95);
-  }
-
-  .foldable-content {
-    padding: 16px;
-    background: var(--card-background-color, white);
-  }
-
-  .foldable-content.collapsed {
-    display: none;
-  }
-
-  .foldable-arrow {
-    transition: transform 0.2s;
-  }
-
-  .foldable-arrow.collapsed {
-    transform: rotate(-90deg);
+  /* Slider value display */
+  .slider-value {
+    font-weight: 600;
+    color: var(--primary-text-color, #333);
+    text-align: center;
+    min-width: 45px;
+    font-size: 0.9em;
   }
 `;
 
@@ -441,7 +403,7 @@ export class EditorConfigManager {
 export function renderModeSettingsSection(title, content) {
   return html`
     <div
-      style="margin-top: 20px; padding: 16px; background: var(--secondary-background-color, #f0f8ff); border-radius: 8px; border-left: 4px solid var(--primary-color, #0077cc);"
+      style="margin-top: 20px; padding: 16px; background: color-mix(in srgb, var(--primary-color, #1976d2) 10%, var(--card-background-color, #fff)); border-radius: 8px; border-left: 4px solid var(--primary-color, #0077cc);"
     >
       <div
         style="font-weight: 600; font-size: 1.05em; margin-bottom: 12px; color: var(--primary-color, #0077cc);"

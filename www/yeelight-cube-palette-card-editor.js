@@ -1,6 +1,8 @@
 import { LitElement, html, css } from "./lib/lit-all.js";
 
 import {
+  sharedEditorStyles,
+  fireEvent,
   renderModeSettingsSection,
   renderModeInfoMessage,
 } from "./editor_ui_utils.js";
@@ -10,6 +12,10 @@ import {
   createButtonGroupChangeHandler,
   buttonGroupStyles,
 } from "./button-group-utils.js";
+
+import { createToggleRow, createSliderRow } from "./form-row-utils.js";
+
+import { createYeelightCubeEntityPicker } from "./entity-selector-utils.js";
 
 class YeelightCubePaletteCardEditor extends LitElement {
   static get properties() {
@@ -42,177 +48,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
   }
 
   static get styles() {
-    return [
-      buttonGroupStyles,
-      css`
-        .editor-root {
-          display: flex;
-          flex-direction: column;
-          gap: 18px;
-          padding: 18px 8px 8px 8px;
-        }
-        .editor-card {
-          background: var(--secondary-background-color, #f7fafd);
-          border-radius: 14px;
-          box-shadow: 0 2px 8px #0001;
-          padding: 16px 18px 12px 18px;
-          margin-bottom: 10px;
-          position: relative;
-        }
-        .editor-card-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          font-size: 1.15em;
-          font-weight: 600;
-          margin-bottom: 8px;
-          cursor: pointer;
-          user-select: none;
-        }
-        .editor-card-content {
-          transition:
-            max-height 0.3s,
-            opacity 0.3s;
-          overflow: hidden;
-        }
-        .editor-card-collapsed .editor-card-content {
-          max-height: 0;
-          opacity: 0;
-          pointer-events: none;
-        }
-        .editor-card:not(.editor-card-collapsed) .editor-card-content {
-          max-height: 1200px;
-          opacity: 1;
-          pointer-events: auto;
-        }
-        .form-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          margin-bottom: 16px;
-        }
-        .form-row.column {
-          flex-direction: column;
-          align-items: stretch;
-        }
-        label {
-          font-weight: 500;
-          color: var(--primary-text-color, #333);
-          font-size: 1em;
-        }
-        input[type="text"],
-        select {
-          flex: 1;
-          padding: 8px 12px;
-          border-radius: 8px;
-          border: 1px solid var(--divider-color, #cfd8dc);
-          font-size: 1em;
-          background: var(--secondary-background-color, #f7f8fa);
-          box-sizing: border-box;
-        }
-        .form-row.column input[type="text"],
-        .form-row.column select {
-          width: 100%;
-          margin-top: 6px;
-        }
-        .switch {
-          position: relative;
-          display: inline-block;
-          width: 44px;
-          height: 24px;
-        }
-        .switch input {
-          opacity: 0;
-          width: 0;
-          height: 0;
-        }
-        .slider {
-          position: absolute;
-          cursor: pointer;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background-color: var(--divider-color, #ccc);
-          transition: 0.2s;
-          border-radius: 24px;
-        }
-        .slider:before {
-          position: absolute;
-          content: "";
-          height: 18px;
-          width: 18px;
-          left: 3px;
-          bottom: 3px;
-          background-color: var(--card-background-color, white);
-          transition: 0.2s;
-          border-radius: 50%;
-          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
-        }
-        input:checked + .slider {
-          background-color: var(--primary-color, #0077cc);
-        }
-        input:checked + .slider:before {
-          transform: translateX(20px);
-        }
-        input[type="range"] {
-          -webkit-appearance: none;
-          width: 100%;
-          height: 6px;
-          border-radius: 3px;
-          background: var(--divider-color, #e0e0e0);
-          outline: none;
-        }
-        input[type="range"]::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          appearance: none;
-          width: 18px;
-          height: 18px;
-          border-radius: 50%;
-          background: var(--primary-color, #0077cc);
-          cursor: pointer;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-        }
-        input[type="range"]::-moz-range-thumb {
-          width: 18px;
-          height: 18px;
-          border-radius: 50%;
-          background: var(--primary-color, #0077cc);
-          cursor: pointer;
-          border: none;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-        }
-        .button-group {
-          display: flex;
-          flex-wrap: wrap;
-          border-radius: 8px;
-          overflow: hidden;
-          border: 1px solid var(--divider-color, #cfd8dc);
-          gap: 1px;
-        }
-        .button-group-btn {
-          background: var(--secondary-background-color, #f7f8fa);
-          border: none;
-          padding: 8px 12px;
-          cursor: pointer;
-          font-size: 14px;
-          transition: background 0.2s;
-          flex: 1 1 calc(25% - 1px);
-          min-width: 80px;
-        }
-        .button-group-btn:hover {
-          background: color-mix(
-            in srgb,
-            var(--primary-color, #1976d2) 15%,
-            var(--card-background-color, #fff)
-          );
-        }
-        .button-group-btn.active {
-          background: var(--primary-color, #0077cc);
-          color: var(--text-primary-color, white);
-        }
-      `,
-    ];
+    return [sharedEditorStyles, buttonGroupStyles];
   }
 
   setConfig(config) {
@@ -295,7 +131,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
             Global Settings ${chevronIcon(!this._globalOpen)}
           </div>
           <div class="editor-card-content">
-            <div class="form-row column">
+            <div class="form-row">
               <label>Title (optional)</label>
               <input
                 type="text"
@@ -305,7 +141,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
                 @input="${this._onTitleInput}"
               />
             </div>
-            <div class="form-row column">
+            <div class="form-row">
               <label>Target Entities (optional)</label>
               <div
                 style="font-size: 0.9em; color: var(--secondary-text-color, #666); margin-bottom: 8px;"
@@ -313,12 +149,18 @@ class YeelightCubePaletteCardEditor extends LitElement {
                 Select which Yeelight Cube Lite lights should receive palette
                 applications. Leave empty to affect all lights.
               </div>
-              ${this._renderEntityPicker()}
+              ${createYeelightCubeEntityPicker(
+                this._hass,
+                this.config.target_entities || [],
+                (e) => this._onEntityChange(e),
+                "multiple",
+              )}
             </div>
-            ${this._renderSwitch(
+            ${createToggleRow(
               "Show Card Background",
               "show_card_background",
               config.show_card_background !== false,
+              (e) => this._onSwitchChange(e, "show_card_background"),
             )}
           </div>
         </div>
@@ -335,167 +177,24 @@ class YeelightCubePaletteCardEditor extends LitElement {
             Palettes List ${chevronIcon(!this._palettesListOpen)}
           </div>
           <div class="editor-card-content">
-            ${this._renderSwitch(
-              "Show Palette Title",
-              "show_palette_title",
-              config.show_palette_title !== false,
-            )}
-            ${this._renderSwitch(
-              "Show Color Count",
-              "show_color_count",
-              config.show_color_count !== false,
-            )}
-            ${this._renderSwitch(
-              "Allow Title Edit",
-              "allow_title_edit",
-              config.allow_title_edit === true,
-            )}
-            ${this._renderButtonGroup(
-              "Swatch Style",
-              "swatch_style",
-              config.swatch_style || "square",
-              [
-                { value: "round", label: "Round" },
-                { value: "square", label: "Square" },
-                { value: "gradient", label: "Gradient Bar" },
-                { value: "gradient-bg", label: "Gradient Background" },
-                { value: "stripes", label: "Color Stripes" },
-              ],
-            )}
-            ${this._renderButtonGroup(
-              "Display Mode",
-              "display_mode",
-              config.display_mode || "list",
-              [
-                { value: "gallery", label: "Gallery" },
-                { value: "list", label: "List" },
-                { value: "carousel", label: "Carousel" },
-                { value: "album", label: "Album" },
-              ],
-            )}
-            ${this._renderButtonGroup(
-              "Card Shape",
-              "rounded_cards",
-              config.rounded_cards === "rounded"
-                ? "rounded"
-                : config.rounded_cards === "square" ||
-                    config.rounded_cards === false
-                  ? "square"
-                  : "round",
-              [
-                { value: "round", label: "Round" },
-                { value: "rounded", label: "Rounded" },
-                { value: "square", label: "Square" },
-              ],
-            )}
-            ${config.display_mode === "list" ||
-            config.display_mode === "gallery"
-              ? html`
-                  <div class="form-row">
-                    <label>Items Per Page (0 = no pagination)</label>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                      <input
-                        id="items_per_page"
-                        type="range"
-                        min="0"
-                        max="50"
-                        step="1"
-                        .value="${config.items_per_page || 0}"
-                        @input="${this._onItemsPerPageInput}"
-                        style="flex: 1;"
-                      />
-                      <span
-                        id="items_per_page_display"
-                        style="min-width: 35px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
-                      >
-                        ${config.items_per_page || 0}
-                      </span>
-                    </div>
-                  </div>
-                `
-              : ""}
-
-            <!-- Global Delete Button Settings -->
-            ${this._renderButtonGroup(
-              "Delete Button Style",
-              "remove_button_style",
-              config.remove_button_style || "default",
-              [
-                { value: "none", label: "None" },
-                { value: "default", label: "Default" },
-                { value: "red", label: "Red" },
-                { value: "black", label: "Black" },
-                { value: "dot", label: "Dot" },
-                { value: "glass", label: "Glass" },
-              ],
-            )}
-            ${(config.remove_button_style || "default") !== "none"
-              ? html`
-                  ${this._renderButtonGroup(
-                    "Button Shape",
-                    "delete_button_shape",
-                    config.delete_button_shape || "round",
-                    [
-                      { value: "round", label: "Round" },
-                      { value: "rounded", label: "Rounded" },
-                      { value: "square", label: "Square" },
-                    ],
-                  )}
-                  ${this._renderButtonGroup(
-                    "Button Position",
-                    "delete_button_inside",
-                    config.delete_button_inside === true ? "inside" : "outside",
-                    [
-                      { value: "inside", label: "Inside" },
-                      { value: "outside", label: "Outside" },
-                    ],
-                  )}
-                  ${this._renderButtonGroup(
-                    "Delete Button Position",
-                    "delete_button_left",
-                    config.delete_button_left === true ? "left" : "right",
-                    [
-                      { value: "left", label: "Left" },
-                      { value: "right", label: "Right" },
-                    ],
-                  )}
-                `
-              : ""}
-
+            <!-- 1. Display Mode (container layout choice) -->
             <div class="form-row">
-              <label>Display Card Size</label>
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <input
-                  id="card_size"
-                  type="range"
-                  min="30"
-                  max="100"
-                  step="1"
-                  .value="${config.card_size || 50}"
-                  @input="${this._onRangeInput}"
-                  style="flex: 1;"
-                />
-                <span
-                  id="card_size_display"
-                  style="min-width: 45px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
-                >
-                  ${config.card_size || 50}%
-                </span>
-              </div>
+              <label>Display Mode</label>
+              ${createButtonGroup(
+                [
+                  { value: "gallery", label: "Gallery" },
+                  { value: "list", label: "List" },
+                  { value: "carousel", label: "Carousel" },
+                  { value: "album", label: "Album" },
+                ],
+                config.display_mode || "list",
+                createButtonGroupChangeHandler("display_mode", (value) => {
+                  this._onButtonGroupChange("display_mode", value);
+                }),
+              )}
             </div>
 
-            ${this._renderButtonGroup(
-              "Item Card Border",
-              "item_card_border",
-              config.item_card_border || "auto",
-              [
-                { value: "none", label: "None" },
-                { value: "auto", label: "Auto" },
-                { value: "always", label: "Always" },
-              ],
-            )}
-
-            <!-- Carousel Mode Settings -->
+            <!-- 2. Conditional mode settings (right after Display Mode) -->
             ${config.display_mode === "carousel"
               ? renderModeSettingsSection(
                   "Carousel Mode Settings",
@@ -513,29 +212,35 @@ class YeelightCubePaletteCardEditor extends LitElement {
                           "palette_carousel_button_shape",
                           (value) => {
                             this.config.palette_carousel_button_shape = value;
+                            this.config = { ...this.config };
+                            this.requestUpdate();
                             this._fireConfigChanged();
                           },
                         ),
                       )}
                     </div>
-                    ${this._renderSwitch(
+                    ${createToggleRow(
                       "Wrap Navigation (Infinite Loop)",
                       "palette_carousel_wrap_navigation",
                       config.palette_carousel_wrap_navigation === true,
+                      (e) =>
+                        this._onSwitchChange(
+                          e,
+                          "palette_carousel_wrap_navigation",
+                        ),
                     )}
                   `,
                 )
               : ""}
-
-            <!-- Album Mode Settings -->
             ${config.display_mode === "album"
               ? renderModeSettingsSection(
                   "Album Mode Settings",
                   html`
-                    ${this._renderSwitch(
+                    ${createToggleRow(
                       "3D Effect (Perspective)",
                       "album_3d_effect",
                       config.album_3d_effect !== false,
+                      (e) => this._onSwitchChange(e, "album_3d_effect"),
                     )}
                   `,
                 )
@@ -547,6 +252,175 @@ class YeelightCubePaletteCardEditor extends LitElement {
                     ),
                   )
                 : ""}
+
+            <!-- 3. Card container settings -->
+            ${createSliderRow(
+              "Card Roundness",
+              (() => {
+                const v = config.rounded_cards;
+                if (v === undefined || v === true || v === "round") return 16;
+                if (v === false || v === "square") return 0;
+                if (v === "rounded") return 4;
+                return typeof v === "number" ? v : parseInt(v, 10) || 16;
+              })(),
+              { min: 0, max: 28, step: 1 },
+              (e) => this._onSliderChange("rounded_cards", e),
+              "px",
+            )}
+            ${createSliderRow(
+              "Display Card Size",
+              config.card_size || 50,
+              { min: 30, max: 100, step: 1 },
+              (e) => this._onSliderChange("card_size", e),
+              "%",
+            )}
+            <div class="form-row">
+              <label>Item Card Border</label>
+              ${createButtonGroup(
+                [
+                  { value: "none", label: "None" },
+                  { value: "auto", label: "Auto" },
+                  { value: "always", label: "Always" },
+                ],
+                config.item_card_border || "auto",
+                createButtonGroupChangeHandler("item_card_border", (value) => {
+                  this._onButtonGroupChange("item_card_border", value);
+                }),
+              )}
+            </div>
+
+            <!-- 4. Pagination (conditional: list/gallery modes) -->
+            ${config.display_mode === "list" ||
+            config.display_mode === "gallery"
+              ? createSliderRow(
+                  "Items Per Page (0 = no pagination)",
+                  config.items_per_page || 0,
+                  { min: 0, max: 50, step: 1 },
+                  (e) => this._onSliderChange("items_per_page", e),
+                )
+              : ""}
+
+            <!-- 5. Content settings (inside cards) -->
+            <div class="form-row">
+              <label>Swatch Style</label>
+              ${createButtonGroup(
+                [
+                  { value: "round", label: "Round" },
+                  { value: "square", label: "Square" },
+                  { value: "gradient", label: "Gradient Bar" },
+                  { value: "gradient-bg", label: "Gradient Background" },
+                  { value: "stripes", label: "Color Stripes" },
+                ],
+                config.swatch_style || "square",
+                createButtonGroupChangeHandler("swatch_style", (value) => {
+                  this._onButtonGroupChange("swatch_style", value);
+                }),
+              )}
+            </div>
+            ${createToggleRow(
+              "Show Palette Title",
+              "show_palette_title",
+              config.show_palette_title !== false,
+              (e) => this._onSwitchChange(e, "show_palette_title"),
+            )}
+            ${createToggleRow(
+              "Show Color Count",
+              "show_color_count",
+              config.show_color_count !== false,
+              (e) => this._onSwitchChange(e, "show_color_count"),
+            )}
+            ${createToggleRow(
+              "Allow Title Edit",
+              "allow_title_edit",
+              config.allow_title_edit === true,
+              (e) => this._onSwitchChange(e, "allow_title_edit"),
+            )}
+
+            <!-- 6. Delete button settings -->
+            <div class="form-row">
+              <label>Delete Button Style</label>
+              ${createButtonGroup(
+                [
+                  { value: "none", label: "None" },
+                  { value: "default", label: "Default" },
+                  { value: "red", label: "Red" },
+                  { value: "black", label: "Black" },
+                  { value: "dot", label: "Dot" },
+                  { value: "glass", label: "Glass" },
+                ],
+                config.remove_button_style || "default",
+                createButtonGroupChangeHandler(
+                  "remove_button_style",
+                  (value) => {
+                    this._onButtonGroupChange("remove_button_style", value);
+                  },
+                ),
+              )}
+            </div>
+            ${(config.remove_button_style || "default") !== "none"
+              ? html`
+                  <div class="form-row">
+                    <label>Button Shape</label>
+                    ${createButtonGroup(
+                      [
+                        { value: "round", label: "Round" },
+                        { value: "rounded", label: "Rounded" },
+                        { value: "square", label: "Square" },
+                      ],
+                      config.delete_button_shape || "round",
+                      createButtonGroupChangeHandler(
+                        "delete_button_shape",
+                        (value) => {
+                          this._onButtonGroupChange(
+                            "delete_button_shape",
+                            value,
+                          );
+                        },
+                      ),
+                    )}
+                  </div>
+                  <div class="form-row">
+                    <label>Button Position</label>
+                    ${createButtonGroup(
+                      [
+                        { value: "inside", label: "Inside" },
+                        { value: "outside", label: "Outside" },
+                      ],
+                      config.delete_button_inside === true
+                        ? "inside"
+                        : "outside",
+                      createButtonGroupChangeHandler(
+                        "delete_button_inside",
+                        (value) => {
+                          this._onButtonGroupChange(
+                            "delete_button_inside",
+                            value,
+                          );
+                        },
+                      ),
+                    )}
+                  </div>
+                  <div class="form-row">
+                    <label>Delete Button Position</label>
+                    ${createButtonGroup(
+                      [
+                        { value: "left", label: "Left" },
+                        { value: "right", label: "Right" },
+                      ],
+                      config.delete_button_left === true ? "left" : "right",
+                      createButtonGroupChangeHandler(
+                        "delete_button_left",
+                        (value) => {
+                          this._onButtonGroupChange(
+                            "delete_button_left",
+                            value,
+                          );
+                        },
+                      ),
+                    )}
+                  </div>
+                `
+              : ""}
           </div>
         </div>
 
@@ -563,40 +437,58 @@ class YeelightCubePaletteCardEditor extends LitElement {
             Import/Export Actions ${chevronIcon(!this._importExportOpen)}
           </div>
           <div class="editor-card-content">
-            ${this._renderSwitch(
+            ${createToggleRow(
               "Show Export Button",
               "show_export_button",
               config.show_export_button !== false,
+              (e) => this._onSwitchChange(e, "show_export_button"),
             )}
-            ${this._renderSwitch(
+            ${createToggleRow(
               "Show Import Button",
               "show_import_button",
               config.show_import_button !== false,
+              (e) => this._onSwitchChange(e, "show_import_button"),
             )}
-            ${this._renderButtonGroup(
-              "Button Style",
-              "buttons_style",
-              config.buttons_style || "modern",
-              [
-                { value: "modern", label: "Modern" },
-                { value: "classic", label: "Classic" },
-                { value: "outline", label: "Outline" },
-                { value: "gradient", label: "Gradient" },
-                { value: "icon", label: "Icon" },
-                { value: "pill", label: "Pill" },
-              ],
-            )}
+            <div class="form-row">
+              <label>Button Style</label>
+              ${createButtonGroup(
+                [
+                  { value: "modern", label: "Modern" },
+                  { value: "classic", label: "Classic" },
+                  { value: "outline", label: "Outline" },
+                  { value: "gradient", label: "Gradient" },
+                  { value: "icon", label: "Icon" },
+                  { value: "pill", label: "Pill" },
+                ],
+                config.buttons_style || "modern",
+                createButtonGroupChangeHandler("buttons_style", (value) => {
+                  this._onButtonGroupChange("buttons_style", value);
+                }),
+              )}
+            </div>
             ${(config.buttons_style || "modern") !== "icon"
-              ? this._renderButtonGroup(
-                  "Content Mode",
-                  "buttons_content_mode",
-                  config.buttons_content_mode || "icon_text",
-                  [
-                    { value: "icon", label: "Icon" },
-                    { value: "text", label: "Text" },
-                    { value: "icon_text", label: "Icon + Text" },
-                  ],
-                )
+              ? html`
+                  <div class="form-row">
+                    <label>Content Mode</label>
+                    ${createButtonGroup(
+                      [
+                        { value: "icon", label: "Icon" },
+                        { value: "text", label: "Text" },
+                        { value: "icon_text", label: "Icon + Text" },
+                      ],
+                      config.buttons_content_mode || "icon_text",
+                      createButtonGroupChangeHandler(
+                        "buttons_content_mode",
+                        (value) => {
+                          this._onButtonGroupChange(
+                            "buttons_content_mode",
+                            value,
+                          );
+                        },
+                      ),
+                    )}
+                  </div>
+                `
               : html`
                   <div class="form-row" style="opacity: 0.5;">
                     <label>Content Mode</label>
@@ -619,189 +511,13 @@ class YeelightCubePaletteCardEditor extends LitElement {
     this._fireConfigChanged();
   }
 
-  _renderSwitch(label, id, checked) {
-    return html`
-      <div class="form-row">
-        <label for="${id}">${label}</label>
-        <label class="switch">
-          <input
-            type="checkbox"
-            id="${id}"
-            .checked="${checked}"
-            @change="${(e) => this._onSwitchChange(e, id)}"
-          />
-          <span class="slider"></span>
-        </label>
-      </div>
-    `;
-  }
-
-  _renderButtonGroup(label, id, currentValue, options) {
-    return html`
-      <div class="form-row">
-        <label>${label}</label>
-        <div class="button-group">
-          ${options.map(
-            (option) => html`
-              <button
-                class="button-group-btn ${currentValue === option.value
-                  ? "active"
-                  : ""}"
-                title="${option.label}"
-                @click="${() => this._onButtonGroupChange(id, option.value)}"
-              >
-                ${option.label}
-              </button>
-            `,
-          )}
-        </div>
-      </div>
-    `;
-  }
-
-  _renderEntityPicker() {
-    if (!this._hass || !this._hass.states) {
-      return html`<div
-        style="color: var(--secondary-text-color, #666); font-style: italic; padding: 8px;"
-      >
-        Loading entities...
-      </div>`;
-    }
-
-    // Get all light entities and filter for our custom component
-    const allLightEntities = Object.keys(this._hass.states)
-      .filter((entityId) => entityId.startsWith("light."))
-      .sort();
-
-    // Filter to only show entities from our yeelight_cube component
-    // Use our internal component identifier that users cannot modify
-    const ourComponentEntities = allLightEntities.filter((entityId) => {
-      const state = this._hass.states[entityId];
-      const attributes = state?.attributes || {};
-
-      // Check for our internal component identifier
-      // This is bulletproof as users cannot modify internal attributes
-      return (
-        attributes._yeelight_cube_component === "yeelight-cube-component-v1.0"
-      );
-    });
-
-    // Use Yeelight entities if found, otherwise show all light entities
-    const entitiesToShow = ourComponentEntities;
-    const selectedEntities = this.config.target_entities || [];
-
-    return html`
-      <div
-        style="border: 1px solid var(--divider-color, #e0e0e0); border-radius: 8px; background: var(--secondary-background-color, #fafafa);"
-      >
-        <!-- Header -->
-        <div
-          style="padding: 12px 16px 8px 16px; font-weight: 500; color: var(--primary-text-color, #333); border-bottom: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f5f5f5); border-radius: 8px 8px 0 0;"
-        >
-          Yeelight Cube Lite Entities (${ourComponentEntities.length})
-        </div>
-
-        <!-- Entity list -->
-        <div style="max-height: 200px; overflow-y: auto; padding: 8px;">
-          ${entitiesToShow.length === 0
-            ? html`<div
-                style="color: var(--secondary-text-color, #666); font-style: italic; text-align: center; padding: 20px;"
-              >
-                <div style="margin-bottom: 8px;">
-                  No Yeelight Cube Lite entities found
-                </div>
-                <div
-                  style="font-size: 0.85em; color: var(--secondary-text-color, #999);"
-                >
-                  Make sure you have Yeelight Cube Lite devices configured in
-                  this integration
-                </div>
-              </div>`
-            : entitiesToShow.map((entityId) => {
-                if (!this._hass || !this._hass.states) {
-                  return html``;
-                }
-                const isSelected = selectedEntities.includes(entityId);
-                const state = this._hass.states[entityId];
-                const friendlyName =
-                  state?.attributes?.friendly_name || entityId;
-                return html`
-                  <div
-                    style="display: flex; align-items: center; padding: 8px 12px; margin: 4px 0; border-radius: 6px; background: ${isSelected
-                      ? "color-mix(in srgb, var(--primary-color, #2196f3) 15%, var(--card-background-color, #fff))"
-                      : "var(--card-background-color, white)"}; border: 1px solid ${isSelected
-                      ? "var(--primary-color, #90caf9)"
-                      : "var(--divider-color, #e0e0e0)"}; transition: all 0.2s ease; cursor: pointer;"
-                    @click="${() => this._toggleEntitySelection(entityId)}"
-                  >
-                    <input
-                      type="checkbox"
-                      id="entity_${entityId.replace(/[^a-zA-Z0-9]/g, "_")}"
-                      .checked="${isSelected}"
-                      @change="${(e) => {
-                        e.stopPropagation();
-                        this._onEntitySelectionChange(
-                          entityId,
-                          e.target.checked,
-                        );
-                      }}"
-                      style="margin-right: 12px; transform: scale(1.1);"
-                    />
-                    <div style="flex: 1;">
-                      <div
-                        style="font-weight: 500; color: var(--primary-text-color, #333); margin-bottom: 2px;"
-                      >
-                        ${friendlyName}
-                      </div>
-                      <div
-                        style="font-size: 0.85em; color: var(--secondary-text-color, #666); font-family: monospace;"
-                      >
-                        ${entityId}
-                      </div>
-                    </div>
-                  </div>
-                `;
-              })}
-        </div>
-
-        <!-- Footer info -->
-        ${selectedEntities.length > 0
-          ? html`<div
-              style="padding: 8px 16px; font-size: 0.9em; color: var(--secondary-text-color, #666); border-top: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f9f9f9); border-radius: 0 0 8px 8px;"
-            >
-              ${selectedEntities.length} entities selected for palette
-              applications
-            </div>`
-          : html`<div
-              style="padding: 8px 16px; font-size: 0.9em; color: var(--secondary-text-color, #999); border-top: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f9f9f9); border-radius: 0 0 8px 8px; font-style: italic;"
-            >
-              No entities selected - palettes will not be applied
-            </div>`}
-      </div>
-    `;
-  }
-
-  _toggleEntitySelection(entityId) {
-    const currentEntities = this.config.target_entities || [];
-    const isSelected = currentEntities.includes(entityId);
-    this._onEntitySelectionChange(entityId, !isSelected);
-  }
-
-  _onEntitySelectionChange(entityId, isSelected) {
-    const currentEntities = this.config.target_entities || [];
-
-    if (isSelected) {
-      // Add entity if not already present
-      if (!currentEntities.includes(entityId)) {
-        this.config.target_entities = [...currentEntities, entityId];
-      }
-    } else {
-      // Remove entity
-      this.config.target_entities = currentEntities.filter(
-        (id) => id !== entityId,
-      );
-    }
-
+  _onEntityChange(e) {
+    const newEntities = Array.isArray(e.target.value)
+      ? e.target.value
+      : [e.target.value];
+    this.config.target_entities = newEntities;
+    this.config = { ...this.config };
+    this.requestUpdate();
     this._fireConfigChanged();
   }
 
@@ -823,31 +539,16 @@ class YeelightCubePaletteCardEditor extends LitElement {
   _onSwitchChange(e, key) {
     this.config[key] = e.target.checked;
     // Immediately update the UI before firing config change
+    this.config = { ...this.config };
     this.requestUpdate();
     this._fireConfigChanged();
   }
 
-  _onRangeInput(e) {
-    const id = e.target.id;
+  _onSliderChange(key, e) {
     const value = parseInt(e.target.value);
-    this.config[id] = value;
-
-    // Update the display value
-    const display = this.shadowRoot.getElementById(`${id}_display`);
-    if (display) {
-      display.textContent = `${value}%`;
-    }
-
-    this._fireConfigChanged();
-  }
-
-  _onItemsPerPageInput(e) {
-    const value = parseInt(e.target.value);
-    this.config.items_per_page = value;
-    const display = this.shadowRoot.getElementById("items_per_page_display");
-    if (display) {
-      display.textContent = `${value}`;
-    }
+    this.config[key] = value;
+    this.config = { ...this.config };
+    this.requestUpdate();
     this._fireConfigChanged();
   }
 

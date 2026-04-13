@@ -786,7 +786,10 @@ class YeelightCubeDrawCard extends LitElement {
 
   _onConfigChanged(e) {
     if (!e.detail || !e.detail.config) return;
-    this.setConfig(e.detail.config);
+    // Only accept config-changed events meant for this card type
+    const cfg = e.detail.config;
+    if (cfg.type && cfg.type !== "custom:yeelight-cube-draw-card") return;
+    this.setConfig(cfg);
     this.requestUpdate();
   }
 
@@ -2074,18 +2077,16 @@ class YeelightCubeDrawCard extends LitElement {
           padding: 12px;
           background: var(--secondary-background-color, #fafbfc);
           border: 1.5px solid var(--divider-color, #d0d7de);
-          border-radius: 14px;
+          border-radius: ${(() => {
+            const v = cfg.rounded_cards;
+            if (v === undefined || v === true || v === "round") return 16;
+            if (v === false || v === "square") return 0;
+            if (v === "rounded") return 4;
+            return typeof v === "number" ? v : parseInt(v, 10) || 16;
+          })()}px;
           box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
           margin-bottom: 10px;
           transition: all 0.2s ease;
-        }
-
-        .pixelart-list-item.pixelart-list-item-square {
-          border-radius: 0;
-        }
-
-        .pixelart-list-item.pixelart-list-item-rounded {
-          border-radius: 4px;
         }
 
         .pixelart-list-item:hover {
@@ -2204,23 +2205,7 @@ class YeelightCubeDrawCard extends LitElement {
             const globalIdx = globalOffset + idx;
 
             return html`
-              <div
-                class="pixelart-list-item${(() => {
-                  const v = cfg.rounded_cards;
-                  const s =
-                    v === true || v === undefined || v === "round"
-                      ? "round"
-                      : v === false || v === "square"
-                        ? "square"
-                        : v;
-                  return s === "square"
-                    ? " pixelart-list-item-square"
-                    : s === "rounded"
-                      ? " pixelart-list-item-rounded"
-                      : "";
-                })()}"
-                data-index="${globalIdx}"
-              >
+              <div class="pixelart-list-item" data-index="${globalIdx}">
                 ${allowDelete
                   ? html`<button
                       class="${removeBtnClass} list-delete-btn ${btnCfg.posClass} ${btnCfg.sideClass}"
@@ -2619,6 +2604,8 @@ class YeelightCubeDrawCard extends LitElement {
       },
       // Context object to store state
       this,
+      // Config for 3D mode detection
+      cfg,
     );
 
     // Setup rename functionality if enabled

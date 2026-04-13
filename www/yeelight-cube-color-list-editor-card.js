@@ -677,12 +677,18 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           max-width: 100%;
           box-sizing: border-box;
           overflow: visible;
+          --rounded-cards-radius: ${this._getCardBorderRadius()}px;
         }
         ha-card {
           overflow: visible;
         }
         * {
           box-sizing: border-box;
+        }
+        /* Block ALL native color inputs from receiving clicks.
+           Color picking is handled by wrapper click handlers that call _openColorPickerAt(). */
+        input[type="color"] {
+          pointer-events: none !important;
         }
         > div {
           max-width: 100%;
@@ -914,7 +920,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         }
         .color-grid-swatch { position: relative; width: calc(114.29px * var(--card-size-multiplier, 0.7)); height: calc(114.29px * var(--card-size-multiplier, 0.7)); border-radius: calc(17.14px * var(--card-size-multiplier, 0.7)); box-shadow: 0 2px 8px rgba(0,0,0,0.15); cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; }
         .color-grid-swatch:hover { transform: translateY(-4px); box-shadow: 0 4px 16px rgba(0,0,0,0.25); }
-        .grid-color-picker { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: calc(85.71px * var(--card-size-multiplier, 0.7)); height: calc(85.71px * var(--card-size-multiplier, 0.7)); opacity: 0; cursor: pointer; }
+        .grid-color-picker { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: calc(85.71px * var(--card-size-multiplier, 0.7)); height: calc(85.71px * var(--card-size-multiplier, 0.7)); opacity: 0; cursor: pointer; pointer-events: none; }
         .grid-remove-btn { 
           /* Positioning only - styles come from deleteButtonStyles */
           position: absolute; 
@@ -988,6 +994,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           inset: 0;
           opacity: 0;
           cursor: pointer;
+          pointer-events: none;
         }
         .compact-hex-display {
           font-family: monospace;
@@ -1065,6 +1072,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           inset: 0;
           opacity: 0;
           cursor: pointer;
+          pointer-events: none;
           border-radius: 50%;
           width: 100%;
           height: 100%;
@@ -1176,6 +1184,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           inset: 0;
           opacity: 0;
           cursor: pointer;
+          pointer-events: none;
         }
         .tile-info {
           flex: 1;
@@ -1280,6 +1289,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           inset: 0;
           opacity: 0;
           cursor: pointer;
+          pointer-events: none;
         }
         .row-content {
           display: flex;
@@ -1334,9 +1344,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         @media (hover: hover) {
           .row-color-input {
             pointer-events: none;
-          }
-          .row-color-input:hover {
-            pointer-events: auto;
           }
           .row-content {
             pointer-events: none;
@@ -1928,23 +1935,14 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           cursor: pointer;
         }
 
-        /* Rounded Cards override — square variants */
-        .compact-item.square-item { border-radius: 0 !important; }
-        .chip-item.square-item { border-radius: 0 !important; }
-        .tile-item.square-item { border-radius: 0 !important; }
-        .row-item.square-item { border-radius: 0 !important; }
-        .color-grid-swatch.square-item { border-radius: 0 !important; }
-        .card-item.square-item { border-radius: 0 !important; }
-        .card-item.square-item .card-face { border-radius: 0 !important; }
-
-        /* Rounded Cards override — rounded variants */
-        .compact-item.rounded-item { border-radius: 4px !important; }
-        .chip-item.rounded-item { border-radius: 4px !important; }
-        .tile-item.rounded-item { border-radius: 4px !important; }
-        .row-item.rounded-item { border-radius: 4px !important; }
-        .color-grid-swatch.rounded-item { border-radius: 4px !important; }
-        .card-item.rounded-item { border-radius: 4px !important; }
-        .card-item.rounded-item .card-face { border-radius: 4px !important; }
+        /* Rounded Cards override — applied via CSS variable */
+        .compact-item,
+        .chip-item,
+        .tile-item,
+        .row-item,
+        .color-grid-swatch,
+        .card-item { border-radius: var(--rounded-cards-radius) !important; }
+        .card-item .card-face { border-radius: var(--rounded-cards-radius) !important; }
 
         /* Shared Delete Button Styles */
         ${deleteButtonStyles}
@@ -2217,106 +2215,14 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       });
     }
     const self = this;
-    // Color input handlers - use temporary inputs to prevent auto-close
+    // Color input handlers - prevent direct clicks from opening native picker
+    // All color picking now goes through _openColorPickerAt() called by wrapper handlers
     root.querySelectorAll("input[type=color]").forEach((input) => {
-      // Prevent the default click behavior and create temporary input instead
+      // Block any direct clicks on color inputs to prevent native picker double-open
       input.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
-
-        this._usingColorPicker = true; // Prevent re-renders
-        const idx = parseInt(input.dataset.idx);
-        const currentValue = input.value;
-
-        // Use stored coordinates if available (from swatch click), otherwise use event coordinates
-        const clickX = input._clickX !== undefined ? input._clickX : e.pageX;
-        const clickY = input._clickY !== undefined ? input._clickY : e.pageY;
-
-        // Clear stored coordinates
-        delete input._clickX;
-        delete input._clickY;
-
-        // Create temporary input at click position
-        const tempInput = document.createElement("input");
-        tempInput.type = "color";
-        tempInput.value = currentValue;
-        tempInput.style.position = "absolute";
-        tempInput.style.left = clickX + "px";
-        tempInput.style.top = clickY + "px";
-        tempInput.style.width = "1px";
-        tempInput.style.height = "1px";
-        tempInput.style.opacity = "0";
-        tempInput.style.pointerEvents = "none";
-        tempInput.style.zIndex = "9999";
-
-        // Add to body temporarily
-        document.body.appendChild(tempInput);
-
-        // Set up event listener for color change
-        tempInput.addEventListener("input", (e) => {
-          const hex = e.target.value;
-          const rgb = this.hexToRgb(hex);
-          if (rgb) {
-            // Get current colors (not stale closure)
-            const currentColors = this._getCurrentColors();
-            currentColors[idx] = rgb;
-
-            // Update UI immediately for instant feedback
-            input.value = hex;
-            const hexInput = root.querySelector(
-              `input.hex-input[data-idx='${idx}']`,
-            );
-            if (hexInput) hexInput.value = hex;
-
-            // Optimistically update all visual elements for instant feedback
-            this._updateColorVisuals(idx, rgb, hex);
-
-            this.saveColors(currentColors);
-          }
-        }); // Clean up when color picker closes
-        tempInput.addEventListener("blur", () => {
-          setTimeout(() => {
-            if (tempInput.parentNode) {
-              document.body.removeChild(tempInput);
-            }
-            this._usingColorPicker = false; // Re-enable re-renders
-            this._flushPendingRender();
-          }, 100);
-        });
-
-        // Also clean up on change event
-        tempInput.addEventListener("change", () => {
-          setTimeout(() => {
-            if (tempInput.parentNode) {
-              document.body.removeChild(tempInput);
-            }
-            this._usingColorPicker = false; // Re-enable re-renders
-            this._flushPendingRender();
-          }, 100);
-        });
-
-        // Trigger the color picker
-        setTimeout(() => {
-          tempInput.click();
-        }, 10);
-      });
-
-      // Keep the input event as backup (though it shouldn't be needed with click override)
-      input.addEventListener("input", (e) => {
-        const idx = parseInt(e.target.dataset.idx);
-        const hex = e.target.value;
-        const rgb = this.hexToRgb(hex);
-        if (rgb) {
-          // Get current colors (not stale closure)
-          const currentColors = this._getCurrentColors();
-          currentColors[idx] = rgb;
-
-          const hexInput = root.querySelector(
-            `input.hex-input[data-idx='${idx}']`,
-          );
-          if (hexInput) hexInput.value = hex;
-          this.saveColors(currentColors);
-        }
+        // Do NOT open picker here - wrapper handlers (bar, swatch, row, tile, etc.) handle it
       });
     });
     root.querySelectorAll("input.hex-input").forEach((input) => {
@@ -2357,89 +2263,34 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       });
     });
 
-    // Full row color picker handler
-    root.querySelectorAll('[data-color-row="true"]').forEach((row) => {
-      row.addEventListener("click", (e) => {
-        // Don't trigger if clicking on buttons, inputs, or drag handle
-        if (
-          e.target.tagName === "BUTTON" ||
-          e.target.tagName === "INPUT" ||
-          e.target.classList.contains("drag-handle") ||
-          e.target.closest("button") ||
-          e.target.closest(".drag-handle")
-        ) {
-          return;
-        }
+    // Color row click handler (covers standard list rows, full-row-color rows, and "rows" mode items)
+    root
+      .querySelectorAll('.color-row, [data-color-row="true"]')
+      .forEach((row) => {
+        row.addEventListener("click", (e) => {
+          // Don't trigger if clicking on buttons, inputs, or drag handle
+          if (
+            e.target.tagName === "BUTTON" ||
+            e.target.tagName === "INPUT" ||
+            e.target.classList.contains("drag-handle") ||
+            e.target.closest("button") ||
+            e.target.closest(".drag-handle")
+          ) {
+            return;
+          }
 
-        const idx = parseInt(row.dataset.idx);
-        const hiddenColorInput = row.querySelector('input[type="color"]');
-        if (hiddenColorInput) {
-          this._usingColorPicker = true; // Prevent re-renders
-
-          // Create a temporary visible color input at the click position
-          const tempInput = document.createElement("input");
-          tempInput.type = "color";
-          tempInput.value = hiddenColorInput.value;
-          tempInput.style.position = "absolute";
-          tempInput.style.left = e.pageX + "px";
-          tempInput.style.top = e.pageY + "px";
-          tempInput.style.width = "1px";
-          tempInput.style.height = "1px";
-          tempInput.style.opacity = "0";
-          tempInput.style.pointerEvents = "none";
-          tempInput.style.zIndex = "9999";
-
-          // Add to body temporarily
-          document.body.appendChild(tempInput);
-
-          // Set up event listener for color change
-          tempInput.addEventListener("input", (e) => {
-            const hex = e.target.value;
-            const rgb = this.hexToRgb(hex);
-            if (rgb) {
-              // Get current colors (not stale closure)
-              const currentColors = this._getCurrentColors();
-              currentColors[idx] = rgb;
-
-              hiddenColorInput.value = hex;
-              // Update hex input if it exists
-              const hexInput = root.querySelector(
-                `input.hex-input[data-idx='${idx}']`,
-              );
-              if (hexInput) hexInput.value = hex;
-              this.saveColors(currentColors);
-            }
-          });
-
-          // Clean up when color picker closes
-          tempInput.addEventListener("blur", () => {
-            setTimeout(() => {
-              if (tempInput.parentNode) {
-                document.body.removeChild(tempInput);
-              }
-              this._usingColorPicker = false; // Re-enable re-renders
-              this._flushPendingRender();
-            }, 100);
-          });
-
-          // Also clean up on change event as some browsers close picker immediately
-          tempInput.addEventListener("change", () => {
-            setTimeout(() => {
-              if (tempInput.parentNode) {
-                document.body.removeChild(tempInput);
-              }
-              this._usingColorPicker = false; // Re-enable re-renders
-              this._flushPendingRender();
-            }, 100);
-          });
-
-          // Trigger the color picker
-          setTimeout(() => {
-            tempInput.click();
-          }, 10);
-        }
+          const idx = parseInt(row.dataset.idx);
+          const hiddenColorInput = row.querySelector('input[type="color"]');
+          if (hiddenColorInput) {
+            this._openColorPickerAt(
+              idx,
+              hiddenColorInput.value,
+              e.pageX,
+              e.pageY,
+            );
+          }
+        });
       });
-    });
 
     // Card color bar click handler (for cards/spread modes with pointer-events: none on color picker)
     root.querySelectorAll(".card-color-bar.clickable").forEach((bar) => {
@@ -2458,13 +2309,8 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           'input[type="color"].card-color-picker',
         );
         if (colorInput) {
-          // Store click coordinates for the color picker
-          colorInput._clickX = e.pageX;
-          colorInput._clickY = e.pageY;
-
-          // Programmatically trigger click on the color picker
-          // This will be handled by the input[type=color] click handler above
-          colorInput.click();
+          const idx = parseInt(colorInput.dataset.idx);
+          this._openColorPickerAt(idx, colorInput.value, e.pageX, e.pageY);
         }
       });
     });
@@ -2800,7 +2646,13 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
               if (!hasMoved && Date.now() - mouseDownTime < 300) {
                 e.preventDefault();
                 e.stopPropagation();
-                colorPicker.click();
+                const idx = parseInt(colorPicker.dataset.idx);
+                this._openColorPickerAt(
+                  idx,
+                  colorPicker.value,
+                  e.pageX,
+                  e.pageY,
+                );
               }
             });
 
@@ -2832,6 +2684,36 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
               },
               { passive: true },
             );
+          }
+        });
+      }
+
+      // CHIPS MODE: Add color picker click handler for chip-color-swatch
+      if (newModesLayout === "chips") {
+        root.querySelectorAll(".chip-color-swatch").forEach((swatch) => {
+          const colorPicker = swatch.querySelector(".chip-color-input");
+          if (colorPicker) {
+            swatch.addEventListener("click", (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const idx = parseInt(colorPicker.dataset.idx);
+              this._openColorPickerAt(idx, colorPicker.value, e.pageX, e.pageY);
+            });
+          }
+        });
+      }
+
+      // COMPACT MODE: Add color picker click handler for compact-swatch
+      if (newModesLayout === "compact") {
+        root.querySelectorAll(".compact-swatch").forEach((swatch) => {
+          const colorPicker = swatch.querySelector(".compact-color-input");
+          if (colorPicker) {
+            swatch.addEventListener("click", (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              const idx = parseInt(colorPicker.dataset.idx);
+              this._openColorPickerAt(idx, colorPicker.value, e.pageX, e.pageY);
+            });
           }
         });
       }
@@ -3591,10 +3473,8 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
               e.preventDefault();
               e.stopPropagation();
 
-              // Store coordinates for the color picker
-              colorPicker._clickX = e.pageX;
-              colorPicker._clickY = e.pageY;
-              colorPicker.click();
+              const idx = parseInt(colorPicker.dataset.idx);
+              this._openColorPickerAt(idx, colorPicker.value, e.pageX, e.pageY);
             }
           });
 
@@ -4227,6 +4107,97 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     return sensorColors.slice(); // Return a copy
   }
 
+  // Opens a color picker at the given page coordinates for the color at index idx.
+  // Creates a temporary invisible <input type="color"> appended to document.body
+  // positioned at (clickX, clickY) so the browser anchors its picker popup there.
+  _openColorPickerAt(idx, currentValue, clickX, clickY) {
+    // Clean up any previous picker without triggering a re-render (we're about to reopen)
+    this._cleanupColorPicker(true);
+
+    this._usingColorPicker = true; // Prevent re-renders
+
+    const root = this.shadowRoot;
+
+    // Create temporary input at click position
+    const tempInput = document.createElement("input");
+    tempInput.type = "color";
+    tempInput.value = currentValue;
+    tempInput.style.cssText = `
+      position: absolute;
+      left: ${clickX}px;
+      top: ${clickY}px;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      border: 0;
+      margin: 0;
+      opacity: 0.01;
+      pointer-events: none;
+    `;
+
+    // Store reference for cleanup
+    this._activeTempInput = tempInput;
+
+    // Add to body temporarily
+    document.body.appendChild(tempInput);
+
+    // Force layout so the browser knows the position before the picker opens
+    void tempInput.getBoundingClientRect();
+
+    // Set up event listener for color change
+    tempInput.addEventListener("input", (e) => {
+      const hex = e.target.value;
+      const rgb = this.hexToRgb(hex);
+      if (rgb) {
+        // Get current colors (not stale closure)
+        const currentColors = this._getCurrentColors();
+        currentColors[idx] = rgb;
+
+        // Update the original hidden input if it exists
+        if (root) {
+          const originalInput = root.querySelector(
+            `input[type="color"][data-idx='${idx}']`,
+          );
+          if (originalInput) originalInput.value = hex;
+
+          const hexInput = root.querySelector(
+            `input.hex-input[data-idx='${idx}']`,
+          );
+          if (hexInput) hexInput.value = hex;
+        }
+
+        // Optimistically update all visual elements for instant feedback
+        this._updateColorVisuals(idx, rgb, hex);
+        this.saveColors(currentColors);
+      }
+    });
+
+    // Only clean up on 'change' event (fires when user confirms or cancels the picker).
+    // Do NOT listen to 'blur' — it fires immediately when the picker dialog opens,
+    // which would destroy the input and close the picker before the user can interact.
+    tempInput.addEventListener("change", () => {
+      this._cleanupColorPicker(false);
+    });
+
+    // Open the color picker
+    tempInput.click();
+  }
+
+  // Clean up the active temporary color picker input
+  // skipFlush: true when we're about to immediately reopen (avoids a useless render cycle)
+  _cleanupColorPicker(skipFlush) {
+    if (this._activeTempInput) {
+      if (this._activeTempInput.parentNode) {
+        this._activeTempInput.parentNode.removeChild(this._activeTempInput);
+      }
+      this._activeTempInput = null;
+    }
+    this._usingColorPicker = false;
+    if (!skipFlush) {
+      this._flushPendingRender();
+    }
+  }
+
   // Optimistically update all visual elements when a color changes
   _updateColorVisuals(idx, rgb, hex) {
     const root = this.shadowRoot;
@@ -4373,29 +4344,12 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     // Note: Pending colors will be cleared automatically in render()
     // when the sensor value matches, providing seamless sync
   }
-  _getShapeClass() {
+  _getCardBorderRadius() {
     const v = this.config.rounded_cards;
-    const s =
-      v === true || v === undefined || v === "round"
-        ? "round"
-        : v === false || v === "square"
-          ? "square"
-          : v;
-    return s === "square"
-      ? " square-item"
-      : s === "rounded"
-        ? " rounded-item"
-        : "";
-  }
-  _getShapeBorderRadius(roundVal) {
-    const v = this.config.rounded_cards;
-    const s =
-      v === true || v === undefined || v === "round"
-        ? "round"
-        : v === false || v === "square"
-          ? "square"
-          : v;
-    return s === "square" ? "0" : s === "rounded" ? "4px" : roundVal;
+    if (v === undefined || v === true || v === "round") return 16;
+    if (v === false || v === "square") return 0;
+    if (v === "rounded") return 4;
+    return typeof v === "number" ? v : parseInt(v, 10) || 16;
   }
   rgbToHex(rgb) {
     return (
@@ -4781,12 +4735,10 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     const posClass = buttonInside ? "btn-pos-inside" : "btn-pos-outside";
     const sideClass = buttonLeft ? "btn-side-left" : "";
 
-    const squareClass = this._getShapeClass();
-
     return textColors
       .map((color, idx) =>
         Array.isArray(color) && color.length === 3
-          ? `<div class="compact-item${squareClass}" data-idx="${idx}" ${
+          ? `<div class="compact-item" data-idx="${idx}" ${
               allowDragDrop !== false ? 'draggable="true"' : ""
             }>
               <div class="compact-swatch" style="background: ${this.rgbToHex(
@@ -4841,13 +4793,11 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     const posClass = buttonInside ? "btn-pos-inside" : "btn-pos-outside";
     const sideClass = buttonLeft ? "btn-side-left" : "";
 
-    const squareClass = this._getShapeClass();
-
     return `<div class="chips-container">
       ${textColors
         .map((color, idx) =>
           Array.isArray(color) && color.length === 3
-            ? `<div class="chip-item${squareClass}" data-idx="${idx}" ${
+            ? `<div class="chip-item" data-idx="${idx}" ${
                 allowDragDrop !== false ? 'draggable="true"' : ""
               } style="background: ${this.rgbToHex(
                 color,
@@ -4909,12 +4859,10 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     const posClass = buttonInside ? "btn-pos-inside" : "btn-pos-outside";
     const sideClass = buttonLeft ? "btn-side-left" : "";
 
-    const squareClass = this._getShapeClass();
-
     return textColors
       .map((color, idx) =>
         Array.isArray(color) && color.length === 3
-          ? `<div class="tile-item${squareClass}" data-idx="${idx}" ${
+          ? `<div class="tile-item" data-idx="${idx}" ${
               allowDragDrop !== false ? 'draggable="true"' : ""
             }>
               ${
@@ -4974,12 +4922,10 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     const posClass = buttonInside ? "btn-pos-inside" : "btn-pos-outside";
     const sideClass = buttonLeft ? "btn-side-left" : "";
 
-    const squareClass = this._getShapeClass();
-
     return textColors
       .map((color, idx) =>
         Array.isArray(color) && color.length === 3
-          ? `<div class="row-item${squareClass}" data-idx="${idx}" ${
+          ? `<div class="row-item" data-idx="${idx}" ${
               allowDragDrop !== false ? 'draggable="true"' : ""
             } 
                 style="background: linear-gradient(135deg, ${this.rgbToHex(
@@ -5053,7 +4999,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           ? `<div class="color-grid-item" data-idx="${idx}" ${
               allowDragDrop !== false ? 'draggable="true"' : ""
             }>
-              <div class="color-grid-swatch${this._getShapeClass()}" style="background-color: ${this.rgbToHex(
+              <div class="color-grid-swatch" style="background-color: ${this.rgbToHex(
                 color,
               )};" title="${this.formatColorInfo(
                 color,
@@ -5097,10 +5043,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
 
     // Card styling
-    const borderRadius = this._getShapeBorderRadius(
-      "calc(11.43px * var(--card-size-multiplier, 0.7))",
-    );
-    const squareClass = this._getShapeClass();
     const buttonPositionStyles = getButtonPositionStyles(
       buttonInside,
       buttonLeft,
@@ -5144,11 +5086,10 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                   const horizontalOffset = offset * -15; // Overlap
 
                   return `<div class="card-wrapper poker-card" data-position="${globalIdx}">
-                    <div class="card-item${squareClass}" data-idx="${globalIdx}" 
+                    <div class="card-item" data-idx="${globalIdx}" 
                       style="
                         transform: rotate(${rotationDeg}deg) translateY(${verticalOffset}px) translateX(${horizontalOffset}px);
                         z-index: ${idx};
-                        border-radius: ${borderRadius};
                       ">
                       <div class="card-face">
                         <div class="card-color-bar${
@@ -5201,10 +5142,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
 
     // Card styling
-    const borderRadius = this._getShapeBorderRadius(
-      "calc(11.43px * var(--card-size-multiplier, 0.7))",
-    );
-    const squareClass = this._getShapeClass();
     const buttonPositionStyles = getButtonPositionStyles(
       buttonInside,
       buttonLeft,
@@ -5225,11 +5162,10 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
             const verticalOffset = (seed2 % 12) - 6;
 
             return `<div class="card-wrapper" data-position="${globalIdx}">
-              <div class="card-item${squareClass}" data-idx="${globalIdx}" 
+              <div class="card-item" data-idx="${globalIdx}" 
                 style="
                   transform: rotate(${rotationDeg}deg) translateY(${verticalOffset}px);
                   z-index: ${globalIdx};
-                  border-radius: ${borderRadius};
                 ">
                 <div class="card-face">
                   <div class="card-color-bar${

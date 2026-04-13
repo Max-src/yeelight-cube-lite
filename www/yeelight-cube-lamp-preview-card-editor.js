@@ -5,13 +5,19 @@ import {
   buttonGroupStyles,
 } from "./button-group-utils.js";
 import {
-  createEntitySelector,
-  getLightEntities,
   createYeelightCubeEntityPicker,
-  getYeelightCubeEntities,
   entitySelectorStyles,
 } from "./entity-selector-utils.js";
-import { fireEvent } from "./editor_ui_utils.js";
+import {
+  sharedEditorStyles,
+  fireEvent,
+  renderModeSettingsSection,
+} from "./editor_ui_utils.js";
+import {
+  formRowStyles,
+  createToggleRow,
+  createSliderRow,
+} from "./form-row-utils.js";
 
 // Editor class for the Yeelight Cube Lite Lamp Preview Card
 class YeelightCubeLampPreviewCardEditor extends LitElement {
@@ -52,7 +58,8 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
       buttons_style: "classic", // New: default style for all buttons
       show_brightness_slider: true, // Show brightness slider by default
       brightness_slider_style: "slider", // Default brightness slider style
-      brightness_slider_appearance: "default", // Default slider appearance
+      brightness_slider_appearance: "default", // Legacy slider appearance (migrated to thickness)
+      brightness_slider_thickness: 6, // Track thickness in px (2-20, replaces appearance)
       brightness_theme: "subtle", // Default brightness theme (matches section_style naming)
       show_brightness_label: true, // Show "Brightness" label above slider
       ...config,
@@ -116,172 +123,10 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
   }
 
   static styles = [
+    sharedEditorStyles,
+    buttonGroupStyles,
+    formRowStyles,
     entitySelectorStyles,
-    css`
-      .editor-root {
-        display: flex;
-        flex-direction: column;
-        gap: 18px;
-        padding: 18px 8px 8px 8px;
-      }
-      .editor-card {
-        background: var(--secondary-background-color, #f7fafd);
-        border-radius: 14px;
-        box-shadow: 0 2px 8px #0001;
-        padding: 16px 18px 12px 18px;
-        margin-bottom: 10px;
-        position: relative;
-      }
-      .editor-card-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        font-size: 1.15em;
-        font-weight: 600;
-        margin-bottom: 8px;
-        cursor: pointer;
-        user-select: none;
-      }
-      .editor-card-content {
-        transition:
-          max-height 0.3s,
-          opacity 0.3s;
-        overflow: hidden;
-      }
-      .editor-card-collapsed .editor-card-content {
-        max-height: 0;
-        opacity: 0;
-        pointer-events: none;
-      }
-      .editor-card:not(.editor-card-collapsed) .editor-card-content {
-        max-height: 1200px;
-        opacity: 1;
-        pointer-events: auto;
-      }
-      .form-row {
-        display: flex;
-        flex-direction: column;
-        align-items: stretch;
-        gap: 6px;
-        margin-bottom: 2px;
-      }
-      label {
-        font-weight: 500;
-        color: var(--primary-text-color, #333);
-        font-size: 1em;
-      }
-      input[type="text"],
-      select {
-        width: 100%;
-        padding: 8px 12px;
-        font-size: 1em;
-        border-radius: 8px;
-        border: 1px solid var(--divider-color, #cfd8dc);
-        margin-top: 2px;
-        margin-bottom: 10px;
-        box-sizing: border-box;
-        background: var(--secondary-background-color, #f7f8fa);
-      }
-      .config-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 16px;
-      }
-      .config-label {
-        font-weight: 500;
-        color: var(--primary-text-color, #333);
-        font-size: 1em;
-      }
-      .toggle-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 12px;
-      }
-      .toggle-label {
-        font-weight: 500;
-        color: var(--primary-text-color, #333);
-        font-size: 1em;
-      }
-      .toggle-switch {
-        position: relative;
-        width: 44px;
-        height: 24px;
-      }
-      .toggle-switch input {
-        opacity: 0;
-        width: 0;
-        height: 0;
-      }
-      .toggle-slider {
-        position: absolute;
-        cursor: pointer;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background-color: var(--divider-color, #cfd8dc);
-        transition: 0.2s;
-        border-radius: 24px;
-      }
-      .toggle-slider:before {
-        position: absolute;
-        content: "";
-        height: 18px;
-        width: 18px;
-        left: 3px;
-        bottom: 3px;
-        background-color: var(--card-background-color, white);
-        transition: 0.2s;
-        border-radius: 50%;
-        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
-      }
-      input:checked + .toggle-slider {
-        background-color: var(--primary-color, #1976d2);
-      }
-      input:checked + .toggle-slider:before {
-        transform: translateX(20px);
-      }
-      input[type="range"] {
-        -webkit-appearance: none;
-        appearance: none;
-        height: 4px;
-        border-radius: 2px;
-        background: linear-gradient(
-          to right,
-          var(--primary-color, #1976d2) 0%,
-          var(--primary-color, #1976d2) var(--value, 0%),
-          var(--divider-color, #e0e0e0) var(--value, 0%),
-          var(--divider-color, #e0e0e0) 100%
-        );
-        outline: none;
-        cursor: pointer;
-      }
-      input[type="range"]::-webkit-slider-thumb {
-        -webkit-appearance: none;
-        appearance: none;
-        height: 20px;
-        width: 20px;
-        border-radius: 50%;
-        background: var(--primary-color, #1976d2);
-        cursor: pointer;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-        border: none;
-        transition: all 0.2s ease;
-      }
-      input[type="range"]::-moz-range-thumb {
-        height: 20px;
-        width: 20px;
-        border-radius: 50%;
-        background: var(--primary-color, #1976d2);
-        cursor: pointer;
-        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-        border: none;
-        transition: all 0.2s ease;
-      }
-      ${buttonGroupStyles}
-    `,
   ];
 
   render() {
@@ -298,6 +143,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
 
     return html`
       <div class="editor-root">
+        <!-- Global Settings -->
         <div
           class="editor-card${!this._globalOpen
             ? " editor-card-collapsed"
@@ -329,21 +175,16 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
                 "single",
               )}
             </div>
-            <div class="toggle-row">
-              <label class="toggle-label">Show Card Background</label>
-              <label class="toggle-switch">
-                <input
-                  id="show_card_background"
-                  type="checkbox"
-                  .checked="${cfg.show_card_background !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
+            ${createToggleRow(
+              "Show Card Background",
+              "show_card_background",
+              cfg.show_card_background !== false,
+              (e) => this._onToggleChange(e),
+            )}
           </div>
         </div>
 
+        <!-- Lamp Preview -->
         <div
           class="editor-card${!this._lampPreviewOpen
             ? " editor-card-collapsed"
@@ -356,56 +197,19 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
             Lamp Preview ${chevronIcon(!this._lampPreviewOpen)}
           </div>
           <div class="editor-card-content">
-            <div class="toggle-row">
-              <label class="toggle-label">Show Lamp Preview</label>
-              <label class="toggle-switch">
-                <input
-                  id="show_lamp_preview"
-                  type="checkbox"
-                  .checked="${cfg.show_lamp_preview !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="config-row">
-              <label class="config-label">Matrix Size</label>
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <input
-                  id="size_pct"
-                  type="range"
-                  min="50"
-                  max="100"
-                  .value="${cfg.size_pct || 100}"
-                  @input="${this._valueChanged}"
-                  style="flex: 1;"
-                />
-                <span
-                  style="min-width: 45px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
-                >
-                  ${cfg.size_pct || 100}%
-                </span>
-              </div>
-            </div>
-            <div class="config-row">
-              <label class="config-label">Pixel Gap</label>
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <input
-                  id="matrix_pixel_gap"
-                  type="range"
-                  min="0"
-                  max="6"
-                  .value="${cfg.matrix_pixel_gap ?? 4}"
-                  @input="${this._valueChanged}"
-                  style="flex: 1;"
-                />
-                <span
-                  style="min-width: 45px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
-                >
-                  ${cfg.matrix_pixel_gap ?? 4}px
-                </span>
-              </div>
-            </div>
+            ${createToggleRow(
+              "Show Lamp Preview",
+              "show_lamp_preview",
+              cfg.show_lamp_preview !== false,
+              (e) => this._onToggleChange(e),
+            )}
+            ${createSliderRow(
+              "Matrix Size",
+              cfg.size_pct || 100,
+              { min: 50, max: 100, step: 1 },
+              (e) => this._onSliderChange("size_pct", e),
+              "%",
+            )}
             <div class="form-row">
               <label>Matrix Background Color</label>
               ${createButtonGroup(
@@ -421,45 +225,13 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
                 }),
               )}
             </div>
-            <div class="toggle-row">
-              <label class="toggle-label">Matrix Box Shadow</label>
-              <label class="toggle-switch">
-                <input
-                  id="matrix_box_shadow"
-                  type="checkbox"
-                  .checked="${cfg.matrix_box_shadow !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="toggle-row">
-              <label class="toggle-label">Pixel Box Shadow</label>
-              <label class="toggle-switch">
-                <input
-                  id="lamp_dot_shadow"
-                  type="checkbox"
-                  .checked="${cfg.lamp_dot_shadow !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
             ${(cfg.matrix_background || "black") !== "black"
-              ? html`
-                  <div class="toggle-row">
-                    <label class="toggle-label">Ignore Black Pixels</label>
-                    <label class="toggle-switch">
-                      <input
-                        id="hide_black_dots"
-                        type="checkbox"
-                        .checked="${cfg.hide_black_dots !== false}"
-                        @change="${this._valueChanged}"
-                      />
-                      <span class="toggle-slider"></span>
-                    </label>
-                  </div>
-                `
+              ? createToggleRow(
+                  "Ignore Black Pixels",
+                  "hide_black_dots",
+                  cfg.hide_black_dots !== false,
+                  (e) => this._onToggleChange(e),
+                )
               : ""}
             <div class="form-row">
               <label>Matrix Pixel Style</label>
@@ -481,9 +253,29 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
                 ),
               )}
             </div>
+            ${createSliderRow(
+              "Pixel Gap",
+              cfg.matrix_pixel_gap ?? 4,
+              { min: 0, max: 6, step: 1 },
+              (e) => this._onSliderChange("matrix_pixel_gap", e),
+              "px",
+            )}
+            ${createToggleRow(
+              "Matrix Box Shadow",
+              "matrix_box_shadow",
+              cfg.matrix_box_shadow !== false,
+              (e) => this._onToggleChange(e),
+            )}
+            ${createToggleRow(
+              "Pixel Box Shadow",
+              "lamp_dot_shadow",
+              cfg.lamp_dot_shadow !== false,
+              (e) => this._onToggleChange(e),
+            )}
           </div>
         </div>
 
+        <!-- Power / Refresh Actions -->
         <div
           class="editor-card${!this._lampControlOpen
             ? " editor-card-collapsed"
@@ -496,30 +288,18 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
             Power / Refresh Actions ${chevronIcon(!this._lampControlOpen)}
           </div>
           <div class="editor-card-content">
-            <div class="toggle-row">
-              <label class="toggle-label">Show Power Button</label>
-              <label class="toggle-switch">
-                <input
-                  id="show_power_toggle"
-                  type="checkbox"
-                  .checked="${cfg.show_power_toggle !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="toggle-row">
-              <label class="toggle-label">Show Force Refresh Button</label>
-              <label class="toggle-switch">
-                <input
-                  id="show_force_refresh_button"
-                  type="checkbox"
-                  .checked="${cfg.show_force_refresh_button !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
+            ${createToggleRow(
+              "Show Power Button",
+              "show_power_toggle",
+              cfg.show_power_toggle !== false,
+              (e) => this._onToggleChange(e),
+            )}
+            ${createToggleRow(
+              "Show Force Refresh Button",
+              "show_force_refresh_button",
+              cfg.show_force_refresh_button !== false,
+              (e) => this._onToggleChange(e),
+            )}
             <div class="form-row">
               <label>Buttons Style</label>
               ${createButtonGroup(
@@ -578,6 +358,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
           </div>
         </div>
 
+        <!-- Brightness Settings -->
         <div
           class="editor-card${!this._brightnessSettingsOpen
             ? " editor-card-collapsed"
@@ -590,42 +371,24 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
             Brightness Settings ${chevronIcon(!this._brightnessSettingsOpen)}
           </div>
           <div class="editor-card-content">
-            <div class="toggle-row">
-              <label class="toggle-label">Show Brightness Slider</label>
-              <label class="toggle-switch">
-                <input
-                  id="show_brightness_slider"
-                  type="checkbox"
-                  .checked="${cfg.show_brightness_slider === true}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="toggle-row">
-              <label class="toggle-label">Show Brightness Percentage</label>
-              <label class="toggle-switch">
-                <input
-                  id="show_brightness_percentage"
-                  type="checkbox"
-                  .checked="${cfg.show_brightness_percentage !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="toggle-row">
-              <label class="toggle-label">Show Brightness Label</label>
-              <label class="toggle-switch">
-                <input
-                  id="show_brightness_label"
-                  type="checkbox"
-                  .checked="${cfg.show_brightness_label !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
+            ${createToggleRow(
+              "Show Brightness Slider",
+              "show_brightness_slider",
+              cfg.show_brightness_slider === true,
+              (e) => this._onToggleChange(e),
+            )}
+            ${createToggleRow(
+              "Show Brightness Percentage",
+              "show_brightness_percentage",
+              cfg.show_brightness_percentage !== false,
+              (e) => this._onToggleChange(e),
+            )}
+            ${createToggleRow(
+              "Show Brightness Label",
+              "show_brightness_label",
+              cfg.show_brightness_label !== false,
+              (e) => this._onToggleChange(e),
+            )}
             <div class="form-row">
               <label>Brightness Slider Style</label>
               ${createButtonGroup(
@@ -649,51 +412,40 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
                 ),
               )}
             </div>
-            ${cfg.brightness_slider_style === "slider" ||
-            !cfg.brightness_slider_style
-              ? html`
-                  <div class="form-row">
-                    <label>Slider Appearance</label>
-                    ${createButtonGroup(
-                      [
-                        { value: "default", label: "Default" },
-                        { value: "thick", label: "Thick" },
-                        { value: "thin", label: "Thin" },
-                      ],
-                      cfg.brightness_slider_appearance || "default",
-                      createButtonGroupChangeHandler(
-                        "brightness_slider_appearance",
-                        (value) => {
-                          this._config = {
-                            ...this._config,
-                            brightness_slider_appearance: value,
-                          };
-                          this._fireConfigChanged();
-                        },
-                      ),
+            ${createSliderRow(
+              "Slider Thickness",
+              cfg.brightness_slider_thickness ??
+                ({ thick: 12, thin: 3 }[cfg.brightness_slider_appearance] || 6),
+              { min: 2, max: 10, step: 1 },
+              (e) => this._onSliderChange("brightness_slider_thickness", e),
+              "px",
+            )}
+            ${cfg.brightness_slider_style === "capsule"
+              ? renderModeSettingsSection(
+                  "Capsule Settings",
+                  html`
+                    ${createToggleRow(
+                      "Show Moon Icon (🌙)",
+                      "show_capsule_moon_icon",
+                      cfg.show_capsule_moon_icon !== false,
+                      (e) => this._onToggleChange(e),
                     )}
-                  </div>
-                `
+                    ${createToggleRow(
+                      "Show Sun Icon (☀️)",
+                      "show_capsule_sun_icon",
+                      cfg.show_capsule_sun_icon !== false,
+                      (e) => this._onToggleChange(e),
+                    )}
+                  `,
+                )
               : ""}
             <div class="form-row">
               <label>Brightness Theme</label>
               ${createButtonGroup(
                 [
-                  {
-                    value: "flat",
-                    label: "Flat",
-                    icon: "▬",
-                  },
-                  {
-                    value: "subtle",
-                    label: "Subtle",
-                    icon: "🔲",
-                  },
-                  {
-                    value: "filled",
-                    label: "Filled",
-                    icon: "■",
-                  },
+                  { value: "flat", label: "Flat", icon: "▬" },
+                  { value: "subtle", label: "Subtle", icon: "🔲" },
+                  { value: "filled", label: "Filled", icon: "■" },
                 ],
                 cfg.brightness_theme ||
                   (cfg.capsule_theme === "dark"
@@ -710,37 +462,10 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
                 }),
               )}
             </div>
-            ${cfg.brightness_slider_style === "capsule"
-              ? html`
-                  <div class="toggle-row">
-                    <label class="toggle-label">Show Moon Icon (🌙)</label>
-                    <label class="toggle-switch">
-                      <input
-                        id="show_capsule_moon_icon"
-                        type="checkbox"
-                        .checked=${cfg.show_capsule_moon_icon !== false}
-                        @change="${this._valueChanged}"
-                      />
-                      <span class="toggle-slider"></span>
-                    </label>
-                  </div>
-                  <div class="toggle-row">
-                    <label class="toggle-label">Show Sun Icon (☀️)</label>
-                    <label class="toggle-switch">
-                      <input
-                        id="show_capsule_sun_icon"
-                        type="checkbox"
-                        .checked=${cfg.show_capsule_sun_icon !== false}
-                        @change="${this._valueChanged}"
-                      />
-                      <span class="toggle-slider"></span>
-                    </label>
-                  </div>
-                `
-              : ""}
           </div>
         </div>
 
+        <!-- Color Adjustments -->
         <div
           class="editor-card${!this._colorAdjustmentsOpen
             ? " editor-card-collapsed"
@@ -753,121 +478,116 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
             Color Adjustments ${chevronIcon(!this._colorAdjustmentsOpen)}
           </div>
           <div class="editor-card-content">
-            <div class="toggle-row">
-              <label class="toggle-label">Show Adjustment Controls</label>
-              <label class="toggle-switch">
-                <input
-                  id="show_adjustment_controls"
-                  type="checkbox"
-                  .checked="${cfg.show_adjustment_controls ?? false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
+            ${createToggleRow(
+              "Show Adjustment Controls",
+              "show_adjustment_controls",
+              cfg.show_adjustment_controls ?? false,
+              (e) => this._onToggleChange(e),
+            )}
             ${cfg.show_adjustment_controls
-              ? html`
-                  <div class="form-row">
-                    <label>Adjustments Layout Mode</label>
-                    ${createButtonGroup(
-                      [
-                        { value: "compact", label: "Compact", icon: "☰" },
-                        { value: "tabbed", label: "Tabbed", icon: "📑" },
-                        { value: "grouped", label: "Grouped", icon: "📦" },
-                        { value: "radial", label: "Radial", icon: "⭕" },
-                        {
-                          value: "categories",
-                          label: "Categories",
-                          icon: "🏷️",
-                        },
-                      ],
-                      cfg.adjustments_layout || "grouped",
-                      createButtonGroupChangeHandler(
-                        "adjustments_layout",
-                        (value) => {
-                          this._config = {
-                            ...this._config,
-                            adjustments_layout: value,
-                          };
-                          this._fireConfigChanged();
-                        },
-                      ),
+              ? renderModeSettingsSection(
+                  "Adjustment Settings",
+                  html`
+                    <div class="form-row">
+                      <label>Adjustments Layout Mode</label>
+                      ${createButtonGroup(
+                        [
+                          { value: "compact", label: "Compact", icon: "☰" },
+                          { value: "tabbed", label: "Tabbed", icon: "📑" },
+                          { value: "grouped", label: "Grouped", icon: "📦" },
+                          { value: "radial", label: "Radial", icon: "⭕" },
+                          {
+                            value: "categories",
+                            label: "Categories",
+                            icon: "🏷️",
+                          },
+                        ],
+                        cfg.adjustments_layout || "grouped",
+                        createButtonGroupChangeHandler(
+                          "adjustments_layout",
+                          (value) => {
+                            this._config = {
+                              ...this._config,
+                              adjustments_layout: value,
+                            };
+                            this._fireConfigChanged();
+                          },
+                        ),
+                      )}
+                    </div>
+                    <div class="form-row">
+                      <label>Section Style</label>
+                      ${createButtonGroup(
+                        [
+                          { value: "flat", label: "Flat", icon: "▬" },
+                          { value: "subtle", label: "Subtle", icon: "🔲" },
+                          { value: "filled", label: "Filled", icon: "■" },
+                        ],
+                        cfg.section_style ||
+                          cfg.grouped_section_style ||
+                          "subtle",
+                        createButtonGroupChangeHandler(
+                          "section_style",
+                          (value) => {
+                            this._config = {
+                              ...this._config,
+                              section_style: value,
+                            };
+                            this._fireConfigChanged();
+                          },
+                        ),
+                      )}
+                    </div>
+                    ${createToggleRow(
+                      "Show Change Indicator",
+                      "show_change_indicators",
+                      cfg.show_change_indicators ?? true,
+                      (e) => this._onToggleChange(e),
                     )}
-                  </div>
-                  <div class="form-row">
-                    <label>Section Style</label>
-                    ${createButtonGroup(
-                      [
-                        {
-                          value: "flat",
-                          label: "Flat",
-                          icon: "▬",
-                        },
-                        {
-                          value: "subtle",
-                          label: "Subtle",
-                          icon: "🔲",
-                        },
-                        {
-                          value: "filled",
-                          label: "Filled",
-                          icon: "■",
-                        },
-                      ],
-                      cfg.section_style ||
-                        cfg.grouped_section_style ||
-                        "subtle",
-                      createButtonGroupChangeHandler(
-                        "section_style",
-                        (value) => {
-                          this._config = {
-                            ...this._config,
-                            section_style: value,
-                          };
-                          this._fireConfigChanged();
-                        },
-                      ),
-                    )}
-                  </div>
-                  <div class="toggle-row">
-                    <label class="toggle-label">Show Change Indicator</label>
-                    <label class="toggle-switch">
-                      <input
-                        id="show_change_indicators"
-                        type="checkbox"
-                        .checked="${cfg.show_change_indicators ?? true}"
-                        @change="${this._valueChanged}"
-                      />
-                      <span class="toggle-slider"></span>
-                    </label>
-                  </div>
-                  <div class="form-row">
-                    <label>Reset Button Visibility</label>
-                    ${createButtonGroup(
-                      [
-                        { value: "always", label: "Always", icon: "👁️" },
-                        { value: "changed", label: "When Changed", icon: "🔶" },
-                        { value: "never", label: "Never", icon: "🚫" },
-                      ],
-                      cfg.reset_button_mode || "always",
-                      createButtonGroupChangeHandler(
-                        "reset_button_mode",
-                        (value) => {
-                          this._config = {
-                            ...this._config,
-                            reset_button_mode: value,
-                          };
-                          this._fireConfigChanged();
-                        },
-                      ),
-                    )}
-                  </div>
-                `
+                    <div class="form-row">
+                      <label>Reset Button Visibility</label>
+                      ${createButtonGroup(
+                        [
+                          { value: "always", label: "Always", icon: "👁️" },
+                          {
+                            value: "changed",
+                            label: "When Changed",
+                            icon: "🔶",
+                          },
+                          { value: "never", label: "Never", icon: "🚫" },
+                        ],
+                        cfg.reset_button_mode || "always",
+                        createButtonGroupChangeHandler(
+                          "reset_button_mode",
+                          (value) => {
+                            this._config = {
+                              ...this._config,
+                              reset_button_mode: value,
+                            };
+                            this._fireConfigChanged();
+                          },
+                        ),
+                      )}
+                    </div>
+                  `,
+                )
               : ""}
           </div>
         </div>
       </div>
     `;
+  }
+
+  _onToggleChange(e) {
+    const key = e.target.id;
+    this._config = { ...this._config, [key]: e.target.checked };
+    this._fireConfigChanged();
+    this.requestUpdate();
+  }
+
+  _onSliderChange(key, e) {
+    this._config = { ...this._config, [key]: Number(e.target.value) };
+    this._fireConfigChanged();
   }
 }
 
