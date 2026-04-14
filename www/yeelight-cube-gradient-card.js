@@ -489,24 +489,28 @@ class YeelightCubeGradientCard extends HTMLElement {
       this._setupPreviewEventListener();
     }
 
-    // Track entity state changes to auto-reload previews (debounced)
-    // Only reload if text, angle, or colors changed
+    // Track entity state changes to auto-reload gallery previews (debounced)
+    // Only reload if text, angle, colors, or panel_mode changed
     const entityId = this._getPrimaryEntity();
     if (hass && entityId) {
       const stateObj = hass.states[entityId];
       const currentText = stateObj?.attributes?.custom_text;
       const currentAngle = stateObj?.attributes?.angle;
       const currentColors = stateObj?.attributes?.text_colors;
+      const currentPanelMode = stateObj?.attributes?.panel_mode || false;
       const colorsHash = currentColors ? JSON.stringify(currentColors) : null;
       if (
         this._lastPreviewText !== currentText ||
         this._lastPreviewAngle !== currentAngle ||
-        this._lastPreviewColors !== colorsHash
+        this._lastPreviewColors !== colorsHash ||
+        this._lastPreviewPanelMode !== currentPanelMode
       ) {
         this._lastPreviewText = currentText;
         this._lastPreviewAngle = currentAngle;
         this._lastPreviewColors = colorsHash;
+        this._lastPreviewPanelMode = currentPanelMode;
         // Debounce preview reload to avoid flickering on rapid updates
+        // (gallery thumbnails still use the preview cache)
         if (this._previewReloadTimer) clearTimeout(this._previewReloadTimer);
         this._previewReloadTimer = setTimeout(() => {
           this._loadPreviews().catch((err) =>
@@ -715,7 +719,6 @@ class YeelightCubeGradientCard extends HTMLElement {
     // Individual angle control visibility
     const showAngleInput = this.config.show_angle_input !== false;
     const showAngleSlider = this.config.show_angle_slider !== false;
-    const showAngleRotary = this.config.show_angle_rotary !== false;
 
     const cardTitle =
       typeof this.config.title === "string" ? this.config.title.trim() : "";
@@ -748,7 +751,7 @@ class YeelightCubeGradientCard extends HTMLElement {
       <div style="padding:16px;">
         ${!showCard && cardTitle ? `<div style="font-weight:600;font-size:1.1em;margin-bottom:8px;">${cardTitle}</div>` : ""}
         ${
-          rotaryInHeader && showAngleSection && showAngleRotary
+          rotaryInHeader && showAngleSection
             ? `
           <div class="card-header" style="display: flex; justify-content: flex-end; align-items: center; margin-bottom: 16px;">
             <div class="header-rotary">${this._renderAngleRotary(
@@ -820,11 +823,7 @@ class YeelightCubeGradientCard extends HTMLElement {
             `
                 : ""
             }
-            ${
-              showAngleRotary && !rotaryInHeader
-                ? this._renderAngleRotary(currentAngle)
-                : ""
-            }
+            ${!rotaryInHeader ? this._renderAngleRotary(currentAngle) : ""}
           </div>
         </div>
         `
@@ -1871,9 +1870,12 @@ class YeelightCubeGradientCard extends HTMLElement {
           .then(() => {
             // Re-enable checkbox, but do NOT clear optimistic state here
             panelCheckbox.disabled = false;
-            this.render();
+            // Matrix preview updates instantly via matrix_colors entity state
+            // (same as lamp preview card).  Gallery thumbnails still need
+            // preview cache, so trigger a reload for those.
+            this._loadPreviews().catch(() => {});
           })
-          .catch(() => {
+          .catch((err) => {
             // On error, revert optimistic state
             this._optimisticPanelMode = undefined;
             panelCheckbox.disabled = false;
@@ -2701,6 +2703,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         text: event.data.text,
         angle: Math.round(event.data.angle * 10) / 10,
         brightness: event.data.brightness,
+        panel_mode: event.data.panel_mode,
       });
 
       const cache = window._yeelightPreviewCache;
@@ -2757,8 +2760,12 @@ class YeelightCubeGradientCard extends HTMLElement {
         case "wheel":
           return { style: "wheel", shape: null };
         case "rectangle":
-          return { style: "rect", shape: null };
+          return {
+            style: this.config.rectangle_shape === "square" ? "square" : "rect",
+            shape: null,
+          };
         case "square":
+          // Backward compat: old standalone square → rectangle with square shape
           return { style: "square", shape: null };
         case "matrix_preview":
           return { style: "matrix_preview", shape: null };
@@ -2803,10 +2810,12 @@ class YeelightCubeGradientCard extends HTMLElement {
     return "none"; // default
   }
 
-  _getCompassShowLabels() {
+  _getCompassLabelsMode() {
+    if (this.config.compass_labels_mode) return this.config.compass_labels_mode;
+    // Backward compat: boolean compass_show_labels
     if (this.config.compass_show_labels !== undefined)
-      return this.config.compass_show_labels;
-    return true; // default
+      return this.config.compass_show_labels ? "under" : "none";
+    return "under"; // default
   }
 
   _getRotarySize() {
@@ -3475,13 +3484,14 @@ class YeelightCubeGradientCard extends HTMLElement {
         // Gradient rotation EXACT same as rectangle
         const squareGradientAngle = -squareNormalizedAngle;
 
-        // Make square use rotary size (maintains 1:1 aspect ratio)
+        // Make square match rectangle height (same h dimension)
+        // Rectangle: width=size%, height=size%/4. Square: width=height=size%/4
         const baseSquareSizePercent = this._getRotarySize();
-        const squareSizePercent = baseSquareSizePercent;
+        const squareSidePercent = baseSquareSizePercent / 4;
 
-        // Calculate header mode dimensions based on rotary size (square: width = height)
+        // Calculate header mode dimensions (same height as rectangle header)
         const squareHeaderSize = isHeaderMode
-          ? Math.round((squareSizePercent / 100) * 88)
+          ? Math.round((baseSquareSizePercent / 100) * 88)
           : 88;
 
         return `
@@ -3493,7 +3503,7 @@ class YeelightCubeGradientCard extends HTMLElement {
                 ${
                   isHeaderMode
                     ? `width: ${squareHeaderSize}px !important; height: ${squareHeaderSize}px !important;`
-                    : `width: ${squareSizePercent}%; aspect-ratio: 1 / 1;`
+                    : `width: ${squareSidePercent}%; aspect-ratio: 1 / 1;`
                 }
                 background: linear-gradient(${
                   90 + squareGradientAngle
@@ -3557,6 +3567,7 @@ class YeelightCubeGradientCard extends HTMLElement {
               : "0";
 
         // Text preview mode: use cached preview data from the backend
+        // The backend already returns correct data (all LEDs lit when panel mode is on)
         const mpTextPreview = this.config.matrix_rotary_text_preview === true;
         let mpPixelDivs = "";
 
@@ -3666,11 +3677,11 @@ class YeelightCubeGradientCard extends HTMLElement {
         const compSY = 50 - compSelRadius * Math.sin(compRad);
 
         const compassShape = this._getCompassShape();
-        const showLabels = this._getCompassShowLabels();
+        const labelsMode = this._getCompassLabelsMode();
 
         // Tick marks and cardinal labels (conditional)
         let ticksAndLabels = "";
-        if (showLabels) {
+        if (labelsMode !== "none") {
           const ticks = [0, 45, 90, 135, 180, 225, 270, 315]
             .map((a) => {
               const rad = (a * Math.PI) / 180;
@@ -3825,8 +3836,9 @@ class YeelightCubeGradientCard extends HTMLElement {
                 ${shapeOverlayDefs}
               </defs>
               <circle cx="50" cy="50" r="${compRadius}" fill="var(--card-background-color, #fff)" stroke="var(--divider-color, #ddd)" stroke-width="1"/>
-              ${ticksAndLabels}
+              ${labelsMode === "under" ? ticksAndLabels : ""}
               ${shapeOverlayContent}
+              ${labelsMode === "over" ? ticksAndLabels : ""}
               ${
                 this.config.show_selector_dot !== false
                   ? `<circle cx="${compSX}" cy="${compSY}" r="4" class="wheel-selector" fill="#fff" stroke="#333" stroke-width="2"/>`
@@ -4610,10 +4622,30 @@ class YeelightCubeGradientCard extends HTMLElement {
   }
 
   /**
+   * Get the 100-pixel color array for the matrix rotary text preview.
+   * Uses the same data source as the lamp preview card: reads matrix_colors
+   * directly from the HA entity state for instant updates.  Falls back to
+   * the preview_gradient_modes cache only when entity state is unavailable.
+   */
+  _getMatrixPreviewColors(rows, cols) {
+    // PRIMARY: read matrix_colors from entity state (same as lamp preview card)
+    const entityId = this._getPrimaryEntity();
+    const stateObj = entityId ? this._hass?.states?.[entityId] : null;
+    const matrixColors = stateObj?.attributes?.matrix_colors;
+    if (matrixColors && matrixColors.length >= rows * cols) {
+      return matrixColors;
+    }
+    // FALLBACK: preview cache (for when entity state doesn't have matrix_colors)
+    const cache = window._yeelightPreviewCache;
+    const previewData = cache?.data;
+    const currentMode = this._getCurrentMode();
+    return previewData?.previews?.[currentMode] || null;
+  }
+
+  /**
    * Render pixel divs for the matrix rotary in "text preview" mode.
-   * Reads the cached preview data for the current gradient mode and produces
-   * HTML pixel divs matching the 5×20 grid — the same content the gallery
-   * previews show, except rendered inside the interactive rotary.
+   * Reads matrix_colors directly from entity state (same approach as the
+   * lamp preview card) for instant updates when panel mode changes.
    */
   _renderMatrixTextPreviewPixels(
     rows,
@@ -4622,10 +4654,7 @@ class YeelightCubeGradientCard extends HTMLElement {
     ignoreBlack,
     borderRadius,
   ) {
-    const cache = window._yeelightPreviewCache;
-    const previewData = cache?.data;
-    const currentMode = this._getCurrentMode();
-    const previewColors = previewData?.previews?.[currentMode];
+    const previewColors = this._getMatrixPreviewColors(rows, cols);
 
     if (!previewColors || previewColors.length < rows * cols) {
       // Fallback: show empty grid if no preview data yet
@@ -4657,19 +4686,15 @@ class YeelightCubeGradientCard extends HTMLElement {
     const pixels = this.shadowRoot.querySelectorAll(".matrix-pixel");
     if (!pixels.length) return;
 
-    // Text preview mode: show cached text preview when NOT dragging.
-    // During active drag, we fall through to the gradient computation so
-    // the user gets immediate visual feedback of the angle change.
-    // When fresh preview data arrives via the event handler, it calls this
-    // method again and the cache will contain the updated pixels.
+    // Text preview mode: show entity state matrix_colors (same as lamp
+    // preview card) for instant updates.  Falls back to preview cache.
+    // During active drag, fall through to gradient computation for
+    // immediate visual feedback of the angle change.
     if (
       this.config.matrix_rotary_text_preview === true &&
       !this._draggingRotary
     ) {
-      const cache = window._yeelightPreviewCache;
-      const previewData = cache?.data;
-      const currentMode = this._getCurrentMode();
-      const previewColors = previewData?.previews?.[currentMode];
+      const previewColors = this._getMatrixPreviewColors(mpRows, mpCols);
       if (previewColors && previewColors.length >= mpRows * mpCols) {
         let idx = 0;
         for (let row = mpRows - 1; row >= 0; row--) {

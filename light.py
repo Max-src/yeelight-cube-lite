@@ -4419,7 +4419,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         preview_matrix = [light_entity._background_color] * 100
         
         # Get entity's current state
-        text = light_entity._custom_text or ""
+        # When panel_mode is on, use the virtual full-panel character just like
+        # the actual rendering code does — so the preview fills all 100 LEDs.
+        if light_entity._panel_mode:
+            text = PANEL_FULL_CHAR
+        else:
+            text = light_entity._custom_text or ""
         colors = light_entity._text_colors or [(255, 0, 0)]
         angle = light_entity._angle
         
@@ -4431,8 +4436,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         
         # Calculate text layout (same as actual rendering)
         total_columns = TOTAL_COLUMNS
-        total_text_width = sum(light_entity.letter_size(light_entity.get_positions_for_letter(letter)) + 1 for letter in text) - 1
-        current_offset = light_entity.calculate_text_offset(total_text_width, total_columns)
+        if light_entity._panel_mode:
+            total_text_width = TOTAL_COLUMNS
+            current_offset = 0
+        else:
+            total_text_width = sum(light_entity.letter_size(light_entity.get_positions_for_letter(letter)) + 1 for letter in text) - 1
+            current_offset = light_entity.calculate_text_offset(total_text_width, total_columns)
         
         # Render based on mode (simplified version of _apply_display_mode_internal)
         if mode == "Solid Color":
@@ -4659,9 +4668,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         if not target_entity:
             return {}
         
-        # Log current entity state for debugging
-        _LOGGER.debug(f"[PREVIEW] Generating previews for entity with text='{target_entity._custom_text}', angle={target_entity._angle}, colors={len(target_entity._text_colors or [])} colors")
-        
         # Generate previews for all modes using entity's actual state
         modes = [
             "Solid Color",
@@ -4681,8 +4687,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             # Convert to list of lists for JSON serialization
             previews[mode] = [list(color) for color in preview_colors]
         
-        _LOGGER.debug(f"[PREVIEW] Generated {len(modes)} previews, each with 100 pixels (5x20)")
-        
         # Fire event with preview data
         hass.bus.async_fire(
             f"{DOMAIN}_gradient_preview_response",
@@ -4695,7 +4699,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 "angle": target_entity._angle,
                 "brightness": target_entity._brightness,
                 "darken_percent": target_entity._preview_darken,
-                "apply_brightness": apply_brightness
+                "apply_brightness": apply_brightness,
+                "panel_mode": target_entity._panel_mode,
             }
         )
         

@@ -66,6 +66,22 @@ class YeelightCubeGradientCardEditor extends LitElement {
         this._config.compass_shape = "rectangle";
       }
     }
+    // Migrate old standalone "square" style into rectangle + rectangle_shape
+    if (this._config.rotary_unified_style === "square") {
+      this._config.rotary_unified_style = "rectangle";
+      if (!this._config.rectangle_shape) {
+        this._config.rectangle_shape = "square";
+      }
+    }
+    // Migrate compass_show_labels boolean to compass_labels_mode
+    if (
+      this._config.compass_show_labels !== undefined &&
+      !this._config.compass_labels_mode
+    ) {
+      this._config.compass_labels_mode = this._config.compass_show_labels
+        ? "under"
+        : "none";
+    }
     // Force a re-render after config is set to avoid template errors
     this.requestUpdate();
   }
@@ -608,7 +624,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
           </div>
           <div class="editor-card-content">
             <div class="toggle-row">
-              <label class="toggle-label">Show Angle Section</label>
+              <label class="toggle-label">Show Angle Selector</label>
               <label class="toggle-switch">
                 <input
                   id="show_angle_section"
@@ -632,20 +648,8 @@ class YeelightCubeGradientCardEditor extends LitElement {
                 <span class="toggle-slider"></span>
               </label>
             </div>
-            <div class="toggle-row">
-              <label class="toggle-label">Show Rotary Preview</label>
-              <label class="toggle-switch">
-                <input
-                  id="show_angle_rotary"
-                  type="checkbox"
-                  .checked="${cfg.show_angle_rotary !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
             <div class="config-row">
-              <label class="config-label">Rotary Style</label>
+              <label class="config-label">Angle Selector Style</label>
               <div style="display: flex; flex-direction: column;">
                 <div>
                   ${createButtonGroup(
@@ -653,12 +657,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
                       {
                         value: "rectangle",
                         label: "Rectangle",
-                        title: "Gradient Bar",
-                      },
-                      {
-                        value: "square",
-                        label: "Square",
-                        title: "Square Shape",
+                        title: "Gradient Bar (Rectangle or Square)",
                       },
                       {
                         value: "wheel",
@@ -696,40 +695,85 @@ class YeelightCubeGradientCardEditor extends LitElement {
                 </div>
               </div>
             </div>
-            <div class="config-row">
-              <label class="config-label">Rotary Size</label>
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <input
-                  id="rotary_size"
-                  type="range"
-                  min="30"
-                  max="100"
-                  step="5"
-                  .value="${cfg.rotary_size || 80}"
-                  @input="${this._valueChanged}"
-                  style="flex: 1;"
-                />
-                <span
-                  style="min-width: 45px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
-                >
-                  ${cfg.rotary_size || 80}%
-                </span>
-              </div>
-            </div>
-
-            <div class="toggle-row">
-              <label class="toggle-label">Show Selector Dot</label>
-              <label class="toggle-switch">
-                <input
-                  id="show_selector_dot"
-                  type="checkbox"
-                  .checked="${cfg.show_selector_dot !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-
+            ${this._getUnifiedRotaryStyle(cfg) !== "capsule"
+              ? html`
+                  <div class="config-row">
+                    <label class="config-label">Element Size</label>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                      <input
+                        id="rotary_size"
+                        type="range"
+                        min="30"
+                        max="100"
+                        step="5"
+                        .value="${cfg.rotary_size || 80}"
+                        @input="${this._valueChanged}"
+                        style="flex: 1;"
+                      />
+                      <span
+                        style="min-width: 45px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
+                      >
+                        ${cfg.rotary_size || 80}%
+                      </span>
+                    </div>
+                  </div>
+                `
+              : ""}
+            ${this._getUnifiedRotaryStyle(cfg) === "rectangle"
+              ? html`
+                  <div
+                    style="margin-top:8px;padding:12px;background:var(--primary-background-color, #1e1e1e);border-radius:8px;"
+                  >
+                    <div
+                      style="font-size:0.9em;font-weight:600;margin-bottom:8px;color:var(--primary-text-color, #ccc);"
+                    >
+                      Rectangle Settings
+                    </div>
+                    <div class="toggle-row">
+                      <label class="toggle-label">Show Selector Dot</label>
+                      <label class="toggle-switch">
+                        <input
+                          id="show_selector_dot"
+                          type="checkbox"
+                          .checked="${cfg.show_selector_dot !== false}"
+                          @change="${this._valueChanged}"
+                        />
+                        <span class="toggle-slider"></span>
+                      </label>
+                    </div>
+                    <div class="config-row">
+                      <label class="config-label">Shape</label>
+                      <div style="display:flex;flex-direction:column;">
+                        ${createButtonGroup(
+                          [
+                            {
+                              value: "rectangle",
+                              label: "Rectangle",
+                              title: "Wide gradient bar (4:1)",
+                            },
+                            {
+                              value: "square",
+                              label: "Square",
+                              title: "Square shape (1:1)",
+                            },
+                          ],
+                          cfg.rectangle_shape || "rectangle",
+                          createButtonGroupChangeHandler(
+                            "rectangle_shape",
+                            (value) => {
+                              this._config = {
+                                ...this._config,
+                                rectangle_shape: value,
+                              };
+                              this._fireConfigChanged();
+                            },
+                          ),
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                `
+              : ""}
             ${this._getUnifiedRotaryStyle(cfg) === "wheel"
               ? html`
                   <div
@@ -739,6 +783,18 @@ class YeelightCubeGradientCardEditor extends LitElement {
                       style="font-size:0.9em;font-weight:600;margin-bottom:8px;color:var(--primary-text-color, #ccc);"
                     >
                       Wheel Settings
+                    </div>
+                    <div class="toggle-row">
+                      <label class="toggle-label">Show Selector Dot</label>
+                      <label class="toggle-switch">
+                        <input
+                          id="show_selector_dot"
+                          type="checkbox"
+                          .checked="${cfg.show_selector_dot !== false}"
+                          @change="${this._valueChanged}"
+                        />
+                        <span class="toggle-slider"></span>
+                      </label>
                     </div>
                     <div class="toggle-row">
                       <label class="toggle-label">Show Arrow Mask</label>
@@ -764,6 +820,18 @@ class YeelightCubeGradientCardEditor extends LitElement {
                       style="font-size:0.9em;font-weight:600;margin-bottom:8px;color:var(--primary-text-color, #ccc);"
                     >
                       Compass Settings
+                    </div>
+                    <div class="toggle-row">
+                      <label class="toggle-label">Show Selector Dot</label>
+                      <label class="toggle-switch">
+                        <input
+                          id="show_selector_dot"
+                          type="checkbox"
+                          .checked="${cfg.show_selector_dot !== false}"
+                          @change="${this._valueChanged}"
+                        />
+                        <span class="toggle-slider"></span>
+                      </label>
                     </div>
                     <div class="config-row">
                       <label class="config-label">Overlay Shape</label>
@@ -815,17 +883,40 @@ class YeelightCubeGradientCardEditor extends LitElement {
                         )}
                       </div>
                     </div>
-                    <div class="toggle-row">
-                      <label class="toggle-label">Show Coordinates</label>
-                      <label class="toggle-switch">
-                        <input
-                          id="compass_show_labels"
-                          type="checkbox"
-                          .checked="${cfg.compass_show_labels !== false}"
-                          @change="${this._valueChanged}"
-                        />
-                        <span class="toggle-slider"></span>
-                      </label>
+                    <div class="config-row">
+                      <label class="config-label">Coordinates</label>
+                      <div style="display:flex;flex-direction:column;">
+                        ${createButtonGroup(
+                          [
+                            {
+                              value: "none",
+                              label: "None",
+                              title: "No coordinate labels",
+                            },
+                            {
+                              value: "under",
+                              label: "Under",
+                              title: "Coordinates behind shape/colors",
+                            },
+                            {
+                              value: "over",
+                              label: "Over",
+                              title: "Coordinates always visible over shape",
+                            },
+                          ],
+                          cfg.compass_labels_mode || "under",
+                          createButtonGroupChangeHandler(
+                            "compass_labels_mode",
+                            (value) => {
+                              this._config = {
+                                ...this._config,
+                                compass_labels_mode: value,
+                              };
+                              this._fireConfigChanged();
+                            },
+                          ),
+                        )}
+                      </div>
                     </div>
                   </div>
                 `
