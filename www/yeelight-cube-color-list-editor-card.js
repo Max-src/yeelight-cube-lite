@@ -5676,6 +5676,8 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     this._draggingRotary = false;
     this._processingModeChange = false;
     this._usingColorPicker = false;
+    this._usingSlider = false;
+    this._editingText = false;
     this._isReordering = false;
     this._pendingHassRender = false;
     if (this._interactionSafetyTimer) {

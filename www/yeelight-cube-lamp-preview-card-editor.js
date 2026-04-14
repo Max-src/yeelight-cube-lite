@@ -105,7 +105,11 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
 
   _fireConfigChanged() {
     this.dispatchEvent(
-      new CustomEvent("config-changed", { detail: { config: this._config } }),
+      new CustomEvent("config-changed", {
+        detail: { config: this._config },
+        bubbles: true,
+        composed: true,
+      }),
     );
   }
 

@@ -343,10 +343,10 @@ class YeelightCubePaletteCardEditor extends LitElement {
                 [
                   { value: "none", label: "None" },
                   { value: "default", label: "Default" },
+                  { value: "glass", label: "Glass" },
                   { value: "red", label: "Red" },
                   { value: "black", label: "Black" },
                   { value: "dot", label: "Dot" },
-                  { value: "glass", label: "Glass" },
                 ],
                 config.remove_button_style || "default",
                 createButtonGroupChangeHandler(

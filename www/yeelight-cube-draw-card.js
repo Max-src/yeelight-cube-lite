@@ -140,6 +140,7 @@ class YeelightCubeDrawCard extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     document.addEventListener("mousedown", this._handleTabsOutsideClick);
+    document.addEventListener("mousedown", this._handleFloatingOutsideClick);
   }
 
   _handleTabsOutsideClick = (e) => {
@@ -163,8 +164,6 @@ class YeelightCubeDrawCard extends LitElement {
     if (cfg.pixel_art_gallery_mode === "album") {
       setTimeout(() => this._setupPixelArtAlbumNavigation(), 0);
     }
-
-    document.addEventListener("mousedown", this._handleFloatingOutsideClick);
 
     // Drag-to-scroll is now setup in _setupPaletteRowDragScroll(), called from updated()
     this._setupPaletteRowDragScroll();
@@ -295,15 +294,6 @@ class YeelightCubeDrawCard extends LitElement {
 
     // Re-setup drag-to-scroll for palette containers after re-renders
     setTimeout(() => this._setupPaletteRowDragScroll(), 0);
-  }
-
-  _fireConfigChanged(newConfig) {
-    const event = new CustomEvent("config-changed", {
-      detail: { config: newConfig },
-      bubbles: true,
-      composed: true,
-    });
-    this.dispatchEvent(event);
   }
 
   _renderPaletteCards(
@@ -781,6 +771,16 @@ class YeelightCubeDrawCard extends LitElement {
     if (this._toolDragUtil) {
       this._toolDragUtil.destroy();
       this._toolDragUtil = null;
+    }
+
+    // Clear pending timers
+    if (this._applyPixelArtTimer) {
+      clearTimeout(this._applyPixelArtTimer);
+      this._applyPixelArtTimer = null;
+    }
+    if (this._previewCollapseTimer) {
+      clearTimeout(this._previewCollapseTimer);
+      this._previewCollapseTimer = null;
     }
   }
 
@@ -2653,7 +2653,7 @@ class YeelightCubeDrawCard extends LitElement {
         titleEl.addEventListener("click", (e) => {
           e.stopPropagation();
           const idx = parseInt(titleEl.dataset.index, 10);
-          this._handleRenameClick(idx);
+          this._handleRenameClick(e, idx);
         });
       });
     }

@@ -1057,7 +1057,6 @@ class YeelightCubePaletteCard extends HTMLElement {
         .item-card-border .palettes-album-item {
           border: 1px solid var(--divider-color, rgba(255,255,255,0.15));
         }
-        }
       </style>
       ${
         showCard
@@ -1444,11 +1443,20 @@ class YeelightCubePaletteCard extends HTMLElement {
               } else {
                 imported = [];
               }
-              // If palettes is empty, start with imported
+              // Fetch current palettes from sensor (avoid stale closure)
+              const currentPalettes = (() => {
+                const sensor = this.config?.palette_sensor;
+                if (sensor && this._hass?.states?.[sensor]) {
+                  return (
+                    this._hass.states[sensor].attributes?.palettes_v2 || []
+                  );
+                }
+                return palettes;
+              })();
               let newPalettes =
-                palettes.length === 0
+                currentPalettes.length === 0
                   ? imported.slice()
-                  : palettes.concat(imported);
+                  : currentPalettes.concat(imported);
               // Clear local cache to ensure updates aren't blocked
               delete this._localPalettes;
               delete this._localPalettesTimestamp;

@@ -378,25 +378,6 @@ export async function setupAlbumNavigation(
     context._currentAlbumIndex = currentIndex;
   };
 
-  // Navigation
-  if (prevBtn) {
-    prevBtn.addEventListener("click", () => {
-      if (currentIndex > 0) {
-        currentIndex--;
-        updateCoverflow();
-      }
-    });
-  }
-
-  if (nextBtn) {
-    nextBtn.addEventListener("click", () => {
-      if (currentIndex < items.length - 1) {
-        currentIndex++;
-        updateCoverflow();
-      }
-    });
-  }
-
   // Touch swipe navigation on album container
   {
     let swipeStartX = 0;
@@ -508,20 +489,45 @@ export async function setupAlbumNavigation(
     });
   });
 
-  // Store cleanup function to remove listeners on re-init
-  const prevHandler = prevBtn?._coverflowHandler;
-  const nextHandler = nextBtn?._coverflowHandler;
+  // Store named handler references for cleanup on re-init
+  const prevClickHandler = prevBtn
+    ? () => {
+        if (currentIndex > 0) {
+          currentIndex--;
+          updateCoverflow();
+        }
+      }
+    : null;
+  const nextClickHandler = nextBtn
+    ? () => {
+        if (currentIndex < items.length - 1) {
+          currentIndex++;
+          updateCoverflow();
+        }
+      }
+    : null;
+
+  // Replace anonymous listeners with named references we can remove
+  if (prevBtn) {
+    // Remove previous handler if stored
+    if (prevBtn._coverflowHandler)
+      prevBtn.removeEventListener("click", prevBtn._coverflowHandler);
+    prevBtn.addEventListener("click", prevClickHandler);
+    prevBtn._coverflowHandler = prevClickHandler;
+  }
+  if (nextBtn) {
+    if (nextBtn._coverflowHandler)
+      nextBtn.removeEventListener("click", nextBtn._coverflowHandler);
+    nextBtn.addEventListener("click", nextClickHandler);
+    nextBtn._coverflowHandler = nextClickHandler;
+  }
 
   context._coverflowCleanup = () => {
-    if (prevBtn && prevHandler)
-      prevBtn.removeEventListener("click", prevHandler);
-    if (nextBtn && nextHandler)
-      nextBtn.removeEventListener("click", nextHandler);
+    if (prevBtn && prevBtn._coverflowHandler)
+      prevBtn.removeEventListener("click", prevBtn._coverflowHandler);
+    if (nextBtn && nextBtn._coverflowHandler)
+      nextBtn.removeEventListener("click", nextBtn._coverflowHandler);
   };
-
-  // Store handlers for cleanup
-  if (prevBtn) prevBtn._coverflowHandler = prevBtn.onclick;
-  if (nextBtn) nextBtn._coverflowHandler = nextBtn.onclick;
 
   // Initial render (skip animation if this is a re-setup after deletion)
   const isReSetup = context._coverflowCleanup !== undefined;

@@ -15,6 +15,13 @@ import {
   createShapeGradientStops as _sharedCreateShapeGradientStops,
   generateShapeMask as _sharedGenerateShapeMask,
 } from "./angle-wheel-utils.js";
+import {
+  renderCapsuleHTML,
+  getCapsuleCSS,
+  updateCapsuleVisuals,
+  resolveCapsuleTheme,
+  resolveCapsuleThickness,
+} from "./capsule-slider-utils.js";
 
 // Fill-panel test: map column count (1-20) to Private Use Area characters
 // 0 = off, 1-20 = number of columns filled (U+E001-U+E014)
@@ -294,6 +301,14 @@ class YeelightCubeGradientCard extends HTMLElement {
       );
     }
 
+    // Re-establish preview event subscription lost during disconnection.
+    // disconnectedCallback unsubscribes, but the persistent _previewElement
+    // survives, so the creation-time setTimeout that calls
+    // _setupPreviewEventListener never runs again.  Re-subscribe here.
+    if (!this._previewEventListenerRegistered && this._hass) {
+      this._setupPreviewEventListener();
+    }
+
     // After reconnection, the wheel controller was destroyed in disconnectedCallback.
     // We must re-initialize it once the DOM is ready again.
     if (
@@ -332,6 +347,35 @@ class YeelightCubeGradientCard extends HTMLElement {
     // config change — clearing the cache here causes the new instance to render
     // an empty wheel (no preview data), leading to the wheel-disappearing bug.
     // The cache is lightweight and will be naturally refreshed by _loadPreviews().
+
+    // Unsubscribe from preview events
+    if (this._unsubscribePreviewEvents) {
+      this._unsubscribePreviewEvents();
+      this._unsubscribePreviewEvents = null;
+    }
+    this._previewEventListenerRegistered = false;
+
+    // Clear pending timers
+    if (this._previewReloadTimer) {
+      clearTimeout(this._previewReloadTimer);
+      this._previewReloadTimer = null;
+    }
+    if (this._angleDebounceTimer) {
+      clearTimeout(this._angleDebounceTimer);
+      this._angleDebounceTimer = null;
+    }
+    if (this._panelModeTimeout) {
+      clearTimeout(this._panelModeTimeout);
+      this._panelModeTimeout = null;
+    }
+    if (this._fillPanelTimeout) {
+      clearTimeout(this._fillPanelTimeout);
+      this._fillPanelTimeout = null;
+    }
+    if (this._anglePreviewReloadTimer) {
+      clearTimeout(this._anglePreviewReloadTimer);
+      this._anglePreviewReloadTimer = null;
+    }
 
     // Reset interaction flags and cleanup safety timer
     this._pendingHassRender = false;
@@ -439,6 +483,12 @@ class YeelightCubeGradientCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
 
+    // Re-establish preview event subscription if lost (connectedCallback may
+    // fire before hass is available, so this is a belt-and-suspenders guard).
+    if (!this._previewEventListenerRegistered && hass) {
+      this._setupPreviewEventListener();
+    }
+
     // Track entity state changes to auto-reload previews (debounced)
     // Only reload if text, angle, or colors changed
     const entityId = this._getPrimaryEntity();
@@ -459,8 +509,6 @@ class YeelightCubeGradientCard extends HTMLElement {
         // Debounce preview reload to avoid flickering on rapid updates
         if (this._previewReloadTimer) clearTimeout(this._previewReloadTimer);
         this._previewReloadTimer = setTimeout(() => {
-          // "[Gradient Card] Text, angle, or colors changed, reloading previews..."
-          // );
           this._loadPreviews().catch((err) =>
             console.error("[Gradient Card] Error reloading previews:", err),
           );
@@ -764,7 +812,7 @@ class YeelightCubeGradientCard extends HTMLElement {
                 : ""
             }
             ${
-              showAngleSlider
+              showAngleSlider && this._getRotaryStyleInfo().style !== "capsule"
                 ? `
               <input id="angleslider" class="angle-slider" type="range" min="0" max="359" step="1" value="${Math.round(
                 currentAngle,
@@ -815,7 +863,9 @@ class YeelightCubeGradientCard extends HTMLElement {
         
         .header-rotary .wheel-container,
         .header-rotary .rect-container,
-        .header-rotary .default-container {
+        .header-rotary .default-container,
+        .header-rotary .matrix-preview-container,
+        .header-rotary .compass-container {
           margin: 0;
           gap: 4px;
         }
@@ -1142,7 +1192,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         }
 
         /* Prevent text selection during dragging */
-        .color-wheel, .default-container, .rect-container {
+        .color-wheel, .default-container, .rect-container, .matrix-preview-container, .compass-container {
           user-select: none;
           -webkit-user-select: none;
           -moz-user-select: none;
@@ -1525,6 +1575,14 @@ class YeelightCubeGradientCard extends HTMLElement {
           color: var(--primary-text-color, #000) !important;
         }
 
+        /* ===== Capsule angle slider (shared util) ===== */
+        ${getCapsuleCSS()}
+        .angle-capsule-host {
+          width: 100%;
+          flex: 1 1 auto;
+          min-width: 160px;
+        }
+
       </style>
       ${
         showCard
@@ -1597,6 +1655,11 @@ class YeelightCubeGradientCard extends HTMLElement {
         this._previewElement.parentElement.removeChild(this._previewElement);
       }
       cardContentDiv.appendChild(this._previewElement);
+
+      // Refresh preview content from latest global cache.  This catches updates
+      // that arrived while the element was detached or whose event-based
+      // _updatePreviewSection() ran before the element was re-appended.
+      this._updatePreviewSection();
 
       // Handle pending wheel height update (preview element kept alive,
       // container content needs refresh with new height)
@@ -2045,13 +2108,6 @@ class YeelightCubeGradientCard extends HTMLElement {
   }
 
   _updatePreviewSection() {
-    // containerExists: !!this.shadowRoot?.querySelector(
-    // ".preview-grid-container"
-    // ),
-    // displayMode: this.config?.preview_display_mode,
-    // timestamp: Date.now(),
-    // });
-
     const displayMode = this._getDisplayMode();
 
     // For wheel mode, try surgical update first (only update preview images)
@@ -2125,9 +2181,6 @@ class YeelightCubeGradientCard extends HTMLElement {
    * This avoids destroying and re-creating the wheel structure
    */
   _updateWheelPreviews() {
-    // "[Gradient Card] Updating wheel preview images only (not wheel structure)"
-    // );
-
     const previewData = window._yeelightPreviewCache.data;
     if (!previewData) {
       return;
@@ -2151,6 +2204,7 @@ class YeelightCubeGradientCard extends HTMLElement {
       ".wheel-item[data-mode]",
     );
 
+    let updatedCount = 0;
     wheelItems.forEach((item) => {
       const mode = item.dataset.mode;
       const previewColors = previewData.previews[mode];
@@ -2182,6 +2236,7 @@ class YeelightCubeGradientCard extends HTMLElement {
 
         // Update only the preview content
         previewContainer.outerHTML = newPreviewHtml;
+        updatedCount++;
       }
     });
 
@@ -2564,6 +2619,11 @@ class YeelightCubeGradientCard extends HTMLElement {
   }
 
   async _loadPreviews() {
+    // Ensure event subscription is active before requesting preview data
+    if (!this._previewEventListenerRegistered && this._hass) {
+      this._setupPreviewEventListener();
+    }
+
     const entityId = this._getPrimaryEntity();
     if (!this._hass || !entityId) return;
 
@@ -2576,7 +2636,29 @@ class YeelightCubeGradientCard extends HTMLElement {
         entity_id: entityId,
       });
 
-      // The response will come via event bus, handled by event listener
+      // The response comes via event bus, handled by _setupPreviewEventListener.
+      // The backend fires the event BEFORE responding to the service call, so
+      // the cache should already be updated by the event handler.  However, on
+      // some HA versions the WebSocket event delivery can be slightly delayed.
+      // Schedule a deferred safety refresh to cover that edge case.
+      setTimeout(() => {
+        this._updatePreviewSection();
+
+        // Also refresh the matrix text preview.  When the HA editor is open
+        // there are TWO card instances and the event handler may fire on the
+        // instance whose config does NOT include matrix_rotary_text_preview,
+        // causing the render trigger to be skipped.  This safety timeout runs
+        // on the instance that called _loadPreviews (the correct one) so the
+        // config check works reliably here.
+        if (
+          this.config?.matrix_rotary_text_preview === true &&
+          !this._draggingRotary
+        ) {
+          this._renderScheduled = false;
+          this.render();
+        }
+      }, 300);
+
       // Reset retry counter on success
       this._previewRetryCount = 0;
     } catch (error) {
@@ -2610,7 +2692,9 @@ class YeelightCubeGradientCard extends HTMLElement {
 
     this._previewEventListenerRegistered = true;
 
-    this._hass.connection.subscribeEvents((event) => {
+    const unsub = this._hass.connection.subscribeEvents((event) => {
+      // Guard: ignore events if card has been disconnected
+      if (!this.isConnected) return;
       // Generate hash of response to deduplicate
       const responseHash = JSON.stringify({
         entity: event.data.entity_id,
@@ -2633,7 +2717,30 @@ class YeelightCubeGradientCard extends HTMLElement {
 
       // Update only the preview section instead of re-rendering entire card
       this._updatePreviewSection();
+
+      // Fresh preview data arrived — if text preview mode is active and we are
+      // NOT mid-drag, force the exact same path as toggling the "Show Text
+      // Preview" switch: a synchronous this.render() that rebuilds the full DOM
+      // from the now-fresh cache.  Previous attempts using requestAnimationFrame
+      // were silently blocked by the _renderScheduled guard when a set-hass
+      // render was already queued.
+      if (
+        this.config?.matrix_rotary_text_preview === true &&
+        !this._draggingRotary
+      ) {
+        this._renderScheduled = false; // clear any pending guard
+        this.render(); // full DOM rebuild from fresh cache
+      }
     }, "yeelight_cube_gradient_preview_response");
+
+    // Store unsubscribe function for cleanup in disconnectedCallback
+    if (unsub && typeof unsub.then === "function") {
+      unsub.then((fn) => {
+        this._unsubscribePreviewEvents = fn;
+      });
+    } else if (typeof unsub === "function") {
+      this._unsubscribePreviewEvents = unsub;
+    }
   }
 
   _getRotaryStyleInfo() {
@@ -2644,19 +2751,30 @@ class YeelightCubeGradientCard extends HTMLElement {
       // New unified format
       switch (unifiedStyle) {
         case "turning_rectangle":
-          return { style: "default", shape: "rectangle" };
-        case "arrow":
-          return { style: "default", shape: "arrow_classic" };
+          return { style: "compass", shape: null };
         case "star":
-          return { style: "default", shape: "star" };
+          return { style: "compass", shape: null };
         case "wheel":
           return { style: "wheel", shape: null };
         case "rectangle":
           return { style: "rect", shape: null };
         case "square":
           return { style: "square", shape: null };
+        case "matrix_preview":
+          return { style: "matrix_preview", shape: null };
+        case "compass":
+          return { style: "compass", shape: null };
+        case "capsule":
+          return { style: "capsule", shape: null };
+        // Backward compat: deprecated styles now merged into wheel/compass
+        case "arrow_window":
+          return { style: "wheel", shape: null };
+        case "arrow":
+          return { style: "compass", shape: null };
+        case "beam":
+          return { style: "compass", shape: null };
         default:
-          return { style: "default", shape: "rectangle" };
+          return { style: "compass", shape: null };
       }
     } else {
       // Backward compatibility with old format
@@ -2664,6 +2782,31 @@ class YeelightCubeGradientCard extends HTMLElement {
       const oldShape = this.config.default_shape || "rectangle";
       return { style: oldStyle, shape: oldShape };
     }
+  }
+
+  _getWheelShowMask() {
+    // Explicit setting takes priority
+    if (this.config.wheel_show_mask !== undefined)
+      return this.config.wheel_show_mask;
+    // Backward compat: arrow_window implies mask
+    return this.config.rotary_unified_style === "arrow_window";
+  }
+
+  _getCompassShape() {
+    if (this.config.compass_shape) return this.config.compass_shape;
+    // Backward compat from deprecated unified styles
+    if (this.config.rotary_unified_style === "beam") return "beam";
+    if (this.config.rotary_unified_style === "arrow") return "arrow";
+    if (this.config.rotary_unified_style === "star") return "star";
+    if (this.config.rotary_unified_style === "turning_rectangle")
+      return "rectangle";
+    return "none"; // default
+  }
+
+  _getCompassShowLabels() {
+    if (this.config.compass_show_labels !== undefined)
+      return this.config.compass_show_labels;
+    return true; // default
   }
 
   _getRotarySize() {
@@ -2756,9 +2899,20 @@ class YeelightCubeGradientCard extends HTMLElement {
     const handleMouseUp = (e) => {
       if (this._draggingRotary) {
         e.preventDefault(); // Prevent text selection
+
+        // Cancel pending debounce and apply the final angle immediately
+        if (this._angleDebounceTimer) {
+          clearTimeout(this._angleDebounceTimer);
+          this._angleDebounceTimer = null;
+        }
+        if (this._pendingAngle !== null && this._pendingAngle !== undefined) {
+          this._applyAngle(this._pendingAngle);
+          this._lastAngleSent = this._pendingAngle;
+        }
+
         this._draggingRotary = false;
         this._isDragging = false;
-        this._pendingAngle = undefined;
+        this._pendingAngle = null;
         this._flushPendingRender();
 
         // Clean up document listeners
@@ -2777,9 +2931,20 @@ class YeelightCubeGradientCard extends HTMLElement {
     const handleTouchEnd = (e) => {
       if (this._draggingRotary) {
         e.preventDefault(); // Prevent text selection
+
+        // Cancel pending debounce and apply the final angle immediately
+        if (this._angleDebounceTimer) {
+          clearTimeout(this._angleDebounceTimer);
+          this._angleDebounceTimer = null;
+        }
+        if (this._pendingAngle !== null && this._pendingAngle !== undefined) {
+          this._applyAngle(this._pendingAngle);
+          this._lastAngleSent = this._pendingAngle;
+        }
+
         this._draggingRotary = false;
         this._isDragging = false;
-        this._pendingAngle = undefined;
+        this._pendingAngle = null;
         this._flushPendingRender();
 
         // Clean up document listeners
@@ -2813,11 +2978,9 @@ class YeelightCubeGradientCard extends HTMLElement {
       });
 
       rotary.addEventListener("click", (e) => {
-        // Only handle click if we're not dragging
-        if (!this._draggingRotary) {
-          e.preventDefault(); // Prevent text selection
-          this._handleRotaryDrag(e);
-        }
+        // Skip: mousedown already handled this interaction and mouseup applied the angle.
+        // The click fires after mouseup and would redundantly set _isDragging=true
+        // without any handler to clear it, permanently blocking renders.
       });
     }
 
@@ -2848,11 +3011,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         });
 
         wheelSelector.addEventListener("click", (e) => {
-          if (!this._draggingRotary) {
-            e.preventDefault();
-            e.stopPropagation();
-            this._handleRotaryDrag(e);
-          }
+          // Skip: mousedown already handled; mouseup applied the angle.
         });
       }
 
@@ -2879,11 +3038,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         });
 
         rectSelector.addEventListener("click", (e) => {
-          if (!this._draggingRotary) {
-            e.preventDefault();
-            e.stopPropagation();
-            this._handleRotaryDrag(e);
-          }
+          // Skip: mousedown already handled; mouseup applied the angle.
         });
       }
 
@@ -2906,16 +3061,34 @@ class YeelightCubeGradientCard extends HTMLElement {
           this._handleRotaryDrag(e.touches[0]);
           document.addEventListener("touchmove", handleTouchMove);
           document.addEventListener("touchend", handleTouchEnd);
+          document.addEventListener("touchcancel", handleTouchEnd);
         });
 
         squareSelector.addEventListener("click", (e) => {
-          if (!this._draggingRotary) {
-            e.preventDefault();
-            e.stopPropagation();
-            this._handleRotaryDrag(e);
-          }
+          // Skip: mousedown already handled; mouseup applied the angle.
         });
       }
+    }
+
+    // Capsule slider safety handlers (change + mouseleave)
+    // The capsule <input type="range"> uses inline oninput/onmouseup/ontouchend,
+    // but `change` fires reliably when the native slider finalises its value and
+    // `mouseleave` covers the edge case of releasing outside the element.
+    const capsuleInput = root.querySelector(
+      ".angle-capsule-host .capsule-input",
+    );
+    if (capsuleInput) {
+      capsuleInput.addEventListener("change", () => {
+        this._endCapsuleDrag();
+      });
+      capsuleInput.addEventListener("mouseleave", () => {
+        if (this._usingSlider) {
+          setTimeout(() => {
+            this._usingSlider = false;
+            this._flushPendingRender();
+          }, 200);
+        }
+      });
     }
   } // Always get the current textColors from the entity state
   _getCurrentTextColors() {
@@ -2934,7 +3107,7 @@ class YeelightCubeGradientCard extends HTMLElement {
       clearTimeout(this._angleDebounceTimer);
     }
     this._angleDebounceTimer = setTimeout(() => {
-      if (this._pendingAngle !== null) {
+      if (this._pendingAngle != null) {
         this._applyAngle(this._pendingAngle);
         this._lastAngleSent = this._pendingAngle;
         this._pendingAngle = null;
@@ -2945,16 +3118,6 @@ class YeelightCubeGradientCard extends HTMLElement {
   _applyAngle(angle) {
     const targetEntities = this.config.target_entities || [];
     const fallbackEntity = this.config.entity;
-
-    // "_applyAngle called with:",
-    // angle,
-    // "target_entities:",
-    // targetEntities,
-    // "fallback_entity:",
-    // fallbackEntity,
-    // "hass:",
-    // !!this._hass
-    // );
 
     if ((targetEntities.length === 0 && !fallbackEntity) || !this._hass) return;
 
@@ -2971,6 +3134,29 @@ class YeelightCubeGradientCard extends HTMLElement {
     this.callServiceOnTargetEntities("set_angle", {
       angle: normalizedAngle,
     });
+
+    // Invalidate the response deduplication hash so the next preview_gradient_modes
+    // response is always accepted, even if the backend briefly returns data for the
+    // same angle (e.g., during rapid adjustments).
+    window._yeelightPreviewCache.responseHash = null;
+
+    // Directly schedule a preview reload after the backend processes the angle
+    // change.  The set hass() detection path is unreliable because the entity
+    // state update only arrives after the hardware operation completes (sending
+    // pixels to the lamp), and timing/flag interactions can prevent the debounced
+    // _loadPreviews() from ever firing.  A direct reload with a generous delay
+    // guarantees the wheel/gallery previews reflect the new angle.
+    if (this._anglePreviewReloadTimer) {
+      clearTimeout(this._anglePreviewReloadTimer);
+    }
+    this._anglePreviewReloadTimer = setTimeout(() => {
+      this._loadPreviews().catch((err) =>
+        console.error(
+          "[Gradient Card] Error reloading previews after angle change:",
+          err,
+        ),
+      );
+    }, 800);
   }
 
   _rgbToHex(rgb) {
@@ -2998,35 +3184,54 @@ class YeelightCubeGradientCard extends HTMLElement {
 
     switch (style) {
       case "wheel":
-        // Get the actual colors from the lamp
+        // Wheel mode: gradient circle with optional arrow window mask
         const textColors = this._getCurrentTextColors();
         const wheelGradientStops = this._createWheelGradientStops(textColors);
-
-        // Use visual angle for immediate feedback during dragging
         const visualAngle =
           this._draggingRotary && this._pendingAngle !== undefined
             ? this._pendingAngle
             : currentAngle;
-
         const selectorAngle = visualAngle;
         const selectorRadians = (selectorAngle * Math.PI) / 180;
-
-        // Make wheel size configurable like rectangle
-        // In header mode, use rotary size directly (no minimum constraint)
         const baseWheelSizePercent = this._getRotarySize();
         const wheelSizePercent = baseWheelSizePercent;
-        const wheelSize = Math.min(100, wheelSizePercent); // SVG viewBox size
-        const wheelRadius = (wheelSize * 45) / 100; // Scale radius proportionally
-        const selectorRadius = (wheelSize * 40) / 100; // Scale selector radius too
-
-        // Fix: 0° should be at center-right (3 o'clock), not center-top
-        // Fix: Invert Y axis since SVG Y+ goes down but we want mathematical Y+ goes up
+        const wheelSize = Math.min(100, wheelSizePercent);
+        const wheelRadius = (wheelSize * 45) / 100;
+        const selectorRadius = (wheelSize * 40) / 100;
         const selectorX = 50 + selectorRadius * Math.cos(selectorRadians);
-        const selectorY = 50 - selectorRadius * Math.sin(selectorRadians); // Flip Y axis
-
-        // Gradient should always flow in the same direction relative to the dot
-        // The gradient should rotate with the dot to maintain consistent relative positioning
+        const selectorY = 50 - selectorRadius * Math.sin(selectorRadians);
         const gradientAngle = -visualAngle;
+
+        // Optional arrow window mask
+        const showMask = this._getWheelShowMask();
+        let wheelMaskDefs = "";
+        let wheelMaskOverlay = "";
+        if (showMask) {
+          const al = wheelRadius * 2,
+            abw = wheelRadius * 0.45;
+          const ahw = wheelRadius * 0.85,
+            ahl = wheelRadius * 0.55;
+          const awTipX = 50 + al / 2;
+          const awBl = 50 - al / 2;
+          const awBt = 50 - abw / 2,
+            awBb = 50 + abw / 2;
+          const awHt = 50 - ahw / 2,
+            awHb = 50 + ahw / 2;
+          const awHs = awTipX - ahl;
+          const arrowWindowPath = `M ${awBl} ${awBt} L ${awHs} ${awBt} L ${awHs} ${awHt} L ${awTipX} 50 L ${awHs} ${awHb} L ${awHs} ${awBb} L ${awBl} ${awBb} Z`;
+          wheelMaskDefs = `
+                <mask id="awDimMask">
+                  <rect x="0" y="0" width="100" height="100" fill="white"/>
+                  <g class="aw-rotate" transform="rotate(${gradientAngle} 50 50)">
+                    <path d="${arrowWindowPath}" fill="black"/>
+                  </g>
+                </mask>`;
+          wheelMaskOverlay = `
+              <circle cx="50" cy="50" r="${wheelRadius}" fill="black" opacity="0.55" mask="url(#awDimMask)"/>
+              <g class="aw-rotate" transform="rotate(${gradientAngle} 50 50)">
+                <path d="${arrowWindowPath}" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="0.8"/>
+              </g>`;
+        }
 
         return `
           <div class="wheel-container" style="width: 100%; display: flex; flex-direction: column; align-items: center;">
@@ -3042,21 +3247,22 @@ class YeelightCubeGradientCard extends HTMLElement {
                 <mask id="circleMask">
                   <circle cx="50" cy="50" r="${wheelRadius}" fill="white"/>
                 </mask>
+                ${wheelMaskDefs}
               </defs>
-              <g transform="rotate(${gradientAngle} 50 50)">
+              <g ${showMask ? 'class="aw-grad-group" ' : ""}transform="rotate(${gradientAngle} 50 50)">
                 <rect x="${50 - wheelRadius}" y="${50 - wheelRadius}" width="${
                   wheelRadius * 2
                 }" height="${
                   wheelRadius * 2
                 }" fill="url(#wheelGradient)" mask="url(#circleMask)"/>
               </g>
+              ${wheelMaskOverlay}
               <circle cx="50" cy="50" r="${wheelRadius}" fill="none" stroke="var(--divider-color, #ddd)" stroke-width="1"/>
               ${
                 this.config.show_selector_dot !== false
                   ? `<circle cx="${selectorX}" cy="${selectorY}" r="4" class="wheel-selector" fill="#fff" stroke="#333" stroke-width="2"/>`
                   : ""
               }
-              <!-- Invisible circle to make entire wheel draggable -->
               <circle cx="50" cy="50" r="${wheelRadius}" fill="transparent" style="cursor: pointer;"/>
             </svg>
           </div>
@@ -3162,7 +3368,7 @@ class YeelightCubeGradientCard extends HTMLElement {
                 }deg, ${rectTextColors
                   .map((color) => `rgb(${color.join(",")})`)
                   .join(", ")});
-                border: 1px solid var(--divider-color, #ddd);
+                box-shadow: inset 0 0 0 1px var(--divider-color, #ddd);
                 border-radius: 6px;
                 margin: 0 auto;
                 position: relative;
@@ -3294,7 +3500,7 @@ class YeelightCubeGradientCard extends HTMLElement {
                 }deg, ${squareTextColors
                   .map((color) => `rgb(${color.join(",")})`)
                   .join(", ")});
-                border: 1px solid var(--divider-color, #ddd);
+                box-shadow: inset 0 0 0 1px var(--divider-color, #ddd);
                 border-radius: 6px;
                 margin: 0 auto;
                 position: relative;
@@ -3324,6 +3530,353 @@ class YeelightCubeGradientCard extends HTMLElement {
             </div>
           </div>
         `;
+
+      case "matrix_preview": {
+        const mpColors = this._getCurrentTextColors();
+        const mpVisualAngle =
+          this._draggingRotary && this._pendingAngle !== undefined
+            ? this._pendingAngle
+            : currentAngle;
+        const baseMpSz = this._getRotarySize();
+        const mpRows = 5;
+        const mpCols = 20;
+
+        // Read matrix rotary config (independent from gallery settings)
+        const mpBgColor = this.config.matrix_rotary_bg_color || "#000000";
+        const mpPixelStyle = this.config.matrix_rotary_pixel_style || "square";
+        const mpPixelGap =
+          this.config.matrix_rotary_pixel_gap !== undefined
+            ? parseFloat(this.config.matrix_rotary_pixel_gap)
+            : 1;
+        const mpIgnoreBlack = this.config.matrix_rotary_ignore_black === true;
+        const mpBorderRadius =
+          mpPixelStyle === "circle"
+            ? "50%"
+            : mpPixelStyle === "rounded"
+              ? "20%"
+              : "0";
+
+        // Text preview mode: use cached preview data from the backend
+        const mpTextPreview = this.config.matrix_rotary_text_preview === true;
+        let mpPixelDivs = "";
+
+        if (mpTextPreview) {
+          // Use backend preview for the current gradient mode
+          mpPixelDivs = this._renderMatrixTextPreviewPixels(
+            mpRows,
+            mpCols,
+            mpBgColor,
+            mpIgnoreBlack,
+            mpBorderRadius,
+          );
+        } else {
+          // Pure angle gradient computation
+          const angleRad = (mpVisualAngle * Math.PI) / 180;
+          const dirX = Math.cos(angleRad);
+          const dirY = -Math.sin(angleRad);
+
+          const centerCol = (mpCols - 1) / 2;
+          const centerRow = (mpRows - 1) / 2;
+          const mpCorners = [
+            [-centerCol, -centerRow],
+            [centerCol, -centerRow],
+            [-centerCol, centerRow],
+            [centerCol, centerRow],
+          ];
+          const mpCornerProjs = mpCorners.map(([c, r]) => c * dirX + r * dirY);
+          const mpMinProj = Math.min(...mpCornerProjs);
+          const mpMaxProj = Math.max(...mpCornerProjs);
+          const mpProjRange = mpMaxProj - mpMinProj || 1;
+
+          for (let row = 0; row < mpRows; row++) {
+            for (let col = 0; col < mpCols; col++) {
+              const centeredCol = col - centerCol;
+              const centeredRow = row - centerRow;
+              const projection = centeredCol * dirX + centeredRow * dirY;
+              const t = Math.max(
+                0,
+                Math.min(1, (projection - mpMinProj) / mpProjRange),
+              );
+              const colorIdx = t * (mpColors.length - 1);
+              const i1 = Math.max(
+                0,
+                Math.min(mpColors.length - 1, Math.floor(colorIdx)),
+              );
+              const i2 = Math.min(mpColors.length - 1, i1 + 1);
+              const frac = colorIdx - i1;
+              const r = Math.round(
+                mpColors[i1][0] * (1 - frac) + mpColors[i2][0] * frac,
+              );
+              const g = Math.round(
+                mpColors[i1][1] * (1 - frac) + mpColors[i2][1] * frac,
+              );
+              const b = Math.round(
+                mpColors[i1][2] * (1 - frac) + mpColors[i2][2] * frac,
+              );
+              const isBlack = r <= 5 && g <= 5 && b <= 5;
+              const shouldIgnore = mpIgnoreBlack && isBlack;
+              mpPixelDivs += `<div class="matrix-pixel" style="background:${shouldIgnore ? "transparent" : `rgb(${r},${g},${b})`};border-radius:${mpBorderRadius};aspect-ratio:1;"></div>`;
+            }
+          }
+        }
+
+        // Calculate header mode dimensions to match rectangle sizing
+        const mpHeaderWidth = isHeaderMode
+          ? Math.round((baseMpSz / 100) * 300)
+          : null;
+        const mpHeaderHeight = isHeaderMode
+          ? Math.round((baseMpSz / 100) * 88)
+          : null;
+
+        return `
+          <div class="matrix-preview-container" id="angle-preview" style="width:100%;display:flex;flex-direction:column;align-items:center;cursor:pointer;">
+            <div class="matrix-preview-grid" style="
+              display:grid;
+              grid-template-columns:repeat(${mpCols}, 1fr);
+              gap:${mpPixelGap}px;
+              background:${mpBgColor};
+              padding:${mpPixelGap * 2}px;
+              border-radius:6px;
+              ${
+                isHeaderMode
+                  ? `width:${mpHeaderWidth}px;`
+                  : `width:${baseMpSz}%;`
+              }
+              margin:0 auto;
+              box-sizing:border-box;
+            ">${mpPixelDivs}</div>
+          </div>
+        `;
+      }
+
+      case "compass": {
+        // Compass mode: circular dial with configurable overlay shape + optional labels
+        const compColors = this._getCurrentTextColors();
+        const compGradientStops = this._createWheelGradientStops(compColors);
+        const compVisualAngle =
+          this._draggingRotary && this._pendingAngle !== undefined
+            ? this._pendingAngle
+            : currentAngle;
+        const baseCmpSz = this._getRotarySize();
+        const compRadius = (Math.min(100, baseCmpSz) * 45) / 100;
+        const compGradAngle = -compVisualAngle;
+        const compSelRadius = (Math.min(100, baseCmpSz) * 40) / 100;
+        const compRad = (compVisualAngle * Math.PI) / 180;
+        const compSX = 50 + compSelRadius * Math.cos(compRad);
+        const compSY = 50 - compSelRadius * Math.sin(compRad);
+
+        const compassShape = this._getCompassShape();
+        const showLabels = this._getCompassShowLabels();
+
+        // Tick marks and cardinal labels (conditional)
+        let ticksAndLabels = "";
+        if (showLabels) {
+          const ticks = [0, 45, 90, 135, 180, 225, 270, 315]
+            .map((a) => {
+              const rad = (a * Math.PI) / 180;
+              const inner = compRadius - 4;
+              const outer = compRadius - (a % 90 === 0 ? 1 : 2);
+              return `<line x1="${50 + inner * Math.cos(rad)}" y1="${50 - inner * Math.sin(rad)}" x2="${50 + outer * Math.cos(rad)}" y2="${50 - outer * Math.sin(rad)}" stroke="var(--secondary-text-color, #999)" stroke-width="${a % 90 === 0 ? 1.5 : 0.8}"/>`;
+            })
+            .join("");
+          const cLabelR = compRadius - 10;
+          ticksAndLabels = `
+              ${ticks}
+              <text x="${50 + cLabelR}" y="52" text-anchor="middle" font-size="5.5" fill="var(--secondary-text-color, #999)" font-weight="600">E</text>
+              <text x="50" y="${50 - cLabelR + 2}" text-anchor="middle" font-size="5.5" fill="var(--secondary-text-color, #999)" font-weight="600">N</text>
+              <text x="${50 - cLabelR}" y="52" text-anchor="middle" font-size="5.5" fill="var(--secondary-text-color, #999)" font-weight="600">W</text>
+              <text x="50" y="${50 + cLabelR + 2}" text-anchor="middle" font-size="5.5" fill="var(--secondary-text-color, #999)" font-weight="600">S</text>`;
+        }
+
+        // Shape overlay (needle / beam / arrow)
+        let shapeOverlayDefs = "";
+        let shapeOverlayContent = "";
+
+        if (compassShape === "none") {
+          // No overlay — empty circle, just selector dot
+          shapeOverlayDefs = "";
+          shapeOverlayContent = "";
+        } else if (compassShape === "beam") {
+          // Beam wedge — origin from opposite border so full gradient is visible
+          const beamSpread = 30;
+          const angleRad = (compVisualAngle * Math.PI) / 180;
+          const originX = 50 - compRadius * Math.cos(angleRad);
+          const originY = 50 + compRadius * Math.sin(angleRad);
+          const bRad1 = ((compVisualAngle + beamSpread) * Math.PI) / 180;
+          const bRad2 = ((compVisualAngle - beamSpread) * Math.PI) / 180;
+          const bx1 = 50 + compRadius * Math.cos(bRad1);
+          const by1 = 50 - compRadius * Math.sin(bRad1);
+          const bx2 = 50 + compRadius * Math.cos(bRad2);
+          const by2 = 50 - compRadius * Math.sin(bRad2);
+          const beamPath = `M ${originX} ${originY} L ${bx1} ${by1} A ${compRadius} ${compRadius} 0 0 1 ${bx2} ${by2} Z`;
+          shapeOverlayDefs = `<clipPath id="compShapeClip"><path class="beam-wedge-path" d="${beamPath}"/></clipPath>`;
+          shapeOverlayContent = `
+              <g clip-path="url(#compCircleClip)">
+                <g clip-path="url(#compShapeClip)">
+                  <g class="beam-grad-group" transform="rotate(${compGradAngle} 50 50)">
+                    <rect x="0" y="0" width="100" height="100" fill="url(#compGrad)"/>
+                  </g>
+                </g>
+              </g>
+              <path class="beam-outline" d="${beamPath}" fill="none" stroke="var(--divider-color, #ddd)" stroke-width="0.8" opacity="0.6"/>
+              <circle cx="50" cy="50" r="2.5" fill="var(--card-background-color, #fff)" stroke="var(--divider-color, #ddd)" stroke-width="0.8"/>`;
+        } else if (compassShape === "arrow") {
+          // Arrow shape overlay — border to border
+          const arrowLen = compRadius;
+          const arrowBodyW = arrowLen * 0.22;
+          const arrowHeadW = arrowLen * 0.45;
+          const arrowHeadLen = arrowLen * 0.3;
+          const tipX = 50 + arrowLen;
+          const bodyLeft = 50 - arrowLen;
+          const bodyTop = 50 - arrowBodyW / 2;
+          const bodyBottom = 50 + arrowBodyW / 2;
+          const headTop = 50 - arrowHeadW / 2;
+          const headBottom = 50 + arrowHeadW / 2;
+          const headStart = tipX - arrowHeadLen;
+          const arrowPath = `M ${bodyLeft} ${bodyTop} L ${headStart} ${bodyTop} L ${headStart} ${headTop} L ${tipX} 50 L ${headStart} ${headBottom} L ${headStart} ${bodyBottom} L ${bodyLeft} ${bodyBottom} Z`;
+          shapeOverlayDefs = `<clipPath id="compShapeClip"><path d="${arrowPath}"/></clipPath>`;
+          shapeOverlayContent = `
+              <g clip-path="url(#compCircleClip)">
+                <g class="comp-rotate" transform="rotate(${compGradAngle} 50 50)">
+                  <g clip-path="url(#compShapeClip)">
+                    <rect x="0" y="0" width="100" height="100" fill="url(#compGrad)"/>
+                  </g>
+                </g>
+              </g>
+              <g class="comp-rotate" transform="rotate(${compGradAngle} 50 50)">
+                <path d="${arrowPath}" fill="none" stroke="var(--divider-color, #ddd)" stroke-width="0.5"/>
+              </g>
+              <circle cx="50" cy="50" r="3" fill="var(--card-background-color, #fff)" stroke="var(--divider-color, #ddd)" stroke-width="1"/>`;
+        } else if (compassShape === "star") {
+          // Star shape overlay — border to border
+          const starOuterR = compRadius;
+          const starInnerR = starOuterR * 0.4;
+          const starPoints = [];
+          for (let i = 0; i < 10; i++) {
+            const a = (i * Math.PI) / 5;
+            const r = i % 2 === 0 ? starOuterR : starInnerR;
+            starPoints.push(`${50 + r * Math.cos(a)},${50 - r * Math.sin(a)}`);
+          }
+          const starPath = `M ${starPoints.join(" L ")} Z`;
+          shapeOverlayDefs = `<clipPath id="compShapeClip"><path d="${starPath}"/></clipPath>`;
+          shapeOverlayContent = `
+              <g clip-path="url(#compCircleClip)">
+                <g class="comp-rotate" transform="rotate(${compGradAngle} 50 50)">
+                  <g clip-path="url(#compShapeClip)">
+                    <rect x="0" y="0" width="100" height="100" fill="url(#compGrad)"/>
+                  </g>
+                </g>
+              </g>
+              <g class="comp-rotate" transform="rotate(${compGradAngle} 50 50)">
+                <path d="${starPath}" fill="none" stroke="var(--divider-color, #ddd)" stroke-width="0.5"/>
+              </g>
+              <circle cx="50" cy="50" r="3" fill="var(--card-background-color, #fff)" stroke="var(--divider-color, #ddd)" stroke-width="1"/>`;
+        } else if (compassShape === "rectangle") {
+          // Rectangle shape overlay — border to border, thinner aspect
+          const trW = compRadius * 2;
+          const trH = trW * 0.35;
+          const trX = 50 - trW / 2;
+          const trY = 50 - trH / 2;
+          const trR = 4;
+          const trPath = `M ${trX + trR} ${trY} L ${trX + trW - trR} ${trY} Q ${trX + trW} ${trY} ${trX + trW} ${trY + trR} L ${trX + trW} ${trY + trH - trR} Q ${trX + trW} ${trY + trH} ${trX + trW - trR} ${trY + trH} L ${trX + trR} ${trY + trH} Q ${trX} ${trY + trH} ${trX} ${trY + trH - trR} L ${trX} ${trY + trR} Q ${trX} ${trY} ${trX + trR} ${trY} Z`;
+          shapeOverlayDefs = `<clipPath id="compShapeClip"><path d="${trPath}"/></clipPath>`;
+          shapeOverlayContent = `
+              <g clip-path="url(#compCircleClip)">
+                <g class="comp-rotate" transform="rotate(${compGradAngle} 50 50)">
+                  <g clip-path="url(#compShapeClip)">
+                    <rect x="0" y="0" width="100" height="100" fill="url(#compGrad)"/>
+                  </g>
+                </g>
+              </g>
+              <g class="comp-rotate" transform="rotate(${compGradAngle} 50 50)">
+                <path d="${trPath}" fill="none" stroke="var(--divider-color, #ddd)" stroke-width="0.5"/>
+              </g>
+              <circle cx="50" cy="50" r="3" fill="var(--card-background-color, #fff)" stroke="var(--divider-color, #ddd)" stroke-width="1"/>`;
+        } else {
+          // Needle (default) — border to border
+          const nLen = compRadius;
+          const nW = compRadius * 0.1;
+          const nTip = 50 + nLen;
+          const nTail = 50 - nLen;
+          const nTop = 50 - nW;
+          const nBot = 50 + nW;
+          const needlePath = `M ${nTip} 50 L ${50 + nW * 0.6} ${nTop} L ${nTail} 50 L ${50 + nW * 0.6} ${nBot} Z`;
+          shapeOverlayDefs = `<clipPath id="compShapeClip"><path d="${needlePath}"/></clipPath>`;
+          shapeOverlayContent = `
+              <g clip-path="url(#compCircleClip)">
+                <g class="comp-rotate" transform="rotate(${compGradAngle} 50 50)">
+                  <g clip-path="url(#compShapeClip)">
+                    <rect x="0" y="0" width="100" height="100" fill="url(#compGrad)"/>
+                  </g>
+                </g>
+              </g>
+              <g class="comp-rotate" transform="rotate(${compGradAngle} 50 50)">
+                <path d="${needlePath}" fill="none" stroke="var(--divider-color, #ddd)" stroke-width="0.5"/>
+              </g>
+              <circle cx="50" cy="50" r="3" fill="var(--card-background-color, #fff)" stroke="var(--divider-color, #ddd)" stroke-width="1"/>`;
+        }
+
+        return `
+          <div class="compass-container" style="width:100%;display:flex;flex-direction:column;align-items:center;">
+            <svg width="${isHeaderMode ? "88px" : `${baseCmpSz}%`}" height="${isHeaderMode ? "88px" : `${baseCmpSz}%`}" viewBox="0 0 100 100" id="angle-preview" class="color-wheel" style="max-width:200px;max-height:200px;">
+              <defs>
+                <linearGradient id="compGrad" x1="0%" y1="50%" x2="100%" y2="50%">${compGradientStops}</linearGradient>
+                <clipPath id="compCircleClip"><circle cx="50" cy="50" r="${compRadius}"/></clipPath>
+                ${shapeOverlayDefs}
+              </defs>
+              <circle cx="50" cy="50" r="${compRadius}" fill="var(--card-background-color, #fff)" stroke="var(--divider-color, #ddd)" stroke-width="1"/>
+              ${ticksAndLabels}
+              ${shapeOverlayContent}
+              ${
+                this.config.show_selector_dot !== false
+                  ? `<circle cx="${compSX}" cy="${compSY}" r="4" class="wheel-selector" fill="#fff" stroke="#333" stroke-width="2"/>`
+                  : ""
+              }
+              <circle cx="50" cy="50" r="${compRadius}" fill="transparent" style="cursor:pointer;"/>
+            </svg>
+          </div>
+        `;
+      }
+
+      case "capsule": {
+        // Capsule/pill style — horizontal slider for angle
+        const capsuleAngle =
+          this._draggingRotary && this._pendingAngle !== undefined
+            ? this._pendingAngle
+            : currentAngle;
+        const capsulePercent = (capsuleAngle / 359) * 100;
+        const capsuleTheme = resolveCapsuleTheme(
+          this.config.capsule_theme,
+          undefined,
+        );
+        const capsuleThickness = resolveCapsuleThickness(
+          this.config.capsule_thickness,
+          undefined,
+          6,
+        );
+        const showIconLeft = this.config.capsule_show_icon_left !== false;
+        const showIconRight = this.config.capsule_show_icon_right !== false;
+
+        const capsuleHTML = renderCapsuleHTML({
+          theme: capsuleTheme,
+          thickness: capsuleThickness,
+          value: Math.round(capsuleAngle),
+          min: 0,
+          max: 359,
+          iconLeft: showIconLeft ? "🔄" : null,
+          iconRight: showIconRight ? "🎯" : null,
+          hostInputHandler:
+            "this.getRootNode().host._handleCapsuleAngleInput(event)",
+          hostDragStart: "this.getRootNode().host._startCapsuleDrag()",
+          hostDragEnd: "this.getRootNode().host._endCapsuleDrag()",
+          label: null,
+          showValue: true,
+          valueText: `${Math.round(capsuleAngle)}°`,
+          wheelHandler: "this.getRootNode().host._handleCapsuleWheel(event)",
+        });
+
+        return `<div class="angle-capsule-host" style="width:${this._getRotarySize()}%;margin:0 auto;">${capsuleHTML}</div>`;
+      }
 
       default:
         // Get the actual colors from the lamp (EXACT same as wheel)
@@ -3635,6 +4188,18 @@ class YeelightCubeGradientCard extends HTMLElement {
       this._updateRectVisual(angle);
     } else if (style === "square") {
       this._updateSquareVisual(angle);
+    } else if (style === "compass") {
+      this._updateCompassVisual(angle);
+    } else if (style === "matrix_preview") {
+      this._updateMatrixPreviewVisual(angle);
+    } else if (style === "capsule") {
+      const pct = (angle / 359) * 100;
+      updateCapsuleVisuals(
+        this.shadowRoot,
+        pct,
+        `${Math.round(angle)}°`,
+        ".angle-capsule-host",
+      );
     } else if (style === "default") {
       // Use EXACT same logic as wheel for default mode
       this._updateWheelVisual(angle);
@@ -3646,9 +4211,74 @@ class YeelightCubeGradientCard extends HTMLElement {
     this._debouncedApplyAngle(angle);
   }
 
+  // ── Capsule angle slider handlers ──────────────────────────
+  _startCapsuleDrag() {
+    this._usingSlider = true;
+  }
+
+  _endCapsuleDrag() {
+    // Cancel pending debounce and apply the final angle immediately
+    // (mirrors handleMouseUp for rotary drag to guarantee _applyAngle fires)
+    if (this._angleDebounceTimer) {
+      clearTimeout(this._angleDebounceTimer);
+      this._angleDebounceTimer = null;
+    }
+    if (this._pendingAngle !== null && this._pendingAngle !== undefined) {
+      this._applyAngle(this._pendingAngle);
+      this._lastAngleSent = this._pendingAngle;
+      this._pendingAngle = null;
+    }
+    setTimeout(() => {
+      this._usingSlider = false;
+      this._flushPendingRender();
+    }, 100);
+  }
+
+  _handleCapsuleAngleInput(event) {
+    this._usingSlider = true;
+    const angle = parseInt(event.target.value);
+    if (isNaN(angle)) return;
+
+    // Sync the separate angle input field if visible
+    const angleInput = this.shadowRoot.getElementById("angleinput");
+    if (angleInput) angleInput.value = angle;
+
+    // Update capsule visuals immediately
+    const percent = (angle / 359) * 100;
+    updateCapsuleVisuals(
+      this.shadowRoot,
+      percent,
+      `${angle}°`,
+      ".angle-capsule-host",
+    );
+
+    // Update gradient buttons for immediate visual feedback
+    this._updateGradientButtons(angle);
+
+    this._debouncedApplyAngle(angle);
+  }
+
+  _handleCapsuleWheel(event) {
+    event.preventDefault();
+    const input = this.shadowRoot.querySelector(
+      ".angle-capsule-host .capsule-input",
+    );
+    if (!input) return;
+    const current = parseInt(input.value) || 0;
+    const delta = event.deltaY < 0 ? 5 : -5;
+    const newValue = (((current + delta) % 360) + 360) % 360;
+    input.value = newValue;
+    // Trigger the same handler as manual drag
+    this._handleCapsuleAngleInput({ target: input });
+    // Wheel events are instantaneous (no mouseup) — clear _usingSlider
+    // immediately so render() is not permanently blocked.
+    this._usingSlider = false;
+  }
+  // ────────────────────────────────────────────────────────────
+
   _updateRotaryDisplay(angle) {
     const rotaryContainer = this.shadowRoot.querySelector(
-      ".wheel-container, .rect-container, .default-container",
+      ".wheel-container, .rect-container, .default-container, .matrix-preview-container, .compass-container, .angle-capsule-host",
     );
     if (!rotaryContainer) return;
 
@@ -3667,6 +4297,30 @@ class YeelightCubeGradientCard extends HTMLElement {
       case "square":
         this._updateSquareVisual(angle);
         break;
+
+      case "compass":
+        this._updateCompassVisual(angle);
+        break;
+
+      case "matrix_preview":
+        this._updateMatrixPreviewVisual(angle);
+        break;
+
+      case "capsule": {
+        const percent = (angle / 359) * 100;
+        updateCapsuleVisuals(
+          this.shadowRoot,
+          percent,
+          `${Math.round(angle)}°`,
+          ".angle-capsule-host",
+        );
+        // Also sync the hidden range input
+        const capsuleInput = this.shadowRoot.querySelector(
+          ".angle-capsule-host .capsule-input",
+        );
+        if (capsuleInput) capsuleInput.value = Math.round(angle);
+        break;
+      }
 
       case "default":
         // Use EXACT same logic as wheel
@@ -3727,6 +4381,16 @@ class YeelightCubeGradientCard extends HTMLElement {
     );
     if (gradientGroup) {
       gradientGroup.setAttribute("transform", `rotate(${gradientAngle} 50 50)`);
+    }
+
+    // Handle arrow window mask groups if present (wheel + mask mode)
+    const awRotateGroups = this.shadowRoot.querySelectorAll(".aw-rotate");
+    awRotateGroups.forEach((g) =>
+      g.setAttribute("transform", `rotate(${gradientAngle} 50 50)`),
+    );
+    const awGradGroup = this.shadowRoot.querySelector(".aw-grad-group");
+    if (awGradGroup) {
+      awGradGroup.setAttribute("transform", `rotate(${gradientAngle} 50 50)`);
     }
   }
 
@@ -3890,6 +4554,186 @@ class YeelightCubeGradientCard extends HTMLElement {
     const squareAngleDisplay = this.shadowRoot.querySelector(".square-angle");
     if (squareAngleDisplay) {
       squareAngleDisplay.textContent = `${Math.round(angle)}°`;
+    }
+  }
+
+  // Unified update for compass style (needle/beam/arrow shapes)
+  _updateCompassVisual(angle) {
+    const gradientAngle = -angle;
+    const selectorRadians = (angle * Math.PI) / 180;
+    const sizePercent = this._getRotarySize();
+    const selectorRadius = (Math.min(100, sizePercent) * 40) / 100;
+    const selectorX = 50 + selectorRadius * Math.cos(selectorRadians);
+    const selectorY = 50 - selectorRadius * Math.sin(selectorRadians);
+
+    const dot = this.shadowRoot.querySelector(".wheel-selector");
+    if (dot) {
+      dot.setAttribute("cx", selectorX);
+      dot.setAttribute("cy", selectorY);
+    }
+
+    const compassShape = this._getCompassShape();
+
+    if (compassShape === "none") {
+      // No overlay — nothing to update beyond selector dot
+    } else if (compassShape === "beam") {
+      // Recalculate beam wedge path — origin from opposite border
+      const radius = (Math.min(100, sizePercent) * 45) / 100;
+      const beamSpread = 30;
+      const angleRad = (angle * Math.PI) / 180;
+      const originX = 50 - radius * Math.cos(angleRad);
+      const originY = 50 + radius * Math.sin(angleRad);
+      const rad1 = ((angle + beamSpread) * Math.PI) / 180;
+      const rad2 = ((angle - beamSpread) * Math.PI) / 180;
+      const bx1 = 50 + radius * Math.cos(rad1);
+      const by1 = 50 - radius * Math.sin(rad1);
+      const bx2 = 50 + radius * Math.cos(rad2);
+      const by2 = 50 - radius * Math.sin(rad2);
+      const newPath = `M ${originX} ${originY} L ${bx1} ${by1} A ${radius} ${radius} 0 0 1 ${bx2} ${by2} Z`;
+
+      const clipPath = this.shadowRoot.querySelector(".beam-wedge-path");
+      if (clipPath) clipPath.setAttribute("d", newPath);
+
+      const outline = this.shadowRoot.querySelector(".beam-outline");
+      if (outline) outline.setAttribute("d", newPath);
+
+      const gradGroup = this.shadowRoot.querySelector(".beam-grad-group");
+      if (gradGroup)
+        gradGroup.setAttribute("transform", `rotate(${gradientAngle} 50 50)`);
+    } else {
+      // Needle or Arrow — rotate all .comp-rotate groups
+      const rotGroups = this.shadowRoot.querySelectorAll(".comp-rotate");
+      rotGroups.forEach((g) => {
+        g.setAttribute("transform", `rotate(${gradientAngle} 50 50)`);
+      });
+    }
+  }
+
+  /**
+   * Render pixel divs for the matrix rotary in "text preview" mode.
+   * Reads the cached preview data for the current gradient mode and produces
+   * HTML pixel divs matching the 5×20 grid — the same content the gallery
+   * previews show, except rendered inside the interactive rotary.
+   */
+  _renderMatrixTextPreviewPixels(
+    rows,
+    cols,
+    bgColor,
+    ignoreBlack,
+    borderRadius,
+  ) {
+    const cache = window._yeelightPreviewCache;
+    const previewData = cache?.data;
+    const currentMode = this._getCurrentMode();
+    const previewColors = previewData?.previews?.[currentMode];
+
+    if (!previewColors || previewColors.length < rows * cols) {
+      // Fallback: show empty grid if no preview data yet
+      let divs = "";
+      for (let i = 0; i < rows * cols; i++) {
+        divs += `<div class="matrix-pixel" style="background:${bgColor === "transparent" ? "rgba(128,128,128,0.2)" : "rgba(255,255,255,0.08)"};border-radius:${borderRadius};aspect-ratio:1;"></div>`;
+      }
+      return divs;
+    }
+
+    // Flip vertically (same convention as _renderPreviewGrid)
+    let divs = "";
+    for (let row = rows - 1; row >= 0; row--) {
+      for (let col = 0; col < cols; col++) {
+        const color = previewColors[row * cols + col];
+        const [r, g, b] = color;
+        const isBlack = r <= 5 && g <= 5 && b <= 5;
+        const shouldIgnore = ignoreBlack && isBlack;
+        divs += `<div class="matrix-pixel" style="background:${shouldIgnore ? "transparent" : `rgb(${r},${g},${b})`};border-radius:${borderRadius};aspect-ratio:1;"></div>`;
+      }
+    }
+    return divs;
+  }
+
+  _updateMatrixPreviewVisual(angle) {
+    const mpRows = 5;
+    const mpCols = 20;
+    const mpIgnoreBlack = this.config.matrix_rotary_ignore_black === true;
+    const pixels = this.shadowRoot.querySelectorAll(".matrix-pixel");
+    if (!pixels.length) return;
+
+    // Text preview mode: show cached text preview when NOT dragging.
+    // During active drag, we fall through to the gradient computation so
+    // the user gets immediate visual feedback of the angle change.
+    // When fresh preview data arrives via the event handler, it calls this
+    // method again and the cache will contain the updated pixels.
+    if (
+      this.config.matrix_rotary_text_preview === true &&
+      !this._draggingRotary
+    ) {
+      const cache = window._yeelightPreviewCache;
+      const previewData = cache?.data;
+      const currentMode = this._getCurrentMode();
+      const previewColors = previewData?.previews?.[currentMode];
+      if (previewColors && previewColors.length >= mpRows * mpCols) {
+        let idx = 0;
+        for (let row = mpRows - 1; row >= 0; row--) {
+          for (let col = 0; col < mpCols; col++) {
+            if (idx >= pixels.length) break;
+            const color = previewColors[row * mpCols + col];
+            const [r, g, b] = color;
+            const isBlack = r <= 5 && g <= 5 && b <= 5;
+            const shouldIgnore = mpIgnoreBlack && isBlack;
+            pixels[idx].style.background = shouldIgnore
+              ? "transparent"
+              : `rgb(${r},${g},${b})`;
+            idx++;
+          }
+        }
+        return;
+      }
+      // No preview data available yet — fall through to gradient visualization
+    }
+
+    // Pure angle gradient mode
+    const colors = this._getCurrentTextColors();
+    const angleRad = (angle * Math.PI) / 180;
+    const dirX = Math.cos(angleRad);
+    const dirY = -Math.sin(angleRad);
+
+    const centerCol = (mpCols - 1) / 2;
+    const centerRow = (mpRows - 1) / 2;
+    const corners = [
+      [-centerCol, -centerRow],
+      [centerCol, -centerRow],
+      [-centerCol, centerRow],
+      [centerCol, centerRow],
+    ];
+    const cornerProjs = corners.map(([c, r]) => c * dirX + r * dirY);
+    const minProj = Math.min(...cornerProjs);
+    const maxProj = Math.max(...cornerProjs);
+    const projRange = maxProj - minProj || 1;
+
+    let idx = 0;
+    for (let row = 0; row < mpRows; row++) {
+      for (let col = 0; col < mpCols; col++) {
+        if (idx >= pixels.length) break;
+        const centeredCol = col - centerCol;
+        const centeredRow = row - centerRow;
+        const projection = centeredCol * dirX + centeredRow * dirY;
+        const t = Math.max(0, Math.min(1, (projection - minProj) / projRange));
+        const colorIdx = t * (colors.length - 1);
+        const i1 = Math.max(
+          0,
+          Math.min(colors.length - 1, Math.floor(colorIdx)),
+        );
+        const i2 = Math.min(colors.length - 1, i1 + 1);
+        const frac = colorIdx - i1;
+        const r = Math.round(colors[i1][0] * (1 - frac) + colors[i2][0] * frac);
+        const g = Math.round(colors[i1][1] * (1 - frac) + colors[i2][1] * frac);
+        const b = Math.round(colors[i1][2] * (1 - frac) + colors[i2][2] * frac);
+        const isBlack = r <= 5 && g <= 5 && b <= 5;
+        const shouldIgnore = mpIgnoreBlack && isBlack;
+        pixels[idx].style.background = shouldIgnore
+          ? "transparent"
+          : `rgb(${r},${g},${b})`;
+        idx++;
+      }
     }
   }
 

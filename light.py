@@ -5438,6 +5438,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 _LOGGER.debug(f"[AUTO-TURN-ON] set_angle command ignored - lamp is off and auto-turn-on is disabled")
                 return
             target_entity._angle = angle
+            # Push angle to HA state immediately so the frontend card's set hass()
+            # detects the change and can reload previews without waiting for the
+            # next polling cycle (~30s).  Must happen BEFORE the slow hardware
+            # command so the JS card sees the new angle right away.
+            target_entity.async_schedule_update_ha_state()
             await target_entity.async_apply_display_mode(update_type='color_change')
             if target_entity._angle_number_entity:
                 target_entity._angle_number_entity.async_update_from_light()

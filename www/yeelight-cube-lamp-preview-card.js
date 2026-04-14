@@ -11,6 +11,13 @@ import {
   getExportImportButtonClass,
   renderButtonContent,
 } from "./export-import-button-utils.js?v=4";
+import {
+  renderCapsuleHTML,
+  getCapsuleCSS,
+  updateCapsuleVisuals,
+  resolveCapsuleTheme,
+  resolveCapsuleThickness,
+} from "./capsule-slider-utils.js";
 
 // ==============  EFFECTS REGISTRY  ==============
 // Single source of truth for all effect metadata.
@@ -459,8 +466,10 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         slider.dispatchEvent(new Event("input", { bubbles: true }));
       }
     } else {
-      // Regular slider modes
-      const slider = container.querySelector(".brightness-slider");
+      // Regular slider modes (including capsule via shared util)
+      const slider =
+        container.querySelector(".brightness-slider") ||
+        container.querySelector(".capsule-input");
       if (slider) {
         const currentValue = parseInt(slider.value);
         const delta = event.deltaY < 0 ? 5 : -5;
@@ -616,22 +625,12 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         if (rotaryValue) rotaryValue.textContent = `${newBrightness}%`;
       }
     } else if (sliderStyle === "capsule") {
-      const capsuleFill = this.shadowRoot?.querySelector(".capsule-fill");
-      const capsuleThumb = this.shadowRoot?.querySelector(".capsule-thumb");
-      if (capsuleFill) {
-        capsuleFill.style.setProperty("--brightness-percent", newBrightness);
-      }
-      if (capsuleThumb) {
-        capsuleThumb.style.setProperty("--brightness-percent", newBrightness);
-      }
-
-      if (showPercentage) {
-        const percentageStandalone = this.shadowRoot?.querySelector(
-          ".brightness-percentage-standalone",
-        );
-        if (percentageStandalone)
-          percentageStandalone.textContent = `${newBrightness}%`;
-      }
+      updateCapsuleVisuals(
+        this.shadowRoot,
+        newBrightness,
+        showPercentage ? `${newBrightness}%` : null,
+        ".brightness-capsule-host",
+      );
     } else {
       // Slider mode (default)
       if (showPercentage) {
@@ -1931,7 +1930,8 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   _updateSliderValues(brightness, effects) {
     // Update brightness slider and visual indicators
     const brightnessSlider =
-      this.shadowRoot.querySelector(".brightness-slider");
+      this.shadowRoot.querySelector(".brightness-slider") ||
+      this.shadowRoot.querySelector(".capsule-input");
     if (brightnessSlider && !this._anySliderDragging) {
       brightnessSlider.value = brightness;
 
@@ -1966,22 +1966,12 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           if (rotaryValue) rotaryValue.textContent = `${brightness}%`;
         }
       } else if (sliderStyle === "capsule") {
-        const capsuleFill = this.shadowRoot?.querySelector(".capsule-fill");
-        const capsuleThumb = this.shadowRoot?.querySelector(".capsule-thumb");
-        if (capsuleFill) {
-          capsuleFill.style.setProperty("--brightness-percent", brightness);
-        }
-        if (capsuleThumb) {
-          capsuleThumb.style.setProperty("--brightness-percent", brightness);
-        }
-
-        if (showPercentage) {
-          const percentageStandalone = this.shadowRoot?.querySelector(
-            ".brightness-percentage-standalone",
-          );
-          if (percentageStandalone)
-            percentageStandalone.textContent = `${brightness}%`;
-        }
+        updateCapsuleVisuals(
+          this.shadowRoot,
+          brightness,
+          showPercentage ? `${brightness}%` : null,
+          ".brightness-capsule-host",
+        );
       } else {
         // Slider mode (default)
         if (showPercentage) {
@@ -2193,17 +2183,18 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     if (this.config.show_brightness_slider === true) {
       const sliderStyle = this.config.brightness_slider_style || "slider";
       // Migrate old appearance to numeric thickness
-      const sliderThickness =
-        this.config.brightness_slider_thickness ??
-        ({ thick: 12, thin: 3 }[this.config.brightness_slider_appearance] || 6);
+      const sliderThickness = resolveCapsuleThickness(
+        this.config.brightness_slider_thickness,
+        this.config.brightness_slider_appearance,
+        6,
+      );
       const brightnessPercent = brightness;
 
-      // Resolve brightness theme (migrate old values to section_style naming)
-      let brightnessTheme =
-        this.config.brightness_theme || this.config.capsule_theme || "subtle";
-      if (brightnessTheme === "light") brightnessTheme = "subtle";
-      else if (brightnessTheme === "dark") brightnessTheme = "filled";
-      else if (brightnessTheme === "transparent") brightnessTheme = "flat";
+      // Resolve brightness theme (migrate old values via shared util)
+      const brightnessTheme = resolveCapsuleTheme(
+        this.config.brightness_theme,
+        this.config.capsule_theme,
+      );
 
       // Brightness label: simple show/hide (backward compat with old label modes)
       let showLabel = this.config.show_brightness_label;
@@ -2286,52 +2277,29 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           </div>
         `;
       } else if (sliderStyle === "capsule") {
-        // Capsule/pill style with moon and sun icons - label always above
-        if (showLabel) {
-          html += `<div class="brightness-label">${labelContent}</div>`;
-        }
-
-        const capsuleTheme = brightnessTheme;
+        // Capsule/pill style — uses shared capsule component
         const showMoonIcon = this.config.show_capsule_moon_icon !== false;
         const showSunIcon = this.config.show_capsule_sun_icon !== false;
 
-        html += `
-          <div class="brightness-capsule-wrapper">
-            <div class="brightness-capsule brightness-capsule-${capsuleTheme}">
-              ${
-                showMoonIcon
-                  ? '<div class="capsule-icon capsule-icon-left">🌙</div>'
-                  : ""
-              }
-              <div class="capsule-track">
-                <div class="capsule-fill"></div>
-                <div class="capsule-thumb"></div>
-                <input 
-                  type="range" 
-                  min="1" 
-                  max="100" 
-                  value="${brightness}" 
-                  class="brightness-slider brightness-slider-capsule"
-                  onmousedown="this.getRootNode().host._startDrag()"
-                  ontouchstart="this.getRootNode().host._startDrag()"
-                  onmouseup="this.getRootNode().host._endDrag()"
-                  ontouchend="this.getRootNode().host._endDrag()"
-                  oninput="this.getRootNode().host.handleBrightnessChange(event)"
-                />
-              </div>
-              ${
-                showSunIcon
-                  ? '<div class="capsule-icon capsule-icon-right">☀️</div>'
-                  : ""
-              }
-            </div>
-            ${
-              this.config.show_brightness_percentage !== false
-                ? `<div class="brightness-percentage-standalone">${brightnessPercent}%</div>`
-                : ""
-            }
-          </div>
-        `;
+        html += `<div class="brightness-capsule-host">`;
+        html += renderCapsuleHTML({
+          theme: brightnessTheme,
+          thickness: sliderThickness,
+          value: brightness,
+          min: 1,
+          max: 100,
+          iconLeft: showMoonIcon ? "🌙" : null,
+          iconRight: showSunIcon ? "☀️" : null,
+          hostInputHandler:
+            "this.getRootNode().host.handleBrightnessChange(event)",
+          hostDragStart: "this.getRootNode().host._startDrag()",
+          hostDragEnd: "this.getRootNode().host._endDrag()",
+          label: showLabel ? labelContent : null,
+          showValue: this.config.show_brightness_percentage !== false,
+          valueText: `${brightnessPercent}%`,
+          // No wheelHandler — outer brightness-slider-container handles it
+        });
+        html += `</div>`;
       } else {
         // Slider (default) style — thickness driven by --slider-thickness CSS variable
         if (showLabel) {
@@ -3359,96 +3327,10 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           pointer-events: none;
         }
         
-        /* Capsule/Pill Style */
-        .brightness-capsule-wrapper {
-          padding: 5px 0;
-        }
-        .brightness-capsule {
-          display: flex;
-          align-items: center;
-          gap: 16px;
-          padding: 8px 12px;
-          border-radius: 50px;
-          box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-        .brightness-capsule-subtle {
-          background: var(--card-background-color, #fff);
-        }
-        .brightness-capsule-filled {
-          background: var(--secondary-background-color, #2c2c2c);
-        }
-        .brightness-capsule-flat {
-          background: transparent;
-          box-shadow: none;
-        }
-        .capsule-icon {
-          font-size: 22px;
-          flex-shrink: 0;
-          width: 28px;
-          text-align: center;
-          user-select: none;
-        }
-        .capsule-track {
-          position: relative;
-          flex: 1;
-          height: calc(var(--slider-thickness, 6px) * 1.33);
-          border-radius: calc(var(--slider-thickness, 6px) * 1.67);
-          overflow: visible;
-        }
-        .brightness-capsule-subtle .capsule-track {
-          background: var(--divider-color, #d0d0d0);
-        }
-        .brightness-capsule-filled .capsule-track {
-          background: var(--primary-background-color, #1a1a1a);
-        }
-        .brightness-capsule-flat .capsule-track {
-          background: var(--divider-color, #d0d0d0);
-        }
-        .capsule-fill {
-          position: absolute;
-          top: 0;
-          left: 0;
-          height: 100%;
-          width: calc(var(--brightness-percent, 0) * 1%);
-          background: var(--primary-color, #03a9f4);
-          border-radius: 10px;
-          transition: width 0.1s ease;
-          pointer-events: none;
-        }
-        .capsule-thumb {
-          position: absolute;
-          top: 50%;
-          left: calc(var(--brightness-percent, 0) * 1%);
-          transform: translate(-50%, -50%);
-          width: calc(var(--slider-thickness, 6px) * 4);
-          height: calc(var(--slider-thickness, 6px) * 4);
-          border-radius: 50%;
-          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-          transition: left 0.1s ease;
-          pointer-events: none;
-          z-index: 2;
-          border: 2px solid var(--divider-color, rgba(0, 0, 0, 0.1));
-        }
-        .brightness-capsule-subtle .capsule-thumb {
-          background: var(--card-background-color, white);
-          border-color: var(--divider-color, rgba(0, 0, 0, 0.1));
-        }
-        .brightness-capsule-filled .capsule-thumb {
-          background: var(--primary-background-color, #1a1a1a);
-          border-color: rgba(255, 255, 255, 0.2);
-        }
-        .brightness-capsule-flat .capsule-thumb {
-          background: var(--card-background-color, white);
-          border-color: var(--divider-color, rgba(0, 0, 0, 0.1));
-        }
-        .brightness-slider-capsule {
-          position: absolute;
-          top: 0;
-          left: 0;
+        /* Capsule/Pill Style — shared component */
+        ${getCapsuleCSS()}
+        .brightness-capsule-host {
           width: 100%;
-          height: 100%;
-          opacity: 0;
-          cursor: pointer;
         }
         
         /* ===== Brightness Theme: Container-level styles ===== */

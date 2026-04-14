@@ -123,6 +123,7 @@ export function floodFill(
 ) {
   const normTarget = normalizeHex(targetColor);
   const normFill = normalizeHex(fillColor);
+  if (normTarget === normFill) return new Set();
   const stack = [idx];
   const visited = new Set();
   while (stack.length) {

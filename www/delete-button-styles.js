@@ -233,9 +233,9 @@ export const deleteButtonStyles = `
   }
   .delete-btn-cross.black-style::before,
   .delete-btn-cross.black-style::after {
-    background: #fff !important;
-    box-shadow: 0 0 4px rgba(255, 255, 255, 0.5) !important;
-    width: 16px !important;
+    background: rgba(255, 255, 255, 0.9) !important;
+    box-shadow: none !important;
+    width: 14px !important;
     height: 1.5px !important;
   }
   .delete-btn-cross.black-style:hover {
