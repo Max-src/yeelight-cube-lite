@@ -218,6 +218,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     // Track if user is actively dragging to prevent re-render
     this._isDragging = false;
     this._anySliderDragging = false; // Track if ANY slider is being dragged
+    this._typingBrightness = false; // Track if user is typing in brightness input
     this._userSetBrightness = null; // Cache user-set brightness during drag/update cycle
     this._userBrightnessTimeout = null; // Timer to clear cached brightness
     this._lastRenderedBrightness = null; // Track last rendered brightness to detect oscillations
@@ -637,12 +638,21 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         if (rotaryValue) rotaryValue.textContent = `${newBrightness}%`;
       }
     } else if (sliderStyle === "capsule") {
+      const bvd =
+        this.config.brightness_value_display ||
+        (this.config.show_brightness_percentage !== false ? "text" : "none");
+      const bvs = this.config.brightness_value_side || "under";
+      // Update capsule fill/thumb + under-text if in text/under mode
       updateCapsuleVisuals(
         this.shadowRoot,
         newBrightness,
-        showPercentage ? `${newBrightness}%` : null,
+        bvd !== "none" && bvs === "under" && bvd !== "input"
+          ? `${newBrightness}%`
+          : null,
         ".brightness-capsule-host",
       );
+      // Sync brightness value in all positions
+      this._syncBrightnessValueDisplay(newBrightness);
     } else {
       // Slider mode (default)
       if (showPercentage) {
@@ -710,6 +720,49 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       this._anySliderDragging = false;
       // Don't force render here - let the hass setter handle it naturally
     }, 50);
+  }
+
+  /** Sync brightness value UI elements (input, readonly text, under-text). */
+  _syncBrightnessValueDisplay(brightness) {
+    const root = this.shadowRoot;
+    if (!root) return;
+    const input = root.getElementById("brightnessinput");
+    const text = root.getElementById("brightnesstext");
+    const valueText = root.querySelector(
+      ".brightness-capsule-host .capsule-value-text",
+    );
+    if (input && !this._typingBrightness) input.value = brightness;
+    if (text) text.value = `${brightness}%`;
+    if (valueText) valueText.textContent = `${brightness}%`;
+  }
+
+  /** Handle typing in the brightness number input (visual update only). */
+  _handleBrightnessValueInput(event) {
+    let val = parseInt(event.target.value);
+    if (isNaN(val)) return;
+    val = Math.max(1, Math.min(100, val));
+    // Update capsule visuals immediately
+    updateCapsuleVisuals(
+      this.shadowRoot,
+      val,
+      null,
+      ".brightness-capsule-host",
+    );
+  }
+
+  /** Handle blur/Enter on the brightness number input (apply to HA). */
+  _handleBrightnessValueBlur(event) {
+    this._typingBrightness = false;
+    let val = parseInt(event.target.value);
+    if (isNaN(val)) val = 1;
+    val = Math.max(1, Math.min(100, val));
+    event.target.value = val;
+    // Apply brightness via HA service
+    this.handleBrightnessChange({ target: { value: val } });
+    // Allow re-render
+    setTimeout(() => {
+      this._isDragging = false;
+    }, 100);
   }
 
   async handleEffectChange(effectName, event) {
@@ -1622,8 +1675,8 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
 
   render() {
     const _tRender = performance.now();
-    // Skip re-rendering if user is dragging a slider
-    if (this._anySliderDragging) {
+    // Skip re-rendering if user is dragging a slider or typing in brightness input
+    if (this._anySliderDragging || this._typingBrightness) {
       return;
     }
 
@@ -1978,12 +2031,19 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           if (rotaryValue) rotaryValue.textContent = `${brightness}%`;
         }
       } else if (sliderStyle === "capsule") {
+        const bvd =
+          this.config.brightness_value_display ||
+          (this.config.show_brightness_percentage !== false ? "text" : "none");
+        const bvs = this.config.brightness_value_side || "under";
         updateCapsuleVisuals(
           this.shadowRoot,
           brightness,
-          showPercentage ? `${brightness}%` : null,
+          bvd !== "none" && bvs === "under" && bvd !== "input"
+            ? `${brightness}%`
+            : null,
           ".brightness-capsule-host",
         );
+        this._syncBrightnessValueDisplay(brightness);
       } else {
         // Slider mode (default)
         if (showPercentage) {
@@ -2293,6 +2353,52 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         const showMoonIcon = this.config.show_capsule_moon_icon !== false;
         const showSunIcon = this.config.show_capsule_sun_icon !== false;
 
+        // Brightness value display: none / text / input
+        const bvd =
+          this.config.brightness_value_display ||
+          (this.config.show_brightness_percentage !== false ? "text" : "none");
+        const bvs = this.config.brightness_value_side || "under";
+
+        let bLeftSlot = null;
+        let bRightSlot = null;
+        let bIconLeft = showMoonIcon ? "🌙" : null;
+        let bIconRight = showSunIcon ? "☀️" : null;
+        let bShowValue = false;
+        let bValueText = "";
+        let bUnderHtml = null;
+
+        if (bvd !== "none") {
+          const isInput = bvd === "input";
+          if (bvs === "under") {
+            if (isInput) {
+              bUnderHtml = `<div class="brightness-capsule-slot capsule-value-under"><input id="brightnessinput" class="brightness-capsule-input" type="number" min="1" max="100" step="1" value="${brightnessPercent}" onfocus="this.getRootNode().host._typingBrightness=true" onblur="this.getRootNode().host._handleBrightnessValueBlur(event)" onkeydown="if(event.key==='Enter')this.blur()" oninput="this.getRootNode().host._handleBrightnessValueInput(event)" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" /></div>`;
+            } else {
+              bShowValue = true;
+              bValueText = `${brightnessPercent}%`;
+            }
+          } else {
+            // left or right side — keep icon visible between value and track
+            const inputHtml = isInput
+              ? `<input id="brightnessinput" class="brightness-capsule-input" type="number" min="1" max="100" step="1" value="${brightnessPercent}" onfocus="this.getRootNode().host._typingBrightness=true" onblur="this.getRootNode().host._handleBrightnessValueBlur(event)" onkeydown="if(event.key==='Enter')this.blur()" oninput="this.getRootNode().host._handleBrightnessValueInput(event)" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()" />`
+              : `<input id="brightnesstext" class="brightness-capsule-input" type="text" value="${brightnessPercent}%" readonly tabindex="-1" />`;
+            if (bvs === "left") {
+              // Layout: [value] [icon] [track] — icon stays between value and slider
+              const iconHtml = bIconLeft
+                ? `<div class="capsule-icon capsule-icon-left">${bIconLeft}</div>`
+                : "";
+              bLeftSlot = `<div class="brightness-capsule-slot">${inputHtml}${iconHtml}</div>`;
+              bIconLeft = null; // already included in slot
+            } else {
+              // Layout: [track] [icon] [value] — icon stays between slider and value
+              const iconHtml = bIconRight
+                ? `<div class="capsule-icon capsule-icon-right">${bIconRight}</div>`
+                : "";
+              bRightSlot = `<div class="brightness-capsule-slot">${iconHtml}${inputHtml}</div>`;
+              bIconRight = null; // already included in slot
+            }
+          }
+        }
+
         html += `<div class="brightness-capsule-host">`;
         html += renderCapsuleHTML({
           theme: brightnessTheme,
@@ -2300,15 +2406,18 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           value: brightness,
           min: 1,
           max: 100,
-          iconLeft: showMoonIcon ? "🌙" : null,
-          iconRight: showSunIcon ? "☀️" : null,
+          iconLeft: bIconLeft,
+          iconRight: bIconRight,
+          leftSlotHtml: bLeftSlot,
+          rightSlotHtml: bRightSlot,
           hostInputHandler:
             "this.getRootNode().host.handleBrightnessChange(event)",
           hostDragStart: "this.getRootNode().host._startDrag()",
           hostDragEnd: "this.getRootNode().host._endDrag()",
           label: showLabel ? labelContent : null,
-          showValue: this.config.show_brightness_percentage !== false,
-          valueText: `${brightnessPercent}%`,
+          showValue: bShowValue,
+          valueText: bValueText,
+          underHtml: bUnderHtml,
           trackExtraHtml: this.config.brightness_snap_to_positions
             ? `<div class="capsule-snap-ticks">${[20, 40, 60, 80].map((v) => `<div class="capsule-snap-tick" style="left:${((v - 1) / 99) * 100}%"></div>`).join("")}</div>`
             : "",
@@ -3365,6 +3474,41 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           background: var(--primary-text-color, #333);
           border-radius: 50%;
           opacity: 0.35;
+        }
+        .brightness-capsule-slot {
+          flex-shrink: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 2px;
+        }
+        .brightness-capsule-input {
+          width: 52px;
+          height: 26px;
+          border: 1px solid var(--divider-color, rgba(128,128,128,0.3));
+          border-radius: 5px;
+          background: transparent;
+          color: var(--primary-text-color, #333);
+          font-size: 13px;
+          font-weight: 700;
+          text-align: center;
+          box-sizing: border-box;
+          padding: 0;
+          -moz-appearance: textfield;
+          outline: none;
+        }
+        .brightness-capsule-input::-webkit-outer-spin-button,
+        .brightness-capsule-input::-webkit-inner-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }
+        .brightness-capsule-input[readonly] {
+          cursor: default;
+        }
+        .capsule-value-under {
+          display: flex;
+          justify-content: center;
+          padding: 8px 0;
         }
         
         /* ===== Brightness Theme: Container-level styles ===== */

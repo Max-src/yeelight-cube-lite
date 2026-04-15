@@ -78,6 +78,7 @@ export function renderCapsuleHTML(opts) {
     label = null,
     showValue = true,
     valueText = "",
+    underHtml = null,
     wheelHandler = "",
     trackExtraHtml = "",
   } = opts;
@@ -96,9 +97,12 @@ export function renderCapsuleHTML(opts) {
       ? `<div class="capsule-icon capsule-icon-right">${iconRight}</div>`
       : "";
 
-  const valueHtml = showValue
-    ? `<div class="capsule-value-text">${valueText}</div>`
-    : "";
+  // underHtml overrides showValue/valueText when provided
+  const valueHtml = underHtml
+    ? underHtml
+    : showValue
+      ? `<div class="capsule-value-text">${valueText}</div>`
+      : "";
 
   // Compute initial percent so the capsule renders at the correct
   // position on first paint (avoids the visual blink from 0 → value

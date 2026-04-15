@@ -1315,6 +1315,11 @@ class YeelightCubeGradientCard extends HTMLElement {
         .capsule-angle-input[readonly] {
           cursor: default;
         }
+        .capsule-value-under {
+          display: flex;
+          justify-content: center;
+          padding: 8px 0;
+        }
         .snap-tick {
           position: absolute;
           background: var(--secondary-text-color, #999);
@@ -4322,18 +4327,32 @@ ${(() => {
         let capsuleRightSlot = null;
         let capsuleIconLeft = null;
         let capsuleIconRight = null;
+        let capsuleShowValue = false;
+        let capsuleValueText = "";
+        let capsuleUnderHtml = null;
 
         if (capsuleAvd !== "none") {
           const isInput = capsuleAvd === "input";
-          const slotHtml = isInput
-            ? `<div class="capsule-angle-slot"><input id="angleinput" class="capsule-angle-input" type="number" min="0" max="359" step="1" value="${capsuleAngleRounded}" /></div>`
-            : `<div class="capsule-angle-slot"><input id="angletext" class="capsule-angle-input" type="text" value="${capsuleAngleRounded}°" readonly tabindex="-1" /></div>`;
-          if (capsuleAvdSide === "left") {
-            capsuleLeftSlot = slotHtml;
-            capsuleIconLeft = null; // slot replaces icon
+          if (capsuleAvdSide === "under") {
+            if (isInput) {
+              capsuleUnderHtml = `<div class="capsule-angle-slot capsule-value-under"><input id="angleinput" class="capsule-angle-input" type="number" min="0" max="359" step="1" value="${capsuleAngleRounded}" /></div>`;
+            } else {
+              // text mode — use default capsule-value-text
+              capsuleShowValue = true;
+              capsuleValueText = `${capsuleAngleRounded}°`;
+            }
           } else {
-            capsuleRightSlot = slotHtml;
-            capsuleIconRight = null; // slot replaces icon
+            // left or right side
+            const slotHtml = isInput
+              ? `<div class="capsule-angle-slot"><input id="angleinput" class="capsule-angle-input" type="number" min="0" max="359" step="1" value="${capsuleAngleRounded}" /></div>`
+              : `<div class="capsule-angle-slot"><input id="angletext" class="capsule-angle-input" type="text" value="${capsuleAngleRounded}°" readonly tabindex="-1" /></div>`;
+            if (capsuleAvdSide === "left") {
+              capsuleLeftSlot = slotHtml;
+              capsuleIconLeft = null; // slot replaces icon
+            } else {
+              capsuleRightSlot = slotHtml;
+              capsuleIconRight = null; // slot replaces icon
+            }
           }
         }
 
@@ -4352,8 +4371,9 @@ ${(() => {
           hostDragStart: "this.getRootNode().host._startCapsuleDrag()",
           hostDragEnd: "this.getRootNode().host._endCapsuleDrag()",
           label: null,
-          showValue: capsuleAvd === "none",
-          valueText: `${capsuleAngleRounded}°`,
+          showValue: capsuleShowValue,
+          valueText: capsuleValueText,
+          underHtml: capsuleUnderHtml,
           wheelHandler: "this.getRootNode().host._handleCapsuleWheel(event)",
           trackExtraHtml: this.config.compass_snap_to_coordinates
             ? `<div class="capsule-snap-ticks">${[45, 90, 135, 180, 225, 270, 315].map((a) => `<div class="capsule-snap-tick" style="left:${(a / 359) * 100}%"></div>`).join("")}</div>`
@@ -4812,8 +4832,12 @@ ${(() => {
     const rounded = Math.round(angle);
     const angleInput = this.shadowRoot.getElementById("angleinput");
     const angleText = this.shadowRoot.getElementById("angletext");
+    const valueText = this.shadowRoot.querySelector(
+      ".angle-capsule-host .capsule-value-text",
+    );
     if (angleInput) angleInput.value = rounded;
     if (angleText) angleText.value = `${rounded}°`;
+    if (valueText) valueText.textContent = `${rounded}°`;
   }
 
   _updateRotaryDisplay(angle) {

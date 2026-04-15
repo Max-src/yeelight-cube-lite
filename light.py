@@ -33,28 +33,28 @@ _LOGGER = logging.getLogger(__name__)
 _LOGGER.debug("Yeelight Cube Lite light.py module loaded")
 
 # Timing constants
-APPLY_POST_DELAY = 0.0        # No post-delay needed â€” send_command_fast doesn't wait for responses
-APPLY_HARD_TIMEOUT = 5.0      # Seconds â€” absolute safety timeout for a single apply() call under
+APPLY_POST_DELAY = 0.0        # No post-delay needed -- send_command_fast doesn't wait for responses
+APPLY_HARD_TIMEOUT = 5.0      # Seconds -- absolute safety timeout for a single apply() call under
                               # the global lock.  If an apply() exceeds this (e.g., socket hangs
                               # beyond the per-op 0.5s timeout), asyncio.wait_for cancels it and
                               # releases the lock so other entities can proceed.
-                              # Reduced from 8s to 5s â€” inner timeouts are now tighter:
-                              #   probe 0.5s + raw_cmd 1.5sÃ—2 + draw 0.5s = 4s worst case.
-CIRCUIT_BREAKER_WINDOW = 30.0 # Seconds â€” if 2+ hard timeouts occur within this window,
+                              # Reduced from 8s to 5s -- inner timeouts are now tighter:
+                              #   probe 0.5s + raw_cmd 1.5sx2 + draw 0.5s = 4s worst case.
+CIRCUIT_BREAKER_WINDOW = 30.0 # Seconds -- if 2+ hard timeouts occur within this window,
                               # reject new operations immediately instead of queueing them
                               # behind the lock for another 8s timeout each.
-FX_MODE_STALENESS_TIMEOUT = 20.0  # Seconds â€” re-send activate_fx_mode when fx_age exceeds this
+FX_MODE_STALENESS_TIMEOUT = 20.0  # Seconds -- re-send activate_fx_mode when fx_age exceeds this
                                   # The Cube silently exits direct FX mode ~25s after ACTIVATION
                                   # (not after last command!).  It keeps the TCP connection open
-                                  # and silently ignores update_leds â€” no error, no socket close.
+                                  # and silently ignores update_leds -- no error, no socket close.
                                   # 20s gives ~5s safety margin.  Must check time since
                                   # activate_fx_mode was sent, NOT time since last command.
 
 # NOTE: Per-entity and global pixel art throttle REMOVED.
 # The gradient card sends identical update_leds commands rapidly without
 # any throttle and works perfectly.  The throttle was actually causing
-# sticking: multi-second delays let sockets go stale â†’ RST + reconnect
-# timeout â†’ retry storm â†’ lamp stuck for 20-30s.
+# sticking: multi-second delays let sockets go stale -> RST + reconnect
+# timeout -> retry storm -> lamp stuck for 20-30s.
 # JS 300ms debounce provides sufficient rate limiting.
 
 # Global registry to store entity instances for service calls
@@ -79,9 +79,9 @@ def _entity_id_or_list(value):
 # Per-device locks to serialize hardware commands to the SAME physical lamp.
 # Each IP gets its own asyncio.Lock, so operations to different lamps run
 # concurrently without cross-device cascade.  When one lamp is unreachable,
-# only that lamp's operations block â€” the other lamp continues normally.
-# Within a single lamp, the lock ensures command chains (activate_fx_mode â†’
-# set_bright â†’ update_leds) complete atomically without interleaving.
+# only that lamp's operations block -- the other lamp continues normally.
+# Within a single lamp, the lock ensures command chains (activate_fx_mode  -> 
+# set_bright -> update_leds) complete atomically without interleaving.
 _DEVICE_LOCKS: dict[str, asyncio.Lock] = {}
 
 def _get_device_lock(ip: str) -> asyncio.Lock:
@@ -114,9 +114,9 @@ ORIENTATION_FLIPPED = "flipped"
 
 # Virtual character sentinel for panel mode.
 # When panel_mode is on, the text is replaced by this single character
-# whose positions cover the entire 5Ã—20 display (all 100 pixels).
+# whose positions cover the entire 5x20 display (all 100 pixels).
 # All rendering modes see one "giant letter" filling the whole panel
-# and work via the normal text rendering path â€” no special branches needed.
+# and work via the normal text rendering path -- no special branches needed.
 PANEL_FULL_CHAR = "\uFFFF"
 
 class YeelightCubeLight(LightEntity, RestoreEntity):
@@ -394,13 +394,13 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         if self._preview_darken > 0:
             darken_factor = 1 - (self._preview_darken / 100)
             # Use floor() to avoid rounding up, then ensure non-zero channels stay alive
-            # This prevents color shifts (e.g., purple â†’ red) when green channel would round to 0
+            # This prevents color shifts (e.g., purple -> red) when green channel would round to 0
             r = max(1, math.floor(r * darken_factor)) if r > 0 else 0
             g = max(1, math.floor(g * darken_factor)) if g > 0 else 0
             b = max(1, math.floor(b * darken_factor)) if b > 0 else 0
             
             # Log darken effect for debugging (reduced to debug level to avoid spam)
-            _LOGGER.debug(f"[FINAL BRIGHTNESS] RGB{original_rgb} â†’ darken {self._preview_darken}% â†’ RGB({r}, {g}, {b})")
+            _LOGGER.debug(f"[FINAL BRIGHTNESS] RGB{original_rgb} -> darken {self._preview_darken}% -> RGB({r}, {g}, {b})")
         
         # Brighten (0-100: interpolate towards white) - Kept for future use
         if self._preview_brighten > 0:
@@ -443,9 +443,8 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         is NO non-linearity to compensate for.  Using darken% here would
         over-correct and desaturate colours ("faded / merged with white").
         
-        ═══════════════════════════════════════════════════════════════════
         TUNING PARAMETERS - adjust these if colours still look off:
-        ═══════════════════════════════════════════════════════════════════
+        -------------------------------------------------------------------
 
         HW_BRIGHT_THRESHOLD  (default 50)
             Hardware brightness % ABOVE which correction is skipped.
@@ -466,19 +465,17 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             Blue channel gamma.  Lowest value because blue LEDs need the
             most help.  If blues are still too dark, try 0.50-0.55.
             If blues are over-boosted, try 0.70-0.80.
-        ═══════════════════════════════════════════════════════════════════
         """
         r, g, b = rgb_color
         if r == 0 and g == 0 and b == 0:
             return (0, 0, 0)
 
-        # ── Tuning knobs (read from instance for runtime calibration) ──
+        # Tuning knobs (read from instance for runtime calibration)
         HW_BRIGHT_THRESHOLD = self._calib_hw_threshold
         HW_BRIGHT_FULL      = self._calib_hw_full
         GAMMA_R             = self._calib_gamma_r
         GAMMA_G             = self._calib_gamma_g
         GAMMA_B             = self._calib_gamma_b
-        # ────────────────────────────────────────────────────────────────
 
         # Compute EFFECTIVE brightness that accounts for both dimming mechanisms:
         #   1. Hardware brightness (global LED current/PWM)
@@ -496,15 +493,15 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         # Correction strength has TWO components:
         #
         # 1. eff_strength: how much correction the effective brightness demands
-        #    (ramps 0→1 as effective drops from threshold→full)
+        #    (ramps 0->1 as effective drops from threshold->full)
         #
         # 2. hw_damping: keeps VISUAL IMPACT of correction constant across
-        #    brightness levels.  A pixel boost of Δ produces visible change
-        #    proportional to Δ × hw/100.  At hw=4% (1% user), even a large Δ
-        #    is invisible.  At hw=96% (24% user), even small Δ washes colors.
+        #    brightness levels.  A pixel boost of delta produces visible change
+        #    proportional to delta x hw/100.  At hw=4% (1% user), even a large delta
+        #    is invisible.  At hw=96% (24% user), even small delta washes colors.
         #
         #    hw_damping = HW_FULL / hw  (capped at 1.0)
-        #    This ensures:  Δ × hw × (HW_FULL/hw) = Δ × HW_FULL = constant.
+        #    This ensures:  delta x hw x (HW_FULL/hw) = delta x HW_FULL = constant.
         #
         #    Result: correction is strongest at very low hw (where it's needed
         #    AND invisible), and scales down proportionally at higher hw.
@@ -526,25 +523,24 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         g_corr = gamma_correct(g, GAMMA_G)
         b_corr = gamma_correct(b, GAMMA_B)
 
-        # ── HYBRID LUMINANCE + CHANNEL-BALANCE scaling ──────────────────
+        # HYBRID LUMINANCE + CHANNEL-BALANCE scaling
         # Pure per-channel gamma (R=0.85, G=0.75, B=0.65) destroys hue:
-        #   pink (10,3,6) → (16,9,22) = massive shift pink→purple!
-        #   white (10,10,10) → (16,19,22) = blue tint
+        #   pink (10,3,6) -> (16,9,22) = massive shift pink->purple!
+        #   white (10,10,10) -> (16,19,22) = blue tint
         #
         # Pure uniform luminance scaling preserves hue perfectly but
         # CANNOT compensate for physical per-channel LED non-linearity
-        # (blue LEDs have higher forward voltage → less output at low duty).
+        # (blue LEDs have higher forward voltage -> less output at low duty).
         # Result: whites look brown/orange, blues look grayish.
         #
         # HYBRID approach: blend between uniform and per-channel.
-        #   channel_balance = 0.0 → pure uniform (perfect hue, no blue fix)
-        #   channel_balance = 1.0 → pure per-channel (blue fixed, hue shifts)
-        #   channel_balance = 0.5 → 50/50 blend (moderate blue boost, mild shift)
+        #   channel_balance = 0.0 -> pure uniform (perfect hue, no blue fix)
+        #   channel_balance = 1.0 -> pure per-channel (blue fixed, hue shifts)
+        #   channel_balance = 0.5 -> 50/50 blend (moderate blue boost, mild shift)
         #
         # At 0.5 default:
-        #   white (10,10,10) → ~(17,18,20): subtle blue boost → neutral on LED
-        #   pink  (10,3,6)  → keeps pink character with modest blue nudge
-        # ──────────────────────────────────────────────────────────────────
+        #   white (10,10,10) -> ~(17,18,20): subtle blue boost -> neutral on LED
+        #   pink  (10,3,6)  -> keeps pink character with modest blue nudge
         CHANNEL_BALANCE = getattr(self, '_calib_channel_balance', 0.7)
 
         orig_lum = 0.299 * r + 0.587 * g + 0.114 * b
@@ -590,29 +586,28 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         efficiency and wavelength, so the *same* RGB values look different on
         a monitor versus the physical lamp.  Typical symptoms on this lamp:
 
-          - Yellow (#ffff00) shifts greenish   → green LED is too efficient
-          - Cyan   (#00ffff) shifts greenish   → green dominates blue in mixes
-          - White  (#ffffff) not perfectly neutral → green tint
-          - Blues / purples / oranges appear "lighter" / washed → G & B LEDs
+          - Yellow (#ffff00) shifts greenish   -> green LED is too efficient
+          - Cyan   (#00ffff) shifts greenish   -> green dominates blue in mixes
+          - White  (#ffffff) not perfectly neutral -> green tint
+          - Blues / purples / oranges appear "lighter" / washed -> G & B LEDs
             contribute more perceived brightness than expected
-          - Pure red and magenta look correct  → red channel is accurate
+          - Pure red and magenta look correct  -> red channel is accurate
 
         HOW IT WORKS:
         Per-channel gain multiplier blended toward 1.0 (neutral) at low
         brightness.  The blend factor is derived from self._brightness
-        (1–255, HA brightness).
+        (1--255, HA brightness).
 
-        Pipeline order:  colour effects → brightness darken →
-                         _apply_color_correction (low-brightness gamma) →
-                         ★ _apply_color_accuracy (this, channel gain) ★ →
+        Pipeline order:  colour effects -> brightness darken ->
+                         _apply_color_correction (low-brightness gamma) ->
+                         * _apply_color_accuracy (this, channel gain) * ->
                          encode & send to lamp
 
-        The preview card is NOT affected — it always shows the original
+        The preview card is NOT affected -- it always shows the original
         intended colours.
 
-        ═══════════════════════════════════════════════════════════════════
-        TUNING PARAMETERS — adjust these to match YOUR lamp:
-        ═══════════════════════════════════════════════════════════════════
+        TUNING PARAMETERS - adjust these to match YOUR lamp:
+        -------------------------------------------------------------------
 
         GAIN_R  (default 1.00)
             Red channel multiplier.  1.0 = unchanged.
@@ -622,15 +617,14 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         GAIN_G  (default 0.87)
             Green channel multiplier.  Reduced because the green LED is
             over-efficient, causing yellows/cyans/whites to shift green.
-            If still too green, try 0.80–0.85.
-            If colours look too pink/magenta, raise to 0.90–0.94.
+            If still too green, try 0.80--0.85.
+            If colours look too pink/magenta, raise to 0.90--0.94.
 
         GAIN_B  (default 0.72)
             Blue channel multiplier.  Reduced for deeper blues
             and to prevent mid-range colours from looking washed out.
-            If blues are too dark, raise to 0.80–0.90.
-            If blues still look washed, lower to 0.65–0.70.
-        ═══════════════════════════════════════════════════════════════════
+            If blues are too dark, raise to 0.80--0.90.
+            If blues still look washed, lower to 0.65-0.70.
         """
         if not self._color_accuracy_enabled:
             return rgb_color
@@ -639,23 +633,21 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         if r == 0 and g == 0 and b == 0:
             return (0, 0, 0)
 
-        # ── Tuning knobs (read from instance for runtime calibration) ──
+        # Tuning knobs (read from instance for runtime calibration)
         GAIN_R = self._calib_gain_r
         GAIN_G = self._calib_gain_g
         GAIN_B = self._calib_gain_b
-        # ────────────────────────────────────────────────────────────────
 
-        # ── Brightness-based fade ───────────────────────────────────────
+        # Brightness-based fade
         # Blend gains toward 1.0 (neutral) as brightness decreases.
-        # At brightness 255 → factor = 1.0 (full correction)
-        # At brightness   1 → factor ≈ 0.0 (no correction)
+        # At brightness 255 -> factor = 1.0 (full correction)
+        # At brightness   1 -> factor ~= 0.0 (no correction)
         brightness = max(1, min(255, getattr(self, '_brightness', 255)))
         factor = (brightness - 1) / 254  # 0.0 .. 1.0
 
         GAIN_R = 1.0 + (GAIN_R - 1.0) * factor
         GAIN_G = 1.0 + (GAIN_G - 1.0) * factor
         GAIN_B = 1.0 + (GAIN_B - 1.0) * factor
-        # ────────────────────────────────────────────────────────────────
 
         r_out = min(255, round(r * GAIN_R))
         g_out = min(255, round(g * GAIN_G))
@@ -669,7 +661,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
     # This system combines TWO brightness mechanisms for extended range:
     #
     # 1. RGB DARKENING (high brightness range):
-    #    - Reduces RGB values mathematically (e.g., RGB(255,0,0) â†’ RGB(128,0,0) at 50% darken)
+    #    - Reduces RGB values mathematically (e.g., RGB(255,0,0) -> RGB(128,0,0) at 50% darken)
     #    - Used when hardware brightness is at maximum
     #    - Preserves color accuracy at higher brightness levels
     #
@@ -759,12 +751,12 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         LOW RANGE (0 to BRIGHTNESS_TRANSITION_POINT):
         - Hardware brightness varies: MIN_HARDWARE_BRIGHTNESS to MAX_HARDWARE_BRIGHTNESS
         - Darkness fixed at: MAX_DARKEN_PERCENT
-        - Example: 0-50% user â†’ hardware 10-100%, darkness 94%
+        - Example: 0-50% user -> hardware 10-100%, darkness 94%
         
         HIGH RANGE (BRIGHTNESS_TRANSITION_POINT to 100):
         - Hardware brightness fixed at: 100%
         - Darkness varies: MAX_DARKEN_PERCENT to MIN_DARKEN_PERCENT (with curve)
-        - Example: 50-100% user â†’ hardware 100%, darkness 94-0%
+        - Example: 50-100% user -> hardware 100%, darkness 94-0%
         
         Args:
             user_brightness: Home Assistant brightness value (1-255)
@@ -777,7 +769,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         # Clamp to valid range
         user_brightness = max(1, min(255, user_brightness))
         
-        # Convert to percentage (1-255 â†’ 1-100%)
+        # Convert to percentage (1-255 -> 1-100%)
         user_brightness_pct = (user_brightness / 255) * 100
         
         transition_point = self._calib_brightness_transition
@@ -790,9 +782,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         dark_80 = self._calib_dark_at_80
         low_min_dark = self._calib_low_min_darken
         
-        # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         # LOW BRIGHTNESS RANGE: Use hardware dimming + maximum darkness
-        # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         if user_brightness_pct <= transition_point:
             # Darken ramps from low_min_dark (at 0%) to max_dark (at transition)
             # This preserves pixel precision at low brightness instead of crushing values
@@ -809,15 +799,13 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             darken_percent = int(round(max(0, min(100, darken_percent))))
             
             _LOGGER.debug(
-                f"[BRIGHTNESS] LOW range: user={user_brightness_pct:.1f}% â†’ "
+                f"[BRIGHTNESS] LOW range: user={user_brightness_pct:.1f}% -> "
                 f"hardware={hardware_brightness}%, darkness={darken_percent}%"
             )
             
             return (hardware_brightness, darken_percent)
         
-        # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         # HIGH BRIGHTNESS RANGE: Use maximum hardware + darkness curve
-        # â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         else:
             # Hardware brightness is fixed at maximum
             hardware_brightness = 100
@@ -860,7 +848,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             darken_percent = int(round(max(0, min(100, darken_percent))))
             
             _LOGGER.debug(
-                f"[BRIGHTNESS] HIGH range: user={user_brightness_pct:.1f}% â†’ "
+                f"[BRIGHTNESS] HIGH range: user={user_brightness_pct:.1f}% -> "
                 f"hardware={hardware_brightness}%, darkness={darken_percent}%"
             )
             
@@ -936,13 +924,13 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         self._preview_tint_hue = 0      # 0-360: tint color hue
         self._preview_tint_strength = 0 # 0-100: tint blend amount
         # Hardware color correction is always active (see _apply_color_correction)
-        # Hardware color accuracy — always-on by default (see _apply_color_accuracy).
+        # Hardware color accuracy -- always-on by default (see _apply_color_accuracy).
         # Compensates for LED colour rendering differences vs. a computer monitor
         # by applying per-channel gain that fades with brightness.  The service
         # set_color_accuracy still exists to toggle at runtime but the default is ON.
         self._color_accuracy_enabled = True  # Per-channel gain to match monitor colours
         
-        # ── Calibration overrides (runtime-tunable via set_color_calibration) ──
+        # Calibration overrides (runtime-tunable via set_color_calibration)
         # System 1: Low-brightness gamma correction
         self._calib_gamma_r = 0.85
         self._calib_gamma_g = 0.75
@@ -1025,7 +1013,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         # without double-darkening (module.data may already be darkened after apply).
         self._base_matrix_colors = None
         
-        # â”€â”€ Transition settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        # -- Transition settings ------------------------------------------
         self._transition_type = "none"           # Transition effect key (see select.py _TRANSITION_TYPES)
         self._transition_steps = 5               # Number of intermediate frames (1-10)
         self._transition_duration = 1.0          # Total transition time in seconds (0.2-10.0)
@@ -1038,7 +1026,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         self._transition_steps_entity = None
         self._transition_duration_entity = None
         
-        # Camera entity references â€” set by camera.py async_setup_entry.
+        # Camera entity references -- set by camera.py async_setup_entry.
         # Used for direct push notifications (bypass state-change-event delay).
         self._camera_entities: list = []
     
@@ -1048,7 +1036,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         Must be called BEFORE ``async_schedule_update_ha_state()`` on the
         light entity so the camera image is already cached when the frontend
         makes the HTTP fetch triggered by the light state change.
-        This avoids the double-request problem (stale image â†’ re-fetch).
+        This avoids the double-request problem (stale image -> re-fetch).
         """
         cams = getattr(self, '_camera_entities', None)
         if cams:
@@ -1056,7 +1044,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 try:
                     cam.async_refresh_preview()
                 except Exception:
-                    pass  # camera not yet ready â€” ignore
+                    pass  # camera not yet ready -- ignore
 
     @property
     def _palettes(self):
@@ -1105,7 +1093,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         self._hard_timeout_times = [t for t in self._hard_timeout_times if now - t < CIRCUIT_BREAKER_WINDOW]
         if len(self._hard_timeout_times) >= 2:
             _LOGGER.warning(
-                f"[OP #{op_id}] [{self._ip}] âš¡ CIRCUIT BREAKER â€” rejecting {op_name} "
+                f"[OP #{op_id}] [{self._ip}] [!] CIRCUIT BREAKER -- rejecting {op_name} "
                 f"({len(self._hard_timeout_times)} timeouts in last {CIRCUIT_BREAKER_WINDOW:.0f}s). "
                 f"Device appears unreachable, will recover via health check."
             )
@@ -1116,7 +1104,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             return
         
         _LOGGER.debug(
-            f"[OP #{op_id}] [{self._ip}] â–¶ {op_name} "
+            f"[OP #{op_id}] [{self._ip}] > {op_name} "
             f"(is_on={self._is_on}, fx_direct={self._fx_mode_is_direct}) "
             f"[{self._cube_matrix._state_summary()}]"
         )
@@ -1133,7 +1121,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     await asyncio.wait_for(func(), timeout=effective_timeout)
                 except asyncio.TimeoutError:
                     _LOGGER.error(
-                        f"[OP #{op_id}] [{self._ip}] âš  HARD TIMEOUT â€” "
+                        f"[OP #{op_id}] [{self._ip}] [!] HARD TIMEOUT -- "
                         f"{op_name} exceeded {effective_timeout:.0f}s, releasing lock"
                     )
                     self._fx_mode_is_direct = False
@@ -1147,7 +1135,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                         self._maybe_schedule_retry()
                     return
             # Success
-            _LOGGER.debug(f"[OP #{op_id}] [{self._ip}] âœ“ {op_name} complete")
+            _LOGGER.debug(f"[OP #{op_id}] [{self._ip}] [OK] {op_name} complete")
             # Only reset display retry state on display op success
             if is_display_op:
                 self._display_retry_count = 0
@@ -1160,7 +1148,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         except AttributeError as e:
             if "'NoneType'" in str(e):
                 _LOGGER.debug(
-                    f"[OP #{op_id}] [{self._ip}] Socket gone â€” resetting FX mode"
+                    f"[OP #{op_id}] [{self._ip}] Socket gone -- resetting FX mode"
                 )
                 self._connection_error = True
                 self._last_connection_error = "Connection lost"
@@ -1186,7 +1174,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 )
         except TimeoutError:
             _LOGGER.debug(
-                f"[OP #{op_id}] [{self._ip}] Timeout â€” device unreachable"
+                f"[OP #{op_id}] [{self._ip}] Timeout -- device unreachable"
             )
             self._connection_error = True
             self._last_connection_error = "Device timeout"
@@ -1209,7 +1197,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     f"[OP #{op_id}] [{self._ip}] Unexpected error in {op_name}: {e}"
                 )
 
-    MAX_DISPLAY_RETRIES = 3  # 3 retries â‰ˆ 20s total, then health check takes over
+    MAX_DISPLAY_RETRIES = 3  # 3 retries ~= 20s total, then health check takes over
 
     def _maybe_schedule_retry(self):
         """Schedule a display retry if the retry limit hasn't been reached.
@@ -1219,7 +1207,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         """
         if self._display_retry_count >= self.MAX_DISPLAY_RETRIES:
             _LOGGER.debug(
-                f"[RETRY] [{self._ip}] Skipping retry â€” already at limit "
+                f"[RETRY] [{self._ip}] Skipping retry -- already at limit "
                 f"({self._display_retry_count}/{self.MAX_DISPLAY_RETRIES})"
             )
             return
@@ -1233,13 +1221,13 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         after HA reboot), this schedules a future async_apply_display_mode() call
         that respects the exponential backoff:
         
-          boot â†’ apply fails â†’ retry in 2s â†’ fails â†’ retry in 2s â†’ fails â†’ backoff â†’ 4s â†’ ...
+          boot -> apply fails -> retry in 2s -> fails -> retry in 2s -> fails -> backoff -> 4s -> ...
         
         Only ONE retry task runs at a time. A successful display update clears the retry.
         User-initiated actions (turn_on, set_color, etc.) also naturally re-queue,
         so this retry only matters when nothing else is driving updates.
         
-        After MAX_DISPLAY_RETRIES (6 retries â‰ˆ 50s), stops retrying â€” health check
+        After MAX_DISPLAY_RETRIES (6 retries ~= 50s), stops retrying -- health check
         at 10s intervals takes over for longer outages. User actions will still
         trigger a fresh display update, resetting the counter.
         """
@@ -1261,7 +1249,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         # Calculate delay: first retry is quick (2.5s) to catch transient network
         # hiccups before engaging exponential backoff.  Subsequent retries use
         # the device's current cooldown + buffer.
-        QUICK_RETRY_DELAY = 1.5  # seconds â€” fast enough to recover from a 1-2s WiFi hiccup
+        QUICK_RETRY_DELAY = 1.5  # seconds -- fast enough to recover from a 1-2s WiFi hiccup
                                  # Reduced from 2.5s since inner timeouts are now tighter
         cooldown = self._cube_matrix._reconnect_cooldown
         if self._display_retry_count == 1:
@@ -1271,7 +1259,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         
         # Add random jitter (0-1.5s) to desynchronize retries across lamps.
         # When two lamps fail at the same moment, they get identical cooldown
-        # schedules and retry simultaneously â€” each round has both lamps
+        # schedules and retry simultaneously -- each round has both lamps
         # hitting the network at once, prolonging the failure.  Jitter breaks
         # this synchronization so they stagger naturally.
         import random as _rng
@@ -1280,7 +1268,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         async def _delayed_retry():
             try:
                 _LOGGER.debug(
-                    f"[RETRY] [{self._ip}] Attempt {self._display_retry_count}/{self.MAX_DISPLAY_RETRIES} â€” "
+                    f"[RETRY] [{self._ip}] Attempt {self._display_retry_count}/{self.MAX_DISPLAY_RETRIES} -- "
                     f"waiting {delay:.1f}s before retry "
                     f"[{self._cube_matrix._state_summary()}]"
                 )
@@ -1318,10 +1306,10 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         
         Flow:
           1. Sleep for adaptive interval (10s during failures, 15s when recently online, 60s when long-dead)
-          2. If device has no active issues â†’ skip
+          2. If device has no active issues -> skip
           3. TCP probe the device (CONNECT_TIMEOUT timeout)
-          4. If reachable â†’ reset all failure counters and trigger a fresh display update
-          5. If still unreachable â†’ log at debug level, try again next cycle
+          4. If reachable -> reset all failure counters and trigger a fresh display update
+          5. If still unreachable -> log at debug level, try again next cycle
         """
         _LOGGER.debug(f"[HEALTH] [{self._ip}] Health check started (adaptive interval)")
         while True:
@@ -1344,10 +1332,10 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 else:
                     interval = 60
                 
-                # PERIODIC BRIGHTNESS STATE SNAPSHOT â€” logs every cycle so we can
+                # PERIODIC BRIGHTNESS STATE SNAPSHOT -- logs every cycle so we can
                 # see the stored brightness values even when nothing is changing.
                 _LOGGER.debug(
-                    f"[BRIGHTNESS_DIAG] [{self._ip}] SNAPSHOT â€” "
+                    f"[BRIGHTNESS_DIAG] [{self._ip}] SNAPSHOT -- "
                     f"user={self._brightness}/255, "
                     f"last_hw={self._last_hardware_brightness}, "
                     f"darken={self._preview_darken}%, "
@@ -1380,7 +1368,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     f"interval={interval}s)"
                 )
                 
-                # Quick TCP probe â€” use longer timeout for recovery.
+                # Quick TCP probe -- use longer timeout for recovery.
                 # Normal commands use 0.5s, but a lamp rebooting may have
                 # slow TCP handshakes.  3s gives reliable detection.
                 import socket as _socket
@@ -1389,7 +1377,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 try:
                     sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
                     sock.settimeout(probe_timeout)
-                    # SO_LINGER RST close â€” avoids TIME_WAIT on probe sockets
+                    # SO_LINGER RST close -- avoids TIME_WAIT on probe sockets
                     import struct as _struct
                     sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_LINGER, _struct.pack('ii', 1, 0))
                     await asyncio.to_thread(sock.connect, (self._ip, self._cube_matrix._port))
@@ -1398,7 +1386,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 except (OSError, ConnectionRefusedError, TimeoutError):
                     # Log at WARNING so the user can see probes are happening
                     _LOGGER.warning(
-                        f"[HEALTH] [{self._ip}] Probe failed â€” still unreachable "
+                        f"[HEALTH] [{self._ip}] Probe failed -- still unreachable "
                         f"(retries={self._display_retry_count}/{self.MAX_DISPLAY_RETRIES}, "
                         f"failures={self._cube_matrix._consecutive_failures}, "
                         f"timeout={probe_timeout}s)"
@@ -1412,10 +1400,10 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 
                 # Device is back! Reset everything and trigger a fresh display.
                 _LOGGER.warning(
-                    f"[HEALTH] [{self._ip}] âœ“ Device is BACK ONLINE! "
-                    f"Resetting failures ({self._cube_matrix._consecutive_failures}â†’0), "
-                    f"retries ({self._display_retry_count}â†’0), "
-                    f"cooldown ({self._cube_matrix._reconnect_cooldown:.0f}sâ†’{RECONNECT_COOLDOWN_INITIAL}s)"
+                    f"[HEALTH] [{self._ip}] [OK] Device is BACK ONLINE! "
+                    f"Resetting failures ({self._cube_matrix._consecutive_failures} -> 0), "
+                    f"retries ({self._display_retry_count} -> 0), "
+                    f"cooldown ({self._cube_matrix._reconnect_cooldown:.0f}s -> {RECONNECT_COOLDOWN_INITIAL}s)"
                 )
                 self._cube_matrix._close_fast_socket()  # Ensure fresh socket after recovery
                 self._cube_matrix._consecutive_failures = 0
@@ -1430,7 +1418,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 
                 # Trigger a full display update (turn_on type so it isn't blocked)
                 _LOGGER.debug(
-                    f"[BRIGHTNESS_DIAG] [{self._ip}] HEALTH RECOVERY â€” will apply display mode. "
+                    f"[BRIGHTNESS_DIAG] [{self._ip}] HEALTH RECOVERY -- will apply display mode. "
                     f"user={self._brightness}/255, last_hw={self._last_hardware_brightness}, "
                     f"darken={self._preview_darken}%, fx_direct={self._fx_mode_is_direct}"
                 )
@@ -1594,7 +1582,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         # brightness-adjusted colors IMMEDIATELY when the user drags the slider,
         # without waiting for the lamp roundtrip.  set_brightness() updates
         # _preview_darken and calls async_schedule_update_ha_state() before
-        # queuing the actual lamp command â€” so this property is read with the
+        # queuing the actual lamp command -- so this property is read with the
         # new darken value and the card preview updates instantly.
         #
         # We read from _base_matrix_colors (snapshot of un-darkened layout colors
@@ -1692,7 +1680,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 # Ensure brightness is at least 1 (Home Assistant minimum for ON lights)
                 self._brightness = max(1, min(255, restored_brightness))
                 _LOGGER.debug(
-                    f"[BRIGHTNESS_DIAG] [{self._ip}] RESTORE â€” raw={restored_brightness}, "
+                    f"[BRIGHTNESS_DIAG] [{self._ip}] RESTORE -- raw={restored_brightness}, "
                     f"clamped={self._brightness}, was_on={old_state.state}"
                 )
                 
@@ -1702,7 +1690,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 self._last_hardware_brightness = hardware_brightness
                 self._last_applied_darken = darken_percent
                 _LOGGER.debug(
-                    f"[BRIGHTNESS_DIAG] [{self._ip}] RESTORE CALC â€” user={self._brightness}/255 â†’ "
+                    f"[BRIGHTNESS_DIAG] [{self._ip}] RESTORE CALC -- user={self._brightness}/255 -> "
                     f"hardware={hardware_brightness}%, darken={darken_percent}%, "
                     f"preview_darken={self._preview_darken}, last_hw={self._last_hardware_brightness}"
                 )
@@ -1832,14 +1820,14 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         Also available as the force_refresh service for manual recovery.
         
         Steps:
-          0. Quick TCP probe â€” fail fast if device is unreachable
+          0. Quick TCP probe -- fail fast if device is unreachable
           1. Close any existing persistent socket (clean slate)
           2. Send activate_fx_mode on a fresh TCP connection (RST-closed after)
           3. Send set_bright on a fresh TCP connection (RST-closed after)
           4. Reset internal state flags
         
         After this, the next send_command_fast call will open a fresh
-        persistent socket for update_leds â€” the Cube accepts pixel data
+        persistent socket for update_leds -- the Cube accepts pixel data
         on any connection once FX mode is device-level active.
         """
         cm = self._cube_matrix
@@ -1849,7 +1837,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             f"[{cm._state_summary()}]"
         )
         
-        # Step 0: Quick TCP probe â€” fail immediately if device is unreachable.
+        # Step 0: Quick TCP probe -- fail immediately if device is unreachable.
         # Without this, we'd burn up to 3s on send_raw_command(activate_fx_mode)
         # + 1.5s on send_raw_command(set_bright) = 4.5s total for a dead device.
         # The probe uses a 0.5s connect + RST close, so we fail in <1s instead.
@@ -1871,7 +1859,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         
         if not probe_ok:
             _LOGGER.warning(
-                f"[ENSURE_FX] [{self._ip}] âš¡ Fast probe FAILED â€” device unreachable, "
+                f"[ENSURE_FX] [{self._ip}] [!] Fast probe FAILED -- device unreachable, "
                 f"skipping FX activation to avoid {1.5*2:.0f}s timeout"
             )
             raise TimeoutError(f"Device {self._ip} unreachable (fast probe failed)")
@@ -1894,7 +1882,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         self._last_hardware_brightness = hardware_brightness
         
         _LOGGER.debug(
-            f"[ENSURE_FX] [{self._ip}] âœ“ FX ready â€” brightness={hardware_brightness}%"
+            f"[ENSURE_FX] [{self._ip}] [OK] FX ready -- brightness={hardware_brightness}%"
         )
 
     async def _force_refresh_impl(self):
@@ -1932,7 +1920,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
     async def async_force_refresh(self):
         """Force refresh via _execute_hardware_op (properly serialized with device lock)."""
         _LOGGER.warning(
-            f"[FORCE REFRESH] [{self._ip}] Starting â€” "
+            f"[FORCE REFRESH] [{self._ip}] Starting -- "
             f"closing persistent socket and using raw TCP"
         )
         await self._execute_hardware_op(
@@ -1959,7 +1947,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         )
     
     async def _internal_turn_on(self, **kwargs):
-        """Internal turn_on implementation â€” runs under the global lock."""
+        """Internal turn_on implementation -- runs under the global lock."""
         _LOGGER.debug(f"[TURN_ON] Executing - is_on: {self._is_on}, custom_text: '{self._custom_text}', mode: '{self._mode}'")
         
         # Ensure FX mode is active using raw TCP (proven reliable).
@@ -1988,7 +1976,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             if "brightness" in kwargs:
                 new_brightness = kwargs["brightness"]
                 _LOGGER.debug(f"[TURN_ON] Setting brightness to {new_brightness}")
-                # Call internal directly â€” we're already under the global lock
+                # Call internal directly -- we're already under the global lock
                 call_id = int(time.time() * 1000) % 100000
                 await self._internal_set_brightness(new_brightness, call_id)
             else:
@@ -2037,13 +2025,13 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         self._is_on = False
         # NOTE: Do NOT reset _fx_mode_is_direct here!
         # The FX socket is still alive after sending blank pixel data.
-        # On turn_on we just reuse the existing socket â€” no activate_fx_mode
+        # On turn_on we just reuse the existing socket -- no activate_fx_mode
         # needed.  If the socket dies while off (Cube idle timeout), the
         # natural error-detection in send_command_fast / apply() will detect
         # it and re-activate FX mode automatically.
         # Previously this was set to False, which forced EVERY turn_on to
         # close the socket, wait 300ms, and open a new one for
-        # activate_fx_mode â€” a cycle that timed out ~50% of the time.
+        # activate_fx_mode -- a cycle that timed out ~50% of the time.
         self._last_hardware_brightness = None  # Reset hardware brightness tracking
         self._last_applied_darken = None        # Reset darken tracking
         self._last_apply_time = 0  # Reset cooldown timer to ensure turn_on will work immediately
@@ -2098,7 +2086,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             self._preview_darken = darken_percent
             _LOGGER.debug(
                 f"[BRIGHTNESS_DIAG] [{self._ip}] SET_BRIGHTNESS state update: "
-                f"{old_brightness} â†’ {self._brightness}, darken={darken_percent}%"
+                f"{old_brightness} -> {self._brightness}, darken={darken_percent}%"
             )
             if self.hass is not None:
                 _LOGGER.warning(
@@ -2112,9 +2100,9 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         )
     
     async def _internal_set_brightness(self, brightness: int, call_id: int, **kwargs):
-        """Internal brightness implementation â€” runs under the global lock."""
+        """Internal brightness implementation -- runs under the global lock."""
         _LOGGER.debug(
-            f"[BRIGHTNESS_DIAG] [{self._ip}] INTERNAL_SET #{call_id} â€” "
+            f"[BRIGHTNESS_DIAG] [{self._ip}] INTERNAL_SET #{call_id} -- "
             f"requested={brightness}, current={self._brightness}, "
             f"last_hw={self._last_hardware_brightness}, last_darken={self._last_applied_darken}"
         )
@@ -2123,32 +2111,29 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             # Store the raw HA brightness value (1-255 for ON lights, 0 means OFF)
             old_brightness = self._brightness
             self._brightness = max(1, min(255, brightness))  # Clamp to 1-255 for ON state
-            _LOGGER.debug(f"[BRIGHTNESS #{call_id}] Brightness changed: {old_brightness} â†’ {self._brightness}")
+            _LOGGER.debug(f"[BRIGHTNESS #{call_id}] Brightness changed: {old_brightness} -> {self._brightness}")
             
             # Calculate BOTH hardware brightness and darkness percentage
             hardware_brightness, darken_percent = self._calculate_brightness_values(self._brightness)
             
             _LOGGER.debug(
-                f"[BRIGHTNESS #{call_id}] User brightness {self._brightness} (1-255) â†’ "
+                f"[BRIGHTNESS #{call_id}] User brightness {self._brightness} (1-255) -> "
                 f"hardware={hardware_brightness}%, darkness={darken_percent}%"
             )
             
             try:
-                # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
                 # BRIGHTNESS UPDATE OPTIMIZATION:
-                # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
                 # 1. Hardware brightness command is FIRE-AND-FORGET (lamp doesn't respond)
                 # 2. Display update requires re-rendering all 100 LEDs with new darkness
                 # 3. When BOTH change: Execute in parallel for maximum speed
                 # 4. When only ONE changes: Execute only that operation
-                # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
                 
                 # Track what changed to avoid redundant updates
                 # CRITICAL: Compare darken against _last_applied_darken (what was actually
                 # rendered to the lamp), NOT _preview_darken.  set_brightness() updates
                 # _preview_darken early for the JS card preview, so by the time this
                 # queued function runs, _preview_darken already equals darken_percent
-                # and the comparison would ALWAYS be False â€” skipping the display
+                # and the comparison would ALWAYS be False -- skipping the display
                 # update that bakes RGB darkening into the actual lamp pixels.
                 darken_changed = (self._last_applied_darken != darken_percent)
                 hardware_changed = (self._last_hardware_brightness != hardware_brightness)
@@ -2161,8 +2146,8 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 # CRITICAL: Update _last_hardware_brightness BEFORE any branch
                 # that calls _apply_brightness_only() or _apply_color_correction().
                 # _apply_color_correction() reads this to determine correction
-                # strength — if updated AFTER _apply_brightness_only(), the
-                # correction uses the OLD hardware brightness → wrong colors.
+                # strength -- if updated AFTER _apply_brightness_only(), the
+                # correction uses the OLD hardware brightness -> wrong colors.
                 # (In non-hardware_changed branches, this is a no-op since the
                 # value hasn't changed.)
                 self._last_hardware_brightness = hardware_brightness
@@ -2171,8 +2156,8 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 if hardware_changed and darken_changed:
                     _LOGGER.debug(
                         f"[BRIGHTNESS #{call_id}] BOTH changed - "
-                        f"hardware: {old_hardware}% â†’ {hardware_brightness}%, "
-                        f"darkness: {old_darken}% â†’ {darken_percent}% - sequential hw then display"
+                        f"hardware: {old_hardware}% -> {hardware_brightness}%, "
+                        f"darkness: {old_darken}% -> {darken_percent}% - sequential hw then display"
                     )
                     # IMPORTANT: Send hardware brightness FIRST, then update display.
                     # If we fire-and-forget the hardware command while sending the display
@@ -2190,14 +2175,14 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     else:
                         try:
                             # Fire-and-forget: send-only, no recv() wait.
-                            # The Cube always closes TCP after each command â€”
+                            # The Cube always closes TCP after each command  --
                             # waiting for the response just wastes time on a
                             # "Bulb closed the connection" exception.
                             await self._cube_matrix.send_command_fast("set_bright", [hardware_brightness])
                             # NOTE: We do NOT reset _fx_mode_is_direct here.
                             # Testing shows set_bright does not knock the Cube out of
                             # direct mode, and resetting this flag would force apply()
-                            # to re-send activate_fx_mode + set_bright AGAIN â€” adding
+                            # to re-send activate_fx_mode + set_bright AGAIN -- adding
                             # ~300ms of unnecessary TCP commands on every brightness
                             # change.  The FX_MODE_STALENESS_TIMEOUT check in
                             # _apply_impl() is the safety net if the Cube does
@@ -2236,7 +2221,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     # Only hardware changed - send command and await it
                     _LOGGER.debug(
                         f"[BRIGHTNESS #{call_id}] Hardware brightness changed: "
-                        f"{old_hardware}% â†’ {hardware_brightness}%, sending..."
+                        f"{old_hardware}% -> {hardware_brightness}%, sending..."
                     )
                     # Pre-flight check: skip if connection is down
                     if not self._cube_matrix.is_connected():
@@ -2248,7 +2233,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                         try:
                             # Fire-and-forget: send-only, no recv() wait.
                             await self._cube_matrix.send_command_fast("set_bright", [hardware_brightness])
-                            # NOTE: Do NOT reset _fx_mode_is_direct here â€” see
+                            # NOTE: Do NOT reset _fx_mode_is_direct here -- see
                             # comment in 'both changed' branch above.
                         except Exception as e:
                             error_msg = str(e).lower()
@@ -2266,7 +2251,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     
                     # IMPORTANT: Re-render pixels with updated color correction.
                     # _apply_color_correction() uses _last_hardware_brightness which
-                    # just changed — existing pixels have stale correction baked in.
+                    # just changed -- existing pixels have stale correction baked in.
                     # Without this, low-brightness color correction would be wrong
                     # until the next full re-render.
                     await self._apply_brightness_only()
@@ -2277,7 +2262,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 elif darken_changed:
                     # Only darkness changed - use FAST PATH (no full re-render)
                     _LOGGER.debug(
-                        f"[BRIGHTNESS #{call_id}] Darkness changed: {old_darken}% â†’ {darken_percent}%, "
+                        f"[BRIGHTNESS #{call_id}] Darkness changed: {old_darken}% -> {darken_percent}%, "
                         f"using fast brightness path..."
                     )
                     # PERFORMANCE: _apply_brightness_only() re-darkens existing
@@ -2305,9 +2290,9 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     if has_active_effects:
                         _LOGGER.debug(
                             f"[BRIGHTNESS #{call_id}] Values unchanged but effects active "
-                            f"â€” forcing display update to preserve effects"
+                            f" -- forcing display update to preserve effects"
                         )
-                        # PERFORMANCE: Direct call â€” see comment in 'both changed' branch.
+                        # PERFORMANCE: Direct call -- see comment in 'both changed' branch.
                         await self._apply_display_mode_internal(skip_post_delay=True)
                     else:
                         _LOGGER.debug(f"[BRIGHTNESS #{call_id}] No changes needed, brightness already at target")
@@ -2337,7 +2322,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         ANTI-OVERWRITE PROTECTION:
         - Only retries if no newer brightness has been successfully applied
         - Drops stale queued brightness if user changed brightness since failure
-        - Example: Brightness 20% queued â†’ User sets 60% successfully â†’ Drop queued 20%
+        - Example: Brightness 20% queued -> User sets 60% successfully -> Drop queued 20%
         """
         _LOGGER.debug("[BRIGHTNESS RETRY] Retry processor started")
         
@@ -2407,7 +2392,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         if not isinstance(text_chars, str):
             _LOGGER.error("set_custom_text received non-string character: %s", text_chars)
             return
-        # Prevent empty text â€” the Yeelight firmware misbehaves when given
+        # Prevent empty text -- the Yeelight firmware misbehaves when given
         # an empty string.  Use a single space instead (renders as blank).
         if text_chars == "":
             text_chars = " "
@@ -2430,7 +2415,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         # NOTE: _apply_cooldown removed. It was silently DROPPING updates
         # when they arrived within 100ms of each other (e.g., rapid pixel
         # drawing or fast slider changes). The queue's coalescing logic
-        # already handles deduplication properly â€” if two identical updates
+        # already handles deduplication properly -- if two identical updates
         # are queued, the queue processor coalesces them. Dropping here
         # caused lost pixel art frames and missed state changes.
         is_retry = update_type == 'display_retry'
@@ -2444,7 +2429,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         #
         # Previously ANY non-retry call reset the counter.  This meant periodic
         # display_update calls arriving every ~30s would restart the 20-retry
-        # cycle for a device that's genuinely offline â€” retrying forever.
+        # cycle for a device that's genuinely offline -- retrying forever.
         # Now only explicit user actions restart retries.
         user_action_types = {
             'turn_on', 'turn_off', 'brightness_change', 'text_change',
@@ -2455,21 +2440,21 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             if is_user_action:
                 _LOGGER.debug(
                     f"[DISPLAY] [{self._ip}] User action '{update_type}' reset retry counter "
-                    f"({self._display_retry_count} â†’ 0) â€” retries will resume"
+                    f"({self._display_retry_count} -> 0) -- retries will resume"
                 )
                 self._display_retry_count = 0
-                # Cancel any pending retry task â€” without this, the old
+                # Cancel any pending retry task -- without this, the old
                 # retry fires immediately and pushes the counter back to 6
                 if self._retry_display_task and not self._retry_display_task.done():
                     self._retry_display_task.cancel()
                     _LOGGER.debug(f"[DISPLAY] [{self._ip}] Cancelled stale retry task")
             else:
                 _LOGGER.debug(
-                    f"[DISPLAY] [{self._ip}] Periodic '{update_type}' skipped â€” device offline, "
+                    f"[DISPLAY] [{self._ip}] Periodic '{update_type}' skipped -- device offline, "
                     f"retry limit reached ({self._display_retry_count}/{self.MAX_DISPLAY_RETRIES}). "
                     f"A user action will restart retries."
                 )
-                return  # Don't queue â€” device is offline and no user is actively requesting
+                return  # Don't queue -- device is offline and no user is actively requesting
         
         log_level = _LOGGER.info if is_retry else _LOGGER.debug
         log_level(f"[DISPLAY] async_apply_display_mode called - mode: '{self._mode}', text: '{self._custom_text}', type: '{update_type}', is_on: {self._is_on}")
@@ -2537,7 +2522,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         """
         if self._orientation == ORIENTATION_NORMAL:
             return pos
-        # Flip both row and column (180Â° rotation)
+        # Flip both row and column (180 deg rotation)
         row, col = divmod(pos, total_columns)
         flipped_row = total_rows - 1 - row
         flipped_col = total_columns - 1 - col
@@ -2563,7 +2548,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         3. Encodes and sends draw_matrices_fast  (1 TCP command, fire-and-forget)
         
         Savings: ~200-400ms of TCP round-trips + full re-render avoided.
-        Only valid when the underlying pixel art/text hasn't changed â€” just the
+        Only valid when the underlying pixel art/text hasn't changed -- just the
         brightness level (darken_percent).
         """
         await self._apply_brightness_only_impl()
@@ -2571,36 +2556,36 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
     async def _apply_brightness_only_impl(self):
         try:
             if not self._cube_matrix.is_connected():
-                _LOGGER.warning(f"[BRIGHTNESS_FAST] [{self._ip}] SKIP â€” cooldown active")
-                raise Exception("Cooldown active â€” device not yet reachable")
+                _LOGGER.warning(f"[BRIGHTNESS_FAST] [{self._ip}] SKIP -- cooldown active")
+                raise Exception("Cooldown active -- device not yet reachable")
             
             # If we don't have base colors yet, fall back to the full path
             base_colors = getattr(self, '_base_matrix_colors', None)
             if not base_colors or len(base_colors) != len(self._layout.device_layout):
-                _LOGGER.debug(f"[BRIGHTNESS_FAST] No base colors â€” falling back to full apply")
+                _LOGGER.debug(f"[BRIGHTNESS_FAST] No base colors -- falling back to full apply")
                 await self._apply_display_mode_internal(skip_post_delay=True)
                 return
             
-            # STALENESS CHECK: Same as in _apply_impl â€” check fx_age, not idle.
+            # STALENESS CHECK: Same as in _apply_impl -- check fx_age, not idle.
             # Falls through to full apply path which uses ensure_fx_ready() (raw TCP).
             if self._fx_mode_is_direct and self._last_fx_mode_time > 0:
                 fx_age = time.time() - self._last_fx_mode_time
                 if fx_age > FX_MODE_STALENESS_TIMEOUT:
                     _LOGGER.warning(
-                        f"[BRIGHTNESS_FAST] [{self._ip}] FX mode stale â€” fx_age={fx_age:.0f}s > "
+                        f"[BRIGHTNESS_FAST] [{self._ip}] FX mode stale -- fx_age={fx_age:.0f}s > "
                         f"{FX_MODE_STALENESS_TIMEOUT:.0f}s, falling back to full apply (raw TCP recovery)"
                     )
                     self._fx_mode_is_direct = False
 
             # If FX mode isn't set, fall back to the full path which handles activation
             if not self._fx_mode_is_direct:
-                _LOGGER.debug(f"[BRIGHTNESS_FAST] FX mode not set â€” falling back to full apply")
+                _LOGGER.debug(f"[BRIGHTNESS_FAST] FX mode not set -- falling back to full apply")
                 await self._apply_display_mode_internal(skip_post_delay=True)
                 return
             
             # Check if reconnection happened
             if self._cube_matrix.consume_reconnected_flag():
-                _LOGGER.debug(f"[BRIGHTNESS_FAST] Reconnection detected â€” falling back to full apply")
+                _LOGGER.debug(f"[BRIGHTNESS_FAST] Reconnection detected -- falling back to full apply")
                 self._fx_mode_is_direct = False
                 await self._apply_display_mode_internal(skip_post_delay=True)
                 return
@@ -2615,13 +2600,13 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             # double-apply every color effect (e.g., hue shift applied twice).
             #
             # What we DO re-apply each time brightness changes:
-            #   1. _apply_final_brightness  -- RGB darkening for brightness
-            #   2. _apply_color_correction  -- low-brightness gamma correction
-            #   3. _apply_color_accuracy    -- per-channel gain (fades with brightness)
+            #   1. _apply_final_brightness -- RGB darkening for brightness
+            #   2. _apply_color_correction -- low-brightness gamma correction
+            #   3. _apply_color_accuracy -- per-channel gain (fades with brightness)
             
             # Write darkened colors directly into modules
             _LOGGER.debug(
-                f"[BRIGHTNESS_DIAG] [{self._ip}] BRIGHTNESS_FAST â€” "
+                f"[BRIGHTNESS_DIAG] [{self._ip}] BRIGHTNESS_FAST -- "
                 f"user={self._brightness}/255, darken={self._preview_darken}%, "
                 f"brighten={self._preview_brighten}%, "
                 f"last_hw={self._last_hardware_brightness}, last_darken={self._last_applied_darken}, "
@@ -2641,12 +2626,12 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             raw_rgb_data = self._layout.get_raw_rgb_data()
             await self._cube_matrix.draw_matrices_fast(raw_rgb_data)
             
-            # POST-SEND RECONNECTION CHECK: Same as in _apply_impl â€” if the
+            # POST-SEND RECONNECTION CHECK: Same as in _apply_impl -- if the
             # socket reconnected during send, pixels were silently ignored.
             if self._cube_matrix.consume_reconnected_flag():
                 self._fx_mode_is_direct = False
                 _LOGGER.warning(
-                    f"[BRIGHTNESS_FAST] [{self._ip}] Socket reconnected during update_leds â€” "
+                    f"[BRIGHTNESS_FAST] [{self._ip}] Socket reconnected during update_leds -- "
                     f"falling back to full apply for FX re-activation"
                 )
                 await self._apply_display_mode_internal(skip_post_delay=True)
@@ -2671,7 +2656,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 self._notify_camera_preview()
                 self.async_schedule_update_ha_state()
                 
-            _LOGGER.debug(f"[BRIGHTNESS_FAST] âœ“ Done (darken={self._preview_darken}%)")
+            _LOGGER.debug(f"[BRIGHTNESS_FAST] [OK] Done (darken={self._preview_darken}%)")
             
         except Exception as e:
             msg = str(e)
@@ -2679,7 +2664,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 self._fx_mode_is_direct = False
                 self._connection_error = True
                 self._last_connection_error = msg
-                _LOGGER.debug(f"[BRIGHTNESS_FAST] Connection issue: {e} â€” re-raising for retry")
+                _LOGGER.debug(f"[BRIGHTNESS_FAST] Connection issue: {e} -- re-raising for retry")
             else:
                 _LOGGER.warning(f"[BRIGHTNESS_FAST] Error: {e}")
             raise
@@ -2689,7 +2674,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         
         Returns True on success, False if the send failed (connection error,
         quota exceeded, etc.).  Callers should break out of the transition
-        loop on False â€” the post-transition ensure_fx_ready will recover.
+        loop on False -- the post-transition ensure_fx_ready will recover.
         """
         for i, module in enumerate(self._layout.device_layout):
             if i < len(frame):
@@ -2700,7 +2685,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             return True
         except Exception as e:
             _LOGGER.warning(
-                f"[TRANSITION] [{self._ip}] Frame send failed â€” aborting transition early: {e}"
+                f"[TRANSITION] [{self._ip}] Frame send failed -- aborting transition early: {e}"
             )
             return False
 
@@ -2724,15 +2709,15 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         frames are pushed on a stale socket.
         
         Supported transition types:
-          - fade_through_black: current â†’ black â†’ target
-          - direct_crossfade:   linear blend from current â†’ target
-          - random_dissolve:    pixels switch oldâ†’new in random order
+          - fade_through_black: current -> black -> target
+          - direct_crossfade:   linear blend from current -> target
+          - random_dissolve:    pixels switch old -> new in random order
           - wipe_right/left/down/up: boundary sweeps in that direction
           - slide_left/right/up/down: old slides out, new enters from opposite side
           - card_from_right/left/top/bottom: new slides over old like a card
           - explode_reform:     pixels scatter outward then converge to new
           - snake:              boustrophedon reveal across rows
-          - wave_wipe:          sine-wave boundary sweeps leftâ†’right
+          - wave_wipe:          sine-wave boundary sweeps left -> right
           - iris:               circular reveal from center
           - vertical_flip:      rows compress/expand around horizontal axis
           - curtain:            old splits apart revealing new underneath
@@ -2750,7 +2735,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             step_delay = duration / steps
             num_pixels = len(from_colors)
             
-            # â”€â”€ Clean TCP: close persistent socket, re-activate FX via fresh TCP â”€â”€
+            # -- Clean TCP: close persistent socket, re-activate FX via fresh TCP --
             # This resets the Cube's FX-mode timer (which counts from activation,
             # not from last command) and gives us a pristine persistent socket for
             # the burst of transition frames that follows.
@@ -2767,20 +2752,20 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             
             ttype = self._transition_type
 
-            # â”€â”€ Fade Through Black â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            # -- Fade Through Black ----------------------------------------
             if ttype == "fade_through_black":
                 half = max(1, steps // 2)
                 remaining = steps - half
                 for step in range(steps):
                     if step < half:
-                        # Phase 1: current â†’ black.  Last frame in phase = black.
+                        # Phase 1: current -> black.  Last frame in phase = black.
                         factor = 1.0 - ((step + 1) / half)
                         frame = [
                             (int(r * factor), int(g * factor), int(b * factor))
                             for r, g, b in from_colors
                         ]
                     else:
-                        # Phase 2: black â†’ target.  Last frame = full target.
+                        # Phase 2: black -> target.  Last frame = full target.
                         progress = step - half + 1
                         factor = progress / remaining
                         frame = [
@@ -2791,7 +2776,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                         break
                     await asyncio.sleep(step_delay)
 
-            # â”€â”€ Direct Crossfade â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            # -- Direct Crossfade ------------------------------------------
             elif ttype == "direct_crossfade":
                 for step in range(steps):
                     t = (step + 1) / steps  # 1/N .. N/N (reaches 1.0)
@@ -2803,7 +2788,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                         break
                     await asyncio.sleep(step_delay)
 
-            # â”€â”€ Random Dissolve â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            # -- Random Dissolve -------------------------------------------
             elif ttype == "random_dissolve":
                 # Build a random permutation of pixel indices and reveal them
                 # progressively across the steps.
@@ -2820,29 +2805,29 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                         break
                     await asyncio.sleep(step_delay)
 
-            # â”€â”€ Wipe (4 directions) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            # -- Wipe (4 directions) ---------------------------------------
             elif ttype in ("wipe_right", "wipe_left", "wipe_down", "wipe_up"):
                 cols = TOTAL_COLUMNS  # 20
                 rows = TOTAL_ROWS     # 5
                 for step in range(steps):
                     frame = []
                     if ttype == "wipe_right":
-                        # Boundary sweeps left â†’ right
+                        # Boundary sweeps left -> right
                         boundary = int((step + 1) * cols / steps)
                         for i in range(num_pixels):
                             frame.append(to_colors[i] if (i % cols) < boundary else from_colors[i])
                     elif ttype == "wipe_left":
-                        # Boundary sweeps right â†’ left
+                        # Boundary sweeps right -> left
                         boundary = cols - int((step + 1) * cols / steps)
                         for i in range(num_pixels):
                             frame.append(to_colors[i] if (i % cols) >= boundary else from_colors[i])
                     elif ttype == "wipe_down":
-                        # Boundary sweeps top â†’ bottom (row 4 â†’ row 0)
+                        # Boundary sweeps top -> bottom (row 4 -> row 0)
                         boundary = rows - int((step + 1) * rows / steps)
                         for i in range(num_pixels):
                             frame.append(to_colors[i] if (i // cols) >= boundary else from_colors[i])
                     else:  # wipe_up
-                        # Boundary sweeps bottom â†’ top (row 0 â†’ row 4)
+                        # Boundary sweeps bottom -> top (row 0 -> row 4)
                         boundary = int((step + 1) * rows / steps)
                         for i in range(num_pixels):
                             frame.append(to_colors[i] if (i // cols) < boundary else from_colors[i])
@@ -2850,7 +2835,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                         break
                     await asyncio.sleep(step_delay)
 
-            # â”€â”€ Slide (4 directions) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            # -- Slide (4 directions) --------------------------------------
             elif ttype in ("slide_left", "slide_right", "slide_up", "slide_down"):
                 # Old content slides out one side, new enters from the opposite.
                 cols = TOTAL_COLUMNS  # 20
@@ -2907,7 +2892,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                         break
                     await asyncio.sleep(step_delay)
 
-            # â”€â”€ Card (4 directions) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            # -- Card (4 directions) ---------------------------------------
             elif ttype in ("card_from_right", "card_from_left", "card_from_top", "card_from_bottom"):
                 # New content slides in from one side ON TOP of old, which stays in place.
                 cols = TOTAL_COLUMNS  # 20
@@ -2965,7 +2950,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                         break
                     await asyncio.sleep(step_delay)
 
-            # â”€â”€ Explode & Reform â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            # -- Explode & Reform ------------------------------------------
             elif ttype == "explode_reform":
                 # Phase 1: old pixels scatter outward from center.
                 # Phase 2: new pixels converge inward to their positions.
@@ -2979,7 +2964,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     frame = [(0, 0, 0)] * num_pixels
                     if step < half:
                         # Explode phase: push old pixels away from center
-                        t = (step + 1) / half  # 0â†’1
+                        t = (step + 1) / half  # 0 -> 1
                         for i in range(num_pixels):
                             r, c = i // cols, i % cols
                             dx, dy = c - cx, r - cy
@@ -2996,7 +2981,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     else:
                         # Reform phase: new pixels converge inward
                         progress = step - half + 1
-                        t = progress / (steps - half)  # 0â†’1
+                        t = progress / (steps - half)  # 0 -> 1
                         for i in range(num_pixels):
                             r, c = i // cols, i % cols
                             dx, dy = c - cx, r - cy
@@ -3017,13 +3002,13 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                         break
                     await asyncio.sleep(step_delay)
 
-            # â”€â”€ Snake â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            # -- Snake -----------------------------------------------------
             elif ttype == "snake":
                 # Reveal new pixels in a snake (boustrophedon) pattern across
                 # rows, alternating direction each row.
                 cols = TOTAL_COLUMNS
                 rows = TOTAL_ROWS
-                # Build snake order: row 0 Lâ†’R, row 1 Râ†’L, row 2 Lâ†’R, ...
+                # Build snake order: row 0 L -> R, row 1 R -> L, row 2 L -> R, ...
                 snake_order = []
                 for r in range(rows):
                     if r % 2 == 0:
@@ -3040,9 +3025,9 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                         break
                     await asyncio.sleep(step_delay)
 
-            # â”€â”€ Wave Wipe â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            # -- Wave Wipe -------------------------------------------------
             elif ttype == "wave_wipe":
-                # Like a wipe but the boundary is a sine wave moving leftâ†’right.
+                # Like a wipe but the boundary is a sine wave moving left -> right.
                 import math as _math
                 cols = TOTAL_COLUMNS
                 rows = TOTAL_ROWS
@@ -3060,15 +3045,15 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                         break
                     await asyncio.sleep(step_delay)
 
-            # â”€â”€ Iris (Circle Wipe) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            # -- Iris (Circle Wipe) ----------------------------------------
             elif ttype == "iris":
                 # A circular reveal expanding from the center of the display.
                 import math as _math
                 cols = TOTAL_COLUMNS
                 rows = TOTAL_ROWS
                 cx, cy = cols / 2.0, rows / 2.0
-                # Aspect ratio correction: pixels are wider than tall on 20Ã—5
-                aspect = cols / rows  # â‰ˆ 4.0
+                # Aspect ratio correction: pixels are wider than tall on 20x5
+                aspect = cols / rows  # ~= 4.0
                 max_radius = _math.sqrt((cols / 2.0) ** 2 + ((rows / 2.0) * aspect) ** 2)
                 for step in range(steps):
                     radius = ((step + 1) / steps) * max_radius
@@ -3083,7 +3068,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                         break
                     await asyncio.sleep(step_delay)
 
-            # â”€â”€ Vertical Flip â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            # -- Vertical Flip ---------------------------------------------
             elif ttype == "vertical_flip":
                 # The display "flips" around a horizontal axis: rows compress
                 # toward the middle (old), then expand outward (new).
@@ -3094,7 +3079,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     frame = [(0, 0, 0)] * num_pixels
                     if step < half:
                         # Compress old content: rows squeeze toward center
-                        t = (step + 1) / half  # 0â†’1
+                        t = (step + 1) / half  # 0 -> 1
                         visible_rows = max(1, int(round(rows * (1.0 - t))))
                         start_row = (rows - visible_rows) // 2
                         for vr in range(visible_rows):
@@ -3120,7 +3105,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                         break
                     await asyncio.sleep(step_delay)
 
-            # â”€â”€ Curtain â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            # -- Curtain ---------------------------------------------------
             elif ttype == "curtain":
                 # Two halves of the old content slide apart (left/right) to
                 # reveal the new content underneath.
@@ -3146,7 +3131,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                         break
                     await asyncio.sleep(step_delay)
 
-            # â”€â”€ Gravity Drop â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            # -- Gravity Drop ----------------------------------------------
             elif ttype == "gravity_drop":
                 # Old lit pixels "fall" off the bottom, then new pixels "drop"
                 # in from the top.
@@ -3159,7 +3144,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     frame = [BLACK] * num_pixels
                     if step < half:
                         # Phase 1: old pixels fall down (shift down by increasing offset)
-                        t = (step + 1) / half  # 0â†’1
+                        t = (step + 1) / half  # 0 -> 1
                         drop = int(round(t * rows))
                         for r in range(rows):
                             dst_r = r - drop  # shift down (row 0 = bottom)
@@ -3168,7 +3153,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                                     frame[dst_r * cols + c] = from_colors[r * cols + c]
                     else:
                         # Phase 2: new pixels drop in from top
-                        t = (step - half + 1) / (steps - half)  # 0â†’1
+                        t = (step - half + 1) / (steps - half)  # 0 -> 1
                         drop = int(round((1.0 - t) * rows))
                         for r in range(rows):
                             src_r = r + drop
@@ -3179,7 +3164,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                         break
                     await asyncio.sleep(step_delay)
 
-            # â”€â”€ Pixel Migration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            # -- Pixel Migration -------------------------------------------
             elif ttype == "pixel_migration":
                 # Each "lit" pixel in the old state finds the nearest lit pixel
                 # in the new state and migrates towards it.  Un-matched pixels
@@ -3203,7 +3188,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
 
                 # Build ALL pairwise distances and sort shortest-first
                 # Uses Euclidean distance for natural diagonal movement.
-                # With â‰¤100 lit pixels per side this is at most 10 000 pairs â€”
+                # With <=100 lit pixels per side this is at most 10 000 pairs  --
                 # fast enough even on a Pi.
                 import math as _math
                 pairs = []  # (distance, old_list_idx, new_list_idx)
@@ -3215,7 +3200,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                         pairs.append((d, oi_idx, ni_idx))
                 pairs.sort()  # shortest distance first
 
-                # Greedy global matching â€” process closest pairs first
+                # Greedy global matching -- process closest pairs first
                 matched_old = set()
                 matched_new = set()
                 migrations = []  # (old_pos, old_color, new_pos, new_color)
@@ -3242,7 +3227,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     for (oi, oc, ni, nc) in migrations:
                         or_, oc_ = pos_to_rc(oi)
                         nr_, nc_ = pos_to_rc(ni)
-                        # Interpolate position (smooth float â†’ snap to grid)
+                        # Interpolate position (smooth float -> snap to grid)
                         cur_r = or_ + (nr_ - or_) * t
                         cur_c = oc_ + (nc_ - oc_) * t
                         snap_r = max(0, min(rows - 1, int(round(cur_r))))
@@ -3297,17 +3282,17 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             if not getattr(self, '_custom_draw_active', False):
                 self._custom_pixels = None
             if self._custom_text or self._panel_mode:
-                # â”€â”€â”€ Panel mode override â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+                # --- Panel mode override -----------------------------------
                 # When panel_mode is on, replace the actual text with a single
                 # virtual character (PANEL_FULL_CHAR) that covers every pixel
-                # on the 5Ã—20 display.  All rendering modes then see one
+                # on the 5x20 display.  All rendering modes then see one
                 # "giant letter" filling the whole panel and work through the
-                # normal text rendering path â€” no special branches needed.
+                # normal text rendering path -- no special branches needed.
                 if self._panel_mode:
                     effective_text = PANEL_FULL_CHAR  # single char whose positions = all 100 pixels
                     total_columns = TOTAL_COLUMNS
                     total_text_width = TOTAL_COLUMNS  # fills the full width
-                    current_offset = 0  # no alignment shift â€” it already covers everything
+                    current_offset = 0  # no alignment shift -- it already covers everything
                     _LOGGER.debug(
                         f"[DISPLAY] [{self._ip}] Panel mode: rendering virtual full-panel character "
                         f"(mode='{self._mode}', colors={len(self._text_colors) if self._text_colors else 0} stops)"
@@ -3676,12 +3661,12 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 # All modules were already set to background color above.
                 # Push that background-only display to the Cube so the lamp
                 # actually shows it (e.g., when panel mode is turned OFF with
-                # no text set â€” without this, the lamp stays on the old display).
+                # no text set -- without this, the lamp stays on the old display).
                 _LOGGER.debug(
                     f"[DISPLAY] [{self._ip}] No content to render "
                     f"(text='{self._custom_text}', panel={self._panel_mode}, "
                     f"draw_active={getattr(self, '_custom_draw_active', False)}, "
-                    f"mode='{self._mode}') â€” pushing background-only display"
+                    f"mode='{self._mode}') -- pushing background-only display"
                 )
                 await self.apply(skip_post_delay=skip_post_delay)
         except Exception as e:
@@ -3702,7 +3687,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         """Filter pixel positions to only those visible in the display window.
         
         Applies bounds checking and virtual-column filtering to ensure only
-        pixels within the visible 5Ã—20 matrix are included.
+        pixels within the visible 5x20 matrix are included.
         
         Args:
             positions: List of base pixel positions (from font map)
@@ -3810,7 +3795,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         return len(unique_columns)
 
     def get_positions_for_letter(self, letter: str):
-        # Panel mode virtual character: covers the entire 5Ã—20 display
+        # Panel mode virtual character: covers the entire 5x20 display
         if letter == PANEL_FULL_CHAR:
             return list(range(TOTAL_COLUMNS * TOTAL_ROWS))
         font_map = FONT_MAPS.get(self._font, FONT_MAPS.get("basic", {}))
@@ -3828,22 +3813,22 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             # Fast-fail: if we're in cooldown after a failed connection attempt,
             # RAISE so the queue processor sees this as a failure and schedules
             # a retry. Previously this returned silently, which the queue processor
-            # treated as success â€” cancelling the retry chain and leaving the lamp
+            # treated as success -- cancelling the retry chain and leaving the lamp
             # dark forever.
             if not self._cube_matrix.is_connected():
                 _LOGGER.warning(
-                    f"[APPLY] [{self._ip}] SKIP â€” cooldown active, raising to trigger retry "
+                    f"[APPLY] [{self._ip}] SKIP -- cooldown active, raising to trigger retry "
                     f"(fx_direct={self._fx_mode_is_direct}, is_on={self._is_on}, "
                     f"retry_count={self._display_retry_count}/{self.MAX_DISPLAY_RETRIES}) "
                     f"[{self._cube_matrix._state_summary()}]"
                 )
-                raise Exception("Cooldown active â€” device not yet reachable")
+                raise Exception("Cooldown active -- device not yet reachable")
             
             # Check if the lamp just reconnected (socket was reset).
             # If so, we need to re-send FX mode and brightness before pixel data.
             if self._cube_matrix.consume_reconnected_flag():
                 _LOGGER.warning(
-                    f"[APPLY] [{self._ip}] Reconnection detected â€” will restore FX mode + brightness "
+                    f"[APPLY] [{self._ip}] Reconnection detected -- will restore FX mode + brightness "
                     f"(fx_direct was {self._fx_mode_is_direct}, forcing to False)"
                 )
                 self._fx_mode_is_direct = False  # Force re-send
@@ -3855,14 +3840,14 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 if fx_age > FX_MODE_STALENESS_TIMEOUT:
                     idle_seconds = time.time() - self._cube_matrix._last_command_time if self._cube_matrix._last_command_time > 0 else 999
                     _LOGGER.warning(
-                        f"[APPLY] [{self._ip}] FX mode stale â€” fx_age={fx_age:.0f}s > "
+                        f"[APPLY] [{self._ip}] FX mode stale -- fx_age={fx_age:.0f}s > "
                         f"{FX_MODE_STALENESS_TIMEOUT:.0f}s threshold (idle={idle_seconds:.1f}s), "
                         f"forcing re-activation via raw TCP"
                     )
                     self._fx_mode_is_direct = False
 
             # Ensure lamp is in direct FX mode before sending pixel data.
-            # Uses raw TCP (fresh connection per command) â€” the proven-reliable
+            # Uses raw TCP (fresh connection per command) -- the proven-reliable
             # approach.  The Cube always processes activate_fx_mode correctly
             # on a fresh TCP connection but sometimes silently ignores it on
             # a reused persistent socket.
@@ -3871,10 +3856,10 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 await self.ensure_fx_ready()
                 hardware_brightness = self._last_hardware_brightness  # ensure_fx_ready sets this
             else:
-                # FX mode already active â€” only send set_bright when value changed.
+                # FX mode already active -- only send set_bright when value changed.
                 if hardware_brightness != self._last_hardware_brightness:
                     _LOGGER.debug(
-                        f"[BRIGHTNESS_DIAG] [{self._ip}] APPLY â€” sending set_bright: "
+                        f"[BRIGHTNESS_DIAG] [{self._ip}] APPLY -- sending set_bright: "
                         f"user={self._brightness}/255, hardware={hardware_brightness}%, "
                         f"darken={darken_percent}%, prev_hw={self._last_hardware_brightness}, "
                         f"fx_direct={self._fx_mode_is_direct}, mode='{self._mode}'"
@@ -3883,25 +3868,23 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                         await self._cube_matrix.send_command_fast("set_bright", [hardware_brightness])
                         self._last_hardware_brightness = hardware_brightness
                         _LOGGER.debug(
-                            f"[BRIGHTNESS_DIAG] [{self._ip}] APPLY â€” set_bright SUCCESS: "
+                            f"[BRIGHTNESS_DIAG] [{self._ip}] APPLY -- set_bright SUCCESS: "
                             f"hardware={hardware_brightness}%"
                         )
                     except Exception as e:
                         _LOGGER.debug(
-                            f"[BRIGHTNESS_DIAG] [{self._ip}] APPLY â€” set_bright FAILED: {e}"
+                            f"[BRIGHTNESS_DIAG] [{self._ip}] APPLY -- set_bright FAILED: {e}"
                         )
                 else:
                     _LOGGER.debug(
-                        f"[BRIGHTNESS_DIAG] [{self._ip}] APPLY â€” set_bright SKIPPED "
+                        f"[BRIGHTNESS_DIAG] [{self._ip}] APPLY -- set_bright SKIPPED "
                         f"(unchanged at {hardware_brightness}%)"
                     )
 
-            # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
             # SINGLE-PASS: Apply color effects + brightness in one loop
-            # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
             # Previously this was two separate loops (color then brightness), each
-            # doing hexâ†’RGBâ†’processâ†’RGBâ†’hex. Now merged into one pass to halve
-            # the conversion overhead (100 pixels Ã— 2 conversions saved per frame).
+            # doing hex -> RGB -> process -> RGB -> hex. Now merged into one pass to halve
+            # the conversion overhead (100 pixels x 2 conversions saved per frame).
             
             # CRITICAL: Sync _preview_darken from the authoritative _brightness value.
             # _preview_darken can become stale (e.g., stuck at 94% while user=255/255)
@@ -3913,8 +3896,8 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             self._last_applied_darken = darken_percent
             if old_darken != darken_percent:
                 _LOGGER.warning(
-                    f"[BRIGHTNESS_DIAG] [{self._ip}] APPLY â€” fixed stale _preview_darken: "
-                    f"{old_darken}% â†’ {darken_percent}% (user={self._brightness}/255)"
+                    f"[BRIGHTNESS_DIAG] [{self._ip}] APPLY -- fixed stale _preview_darken: "
+                    f"{old_darken}% -> {darken_percent}% (user={self._brightness}/255)"
                 )
 
             has_color_effect = (
@@ -3932,14 +3915,14 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             #
             # The snapshot is taken AFTER color effects but BEFORE brightness
             # darkening, so _base_matrix_colors always contains:
-            #   ✓ Original pixel colors (text/drawing)
-            #   ✓ Color adjustments (hue_shift, saturation, etc.) already baked in
-            #   ✗ No brightness darkening
-            #   ✗ No color correction (gamma)
-            #   ✗ No color accuracy (per-channel gain)
+            #   [OK] Original pixel colors (text/drawing)
+            #   [OK] Color adjustments (hue_shift, saturation, etc.) already baked in
+            #   [X] No brightness darkening
+            #   [X] No color correction (gamma)
+            #   [X] No color accuracy (per-channel gain)
             #
             # The brightness fast path (_apply_brightness_only_impl) therefore
-            # must NOT re-apply color adjustments — only brightness pipeline.
+            # must NOT re-apply color adjustments -- only brightness pipeline.
             snapshot_in_loop = has_color_effect or has_brightness_effect
             if not snapshot_in_loop:
                 try:
@@ -3980,11 +3963,9 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     elif snapshot_in_loop:
                         self._base_matrix_colors.append((0, 0, 0))
             
-            # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-            # TRANSITION ANIMATION: If enabled, animate from previous â†’ new state
+            # TRANSITION ANIMATION: If enabled, animate from previous -> new state
             # before sending the final frame.  Runs intermediate frames through
             # draw_matrices_fast directly (FX mode already active above).
-            # â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
             # Only animate transitions for user-initiated content changes.
             # Retries, periodic refreshes, and health-recovery turn_on calls
             # skip the animation to avoid re-triggering long transitions that
@@ -4047,15 +4028,15 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 f"[TIMING] [{self._ip}] TCP draw_matrices_fast: {(_t_after_send - _t_before_send)*1000:.1f}ms")
             
             # POST-SEND RECONNECTION CHECK: If the socket reconnected during
-            # draw_matrices, pixels were sent on a non-FX socket â€” silently
+            # draw_matrices, pixels were sent on a non-FX socket -- silently
             # ignored.  Mark FX as not active so the next update re-activates.
             if self._cube_matrix.consume_reconnected_flag():
                 self._fx_mode_is_direct = False
                 _LOGGER.warning(
-                    f"[APPLY] [{self._ip}] Socket reconnected during update_leds â€” "
+                    f"[APPLY] [{self._ip}] Socket reconnected during update_leds -- "
                     f"FX mode lost, will re-activate on next update"
                 )
-                raise Exception("Socket reconnected during pixel send â€” FX re-activation needed")
+                raise Exception("Socket reconnected during pixel send -- FX re-activation needed")
             
             # Track that this darken% was successfully rendered to lamp pixels.
             # This keeps _last_applied_darken accurate even when apply() is called
@@ -4088,7 +4069,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             
             # Render camera images + push camera state FIRST so the image
             # is already cached when the light state change triggers the
-            # frontendâ€™s HTTP fetch.  This eliminates the double-request.
+            # frontend's HTTP fetch.  This eliminates the double-request.
             if self.hass is not None:
                 _t_state_push = time.time()
                 self._notify_camera_preview()
@@ -4121,12 +4102,12 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             if "socket error" in error_message.lower() or "closed" in error_message.lower():
                 _LOGGER.debug(
                     f"[APPLY] [{self._ip}] BulbException (connection): code={error_code}, "
-                    f"msg='{error_message}' â€” re-raising for retry"
+                    f"msg='{error_message}' -- re-raising for retry"
                 )
             else:
                 _LOGGER.warning(
                     f"[APPLY] [{self._ip}] BulbException: code={error_code}, "
-                    f"msg='{error_message}' â€” re-raising for retry"
+                    f"msg='{error_message}' -- re-raising for retry"
                 )
             raise
             
@@ -4140,7 +4121,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             
             if any(kw in msg.lower() for kw in ['socket', 'closed', 'connection', 'cooldown', 'none', 'quota', 'timeout']):
                 _LOGGER.debug(
-                    f"[APPLY] [{self._ip}] Connection issue: {type(e).__name__}: {msg} â€” re-raising for retry"
+                    f"[APPLY] [{self._ip}] Connection issue: {type(e).__name__}: {msg} -- re-raising for retry"
                 )
             else:
                 _LOGGER.error(f"[APPLY] [{self._ip}] Unexpected error: {type(e).__name__}: {e}")
@@ -4224,10 +4205,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     )
     if len(same_ip_entries) > 1:
         _LOGGER.warning(
-            f"[SETUP] âš  DUPLICATE CONFIG ENTRIES for IP {ip}! "
+            f"[SETUP] [!] DUPLICATE CONFIG ENTRIES for IP {ip}! "
             f"Entry IDs: {[e.entry_id for e in same_ip_entries]}. "
-            f"This causes two CubeMatrix instances fighting each other â€” "
-            f"remove the duplicate in Settings â†’ Integrations."
+            f"This causes two CubeMatrix instances fighting each other -- "
+            f"remove the duplicate in Settings -> Integrations."
         )
     
     # TCP reachability has already been verified in __init__.py's
@@ -4279,12 +4260,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         attribute if the direct lookup fails.
         
         Returns None and logs an error if entity_id is not provided or
-        not found â€” callers must handle the None case and abort.
+        not found -- callers must handle the None case and abort.
         Never silently falls back to light_entity.
         """
         entity_id = service_call.data.get("entity_id")
         if not entity_id:
-            _LOGGER.warning(f"[{service_name}] No entity_id provided â€” cannot determine target")
+            _LOGGER.warning(f"[{service_name}] No entity_id provided -- cannot determine target")
             return None
         
         # If a list was provided, return only the first one (legacy compat)
@@ -4293,7 +4274,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             if not entity_id:
                 return None
         
-        # Direct lookup (fast path â€” registry is keyed by entity_id)
+        # Direct lookup (fast path -- registry is keyed by entity_id)
         target = _ENTITY_REGISTRY.get(entity_id)
         if target:
             return target
@@ -4315,7 +4296,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         """
         entity_id = service_call.data.get("entity_id")
         if not entity_id:
-            _LOGGER.warning(f"[{service_name}] No entity_id provided â€” cannot determine target")
+            _LOGGER.warning(f"[{service_name}] No entity_id provided -- cannot determine target")
             return []
         
         ids = entity_id if isinstance(entity_id, list) else [entity_id]
@@ -4420,7 +4401,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         
         # Get entity's current state
         # When panel_mode is on, use the virtual full-panel character just like
-        # the actual rendering code does — so the preview fills all 100 LEDs.
+        # the actual rendering code does -- so the preview fills all 100 LEDs.
         if light_entity._panel_mode:
             text = PANEL_FULL_CHAR
         else:
@@ -4919,7 +4900,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
 
     async def handle_apply_pixel_art(service_call):
-        # Only accept idx, apply saved pixel art â€” supports multi-entity parallel dispatch
+        # Only accept idx, apply saved pixel art -- supports multi-entity parallel dispatch
         idx = service_call.data.get("idx")
         targets = _resolve_entities(service_call, "APPLY_PIXEL_ART")
         if not targets:
@@ -5327,7 +5308,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         })
     )
     async def handle_set_custom_pixels(service_call):
-        # Expects: list of {"position": int, "color": [r,g,b]} â€” supports multi-entity parallel dispatch
+        # Expects: list of {"position": int, "color": [r,g,b]} -- supports multi-entity parallel dispatch
         pixels = service_call.data.get("pixels")
         if not isinstance(pixels, list):
             _LOGGER.error("set_custom_pixels expects a list of dicts with 'position' and 'color'")
@@ -5383,7 +5364,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             _LOGGER.error("set_custom_text received non-string: %s", text)
             return
         
-        # Prevent empty text â€” the Yeelight firmware misbehaves when given
+        # Prevent empty text -- the Yeelight firmware misbehaves when given
         # an empty string.  Use a single space instead (renders as blank).
         if text == "":
             text = " "
@@ -5901,10 +5882,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         })
     )
 
-    # ── DEBUG: Color calibration service ─────────────────────────────
+    # DEBUG: Color calibration service
     async def handle_set_color_calibration(service_call):
         """Set color correction / accuracy calibration values at runtime.
-        All fields are optional — only provided values are updated."""
+        All fields are optional -- only provided values are updated."""
         targets = _resolve_entities(service_call, "SET_COLOR_CALIBRATION")
         if not targets:
             return
@@ -5939,7 +5920,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     old_val = getattr(target_entity, attr)
                     new_val = data[key]
                     setattr(target_entity, attr, new_val)
-                    changed.append(f"{key}: {old_val} → {new_val}")
+                    changed.append(f"{key}: {old_val} -> {new_val}")
             if changed:
                 _LOGGER.info(
                     f"[CALIBRATION] [{target_entity._ip}] Updated: {', '.join(changed)}"
@@ -5978,6 +5959,4 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             vol.Optional("entity_id"): _entity_id_or_list,
         })
     )
-    # ─────────────────────────────────────────────────────────────────
-    
     return True

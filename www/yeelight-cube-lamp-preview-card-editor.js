@@ -388,12 +388,14 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
               cfg.show_brightness_label !== false,
               (e) => this._onToggleChange(e),
             )}
-            ${createToggleRow(
-              "Show Brightness Percentage",
-              "show_brightness_percentage",
-              cfg.show_brightness_percentage !== false,
-              (e) => this._onToggleChange(e),
-            )}
+            ${cfg.brightness_slider_style !== "capsule"
+              ? createToggleRow(
+                  "Show Brightness Percentage",
+                  "show_brightness_percentage",
+                  cfg.show_brightness_percentage !== false,
+                  (e) => this._onToggleChange(e),
+                )
+              : ""}
             <div class="form-row">
               <label>Brightness Slider Style</label>
               ${createButtonGroup(
@@ -429,6 +431,58 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
               ? renderModeSettingsSection(
                   "Capsule Settings",
                   html`
+                    <div class="form-row">
+                      <label>Brightness Value</label>
+                      ${createButtonGroup(
+                        [
+                          { value: "none", label: "None" },
+                          { value: "text", label: "Text" },
+                          { value: "input", label: "Input" },
+                        ],
+                        cfg.brightness_value_display ||
+                          (cfg.show_brightness_percentage !== false
+                            ? "text"
+                            : "none"),
+                        createButtonGroupChangeHandler(
+                          "brightness_value_display",
+                          (value) => {
+                            this._config = {
+                              ...this._config,
+                              brightness_value_display: value,
+                            };
+                            this._fireConfigChanged();
+                          },
+                        ),
+                      )}
+                    </div>
+                    ${(cfg.brightness_value_display ||
+                      (cfg.show_brightness_percentage !== false
+                        ? "text"
+                        : "none")) !== "none"
+                      ? html`
+                          <div class="form-row">
+                            <label>Brightness Value Side</label>
+                            ${createButtonGroup(
+                              [
+                                { value: "left", label: "Left" },
+                                { value: "under", label: "Under" },
+                                { value: "right", label: "Right" },
+                              ],
+                              cfg.brightness_value_side || "under",
+                              createButtonGroupChangeHandler(
+                                "brightness_value_side",
+                                (value) => {
+                                  this._config = {
+                                    ...this._config,
+                                    brightness_value_side: value,
+                                  };
+                                  this._fireConfigChanged();
+                                },
+                              ),
+                            )}
+                          </div>
+                        `
+                      : ""}
                     ${createToggleRow(
                       "Show Moon Icon (🌙)",
                       "show_capsule_moon_icon",

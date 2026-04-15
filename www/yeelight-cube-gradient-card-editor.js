@@ -1197,6 +1197,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
                             ${createButtonGroup(
                               [
                                 { value: "left", label: "Left" },
+                                { value: "under", label: "Under" },
                                 { value: "right", label: "Right" },
                               ],
                               cfg.capsule_angle_value_side || "right",
