@@ -319,31 +319,6 @@ class YeelightCubeGradientCardEditor extends LitElement {
           justify-content: space-between;
           margin-bottom: 16px;
         }
-        .config-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          margin-bottom: 16px;
-        }
-        .config-label {
-          font-weight: 500;
-          color: var(--primary-text-color, #333);
-          font-size: 1em;
-        }
-        .config-row select {
-          padding: 6px 12px;
-          border: 1.5px solid var(--divider-color, #d0d7de);
-          border-radius: 8px;
-          background: var(--card-background-color, white);
-          font-size: 0.9em;
-          color: var(--primary-text-color, #333);
-          min-width: 140px;
-        }
-        .config-row select:focus {
-          outline: none;
-          border-color: var(--primary-color, #0969da);
-          box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.1);
-        }
         .toggle-label {
           font-weight: 500;
           color: var(--primary-text-color, #333);
@@ -636,20 +611,29 @@ class YeelightCubeGradientCardEditor extends LitElement {
               </label>
             </div>
 
-            <div class="toggle-row">
-              <label class="toggle-label">Show Angle Input Field</label>
-              <label class="toggle-switch">
-                <input
-                  id="show_angle_input"
-                  type="checkbox"
-                  .checked="${cfg.show_angle_input !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
+            <div class="form-row">
+              <label>Show Angle Value</label>
+              ${createButtonGroup(
+                [
+                  { value: "none", label: "None" },
+                  { value: "text", label: "Text" },
+                  { value: "input", label: "Input" },
+                ],
+                cfg.angle_value_display || "none",
+                createButtonGroupChangeHandler(
+                  "angle_value_display",
+                  (value) => {
+                    this._config = {
+                      ...this._config,
+                      angle_value_display: value,
+                    };
+                    this._fireConfigChanged();
+                  },
+                ),
+              )}
             </div>
-            <div class="config-row">
-              <label class="config-label">Angle Selector Style</label>
+            <div class="form-row">
+              <label>Angle Selector Style</label>
               <div style="display: flex; flex-direction: column;">
                 <div>
                   ${createButtonGroup(
@@ -695,39 +679,31 @@ class YeelightCubeGradientCardEditor extends LitElement {
                 </div>
               </div>
             </div>
-            ${this._getUnifiedRotaryStyle(cfg) !== "capsule"
-              ? html`
-                  <div class="config-row">
-                    <label class="config-label">Element Size</label>
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                      <input
-                        id="rotary_size"
-                        type="range"
-                        min="30"
-                        max="100"
-                        step="5"
-                        .value="${cfg.rotary_size || 80}"
-                        @input="${this._valueChanged}"
-                        style="flex: 1;"
-                      />
-                      <span
-                        style="min-width: 45px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
-                      >
-                        ${cfg.rotary_size || 80}%
-                      </span>
-                    </div>
-                  </div>
-                `
-              : ""}
             ${this._getUnifiedRotaryStyle(cfg) === "rectangle"
-              ? html`
-                  <div
-                    style="margin-top:8px;padding:12px;background:var(--primary-background-color, #1e1e1e);border-radius:8px;"
-                  >
-                    <div
-                      style="font-size:0.9em;font-weight:600;margin-bottom:8px;color:var(--primary-text-color, #ccc);"
-                    >
-                      Rectangle Settings
+              ? renderModeSettingsSection(
+                  "Rectangle Settings",
+                  html`
+                    <div class="form-row">
+                      <label>Element Size</label>
+                      <div
+                        style="display: flex; align-items: center; gap: 8px;"
+                      >
+                        <input
+                          id="rotary_size"
+                          type="range"
+                          min="30"
+                          max="100"
+                          step="5"
+                          .value="${cfg.rotary_size || 80}"
+                          @input="${this._valueChanged}"
+                          style="flex: 1;"
+                        />
+                        <span
+                          style="min-width: 45px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
+                        >
+                          ${cfg.rotary_size || 80}%
+                        </span>
+                      </div>
                     </div>
                     <div class="toggle-row">
                       <label class="toggle-label">Show Selector Dot</label>
@@ -741,8 +717,8 @@ class YeelightCubeGradientCardEditor extends LitElement {
                         <span class="toggle-slider"></span>
                       </label>
                     </div>
-                    <div class="config-row">
-                      <label class="config-label">Shape</label>
+                    <div class="form-row">
+                      <label>Shape</label>
                       <div style="display:flex;flex-direction:column;">
                         ${createButtonGroup(
                           [
@@ -771,18 +747,46 @@ class YeelightCubeGradientCardEditor extends LitElement {
                         )}
                       </div>
                     </div>
-                  </div>
-                `
+                    <div class="toggle-row">
+                      <label class="toggle-label">Snap to Coordinates</label>
+                      <label class="toggle-switch">
+                        <input
+                          id="compass_snap_to_coordinates"
+                          type="checkbox"
+                          .checked="${cfg.compass_snap_to_coordinates === true}"
+                          @change="${this._valueChanged}"
+                        />
+                        <span class="toggle-slider"></span>
+                      </label>
+                    </div>
+                  `,
+                )
               : ""}
             ${this._getUnifiedRotaryStyle(cfg) === "wheel"
-              ? html`
-                  <div
-                    style="margin-top:8px;padding:12px;background:var(--primary-background-color, #1e1e1e);border-radius:8px;"
-                  >
-                    <div
-                      style="font-size:0.9em;font-weight:600;margin-bottom:8px;color:var(--primary-text-color, #ccc);"
-                    >
-                      Wheel Settings
+              ? renderModeSettingsSection(
+                  "Wheel Settings",
+                  html`
+                    <div class="form-row">
+                      <label>Element Size</label>
+                      <div
+                        style="display: flex; align-items: center; gap: 8px;"
+                      >
+                        <input
+                          id="rotary_size"
+                          type="range"
+                          min="30"
+                          max="100"
+                          step="5"
+                          .value="${cfg.rotary_size || 80}"
+                          @input="${this._valueChanged}"
+                          style="flex: 1;"
+                        />
+                        <span
+                          style="min-width: 45px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
+                        >
+                          ${cfg.rotary_size || 80}%
+                        </span>
+                      </div>
                     </div>
                     <div class="toggle-row">
                       <label class="toggle-label">Show Selector Dot</label>
@@ -808,18 +812,46 @@ class YeelightCubeGradientCardEditor extends LitElement {
                         <span class="toggle-slider"></span>
                       </label>
                     </div>
-                  </div>
-                `
+                    <div class="toggle-row">
+                      <label class="toggle-label">Snap to Coordinates</label>
+                      <label class="toggle-switch">
+                        <input
+                          id="compass_snap_to_coordinates"
+                          type="checkbox"
+                          .checked="${cfg.compass_snap_to_coordinates === true}"
+                          @change="${this._valueChanged}"
+                        />
+                        <span class="toggle-slider"></span>
+                      </label>
+                    </div>
+                  `,
+                )
               : ""}
             ${this._getUnifiedRotaryStyle(cfg) === "compass"
-              ? html`
-                  <div
-                    style="margin-top:8px;padding:12px;background:var(--primary-background-color, #1e1e1e);border-radius:8px;"
-                  >
-                    <div
-                      style="font-size:0.9em;font-weight:600;margin-bottom:8px;color:var(--primary-text-color, #ccc);"
-                    >
-                      Compass Settings
+              ? renderModeSettingsSection(
+                  "Compass Settings",
+                  html`
+                    <div class="form-row">
+                      <label>Element Size</label>
+                      <div
+                        style="display: flex; align-items: center; gap: 8px;"
+                      >
+                        <input
+                          id="rotary_size"
+                          type="range"
+                          min="30"
+                          max="100"
+                          step="5"
+                          .value="${cfg.rotary_size || 80}"
+                          @input="${this._valueChanged}"
+                          style="flex: 1;"
+                        />
+                        <span
+                          style="min-width: 45px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
+                        >
+                          ${cfg.rotary_size || 80}%
+                        </span>
+                      </div>
                     </div>
                     <div class="toggle-row">
                       <label class="toggle-label">Show Selector Dot</label>
@@ -833,8 +865,8 @@ class YeelightCubeGradientCardEditor extends LitElement {
                         <span class="toggle-slider"></span>
                       </label>
                     </div>
-                    <div class="config-row">
-                      <label class="config-label">Overlay Shape</label>
+                    <div class="form-row">
+                      <label>Overlay Shape</label>
                       <div style="display:flex;flex-direction:column;">
                         ${createButtonGroup(
                           [
@@ -883,8 +915,8 @@ class YeelightCubeGradientCardEditor extends LitElement {
                         )}
                       </div>
                     </div>
-                    <div class="config-row">
-                      <label class="config-label">Coordinates</label>
+                    <div class="form-row">
+                      <label>Coordinates</label>
                       <div style="display:flex;flex-direction:column;">
                         ${createButtonGroup(
                           [
@@ -918,18 +950,46 @@ class YeelightCubeGradientCardEditor extends LitElement {
                         )}
                       </div>
                     </div>
-                  </div>
-                `
+                    <div class="toggle-row">
+                      <label class="toggle-label">Snap to Coordinates</label>
+                      <label class="toggle-switch">
+                        <input
+                          id="compass_snap_to_coordinates"
+                          type="checkbox"
+                          .checked="${cfg.compass_snap_to_coordinates === true}"
+                          @change="${this._valueChanged}"
+                        />
+                        <span class="toggle-slider"></span>
+                      </label>
+                    </div>
+                  `,
+                )
               : ""}
             ${this._getUnifiedRotaryStyle(cfg) === "matrix_preview"
-              ? html`
-                  <div
-                    style="margin-top:8px;padding:12px;background:var(--primary-background-color, #1e1e1e);border-radius:8px;"
-                  >
-                    <div
-                      style="font-size:0.9em;font-weight:600;margin-bottom:8px;color:var(--primary-text-color, #ccc);"
-                    >
-                      Matrix Preview Settings
+              ? renderModeSettingsSection(
+                  "Matrix Preview Settings",
+                  html`
+                    <div class="form-row">
+                      <label>Element Size</label>
+                      <div
+                        style="display: flex; align-items: center; gap: 8px;"
+                      >
+                        <input
+                          id="rotary_size"
+                          type="range"
+                          min="30"
+                          max="100"
+                          step="5"
+                          .value="${cfg.rotary_size || 80}"
+                          @input="${this._valueChanged}"
+                          style="flex: 1;"
+                        />
+                        <span
+                          style="min-width: 45px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
+                        >
+                          ${cfg.rotary_size || 80}%
+                        </span>
+                      </div>
                     </div>
                     <div class="toggle-row">
                       <label class="toggle-label">Show Text Preview</label>
@@ -943,8 +1003,8 @@ class YeelightCubeGradientCardEditor extends LitElement {
                         <span class="toggle-slider"></span>
                       </label>
                     </div>
-                    <div class="config-row">
-                      <label class="config-label">Background Color</label>
+                    <div class="form-row">
+                      <label>Background Color</label>
                       <div style="display:flex;flex-direction:column;">
                         ${createButtonGroup(
                           [
@@ -997,8 +1057,8 @@ class YeelightCubeGradientCardEditor extends LitElement {
                           </div>
                         `
                       : ""}
-                    <div class="config-row">
-                      <label class="config-label">Pixel Style</label>
+                    <div class="form-row">
+                      <label>Pixel Style</label>
                       <div style="display:flex;flex-direction:column;">
                         ${createButtonGroup(
                           [
@@ -1032,8 +1092,8 @@ class YeelightCubeGradientCardEditor extends LitElement {
                         )}
                       </div>
                     </div>
-                    <div class="config-row">
-                      <label class="config-label">Pixel Gap</label>
+                    <div class="form-row">
+                      <label>Pixel Gap</label>
                       <div style="display:flex;align-items:center;gap:8px;">
                         <input
                           id="matrix_rotary_pixel_gap"
@@ -1056,45 +1116,15 @@ class YeelightCubeGradientCardEditor extends LitElement {
                         </span>
                       </div>
                     </div>
-                  </div>
-                `
+                  `,
+                )
               : ""}
             ${this._getUnifiedRotaryStyle(cfg) === "capsule"
-              ? html`
-                  <div
-                    style="margin-top:8px;padding:12px;background:var(--primary-background-color, #1e1e1e);border-radius:8px;"
-                  >
-                    <div
-                      style="font-size:0.9em;font-weight:600;margin-bottom:8px;color:var(--primary-text-color, #ccc);"
-                    >
-                      Capsule Settings
-                    </div>
-                    <div class="toggle-row">
-                      <label class="toggle-label">Show 🔄 Icon</label>
-                      <label class="toggle-switch">
-                        <input
-                          id="capsule_show_icon_left"
-                          type="checkbox"
-                          .checked="${cfg.capsule_show_icon_left !== false}"
-                          @change="${this._valueChanged}"
-                        />
-                        <span class="toggle-slider"></span>
-                      </label>
-                    </div>
-                    <div class="toggle-row">
-                      <label class="toggle-label">Show 🎯 Icon</label>
-                      <label class="toggle-switch">
-                        <input
-                          id="capsule_show_icon_right"
-                          type="checkbox"
-                          .checked="${cfg.capsule_show_icon_right !== false}"
-                          @change="${this._valueChanged}"
-                        />
-                        <span class="toggle-slider"></span>
-                      </label>
-                    </div>
-                    <div class="config-row">
-                      <label class="config-label">Theme</label>
+              ? renderModeSettingsSection(
+                  "Capsule Settings",
+                  html`
+                    <div class="form-row">
+                      <label>Theme</label>
                       <div style="display:flex;flex-direction:column;">
                         ${createButtonGroup(
                           [
@@ -1128,8 +1158,8 @@ class YeelightCubeGradientCardEditor extends LitElement {
                         )}
                       </div>
                     </div>
-                    <div class="config-row">
-                      <label class="config-label">Thickness</label>
+                    <div class="form-row">
+                      <label>Thickness</label>
                       <div style="display:flex;align-items:center;gap:8px;">
                         <input
                           id="capsule_thickness"
@@ -1148,12 +1178,52 @@ class YeelightCubeGradientCardEditor extends LitElement {
                         </span>
                       </div>
                     </div>
-                  </div>
-                `
+                    <div class="toggle-row">
+                      <label class="toggle-label">Snap to Coordinates</label>
+                      <label class="toggle-switch">
+                        <input
+                          id="compass_snap_to_coordinates"
+                          type="checkbox"
+                          .checked="${cfg.compass_snap_to_coordinates === true}"
+                          @change="${this._valueChanged}"
+                        />
+                        <span class="toggle-slider"></span>
+                      </label>
+                    </div>
+                    ${(cfg.angle_value_display || "none") !== "none"
+                      ? html`
+                          <div class="form-row">
+                            <label>Angle Value Side</label>
+                            ${createButtonGroup(
+                              [
+                                { value: "left", label: "Left" },
+                                { value: "right", label: "Right" },
+                              ],
+                              cfg.capsule_angle_value_side || "right",
+                              createButtonGroupChangeHandler(
+                                "capsule_angle_value_side",
+                                (value) => {
+                                  this._config = {
+                                    ...this._config,
+                                    capsule_angle_value_side: value,
+                                  };
+                                  this._fireConfigChanged();
+                                },
+                              ),
+                            )}
+                          </div>
+                        `
+                      : ""}
+                  `,
+                )
               : ""}
           </div>
         </div>
-        <div class="editor-card ${this._previewOpen ? "expanded" : ""}">
+        <div
+          class="editor-card${!this._previewOpen
+            ? " editor-card-collapsed"
+            : ""}"
+        >
           <div
             class="editor-card-header"
             @click="${() => this._toggleSection("preview")}"
@@ -1202,8 +1272,8 @@ class YeelightCubeGradientCardEditor extends LitElement {
             </div>
 
             <!-- 1. Preview Display Mode (container layout choice) -->
-            <div class="config-row">
-              <label class="config-label">Preview Display Mode</label>
+            <div class="form-row">
+              <label>Preview Display Mode</label>
               <div style="display: flex; flex-direction: column;">
                 <div>
                   ${createButtonGroup(
@@ -1309,8 +1379,8 @@ class YeelightCubeGradientCardEditor extends LitElement {
               : ""}
 
             <!-- 3. Gallery appearance settings -->
-            <div class="config-row">
-              <label class="config-label">Preview Background Color</label>
+            <div class="form-row">
+              <label>Preview Background Color</label>
               <div style="display: flex; flex-direction: column;">
                 <div>
                   ${createButtonGroup(
@@ -1364,8 +1434,8 @@ class YeelightCubeGradientCardEditor extends LitElement {
                 `
               : ""}
 
-            <div class="config-row">
-              <label class="config-label">Gallery Pixel Style</label>
+            <div class="form-row">
+              <label>Gallery Pixel Style</label>
               <div style="display: flex; flex-direction: column;">
                 <div>
                   ${createButtonGroup(
@@ -1402,8 +1472,8 @@ class YeelightCubeGradientCardEditor extends LitElement {
               </div>
             </div>
 
-            <div class="config-row">
-              <label class="config-label">Gallery Pixel Gap</label>
+            <div class="form-row">
+              <label>Gallery Pixel Gap</label>
               <div style="display: flex; align-items: center; gap: 8px;">
                 <input
                   id="gallery_pixel_gap"
@@ -1427,8 +1497,8 @@ class YeelightCubeGradientCardEditor extends LitElement {
               </div>
             </div>
 
-            <div class="config-row">
-              <label class="config-label">Gallery Preview Size</label>
+            <div class="form-row">
+              <label>Gallery Preview Size</label>
               <div style="display: flex; align-items: center; gap: 8px;">
                 <input
                   id="gallery_preview_size"

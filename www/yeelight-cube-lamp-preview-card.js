@@ -569,6 +569,18 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   async handleBrightnessChange(event) {
     let newBrightness = parseInt(event.target.value);
 
+    // Snap to positions if enabled
+    if (this.config.brightness_snap_to_positions) {
+      const snapValues = [20, 40, 60, 80];
+      const snapThreshold = 4;
+      for (const sv of snapValues) {
+        if (Math.abs(newBrightness - sv) <= snapThreshold) {
+          newBrightness = sv;
+          break;
+        }
+      }
+    }
+
     // Cache the user-set brightness to use during render storms
     this._userSetBrightness = newBrightness;
 
@@ -2297,6 +2309,9 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           label: showLabel ? labelContent : null,
           showValue: this.config.show_brightness_percentage !== false,
           valueText: `${brightnessPercent}%`,
+          trackExtraHtml: this.config.brightness_snap_to_positions
+            ? `<div class="capsule-snap-ticks">${[20, 40, 60, 80].map((v) => `<div class="capsule-snap-tick" style="left:${((v - 1) / 99) * 100}%"></div>`).join("")}</div>`
+            : "",
           // No wheelHandler — outer brightness-slider-container handles it
         });
         html += `</div>`;
@@ -3331,6 +3346,25 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         ${getCapsuleCSS()}
         .brightness-capsule-host {
           width: 100%;
+        }
+        .capsule-snap-ticks {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          pointer-events: none;
+          z-index: 1;
+        }
+        .capsule-snap-tick {
+          position: absolute;
+          top: 50%;
+          width: 5px;
+          height: 5px;
+          transform: translate(-50%, -50%);
+          background: var(--primary-text-color, #333);
+          border-radius: 50%;
+          opacity: 0.35;
         }
         
         /* ===== Brightness Theme: Container-level styles ===== */

@@ -463,7 +463,7 @@ class YeelightCubeGradientCard extends HTMLElement {
       show_color_mode_selector: true,
       rotary_unified_style: "rectangle",
       show_angle_section: true,
-      show_angle_input: false,
+      angle_value_display: "none",
       show_angle_slider: false,
       color_mode_style: "colorized",
       button_text_color: "white",
@@ -541,9 +541,35 @@ class YeelightCubeGradientCard extends HTMLElement {
       ? this._previousHass.states[_primaryEntityId]
       : null;
 
-    // Only render if our entity changed or this is the first hass update
+    // Only render if attributes that actually affect the card UI changed.
+    // HA creates new state objects on ANY attribute update (brightness, etc.),
+    // so object-reference equality (`entity !== oldEntity`) triggers spurious
+    // full-DOM rebuilds that destroy & recreate the capsule slider, causing the
+    // visible "blink" (thumb jumps to 0 then animates back).  Compare only the
+    // attributes the card actually reads during render().
+    // NOTE: HA deserialises attributes from JSON on every update, so arrays
+    // like text_colors/matrix_colors are always new references even when the
+    // values haven't changed — use JSON comparison for those.
     const entityChanged =
-      !oldEntity || entity !== oldEntity || entity.state !== oldEntity.state;
+      !oldEntity ||
+      (() => {
+        if (entity.state !== oldEntity.state) return true;
+        const a = entity.attributes;
+        const b = oldEntity.attributes;
+        if (
+          a.angle !== b.angle ||
+          a.mode !== b.mode ||
+          a.panel_mode !== b.panel_mode ||
+          a.custom_text !== b.custom_text
+        )
+          return true;
+        // Deep-compare arrays (new references each hass update even if values identical)
+        if (JSON.stringify(a.text_colors) !== JSON.stringify(b.text_colors))
+          return true;
+        if (JSON.stringify(a.matrix_colors) !== JSON.stringify(b.matrix_colors))
+          return true;
+        return false;
+      })();
 
     // --- Optimistic Panel Mode: clear only when backend matches ---
     if (this._optimisticPanelMode !== undefined && entity) {
@@ -624,6 +650,7 @@ class YeelightCubeGradientCard extends HTMLElement {
       !this._isDragging &&
       !this._usingSlider &&
       !this._dropdownOpen &&
+      !this._typingAngle &&
       timeSinceLastModeChange > ignoreUpdateWindow
     ) {
       this._pendingHassRender = false;
@@ -649,7 +676,8 @@ class YeelightCubeGradientCard extends HTMLElement {
       this._draggingRotary ||
       this._isDragging ||
       this._usingSlider ||
-      this._dropdownOpen
+      this._dropdownOpen ||
+      this._typingAngle
     )
       return; // Another flag still active
     this._pendingHassRender = false;
@@ -676,7 +704,8 @@ class YeelightCubeGradientCard extends HTMLElement {
         !this._draggingRotary &&
         !this._isDragging &&
         !this._usingSlider &&
-        !this._dropdownOpen
+        !this._dropdownOpen &&
+        !this._typingAngle
       ) {
         clearInterval(this._interactionSafetyTimer);
         this._interactionSafetyTimer = null;
@@ -687,7 +716,13 @@ class YeelightCubeGradientCard extends HTMLElement {
 
   render() {
     // Only block render if actively dragging/interacting with angle controls to prevent interference
-    if (this._draggingRotary || this._isDragging || this._usingSlider) return;
+    if (
+      this._draggingRotary ||
+      this._isDragging ||
+      this._usingSlider ||
+      this._typingAngle
+    )
+      return;
 
     const hass = this._hass;
     if (!hass) return;
@@ -717,7 +752,9 @@ class YeelightCubeGradientCard extends HTMLElement {
     const showAngleSection = this.config.show_angle_section !== false;
 
     // Individual angle control visibility
-    const showAngleInput = this.config.show_angle_input !== false;
+    const angleValueDisplay =
+      this.config.angle_value_display ||
+      (this.config.show_angle_input === true ? "input" : "none");
     const showAngleSlider = this.config.show_angle_slider !== false;
 
     const cardTitle =
@@ -803,17 +840,15 @@ class YeelightCubeGradientCard extends HTMLElement {
           showColorModeSelector ? "" : "no-color-selector"
         }">
           <div class="angle-row">
-            ${
-              showAngleInput
-                ? `
-              <span>Angle:</span>
-              <input id="angleinput" class="angle-input" type="number" min="0" max="359" step="1" value="${Math.round(
-                currentAngle,
-              )}" />
-              <span>°</span>
-            `
-                : ""
-            }
+            ${(() => {
+              // Angle value is now shown in-place on all rotary styles, skip external display
+              return "";
+              return angleValueDisplay === "input"
+                ? `<input id="angleinput" class="angle-input" type="number" min="0" max="359" step="1" value="${Math.round(currentAngle)}" /><span>°</span>`
+                : angleValueDisplay === "text"
+                  ? `<span id="angletext" class="angle-text">${Math.round(currentAngle)}°</span>`
+                  : "";
+            })()}
             ${
               showAngleSlider && this._getRotaryStyleInfo().style !== "capsule"
                 ? `
@@ -1160,6 +1195,170 @@ class YeelightCubeGradientCard extends HTMLElement {
           padding: 4px 6px;
           text-align: center;
         }
+        .angle-text {
+          font-size: 14px;
+          font-weight: 600;
+          color: var(--primary-text-color, #333);
+          min-width: 40px;
+          text-align: center;
+          user-select: none;
+        }
+
+        /* Compass center angle display */
+        .compass-center-input {
+          width: 100%;
+          height: 100%;
+          border: 1px solid var(--divider-color, rgba(128,128,128,0.3));
+          border-radius: 6px;
+          background: color-mix(in srgb, var(--card-background-color, #fff) 85%, transparent);
+          color: var(--primary-text-color, #333);
+          font-size: 12px;
+          font-weight: 700;
+          text-align: center;
+          box-sizing: border-box;
+          padding: 0;
+          -moz-appearance: textfield;
+          outline: none;
+        }
+        .compass-center-input::-webkit-outer-spin-button,
+        .compass-center-input::-webkit-inner-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }
+        .compass-center-input[readonly] {
+          cursor: default;
+        }
+        .rotary-overlay-value {
+          position: absolute;
+          top: 50%;
+          left: 50%;
+          transform: translate(-50%, -50%);
+          z-index: 2;
+        }
+        .rotary-overlay-value input {
+          width: 80px;
+          height: 34px;
+          border: 1px solid var(--divider-color, rgba(128,128,128,0.3));
+          border-radius: 8px;
+          background: color-mix(in srgb, var(--card-background-color, #fff) 85%, transparent);
+          color: var(--primary-text-color, #333);
+          font-size: 16px;
+          font-weight: 700;
+          text-align: center;
+          box-sizing: border-box;
+          padding: 0;
+          -moz-appearance: textfield;
+          outline: none;
+        }
+        .rotary-overlay-value input::-webkit-outer-spin-button,
+        .rotary-overlay-value input::-webkit-inner-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }
+        .rotary-overlay-value input[readonly] {
+          cursor: default;
+        }
+        .matrix-angle-value {
+          display: flex;
+          justify-content: center;
+          margin-top: 6px;
+        }
+        .matrix-angle-value input {
+          width: 80px;
+          height: 34px;
+          border: 1px solid var(--divider-color, rgba(128,128,128,0.3));
+          border-radius: 8px;
+          background: color-mix(in srgb, var(--card-background-color, #fff) 85%, transparent);
+          color: var(--primary-text-color, #333);
+          font-size: 16px;
+          font-weight: 700;
+          text-align: center;
+          box-sizing: border-box;
+          padding: 0;
+          -moz-appearance: textfield;
+          outline: none;
+        }
+        .matrix-angle-value input::-webkit-outer-spin-button,
+        .matrix-angle-value input::-webkit-inner-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }
+        .matrix-angle-value input[readonly] {
+          cursor: default;
+        }
+        .capsule-angle-slot {
+          flex-shrink: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .capsule-angle-input {
+          width: 52px;
+          height: 26px;
+          border: 1px solid var(--divider-color, rgba(128,128,128,0.3));
+          border-radius: 5px;
+          background: transparent;
+          color: var(--primary-text-color, #333);
+          font-size: 13px;
+          font-weight: 700;
+          text-align: center;
+          box-sizing: border-box;
+          padding: 0;
+          -moz-appearance: textfield;
+          outline: none;
+        }
+        .capsule-angle-input::-webkit-outer-spin-button,
+        .capsule-angle-input::-webkit-inner-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }
+        .capsule-angle-input[readonly] {
+          cursor: default;
+        }
+        .snap-tick {
+          position: absolute;
+          background: var(--secondary-text-color, #999);
+          pointer-events: none;
+          z-index: 1;
+        }
+        .snap-tick-top, .snap-tick-bottom {
+          width: 6px;
+          height: 3px;
+          transform: translateX(-50%);
+        }
+        .snap-tick-top { top: 0; border-radius: 0 0 3px 3px; }
+        .snap-tick-bottom { bottom: 0; border-radius: 3px 3px 0 0; }
+        .snap-tick-left, .snap-tick-right {
+          width: 3px;
+          height: 6px;
+          transform: translateY(-50%);
+        }
+        .snap-tick-left { left: 0; border-radius: 0 3px 3px 0; }
+        .snap-tick-right { right: 0; border-radius: 3px 0 0 3px; }
+        .snap-tick-corner {
+          width: 5px;
+          height: 5px;
+          border-radius: 50%;
+        }
+        .capsule-snap-ticks {
+          position: absolute;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          pointer-events: none;
+          z-index: 1;
+        }
+        .capsule-snap-tick {
+          position: absolute;
+          top: 50%;
+          width: 5px;
+          height: 5px;
+          transform: translate(-50%, -50%);
+          background: var(--primary-text-color, #333);
+          border-radius: 50%;
+          opacity: 0.35;
+        }
         .angle-preview {
           width: 64px;
           height: 64px;
@@ -1178,6 +1377,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         .color-wheel {
           cursor: pointer;
           border-radius: 50%;
+          overflow: visible;
         }
 
         .wheel-selector {
@@ -2840,18 +3040,82 @@ class YeelightCubeGradientCard extends HTMLElement {
     if (!root) return;
 
     const angleInput = root.getElementById("angleinput");
+    const angleText = root.getElementById("angletext");
     const angleSlider = root.getElementById("angleslider");
     const rotary = root.getElementById("angle-preview");
 
+    // Readonly text display: block clicks from triggering the SVG drag handler
+    if (angleText) {
+      angleText.addEventListener("mousedown", (e) => e.stopPropagation());
+      angleText.addEventListener("touchstart", (e) => e.stopPropagation());
+    }
+
+    // Block clicks on the overlay wrapper div too (HTML modes: rect/square/matrix)
+    const overlayDiv = root.querySelector(".rotary-overlay-value");
+    if (overlayDiv) {
+      overlayDiv.addEventListener("mousedown", (e) => e.stopPropagation());
+      overlayDiv.addEventListener("touchstart", (e) => e.stopPropagation());
+    }
+
+    // Same for matrix below-grid angle value
+    const matrixAngleDiv = root.querySelector(".matrix-angle-value");
+    if (matrixAngleDiv) {
+      matrixAngleDiv.addEventListener("mousedown", (e) => e.stopPropagation());
+      matrixAngleDiv.addEventListener("touchstart", (e) => e.stopPropagation());
+    }
+
+    // Same for capsule angle slot
+    const capsuleAngleSlot = root.querySelector(".capsule-angle-slot");
+    if (capsuleAngleSlot) {
+      capsuleAngleSlot.addEventListener("mousedown", (e) =>
+        e.stopPropagation(),
+      );
+      capsuleAngleSlot.addEventListener("touchstart", (e) =>
+        e.stopPropagation(),
+      );
+    }
+
     // Angle input control
     if (angleInput) {
+      // Stop propagation on mousedown/touchstart so the compass SVG drag
+      // handler doesn't capture clicks meant for the input field.
+      angleInput.addEventListener("mousedown", (e) => e.stopPropagation());
+      angleInput.addEventListener("touchstart", (e) => e.stopPropagation());
+
+      // Block render() while the user is focused on the input so DOM
+      // rebuilds don't destroy the element mid-typing.
+      angleInput.addEventListener("focus", () => {
+        this._typingAngle = true;
+      });
+      angleInput.addEventListener("blur", () => {
+        this._typingAngle = false;
+        // Apply the final value on blur (covers Tab-out, click-away)
+        let angle = parseFloat(angleInput.value);
+        if (!isNaN(angle)) {
+          angle = Math.max(0, Math.min(359, angle));
+          if (angleSlider) angleSlider.value = angle;
+          this._updateRotaryDisplay(angle);
+          this._debouncedApplyAngle(angle);
+        }
+        this._flushPendingRender();
+      });
+
+      // Live visual feedback while typing — update rotary/slider preview
+      // without triggering a backend call (that comes on blur or Enter).
       angleInput.addEventListener("input", () => {
         let angle = parseFloat(angleInput.value);
-        if (isNaN(angle)) angle = 0;
+        if (isNaN(angle)) return; // incomplete input, skip
         angle = Math.max(0, Math.min(359, angle));
         if (angleSlider) angleSlider.value = angle;
         this._updateRotaryDisplay(angle);
         this._debouncedApplyAngle(angle);
+      });
+
+      // Enter key: apply immediately and blur (confirms the value)
+      angleInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          angleInput.blur();
+        }
       });
     }
 
@@ -2861,7 +3125,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         this._usingSlider = true; // Flag to prevent re-renders during slider use
         let angle = parseFloat(angleSlider.value);
         if (isNaN(angle)) angle = 0;
-        if (angleInput) angleInput.value = angle;
+        this._syncAngleValueDisplay(angle);
         this._updateRotaryDisplay(angle);
         this._debouncedApplyAngle(angle);
       });
@@ -3206,7 +3470,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         const wheelSizePercent = baseWheelSizePercent;
         const wheelSize = Math.min(100, wheelSizePercent);
         const wheelRadius = (wheelSize * 45) / 100;
-        const selectorRadius = (wheelSize * 40) / 100;
+        const selectorRadius = wheelRadius;
         const selectorX = 50 + selectorRadius * Math.cos(selectorRadians);
         const selectorY = 50 - selectorRadius * Math.sin(selectorRadians);
         const gradientAngle = -visualAngle;
@@ -3268,11 +3532,44 @@ class YeelightCubeGradientCard extends HTMLElement {
               ${wheelMaskOverlay}
               <circle cx="50" cy="50" r="${wheelRadius}" fill="none" stroke="var(--divider-color, #ddd)" stroke-width="1"/>
               ${
+                this.config.compass_snap_to_coordinates
+                  ? [0, 45, 90, 135, 180, 225, 270, 315]
+                      .map((a) => {
+                        const rad = (a * Math.PI) / 180;
+                        const inner = wheelRadius - 3;
+                        const outer = wheelRadius + 1;
+                        return `<line x1="${50 + inner * Math.cos(rad)}" y1="${50 - inner * Math.sin(rad)}" x2="${50 + outer * Math.cos(rad)}" y2="${50 - outer * Math.sin(rad)}" stroke="var(--secondary-text-color, #999)" stroke-width="${a % 90 === 0 ? 1.8 : 1}" opacity="0.7"/>`;
+                      })
+                      .join("")
+                  : ""
+              }
+              ${
                 this.config.show_selector_dot !== false
                   ? `<circle cx="${selectorX}" cy="${selectorY}" r="4" class="wheel-selector" fill="#fff" stroke="#333" stroke-width="2"/>`
                   : ""
               }
               <circle cx="50" cy="50" r="${wheelRadius}" fill="transparent" style="cursor: pointer;"/>
+              ${(() => {
+                const avd =
+                  this.config.angle_value_display ||
+                  (this.config.show_angle_input === true ? "input" : "none");
+                if (avd === "none") return "";
+                const displayAngle = Math.round(visualAngle);
+                const foW = Math.max(wheelRadius * 1.11, 30);
+                const foH = Math.max(wheelRadius * 0.58, 16);
+                const foX = 50 - foW / 2;
+                const foY = 50 - foH / 2;
+                const foFS = Math.max(wheelRadius * 0.27, 7.5).toFixed(1);
+                const foBR = Math.max(wheelRadius * 0.13, 3.5).toFixed(1);
+                if (avd === "input") {
+                  return `<foreignObject x="${foX.toFixed(1)}" y="${foY.toFixed(1)}" width="${foW.toFixed(1)}" height="${foH.toFixed(1)}">
+                      <input xmlns="http://www.w3.org/1999/xhtml" id="angleinput" class="compass-center-input" type="number" min="0" max="359" step="1" value="${displayAngle}" style="font-size:${foFS}px;border-radius:${foBR}px" />
+                    </foreignObject>`;
+                }
+                return `<foreignObject x="${foX.toFixed(1)}" y="${foY.toFixed(1)}" width="${foW.toFixed(1)}" height="${foH.toFixed(1)}">
+                    <input xmlns="http://www.w3.org/1999/xhtml" id="angletext" class="compass-center-input" type="text" value="${displayAngle}°" readonly tabindex="-1" style="font-size:${foFS}px;border-radius:${foBR}px" />
+                  </foreignObject>`;
+              })()}
             </svg>
           </div>
         `;
@@ -3404,6 +3701,54 @@ class YeelightCubeGradientCard extends HTMLElement {
               ></div>`
                   : ""
               }
+${(() => {
+  if (!this.config.compass_snap_to_coordinates) return "";
+  const snapAngles = [0, 45, 90, 135, 180, 225, 270, 315];
+  const rw = 4,
+    rh = 1,
+    rp = 2 * (rw + rh);
+  return snapAngles
+    .map((sa) => {
+      const pp = (sa / 360) * rp;
+      let sx, sy, cls;
+      if (pp <= rh / 2) {
+        sx = 100;
+        sy = 50 - (pp / (rh / 2)) * 50;
+        cls = "right";
+      } else if (pp <= rh / 2 + rw) {
+        sx = 100 - ((pp - rh / 2) / rw) * 100;
+        sy = 0;
+        cls = "top";
+      } else if (pp <= rh / 2 + rw + rh) {
+        sx = 0;
+        sy = ((pp - rh / 2 - rw) / rh) * 100;
+        cls = "left";
+      } else if (pp <= rh / 2 + rw + rh + rw) {
+        sx = ((pp - rh / 2 - rw - rh) / rw) * 100;
+        sy = 100;
+        cls = "bottom";
+      } else {
+        sx = 100;
+        sy = 100 - ((pp - rh / 2 - rw - rh - rw) / (rh / 2)) * 50;
+        cls = "right";
+      }
+      if (cls === "top" || cls === "bottom")
+        return `<div class="snap-tick snap-tick-${cls}" style="left:${sx}%"></div>`;
+      return `<div class="snap-tick snap-tick-${cls}" style="top:${sy}%"></div>`;
+    })
+    .join("");
+})()}
+${(() => {
+  const avd =
+    this.config.angle_value_display ||
+    (this.config.show_angle_input === true ? "input" : "none");
+  if (avd === "none") return "";
+  const da = Math.round(rectVisualAngle);
+  if (avd === "input") {
+    return `<div class="rotary-overlay-value"><input id="angleinput" type="number" min="0" max="359" step="1" value="${da}" /></div>`;
+  }
+  return `<div class="rotary-overlay-value"><input id="angletext" type="text" value="${da}°" readonly tabindex="-1" /></div>`;
+})()}
             </div>
           </div>
         `;
@@ -3537,6 +3882,62 @@ class YeelightCubeGradientCard extends HTMLElement {
               ></div>`
                   : ""
               }
+${(() => {
+  if (!this.config.compass_snap_to_coordinates) return "";
+  /* Cardinal angles (0/90/180/270) → edge half-circles */
+  const sw = 1,
+    sh = 1,
+    sp = 2 * (sw + sh);
+  const edgeTicks = [0, 90, 180, 270]
+    .map((sa) => {
+      const pp = (sa / 360) * sp;
+      let sx, sy, cls;
+      if (pp <= sh / 2) {
+        sx = 100;
+        sy = 50 - (pp / (sh / 2)) * 50;
+        cls = "right";
+      } else if (pp <= sh / 2 + sw) {
+        sx = 100 - ((pp - sh / 2) / sw) * 100;
+        sy = 0;
+        cls = "top";
+      } else if (pp <= sh / 2 + sw + sh) {
+        sx = 0;
+        sy = ((pp - sh / 2 - sw) / sh) * 100;
+        cls = "left";
+      } else if (pp <= sh / 2 + sw + sh + sw) {
+        sx = ((pp - sh / 2 - sw - sh) / sw) * 100;
+        sy = 100;
+        cls = "bottom";
+      } else {
+        sx = 100;
+        sy = 100 - ((pp - sh / 2 - sw - sh - sw) / (sh / 2)) * 50;
+        cls = "right";
+      }
+      if (cls === "top" || cls === "bottom")
+        return `<div class="snap-tick snap-tick-${cls}" style="left:${sx}%"></div>`;
+      return `<div class="snap-tick snap-tick-${cls}" style="top:${sy}%"></div>`;
+    })
+    .join("");
+  /* Diagonal angles (45/135/225/315) → corner dots */
+  const cornerTicks = [
+    `<div class="snap-tick snap-tick-corner" style="top:-2px;right:-2px"></div>`,
+    `<div class="snap-tick snap-tick-corner" style="top:-2px;left:-2px"></div>`,
+    `<div class="snap-tick snap-tick-corner" style="bottom:-2px;left:-2px"></div>`,
+    `<div class="snap-tick snap-tick-corner" style="bottom:-2px;right:-2px"></div>`,
+  ].join("");
+  return edgeTicks + cornerTicks;
+})()}
+${(() => {
+  const avd =
+    this.config.angle_value_display ||
+    (this.config.show_angle_input === true ? "input" : "none");
+  if (avd === "none") return "";
+  const da = Math.round(squareVisualAngle);
+  if (avd === "input") {
+    return `<div class="rotary-overlay-value"><input id="angleinput" type="number" min="0" max="359" step="1" value="${da}" /></div>`;
+  }
+  return `<div class="rotary-overlay-value"><input id="angletext" type="text" value="${da}°" readonly tabindex="-1" /></div>`;
+})()}
             </div>
           </div>
         `;
@@ -3640,7 +4041,7 @@ class YeelightCubeGradientCard extends HTMLElement {
           : null;
 
         return `
-          <div class="matrix-preview-container" id="angle-preview" style="width:100%;display:flex;flex-direction:column;align-items:center;cursor:pointer;">
+          <div class="matrix-preview-container" id="angle-preview" style="width:100%;display:flex;flex-direction:column;align-items:center;cursor:pointer;position:relative;">
             <div class="matrix-preview-grid" style="
               display:grid;
               grid-template-columns:repeat(${mpCols}, 1fr);
@@ -3656,6 +4057,17 @@ class YeelightCubeGradientCard extends HTMLElement {
               margin:0 auto;
               box-sizing:border-box;
             ">${mpPixelDivs}</div>
+${(() => {
+  const avd =
+    this.config.angle_value_display ||
+    (this.config.show_angle_input === true ? "input" : "none");
+  if (avd === "none") return "";
+  const da = Math.round(mpVisualAngle);
+  if (avd === "input") {
+    return `<div class="matrix-angle-value"><input id="angleinput" type="number" min="0" max="359" step="1" value="${da}" /></div>`;
+  }
+  return `<div class="matrix-angle-value"><input id="angletext" type="text" value="${da}\u00b0" readonly tabindex="-1" /></div>`;
+})()}
           </div>
         `;
       }
@@ -3671,7 +4083,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         const baseCmpSz = this._getRotarySize();
         const compRadius = (Math.min(100, baseCmpSz) * 45) / 100;
         const compGradAngle = -compVisualAngle;
-        const compSelRadius = (Math.min(100, baseCmpSz) * 40) / 100;
+        const compSelRadius = compRadius;
         const compRad = (compVisualAngle * Math.PI) / 180;
         const compSX = 50 + compSelRadius * Math.cos(compRad);
         const compSY = 50 - compSelRadius * Math.sin(compRad);
@@ -3700,6 +4112,18 @@ class YeelightCubeGradientCard extends HTMLElement {
         }
 
         // Shape overlay (needle / beam / arrow)
+        // Determine if center dot should be shown (hidden when angle value text/input is displayed)
+        const compAvd =
+          this.config.angle_value_display ||
+          (this.config.show_angle_input === true ? "input" : "none");
+        const compCenterDot =
+          compAvd === "none"
+            ? `<circle cx="50" cy="50" r="3" fill="var(--card-background-color, #fff)" stroke="var(--divider-color, #ddd)" stroke-width="1"/>`
+            : "";
+        const compCenterDotSmall =
+          compAvd === "none"
+            ? `<circle cx="50" cy="50" r="2.5" fill="var(--card-background-color, #fff)" stroke="var(--divider-color, #ddd)" stroke-width="0.8"/>`
+            : "";
         let shapeOverlayDefs = "";
         let shapeOverlayContent = "";
 
@@ -3730,7 +4154,7 @@ class YeelightCubeGradientCard extends HTMLElement {
                 </g>
               </g>
               <path class="beam-outline" d="${beamPath}" fill="none" stroke="var(--divider-color, #ddd)" stroke-width="0.8" opacity="0.6"/>
-              <circle cx="50" cy="50" r="2.5" fill="var(--card-background-color, #fff)" stroke="var(--divider-color, #ddd)" stroke-width="0.8"/>`;
+              ${compCenterDotSmall}`;
         } else if (compassShape === "arrow") {
           // Arrow shape overlay — border to border
           const arrowLen = compRadius;
@@ -3757,7 +4181,7 @@ class YeelightCubeGradientCard extends HTMLElement {
               <g class="comp-rotate" transform="rotate(${compGradAngle} 50 50)">
                 <path d="${arrowPath}" fill="none" stroke="var(--divider-color, #ddd)" stroke-width="0.5"/>
               </g>
-              <circle cx="50" cy="50" r="3" fill="var(--card-background-color, #fff)" stroke="var(--divider-color, #ddd)" stroke-width="1"/>`;
+              ${compCenterDot}`;
         } else if (compassShape === "star") {
           // Star shape overlay — border to border
           const starOuterR = compRadius;
@@ -3781,7 +4205,7 @@ class YeelightCubeGradientCard extends HTMLElement {
               <g class="comp-rotate" transform="rotate(${compGradAngle} 50 50)">
                 <path d="${starPath}" fill="none" stroke="var(--divider-color, #ddd)" stroke-width="0.5"/>
               </g>
-              <circle cx="50" cy="50" r="3" fill="var(--card-background-color, #fff)" stroke="var(--divider-color, #ddd)" stroke-width="1"/>`;
+              ${compCenterDot}`;
         } else if (compassShape === "rectangle") {
           // Rectangle shape overlay — border to border, thinner aspect
           const trW = compRadius * 2;
@@ -3802,7 +4226,7 @@ class YeelightCubeGradientCard extends HTMLElement {
               <g class="comp-rotate" transform="rotate(${compGradAngle} 50 50)">
                 <path d="${trPath}" fill="none" stroke="var(--divider-color, #ddd)" stroke-width="0.5"/>
               </g>
-              <circle cx="50" cy="50" r="3" fill="var(--card-background-color, #fff)" stroke="var(--divider-color, #ddd)" stroke-width="1"/>`;
+              ${compCenterDot}`;
         } else {
           // Needle (default) — border to border
           const nLen = compRadius;
@@ -3824,7 +4248,7 @@ class YeelightCubeGradientCard extends HTMLElement {
               <g class="comp-rotate" transform="rotate(${compGradAngle} 50 50)">
                 <path d="${needlePath}" fill="none" stroke="var(--divider-color, #ddd)" stroke-width="0.5"/>
               </g>
-              <circle cx="50" cy="50" r="3" fill="var(--card-background-color, #fff)" stroke="var(--divider-color, #ddd)" stroke-width="1"/>`;
+              ${compCenterDot}`;
         }
 
         return `
@@ -3845,6 +4269,27 @@ class YeelightCubeGradientCard extends HTMLElement {
                   : ""
               }
               <circle cx="50" cy="50" r="${compRadius}" fill="transparent" style="cursor:pointer;"/>
+              ${(() => {
+                const avd =
+                  this.config.angle_value_display ||
+                  (this.config.show_angle_input === true ? "input" : "none");
+                if (avd === "none") return "";
+                const displayAngle = Math.round(compVisualAngle);
+                const foW = Math.max(compRadius * 1.11, 30);
+                const foH = Math.max(compRadius * 0.58, 16);
+                const foX = 50 - foW / 2;
+                const foY = 50 - foH / 2;
+                const foFS = Math.max(compRadius * 0.27, 7.5).toFixed(1);
+                const foBR = Math.max(compRadius * 0.13, 3.5).toFixed(1);
+                if (avd === "input") {
+                  return `<foreignObject x="${foX.toFixed(1)}" y="${foY.toFixed(1)}" width="${foW.toFixed(1)}" height="${foH.toFixed(1)}">
+                      <input xmlns="http://www.w3.org/1999/xhtml" id="angleinput" class="compass-center-input" type="number" min="0" max="359" step="1" value="${displayAngle}" style="font-size:${foFS}px;border-radius:${foBR}px" />
+                    </foreignObject>`;
+                }
+                return `<foreignObject x="${foX.toFixed(1)}" y="${foY.toFixed(1)}" width="${foW.toFixed(1)}" height="${foH.toFixed(1)}">
+                    <input xmlns="http://www.w3.org/1999/xhtml" id="angletext" class="compass-center-input" type="text" value="${displayAngle}°" readonly tabindex="-1" style="font-size:${foFS}px;border-radius:${foBR}px" />
+                  </foreignObject>`;
+              })()}
             </svg>
           </div>
         `;
@@ -3866,8 +4311,31 @@ class YeelightCubeGradientCard extends HTMLElement {
           undefined,
           6,
         );
-        const showIconLeft = this.config.capsule_show_icon_left !== false;
-        const showIconRight = this.config.capsule_show_icon_right !== false;
+        // Angle value display: replace an icon with text/input
+        const capsuleAvd =
+          this.config.angle_value_display ||
+          (this.config.show_angle_input === true ? "input" : "none");
+        const capsuleAvdSide = this.config.capsule_angle_value_side || "right";
+        const capsuleAngleRounded = Math.round(capsuleAngle);
+
+        let capsuleLeftSlot = null;
+        let capsuleRightSlot = null;
+        let capsuleIconLeft = null;
+        let capsuleIconRight = null;
+
+        if (capsuleAvd !== "none") {
+          const isInput = capsuleAvd === "input";
+          const slotHtml = isInput
+            ? `<div class="capsule-angle-slot"><input id="angleinput" class="capsule-angle-input" type="number" min="0" max="359" step="1" value="${capsuleAngleRounded}" /></div>`
+            : `<div class="capsule-angle-slot"><input id="angletext" class="capsule-angle-input" type="text" value="${capsuleAngleRounded}°" readonly tabindex="-1" /></div>`;
+          if (capsuleAvdSide === "left") {
+            capsuleLeftSlot = slotHtml;
+            capsuleIconLeft = null; // slot replaces icon
+          } else {
+            capsuleRightSlot = slotHtml;
+            capsuleIconRight = null; // slot replaces icon
+          }
+        }
 
         const capsuleHTML = renderCapsuleHTML({
           theme: capsuleTheme,
@@ -3875,16 +4343,21 @@ class YeelightCubeGradientCard extends HTMLElement {
           value: Math.round(capsuleAngle),
           min: 0,
           max: 359,
-          iconLeft: showIconLeft ? "🔄" : null,
-          iconRight: showIconRight ? "🎯" : null,
+          iconLeft: capsuleIconLeft,
+          iconRight: capsuleIconRight,
+          leftSlotHtml: capsuleLeftSlot,
+          rightSlotHtml: capsuleRightSlot,
           hostInputHandler:
             "this.getRootNode().host._handleCapsuleAngleInput(event)",
           hostDragStart: "this.getRootNode().host._startCapsuleDrag()",
           hostDragEnd: "this.getRootNode().host._endCapsuleDrag()",
           label: null,
-          showValue: true,
-          valueText: `${Math.round(capsuleAngle)}°`,
+          showValue: capsuleAvd === "none",
+          valueText: `${capsuleAngleRounded}°`,
           wheelHandler: "this.getRootNode().host._handleCapsuleWheel(event)",
+          trackExtraHtml: this.config.compass_snap_to_coordinates
+            ? `<div class="capsule-snap-ticks">${[45, 90, 135, 180, 225, 270, 315].map((a) => `<div class="capsule-snap-tick" style="left:${(a / 359) * 100}%"></div>`).join("")}</div>`
+            : "",
         });
 
         return `<div class="angle-capsule-host" style="width:${this._getRotarySize()}%;margin:0 auto;">${capsuleHTML}</div>`;
@@ -3960,6 +4433,27 @@ class YeelightCubeGradientCard extends HTMLElement {
               }
               <!-- Invisible circle to make entire area draggable -->
               <circle cx="50" cy="50" r="${defaultRadius}" fill="transparent" style="cursor: pointer;"/>
+              ${(() => {
+                const avd =
+                  this.config.angle_value_display ||
+                  (this.config.show_angle_input === true ? "input" : "none");
+                if (avd === "none") return "";
+                const displayAngle = Math.round(defaultVisualAngle);
+                const foW = Math.max(defaultRadius * 1.11, 30);
+                const foH = Math.max(defaultRadius * 0.58, 16);
+                const foX = 50 - foW / 2;
+                const foY = 50 - foH / 2;
+                const foFS = Math.max(defaultRadius * 0.27, 7.5).toFixed(1);
+                const foBR = Math.max(defaultRadius * 0.13, 3.5).toFixed(1);
+                if (avd === "input") {
+                  return `<foreignObject x="${foX.toFixed(1)}" y="${foY.toFixed(1)}" width="${foW.toFixed(1)}" height="${foH.toFixed(1)}">
+                      <input xmlns="http://www.w3.org/1999/xhtml" id="angleinput" class="compass-center-input" type="number" min="0" max="359" step="1" value="${displayAngle}" style="font-size:${foFS}px;border-radius:${foBR}px" />
+                    </foreignObject>`;
+                }
+                return `<foreignObject x="${foX.toFixed(1)}" y="${foY.toFixed(1)}" width="${foW.toFixed(1)}" height="${foH.toFixed(1)}">
+                    <input xmlns="http://www.w3.org/1999/xhtml" id="angletext" class="compass-center-input" type="text" value="${displayAngle}°" readonly tabindex="-1" style="font-size:${foFS}px;border-radius:${foBR}px" />
+                  </foreignObject>`;
+              })()}
             </svg>
           </div>
         `;
@@ -4183,14 +4677,27 @@ class YeelightCubeGradientCard extends HTMLElement {
       return;
     }
 
+    // Snap to compass coordinates if enabled (N/NE/E/SE/S/SW/W/NW)
+    if (this.config.compass_snap_to_coordinates) {
+      const snapAngles = [0, 45, 90, 135, 180, 225, 270, 315];
+      const snapThreshold = 12; // degrees — how close you need to be to snap
+      for (const sa of snapAngles) {
+        let diff = Math.abs(angle - sa);
+        if (diff > 180) diff = 360 - diff;
+        if (diff <= snapThreshold) {
+          angle = sa;
+          break;
+        }
+      }
+    }
+
     // Store the pending angle for immediate visual feedback
     this._isDragging = true;
     this._pendingAngle = angle;
 
     // Update both input and slider if they exist
-    const angleInput = this.shadowRoot.getElementById("angleinput");
+    this._syncAngleValueDisplay(angle);
     const angleSlider = this.shadowRoot.getElementById("angleslider");
-    if (angleInput) angleInput.value = Math.round(angle);
     if (angleSlider) angleSlider.value = Math.round(angle);
 
     // Update visual elements directly for better performance
@@ -4248,12 +4755,24 @@ class YeelightCubeGradientCard extends HTMLElement {
 
   _handleCapsuleAngleInput(event) {
     this._usingSlider = true;
-    const angle = parseInt(event.target.value);
+    let angle = parseInt(event.target.value);
     if (isNaN(angle)) return;
 
-    // Sync the separate angle input field if visible
-    const angleInput = this.shadowRoot.getElementById("angleinput");
-    if (angleInput) angleInput.value = angle;
+    // Snap to compass coordinates if enabled (linear distance for capsule)
+    if (this.config.compass_snap_to_coordinates) {
+      const snapAngles = [0, 45, 90, 135, 180, 225, 270, 315, 359];
+      const snapThreshold = 12;
+      for (const sa of snapAngles) {
+        const diff = Math.abs(angle - sa);
+        if (diff <= snapThreshold) {
+          angle = sa;
+          break;
+        }
+      }
+    }
+
+    // Sync the separate angle input/text if visible
+    this._syncAngleValueDisplay(angle);
 
     // Update capsule visuals immediately
     const percent = (angle / 359) * 100;
@@ -4287,6 +4806,15 @@ class YeelightCubeGradientCard extends HTMLElement {
     this._usingSlider = false;
   }
   // ────────────────────────────────────────────────────────────
+
+  /** Sync the angle-value UI elements (input field and/or read-only text). */
+  _syncAngleValueDisplay(angle) {
+    const rounded = Math.round(angle);
+    const angleInput = this.shadowRoot.getElementById("angleinput");
+    const angleText = this.shadowRoot.getElementById("angletext");
+    if (angleInput) angleInput.value = rounded;
+    if (angleText) angleText.value = `${rounded}°`;
+  }
 
   _updateRotaryDisplay(angle) {
     const rotaryContainer = this.shadowRoot.querySelector(
@@ -4374,7 +4902,7 @@ class YeelightCubeGradientCard extends HTMLElement {
 
     // Use unified sizing method
     const sizePercent = this._getRotarySize();
-    const selectorRadius = (sizePercent * 40) / 100; // Scale selector radius
+    const selectorRadius = (sizePercent * 45) / 100; // On circle border
 
     const selectorX = 50 + selectorRadius * Math.cos(selectorRadians);
     const selectorY = 50 - selectorRadius * Math.sin(selectorRadians);
@@ -4574,7 +5102,7 @@ class YeelightCubeGradientCard extends HTMLElement {
     const gradientAngle = -angle;
     const selectorRadians = (angle * Math.PI) / 180;
     const sizePercent = this._getRotarySize();
-    const selectorRadius = (Math.min(100, sizePercent) * 40) / 100;
+    const selectorRadius = (Math.min(100, sizePercent) * 45) / 100; // On circle border
     const selectorX = 50 + selectorRadius * Math.cos(selectorRadians);
     const selectorY = 50 - selectorRadius * Math.sin(selectorRadians);
 

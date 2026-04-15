@@ -441,6 +441,12 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
                       cfg.show_capsule_sun_icon !== false,
                       (e) => this._onToggleChange(e),
                     )}
+                    ${createToggleRow(
+                      "Snap to Positions",
+                      "brightness_snap_to_positions",
+                      cfg.brightness_snap_to_positions === true,
+                      (e) => this._onToggleChange(e),
+                    )}
                   `,
                 )
               : ""}

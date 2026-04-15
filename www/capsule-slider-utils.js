@@ -70,6 +70,8 @@ export function renderCapsuleHTML(opts) {
     max = 100,
     iconLeft = null,
     iconRight = null,
+    leftSlotHtml = null,
+    rightSlotHtml = null,
     hostInputHandler = "",
     hostDragStart = "",
     hostDragEnd = "",
@@ -77,31 +79,43 @@ export function renderCapsuleHTML(opts) {
     showValue = true,
     valueText = "",
     wheelHandler = "",
+    trackExtraHtml = "",
   } = opts;
 
   const labelHtml = label ? `<div class="capsule-label">${label}</div>` : "";
 
-  const leftIconHtml = iconLeft
-    ? `<div class="capsule-icon capsule-icon-left">${iconLeft}</div>`
-    : "";
+  const leftContentHtml = leftSlotHtml
+    ? leftSlotHtml
+    : iconLeft
+      ? `<div class="capsule-icon capsule-icon-left">${iconLeft}</div>`
+      : "";
 
-  const rightIconHtml = iconRight
-    ? `<div class="capsule-icon capsule-icon-right">${iconRight}</div>`
-    : "";
+  const rightContentHtml = rightSlotHtml
+    ? rightSlotHtml
+    : iconRight
+      ? `<div class="capsule-icon capsule-icon-right">${iconRight}</div>`
+      : "";
 
   const valueHtml = showValue
     ? `<div class="capsule-value-text">${valueText}</div>`
     : "";
+
+  // Compute initial percent so the capsule renders at the correct
+  // position on first paint (avoids the visual blink from 0 → value
+  // that occurs when --capsule-percent is set later via JS).
+  const range = max - min || 1;
+  const initialPercent = ((value - min) / range) * 100;
 
   return `
     <div class="capsule-container capsule-theme-${theme}" style="--capsule-thickness: ${thickness}px;"${wheelHandler ? ` onwheel="${wheelHandler}"` : ""}>
       ${labelHtml}
       <div class="capsule-wrapper">
         <div class="capsule-pill capsule-pill-${theme}">
-          ${leftIconHtml}
+          ${leftContentHtml}
           <div class="capsule-track">
-            <div class="capsule-fill"></div>
-            <div class="capsule-thumb"></div>
+            ${trackExtraHtml}
+            <div class="capsule-fill" style="--capsule-percent: ${initialPercent};"></div>
+            <div class="capsule-thumb" style="--capsule-percent: ${initialPercent};"></div>
             <input
               type="range"
               min="${min}"
@@ -113,7 +127,7 @@ export function renderCapsuleHTML(opts) {
               ${hostInputHandler ? `oninput="${hostInputHandler}"` : ""}
             />
           </div>
-          ${rightIconHtml}
+          ${rightContentHtml}
         </div>
         ${valueHtml}
       </div>
