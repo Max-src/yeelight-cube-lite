@@ -337,11 +337,8 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       !layoutChanged &&
       !lengthChanged
     ) {
-      // For cards and spread layout, handle animations for adding/removing/reordering
-      if (
-        (currentLayout === "cards" || currentLayout === "spread") &&
-        colorsChanged
-      ) {
+      // For cards layout, handle animations for adding/removing/reordering
+      if (currentLayout === "cards" && colorsChanged) {
         const colorListElement = this.shadowRoot.querySelector("#color-list");
         if (colorListElement) {
           // If we're just reordering (drag-and-drop), skip animations
@@ -499,11 +496,8 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         return;
       }
 
-      // For non-cards/spread layouts or when colors haven't changed
-      if (
-        (currentLayout === "cards" || currentLayout === "spread") &&
-        !colorsChanged
-      ) {
+      // For cards layout when colors haven't changed
+      if (currentLayout === "cards" && !colorsChanged) {
         // Just update action row if needed, don't touch the cards
         const actionRowElement = this.shadowRoot.querySelector(".action-row");
         if (actionRowElement) {
@@ -608,7 +602,11 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
             ? `
         <div id="color-list" class="layout-${
           this.config.list_layout || "list"
-        }${showItemBorder ? " item-card-border" : ""}" style="--card-size-multiplier: ${
+        }${showItemBorder ? " item-card-border" : ""} surface-${
+          this.config.card_surface_effect || "none"
+        } shadow-${this.config.card_shadow_style || "soft"} hover-${
+          this.config.card_hover_effect || "lift"
+        }" style="--card-size-multiplier: ${
           (this.config.card_size || 70) / 100
         };">
           ${this._generateColorList(textColors, {
@@ -1396,21 +1394,103 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           left: -4px !important;
         }
         
-        /* Spread Layout - Cards spread on table */
+        /* Spread Arrangement - Cards spread on table */
         .cards-container { 
           display: flex;
           flex-wrap: wrap;
           gap: 30px;
           padding: 40px 20px;
-          /* justify-content: center; */
           justify-content: space-evenly;
           align-items: flex-end;
           perspective: 1000px;
           max-width: 100%;
           margin: 0 auto;
         }
+
+        /* Cascade Arrangement - overlapping waterfall */
+        .cards-container.cascade-mode {
+          gap: 0;
+          padding: 30px 20px;
+          justify-content: center;
+          align-items: center;
+        }
+        .cards-container.cascade-mode .card-wrapper {
+          margin-left: -28px;
+        }
+        .cards-container.cascade-mode .card-wrapper:first-child {
+          margin-left: 0;
+        }
+
+        /* Tilt Arrangement - uniform rotation grid */
+        .cards-container.tilt-mode {
+          gap: 22px;
+          padding: 30px 20px;
+          justify-content: center;
+          align-items: flex-start;
+        }
+
+        /* Fan Arrangement - semicircular arc */
+        .cards-fan-container {
+          display: flex;
+          justify-content: center;
+          align-items: flex-end;
+          min-height: 320px;
+          padding: 30px 10px 60px;
+          position: relative;
+          max-width: 100%;
+          margin: 0 auto;
+          perspective: 1200px;
+        }
+        .cards-fan-container .card-wrapper {
+          position: absolute;
+          transform-origin: 50% 320%;
+          transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+          pointer-events: none;
+        }
+        .cards-fan-container .card-item {
+          pointer-events: auto;
+          transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.25s ease, opacity 0.25s ease, filter 0.25s ease;
+        }
+        /* JS-managed classes: .fan-active on container, .fan-hovered on active wrapper */
+        .cards-fan-container.fan-active .card-wrapper:not(.fan-hovered) {
+          z-index: 0 !important;
+        }
+        .cards-fan-container.fan-active .card-wrapper.fan-hovered {
+          z-index: 200 !important;
+        }
+        .cards-fan-container.fan-active .card-wrapper:not(.fan-hovered) .card-item {
+          opacity: 0.35;
+          filter: brightness(0.55) saturate(0.4);
+        }
+        .cards-fan-container.fan-active .card-wrapper.fan-hovered .card-item {
+          transform: scale(1.12) !important;
+          box-shadow: 0 8px 28px rgba(0,0,0,0.30);
+        }
+
+        /* Fan drag mode: keep fan shape, just enable pointer-events on wrappers */
+        .cards-fan-container.dragging-active .card-wrapper {
+          pointer-events: auto !important;
+        }
+        .cards-fan-container .card-wrapper.dragging .card-item {
+          opacity: 0.75;
+          outline: 2px dashed rgba(255,255,255,0.7);
+          outline-offset: 3px;
+          filter: brightness(1.1);
+          box-shadow: 0 0 16px 4px rgba(255,255,255,0.25);
+          transition: none !important;
+        }
+        /* Spread / Hand mode: same dashed-outline drop-preview as fan */
+        .cards-container .card-wrapper.dragging .card-item,
+        .cards-poker-container .card-wrapper.dragging .card-item {
+          opacity: 0.75;
+          outline: 2px dashed rgba(255,255,255,0.7);
+          outline-offset: 3px;
+          filter: brightness(1.1);
+          box-shadow: 0 0 16px 4px rgba(255,255,255,0.25);
+          transition: none !important;
+        }
         
-        /* Cards Layout - Poker Hand Style */
+        /* Hand Arrangement - Poker Hand Style */
         .cards-poker-container {
           display: flex;
           flex-direction: column;
@@ -1510,8 +1590,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           right: -16px;
           bottom: -35px;
           z-index: -1;
-          /* background: rgba(255, 0, 0, 0.3);
-          border: 2px solid red; */
         }
         .cards-container:not(.dragging-active) .card-item:hover,
         .cards-poker-container:not(.dragging-active) .card-item:hover { 
@@ -1520,6 +1598,15 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           box-shadow: 0 12px 32px rgba(0,0,0,0.25);
           transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease, z-index 0s 0s;
         }
+        /* Fan hover: entirely JS-managed via .fan-active/.fan-hovered classes */
+        .cards-fan-container:not(.dragging-active) .card-item:hover {
+          z-index: 100 !important;
+        }
+        /* Elevate the entire poker-hand ROW so hovered card renders above later rows */
+        .cards-poker-container:not(.dragging-active) .poker-hand:has(.card-item:hover) {
+          z-index: 200 !important;
+        }
+        /* Legacy — kept as fallback if dragging class ends up on card-item */
         .card-item.dragging {
           opacity: 0;
           visibility: hidden;
@@ -1638,7 +1725,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           height: 28px;
           font-size: 1.5em;
         }
-        /* Dot-style on cards/spread: position from inline styles */
+        /* Dot-style on cards: position from inline styles */
         .card-remove.dot-style {
           /* No position override — inline styles from getButtonPositionStyles() apply */
         }
@@ -1935,6 +2022,82 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         .color-grid-swatch,
         .card-item { border-radius: var(--rounded-cards-radius) !important; }
         .card-item .card-face { border-radius: var(--rounded-cards-radius) !important; }
+
+        /* ===== Card Surface Effects ===== */
+        .surface-gloss .card-color-bar::after,
+        .surface-matte .card-color-bar::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          border-radius: inherit;
+        }
+        .surface-gloss .card-color-bar::after {
+          background: linear-gradient(135deg, rgba(255,255,255,0.38) 0%, rgba(255,255,255,0.10) 35%, transparent 55%);
+        }
+        .surface-matte .card-color-bar::after {
+          background: radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.18) 100%);
+        }
+        /* Plastic: soft specular highlight + subtle edge darkening like injection-molded ABS */
+        .surface-plastic .card-color-bar::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          border-radius: inherit;
+          background:
+            linear-gradient(165deg, rgba(255,255,255,0.28) 0%, rgba(255,255,255,0.06) 25%, transparent 50%),
+            linear-gradient(to bottom, transparent 70%, rgba(0,0,0,0.22) 100%);
+        }
+        .surface-plastic .card-color-bar {
+          filter: saturate(1.1) contrast(1.05);
+        }
+
+        /* ===== Card Shadow Styles ===== */
+        .shadow-none .card-item { box-shadow: none !important; }
+        .shadow-soft .card-item { box-shadow: 0 4px 16px rgba(0,0,0,0.15) !important; }
+        .shadow-strong .card-item { box-shadow: 0 8px 28px rgba(0,0,0,0.32) !important; }
+        .shadow-colored .card-item { box-shadow: 0 6px 22px color-mix(in srgb, var(--card-color, #888) 55%, transparent) !important; }
+
+        /* ===== Card Hover Effects ===== */
+        /* Disable default hover when a specific hover mode is set */
+        .hover-none .cards-container:not(.dragging-active) .card-item:hover,
+        .hover-none .cards-poker-container:not(.dragging-active) .card-item:hover,
+        .hover-none .cards-fan-container:not(.dragging-active) .card-item:hover {
+          transform: none !important;
+          box-shadow: inherit !important;
+        }
+        .hover-glow .cards-container:not(.dragging-active) .card-item:hover,
+        .hover-glow .cards-poker-container:not(.dragging-active) .card-item:hover {
+          transform: translateY(-12px) scale(1.04) !important;
+          z-index: 100 !important;
+          box-shadow: 0 0 24px 8px color-mix(in srgb, var(--card-color, #888) 60%, transparent) !important;
+          transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease, z-index 0s 0s !important;
+        }
+        /* Fan glow: JS-managed via .fan-hovered class */
+        .hover-glow .cards-fan-container.fan-active .card-wrapper.fan-hovered .card-item {
+          box-shadow: 0 0 24px 8px color-mix(in srgb, var(--card-color, #888) 60%, transparent) !important;
+        }
+        .hover-glow .cards-poker-container:not(.dragging-active) .poker-hand:has(.card-item:hover) {
+          z-index: 200 !important;
+        }
+        .hover-spotlight .cards-container:not(.dragging-active) .card-item:hover,
+        .hover-spotlight .cards-poker-container:not(.dragging-active) .card-item:hover {
+          transform: translateY(-16px) scale(1.06) !important;
+          z-index: 100 !important;
+          filter: brightness(1.15);
+          box-shadow: 0 18px 44px rgba(0,0,0,0.40) !important;
+          transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s ease, filter 0.3s ease, z-index 0s 0s !important;
+        }
+        /* Fan spotlight: JS-managed via .fan-hovered class */
+        .hover-spotlight .cards-fan-container.fan-active .card-wrapper.fan-hovered .card-item {
+          filter: brightness(1.15);
+          box-shadow: 0 18px 44px rgba(0,0,0,0.40) !important;
+        }
+        .hover-spotlight .cards-poker-container:not(.dragging-active) .poker-hand:has(.card-item:hover) {
+          z-index: 200 !important;
+        }
+        /* lift uses the existing default hover rules */
 
         /* Shared Delete Button Styles */
         ${deleteButtonStyles}
@@ -2284,7 +2447,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         });
       });
 
-    // Card color bar click handler (for cards/spread modes with pointer-events: none on color picker)
+    // Card color bar click handler (for cards mode with pointer-events: none on color picker)
     root.querySelectorAll(".card-color-bar.clickable").forEach((bar) => {
       bar.addEventListener("click", (e) => {
         // Don't trigger if clicking on delete button or other interactive elements
@@ -2922,12 +3085,156 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       });
     }
 
-    // Cards and Spread layout drag-and-drop with wrapper-based drop zones
+    // Fan arrangement: spread neighbour cards on hover, collapse when cursor
+    // leaves the fan area entirely.
+    //
+    // The initial fan shape is created by card-item inline transforms
+    // (rotate around card center). The wrapper has NO initial transform.
+    // Spread/collapse only add/remove a PUSH OFFSET on the wrapper
+    // (rotated around transform-origin 50% 320%), never the base rotation.
     const currentLayout = this.config.list_layout || "list";
-    if (
-      (currentLayout === "cards" || currentLayout === "spread") &&
-      this.config.allow_drag_drop !== false
-    ) {
+    const cardArrangementForFan = this.config.card_arrangement || "hand";
+    if (currentLayout === "cards" && cardArrangementForFan === "fan") {
+      const fanContainer = root.querySelector(".cards-fan-container");
+      if (fanContainer && !fanContainer._fanHoverInit) {
+        fanContainer._fanHoverInit = true;
+        let currentHoveredWrapper = null;
+        let justCollapsed = false;
+
+        // Cumulative push: each step away from the hovered card adds spacing,
+        // with a decay factor so distant cards are still pushed but less per step.
+        // The first gap (immediately next to hovered) is the largest.
+        const firstGap = 18; // degrees for the immediate neighbour gap
+        const pushPerStep = 8; // additional degrees per subsequent step
+        const decay = 0.6; // each subsequent step pushes slightly less
+
+        const spreadFan = (hoveredWrapper) => {
+          if (hoveredWrapper === currentHoveredWrapper) return;
+          currentHoveredWrapper = hoveredWrapper;
+          const wrappers = Array.from(
+            fanContainer.querySelectorAll(".card-wrapper"),
+          );
+          const hoveredIdx = wrappers.indexOf(hoveredWrapper);
+          if (hoveredIdx === -1) return;
+          fanContainer.classList.add("fan-active");
+          wrappers.forEach((w, i) => {
+            w.style.transition = "";
+            if (i === hoveredIdx) {
+              w.classList.add("fan-hovered");
+              w.style.transform = "none";
+            } else {
+              w.classList.remove("fan-hovered");
+              const dist = Math.abs(i - hoveredIdx);
+              const sign = i > hoveredIdx ? 1 : -1;
+              // First gap is large, then cumulative smaller steps
+              let totalPush = firstGap;
+              for (let k = 1; k < dist; k++) {
+                totalPush += pushPerStep * Math.pow(decay, k - 1);
+              }
+              const push = sign * totalPush;
+              w.style.transform = `rotate(${push}deg)`;
+            }
+          });
+        };
+
+        const collapseFan = () => {
+          if (!currentHoveredWrapper) return;
+          currentHoveredWrapper = null;
+          justCollapsed = true;
+          fanContainer.classList.remove("fan-active");
+          fanContainer.querySelectorAll(".card-wrapper").forEach((w) => {
+            w.classList.remove("fan-hovered");
+            w.style.transition = "none";
+            w.style.transform = "none";
+          });
+          requestAnimationFrame(() => {
+            fanContainer.querySelectorAll(".card-wrapper").forEach((w) => {
+              w.style.transition = "";
+            });
+          });
+        };
+
+        // --- Helper: resolve card-wrapper from a pointer coordinate ---
+        const wrapperFromPoint = (clientX, clientY) => {
+          const el = fanContainer
+            .getRootNode()
+            .elementFromPoint(clientX, clientY);
+          if (!el) return null;
+          const cardItem = el.closest && el.closest(".card-item");
+          if (!cardItem) return null;
+          return cardItem.closest(".card-wrapper");
+        };
+
+        // --- Mouse events (desktop) ---
+        fanContainer.addEventListener("mousemove", (e) => {
+          if (justCollapsed) return;
+          if (fanContainer.classList.contains("dragging-active")) return;
+          const wrapper = wrapperFromPoint(e.clientX, e.clientY);
+          if (wrapper && fanContainer.contains(wrapper)) spreadFan(wrapper);
+        });
+
+        fanContainer.addEventListener("mouseenter", () => {
+          justCollapsed = false;
+        });
+
+        fanContainer.addEventListener("mouseleave", () => {
+          collapseFan();
+        });
+
+        // --- Touch events (mobile / tablet) ---
+        // touchstart on a card → spread around it
+        fanContainer.addEventListener(
+          "touchstart",
+          (e) => {
+            if (fanContainer.classList.contains("dragging-active")) return;
+            const touch = e.touches[0];
+            if (!touch) return;
+            justCollapsed = false;
+            const wrapper = wrapperFromPoint(touch.clientX, touch.clientY);
+            if (wrapper && fanContainer.contains(wrapper)) spreadFan(wrapper);
+          },
+          { passive: true },
+        );
+
+        // touchmove → update spread as finger slides across cards
+        fanContainer.addEventListener(
+          "touchmove",
+          (e) => {
+            if (fanContainer.classList.contains("dragging-active")) return;
+            const touch = e.touches[0];
+            if (!touch) return;
+            const wrapper = wrapperFromPoint(touch.clientX, touch.clientY);
+            if (wrapper && fanContainer.contains(wrapper)) {
+              spreadFan(wrapper);
+            }
+          },
+          { passive: true },
+        );
+
+        // touchend / touchcancel → collapse fan
+        fanContainer.addEventListener(
+          "touchend",
+          () => {
+            collapseFan();
+          },
+          { passive: true },
+        );
+        fanContainer.addEventListener(
+          "touchcancel",
+          () => {
+            collapseFan();
+          },
+          { passive: true },
+        );
+
+        // Expose collapseFan so drag-and-drop code can call it
+        fanContainer._collapseFan = collapseFan;
+      }
+    }
+
+    // Cards layout drag-and-drop with wrapper-based drop zones
+    if (currentLayout === "cards" && this.config.allow_drag_drop !== false) {
+      const cardArrangement = this.config.card_arrangement || "hand";
       let draggedCard = null;
       let draggedIndex = null;
       let targetWrapper = null; // Track which wrapper has the gap indicator
@@ -2937,9 +3244,60 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       let lastUpdateTime = 0; // Throttle timer
       let clonedCard = null; // Clone that follows the finger
       const cardsContainer =
-        currentLayout === "spread"
-          ? root.querySelector(".cards-container")
-          : root.querySelector(".cards-poker-container");
+        cardArrangement === "hand"
+          ? root.querySelector(".cards-poker-container")
+          : root.querySelector(".cards-container") ||
+            root.querySelector(".cards-fan-container");
+
+      // Fan mode helpers (simplified for drag).
+      // recalcFanRotations: restore normal fan arc after drop.
+      const recalcFanRotations = () => {
+        if (cardArrangement !== "fan" || !cardsContainer) return;
+        const wrappers = Array.from(
+          cardsContainer.querySelectorAll(".card-wrapper"),
+        );
+        const totalCards = wrappers.length;
+        if (totalCards <= 1) return;
+        const maxSpread = Math.min(50, totalCards * 6);
+        const centerIndex = (totalCards - 1) / 2;
+        wrappers.forEach((w, i) => {
+          const offset = i - centerIndex;
+          const rotationDeg =
+            centerIndex > 0 ? (offset / centerIndex) * maxSpread : 0;
+          const cardItem = w.querySelector(".card-item");
+          if (cardItem) {
+            cardItem.style.transform = `rotate(${rotationDeg.toFixed(1)}deg)`;
+            cardItem.style.zIndex = i;
+          }
+          w.style.transform = "none";
+          w.classList.remove("fan-hovered");
+        });
+      };
+
+      // Fan mode: collapse fan hover state when drag starts.
+      // Robust: directly cleans all fan classes/transforms without relying
+      // on collapseFan's internal guard (avoids race with mouseleave).
+      const spreadFanForDrag = () => {
+        if (cardArrangement !== "fan" || !cardsContainer) return;
+        // Reset internal hover tracking if collapseFan exists
+        try {
+          if (cardsContainer._collapseFan) cardsContainer._collapseFan();
+        } catch (_) {}
+        // Force-clean all fan hover state regardless
+        cardsContainer.classList.remove("fan-active");
+        cardsContainer.querySelectorAll(".card-wrapper").forEach((w) => {
+          w.classList.remove("fan-hovered");
+          w.style.transition = "none";
+          w.style.transform = "none";
+        });
+        // Restore transitions next frame
+        requestAnimationFrame(() => {
+          if (!cardsContainer) return;
+          cardsContainer.querySelectorAll(".card-wrapper").forEach((w) => {
+            w.style.transition = "";
+          });
+        });
+      };
 
       // Helper function to find insertion position and reorder DOM
       const updateCardPositions = (clientX, clientY) => {
@@ -2956,7 +3314,13 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         wrappers.forEach((wrapper, index) => {
           if (wrapper === draggedCard) return;
 
-          const rect = wrapper.getBoundingClientRect();
+          // Fan mode: wrappers are all position:absolute at the same spot,
+          // so use card-item rects (which differ due to rotation) for distance.
+          const el =
+            cardArrangement === "fan"
+              ? wrapper.querySelector(".card-item") || wrapper
+              : wrapper;
+          const rect = el.getBoundingClientRect();
           const centerX = rect.left + rect.width / 2;
           const centerY = rect.top + rect.height / 2;
 
@@ -2973,7 +3337,12 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
         if (closestWrapper && insertIndex !== -1) {
           // Determine if we should insert before or after based on position
-          const rect = closestWrapper.getBoundingClientRect();
+          // Fan mode: use card-item rect for before/after determination
+          const beforeAfterEl =
+            cardArrangement === "fan"
+              ? closestWrapper.querySelector(".card-item") || closestWrapper
+              : closestWrapper;
+          const rect = beforeAfterEl.getBoundingClientRect();
           const centerX = rect.left + rect.width / 2;
 
           // If cursor is to the right of the card's center, insert after
@@ -2988,8 +3357,8 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
           // Only reorder if position changed
           if (insertIndex !== draggedCardIndex) {
-            // For poker mode, we need to reorganize into rows
-            if (currentLayout === "cards") {
+            // For hand mode, we need to reorganize into rows
+            if (cardArrangement === "hand") {
               // Get all wrappers in their new order
               const allWrappers = Array.from(
                 root.querySelectorAll(".card-wrapper"),
@@ -3045,7 +3414,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                 }
               }
             } else {
-              // Spread mode - simple reorder
+              // Non-hand arrangements - simple reorder
               // Physically move the dragged card wrapper in the DOM
               if (insertIndex >= 0 && insertIndex < wrappers.length) {
                 const targetPosition = wrappers[insertIndex];
@@ -3064,6 +3433,9 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                     // Moving left - insert before target
                     cardsContainer.insertBefore(draggedCard, targetPosition);
                   }
+                  // Fan mode: recalculate rotations after reorder
+                  // so cards animate to their new positions in the arc
+                  recalcFanRotations();
                 }
               }
             }
@@ -3076,7 +3448,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       // Helper function to perform the drop
       const performDrop = () => {
         if (draggedCard) {
-          // Get the new order from the DOM
+          // Use DOM order for all modes (fan is now flattened during drag)
           const wrappers = Array.from(root.querySelectorAll(".card-wrapper"));
           const newOrder = wrappers.map((w) => parseInt(w.dataset.position));
 
@@ -3112,6 +3484,11 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         }
         if (cardsContainer) {
           cardsContainer.classList.remove("dragging-active");
+        }
+
+        // Clean up fan state
+        if (cardArrangement === "fan") {
+          recalcFanRotations();
         }
 
         // Remove cloned card
@@ -3150,6 +3527,25 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           }
           e.dataTransfer.effectAllowed = "move";
           e.dataTransfer.setData("text/html", card.innerHTML);
+
+          // Create a colored drag ghost so the user sees the color being carried
+          const dragColor =
+            card.style.getPropertyValue("--card-color") || "#888";
+          const dragImg = document.createElement("div");
+          dragImg.style.cssText = `width:50px;height:70px;background:${dragColor};border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);position:absolute;top:-9999px;left:-9999px;`;
+          document.body.appendChild(dragImg);
+          e.dataTransfer.setDragImage(dragImg, 25, 35);
+          // Clean up drag image element after browser captures it
+          setTimeout(() => {
+            if (dragImg.parentNode) dragImg.parentNode.removeChild(dragImg);
+          }, 100);
+
+          // CRITICAL: Defer fan collapse to AFTER browser captures the drag image.
+          // Collapsing synchronously changes transforms, which makes the element
+          // jump away from the cursor and the browser aborts the drag.
+          if (cardArrangement === "fan") {
+            setTimeout(() => spreadFanForDrag(), 0);
+          }
         });
 
         card.addEventListener("dragend", (e) => {
@@ -3219,8 +3615,14 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                 cardsContainer.classList.add("dragging-active");
               }
 
-              // Create clone that follows finger
+              // Create clone that follows finger BEFORE collapsing fan
+              // (so cardRect captures the current spread position)
               const cardRect = card.getBoundingClientRect();
+
+              // Fan mode: defer collapse so clone captures correct position
+              if (cardArrangement === "fan") {
+                setTimeout(() => spreadFanForDrag(), 0);
+              }
               clonedCard = card.cloneNode(true);
               clonedCard.classList.add("touch-dragging");
               clonedCard.style.width = cardRect.width + "px";
@@ -4258,28 +4660,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     if (cardHex) {
       cardHex.textContent = hex;
     }
-
-    // Update SPREAD mode elements (similar to cards)
-    const spreadBar = root.querySelector(
-      `.spread-card[data-position='${idx}'] .card-color-bar`,
-    );
-    if (spreadBar) {
-      spreadBar.style.backgroundColor = hex;
-    }
-
-    const spreadName = root.querySelector(
-      `.spread-card[data-position='${idx}'] .card-name`,
-    );
-    if (spreadName) {
-      spreadName.textContent = this.formatColorInfo(rgb, displayMode);
-    }
-
-    const spreadHex = root.querySelector(
-      `.spread-card[data-position='${idx}'] .card-hex-display`,
-    );
-    if (spreadHex) {
-      spreadHex.textContent = hex;
-    }
   }
 
   saveColors(textColors) {
@@ -4597,10 +4977,21 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         return this._generateRowsLayout(textColors, options);
       case "grid":
         return this._generateGridLayout(textColors, options);
-      case "cards":
-        return this._generateCardsLayout(textColors, options);
-      case "spread":
-        return this._generateSpreadLayout(textColors, options);
+      case "cards": {
+        const arrangement = this.config.card_arrangement || "hand";
+        switch (arrangement) {
+          case "spread":
+            return this._generateSpreadLayout(textColors, options);
+          case "cascade":
+            return this._generateCascadeLayout(textColors, options);
+          case "tilt":
+            return this._generateTiltLayout(textColors, options);
+          case "fan":
+            return this._generateFanLayout(textColors, options);
+          default:
+            return this._generateCardsLayout(textColors, options);
+        }
+      }
       default:
         return this._generateCompactLayout(textColors, options);
     }
@@ -5080,6 +5471,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                   return `<div class="card-wrapper poker-card" data-position="${globalIdx}">
                     <div class="card-item" data-idx="${globalIdx}" 
                       style="
+                        --card-color: ${this.rgbToHex(color)};
                         transform: rotate(${rotationDeg}deg) translateY(${verticalOffset}px) translateX(${horizontalOffset}px);
                         z-index: ${idx};
                       ">
@@ -5156,6 +5548,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
             return `<div class="card-wrapper" data-position="${globalIdx}">
               <div class="card-item" data-idx="${globalIdx}" 
                 style="
+                  --card-color: ${this.rgbToHex(color)};
                   transform: rotate(${rotationDeg}deg) translateY(${verticalOffset}px);
                   z-index: ${globalIdx};
                 ">
@@ -5183,6 +5576,196 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                       color,
                       this.config.color_info_display || "hex",
                     )}</div>
+                  </div>
+                </div>
+                ${
+                  options.allowDelete
+                    ? `<button data-action="remove" data-idx="${globalIdx}" class="${deleteBtnClass} card-remove" style="${buttonPositionStyles}" title="Remove"></button>`
+                    : ""
+                }
+              </div>
+            </div>`;
+          }
+          return "";
+        })
+        .join("")}
+    </div>`;
+  }
+
+  _generateCascadeLayout(textColors, options) {
+    const removeButtonStyle = options.removeButtonStyle || "default";
+    const buttonShape = options.buttonShape || "round";
+    const buttonInside = options.buttonInside === true;
+    const buttonLeft = options.buttonLeft === true;
+    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
+    const buttonPositionStyles = getButtonPositionStyles(
+      buttonInside,
+      buttonLeft,
+    );
+
+    // Cascade: overlapping diagonal waterfall. Cards overlap horizontally
+    // with a uniform slight rotation, and a gentle vertical step per card.
+    const tiltDeg = -3;
+
+    return `<div class="cards-container cascade-mode">
+      ${textColors
+        .map((color, globalIdx) => {
+          if (Array.isArray(color) && color.length === 3) {
+            // Gentle vertical step: each card a bit lower, reset every ~8 cards
+            const verticalOffset = (globalIdx % 8) * 4;
+
+            return `<div class="card-wrapper" data-position="${globalIdx}">
+              <div class="card-item" data-idx="${globalIdx}" 
+                style="
+                  --card-color: ${this.rgbToHex(color)};
+                  transform: rotate(${tiltDeg}deg) translateY(${verticalOffset}px);
+                  z-index: ${globalIdx};
+                ">
+                <div class="card-face">
+                  <div class="card-color-bar${
+                    options.enableColorPicker ? " clickable" : ""
+                  }" style="background: ${this.rgbToHex(color)};">
+                    ${
+                      options.enableColorPicker
+                        ? `<input type="color" value="${this.rgbToHex(color)}" data-idx="${globalIdx}" class="card-color-picker" />`
+                        : ""
+                    }
+                  </div>
+                  <div class="card-info-area">
+                    ${
+                      options.showHexInput
+                        ? `<input type="text" class="hex-input card-hex" value="${this.rgbToHex(color)}" data-idx="${globalIdx}" maxlength="7" />`
+                        : ""
+                    }
+                    <div class="card-name">${this.formatColorInfo(color, this.config.color_info_display || "hex")}</div>
+                  </div>
+                </div>
+                ${
+                  options.allowDelete
+                    ? `<button data-action="remove" data-idx="${globalIdx}" class="${deleteBtnClass} card-remove" style="${buttonPositionStyles}" title="Remove"></button>`
+                    : ""
+                }
+              </div>
+            </div>`;
+          }
+          return "";
+        })
+        .join("")}
+    </div>`;
+  }
+
+  _generateTiltLayout(textColors, options) {
+    const removeButtonStyle = options.removeButtonStyle || "default";
+    const buttonShape = options.buttonShape || "round";
+    const buttonInside = options.buttonInside === true;
+    const buttonLeft = options.buttonLeft === true;
+    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
+    const buttonPositionStyles = getButtonPositionStyles(
+      buttonInside,
+      buttonLeft,
+    );
+
+    // Tilt: clean grid with all cards rotated at the exact same uniform angle.
+    // Looks organised like a catalog / magazine spread.
+    const uniformAngle = -5;
+
+    return `<div class="cards-container tilt-mode">
+      ${textColors
+        .map((color, globalIdx) => {
+          if (Array.isArray(color) && color.length === 3) {
+            return `<div class="card-wrapper" data-position="${globalIdx}">
+              <div class="card-item" data-idx="${globalIdx}" 
+                style="
+                  --card-color: ${this.rgbToHex(color)};
+                  transform: rotate(${uniformAngle}deg);
+                  z-index: ${globalIdx};
+                ">
+                <div class="card-face">
+                  <div class="card-color-bar${
+                    options.enableColorPicker ? " clickable" : ""
+                  }" style="background: ${this.rgbToHex(color)};">
+                    ${
+                      options.enableColorPicker
+                        ? `<input type="color" value="${this.rgbToHex(color)}" data-idx="${globalIdx}" class="card-color-picker" />`
+                        : ""
+                    }
+                  </div>
+                  <div class="card-info-area">
+                    ${
+                      options.showHexInput
+                        ? `<input type="text" class="hex-input card-hex" value="${this.rgbToHex(color)}" data-idx="${globalIdx}" maxlength="7" />`
+                        : ""
+                    }
+                    <div class="card-name">${this.formatColorInfo(color, this.config.color_info_display || "hex")}</div>
+                  </div>
+                </div>
+                ${
+                  options.allowDelete
+                    ? `<button data-action="remove" data-idx="${globalIdx}" class="${deleteBtnClass} card-remove" style="${buttonPositionStyles}" title="Remove"></button>`
+                    : ""
+                }
+              </div>
+            </div>`;
+          }
+          return "";
+        })
+        .join("")}
+    </div>`;
+  }
+
+  _generateFanLayout(textColors, options) {
+    const removeButtonStyle = options.removeButtonStyle || "default";
+    const buttonShape = options.buttonShape || "round";
+    const buttonInside = options.buttonInside === true;
+    const buttonLeft = options.buttonLeft === true;
+    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
+    const buttonPositionStyles = getButtonPositionStyles(
+      buttonInside,
+      buttonLeft,
+    );
+
+    // Fan: semicircular arc from a single origin point below the cards.
+    // Each card is rotated around a distant pivot so they fan out evenly.
+    const totalCards = textColors.filter(
+      (c) => Array.isArray(c) && c.length === 3,
+    ).length;
+    // Spread angle range: up to ±50° for many cards, narrower for fewer
+    const maxSpread = Math.min(50, totalCards * 6);
+
+    return `<div class="cards-fan-container">
+      ${textColors
+        .map((color, globalIdx) => {
+          if (Array.isArray(color) && color.length === 3) {
+            const centerIndex = (totalCards - 1) / 2;
+            const offset = globalIdx - centerIndex;
+            // Distribute evenly across the arc
+            const rotationDeg =
+              totalCards > 1 ? (offset / centerIndex) * maxSpread : 0;
+
+            return `<div class="card-wrapper" data-position="${globalIdx}" data-base-rotation="${rotationDeg.toFixed(1)}">
+              <div class="card-item" data-idx="${globalIdx}" 
+                style="
+                  --card-color: ${this.rgbToHex(color)};
+                  transform: rotate(${rotationDeg.toFixed(1)}deg);
+                  z-index: ${globalIdx};
+                ">
+                <div class="card-face">
+                  <div class="card-color-bar${
+                    options.enableColorPicker ? " clickable" : ""
+                  }" style="background: ${this.rgbToHex(color)};">
+                    ${
+                      options.enableColorPicker
+                        ? `<input type="color" value="${this.rgbToHex(color)}" data-idx="${globalIdx}" class="card-color-picker" />`
+                        : ""
+                    }
+                  </div>
+                  <div class="card-info-area">
+                    ${
+                      options.showHexInput
+                        ? `<input type="text" class="hex-input card-hex" value="${this.rgbToHex(color)}" data-idx="${globalIdx}" maxlength="7" />`
+                        : ""
+                    }
+                    <div class="card-name">${this.formatColorInfo(color, this.config.color_info_display || "hex")}</div>
                   </div>
                 </div>
                 ${

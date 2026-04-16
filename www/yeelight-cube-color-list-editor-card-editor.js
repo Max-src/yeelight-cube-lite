@@ -12,7 +12,7 @@ import {
 } from "./entity-selector-utils.js";
 import { renderPercentageSlider, sliderStyles } from "./slider_utils.js";
 import { createToggleRow, createSliderRow } from "./form-row-utils.js";
-import { fireEvent } from "./editor_ui_utils.js";
+import { fireEvent, renderModeSettingsSection } from "./editor_ui_utils.js";
 
 class YeelightCubeColorListEditorCardEditor extends LitElement {
   static get properties() {
@@ -378,7 +378,6 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                   { value: "rows", label: "Rows", icon: "▬" },
                   { value: "grid", label: "Grid", icon: "▦" },
                   { value: "cards", label: "Cards", icon: "🂠" },
-                  { value: "spread", label: "Spread", icon: "🃏" },
                 ],
                 cfg.list_layout || "compact",
                 createButtonGroupChangeHandler("list_layout", (value) => {
@@ -409,19 +408,11 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
               },
               "px",
             )}
-            ${[
-              "cards",
-              "spread",
-              "grid",
-              "rows",
-              "tiles",
-              "chips",
-              "compact",
-            ].includes(cfg.list_layout)
+            ${["cards", "grid", "rows", "tiles", "chips", "compact"].includes(
+              cfg.list_layout,
+            )
               ? renderPercentageSlider(
-                  cfg.list_layout === "cards" || cfg.list_layout === "spread"
-                    ? "Card Size"
-                    : "Element Size",
+                  "Element Size",
                   cfg.card_size || 70,
                   (e) => {
                     this._config = {
@@ -431,6 +422,102 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                     this._fireConfigChanged();
                   },
                   { min: 30, max: 100, step: 5 },
+                )
+              : ""}
+            ${cfg.list_layout === "cards"
+              ? renderModeSettingsSection(
+                  "Card Effects",
+                  html`
+                    <div class="form-row">
+                      <label>Card Arrangement</label>
+                      ${createButtonGroup(
+                        [
+                          { value: "hand", label: "Hand", icon: "🤚" },
+                          { value: "spread", label: "Spread", icon: "🎴" },
+                          { value: "cascade", label: "Cascade", icon: "🃏" },
+                          { value: "tilt", label: "Tilt", icon: "📐" },
+                          { value: "fan", label: "Fan", icon: "🦚" },
+                        ],
+                        cfg.card_arrangement || "hand",
+                        createButtonGroupChangeHandler(
+                          "card_arrangement",
+                          (value) => {
+                            this._config = {
+                              ...this._config,
+                              card_arrangement: value,
+                            };
+                            this._fireConfigChanged();
+                          },
+                        ),
+                      )}
+                    </div>
+                    <div class="form-row">
+                      <label>Card Surface Effect</label>
+                      ${createButtonGroup(
+                        [
+                          { value: "none", label: "None" },
+                          { value: "gloss", label: "Gloss" },
+                          { value: "matte", label: "Matte" },
+                          { value: "plastic", label: "Plastic" },
+                        ],
+                        cfg.card_surface_effect || "none",
+                        createButtonGroupChangeHandler(
+                          "card_surface_effect",
+                          (value) => {
+                            this._config = {
+                              ...this._config,
+                              card_surface_effect: value,
+                            };
+                            this._fireConfigChanged();
+                          },
+                        ),
+                      )}
+                    </div>
+                    <div class="form-row">
+                      <label>Card Shadow</label>
+                      ${createButtonGroup(
+                        [
+                          { value: "none", label: "None" },
+                          { value: "soft", label: "Soft" },
+                          { value: "strong", label: "Strong" },
+                          { value: "colored", label: "Colored" },
+                        ],
+                        cfg.card_shadow_style || "soft",
+                        createButtonGroupChangeHandler(
+                          "card_shadow_style",
+                          (value) => {
+                            this._config = {
+                              ...this._config,
+                              card_shadow_style: value,
+                            };
+                            this._fireConfigChanged();
+                          },
+                        ),
+                      )}
+                    </div>
+                    <div class="form-row">
+                      <label>Card Hover Effect</label>
+                      ${createButtonGroup(
+                        [
+                          { value: "none", label: "None" },
+                          { value: "lift", label: "Lift" },
+                          { value: "glow", label: "Glow" },
+                          { value: "spotlight", label: "Spotlight" },
+                        ],
+                        cfg.card_hover_effect || "lift",
+                        createButtonGroupChangeHandler(
+                          "card_hover_effect",
+                          (value) => {
+                            this._config = {
+                              ...this._config,
+                              card_hover_effect: value,
+                            };
+                            this._fireConfigChanged();
+                          },
+                        ),
+                      )}
+                    </div>
+                  `,
                 )
               : ""}
             <div class="form-row">
