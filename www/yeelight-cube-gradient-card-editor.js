@@ -919,22 +919,31 @@ class YeelightCubeGradientCardEditor extends LitElement {
                         )}
                       </div>
                     </div>
-                    ${createToggleRow(
-                      "Pixel Spacing",
-                      "matrix_rotary_pixel_spacing",
-                      cfg.matrix_rotary_pixel_spacing !== false,
-                      (e) => this._valueChanged(e),
-                    )}
+                    <div class="form-row">
+                      <label>Pixel Spacing</label>
+                      ${createButtonGroup(
+                        [
+                          { value: "none", label: "None" },
+                          { value: "subtle", label: "Subtle" },
+                          { value: "normal", label: "Normal" },
+                        ],
+                        cfg.matrix_rotary_spacing_mode || "normal",
+                        createButtonGroupChangeHandler(
+                          "matrix_rotary_spacing_mode",
+                          (value) => {
+                            this._config = {
+                              ...this._config,
+                              matrix_rotary_spacing_mode: value,
+                            };
+                            this._fireConfigChanged();
+                          },
+                        ),
+                      )}
+                    </div>
                     ${createToggleRow(
                       "Matrix Box Shadow",
                       "matrix_rotary_box_shadow",
                       cfg.matrix_rotary_box_shadow === true,
-                      (e) => this._valueChanged(e),
-                    )}
-                    ${createToggleRow(
-                      "Pixel Box Shadow",
-                      "matrix_rotary_pixel_box_shadow",
-                      cfg.matrix_rotary_pixel_box_shadow === true,
                       (e) => this._valueChanged(e),
                     )}
                   `,
@@ -1300,22 +1309,31 @@ class YeelightCubeGradientCardEditor extends LitElement {
               </div>
             </div>
 
-            ${createToggleRow(
-              "Pixel Spacing",
-              "gallery_pixel_spacing",
-              cfg.gallery_pixel_spacing !== false,
-              (e) => this._valueChanged(e),
-            )}
+            <div class="form-row">
+              <label>Pixel Spacing</label>
+              ${createButtonGroup(
+                [
+                  { value: "none", label: "None" },
+                  { value: "subtle", label: "Subtle" },
+                  { value: "normal", label: "Normal" },
+                ],
+                cfg.gallery_spacing_mode || "normal",
+                createButtonGroupChangeHandler(
+                  "gallery_spacing_mode",
+                  (value) => {
+                    this._config = {
+                      ...this._config,
+                      gallery_spacing_mode: value,
+                    };
+                    this._fireConfigChanged();
+                  },
+                ),
+              )}
+            </div>
             ${createToggleRow(
               "Matrix Box Shadow",
               "gallery_matrix_box_shadow",
               cfg.gallery_matrix_box_shadow === true,
-              (e) => this._valueChanged(e),
-            )}
-            ${createToggleRow(
-              "Pixel Box Shadow",
-              "gallery_pixel_box_shadow",
-              cfg.gallery_pixel_box_shadow === true,
               (e) => this._valueChanged(e),
             )}
 

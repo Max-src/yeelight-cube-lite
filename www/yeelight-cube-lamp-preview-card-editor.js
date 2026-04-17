@@ -49,11 +49,10 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
       size: "medium",
       size_pct: 100, // Default matrix size to 100%
       align: "center",
-      matrix_pixel_spacing: true, // Default pixel spacing enabled
+      matrix_spacing_mode: "normal", // Default pixel spacing mode
       matrix_background: "black", // Black background by default
       matrix_box_shadow: true, // Keep matrix box shadow enabled
       matrix_pixel_style: "square", // Default pixel style
-      lamp_dot_shadow: false, // Default pixel box shadow OFF
       show_force_refresh_button: true, // Default force refresh button to enabled
       buttons_style: "classic", // New: default style for all buttons
       show_brightness_slider: true, // Show brightness slider by default
@@ -259,22 +258,31 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
                 ),
               )}
             </div>
-            ${createToggleRow(
-              "Pixel Spacing",
-              "matrix_pixel_spacing",
-              cfg.matrix_pixel_spacing !== false,
-              (e) => this._onToggleChange(e),
-            )}
+            <div class="form-row">
+              <label>Pixel Spacing</label>
+              ${createButtonGroup(
+                [
+                  { value: "none", label: "None" },
+                  { value: "subtle", label: "Subtle" },
+                  { value: "normal", label: "Normal" },
+                ],
+                cfg.matrix_spacing_mode || "normal",
+                createButtonGroupChangeHandler(
+                  "matrix_spacing_mode",
+                  (value) => {
+                    this._config = {
+                      ...this._config,
+                      matrix_spacing_mode: value,
+                    };
+                    this._fireConfigChanged();
+                  },
+                ),
+              )}
+            </div>
             ${createToggleRow(
               "Matrix Box Shadow",
               "matrix_box_shadow",
               cfg.matrix_box_shadow !== false,
-              (e) => this._onToggleChange(e),
-            )}
-            ${createToggleRow(
-              "Pixel Box Shadow",
-              "lamp_dot_shadow",
-              cfg.lamp_dot_shadow === true,
               (e) => this._onToggleChange(e),
             )}
           </div>

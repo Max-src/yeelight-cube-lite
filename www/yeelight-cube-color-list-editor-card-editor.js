@@ -10,8 +10,11 @@ import {
   getYeelightCubeEntities,
   entitySelectorStyles,
 } from "./entity-selector-utils.js";
-import { renderPercentageSlider, sliderStyles } from "./slider_utils.js";
-import { createToggleRow, createSliderRow } from "./form-row-utils.js";
+import {
+  formRowStyles,
+  createToggleRow,
+  createSliderRow,
+} from "./form-row-utils.js";
 import { fireEvent, renderModeSettingsSection } from "./editor_ui_utils.js";
 
 class YeelightCubeColorListEditorCardEditor extends LitElement {
@@ -104,7 +107,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
     return [
       buttonGroupStyles,
       entitySelectorStyles,
-      sliderStyles,
+      formRowStyles,
       css`
         .editor-root {
           display: flex;
@@ -146,18 +149,6 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
           opacity: 1;
           pointer-events: auto;
         }
-        .form-row {
-          display: flex;
-          flex-direction: column;
-          align-items: stretch;
-          gap: 6px;
-          margin-bottom: 16px;
-        }
-        label {
-          font-weight: 500;
-          color: var(--primary-text-color, #333);
-          font-size: 1em;
-        }
         input[type="text"],
         select {
           width: 100%;
@@ -169,57 +160,6 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
           margin-bottom: 10px;
           box-sizing: border-box;
           background: var(--secondary-background-color, #f7f8fa);
-        }
-        .toggle-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          margin-bottom: 16px;
-        }
-        .toggle-label {
-          font-weight: 500;
-          color: var(--primary-text-color, #333);
-          font-size: 1em;
-        }
-        .toggle-switch {
-          position: relative;
-          display: inline-block;
-          width: 44px;
-          height: 24px;
-        }
-        .toggle-switch input {
-          opacity: 0;
-          width: 0;
-          height: 0;
-        }
-        .toggle-slider {
-          position: absolute;
-          cursor: pointer;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background-color: var(--divider-color, #cfd8dc);
-          transition: 0.2s;
-          border-radius: 24px;
-        }
-        .toggle-slider:before {
-          position: absolute;
-          content: "";
-          height: 18px;
-          width: 18px;
-          left: 3px;
-          bottom: 3px;
-          background-color: var(--card-background-color, white);
-          transition: 0.2s;
-          border-radius: 50%;
-          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
-        }
-        input:checked + .toggle-slider {
-          background-color: var(--primary-color, #1976d2);
-        }
-        input:checked + .toggle-slider:before {
-          transform: translateX(20px);
         }
       `,
     ];
@@ -271,18 +211,18 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
               )}
             </div>
 
-            <div class="toggle-row">
-              <label class="toggle-label">Show Card Background</label>
-              <label class="toggle-switch">
-                <input
-                  id="show_card_background"
-                  type="checkbox"
-                  .checked="${cfg.show_card_background !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
+            ${createToggleRow(
+              "Show Card Background",
+              "show_card_background",
+              cfg.show_card_background !== false,
+              (e) => {
+                this._config = {
+                  ...this._config,
+                  show_card_background: e.target.checked,
+                };
+                this._fireConfigChanged();
+              },
+            )}
           </div>
         </div>
 
@@ -298,54 +238,54 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
             Color List Settings ${chevronIcon(!this._colorListOpen)}
           </div>
           <div class="editor-card-content">
-            <div class="toggle-row">
-              <label class="toggle-label">Show Color Section</label>
-              <label class="toggle-switch">
-                <input
-                  id="show_color_section"
-                  type="checkbox"
-                  .checked="${cfg.show_color_section !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="toggle-row">
-              <label class="toggle-label">Enable Color Picker</label>
-              <label class="toggle-switch">
-                <input
-                  id="enable_color_picker"
-                  type="checkbox"
-                  .checked="${cfg.enable_color_picker !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="toggle-row">
-              <label class="toggle-label">Show Hex Input Field</label>
-              <label class="toggle-switch">
-                <input
-                  id="show_hex_input"
-                  type="checkbox"
-                  .checked="${cfg.show_hex_input !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="toggle-row">
-              <label class="toggle-label">Allow Drag & Drop</label>
-              <label class="toggle-switch">
-                <input
-                  id="allow_drag_drop"
-                  type="checkbox"
-                  .checked="${cfg.allow_drag_drop !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
+            ${createToggleRow(
+              "Show Color Section",
+              "show_color_section",
+              cfg.show_color_section !== false,
+              (e) => {
+                this._config = {
+                  ...this._config,
+                  show_color_section: e.target.checked,
+                };
+                this._fireConfigChanged();
+              },
+            )}
+            ${createToggleRow(
+              "Enable Color Picker",
+              "enable_color_picker",
+              cfg.enable_color_picker !== false,
+              (e) => {
+                this._config = {
+                  ...this._config,
+                  enable_color_picker: e.target.checked,
+                };
+                this._fireConfigChanged();
+              },
+            )}
+            ${createToggleRow(
+              "Show Hex Input Field",
+              "show_hex_input",
+              cfg.show_hex_input !== false,
+              (e) => {
+                this._config = {
+                  ...this._config,
+                  show_hex_input: e.target.checked,
+                };
+                this._fireConfigChanged();
+              },
+            )}
+            ${createToggleRow(
+              "Allow Drag & Drop",
+              "allow_drag_drop",
+              cfg.allow_drag_drop !== false,
+              (e) => {
+                this._config = {
+                  ...this._config,
+                  allow_drag_drop: e.target.checked,
+                };
+                this._fireConfigChanged();
+              },
+            )}
             <!-- Card/Layout settings first (containers before content on them) -->
             <div class="form-row">
               <label>Color Info Display</label>
@@ -410,9 +350,10 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
             ${["cards", "grid", "rows", "tiles", "chips"].includes(
               cfg.list_layout,
             )
-              ? renderPercentageSlider(
+              ? createSliderRow(
                   "Element Size",
                   cfg.card_size || 70,
+                  { min: 50, max: 100, step: 5 },
                   (e) => {
                     this._config = {
                       ...this._config,
@@ -420,7 +361,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                     };
                     this._fireConfigChanged();
                   },
-                  { min: 50, max: 100, step: 5 },
+                  "%",
                 )
               : ""}
             ${cfg.list_layout === "cards"
@@ -625,42 +566,42 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
             Add/Shuffle/Save Actions ${chevronIcon(!this._actionsOpen)}
           </div>
           <div class="editor-card-content">
-            <div class="toggle-row">
-              <label class="toggle-label">Show Add Color Button</label>
-              <label class="toggle-switch">
-                <input
-                  id="show_add_color_button"
-                  type="checkbox"
-                  .checked="${cfg.show_add_color_button !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="toggle-row">
-              <label class="toggle-label">Show Randomize Button</label>
-              <label class="toggle-switch">
-                <input
-                  id="show_randomize_button"
-                  type="checkbox"
-                  .checked="${cfg.show_randomize_button !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-            <div class="toggle-row">
-              <label class="toggle-label">Show Save Palette Button</label>
-              <label class="toggle-switch">
-                <input
-                  id="show_save_palette"
-                  type="checkbox"
-                  .checked="${cfg.show_save_palette !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
+            ${createToggleRow(
+              "Show Add Color Button",
+              "show_add_color_button",
+              cfg.show_add_color_button !== false,
+              (e) => {
+                this._config = {
+                  ...this._config,
+                  show_add_color_button: e.target.checked,
+                };
+                this._fireConfigChanged();
+              },
+            )}
+            ${createToggleRow(
+              "Show Randomize Button",
+              "show_randomize_button",
+              cfg.show_randomize_button !== false,
+              (e) => {
+                this._config = {
+                  ...this._config,
+                  show_randomize_button: e.target.checked,
+                };
+                this._fireConfigChanged();
+              },
+            )}
+            ${createToggleRow(
+              "Show Save Palette Button",
+              "show_save_palette",
+              cfg.show_save_palette !== false,
+              (e) => {
+                this._config = {
+                  ...this._config,
+                  show_save_palette: e.target.checked,
+                };
+                this._fireConfigChanged();
+              },
+            )}
             <div class="form-row">
               <label>Button Style</label>
               ${createButtonGroup(

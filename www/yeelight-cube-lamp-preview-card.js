@@ -182,11 +182,10 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       size: "medium",
       size_pct: 100,
       align: "center",
-      matrix_pixel_spacing: true,
+      matrix_spacing_mode: "normal",
       matrix_background: "black",
       matrix_box_shadow: true,
       matrix_pixel_style: "square",
-      lamp_dot_shadow: false,
       show_force_refresh_button: false,
       buttons_style: "gradient",
       show_brightness_slider: true,
@@ -263,11 +262,10 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       size: "medium",
       size_pct: 100, // Default matrix size to 100%
       align: "center",
-      matrix_pixel_spacing: true, // Default pixel spacing enabled
+      matrix_spacing_mode: "normal", // Default pixel spacing mode
       matrix_background: "black", // Black background by default
       matrix_box_shadow: true, // Keep matrix box shadow enabled
       matrix_pixel_style: "square", // Default pixel style
-      lamp_dot_shadow: false, // Default pixel box shadow OFF
       buttons_style: "classic", // Style for all buttons (power toggle, force refresh)
       show_brightness_slider: true, // NEW: Show brightness slider by default
       show_brightness_percentage: true, // NEW: Show brightness percentage value
@@ -2143,11 +2141,14 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   _generateMatrixHtml(gridColors, stateObj) {
     const totalRows = 5;
     const totalCols = 20;
-    const pixelGap = this.config.matrix_pixel_spacing !== false ? 4 : 0;
     const matrixBackground = this.config.matrix_background || "black";
     const matrixBoxShadow = this.config.matrix_box_shadow !== false;
     const pixelStyle = this.config.matrix_pixel_style || "square";
-    const lampDotShadow = this.config.lamp_dot_shadow === true;
+    // Resolve pixel spacing mode (new tri-state) with backward compat for old booleans
+    const spacingMode =
+      this.config.matrix_spacing_mode ||
+      (this.config.matrix_pixel_spacing === false ? "none" : "normal");
+    const pixelGap = spacingMode === "normal" ? 4 : 0;
     const alignClass =
       this.config.align === "left"
         ? "align-left"
@@ -3161,7 +3162,11 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     const totalRows = 5;
     const totalCols = 20;
     const pixelStyle = this.config.matrix_pixel_style || "square";
-    const lampDotShadow = this.config.lamp_dot_shadow === true;
+    // Resolve pixel spacing mode for CSS styles
+    const spacingMode =
+      this.config.matrix_spacing_mode ||
+      (this.config.matrix_pixel_spacing === false ? "none" : "normal");
+    const lampDotShadow = spacingMode === "subtle" || spacingMode === "normal";
 
     return `
       <style>

@@ -5665,6 +5665,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 f"Setting panel_mode={panel_mode} (was {target_entity._panel_mode})"
             )
             target_entity._panel_mode = panel_mode
+            # When enabling panel mode, deactivate custom draw so the display
+            # switches back to the text/gradient rendering path.  The pixel art
+            # branch in _apply_display_mode_internal would otherwise take
+            # priority and ignore panel_mode entirely.
+            if panel_mode:
+                target_entity._custom_draw_active = False
+                target_entity._custom_pixels = None
             target_entity.async_schedule_update_ha_state()
             await target_entity.async_apply_display_mode(update_type='color_change')
 

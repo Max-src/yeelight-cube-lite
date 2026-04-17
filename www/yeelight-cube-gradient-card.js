@@ -487,7 +487,7 @@ class YeelightCubeGradientCard extends HTMLElement {
       gallery_pixel_style: "square",
       gallery_ignore_black_pixels: true,
       gallery_preview_size: "50",
-      gallery_pixel_spacing: true,
+      gallery_spacing_mode: "normal",
     };
   }
 
@@ -1904,7 +1904,9 @@ class YeelightCubeGradientCard extends HTMLElement {
                   Math.round(window._yeelightPreviewCache.data.angle * 10) / 10,
                 bgColor: this.config.gallery_background_color,
                 pixelStyle: this.config.gallery_pixel_style,
-                pixelGap: this.config.gallery_pixel_spacing,
+                pixelGap:
+                  this.config.gallery_spacing_mode ||
+                  this.config.gallery_pixel_spacing,
                 previewSize: this.config.gallery_preview_size,
                 ignoreBlack: this.config.gallery_ignore_black_pixels,
                 displayMode: this.config.preview_display_mode,
@@ -2420,12 +2422,18 @@ class YeelightCubeGradientCard extends HTMLElement {
       this.config.gallery_preview_size,
     );
     const galleryPixelGap =
-      this.config.gallery_pixel_spacing !== false
+      (this.config.gallery_spacing_mode ||
+        (this.config.gallery_pixel_spacing !== false ? "normal" : "none")) ===
+      "normal"
         ? Math.max(0, (galleryPreviewSize / 350) * 3)
         : 0;
+    const gallerySpacingModeResolved =
+      this.config.gallery_spacing_mode ||
+      (this.config.gallery_pixel_spacing !== false ? "normal" : "none");
+    const galleryPixelBoxShadow =
+      gallerySpacingModeResolved === "subtle" ||
+      gallerySpacingModeResolved === "normal";
     const ignoreBlackPixels = this.config.gallery_ignore_black_pixels === true;
-
-    // Find all wheel items and update their preview images
     const wheelItems = this.shadowRoot.querySelectorAll(
       ".wheel-item[data-mode]",
     );
@@ -2458,6 +2466,8 @@ class YeelightCubeGradientCard extends HTMLElement {
           pixelGap: galleryPixelGap,
           previewSize: galleryPreviewSize,
           ignoreBlackPixels,
+          matrixBoxShadow: this.config.gallery_matrix_box_shadow === true,
+          pixelBoxShadow: galleryPixelBoxShadow,
         });
 
         // Update only the preview content
@@ -2730,7 +2740,9 @@ class YeelightCubeGradientCard extends HTMLElement {
           angle: Math.round(previewData.angle * 10) / 10, // Round to 1 decimal
           bgColor: this.config.gallery_background_color,
           pixelStyle: this.config.gallery_pixel_style,
-          pixelGap: this.config.gallery_pixel_spacing,
+          pixelGap:
+            this.config.gallery_spacing_mode ||
+            this.config.gallery_pixel_spacing,
           previewSize: this.config.gallery_preview_size,
           ignoreBlack: this.config.gallery_ignore_black_pixels,
           displayMode: this.config.preview_display_mode,
@@ -2772,7 +2784,9 @@ class YeelightCubeGradientCard extends HTMLElement {
       this.config.gallery_preview_size,
     );
     const galleryPixelGap =
-      this.config.gallery_pixel_spacing !== false
+      (this.config.gallery_spacing_mode ||
+        (this.config.gallery_pixel_spacing !== false ? "normal" : "none")) ===
+      "normal"
         ? Math.max(0, (galleryPreviewSize / 350) * 3)
         : 0;
     const ignoreBlackPixels = this.config.gallery_ignore_black_pixels === true;
@@ -2823,6 +2837,13 @@ class YeelightCubeGradientCard extends HTMLElement {
     const highlightActive = this.config.highlight_active_mode !== false;
     const currentMode = highlightActive ? this._getCurrentMode() : null;
 
+    // Resolve gallery pixel box shadow from spacing mode
+    const gallerySpacingMode =
+      this.config.gallery_spacing_mode ||
+      (this.config.gallery_pixel_spacing !== false ? "normal" : "none");
+    const galleryPixelBoxShadow =
+      gallerySpacingMode === "subtle" || gallerySpacingMode === "normal";
+
     const galleryHtml = renderGalleryDisplay(items, displayMode, {
       rows,
       cols,
@@ -2835,7 +2856,7 @@ class YeelightCubeGradientCard extends HTMLElement {
       showTitles,
       onClickEnabled: true,
       matrixBoxShadow: this.config.gallery_matrix_box_shadow === true,
-      pixelBoxShadow: this.config.gallery_pixel_box_shadow === true,
+      pixelBoxShadow: galleryPixelBoxShadow,
       wheelNavPosition: this.config.wheel_nav_position || "bottom",
       wheelHeight: this.config.wheel_height || 300,
       wheelDisplayStyle: showTitles ? "default" : "compact",
@@ -3988,12 +4009,17 @@ ${(() => {
         // Read matrix rotary config (independent from gallery settings)
         const mpBgColor = this.config.matrix_rotary_bg_color || "black";
         const mpPixelStyle = this.config.matrix_rotary_pixel_style || "square";
-        const mpPixelGap =
-          this.config.matrix_rotary_pixel_spacing !== false ? 3 : 0;
+        // Resolve pixel spacing mode (new tri-state) with backward compat
+        const mpSpacingMode =
+          this.config.matrix_rotary_spacing_mode ||
+          (this.config.matrix_rotary_pixel_spacing === false
+            ? "none"
+            : "normal");
+        const mpPixelGap = mpSpacingMode === "normal" ? 3 : 0;
         const mpIgnoreBlack = this.config.matrix_rotary_ignore_black === true;
         const mpMatrixBoxShadow = this.config.matrix_rotary_box_shadow === true;
         const mpPixelBoxShadow =
-          this.config.matrix_rotary_pixel_box_shadow === true;
+          mpSpacingMode === "subtle" || mpSpacingMode === "normal";
         const mpBorderRadius =
           mpPixelStyle === "circle"
             ? "50%"

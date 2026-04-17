@@ -370,13 +370,13 @@ class YeelightCubeDrawCardEditor extends LitElement {
   setConfig(config) {
     this.config = { ...config };
     this.localTitle = config.title || "";
-    if (typeof this.config.pixel_spacing !== "boolean")
-      this.config.pixel_spacing = true;
+    if (!this.config.pixel_spacing_mode)
+      this.config.pixel_spacing_mode = "normal";
     if (!this.config.matrix_bg) this.config.matrix_bg = "black";
     if (typeof this.config.matrix_box_shadow !== "boolean")
       this.config.matrix_box_shadow = true;
-    if (typeof this.config.pixel_art_pixel_box_shadow !== "boolean")
-      this.config.pixel_art_pixel_box_shadow = false;
+    if (!this.config.pixel_art_spacing_mode)
+      this.config.pixel_art_spacing_mode = "normal";
     if (typeof this.config.pixel_art_show_titles !== "boolean")
       this.config.pixel_art_show_titles = true;
     if (typeof this.config.pixel_art_allow_rename !== "boolean")
@@ -818,23 +818,29 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 ),
               )}
             </div>
-            ${createToggleRow(
-              "Pixel Spacing",
-              "pixel_spacing",
-              this.config.pixel_spacing !== false,
-              (e) => this._onSwitchChange(e, "pixel_spacing"),
-            )}
+            <div class="form-row">
+              <label>Pixel Spacing</label>
+              ${createButtonGroup(
+                [
+                  { value: "none", label: "None" },
+                  { value: "subtle", label: "Subtle" },
+                  { value: "normal", label: "Normal" },
+                ],
+                this.config.pixel_spacing_mode || "normal",
+                createButtonGroupChangeHandler(
+                  "pixel_spacing_mode",
+                  (value) => {
+                    this.config.pixel_spacing_mode = value;
+                    this._fireConfigChanged();
+                  },
+                ),
+              )}
+            </div>
             ${createToggleRow(
               "Matrix Box Shadow",
               "matrix_box_shadow",
               this.config.matrix_box_shadow !== false,
               (e) => this._onSwitchChange(e, "matrix_box_shadow"),
-            )}
-            ${createToggleRow(
-              "Pixel Box Shadow",
-              "pixel_box_shadow",
-              this.config.pixel_box_shadow === true,
-              (e) => this._onSwitchChange(e, "pixel_box_shadow"),
             )}
           </div>
         </div>
@@ -1147,18 +1153,24 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 ),
               )}
             </div>
-            ${createToggleRow(
-              "Pixel Spacing",
-              "pixel_art_pixel_spacing",
-              this.config.pixel_art_pixel_spacing !== false,
-              (e) => this._onSwitchChange(e, "pixel_art_pixel_spacing"),
-            )}
-            ${createToggleRow(
-              "Pixel Art Pixel Box Shadow",
-              "pixel_art_pixel_box_shadow",
-              this.config.pixel_art_pixel_box_shadow === true,
-              (e) => this._onSwitchChange(e, "pixel_art_pixel_box_shadow"),
-            )}
+            <div class="form-row">
+              <label>Pixel Spacing</label>
+              ${createButtonGroup(
+                [
+                  { value: "none", label: "None" },
+                  { value: "subtle", label: "Subtle" },
+                  { value: "normal", label: "Normal" },
+                ],
+                this.config.pixel_art_spacing_mode || "normal",
+                createButtonGroupChangeHandler(
+                  "pixel_art_spacing_mode",
+                  (value) => {
+                    this.config.pixel_art_spacing_mode = value;
+                    this._fireConfigChanged();
+                  },
+                ),
+              )}
+            </div>
 
             <!-- 7. Content & Labels -->
             ${createToggleRow(
