@@ -548,6 +548,12 @@ class YeelightCubeGradientCard extends HTMLElement {
 
     // Check if the entities we care about actually changed
     const entity = this._hass.states[_primaryEntityId];
+    if (!entity) {
+      // Entity no longer exists in HA — force a render to show the error state
+      this._previousHass = hass;
+      this.render();
+      return;
+    }
     const oldEntity = this._previousHass
       ? this._previousHass.states[_primaryEntityId]
       : null;
@@ -2480,8 +2486,15 @@ class YeelightCubeGradientCard extends HTMLElement {
    * Return the primary entity ID (first target entity, or fallback single entity).
    */
   _getPrimaryEntity() {
-    const targetEntities = this.config?.target_entities || [];
-    return targetEntities.length > 0 ? targetEntities[0] : this.config?.entity;
+    const candidates = [
+      ...(this.config?.target_entities || []),
+      this.config?.entity,
+    ].filter(Boolean);
+    if (!this._hass?.states) return candidates[0] || null;
+    for (const eid of candidates) {
+      if (this._hass.states[eid]) return eid;
+    }
+    return candidates[0] || null; // return first even if stale (so error is shown)
   }
 
   /**

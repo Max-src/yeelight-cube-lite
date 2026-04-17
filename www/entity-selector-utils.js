@@ -410,7 +410,8 @@ export function createYeelightCubeEntityPicker(
         ? html`<div
             style="padding: 8px 16px; font-size: 0.9em; color: var(--secondary-text-color, #666); border-top: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f9f9f9); border-radius: 0 0 8px 8px;"
           >
-            ${validSelected.length} ${validSelected.length === 1 ? "entity" : "entities"} selected
+            ${validSelected.length}
+            ${validSelected.length === 1 ? "entity" : "entities"} selected
           </div>`
         : html`<div
             style="padding: 8px 16px; font-size: 0.9em; color: var(--secondary-text-color, #999); border-top: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f9f9f9); border-radius: 0 0 8px 8px; font-style: italic;"

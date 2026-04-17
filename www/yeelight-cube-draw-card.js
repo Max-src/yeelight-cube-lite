@@ -723,6 +723,7 @@ class YeelightCubeDrawCard extends LitElement {
 
     // Check if pixel art sensor changed using COUNT
     const stateObj = this._hass.states[pixelartSensor];
+    if (!stateObj) return; // Sensor entity not (yet) available
     const prevCount = this._lastPixelArtCount;
     const currCount = stateObj?.attributes?.count;
 

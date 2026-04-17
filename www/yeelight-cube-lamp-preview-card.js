@@ -782,7 +782,8 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     // visually, which feels broken. Auto-set Tint Strength to 50% when the
     // user starts changing Tint Hue and strength is currently 0.
     if (effectName === "tint_hue" && newValue !== 0) {
-      const stateObj = this._hass.states[this.config.entity];
+      const stateObj = this._hass?.states?.[this.config.entity];
+      if (!stateObj) return;
       const currentStrength =
         this._localEffects.tint_strength ??
         stateObj?.attributes?.preview_tint_strength ??
@@ -819,7 +820,8 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
 
       try {
         // Get all current effect values
-        const stateObj = this._hass.states[this.config.entity];
+        const stateObj = this._hass?.states?.[this.config.entity];
+        if (!stateObj) return;
         const _tSvc = performance.now();
         const effects = {};
         for (const name of EFFECT_NAMES) {
