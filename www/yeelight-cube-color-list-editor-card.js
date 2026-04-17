@@ -286,13 +286,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     const currentAngle = stateObj.attributes.angle ?? 0;
 
     const showCard = this.config.show_card_background !== false;
-    const borderMode = this.config.item_card_border || "auto";
-    const isDark =
-      this._hass?.themes?.darkMode ??
-      window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ??
-      false;
-    const showItemBorder =
-      borderMode === "always" || (borderMode === "auto" && isDark);
+    const showItemBorder = true;
     const showSavePalette = this.config.show_save_palette !== false;
     const enableColorPicker = this.config.enable_color_picker !== false;
     const showHexInput = this.config.show_hex_input !== false;

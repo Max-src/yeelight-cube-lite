@@ -10,7 +10,16 @@ import {
   entitySelectorStyles,
   createYeelightCubeEntityPicker,
 } from "./entity-selector-utils.js";
-import { fireEvent, renderModeSettingsSection } from "./editor_ui_utils.js";
+import {
+  fireEvent,
+  sharedEditorStyles,
+  renderModeSettingsSection,
+} from "./editor_ui_utils.js";
+import {
+  formRowStyles,
+  createToggleRow,
+  createSliderRow,
+} from "./form-row-utils.js";
 
 // localStorage key and event for gradient mode visibility
 const LS_GRADIENT_MODE_VISIBILITY = "yeelight-gradient-mode-visibility";
@@ -246,159 +255,11 @@ class YeelightCubeGradientCardEditor extends LitElement {
 
   static get styles() {
     return [
+      sharedEditorStyles,
+      formRowStyles,
       buttonGroupStyles,
       entitySelectorStyles,
       css`
-        .editor-root {
-          display: flex;
-          flex-direction: column;
-          gap: 18px;
-          padding: 18px 8px 8px 8px;
-        }
-        .editor-card {
-          background: var(--secondary-background-color, #f7fafd);
-          border-radius: 14px;
-          box-shadow: 0 2px 8px #0001;
-          padding: 16px 18px 12px 18px;
-          margin-bottom: 10px;
-          position: relative;
-        }
-        .editor-card-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          font-size: 1.15em;
-          font-weight: 600;
-          margin-bottom: 8px;
-          cursor: pointer;
-          user-select: none;
-        }
-        .editor-card-content {
-          transition:
-            max-height 0.3s,
-            opacity 0.3s;
-          overflow: hidden;
-        }
-        .editor-card-collapsed .editor-card-content {
-          max-height: 0;
-          opacity: 0;
-          pointer-events: none;
-        }
-        .editor-card:not(.editor-card-collapsed) .editor-card-content {
-          max-height: 1200px;
-          opacity: 1;
-          pointer-events: auto;
-        }
-        .form-row {
-          display: flex;
-          flex-direction: column;
-          align-items: stretch;
-          gap: 6px;
-          margin-bottom: 16px;
-        }
-        label {
-          font-weight: 500;
-          color: var(--primary-text-color, #333);
-          font-size: 1em;
-        }
-        input[type="text"],
-        select {
-          width: 100%;
-          padding: 8px 12px;
-          font-size: 1em;
-          border-radius: 8px;
-          border: 1px solid var(--divider-color, #cfd8dc);
-          margin-top: 2px;
-          margin-bottom: 10px;
-          box-sizing: border-box;
-          background: var(--secondary-background-color, #f7f8fa);
-        }
-        .toggle-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          margin-bottom: 16px;
-        }
-        .toggle-label {
-          font-weight: 500;
-          color: var(--primary-text-color, #333);
-          font-size: 1em;
-        }
-        .toggle-switch {
-          position: relative;
-          display: inline-block;
-          width: 44px;
-          height: 24px;
-        }
-        .toggle-switch input {
-          opacity: 0;
-          width: 0;
-          height: 0;
-        }
-        .toggle-slider {
-          position: absolute;
-          cursor: pointer;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background-color: var(--divider-color, #cfd8dc);
-          transition: 0.2s;
-          border-radius: 24px;
-        }
-        .toggle-slider:before {
-          position: absolute;
-          content: "";
-          height: 18px;
-          width: 18px;
-          left: 3px;
-          bottom: 3px;
-          background-color: var(--card-background-color, white);
-          transition: 0.2s;
-          border-radius: 50%;
-          box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
-        }
-        input:checked + .toggle-slider {
-          background-color: var(--primary-color, #1976d2);
-        }
-        input:checked + .toggle-slider:before {
-          transform: translateX(20px);
-        }
-
-        /* Range input premium styling */
-        input[type="range"] {
-          -webkit-appearance: none;
-          appearance: none;
-          height: 4px;
-          border-radius: 2px;
-          background: var(--divider-color, #e0e0e0);
-          outline: none;
-          cursor: pointer;
-          margin: 8px 0;
-        }
-        input[type="range"]::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          appearance: none;
-          height: 20px;
-          width: 20px;
-          border-radius: 50%;
-          background: var(--primary-color, #1976d2);
-          cursor: pointer;
-          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-          border: none;
-          transition: all 0.2s ease;
-        }
-        input[type="range"]::-moz-range-thumb {
-          height: 20px;
-          width: 20px;
-          border-radius: 50%;
-          background: var(--primary-color, #1976d2);
-          cursor: pointer;
-          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
-          border: none;
-          transition: all 0.2s ease;
-        }
-
         /* Color info group styles (specific to this component) */
         .color-info-group {
           display: flex;
@@ -969,40 +830,25 @@ class YeelightCubeGradientCardEditor extends LitElement {
               ? renderModeSettingsSection(
                   "Matrix Preview Settings",
                   html`
-                    <div class="form-row">
-                      <label>Element Size</label>
-                      <div
-                        style="display: flex; align-items: center; gap: 8px;"
-                      >
-                        <input
-                          id="rotary_size"
-                          type="range"
-                          min="30"
-                          max="100"
-                          step="5"
-                          .value="${cfg.rotary_size || 80}"
-                          @input="${this._valueChanged}"
-                          style="flex: 1;"
-                        />
-                        <span
-                          style="min-width: 45px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
-                        >
-                          ${cfg.rotary_size || 80}%
-                        </span>
-                      </div>
-                    </div>
-                    <div class="toggle-row">
-                      <label class="toggle-label">Show Text Preview</label>
-                      <label class="toggle-switch">
-                        <input
-                          id="matrix_rotary_text_preview"
-                          type="checkbox"
-                          .checked="${cfg.matrix_rotary_text_preview === true}"
-                          @change="${this._valueChanged}"
-                        />
-                        <span class="toggle-slider"></span>
-                      </label>
-                    </div>
+                    ${createSliderRow(
+                      "Element Size",
+                      cfg.rotary_size || 80,
+                      { min: 30, max: 100, step: 5 },
+                      (e) => {
+                        this._config = {
+                          ...this._config,
+                          rotary_size: e.target.value,
+                        };
+                        this._fireConfigChanged();
+                      },
+                      "%",
+                    )}
+                    ${createToggleRow(
+                      "Show Text Preview",
+                      "matrix_rotary_text_preview",
+                      cfg.matrix_rotary_text_preview === true,
+                      (e) => this._valueChanged(e),
+                    )}
                     <div class="form-row">
                       <label>Background Color</label>
                       <div style="display:flex;flex-direction:column;">
@@ -1013,18 +859,10 @@ class YeelightCubeGradientCardEditor extends LitElement {
                               label: "Transparent",
                               title: "Transparent",
                             },
-                            {
-                              value: "#ffffff",
-                              label: "White",
-                              title: "White",
-                            },
-                            {
-                              value: "#000000",
-                              label: "Black",
-                              title: "Black",
-                            },
+                            { value: "white", label: "White", title: "White" },
+                            { value: "black", label: "Black", title: "Black" },
                           ],
-                          cfg.matrix_rotary_bg_color || "#000000",
+                          cfg.matrix_rotary_bg_color || "black",
                           createButtonGroupChangeHandler(
                             "matrix_rotary_bg_color",
                             (value) => {
@@ -1038,24 +876,13 @@ class YeelightCubeGradientCardEditor extends LitElement {
                         )}
                       </div>
                     </div>
-                    ${(cfg.matrix_rotary_bg_color || "#000000") !== "#000000"
-                      ? html`
-                          <div class="toggle-row">
-                            <label class="toggle-label"
-                              >Ignore Black Pixels</label
-                            >
-                            <label class="toggle-switch">
-                              <input
-                                id="matrix_rotary_ignore_black"
-                                type="checkbox"
-                                .checked="${cfg.matrix_rotary_ignore_black ===
-                                true}"
-                                @change="${this._valueChanged}"
-                              />
-                              <span class="toggle-slider"></span>
-                            </label>
-                          </div>
-                        `
+                    ${(cfg.matrix_rotary_bg_color || "black") !== "black"
+                      ? createToggleRow(
+                          "Ignore Black Pixels",
+                          "matrix_rotary_ignore_black",
+                          cfg.matrix_rotary_ignore_black === true,
+                          (e) => this._valueChanged(e),
+                        )
                       : ""}
                     <div class="form-row">
                       <label>Pixel Style</label>
@@ -1092,30 +919,24 @@ class YeelightCubeGradientCardEditor extends LitElement {
                         )}
                       </div>
                     </div>
-                    <div class="form-row">
-                      <label>Pixel Gap</label>
-                      <div style="display:flex;align-items:center;gap:8px;">
-                        <input
-                          id="matrix_rotary_pixel_gap"
-                          type="range"
-                          min="0"
-                          max="5"
-                          step="0.5"
-                          .value="${cfg.matrix_rotary_pixel_gap !== undefined
-                            ? cfg.matrix_rotary_pixel_gap
-                            : 1}"
-                          @input="${this._valueChanged}"
-                          style="flex:1;"
-                        />
-                        <span
-                          style="min-width:45px;text-align:right;font-size:0.9em;color:var(--secondary-text-color, #666);"
-                        >
-                          ${cfg.matrix_rotary_pixel_gap !== undefined
-                            ? cfg.matrix_rotary_pixel_gap
-                            : 1}px
-                        </span>
-                      </div>
-                    </div>
+                    ${createToggleRow(
+                      "Pixel Spacing",
+                      "matrix_rotary_pixel_spacing",
+                      cfg.matrix_rotary_pixel_spacing !== false,
+                      (e) => this._valueChanged(e),
+                    )}
+                    ${createToggleRow(
+                      "Matrix Box Shadow",
+                      "matrix_rotary_box_shadow",
+                      cfg.matrix_rotary_box_shadow === true,
+                      (e) => this._valueChanged(e),
+                    )}
+                    ${createToggleRow(
+                      "Pixel Box Shadow",
+                      "matrix_rotary_pixel_box_shadow",
+                      cfg.matrix_rotary_pixel_box_shadow === true,
+                      (e) => this._valueChanged(e),
+                    )}
                   `,
                 )
               : ""}
@@ -1380,6 +1201,20 @@ class YeelightCubeGradientCardEditor extends LitElement {
               : ""}
 
             <!-- 3. Gallery appearance settings -->
+            ${createSliderRow(
+              "Gallery Preview Size",
+              cfg.gallery_preview_size || 50,
+              { min: 50, max: 100, step: 1 },
+              (e) => {
+                this._config = {
+                  ...this._config,
+                  gallery_preview_size: e.target.value,
+                };
+                this._fireConfigChanged();
+              },
+              "%",
+            )}
+
             <div class="form-row">
               <label>Preview Background Color</label>
               <div style="display: flex; flex-direction: column;">
@@ -1392,17 +1227,17 @@ class YeelightCubeGradientCardEditor extends LitElement {
                         title: "Transparent Background",
                       },
                       {
-                        value: "#ffffff",
+                        value: "white",
                         label: "White",
                         title: "White Background",
                       },
                       {
-                        value: "#000000",
+                        value: "black",
                         label: "Black",
                         title: "Black Background",
                       },
                     ],
-                    cfg.gallery_background_color || "#000000",
+                    cfg.gallery_background_color || "black",
                     createButtonGroupChangeHandler(
                       "gallery_background_color",
                       (value) => {
@@ -1418,21 +1253,13 @@ class YeelightCubeGradientCardEditor extends LitElement {
               </div>
             </div>
 
-            ${(cfg.gallery_background_color || "#000000") !== "#000000"
-              ? html`
-                  <div class="toggle-row">
-                    <label class="toggle-label">Ignore Black Pixels</label>
-                    <label class="toggle-switch">
-                      <input
-                        id="gallery_ignore_black_pixels"
-                        type="checkbox"
-                        .checked="${cfg.gallery_ignore_black_pixels === true}"
-                        @change="${this._valueChanged}"
-                      />
-                      <span class="toggle-slider"></span>
-                    </label>
-                  </div>
-                `
+            ${(cfg.gallery_background_color || "black") !== "black"
+              ? createToggleRow(
+                  "Ignore Black Pixels",
+                  "gallery_ignore_black_pixels",
+                  cfg.gallery_ignore_black_pixels === true,
+                  (e) => this._valueChanged(e),
+                )
               : ""}
 
             <div class="form-row">
@@ -1473,78 +1300,38 @@ class YeelightCubeGradientCardEditor extends LitElement {
               </div>
             </div>
 
-            <div class="form-row">
-              <label>Gallery Pixel Gap</label>
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <input
-                  id="gallery_pixel_gap"
-                  type="range"
-                  min="0"
-                  max="5"
-                  step="0.5"
-                  .value="${cfg.gallery_pixel_gap !== undefined
-                    ? cfg.gallery_pixel_gap
-                    : 1}"
-                  @input="${this._valueChanged}"
-                  style="flex: 1;"
-                />
-                <span
-                  style="min-width: 45px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
-                >
-                  ${cfg.gallery_pixel_gap !== undefined
-                    ? cfg.gallery_pixel_gap
-                    : 1}px
-                </span>
-              </div>
-            </div>
-
-            <div class="form-row">
-              <label>Gallery Preview Size</label>
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <input
-                  id="gallery_preview_size"
-                  type="range"
-                  min="120"
-                  max="450"
-                  step="10"
-                  .value="${cfg.gallery_preview_size || 200}"
-                  @input="${this._valueChanged}"
-                  style="flex: 1;"
-                />
-                <span
-                  style="min-width: 45px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
-                >
-                  ${cfg.gallery_preview_size || 200}px
-                </span>
-              </div>
-            </div>
+            ${createToggleRow(
+              "Pixel Spacing",
+              "gallery_pixel_spacing",
+              cfg.gallery_pixel_spacing !== false,
+              (e) => this._valueChanged(e),
+            )}
+            ${createToggleRow(
+              "Matrix Box Shadow",
+              "gallery_matrix_box_shadow",
+              cfg.gallery_matrix_box_shadow === true,
+              (e) => this._valueChanged(e),
+            )}
+            ${createToggleRow(
+              "Pixel Box Shadow",
+              "gallery_pixel_box_shadow",
+              cfg.gallery_pixel_box_shadow === true,
+              (e) => this._valueChanged(e),
+            )}
 
             <!-- 4. Content & Labels -->
-            <div class="toggle-row">
-              <label class="toggle-label">Show Titles</label>
-              <label class="toggle-switch">
-                <input
-                  id="preview_show_titles"
-                  type="checkbox"
-                  .checked="${cfg.preview_show_titles !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
-
-            <div class="toggle-row">
-              <label class="toggle-label">Highlight Active Mode</label>
-              <label class="toggle-switch">
-                <input
-                  id="highlight_active_mode"
-                  type="checkbox"
-                  .checked="${cfg.highlight_active_mode !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
+            ${createToggleRow(
+              "Show Titles",
+              "preview_show_titles",
+              cfg.preview_show_titles !== false,
+              (e) => this._valueChanged(e),
+            )}
+            ${createToggleRow(
+              "Highlight Active Mode",
+              "highlight_active_mode",
+              cfg.highlight_active_mode !== false,
+              (e) => this._valueChanged(e),
+            )}
           </div>
         </div>
       </div>

@@ -270,7 +270,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
             ${createSliderRow(
               "Display Card Size",
               config.card_size || 50,
-              { min: 30, max: 100, step: 1 },
+              { min: 50, max: 100, step: 1 },
               (e) => this._onSliderChange("card_size", e),
               "%",
             )}

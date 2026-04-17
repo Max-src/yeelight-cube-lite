@@ -19,7 +19,7 @@ export function renderPaletteList(palette, onClick) {
 export function renderMatrixPixel(
   idx,
   color,
-  drawWithSquares,
+  pixelStyle,
   previewStyle,
   handlers,
   ignoreBlackPixels = false,
@@ -30,11 +30,16 @@ export function renderMatrixPixel(
     displayColor = "transparent";
   }
 
+  const styleClass =
+    pixelStyle === "circle"
+      ? "round"
+      : pixelStyle === "rounded"
+        ? "rounded"
+        : "square";
+
   return html`
     <div
-      class="pixel ${drawWithSquares ? "square" : "round"} ${color
-        ? "active"
-        : ""}"
+      class="pixel ${styleClass} ${color ? "active" : ""}"
       style="background:${displayColor};${previewStyle}"
       @mousedown=${handlers.onMouseDown}
       @contextmenu=${handlers.onContextMenu}

@@ -23,6 +23,17 @@ import {
   resolveCapsuleThickness,
 } from "./capsule-slider-utils.js";
 
+/**
+ * Convert gallery_preview_size config value (%) to pixels.
+ * Legacy configs stored px values (120-450); new configs store % (30-100).
+ * Values > 100 are treated as legacy px; values ≤ 100 are % mapped to px.
+ */
+function galleryPreviewSizeToPx(configValue) {
+  const v = Number(configValue) || 50;
+  if (v > 100) return v; // legacy px value
+  return Math.round((v / 100) * 450);
+}
+
 // Fill-panel test: map column count (1-20) to Private Use Area characters
 // 0 = off, 1-20 = number of columns filled (U+E001-U+E014)
 const FILL_PANEL_CHARS = {
@@ -469,14 +480,14 @@ class YeelightCubeGradientCard extends HTMLElement {
       button_text_color: "white",
       panel_toggle_style: "card",
       rotary_size: "100",
-      gallery_background_color: "#ffffff",
+      gallery_background_color: "white",
       preview_display_mode: "wheel",
       wheel_nav_position: "sides",
       preview_show_titles: false,
       gallery_pixel_style: "square",
       gallery_ignore_black_pixels: true,
-      gallery_preview_size: "200",
-      gallery_pixel_gap: "0",
+      gallery_preview_size: "50",
+      gallery_pixel_spacing: true,
     };
   }
 
@@ -1887,7 +1898,7 @@ class YeelightCubeGradientCard extends HTMLElement {
                   Math.round(window._yeelightPreviewCache.data.angle * 10) / 10,
                 bgColor: this.config.gallery_background_color,
                 pixelStyle: this.config.gallery_pixel_style,
-                pixelGap: this.config.gallery_pixel_gap,
+                pixelGap: this.config.gallery_pixel_spacing,
                 previewSize: this.config.gallery_preview_size,
                 ignoreBlack: this.config.gallery_ignore_black_pixels,
                 displayMode: this.config.preview_display_mode,
@@ -2397,13 +2408,15 @@ class YeelightCubeGradientCard extends HTMLElement {
     const cols = previewData.cols || 20;
 
     // Get gallery settings from config
-    const galleryBgColor = this.config.gallery_background_color || "#000000";
+    const galleryBgColor = this.config.gallery_background_color || "black";
     const galleryPixelStyle = this.config.gallery_pixel_style || "square";
+    const galleryPreviewSize = galleryPreviewSizeToPx(
+      this.config.gallery_preview_size,
+    );
     const galleryPixelGap =
-      this.config.gallery_pixel_gap !== undefined
-        ? this.config.gallery_pixel_gap
-        : 1;
-    const galleryPreviewSize = this.config.gallery_preview_size || 200;
+      this.config.gallery_pixel_spacing !== false
+        ? Math.max(0, (galleryPreviewSize / 350) * 3)
+        : 0;
     const ignoreBlackPixels = this.config.gallery_ignore_black_pixels === true;
 
     // Find all wheel items and update their preview images
@@ -2704,7 +2717,7 @@ class YeelightCubeGradientCard extends HTMLElement {
           angle: Math.round(previewData.angle * 10) / 10, // Round to 1 decimal
           bgColor: this.config.gallery_background_color,
           pixelStyle: this.config.gallery_pixel_style,
-          pixelGap: this.config.gallery_pixel_gap,
+          pixelGap: this.config.gallery_pixel_spacing,
           previewSize: this.config.gallery_preview_size,
           ignoreBlack: this.config.gallery_ignore_black_pixels,
           displayMode: this.config.preview_display_mode,
@@ -2740,13 +2753,15 @@ class YeelightCubeGradientCard extends HTMLElement {
     const rows = previewData.rows || 5;
     const cols = previewData.cols || 20;
     // Get gallery settings from config
-    const galleryBgColor = this.config.gallery_background_color || "#000000";
+    const galleryBgColor = this.config.gallery_background_color || "black";
     const galleryPixelStyle = this.config.gallery_pixel_style || "square";
+    const galleryPreviewSize = galleryPreviewSizeToPx(
+      this.config.gallery_preview_size,
+    );
     const galleryPixelGap =
-      this.config.gallery_pixel_gap !== undefined
-        ? this.config.gallery_pixel_gap
-        : 1;
-    const galleryPreviewSize = this.config.gallery_preview_size || 200;
+      this.config.gallery_pixel_spacing !== false
+        ? Math.max(0, (galleryPreviewSize / 350) * 3)
+        : 0;
     const ignoreBlackPixels = this.config.gallery_ignore_black_pixels === true;
     const displayMode = this._getDisplayMode();
     const showTitles = this.config.preview_show_titles !== false;
@@ -2806,8 +2821,8 @@ class YeelightCubeGradientCard extends HTMLElement {
       showCards,
       showTitles,
       onClickEnabled: true,
-      matrixBoxShadow: false,
-      pixelBoxShadow: false,
+      matrixBoxShadow: this.config.gallery_matrix_box_shadow === true,
+      pixelBoxShadow: this.config.gallery_pixel_box_shadow === true,
       wheelNavPosition: this.config.wheel_nav_position || "bottom",
       wheelHeight: this.config.wheel_height || 300,
       wheelDisplayStyle: showTitles ? "default" : "compact",
@@ -3958,19 +3973,26 @@ ${(() => {
         const mpCols = 20;
 
         // Read matrix rotary config (independent from gallery settings)
-        const mpBgColor = this.config.matrix_rotary_bg_color || "#000000";
+        const mpBgColor = this.config.matrix_rotary_bg_color || "black";
         const mpPixelStyle = this.config.matrix_rotary_pixel_style || "square";
         const mpPixelGap =
-          this.config.matrix_rotary_pixel_gap !== undefined
-            ? parseFloat(this.config.matrix_rotary_pixel_gap)
-            : 1;
+          this.config.matrix_rotary_pixel_spacing !== false ? 3 : 0;
         const mpIgnoreBlack = this.config.matrix_rotary_ignore_black === true;
+        const mpMatrixBoxShadow = this.config.matrix_rotary_box_shadow === true;
+        const mpPixelBoxShadow =
+          this.config.matrix_rotary_pixel_box_shadow === true;
         const mpBorderRadius =
           mpPixelStyle === "circle"
             ? "50%"
             : mpPixelStyle === "rounded"
               ? "20%"
               : "0";
+        const mpPixelShadowStyle = mpPixelBoxShadow
+          ? "box-shadow: 0 0 2px #0008;"
+          : "";
+        const mpMatrixShadowStyle = mpMatrixBoxShadow
+          ? "box-shadow: 0 2px 8px rgba(0,0,0,0.5);"
+          : "";
 
         // Text preview mode: use cached preview data from the backend
         // The backend already returns correct data (all LEDs lit when panel mode is on)
@@ -3985,6 +4007,7 @@ ${(() => {
             mpBgColor,
             mpIgnoreBlack,
             mpBorderRadius,
+            mpPixelShadowStyle,
           );
         } else {
           // Pure angle gradient computation
@@ -4032,7 +4055,7 @@ ${(() => {
               );
               const isBlack = r <= 5 && g <= 5 && b <= 5;
               const shouldIgnore = mpIgnoreBlack && isBlack;
-              mpPixelDivs += `<div class="matrix-pixel" style="background:${shouldIgnore ? "transparent" : `rgb(${r},${g},${b})`};border-radius:${mpBorderRadius};aspect-ratio:1;"></div>`;
+              mpPixelDivs += `<div class="matrix-pixel" style="background:${shouldIgnore ? "transparent" : `rgb(${r},${g},${b})`};border-radius:${mpBorderRadius};aspect-ratio:1;${mpPixelShadowStyle}"></div>`;
             }
           }
         }
@@ -4054,6 +4077,7 @@ ${(() => {
               background:${mpBgColor};
               padding:${mpPixelGap * 2}px;
               border-radius:6px;
+              ${mpMatrixShadowStyle}
               ${
                 isHeaderMode
                   ? `width:${mpHeaderWidth}px;`
@@ -5205,6 +5229,7 @@ ${(() => {
     bgColor,
     ignoreBlack,
     borderRadius,
+    pixelShadowStyle = "",
   ) {
     const previewColors = this._getMatrixPreviewColors(rows, cols);
 
@@ -5212,7 +5237,7 @@ ${(() => {
       // Fallback: show empty grid if no preview data yet
       let divs = "";
       for (let i = 0; i < rows * cols; i++) {
-        divs += `<div class="matrix-pixel" style="background:${bgColor === "transparent" ? "rgba(128,128,128,0.2)" : "rgba(255,255,255,0.08)"};border-radius:${borderRadius};aspect-ratio:1;"></div>`;
+        divs += `<div class="matrix-pixel" style="background:${bgColor === "transparent" ? "rgba(128,128,128,0.2)" : "rgba(255,255,255,0.08)"};border-radius:${borderRadius};aspect-ratio:1;${pixelShadowStyle}"></div>`;
       }
       return divs;
     }
@@ -5225,7 +5250,7 @@ ${(() => {
         const [r, g, b] = color;
         const isBlack = r <= 5 && g <= 5 && b <= 5;
         const shouldIgnore = ignoreBlack && isBlack;
-        divs += `<div class="matrix-pixel" style="background:${shouldIgnore ? "transparent" : `rgb(${r},${g},${b})`};border-radius:${borderRadius};aspect-ratio:1;"></div>`;
+        divs += `<div class="matrix-pixel" style="background:${shouldIgnore ? "transparent" : `rgb(${r},${g},${b})`};border-radius:${borderRadius};aspect-ratio:1;${pixelShadowStyle}"></div>`;
       }
     }
     return divs;

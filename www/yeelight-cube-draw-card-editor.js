@@ -129,8 +129,6 @@ class YeelightCubeDrawCardEditor extends LitElement {
     // Throttle state for slider updates
     this._previewSizeUpdateScheduled = false;
     this._pendingPreviewSize = null;
-    this._pixelGapUpdateScheduled = false;
-    this._pendingPixelGap = null;
   }
 
   connectedCallback() {
@@ -372,17 +370,18 @@ class YeelightCubeDrawCardEditor extends LitElement {
   setConfig(config) {
     this.config = { ...config };
     this.localTitle = config.title || "";
-    if (typeof this.config.pixel_gap !== "number") this.config.pixel_gap = 2;
+    if (typeof this.config.pixel_spacing !== "boolean")
+      this.config.pixel_spacing = true;
     if (!this.config.matrix_bg) this.config.matrix_bg = "black";
     if (typeof this.config.matrix_box_shadow !== "boolean")
       this.config.matrix_box_shadow = true;
     if (typeof this.config.pixel_art_pixel_box_shadow !== "boolean")
-      this.config.pixel_art_pixel_box_shadow = true;
+      this.config.pixel_art_pixel_box_shadow = false;
     if (typeof this.config.pixel_art_show_titles !== "boolean")
       this.config.pixel_art_show_titles = true;
     if (typeof this.config.pixel_art_allow_rename !== "boolean")
       this.config.pixel_art_allow_rename = false;
-    if (!this.config.matrix_size) this.config.matrix_size = "large";
+    if (!this.config.matrix_size) this.config.matrix_size = 100;
     if (!this.config.button_shape) this.config.button_shape = "rect";
     if (!this.config.actions_buttons_style)
       this.config.actions_buttons_style = "modern";
@@ -778,23 +777,6 @@ class YeelightCubeDrawCardEditor extends LitElement {
               this._onMatrixSizeSliderChange.bind(this),
               "%",
             )}
-            ${createToggleRow(
-              "Pixel Box Shadow",
-              "pixel_box_shadow",
-              this.config.pixel_box_shadow === true,
-              (e) => this._onSwitchChange(e, "pixel_box_shadow"),
-            )}
-            ${createSliderRow(
-              "Pixel Gap",
-              this.config.pixel_gap ?? 2,
-              {
-                min: 0,
-                max: 6,
-                step: 0.5,
-              },
-              this._onDrawingMatrixPixelGapChange.bind(this),
-              "px",
-            )}
             <div class="form-row">
               <label>Matrix Background Color</label>
               ${createButtonGroup(
@@ -818,26 +800,42 @@ class YeelightCubeDrawCardEditor extends LitElement {
                   (e) => this._onSwitchChange(e, "matrix_ignore_black_pixels"),
                 )
               : ""}
+            <div class="form-row">
+              <label>Matrix Pixel Style</label>
+              ${createButtonGroup(
+                [
+                  { value: "square", label: "Square" },
+                  { value: "rounded", label: "Rounded" },
+                  { value: "circle", label: "Circle" },
+                ],
+                this.config.matrix_pixel_style || "square",
+                createButtonGroupChangeHandler(
+                  "matrix_pixel_style",
+                  (value) => {
+                    this.config.matrix_pixel_style = value;
+                    this._fireConfigChanged();
+                  },
+                ),
+              )}
+            </div>
+            ${createToggleRow(
+              "Pixel Spacing",
+              "pixel_spacing",
+              this.config.pixel_spacing !== false,
+              (e) => this._onSwitchChange(e, "pixel_spacing"),
+            )}
             ${createToggleRow(
               "Matrix Box Shadow",
               "matrix_box_shadow",
               this.config.matrix_box_shadow !== false,
               (e) => this._onSwitchChange(e, "matrix_box_shadow"),
             )}
-            <div class="form-row">
-              <label>Matrix Pixel Style</label>
-              ${createButtonGroup(
-                [
-                  { value: "false", label: "Round" },
-                  { value: "true", label: "Square" },
-                ],
-                this.config.draw_with_squares ? "true" : "false",
-                createButtonGroupChangeHandler("draw_with_squares", (value) => {
-                  this.config.draw_with_squares = value === "true";
-                  this._fireConfigChanged();
-                }),
-              )}
-            </div>
+            ${createToggleRow(
+              "Pixel Box Shadow",
+              "pixel_box_shadow",
+              this.config.pixel_box_shadow === true,
+              (e) => this._onSwitchChange(e, "pixel_box_shadow"),
+            )}
           </div>
         </div>
 
@@ -1097,6 +1095,13 @@ class YeelightCubeDrawCardEditor extends LitElement {
               : ""}
 
             <!-- 6. Gallery appearance -->
+            ${createSliderRow(
+              "Gallery Preview Size",
+              this.config.pixel_art_preview_size || 100,
+              { min: 50, max: 100, step: 1 },
+              this._onPixelArtPreviewSizeChange.bind(this),
+              "%",
+            )}
             <div class="form-row">
               <label>Gallery Background Color</label>
               ${createButtonGroup(
@@ -1128,10 +1133,11 @@ class YeelightCubeDrawCardEditor extends LitElement {
               <label>Gallery Pixel Style</label>
               ${createButtonGroup(
                 [
-                  { value: "round", label: "Round" },
                   { value: "square", label: "Square" },
+                  { value: "rounded", label: "Rounded" },
+                  { value: "circle", label: "Circle" },
                 ],
-                this.config.pixel_art_pixel_style || "round",
+                this.config.pixel_art_pixel_style || "square",
                 createButtonGroupChangeHandler(
                   "pixel_art_pixel_style",
                   (value) => {
@@ -1141,24 +1147,16 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 ),
               )}
             </div>
-            ${createSliderRow(
-              "Gallery Pixel Gap",
-              this.config.pixel_art_pixel_gap || 0,
-              { min: 0, max: 6, step: 1 },
-              this._onPixelArtPixelGapChange.bind(this),
-              "px",
-            )}
-            ${createSliderRow(
-              "Gallery Preview Size",
-              this.config.pixel_art_preview_size || 100,
-              { min: 30, max: 100, step: 1 },
-              this._onPixelArtPreviewSizeChange.bind(this),
-              "%",
+            ${createToggleRow(
+              "Pixel Spacing",
+              "pixel_art_pixel_spacing",
+              this.config.pixel_art_pixel_spacing !== false,
+              (e) => this._onSwitchChange(e, "pixel_art_pixel_spacing"),
             )}
             ${createToggleRow(
               "Pixel Art Pixel Box Shadow",
               "pixel_art_pixel_box_shadow",
-              this.config.pixel_art_pixel_box_shadow !== false,
+              this.config.pixel_art_pixel_box_shadow === true,
               (e) => this._onSwitchChange(e, "pixel_art_pixel_box_shadow"),
             )}
 
@@ -1358,10 +1356,6 @@ class YeelightCubeDrawCardEditor extends LitElement {
   }
 
   // New centralized slider handlers
-  _onDrawingMatrixPixelGapChange(e) {
-    this.config.pixel_gap = Number(e.target.value);
-    this._fireConfigChanged();
-  }
 
   _onMatrixSizeChange(e) {
     this.config.matrix_size = e.target.value;
@@ -1371,28 +1365,6 @@ class YeelightCubeDrawCardEditor extends LitElement {
   _onItemsPerPageChange(e) {
     this.config.pixel_art_items_per_page = parseInt(e.target.value, 10);
     this._fireConfigChanged();
-  }
-
-  _onPixelArtPixelGapChange(e) {
-    const newGap = Number(e.target.value);
-    this._pendingPixelGap = newGap;
-
-    // Update config immediately for slider position
-    this.config.pixel_art_pixel_gap = newGap;
-
-    // Throttle the expensive config-changed event using requestAnimationFrame
-    if (!this._pixelGapUpdateScheduled) {
-      this._pixelGapUpdateScheduled = true;
-      requestAnimationFrame(() => {
-        this._pixelGapUpdateScheduled = false;
-        // Use the most recent value
-        if (this._pendingPixelGap !== null) {
-          this.config.pixel_art_pixel_gap = this._pendingPixelGap;
-          this._pendingPixelGap = null;
-          this._fireConfigChanged();
-        }
-      });
-    }
   }
 
   _onPixelArtPreviewSizeChange(e) {

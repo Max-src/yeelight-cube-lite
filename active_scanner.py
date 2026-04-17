@@ -7,7 +7,7 @@ from homeassistant.helpers.discovery_flow import async_create_flow # type: ignor
 from homeassistant.helpers.event import async_track_time_interval # type: ignore
 from homeassistant.util import dt as dt_util # type: ignore
 from datetime import timedelta
-from .const import DOMAIN, CONF_IP
+from .const import DOMAIN, CONF_IP, CONF_DEVICE_ID
 from .discovery import is_cube_device
 from .conflict_prevention import get_conflict_prevention
 
@@ -107,14 +107,36 @@ class YeelightCubeScanner:
                 
                 # Add to seen devices to avoid duplicates
                 self._seen_devices.add(device_key)
+
+                # --- Check if this device_id belongs to an existing entry at a different IP ---
+                # This handles DHCP IP changes: the device moved but our entry
+                # still has the old IP.  Update it in place instead of creating
+                # a new discovery flow.
+                if device_id:
+                    existing_entries = self.hass.config_entries.async_entries(DOMAIN)
+                    for entry in existing_entries:
+                        stored_did = entry.data.get(CONF_DEVICE_ID, "")
+                        stored_ip = entry.data.get(CONF_IP, "")
+                        if stored_did and stored_did == device_id and stored_ip != host:
+                            _LOGGER.warning(
+                                "[ACTIVE-SCAN] Device %s moved from %s to %s — "
+                                "updating entry %s",
+                                device_id, stored_ip, host, entry.entry_id,
+                            )
+                            self.hass.config_entries.async_update_entry(
+                                entry,
+                                data={**entry.data, CONF_IP: host},
+                                title=f"Yeelight Cube ({host})",
+                            )
+                            return
                 
-                # Check if already configured
+                # Check if already configured at this IP
                 conflict_prevention = get_conflict_prevention(self.hass)
                 if conflict_prevention.is_device_managed(host):
                     _LOGGER.debug(f"Cube device at {host} already managed, skipping")
                     return
                 
-                # Check if already in config entries
+                # Check if already in config entries by IP
                 existing_entries = self.hass.config_entries.async_entries(DOMAIN)
                 for entry in existing_entries:
                     if entry.data.get(CONF_IP) == host:
@@ -125,9 +147,9 @@ class YeelightCubeScanner:
                 await async_create_flow(
                     self.hass,
                     DOMAIN,
-                    context={"source": "active_scan"},
+                    context={"source": "discovery"},
                     data={
-                        "host": host,
+                        "ip": host,
                         "name": device_name,
                         "model": device_model,
                         "device_id": device_id,

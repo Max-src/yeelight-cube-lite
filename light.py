@@ -21,7 +21,7 @@ from homeassistant.helpers.event import async_track_state_change_event # type: i
 from homeassistant.helpers import config_validation as cv # type: ignore
 from homeassistant.helpers import entity_registry as er # type: ignore
 from yeelight import BulbException # type: ignore
-from .const import DOMAIN, CONF_IP
+from .const import DOMAIN, CONF_IP, CONF_DEVICE_ID
 from .cube_matrix import CubeMatrix, RECONNECT_COOLDOWN_INITIAL, CONNECT_TIMEOUT, RECOVERY_CONNECT_TIMEOUT
 from .layout import Layout, Module, FONT_MAPS, TOTAL_COLUMNS, TOTAL_ROWS
 from . import async_save_data
@@ -860,10 +860,22 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         self._cube_matrix = cube_matrix
         self._ip = ip
         self._config_entry = config_entry  # Always set during initialization
-        self._attr_name = f"{cube_matrix.device_name} ({ip})"
-        # Use IP as primary unique identifier to ensure uniqueness across multiple devices
-        # Format: yeelight_cube_192_168_4_139
-        self._attr_unique_id = f'yeelight_cube_{ip.replace(".", "_")}'
+
+        # --- Stable entity naming (IP-independent) ---
+        # Use a short device identifier for display names so they stay consistent
+        # across DHCP IP changes.  Prefer the hardware device_id (last 4 hex chars),
+        # fall back to a short hash of the entry_id.
+        device_id = config_entry.data.get(CONF_DEVICE_ID, "")
+        if device_id:
+            short_id = device_id[-4:]  # e.g. "9bc6" from "0x00000000172b9bc6"
+        else:
+            short_id = config_entry.entry_id[:6]
+        self._attr_name = f"{cube_matrix.device_name} {short_id}"
+
+        # --- Stable unique_id (entry_id-based, never changes across IP changes) ---
+        # The config entry's entry_id is assigned once and stays constant even when
+        # the stored IP is updated by rediscovery / zeroconf.
+        self._attr_unique_id = f'yeelight_cube_{config_entry.entry_id}'
         # Safeguard: check that the generated name does not end with _palettes (without _v2)
         self._safeguard_entity_id(self._attr_name.lower().replace(' ', '_'))
         self._is_on = True

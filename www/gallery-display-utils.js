@@ -147,11 +147,12 @@ export function renderMatrixPreview(colorData, options = {}) {
   const borderRadius =
     pixelStyle === "circle" ? "50%" : pixelStyle === "rounded" ? "20%" : "0";
 
-  // Use aspect-ratio for grid mode to preserve correct shape
-  // If previewSize is set, use width/height as fallback for gallery/inline
-  const aspectRatioStyle = options.forceAspectRatio
-    ? `aspect-ratio: ${cols} / ${rows}; width: 100%; height: auto;`
-    : `width: ${previewSize}px; height: ${previewSize * (rows / cols)}px;`;
+  // Width is controlled by previewSize (or 100% in forceAspectRatio mode).
+  // Height is auto-calculated: each pixel is forced square via aspect-ratio 1/1,
+  // so height naturally follows from (width, cols, rows, gap, padding).
+  const sizeStyle = options.forceAspectRatio
+    ? `width: 100%;`
+    : `width: ${previewSize}px;`;
 
   return `
     <div class="gallery-matrix-preview" style="
@@ -163,7 +164,7 @@ export function renderMatrixPreview(colorData, options = {}) {
       border-radius: 4px;
       max-width: 100%;
       box-sizing: border-box;
-      ${aspectRatioStyle}
+      ${sizeStyle}
       ${matrixShadowStyle}
     ">${colorData
       .map((color) => {
@@ -194,6 +195,7 @@ export function renderMatrixPreview(colorData, options = {}) {
         const shouldIgnore = ignoreBlackPixels && isBlack;
 
         return `<div style="
+            aspect-ratio: 1 / 1;
             background: ${shouldIgnore ? "transparent" : bgColor};
             border-radius: ${borderRadius};
             ${shouldIgnore ? "" : pixelShadowStyle}

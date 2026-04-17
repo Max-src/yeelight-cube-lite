@@ -182,11 +182,11 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       size: "medium",
       size_pct: 100,
       align: "center",
-      matrix_pixel_gap: 4,
+      matrix_pixel_spacing: true,
       matrix_background: "black",
       matrix_box_shadow: true,
-      matrix_pixel_style: "round",
-      lamp_dot_shadow: true,
+      matrix_pixel_style: "square",
+      lamp_dot_shadow: false,
       show_force_refresh_button: false,
       buttons_style: "gradient",
       show_brightness_slider: true,
@@ -263,11 +263,11 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       size: "medium",
       size_pct: 100, // Default matrix size to 100%
       align: "center",
-      matrix_pixel_gap: 4, // Default pixel gap to 4px
+      matrix_pixel_spacing: true, // Default pixel spacing enabled
       matrix_background: "black", // Black background by default
       matrix_box_shadow: true, // Keep matrix box shadow enabled
-      matrix_pixel_style: "round", // Keep round pixel style
-      lamp_dot_shadow: true, // Keep pixel box shadow enabled
+      matrix_pixel_style: "square", // Default pixel style
+      lamp_dot_shadow: false, // Default pixel box shadow OFF
       buttons_style: "classic", // Style for all buttons (power toggle, force refresh)
       show_brightness_slider: true, // NEW: Show brightness slider by default
       show_brightness_percentage: true, // NEW: Show brightness percentage value
@@ -279,7 +279,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       show_power_toggle: true, // NEW: Show on/off toggle button by default
       show_force_refresh_button: true, // Show force refresh button (raw TCP bypass)
 
-      hide_black_dots: true, // NEW: Treat black dots as transparent on preview (default: true to match real device behavior)
+      hide_black_dots: false, // NEW: Ignore black pixels on preview (default: false = OFF)
       show_lamp_preview: true, // NEW: Show lamp matrix preview by default
       show_adjustment_controls: false, // Deprecated: Use light brightness control instead
       ...config,
@@ -2141,14 +2141,11 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   _generateMatrixHtml(gridColors, stateObj) {
     const totalRows = 5;
     const totalCols = 20;
-    const pixelGap =
-      typeof this.config.matrix_pixel_gap === "number"
-        ? this.config.matrix_pixel_gap
-        : 0;
+    const pixelGap = this.config.matrix_pixel_spacing !== false ? 4 : 0;
     const matrixBackground = this.config.matrix_background || "black";
     const matrixBoxShadow = this.config.matrix_box_shadow !== false;
-    const pixelStyle = this.config.matrix_pixel_style || "round";
-    const lampDotShadow = this.config.lamp_dot_shadow !== false;
+    const pixelStyle = this.config.matrix_pixel_style || "square";
+    const lampDotShadow = this.config.lamp_dot_shadow === true;
     const alignClass =
       this.config.align === "left"
         ? "align-left"
@@ -3161,8 +3158,8 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   _getStyles() {
     const totalRows = 5;
     const totalCols = 20;
-    const pixelStyle = this.config.matrix_pixel_style || "round";
-    const lampDotShadow = this.config.lamp_dot_shadow !== false;
+    const pixelStyle = this.config.matrix_pixel_style || "square";
+    const lampDotShadow = this.config.lamp_dot_shadow === true;
 
     return `
       <style>
@@ -3200,7 +3197,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         .lamp-dot {
           width: 100%;
           height: 100%;
-          border-radius: ${pixelStyle === "round" ? "50%" : "0px"};
+          border-radius: ${pixelStyle === "circle" ? "50%" : pixelStyle === "rounded" ? "20%" : "0px"};
           margin: auto;
           box-shadow: ${lampDotShadow ? "0 0 2px #0008" : "none"};
           transition: background 0.2s, border 0.2s;

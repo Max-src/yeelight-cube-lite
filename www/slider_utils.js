@@ -346,8 +346,9 @@ export function renderExpandButtonModeGroup(label, currentValue, onChange) {
  */
 export function renderMatrixPixelStyleGroup(label, currentValue, onChange) {
   const pixelStyleOptions = [
-    { value: "false", label: "Round" },
-    { value: "true", label: "Square" },
+    { value: "square", label: "Square" },
+    { value: "rounded", label: "Rounded" },
+    { value: "circle", label: "Circle" },
   ];
 
   return renderButtonGroup(label, pixelStyleOptions, currentValue, onChange);
@@ -384,8 +385,9 @@ export function renderGalleryBackgroundColorGroup(
  */
 export function renderGalleryPixelStyleGroup(label, currentValue, onChange) {
   const galleryPixelStyleOptions = [
-    { value: "round", label: "Round" },
     { value: "square", label: "Square" },
+    { value: "rounded", label: "Rounded" },
+    { value: "circle", label: "Circle" },
   ];
 
   return renderButtonGroup(

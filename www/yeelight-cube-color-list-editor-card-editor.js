@@ -372,14 +372,13 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
               <label>Colors Layout Mode</label>
               ${createButtonGroup(
                 [
-                  { value: "compact", label: "Compact", icon: "≡" },
                   { value: "chips", label: "Chips", icon: "◐" },
                   { value: "tiles", label: "Tiles", icon: "▢" },
                   { value: "rows", label: "Rows", icon: "▬" },
                   { value: "grid", label: "Grid", icon: "▦" },
                   { value: "cards", label: "Cards", icon: "🂠" },
                 ],
-                cfg.list_layout || "compact",
+                cfg.list_layout || "chips",
                 createButtonGroupChangeHandler("list_layout", (value) => {
                   this._config = {
                     ...this._config,
@@ -408,7 +407,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
               },
               "px",
             )}
-            ${["cards", "grid", "rows", "tiles", "chips", "compact"].includes(
+            ${["cards", "grid", "rows", "tiles", "chips"].includes(
               cfg.list_layout,
             )
               ? renderPercentageSlider(
@@ -421,7 +420,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                     };
                     this._fireConfigChanged();
                   },
-                  { min: 30, max: 100, step: 5 },
+                  { min: 50, max: 100, step: 5 },
                 )
               : ""}
             ${cfg.list_layout === "cards"
@@ -520,25 +519,6 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                   `,
                 )
               : ""}
-            <div class="form-row">
-              <label>Item Card Border</label>
-              ${createButtonGroup(
-                [
-                  { value: "none", label: "None" },
-                  { value: "auto", label: "Auto" },
-                  { value: "always", label: "Always" },
-                ],
-                cfg.item_card_border || "auto",
-                createButtonGroupChangeHandler("item_card_border", (value) => {
-                  this._config = {
-                    ...this._config,
-                    item_card_border: value,
-                  };
-                  this._fireConfigChanged();
-                }),
-              )}
-            </div>
-
             <!-- Delete button settings last (button lives on the cards) -->
             <div class="form-row">
               <label>Delete Button Style</label>

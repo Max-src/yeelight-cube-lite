@@ -49,11 +49,11 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
       size: "medium",
       size_pct: 100, // Default matrix size to 100%
       align: "center",
-      matrix_pixel_gap: 4, // Default pixel gap to 4px
+      matrix_pixel_spacing: true, // Default pixel spacing enabled
       matrix_background: "black", // Black background by default
       matrix_box_shadow: true, // Keep matrix box shadow enabled
-      matrix_pixel_style: "round", // Keep round pixel style
-      lamp_dot_shadow: true, // Keep pixel box shadow enabled
+      matrix_pixel_style: "square", // Default pixel style
+      lamp_dot_shadow: false, // Default pixel box shadow OFF
       show_force_refresh_button: true, // Default force refresh button to enabled
       buttons_style: "classic", // New: default style for all buttons
       show_brightness_slider: true, // Show brightness slider by default
@@ -234,7 +234,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
               ? createToggleRow(
                   "Ignore Black Pixels",
                   "hide_black_dots",
-                  cfg.hide_black_dots !== false,
+                  cfg.hide_black_dots === true,
                   (e) => this._onToggleChange(e),
                 )
               : ""}
@@ -242,10 +242,11 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
               <label>Matrix Pixel Style</label>
               ${createButtonGroup(
                 [
-                  { value: "round", label: "Round" },
                   { value: "square", label: "Square" },
+                  { value: "rounded", label: "Rounded" },
+                  { value: "circle", label: "Circle" },
                 ],
-                cfg.matrix_pixel_style || "round",
+                cfg.matrix_pixel_style || "square",
                 createButtonGroupChangeHandler(
                   "matrix_pixel_style",
                   (value) => {
@@ -258,12 +259,11 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
                 ),
               )}
             </div>
-            ${createSliderRow(
-              "Pixel Gap",
-              cfg.matrix_pixel_gap ?? 4,
-              { min: 0, max: 6, step: 1 },
-              (e) => this._onSliderChange("matrix_pixel_gap", e),
-              "px",
+            ${createToggleRow(
+              "Pixel Spacing",
+              "matrix_pixel_spacing",
+              cfg.matrix_pixel_spacing !== false,
+              (e) => this._onToggleChange(e),
             )}
             ${createToggleRow(
               "Matrix Box Shadow",
@@ -274,7 +274,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
             ${createToggleRow(
               "Pixel Box Shadow",
               "lamp_dot_shadow",
-              cfg.lamp_dot_shadow !== false,
+              cfg.lamp_dot_shadow === true,
               (e) => this._onToggleChange(e),
             )}
           </div>

@@ -377,6 +377,9 @@ export const drawCardStyles = css`
   .pixel.round {
     border-radius: 50%;
   }
+  .pixel.rounded {
+    border-radius: 20%;
+  }
   .pixel.square {
     border-radius: 0;
   }

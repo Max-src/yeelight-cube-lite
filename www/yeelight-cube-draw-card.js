@@ -86,13 +86,13 @@ class YeelightCubeDrawCard extends LitElement {
       type: "custom:yeelight-cube-draw-card",
       entity: firstEntity,
       target_entities: firstEntity ? [firstEntity] : [],
-      pixel_gap: 2,
+      pixel_spacing: true,
       matrix_bg: "black",
       matrix_box_shadow: true,
-      pixel_art_pixel_box_shadow: true,
+      pixel_art_pixel_box_shadow: false,
       pixel_art_show_titles: true,
       pixel_art_allow_rename: false,
-      matrix_size: "large",
+      matrix_size: 100,
       button_shape: "circle",
       actions_buttons_style: "gradient",
       actions_content_mode: "icon_text",
@@ -1048,7 +1048,7 @@ class YeelightCubeDrawCard extends LitElement {
     matrixBg,
     matrixShadowStyle,
     matrixWidth,
-    drawWithSquares,
+    matrixPixelStyle,
   ) {
     return html`
       <div
@@ -1078,7 +1078,7 @@ class YeelightCubeDrawCard extends LitElement {
           return renderMatrixPixel(
             idx,
             color,
-            drawWithSquares,
+            matrixPixelStyle,
             previewStyle,
             {
               onMouseDown: (e) => drawPixel(this, e, idx),
@@ -1195,7 +1195,7 @@ class YeelightCubeDrawCard extends LitElement {
 
   render() {
     const cfg = this.config || {};
-    const pixelGap = typeof cfg.pixel_gap === "number" ? cfg.pixel_gap : 2;
+    const pixelGap = cfg.pixel_spacing !== false ? 3 : 0;
     let matrixBg = cfg.matrix_bg || "black";
     if (matrixBg === "transparent") matrixBg = "transparent";
     const matrixBoxShadow = cfg.matrix_box_shadow !== false;
@@ -1228,7 +1228,7 @@ class YeelightCubeDrawCard extends LitElement {
     const showSave = cfg.show_save_button !== false;
     const showUpload = cfg.show_upload_image_button !== false;
     const showPixelArtGallery = cfg.show_pixelart_gallery !== false;
-    const drawWithSquares = cfg.draw_with_squares === true;
+    const matrixPixelStyle = cfg.matrix_pixel_style || "square";
     const paintShape = cfg.button_shape || "rect";
     const paintContent = cfg.paint_button_content || "icon";
 
@@ -1267,7 +1267,7 @@ class YeelightCubeDrawCard extends LitElement {
                 matrixBg,
                 matrixShadowStyle,
                 matrixWidth,
-                drawWithSquares,
+                matrixPixelStyle,
               )
             : ""}
           ${showActions ? this._renderActionsSection() : ""}
@@ -1680,8 +1680,8 @@ class YeelightCubeDrawCard extends LitElement {
   ) {
     const cfg = this.config || {};
     if (!btnCfg) btnCfg = getDeleteButtonConfig(cfg);
-    const pixelStyle = cfg.pixel_art_pixel_style || "round";
-    const pixelGap = parseInt(cfg.pixel_art_pixel_gap) || 0;
+    const pixelStyle = cfg.pixel_art_pixel_style || "square";
+    const pixelGap = cfg.pixel_art_pixel_spacing !== false ? 3 : 0;
 
     // Get paginated data
     const { items: paginatedPixelArts, pagination } =
@@ -1847,9 +1847,11 @@ class YeelightCubeDrawCard extends LitElement {
                                           : color || "#000000"
                                       }; 
                                       ${
-                                        pixelStyle === "round"
+                                        pixelStyle === "circle"
                                           ? "border-radius: 50%;"
-                                          : ""
+                                          : pixelStyle === "rounded"
+                                            ? "border-radius: 15%;"
+                                            : ""
                                       }">
                           </div>`;
                 })
@@ -1915,7 +1917,7 @@ class YeelightCubeDrawCard extends LitElement {
     // Render function for each pixel art item content
     const renderPixelArtContent = (art, idx) => {
       const pixelMatrix = this._convertPixelArtToDisplayMatrix(art);
-      const pixelArtPixelBoxShadow = cfg.pixel_art_pixel_box_shadow !== false;
+      const pixelArtPixelBoxShadow = cfg.pixel_art_pixel_box_shadow === true;
 
       return `
         <div class="album-content-container">
@@ -2048,7 +2050,7 @@ class YeelightCubeDrawCard extends LitElement {
         .pixelart-pixel.pixelart-pixel-empty {
           background: transparent !important;
         }
-        .pixelart-pixel.round {
+        .pixelart-pixel.circle {
           border-radius: 50%;
         }
         .pixelart-pixel.rounded {
@@ -2139,8 +2141,12 @@ class YeelightCubeDrawCard extends LitElement {
           transition: background 0.15s ease;
         }
 
-        .pixelart-list-item .pixelart-pixel.round {
+        .pixelart-list-item .pixelart-pixel.circle {
           border-radius: 50%;
+        }
+
+        .pixelart-list-item .pixelart-pixel.rounded {
+          border-radius: 15%;
         }
 
         .pixelart-list-item .pixelart-pixel.square {
@@ -2211,7 +2217,7 @@ class YeelightCubeDrawCard extends LitElement {
           (art, idx) => {
             const pixelMatrix = this._convertPixelArtToDisplayMatrix(art);
             const pixelArtPixelBoxShadow =
-              cfg.pixel_art_pixel_box_shadow !== false;
+              cfg.pixel_art_pixel_box_shadow === true;
             const globalIdx = globalOffset + idx;
 
             return html`
@@ -2391,7 +2397,7 @@ class YeelightCubeDrawCard extends LitElement {
     allowDelete,
     displayMode = "grid",
     bgColor = "transparent",
-    pixelStyle = "round",
+    pixelStyle = "square",
     pixelGap = 0,
     autoApplyToLamp = false,
     showTitles = true,
@@ -2421,7 +2427,7 @@ class YeelightCubeDrawCard extends LitElement {
     const pixelMatrix = this._convertPixelArtToDisplayMatrix(art);
 
     // Box shadow settings for pixel art previews
-    const pixelArtPixelBoxShadow = cfg.pixel_art_pixel_box_shadow !== false;
+    const pixelArtPixelBoxShadow = cfg.pixel_art_pixel_box_shadow === true;
 
     // Determine if title should be on top (for grid, carousel)
     const titleOnTop = displayMode !== "list";
