@@ -19,13 +19,17 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Restructure for hassfest
+      - name: Restructure for hassfest (content_in_root)
         run: |
-          mkdir -p /tmp/hassfest/custom_components/yeelight_cube
-          cp -r $GITHUB_WORKSPACE/* /tmp/hassfest/custom_components/yeelight_cube/
-          cp -r $GITHUB_WORKSPACE/.* /tmp/hassfest/custom_components/yeelight_cube/ 2>/dev/null || true
+          # hassfest expects custom_components/<domain>/ structure
+          tmp=$(mktemp -d)
+          shopt -s dotglob
+          mv $GITHUB_WORKSPACE/* "$tmp/" 2>/dev/null || true
+          shopt -u dotglob
+          mkdir -p $GITHUB_WORKSPACE/custom_components/yeelight_cube
+          shopt -s dotglob
+          mv "$tmp"/* $GITHUB_WORKSPACE/custom_components/yeelight_cube/ 2>/dev/null || true
+          shopt -u dotglob
 
       - name: Hassfest validation
         uses: home-assistant/actions/hassfest@master
-        with:
-          path: /tmp/hassfest/custom_components/yeelight_cube

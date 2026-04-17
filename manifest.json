@@ -26,15 +26,5 @@
   ],
   "version": "1.1.13",
   "iot_class": "local_push",
-  "config_flow": true,
-  "platforms": [
-    "light",
-    "switch",
-    "text",
-    "select",
-    "sensor",
-    "number",
-    "button",
-    "camera"
-  ]
+  "config_flow": true
 }
