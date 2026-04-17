@@ -12,8 +12,11 @@ from homeassistant.helpers import entity_registry as er # type: ignore
 from .const import DOMAIN, CONF_IP, CONF_DEVICE_ID
 from .conflict_prevention import get_conflict_prevention
 from .services import async_setup_services, async_remove_services
+import homeassistant.helpers.config_validation as cv  # type: ignore
 
 _LOGGER = logging.getLogger(__name__)
+
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 STORAGE_VERSION = 1
 STORAGE_KEY = f"{DOMAIN}.storage"
