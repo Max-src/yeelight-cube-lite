@@ -1,30 +1,30 @@
 {
   "domain": "yeelight_cube",
   "name": "Yeelight Cube Lite",
-  "documentation": "https://github.com/Max-src/yeelight-cube-lite",
-  "issue_tracker": "https://github.com/Max-src/yeelight-cube-lite/issues",
-  "requirements": [
-    "yeelight",
-    "Pillow"
-  ],
-  "dependencies": [
-    "zeroconf"
-  ],
   "after_dependencies": [
     "frontend",
     "http",
     "lovelace"
   ],
+  "codeowners": [
+    "@Max-src"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "zeroconf"
+  ],
+  "documentation": "https://github.com/Max-src/yeelight-cube-lite",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/Max-src/yeelight-cube-lite/issues",
+  "requirements": [
+    "yeelight",
+    "Pillow"
+  ],
+  "version": "1.1.13",
   "zeroconf": [
     {
       "type": "_miio._udp.local.",
       "name": "yeelink-*"
     }
-  ],
-  "codeowners": [
-    "@Max-src"
-  ],
-  "version": "1.1.13",
-  "iot_class": "local_push",
-  "config_flow": true
+  ]
 }
