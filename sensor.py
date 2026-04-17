@@ -1,6 +1,7 @@
 from homeassistant.helpers.entity import Entity # type: ignore
+from homeassistant.config_entries import ConfigEntry # type: ignore
 from .layout import FONT_MAPS
-from .const import DOMAIN
+from .const import DOMAIN, CONF_IP, CONF_DEVICE_ID
 
 class YeelightCubeBaseSensor(Entity):
     """Base class for Yeelight Cube Lite sensors."""
@@ -193,6 +194,54 @@ class PixelArtSensor(YeelightCubeBaseSensor):
             "last_updated": time.time()
         }
 
+class YeelightCubeIPSensor(Entity):
+    """Per-device sensor exposing the current IP address.
+
+    This is a diagnostic sensor — read-only, updated automatically whenever
+    the config entry is reloaded (e.g. after DHCP IP change + rediscovery).
+    """
+
+    def __init__(self, hass, config_entry: ConfigEntry):
+        self.hass = hass
+        self._config_entry = config_entry
+        self._attr_should_poll = False
+        self._attr_unique_id = f"{config_entry.entry_id}_ip_address"
+        self._attr_icon = "mdi:ip-network"
+
+        # Build a short, stable display name (same logic as light entity)
+        device_id = config_entry.data.get(CONF_DEVICE_ID, "")
+        if device_id:
+            short_id = device_id[-4:]
+        else:
+            short_id = config_entry.entry_id[:6]
+        self._attr_name = f"Yeelight Cube Lite {short_id} IP Address"
+
+    @property
+    def device_info(self):
+        """Link this sensor to the same device as the light entity."""
+        return {
+            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
+        }
+
+    @property
+    def state(self):
+        """Return the current IP address from the config entry."""
+        return self._config_entry.data.get(CONF_IP, "unknown")
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            "device_id": self._config_entry.data.get(CONF_DEVICE_ID, ""),
+            "entry_id": self._config_entry.entry_id,
+        }
+
+    @property
+    def entity_category(self):
+        """Mark as diagnostic so it doesn't clutter the main UI."""
+        from homeassistant.const import EntityCategory  # type: ignore
+        return EntityCategory.DIAGNOSTIC
+
+
 def _create_and_register_sensors(hass, async_add_entities, owner_entry_id):
     """Create global sensors and register them under the given entry's platform.
 
@@ -240,9 +289,14 @@ async def async_setup_entry(hass, entry, async_add_entities):
     # re-created under a surviving entry when the owning entry is removed.
     hass.data[DOMAIN].setdefault("_sensor_callbacks", {})[entry.entry_id] = async_add_entities
 
-    # Only create sensors once (they're global, not per-device)
+    # --- Per-device IP sensor (always created for every entry) ---
+    ip_sensor = YeelightCubeIPSensor(hass, entry)
+    async_add_entities([ip_sensor], update_before_add=True)
+    _LOGGER.debug("Created IP address sensor for entry %s", entry.entry_id)
+
+    # --- Global sensors (created only once, shared across all devices) ---
     if "sensors_created" in hass.data[DOMAIN]:
-        _LOGGER.debug("Sensors already created, skipping for entry %s", entry.entry_id)
+        _LOGGER.debug("Global sensors already created, skipping for entry %s", entry.entry_id)
         return
 
     _create_and_register_sensors(hass, async_add_entities, entry.entry_id)
