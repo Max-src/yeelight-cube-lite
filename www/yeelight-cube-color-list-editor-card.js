@@ -127,11 +127,8 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
     // Only render if our entity's state actually changed
     if (oldHass && this.config) {
-      const targetEntities =
-        this.config.target_entities ||
-        (this.config.entity ? [this.config.entity] : []);
-      if (targetEntities.length > 0) {
-        const entityId = targetEntities[0];
+      const entityId = this._getPrimaryEntity();
+      if (entityId) {
         const oldState = oldHass.states[entityId];
         const newState = hass.states[entityId];
 
@@ -216,11 +213,19 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     }, 1000);
   }
 
-  // Resolve the primary entity: first from target_entities, fallback to legacy entity.
+  // Resolve the primary entity: first VALID entity from target_entities,
+  // fallback to legacy entity.  Skips entity IDs that no longer exist in
+  // hass.states (stale config entries after entity renames / IP changes).
   _getPrimaryEntity() {
-    const targetEntities = this.config?.target_entities || [];
-    if (targetEntities.length > 0) return targetEntities[0];
-    return this.config?.entity || null;
+    const candidates = [
+      ...(this.config?.target_entities || []),
+      this.config?.entity,
+    ].filter(Boolean);
+    if (!this._hass?.states) return candidates[0] || null;
+    for (const eid of candidates) {
+      if (this._hass.states[eid]) return eid;
+    }
+    return candidates[0] || null; // return first even if stale (so error is shown)
   }
 
   // Helper method for calling services on multiple entities.
@@ -246,21 +251,16 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     )
       return;
 
-    // For multi-entity support: use first entity as the source of truth
-    const targetEntities =
-      this.config.target_entities ||
-      (this.config.entity ? [this.config.entity] : []);
-
-    if (targetEntities.length === 0) return;
-
-    const entityId = targetEntities[0]; // Use first entity as source
+    // For multi-entity support: use the first *valid* entity as source of truth.
+    // _getPrimaryEntity() skips stale entity IDs that no longer exist.
+    const entityId = this._getPrimaryEntity();
     const hass = this._hass;
     if (!hass || !entityId) {
       return;
     }
     const stateObj = hass.states[entityId];
     if (!stateObj) {
-      this.shadowRoot.innerHTML = `<ha-card>Entity not found</ha-card>`;
+      this.shadowRoot.innerHTML = `<ha-card><div style="padding:16px;color:var(--error-color,#db4437)">Entity not found: ${entityId}<br><small style="color:var(--secondary-text-color)">Check the card configuration — the selected entity may have been removed or renamed.</small></div></ha-card>`;
       this._isInitialRenderComplete = false;
       return;
     }
@@ -2129,14 +2129,9 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     const root = this.shadowRoot;
     if (!root) return;
 
-    // For multi-entity support: use first entity as the source of truth
-    const targetEntities =
-      this.config.target_entities ||
-      (this.config.entity ? [this.config.entity] : []);
-
-    if (targetEntities.length === 0) return;
-
-    const entityId = targetEntities[0]; // Use first entity (same as saveColors and render)
+    // For multi-entity support: use the first *valid* entity.
+    const entityId = this._getPrimaryEntity();
+    if (!entityId) return;
 
     // Determine textColors based on whether _hass is ready
     let textColors;
@@ -4464,16 +4459,12 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
   }
 
   _getCurrentColors() {
-    // For multi-entity support: use first entity as the source of truth
-    const targetEntities =
-      this.config.target_entities ||
-      (this.config.entity ? [this.config.entity] : []);
+    // For multi-entity support: use first valid entity as the source of truth
+    const entityId = this._getPrimaryEntity();
 
-    if (targetEntities.length === 0) {
+    if (!entityId) {
       return [[255, 255, 255]]; // Default fallback
     }
-
-    const entityId = targetEntities[0]; // Use first entity (same as saveColors and render)
     const hass = this._hass;
 
     // Get the current colors from global pending state or entity state
@@ -4657,16 +4648,12 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
   }
 
   saveColors(textColors) {
-    // For multi-entity support: use first entity as the source of truth
-    const targetEntities =
-      this.config.target_entities ||
-      (this.config.entity ? [this.config.entity] : []);
+    // For multi-entity support: use first valid entity as the source of truth
+    const entityId = this._getPrimaryEntity();
 
-    if (targetEntities.length === 0) {
+    if (!entityId) {
       return;
     }
-
-    const entityId = targetEntities[0]; // Use first entity for pending storage
 
     // Store old length to detect if array size changed
     const oldColors =

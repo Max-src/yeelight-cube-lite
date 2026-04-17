@@ -328,10 +328,21 @@ export function createYeelightCubeEntityPicker(
   }
 
   // Multiple selection with checkboxes
+
+  // Clean stale entity IDs: remove any selected entities that no longer exist
+  // in HA (e.g. after entity renames, IP changes, or device removal).
+  const validSelected = Array.isArray(selectedEntities)
+    ? selectedEntities.filter((id) => hass.states[id])
+    : [];
+
+  // If stale entries were removed, notify the parent so the config is cleaned up
+  if (validSelected.length !== (selectedEntities?.length || 0)) {
+    // Schedule a clean-up callback after this render cycle
+    setTimeout(() => onChange({ target: { value: validSelected } }), 0);
+  }
+
   const toggleEntity = (entityId) => {
-    const currentSelected = Array.isArray(selectedEntities)
-      ? selectedEntities
-      : [];
+    const currentSelected = [...validSelected];
     const isSelected = currentSelected.includes(entityId);
 
     let newSelected;
@@ -356,9 +367,7 @@ export function createYeelightCubeEntityPicker(
 
       <div style="max-height: 200px; overflow-y: auto; padding: 8px;">
         ${entities.map((entityId) => {
-          const isSelected =
-            Array.isArray(selectedEntities) &&
-            selectedEntities.includes(entityId);
+          const isSelected = validSelected.includes(entityId);
           const state = hass.states[entityId];
           const friendlyName = state?.attributes?.friendly_name || entityId;
 
@@ -397,11 +406,11 @@ export function createYeelightCubeEntityPicker(
         })}
       </div>
 
-      ${selectedEntities.length > 0
+      ${validSelected.length > 0
         ? html`<div
             style="padding: 8px 16px; font-size: 0.9em; color: var(--secondary-text-color, #666); border-top: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f9f9f9); border-radius: 0 0 8px 8px;"
           >
-            ${selectedEntities.length} entities selected
+            ${validSelected.length} ${validSelected.length === 1 ? "entity" : "entities"} selected
           </div>`
         : html`<div
             style="padding: 8px 16px; font-size: 0.9em; color: var(--secondary-text-color, #999); border-top: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f9f9f9); border-radius: 0 0 8px 8px; font-style: italic;"
