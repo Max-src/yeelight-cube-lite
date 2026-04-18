@@ -15,6 +15,7 @@ export function parseConfig(config) {
     showColorPicker: config.show_color_picker !== false,
     showRecentColors: config.show_recent_colors !== false,
     showLampPalette: config.show_lamp_palette !== false,
+    showLampColors: config.show_lamp_colors !== false,
     showImagePalette: config.show_image_palette !== false,
     showEraserTool: config.show_eraser_tool !== false,
     showFillTool: config.show_fill_tool !== false,

@@ -141,6 +141,183 @@ export function floodFill(
   return visited;
 }
 
+/**
+ * RGB to HSV conversion (shared helper).
+ */
+function rgbToHsv([r, g, b]) {
+  r /= 255;
+  g /= 255;
+  b /= 255;
+  const max = Math.max(r, g, b),
+    min = Math.min(r, g, b);
+  let h,
+    s,
+    v = max;
+  const d = max - min;
+  s = max === 0 ? 0 : d / max;
+  if (max === min) {
+    h = 0;
+  } else {
+    switch (max) {
+      case r:
+        h = (g - b) / d + (g < b ? 6 : 0);
+        break;
+      case g:
+        h = (b - r) / d + 2;
+        break;
+      case b:
+        h = (r - g) / d + 4;
+        break;
+    }
+    h /= 6;
+  }
+  return [h, s, v];
+}
+
+/**
+ * K-means clustering on RGB data for color diversity.
+ * Uses maximin initialization for deterministic, well-spread centroids.
+ */
+function kmeansRgb(data, k, maxIter = 20) {
+  if (data.length <= k) return data.slice();
+  // Maximin initialization: pick first centroid, then each subsequent one
+  // is the point farthest from all existing centroids
+  const centroids = [data[0]];
+  for (let c = 1; c < k; c++) {
+    let bestDist = -1,
+      bestIdx = 0;
+    for (let i = 0; i < data.length; i++) {
+      let minDist = Infinity;
+      for (const cen of centroids) {
+        const d =
+          (data[i][0] - cen[0]) ** 2 +
+          (data[i][1] - cen[1]) ** 2 +
+          (data[i][2] - cen[2]) ** 2;
+        if (d < minDist) minDist = d;
+      }
+      if (minDist > bestDist) {
+        bestDist = minDist;
+        bestIdx = i;
+      }
+    }
+    centroids.push(data[bestIdx]);
+  }
+  // Iterate
+  const assignments = new Array(data.length).fill(0);
+  for (let iter = 0; iter < maxIter; iter++) {
+    for (let i = 0; i < data.length; i++) {
+      let minDist = Infinity,
+        best = 0;
+      for (let j = 0; j < k; j++) {
+        const d =
+          (data[i][0] - centroids[j][0]) ** 2 +
+          (data[i][1] - centroids[j][1]) ** 2 +
+          (data[i][2] - centroids[j][2]) ** 2;
+        if (d < minDist) {
+          minDist = d;
+          best = j;
+        }
+      }
+      assignments[i] = best;
+    }
+    const sums = Array(k)
+      .fill(0)
+      .map(() => [0, 0, 0]);
+    const counts = Array(k).fill(0);
+    for (let i = 0; i < data.length; i++) {
+      const a = assignments[i];
+      sums[a][0] += data[i][0];
+      sums[a][1] += data[i][1];
+      sums[a][2] += data[i][2];
+      counts[a]++;
+    }
+    for (let j = 0; j < k; j++) {
+      if (counts[j] > 0) {
+        centroids[j] = [
+          Math.round(sums[j][0] / counts[j]),
+          Math.round(sums[j][1] / counts[j]),
+          Math.round(sums[j][2] / counts[j]),
+        ];
+      }
+    }
+  }
+  return centroids;
+}
+
+/**
+ * Extract a diverse color palette from an array of RGB tuples [[r,g,b], ...].
+ * Uses K-means clustering for color diversity, filters black, deduplicates,
+ * and returns hex strings sorted by HSV hue.
+ * @param {Array} rgbPixels - Array of [r,g,b] tuples
+ * @param {number} maxColors - Maximum palette size
+ * @returns {string[]} Array of hex color strings
+ */
+export function extractDiversePaletteFromRgb(rgbPixels, maxColors = 15) {
+  // Filter out black/near-black pixels
+  const filtered = rgbPixels.filter(
+    (rgb) =>
+      Array.isArray(rgb) &&
+      rgb.length === 3 &&
+      (rgb[0] > 5 || rgb[1] > 5 || rgb[2] > 5),
+  );
+  if (filtered.length === 0) return [];
+  // If very few unique colors, just return them
+  const uniqueMap = new Map();
+  for (const rgb of filtered) {
+    const hex =
+      "#" +
+      rgb
+        .map((x) =>
+          Math.max(0, Math.min(255, Math.round(x)))
+            .toString(16)
+            .padStart(2, "0"),
+        )
+        .join("");
+    if (!uniqueMap.has(hex)) uniqueMap.set(hex, rgb);
+  }
+  if (uniqueMap.size <= maxColors) {
+    const result = [...uniqueMap.keys()];
+    result.sort((a, b) => {
+      const ha = rgbToHsv(uniqueMap.get(a));
+      const hb = rgbToHsv(uniqueMap.get(b));
+      return ha[0] !== hb[0]
+        ? ha[0] - hb[0]
+        : ha[1] !== hb[1]
+          ? ha[1] - hb[1]
+          : hb[2] - ha[2];
+    });
+    return result;
+  }
+  // K-means for diversity
+  const centroids = kmeansRgb(filtered, maxColors);
+  // Deduplicate
+  const seen = new Set();
+  const palette = [];
+  for (const rgb of centroids) {
+    const hex =
+      "#" +
+      rgb
+        .map((x) => Math.max(0, Math.min(255, x)).toString(16).padStart(2, "0"))
+        .join("");
+    const lower = hex.toLowerCase();
+    if (!seen.has(lower) && (rgb[0] > 5 || rgb[1] > 5 || rgb[2] > 5)) {
+      seen.add(lower);
+      palette.push({ hex: lower, rgb });
+    }
+  }
+  // Sort by HSV hue
+  palette.sort((a, b) => {
+    const ha = rgbToHsv(a.rgb);
+    const hb = rgbToHsv(b.rgb);
+    return ha[0] !== hb[0]
+      ? ha[0] - hb[0]
+      : ha[1] !== hb[1]
+        ? ha[1] - hb[1]
+        : hb[2] - ha[2];
+  });
+  return palette.map((p) => p.hex);
+}
+
 // Extract palette from image data
 export function extractPalette(imgData, maxColors = 12) {
   // Convert image data to array of [r,g,b]

@@ -421,6 +421,8 @@ class YeelightCubeDrawCardEditor extends LitElement {
       this.config.show_recent_colors = true;
     if (typeof this.config.show_lamp_palette !== "boolean")
       this.config.show_lamp_palette = true;
+    if (typeof this.config.show_lamp_colors !== "boolean")
+      this.config.show_lamp_colors = true;
     if (typeof this.config.show_image_palette !== "boolean")
       this.config.show_image_palette = true;
     if (typeof this.config.show_pixelart_gallery !== "boolean")
@@ -533,7 +535,13 @@ class YeelightCubeDrawCardEditor extends LitElement {
               (e) => this._onSwitchChange(e, "show_lamp_palette"),
             )}
             ${createToggleRow(
-              "Show Image Palette Colors",
+              "Show Lamp Colors",
+              "show_lamp_colors",
+              this.config.show_lamp_colors !== false,
+              (e) => this._onSwitchChange(e, "show_lamp_colors"),
+            )}
+            ${createToggleRow(
+              "Show Drawing Colors",
               "show_image_palette",
               this.config.show_image_palette !== false,
               (e) => this._onSwitchChange(e, "show_image_palette"),

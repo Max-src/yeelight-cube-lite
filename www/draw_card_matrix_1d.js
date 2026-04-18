@@ -240,34 +240,15 @@ export class MatrixOperations1D {
 
   // Update recent colors when setting pixels
   updateRecentColors() {
-    const colorLower = this.card.selectedColor.toLowerCase();
-    const inRecent = this.card.recentColors.some(
-      (c) => c.toLowerCase() === colorLower,
-    );
-    const inImage = this.card.imagePalette.some(
-      (c) => c.toLowerCase() === colorLower,
-    );
-    const inLamp = this.card.lampPalette.some(
-      (c) => c.toLowerCase() === colorLower,
-    );
+    if (typeof updateRecentColors !== "function") return;
 
-    if (
-      typeof updateRecentColors === "function" &&
-      !inRecent &&
-      !inImage &&
-      !inLamp
-    ) {
-      this.card.recentColors = updateRecentColors(
-        this.card.recentColors,
-        this.card.selectedColor,
-      );
-      // Save to storage if available
-      if (
-        typeof StorageUtils !== "undefined" &&
-        StorageUtils.saveRecentColors
-      ) {
-        StorageUtils.saveRecentColors(this.card.recentColors);
-      }
+    this.card.recentColors = updateRecentColors(
+      this.card.recentColors,
+      this.card.selectedColor,
+    );
+    // Save to storage if available
+    if (typeof StorageUtils !== "undefined" && StorageUtils.saveRecentColors) {
+      StorageUtils.saveRecentColors(this.card.recentColors);
     }
   }
 

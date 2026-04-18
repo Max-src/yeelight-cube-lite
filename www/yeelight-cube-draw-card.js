@@ -52,7 +52,6 @@ import {
 } from "./draw_card_events.js";
 import {
   normalizeHex,
-  extractPalette,
   updateRecentColors,
   lampToMatrixCoords,
   matrixToLampCoords,
@@ -60,6 +59,7 @@ import {
   isBlackPixel,
   resolveBgColor,
   createEmptyMatrix,
+  extractDiversePaletteFromRgb,
 } from "./draw_utils.js";
 import {
   GRID_COLS,
@@ -119,6 +119,7 @@ class YeelightCubeDrawCard extends LitElement {
       show_card_background: true,
       show_recent_colors: true,
       show_lamp_palette: true,
+      show_lamp_colors: true,
       show_image_palette: true,
       show_pixelart_gallery: true,
       pixel_art_delete_button_style: "text",
@@ -300,6 +301,7 @@ class YeelightCubeDrawCard extends LitElement {
     cfg,
     showRecentColors,
     showLampPalette,
+    showLampColors,
     showImagePalette,
   ) {
     const mode = cfg.palette_card_mode || "side";
@@ -339,11 +341,28 @@ class YeelightCubeDrawCard extends LitElement {
         ),
       });
     }
+    if (showLampColors) {
+      const palette = this._getLampMatrixColors();
+      cards.push({
+        key: "lampcolors",
+        title: "Lamp Colors",
+        palette,
+        content: renderPaletteSection(
+          palette,
+          "lampcolors",
+          (color) => handleColorSelect(this, color),
+          cfg.palette_display_mode || "row",
+          cfg.swatch_shape || "round",
+          "icon",
+          buttonShape,
+        ),
+      });
+    }
     if (showImagePalette) {
-      const palette = this.imagePalette || [];
+      const palette = this._getCurrentColors();
       cards.push({
         key: "image",
-        title: "Image Palette",
+        title: "Drawing Colors",
         palette,
         content: renderPaletteSection(
           palette,
@@ -631,7 +650,6 @@ class YeelightCubeDrawCard extends LitElement {
     ];
     this.pencilMode = true;
     this.recentColors = StorageUtils.loadRecentColors();
-    this.imagePalette = StorageUtils.loadImagePalette();
     this.lampPalette = [];
     this.eraserMode = false;
     this.areaFillMode = false;
@@ -738,6 +756,24 @@ class YeelightCubeDrawCard extends LitElement {
           // Force LitElement to re-render AND trigger updated() callback
           this.requestUpdate("hass", oldHass);
         });
+      }
+    }
+
+    // Check if light entity state changed (for Lamp Colors palette)
+    if (this.entity) {
+      const lightState = this._hass.states[this.entity];
+      if (lightState) {
+        const newEpoch = lightState.attributes?._update_epoch;
+        if (newEpoch !== this._lastLampEpoch) {
+          this._lastLampEpoch = newEpoch;
+          if (!this._renderScheduled) {
+            this._renderScheduled = true;
+            requestAnimationFrame(() => {
+              this._renderScheduled = false;
+              this.requestUpdate("hass", oldHass);
+            });
+          }
+        }
       }
     }
   }
@@ -981,6 +1017,7 @@ class YeelightCubeDrawCard extends LitElement {
     cfg,
     showRecentColors,
     showLampPalette,
+    showLampColors,
     showImagePalette,
   ) {
     return html`
@@ -996,6 +1033,7 @@ class YeelightCubeDrawCard extends LitElement {
           cfg,
           showRecentColors,
           showLampPalette,
+          showLampColors,
           showImagePalette,
         )}
       </div>
@@ -1231,6 +1269,7 @@ class YeelightCubeDrawCard extends LitElement {
     const showColorPicker = cfg.show_color_picker !== false;
     const showRecentColors = cfg.show_recent_colors !== false;
     const showLampPalette = cfg.show_lamp_palette !== false;
+    const showLampColors = cfg.show_lamp_colors !== false;
     const showImagePalette = cfg.show_image_palette !== false;
     const showEraserTool = cfg.show_eraser_tool !== false;
     const showFillTool = cfg.show_fill_tool !== false;
@@ -1266,6 +1305,7 @@ class YeelightCubeDrawCard extends LitElement {
                 cfg,
                 showRecentColors,
                 showLampPalette,
+                showLampColors,
                 showImagePalette,
               )
             : ""}
@@ -1346,6 +1386,41 @@ class YeelightCubeDrawCard extends LitElement {
     });
   }
 
+  /**
+   * Extract diverse colors from the lamp's actual displayed matrix.
+   * Uses K-means clustering for color diversity. Reads matrix_colors from the light entity.
+   */
+  _getLampMatrixColors() {
+    if (!this.hass || !this.entity) return [];
+    const stateObj = this.hass.states[this.entity];
+    if (!stateObj || !Array.isArray(stateObj.attributes.matrix_colors))
+      return [];
+    return extractDiversePaletteFromRgb(
+      stateObj.attributes.matrix_colors,
+      MAX_IMAGE_PALETTE_COLORS,
+    );
+  }
+
+  /**
+   * Extract diverse colors from the current draw matrix.
+   * Uses K-means clustering for color diversity. This is the "Drawing Colors" palette.
+   */
+  _getCurrentColors() {
+    if (!this.matrix || !Array.isArray(this.matrix)) return [];
+    // Convert hex strings to RGB tuples for the shared palette extractor
+    const rgbPixels = [];
+    for (const hex of this.matrix) {
+      if (!hex || hex === "#000000") continue;
+      const h = hex.replace("#", "");
+      rgbPixels.push([
+        parseInt(h.substring(0, 2), 16),
+        parseInt(h.substring(2, 4), 16),
+        parseInt(h.substring(4, 6), 16),
+      ]);
+    }
+    return extractDiversePaletteFromRgb(rgbPixels, MAX_IMAGE_PALETTE_COLORS);
+  }
+
   _savePalette(colors, name = "Custom Palette") {
     savePalette(this.hass, this.paletteSensor, colors);
   }
@@ -1355,7 +1430,11 @@ class YeelightCubeDrawCard extends LitElement {
   }
 
   _saveImagePalette() {
-    this._savePalette(this.imagePalette, "Image Colors");
+    this._savePalette(this._getCurrentColors(), "Drawing Colors");
+  }
+
+  _saveLampColorsPalette() {
+    this._savePalette(this._getLampMatrixColors(), "Lamp Colors");
   }
 
   _toggleEraser() {
@@ -1483,11 +1562,7 @@ class YeelightCubeDrawCard extends LitElement {
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0, GRID_COLS, GRID_ROWS);
         const imgData = ctx.getImageData(0, 0, GRID_COLS, GRID_ROWS).data;
-        // Extract palette
-        const palette = extractPalette(imgData, MAX_IMAGE_PALETTE_COLORS);
-        this.imagePalette = palette;
-        StorageUtils.saveImagePalette(this.imagePalette);
-        // Fill matrix with image pixels
+        // Fill matrix with image pixels (current colors will be derived automatically)
         const matrix = [];
         for (let i = 0; i < MATRIX_SIZE; i++) {
           const r = imgData[i * 4];
