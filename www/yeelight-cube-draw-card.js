@@ -60,6 +60,7 @@ import {
   resolveBgColor,
   createEmptyMatrix,
   extractDiversePaletteFromRgb,
+  extractDiversePaletteWithWeights,
 } from "./draw_utils.js";
 import {
   GRID_COLS,
@@ -295,6 +296,42 @@ class YeelightCubeDrawCard extends LitElement {
 
     // Re-setup drag-to-scroll for palette containers after re-renders
     setTimeout(() => this._setupPaletteRowDragScroll(), 0);
+
+    // Measure preview-hover container width for fixed-pixel body rendering
+    // and set each collapsed card's max-height to match its scaled visual height.
+    // Double RAF ensures custom elements (palette-fan, palette-spiral, etc.)
+    // have rendered their content before we measure scrollHeight.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = this.shadowRoot
+          ? this.shadowRoot.querySelector(".palette-preview-hover")
+          : this.querySelector(".palette-preview-hover");
+        if (el) {
+          const allCards = el.querySelectorAll(".palette-preview-card");
+          const nCards = allCards.length || 1;
+          const gap = 8; // matches CSS gap on .palette-preview-hover
+          const outerW = el.offsetWidth;
+          // Body width = outer minus gaps so visual body (scaled 1/n) fits each card exactly
+          const bodyW = outerW - (nCards - 1) * gap;
+          if (bodyW > 0) el.style.setProperty("--container-w", bodyW + "px");
+
+          // Dynamically size collapsed preview cards to their visual height
+          const expandedMode = el.classList.contains("expanded-mode");
+          allCards.forEach((card) => {
+            if (card.classList.contains("expanded") || expandedMode) {
+              // Let CSS rules handle expanded and shrinking-to-zero cards
+              card.style.removeProperty("max-height");
+            } else {
+              const body = card.querySelector(".palette-preview-body");
+              if (body) {
+                const h = Math.ceil(body.scrollHeight / nCards);
+                card.style.maxHeight = h + "px";
+              }
+            }
+          });
+        }
+      });
+    });
   }
 
   _renderPaletteCards(
@@ -307,20 +344,27 @@ class YeelightCubeDrawCard extends LitElement {
     const mode = cfg.palette_card_mode || "side";
     const buttonShape = cfg.button_shape || "rect";
     const cards = [];
+    const expandStyle = cfg.expand_btn_style || "pill";
+    const blindsDir = cfg.blinds_direction || "rows";
+    const colorInfo = cfg.color_info_display || "none";
     if (showRecentColors) {
       const palette = this.recentColors || [];
       cards.push({
         key: "recent",
         title: "Recent Colors",
         palette,
+        weights: null,
         content: renderPaletteSection(
           palette,
           "recent",
           (color) => handleColorSelect(this, color),
           cfg.palette_display_mode || "row",
           cfg.swatch_shape || "round",
-          "icon",
+          expandStyle,
           buttonShape,
+          blindsDir,
+          null,
+          colorInfo,
         ),
       });
     }
@@ -330,48 +374,60 @@ class YeelightCubeDrawCard extends LitElement {
         key: "lamp",
         title: "Lamp Palette",
         palette,
+        weights: null,
         content: renderPaletteSection(
           palette,
           "lamp",
           (color) => handleColorSelect(this, color),
           cfg.palette_display_mode || "row",
           cfg.swatch_shape || "round",
-          "icon",
+          expandStyle,
           buttonShape,
+          blindsDir,
+          null,
+          colorInfo,
         ),
       });
     }
     if (showLampColors) {
-      const palette = this._getLampMatrixColors();
+      const { palette, weights } = this._getLampMatrixColors();
       cards.push({
         key: "lampcolors",
         title: "Lamp Colors",
         palette,
+        weights,
         content: renderPaletteSection(
           palette,
           "lampcolors",
           (color) => handleColorSelect(this, color),
           cfg.palette_display_mode || "row",
           cfg.swatch_shape || "round",
-          "icon",
+          expandStyle,
           buttonShape,
+          blindsDir,
+          weights,
+          colorInfo,
         ),
       });
     }
     if (showImagePalette) {
-      const palette = this._getCurrentColors();
+      const { palette, weights } = this._getCurrentColors();
       cards.push({
         key: "image",
         title: "Drawing Colors",
         palette,
+        weights,
         content: renderPaletteSection(
           palette,
           "image",
           (color) => handleColorSelect(this, color),
           cfg.palette_display_mode || "row",
           cfg.swatch_shape || "round",
-          "icon",
+          expandStyle,
           buttonShape,
+          blindsDir,
+          weights,
+          colorInfo,
         ),
       });
     }
@@ -384,10 +440,63 @@ class YeelightCubeDrawCard extends LitElement {
 
     // Side-by-side (default)
     if (mode === "side") {
-      return html`<div class="palette-row">
+      const sideW = cfg.side_card_width || 100;
+      const clickZoom = cfg.side_click_zoom === "on";
+      if (!this._sideZoomedKey) this._sideZoomedKey = null;
+      const zoomedKey = this._sideZoomedKey;
+      const isZoomMode = clickZoom && zoomedKey;
+      const handleZoomClick = (key) => {
+        if (!clickZoom) return;
+        if (this._sideZoomedKey === key) return;
+        // Save scroll position before zooming
+        const row = this.shadowRoot?.querySelector(".palette-row");
+        if (row) this._sideZoomScrollLeft = row.scrollLeft;
+        this._sideZoomedKey = key;
+        this.requestUpdate();
+      };
+      const handleCollapse = () => {
+        const savedScroll = this._sideZoomScrollLeft || 0;
+        this._sideZoomedKey = null;
+        this.requestUpdate();
+        // Restore scroll position after CSS transition (0.3s) completes
+        this.updateComplete.then(() => {
+          setTimeout(() => {
+            const row = this.shadowRoot?.querySelector(".palette-row");
+            if (row) row.scrollLeft = savedScroll;
+          }, 350);
+        });
+      };
+      const paletteCardRadius = (() => {
+        const v = cfg.rounded_cards;
+        if (v === undefined || v === true || v === "round") return "16px";
+        if (v === false || v === "square") return "0px";
+        if (v === "rounded") return "4px";
+        return typeof v === "number" ? `${v}px` : `${parseInt(v, 10) || 16}px`;
+      })();
+      return html`<div
+        class="palette-row${isZoomMode ? " zoom-mode" : ""}"
+        style="--side-card-width:${sideW}%;--palette-card-radius:${paletteCardRadius}"
+      >
         ${cards.map(
           (card) => html`
-            <div class="palette-group-card">
+            <div
+              class="palette-group-card${isZoomMode && zoomedKey === card.key
+                ? " zoomed"
+                : ""}"
+              @click="${() => handleZoomClick(card.key)}"
+              style="${clickZoom && !isZoomMode ? "cursor:pointer" : ""}"
+            >
+              ${isZoomMode && zoomedKey === card.key
+                ? html`<button
+                    class="palette-zoom-collapse-btn"
+                    @click="${(e) => {
+                      e.stopPropagation();
+                      handleCollapse();
+                    }}"
+                  >
+                    ← Show All
+                  </button>`
+                : ""}
               <div class="palette-card-top-row">
                 <div class="palette-group-title">${card.title}</div>
               </div>
@@ -397,45 +506,35 @@ class YeelightCubeDrawCard extends LitElement {
         )}
       </div>`;
     }
-    // Stacked deck mode
-    if (mode === "stacked") {
-      if (!this._activeStackedIdx) this._activeStackedIdx = 0;
-      const total = cards.length;
-      const activeIdx = this._activeStackedIdx % total;
-      const prevIdx = (activeIdx - 1 + total) % total;
-      const nextIdx = (activeIdx + 1) % total;
-      return html`
-        <div class="palette-stacked-deck">
-          <button
-            class="palette-stacked-nav-btn palette-stacked-nav-prev draw-btn save icon-mode nav-btn-${buttonShape}"
-            @click="${() => {
-              this._activeStackedIdx = prevIdx;
-              this.requestUpdate();
-            }}"
-            title="Previous palette"
-          >
-            <ha-icon icon="mdi:chevron-left"></ha-icon>
-          </button>
-          <div class="palette-stacked-cards">
-            <div class="palette-stacked-card active">
-              <div class="palette-stacked-title-row">
-                <div class="palette-group-title">${cards[activeIdx].title}</div>
-              </div>
-              ${cardContent(cards[activeIdx])}
+    // Carousel mode
+    if (mode === "carousel") {
+      const carouselButtonShape = cfg.palette_carousel_button_shape || "rect";
+      if (this._colorCarouselIndex === undefined) this._colorCarouselIndex = 0;
+      if (this._colorCarouselSlideDirection === undefined)
+        this._colorCarouselSlideDirection = 0;
+      return renderCarousel({
+        items: cards,
+        currentIndex: this._colorCarouselIndex,
+        slideDirection: this._colorCarouselSlideDirection,
+        buttonShape: carouselButtonShape,
+        showAsCard: true,
+        wrapNavigation: cfg.palette_carousel_wrap_navigation === true,
+        roundedCards: cfg.rounded_cards,
+        onNavigate: (direction, maxLength) => {
+          this._navigateColorCarousel(direction, maxLength);
+        },
+        onSetIndex: (index) => {
+          this._setColorCarouselIndex(index);
+        },
+        renderItem: (card) => {
+          return html`
+            <div class="palette-card-top-row">
+              <div class="palette-group-title">${card.title}</div>
             </div>
-          </div>
-          <button
-            class="palette-stacked-nav-btn palette-stacked-nav-next draw-btn save icon-mode nav-btn-${buttonShape}"
-            @click="${() => {
-              this._activeStackedIdx = nextIdx;
-              this.requestUpdate();
-            }}"
-            title="Next palette"
-          >
-            <ha-icon icon="mdi:chevron-right"></ha-icon>
-          </button>
-        </div>
-      `;
+            ${cardContent(card)}
+          `;
+        },
+      });
     }
     // Tabs (segmented control)
     if (mode === "tabs") {
@@ -444,9 +543,14 @@ class YeelightCubeDrawCard extends LitElement {
       }
       const activeTab = this._activePaletteTab;
       const activeCard = cards.find((c) => c.key === activeTab);
+      const activeIdx = cards.findIndex((c) => c.key === activeTab);
       return html`
         <div class="palette-tabs">
-          <div class="palette-tab-bar">
+          <div
+            class="palette-tab-bar"
+            style="--tab-count:${cards.length};--tab-active-index:${activeIdx}"
+          >
+            <div class="palette-tab-indicator"></div>
             ${cards.map(
               (card) => html`
                 <button
@@ -510,35 +614,24 @@ class YeelightCubeDrawCard extends LitElement {
     // Preview-hover mode
     if (mode === "preview-hover") {
       if (!this._previewStates) this._previewStates = {};
-      let dotCount = 3;
-      if (cfg.palette_preview_dot_count === "all") {
-        dotCount = Infinity;
-      } else if (typeof cfg.palette_preview_dot_count === "number") {
-        dotCount = cfg.palette_preview_dot_count;
-      } else if (
-        ["1", "2", "3", "4", "5"].includes(cfg.palette_preview_dot_count)
-      ) {
-        dotCount = parseInt(cfg.palette_preview_dot_count);
-      }
-      // Filter out empty palette groups to prevent hover bug on zero-content cards
-      const visibleCards = cards.filter((c) => c.palette.length > 0);
-      if (!visibleCards.length) {
+      if (!cards.length) {
         return html`<div class="palette-empty-hint">
           No palette colors available
         </div>`;
       }
-      const expandedIndex = visibleCards.findIndex(
-        (card) => this._previewStates[card.key],
+      const displayMode = cfg.palette_display_mode || "row";
+      const expandedKey = Object.keys(this._previewStates).find(
+        (k) => this._previewStates[k],
       );
-      const expandedMode = expandedIndex !== -1;
+      const expandedMode = !!expandedKey;
+      const nCards = cards.length;
       return html`<div
         class="palette-preview-hover${expandedMode ? " expanded-mode" : ""}"
+        style="--n-cards:${nCards};"
       >
-        ${visibleCards.map((card) => {
-          let displayStyle = "display: flex;";
-          if (expandedMode && !this._previewStates[card.key]) {
-            displayStyle = "display: none;";
-          }
+        ${cards.map((card, idx) => {
+          const hasPalette = card.palette.length > 0;
+          const isExpanded = !!this._previewStates[card.key];
           // Timer-based expand/collapse to prevent stuck states
           const handleExpand = () => {
             if (this._previewCollapseTimer) {
@@ -556,39 +649,32 @@ class YeelightCubeDrawCard extends LitElement {
               this.requestUpdate();
             }, 200);
           };
+          const content = hasPalette
+            ? card.content
+            : html`<div class="palette-mini-empty">
+                <span class="mini-empty-title">${card.title}</span>
+                <span class="mini-empty-hint">Empty</span>
+              </div>`;
           return html`
             <div
-              class="palette-preview-card${this._previewStates[card.key]
-                ? " expanded"
-                : ""}"
-              style="${displayStyle}"
+              class="palette-preview-card${isExpanded ? " expanded" : ""}"
               @mouseenter="${handleExpand}"
               @mouseleave="${handleCollapse}"
               @touchstart="${handleExpand}"
               @touchend="${handleCollapse}"
             >
-              <div class="palette-preview-dots">
-                ${card.palette
-                  .slice(0, dotCount)
-                  .map(
-                    (color) =>
-                      html`<span
-                        class="palette-preview-dot ${cfg.swatch_shape ===
-                        "square"
-                          ? "square"
-                          : "round"}"
-                        style="background:${color}"
-                      ></span>`,
-                  )}
-              </div>
-              <div class="palette-preview-content">${card.content}</div>
+              <div class="palette-preview-body">${content}</div>
             </div>
           `;
         })}
       </div>`;
     }
     // Fallback: side-by-side
-    return html`<div class="palette-row">
+    const fallbackSideW = cfg.side_card_width || 100;
+    return html`<div
+      class="palette-row"
+      style="--side-card-width:${fallbackSideW}%"
+    >
       ${cards.map(
         (card) => html`
           <div class="palette-group-card">
@@ -1391,11 +1477,11 @@ class YeelightCubeDrawCard extends LitElement {
    * Uses K-means clustering for color diversity. Reads matrix_colors from the light entity.
    */
   _getLampMatrixColors() {
-    if (!this.hass || !this.entity) return [];
+    if (!this.hass || !this.entity) return { palette: [], weights: null };
     const stateObj = this.hass.states[this.entity];
     if (!stateObj || !Array.isArray(stateObj.attributes.matrix_colors))
-      return [];
-    return extractDiversePaletteFromRgb(
+      return { palette: [], weights: null };
+    return extractDiversePaletteWithWeights(
       stateObj.attributes.matrix_colors,
       MAX_IMAGE_PALETTE_COLORS,
     );
@@ -1406,7 +1492,8 @@ class YeelightCubeDrawCard extends LitElement {
    * Uses K-means clustering for color diversity. This is the "Drawing Colors" palette.
    */
   _getCurrentColors() {
-    if (!this.matrix || !Array.isArray(this.matrix)) return [];
+    if (!this.matrix || !Array.isArray(this.matrix))
+      return { palette: [], weights: null };
     // Convert hex strings to RGB tuples for the shared palette extractor
     const rgbPixels = [];
     for (const hex of this.matrix) {
@@ -1418,7 +1505,10 @@ class YeelightCubeDrawCard extends LitElement {
         parseInt(h.substring(4, 6), 16),
       ]);
     }
-    return extractDiversePaletteFromRgb(rgbPixels, MAX_IMAGE_PALETTE_COLORS);
+    return extractDiversePaletteWithWeights(
+      rgbPixels,
+      MAX_IMAGE_PALETTE_COLORS,
+    );
   }
 
   _savePalette(colors, name = "Custom Palette") {
@@ -1430,11 +1520,11 @@ class YeelightCubeDrawCard extends LitElement {
   }
 
   _saveImagePalette() {
-    this._savePalette(this._getCurrentColors(), "Drawing Colors");
+    this._savePalette(this._getCurrentColors().palette, "Drawing Colors");
   }
 
   _saveLampColorsPalette() {
-    this._savePalette(this._getLampMatrixColors(), "Lamp Colors");
+    this._savePalette(this._getLampMatrixColors().palette, "Lamp Colors");
   }
 
   _toggleEraser() {
@@ -2465,6 +2555,39 @@ class YeelightCubeDrawCard extends LitElement {
         );
       },
     });
+  }
+
+  _navigateColorCarousel(direction, maxLength) {
+    const current = this._colorCarouselIndex || 0;
+    const cfg = this.config || {};
+    const wrapNavigation = cfg.palette_carousel_wrap_navigation === true;
+
+    let newIndex = current + direction;
+
+    if (wrapNavigation) {
+      if (newIndex < 0) {
+        newIndex = maxLength - 1;
+      } else if (newIndex >= maxLength) {
+        newIndex = 0;
+      }
+    } else {
+      newIndex = Math.max(0, Math.min(newIndex, maxLength - 1));
+    }
+
+    if (newIndex !== current) {
+      this._colorCarouselSlideDirection = direction;
+      this._colorCarouselIndex = newIndex;
+      this.requestUpdate();
+    }
+  }
+
+  _setColorCarouselIndex(index) {
+    const current = this._colorCarouselIndex || 0;
+    if (index !== current) {
+      this._colorCarouselSlideDirection = index > current ? 1 : -1;
+      this._colorCarouselIndex = index;
+      this.requestUpdate();
+    }
   }
 
   _navigateCarousel(direction, maxLength) {

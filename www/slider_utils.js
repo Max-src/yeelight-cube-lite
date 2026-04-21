@@ -424,7 +424,7 @@ export function renderSwatchShapeGroup(label, currentValue, onChange) {
 export function renderPaletteCardModeGroup(label, currentValue, onChange) {
   const paletteCardModeOptions = [
     { value: "side", label: "Side-by-Side" },
-    { value: "stacked", label: "Stacked" },
+    { value: "carousel", label: "Carousel" },
     { value: "tabs", label: "Tabs" },
     { value: "dropdown", label: "Dropdown" },
     { value: "preview-hover", label: "Preview Hover" },

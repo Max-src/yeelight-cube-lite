@@ -37,17 +37,7 @@ export const drawCardStyles = css`
   /* Shared Carousel Styles */
   ${unsafeCSS(carouselStyles)}
 
-  .palette-stacked-title-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    margin-bottom: 8px;
-    gap: 12px;
-  }
-
-  .palette-stacked-title-row .draw-btn {
-    margin: 0;\n  }\n  .palette-fold {
+  .palette-fold {
     position: relative;
     width: 100%;
     min-height: 64px;
@@ -106,18 +96,35 @@ export const drawCardStyles = css`
     box-shadow: 0 1px 4px #0002;
     border: 2px solid var(--card-background-color, #fff);
     cursor: pointer;
-    transition: box-shadow 0.2s, border 0.2s;
+    transition:
+      box-shadow 0.2s,
+      border 0.2s;
     display: inline-block;
   }
-  .color-swatch.square {
-    border-radius: 6px !important;
+  .color-swatch.rounded {
+    border-radius: 6px;
     width: 28px;
     height: 28px;
     margin: 0 4px;
     box-shadow: 0 1px 4px #0002;
     border: 2px solid var(--card-background-color, #fff);
     cursor: pointer;
-    transition: box-shadow 0.2s, border 0.2s;
+    transition:
+      box-shadow 0.2s,
+      border 0.2s;
+    display: inline-block;
+  }
+  .color-swatch.square {
+    border-radius: 0 !important;
+    width: 28px;
+    height: 28px;
+    margin: 0 4px;
+    box-shadow: 0 1px 4px #0002;
+    border: 2px solid var(--card-background-color, #fff);
+    cursor: pointer;
+    transition:
+      box-shadow 0.2s,
+      border 0.2s;
     display: inline-block;
   }
   /* Palette card container modes */
@@ -145,103 +152,112 @@ export const drawCardStyles = css`
   .palette-preview-hover {
     display: flex;
     flex-direction: row;
-    justify-content: space-between;
     align-items: flex-start;
     width: 100%;
-    gap: 18px;
+    gap: 8px;
+    overflow: hidden;
+    transition: gap 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   }
   .palette-preview-card {
-    flex: 1 1 0;
-    min-width: 48px;
-    max-width: 180px;
-    height: 100%;
-    transition: box-shadow 0.2s, transform 0.2s ease;
-    overflow: visible;
+    flex: 0 0 auto;
+    min-width: 0;
+    overflow: hidden;
     display: flex;
-    align-items: center;
-    justify-content: center;
+    flex-direction: column;
+    align-items: stretch;
     border-radius: 10px;
-    padding: 4px;
+    padding: 0;
     cursor: pointer;
+    position: relative;
+    /* max-height managed by JS to match scaled visual content */
+    transition:
+      flex 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+      max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+      padding 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  /* Collapsed: share space equally */
+  .palette-preview-hover:not(.expanded-mode) .palette-preview-card {
+    flex: 1 1 0;
   }
   .palette-preview-card:not(.expanded):hover {
-    background: color-mix(in srgb, var(--primary-color, #0077cc) 5%, var(--card-background-color, #fff));
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    background: color-mix(
+      in srgb,
+      var(--primary-color, #0077cc) 5%,
+      var(--card-background-color, #fff)
+    );
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   }
-  /* Slide-out animation for non-expanded preview cards */
+  .palette-preview-card.empty {
+    cursor: default;
+  }
+  /* When expanded mode is on, non-expanded cards shrink to zero */
   .palette-preview-hover.expanded-mode .palette-preview-card:not(.expanded) {
+    flex: 0 0 0px;
+    max-height: 0;
     opacity: 0;
+    padding: 0;
+    overflow: hidden;
     pointer-events: none;
-    transform: translateX(var(--slide-dir, 0)) scale(0.95);
-    transition: opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1),
-      transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   }
-  /* Slide-in animation for preview cards when not expanded */
-  .palette-preview-hover:not(.expanded-mode) .palette-preview-card {
+  .palette-preview-hover.expanded-mode {
+    gap: 0;
+  }
+  .palette-preview-hover:not(.expanded-mode) .palette-preview-card.empty {
     opacity: 1;
-    pointer-events: auto;
-    transform: translateX(0) scale(1);
-    transition: opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1),
-      transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-    margin: 0 auto;
   }
+  /* Expanded card takes full width */
   .palette-preview-card.expanded {
-    margin: 0 auto;
-    height: 100%;
+    flex: 1 0 100%;
+    max-height: 2000px;
     z-index: 10;
-    width: 100%;
-    min-width: 100%;
-    max-width: 100%;
+    overflow: hidden;
+    padding: 0;
   }
-  .palette-preview-content {
-    opacity: 0;
+  /* Body wraps palette content — fixed pixel width from JS (--container-w) ensures
+     content always renders at full container width. Only transform transitions,
+     so visual_width = container-w × scale — perfectly linear, no overshoot. */
+  .palette-preview-body {
     pointer-events: none;
-    position: absolute;
-    left: 0;
-    top: 0;
+    width: var(--container-w, 300px);
+    transform: scale(calc(1 / var(--n-cards, 3)));
+    transform-origin: top left;
+    box-sizing: border-box;
+    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .palette-preview-card.expanded .palette-preview-body {
+    pointer-events: auto;
     width: 100%;
-    height: 100%;
+    transform: scale(1);
+  }
+  /* Empty preview card placeholder */
+  .palette-mini-empty {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-  }
-  .palette-preview-card.expanded .palette-preview-content {
-    opacity: 1;
-    pointer-events: auto;
-    position: static;
-    gap: 6px;
-    padding: 8px;
-  }
-  .palette-preview-dots {
-    display: flex;
-    flex-direction: row;
+    padding: 16px 8px;
     gap: 4px;
-    align-items: center;
-    justify-content: center;
-    padding: 4px 0;
+    min-height: 48px;
+    border: 2px dashed var(--divider-color, #ddd);
+    border-radius: 10px;
+    background: color-mix(
+      in srgb,
+      var(--primary-text-color, #333) 3%,
+      transparent
+    );
   }
-  .palette-preview-dot {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: var(--divider-color, #ccc);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
-    margin: 0 2px;
-    border: 1.5px solid var(--card-background-color, #fff);
-    transition: transform 0.2s ease;
+  .mini-empty-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--primary-text-color, #333);
+    opacity: 0.6;
+    white-space: nowrap;
   }
-  .palette-preview-card:hover .palette-preview-dot {
-    transform: scale(1.15);
-  }
-  .palette-preview-dot.round {
-    border-radius: 50%;
-  }
-  .palette-preview-dot.square {
-    border-radius: 4px;
-  }
-  .palette-preview-card.expanded > .palette-preview-dots {
-    display: none;
+  .mini-empty-hint {
+    font-size: 11px;
+    color: var(--secondary-text-color, #888);
+    opacity: 0.45;
   }
 
   /* Paint button shape variants */
@@ -369,7 +385,9 @@ export const drawCardStyles = css`
     aspect-ratio: 1/1;
     background: #222;
     border: none;
-    transition: background 0.1s, border-radius 0.2s;
+    transition:
+      background 0.1s,
+      border-radius 0.2s;
     cursor: pointer;
     box-sizing: border-box;
     display: block;
@@ -402,7 +420,11 @@ export const drawCardStyles = css`
     transition: border 0.1s;
   }
   .draw-btn {
-    background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
+    background: color-mix(
+      in srgb,
+      var(--primary-color, #1976d2) 15%,
+      var(--card-background-color, #fff)
+    );
     color: var(--primary-color, #0077cc);
     border: none;
     border-radius: 8px;
@@ -416,22 +438,42 @@ export const drawCardStyles = css`
     text-align: center;
   }
   .draw-btn:hover {
-    background: color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
+    background: color-mix(
+      in srgb,
+      var(--primary-color, #1976d2) 30%,
+      var(--card-background-color, #fff)
+    );
   }
   .draw-btn.clear {
-    background: color-mix(in srgb, var(--error-color, #db4437) 15%, var(--card-background-color, #fff));
+    background: color-mix(
+      in srgb,
+      var(--error-color, #db4437) 15%,
+      var(--card-background-color, #fff)
+    );
     color: var(--error-color, #db4437);
   }
   .draw-btn.clear:hover {
-    background: color-mix(in srgb, var(--error-color, #db4437) 25%, var(--card-background-color, #fff));
+    background: color-mix(
+      in srgb,
+      var(--error-color, #db4437) 25%,
+      var(--card-background-color, #fff)
+    );
   }
   .draw-btn.save {
-    background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
+    background: color-mix(
+      in srgb,
+      var(--primary-color, #1976d2) 15%,
+      var(--card-background-color, #fff)
+    );
     color: var(--primary-color, #0077cc);
     box-shadow: none;
   }
   .draw-btn.save:hover {
-    background: color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
+    background: color-mix(
+      in srgb,
+      var(--primary-color, #1976d2) 30%,
+      var(--card-background-color, #fff)
+    );
   }
   .draw-btn:disabled,
   .draw-btn.disabled {
@@ -686,14 +728,71 @@ export const drawCardStyles = css`
   }
   .palette-group-card {
     background: var(--card-background-color, #fff);
-    border-radius: 8px;
+    border-radius: var(--palette-card-radius, 8px);
     box-shadow: 0 2px 8px #0002;
     padding: 10px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    max-width: fit-content;
+    width: var(--side-card-width, 100%);
+    flex-shrink: 0;
     box-sizing: border-box;
+    overflow: hidden;
+    white-space: normal;
+    transition:
+      width 0.3s ease,
+      min-width 0.3s ease,
+      flex 0.3s ease,
+      padding 0.3s ease,
+      opacity 0.3s ease;
+  }
+  /* Click-to-zoom: zoomed card fills row, siblings collapse */
+  .palette-row.zoom-mode .palette-group-card.zoomed {
+    flex: 1 0 100%;
+    width: 100%;
+    min-width: 100%;
+    cursor: default;
+  }
+  .palette-row.zoom-mode .palette-group-card:not(.zoomed) {
+    flex: 0 0 0px;
+    width: 0;
+    min-width: 0;
+    padding: 0;
+    opacity: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .palette-row.zoom-mode {
+    gap: 0;
+    overflow-x: hidden;
+    width: 100%;
+    transition: gap 0.3s ease;
+  }
+  /* Collapse button shown inside zoomed card */
+  .palette-zoom-collapse-btn {
+    align-self: flex-end;
+    background: color-mix(
+      in srgb,
+      var(--primary-color, #0077cc) 12%,
+      var(--card-background-color, #fff)
+    );
+    border: 1px solid
+      color-mix(in srgb, var(--primary-color, #0077cc) 25%, transparent);
+    border-radius: 6px;
+    padding: 4px 12px;
+    font-size: 0.82em;
+    font-weight: 500;
+    color: var(--primary-color, #0077cc);
+    cursor: pointer;
+    margin-bottom: 6px;
+    transition: background 0.2s;
+  }
+  .palette-zoom-collapse-btn:hover {
+    background: color-mix(
+      in srgb,
+      var(--primary-color, #0077cc) 22%,
+      var(--card-background-color, #fff)
+    );
   }
   .palette-group-title {
     font-size: 1em;
@@ -714,14 +813,35 @@ export const drawCardStyles = css`
     width: 100%;
     gap: 12px;
   }
+  /* Force all palette content inside side-by-side cards to respect the card width */
+  .palette-group-card > * {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .palette-group-card .palette-expandable,
+  .palette-group-card .palette-grid,
+  .palette-group-card .palette-scroll-wrapper,
+  .palette-group-card .palette-gradient-bar-wrapper,
+  .palette-group-card palette-fan,
+  .palette-group-card palette-wave,
+  .palette-group-card palette-spiral,
+  .palette-group-card palette-honeycomb,
+  .palette-group-card palette-blinds,
+  .palette-group-card palette-treemap {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
 
   .palette-row {
     display: flex;
     flex-direction: row;
+    align-items: flex-start;
     gap: 16px;
     overflow-x: auto;
     padding-bottom: 4px;
     white-space: nowrap;
+    width: 100%;
     max-width: 100%;
     box-sizing: border-box;
     scrollbar-width: none; /* Firefox */
@@ -772,7 +892,11 @@ export const drawCardStyles = css`
     justify-content: center;
   }
   .selected {
-    background: color-mix(in srgb, var(--primary-color, #00ff99) 15%, var(--card-background-color, #fff)) !important;
+    background: color-mix(
+      in srgb,
+      var(--primary-color, #00ff99) 15%,
+      var(--card-background-color, #fff)
+    ) !important;
     border: 2px solid var(--primary-color, #00ff99) !important;
   }
   .paint-btn-circle.selected {
@@ -794,10 +918,29 @@ export const drawCardStyles = css`
     flex-direction: row;
     gap: 0;
     justify-content: center;
-    background: color-mix(in srgb, var(--primary-color, #1976d2) 8%, var(--card-background-color, #fff));
+    background: color-mix(
+      in srgb,
+      var(--primary-color, #1976d2) 8%,
+      var(--card-background-color, #fff)
+    );
     border-radius: 10px;
     padding: 3px;
     margin-bottom: 10px;
+    position: relative;
+  }
+  .palette-tab-indicator {
+    position: absolute;
+    top: 3px;
+    bottom: 3px;
+    left: 3px;
+    width: calc((100% - 6px) / var(--tab-count, 1));
+    background: var(--card-background-color, #fff);
+    border-radius: 8px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+    transform: translateX(calc(var(--tab-active-index, 0) * 100%));
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    pointer-events: none;
+    z-index: 0;
   }
   .palette-tab-btn {
     flex: 1;
@@ -809,16 +952,17 @@ export const drawCardStyles = css`
     cursor: pointer;
     font-weight: 500;
     color: var(--secondary-text-color, #666);
-    transition: all 0.2s ease;
+    transition: color 0.2s ease;
+    position: relative;
+    z-index: 1;
+    user-select: none;
   }
   .palette-tab-btn:hover:not(.active) {
-    background: color-mix(in srgb, var(--primary-color, #1976d2) 6%, var(--card-background-color, #fff));
+    color: var(--primary-text-color, #444);
   }
   .palette-tab-btn.active {
-    background: var(--card-background-color, #fff);
     color: var(--primary-text-color, #222);
     font-weight: 600;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.1);
   }
   .palette-tab-content {
     width: 100%;
@@ -862,7 +1006,8 @@ export const drawCardStyles = css`
   .palette-dropdown-select:focus {
     outline: none;
     border-color: var(--primary-color, #0077cc);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary-color, #0077cc) 15%, transparent);
+    box-shadow: 0 0 0 2px
+      color-mix(in srgb, var(--primary-color, #0077cc) 15%, transparent);
   }
   .palette-dropdown-content {
     width: 100%;
@@ -887,7 +1032,11 @@ export const drawCardStyles = css`
     flex-wrap: wrap;
   }
   .palette-floating-btn {
-    background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
+    background: color-mix(
+      in srgb,
+      var(--primary-color, #1976d2) 15%,
+      var(--card-background-color, #fff)
+    );
     border-radius: 6px;
     padding: 6px 14px;
     font-size: 1em;
@@ -899,7 +1048,11 @@ export const drawCardStyles = css`
     transition: background 0.2s;
   }
   .palette-floating-btn:hover {
-    background: color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
+    background: color-mix(
+      in srgb,
+      var(--primary-color, #1976d2) 30%,
+      var(--card-background-color, #fff)
+    );
   }
   .palette-group-card.floating {
     position: absolute;
@@ -908,7 +1061,12 @@ export const drawCardStyles = css`
     max-width: 220px;
     box-shadow: 0 4px 16px #0003;
     background: var(--card-background-color, #fff);
-    border: 1px solid color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
+    border: 1px solid
+      color-mix(
+        in srgb,
+        var(--primary-color, #1976d2) 30%,
+        var(--card-background-color, #fff)
+      );
     margin-top: 32px;
     left: 0;
   }
@@ -927,7 +1085,11 @@ export const drawCardStyles = css`
     flex-direction: row;
     gap: 6px;
     justify-content: center;
+    flex-wrap: wrap;
     width: 100%;
+  }
+  .palette-grid-row .color-swatch {
+    flex: 0 0 auto;
   }
   .palette-row-scroll {
     display: flex;
@@ -937,7 +1099,12 @@ export const drawCardStyles = css`
     max-width: 100%;
     align-items: center;
     scrollbar-width: thin;
-    scrollbar-color: color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff)) var(--card-background-color, #fff);
+    scrollbar-color: color-mix(
+        in srgb,
+        var(--primary-color, #1976d2) 30%,
+        var(--card-background-color, #fff)
+      )
+      var(--card-background-color, #fff);
     height: 100%;
     cursor: grab;
     user-select: none;
@@ -962,7 +1129,11 @@ export const drawCardStyles = css`
     background: var(--card-background-color, #fff);
   }
   .palette-row-scroll::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
+    background: color-mix(
+      in srgb,
+      var(--primary-color, #1976d2) 30%,
+      var(--card-background-color, #fff)
+    );
     border-radius: 3px;
   }
   .palette-row-scroll > :first-child {
@@ -971,6 +1142,7 @@ export const drawCardStyles = css`
   .palette-row-scroll > :last-child {
     margin: 0 2px 0 2px;
   }
+  /* ====== Expandable palette container ====== */
   .palette-expandable {
     display: flex;
     flex-direction: row;
@@ -978,250 +1150,431 @@ export const drawCardStyles = css`
     flex-wrap: wrap !important;
     white-space: nowrap !important;
     overflow-x: hidden;
+    position: relative;
   }
   .palette-expandable .color-swatch {
     flex: 0 0 auto;
   }
+
+  /* --- Expand button: shared base --- */
   .palette-expandable .expand-btn {
     flex: 0 0 auto;
-    margin-left: 8px;
-    /* Match paint tool button style */
-    background: color-mix(in srgb, var(--primary-color, #1976d2) 12%, var(--card-background-color, #fff));
+    margin-left: 6px;
     border: none;
-    border-radius: 8px;
-    box-shadow: 0 1px 4px #0001;
-    color: var(--primary-color, #0077cc);
-    font-size: 18px;
-    padding: 6px 12px;
     cursor: pointer;
-    transition: box-shadow 0.2s, border 0.2s;
-    display: flex;
+    transition: all 0.2s;
+    display: inline-flex;
     align-items: center;
+    justify-content: center;
+    line-height: 1;
+    vertical-align: middle;
   }
-  .palette-expandable .expand-btn.icon-mode {
-    padding: 6px 8px;
-    font-size: 20px;
-  }
-  /* Ensure draw-btn and paint-btn shape classes apply to expand-btn */
-  .palette-expandable .expand-btn.draw-btn {
-    /* Inherit draw-btn styles */
-  }
-  .palette-expandable .expand-btn.paint-btn-rect {
-    border-radius: 8px;
-  }
-  .palette-expandable .expand-btn.paint-btn-round {
+
+  /* --- Pill style: "+N" badge --- */
+  .palette-expandable .expand-pill {
+    background: color-mix(
+      in srgb,
+      var(--primary-color, #1976d2) 14%,
+      var(--card-background-color, #fff)
+    );
+    color: var(--primary-color, #0077cc);
+    font-size: 0.72em;
+    font-weight: 600;
+    padding: 4px 10px;
     border-radius: 50px;
+    box-shadow: 0 1px 4px #0002;
+    min-width: 28px;
+    height: 24px;
+    letter-spacing: 0.02em;
+  }
+  .palette-expandable .expand-pill:hover {
+    background: color-mix(
+      in srgb,
+      var(--primary-color, #1976d2) 28%,
+      var(--card-background-color, #fff)
+    );
+    box-shadow: 0 2px 8px #0003;
+  }
+  .palette-expandable .expand-pill.expanded {
+    font-size: 1em;
+    padding: 4px 10px;
+    min-width: 24px;
+    height: 24px;
   }
 
-  .palette-stacked-deck {
-    position: relative;
-    width: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 12px;
-  }
-  .palette-stacked-nav-btn {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    z-index: 8;
-    width: 38px !important;
-    max-width: 38px !important;
-    min-width: 38px !important;
-    height: 38px;
-    padding: 0;
-  }
-  .palette-stacked-nav-prev {
-    left: 0;
-  }
-  .palette-stacked-nav-next {
-    right: 0;
-  }
-  .palette-stacked-cards {
-    position: relative;
-    width: auto;
-    height: auto;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: center;
-  }
-  .palette-stacked-card {
-    position: relative;
-    width: auto;
-
-    background: var(--card-background-color, #fff);
-    border-radius: 14px;
-    box-shadow: 0 2px 12px #0002;
-    transition: box-shadow 0.3s, transform 0.4s cubic-bezier(0.4, 0, 0.2, 1),
-      opacity 0.4s;
-    overflow: hidden;
-    z-index: 2;
-    opacity: 1;
-    filter: none;
-    pointer-events: auto;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  .palette-stacked-card.active {
-    z-index: 3;
-    opacity: 1;
-    filter: none;
-    pointer-events: auto;
-    transform: scale(1) translateY(0);
-    padding: 10px 12px 14px 12px;
-    position: relative;
-    max-width: 370px;
-  }
-  .palette-stacked-card.bg.prev,
-  .palette-stacked-card.bg.next {
-    display: none !important;
-  }
-  .palette-stacked-nav {
-    position: static;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    justify-content: center;
-    gap: 16px;
-    margin: 0 8px;
-    z-index: 4;
-  }
-  .palette-stacked-nav button {
-    background: rgba(100, 100, 255, 0.12);
-    border: none;
-    border-radius: 50%;
+  /* --- Chevron style: carousel-matching arrow --- */
+  .palette-expandable .expand-chevron {
+    background: color-mix(
+      in srgb,
+      var(--primary-color, #1976d2) 15%,
+      var(--card-background-color, #fff)
+    );
+    color: var(--primary-color, #0077cc);
+    border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.1));
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
     width: 28px;
     height: 28px;
+    padding: 0;
+  }
+  .palette-expandable .expand-chevron:hover {
+    background: color-mix(
+      in srgb,
+      var(--primary-color, #1976d2) 30%,
+      var(--card-background-color, #fff)
+    );
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+  .palette-expandable .expand-chevron svg {
+    display: block;
+  }
+
+  /* --- Dots style: subtle ellipsis --- */
+  .palette-expandable .expand-dots {
+    background: color-mix(
+      in srgb,
+      var(--primary-color, #1976d2) 10%,
+      var(--card-background-color, #fff)
+    );
+    color: var(--primary-color, #0077cc);
+    font-size: 1.1em;
+    font-weight: 700;
+    letter-spacing: 2px;
+    padding: 2px 10px;
+    border-radius: 50px;
+    box-shadow: 0 1px 3px #0001;
+    min-width: 28px;
+    height: 24px;
+    opacity: 0.75;
+  }
+  .palette-expandable .expand-dots:hover {
+    opacity: 1;
+    background: color-mix(
+      in srgb,
+      var(--primary-color, #1976d2) 22%,
+      var(--card-background-color, #fff)
+    );
+    box-shadow: 0 2px 6px #0002;
+  }
+
+  /* --- Fade style: gradient mask over trailing edge --- */
+  .palette-expandable.palette-fade-active {
+    flex-wrap: nowrap !important;
+    overflow: hidden;
+    mask-image: linear-gradient(to right, black 60%, transparent 100%);
+    -webkit-mask-image: linear-gradient(to right, black 60%, transparent 100%);
+  }
+  .palette-expandable .expand-fade-zone {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 60px;
+    background: transparent;
+    cursor: pointer;
+    z-index: 4;
+  }
+
+  /* ====== Scroll mode: horizontal ribbon with nav arrows ====== */
+  .palette-scroll-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+  }
+  .palette-scroll-arrow {
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    background: color-mix(
+      in srgb,
+      var(--primary-color, #1976d2) 15%,
+      var(--card-background-color, #fff)
+    );
+    color: var(--primary-color, #0077cc);
+    border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.1));
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+  }
+  .palette-scroll-arrow:hover {
+    background: color-mix(
+      in srgb,
+      var(--primary-color, #1976d2) 30%,
+      var(--card-background-color, #fff)
+    );
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+  .palette-scroll-arrow svg {
+    display: block;
+  }
+  .palette-scroll-track {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 2px;
+    scrollbar-width: none;
+    cursor: grab;
+    user-select: none;
+    -webkit-user-select: none;
+    scroll-behavior: smooth;
+    padding: 4px 0;
+  }
+  .palette-scroll-track::-webkit-scrollbar {
+    height: 0;
+    display: none;
+  }
+  .palette-scroll-track.dragging {
+    cursor: grabbing;
+    scroll-behavior: auto;
+  }
+  .palette-scroll-track .color-swatch {
+    flex: 0 0 auto;
+  }
+
+  /* ====== Gradient bar mode ====== */
+  .palette-gradient-bar-wrapper {
+    position: relative;
+    width: 100%;
+    padding: 4px 8px;
+    box-sizing: border-box;
+  }
+  .palette-gradient-bar {
+    height: 28px;
+    border-radius: 14px;
+    cursor: pointer;
+    box-shadow:
+      0 2px 8px #0002,
+      inset 0 1px 2px #fff4;
+    transition: box-shadow 0.2s;
+    position: relative;
+  }
+  .palette-gradient-bar:hover {
+    box-shadow:
+      0 3px 12px #0003,
+      inset 0 1px 2px #fff4;
+  }
+  .palette-gradient-ticks {
+    position: relative;
+    width: 100%;
+    height: 14px;
+    margin-top: 4px;
+  }
+  .palette-gradient-tick {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    transform: translateX(-50%);
+    border: 2px solid var(--card-background-color, #fff);
+    box-shadow: 0 1px 3px #0003;
+    cursor: pointer;
+    transition:
+      transform 0.15s,
+      box-shadow 0.15s;
+  }
+  .palette-gradient-tick:hover {
+    transform: translateX(-50%) scale(1.3);
+    box-shadow: 0 2px 6px #0004;
+  }
+
+  /* ====== Fan / arc mode ====== */
+  .palette-fan-container {
+    overflow: hidden;
+    margin: 0 auto;
+  }
+  .palette-fan-swatch {
+    position: absolute !important;
+    margin: 0 !important;
+    box-sizing: border-box;
+    transition:
+      transform 0.2s,
+      opacity 0.2s,
+      box-shadow 0.2s;
+    transform-origin: center bottom;
+    z-index: 2;
+  }
+  .palette-fan-swatch:hover {
+    z-index: 10 !important;
+    transform: rotate(var(--fan-angle, 0deg)) scale(1.25) !important;
+    opacity: 1 !important;
+    box-shadow: 0 3px 12px #0004 !important;
+  }
+
+  /* ====== Wave mode ====== */
+  .palette-wave-container {
+    scrollbar-width: none;
+  }
+  .palette-wave-container::-webkit-scrollbar {
+    display: none;
+  }
+  .palette-wave-swatch {
+    position: absolute !important;
+    margin: 0 !important;
+    box-sizing: border-box;
+    transition:
+      transform 0.2s,
+      box-shadow 0.2s;
+    z-index: 2;
+  }
+  .palette-wave-swatch:hover {
+    z-index: 10 !important;
+    transform: scale(1.3) !important;
+    box-shadow: 0 3px 12px #0004 !important;
+  }
+
+  /* ====== Spiral mode ====== */
+  .palette-spiral-container {
+    overflow: visible;
+  }
+  .palette-spiral-swatch {
+    position: absolute !important;
+    margin: 0 !important;
+    box-sizing: border-box;
+    transition:
+      transform 0.2s,
+      box-shadow 0.2s;
+    z-index: 2;
+  }
+  .palette-spiral-swatch:hover {
+    z-index: 10 !important;
+    transform: scale(1.35) !important;
+    box-shadow: 0 4px 14px #0005 !important;
+  }
+
+  /* ---- Honeycomb mode ---- */
+  .palette-honeycomb-container {
+    overflow: visible;
+  }
+  .palette-hex-swatch {
+    position: absolute;
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    cursor: pointer;
+    transition:
+      transform 0.2s ease,
+      filter 0.2s ease;
+    box-shadow: none;
+  }
+  .palette-hex-swatch:hover {
+    transform: scale(1.2);
+    filter: brightness(1.2);
+    z-index: 20 !important;
+  }
+
+  /* ---- Blinds mode ---- */
+  .palette-blinds-container {
+    display: flex;
+    flex-direction: column;
+    border-radius: 8px;
+    overflow: hidden;
+    gap: 1px;
+    background: var(--card-background-color, #fff);
+  }
+  /* Rows = default column direction (horizontal strips) */
+  .palette-blinds-rows {
+    flex-direction: column;
+  }
+  /* Columns = vertical strips side by side */
+  .palette-blinds-columns {
+    flex-direction: row;
+  }
+  .palette-blinds-columns .palette-blind-strip {
+    min-height: unset;
+    min-width: 2px;
+  }
+  /* Diagonal wrapper */
+  .palette-blinds-diagonal {
+    overflow: hidden;
+    border-radius: 8px;
+    position: relative;
+  }
+  .palette-blinds-rotate-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    /* Default scale — overridden by inline styles for exact coverage */
+    width: 260%;
+    height: 260%;
+    position: absolute;
+    top: -80%;
+    left: -80%;
+    transform-origin: center center;
+  }
+  .palette-blinds-diagonal .palette-blind-strip {
+    min-height: 3px;
+  }
+  .palette-blind-strip {
+    cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--primary-color, #6464ff);
-    font-size: 1.2em;
+    transition:
+      flex 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+      filter 0.2s;
+    overflow: hidden;
+    min-height: 3px;
+    min-width: 3px;
+  }
+  .palette-blind-strip:hover,
+  .palette-blind-strip.touch-active {
+    flex: 4 !important;
+    filter: brightness(1.1);
+  }
+  .palette-blind-label {
+    font-size: 0.7em;
+    font-family: monospace;
+    opacity: 0;
+    transition: opacity 0.25s;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .palette-blind-strip:hover .palette-blind-label,
+  .palette-blind-strip.touch-active .palette-blind-label {
+    opacity: 0.8;
+  }
+
+  /* ---- Treemap mode ---- */
+  .palette-treemap-cell {
+    position: absolute;
     cursor: pointer;
-    transition: background 0.2s, color 0.2s;
-    outline: none;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
-  }
-  .palette-stacked-nav button:hover {
-    background: rgba(100, 100, 255, 0.22);
-    color: var(--primary-color, #3333cc);
-  }
-  .palette-stacked-title {
-    font-size: 1rem;
-    font-weight: 500;
-    margin-bottom: 8px;
-    margin-left: 0;
-    margin-top: 0;
-    padding: 8px 0 0 8px;
-  }
-  .palette-stacked-nav > button:first-of-type {
-    transform: translateX(-50px);
-  }
-  .palette-stacked-nav > button:last-of-type {
-    transform: translateX(50px);
-  }
-  .palette-stacked-content {
-    padding: 0 16px 8px 16px;
-  }
-  .palette-stacked-card.slide-in-left {
-    opacity: 1;
-    left: 50%;
-    transform: translateX(-50%) scale(1);
-    animation: slideInLeft 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  .palette-stacked-card.slide-in-right {
-    opacity: 1;
-    left: 50%;
-    transform: translateX(-50%) scale(1);
-    animation: slideInRight 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  .palette-stacked-card.slide-out-left {
-    opacity: 0;
-    left: 10%;
-    transform: translateX(-50%) scale(0.95);
-    animation: slideOutLeft 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  .palette-stacked-card.slide-out-right {
-    opacity: 0;
-    left: 90%;
-    transform: translateX(-50%) scale(0.95);
-    animation: slideOutRight 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  @keyframes slideInLeft {
-    from {
-      opacity: 0;
-      left: 10%;
-      transform: translateX(-50%) scale(0.95);
-    }
-    to {
-      opacity: 1;
-      left: 50%;
-      transform: translateX(-50%) scale(1);
-    }
-  }
-  @keyframes slideInRight {
-    from {
-      opacity: 0;
-      left: 90%;
-      transform: translateX(-50%) scale(0.95);
-    }
-    to {
-      opacity: 1;
-      left: 50%;
-      transform: translateX(-50%) scale(1);
-    }
-  }
-  @keyframes slideOutLeft {
-    from {
-      opacity: 1;
-      left: 50%;
-      transform: translateX(-50%) scale(1);
-    }
-    to {
-      opacity: 0;
-      left: 10%;
-      transform: translateX(-50%) scale(0.95);
-    }
-  }
-  @keyframes slideOutRight {
-    from {
-      opacity: 1;
-      left: 50%;
-      transform: translateX(-50%) scale(1);
-    }
-    to {
-      opacity: 0;
-      left: 90%;
-      transform: translateX(-50%) scale(0.95);
-    }
-  }
-  .palette-preview-hover.expanded-mode {
-    overflow-x: hidden !important;
-    scrollbar-width: none !important;
-    white-space: wrap !important;
     display: flex;
-    flex-wrap: nowrap !important;
+    align-items: center;
+    justify-content: center;
+    transition:
+      filter 0.2s,
+      z-index 0s;
+    border: 0.5px solid rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+  }
+  .palette-treemap-cell span {
+    font-size: 0.55em;
+    font-family: monospace;
+    pointer-events: none;
+    white-space: nowrap;
+  }
+  .palette-treemap-cell:hover {
+    filter: brightness(1.2);
+    z-index: 10 !important;
+    outline: 2px solid var(--primary-color, #4488ff);
+    outline-offset: -2px;
+  }
+
+  .palette-preview-hover.expanded-mode {
+    overflow: hidden !important;
+    scrollbar-width: none !important;
   }
   .palette-preview-hover {
     scrollbar-width: none;
-    white-space: nowrap;
-    display: flex;
-    flex-wrap: nowrap;
+    overflow: hidden;
   }
   .palette-preview-hover::-webkit-scrollbar {
     display: none !important;
-  }
-  .palette-preview-content {
-    overflow-x: auto;
-    white-space: nowrap;
-    cursor: grab;
-    -webkit-overflow-scrolling: touch;
-  }
-  .palette-preview-content:active {
-    cursor: grabbing;
   }
   .palette-preview-hover-expand {
     /* Remove transition for instant open/close */
@@ -1252,13 +1605,13 @@ export const drawCardStyles = css`
 
   /* Item card border for dark mode visibility */
   .item-card-border .gallery-item {
-    border: 1px solid var(--divider-color, rgba(255,255,255,0.15));
+    border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.15));
   }
   .item-card-border .carousel-content-card {
-    border: 1px solid var(--divider-color, rgba(255,255,255,0.15));
+    border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.15));
   }
   .item-card-border .pixelarts-album-item {
-    border: 1px solid var(--divider-color, rgba(255,255,255,0.15));
+    border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.15));
   }
 
   .pixelart-gallery-header {
@@ -1436,7 +1789,9 @@ export const drawCardStyles = css`
     display: grid;
     gap: 12px;
     align-items: start;
-    transition: grid-template-columns 0.3s ease, gap 0.3s ease;
+    transition:
+      grid-template-columns 0.3s ease,
+      gap 0.3s ease;
 
     /* Container cards sized directly by preview size value */
     grid-template-columns: repeat(
@@ -1491,7 +1846,9 @@ export const drawCardStyles = css`
     justify-content: space-between;
     position: relative;
     cursor: pointer;
-    transition: background 0.15s ease, padding 0.2s ease;
+    transition:
+      background 0.15s ease,
+      padding 0.2s ease;
     box-sizing: border-box;
   }
 
@@ -1997,7 +2354,11 @@ export const drawCardStyles = css`
     border: 2px dashed var(--primary-color, #0077cc);
     border-radius: 8px;
     padding: 8px;
-    background: color-mix(in srgb, var(--primary-color, #0077cc) 5%, transparent);
+    background: color-mix(
+      in srgb,
+      var(--primary-color, #0077cc) 5%,
+      transparent
+    );
     margin: 4px 0;
   }
 
@@ -2115,7 +2476,11 @@ export const drawCardStyles = css`
 
   .tool-order-item.dragging {
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-    background: color-mix(in srgb, var(--accent-color, #ff9800) 12%, var(--card-background-color, #fff));
+    background: color-mix(
+      in srgb,
+      var(--accent-color, #ff9800) 12%,
+      var(--card-background-color, #fff)
+    );
     transform: scale(1.04);
     z-index: 1000;
   }
@@ -2141,5 +2506,4 @@ export const drawCardStyles = css`
     font-size: 0.85em;
     color: var(--secondary-text-color, #666);
   }
-
 `;

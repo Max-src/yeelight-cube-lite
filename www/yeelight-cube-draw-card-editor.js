@@ -393,7 +393,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
     if (!this.config.paint_button_shape)
       this.config.paint_button_shape = "rect";
     if (!this.config.swatch_shape) this.config.swatch_shape = "round";
-    if (!this.config.expand_btn_mode) this.config.expand_btn_mode = "label";
+    if (!this.config.expand_btn_style) this.config.expand_btn_style = "pill";
     if (typeof this.config.pixel_art_preview_size !== "number")
       this.config.pixel_art_preview_size = 100;
 
@@ -550,8 +550,9 @@ class YeelightCubeDrawCardEditor extends LitElement {
               <label>Swatch Shape</label>
               ${createButtonGroup(
                 [
-                  { value: "round", label: "Round" },
                   { value: "square", label: "Square" },
+                  { value: "rounded", label: "Rounded" },
+                  { value: "round", label: "Circle" },
                 ],
                 this.config.swatch_shape || "round",
                 createButtonGroupChangeHandler("swatch_shape", (value) => {
@@ -561,11 +562,11 @@ class YeelightCubeDrawCardEditor extends LitElement {
               )}
             </div>
             ${createButtonGroupRow(
-              "Palette Card Container Mode",
+              "Colors Container Mode",
               createButtonGroup(
                 [
                   { value: "side", label: "Side-by-Side" },
-                  { value: "stacked", label: "Stacked" },
+                  { value: "carousel", label: "Carousel" },
                   { value: "tabs", label: "Tabs" },
                   { value: "dropdown", label: "Dropdown" },
                   { value: "preview-hover", label: "Preview Hover" },
@@ -577,34 +578,124 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 }),
               ),
             )}
+            ${(this.config.palette_card_mode || "side") === "carousel"
+              ? renderModeSettingsSection(
+                  "Carousel Mode Settings",
+                  html`
+                    <div class="form-row">
+                      <label>Navigation Button Shape</label>
+                      ${createButtonGroup(
+                        [
+                          { value: "circle", label: "Circle" },
+                          { value: "rect", label: "Rounded" },
+                          { value: "square", label: "Square" },
+                        ],
+                        this.config.palette_carousel_button_shape || "rect",
+                        createButtonGroupChangeHandler(
+                          "palette_carousel_button_shape",
+                          (value) => {
+                            this.config.palette_carousel_button_shape = value;
+                            this._fireConfigChanged();
+                          },
+                        ),
+                      )}
+                    </div>
+                    ${createToggleRow(
+                      "Wrap Navigation (Infinite Loop)",
+                      "palette_carousel_wrap_navigation",
+                      this.config.palette_carousel_wrap_navigation === true,
+                      (e) =>
+                        this._onSwitchChange(
+                          e,
+                          "palette_carousel_wrap_navigation",
+                        ),
+                    )}
+                    ${createSliderRow(
+                      "Card Roundness",
+                      (() => {
+                        const v = this.config.rounded_cards;
+                        if (v === undefined || v === true || v === "round")
+                          return 16;
+                        if (v === false || v === "square") return 0;
+                        if (v === "rounded") return 4;
+                        return typeof v === "number"
+                          ? v
+                          : parseInt(v, 10) || 16;
+                      })(),
+                      { min: 0, max: 28, step: 1 },
+                      (e) => {
+                        this.config.rounded_cards = parseInt(e.target.value);
+                        this._fireConfigChanged();
+                      },
+                      "px",
+                    )}
+                  `,
+                )
+              : (this.config.palette_card_mode || "side") === "side"
+                ? renderModeSettingsSection(
+                    "Side-by-Side Settings",
+                    html`
+                      ${createSliderRow(
+                        "Card Width",
+                        this.config.side_card_width || 100,
+                        { min: 30, max: 100, step: 1 },
+                        this._onSideCardWidthChange.bind(this),
+                        "%",
+                      )}
+                      ${createButtonGroupRow(
+                        "Click to Zoom",
+                        createButtonGroup(
+                          [
+                            { value: "off", label: "Off" },
+                            { value: "on", label: "On" },
+                          ],
+                          this.config.side_click_zoom || "off",
+                          createButtonGroupChangeHandler(
+                            "side_click_zoom",
+                            (value) => {
+                              this.config.side_click_zoom = value;
+                              this._fireConfigChanged();
+                            },
+                          ),
+                        ),
+                      )}
+                      ${createSliderRow(
+                        "Card Roundness",
+                        (() => {
+                          const v = this.config.rounded_cards;
+                          if (v === undefined || v === true || v === "round")
+                            return 16;
+                          if (v === false || v === "square") return 0;
+                          if (v === "rounded") return 4;
+                          return typeof v === "number"
+                            ? v
+                            : parseInt(v, 10) || 16;
+                        })(),
+                        { min: 0, max: 28, step: 1 },
+                        (e) => {
+                          this.config.rounded_cards = parseInt(e.target.value);
+                          this._fireConfigChanged();
+                        },
+                        "px",
+                      )}
+                    `,
+                  )
+                : ""}
             ${createButtonGroupRow(
-              "Preview Dots (for Preview on Hover)",
-              createButtonGroup(
-                [
-                  { value: "1", label: "1" },
-                  { value: "2", label: "2" },
-                  { value: "3", label: "3" },
-                  { value: "4", label: "4" },
-                  { value: "5", label: "5" },
-                  { value: "all", label: "All" },
-                ],
-                this.config.palette_preview_dot_count || "3",
-                createButtonGroupChangeHandler(
-                  "palette_preview_dot_count",
-                  (value) => {
-                    this.config.palette_preview_dot_count = value;
-                    this._fireConfigChanged();
-                  },
-                ),
-              ),
-            )}
-            ${createButtonGroupRow(
-              "Palette Display Mode",
+              "Colors Display Mode",
               createButtonGroup(
                 [
                   { value: "row", label: "Row" },
                   { value: "grid", label: "Grid" },
                   { value: "expand", label: "Expandable" },
+                  { value: "scroll", label: "Scroll" },
+                  { value: "gradient", label: "Gradient" },
+                  { value: "fan", label: "Fan" },
+                  { value: "wave", label: "Wave" },
+                  { value: "spiral", label: "Spiral" },
+                  { value: "honeycomb", label: "Honeycomb" },
+                  { value: "blinds", label: "Blinds" },
+                  { value: "treemap", label: "Treemap" },
                 ],
                 this.config.palette_display_mode || "row",
                 createButtonGroupChangeHandler(
@@ -616,19 +707,69 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 ),
               ),
             )}
+            ${(this.config.palette_display_mode || "row") === "expand"
+              ? renderModeSettingsSection(
+                  "Expandable Mode Settings",
+                  createButtonGroupRow(
+                    "Expand Button Style",
+                    createButtonGroup(
+                      [
+                        { value: "pill", label: "Pill (+N)" },
+                        { value: "chevron", label: "Chevron" },
+                        { value: "dots", label: "Dots" },
+                      ],
+                      this.config.expand_btn_style || "pill",
+                      createButtonGroupChangeHandler(
+                        "expand_btn_style",
+                        (value) => {
+                          this.config.expand_btn_style = value;
+                          this._fireConfigChanged();
+                        },
+                      ),
+                    ),
+                  ),
+                )
+              : ""}
+            ${(this.config.palette_display_mode || "row") === "blinds"
+              ? renderModeSettingsSection(
+                  "Blinds Mode Settings",
+                  createButtonGroupRow(
+                    "Blinds Direction",
+                    createButtonGroup(
+                      [
+                        { value: "rows", label: "Horizontal" },
+                        { value: "columns", label: "Vertical" },
+                        { value: "diagonal-right", label: "Diagonal \u2572" },
+                        { value: "diagonal-left", label: "Diagonal \u2571" },
+                      ],
+                      this.config.blinds_direction || "rows",
+                      createButtonGroupChangeHandler(
+                        "blinds_direction",
+                        (value) => {
+                          this.config.blinds_direction = value;
+                          this._fireConfigChanged();
+                        },
+                      ),
+                    ),
+                  ),
+                )
+              : ""}
             ${createButtonGroupRow(
-              "More/Less Button Content (Expandable Palette)",
+              "Color Info Display",
               createButtonGroup(
                 [
-                  { value: "label", label: "Label" },
-                  { value: "icon", label: "Icon" },
-                  { value: "both", label: "Both" },
+                  { value: "none", label: "None" },
+                  { value: "hex", label: "Hex Code" },
+                  { value: "name", label: "Color Name" },
                 ],
-                this.config.expand_btn_mode || "label",
-                createButtonGroupChangeHandler("expand_btn_mode", (value) => {
-                  this.config.expand_btn_mode = value;
-                  this._fireConfigChanged();
-                }),
+                this.config.color_info_display || "none",
+                createButtonGroupChangeHandler(
+                  "color_info_display",
+                  (value) => {
+                    this.config.color_info_display = value;
+                    this._fireConfigChanged();
+                  },
+                ),
               ),
             )}
           </div>
@@ -1454,6 +1595,12 @@ class YeelightCubeDrawCardEditor extends LitElement {
   _onMatrixSizeSliderChange(e) {
     const val = Number(e.target.value);
     this.config.matrix_size = val;
+    this._fireConfigChanged();
+  }
+
+  _onSideCardWidthChange(e) {
+    const val = Number(e.target.value);
+    this.config.side_card_width = val;
     this._fireConfigChanged();
   }
 

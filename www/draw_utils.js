@@ -204,6 +204,7 @@ function kmeansRgb(data, k, maxIter = 20) {
   }
   // Iterate
   const assignments = new Array(data.length).fill(0);
+  let counts = Array(k).fill(0);
   for (let iter = 0; iter < maxIter; iter++) {
     for (let i = 0; i < data.length; i++) {
       let minDist = Infinity,
@@ -223,7 +224,7 @@ function kmeansRgb(data, k, maxIter = 20) {
     const sums = Array(k)
       .fill(0)
       .map(() => [0, 0, 0]);
-    const counts = Array(k).fill(0);
+    counts = Array(k).fill(0);
     for (let i = 0; i < data.length; i++) {
       const a = assignments[i];
       sums[a][0] += data[i][0];
@@ -241,7 +242,7 @@ function kmeansRgb(data, k, maxIter = 20) {
       }
     }
   }
-  return centroids;
+  return { centroids, counts };
 }
 
 /**
@@ -289,7 +290,7 @@ export function extractDiversePaletteFromRgb(rgbPixels, maxColors = 15) {
     return result;
   }
   // K-means for diversity
-  const centroids = kmeansRgb(filtered, maxColors);
+  const { centroids } = kmeansRgb(filtered, maxColors);
   // Deduplicate
   const seen = new Set();
   const palette = [];
@@ -316,6 +317,87 @@ export function extractDiversePaletteFromRgb(rgbPixels, maxColors = 15) {
         : hb[2] - ha[2];
   });
   return palette.map((p) => p.hex);
+}
+
+/**
+ * Same as extractDiversePaletteFromRgb but returns {palette, weights}
+ * where weights is a Map<hexColor, pixelCount>.
+ * Used by treemap mode to size tiles proportionally.
+ */
+export function extractDiversePaletteWithWeights(rgbPixels, maxColors = 15) {
+  const filtered = rgbPixels.filter(
+    (rgb) =>
+      Array.isArray(rgb) &&
+      rgb.length === 3 &&
+      (rgb[0] > 5 || rgb[1] > 5 || rgb[2] > 5),
+  );
+  if (filtered.length === 0) return { palette: [], weights: new Map() };
+  // If very few unique colors, count exact occurrences
+  const uniqueMap = new Map(); // hex -> rgb
+  const uniqueCounts = new Map(); // hex -> count
+  for (const rgb of filtered) {
+    const hex =
+      "#" +
+      rgb
+        .map((x) =>
+          Math.max(0, Math.min(255, Math.round(x)))
+            .toString(16)
+            .padStart(2, "0"),
+        )
+        .join("");
+    if (!uniqueMap.has(hex)) uniqueMap.set(hex, rgb);
+    uniqueCounts.set(hex, (uniqueCounts.get(hex) || 0) + 1);
+  }
+  if (uniqueMap.size <= maxColors) {
+    const result = [...uniqueMap.keys()];
+    result.sort((a, b) => {
+      const ha = rgbToHsv(uniqueMap.get(a));
+      const hb = rgbToHsv(uniqueMap.get(b));
+      return ha[0] !== hb[0]
+        ? ha[0] - hb[0]
+        : ha[1] !== hb[1]
+          ? ha[1] - hb[1]
+          : hb[2] - ha[2];
+    });
+    const weights = new Map();
+    result.forEach((hex) => weights.set(hex, uniqueCounts.get(hex) || 1));
+    return { palette: result, weights };
+  }
+  // K-means for diversity — get centroids + cluster sizes
+  const { centroids, counts } = kmeansRgb(filtered, maxColors);
+  // Deduplicate and map counts
+  const seen = new Set();
+  const palette = [];
+  const weights = new Map();
+  for (let i = 0; i < centroids.length; i++) {
+    const rgb = centroids[i];
+    const hex =
+      "#" +
+      rgb
+        .map((x) => Math.max(0, Math.min(255, x)).toString(16).padStart(2, "0"))
+        .join("");
+    const lower = hex.toLowerCase();
+    if (!seen.has(lower) && (rgb[0] > 5 || rgb[1] > 5 || rgb[2] > 5)) {
+      seen.add(lower);
+      palette.push({ hex: lower, rgb, count: counts[i] || 1 });
+    } else if (seen.has(lower)) {
+      // Merge count into existing entry
+      const existing = palette.find((p) => p.hex === lower);
+      if (existing) existing.count += counts[i] || 0;
+    }
+  }
+  palette.sort((a, b) => {
+    const ha = rgbToHsv(a.rgb);
+    const hb = rgbToHsv(b.rgb);
+    return ha[0] !== hb[0]
+      ? ha[0] - hb[0]
+      : ha[1] !== hb[1]
+        ? ha[1] - hb[1]
+        : hb[2] - ha[2];
+  });
+  const sortedPalette = palette.map((p) => p.hex);
+  palette.forEach((p) => weights.set(p.hex, p.count));
+  return { palette: sortedPalette, weights };
 }
 
 // Extract palette from image data

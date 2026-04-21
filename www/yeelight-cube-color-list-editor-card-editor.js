@@ -292,8 +292,8 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
               ${createButtonGroup(
                 [
                   { value: "none", label: "None" },
-                  { value: "hex", label: "Hex" },
-                  { value: "name", label: "Name" },
+                  { value: "hex", label: "Hex Code" },
+                  { value: "name", label: "Color Name" },
                 ],
                 cfg.color_info_display || "hex",
                 createButtonGroupChangeHandler(

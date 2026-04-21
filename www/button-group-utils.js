@@ -37,27 +37,30 @@ export const buttonGroupStyles = css`
   /* Button group styles (reusable) */
   .button-group {
     display: flex !important;
+    flex-wrap: wrap !important;
     border-radius: 8px !important;
-    overflow: hidden !important;
+    overflow: visible !important;
     border: 1.5px solid var(--divider-color, #d0d7de) !important;
     margin-top: 8px !important;
     gap: 0px !important;
   }
 
   .btn-group-item {
-    flex: 1 !important;
-    padding: 8px 12px !important;
+    flex: 1 1 auto !important;
+    padding: 8px 10px !important;
     border: none !important;
     border-radius: 0 !important;
     background: var(--card-background-color, white) !important;
     color: var(--primary-text-color, #333) !important;
-    font-size: 0.85em !important;
+    font-size: 0.82em !important;
     font-weight: 500 !important;
     cursor: pointer !important;
     transition: all 0.2s ease !important;
     border-right: 1px solid var(--divider-color, #d0d7de) !important;
+    border-bottom: 1px solid var(--divider-color, #d0d7de) !important;
     text-align: center !important;
     white-space: nowrap !important;
+    min-width: 0 !important;
   }
 
   .btn-group-item:last-child {
