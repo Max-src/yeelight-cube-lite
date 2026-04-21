@@ -347,6 +347,7 @@ class YeelightCubeDrawCard extends LitElement {
     const expandStyle = cfg.expand_btn_style || "pill";
     const blindsDir = cfg.blinds_direction || "rows";
     const colorInfo = cfg.color_info_display || "none";
+    const gradientFreePick = cfg.gradient_free_pick === true;
     if (showRecentColors) {
       const palette = this.recentColors || [];
       cards.push({
@@ -365,6 +366,7 @@ class YeelightCubeDrawCard extends LitElement {
           blindsDir,
           null,
           colorInfo,
+          gradientFreePick,
         ),
       });
     }
@@ -386,6 +388,7 @@ class YeelightCubeDrawCard extends LitElement {
           blindsDir,
           null,
           colorInfo,
+          gradientFreePick,
         ),
       });
     }
@@ -407,6 +410,7 @@ class YeelightCubeDrawCard extends LitElement {
           blindsDir,
           weights,
           colorInfo,
+          gradientFreePick,
         ),
       });
     }
@@ -428,6 +432,7 @@ class YeelightCubeDrawCard extends LitElement {
           blindsDir,
           weights,
           colorInfo,
+          gradientFreePick,
         ),
       });
     }

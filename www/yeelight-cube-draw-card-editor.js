@@ -546,21 +546,6 @@ class YeelightCubeDrawCardEditor extends LitElement {
               this.config.show_image_palette !== false,
               (e) => this._onSwitchChange(e, "show_image_palette"),
             )}
-            <div class="form-row">
-              <label>Swatch Shape</label>
-              ${createButtonGroup(
-                [
-                  { value: "square", label: "Square" },
-                  { value: "rounded", label: "Rounded" },
-                  { value: "round", label: "Circle" },
-                ],
-                this.config.swatch_shape || "round",
-                createButtonGroupChangeHandler("swatch_shape", (value) => {
-                  this.config.swatch_shape = value;
-                  this._fireConfigChanged();
-                }),
-              )}
-            </div>
             ${createButtonGroupRow(
               "Colors Container Mode",
               createButtonGroup(
@@ -681,79 +666,174 @@ class YeelightCubeDrawCardEditor extends LitElement {
                     `,
                   )
                 : ""}
-            ${createButtonGroupRow(
-              "Colors Display Mode",
-              createButtonGroup(
-                [
-                  { value: "row", label: "Row" },
-                  { value: "grid", label: "Grid" },
-                  { value: "expand", label: "Expandable" },
-                  { value: "scroll", label: "Scroll" },
-                  { value: "gradient", label: "Gradient" },
-                  { value: "fan", label: "Fan" },
-                  { value: "wave", label: "Wave" },
-                  { value: "spiral", label: "Spiral" },
-                  { value: "honeycomb", label: "Honeycomb" },
-                  { value: "blinds", label: "Blinds" },
-                  { value: "treemap", label: "Treemap" },
-                ],
-                this.config.palette_display_mode || "row",
-                createButtonGroupChangeHandler(
-                  "palette_display_mode",
-                  (value) => {
-                    this.config.palette_display_mode = value;
-                    this._fireConfigChanged();
-                  },
-                ),
-              ),
-            )}
-            ${(this.config.palette_display_mode || "row") === "expand"
-              ? renderModeSettingsSection(
-                  "Expandable Mode Settings",
-                  createButtonGroupRow(
-                    "Expand Button Style",
-                    createButtonGroup(
-                      [
-                        { value: "pill", label: "Pill (+N)" },
-                        { value: "chevron", label: "Chevron" },
-                        { value: "dots", label: "Dots" },
-                      ],
-                      this.config.expand_btn_style || "pill",
-                      createButtonGroupChangeHandler(
-                        "expand_btn_style",
-                        (value) => {
-                          this.config.expand_btn_style = value;
-                          this._fireConfigChanged();
-                        },
-                      ),
+            ${(() => {
+              const dm = this.config.palette_display_mode || "row";
+              const swatchSubModes = [
+                "row",
+                "grid",
+                "expand",
+                "scroll",
+                "fan",
+                "wave",
+                "spiral",
+              ];
+              const isSwatches = swatchSubModes.includes(dm);
+              // Derive top-level bucket
+              const topLevel = isSwatches ? "swatches" : dm;
+              return html`
+                ${createButtonGroupRow(
+                  "Colors Display Mode",
+                  createButtonGroup(
+                    [
+                      { value: "swatches", label: "Color Swatches" },
+                      { value: "gradient", label: "Gradient" },
+                      { value: "honeycomb", label: "Honeycomb" },
+                      { value: "blinds", label: "Blinds" },
+                      { value: "treemap", label: "Treemap" },
+                    ],
+                    topLevel,
+                    createButtonGroupChangeHandler(
+                      "palette_display_mode",
+                      (value) => {
+                        if (value === "swatches") {
+                          // Keep current sub-mode if already a swatch, else default to row
+                          this.config.palette_display_mode = isSwatches
+                            ? dm
+                            : "row";
+                        } else {
+                          this.config.palette_display_mode = value;
+                        }
+                        this._fireConfigChanged();
+                      },
                     ),
                   ),
-                )
-              : ""}
-            ${(this.config.palette_display_mode || "row") === "blinds"
-              ? renderModeSettingsSection(
-                  "Blinds Mode Settings",
-                  createButtonGroupRow(
-                    "Blinds Direction",
-                    createButtonGroup(
-                      [
-                        { value: "rows", label: "Horizontal" },
-                        { value: "columns", label: "Vertical" },
-                        { value: "diagonal-right", label: "Diagonal \u2572" },
-                        { value: "diagonal-left", label: "Diagonal \u2571" },
-                      ],
-                      this.config.blinds_direction || "rows",
-                      createButtonGroupChangeHandler(
-                        "blinds_direction",
-                        (value) => {
-                          this.config.blinds_direction = value;
-                          this._fireConfigChanged();
-                        },
-                      ),
-                    ),
-                  ),
-                )
-              : ""}
+                )}
+                ${topLevel === "swatches"
+                  ? renderModeSettingsSection(
+                      "Color Swatches Settings",
+                      html`
+                        ${createButtonGroupRow(
+                          "Layout",
+                          createButtonGroup(
+                            [
+                              { value: "row", label: "Row" },
+                              { value: "grid", label: "Grid" },
+                              { value: "expand", label: "Expandable" },
+                              { value: "scroll", label: "Scroll" },
+                              { value: "fan", label: "Fan" },
+                              { value: "wave", label: "Wave" },
+                              { value: "spiral", label: "Spiral" },
+                            ],
+                            dm,
+                            createButtonGroupChangeHandler(
+                              "palette_display_mode",
+                              (value) => {
+                                this.config.palette_display_mode = value;
+                                this._fireConfigChanged();
+                              },
+                            ),
+                          ),
+                        )}
+                        ${createButtonGroupRow(
+                          "Swatch Shape",
+                          createButtonGroup(
+                            [
+                              { value: "square", label: "Square" },
+                              { value: "rounded", label: "Rounded" },
+                              { value: "round", label: "Circle" },
+                            ],
+                            this.config.swatch_shape || "round",
+                            createButtonGroupChangeHandler(
+                              "swatch_shape",
+                              (value) => {
+                                this.config.swatch_shape = value;
+                                this._fireConfigChanged();
+                              },
+                            ),
+                          ),
+                        )}
+                        ${dm === "expand"
+                          ? createButtonGroupRow(
+                              "Expand Button Style",
+                              createButtonGroup(
+                                [
+                                  { value: "pill", label: "Pill (+N)" },
+                                  { value: "chevron", label: "Chevron" },
+                                  { value: "dots", label: "Dots" },
+                                ],
+                                this.config.expand_btn_style || "pill",
+                                createButtonGroupChangeHandler(
+                                  "expand_btn_style",
+                                  (value) => {
+                                    this.config.expand_btn_style = value;
+                                    this._fireConfigChanged();
+                                  },
+                                ),
+                              ),
+                            )
+                          : ""}
+                      `,
+                    )
+                  : topLevel === "gradient"
+                    ? renderModeSettingsSection(
+                        "Gradient Settings",
+                        html`${createButtonGroupRow(
+                          "Swatch Shape",
+                          createButtonGroup(
+                            [
+                              { value: "square", label: "Square" },
+                              { value: "rounded", label: "Rounded" },
+                              { value: "round", label: "Circle" },
+                            ],
+                            this.config.swatch_shape || "round",
+                            createButtonGroupChangeHandler(
+                              "swatch_shape",
+                              (value) => {
+                                this.config.swatch_shape = value;
+                                this._fireConfigChanged();
+                              },
+                            ),
+                          ),
+                        )}
+                        ${createToggleRow(
+                          "Free Pick (Interpolate Any Color)",
+                          "gradient_free_pick",
+                          this.config.gradient_free_pick === true,
+                          (e) => this._onSwitchChange(e, "gradient_free_pick"),
+                        )}`,
+                      )
+                    : topLevel === "blinds"
+                      ? renderModeSettingsSection(
+                          "Blinds Settings",
+                          createButtonGroupRow(
+                            "Blinds Direction",
+                            createButtonGroup(
+                              [
+                                { value: "rows", label: "Horizontal" },
+                                { value: "columns", label: "Vertical" },
+                                {
+                                  value: "diagonal-right",
+                                  label: "Diagonal \u2572",
+                                },
+                                {
+                                  value: "diagonal-left",
+                                  label: "Diagonal \u2571",
+                                },
+                              ],
+                              this.config.blinds_direction || "rows",
+                              createButtonGroupChangeHandler(
+                                "blinds_direction",
+                                (value) => {
+                                  this.config.blinds_direction = value;
+                                  this._fireConfigChanged();
+                                },
+                              ),
+                            ),
+                          ),
+                        )
+                      : ""}
+              `;
+            })()}
             ${createButtonGroupRow(
               "Color Info Display",
               createButtonGroup(

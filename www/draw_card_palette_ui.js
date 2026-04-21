@@ -83,6 +83,25 @@ function _sortColorsForGradient(palette) {
   return sorted.map((p) => p.color);
 }
 
+// Helper: interpolate an exact color at fractional position t (0–1) along the sorted gradient palette.
+// Linearly blends RGB between the two adjacent palette stops.
+function _interpolateGradientColor(palette, t) {
+  const n = palette.length;
+  if (n === 0) return "#000000";
+  if (n === 1) return palette[0];
+  const scaled = Math.max(0, Math.min(n - 1, t * (n - 1)));
+  const lo = Math.floor(scaled);
+  const hi = Math.min(n - 1, lo + 1);
+  const frac = scaled - lo;
+  if (frac === 0) return palette[lo];
+  const [r1, g1, b1] = _parseColor(palette[lo]);
+  const [r2, g2, b2] = _parseColor(palette[hi]);
+  const r = Math.round(r1 + (r2 - r1) * frac);
+  const g = Math.round(g1 + (g2 - g1) * frac);
+  const b = Math.round(b1 + (b2 - b1) * frac);
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+}
+
 // Helper: resolve swatch shape class
 function _shapeClass(swatchShape) {
   return swatchShape === "square"
@@ -279,34 +298,57 @@ export function renderPaletteSection(
   blindsDirection = "rows",
   colorWeights = null,
   colorInfoDisplay = "none",
+  gradientFreePick = false,
 ) {
   if (!palette || !palette.length) return "";
   const shapeClass = _shapeClass(swatchShape);
+  const hasInfo = colorInfoDisplay !== "none";
   let hoveredColor = null;
-  const handleMouseOver = (color) => {
+  const handleMouseOver = (color, e) => {
     hoveredColor = color;
+    if (hasInfo) {
+      const w = e.currentTarget.closest(".palette-with-tooltip");
+      const t = w?.querySelector(".palette-hover-tooltip");
+      if (t) {
+        const lbl = _formatColorLabel(color, colorInfoDisplay);
+        if (lbl) {
+          t.textContent = lbl;
+          t.style.opacity = "1";
+        }
+      }
+    }
   };
-  const handleMouseLeave = () => {
+  const handleMouseLeave = (e) => {
     hoveredColor = null;
+    if (hasInfo) {
+      const w = e.currentTarget.closest(".palette-with-tooltip");
+      const t = w?.querySelector(".palette-hover-tooltip");
+      if (t) {
+        t.textContent = "\u00a0";
+        t.style.opacity = "0";
+      }
+    }
   };
   const handleClick = (color, e) => {
     e.stopPropagation();
     if (hoveredColor === color) onSelect(color);
   };
 
-  // Tooltip text based on color info display setting
-  const _tip = (color) => {
-    const label = _formatColorLabel(color, colorInfoDisplay);
-    return label || color;
-  };
+  const _tooltipDiv = hasInfo
+    ? html`<div
+        class="palette-hover-tooltip"
+        style="min-height:1.4em;text-align:center;font-size:0.8em;color:var(--secondary-text-color,#888);margin-top:4px;transition:opacity 0.15s;opacity:0;"
+      >
+        &nbsp;
+      </div>`
+    : "";
 
   const swatch = (color) =>
     html`<div
       class="color-swatch ${shapeClass}"
       style="background:${color}"
-      title="${_tip(color)}"
-      @mouseover=${() => handleMouseOver(color)}
-      @mouseleave=${handleMouseLeave}
+      @mouseover=${(e) => handleMouseOver(color, e)}
+      @mouseleave=${(e) => handleMouseLeave(e)}
       @click=${(e) => handleClick(color, e)}
       @touchend=${(e) => {
         e.preventDefault();
@@ -320,13 +362,16 @@ export function renderPaletteSection(
     const rows = Array.from({ length: rowCount }, (_, r) =>
       palette.slice(r * colCount, (r + 1) * colCount),
     );
-    return html`<div class="palette-grid">
-      ${rows.map(
-        (row) =>
-          html`<div class="palette-grid-row">
-            ${row.map((c) => swatch(c))}
-          </div>`,
-      )}
+    return html`<div class="palette-with-tooltip">
+      <div class="palette-grid">
+        ${rows.map(
+          (row) =>
+            html`<div class="palette-grid-row">
+              ${row.map((c) => swatch(c))}
+            </div>`,
+        )}
+      </div>
+      ${_tooltipDiv}
     </div>`;
   }
 
@@ -356,7 +401,9 @@ export function renderPaletteSection(
     return html`<palette-gradient-bar
       .palette=${sortedPalette}
       .onSelect=${onSelect}
+      .swatchShape=${swatchShape}
       .colorInfoDisplay=${colorInfoDisplay}
+      .gradientFreePick=${gradientFreePick}
     ></palette-gradient-bar>`;
   }
 
@@ -414,8 +461,9 @@ export function renderPaletteSection(
   }
 
   // Default: ROW (wrapping flex)
-  return html`<div class="palette-expandable">
-    ${palette.map((c) => swatch(c))}
+  return html`<div class="palette-with-tooltip">
+    <div class="palette-expandable">${palette.map((c) => swatch(c))}</div>
+    ${_tooltipDiv}
   </div>`;
 }
 
@@ -534,7 +582,8 @@ class PaletteExpandable extends PaletteBase {
       }
     }
 
-    this.innerHTML = `<div class="palette-expandable">${shown.map((c) => `<div class="color-swatch ${shapeClass}" style="background:${c}" data-color="${c}" title="${tip(c)}"></div>`).join("")}${btnHtml}</div>`;
+    const hasInfo = infoMode !== "none";
+    this.innerHTML = `<div class="palette-with-tooltip"><div class="palette-expandable">${shown.map((c) => `<div class="color-swatch ${shapeClass}" style="background:${c}" data-color="${c}"></div>`).join("")}${btnHtml}</div>${hasInfo ? `<div class="palette-hover-tooltip" style="min-height:1.4em;text-align:center;font-size:0.8em;color:var(--secondary-text-color,#888);margin-top:4px;transition:opacity 0.15s;opacity:0;">&nbsp;</div>` : ""}</div>`;
     this._attachSwatchSelect(".color-swatch", onSelect);
     const btn = this.querySelector(".expand-btn");
     if (btn)
@@ -542,6 +591,27 @@ class PaletteExpandable extends PaletteBase {
         this._expanded = !this._expanded;
         this._doRender();
       };
+    if (hasInfo) {
+      const tooltipEl = this.querySelector(".palette-hover-tooltip");
+      this.querySelectorAll(".color-swatch").forEach((el) => {
+        el.addEventListener("mouseenter", () => {
+          const lbl = _formatColorLabel(
+            el.getAttribute("data-color"),
+            infoMode,
+          );
+          if (tooltipEl && lbl) {
+            tooltipEl.textContent = lbl;
+            tooltipEl.style.opacity = "1";
+          }
+        });
+        el.addEventListener("mouseleave", () => {
+          if (tooltipEl) {
+            tooltipEl.textContent = "\u00a0";
+            tooltipEl.style.opacity = "0";
+          }
+        });
+      });
+    }
   }
   set expandStyle(v) {
     this._prop("expandStyle", v);
@@ -596,11 +666,33 @@ class PaletteScroll extends PaletteBase {
     this.innerHTML = `
       <div class="palette-scroll-wrapper">
         <button class="palette-scroll-arrow palette-scroll-left nav-btn-${btnShape}" title="Scroll left"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg></button>
-        <div class="palette-scroll-track">${palette.map((c) => `<div class="color-swatch ${shapeClass}" style="background:${c}" data-color="${c}" title="${tip(c)}"></div>`).join("")}</div>
+        <div class="palette-scroll-track">${palette.map((c) => `<div class="color-swatch ${shapeClass}" style="background:${c}" data-color="${c}"></div>`).join("")}</div>
         <button class="palette-scroll-arrow palette-scroll-right nav-btn-${btnShape}" title="Scroll right"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></button>
+      ${infoMode !== "none" ? `<div class="palette-hover-tooltip" style="min-height:1.4em;text-align:center;font-size:0.8em;color:var(--secondary-text-color,#888);margin-top:4px;transition:opacity 0.15s;opacity:0;">&nbsp;</div>` : ""}
       </div>`;
     const onSelect = this._getProp("onSelect", () => {});
     this._attachSwatchSelect(".color-swatch", onSelect);
+    if (infoMode !== "none") {
+      const tooltipEl = this.querySelector(".palette-hover-tooltip");
+      this.querySelectorAll(".color-swatch").forEach((el) => {
+        el.addEventListener("mouseenter", () => {
+          const lbl = _formatColorLabel(
+            el.getAttribute("data-color"),
+            infoMode,
+          );
+          if (tooltipEl && lbl) {
+            tooltipEl.textContent = lbl;
+            tooltipEl.style.opacity = "1";
+          }
+        });
+        el.addEventListener("mouseleave", () => {
+          if (tooltipEl) {
+            tooltipEl.textContent = "\u00a0";
+            tooltipEl.style.opacity = "0";
+          }
+        });
+      });
+    }
     const track = this.querySelector(".palette-scroll-track");
     this.querySelector(".palette-scroll-left")?.addEventListener(
       "click",
@@ -695,6 +787,8 @@ class PaletteGradientBar extends PaletteBase {
       return;
     }
     const infoMode = this._getProp("colorInfoDisplay", "none");
+    const freePick = this._getProp("gradientFreePick", false);
+    const shapeClass = _shapeClass(this._getProp("swatchShape", "round"));
     const tip = (c) => _formatColorLabel(c, infoMode) || c;
     const n = palette.length;
     const pct = (i) => ((i / Math.max(n - 1, 1)) * 100).toFixed(1);
@@ -702,15 +796,46 @@ class PaletteGradientBar extends PaletteBase {
     this.innerHTML = `
       <div class="palette-gradient-bar-wrapper">
         <div class="palette-gradient-bar" style="background:linear-gradient(to right, ${stops});"></div>
-        <div class="palette-gradient-ticks">${palette.map((c, i) => `<div class="palette-gradient-tick" style="left:${pct(i)}%;background:${c};" data-color="${c}" title="${tip(c)}"></div>`).join("")}</div>
+        <div class="palette-gradient-ticks">${palette.map((c, i) => `<div class="palette-gradient-tick ${shapeClass}" style="left:${pct(i)}%;background:${c};" data-color="${c}"></div>`).join("")}</div>
+      ${infoMode !== "none" ? `<div class="palette-hover-tooltip" style="min-height:1.4em;text-align:center;font-size:0.8em;color:var(--secondary-text-color,#888);margin-top:4px;transition:opacity 0.15s;opacity:0;">&nbsp;</div>` : ""}
       </div>`;
     const onSelect = this._getProp("onSelect", () => {});
+    const tooltipEl =
+      infoMode !== "none" ? this.querySelector(".palette-hover-tooltip") : null;
+    if (infoMode !== "none") {
+      this.querySelectorAll(".palette-gradient-tick").forEach((el) => {
+        el.addEventListener("mouseenter", () => {
+          const lbl = _formatColorLabel(
+            el.getAttribute("data-color"),
+            infoMode,
+          );
+          if (tooltipEl && lbl) {
+            tooltipEl.textContent = lbl;
+            tooltipEl.style.opacity = "1";
+          }
+        });
+        el.addEventListener("mouseleave", () => {
+          if (tooltipEl) {
+            tooltipEl.textContent = "\u00a0";
+            tooltipEl.style.opacity = "0";
+          }
+        });
+      });
+    }
     const bar = this.querySelector(".palette-gradient-bar");
     if (bar) {
       const pickColor = (clientX) => {
         const rect = bar.getBoundingClientRect();
         const p = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-        onSelect(palette[Math.round(p * (n - 1))]);
+        const color = freePick
+          ? _interpolateGradientColor(palette, p)
+          : palette[Math.round(p * (n - 1))];
+        if (tooltipEl) {
+          const lbl = _formatColorLabel(color, infoMode) || color;
+          tooltipEl.textContent = lbl;
+          tooltipEl.style.opacity = "1";
+        }
+        onSelect(color);
       };
       bar.addEventListener("click", (e) => pickColor(e.clientX));
       bar.addEventListener("touchend", (e) => {
@@ -719,6 +844,34 @@ class PaletteGradientBar extends PaletteBase {
           pickColor(e.changedTouches[0].clientX);
         }
       });
+      // Free-pick live tooltip: show interpolated color while hovering bar
+      if (freePick && infoMode !== "none") {
+        let barMmRaf = null;
+        bar.addEventListener("mousemove", (e) => {
+          if (barMmRaf) return;
+          const cx = e.clientX;
+          barMmRaf = requestAnimationFrame(() => {
+            barMmRaf = null;
+            if (!tooltipEl) return;
+            const rect = bar.getBoundingClientRect();
+            const p = Math.max(0, Math.min(1, (cx - rect.left) / rect.width));
+            const color = _interpolateGradientColor(palette, p);
+            const lbl = _formatColorLabel(color, infoMode) || color;
+            tooltipEl.textContent = lbl;
+            tooltipEl.style.opacity = "1";
+          });
+        });
+        bar.addEventListener("mouseleave", () => {
+          if (barMmRaf) {
+            cancelAnimationFrame(barMmRaf);
+            barMmRaf = null;
+          }
+          if (tooltipEl) {
+            tooltipEl.textContent = "\u00a0";
+            tooltipEl.style.opacity = "0";
+          }
+        });
+      }
     }
     this.querySelectorAll(".palette-gradient-tick").forEach((el) => {
       el.addEventListener("click", (e) => {
@@ -739,11 +892,23 @@ class PaletteGradientBar extends PaletteBase {
   get onSelect() {
     return this._getProp("onSelect", null);
   }
+  set swatchShape(v) {
+    this._prop("swatchShape", v);
+  }
+  get swatchShape() {
+    return this._getProp("swatchShape", "round");
+  }
   set colorInfoDisplay(v) {
     this._prop("colorInfoDisplay", v);
   }
   get colorInfoDisplay() {
     return this._getProp("colorInfoDisplay", "none");
+  }
+  set gradientFreePick(v) {
+    this._prop("gradientFreePick", v);
+  }
+  get gradientFreePick() {
+    return this._getProp("gradientFreePick", false);
   }
 }
 if (!customElements.get("palette-gradient-bar"))
@@ -793,10 +958,32 @@ class PaletteFan extends PaletteBase {
       const op = 0.6 + 0.4 * edge;
       const leftPct = ((left / naturalW) * 100).toFixed(2);
       const topPct = ((y / naturalH) * 100).toFixed(2);
-      s += `<div class="color-swatch palette-fan-swatch ${shapeClass}" style="background:${color};left:${leftPct}%;top:${topPct}%;width:${wPct}%;height:${hPct}%;--fan-angle:${angle.toFixed(1)}deg;transform:rotate(var(--fan-angle)) scale(${sc.toFixed(2)});opacity:${op.toFixed(2)};" data-color="${color}" title="${tip(color)}"></div>`;
+      s += `<div class="color-swatch palette-fan-swatch ${shapeClass}" style="background:${color};left:${leftPct}%;top:${topPct}%;width:${wPct}%;height:${hPct}%;--fan-angle:${angle.toFixed(1)}deg;transform:rotate(var(--fan-angle)) scale(${sc.toFixed(2)});opacity:${op.toFixed(2)};" data-color="${color}"></div>`;
     });
-    this.innerHTML = `<div class="palette-fan-container" style="width:100%;max-width:${naturalW}px;margin:0 auto;aspect-ratio:${naturalW}/${naturalH};position:relative;overflow:hidden;">${s}</div>`;
+    const hasInfo = infoMode !== "none";
+    this.innerHTML = `<div class="palette-fan-container" style="width:100%;max-width:${naturalW}px;margin:0 auto;aspect-ratio:${naturalW}/${naturalH};position:relative;overflow:hidden;">${s}</div>${hasInfo ? `<div class="palette-hover-tooltip" style="min-height:1.4em;text-align:center;font-size:0.8em;color:var(--secondary-text-color,#888);margin-top:4px;transition:opacity 0.15s;opacity:0;">&nbsp;</div>` : ""}`;
     this._attachSwatchSelect(".color-swatch", onSelect);
+    if (hasInfo) {
+      const tooltipEl = this.querySelector(".palette-hover-tooltip");
+      this.querySelectorAll(".color-swatch").forEach((el) => {
+        el.addEventListener("mouseenter", () => {
+          const lbl = _formatColorLabel(
+            el.getAttribute("data-color"),
+            infoMode,
+          );
+          if (tooltipEl && lbl) {
+            tooltipEl.textContent = lbl;
+            tooltipEl.style.opacity = "1";
+          }
+        });
+        el.addEventListener("mouseleave", () => {
+          if (tooltipEl) {
+            tooltipEl.textContent = "\u00a0";
+            tooltipEl.style.opacity = "0";
+          }
+        });
+      });
+    }
   }
   set palette(v) {
     this._prop("palette", v);
@@ -858,10 +1045,32 @@ class PaletteWave extends PaletteBase {
       const sc = 0.8 + 0.25 * peak;
       const leftPct = ((x / naturalW) * 100).toFixed(2);
       const topPct = ((y / naturalH) * 100).toFixed(2);
-      s += `<div class="color-swatch palette-wave-swatch ${shapeClass}" style="background:${color};left:${leftPct}%;top:${topPct}%;width:${wPct}%;height:${hPct}%;transform:scale(${sc.toFixed(2)});" data-color="${color}" title="${tip(color)}"></div>`;
+      s += `<div class="color-swatch palette-wave-swatch ${shapeClass}" style="background:${color};left:${leftPct}%;top:${topPct}%;width:${wPct}%;height:${hPct}%;transform:scale(${sc.toFixed(2)});" data-color="${color}"></div>`;
     });
-    this.innerHTML = `<div class="palette-wave-container" style="width:100%;max-width:${naturalW}px;margin:0 auto;aspect-ratio:${naturalW}/${naturalH};position:relative;">${s}</div>`;
+    const hasInfo = infoMode !== "none";
+    this.innerHTML = `<div class="palette-wave-container" style="width:100%;max-width:${naturalW}px;margin:0 auto;aspect-ratio:${naturalW}/${naturalH};position:relative;">${s}</div>${hasInfo ? `<div class="palette-hover-tooltip" style="min-height:1.4em;text-align:center;font-size:0.8em;color:var(--secondary-text-color,#888);margin-top:4px;transition:opacity 0.15s;opacity:0;">&nbsp;</div>` : ""}`;
     this._attachSwatchSelect(".color-swatch", onSelect);
+    if (hasInfo) {
+      const tooltipEl = this.querySelector(".palette-hover-tooltip");
+      this.querySelectorAll(".color-swatch").forEach((el) => {
+        el.addEventListener("mouseenter", () => {
+          const lbl = _formatColorLabel(
+            el.getAttribute("data-color"),
+            infoMode,
+          );
+          if (tooltipEl && lbl) {
+            tooltipEl.textContent = lbl;
+            tooltipEl.style.opacity = "1";
+          }
+        });
+        el.addEventListener("mouseleave", () => {
+          if (tooltipEl) {
+            tooltipEl.textContent = "\u00a0";
+            tooltipEl.style.opacity = "0";
+          }
+        });
+      });
+    }
   }
   set palette(v) {
     this._prop("palette", v);
@@ -944,10 +1153,32 @@ class PaletteSpiral extends PaletteBase {
       const rot = ((angle * 180) / Math.PI).toFixed(0);
       const leftPct = ((x / cSize) * 100).toFixed(2);
       const topPct = ((y / cSize) * 100).toFixed(2);
-      s += `<div class="color-swatch palette-spiral-swatch ${shapeClass}" style="background:${color};left:${leftPct}%;top:${topPct}%;width:${swPct}%;height:${swPct}%;transform:rotate(${rot}deg) scale(${sc.toFixed(2)});" data-color="${color}" title="${tip(color)}"></div>`;
+      s += `<div class="color-swatch palette-spiral-swatch ${shapeClass}" style="background:${color};left:${leftPct}%;top:${topPct}%;width:${swPct}%;height:${swPct}%;transform:rotate(${rot}deg) scale(${sc.toFixed(2)});" data-color="${color}"></div>`;
     });
-    this.innerHTML = `<div class="palette-spiral-container" style="width:100%;max-width:${cSize}px;margin:0 auto;aspect-ratio:1;position:relative;">${s}</div>`;
+    const hasInfo = infoMode !== "none";
+    this.innerHTML = `<div class="palette-spiral-container" style="width:100%;max-width:${cSize}px;margin:0 auto;aspect-ratio:1;position:relative;">${s}</div>${hasInfo ? `<div class="palette-hover-tooltip" style="min-height:1.4em;text-align:center;font-size:0.8em;color:var(--secondary-text-color,#888);margin-top:4px;transition:opacity 0.15s;opacity:0;">&nbsp;</div>` : ""}`;
     this._attachSwatchSelect(".color-swatch", onSelect);
+    if (hasInfo) {
+      const tooltipEl = this.querySelector(".palette-hover-tooltip");
+      this.querySelectorAll(".color-swatch").forEach((el) => {
+        el.addEventListener("mouseenter", () => {
+          const lbl = _formatColorLabel(
+            el.getAttribute("data-color"),
+            infoMode,
+          );
+          if (tooltipEl && lbl) {
+            tooltipEl.textContent = lbl;
+            tooltipEl.style.opacity = "1";
+          }
+        });
+        el.addEventListener("mouseleave", () => {
+          if (tooltipEl) {
+            tooltipEl.textContent = "\u00a0";
+            tooltipEl.style.opacity = "0";
+          }
+        });
+      });
+    }
   }
   set palette(v) {
     this._prop("palette", v);
@@ -990,7 +1221,6 @@ class PaletteHoneycomb extends PaletteBase {
     }
     const infoMode = this._getProp("colorInfoDisplay", "none");
     const tip = (c) => _formatColorLabel(c, infoMode) || c;
-    const label = (c) => _formatColorLabel(c, infoMode);
     const total = palette.length;
     const hexW = total <= 8 ? 40 : total <= 20 ? 34 : 28;
     const hexH = Math.round(hexW * 1.1547); // 2/sqrt(3)
@@ -1008,17 +1238,37 @@ class PaletteHoneycomb extends PaletteBase {
       const offset = row % 2 === 1 ? hexW / 2 : 0;
       const x = col * hexW + offset + 8;
       const y = row * rowH + 8;
-      const lbl = label(color);
-      const [r, g, b] = _parseColor(color);
-      const textColor =
-        r * 0.299 + g * 0.587 + b * 0.114 > 150 ? "#000" : "#fff";
       const leftPct = ((x / naturalW) * 100).toFixed(2);
       const topPct = ((y / naturalH) * 100).toFixed(2);
-      const fontSize = hexW <= 28 ? 6 : 7;
-      s += `<div class="palette-hex-swatch" style="background:${color};left:${leftPct}%;top:${topPct}%;width:${hwPct}%;height:${hhPct}%;" data-color="${color}" title="${tip(color)}">${lbl ? `<span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:${fontSize}px;color:${textColor};pointer-events:none;text-align:center;line-height:1.1;padding:2px;overflow:hidden;">${lbl}</span>` : ""}</div>`;
+      s += `<div class="palette-hex-swatch" style="background:${color};left:${leftPct}%;top:${topPct}%;width:${hwPct}%;height:${hhPct}%;" data-color="${color}"></div>`;
     });
-    this.innerHTML = `<div class="palette-honeycomb-container" style="width:100%;max-width:${naturalW}px;margin:0 auto;aspect-ratio:${naturalW}/${naturalH};position:relative;">${s}</div>`;
+    const hasInfo = infoMode !== "none";
+    this.innerHTML = `
+      <div class="palette-honeycomb-container" style="width:100%;max-width:${naturalW}px;margin:0 auto;aspect-ratio:${naturalW}/${naturalH};position:relative;">${s}</div>
+      ${hasInfo ? `<div class="palette-honeycomb-tooltip" style="min-height:1.4em;text-align:center;font-size:0.8em;color:var(--secondary-text-color,#888);margin-top:4px;transition:opacity 0.15s;opacity:0;">&nbsp;</div>` : ""}
+    `;
     this._attachSwatchSelect(".palette-hex-swatch", onSelect);
+    if (hasInfo) {
+      const tooltipEl = this.querySelector(".palette-honeycomb-tooltip");
+      this.querySelectorAll(".palette-hex-swatch").forEach((el) => {
+        el.addEventListener("mouseenter", () => {
+          const lbl = _formatColorLabel(
+            el.getAttribute("data-color"),
+            infoMode,
+          );
+          if (tooltipEl && lbl) {
+            tooltipEl.textContent = lbl;
+            tooltipEl.style.opacity = "1";
+          }
+        });
+        el.addEventListener("mouseleave", () => {
+          if (tooltipEl) {
+            tooltipEl.textContent = "\u00a0";
+            tooltipEl.style.opacity = "0";
+          }
+        });
+      });
+    }
   }
   set palette(v) {
     this._prop("palette", v);
@@ -1048,8 +1298,6 @@ if (!customElements.get("palette-honeycomb"))
 // -----------------------------------------------------------------------
 class PaletteBlinds extends PaletteBase {
   _doRender() {
-    // If a click-lock is active, skip re-render to prevent the
-    // collapse-reopen-select-wrong-color issue.
     if (this._clickLocked) return;
 
     const palette = this._getProp("palette", []);
@@ -1060,96 +1308,157 @@ class PaletteBlinds extends PaletteBase {
       this.innerHTML = "";
       return;
     }
-    const total = palette.length;
-    const label = (c) => _formatColorLabel(c, infoMode);
-    const tip = (c) => _formatColorLabel(c, infoMode) || c;
 
-    // Direction class applied to the container
-    const dirClass = `palette-blinds-${direction}`;
+    const n = palette.length;
+    const hasInfo = infoMode !== "none";
+    const tooltipHtml = hasInfo
+      ? `<div class="palette-hover-tooltip" style="min-height:1.4em;text-align:center;font-size:0.8em;color:var(--secondary-text-color,#888);margin-top:4px;transition:opacity 0.15s;opacity:0;">&nbsp;</div>`
+      : "";
 
-    if (direction === "columns") {
-      // Vertical strips side by side
-      const totalW = "100%";
-      const containerH = 110;
-      let s = "";
-      palette.forEach((color) => {
-        const [r, g, b] = _parseColor(color);
-        const textColor =
-          r * 0.299 + g * 0.587 + b * 0.114 > 150 ? "#000" : "#fff";
-        s += `<div class="palette-blind-strip" style="background:${color};flex:1;" data-color="${color}" title="${tip(color)}"><span class="palette-blind-label" style="color:${textColor};">${label(color)}</span></div>`;
-      });
-      this.innerHTML = `<div class="palette-blinds-container ${dirClass}" style="width:${totalW};height:${containerH}px;">${s}</div>`;
-    } else if (
-      direction === "diagonal-right" ||
-      direction === "diagonal-left"
-    ) {
-      // Diagonal strips using a rotated inner flex container
-      // Compute exact scale so the rotated rectangle fully covers
-      // the visible container regardless of its aspect ratio.
-      const containerH = 130;
-      const rotDeg = direction === "diagonal-right" ? 18 : -18;
-      const rad = (Math.abs(rotDeg) * Math.PI) / 180;
-      const cosA = Math.cos(rad);
-      const sinA = Math.sin(rad);
-      // For a rectangle W×H rotated by θ, its axis-aligned bounding box is:
-      //   bbW = W·cos + H·sin,   bbH = W·sin + H·cos
-      // We need bbW ≥ containerW and bbH ≥ containerH.
-      // Since containerW is unknown (responsive), we use percentages:
-      //   scale = 1 / cos(θ)  covers width when aspect isn't extreme,
-      //   but we must also cover height.  Use a generous factor.
-      // For θ=18°: cos=0.951, sin=0.309 → worst-case (wide card ~3:1)
-      //   height factor ≈ 3·sin + cos ≈ 1.88
-      // Use 260% / -80% for generous coverage at all aspect ratios.
-      const scalePct = 260;
-      const offsetPct = -(scalePct - 100) / 2;
-      let s = "";
-      palette.forEach((color) => {
-        const [r, g, b] = _parseColor(color);
-        const textColor =
-          r * 0.299 + g * 0.587 + b * 0.114 > 150 ? "#000" : "#fff";
-        s += `<div class="palette-blind-strip" style="background:${color};flex:1;" data-color="${color}" title="${tip(color)}"><span class="palette-blind-label" style="color:${textColor};transform:rotate(${-rotDeg}deg);">${label(color)}</span></div>`;
-      });
-      this.innerHTML = `<div class="palette-blinds-container palette-blinds-diagonal" style="width:100%;height:${containerH}px;"><div class="palette-blinds-rotate-wrap" style="transform:rotate(${rotDeg}deg);width:${scalePct}%;height:${scalePct}%;top:${offsetPct}%;left:${offsetPct}%;">${s}</div></div>`;
-    } else {
-      // Default: rows (horizontal strips stacked top to bottom)
-      const minStripH = Math.max(4, Math.min(12, Math.floor(120 / total)));
-      const totalH = Math.max(60, Math.min(130, total * minStripH + 10));
-      let s = "";
-      palette.forEach((color) => {
-        const [r, g, b] = _parseColor(color);
-        const textColor =
-          r * 0.299 + g * 0.587 + b * 0.114 > 150 ? "#000" : "#fff";
-        s += `<div class="palette-blind-strip" style="background:${color};flex:1;" data-color="${color}" title="${tip(color)}"><span class="palette-blind-label" style="color:${textColor};">${label(color)}</span></div>`;
-      });
-      this.innerHTML = `<div class="palette-blinds-container ${dirClass}" style="width:100%;height:${totalH}px;">${s}</div>`;
-    }
+    // Geometry per direction:
+    //   rows            → flex column, no skew,  expand on Y axis
+    //   columns         → flex row,    no skew,  expand on X axis
+    //   diagonal-right  → flex row,    skewX(-15deg), expand on X axis
+    //   diagonal-left   → flex row,    skewX(+15deg), expand on X axis
+    // skewX keeps strips full-height → ALL colors always visible (no rotation clipping).
+    const isRows = direction === "rows";
+    const isDiag =
+      direction === "diagonal-right" || direction === "diagonal-left";
+    const skewDeg = isDiag ? (direction === "diagonal-right" ? -15 : 15) : 0;
+    const skewRad = (skewDeg * Math.PI) / 180;
+    const flexDir = isRows ? "column" : "row";
 
-    // Attach click/touch handlers
-    this.querySelectorAll(".palette-blind-strip").forEach((el) => {
-      el.onclick = () => {
-        this._clickLocked = true;
-        onSelect(el.getAttribute("data-color"));
-      };
-      el.onmouseleave = () => {
-        this._clickLocked = false;
-      };
-      // Touch: expand strip on touch, select on tap
-      el.addEventListener(
-        "touchstart",
-        (e) => {
-          el.classList.add("touch-active");
-        },
-        { passive: true },
-      );
-      el.addEventListener("touchend", (e) => {
-        el.classList.remove("touch-active");
-        this._clickLocked = true;
-        onSelect(el.getAttribute("data-color"));
+    const containerH = isRows
+      ? Math.max(
+          60,
+          Math.min(
+            130,
+            n * Math.max(4, Math.min(14, Math.floor(120 / n))) + 10,
+          ),
+        )
+      : 120;
+
+    const stripsHtml = palette
+      .map(
+        (color) =>
+          `<div class="palette-blind-strip" style="background:${color};flex:1 1 0;pointer-events:none;" data-color="${color}"></div>`,
+      )
+      .join("");
+
+    // Inner wrapper: flex layout + optional skew. overflow:visible so slanted edges aren't double-clipped.
+    // For diagonal: inner wrapper is wider than the container so skewed strips
+    // cover the full area (no empty corners). Overshoot = containerH * tan(|skewDeg|).
+    const overshoot = isDiag
+      ? Math.ceil(containerH * Math.abs(Math.tan(skewRad))) + 4
+      : 0;
+    const innerStyle =
+      `display:flex;flex-direction:${flexDir};gap:1px;` +
+      (isDiag
+        ? `width:calc(100% + ${overshoot * 2}px);height:100%;margin-left:-${overshoot}px;transform:skewX(${skewDeg}deg);`
+        : `width:100%;height:100%;`);
+
+    this.innerHTML =
+      `<div class="palette-blinds-outer" style="width:100%;height:${containerH}px;overflow:hidden;border-radius:8px;cursor:pointer;">` +
+      `<div class="palette-blinds-inner" style="${innerStyle}">${stripsHtml}</div>` +
+      `</div>${tooltipHtml}`;
+
+    const outer = this.querySelector(".palette-blinds-outer");
+    const strips = Array.from(this.querySelectorAll(".palette-blind-strip"));
+    const tooltipEl = hasInfo
+      ? this.querySelector(".palette-hover-tooltip")
+      : null;
+    let lastIdx = -1;
+
+    const setActive = (idx) => {
+      if (idx === lastIdx) return;
+      lastIdx = idx;
+      // Set ALL strips explicitly so flex sum stays constant → container never overflows.
+      strips.forEach((el, i) => {
+        el.style.flex = i === idx ? "4 1 0" : "1 1 0";
+        el.style.filter = i === idx ? "brightness(1.1)" : "";
       });
-      el.addEventListener("touchcancel", () => {
-        el.classList.remove("touch-active");
+      if (tooltipEl) {
+        if (idx >= 0) {
+          const lbl = _formatColorLabel(palette[idx], infoMode);
+          tooltipEl.textContent = lbl || "\u00a0";
+          tooltipEl.style.opacity = lbl ? "1" : "0";
+        } else {
+          tooltipEl.textContent = "\u00a0";
+          tooltipEl.style.opacity = "0";
+        }
+      }
+    };
+
+    const resetAll = () => {
+      lastIdx = -1;
+      strips.forEach((el) => {
+        el.style.flex = "1 1 0";
+        el.style.filter = "";
+      });
+      if (tooltipEl) {
+        tooltipEl.textContent = "\u00a0";
+        tooltipEl.style.opacity = "0";
+      }
+      this._clickLocked = false;
+    };
+
+    const getIdx = (clientX, clientY) => {
+      const rect = outer.getBoundingClientRect();
+      if (isRows) {
+        const t = (clientY - rect.top) / rect.height;
+        return Math.max(0, Math.min(n - 1, Math.floor(t * n)));
+      } else {
+        // columns and diagonal: use X axis.
+        // For skewX(a): inverse-unskew the mouse X: x_unskewed = x - y * tan(a)
+        const y = clientY - rect.top - rect.height / 2;
+        const xRaw = clientX - rect.left + overshoot; // offset for the wider inner
+        const xUnskewed = xRaw - y * Math.tan(skewRad);
+        const t = xUnskewed / (rect.width + overshoot * 2);
+        return Math.max(0, Math.min(n - 1, Math.floor(t * n)));
+      }
+    };
+
+    // RAF-throttle mousemove so we only process one event per animation frame
+    let mmRaf = null;
+    outer.addEventListener("mousemove", (e) => {
+      const cx = e.clientX,
+        cy = e.clientY;
+      if (mmRaf) return;
+      mmRaf = requestAnimationFrame(() => {
+        mmRaf = null;
+        setActive(getIdx(cx, cy));
       });
     });
+    outer.addEventListener("mouseleave", () => {
+      if (mmRaf) {
+        cancelAnimationFrame(mmRaf);
+        mmRaf = null;
+      }
+      resetAll();
+    });
+    outer.addEventListener("click", (e) => {
+      this._clickLocked = true;
+      onSelect(palette[getIdx(e.clientX, e.clientY)]);
+    });
+    outer.addEventListener(
+      "touchstart",
+      (e) => {
+        if (e.touches.length) {
+          const t = e.touches[0];
+          this._touchIdx = getIdx(t.clientX, t.clientY);
+          setActive(this._touchIdx);
+        }
+      },
+      { passive: true },
+    );
+    outer.addEventListener("touchend", (e) => {
+      e.preventDefault();
+      const idx = this._touchIdx;
+      resetAll();
+      this._clickLocked = true;
+      if (idx !== undefined) onSelect(palette[idx]);
+    });
+    outer.addEventListener("touchcancel", resetAll);
   }
   set palette(v) {
     this._prop("palette", v);
@@ -1301,9 +1610,8 @@ class PaletteTreemap extends PaletteBase {
       const txtC =
         rr * 0.299 + gg * 0.587 + bb * 0.114 > 150 ? "#0008" : "#fff8";
       const cellLabel = _formatColorLabel(r.color, infoMode);
-      const cellTip = cellLabel || r.color;
       const showLabel = hPct > 16 && wPct > 12 ? cellLabel : "";
-      s += `<div class="palette-treemap-cell" style="background:${r.color};left:${xPct.toFixed(2)}%;top:${yPct.toFixed(2)}%;width:${wPct.toFixed(2)}%;height:${hPct.toFixed(2)}%;" data-color="${r.color}" title="${cellTip}"><span style="color:${txtC};">${showLabel}</span></div>`;
+      s += `<div class="palette-treemap-cell" style="background:${r.color};left:${xPct.toFixed(2)}%;top:${yPct.toFixed(2)}%;width:${wPct.toFixed(2)}%;height:${hPct.toFixed(2)}%;--cell-color:${r.color};" data-color="${r.color}"><span style="color:${txtC};">${showLabel}</span></div>`;
     });
     this.innerHTML = `<div class="palette-treemap-container" style="aspect-ratio:${refW}/${totalH};position:relative;width:100%;border-radius:10px;overflow:hidden;">${s}</div>`;
     this._attachSwatchSelect(".palette-treemap-cell", onSelect);

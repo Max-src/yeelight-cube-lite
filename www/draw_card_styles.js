@@ -1372,6 +1372,16 @@ export const drawCardStyles = css`
     height: 10px;
     border-radius: 50%;
     transform: translateX(-50%);
+  }
+  .palette-gradient-tick.square {
+    border-radius: 2px;
+  }
+  .palette-gradient-tick.rounded {
+    border-radius: 4px;
+  }
+  .palette-gradient-tick.square,
+  .palette-gradient-tick.rounded,
+  .palette-gradient-tick.round {
     border: 2px solid var(--card-background-color, #fff);
     box-shadow: 0 1px 3px #0003;
     cursor: pointer;
@@ -1468,75 +1478,16 @@ export const drawCardStyles = css`
   }
 
   /* ---- Blinds mode ---- */
-  .palette-blinds-container {
-    display: flex;
-    flex-direction: column;
-    border-radius: 8px;
-    overflow: hidden;
-    gap: 1px;
-    background: var(--card-background-color, #fff);
-  }
-  /* Rows = default column direction (horizontal strips) */
-  .palette-blinds-rows {
-    flex-direction: column;
-  }
-  /* Columns = vertical strips side by side */
-  .palette-blinds-columns {
-    flex-direction: row;
-  }
-  .palette-blinds-columns .palette-blind-strip {
-    min-height: unset;
-    min-width: 2px;
-  }
-  /* Diagonal wrapper */
-  .palette-blinds-diagonal {
-    overflow: hidden;
-    border-radius: 8px;
-    position: relative;
-  }
-  .palette-blinds-rotate-wrap {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    /* Default scale — overridden by inline styles for exact coverage */
-    width: 260%;
-    height: 260%;
-    position: absolute;
-    top: -80%;
-    left: -80%;
+  .palette-blinds-inner {
     transform-origin: center center;
-  }
-  .palette-blinds-diagonal .palette-blind-strip {
-    min-height: 3px;
   }
   .palette-blind-strip {
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     transition:
       flex 0.3s cubic-bezier(0.4, 0, 0.2, 1),
       filter 0.2s;
-    overflow: hidden;
-    min-height: 3px;
-    min-width: 3px;
-  }
-  .palette-blind-strip:hover,
-  .palette-blind-strip.touch-active {
-    flex: 4 !important;
-    filter: brightness(1.1);
-  }
-  .palette-blind-label {
-    font-size: 0.7em;
-    font-family: monospace;
-    opacity: 0;
-    transition: opacity 0.25s;
-    pointer-events: none;
-    white-space: nowrap;
-  }
-  .palette-blind-strip:hover .palette-blind-label,
-  .palette-blind-strip.touch-active .palette-blind-label {
-    opacity: 0.8;
+    min-height: 0;
+    min-width: 0;
   }
 
   /* ---- Treemap mode ---- */
@@ -1546,9 +1497,6 @@ export const drawCardStyles = css`
     display: flex;
     align-items: center;
     justify-content: center;
-    transition:
-      filter 0.2s,
-      z-index 0s;
     border: 0.5px solid rgba(255, 255, 255, 0.08);
     overflow: hidden;
   }
@@ -1559,10 +1507,8 @@ export const drawCardStyles = css`
     white-space: nowrap;
   }
   .palette-treemap-cell:hover {
-    filter: brightness(1.2);
-    z-index: 10 !important;
-    outline: 2px solid var(--primary-color, #4488ff);
-    outline-offset: -2px;
+    outline: 3px solid var(--cell-color, #fff);
+    outline-offset: -3px;
   }
 
   .palette-preview-hover.expanded-mode {
