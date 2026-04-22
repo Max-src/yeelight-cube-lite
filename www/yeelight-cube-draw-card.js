@@ -297,41 +297,133 @@ class YeelightCubeDrawCard extends LitElement {
     // Re-setup drag-to-scroll for palette containers after re-renders
     setTimeout(() => this._setupPaletteRowDragScroll(), 0);
 
-    // Measure preview-hover container width for fixed-pixel body rendering
-    // and set each collapsed card's max-height to match its scaled visual height.
-    // Double RAF ensures custom elements (palette-fan, palette-spiral, etc.)
-    // have rendered their content before we measure scrollHeight.
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const el = this.shadowRoot
-          ? this.shadowRoot.querySelector(".palette-preview-hover")
-          : this.querySelector(".palette-preview-hover");
-        if (el) {
-          const allCards = el.querySelectorAll(".palette-preview-card");
-          const nCards = allCards.length || 1;
-          const gap = 8; // matches CSS gap on .palette-preview-hover
-          const outerW = el.offsetWidth;
-          // Body width = outer minus gaps so visual body (scaled 1/n) fits each card exactly
-          const bodyW = outerW - (nCards - 1) * gap;
-          if (bodyW > 0) el.style.setProperty("--container-w", bodyW + "px");
+    // Trigger preview-hover height measurement after each render
+    this._schedulePreviewHoverMeasure();
+  }
 
-          // Dynamically size collapsed preview cards to their visual height
-          const expandedMode = el.classList.contains("expanded-mode");
-          allCards.forEach((card) => {
-            if (card.classList.contains("expanded") || expandedMode) {
-              // Let CSS rules handle expanded and shrinking-to-zero cards
-              card.style.removeProperty("max-height");
-            } else {
-              const body = card.querySelector(".palette-preview-body");
-              if (body) {
-                const h = Math.ceil(body.scrollHeight / nCards);
-                card.style.maxHeight = h + "px";
-              }
-            }
-          });
+  // ─── Preview-hover measurement ─────────────────────────────────────────
+  //
+  // Each palette custom element (PaletteBase subclass) fires
+  // "palette-element-rendered" (bubbling) at the END of its rAF-deferred
+  // _doRender(), i.e. after its innerHTML has settled and the browser has
+  // resolved layout for that element.  We listen for this event on the
+  // .palette-preview-hover container and use it as the authoritative
+  // trigger to measure collapsed card heights.
+  //
+  // Additional triggers:
+  //   • _schedulePreviewHoverMeasure() — called from Lit's updated() for
+  //     cases where no custom-element re-render happens (e.g. empty cards,
+  //     mode changes that don't touch palette content).
+  //   • A 600ms fallback timeout — catches any edge case.
+  //
+  // All triggers are debounced through a single rAF so rapid successive
+  // events coalesce into one measurement per frame.
+  //
+  // applyHeights():
+  //   Reads each non-empty body's scrollHeight (layout height, unaffected by
+  //   CSS transforms), picks the tallest one as uniformH = ceil(max / nCards),
+  //   and sets that same max-height on EVERY collapsed card so they are all
+  //   the same height regardless of palette size or color-info display mode.
+
+  _schedulePreviewHoverMeasure() {
+    if (this._previewMeasurePending) return;
+    this._previewMeasurePending = true;
+    requestAnimationFrame(() => {
+      this._previewMeasurePending = false;
+      this._setupPreviewHoverMeasurement();
+    });
+  }
+
+  // Set up (or refresh) the hover measurement for the current DOM state.
+  // Safe to call multiple times — tears down/recreates listeners cleanly.
+  _setupPreviewHoverMeasurement() {
+    const el = this.shadowRoot
+      ? this.shadowRoot.querySelector(".palette-preview-hover")
+      : this.querySelector(".palette-preview-hover");
+
+    // Tear down previous listeners / timeouts
+    if (this._previewEl && this._previewRenderedListener) {
+      this._previewEl.removeEventListener(
+        "palette-element-rendered",
+        this._previewRenderedListener,
+      );
+    }
+    if (this._previewApplyRAF) {
+      cancelAnimationFrame(this._previewApplyRAF);
+      this._previewApplyRAF = null;
+    }
+    clearTimeout(this._previewROTimeout);
+    this._previewEl = el;
+
+    if (!el) return;
+
+    // ── Set --container-w once so bodies render at the correct pixel width ─
+    const allCards = [...el.querySelectorAll(".palette-preview-card")];
+    const nCards = allCards.length || 1;
+    const gap = 8;
+    const outerW = el.offsetWidth;
+    const bodyW = outerW - (nCards - 1) * gap;
+    if (bodyW > 0) el.style.setProperty("--container-w", bodyW + "px");
+
+    // ── Core measurement function ──────────────────────────────────────────
+    // Called once per logical "render cycle" (debounced via rAF).
+    // Reads body.scrollHeight which is the body's FULL layout height,
+    // independent of: CSS transforms, parent overflow/max-height, or the
+    // GPU-composited visual size.  Setting max-height = scrollH/nCards clips
+    // the card to show exactly the scaled-down (1/n) visual content height.
+    const applyHeights = () => {
+      // Re-read --container-w in case the container was resized
+      const outerW2 = el.offsetWidth;
+      const bodyW2 = outerW2 - (nCards - 1) * gap;
+      if (bodyW2 > 0) el.style.setProperty("--container-w", bodyW2 + "px");
+
+      const expandedMode = el.classList.contains("expanded-mode");
+      let maxScrollH = 0;
+      allCards.forEach((card) => {
+        if (card.classList.contains("empty")) return;
+        if (card.classList.contains("expanded") || expandedMode) return;
+        const body = card.querySelector(".palette-preview-body");
+        if (body && body.scrollHeight > maxScrollH)
+          maxScrollH = body.scrollHeight;
+      });
+      // +1px breathing room avoids sub-pixel clipping when scrollH is exactly
+      // divisible by nCards (Math.ceil would otherwise give no margin).
+      const uniformH = maxScrollH > 0 ? Math.ceil(maxScrollH / nCards) + 1 : 0;
+      allCards.forEach((card) => {
+        if (card.classList.contains("expanded") || expandedMode) {
+          card.style.removeProperty("max-height");
+        } else if (uniformH > 0) {
+          card.style.maxHeight = uniformH + "px";
         }
       });
-    });
+    };
+
+    // ── Debounce helper — coalesces multiple triggers into one rAF ─────────
+    const scheduleApply = () => {
+      if (this._previewApplyRAF) cancelAnimationFrame(this._previewApplyRAF);
+      this._previewApplyRAF = requestAnimationFrame(() => {
+        this._previewApplyRAF = null;
+        applyHeights();
+      });
+    };
+
+    // ── Listen for "palette-element-rendered" — most reliable trigger ──────
+    // Fires from PaletteBase._scheduleRender AFTER _doRender() completes,
+    // guaranteeing the body scrollHeight reflects settled content.
+    this._previewRenderedListener = scheduleApply;
+    el.addEventListener(
+      "palette-element-rendered",
+      this._previewRenderedListener,
+    );
+
+    // ── Immediate baseline pass ────────────────────────────────────────────
+    // Handles empty cards and modes where no custom element renders
+    // (so no event fires).  Also handles the case where custom elements
+    // already rendered before this setup ran.
+    scheduleApply();
+
+    // ── Hard fallback ─────────────────────────────────────────────────────
+    this._previewROTimeout = setTimeout(applyHeights, 600);
   }
 
   _renderPaletteCards(
@@ -443,6 +535,18 @@ class YeelightCubeDrawCard extends LitElement {
     const cardContent = (card) =>
       card.palette.length ? card.content : emptyHint;
 
+    // Colors card border
+    const colorsBorderMode = cfg.colors_card_border || "auto";
+    const isDark =
+      this.hass?.themes?.darkMode ??
+      window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ??
+      false;
+    const showColorsBorder =
+      colorsBorderMode === "always" || (colorsBorderMode === "auto" && isDark);
+    const colorsBorderClass = showColorsBorder
+      ? " palette-colors-card-border"
+      : "";
+
     // Side-by-side (default)
     if (mode === "side") {
       const sideW = cfg.side_card_width || 100;
@@ -479,7 +583,7 @@ class YeelightCubeDrawCard extends LitElement {
         return typeof v === "number" ? `${v}px` : `${parseInt(v, 10) || 16}px`;
       })();
       return html`<div
-        class="palette-row${isZoomMode ? " zoom-mode" : ""}"
+        class="palette-row${isZoomMode ? " zoom-mode" : ""}${colorsBorderClass}"
         style="--side-card-width:${sideW}%;--palette-card-radius:${paletteCardRadius}"
       >
         ${cards.map(
@@ -517,7 +621,7 @@ class YeelightCubeDrawCard extends LitElement {
       if (this._colorCarouselIndex === undefined) this._colorCarouselIndex = 0;
       if (this._colorCarouselSlideDirection === undefined)
         this._colorCarouselSlideDirection = 0;
-      return renderCarousel({
+      const carouselResult = renderCarousel({
         items: cards,
         currentIndex: this._colorCarouselIndex,
         slideDirection: this._colorCarouselSlideDirection,
@@ -540,6 +644,11 @@ class YeelightCubeDrawCard extends LitElement {
           `;
         },
       });
+      return html`<div
+        class="palette-colors-carousel-wrapper${colorsBorderClass}"
+      >
+        ${carouselResult}
+      </div>`;
     }
     // Tabs (segmented control)
     if (mode === "tabs") {
@@ -550,7 +659,7 @@ class YeelightCubeDrawCard extends LitElement {
       const activeCard = cards.find((c) => c.key === activeTab);
       const activeIdx = cards.findIndex((c) => c.key === activeTab);
       return html`
-        <div class="palette-tabs">
+        <div class="palette-tabs${colorsBorderClass}">
           <div
             class="palette-tab-bar"
             style="--tab-count:${cards.length};--tab-active-index:${activeIdx}"
@@ -588,7 +697,7 @@ class YeelightCubeDrawCard extends LitElement {
       const activeDrop = this._activePaletteDropdown || cards[0]?.key;
       const activeCard = cards.find((c) => c.key === activeDrop);
       return html`
-        <div class="palette-dropdown-wrapper">
+        <div class="palette-dropdown-wrapper${colorsBorderClass}">
           <select
             class="palette-dropdown-select"
             @change="${(e) => {
@@ -631,7 +740,10 @@ class YeelightCubeDrawCard extends LitElement {
       const expandedMode = !!expandedKey;
       const nCards = cards.length;
       return html`<div
-        class="palette-preview-hover${expandedMode ? " expanded-mode" : ""}"
+        class="palette-preview-hover${expandedMode
+          ? " expanded-mode"
+          : ""}${colorsBorderClass}"
+        data-display-mode="${displayMode}"
         style="--n-cards:${nCards};"
       >
         ${cards.map((card, idx) => {
@@ -654,21 +766,25 @@ class YeelightCubeDrawCard extends LitElement {
               this.requestUpdate();
             }, 200);
           };
-          const content = hasPalette
-            ? card.content
-            : html`<div class="palette-mini-empty">
-                <span class="mini-empty-title">${card.title}</span>
-                <span class="mini-empty-hint">Empty</span>
-              </div>`;
+          const content = hasPalette ? card.content : null;
           return html`
             <div
-              class="palette-preview-card${isExpanded ? " expanded" : ""}"
+              class="palette-preview-card${isExpanded
+                ? " expanded"
+                : ""}${!hasPalette ? " empty" : ""}"
               @mouseenter="${handleExpand}"
               @mouseleave="${handleCollapse}"
               @touchstart="${handleExpand}"
               @touchend="${handleCollapse}"
             >
-              <div class="palette-preview-body">${content}</div>
+              <div class="palette-preview-card-title">${card.title}</div>
+              ${hasPalette
+                ? html`<div class="palette-preview-body">${content}</div>`
+                : html`<div class="palette-mini-empty">
+                    ${isExpanded
+                      ? html`<span class="mini-empty-hint">Empty</span>`
+                      : ""}
+                  </div>`}
             </div>
           `;
         })}
@@ -677,7 +793,7 @@ class YeelightCubeDrawCard extends LitElement {
     // Fallback: side-by-side
     const fallbackSideW = cfg.side_card_width || 100;
     return html`<div
-      class="palette-row"
+      class="palette-row${colorsBorderClass}"
       style="--side-card-width:${fallbackSideW}%"
     >
       ${cards.map(

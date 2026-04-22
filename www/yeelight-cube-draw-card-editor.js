@@ -852,6 +852,24 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 ),
               ),
             )}
+            ${createButtonGroupRow(
+              "Colors Card Border",
+              createButtonGroup(
+                [
+                  { value: "none", label: "None" },
+                  { value: "auto", label: "Auto" },
+                  { value: "always", label: "Always" },
+                ],
+                this.config.colors_card_border || "auto",
+                createButtonGroupChangeHandler(
+                  "colors_card_border",
+                  (value) => {
+                    this.config.colors_card_border = value;
+                    this._fireConfigChanged();
+                  },
+                ),
+              ),
+            )}
           </div>
         </div>
 
@@ -1365,7 +1383,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 )
               : ""}
             <div class="form-row">
-              <label>Gallery Pixel Style</label>
+              <label>Pixel Art Style</label>
               ${createButtonGroup(
                 [
                   { value: "square", label: "Square" },

@@ -165,7 +165,6 @@ export const drawCardStyles = css`
     display: flex;
     flex-direction: column;
     align-items: stretch;
-    border-radius: 10px;
     padding: 0;
     cursor: pointer;
     position: relative;
@@ -187,9 +186,6 @@ export const drawCardStyles = css`
       var(--card-background-color, #fff)
     );
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  }
-  .palette-preview-card.empty {
-    cursor: default;
   }
   /* When expanded mode is on, non-expanded cards shrink to zero */
   .palette-preview-hover.expanded-mode .palette-preview-card:not(.expanded) {
@@ -229,6 +225,35 @@ export const drawCardStyles = css`
     pointer-events: auto;
     width: 100%;
     transform: scale(1);
+    padding: 0 10px 6px 8px;
+  }
+  /* Empty card: no pointer events since there's nothing to interact with */
+  .palette-preview-card.empty {
+    cursor: default;
+  }
+  /* Title bar — always rendered, animates in/out via max-height + opacity */
+  .palette-preview-card-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--secondary-text-color, #888);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 0;
+    /* Collapsed: hidden with no space */
+    max-height: 0;
+    opacity: 0;
+    padding: 0 10px;
+    transition:
+      max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+      opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+      padding 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  /* Expanded: full height and visible */
+  .palette-preview-card.expanded .palette-preview-card-title {
+    max-height: 2em;
+    opacity: 1;
+    padding: 8px 10px 6px;
   }
   /* Empty preview card placeholder */
   .palette-mini-empty {
@@ -236,16 +261,31 @@ export const drawCardStyles = css`
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 16px 8px;
     gap: 4px;
-    min-height: 48px;
-    border: 2px dashed var(--divider-color, #ddd);
-    border-radius: 10px;
+    flex: 1;
+    min-height: 0;
+    margin: 1px;
+    padding: 4px;
+    /* inset box-shadow instead of border so it never overflows its box */
+    box-shadow: inset 0 0 0 2px var(--divider-color, rgba(180, 180, 180, 0.5));
+    border-radius: 6px;
     background: color-mix(
       in srgb,
       var(--primary-text-color, #333) 3%,
       transparent
     );
+  }
+  .palette-preview-hover[data-display-mode="treemap"] .palette-mini-empty {
+    padding: 16px;
+  }
+  .palette-preview-hover[data-display-mode="blinds"] .palette-mini-empty {
+    padding: 15px;
+  }
+  .palette-preview-hover[data-display-mode="honeycomb"] .palette-mini-empty {
+    padding: 10px;
+  }
+  .palette-preview-hover[data-display-mode="gradient"] .palette-mini-empty {
+    padding: 4px;
   }
   .mini-empty-title {
     font-size: 13px;
@@ -1549,7 +1589,7 @@ export const drawCardStyles = css`
     width: 100%;
   }
 
-  /* Item card border for dark mode visibility */
+  /* Item card border for dark mode visibility (pixel arts) */
   .item-card-border .gallery-item {
     border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.15));
   }
@@ -1558,6 +1598,35 @@ export const drawCardStyles = css`
   }
   .item-card-border .pixelarts-album-item {
     border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.15));
+  }
+
+  /* Carousel wrapper: must fill full width */
+  .palette-colors-carousel-wrapper {
+    width: 100%;
+    display: block;
+  }
+
+  /* Colors section card border */
+  .palette-colors-card-border .palette-group-card {
+    border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+  }
+  .palette-colors-card-border .carousel-content-card {
+    border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+  }
+  .palette-colors-card-border .palette-tab-content {
+    border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+    border-radius: 8px;
+    padding: 8px;
+    box-sizing: border-box;
+  }
+  .palette-colors-card-border .palette-dropdown-content {
+    border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+    border-radius: 8px;
+    padding: 8px;
+    box-sizing: border-box;
+  }
+  .palette-colors-card-border .palette-preview-card.expanded {
+    box-shadow: inset 0 0 0 1px var(--divider-color, rgba(128, 128, 128, 0.35));
   }
 
   .pixelart-gallery-header {
@@ -1647,8 +1716,13 @@ export const drawCardStyles = css`
     display: block;
   }
 
-  .pixelart-pixel.round {
+  .pixelart-pixel.round,
+  .pixelart-pixel.circle {
     border-radius: 50%;
+  }
+
+  .pixelart-pixel.rounded {
+    border-radius: 20%;
   }
 
   .pixelart-pixel.square {

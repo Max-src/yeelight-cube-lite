@@ -489,6 +489,14 @@ class PaletteBase extends HTMLElement {
     this._renderRAF = requestAnimationFrame(() => {
       this._renderRAF = null;
       this._doRender();
+      // Signal to the parent that this element has finished rendering
+      // and the DOM is now settled at its natural dimensions.
+      this.dispatchEvent(
+        new CustomEvent("palette-element-rendered", {
+          bubbles: true,
+          composed: true,
+        }),
+      );
     });
   }
   _doRender() {
