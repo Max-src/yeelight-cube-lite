@@ -20,7 +20,7 @@
     "yeelight",
     "Pillow"
   ],
-  "version": "1.1.14",
+  "version": "1.1.15",
   "zeroconf": [
     {
       "type": "_miio._udp.local.",
