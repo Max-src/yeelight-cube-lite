@@ -1608,20 +1608,35 @@ class PaletteTreemap extends PaletteBase {
     squarify(sorted, 0, 0, refW, totalH);
 
     // Convert ALL coordinates to percentages so the treemap scales with container width
+    const hasInfo = infoMode !== "none";
+    const tooltipHtml = hasInfo
+      ? `<div class="palette-hover-tooltip" style="min-height:1.4em;text-align:center;font-size:0.8em;color:var(--secondary-text-color,#888);margin-top:14px;transition:opacity 0.15s;opacity:0;">&nbsp;</div>`
+      : "";
     let s = "";
     rects.forEach((r) => {
       const xPct = (r.x / refW) * 100;
       const yPct = (r.y / totalH) * 100;
       const wPct = (r.w / refW) * 100;
       const hPct = (r.h / totalH) * 100;
-      const [rr, gg, bb] = _parseColor(r.color);
-      const txtC =
-        rr * 0.299 + gg * 0.587 + bb * 0.114 > 150 ? "#0008" : "#fff8";
-      const cellLabel = _formatColorLabel(r.color, infoMode);
-      const showLabel = hPct > 16 && wPct > 12 ? cellLabel : "";
-      s += `<div class="palette-treemap-cell" style="background:${r.color};left:${xPct.toFixed(2)}%;top:${yPct.toFixed(2)}%;width:${wPct.toFixed(2)}%;height:${hPct.toFixed(2)}%;--cell-color:${r.color};" data-color="${r.color}"><span style="color:${txtC};">${showLabel}</span></div>`;
+      s += `<div class="palette-treemap-cell" style="background:${r.color};left:${xPct.toFixed(2)}%;top:${yPct.toFixed(2)}%;width:${wPct.toFixed(2)}%;height:${hPct.toFixed(2)}%;--cell-color:${r.color};" data-color="${r.color}"></div>`;
     });
-    this.innerHTML = `<div class="palette-treemap-container" style="aspect-ratio:${refW}/${totalH};position:relative;width:100%;border-radius:10px;overflow:hidden;">${s}</div>`;
+    this.innerHTML = `<div class="palette-treemap-container" style="aspect-ratio:${refW}/${totalH};position:relative;width:100%;border-radius:10px;">${s}</div>${tooltipHtml}`;
+
+    if (hasInfo) {
+      const tooltipEl = this.querySelector(".palette-hover-tooltip");
+      this.querySelectorAll(".palette-treemap-cell").forEach((cell) => {
+        cell.addEventListener("mouseover", () => {
+          const lbl = _formatColorLabel(cell.dataset.color, infoMode);
+          tooltipEl.textContent = lbl || "\u00a0";
+          tooltipEl.style.opacity = lbl ? "1" : "0";
+        });
+        cell.addEventListener("mouseleave", () => {
+          tooltipEl.textContent = "\u00a0";
+          tooltipEl.style.opacity = "0";
+        });
+      });
+    }
+
     this._attachSwatchSelect(".palette-treemap-cell", onSelect);
   }
   set palette(v) {

@@ -1534,21 +1534,17 @@ export const drawCardStyles = css`
   .palette-treemap-cell {
     position: absolute;
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     border: 0.5px solid rgba(255, 255, 255, 0.08);
     overflow: hidden;
-  }
-  .palette-treemap-cell span {
-    font-size: 0.55em;
-    font-family: monospace;
-    pointer-events: none;
-    white-space: nowrap;
+    z-index: 1;
+    transition:
+      transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1),
+      z-index 0s;
+    transform-origin: center center;
   }
   .palette-treemap-cell:hover {
-    outline: 3px solid var(--cell-color, #fff);
-    outline-offset: -3px;
+    transform: scale(1.12);
+    z-index: 10;
   }
 
   .palette-preview-hover.expanded-mode {
