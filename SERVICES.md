@@ -1,6 +1,8 @@
-# Complete Service Reference
+﻿﻿# Complete Service Reference
 
 This document provides comprehensive documentation for all available services in the Yeelight Cube Lite Component for controlling Yeelight Cube Smart Lamp Lite devices.
+
+> For a general overview of the integration, including installation, setup, cards and entities, see [README.md](README.md).
 
 ## 📋 Service Categories
 

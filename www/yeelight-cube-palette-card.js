@@ -130,13 +130,14 @@ class YeelightCubePaletteCard extends HTMLElement {
     return {
       type: "custom:yeelight-cube-palette-card",
       target_entities: firstEntity ? [firstEntity] : [],
-      swatch_style: "square",
-      display_mode: "gallery",
-      remove_button_style: "default",
+      swatch_style: "gradient-bg",
+      display_mode: "album",
+      remove_button_style: "none",
       show_color_count: false,
       buttons_style: "gradient",
       card_size: 50,
       items_per_page: 12,
+      delete_button_inside: false,
     };
   }
 

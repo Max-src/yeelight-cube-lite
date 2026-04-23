@@ -461,33 +461,38 @@ class YeelightCubeGradientCard extends HTMLElement {
     return document.createElement("yeelight-cube-gradient-card-editor");
   }
   static getStubConfig(hass) {
-    const firstEntity =
-      Object.keys(hass?.states || {}).find(
-        (e) =>
-          e.startsWith("light.yeelight_cube") ||
-          e.startsWith("light.cubelite_"),
-      ) || "";
+    const allEntities = Object.keys(hass?.states || {}).filter(
+      (e) =>
+        e.startsWith("light.yeelight_cube") || e.startsWith("light.cubelite_"),
+    );
+    const firstEntity = allEntities[0] || "";
     return {
       type: "custom:yeelight-cube-gradient-card",
       entity: firstEntity,
-      target_entities: firstEntity ? [firstEntity] : [],
+      target_entities: allEntities.length > 0 ? allEntities : [],
       show_color_mode_selector: true,
       rotary_unified_style: "rectangle",
       show_angle_section: true,
       angle_value_display: "none",
       show_angle_slider: false,
-      color_mode_style: "colorized",
+      color_mode_style: "compact",
       button_text_color: "white",
-      panel_toggle_style: "card",
+      panel_toggle_style: "default",
       rotary_size: "100",
-      gallery_background_color: "white",
+      gallery_background_color: "transparent",
       preview_display_mode: "wheel",
       wheel_nav_position: "sides",
       preview_show_titles: false,
-      gallery_pixel_style: "square",
+      gallery_pixel_style: "circle",
       gallery_ignore_black_pixels: true,
-      gallery_preview_size: "50",
+      gallery_preview_size: "64",
       gallery_spacing_mode: "normal",
+      rectangle_shape: "rectangle",
+      show_selector_dot: true,
+      compass_snap_to_coordinates: false,
+      wheel_height: "195",
+      gallery_matrix_box_shadow: false,
+      show_card_background: true,
     };
   }
 
