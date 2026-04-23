@@ -147,6 +147,8 @@ class YeelightCubeDrawCard extends LitElement {
 
   _handleTabsOutsideClick = (e) => {
     if (this.config?.palette_card_mode !== "tabs") return;
+    // Early-exit when no tab is open — avoids a requestUpdate() on every global mousedown (#9)
+    if (this._activePaletteTab === null) return;
     const tabBar = this.shadowRoot?.querySelector(".palette-tab-bar");
     const tabContent = this.shadowRoot?.querySelector(".palette-tab-content");
     if (!tabBar && !tabContent) return;
@@ -177,17 +179,24 @@ class YeelightCubeDrawCard extends LitElement {
       (k) => this._floatingStates[k],
     );
     if (!openKeys.length) return;
-    // Check if click is inside any floating card or button
+    // Use composedPath() so clicks inside shadow-DOM children of buttons/cards
+    // are correctly identified as "inside" (issue #10).
+    // Falls back to e.target for environments that don't support composedPath.
+    const composedPath = e.composedPath ? e.composedPath() : [];
+    const isInsideEl = (el) =>
+      composedPath.some(
+        (n) => n === el || (n instanceof Node && el.contains(n)),
+      );
     const btns = this.shadowRoot.querySelectorAll(".palette-floating-btn");
     const cards = this.shadowRoot.querySelectorAll(
       ".palette-group-card.floating",
     );
     let inside = false;
     btns.forEach((btn) => {
-      if (btn.contains(e.target)) inside = true;
+      if (isInsideEl(btn)) inside = true;
     });
     cards.forEach((card) => {
-      if (card.contains(e.target)) inside = true;
+      if (isInsideEl(card)) inside = true;
     });
     if (!inside) {
       openKeys.forEach((k) => (this._floatingStates[k] = false));
@@ -294,8 +303,11 @@ class YeelightCubeDrawCard extends LitElement {
       setTimeout(() => this._setupPixelArtCompactDragDrop(), 0);
     }
 
-    // Re-setup drag-to-scroll for palette containers after re-renders
-    setTimeout(() => this._setupPaletteRowDragScroll(), 0);
+    // Re-setup drag-to-scroll only when config/hass changes (avoids querySelectorAll
+    // on every render cycle including rapid hover animation re-renders — issue #8).
+    if (changedProperties.has("config") || changedProperties.has("hass")) {
+      setTimeout(() => this._setupPaletteRowDragScroll(), 0);
+    }
 
     // Trigger preview-hover height measurement after each render
     this._schedulePreviewHoverMeasure();
@@ -341,7 +353,37 @@ class YeelightCubeDrawCard extends LitElement {
       ? this.shadowRoot.querySelector(".palette-preview-hover")
       : this.querySelector(".palette-preview-hover");
 
-    // Tear down previous listeners / timeouts
+    if (!el) {
+      // Container gone — clean up any lingering state.
+      if (this._previewEl && this._previewRenderedListener) {
+        this._previewEl.removeEventListener(
+          "palette-element-rendered",
+          this._previewRenderedListener,
+        );
+      }
+      if (this._previewApplyRAF) {
+        cancelAnimationFrame(this._previewApplyRAF);
+        this._previewApplyRAF = null;
+      }
+      clearTimeout(this._previewROTimeout);
+      this._previewEl = null;
+      return;
+    }
+
+    const allCards = [...el.querySelectorAll(".palette-preview-card")];
+    const nCards = allCards.length || 1;
+
+    // ── Early-exit: same element, same card count ─────────────────────────
+    // updated() fires on every prop/state change (expand timer, HA entity
+    // updates, etc.).  Avoid tearing down and re-adding listeners when
+    // nothing structural has changed — that caused unnecessary overhead.
+    if (el === this._previewEl && nCards === this._previewNCards) {
+      // Still schedule a fresh measurement in case content changed.
+      if (this._previewScheduleApply) this._previewScheduleApply();
+      return;
+    }
+
+    // ── Full setup (first time, or structural change) ─────────────────────
     if (this._previewEl && this._previewRenderedListener) {
       this._previewEl.removeEventListener(
         "palette-element-rendered",
@@ -354,30 +396,35 @@ class YeelightCubeDrawCard extends LitElement {
     }
     clearTimeout(this._previewROTimeout);
     this._previewEl = el;
+    this._previewNCards = nCards;
 
-    if (!el) return;
+    // Preserve in-flight collapse guards across re-setups (called from
+    // updated() which fires even during the collapse timer window).
+    if (!this._collapsingCards) this._collapsingCards = new Set();
 
-    // ── Set --container-w once so bodies render at the correct pixel width ─
-    const allCards = [...el.querySelectorAll(".palette-preview-card")];
-    const nCards = allCards.length || 1;
+    // Prune stale entries from previous card list.
+    for (const stale of this._collapsingCards) {
+      if (!allCards.includes(stale)) this._collapsingCards.delete(stale);
+    }
+
     const gap = 8;
     const outerW = el.offsetWidth;
     const bodyW = outerW - (nCards - 1) * gap;
     if (bodyW > 0) el.style.setProperty("--container-w", bodyW + "px");
 
     // ── Core measurement function ──────────────────────────────────────────
-    // Called once per logical "render cycle" (debounced via rAF).
-    // Reads body.scrollHeight which is the body's FULL layout height,
-    // independent of: CSS transforms, parent overflow/max-height, or the
-    // GPU-composited visual size.  Setting max-height = scrollH/nCards clips
-    // the card to show exactly the scaled-down (1/n) visual content height.
+    // Reads body.scrollHeight (full layout height, unaffected by CSS
+    // transforms / overflow clipping) and sets max-height = scrollH/nCards
+    // so each card shows exactly its scaled-down share of the content.
     const applyHeights = () => {
-      // Re-read --container-w in case the container was resized
       const outerW2 = el.offsetWidth;
-      const bodyW2 = outerW2 - (nCards - 1) * gap;
-      if (bodyW2 > 0) el.style.setProperty("--container-w", bodyW2 + "px");
-
       const expandedMode = el.classList.contains("expanded-mode");
+      if (expandedMode) {
+        if (outerW2 > 0) el.style.setProperty("--container-w", outerW2 + "px");
+      } else {
+        const bodyW2 = outerW2 - (nCards - 1) * gap;
+        if (bodyW2 > 0) el.style.setProperty("--container-w", bodyW2 + "px");
+      }
       let maxScrollH = 0;
       allCards.forEach((card) => {
         if (card.classList.contains("empty")) return;
@@ -386,19 +433,33 @@ class YeelightCubeDrawCard extends LitElement {
         if (body && body.scrollHeight > maxScrollH)
           maxScrollH = body.scrollHeight;
       });
-      // +1px breathing room avoids sub-pixel clipping when scrollH is exactly
-      // divisible by nCards (Math.ceil would otherwise give no margin).
+      // +1px breathing room avoids sub-pixel clipping.
       const uniformH = maxScrollH > 0 ? Math.ceil(maxScrollH / nCards) + 1 : 0;
+      const uniformPx = uniformH > 0 ? uniformH + "px" : "";
+      // Stored so handleCollapse can read the target without re-measuring.
+      this._previewUniformPx = uniformPx;
       allCards.forEach((card) => {
-        if (card.classList.contains("expanded") || expandedMode) {
-          card.style.removeProperty("max-height");
-        } else if (uniformH > 0) {
-          card.style.maxHeight = uniformH + "px";
+        if (this._collapsingCards && this._collapsingCards.has(card)) {
+          // handleCollapse owns this card's animation via a direct rAF.
+          // Don't touch max-height here or we'll race with it.
+          return;
+        } else if (card.classList.contains("expanded") || expandedMode) {
+          // Expanded: clear any inline max-height and let the CSS class rule
+          // (max-height: 2000px) handle space. Writing a JS-measured value here
+          // creates a feedback loop — the inline style constrains the layout,
+          // which changes body.scrollHeight on the next call, causing oscillation.
+          // The collapse handler pins with scrollHeight separately, just before
+          // triggering the collapse transition.
+          if (card.style.maxHeight) card.style.removeProperty("max-height");
+        } else if (uniformPx && card.style.maxHeight !== uniformPx) {
+          // Only write when the value actually changes — avoids forced style
+          // recalculations on every palette-element-rendered event.
+          card.style.maxHeight = uniformPx;
         }
       });
     };
 
-    // ── Debounce helper — coalesces multiple triggers into one rAF ─────────
+    // ── Debounce helper — coalesces bursts of events into one rAF ─────────
     const scheduleApply = () => {
       if (this._previewApplyRAF) cancelAnimationFrame(this._previewApplyRAF);
       this._previewApplyRAF = requestAnimationFrame(() => {
@@ -407,22 +468,33 @@ class YeelightCubeDrawCard extends LitElement {
       });
     };
 
-    // ── Listen for "palette-element-rendered" — most reliable trigger ──────
-    // Fires from PaletteBase._scheduleRender AFTER _doRender() completes,
-    // guaranteeing the body scrollHeight reflects settled content.
-    this._previewRenderedListener = scheduleApply;
+    // Expose so handleCollapse's transitionend callback (different closure)
+    // can trigger the final measurement after the animation completes.
+    this._previewScheduleApply = scheduleApply;
+
+    // ── palette-element-rendered — fires after each palette finishes render ─
+    // Fix #7: skip events that bubble from a card that is currently mid-collapse.
+    // Those cards have their max-height pinned by handleCollapse; calling
+    // applyHeights() from inside the collapse animation could overwrite that pin
+    // and restart or stutter the CSS transition.
+    this._previewRenderedListener = (ev) => {
+      if (this._collapsingCards && this._collapsingCards.size > 0) {
+        const path = ev.composedPath ? ev.composedPath() : [];
+        for (const node of path) {
+          if (this._collapsingCards.has(node)) return;
+        }
+      }
+      scheduleApply();
+    };
     el.addEventListener(
       "palette-element-rendered",
       this._previewRenderedListener,
     );
 
     // ── Immediate baseline pass ────────────────────────────────────────────
-    // Handles empty cards and modes where no custom element renders
-    // (so no event fires).  Also handles the case where custom elements
-    // already rendered before this setup ran.
     scheduleApply();
 
-    // ── Hard fallback ─────────────────────────────────────────────────────
+    // ── Hard fallback — catches cases where no event fires (e.g. empty cards) ─
     this._previewROTimeout = setTimeout(applyHeights, 600);
   }
 
@@ -749,22 +821,127 @@ class YeelightCubeDrawCard extends LitElement {
         ${cards.map((card, idx) => {
           const hasPalette = card.palette.length > 0;
           const isExpanded = !!this._previewStates[card.key];
-          // Timer-based expand/collapse to prevent stuck states
-          const handleExpand = () => {
+          // Per-card timer map prevents one shared timer from racing across cards
+          if (!this._previewCollapseTimers)
+            this._previewCollapseTimers = new Map();
+
+          const handleExpand = (e) => {
+            // If this card was mid-collapse when the mouse re-entered, remove it
+            // from the collapsing guard so applyHeights() can set its max-height
+            // for re-expansion instead of waiting for .expanded to be removed.
+            const cardEl4 = e?.currentTarget;
+            if (cardEl4 && this._collapsingCards) {
+              this._collapsingCards.delete(cardEl4);
+            }
+            // Cancel pending collapse for THIS card
+            if (this._previewCollapseTimers.has(card.key)) {
+              clearTimeout(this._previewCollapseTimers.get(card.key));
+              this._previewCollapseTimers.delete(card.key);
+            }
+            // Legacy single-timer cleanup
             if (this._previewCollapseTimer) {
               clearTimeout(this._previewCollapseTimer);
               this._previewCollapseTimer = null;
             }
+            // Immediately collapse all OTHER cards so only one is ever expanded.
+            // This prevents dangling _previewStates[k]=true when moving quickly
+            // between cards (which caused both cards to appear expanded at once).
+            Object.keys(this._previewStates).forEach((k) => {
+              if (k !== card.key && this._previewStates[k]) {
+                if (this._previewCollapseTimers.has(k)) {
+                  clearTimeout(this._previewCollapseTimers.get(k));
+                  this._previewCollapseTimers.delete(k);
+                }
+                this._previewStates[k] = false;
+              }
+            });
+            // Issue #5 — touch toggle: on mobile a touchstart opens the card.
+            // Track whether this specific touchstart is the opener so that the
+            // matching touchend can be ignored (card stays open until tap elsewhere).
+            const wasExpanded = !!this._previewStates[card.key];
+            if (e?.type === "touchstart" && !wasExpanded) {
+              this._touchJustExpanded = card.key;
+            }
             this._previewStates[card.key] = true;
             this.requestUpdate();
           };
-          const handleCollapse = () => {
+          const handleCollapse = (e) => {
+            // Touch guard: ignore the touchend that immediately follows the
+            // touchstart that opened this card.
+            if (
+              e?.type === "touchend" &&
+              this._touchJustExpanded === card.key
+            ) {
+              this._touchJustExpanded = null;
+              return;
+            }
+            if (e?.type === "touchend") this._touchJustExpanded = null;
+
             const key = card.key;
-            this._previewCollapseTimer = setTimeout(() => {
+            if (this._previewCollapseTimers.has(key)) {
+              clearTimeout(this._previewCollapseTimers.get(key));
+              this._previewCollapseTimers.delete(key);
+            }
+
+            if (!isExpanded) return;
+
+            const cardEl = e?.currentTarget;
+            if (!cardEl) {
               this._previewStates[key] = false;
-              this._previewCollapseTimer = null;
               this.requestUpdate();
-            }, 200);
+              return;
+            }
+
+            // Compute the collapse target directly from this card's body so
+            // we never depend on the possibly-stale/zero _previewUniformPx cache
+            // (which is skipped for the collapsing card during applyHeights).
+            const body = cardEl.querySelector(".palette-preview-body");
+            const fullH = cardEl.scrollHeight;
+            const targetH = body
+              ? Math.ceil(body.scrollHeight / nCards) + 1
+              : 0;
+            const targetPx = targetH > 0 ? targetH + "px" : "0px";
+
+            // Pin start value. Make background transparent so the white gap
+            // between the mini-body and the card bottom is invisible during
+            // the height animation (inline style survives Lit re-renders).
+            cardEl.style.maxHeight = fullH + "px";
+            cardEl.style.background = "transparent";
+            cardEl.style.boxShadow = "none";
+            if (this._collapsingCards) this._collapsingCards.add(cardEl);
+
+            // Remove .expanded immediately so Lit re-renders and other cards
+            // start recovering in parallel.
+            this._previewStates[key] = false;
+            this.requestUpdate();
+
+            // Force a synchronous reflow to commit the pinned fullH value,
+            // then set the target in the same call-stack execution so the CSS
+            // transition fires immediately — no rAF gap, no extra white frame.
+            void cardEl.getBoundingClientRect();
+            cardEl.style.maxHeight = targetPx;
+
+            // Clean up after the transition completes.
+            const onTransitionEnd = (ev) => {
+              if (ev.propertyName !== "max-height") return;
+              cardEl.removeEventListener("transitionend", onTransitionEnd);
+              clearTimeout(this._previewCollapseTimers.get(key));
+              this._previewCollapseTimers.delete(key);
+              if (this._collapsingCards) this._collapsingCards.delete(cardEl);
+              cardEl.style.removeProperty("background");
+              cardEl.style.removeProperty("box-shadow");
+              if (this._previewScheduleApply) this._previewScheduleApply();
+            };
+            cardEl.addEventListener("transitionend", onTransitionEnd);
+
+            const fallbackTimer = setTimeout(() => {
+              cardEl.removeEventListener("transitionend", onTransitionEnd);
+              this._previewCollapseTimers.delete(key);
+              if (this._collapsingCards) this._collapsingCards.delete(cardEl);
+              cardEl.style.removeProperty("background");
+              cardEl.style.removeProperty("box-shadow");
+            }, 500);
+            this._previewCollapseTimers.set(key, fallbackTimer);
           };
           const content = hasPalette ? card.content : null;
           return html`
@@ -1025,6 +1202,11 @@ class YeelightCubeDrawCard extends LitElement {
     if (this._previewCollapseTimer) {
       clearTimeout(this._previewCollapseTimer);
       this._previewCollapseTimer = null;
+    }
+    // Clear all per-card collapse timers (issue #3 fix)
+    if (this._previewCollapseTimers) {
+      this._previewCollapseTimers.forEach((id) => clearTimeout(id));
+      this._previewCollapseTimers.clear();
     }
   }
 
@@ -1615,6 +1797,18 @@ class YeelightCubeDrawCard extends LitElement {
   _getCurrentColors() {
     if (!this.matrix || !Array.isArray(this.matrix))
       return { palette: [], weights: null };
+    // Issue #11/#14 — Memoize by matrix reference identity.
+    // Lit assigns a new array to this.matrix on every pixel draw, so a new
+    // reference = genuine change → cache miss.  During hover animation re-renders
+    // the matrix object identity is unchanged → cache hit, skipping K-means.
+    // This also fixes the #14 edge case where swapping one color for another at
+    // equal non-black count produced a stale palette (count-based cache miss).
+    if (
+      this._currentColorsCacheRef === this.matrix &&
+      this._currentColorsCache
+    ) {
+      return this._currentColorsCache;
+    }
     // Convert hex strings to RGB tuples for the shared palette extractor
     const rgbPixels = [];
     for (const hex of this.matrix) {
@@ -1626,10 +1820,13 @@ class YeelightCubeDrawCard extends LitElement {
         parseInt(h.substring(4, 6), 16),
       ]);
     }
-    return extractDiversePaletteWithWeights(
+    const result = extractDiversePaletteWithWeights(
       rgbPixels,
       MAX_IMAGE_PALETTE_COLORS,
     );
+    this._currentColorsCacheRef = this.matrix;
+    this._currentColorsCache = result;
+    return result;
   }
 
   _savePalette(colors, name = "Custom Palette") {
@@ -2404,6 +2601,17 @@ class YeelightCubeDrawCard extends LitElement {
     const scaleValue = previewSizePercent / 100;
 
     const removeBtnClass = btnCfg.classes;
+    // Fix #12: compute border-radius once, expose as CSS custom property so the
+    // <style> block below never contains a dynamic ${...} expression.  Lit then
+    // caches the style sheet and the browser only re-parses it on the very first
+    // render — not on every subsequent re-render.
+    const itemBorderRadius = (() => {
+      const v = cfg.rounded_cards;
+      if (v === undefined || v === true || v === "round") return 16;
+      if (v === false || v === "square") return 0;
+      if (v === "rounded") return 4;
+      return typeof v === "number" ? v : parseInt(v, 10) || 16;
+    })();
 
     return html`
       <style>
@@ -2414,13 +2622,7 @@ class YeelightCubeDrawCard extends LitElement {
           padding: 12px;
           background: var(--secondary-background-color, #fafbfc);
           border: 1.5px solid var(--divider-color, #d0d7de);
-          border-radius: ${(() => {
-            const v = cfg.rounded_cards;
-            if (v === undefined || v === true || v === "round") return 16;
-            if (v === false || v === "square") return 0;
-            if (v === "rounded") return 4;
-            return typeof v === "number" ? v : parseInt(v, 10) || 16;
-          })()}px;
+          border-radius: var(--pixelart-list-radius, 16px);
           box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
           margin-bottom: 10px;
           transition: all 0.2s ease;
@@ -2535,10 +2737,15 @@ class YeelightCubeDrawCard extends LitElement {
           padding-left: 30px;
         }
       </style>
-      <div class="pixelart-gallery-list">
+      <div
+        class="pixelart-gallery-list"
+        style="--pixelart-list-radius: ${itemBorderRadius}px"
+      >
         ${repeat(
           pixelArts,
           (art, idx) => `${art.name || "untitled"}-${globalOffset + idx}`,
+          // --pixelart-list-radius is set on the wrapper div above; the CSS var
+          // propagates into every .pixelart-list-item child via cascade.
           (art, idx) => {
             const pixelMatrix = this._convertPixelArtToDisplayMatrix(art);
             const globalIdx = globalOffset + idx;

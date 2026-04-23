@@ -156,6 +156,7 @@ export const drawCardStyles = css`
     width: 100%;
     gap: 8px;
     overflow: hidden;
+    /* Smooth gap transition when entering/leaving expanded-mode (issue #6) */
     transition: gap 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   }
   .palette-preview-card {
@@ -180,6 +181,8 @@ export const drawCardStyles = css`
     flex: 1 1 0;
   }
   .palette-preview-card:not(.expanded):hover {
+    /* Fix #13: fallback for browsers without color-mix() (older WebKit / HA webviews) */
+    background: var(--secondary-background-color, #f0f4fa);
     background: color-mix(
       in srgb,
       var(--primary-color, #0077cc) 5%,
@@ -197,33 +200,44 @@ export const drawCardStyles = css`
     pointer-events: none;
   }
   .palette-preview-hover.expanded-mode {
-    gap: 0;
+    gap: 0; /* transitions smoothly via .palette-preview-hover transition: gap rule */
+    overflow: hidden !important;
+    scrollbar-width: none !important;
   }
   .palette-preview-hover:not(.expanded-mode) .palette-preview-card.empty {
     opacity: 1;
   }
-  /* Expanded card takes full width */
+  /* Expanded card takes full width.
+     max-height is set via inline style by applyHeights() after the palette has
+     re-rendered at the expanded container width, giving the true content height.
+     The CSS fallback (2000px) is only active on the very first RAF before
+     applyHeights() runs. */
   .palette-preview-card.expanded {
     flex: 1 0 100%;
-    max-height: 2000px;
+    max-height: var(--card-open-h, 2000px);
     z-index: 10;
     overflow: hidden;
     padding: 0;
   }
   /* Body wraps palette content — fixed pixel width from JS (--container-w) ensures
-     content always renders at full container width. Only transform transitions,
-     so visual_width = container-w × scale — perfectly linear, no overshoot. */
+     content always renders at full container width. No transform transition —
+     the body snaps instantly to its scaled state; only max-height animates. */
   .palette-preview-body {
     pointer-events: none;
     width: var(--container-w, 300px);
     transform: scale(calc(1 / var(--n-cards, 3)));
     transform-origin: top left;
     box-sizing: border-box;
+    /* Animate scale when expanding/collapsing so the content doesn't jump.
+       The background:transparent inline style (set by handleCollapse) hides the
+       gap between the shrinking body and the card bottom during the animation. */
     transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
   }
   .palette-preview-card.expanded .palette-preview-body {
     pointer-events: auto;
-    width: 100%;
+    /* width stays var(--container-w) — JS updates it to outerW when expanded
+       so the body fills the card. Removing width:100% prevents the expand-flash
+       where 100% was resolving to the card's narrow transitioning width. */
     transform: scale(1);
     padding: 0 10px 6px 8px;
   }
@@ -2300,7 +2314,6 @@ export const drawCardStyles = css`
     display: flex;
     justify-content: center;
     align-items: center;
-    margin-top: 16px;
     border-radius: 8px;
   }
 
@@ -2324,27 +2337,6 @@ export const drawCardStyles = css`
     .pagination-container .draw-btn.save {
       padding: 6px;
     }
-  }
-
-  /* Layout Section Spacing */
-  .draw-container > * + * {
-    margin-top: 16px;
-  }
-
-  .draw-container > .palettes {
-    margin-bottom: 12px;
-  }
-
-  .draw-container > .toolbar {
-    margin-bottom: 16px;
-  }
-
-  .draw-container > .matrix {
-    margin-bottom: 16px;
-  }
-
-  .draw-container > .actions {
-    margin-bottom: 12px;
   }
 
   /* Tool Reordering Styles */
