@@ -244,52 +244,63 @@ Different config sections of the editor card:
 
 A card for managing named color palettes. Palettes can be applied to the lamp instantly, and are also used by the gradient and text color sequence modes. Supports browsing in list, gallery, carousel, or coverflow (album) view.
 
-<!-- TODO: screenshots: Palettes Card variations (list, gallery, album/coverflow view) -->
+These are all different configurations for the palettes card:
+
+<!-- TODO: screenshots: Palettes Card variations (list, gallery, carousel, album/coverflow) -->
 
 **Features:**
 
-- **Palette display**: 5 swatch styles (round, square, gradient bar, gradient background, color stripes). 4 display modes: list, gallery, carousel, album/coverflow
-- **Create & edit**: add, rename, reorder, and delete colors within a palette. Configurable remove button style
-- **Apply palette**: load a palette's colors onto the lamp with one tap
-- **Import/Export**: save and load full palette collections
-- **Multi-entity support**: apply palettes to multiple lamps
+- **Multiple-entity support**: this card allows to control multiple Yeelight Cube Lite lamps at the same time.
+- **Display modes**: browse palettes in list, gallery, carousel, or album/coverflow view. Configurable swatch style (round, square, gradient bar, gradient background, color stripes).
+- **Create & edit palettes**: add, rename, reorder, and delete colors within a palette.
+- **Apply palette**: load a palette's colors onto the lamp with one tap.
+- **Import/Export**: save and load full palette collections.
 
-<!-- TODO: screenshots: Palettes Card editor sections -->
+Different config sections of the editor card:
+
+<!-- TODO: screenshots: Palettes Card editor sections (Global Settings, Display Mode, Content Settings, Import/Export Actions) -->
 
 ### Yeelight Gradient Card: `custom:yeelight-cube-gradient-card`
 
-A card for selecting and configuring the lamp's gradient and color modes. A mode selector lets you switch between the 9 available modes. A two-color picker sets the gradient colors, and a rotary angle control adjusts the direction in real time.
+A card for selecting and configuring the lamp's gradient and color modes. A mode selector lets you switch between the available modes. A two-color picker sets the gradient colors, and an angle control adjusts the gradient direction in real time.
 
-<!-- TODO: screenshots: Gradient Card variations (mode selector styles, angle control, gradient preview) -->
+These are all different configurations for the gradient card:
+
+<!-- TODO: screenshots: Gradient Card variations (mode selector styles, angle selector styles, gradient preview) -->
 
 **Features:**
 
-- **9 gradient/color modes**: Solid Color, Letter Gradient, Column Gradient, Row Gradient, Angle Gradient, Radial Gradient, Letter Angle Gradient, Letter Vertical Gradient, Text Color Sequence. Modes can be reordered and individually shown/hidden
-- **Mode selector**: 5 display styles (buttons, colorized buttons, dropdown, compact, pills)
-- **Two-color gradient picker**: start and end colors, per mode
-- **Angle control**: real-time slider, number input, and rotary angle preview. Multiple rotary styles, configurable size, optional placement in the card header
-- **Gradient preview**: configurable pixel style, gap, background, and preview size
-- **Multi-entity support**: apply to multiple lamps at once
+- **Multiple-entity support**: this card allows to control multiple Yeelight Cube Lite lamps at the same time.
+- **Color mode selector**: switch between 9 gradient/color modes (Solid Color, Letter/Column/Row/Angle/Radial Gradient, and more). Modes can be reordered and individually shown/hidden. Different selector styles available.
+- **Two-color gradient picker**: pick start and end colors for the gradient, per mode.
+- **Angle selector**: real-time adjustment of the gradient angle using a slider, number input, or rotary control. Multiple rotary styles available.
+- **Gradient preview**: a mini matrix preview of the current gradient, with configurable pixel style, gap, background, and size.
 
-<!-- TODO: screenshots: Gradient Card editor sections -->
+Different config sections of the editor card:
+
+<!-- TODO: screenshots: Gradient Card editor sections (Global Settings, Color Mode Selector, Angle Selector, Gradient Preview) -->
 
 ### Yeelight Draw Card: `custom:yeelight-cube-draw-card`
 
-The pixel art editor. Paint on a 20×5 interactive matrix, save designs to a personal gallery, and push artwork to one or more lamps with a single tap. Every section of the card (matrix, tools, palette, gallery) can be shown or hidden and configured independently from the editor panel.
+The pixel art editor. Paint on a 20×5 interactive matrix, save designs to a personal gallery, and push artwork to one or more lamps with a single tap. Each section of the card (colors, drawing tools, matrix, action buttons, gallery) can be shown or hidden and configured independently.
+
+These are all different configurations for the draw card:
 
 <!-- TODO: screenshots: Draw Card variations (full view, gallery modes, palette layout modes) -->
 
 **Features:**
 
-- **20×5 interactive matrix**: click or drag to paint pixels. Configurable pixel style, gap, background color, box shadow, and size
-- **Drawing tools**: color picker, pencil, eyedropper, eraser, area fill, fill all, undo. Tools can be reordered and shown/hidden, with multiple button styles and content modes (icon, text, icon+text)
-- **Palette section**: quick color selection from recent colors, lamp palette, or image palette. 5 layout modes (side-by-side, stacked, tabs, dropdown, preview-hover), configurable swatch shapes and palette display
-- **Pixel art gallery**: save, load, rename, reorder, and import/export designs. 4 gallery view modes (gallery, list, carousel, album/coverflow), each with its own style settings
-- **Upload from image**: upload a bitmap image and auto-convert it to the 20×5 matrix
-- **Multi-entity support**: push artwork to multiple lamps at once
-- **Import/Export**: export full pixel art collections to JSON and import them back
+- **Multiple-entity support**: this card allows to control multiple Yeelight Cube Lite lamps at the same time.
+- **Colors section**: quick color selection from recent colors, lamp palette, or image palette. Different layout modes available (side-by-side, stacked, tabs, dropdown, preview-hover).
+- **Drawing tools**: pencil, eyedropper, eraser, area fill, fill all, undo. Tools can be reordered and shown/hidden. Different button styles and content modes available.
+- **Drawing matrix**: a 20×5 interactive matrix to paint pixels by clicking or dragging. Configurable pixel style, gap, background color, box shadow, and size.
+- **Action buttons**: apply drawing to the lamp, upload from an image file, and other actions. Configurable button styles.
+- **Pixel art gallery**: save, load, rename, reorder, and delete designs. 4 gallery view modes (gallery, list, carousel, album/coverflow).
+- **Import/Export**: export and import full pixel art collections as JSON files.
 
-<!-- TODO: screenshots: Draw Card editor sections -->
+Different config sections of the editor card:
+
+<!-- TODO: screenshots: Draw Card editor sections (Global Settings, Layout, Colors Section, Drawing Tools, Drawing Matrix, Action Buttons, Pixel Art Section, Import/Export Actions) -->
 
 ---
 
