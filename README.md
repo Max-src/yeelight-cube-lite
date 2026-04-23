@@ -234,30 +234,44 @@ Different config sections of the editor card:
 <table>
   <tr>
     <td><img src="images/Cards/Colors-Card-Editor-1.png" alt="Colors card editor - Global Settings"></td>
-    <td><img src="images/Cards/Colors-Card-Editor-2.png" alt="Preview card editor - Color List Settings"></td>
-    <td><img src="images/Cards/Colors-Card-Editor-3.png" alt="Preview card editor - Add/Shuffle/Save Actions"></td>
+    <td><img src="images/Cards/Colors-Card-Editor-2.png" alt="Colors card editor - Color List Settings"></td>
+    <td><img src="images/Cards/Colors-Card-Editor-3.png" alt="Colors card editor - Add/Shuffle/Save Actions"></td>
   </tr>
 </table>
 <!-- TODO: screenshots: Colors Card editor sections -->
 
 ### Yeelight Palettes Card: `custom:yeelight-cube-palette-card`
 
-A card for managing named color palettes. Palettes can be applied to the lamp instantly, and are also used by the gradient and text color sequence modes. Supports browsing in list, gallery, carousel, or coverflow (album) view.
+A card for managing color palettes (lists of colors). Palettes can be applied to the lamps instantly. Selecting a color palette will apply its colors to the lamps, the colors card, the gradient card and the preview card. Multiple display modes are supported.
 
 These are all different configurations for the palettes card:
 
+<table>
+  <tr>
+    <td><img src="images/Cards/Palettes-Card-Variation-1.png" alt="Palettes card variation 1"></td>
+    <td><img src="images/Cards/Palettes-Card-Variation-2.png" alt="Palettes card variation 2"></td>
+    <td><img src="images/Cards/Palettes-Card-Variation-3.png" alt="Palettes card variation 3"></td>
+    <td><img src="images/Cards/Palettes-Card-Variation-4.png" alt="Palettes card variation 4">
+    <img src="images/Cards/Palettes-Card-Variation-5.png" alt="Palettes card variation 5"></td>
+  </tr>
+</table>
 <!-- TODO: screenshots: Palettes Card variations (list, gallery, carousel, album/coverflow) -->
 
 **Features:**
 
 - **Multiple-entity support**: this card allows to control multiple Yeelight Cube Lite lamps at the same time.
-- **Display modes**: browse palettes in list, gallery, carousel, or album/coverflow view. Configurable swatch style (round, square, gradient bar, gradient background, color stripes).
-- **Create & edit palettes**: add, rename, reorder, and delete colors within a palette.
-- **Apply palette**: load a palette's colors onto the lamp with one tap.
-- **Import/Export**: save and load full palette collections.
+- **Manage palettes**: browse palettes using different display modes and configurable color swatch styles. Load the whole palette's colors onto the lamp with one click. Rename and delete palettes if needed.
+- **Import/Export**: load and save full palettes collections.
 
 Different config sections of the editor card:
 
+<table>
+  <tr>
+    <td><img src="images/Cards/Palettes-Card-Editor-1.png" alt="Palettes card editor - Global Settings"></td>
+    <td><img src="images/Cards/Palettes-Card-Editor-2.png" alt="Palettes card editor - Palettes List"></td>
+    <td><img src="images/Cards/palettes-Card-Editor-3.png" alt="Palettes card editor - Import/Export Actions"></td>
+  </tr>
+</table>
 <!-- TODO: screenshots: Palettes Card editor sections (Global Settings, Display Mode, Content Settings, Import/Export Actions) -->
 
 ### Yeelight Gradient Card: `custom:yeelight-cube-gradient-card`
