@@ -207,18 +207,37 @@ Different config sections of the editor card:
 
 ### Yeelight Colors Card: `custom:yeelight-cube-color-list-editor-card`
 
-A card for editing the ordered list of colors used by the Text Color Sequence and Panel Color Sequence display modes. Each slot maps to a character or panel segment, so the order matters. Colors can be dragged to reorder, and a Shuffle action generates random combinations quickly.
+A card for editing the ordered list of colors used by the text displayed on the lamp. Colors can be added, deleted, dragged to reorder, shuffled, and saved as a reuseable palette (list of colors).
 
+These are all different configurations for the colors card:
+
+<table>
+  <tr>
+    <td><img src="images/Cards/Colors-Card-Variation-1.png" alt="Colors card variation 1"></td>
+    <td><img src="images/Cards/Colors-Card-Variation-2.png" alt="Colors card variation 2"></td>
+    <td><img src="images/Cards/Colors-Card-Variation-3.png" alt="Colors card variation 3"></td>
+    <td><img src="images/Cards/Colors-Card-Variation-4.png" alt="Colors card variation 4"></td>
+    <td><img src="images/Cards/Colors-Card-Variation-5.png" alt="Colors card variation 5"></td>
+  </tr>
+</table>
 <!-- TODO: screenshots: Colors Card variations (layout modes: compact, chips, cards, spread) -->
 
 **Features:**
 
-- **Color list**: add, remove, and reorder colors with drag-and-drop. 7 layout modes (compact, chips, tiles, rows, grid, cards, spread) with configurable density and size
-- **Color picker**: rotary picker with optional hex input and color name display
-- **Remove buttons**: configurable style and position (outside, inside, square for cards/spread layouts)
-- **Save & shuffle**: save the current sequence as a named palette, or randomize all colors at once
-- **Multi-entity support**: apply the color sequence to multiple lamps
+- **Multiple-entity support**: this card allows to control multiple Yeelight Cube Lite lamps at the same time.
+- **Color list**: add, remove, and reorder colors with drag-and-drop. Different layout modes available. Display color hex code or color name if needed.
+- **Color edit**: use a color picker or hex input to edit colors.
+- **Add / Shuffle / Save actions**: buttons to add a color to the list, shuffle the colors in the list, and save the list as a reuseable palette (list of colors).
 
+Different config sections of the editor card:
+
+<table>
+  <tr>
+    <td><img src="images/Cards/Colors-Card-Editor-1.png" alt="Colors card editor - Global Settings"></td>
+    <td><img src="images/Cards/Colors-Card-Editor-2.png" alt="Preview card editor - Color List Settings"></td>
+    <td><img src="images/Cards/Colors-Card-Editor-3.png" alt="Preview card editor - Add/Shuffle/Save Actions"></td>
+  </tr>
+</table>
 <!-- TODO: screenshots: Colors Card editor sections -->
 
 ### Yeelight Palettes Card: `custom:yeelight-cube-palette-card`
