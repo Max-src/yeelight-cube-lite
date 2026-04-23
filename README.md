@@ -183,9 +183,6 @@ These are all different configurations for the preview card:
   </tr>
 </table>
 
-<!-- TODO: screenshot: Preview Card showing live 20×5 matrix, brightness slider, power button, and color adjustment panel -->
-<!-- TODO: screenshot: Preview Card with color adjustments panel open (compact/tabbed layout) -->
-
 **Features:**
 
 - **Lamp preview**: reflects what actually displayed on the lamp. Configurable pixel style (square/rounded/circle), space between pixels, background color, box shadow, and size
@@ -220,7 +217,6 @@ These are all different configurations for the colors card:
     <td><img src="images/Cards/Colors-Card-Variation-5.png" alt="Colors card variation 5"></td>
   </tr>
 </table>
-<!-- TODO: screenshots: Colors Card variations (layout modes: compact, chips, cards, spread) -->
 
 **Features:**
 
@@ -238,7 +234,6 @@ Different config sections of the editor card:
     <td><img src="images/Cards/Colors-Card-Editor-3.png" alt="Colors card editor - Add/Shuffle/Save Actions"></td>
   </tr>
 </table>
-<!-- TODO: screenshots: Colors Card editor sections -->
 
 ### Yeelight Palettes Card: `custom:yeelight-cube-palette-card`
 
@@ -255,7 +250,6 @@ These are all different configurations for the palettes card:
     <img src="images/Cards/Palettes-Card-Variation-5.png" alt="Palettes card variation 5"></td>
   </tr>
 </table>
-<!-- TODO: screenshots: Palettes Card variations (list, gallery, carousel, album/coverflow) -->
 
 **Features:**
 
@@ -272,7 +266,6 @@ Different config sections of the editor card:
     <td><img src="images/Cards/palettes-Card-Editor-3.png" alt="Palettes card editor - Import/Export Actions"></td>
   </tr>
 </table>
-<!-- TODO: screenshots: Palettes Card editor sections (Global Settings, Display Mode, Content Settings, Import/Export Actions) -->
 
 ### Yeelight Gradient Card: `custom:yeelight-cube-gradient-card`
 
