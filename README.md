@@ -9,6 +9,36 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**. T
 
 ---
 
+## Table of Contents
+
+- [Features](#features)
+  - [Light Integration](#light-integration)
+  - [Customizable Lovelace Cards](#customizable-lovelace-cards)
+- [Installation via HACS](#installation-via-hacs)
+  - [Add as Custom Repository](#add-as-custom-repository)
+  - [Manual Installation](#manual-installation)
+- [Setup](#setup)
+  - [Prerequisites: Yeelight Station App](#prerequisites-yeelight-station-app)
+  - [Adding to Home Assistant](#adding-to-home-assistant)
+- [Lovelace Cards](#lovelace-cards)
+  - [Preview Card](#yeelight-preview-card-customyeelight-cube-lamp-preview-card)
+  - [Colors Card](#yeelight-colors-card-customyeelight-cube-color-list-editor-card)
+  - [Palettes Card](#yeelight-palettes-card-customyeelight-cube-palette-card)
+  - [Gradient Card](#yeelight-gradient-card-customyeelight-cube-gradient-card)
+  - [Draw Card](#yeelight-draw-card-customyeelight-cube-draw-card)
+- [Automations & Node-RED](#automations--node-red)
+  - [Calling Custom Actions](#calling-custom-actions)
+  - [Key Actions Reference](#key-actions-reference)
+- [Entities Created](#entities-created)
+- [Display Modes](#display-modes)
+- [Transition Effects](#transition-effects)
+- [Requirements](#requirements)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
+- [Support](#support)
+
+---
+
 ## Features
 
 ### Light Integration
