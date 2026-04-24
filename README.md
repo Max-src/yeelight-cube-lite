@@ -339,21 +339,41 @@ The pixel art editor. Paint on a 20×5 interactive matrix, save designs to a per
 
 These are all different configurations for the draw card:
 
+<table>
+  <tr>
+    <td><img src="images/Cards/Draw-Card-Variation-1.png" alt="Draw card variation 1"></td>
+    <td><img src="images/Cards/Draw-Card-Variation-2.png" alt="Draw card variation 2"></td>
+    <td><img src="images/Cards/Draw-Card-Variation-3.png" alt="Draw card variation 3"></td>
+    <td><img src="images/Cards/Draw-Card-Variation-4.png" alt="Draw card variation 4"></td>
+  </tr>
+</table>
 <!-- TODO: screenshots: Draw Card variations (full view, gallery modes, palette layout modes) -->
 
 **Features:**
 
 - **Multiple-entity support**: this card allows to control multiple Yeelight Cube Lite lamps at the same time.
-- **Colors section**: quick color selection from recent colors, lamp palette, or image palette. Different layout modes available (side-by-side, stacked, tabs, dropdown, preview-hover).
-- **Drawing tools**: pencil, eyedropper, eraser, area fill, fill all, undo. Tools can be reordered and shown/hidden. Different button styles and content modes available.
-- **Drawing matrix**: a 20×5 interactive matrix to paint pixels by clicking or dragging. Configurable pixel style, gap, background color, box shadow, and size.
-- **Action buttons**: apply drawing to the lamp, upload from an image file, and other actions. Configurable button styles.
-- **Pixel art gallery**: save, load, rename, reorder, and delete designs. 4 gallery view modes (gallery, list, carousel, album/coverflow).
-- **Import/Export**: export and import full pixel art collections as JSON files.
+- **Colors section**: this section gives quick access to recent colors, lamp palette colors, current lamp colors and drawing colors. Different container modes and swatches display modes are available.
+- **Drawing tools**: a row of drawing tools that can be individually shown or hidden with different styles too.
+- **Drawing matrix**: an interactive matrix area to draw on your lamps.
+- **Action buttons**: quick action buttons to apply drawing to the lamps, upload from an image file, save your drawing in the list of pixel arts or clear the drawing area.
+- **Pixel art gallery**: manage your list of pixel arts and apply them on your lamps.
+- **Import/Export**: import and export pixel art collections as JSON files.
 
 Different config sections of the editor card:
 
-<!-- TODO: screenshots: Draw Card editor sections (Global Settings, Layout, Colors Section, Drawing Tools, Drawing Matrix, Action Buttons, Pixel Art Section, Import/Export Actions) -->
+<table>
+  <tr>
+    <td><img src="images/Cards/Draw-Card-Editor-1.png" alt="Draw card editor - Global Settings"></td>
+    <td><img src="images/Cards/Draw-Card-Editor-2.png" alt="Draw card editor - Layout"></td>
+    <td><img src="images/Cards/Draw-Card-Editor-3.png" alt="Draw card editor - Color Section"></td>
+    <td><img src="images/Cards/Draw-Card-Editor-4.png" alt="Draw card editor - Drawing Tools"></td>
+    <td><img src="images/Cards/Draw-Card-Editor-5.png" alt="Draw card editor - Drawing Matrix Section"></td>
+    <td><img src="images/Cards/Draw-Card-Editor-6.png" alt="Draw card editor - Action Buttons"></td>
+    <td><img src="images/Cards/Draw-Card-Editor-7.png" alt="Draw card editor - Pixel Art Section"></td>
+    <td><img src="images/Cards/Draw-Card-Editor-8.png" alt="Draw card editor - Import/Export Actions"></td>
+  </tr>
+</table>
+<!-- TODO: screenshots: Draw Card editor sections (Global Settings, Layout, Colors Section, Drawing Tools, Drawing Matrix Section, Action Buttons, Pixel Art Section, Import/Export Actions) -->
 
 ---
 
