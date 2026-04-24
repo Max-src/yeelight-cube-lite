@@ -26,10 +26,10 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**. T
   - [Palettes Card](#yeelight-palettes-card-customyeelight-cube-palette-card)
   - [Gradient Card](#yeelight-gradient-card-customyeelight-cube-gradient-card)
   - [Draw Card](#yeelight-draw-card-customyeelight-cube-draw-card)
+- [Entities Created](#entities-created)
 - [Automations & Node-RED](#automations--node-red)
   - [Calling Custom Actions](#calling-custom-actions)
   - [Key Actions Reference](#key-actions-reference)
-- [Entities Created](#entities-created)
 - [Display Modes](#display-modes)
 - [Transition Effects](#transition-effects)
 - [Requirements](#requirements)
@@ -377,6 +377,81 @@ Different config sections of the editor card:
 
 ---
 
+## Entities Created
+
+Each Yeelight Cube Lite device creates the following entities:
+
+### Light
+
+| Entity                 | Description                                       |
+| ---------------------- | ------------------------------------------------- |
+| **Yeelight Cube Lite** | Main light entity (on/off, RGB color, brightness) |
+
+### Selectors
+
+| Entity                | Description                                                                                                                                                                                                           |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Display Mode**      | Switch between: Solid Color, Letter Gradient, Column Gradient, Row Gradient, Angle Gradient, Radial Gradient, Letter Vertical Gradient, Letter Angle Gradient, Text Color Sequence, Panel Color Sequence, Custom Draw |
+| **Palette**           | Select from saved color palettes to apply to the lamp                                                                                                                                                                 |
+| **Pixel Art**         | Select from saved pixel art designs to load onto the matrix                                                                                                                                                           |
+| **Text Alignment**    | Text alignment: left, center, right                                                                                                                                                                                   |
+| **Font**              | Choose the text font (multiple built-in bitmap fonts)                                                                                                                                                                 |
+| **Transition Effect** | Choose from 24 transition animations when switching display modes                                                                                                                                                     |
+
+### Numbers (Sliders)
+
+| Entity                     | Description                                              |
+| -------------------------- | -------------------------------------------------------- |
+| **Gradient Angle**         | Angle for angle-based gradient modes (0°–360°)           |
+| **Transition Steps**       | Number of animation steps for transitions (1–10)         |
+| **Transition Duration**    | Total transition time in seconds (0.2–10s)               |
+| **Color: Hue Shift**       | Shift all colors around the color wheel (−180° to +180°) |
+| **Color: Temperature**     | Warm/cool color temperature adjustment (−100 to +100)    |
+| **Intensity: Saturation**  | Color saturation level (0–200%)                          |
+| **Intensity: Vibrance**    | Vibrance / adaptive saturation (0–200%)                  |
+| **Tone: Contrast**         | Contrast level (0–200%)                                  |
+| **Tone: Glow**             | Bloom / glow effect strength (0–100%)                    |
+| **Effects: Grayscale**     | Grayscale intensity (0–100%)                             |
+| **Effects: Invert**        | Color inversion intensity (0–100%)                       |
+| **Effects: Tint Hue**      | Tint color hue (0°–360°)                                 |
+| **Effects: Tint Strength** | Tint overlay intensity (0–100%)                          |
+
+### Switches
+
+| Entity               | Description                                                              |
+| -------------------- | ------------------------------------------------------------------------ |
+| **Auto Turn On**     | Automatically turn on the lamp when a new mode or drawing is applied     |
+| **Flip Orientation** | Flip the matrix display horizontally (for mounting the lamp upside-down) |
+
+### Text
+
+| Entity           | Description                                                           |
+| ---------------- | --------------------------------------------------------------------- |
+| **Display Text** | Text input for custom text display on the matrix (supports scrolling) |
+
+### Button
+
+| Entity            | Description                                               |
+| ----------------- | --------------------------------------------------------- |
+| **Force Refresh** | Recover a stuck lamp by re-activating FX mode via raw TCP |
+
+### Camera
+
+| Entity                      | Description                                                                |
+| --------------------------- | -------------------------------------------------------------------------- |
+| **Matrix Preview (Square)** | Live camera feed of the matrix state, rendered with square pixels          |
+| **Matrix Preview (Round)**  | Live camera feed of the matrix state, rendered with round LED-style pixels |
+
+### Sensors
+
+| Entity              | Description                                             |
+| ------------------- | ------------------------------------------------------- |
+| **Color Palettes**  | Stores all saved palettes (used by palette cards)       |
+| **Saved Drawings**  | Stores all saved pixel art designs (used by draw cards) |
+| **Font Characters** | Exposes the bitmap font character maps                  |
+
+---
+
 ## Automations & Node-RED
 
 All functionality exposed through HA entities (light, selectors, sliders, text, switches) can be targeted by standard automations, scripts, and Node-RED flows. In addition, this integration registers a set of **custom actions (services)** under the `yeelight_cube` domain that give you fine-grained programmatic control.
@@ -463,81 +538,6 @@ Use an **Inject** node → **Change** node (set `msg.payload.idx`) → **Call Se
 - Data: `{"idx": {{payload.idx}}, "entity_id": "light.yeelight_cube_192_168_4_139"}`
 
 <!-- TODO: screenshot: Node-RED flow cycling pixel art with a counter node -->
-
----
-
-## Entities Created
-
-Each Yeelight Cube Lite device creates the following entities:
-
-### Light
-
-| Entity                 | Description                                       |
-| ---------------------- | ------------------------------------------------- |
-| **Yeelight Cube Lite** | Main light entity (on/off, RGB color, brightness) |
-
-### Selectors
-
-| Entity                | Description                                                                                                                                                                                                           |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Display Mode**      | Switch between: Solid Color, Letter Gradient, Column Gradient, Row Gradient, Angle Gradient, Radial Gradient, Letter Vertical Gradient, Letter Angle Gradient, Text Color Sequence, Panel Color Sequence, Custom Draw |
-| **Palette**           | Select from saved color palettes to apply to the lamp                                                                                                                                                                 |
-| **Pixel Art**         | Select from saved pixel art designs to load onto the matrix                                                                                                                                                           |
-| **Text Alignment**    | Text alignment: left, center, right                                                                                                                                                                                   |
-| **Font**              | Choose the text font (multiple built-in bitmap fonts)                                                                                                                                                                 |
-| **Transition Effect** | Choose from 24 transition animations when switching display modes                                                                                                                                                     |
-
-### Numbers (Sliders)
-
-| Entity                     | Description                                              |
-| -------------------------- | -------------------------------------------------------- |
-| **Gradient Angle**         | Angle for angle-based gradient modes (0°–360°)           |
-| **Transition Steps**       | Number of animation steps for transitions (1–10)         |
-| **Transition Duration**    | Total transition time in seconds (0.2–10s)               |
-| **Color: Hue Shift**       | Shift all colors around the color wheel (−180° to +180°) |
-| **Color: Temperature**     | Warm/cool color temperature adjustment (−100 to +100)    |
-| **Intensity: Saturation**  | Color saturation level (0–200%)                          |
-| **Intensity: Vibrance**    | Vibrance / adaptive saturation (0–200%)                  |
-| **Tone: Contrast**         | Contrast level (0–200%)                                  |
-| **Tone: Glow**             | Bloom / glow effect strength (0–100%)                    |
-| **Effects: Grayscale**     | Grayscale intensity (0–100%)                             |
-| **Effects: Invert**        | Color inversion intensity (0–100%)                       |
-| **Effects: Tint Hue**      | Tint color hue (0°–360°)                                 |
-| **Effects: Tint Strength** | Tint overlay intensity (0–100%)                          |
-
-### Switches
-
-| Entity               | Description                                                              |
-| -------------------- | ------------------------------------------------------------------------ |
-| **Auto Turn On**     | Automatically turn on the lamp when a new mode or drawing is applied     |
-| **Flip Orientation** | Flip the matrix display horizontally (for mounting the lamp upside-down) |
-
-### Text
-
-| Entity           | Description                                                           |
-| ---------------- | --------------------------------------------------------------------- |
-| **Display Text** | Text input for custom text display on the matrix (supports scrolling) |
-
-### Button
-
-| Entity            | Description                                               |
-| ----------------- | --------------------------------------------------------- |
-| **Force Refresh** | Recover a stuck lamp by re-activating FX mode via raw TCP |
-
-### Camera
-
-| Entity                      | Description                                                                |
-| --------------------------- | -------------------------------------------------------------------------- |
-| **Matrix Preview (Square)** | Live camera feed of the matrix state, rendered with square pixels          |
-| **Matrix Preview (Round)**  | Live camera feed of the matrix state, rendered with round LED-style pixels |
-
-### Sensors
-
-| Entity              | Description                                             |
-| ------------------- | ------------------------------------------------------- |
-| **Color Palettes**  | Stores all saved palettes (used by palette cards)       |
-| **Saved Drawings**  | Stores all saved pixel art designs (used by draw cards) |
-| **Font Characters** | Exposes the bitmap font character maps                  |
 
 ---
 
