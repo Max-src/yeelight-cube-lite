@@ -355,7 +355,7 @@ These are all different configurations for the draw card:
 - **Colors section**: this section gives quick access to recent colors, lamp palette colors, current lamp colors and drawing colors. Different container modes and swatches display modes are available.
 - **Drawing tools**: a row of drawing tools that can be individually shown or hidden with different styles too.
 - **Drawing matrix**: an interactive matrix area to draw on your lamps.
-- **Action buttons**: quick action buttons to apply drawing to the lamps, upload from an image file, save your drawing in the list of pixel arts or clear the drawing area.
+- **Action buttons**: quick action buttons to apply drawing to the lamps, upload drawing from an image file, save your drawing in the list of pixel arts or clear the drawing area.
 - **Pixel art gallery**: manage your list of pixel arts and apply them on your lamps.
 - **Import/Export**: import and export pixel art collections as JSON files.
 
@@ -379,76 +379,87 @@ Different config sections of the editor card:
 
 ## Entities Created
 
-Each Yeelight Cube Lite device creates the following entities:
+Each Yeelight Cube Lite lamp creates its own set of per-device entities, all grouped under the same device in Home Assistant. In addition, the integration creates a set of **global entities** (Color Palettes, Saved Drawings, Font Characters) that are shared across all lamps and exist at the integration level. They are not tied to any individual lamp.
 
-### Light
+### Per-device entities
 
-| Entity                 | Description                                       |
-| ---------------------- | ------------------------------------------------- |
-| **Yeelight Cube Lite** | Main light entity (on/off, RGB color, brightness) |
+The following entities are created for each lamp and visible on its device page.
 
-### Selectors
+Overview of entities available for each lamp:
 
-| Entity                | Description                                                                                                                                                                                                           |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Display Mode**      | Switch between: Solid Color, Letter Gradient, Column Gradient, Row Gradient, Angle Gradient, Radial Gradient, Letter Vertical Gradient, Letter Angle Gradient, Text Color Sequence, Panel Color Sequence, Custom Draw |
-| **Palette**           | Select from saved color palettes to apply to the lamp                                                                                                                                                                 |
-| **Pixel Art**         | Select from saved pixel art designs to load onto the matrix                                                                                                                                                           |
-| **Text Alignment**    | Text alignment: left, center, right                                                                                                                                                                                   |
-| **Font**              | Choose the text font (multiple built-in bitmap fonts)                                                                                                                                                                 |
-| **Transition Effect** | Choose from 24 transition animations when switching display modes                                                                                                                                                     |
+<table>
+  <tr>
+    <td><img src="images/Entities/Lamp-Entities-1.png" alt="Lamp Entities - Controls"></td>
+    <td><img src="images/Entities/Lamp-Entities-2.png" alt="Lamp Entities - Sensors"></td>
+    <td><img src="images/Entities/Lamp-Entities-3.png" alt="Lamp Entities - Configuration"></td>
+    <td><img src="images/Entities/Lamp-Entities-4.png" alt="Lamp Entities - Diagnostic"></td>
+  </tr>
+</table>
 
-### Numbers (Sliders)
+#### Controls
 
-| Entity                     | Description                                              |
-| -------------------------- | -------------------------------------------------------- |
-| **Gradient Angle**         | Angle for angle-based gradient modes (0°–360°)           |
-| **Transition Steps**       | Number of animation steps for transitions (1–10)         |
-| **Transition Duration**    | Total transition time in seconds (0.2–10s)               |
-| **Color: Hue Shift**       | Shift all colors around the color wheel (−180° to +180°) |
-| **Color: Temperature**     | Warm/cool color temperature adjustment (−100 to +100)    |
-| **Intensity: Saturation**  | Color saturation level (0–200%)                          |
-| **Intensity: Vibrance**    | Vibrance / adaptive saturation (0–200%)                  |
-| **Tone: Contrast**         | Contrast level (0–200%)                                  |
-| **Tone: Glow**             | Bloom / glow effect strength (0–100%)                    |
-| **Effects: Grayscale**     | Grayscale intensity (0–100%)                             |
-| **Effects: Invert**        | Color inversion intensity (0–100%)                       |
-| **Effects: Tint Hue**      | Tint color hue (0°–360°)                                 |
-| **Effects: Tint Strength** | Tint overlay intensity (0–100%)                          |
+These entities appear in the **Controls** section of the device page and can be used in dashboards, automations, and scripts.
 
-### Switches
+| Entity                 | Type            | Description                                                                                                                                                                                                           |
+| ---------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Auto Turn On**       | Switch          | Automatically turn on the lamp when a new mode or drawing is applied                                                                                                                                                  |
+| **Yeelight Cube Lite** | Light           | Main light entity (on/off, RGB color, brightness)                                                                                                                                                                     |
+| **Display Mode**       | Select          | Switch between: Solid Color, Letter Gradient, Column Gradient, Row Gradient, Angle Gradient, Radial Gradient, Letter Vertical Gradient, Letter Angle Gradient, Text Color Sequence, Panel Color Sequence, Custom Draw |
+| **Display Text**       | Text            | Text input for custom text display on the matrix (supports scrolling)                                                                                                                                                 |
+| **Flip Orientation**   | Switch          | Flip the matrix display horizontally (for mounting the lamp upside-down)                                                                                                                                              |
+| **Font**               | Select          | Choose between 3 included text fonts (basic, fat, italic)                                                                                                                                                             |
+| **Gradient Angle**     | Number (slider) | Angle for angle-based gradient modes (0°–360°)                                                                                                                                                                        |
+| **Palette**            | Select          | Select from saved color palettes to apply to the lamp                                                                                                                                                                 |
+| **Pixel Art**          | Select          | Select from saved pixel arts (drawings) to load on the lamp                                                                                                                                                           |
+| **Text Alignment**     | Select          | Text alignment on the lamp (left, center, right)                                                                                                                                                                      |
 
-| Entity               | Description                                                              |
-| -------------------- | ------------------------------------------------------------------------ |
-| **Auto Turn On**     | Automatically turn on the lamp when a new mode or drawing is applied     |
-| **Flip Orientation** | Flip the matrix display horizontally (for mounting the lamp upside-down) |
+#### Sensors
 
-### Text
+These entities appear in the **Sensors** section of the device page. Use these "fake camera" entities to add a quick preview on your dashboard with a "Picture Entity" card. For more responsive and more configurable previews you can use the custom [Preview Card](#yeelight-preview-card-customyeelight-cube-lamp-preview-card)
 
-| Entity           | Description                                                           |
-| ---------------- | --------------------------------------------------------------------- |
-| **Display Text** | Text input for custom text display on the matrix (supports scrolling) |
+| Entity                      | Type   | Description                                                     |
+| --------------------------- | ------ | --------------------------------------------------------------- |
+| **Matrix Preview (Round)**  | Camera | Live camera feed of the lamp state, rendered with round pixels  |
+| **Matrix Preview (Square)** | Camera | Live camera feed of the lamp state, rendered with square pixels |
 
-### Button
+#### Configuration
 
-| Entity            | Description                                               |
-| ----------------- | --------------------------------------------------------- |
-| **Force Refresh** | Recover a stuck lamp by re-activating FX mode via raw TCP |
+These entities appear in the **Configuration** section of the device page. They control color adjustments and animated transitions effects.
 
-### Camera
+| Entity                     | Type            | Description                                                       |
+| -------------------------- | --------------- | ----------------------------------------------------------------- |
+| **Color: Hue Shift**       | Number (slider) | Shift all colors around the color wheel (−180° to +180°)          |
+| **Color: Temperature**     | Number (slider) | Warm/cool color temperature adjustment (−100 to +100)             |
+| **Effects: Grayscale**     | Number (slider) | Grayscale intensity (0–100%)                                      |
+| **Effects: Invert**        | Number (slider) | Color inversion intensity (0–100%)                                |
+| **Effects: Tint Hue**      | Number (slider) | Tint color hue (0°–360°)                                          |
+| **Effects: Tint Strength** | Number (slider) | Tint overlay intensity (0–100%)                                   |
+| **Intensity: Saturation**  | Number (slider) | Color saturation level (0–200%)                                   |
+| **Intensity: Vibrance**    | Number (slider) | Vibrance / adaptive saturation (0–200%)                           |
+| **Tone: Contrast**         | Number (slider) | Contrast level (0–200%)                                           |
+| **Tone: Glow**             | Number (slider) | Bloom / glow effect strength (0–100%)                             |
+| **Transition Duration**    | Number (slider) | Total transition time in seconds (0.2–10s)                        |
+| **Transition Effect**      | Select          | Choose from 24 transition animations when switching display modes |
+| **Transition Steps**       | Number (slider) | Number of animation steps for transitions (1–10)                  |
 
-| Entity                      | Description                                                                |
-| --------------------------- | -------------------------------------------------------------------------- |
-| **Matrix Preview (Square)** | Live camera feed of the matrix state, rendered with square pixels          |
-| **Matrix Preview (Round)**  | Live camera feed of the matrix state, rendered with round LED-style pixels |
+#### Diagnostic
 
-### Sensors
+These entities appear in the **Diagnostic** section of the device page.
 
-| Entity              | Description                                             |
-| ------------------- | ------------------------------------------------------- |
-| **Color Palettes**  | Stores all saved palettes (used by palette cards)       |
-| **Saved Drawings**  | Stores all saved pixel art designs (used by draw cards) |
-| **Font Characters** | Exposes the bitmap font character maps                  |
+| Entity            | Type   | Description                                                |
+| ----------------- | ------ | ---------------------------------------------------------- |
+| **Force Refresh** | Button | Recover a stuck lamp by re-activating connection           |
+| **IP Address**    | Sensor | Current IP address of the lamp (updated after rediscovery) |
+
+### Global entities
+
+These three sensor entities are created **once per integration install**. They are shared across all lamps ( not tied to specific device). They store and expose the palettes, pixel art, and font maps that the devices and cards can read.
+
+| Entity              | Description                                                                    |
+| ------------------- | ------------------------------------------------------------------------------ |
+| **Color Palettes**  | Stores all saved color palettes and exposes them to the palette and draw cards |
+| **Saved Drawings**  | Stores all saved pixel art designs and exposes them to the draw card           |
+| **Font Characters** | Exposes the bitmap font character maps used for text rendering in the cards    |
 
 ---
 
