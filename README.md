@@ -263,28 +263,44 @@ Different config sections of the editor card:
   <tr>
     <td><img src="images/Cards/Palettes-Card-Editor-1.png" alt="Palettes card editor - Global Settings"></td>
     <td><img src="images/Cards/Palettes-Card-Editor-2.png" alt="Palettes card editor - Palettes List"></td>
-    <td><img src="images/Cards/palettes-Card-Editor-3.png" alt="Palettes card editor - Import/Export Actions"></td>
+    <td><img src="images/Cards/Palettes-Card-Editor-3.png" alt="Palettes card editor - Import/Export Actions"></td>
   </tr>
 </table>
 
 ### Yeelight Gradient Card: `custom:yeelight-cube-gradient-card`
 
-A card for selecting and configuring the lamp's gradient and color modes. A mode selector lets you switch between the available modes. A two-color picker sets the gradient colors, and an angle control adjusts the gradient direction in real time.
+A card for selecting and configuring the lamp's gradient and color modes. Different mode selectors allow you to switch between the available gradient modes. An angle control let's you adjust the gradient direction. Preview for all gradient modes is possible.
 
 These are all different configurations for the gradient card:
 
+<table>
+  <tr>
+    <td><img src="images/Cards/Gradient-Card-Variation-1.png" alt="Gradient card variation 1"></td>
+    <td><img src="images/Cards/Gradient-Card-Variation-2.png" alt="Gradient card variation 2"></td>
+    <td><img src="images/Cards/Gradient-Card-Variation-3.png" alt="Gradient card variation 3"></td>
+    <td><img src="images/Cards/Gradient-Card-Variation-4.png" alt="Gradient card variation 4"></td>
+    <td><img src="images/Cards/Gradient-Card-Variation-5.png" alt="Gradient card variation 5"></td>
+  </tr>
+</table>
 <!-- TODO: screenshots: Gradient Card variations (mode selector styles, angle selector styles, gradient preview) -->
 
 **Features:**
 
 - **Multiple-entity support**: this card allows to control multiple Yeelight Cube Lite lamps at the same time.
-- **Color mode selector**: switch between 9 gradient/color modes (Solid Color, Letter/Column/Row/Angle/Radial Gradient, and more). Modes can be reordered and individually shown/hidden. Different selector styles available.
-- **Two-color gradient picker**: pick start and end colors for the gradient, per mode.
+- **Color mode selector**: switch between gradient/color modes. You can also apply the gradient/color mode to the whole panel (ignore text and pixel art).
 - **Angle selector**: real-time adjustment of the gradient angle using a slider, number input, or rotary control. Multiple rotary styles available.
-- **Gradient preview**: a mini matrix preview of the current gradient, with configurable pixel style, gap, background, and size.
+- **Gradient preview**: a mini matrix preview of how the gradient modes will look on the lamps with the current text, colors and gradient angle. The previews can be used to switch between gradient modes. The list can be refined by hiding gradient modes.
 
 Different config sections of the editor card:
 
+<table>
+  <tr>
+    <td><img src="images/Cards/Gradient-Card-Editor-1.png" alt="Gradient card editor - Global Settings"></td>
+    <td><img src="images/Cards/Gradient-Card-Editor-2.png" alt="Gradient card editor - Color Mode Selector"></td>
+    <td><img src="images/Cards/Gradient-Card-Editor-3.png" alt="Gradient card editor - Angle Selector"></td>
+    <td><img src="images/Cards/Gradient-Card-Editor-4.png" alt="Gradient card editor - Gradient Preview"></td>
+  </tr>
+</table>
 <!-- TODO: screenshots: Gradient Card editor sections (Global Settings, Color Mode Selector, Angle Selector, Gradient Preview) -->
 
 ### Yeelight Draw Card: `custom:yeelight-cube-draw-card`
