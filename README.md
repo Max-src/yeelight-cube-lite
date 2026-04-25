@@ -400,6 +400,12 @@ Overview of entities available for each lamp:
 
 These entities appear in the **Controls** section of the device page and can be used in dashboards, automations, and scripts.
 
+<table>
+  <tr>
+    <td><img src="images/Entities/Lamp-Entities-1.png" alt="Lamp Entities - Controls"></td>
+  </tr>
+</table>
+
 | Entity                 | Type            | Description                                                                                                                                                                                                           |
 | ---------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Auto Turn On**       | Switch          | Automatically turn on the lamp when a new mode or drawing is applied                                                                                                                                                  |
@@ -417,6 +423,12 @@ These entities appear in the **Controls** section of the device page and can be 
 
 These entities appear in the **Sensors** section of the device page. Use these "fake camera" entities to add a quick preview on your dashboard with a "Picture Entity" card. For more responsive and more configurable previews you can use the custom [Preview Card](#yeelight-preview-card-customyeelight-cube-lamp-preview-card)
 
+<table>
+  <tr>
+    <td><img src="images/Entities/Lamp-Entities-2.png" alt="Lamp Entities - Sensors"></td>
+  </tr>
+</table>
+
 | Entity                      | Type   | Description                                                     |
 | --------------------------- | ------ | --------------------------------------------------------------- |
 | **Matrix Preview (Round)**  | Camera | Live camera feed of the lamp state, rendered with round pixels  |
@@ -425,6 +437,12 @@ These entities appear in the **Sensors** section of the device page. Use these "
 #### Configuration
 
 These entities appear in the **Configuration** section of the device page. They control color adjustments and animated transitions effects.
+
+<table>
+  <tr>
+    <td><img src="images/Entities/Lamp-Entities-3.png" alt="Lamp Entities - Configuration"></td>
+  </tr>
+</table>
 
 | Entity                     | Type            | Description                                                       |
 | -------------------------- | --------------- | ----------------------------------------------------------------- |
@@ -446,6 +464,12 @@ These entities appear in the **Configuration** section of the device page. They 
 
 These entities appear in the **Diagnostic** section of the device page.
 
+<table>
+  <tr>
+    <td><img src="images/Entities/Lamp-Entities-4.png" alt="Lamp Entities - Diagnostic"></td>
+  </tr>
+</table>
+
 | Entity            | Type   | Description                                                |
 | ----------------- | ------ | ---------------------------------------------------------- |
 | **Force Refresh** | Button | Recover a stuck lamp by re-activating connection           |
@@ -455,11 +479,17 @@ These entities appear in the **Diagnostic** section of the device page.
 
 These three sensor entities are created **once per integration install**. They are shared across all lamps ( not tied to specific device). They store and expose the palettes, pixel art, and font maps that the devices and cards can read.
 
+<table>
+  <tr>
+    <td><img src="images/Entities/Ungrouped-Entities.png" alt="Ungrouped Entities"></td>
+  </tr>
+</table>
+
 | Entity              | Description                                                                    |
 | ------------------- | ------------------------------------------------------------------------------ |
 | **Color Palettes**  | Stores all saved color palettes and exposes them to the palette and draw cards |
-| **Saved Drawings**  | Stores all saved pixel art designs and exposes them to the draw card           |
 | **Font Characters** | Exposes the bitmap font character maps used for text rendering in the cards    |
+| **Saved Drawings**  | Stores all saved pixel art designs and exposes them to the draw card           |
 
 ---
 
@@ -474,16 +504,26 @@ In **Home Assistant automations / scripts**, use the `action` step:
 ```yaml
 action: yeelight_cube.set_custom_text
 data:
-  entity_id: light.yeelight_cube_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
   text: "HELLO"
 ```
 
-In **Node-RED**, use a **Call Service** node:
+<table>
+  <tr>
+    <td><img src="images/Actions/Action-Set-Custom-Text.png" alt="Action - set_custom_text"></td>
+  </tr>
+</table>
 
-- **Domain**: `yeelight_cube`
-- **Service**: e.g. `set_custom_text`
-- **Data**: JSON object with the fields listed below
+In **Node-RED**, use an **Action node**:
 
+- **Action**: e.g. `yeelight_cube.set_custom_text`
+- **Data**: JSON object e.g. `{"text":msg.payload,"entity_id":"light.cubelite_192_168_4_102"}`
+
+<table>
+  <tr>
+    <td><img src="images/Actions/NodeRED-Set-Custom-Text.png" alt="NodeRED - set_custom_text"></td>
+  </tr>
+</table>
 <!-- TODO: screenshot: Node-RED flow using Call Service node targeting yeelight_cube.apply_pixel_art -->
 <!-- TODO: screenshot: HA automation YAML editor calling yeelight_cube.set_mode -->
 
@@ -493,15 +533,13 @@ In **Node-RED**, use a **Call Service** node:
 
 #### Display Control
 
-| Action                             | Description                | Key fields                                    |
-| ---------------------------------- | -------------------------- | --------------------------------------------- |
-| `yeelight_cube.set_custom_text`    | Display text on the matrix | `text`, `entity_id`                           |
-| `yeelight_cube.set_mode`           | Switch display mode        | `mode` (e.g. `"Angle Gradient"`), `entity_id` |
-| `yeelight_cube.set_angle`          | Set gradient angle         | `angle` (0–360), `entity_id`                  |
-| `yeelight_cube.set_brightness`     | Set brightness %           | `brightness` (1–100), `entity_id`             |
-| `yeelight_cube.set_scroll_speed`   | Text scroll speed          | `speed` (0.1–10 s/step)                       |
-| `yeelight_cube.set_scroll_enabled` | Enable/disable scroll      | `enabled` (true/false)                        |
-| `yeelight_cube.reset_scroll`       | Reset scroll to start      | (none)                                        |
+| Action                          | Description                | Key fields                                    |
+| ------------------------------- | -------------------------- | --------------------------------------------- |
+| `yeelight_cube.set_custom_text` | Display text on the matrix | `text`, `entity_id`                           |
+| `yeelight_cube.set_mode`        | Switch display mode        | `mode` (e.g. `"Angle Gradient"`), `entity_id` |
+| `yeelight_cube.set_solid_color` | Set a single solid color   | `rgb_color` ([R,G,B]), `entity_id`            |
+| `yeelight_cube.set_angle`       | Set gradient angle         | `angle` (0–360), `entity_id`                  |
+| `yeelight_cube.set_brightness`  | Set brightness %           | `brightness` (1–100), `entity_id`             |
 
 #### Pixel Art
 

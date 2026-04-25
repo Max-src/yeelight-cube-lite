@@ -1,24 +1,3 @@
-display_word:
-  name: Display Word
-  description: Display a word on the Yeelight Cube Lite
-  fields:
-    word:
-      description: The word to display on the cube
-      example: "Hello"
-
-set_scroll_speed:
-  name: Set Scroll Speed
-  description: Set the speed of text scrolling for long text
-  fields:
-    speed:
-      description: Scroll speed in seconds per step (0.1 to 10.0)
-      example: 1.0
-      selector:
-        number:
-          min: 0.1
-          max: 10.0
-          step: 0.1
-
 add_managed_device:
   name: Add Managed Device
   description: Add a device IP to the managed devices list to prevent discovery conflicts
@@ -128,21 +107,6 @@ ignore_specific_yeelight:
       description: IP address to ignore in Yeelight integration
       example: "192.168.4.139"
       required: true
-
-set_scroll_enabled:
-  name: Set Scroll Enabled
-  description: Enable or disable automatic scrolling for long text
-  fields:
-    enabled:
-      description: Whether to enable scrolling
-      example: true
-      selector:
-        boolean:
-
-reset_scroll:
-  name: Reset Scroll
-  description: Reset scroll position to the beginning
-  fields: {}
 
 load_palette:
   name: Load Palette
@@ -319,6 +283,22 @@ set_panel_mode:
     entity_id:
       description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
       example: "light.cubelite_192_168_4_247"
+      required: false
+      selector:
+        entity:
+          domain: light
+
+set_solid_color:
+  name: Set Solid Color
+  description: Set a single solid RGB color on the lamp (shortcut for Solid Color mode).
+  fields:
+    rgb_color:
+      description: 'RGB color as a list [R, G, B] (0-255 each) or a hex string (e.g. "#FF0000")'
+      example: [255, 0, 0]
+      required: true
+    entity_id:
+      description: Target specific cube entity. If not provided, uses default entity.
+      example: "light.cubelite_192_168_4_139"
       required: false
       selector:
         entity:

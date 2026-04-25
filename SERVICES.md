@@ -34,17 +34,6 @@ Discovery and device management
 
 ## 🎨 Text Services
 
-### `display_word`
-
-**Display a word on the Yeelight Cube Smart Lamp Lite**
-
-```yaml
-service: yeelight_cube.display_word
-data:
-  word: "Hello"
-  entity_id: light.cubelite_192_168_4_139
-```
-
 ### `set_custom_text`
 
 **Set custom text with full formatting control**
@@ -65,38 +54,6 @@ service: yeelight_cube.set_text_colors
 data:
   text_colors: [[255, 0, 0], [0, 255, 0], [0, 0, 255]]
   save_as_palette: true
-  entity_id: light.cubelite_192_168_4_139
-```
-
-### `set_scroll_speed`
-
-**Control text scrolling speed**
-
-```yaml
-service: yeelight_cube.set_scroll_speed
-data:
-  speed: 1.5 # seconds per step (0.1 to 10.0)
-  entity_id: light.cubelite_192_168_4_139
-```
-
-### `set_scroll_enabled`
-
-**Enable or disable automatic scrolling**
-
-```yaml
-service: yeelight_cube.set_scroll_enabled
-data:
-  enabled: true
-  entity_id: light.cubelite_192_168_4_139
-```
-
-### `reset_scroll`
-
-**Reset scroll position to beginning**
-
-```yaml
-service: yeelight_cube.reset_scroll
-data:
   entity_id: light.cubelite_192_168_4_139
 ```
 
@@ -139,7 +96,7 @@ data:
 
 ### `apply_custom_pixels`
 
-**Set individual pixel colors (10x10 matrix)**
+**Push a full 100-pixel array to the lamp (20×5 matrix). Each entry is an `[R, G, B]` array. Pixels are indexed left-to-right, top-to-bottom.**
 
 ```yaml
 service: yeelight_cube.apply_custom_pixels
@@ -150,12 +107,16 @@ data:
 
 ### `set_custom_pixels`
 
-**Alternative method to set pixel colors**
+**Set individual pixels by position. Each entry is an object with `position` (0–99) and `color` ([R, G, B]).**
 
 ```yaml
 service: yeelight_cube.set_custom_pixels
 data:
-  pixels: [[255, 0, 0], [0, 255, 0], [0, 0, 255], ...] # 100 RGB arrays
+  pixels:
+    [
+      { "position": 0, "color": [255, 0, 0] },
+      { "position": 50, "color": [0, 0, 255] },
+    ]
   entity_id: light.cubelite_192_168_4_139
 ```
 
@@ -218,7 +179,7 @@ data:
 
 ### `import_pixel_arts`
 
-**Import pixel art collection**
+**Import a pixel art collection (replaces/merges saved pixel arts)**
 
 ```yaml
 service: yeelight_cube.import_pixel_arts
@@ -227,14 +188,25 @@ data:
   entity_id: light.cubelite_192_168_4_139
 ```
 
+### `update_pixel_arts`
+
+**Bulk-replace the entire saved pixel arts list**
+
+```yaml
+service: yeelight_cube.update_pixel_arts
+data:
+  pixel_arts: [{ "name": "Art1", "pixels": [[255, 0, 0], ...] }, ...]
+  entity_id: light.cubelite_192_168_4_139
+```
+
 ### `display_image`
 
-**Display an image file on the cube**
+**Display a base64-encoded image on the cube (resized/cropped to 20×5)**
 
 ```yaml
 service: yeelight_cube.display_image
 data:
-  image_path: "/config/www/my_image.png"
+  image_b64: "<base64-encoded image string>"
   entity_id: light.cubelite_192_168_4_139
 ```
 
@@ -255,13 +227,28 @@ data:
 
 **Available Modes:**
 
-- `Solid Color` - Single color text
+- `Solid Color` - Single color fill
 - `Letter Gradient` - Gradient per letter
-- `Column Gradient` - Vertical gradients
-- `Row Gradient` - Horizontal gradients
-- `Angle Gradient` - Diagonal gradients
-- `Radial Gradient` - Circular gradients
-- `Text Color Sequence` - Animated color cycling
+- `Column Gradient` - Vertical gradient across 20 columns
+- `Row Gradient` - Horizontal gradient across 5 rows
+- `Angle Gradient` - Gradient at a configurable angle
+- `Radial Gradient` - Circular gradient from center
+- `Letter Vertical Gradient` - Vertical gradient applied per character
+- `Letter Angle Gradient` - Angled gradient applied per character
+- `Text Color Sequence` - Each character gets a different color from the sequence
+- `Panel Color Sequence` - Color sequence applied across all pixels
+- `Custom Draw` - Pixel art mode (use the Draw Card)
+
+### `set_solid_color`
+
+**Set a single solid RGB color on the lamp (shortcut for Solid Color mode)**
+
+```yaml
+service: yeelight_cube.set_solid_color
+data:
+  rgb_color: [255, 128, 0]
+  entity_id: light.cubelite_192_168_4_139
+```
 
 ### `set_angle`
 
@@ -282,6 +269,16 @@ data:
 service: yeelight_cube.set_panel_mode
 data:
   panel_mode: true # true = whole panel, false = text only
+  entity_id: light.cubelite_192_168_4_139
+```
+
+### `preview_gradient_modes`
+
+**Cycle through all gradient modes sequentially for a visual preview**
+
+```yaml
+service: yeelight_cube.preview_gradient_modes
+data:
   entity_id: light.cubelite_192_168_4_139
 ```
 
@@ -343,6 +340,70 @@ data:
 service: yeelight_cube.set_palettes
 data:
   palettes: [{ "name": "Palette1", "colors": [[255, 0, 0], [0, 255, 0]] }, ...]
+  entity_id: light.cubelite_192_168_4_139
+```
+
+---
+
+## ⚙️ Configuration Services
+
+### `set_brightness`
+
+**Set lamp brightness as a percentage**
+
+```yaml
+service: yeelight_cube.set_brightness
+data:
+  brightness: 75 # 1-100%
+  entity_id: light.cubelite_192_168_4_139
+```
+
+### `set_preview_adjustments`
+
+**Apply real-time color effects to the lamp output**
+
+```yaml
+service: yeelight_cube.set_preview_adjustments
+data:
+  hue_shift: 0 # -180 to +180 (color wheel rotation)
+  temperature: 0 # -100 to +100 (cool/warm)
+  saturation: 100 # 0-200 (color richness)
+  vibrance: 100 # 0-200 (smart saturation)
+  contrast: 100 # 0-200
+  glow: 0 # 0-100 (bloom on highlights)
+  grayscale: 0 # 0-100
+  invert: 0 # 0-100
+  tint_hue: 0 # 0-360 (color for tint overlay)
+  tint_strength: 0 # 0-100
+  entity_id: light.cubelite_192_168_4_139
+```
+
+### `set_color_accuracy`
+
+**Toggle hardware colour accuracy correction (per-channel gain)**
+
+```yaml
+service: yeelight_cube.set_color_accuracy
+data:
+  enabled: true
+  entity_id: light.cubelite_192_168_4_139
+```
+
+### `set_color_calibration`
+
+**Adjust colour correction calibration values at runtime (debug/advanced)**
+
+All fields are optional — only provided values are updated. Changes are not persisted across restarts.
+
+```yaml
+service: yeelight_cube.set_color_calibration
+data:
+  gamma_r: 0.85
+  gamma_g: 0.75
+  gamma_b: 0.65
+  gain_r: 1.00
+  gain_g: 0.87
+  gain_b: 0.72
   entity_id: light.cubelite_192_168_4_139
 ```
 
@@ -555,14 +616,15 @@ Returns: Boolean indicating if device is managed
 
 ## ⚡ Quick Reference
 
-| Category       | Primary Services                        | Purpose                  |
-| -------------- | --------------------------------------- | ------------------------ |
-| **Text**       | `set_custom_text`, `set_text_colors`    | Display text with colors |
-| **Drawing**    | `apply_custom_pixels`, `save_pixel_art` | Create pixel art         |
-| **Gradients**  | `set_mode`, `set_angle`                 | Control gradient effects |
-| **Palettes**   | `save_palette`, `load_palette`          | Manage color collections |
-| **Config**     | `set_font`, `set_alignment`             | Device settings          |
-| **Management** | `create_cube_discovery`, `test_display` | Device setup             |
+| Category          | Primary Services                                             | Purpose                     |
+| ----------------- | ------------------------------------------------------------ | --------------------------- |
+| **Text**          | `set_custom_text`, `set_text_colors`                         | Display text with colors    |
+| **Drawing**       | `apply_custom_pixels`, `set_custom_pixels`, `save_pixel_art` | Create and manage pixel art |
+| **Gradients**     | `set_mode`, `set_solid_color`, `set_angle`, `set_panel_mode` | Control display modes       |
+| **Palettes**      | `save_palette`, `load_palette`, `set_palettes`               | Manage color collections    |
+| **Text Settings** | `set_font`, `set_alignment`, `set_orientation`               | Text formatting             |
+| **Color Effects** | `set_preview_adjustments`, `set_color_accuracy`              | Real-time color adjustments |
+| **Management**    | `create_cube_discovery`, `test_display`, `force_refresh`     | Device setup & diagnostics  |
 
 ---
 
