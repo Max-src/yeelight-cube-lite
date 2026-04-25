@@ -36,26 +36,37 @@ Discovery and device management
 
 ### `set_custom_text`
 
-**Set custom text with full formatting control**
+**Display text on the lamp**
 
 ```yaml
 service: yeelight_cube.set_custom_text
 data:
-  text: "HELLO WORLD"
-  entity_id: light.cubelite_192_168_4_139
+  text: "HELLO"
+  entity_id: light.cubelite_192_168_4_102
 ```
+
+<table>
+  <tr>
+    <td><img src="images/Actions/Action-Set-Custom-Text.png" alt="Action - set_custom_text"></td>
+  </tr>
+</table>
 
 ### `set_text_colors`
 
-**Apply colors to text display**
+**Apply colors to the lamp**
 
 ```yaml
 service: yeelight_cube.set_text_colors
 data:
   text_colors: [[255, 0, 0], [0, 255, 0], [0, 0, 255]]
-  save_as_palette: true
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
+
+<table>
+  <tr>
+    <td><img src="images/Actions/Action-Set-Text-Colors.png" alt="Action - set_text_colors"></td>
+  </tr>
+</table>
 
 ### `set_font`
 
@@ -64,9 +75,15 @@ data:
 ```yaml
 service: yeelight_cube.set_font
 data:
-  font: "koubit" # basic, koubit, josefin
-  entity_id: light.cubelite_192_168_4_139
+  font: "fat" # basic, fat, italic
+  entity_id: light.cubelite_192_168_4_102
 ```
+
+<table>
+  <tr>
+    <td><img src="images/Actions/Action-Set-Font.png" alt="Action - set_font"></td>
+  </tr>
+</table>
 
 ### `set_alignment`
 
@@ -75,9 +92,15 @@ data:
 ```yaml
 service: yeelight_cube.set_alignment
 data:
-  alignment: "center" # left, center, right
-  entity_id: light.cubelite_192_168_4_139
+  alignment: "right" # left, center, right
+  entity_id: light.cubelite_192_168_4_102
 ```
+
+<table>
+  <tr>
+    <td><img src="images/Actions/Action-Set-Alignment.png" alt="Action - set_alignment"></td>
+  </tr>
+</table>
 
 ### `set_orientation`
 
@@ -87,8 +110,15 @@ data:
 service: yeelight_cube.set_orientation
 data:
   orientation: "flipped" # normal, flipped
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
+
+<table>
+  <tr>
+    <td><img src="images/Actions/Action-Set-Alignment.png" alt="Action - set_alignment" style="transform: rotate(180deg);">
+    <br />(lamp preview on dashboards will stay up-right, only content on the lamp will be rotated)</td>
+  </tr>
+</table>
 
 ---
 
@@ -96,14 +126,21 @@ data:
 
 ### `apply_custom_pixels`
 
-**Push a full 100-pixel array to the lamp (20×5 matrix). Each entry is an `[R, G, B]` array. Pixels are indexed left-to-right, top-to-bottom.**
+**Push a full 100-pixel array to the lamp (20×5 matrix). Each entry is an `[R, G, B]` array. Pixels are indexed left-to-right, bottom-to-top.**
 
 ```yaml
 service: yeelight_cube.apply_custom_pixels
 data:
   pixels: [[255, 0, 0], [0, 255, 0], [0, 0, 255], ...] # 100 RGB arrays
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
+
+<table>
+  <tr>
+    <td><img src="images/Actions/Action-Apply-Custom-Pixels.png" alt="Action - apply_custom_pixels">
+    <br />(example above with all 97 other pixels being black [0, 0, 0])</td>
+  </tr>
+</table>
 
 ### `set_custom_pixels`
 
@@ -117,7 +154,7 @@ data:
       { "position": 0, "color": [255, 0, 0] },
       { "position": 50, "color": [0, 0, 255] },
     ]
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `save_pixel_art`
@@ -129,7 +166,7 @@ service: yeelight_cube.save_pixel_art
 data:
   pixels: [[255, 0, 0], [0, 255, 0], [0, 0, 255], ...] # 100 RGB arrays
   name: "My Artwork"
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `apply_pixel_art`
@@ -140,7 +177,7 @@ data:
 service: yeelight_cube.apply_pixel_art
 data:
   idx: 0 # Index of saved pixel art
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `remove_pixel_art`
@@ -151,7 +188,7 @@ data:
 service: yeelight_cube.remove_pixel_art
 data:
   idx: 0
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `rename_pixel_art`
@@ -163,7 +200,7 @@ service: yeelight_cube.rename_pixel_art
 data:
   idx: 0
   new_name: "Updated Artwork"
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `get_pixel_art`
@@ -174,7 +211,7 @@ data:
 service: yeelight_cube.get_pixel_art
 data:
   idx: 0
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `import_pixel_arts`
@@ -185,7 +222,7 @@ data:
 service: yeelight_cube.import_pixel_arts
 data:
   pixel_arts: [{ "name": "Art1", "pixels": [[255, 0, 0], ...] }, ...]
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `update_pixel_arts`
@@ -196,7 +233,7 @@ data:
 service: yeelight_cube.update_pixel_arts
 data:
   pixel_arts: [{ "name": "Art1", "pixels": [[255, 0, 0], ...] }, ...]
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `display_image`
@@ -207,7 +244,7 @@ data:
 service: yeelight_cube.display_image
 data:
   image_b64: "<base64-encoded image string>"
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 ---
@@ -222,7 +259,7 @@ data:
 service: yeelight_cube.set_mode
 data:
   mode: "Angle Gradient" # See mode options below
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 **Available Modes:**
@@ -247,7 +284,7 @@ data:
 service: yeelight_cube.set_solid_color
 data:
   rgb_color: [255, 128, 0]
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `set_angle`
@@ -258,7 +295,7 @@ data:
 service: yeelight_cube.set_angle
 data:
   angle: 45.0 # 0-360 degrees
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `set_panel_mode`
@@ -269,7 +306,7 @@ data:
 service: yeelight_cube.set_panel_mode
 data:
   panel_mode: true # true = whole panel, false = text only
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `preview_gradient_modes`
@@ -279,7 +316,7 @@ data:
 ```yaml
 service: yeelight_cube.preview_gradient_modes
 data:
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 ---
@@ -295,7 +332,7 @@ service: yeelight_cube.save_palette
 data:
   palette: [[255, 0, 0], [0, 255, 0], [0, 0, 255]]
   name: "RGB Rainbow"
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `load_palette`
@@ -306,7 +343,7 @@ data:
 service: yeelight_cube.load_palette
 data:
   idx: 0
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `remove_palette`
@@ -317,7 +354,7 @@ data:
 service: yeelight_cube.remove_palette
 data:
   idx: 0
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `rename_palette`
@@ -329,7 +366,7 @@ service: yeelight_cube.rename_palette
 data:
   idx: 0
   new_name: "Updated Palette"
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `set_palettes`
@@ -340,7 +377,7 @@ data:
 service: yeelight_cube.set_palettes
 data:
   palettes: [{ "name": "Palette1", "colors": [[255, 0, 0], [0, 255, 0]] }, ...]
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 ---
@@ -355,7 +392,7 @@ data:
 service: yeelight_cube.set_brightness
 data:
   brightness: 75 # 1-100%
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `set_preview_adjustments`
@@ -375,7 +412,7 @@ data:
   invert: 0 # 0-100
   tint_hue: 0 # 0-360 (color for tint overlay)
   tint_strength: 0 # 0-100
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `set_color_accuracy`
@@ -386,7 +423,7 @@ data:
 service: yeelight_cube.set_color_accuracy
 data:
   enabled: true
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `set_color_calibration`
@@ -404,7 +441,7 @@ data:
   gain_r: 1.00
   gain_g: 0.87
   gain_b: 0.72
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 ---
@@ -522,7 +559,7 @@ data:
 ```yaml
 service: yeelight_cube.test_display
 data:
-  entity_id: light.cubelite_192_168_4_139
+  entity_id: light.cubelite_192_168_4_102
 ```
 
 ---
@@ -538,7 +575,7 @@ All services support multi-entity operations. You can target multiple cubes by c
 - service: yeelight_cube.set_custom_text
   data:
     text: "SYNC"
-    entity_id: light.cubelite_192_168_4_139
+    entity_id: light.cubelite_192_168_4_102
 - service: yeelight_cube.set_custom_text
   data:
     text: "SYNC"
@@ -552,7 +589,7 @@ All services support multi-entity operations. You can target multiple cubes by c
 - service: yeelight_cube.set_custom_text
   data:
     text: "CUBE 1"
-    entity_id: light.cubelite_192_168_4_139
+    entity_id: light.cubelite_192_168_4_102
 - service: yeelight_cube.set_custom_text
   data:
     text: "CUBE 2"
@@ -584,7 +621,7 @@ All services are fully compatible with Node-RED and provide:
     "service": "set_custom_text",
     "data": {
       "text": "{{payload.message}}",
-      "entity_id": "light.cubelite_192_168_4_139"
+      "entity_id": "light.cubelite_192_168_4_102"
     }
   }
 ]
