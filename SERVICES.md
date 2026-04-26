@@ -126,40 +126,128 @@ data:
 
 ### `apply_custom_pixels`
 
-**Display pixels on the lamp (20×5 = 100 pixels). Each entry is an object with `position` (0–99) and `color` ([R, G, B]). Positions are indexed left-to-right, bottom-to-top. You can send any subset of pixels (e.g. only 3 non-black ones).**
+**Display a pixel art frame on the lamp. The lamp has 100 pixels arranged in a 20×5 grid (20 columns, 5 rows). Positions are numbered 0–99, left-to-right then bottom-to-top (position 0 = bottom-left, position 99 = top-right).**
+
+**Each entry is an object with `position` (0–99) and `color` ([R, G, B]). Rules:**
+
+- **You can send any number of entries** — you don't need to specify all 100 pixels.
+- **Missing positions are treated as black** (off).
+- **Entries can be in any order.**
+- **If a position appears more than once, only the first entry is used.**
+- **Positions outside 0–99 are ignored.**
 
 ```yaml
 service: yeelight_cube.apply_custom_pixels
 data:
-  pixels:
-    - { "position": 0, "color": [255, 0, 0] }
-    - { "position": 1, "color": [0, 255, 0] }
-    - { "position": 2, "color": [0, 0, 255] }
-    # ... up to 100 entries (positions 0–99)
   entity_id: light.cubelite_192_168_4_102
+  pixels:
+    [ { "position": 0, "color": [255, 0, 0] },
+	{ "position": 1, "color": [0, 255, 0] },
+	{ "position": 2, "color": [0, 0, 255] },
+	{ "position": 3, "color": [0, 0, 0] },
+	{ "position": 4, "color": [0, 0, 0] },
+	{ "position": 5, "color": [0, 0, 0] },
+	{ "position": 6, "color": [0, 0, 0] },
+	{ "position": 7, "color": [0, 0, 0] },
+	{ "position": 8, "color": [0, 0, 0] },
+	{ "position": 9, "color": [0, 0, 0] },
+	{ "position": 10, "color": [0, 0, 0] },
+	{ "position": 11, "color": [0, 0, 0] },
+	{ "position": 12, "color": [0, 0, 0] },
+	{ "position": 13, "color": [0, 0, 0] },
+	{ "position": 14, "color": [0, 0, 0] },
+	{ "position": 15, "color": [0, 0, 0] },
+	{ "position": 16, "color": [0, 0, 0] },
+	{ "position": 17, "color": [0, 0, 0] },
+	{ "position": 18, "color": [0, 0, 0] },
+	{ "position": 19, "color": [0, 0, 0] },
+	{ "position": 20, "color": [0, 0, 0] },
+	{ "position": 21, "color": [0, 0, 0] },
+	{ "position": 22, "color": [0, 0, 0] },
+	{ "position": 23, "color": [0, 0, 0] },
+	{ "position": 24, "color": [0, 0, 0] },
+	{ "position": 25, "color": [0, 0, 0] },
+	{ "position": 26, "color": [0, 0, 0] },
+	{ "position": 27, "color": [0, 0, 0] },
+	{ "position": 28, "color": [0, 0, 0] },
+	{ "position": 29, "color": [0, 0, 0] },
+	{ "position": 30, "color": [0, 0, 0] },
+	{ "position": 31, "color": [0, 0, 0] },
+	{ "position": 32, "color": [0, 0, 0] },
+	{ "position": 33, "color": [0, 0, 0] },
+	{ "position": 34, "color": [0, 0, 0] },
+	{ "position": 35, "color": [0, 0, 0] },
+	{ "position": 36, "color": [0, 0, 0] },
+	{ "position": 37, "color": [0, 0, 0] },
+	{ "position": 38, "color": [0, 0, 0] },
+	{ "position": 39, "color": [0, 0, 0] },
+	{ "position": 40, "color": [0, 0, 0] },
+	{ "position": 41, "color": [0, 0, 0] },
+	{ "position": 42, "color": [0, 0, 0] },
+	{ "position": 43, "color": [0, 0, 0] },
+	{ "position": 44, "color": [0, 0, 0] },
+	{ "position": 45, "color": [0, 0, 0] },
+	{ "position": 46, "color": [0, 0, 0] },
+	{ "position": 47, "color": [0, 0, 0] },
+	{ "position": 48, "color": [0, 0, 0] },
+	{ "position": 49, "color": [0, 0, 0] },
+	{ "position": 50, "color": [0, 0, 0] },
+	{ "position": 51, "color": [0, 0, 0] },
+	{ "position": 52, "color": [0, 0, 0] },
+	{ "position": 53, "color": [0, 0, 0] },
+	{ "position": 54, "color": [0, 0, 0] },
+	{ "position": 55, "color": [0, 0, 0] },
+	{ "position": 56, "color": [0, 0, 0] },
+	{ "position": 57, "color": [0, 0, 0] },
+	{ "position": 58, "color": [0, 0, 0] },
+	{ "position": 59, "color": [0, 0, 0] },
+	{ "position": 60, "color": [0, 0, 0] },
+	{ "position": 61, "color": [0, 0, 0] },
+	{ "position": 62, "color": [0, 0, 0] },
+	{ "position": 63, "color": [0, 0, 0] },
+	{ "position": 64, "color": [0, 0, 0] },
+	{ "position": 65, "color": [0, 0, 0] },
+	{ "position": 66, "color": [0, 0, 0] },
+	{ "position": 67, "color": [0, 0, 0] },
+	{ "position": 68, "color": [0, 0, 0] },
+	{ "position": 69, "color": [0, 0, 0] },
+	{ "position": 70, "color": [0, 0, 0] },
+	{ "position": 71, "color": [0, 0, 0] },
+	{ "position": 72, "color": [0, 0, 0] },
+	{ "position": 73, "color": [0, 0, 0] },
+	{ "position": 74, "color": [0, 0, 0] },
+	{ "position": 75, "color": [0, 0, 0] },
+	{ "position": 76, "color": [0, 0, 0] },
+	{ "position": 77, "color": [0, 0, 0] },
+	{ "position": 78, "color": [0, 0, 0] },
+	{ "position": 79, "color": [0, 0, 0] },
+	{ "position": 80, "color": [0, 0, 0] },
+	{ "position": 81, "color": [0, 0, 0] },
+	{ "position": 82, "color": [0, 0, 0] },
+	{ "position": 83, "color": [0, 0, 0] },
+	{ "position": 84, "color": [0, 0, 0] },
+	{ "position": 85, "color": [0, 0, 0] },
+	{ "position": 86, "color": [0, 0, 0] },
+	{ "position": 87, "color": [0, 0, 0] },
+	{ "position": 88, "color": [0, 0, 0] },
+	{ "position": 89, "color": [0, 0, 0] },
+	{ "position": 90, "color": [0, 0, 0] },
+	{ "position": 91, "color": [0, 0, 0] },
+	{ "position": 92, "color": [0, 0, 0] },
+	{ "position": 93, "color": [0, 0, 0] },
+	{ "position": 94, "color": [0, 0, 0] },
+	{ "position": 95, "color": [0, 0, 0] },
+	{ "position": 96, "color": [0, 0, 0] },
+	{ "position": 97, "color": [0, 0, 0] },
+	{ "position": 98, "color": [0, 0, 0] },
+	{ "position": 99, "color": [0, 0, 0] }]
 ```
 
 <table>
   <tr>
     <td><img src="images/Actions/Action-Apply-Custom-Pixels.png" alt="Action - apply_custom_pixels">
-    <br />(example above with all 97 other pixels being black [0, 0, 0])</td>
   </tr>
 </table>
-
-### `set_custom_pixels`
-
-**Set individual pixels by position. Each entry is an object with `position` (0–99) and `color` ([R, G, B]).**
-
-```yaml
-service: yeelight_cube.set_custom_pixels
-data:
-  pixels:
-    [
-      { "position": 0, "color": [255, 0, 0] },
-      { "position": 50, "color": [0, 0, 255] },
-    ]
-  entity_id: light.cubelite_192_168_4_102
-```
 
 ### `save_pixel_art`
 
@@ -663,7 +751,7 @@ Returns: Boolean indicating if device is managed
 | Category          | Primary Services                                             | Purpose                     |
 | ----------------- | ------------------------------------------------------------ | --------------------------- |
 | **Text**          | `set_custom_text`, `set_text_colors`                         | Display text with colors    |
-| **Drawing**       | `apply_custom_pixels`, `set_custom_pixels`, `save_pixel_art` | Create and manage pixel art |
+| **Drawing**       | `apply_custom_pixels`, `save_pixel_art`, `apply_pixel_art`   | Create and manage pixel art |
 | **Gradients**     | `set_mode`, `set_solid_color`, `set_angle`, `set_panel_mode` | Control display modes       |
 | **Palettes**      | `save_palette`, `load_palette`, `set_palettes`               | Manage color collections    |
 | **Text Settings** | `set_font`, `set_alignment`, `set_orientation`               | Text formatting             |

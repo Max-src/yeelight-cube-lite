@@ -548,7 +548,6 @@ In **Node-RED**, use an **Action node**:
 | `yeelight_cube.apply_custom_pixels` | Push 100-pixel array to lamp      | `pixels` (array of 100 `[R,G,B]`), `entity_id` |
 | `yeelight_cube.apply_pixel_art`     | Apply saved pixel art by index    | `idx`, `entity_id`                             |
 | `yeelight_cube.save_pixel_art`      | Save a pixel array as named art   | `pixels`, `name`                               |
-| `yeelight_cube.set_custom_pixels`   | Set individual pixels by position | `pixels` (array of `{position, color}`)        |
 
 #### Palettes & Colors
 

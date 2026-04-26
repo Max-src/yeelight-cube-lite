@@ -5351,62 +5351,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             vol.Required("name"): cv.string,
         })
     )
-    async def handle_set_custom_pixels(service_call):
-        # Expects: list of {"position": int, "color": [r,g,b]} -- supports multi-entity parallel dispatch
-        pixels = service_call.data.get("pixels")
-        if not isinstance(pixels, list):
-            _LOGGER.error("set_custom_pixels expects a list of dicts with 'position' and 'color'")
-            return
-
-        # Validate and convert colors to tuple (shared across all targets)
-        valid_pixels = []
-        for px in pixels:
-            pos = px.get("position")
-            color = px.get("color")
-            if (
-                isinstance(pos, int)
-                and isinstance(color, (list, tuple))
-                and len(color) == 3
-            ):
-                valid_pixels.append({"position": pos, "color": tuple(color)})
-
-        targets = _resolve_entities(service_call, "SET_CUSTOM_PIXELS")
-        if not targets:
-            return
-
-        async def _apply_one(target_entity):
-            if not target_entity._is_on and not target_entity._should_auto_turn_on():
-                _LOGGER.debug(f"[AUTO-TURN-ON] set_custom_pixels command ignored - lamp is off and auto-turn-on is disabled")
-                return
-            target_entity._custom_pixels = valid_pixels
-            target_entity._custom_draw_active = True
-            if not target_entity._custom_text:
-                target_entity._custom_text = "HELLO"
-            target_entity._scroll_offset = 0
-            target_entity._scroll_direction = 1
-            target_entity.stop_scroll_timer()
-            target_entity._is_scrolling = False
-            if target_entity.hass is not None:
-                target_entity.async_schedule_update_ha_state()
-            _LOGGER.debug(f"[SET_CUSTOM_PIXELS] Set {len(valid_pixels)} pixels, custom_draw_active: True")
-            await target_entity.async_apply_display_mode(update_type='pixel_art')
-
-        _fire_and_forget(*[_apply_one(t) for t in targets])
-        
-    hass.services.async_register(
-        DOMAIN,
-        "set_custom_pixels",
-        handle_set_custom_pixels,
-        schema=vol.Schema({
-            vol.Required("pixels"): [
-                {
-                    vol.Required("position"): cv.positive_int,
-                    vol.Required("color"): vol.All(vol.ExactSequence((cv.byte, cv.byte, cv.byte)), vol.Coerce(tuple)),
-                }
-            ],
-            vol.Optional("entity_id", description="Target specific cube entity. If not provided, uses default entity."): _entity_id_or_list,
-        })
-    )
     async def handle_set_custom_text(service_call):
         # Supports multi-entity parallel dispatch
         text = service_call.data.get("text")

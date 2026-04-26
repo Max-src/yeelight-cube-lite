@@ -201,17 +201,6 @@ apply_custom_pixels:
         entity:
           domain: light
 
-set_custom_pixels:
-  name: Set Custom Pixels
-  description: Set individual pixels on the cube matrix using position and color data.
-  fields:
-    pixels:
-      description: Array of pixel objects with position (0-99) and RGB color
-      example: '[{"position": 0, "color": [255, 0, 0]}, {"position": 1, "color": [0, 255, 0]}]'
-      required: true
-      selector:
-        object:
-
 set_mode:
   name: Set Display Mode
   description: Set the display mode for text and gradients on the cube.
