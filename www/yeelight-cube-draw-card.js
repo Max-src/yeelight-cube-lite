@@ -1135,14 +1135,24 @@ class YeelightCubeDrawCard extends LitElement {
       this._hass = hass;
     }
 
-    // Check if pixel art sensor changed using COUNT
+    // Check if pixel art sensor changed using COUNT or content_hash
+    // (count alone won't detect renames since the list size stays the same)
     const stateObj = this._hass.states[pixelartSensor];
     if (!stateObj) return; // Sensor entity not (yet) available
     const prevCount = this._lastPixelArtCount;
     const currCount = stateObj?.attributes?.count;
+    const prevHash = this._lastPixelArtHash;
+    const currHash = stateObj?.attributes?.content_hash;
 
-    if (prevCount !== currCount) {
+    if (prevCount !== currCount || prevHash !== currHash) {
       this._lastPixelArtCount = currCount;
+      this._lastPixelArtHash = currHash;
+
+      // HA websocket does NOT resend large attribute arrays (pixel_arts) on updates —
+      // only scalars like count/content_hash arrive. Fetch fresh data via REST API
+      // so the gallery always shows up-to-date names even for renames from outside the card.
+      this._fetchFreshPixelArts(pixelartSensor);
+
       if (!this._renderScheduled) {
         this._renderScheduled = true;
         requestAnimationFrame(() => {
@@ -3543,8 +3553,25 @@ class YeelightCubeDrawCard extends LitElement {
       return;
     }
 
-    // Optimistically update the UI immediately
-    pixelArts[idx].name = newName.trim();
+    // Optimistically update the UI immediately by patching local hass state.
+    // This survives subsequent websocket re-renders (HA doesn't resend large arrays).
+    const updatedPixelArts = pixelArts.map((art, i) =>
+      i === idx ? { ...art, name: newName.trim() } : art,
+    );
+    const updatedState = {
+      ...stateObj,
+      attributes: {
+        ...stateObj.attributes,
+        pixel_arts: updatedPixelArts,
+      },
+    };
+    this.hass = {
+      ...this.hass,
+      states: {
+        ...this.hass.states,
+        [sensorEntityId]: updatedState,
+      },
+    };
     this.pixelArtVersion = (this.pixelArtVersion || 0) + 1;
     this.requestUpdate();
 
@@ -3567,7 +3594,22 @@ class YeelightCubeDrawCard extends LitElement {
       alert("Failed to rename pixel art. Please try again.");
 
       // Revert optimistic update on error
-      pixelArts[idx].name = currentName;
+      const revertedPixelArts = updatedPixelArts.map((art, i) =>
+        i === idx ? { ...art, name: currentName } : art,
+      );
+      this.hass = {
+        ...this.hass,
+        states: {
+          ...this.hass.states,
+          [sensorEntityId]: {
+            ...updatedState,
+            attributes: {
+              ...updatedState.attributes,
+              pixel_arts: revertedPixelArts,
+            },
+          },
+        },
+      };
       this.pixelArtVersion = (this.pixelArtVersion || 0) + 1;
       this.requestUpdate();
     }
@@ -3673,6 +3715,47 @@ class YeelightCubeDrawCard extends LitElement {
    * Delete a pixel art by calling the backend service.
    * Backend updates sensor → websocket pushes update → card re-renders → album re-initializes.
    */
+  /**
+   * Fetch fresh pixel_arts from the REST API and patch _hass directly.
+   * This bypasses the websocket limitation where HA doesn't resend large attribute
+   * arrays (only scalar attributes like count/content_hash are pushed via websocket).
+   * Called whenever content_hash changes in set hass.
+   */
+  async _fetchFreshPixelArts(sensorEntityId) {
+    if (!this._hass || !sensorEntityId) return;
+    // Debounce: avoid parallel fetches
+    if (this._fetchingPixelArts) return;
+    this._fetchingPixelArts = true;
+    try {
+      const freshState = await this._hass.callApi(
+        "GET",
+        `states/${sensorEntityId}`,
+      );
+      if (freshState?.attributes?.pixel_arts) {
+        // Patch _hass directly (not via setter) to avoid re-triggering set hass logic
+        this._hass = {
+          ...this._hass,
+          states: {
+            ...this._hass.states,
+            [sensorEntityId]: {
+              ...this._hass.states[sensorEntityId],
+              attributes: {
+                ...this._hass.states[sensorEntityId].attributes,
+                pixel_arts: freshState.attributes.pixel_arts,
+              },
+            },
+          },
+        };
+        this.pixelArtVersion = (this.pixelArtVersion || 0) + 1;
+        this.requestUpdate();
+      }
+    } catch (err) {
+      console.warn("[PixelArt] Failed to fetch fresh pixel arts:", err);
+    } finally {
+      this._fetchingPixelArts = false;
+    }
+  }
+
   async _deletePixelArt(idx) {
     // Get current sensor state
     const cfg = this.config || {};

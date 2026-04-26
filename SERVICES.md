@@ -304,7 +304,7 @@ data:
 service: yeelight_cube.rename_pixel_art
 data:
   idx: 0
-  new_name: "Updated Artwork"
+  name: "Updated Artwork"
   entity_id: light.cubelite_192_168_4_102
 ```
 
@@ -470,7 +470,7 @@ data:
 service: yeelight_cube.rename_palette
 data:
   idx: 0
-  new_name: "Updated Palette"
+  name: "Updated Palette"
   entity_id: light.cubelite_192_168_4_102
 ```
 
