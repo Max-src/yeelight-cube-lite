@@ -251,7 +251,7 @@ data:
 
 ### `save_pixel_art`
 
-**Save current pixel configuration**
+**Save drawing in the list of pixel arts**
 
 ```yaml
 service: yeelight_cube.save_pixel_art
@@ -268,10 +268,20 @@ data:
 
 **Load saved pixel art by index**
 
+> **Finding the right index:** The `idx` parameter refers to the 0-based position of the drawing in the `sensor.yeelight_cube_saved_pixel_arts` sensor's `pixel_arts` attribute. Use the template below in **Developer Tools → Template** to list all saved drawings with their indexes:
+>
+> ```jinja
+> {% set arts = state_attr('sensor.yeelight_cube_saved_pixel_arts', 'pixel_arts') %}
+> {% for art in arts %}{{ loop.index0 }}: {{ art.name }}
+> {% endfor %}
+> ```
+>
+> **Default on fresh install:** The list is empty, no pixel arts are loaded by default. Create and save drawings using the Draw Card first, then use their index here.
+
 ```yaml
 service: yeelight_cube.apply_pixel_art
 data:
-  idx: 0 # Index of saved pixel art
+  idx: 0 # Index of saved pixel art (see sensor.yeelight_cube_saved_pixel_arts)
   entity_id: light.cubelite_192_168_4_102
 ```
 

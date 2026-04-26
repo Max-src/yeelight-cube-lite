@@ -477,7 +477,7 @@ These entities appear in the **Diagnostic** section of the device page.
 
 ### Global entities
 
-These three sensor entities are created **once per integration install**. They are shared across all lamps ( not tied to specific device). They store and expose the palettes, pixel art, and font maps that the devices and cards can read.
+These three sensor entities are created **once per integration install**. They are shared across all lamps (not tied to a specific device). They store and expose the palettes, pixel art, and font maps that the devices and cards can read.
 
 <table>
   <tr>
@@ -485,11 +485,61 @@ These three sensor entities are created **once per integration install**. They a
   </tr>
 </table>
 
-| Entity              | Description                                                                    |
-| ------------------- | ------------------------------------------------------------------------------ |
-| **Color Palettes**  | Stores all saved color palettes and exposes them to the palette and draw cards |
-| **Font Characters** | Exposes the bitmap font character maps used for text rendering in the cards    |
-| **Saved Drawings**  | Stores all saved pixel art designs and exposes them to the draw card           |
+---
+
+#### `sensor.yeelight_cube_saved_pixel_arts` -> Saved Drawings
+
+Stores all pixel art designs (drawings) created with the Draw Card and exposes them to the custom cards and services.
+
+| Attribute      | Type    | Description                                                                     |
+| -------------- | ------- | ------------------------------------------------------------------------------- |
+| `pixel_arts`   | list    | Ordered list of saved pixel arts. Each entry has a `name` and a `pixels` array. |
+| `count`        | integer | Number of saved pixel arts                                                      |
+| `content_hash` | string  | MD5 hash of the list — changes whenever the list is modified                    |
+
+**State:** `"N drawings"` (e.g. `"3 drawings"`)
+
+**Default on fresh install:** State is `"0 drawings"`, `pixel_arts` is an empty list. No pixel art is pre-loaded — you create drawings using the Draw Card and save them with the `save_pixel_art` action.
+
+**How to use:** The index you pass to `apply_pixel_art`, `remove_pixel_art`, `rename_pixel_art`, and `get_pixel_art` corresponds to the **position of the entry in the `pixel_arts` list** (0-based). To see all saved drawings and their indexes:
+
+```yaml
+# In a template sensor or Developer Tools → Template
+{{ state_attr('sensor.yeelight_cube_saved_pixel_arts', 'pixel_arts')
+   | map(attribute='name') | list }}
+# Example result: ['Magic Lamp', 'Bat', 'Whale']
+# → 'Magic Lamp' is at index 0, 'Bat' at index 1, 'Whale' at index 2
+```
+
+---
+
+#### `sensor.yeelight_cube_color_palettes` -> Color Palettes
+
+Stores all saved color palettes and exposes them to the Palette Card and Draw Card.
+
+| Attribute      | Type    | Description                                                                   |
+| -------------- | ------- | ----------------------------------------------------------------------------- |
+| `palettes_v2`  | list    | Ordered list of saved palettes. Each entry has a `name` and a `colors` array. |
+| `count`        | integer | Number of saved palettes                                                      |
+| `content_hash` | string  | MD5 hash of the list, changes whenever the list is modified                   |
+
+**State:** numeric count of saved palettes (e.g. `3`)
+
+**Default on fresh install:** `palettes_v2` is an empty list. No palettes are pre-loaded, create them with the Palette Card or `save_palette` action.
+
+---
+
+#### `sensor.yeelight_cube_font_letter_map` -> Font Characters
+
+Exposes the **read-only** bitmap font character maps used for text rendering in the cards.
+
+| Attribute   | Type   | Description                                                                                     |
+| ----------- | ------ | ----------------------------------------------------------------------------------------------- |
+| `font_maps` | object | Dictionary with keys `"basic"`, `"fat"`, and `"italic"`. Each maps characters to pixel bitmaps. |
+
+**State:** always `"ready"`
+
+**Default on fresh install:** Always populated with the 3 built-in fonts (`basic`, `fat`, `italic`). This sensor is static, its content never changes at runtime.
 
 ---
 
@@ -543,11 +593,11 @@ In **Node-RED**, use an **Action node**:
 
 #### Pixel Art
 
-| Action                              | Description                       | Key fields                                     |
-| ----------------------------------- | --------------------------------- | ---------------------------------------------- |
-| `yeelight_cube.apply_custom_pixels` | Push 100-pixel array to lamp      | `pixels` (array of 100 `[R,G,B]`), `entity_id` |
-| `yeelight_cube.apply_pixel_art`     | Apply saved pixel art by index    | `idx`, `entity_id`                             |
-| `yeelight_cube.save_pixel_art`      | Save a pixel array as named art   | `pixels`, `name`                               |
+| Action                              | Description                     | Key fields                                     |
+| ----------------------------------- | ------------------------------- | ---------------------------------------------- |
+| `yeelight_cube.apply_custom_pixels` | Push 100-pixel array to lamp    | `pixels` (array of 100 `[R,G,B]`), `entity_id` |
+| `yeelight_cube.apply_pixel_art`     | Apply saved pixel art by index  | `idx`, `entity_id`                             |
+| `yeelight_cube.save_pixel_art`      | Save a pixel array as named art | `pixels`, `name`                               |
 
 #### Palettes & Colors
 
