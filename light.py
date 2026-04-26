@@ -3278,14 +3278,36 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 module.set_colors([background_color_hex])
             # Priority: custom drawing if present and custom_draw_active, else text
             if getattr(self, '_custom_draw_active', False) and self._custom_pixels:
-                # Group pixels by color for batched placement
+                # Pixel art always uses a black background — missing positions = black
+                for module in self._layout.device_layout:
+                    module.set_colors(["#000000"])
+                # Normalize to exactly 100 positions:
+                #   - positions >= 100 are ignored
+                #   - first definition of a position wins (duplicates ignored)
+                #   - missing positions default to black
                 color_groups = {}
+                seen_positions = set()
                 for px in self._custom_pixels:
+                    if not isinstance(px, dict):
+                        continue
                     pos = px.get("position")
                     color = px.get("color")
-                    if pos is not None and color is not None:
-                        color_hex = rgb_to_hex(tuple(color))
-                        color_groups.setdefault(color_hex, []).append(pos)
+                    if not isinstance(pos, int) or pos < 0 or pos >= 100:
+                        continue
+                    if pos in seen_positions:
+                        continue  # first definition wins
+                    seen_positions.add(pos)
+                    # Validate and normalize color — must be list/tuple of 3 ints
+                    if not isinstance(color, (list, tuple)) or len(color) < 3:
+                        continue  # black (background already set)
+                    try:
+                        r, g, b = int(color[0]), int(color[1]), int(color[2])
+                    except (TypeError, ValueError, IndexError):
+                        continue  # black
+                    if r == 0 and g == 0 and b == 0:
+                        continue  # background (black) already set
+                    color_hex = rgb_to_hex((r, g, b))
+                    color_groups.setdefault(color_hex, []).append(pos)
                 for color_hex, positions in color_groups.items():
                     self.place_pixels(color_hex, self._flip_positions(positions))
                 await self.apply(skip_post_delay=skip_post_delay)
@@ -4028,7 +4050,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             _LOGGER.warning(
                 f"[APPLY] [{self._ip}] Sending update_leds: "
                 f"{lit} lit / {100 - lit} dark pixels, "
-                f"text='{self._custom_text[:10]}' mode='{self._mode}' "
+                f"text='{(self._custom_text or '')[:10]}' mode='{self._mode}' "
                 f"idle={idle_since_last_cmd:.1f}s fx_age={time.time() - self._last_fx_mode_time:.0f}s "
                 f"bright={self._brightness}/255 hw={hardware_brightness}% darken={darken_percent}%"
             )
@@ -4932,6 +4954,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             target_entity._custom_pixels = art["pixels"]
             target_entity._custom_draw_active = True
             target_entity._active_pixel_art_name = art.get("name", f"Pixel Art {idx + 1}")
+            if not target_entity._custom_text:
+                target_entity._custom_text = "HELLO"
+            target_entity._scroll_offset = 0
+            target_entity._scroll_direction = 1
             target_entity.stop_scroll_timer()
             target_entity._is_scrolling = False
             await target_entity.async_apply_display_mode(update_type='pixel_art')
@@ -4958,8 +4984,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 return
             target_entity._custom_pixels = pixels
             target_entity._custom_draw_active = True
+            if not target_entity._custom_text:
+                target_entity._custom_text = "HELLO"
+            target_entity._scroll_offset = 0
+            target_entity._scroll_direction = 1
             target_entity.stop_scroll_timer()
             target_entity._is_scrolling = False
+            if target_entity.hass is not None:
+                target_entity.async_schedule_update_ha_state()
             await target_entity.async_apply_display_mode(update_type='pixel_art')
 
         _fire_and_forget(*[_apply_one(t) for t in targets])
@@ -5348,7 +5380,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 return
             target_entity._custom_pixels = valid_pixels
             target_entity._custom_draw_active = True
-            target_entity._custom_text = None
+            if not target_entity._custom_text:
+                target_entity._custom_text = "HELLO"
+            target_entity._scroll_offset = 0
+            target_entity._scroll_direction = 1
+            target_entity.stop_scroll_timer()
+            target_entity._is_scrolling = False
+            if target_entity.hass is not None:
+                target_entity.async_schedule_update_ha_state()
             _LOGGER.debug(f"[SET_CUSTOM_PIXELS] Set {len(valid_pixels)} pixels, custom_draw_active: True")
             await target_entity.async_apply_display_mode(update_type='pixel_art')
 

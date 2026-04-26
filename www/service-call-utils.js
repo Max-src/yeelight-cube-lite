@@ -49,11 +49,24 @@ export async function callServiceOnTargetEntities(
   const entityIdValue =
     targetEntities.length === 1 ? targetEntities[0] : targetEntities;
 
+  const payload = {
+    ...serviceData,
+    entity_id: entityIdValue,
+  };
+
   try {
-    await hass.callService("yeelight_cube", serviceName, {
-      ...serviceData,
-      entity_id: entityIdValue,
-    });
+    window.__YEELIGHT_DRAW_DEBUG_LAST_SERVICE_CALL = {
+      domain: "yeelight_cube",
+      service: serviceName,
+      data: payload,
+      callerTag,
+      timestamp: new Date().toISOString(),
+    };
+    console.error(
+      `[${callerTag}] Dispatching yeelight_cube.${serviceName}`,
+      payload,
+    );
+    await hass.callService("yeelight_cube", serviceName, payload);
   } catch (error) {
     console.error(
       `[${callerTag}] Error calling ${serviceName} for ${JSON.stringify(entityIdValue)}:`,

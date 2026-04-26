@@ -115,8 +115,8 @@ data:
 
 <table>
   <tr>
-    <td><img src="images/Actions/Action-Set-Alignment.png" alt="Action - set_alignment" style="transform: rotate(180deg);">
-    <br />(lamp preview on dashboards will stay up-right, only content on the lamp will be rotated)</td>
+    <td><img src="images/Actions/Action-Set-Orientation.png" alt="Action - set_orientation">
+    <br />(lamp preview on dashboards will stay up-right, only the content displayed on the lamp will be rotated)</td>
   </tr>
 </table>
 
@@ -126,12 +126,16 @@ data:
 
 ### `apply_custom_pixels`
 
-**Push a full 100-pixel array to the lamp (20×5 matrix). Each entry is an `[R, G, B]` array. Pixels are indexed left-to-right, bottom-to-top.**
+**Display pixels on the lamp (20×5 = 100 pixels). Each entry is an object with `position` (0–99) and `color` ([R, G, B]). Positions are indexed left-to-right, bottom-to-top. You can send any subset of pixels (e.g. only 3 non-black ones).**
 
 ```yaml
 service: yeelight_cube.apply_custom_pixels
 data:
-  pixels: [[255, 0, 0], [0, 255, 0], [0, 0, 255], ...] # 100 RGB arrays
+  pixels:
+    - { "position": 0, "color": [255, 0, 0] }
+    - { "position": 1, "color": [0, 255, 0] }
+    - { "position": 2, "color": [0, 0, 255] }
+    # ... up to 100 entries (positions 0–99)
   entity_id: light.cubelite_192_168_4_102
 ```
 
@@ -164,7 +168,10 @@ data:
 ```yaml
 service: yeelight_cube.save_pixel_art
 data:
-  pixels: [[255, 0, 0], [0, 255, 0], [0, 0, 255], ...] # 100 RGB arrays
+  pixels:
+    - { "position": 0, "color": [255, 0, 0] }
+    - { "position": 1, "color": [0, 255, 0] }
+    # ... up to 100 entries (positions 0–99)
   name: "My Artwork"
   entity_id: light.cubelite_192_168_4_102
 ```

@@ -75,6 +75,10 @@ import { callServiceOnTargetEntities as callServiceSequentially } from "./servic
 
 const MAX_IMAGE_PALETTE_COLORS = 15;
 
+console.error(
+  `[YeelightDrawCard] module loaded at ${new Date().toISOString()}`,
+);
+
 class YeelightCubeDrawCard extends LitElement {
   static getStubConfig(hass) {
     const firstEntity =
@@ -1950,6 +1954,15 @@ class YeelightCubeDrawCard extends LitElement {
         pixels.push({ position: lampIdx, color: rgb });
       }
     }
+    const debugPayload = {
+      service: "yeelight_cube.apply_custom_pixels",
+      data: { entity_id: this.entity, pixels },
+    };
+    window.__YEELIGHT_DRAW_DEBUG_LAST_PAYLOAD = debugPayload;
+    console.error(
+      "[YeelightDrawCard] _sendToLamp → apply_custom_pixels payload",
+      debugPayload,
+    );
     await this.callServiceOnTargetEntities("apply_custom_pixels", {
       pixels,
     });
@@ -2137,15 +2150,17 @@ class YeelightCubeDrawCard extends LitElement {
       `;
     }
 
-    return { items: paginatedItems, pagination: paginationHTML };
+    return {
+      items: paginatedItems,
+      pagination: paginationHTML,
+    };
   }
 
-  /**
-   * Handle page changes
-   */
   _handlePageButtonClick(e) {
-    const pageNum = parseInt(e.target.dataset.pageNum);
-    this._goToPage(pageNum);
+    const pageNum = parseInt(e.currentTarget?.dataset?.pageNum, 10);
+    if (!Number.isNaN(pageNum)) {
+      this._goToPage(pageNum);
+    }
   }
 
   _handlePrevPageClick() {

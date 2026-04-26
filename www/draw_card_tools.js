@@ -687,7 +687,13 @@ export class ActionManager {
             <button
               class="${btnClass("apply")}"
               title="Apply"
-              @click="${() => this.card._sendToLamp()}"
+              @click="${() => {
+                console.error("[YeelightDrawCard] Apply button clicked", {
+                  entity: this.card?.entity,
+                  target_entities: this.card?.config?.target_entities,
+                });
+                return this.card._sendToLamp();
+              }}"
             >
               ${showIcon
                 ? html`<ha-icon icon="mdi:send"></ha-icon>`
