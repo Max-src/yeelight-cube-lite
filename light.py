@@ -4803,46 +4803,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     result.append({"position": pos, "color": color})
         return result
 
-    async def handle_import_pixel_arts(service_call):
-        """Import and overwrite the full list of pixel arts."""
-        pixel_arts = service_call.data.get("pixel_arts")
-        if not isinstance(pixel_arts, list):
-            _LOGGER.error("import_pixel_arts expects a list of pixel art dicts")
-            return
-        # Validate structure: each item should be a dict with 'name' and 'pixels' (list)
-        valid_pixel_arts = []
-        for art in pixel_arts:
-            if (
-                isinstance(art, dict)
-                and "name" in art
-                and "pixels" in art
-                and isinstance(art["pixels"], list)
-            ):
-                valid_pixel_arts.append({
-                    "name": str(art["name"]),
-                    "pixels": _normalize_pixels(art["pixels"]),
-                })
-        
-        # Update global storage for decoupled sensor
-        if DOMAIN not in hass.data:
-            hass.data[DOMAIN] = {}
-        hass.data[DOMAIN]["pixel_arts"] = valid_pixel_arts
-        
-        # Trigger state update for all entities (they access global storage via @property)
-        for entity_id, entity in _ENTITY_REGISTRY.items():
-            entity.async_write_ha_state()
-        
-        # Force sensor update by firing event
-        hass.bus.async_fire(f"{DOMAIN}_pixel_arts_updated", {"count": len(valid_pixel_arts)})
-        
-        # Save to persistent storage
-        await async_save_data(hass)
-        
-        _LOGGER.debug(f"[pixelart-backend] Imported {len(valid_pixel_arts)} pixel arts via import_pixel_arts service.")
-
     async def handle_update_pixel_arts(service_call):
-        """Update the full list of pixel arts (for reordering or bulk updates)."""
+        """Update the pixel art collection — append (default) or fully replace."""
         pixel_arts = service_call.data.get("pixel_arts")
+        replace = service_call.data.get("replace", False)
         if not isinstance(pixel_arts, list):
             _LOGGER.error("update_pixel_arts expects a list of pixel art dicts")
             return
@@ -4864,7 +4828,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         # Update global storage
         if DOMAIN not in hass.data:
             hass.data[DOMAIN] = {}
-        hass.data[DOMAIN]["pixel_arts"] = valid_pixel_arts
+        if replace:
+            hass.data[DOMAIN]["pixel_arts"] = valid_pixel_arts
+        else:
+            existing = hass.data[DOMAIN].get("pixel_arts", [])
+            hass.data[DOMAIN]["pixel_arts"] = existing + valid_pixel_arts
         
         # Force sensor update by firing event
         hass.bus.async_fire(f"{DOMAIN}_pixel_arts_updated", {"count": len(valid_pixel_arts)})
@@ -4872,7 +4840,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         # Save to persistent storage
         await async_save_data(hass)
         
-        _LOGGER.debug(f"[pixelart-backend] Updated pixel arts list with {len(valid_pixel_arts)} items via update_pixel_arts service.")
+        mode = "replace" if replace else "append"
+        total = len(hass.data[DOMAIN]["pixel_arts"])
+        _LOGGER.debug(f"[pixelart-backend] update_pixel_arts ({mode}): {len(valid_pixel_arts)} items provided, {total} total in collection.")
 
 
 
@@ -5143,19 +5113,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     
     hass.services.async_register(
         DOMAIN,
-        "import_pixel_arts",
-        handle_import_pixel_arts,
-        schema=vol.Schema({
-            vol.Required("pixel_arts"): list,
-        }, extra=vol.ALLOW_EXTRA)
-    )
-    
-    hass.services.async_register(
-        DOMAIN,
         "update_pixel_arts",
         handle_update_pixel_arts,
         schema=vol.Schema({
             vol.Required("pixel_arts"): list,
+            vol.Optional("replace", default=False): bool,
         }, extra=vol.ALLOW_EXTRA)
     )
     

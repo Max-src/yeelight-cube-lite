@@ -3373,10 +3373,11 @@ class YeelightCubeDrawCard extends LitElement {
     if (!this.hass || !pixelartSensor) return;
 
     // Use update_pixel_arts service to save the reordered list
-    // This service is specifically designed for bulk updates like reordering
+    // replace: true because we are sending the full reordered collection
     this.hass
       .callService("yeelight_cube", "update_pixel_arts", {
         pixel_arts: pixelArts,
+        replace: true,
       })
       .then(() => {
         this._isDragging = false;
@@ -3916,14 +3917,9 @@ class YeelightCubeDrawCard extends LitElement {
         }
       }
 
-      // Get existing pixel arts and append new ones
-      const stateObj = this.hass.states[pixelartSensor];
-      const existingPixelArts = stateObj?.attributes?.pixel_arts || [];
-      const combinedPixelArts = [...existingPixelArts, ...imported];
-
-      // Send to backend for import (append to existing)
-      await this.callGlobalService("import_pixel_arts", {
-        pixel_arts: combinedPixelArts,
+      // Send to backend — replace: false (default) so the backend appends to the existing collection
+      await this.callGlobalService("update_pixel_arts", {
+        pixel_arts: imported,
       });
 
       await this.hass.callService("homeassistant", "update_entity", {

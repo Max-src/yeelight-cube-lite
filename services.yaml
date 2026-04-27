@@ -406,20 +406,9 @@ get_pixel_art:
       selector:
         boolean:
 
-import_pixel_arts:
-  name: Import Pixel Arts
-  description: Import multiple pixel arts from a list (typically from file import).
-  fields:
-    pixel_arts:
-      description: Array of pixel art objects with name and pixels
-      example: '[{"name": "Art1", "pixels": [[255,0,0], [0,255,0], ...]}, {"name": "Art2", "pixels": [...]}]'
-      required: true
-      selector:
-        object:
-
 update_pixel_arts:
   name: Update Pixel Arts
-  description: Update the full list of pixel arts (used for reordering or bulk modifications).
+  description: Append or replace the pixel art collection. Default is non-destructive (appends to existing).
   fields:
     pixel_arts:
       description: Array of pixel art objects with name and pixels
@@ -427,6 +416,13 @@ update_pixel_arts:
       required: true
       selector:
         object:
+    replace:
+      description: "If true, fully replaces the existing collection. If false (default), appends the provided arts to the existing collection."
+      example: false
+      required: false
+      default: false
+      selector:
+        boolean:
 
 # === PALETTE MANAGEMENT ===
 

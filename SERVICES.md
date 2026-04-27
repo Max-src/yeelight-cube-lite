@@ -408,24 +408,50 @@ pixels:
   # ...
 ```
 
-### `import_pixel_arts`
-
-**Import a pixel art collection (replaces/merges saved pixel arts)**
-
-```yaml
-service: yeelight_cube.import_pixel_arts
-data:
-  pixel_arts: [{ "name": "Art1", "pixels": [[255, 0, 0], ...] }, ...]
-```
-
 ### `update_pixel_arts`
 
-**Bulk-replace the entire saved pixel arts list**
+**Append arts to, or fully replace, the saved pixel art collection.** Used by the Draw Card for reordering and file imports. Also the correct way to restore a collection from a JSON backup.
+
+By default (`replace: false`) the provided arts are **appended** to the existing collection — safe for adding new entries without touching what's already there.
+
+Set `replace: true` to perform a full replacement (reordering use-case, or a full restore from backup).
+
+> ⚠️ **`replace: true` is destructive — replaces everything.** Export first via the Draw Card gallery export button if you need a backup.
 
 ```yaml
+# Append (non-destructive, default)
 service: yeelight_cube.update_pixel_arts
 data:
-  pixel_arts: [{ "name": "Art1", "pixels": [[255, 0, 0], ...] }, ...]
+  pixel_arts:
+    - name: "Red Corner"
+      pixels:
+        - { "position": 0, "color": [255, 0, 0] }
+        - { "position": 1, "color": [255, 0, 0] }
+        - { "position": 2, "color": [255, 0, 0] }
+        - { "position": 20, "color": [255, 0, 0] }
+        - { "position": 21, "color": [255, 0, 0] }
+    - name: "Rainbow Stripes"
+      pixels:
+        - { "position": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19], "color": [255,0,0] }
+        - { "position": [20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39], "color": [255,128,0] }
+        - { "position": [40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59], "color": [255,255,0] }
+        - { "position": [60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79], "color": [0,200,0] }
+        - { "position": [80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99], "color": [0,80,255] }
+```
+
+```yaml
+# Replace (destructive)
+service: yeelight_cube.update_pixel_arts
+data:
+  replace: true
+  pixel_arts:
+    - name: "Rainbow Stripes"
+      pixels:
+        - { "position": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19], "color": [255,0,0] }
+        - { "position": [20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39], "color": [255,128,0] }
+        - { "position": [40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59], "color": [255,255,0] }
+        - { "position": [60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79], "color": [0,200,0] }
+        - { "position": [80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99], "color": [0,80,255] }
 ```
 
 ### `display_image`
