@@ -495,11 +495,11 @@ Stores all pixel art designs (drawings) created with the Draw Card and exposes t
 | -------------- | ------- | ------------------------------------------------------------------------------- |
 | `pixel_arts`   | list    | Ordered list of saved pixel arts. Each entry has a `name` and a `pixels` array. |
 | `count`        | integer | Number of saved pixel arts                                                      |
-| `content_hash` | string  | MD5 hash of the list — changes whenever the list is modified                    |
+| `content_hash` | string  | MD5 hash of the list. It changes whenever the list is modified                  |
 
 **State:** `"N drawings"` (e.g. `"3 drawings"`)
 
-**Default on fresh install:** State is `"0 drawings"`, `pixel_arts` is an empty list. No pixel art is pre-loaded — you create drawings using the Draw Card and save them with the `save_pixel_art` action.
+**Default on fresh install:** State is `"0 drawings"`, `pixel_arts` is an empty list. No pixel art is pre-loaded, you create drawings using the Draw Card and save them with the `save_pixel_art` action.
 
 **How to use:** The index you pass to `apply_pixel_art`, `remove_pixel_art`, `rename_pixel_art`, and `get_pixel_art` corresponds to the **position of the entry in the `pixel_arts` list** (0-based). To see all saved drawings and their indexes:
 

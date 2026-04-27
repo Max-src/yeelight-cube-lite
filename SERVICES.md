@@ -253,15 +253,18 @@ data:
 
 **Save drawing in the list of pixel arts**
 
+Each entry requires a `color` and a `position`. The `position` field accepts either a **single index** or a **list of indexes** — allowing multiple pixels of the same color to be grouped into one entry. Both forms can be freely mixed in the same call.
+
 ```yaml
 service: yeelight_cube.save_pixel_art
 data:
-  pixels:
-    - { "position": 0, "color": [255, 0, 0] }
-    - { "position": 1, "color": [0, 255, 0] }
-    # ... up to 100 entries (positions 0–99)
   name: "My Artwork"
-  entity_id: light.cubelite_192_168_4_102
+  pixels:
+    # Single position (classic form)
+    - { "position": 0, "color": [255, 0, 0] }
+    # Multiple positions sharing the same color (compact form)
+    - { "position": [5, 6, 7, 8, 9], "color": [0, 255, 0] }
+    # ... up to 100 entries total (positions 0–99)
 ```
 
 ### `apply_pixel_art`
@@ -293,7 +296,6 @@ data:
 service: yeelight_cube.remove_pixel_art
 data:
   idx: 0
-  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `rename_pixel_art`
@@ -305,18 +307,48 @@ service: yeelight_cube.rename_pixel_art
 data:
   idx: 0
   name: "Updated Artwork"
-  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `get_pixel_art`
 
-**Retrieve saved pixel art data**
+**Retrieve saved pixel art data. Returns the pixel art in the same format accepted by `save_pixel_art`, so the response can be used directly to re-save or send to another system.**
+
+| Parameter        | Default      | Description                                                                                                                                                               |
+| ---------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `idx`            | _(required)_ | 0-based index of the pixel art to retrieve                                                                                                                                |
+| `skip_black`     | `false`      | **Deprecated / no-op.** Black pixels are always stripped from internal storage, so this parameter has no effect. Kept for backward compatibility.                         |
+| `group_by_color` | `false`      | Return the internal grouped format — each entry has a `color` and a `positions` list. Default (`false`) expands to flat `[{position, color}]` ready for `save_pixel_art`. |
 
 ```yaml
 service: yeelight_cube.get_pixel_art
 data:
   idx: 0
-  entity_id: light.cubelite_192_168_4_102
+  skip_black: true
+  group_by_color: true
+```
+
+Response without `group_by_color` (one entry per pixel):
+
+```yaml
+name: "Magic Lamp"
+pixels:
+  - position: 7
+    color: [255, 191, 1]
+  - position: 8
+    color: [255, 191, 1]
+  # ...
+```
+
+Response with `group_by_color: true` (pixels grouped by color — ready to pass directly back to `save_pixel_art`):
+
+```yaml
+name: "Magic Lamp"
+pixels:
+  - color: [0, 128, 255]
+    positions: [12, 13, 32, 33]
+  - color: [255, 191, 1]
+    positions: [7, 8, 27, 28, 47, 48]
+  # ...
 ```
 
 ### `import_pixel_arts`
@@ -327,7 +359,6 @@ data:
 service: yeelight_cube.import_pixel_arts
 data:
   pixel_arts: [{ "name": "Art1", "pixels": [[255, 0, 0], ...] }, ...]
-  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `update_pixel_arts`
@@ -338,7 +369,6 @@ data:
 service: yeelight_cube.update_pixel_arts
 data:
   pixel_arts: [{ "name": "Art1", "pixels": [[255, 0, 0], ...] }, ...]
-  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `display_image`
@@ -459,7 +489,6 @@ data:
 service: yeelight_cube.remove_palette
 data:
   idx: 0
-  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `rename_palette`
@@ -471,7 +500,6 @@ service: yeelight_cube.rename_palette
 data:
   idx: 0
   name: "Updated Palette"
-  entity_id: light.cubelite_192_168_4_102
 ```
 
 ### `set_palettes`
@@ -482,7 +510,6 @@ data:
 service: yeelight_cube.set_palettes
 data:
   palettes: [{ "name": "Palette1", "colors": [[255, 0, 0], [0, 255, 0]] }, ...]
-  entity_id: light.cubelite_192_168_4_102
 ```
 
 ---
@@ -744,7 +771,10 @@ Returns: List of managed IP addresses
 
 ### `get_pixel_art`
 
-Returns: Pixel art data including name and pixel array
+Returns `{ name: string, pixels: [...] }` in one of two shapes depending on `group_by_color`:
+
+- **Default** (`group_by_color: false`): `pixels` is `[{ position: int, color: [R, G, B] }, ...]` — one entry per pixel, same format as `save_pixel_art` flat input.
+- **Grouped** (`group_by_color: true`): `pixels` is `[{ color: [R, G, B], positions: [int, ...] }, ...]` — one entry per distinct color, compatible with the multi-position form of `save_pixel_art`.
 
 ### `test_device_detection`
 

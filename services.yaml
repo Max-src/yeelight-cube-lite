@@ -398,6 +398,20 @@ get_pixel_art:
         number:
           min: 0
           mode: box
+    skip_black:
+      description: "Deprecated — black pixels are now always stripped from internal storage. This parameter is accepted for backward compatibility but has no effect."
+      example: true
+      required: false
+      default: false
+      selector:
+        boolean:
+    group_by_color:
+      description: "When true, returns the internal grouped format directly — each entry has a color and a list of positions instead of one entry per pixel. Default (false) expands to flat [{position, color}] format compatible with save_pixel_art."
+      example: true
+      required: false
+      default: false
+      selector:
+        boolean:
 
 import_pixel_arts:
   name: Import Pixel Arts
@@ -505,6 +519,12 @@ set_orientation:
           options:
             - "normal"
             - "flipped"
+    entity_id:
+      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
+      required: false
+      selector:
+        entity:
+          domain: light
 
 set_font:
   name: Set Font
@@ -520,6 +540,12 @@ set_font:
             - "basic"
             - "koubit"
             - "josefin"
+    entity_id:
+      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
+      required: false
+      selector:
+        entity:
+          domain: light
 
 set_alignment:
   name: Set Text Alignment
@@ -535,6 +561,12 @@ set_alignment:
             - "left"
             - "center"
             - "right"
+    entity_id:
+      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
+      required: false
+      selector:
+        entity:
+          domain: light
 
 # === IMAGE DISPLAY ===
 
@@ -549,6 +581,12 @@ display_image:
       selector:
         text:
           multiline: true
+    entity_id:
+      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
+      required: false
+      selector:
+        entity:
+          domain: light
 
 # === TESTING AND DEBUGGING ===
 

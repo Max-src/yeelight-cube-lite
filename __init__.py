@@ -247,10 +247,53 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 len(stored_data.get('pixel_arts', []))
             )
         
+        # Migrate existing pixel arts on load: convert to grouped {color, positions} format
+        # (strips black pixels, deduplicates positions, groups remaining pixels by color).
+        # JS cards call expandPixelArt() to expand back to flat [{position, color}] at read time.
+        _raw_pixel_arts = stored_data.get("pixel_arts", [])
+        _migrated_pixel_arts = []
+        _needs_save = False  # Track whether any art was actually migrated (avoid unnecessary writes)
+        for _art in _raw_pixel_arts:
+            if isinstance(_art, dict) and isinstance(_art.get("pixels"), list):
+                _pixels = _art["pixels"]
+                # Detect if already in grouped format (has 'positions' key)
+                if _pixels and isinstance(_pixels[0], dict) and "positions" in _pixels[0]:
+                    _migrated_pixel_arts.append(_art)
+                else:
+                    # Flat format — strip blacks, deduplicate, group by color
+                    _needs_save = True
+                    _seen: dict = {}
+                    for _px in _pixels:
+                        if not isinstance(_px, dict):
+                            continue
+                        _pos = _px.get("position")
+                        _color = list(_px.get("color", []))
+                        if _color == [0, 0, 0] or _pos is None:
+                            continue
+                        if _pos not in _seen:
+                            _seen[_pos] = _color
+                    _cgroups: dict = {}
+                    for _pos, _color in _seen.items():
+                        _key = tuple(_color)
+                        _cgroups.setdefault(_key, []).append(_pos)
+                    _grouped = [
+                        {"color": list(_c), "positions": sorted(_pp)}
+                        for _c, _pp in _cgroups.items()
+                    ]
+                    _migrated_pixel_arts.append({"name": _art.get("name", "Unnamed"), "pixels": _grouped})
+            else:
+                _migrated_pixel_arts.append(_art)
+
         hass.data[DOMAIN].update({
             "palettes_v2": stored_data.get("palettes_v2", []),
-            "pixel_arts": stored_data.get("pixel_arts", []),
+            "pixel_arts": _migrated_pixel_arts,
         })
+
+        # Persist migrated data immediately so the grouped format survives the next reboot
+        # without needing to re-migrate from the flat on-disk format.
+        if _needs_save:
+            _LOGGER.info(f"[pixelart-migration] Migrating {len(_migrated_pixel_arts)} pixel arts to grouped format — saving to disk.")
+            await async_save_data(hass)
         
         # Initialize conflict prevention and services (only once)
         get_conflict_prevention(hass)

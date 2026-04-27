@@ -14,7 +14,7 @@ from homeassistant.components.light import LightEntity, ColorMode # type: ignore
 from homeassistant.helpers.entity import Entity # type: ignore
 from homeassistant.components.sensor import SensorEntity # type: ignore
 from homeassistant.helpers.restore_state import RestoreEntity # type: ignore
-from homeassistant.core import HomeAssistant # type: ignore
+from homeassistant.core import HomeAssistant, SupportsResponse # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 from homeassistant.config_entries import ConfigEntry # type: ignore
 from homeassistant.helpers.event import async_track_state_change_event # type: ignore
@@ -4741,6 +4741,62 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         })
     )
 
+    def _normalize_pixels(pixels):
+        """Group non-black pixels by color — one entry per distinct color per art.
+
+        Accepts both flat [{position, color}] and grouped [{color, positions}] input
+        so that data round-tripping through the JS cards (which send back whatever
+        they read from the sensor) is handled correctly regardless of format.
+
+        Output format: [{"color": [R, G, B], "positions": [int, ...]}, ...]
+
+        First definition of a position wins (duplicates ignored).
+        """
+        seen_positions: dict = {}  # position -> color (first definition wins)
+        for px in pixels:
+            color = list(px.get("color", []))
+            if color == [0, 0, 0]:
+                continue  # black = background; omit to save space
+            if "positions" in px:
+                # Already-grouped input: {color, positions}
+                pos_list = px.get("positions", [])
+            else:
+                # Flat input: {position, color}
+                raw_pos = px.get("position")
+                pos_list = raw_pos if isinstance(raw_pos, list) else [raw_pos]
+            for pos in pos_list:
+                if pos is not None and pos not in seen_positions:
+                    seen_positions[pos] = color
+        # Group by color
+        color_groups: dict = {}
+        for pos, color in seen_positions.items():
+            key = tuple(color)
+            color_groups.setdefault(key, []).append(pos)
+        return [
+            {"color": list(color), "positions": sorted(positions)}
+            for color, positions in color_groups.items()
+        ]
+
+    def _expand_pixels(pixels):
+        """Expand grouped [{color, positions}] storage back to flat [{position, color}] list.
+
+        Also handles legacy flat [{position, color}] entries transparently so that
+        any data that bypassed _normalize_pixels still works correctly.
+        """
+        result = []
+        for entry in pixels:
+            if not isinstance(entry, dict):
+                continue
+            if "positions" in entry:
+                # Grouped format (new internal storage)
+                color = entry.get("color", [])
+                for pos in entry.get("positions", []):
+                    result.append({"position": pos, "color": color})
+            elif "position" in entry:
+                # Legacy flat format
+                result.append(entry)
+        return result
+
     async def handle_import_pixel_arts(service_call):
         """Import and overwrite the full list of pixel arts."""
         pixel_arts = service_call.data.get("pixel_arts")
@@ -4758,7 +4814,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             ):
                 valid_pixel_arts.append({
                     "name": str(art["name"]),
-                    "pixels": art["pixels"],
+                    "pixels": _normalize_pixels(art["pixels"]),
                 })
         
         # Update global storage for decoupled sensor
@@ -4796,7 +4852,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             ):
                 valid_pixel_arts.append({
                     "name": str(art["name"]),
-                    "pixels": art["pixels"],
+                    "pixels": _normalize_pixels(art["pixels"]),
                 })
         
         # Update global storage
@@ -4850,6 +4906,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         if not isinstance(pixels, list):
             _LOGGER.error("save_pixel_art expects a list of pixels")
             return
+        
+        # Expand multi-position entries and strip black pixels before storing
+        pixels = _normalize_pixels(pixels)
         
         # Get current pixel arts from global storage
         if DOMAIN not in hass.data:
@@ -4951,7 +5010,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             if not target_entity._is_on and not target_entity._should_auto_turn_on():
                 _LOGGER.debug(f"[AUTO-TURN-ON] apply_pixel_art command ignored - lamp is off and auto-turn-on is disabled")
                 return
-            target_entity._custom_pixels = art["pixels"]
+            target_entity._custom_pixels = _expand_pixels(art["pixels"])
             target_entity._custom_draw_active = True
             target_entity._active_pixel_art_name = art.get("name", f"Pixel Art {idx + 1}")
             if not target_entity._custom_text:
@@ -4998,19 +5057,33 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
     async def handle_get_pixel_art(service_call):
         idx = service_call.data.get("idx")
+        group_by_color = service_call.data.get("group_by_color", False)
+        # skip_black is a no-op now — blacks are always stripped from internal storage
         pixel_arts = hass.data.get(DOMAIN, {}).get("pixel_arts", [])
         if not (isinstance(idx, int) and 0 <= idx < len(pixel_arts)):
             _LOGGER.error(f"[pixelart-backend] get_pixel_art: Invalid idx {idx}")
             return {"error": "Invalid index"}
         art = pixel_arts[idx]
-        # Only return name and pixels
-        return {"name": art.get("name", "Unnamed"), "pixels": art.get("pixels", [])}
+        if group_by_color:
+            # Internal storage is already in grouped {color, positions} format
+            return {"name": art.get("name", "Unnamed"), "pixels": art.get("pixels", [])}
+        # Expand to flat [{position, color}] sorted by position
+        flat_pixels = sorted(
+            _expand_pixels(art.get("pixels", [])),
+            key=lambda px: px["position"],
+        )
+        return {"name": art.get("name", "Unnamed"), "pixels": flat_pixels}
 
     hass.services.async_register(
     DOMAIN,
     "get_pixel_art",
     handle_get_pixel_art,
-    schema=vol.Schema({vol.Required("idx", default=0): vol.All(int, vol.Range(min=0))}),
+    schema=vol.Schema({
+        vol.Required("idx", default=0): vol.All(int, vol.Range(min=0)),
+        vol.Optional("skip_black", default=False): bool,
+        vol.Optional("group_by_color", default=False): bool,
+    }),
+    supports_response=SupportsResponse.ONLY,
     )
 
     hass.services.async_register(
@@ -5020,7 +5093,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         schema=vol.Schema({
             vol.Required("pixels"): [
                 {
-                    vol.Required("position"): cv.positive_int,
+                    vol.Required("position"): vol.Any(
+                        cv.positive_int,
+                        [cv.positive_int],
+                    ),
                     vol.Required("color"): vol.All(vol.ExactSequence((cv.byte, cv.byte, cv.byte)), vol.Coerce(tuple)),
                 }
             ],

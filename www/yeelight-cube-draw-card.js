@@ -73,6 +73,35 @@ import {
 import { StorageUtils } from "./draw_card_storage.js";
 import { callServiceOnTargetEntities as callServiceSequentially } from "./service-call-utils.js?v=2";
 
+/**
+ * Expand a pixel art's pixels array to flat [{position, color}] format.
+ *
+ * Internal storage uses the compact grouped format:
+ *   [{color: [R,G,B], positions: [int, ...]}, ...]
+ * This helper converts it back to the flat format that the draw card uses,
+ * while also accepting the legacy flat format for backward compatibility
+ * (e.g. pixel arts imported from JSON files saved with older versions).
+ *
+ * @param {object} art - Pixel art object with a `pixels` array.
+ * @returns {Array<{position: number, color: number[]}>} Flat pixels array.
+ */
+function expandPixelArt(art) {
+  if (!art || !Array.isArray(art.pixels)) return [];
+  const expanded = [];
+  for (const entry of art.pixels) {
+    if (Array.isArray(entry.positions)) {
+      // Grouped format: {color: [R,G,B], positions: [int, ...]}
+      for (const pos of entry.positions) {
+        expanded.push({ position: pos, color: entry.color });
+      }
+    } else if (entry.position !== undefined) {
+      // Legacy flat format: {position: int, color: [R,G,B]}
+      expanded.push(entry);
+    }
+  }
+  return expanded;
+}
+
 const MAX_IMAGE_PALETTE_COLORS = 15;
 
 console.error(
@@ -3358,7 +3387,7 @@ class YeelightCubeDrawCard extends LitElement {
 
     const matrix = createEmptyMatrix();
 
-    for (const px of art.pixels) {
+    for (const px of expandPixelArt(art)) {
       const lampPos = px.position; // This is 0-99 (20x5 grid)
       const color = px.color;
 
@@ -3672,7 +3701,7 @@ class YeelightCubeDrawCard extends LitElement {
 
       // Apply pixel art with row flipping to match preview display
       // Preview uses: row = (GRID_ROWS-1) - Math.floor(pos / GRID_COLS) to flip rows vertically
-      for (const px of pixelArt.pixels) {
+      for (const px of expandPixelArt(pixelArt)) {
         const position = px.position;
         const color = px.color;
 
