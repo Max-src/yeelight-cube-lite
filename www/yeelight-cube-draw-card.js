@@ -1998,10 +1998,10 @@ class YeelightCubeDrawCard extends LitElement {
       data: { entity_id: this.entity, pixels },
     };
     window.__YEELIGHT_DRAW_DEBUG_LAST_PAYLOAD = debugPayload;
-    console.error(
-      "[YeelightDrawCard] _sendToLamp → apply_custom_pixels payload",
-      debugPayload,
-    );
+    // console.error(
+    //   "[YeelightDrawCard] _sendToLamp → apply_custom_pixels payload",
+    //   debugPayload,
+    // );
     await this.callServiceOnTargetEntities("apply_custom_pixels", {
       pixels,
     });

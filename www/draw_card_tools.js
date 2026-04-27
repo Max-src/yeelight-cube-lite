@@ -688,10 +688,10 @@ export class ActionManager {
               class="${btnClass("apply")}"
               title="Apply"
               @click="${() => {
-                console.error("[YeelightDrawCard] Apply button clicked", {
-                  entity: this.card?.entity,
-                  target_entities: this.card?.config?.target_entities,
-                });
+                // console.error("[YeelightDrawCard] Apply button clicked", {
+                //   entity: this.card?.entity,
+                //   target_entities: this.card?.config?.target_entities,
+                // });
                 return this.card._sendToLamp();
               }}"
             >

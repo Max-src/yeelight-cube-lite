@@ -133,7 +133,7 @@ data:
 - **You can send any number of entries** — you don't need to specify all 100 pixels.
 - **Missing positions are treated as black** (off).
 - **Entries can be in any order.**
-- **If a position appears more than once, only the first entry is used.**
+- **If a position appears more than once, the last entry takes priority** (overrides earlier ones).
 - **Positions outside 0–99 are ignored.**
 
 ```yaml
@@ -243,9 +243,37 @@ data:
 	{ "position": 99, "color": [0, 0, 0] }]
 ```
 
+You can also omit black pixels entirely — unspecified positions default to off:
+
+```yaml
+service: yeelight_cube.apply_custom_pixels
+data:
+  entity_id: light.cubelite_192_168_4_102
+  pixels:
+    - { "position": 0, "color": [255, 0, 0] }
+    - { "position": 1, "color": [0, 255, 0] }
+    - { "position": 2, "color": [0, 0, 255] }
+    # only non-black pixels needed — all others are off by default
+```
+
+The `position` field also accepts a **list of indexes**, letting you assign the same color to multiple pixels in one entry (compact/grouped form):
+
+```
+service: yeelight_cube.apply_custom_pixels
+data:
+  entity_id: light.cubelite_192_168_4_102
+  pixels:
+    - { "position": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19], "color": [255,0,0] }
+    - { "position": [20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39], "color": [255,128,0] }
+    - { "position": [40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59], "color": [255,255,0] }
+    - { "position": [60,61,62,63,64,65,66,67,68,69,70,71,72,73,74,75,76,77,78,79], "color": [0,200,0] }
+    - { "position": [80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99], "color": [0,80,255] }
+```
+
 <table>
   <tr>
-    <td><img src="images/Actions/Action-Apply-Custom-Pixels.png" alt="Action - apply_custom_pixels">
+    <td><img src="images/Actions/Action-Apply-Custom-Pixels.png" alt="Action - apply_custom_pixels"></td>
+    <td><img src="images/Actions/Action-Apply-Custom-Pixels-Color-Groups.png" alt="Action - apply_custom_pixels color groups"></td>
   </tr>
 </table>
 

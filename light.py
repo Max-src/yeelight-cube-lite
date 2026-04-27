@@ -3283,10 +3283,9 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     module.set_colors(["#000000"])
                 # Normalize to exactly 100 positions:
                 #   - positions >= 100 are ignored
-                #   - first definition of a position wins (duplicates ignored)
+                #   - last definition of a position wins (later entries override earlier)
                 #   - missing positions default to black
-                color_groups = {}
-                seen_positions = set()
+                pixel_map = {}
                 for px in self._custom_pixels:
                     if not isinstance(px, dict):
                         continue
@@ -3294,19 +3293,21 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     color = px.get("color")
                     if not isinstance(pos, int) or pos < 0 or pos >= 100:
                         continue
-                    if pos in seen_positions:
-                        continue  # first definition wins
-                    seen_positions.add(pos)
                     # Validate and normalize color — must be list/tuple of 3 ints
                     if not isinstance(color, (list, tuple)) or len(color) < 3:
-                        continue  # black (background already set)
+                        pixel_map[pos] = None  # explicitly black
+                        continue
                     try:
                         r, g, b = int(color[0]), int(color[1]), int(color[2])
                     except (TypeError, ValueError, IndexError):
-                        continue  # black
-                    if r == 0 and g == 0 and b == 0:
+                        pixel_map[pos] = None
+                        continue
+                    pixel_map[pos] = (r, g, b)
+                color_groups = {}
+                for pos, rgb in pixel_map.items():
+                    if rgb is None or (rgb[0] == 0 and rgb[1] == 0 and rgb[2] == 0):
                         continue  # background (black) already set
-                    color_hex = rgb_to_hex((r, g, b))
+                    color_hex = rgb_to_hex(rgb)
                     color_groups.setdefault(color_hex, []).append(pos)
                 for color_hex, positions in color_groups.items():
                     self.place_pixels(color_hex, self._flip_positions(positions))
@@ -4793,8 +4794,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 for pos in entry.get("positions", []):
                     result.append({"position": pos, "color": color})
             elif "position" in entry:
-                # Legacy flat format
-                result.append(entry)
+                # Flat format — position may be a scalar or a list
+                color = entry.get("color", [])
+                pos = entry.get("position")
+                if isinstance(pos, list):
+                    for p in pos:
+                        result.append({"position": p, "color": color})
+                else:
+                    result.append(entry)
         return result
 
     async def handle_import_pixel_arts(service_call):
@@ -5041,7 +5048,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             if not target_entity._is_on and not target_entity._should_auto_turn_on():
                 _LOGGER.debug(f"[AUTO-TURN-ON] apply_custom_pixels command ignored - lamp is off and auto-turn-on is disabled")
                 return
-            target_entity._custom_pixels = pixels
+            target_entity._custom_pixels = _expand_pixels(pixels)
             target_entity._custom_draw_active = True
             if not target_entity._custom_text:
                 target_entity._custom_text = "HELLO"
