@@ -113,9 +113,9 @@ Before adding the lamp to Home Assistant, you must first set it up using the **Y
 
 <table>
   <tr>
-    <td><img src="images/App_Device_Settings.jpg" width="250" alt="Device Settings"></td>
-    <td><img src="images/App_LAN_Control.jpg" width="250" alt="LAN Control"></td>
-    <td><img src="images/App_Device_Info.jpg" width="250" alt="Device Info"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/App_Device_Settings.jpg" width="250" alt="Device Settings"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/App_LAN_Control.jpg" width="250" alt="LAN Control"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/App_Device_Info.jpg" width="250" alt="Device Info"></td>
   </tr>
 </table>
 
@@ -131,19 +131,19 @@ Once the lamp is on your network with LAN Control enabled, Home Assistant will *
 
 1. Look for the **Yeelight Cube Lite** discovery notification
 
-<img src="images/Home-Assistant-Integrations-Discovered.png" alt="Device Discovered">
+<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Discovered.png" alt="Device Discovered">
 
 2. Click **Add**
 
-<img src="images/Home-Assistant-Integrations-Discovered-Confirmation.png" alt="Confirmation Popup">
+<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Discovered-Confirmation.png" alt="Confirmation Popup">
 
 3. Confirm to set up the device
 
-<img src="images/Home-Assistant-Integrations-Discovered-Create-Device.png" alt="Device Created">
+<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Discovered-Create-Device.png" alt="Device Created">
 
 4. Done. The integration creates all entities automatically.
 
-<img src="images/Home-Assistant-Integrations-Detail-Page.png" alt="Integration Detail Page">
+<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Detail-Page.png" alt="Integration Detail Page">
 
 > **Note:** If you also use the official Yeelight integration, it may also generate a discovery notification for the same lamp. That notification is **automatically suppressed** by this integration: you can safely ignore it. The lamp will not work correctly if added via the built-in Yeelight integration.
 
@@ -158,15 +158,15 @@ If the lamp is not discovered automatically (e.g. it's on a different subnet or 
 3. Search for **Yeelight Cube Lite** and select it
 4. On this integration detail page, click on the button **Add entry**
 
-<img src="images/Home-Assistant-Integrations-Add-Entry.png" alt="Integration Detail Page - Add entry">
+<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Add-Entry.png" alt="Integration Detail Page - Add entry">
 
 5. Enter the **IP address** you noted from the Yeelight Station app (e.g. `192.168.4.139`)
 
-<img src="images/Home-Assistant-Integrations-Add-Entry-Device-IP.png" alt="Add entry - Device IP">
+<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Add-Entry-Device-IP.png" alt="Add entry - Device IP">
 
 6. Click **Submit**. Your light has been added to the list of integration entries.
 
-<img src="images/Home-Assistant-Integrations-Detail-Page.png" alt="Integration Detail Page">
+<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Detail-Page.png" alt="Integration Detail Page">
 
 <!-- TODO: Add screenshot of the Add Integration search showing Yeelight Cube Lite -->
 <!-- TODO: Add screenshot of the IP address entry form -->
@@ -191,8 +191,8 @@ All cards **support light and dark themes**. Colors, borders, backgrounds and te
 
 <table>
   <tr>
-    <td><img src="images/Dashboard-4-cards-preview.png" alt="Preview, Colors, Palettes and Gradient cards"></td>
-    <td><img src="images/Dashboard-draw-card-preview.png" alt="Draw card"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Dashboard-4-cards-preview.png" alt="Preview, Colors, Palettes and Gradient cards"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Dashboard-draw-card-preview.png" alt="Draw card"></td>
   </tr>
 </table>
 
@@ -204,12 +204,12 @@ These are all different configurations for the preview card:
 
 <table>
   <tr>
-    <td><img src="images/Cards/Preview-Card-Variation-1.png" alt="Preview card variation 1"></td>
-    <td><img src="images/Cards/Preview-Card-Variation-2.png" alt="Preview card variation 2"></td>
-    <td><img src="images/Cards/Preview-Card-Variation-3.png" alt="Preview card variation 3"></td>
-    <td><img src="images/Cards/Preview-Card-Variation-4.png" alt="Preview card variation 4"></td>
-    <td><img src="images/Cards/Preview-Card-Variation-5.png" alt="Preview card variation 5">
-    <img src="images/Cards/Preview-Card-Variation-6.png" alt="Preview card variation 6"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Preview-Card-Variation-1.png" alt="Preview card variation 1"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Preview-Card-Variation-2.png" alt="Preview card variation 2"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Preview-Card-Variation-3.png" alt="Preview card variation 3"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Preview-Card-Variation-4.png" alt="Preview card variation 4"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Preview-Card-Variation-5.png" alt="Preview card variation 5">
+    <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Preview-Card-Variation-6.png" alt="Preview card variation 6"></td>
   </tr>
 </table>
 
@@ -224,11 +224,11 @@ Different config sections of the editor card:
 
 <table>
   <tr>
-    <td><img src="images/Cards/Preview-Card-Editor-1.png" alt="Preview card editor - Global Settings"></td>
-    <td><img src="images/Cards/Preview-Card-Editor-2.png" alt="Preview card editor - Lamp Preview"></td>
-    <td><img src="images/Cards/Preview-Card-Editor-3.png" alt="Preview card editor - Power / Refresh Actions"></td>
-    <td><img src="images/Cards/Preview-Card-Editor-4.png" alt="Preview card editor - Brightness Settings"></td>
-    <td><img src="images/Cards/Preview-Card-Editor-5.png" alt="Preview card editor - Color Adjustments"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Preview-Card-Editor-1.png" alt="Preview card editor - Global Settings"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Preview-Card-Editor-2.png" alt="Preview card editor - Lamp Preview"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Preview-Card-Editor-3.png" alt="Preview card editor - Power / Refresh Actions"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Preview-Card-Editor-4.png" alt="Preview card editor - Brightness Settings"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Preview-Card-Editor-5.png" alt="Preview card editor - Color Adjustments"></td>
   </tr>
 </table>
 
@@ -240,11 +240,11 @@ These are all different configurations for the colors card:
 
 <table>
   <tr>
-    <td><img src="images/Cards/Colors-Card-Variation-1.png" alt="Colors card variation 1"></td>
-    <td><img src="images/Cards/Colors-Card-Variation-2.png" alt="Colors card variation 2"></td>
-    <td><img src="images/Cards/Colors-Card-Variation-3.png" alt="Colors card variation 3"></td>
-    <td><img src="images/Cards/Colors-Card-Variation-4.png" alt="Colors card variation 4"></td>
-    <td><img src="images/Cards/Colors-Card-Variation-5.png" alt="Colors card variation 5"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Colors-Card-Variation-1.png" alt="Colors card variation 1"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Colors-Card-Variation-2.png" alt="Colors card variation 2"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Colors-Card-Variation-3.png" alt="Colors card variation 3"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Colors-Card-Variation-4.png" alt="Colors card variation 4"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Colors-Card-Variation-5.png" alt="Colors card variation 5"></td>
   </tr>
 </table>
 
@@ -259,9 +259,9 @@ Different config sections of the editor card:
 
 <table>
   <tr>
-    <td><img src="images/Cards/Colors-Card-Editor-1.png" alt="Colors card editor - Global Settings"></td>
-    <td><img src="images/Cards/Colors-Card-Editor-2.png" alt="Colors card editor - Color List Settings"></td>
-    <td><img src="images/Cards/Colors-Card-Editor-3.png" alt="Colors card editor - Add/Shuffle/Save Actions"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Colors-Card-Editor-1.png" alt="Colors card editor - Global Settings"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Colors-Card-Editor-2.png" alt="Colors card editor - Color List Settings"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Colors-Card-Editor-3.png" alt="Colors card editor - Add/Shuffle/Save Actions"></td>
   </tr>
 </table>
 
@@ -273,11 +273,11 @@ These are all different configurations for the palettes card:
 
 <table>
   <tr>
-    <td><img src="images/Cards/Palettes-Card-Variation-1.png" alt="Palettes card variation 1"></td>
-    <td><img src="images/Cards/Palettes-Card-Variation-2.png" alt="Palettes card variation 2"></td>
-    <td><img src="images/Cards/Palettes-Card-Variation-3.png" alt="Palettes card variation 3"></td>
-    <td><img src="images/Cards/Palettes-Card-Variation-4.png" alt="Palettes card variation 4">
-    <img src="images/Cards/Palettes-Card-Variation-5.png" alt="Palettes card variation 5"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Palettes-Card-Variation-1.png" alt="Palettes card variation 1"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Palettes-Card-Variation-2.png" alt="Palettes card variation 2"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Palettes-Card-Variation-3.png" alt="Palettes card variation 3"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Palettes-Card-Variation-4.png" alt="Palettes card variation 4">
+    <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Palettes-Card-Variation-5.png" alt="Palettes card variation 5"></td>
   </tr>
 </table>
 
@@ -291,9 +291,9 @@ Different config sections of the editor card:
 
 <table>
   <tr>
-    <td><img src="images/Cards/Palettes-Card-Editor-1.png" alt="Palettes card editor - Global Settings"></td>
-    <td><img src="images/Cards/Palettes-Card-Editor-2.png" alt="Palettes card editor - Palettes List"></td>
-    <td><img src="images/Cards/Palettes-Card-Editor-3.png" alt="Palettes card editor - Import/Export Actions"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Palettes-Card-Editor-1.png" alt="Palettes card editor - Global Settings"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Palettes-Card-Editor-2.png" alt="Palettes card editor - Palettes List"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Palettes-Card-Editor-3.png" alt="Palettes card editor - Import/Export Actions"></td>
   </tr>
 </table>
 
@@ -305,11 +305,11 @@ These are all different configurations for the gradient card:
 
 <table>
   <tr>
-    <td><img src="images/Cards/Gradient-Card-Variation-1.png" alt="Gradient card variation 1"></td>
-    <td><img src="images/Cards/Gradient-Card-Variation-2.png" alt="Gradient card variation 2"></td>
-    <td><img src="images/Cards/Gradient-Card-Variation-3.png" alt="Gradient card variation 3"></td>
-    <td><img src="images/Cards/Gradient-Card-Variation-4.png" alt="Gradient card variation 4"></td>
-    <td><img src="images/Cards/Gradient-Card-Variation-5.png" alt="Gradient card variation 5"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Gradient-Card-Variation-1.png" alt="Gradient card variation 1"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Gradient-Card-Variation-2.png" alt="Gradient card variation 2"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Gradient-Card-Variation-3.png" alt="Gradient card variation 3"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Gradient-Card-Variation-4.png" alt="Gradient card variation 4"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Gradient-Card-Variation-5.png" alt="Gradient card variation 5"></td>
   </tr>
 </table>
 <!-- TODO: screenshots: Gradient Card variations (mode selector styles, angle selector styles, gradient preview) -->
@@ -325,10 +325,10 @@ Different config sections of the editor card:
 
 <table>
   <tr>
-    <td><img src="images/Cards/Gradient-Card-Editor-1.png" alt="Gradient card editor - Global Settings"></td>
-    <td><img src="images/Cards/Gradient-Card-Editor-2.png" alt="Gradient card editor - Color Mode Selector"></td>
-    <td><img src="images/Cards/Gradient-Card-Editor-3.png" alt="Gradient card editor - Angle Selector"></td>
-    <td><img src="images/Cards/Gradient-Card-Editor-4.png" alt="Gradient card editor - Gradient Preview"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Gradient-Card-Editor-1.png" alt="Gradient card editor - Global Settings"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Gradient-Card-Editor-2.png" alt="Gradient card editor - Color Mode Selector"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Gradient-Card-Editor-3.png" alt="Gradient card editor - Angle Selector"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Gradient-Card-Editor-4.png" alt="Gradient card editor - Gradient Preview"></td>
   </tr>
 </table>
 <!-- TODO: screenshots: Gradient Card editor sections (Global Settings, Color Mode Selector, Angle Selector, Gradient Preview) -->
@@ -341,10 +341,10 @@ These are all different configurations for the draw card:
 
 <table>
   <tr>
-    <td><img src="images/Cards/Draw-Card-Variation-1.png" alt="Draw card variation 1"></td>
-    <td><img src="images/Cards/Draw-Card-Variation-2.png" alt="Draw card variation 2"></td>
-    <td><img src="images/Cards/Draw-Card-Variation-3.png" alt="Draw card variation 3"></td>
-    <td><img src="images/Cards/Draw-Card-Variation-4.png" alt="Draw card variation 4"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Variation-1.png" alt="Draw card variation 1"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Variation-2.png" alt="Draw card variation 2"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Variation-3.png" alt="Draw card variation 3"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Variation-4.png" alt="Draw card variation 4"></td>
   </tr>
 </table>
 <!-- TODO: screenshots: Draw Card variations (full view, gallery modes, palette layout modes) -->
@@ -363,14 +363,14 @@ Different config sections of the editor card:
 
 <table>
   <tr>
-    <td><img src="images/Cards/Draw-Card-Editor-1.png" alt="Draw card editor - Global Settings"></td>
-    <td><img src="images/Cards/Draw-Card-Editor-2.png" alt="Draw card editor - Layout"></td>
-    <td><img src="images/Cards/Draw-Card-Editor-3.png" alt="Draw card editor - Color Section"></td>
-    <td><img src="images/Cards/Draw-Card-Editor-4.png" alt="Draw card editor - Drawing Tools"></td>
-    <td><img src="images/Cards/Draw-Card-Editor-5.png" alt="Draw card editor - Drawing Matrix Section"></td>
-    <td><img src="images/Cards/Draw-Card-Editor-6.png" alt="Draw card editor - Action Buttons"></td>
-    <td><img src="images/Cards/Draw-Card-Editor-7.png" alt="Draw card editor - Pixel Art Section"></td>
-    <td><img src="images/Cards/Draw-Card-Editor-8.png" alt="Draw card editor - Import/Export Actions"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Editor-1.png" alt="Draw card editor - Global Settings"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Editor-2.png" alt="Draw card editor - Layout"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Editor-3.png" alt="Draw card editor - Color Section"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Editor-4.png" alt="Draw card editor - Drawing Tools"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Editor-5.png" alt="Draw card editor - Drawing Matrix Section"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Editor-6.png" alt="Draw card editor - Action Buttons"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Editor-7.png" alt="Draw card editor - Pixel Art Section"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Editor-8.png" alt="Draw card editor - Import/Export Actions"></td>
   </tr>
 </table>
 <!-- TODO: screenshots: Draw Card editor sections (Global Settings, Layout, Colors Section, Drawing Tools, Drawing Matrix Section, Action Buttons, Pixel Art Section, Import/Export Actions) -->
@@ -389,10 +389,10 @@ Overview of entities available for each lamp:
 
 <table>
   <tr>
-    <td><img src="images/Entities/Lamp-Entities-1.png" alt="Lamp Entities - Controls"></td>
-    <td><img src="images/Entities/Lamp-Entities-2.png" alt="Lamp Entities - Sensors"></td>
-    <td><img src="images/Entities/Lamp-Entities-3.png" alt="Lamp Entities - Configuration"></td>
-    <td><img src="images/Entities/Lamp-Entities-4.png" alt="Lamp Entities - Diagnostic"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Entities/Lamp-Entities-1.png" alt="Lamp Entities - Controls"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Entities/Lamp-Entities-2.png" alt="Lamp Entities - Sensors"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Entities/Lamp-Entities-3.png" alt="Lamp Entities - Configuration"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Entities/Lamp-Entities-4.png" alt="Lamp Entities - Diagnostic"></td>
   </tr>
 </table>
 
@@ -402,7 +402,7 @@ These entities appear in the **Controls** section of the device page and can be 
 
 <table>
   <tr>
-    <td><img src="images/Entities/Lamp-Entities-1.png" alt="Lamp Entities - Controls"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Entities/Lamp-Entities-1.png" alt="Lamp Entities - Controls"></td>
   </tr>
 </table>
 
@@ -425,7 +425,7 @@ These entities appear in the **Sensors** section of the device page. Use these "
 
 <table>
   <tr>
-    <td><img src="images/Entities/Lamp-Entities-2.png" alt="Lamp Entities - Sensors"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Entities/Lamp-Entities-2.png" alt="Lamp Entities - Sensors"></td>
   </tr>
 </table>
 
@@ -440,7 +440,7 @@ These entities appear in the **Configuration** section of the device page. They 
 
 <table>
   <tr>
-    <td><img src="images/Entities/Lamp-Entities-3.png" alt="Lamp Entities - Configuration"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Entities/Lamp-Entities-3.png" alt="Lamp Entities - Configuration"></td>
   </tr>
 </table>
 
@@ -466,7 +466,7 @@ These entities appear in the **Diagnostic** section of the device page.
 
 <table>
   <tr>
-    <td><img src="images/Entities/Lamp-Entities-4.png" alt="Lamp Entities - Diagnostic"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Entities/Lamp-Entities-4.png" alt="Lamp Entities - Diagnostic"></td>
   </tr>
 </table>
 
@@ -481,7 +481,7 @@ These three sensor entities are created **once per integration install**. They a
 
 <table>
   <tr>
-    <td><img src="images/Entities/Ungrouped-Entities.png" alt="Ungrouped Entities"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Entities/Ungrouped-Entities.png" alt="Ungrouped Entities"></td>
   </tr>
 </table>
 
@@ -560,7 +560,7 @@ data:
 
 <table>
   <tr>
-    <td><img src="images/Actions/Action-Set-Custom-Text.png" alt="Action - set_custom_text"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Set-Custom-Text.png" alt="Action - set_custom_text"></td>
   </tr>
 </table>
 
@@ -571,7 +571,7 @@ In **Node-RED**, use an **Action node**:
 
 <table>
   <tr>
-    <td><img src="images/Actions/NodeRED-Set-Custom-Text.png" alt="NodeRED - set_custom_text"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/NodeRED-Set-Custom-Text.png" alt="NodeRED - set_custom_text"></td>
   </tr>
 </table>
 <!-- TODO: screenshot: Node-RED flow using Call Service node targeting yeelight_cube.apply_pixel_art -->
