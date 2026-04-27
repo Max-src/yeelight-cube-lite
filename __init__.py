@@ -247,7 +247,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 len(stored_data.get('pixel_arts', []))
             )
         
-        # Migrate existing pixel arts on load: convert to grouped {color, positions} format
+        # Migrate existing pixel arts on load: convert to grouped {color, position: [...]} format
         # (strips black pixels, deduplicates positions, groups remaining pixels by color).
         # JS cards call expandPixelArt() to expand back to flat [{position, color}] at read time.
         _raw_pixel_arts = stored_data.get("pixel_arts", [])
@@ -256,9 +256,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         for _art in _raw_pixel_arts:
             if isinstance(_art, dict) and isinstance(_art.get("pixels"), list):
                 _pixels = _art["pixels"]
-                # Detect if already in grouped format (has 'positions' key)
-                if _pixels and isinstance(_pixels[0], dict) and "positions" in _pixels[0]:
-                    _migrated_pixel_arts.append(_art)
+                # Detect if already in grouped format:
+                # new format uses "position" as a list; legacy grouped format used "positions" (plural)
+                if _pixels and isinstance(_pixels[0], dict) and (
+                    ("position" in _pixels[0] and isinstance(_pixels[0]["position"], list))
+                    or "positions" in _pixels[0]
+                ):
+                    if "positions" in _pixels[0]:
+                        # Upgrade legacy "positions" key to "position"
+                        _needs_save = True
+                        _migrated_pixel_arts.append({
+                            "name": _art.get("name", "Unnamed"),
+                            "pixels": [
+                                {"color": _px.get("color", []), "position": _px.get("positions", [])}
+                                for _px in _pixels if isinstance(_px, dict)
+                            ]
+                        })
+                    else:
+                        _migrated_pixel_arts.append(_art)
                 else:
                     # Flat format — strip blacks, deduplicate, group by color
                     _needs_save = True
@@ -277,7 +292,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         _key = tuple(_color)
                         _cgroups.setdefault(_key, []).append(_pos)
                     _grouped = [
-                        {"color": list(_c), "positions": sorted(_pp)}
+                        {"color": list(_c), "position": sorted(_pp)}
                         for _c, _pp in _cgroups.items()
                     ]
                     _migrated_pixel_arts.append({"name": _art.get("name", "Unnamed"), "pixels": _grouped})

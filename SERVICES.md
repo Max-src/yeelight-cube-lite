@@ -243,6 +243,12 @@ data:
 	{ "position": 99, "color": [0, 0, 0] }]
 ```
 
+<table>
+  <tr>
+    <td><img src="images/Actions/Action-Apply-Custom-Pixels-1.png" alt="Action - apply_custom_pixels"></td>
+  </tr>
+</table>
+
 You can also omit black pixels entirely — unspecified positions default to off:
 
 ```yaml
@@ -255,6 +261,12 @@ data:
     - { "position": 2, "color": [0, 0, 255] }
     # only non-black pixels needed — all others are off by default
 ```
+
+<table>
+  <tr>
+    <td><img src="images/Actions/Action-Apply-Custom-Pixels-1.png" alt="Action - apply_custom_pixels"></td>
+  </tr>
+</table>
 
 The `position` field also accepts a **list of indexes**, letting you assign the same color to multiple pixels in one entry (compact/grouped form):
 
@@ -272,8 +284,7 @@ data:
 
 <table>
   <tr>
-    <td><img src="images/Actions/Action-Apply-Custom-Pixels.png" alt="Action - apply_custom_pixels"></td>
-    <td><img src="images/Actions/Action-Apply-Custom-Pixels-Color-Groups.png" alt="Action - apply_custom_pixels color groups"></td>
+    <td><img src="images/Actions/Action-Apply-Custom-Pixels-2.png" alt="Action - apply_custom_pixels"></td>
   </tr>
 </table>
 
@@ -281,19 +292,26 @@ data:
 
 **Save drawing in the list of pixel arts**
 
-Each entry requires a `color` and a `position`. The `position` field accepts either a **single index** or a **list of indexes** — allowing multiple pixels of the same color to be grouped into one entry. Both forms can be freely mixed in the same call.
+Each entry requires a `color` and a `position`. The `position` field accepts either a **single index** or a **list of indexes**, allowing multiple pixels of the same color to be grouped into one entry. Both forms can be freely mixed in the same call.
+
+> **Round-trip compatibility:** The response from `get_pixel_art` (with `group_by_color: true`) uses the same `position` key as a list, so you can paste the response directly into `save_pixel_art` or `apply_custom_pixels` without any editing.
 
 ```yaml
 service: yeelight_cube.save_pixel_art
 data:
   name: "My Artwork"
   pixels:
-    # Single position (classic form)
+    # Single position
     - { "position": 0, "color": [255, 0, 0] }
-    # Multiple positions sharing the same color (compact form)
+    # Multiple positions as a list
     - { "position": [5, 6, 7, 8, 9], "color": [0, 255, 0] }
-    # ... up to 100 entries total (positions 0–99)
 ```
+
+<table>
+  <tr>
+    <td><img src="images/Actions/Action-Save-Pixel-Art.png" alt="Action - save_pixel_art"></td>
+  </tr>
+</table>
 
 ### `apply_pixel_art`
 
@@ -310,10 +328,21 @@ data:
 > **Default on fresh install:** The list is empty, no pixel arts are loaded by default. Create and save drawings using the Draw Card first, then use their index here.
 
 ```yaml
+# Single lamp
 service: yeelight_cube.apply_pixel_art
 data:
-  idx: 0 # Index of saved pixel art (see sensor.yeelight_cube_saved_pixel_arts)
+  idx: 0
   entity_id: light.cubelite_192_168_4_102
+```
+
+```yaml
+# Multiple lamps in one call — all receive the same pixel art simultaneously
+service: yeelight_cube.apply_pixel_art
+data:
+  idx: 0
+  entity_id:
+    - light.cubelite_192_168_4_102
+    - light.cubelite_192_168_4_145
 ```
 
 ### `remove_pixel_art`
@@ -344,14 +373,12 @@ data:
 | Parameter        | Default      | Description                                                                                                                                                               |
 | ---------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `idx`            | _(required)_ | 0-based index of the pixel art to retrieve                                                                                                                                |
-| `skip_black`     | `false`      | **Deprecated / no-op.** Black pixels are always stripped from internal storage, so this parameter has no effect. Kept for backward compatibility.                         |
-| `group_by_color` | `false`      | Return the internal grouped format — each entry has a `color` and a `positions` list. Default (`false`) expands to flat `[{position, color}]` ready for `save_pixel_art`. |
+| `group_by_color` | `false`      | Return the internal grouped format — each entry has a `color` and a `position` list. Default (`false`) expands to flat `[{position, color}]` ready for `save_pixel_art`. |
 
 ```yaml
 service: yeelight_cube.get_pixel_art
 data:
   idx: 0
-  skip_black: true
   group_by_color: true
 ```
 
@@ -367,15 +394,17 @@ pixels:
   # ...
 ```
 
-Response with `group_by_color: true` (pixels grouped by color — ready to pass directly back to `save_pixel_art`):
+Response with `group_by_color: true` (pixels grouped by color — ready to pass directly back to `save_pixel_art` or `apply_custom_pixels`):
+
+> **Note:** HA's developer tools serializes the response in YAML block style (each list item on its own line). This is cosmetically different from the compact inline form shown below, but represents identical data and can be copy-pasted directly into any service call without modification.
 
 ```yaml
 name: "Magic Lamp"
 pixels:
   - color: [0, 128, 255]
-    positions: [12, 13, 32, 33]
+    position: [12, 13, 32, 33]
   - color: [255, 191, 1]
-    positions: [7, 8, 27, 28, 47, 48]
+    position: [7, 8, 27, 28, 47, 48]
   # ...
 ```
 
@@ -726,20 +755,30 @@ data:
 
 ## 🎯 Multi-Entity Operations
 
-All services support multi-entity operations. You can target multiple cubes by calling the same service multiple times with different `entity_id` values, or use automations to synchronize operations.
+All services that accept `entity_id` support targeting multiple lamps in a **single call** by passing a list instead of a single string. All targets receive the command simultaneously.
+
+### Example: Synchronized pixel art on all lamps (single call)
+
+```yaml
+service: yeelight_cube.apply_pixel_art
+data:
+  idx: 0
+  entity_id:
+    - light.cubelite_192_168_4_102
+    - light.cubelite_192_168_4_145
+    - light.cubelite_192_168_4_139
+```
 
 ### Example: Synchronized Text Display
 
 ```yaml
-# Show same text on all cubes
-- service: yeelight_cube.set_custom_text
-  data:
-    text: "SYNC"
-    entity_id: light.cubelite_192_168_4_102
-- service: yeelight_cube.set_custom_text
-  data:
-    text: "SYNC"
-    entity_id: light.cubelite_192_168_4_247
+# Show same text on all cubes in one call
+service: yeelight_cube.set_custom_text
+data:
+  text: "SYNC"
+  entity_id:
+    - light.cubelite_192_168_4_102
+    - light.cubelite_192_168_4_145
 ```
 
 ### Example: Different Content Per Cube
@@ -753,7 +792,7 @@ All services support multi-entity operations. You can target multiple cubes by c
 - service: yeelight_cube.set_custom_text
   data:
     text: "CUBE 2"
-    entity_id: light.cubelite_192_168_4_247
+    entity_id: light.cubelite_192_168_4_145
 ```
 
 ---
@@ -802,7 +841,7 @@ Returns: List of managed IP addresses
 Returns `{ name: string, pixels: [...] }` in one of two shapes depending on `group_by_color`:
 
 - **Default** (`group_by_color: false`): `pixels` is `[{ position: int, color: [R, G, B] }, ...]` — one entry per pixel, same format as `save_pixel_art` flat input.
-- **Grouped** (`group_by_color: true`): `pixels` is `[{ color: [R, G, B], positions: [int, ...] }, ...]` — one entry per distinct color, compatible with the multi-position form of `save_pixel_art`.
+- **Grouped** (`group_by_color: true`): `pixels` is `[{ color: [R, G, B], position: [int, ...] }, ...]` — one entry per distinct color, compatible with the multi-position form of `save_pixel_art`.
 
 ### `test_device_detection`
 

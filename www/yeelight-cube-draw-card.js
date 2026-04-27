@@ -77,10 +77,11 @@ import { callServiceOnTargetEntities as callServiceSequentially } from "./servic
  * Expand a pixel art's pixels array to flat [{position, color}] format.
  *
  * Internal storage uses the compact grouped format:
- *   [{color: [R,G,B], positions: [int, ...]}, ...]
+ *   [{color: [R,G,B], position: [int, ...]}, ...]
  * This helper converts it back to the flat format that the draw card uses,
  * while also accepting the legacy flat format for backward compatibility
  * (e.g. pixel arts imported from JSON files saved with older versions).
+ * Also accepts legacy "positions" (plural) key from older stored data.
  *
  * @param {object} art - Pixel art object with a `pixels` array.
  * @returns {Array<{position: number, color: number[]}>} Flat pixels array.
@@ -89,8 +90,13 @@ function expandPixelArt(art) {
   if (!art || !Array.isArray(art.pixels)) return [];
   const expanded = [];
   for (const entry of art.pixels) {
-    if (Array.isArray(entry.positions)) {
-      // Grouped format: {color: [R,G,B], positions: [int, ...]}
+    if (Array.isArray(entry.position)) {
+      // Grouped format: {color: [R,G,B], position: [int, ...]}
+      for (const pos of entry.position) {
+        expanded.push({ position: pos, color: entry.color });
+      }
+    } else if (Array.isArray(entry.positions)) {
+      // Backward-compat: legacy stored data used "positions" (plural)
       for (const pos of entry.positions) {
         expanded.push({ position: pos, color: entry.color });
       }
