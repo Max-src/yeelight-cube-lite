@@ -1,41 +1,16 @@
 # Yeelight Cube Lite for Home Assistant
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-yellow?logo=buy-me-a-coffee&logoColor=white)](https://buymeacoffee.com/max.src)
-
-A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**. This lamp features a **20×5 RGB LED matrix** (100 individually addressable pixels). This integration gives you full pixel-level control from your HA dashboard: draw pixel art, display scrolling text, apply gradients, color effects, transitions, and more.
-
 ![Yeelight Cube Smart Lamp Lite](images/yeelight-cube-light.png)
+
+A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a lamp with a **20×5 RGB LED matrix** (100 individually addressable pixels). Get full pixel-level control from your HA dashboard: draw pixel art, display scrolling text, apply gradients, color effects, transitions, and more.
+
+[![Home Assistant][ha_badge]][ha_link] [![HACS][hacs_badge]][hacs_link] [![GitHub Release][release_badge]][release] [![Buy Me a Coffee][bmac_badge]][bmac]
 
 ---
 
 ## Table of Contents
 
-- [Features](#features)
-  - [Light Integration](#light-integration)
-  - [Customizable Lovelace Cards](#customizable-lovelace-cards)
-- [Installation via HACS](#installation-via-hacs)
-  - [Add as Custom Repository](#add-as-custom-repository)
-  - [Manual Installation](#manual-installation)
-- [Setup](#setup)
-  - [Prerequisites: Yeelight Station App](#prerequisites-yeelight-station-app)
-  - [Adding to Home Assistant](#adding-to-home-assistant)
-- [Lovelace Cards](#lovelace-cards)
-  - [Preview Card](#yeelight-preview-card-customyeelight-cube-lamp-preview-card)
-  - [Colors Card](#yeelight-colors-card-customyeelight-cube-color-list-editor-card)
-  - [Palettes Card](#yeelight-palettes-card-customyeelight-cube-palette-card)
-  - [Gradient Card](#yeelight-gradient-card-customyeelight-cube-gradient-card)
-  - [Draw Card](#yeelight-draw-card-customyeelight-cube-draw-card)
-- [Entities Created](#entities-created)
-- [Automations & Node-RED](#automations--node-red)
-  - [Calling Custom Actions](#calling-custom-actions)
-  - [Key Actions Reference](#key-actions-reference)
-- [Display Modes](#display-modes)
-- [Transition Effects](#transition-effects)
-- [Requirements](#requirements)
-- [Troubleshooting](#troubleshooting)
-- [License](#license)
-- [Support](#support)
+**[`Features`](#features)** · **[`Installation`](#installation-via-hacs)** · **[`Setup`](#setup)** · **[`Lovelace Cards`](#lovelace-cards)** · **[`Entities`](#entities-created)** · **[`Automations`](#automations--node-red)** · **[`Display Modes`](#display-modes)** · **[`Transition Effects`](#transition-effects)** · **[`Troubleshooting`](#troubleshooting)** · **[`License`](#license)**
 
 ---
 
@@ -43,53 +18,59 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**. T
 
 ### Light Integration
 
-- **Full 20×5 RGB matrix control**: individual pixel-level color
-- **Brightness control**
-- **Colors & gradient support**
-- **Color adjustment/effects**
-- **Transition effects**
-- **Multi-lamp support**
-- **Auto-discovery**
-- **Local-only**: all communication stays on your LAN, no cloud dependency
+| Feature | Description |
+| :-- | :-- |
+| **Full matrix control** | 20×5 RGB, individual pixel-level color |
+| **Brightness** | Full brightness control |
+| **Colors & gradients** | Gradient support across multiple modes |
+| **Color effects** | Hue shift, saturation, vibrance, tint, glow, contrast, invert, grayscale |
+| **Transitions** | 14+ animated transition effects |
+| **Multi-lamp** | Control multiple lamps independently |
+| **Auto-discovery** | Zeroconf (mDNS) auto-detection on your network |
+| **Local-only** | All communication stays on your LAN, no cloud dependency |
 
 ### Customizable Lovelace Cards
 
-- **Preview Card**: live lamp preview with brightness and color adjustments
-- **Colors Card**: edit colors used to display text and apply gradients on your lamps
-- **Palettes Card**: manage lists of colors (palettes)
-- **Gradient Card**: configure and preview gradient & color modes applied on your lamps
-- **Draw Card**: draw on your lamps and manage drawings (pixel arts)
+| Card | Description |
+| :-- | :-- |
+| **Preview Card** | Live lamp preview with brightness and color adjustments |
+| **Colors Card** | Edit colors used to display text and apply gradients |
+| **Palettes Card** | Manage lists of colors (palettes) |
+| **Gradient Card** | Configure and preview gradient & color modes |
+| **Draw Card** | Pixel art editor with personal gallery |
 
-- **Light & dark theme support**: all cards adapt to your Home Assistant theme, including light and dark modes
+> [!NOTE]
+> All cards support **light and dark themes** and adapt automatically to your Home Assistant theme.
 
 ---
 
 ## Installation via HACS
 
-### Add as Custom Repository
+### HACS (Recommended)
+
+<div align="left">
+  <a href="https://my.home-assistant.io/redirect/hacs_repository/?owner=Max-src&repository=yeelight-cube-lite" target="_blank" rel="noopener noreferrer">
+    <img src="https://my.home-assistant.io/badges/hacs_repository.svg" alt="Open in HACS" width="200">
+  </a>
+</div>
+
+Or manually add the custom repository:
+
+<details>
+<summary>Step-by-step HACS installation</summary>
 
 1. Open **HACS** in your Home Assistant dashboard
 2. Click the **⋮** menu (top right) → **Custom repositories**
-
-<!-- TODO: screenshot: HACS main page with the ⋮ menu open -->
-
 3. Add this URL and set the category to **Integration**, then click **Add**:
    ```
    https://github.com/Max-src/yeelight-cube-lite
    ```
-
-<!-- TODO: screenshot: Custom repositories dialog with URL filled in -->
-
 4. The repository now appears in the custom repositories list. Close the dialog.
 5. Back in HACS, search for **Yeelight Cube Lite** and open the result
-
-<!-- TODO: screenshot: HACS search results showing Yeelight Cube Lite -->
-
 6. Click **Download** (or **Install**) and confirm
-
-<!-- TODO: screenshot: HACS integration detail page with Download button -->
-
 7. **Restart Home Assistant**
+
+</details>
 
 ### Manual Installation
 
@@ -103,13 +84,16 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**. T
 
 ### Prerequisites: Yeelight Station App
 
-Before adding the lamp to Home Assistant, you must first set it up using the **Yeelight Station app** (not the standard Yeelight app). This is where you configure Wi-Fi access and enable LAN control.
+Before adding the lamp to Home Assistant, you must first set it up using the **Yeelight Station app** (not the standard Yeelight app).
+
+<details>
+<summary>View setup steps</summary>
 
 1. **Download the Yeelight Station app** from the App Store (iOS) or Google Play (Android)
 2. **Power on the lamp**
 3. **Add the lamp to the app**: follow the in-app instructions to connect the lamp to your **2.4 GHz Wi-Fi network**
-4. **Enable LAN Control**: in the app, go to your lamp's **Device Settings** and activate **LAN Control**. This is required for the Home Assistant integration to communicate with the lamp over your local network
-5. **Find the lamp's IP address**: still in the Device Settings screen, go to **Device info** to find the IP address assigned to the lamp on your network (e.g. `192.168.4.139`).
+4. **Enable LAN Control**: in the app, go to your lamp's **Device Settings** and activate **LAN Control**. This is required for the integration to communicate with the lamp over your local network
+5. **Find the lamp's IP address**: in Device Settings → **Device info**, find the IP address assigned to the lamp (e.g. `192.168.4.139`)
 
 <table>
   <tr>
@@ -119,75 +103,81 @@ Before adding the lamp to Home Assistant, you must first set it up using the **Y
   </tr>
 </table>
 
-<!-- TODO: Add screenshot of Yeelight Station app: Device Settings showing LAN Control toggle and IP address -->
+> [!TIP]
+> You can also find the lamp's IP from your router's admin page or DHCP client list. Assigning a **static IP / DHCP reservation** is recommended.
 
-> **Tip:** You can also find the lamp's IP address from your router's admin page or DHCP client list. Assigning a static IP / DHCP reservation for the lamp is recommended to prevent the address from changing.
+</details>
 
 ### Adding to Home Assistant
 
 #### Automatic Discovery (recommended)
 
-Once the lamp is on your network with LAN Control enabled, Home Assistant will **automatically detect it** via Zeroconf (mDNS), **no IP address is needed**. You'll see a notification on the **Settings → Devices & Services** page:
+Once the lamp is on your network with LAN Control enabled, Home Assistant will **automatically detect it** via Zeroconf (mDNS) - no IP address needed.
 
-1. Look for the **Yeelight Cube Lite** discovery notification
+<details>
+<summary>View discovery steps</summary>
 
-<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Discovered.png" alt="Device Discovered">
+1. Look for the **Yeelight Cube Lite** discovery notification on **Settings → Devices & Services**
+
+   <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Discovered.png" alt="Device Discovered">
 
 2. Click **Add**
 
-<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Discovered-Confirmation.png" alt="Confirmation Popup">
+   <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Discovered-Confirmation.png" alt="Confirmation Popup">
 
 3. Confirm to set up the device
 
-<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Discovered-Create-Device.png" alt="Device Created">
+   <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Discovered-Create-Device.png" alt="Device Created">
 
 4. Done. The integration creates all entities automatically.
 
-<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Detail-Page.png" alt="Integration Detail Page">
+   <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Detail-Page.png" alt="Integration Detail Page">
 
-> **Note:** If you also use the official Yeelight integration, it may also generate a discovery notification for the same lamp. That notification is **automatically suppressed** by this integration: you can safely ignore it. The lamp will not work correctly if added via the built-in Yeelight integration.
+> [!NOTE]
+> If you also use the official Yeelight integration, it may generate a discovery notification for the same lamp. That notification is **automatically suppressed** by this integration - you can safely ignore it.
 
-> **IP address changes:** The integration uses auto-rediscovery. If the lamp gets a new IP address (e.g. after a router reboot), the integration finds it again automatically, no manual intervention required.
+> [!TIP]
+> **IP address changes:** The integration uses auto-rediscovery. If the lamp gets a new IP (e.g. after a router reboot), the integration finds it again automatically.
+
+</details>
 
 #### Manual Setup (alternative)
 
-If the lamp is not discovered automatically (e.g. it's on a different subnet or mDNS is blocked), you can add it manually:
+If the lamp is not discovered automatically (e.g. different subnet or mDNS is blocked):
+
+<details>
+<summary>View manual setup steps</summary>
 
 1. Go to **Settings → Devices & Services**
 2. Click **+ Add Integration** (bottom right)
 3. Search for **Yeelight Cube Lite** and select it
-4. On this integration detail page, click on the button **Add entry**
+4. On this integration detail page, click **Add entry**
 
-<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Add-Entry.png" alt="Integration Detail Page - Add entry">
+   <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Add-Entry.png" alt="Integration Detail Page - Add entry">
 
-5. Enter the **IP address** you noted from the Yeelight Station app (e.g. `192.168.4.139`)
+5. Enter the **IP address** from the Yeelight Station app (e.g. `192.168.4.139`)
 
-<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Add-Entry-Device-IP.png" alt="Add entry - Device IP">
+   <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Add-Entry-Device-IP.png" alt="Add entry - Device IP">
 
-6. Click **Submit**. Your light has been added to the list of integration entries.
+6. Click **Submit**
 
-<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Detail-Page.png" alt="Integration Detail Page">
+   <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Detail-Page.png" alt="Integration Detail Page">
 
-<!-- TODO: Add screenshot of the Add Integration search showing Yeelight Cube Lite -->
-<!-- TODO: Add screenshot of the IP address entry form -->
+> [!NOTE]
+> Each lamp needs to be added separately. If you have multiple lamps, repeat the process for each one.
 
-The integration will connect to the lamp over your local network and automatically create a device with all entities: light control, display mode selectors, color effect sliders, text input, transition settings, sensors, camera previews, and more (see [Entities Created](#entities-created) for the full list).
-
-<!-- TODO: Add screenshot of the device page after successful setup -->
-
-> **Note:** Each lamp (base unit) needs to be added separately. If you have multiple lamps, repeat the process for each one.
+</details>
 
 ---
 
 ## Lovelace Cards
 
-This component includes custom lovelace cards you can use on your dashboards.
+This component includes custom Lovelace cards for your dashboards.
 
-Every card comes with a **visual configuration editor**: click the pencil icon in the dashboard editor to customize any card visually without the need to use YAML. Each section of a card (colors, tools, gallery, buttons, matrix preview, etc.) can be configured from the editor. Most sections offer **multiple display styles and layout modes**, so you can tweak of every card to fit your dashboard.
+Every card comes with a **visual configuration editor** - click the pencil icon to customize without YAML. Each section can be configured independently, and most sections offer **multiple display styles and layout modes**.
 
-All cards **support light and dark themes**. Colors, borders, backgrounds and text automatically adapt to your current Home Assistant theme.
-
-> After installing or updating, do a hard refresh (`Ctrl+F5`) in your browser if the yeelight cards don't appear.
+> [!IMPORTANT]
+> After installing or updating, do a hard refresh (`Ctrl+F5`) in your browser if the cards don't appear.
 
 <table>
   <tr>
@@ -196,11 +186,12 @@ All cards **support light and dark themes**. Colors, borders, backgrounds and te
   </tr>
 </table>
 
-### Yeelight Preview Card: `custom:yeelight-cube-lamp-preview-card`
+### 🖥️ Preview Card (`custom:yeelight-cube-lamp-preview-card`)
 
-A live dashboard card that mirrors the lamp's current state and provides quick controls. The matrix preview updates in real time as colors and effects change. A brightness slider is available, as well as power & refresh actions. A color adjustments panel gives access to effects. The card adapts to both light and dark Home Assistant themes.
+A live dashboard card that mirrors the lamp's current state with real-time matrix preview, brightness slider, power & refresh actions, and color adjustments panel.
 
-These are all different configurations for the preview card:
+<details>
+<summary>View card variations</summary>
 
 <table>
   <tr>
@@ -213,14 +204,19 @@ These are all different configurations for the preview card:
   </tr>
 </table>
 
+</details>
+
 **Features:**
 
-- **Lamp preview**: reflects what actually displayed on the lamp. Configurable pixel style (square/rounded/circle), space between pixels, background color, box shadow, and size
-- **Refresh & power actions**: quick buttons to force refresh (reconnect) if the lamp is not responding, or turn off/on the lamp.
-- **Brightness slider**: a brightness slider with configurable styles
-- **Color adjustments**: different color effect sliders. Different layout modes are available, optional change indicators and configurable reset buttons.
+| Feature | Description |
+| :-- | :-- |
+| **Lamp preview** | Reflects what's displayed on the lamp. Configurable pixel style, spacing, background, shadow, and size |
+| **Refresh & power** | Quick buttons to force-refresh or toggle power |
+| **Brightness slider** | Configurable slider styles |
+| **Color adjustments** | Effect sliders with multiple layout modes, change indicators, and reset buttons |
 
-Different config sections of the editor card:
+<details>
+<summary>View editor sections</summary>
 
 <table>
   <tr>
@@ -232,11 +228,16 @@ Different config sections of the editor card:
   </tr>
 </table>
 
-### Yeelight Colors Card: `custom:yeelight-cube-color-list-editor-card`
+</details>
 
-A card for editing the ordered list of colors used by the text displayed on the lamp. Colors can be added, deleted, dragged to reorder, shuffled, and saved as a reuseable palette (list of colors).
+---
 
-These are all different configurations for the colors card:
+### 🎨 Colors Card (`custom:yeelight-cube-color-list-editor-card`)
+
+Edit the ordered list of colors used by text display on the lamp. Add, delete, drag to reorder, shuffle, and save as a reusable palette.
+
+<details>
+<summary>View card variations</summary>
 
 <table>
   <tr>
@@ -248,14 +249,19 @@ These are all different configurations for the colors card:
   </tr>
 </table>
 
+</details>
+
 **Features:**
 
-- **Multiple-entity support**: this card allows to control multiple Yeelight Cube Lite lamps at the same time.
-- **Color list**: add, remove, and reorder colors with drag-and-drop. Different layout modes available. Display color hex code or color name if needed.
-- **Color edit**: use a color picker or hex input to edit colors.
-- **Add / Shuffle / Save actions**: buttons to add a color to the list, shuffle the colors in the list, and save the list as a reuseable palette (list of colors).
+| Feature | Description |
+| :-- | :-- |
+| **Multi-entity support** | Control multiple lamps at the same time |
+| **Color list** | Add, remove, reorder with drag-and-drop. Multiple layout modes, optional hex/name display |
+| **Color edit** | Color picker or hex input |
+| **Actions** | Add, shuffle, and save as reusable palette |
 
-Different config sections of the editor card:
+<details>
+<summary>View editor sections</summary>
 
 <table>
   <tr>
@@ -265,11 +271,16 @@ Different config sections of the editor card:
   </tr>
 </table>
 
-### Yeelight Palettes Card: `custom:yeelight-cube-palette-card`
+</details>
 
-A card for managing color palettes (lists of colors). Palettes can be applied to the lamps instantly. Selecting a color palette will apply its colors to the lamps, the colors card, the gradient card and the preview card. Multiple display modes are supported.
+---
 
-These are all different configurations for the palettes card:
+### 🎭 Palettes Card (`custom:yeelight-cube-palette-card`)
+
+Manage color palettes. Apply a palette to lamps with one click. Multiple display modes supported.
+
+<details>
+<summary>View card variations</summary>
 
 <table>
   <tr>
@@ -281,13 +292,19 @@ These are all different configurations for the palettes card:
   </tr>
 </table>
 
+</details>
+
 **Features:**
 
-- **Multiple-entity support**: this card allows to control multiple Yeelight Cube Lite lamps at the same time.
-- **Manage palettes**: browse palettes using different display modes and configurable color swatch styles. Load the whole palette's colors onto the lamp with one click. Rename and delete palettes if needed.
-- **Import/Export**: load and save full palettes collections.
+| Feature | Description |
+| :-- | :-- |
+| **Multi-entity support** | Control multiple lamps at the same time |
+| **Browse & apply** | Multiple display modes, configurable swatch styles, one-click apply |
+| **Manage** | Rename and delete palettes |
+| **Import/Export** | Load and save full palette collections |
 
-Different config sections of the editor card:
+<details>
+<summary>View editor sections</summary>
 
 <table>
   <tr>
@@ -297,11 +314,16 @@ Different config sections of the editor card:
   </tr>
 </table>
 
-### Yeelight Gradient Card: `custom:yeelight-cube-gradient-card`
+</details>
 
-A card for selecting and configuring the lamp's gradient and color modes. Different mode selectors allow you to switch between the available gradient modes. An angle control let's you adjust the gradient direction. Preview for all gradient modes is possible.
+---
 
-These are all different configurations for the gradient card:
+### 🌈 Gradient Card (`custom:yeelight-cube-gradient-card`)
+
+Select and configure gradient/color modes. Adjust gradient direction with an angle control. Preview all gradient modes live.
+
+<details>
+<summary>View card variations</summary>
 
 <table>
   <tr>
@@ -312,16 +334,20 @@ These are all different configurations for the gradient card:
     <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Gradient-Card-Variation-5.png" alt="Gradient card variation 5"></td>
   </tr>
 </table>
-<!-- TODO: screenshots: Gradient Card variations (mode selector styles, angle selector styles, gradient preview) -->
+
+</details>
 
 **Features:**
 
-- **Multiple-entity support**: this card allows to control multiple Yeelight Cube Lite lamps at the same time.
-- **Color mode selector**: switch between gradient/color modes. You can also apply the gradient/color mode to the whole panel (ignore text and pixel art).
-- **Angle selector**: real-time adjustment of the gradient angle using a slider, number input, or rotary control. Multiple rotary styles available.
-- **Gradient preview**: a mini matrix preview of how the gradient modes will look on the lamps with the current text, colors and gradient angle. The previews can be used to switch between gradient modes. The list can be refined by hiding gradient modes.
+| Feature | Description |
+| :-- | :-- |
+| **Multi-entity support** | Control multiple lamps at the same time |
+| **Mode selector** | Switch between gradient/color modes; apply to whole panel or text only |
+| **Angle selector** | Slider, number input, or rotary control (multiple rotary styles) |
+| **Gradient preview** | Mini matrix previews of each mode with current text, colors, and angle |
 
-Different config sections of the editor card:
+<details>
+<summary>View editor sections</summary>
 
 <table>
   <tr>
@@ -331,13 +357,17 @@ Different config sections of the editor card:
     <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Gradient-Card-Editor-4.png" alt="Gradient card editor - Gradient Preview"></td>
   </tr>
 </table>
-<!-- TODO: screenshots: Gradient Card editor sections (Global Settings, Color Mode Selector, Angle Selector, Gradient Preview) -->
 
-### Yeelight Draw Card: `custom:yeelight-cube-draw-card`
+</details>
 
-The pixel art editor. Paint on a 20×5 interactive matrix, save designs to a personal gallery, and push artwork to one or more lamps with a single tap. Each section of the card (colors, drawing tools, matrix, action buttons, gallery) can be shown or hidden and configured independently.
+---
 
-These are all different configurations for the draw card:
+### ✏️ Draw Card (`custom:yeelight-cube-draw-card`)
+
+The pixel art editor. Paint on a 20×5 interactive matrix, save designs to a personal gallery, and push artwork to one or more lamps with a single tap.
+
+<details>
+<summary>View card variations</summary>
 
 <table>
   <tr>
@@ -347,19 +377,23 @@ These are all different configurations for the draw card:
     <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Variation-4.png" alt="Draw card variation 4"></td>
   </tr>
 </table>
-<!-- TODO: screenshots: Draw Card variations (full view, gallery modes, palette layout modes) -->
+
+</details>
 
 **Features:**
 
-- **Multiple-entity support**: this card allows to control multiple Yeelight Cube Lite lamps at the same time.
-- **Colors section**: this section gives quick access to recent colors, lamp palette colors, current lamp colors and drawing colors. Different container modes and swatches display modes are available.
-- **Drawing tools**: a row of drawing tools that can be individually shown or hidden with different styles too.
-- **Drawing matrix**: an interactive matrix area to draw on your lamps.
-- **Action buttons**: quick action buttons to apply drawing to the lamps, upload drawing from an image file, save your drawing in the list of pixel arts or clear the drawing area.
-- **Pixel art gallery**: manage your list of pixel arts and apply them on your lamps.
-- **Import/Export**: import and export pixel art collections as JSON files.
+| Feature | Description |
+| :-- | :-- |
+| **Multi-entity support** | Control multiple lamps at the same time |
+| **Colors section** | Quick access to recent, palette, current, and drawing colors |
+| **Drawing tools** | Individually toggleable with multiple styles |
+| **Drawing matrix** | Interactive 20×5 matrix |
+| **Action buttons** | Apply to lamp, upload from image, save, or clear |
+| **Pixel art gallery** | Manage and apply pixel arts |
+| **Import/Export** | Import and export collections as JSON |
 
-Different config sections of the editor card:
+<details>
+<summary>View editor sections</summary>
 
 <table>
   <tr>
@@ -373,19 +407,19 @@ Different config sections of the editor card:
     <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Editor-8.png" alt="Draw card editor - Import/Export Actions"></td>
   </tr>
 </table>
-<!-- TODO: screenshots: Draw Card editor sections (Global Settings, Layout, Colors Section, Drawing Tools, Drawing Matrix Section, Action Buttons, Pixel Art Section, Import/Export Actions) -->
+
+</details>
 
 ---
 
 ## Entities Created
 
-Each Yeelight Cube Lite lamp creates its own set of per-device entities, all grouped under the same device in Home Assistant. In addition, the integration creates a set of **global entities** (Color Palettes, Saved Drawings, Font Characters) that are shared across all lamps and exist at the integration level. They are not tied to any individual lamp.
+Each lamp creates its own set of per-device entities, plus the integration creates **global entities** (palettes, drawings, fonts) shared across all lamps.
 
-### Per-device entities
+### Per-device Entities
 
-The following entities are created for each lamp and visible on its device page.
-
-Overview of entities available for each lamp:
+<details>
+<summary>View entity screenshots</summary>
 
 <table>
   <tr>
@@ -395,89 +429,65 @@ Overview of entities available for each lamp:
     <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Entities/Lamp-Entities-4.png" alt="Lamp Entities - Diagnostic"></td>
   </tr>
 </table>
+
+</details>
 
 #### Controls
 
-These entities appear in the **Controls** section of the device page and can be used in dashboards, automations, and scripts.
-
-<table>
-  <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Entities/Lamp-Entities-1.png" alt="Lamp Entities - Controls"></td>
-  </tr>
-</table>
-
-| Entity                 | Type            | Description                                                                                                                                                                                                           |
-| ---------------------- | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Auto Turn On**       | Switch          | Automatically turn on the lamp when a new mode or drawing is applied                                                                                                                                                  |
-| **Yeelight Cube Lite** | Light           | Main light entity (on/off, RGB color, brightness)                                                                                                                                                                     |
-| **Display Mode**       | Select          | Switch between: Solid Color, Letter Gradient, Column Gradient, Row Gradient, Angle Gradient, Radial Gradient, Letter Vertical Gradient, Letter Angle Gradient, Text Color Sequence, Panel Color Sequence, Custom Draw |
-| **Display Text**       | Text            | Text input for custom text display on the matrix (supports scrolling)                                                                                                                                                 |
-| **Flip Orientation**   | Switch          | Flip the matrix display horizontally (for mounting the lamp upside-down)                                                                                                                                              |
-| **Font**               | Select          | Choose between 3 included text fonts (basic, fat, italic)                                                                                                                                                             |
-| **Gradient Angle**     | Number (slider) | Angle for angle-based gradient modes (0°–360°)                                                                                                                                                                        |
-| **Palette**            | Select          | Select from saved color palettes to apply to the lamp                                                                                                                                                                 |
-| **Pixel Art**          | Select          | Select from saved pixel arts (drawings) to load on the lamp                                                                                                                                                           |
-| **Text Alignment**     | Select          | Text alignment on the lamp (left, center, right)                                                                                                                                                                      |
+| Entity | Type | Description |
+| :-- | :-- | :-- |
+| **Auto Turn On** | Switch | Automatically turn on the lamp when a new mode or drawing is applied |
+| **Yeelight Cube Lite** | Light | Main light entity (on/off, RGB color, brightness) |
+| **Display Mode** | Select | Switch between display modes (see [Display Modes](#display-modes)) |
+| **Display Text** | Text | Text input for custom text display on the matrix |
+| **Flip Orientation** | Switch | Flip display horizontally (for upside-down mounting) |
+| **Font** | Select | Choose text font: basic, fat, italic |
+| **Gradient Angle** | Number | Angle for angle-based gradient modes (0°–360°) |
+| **Palette** | Select | Select from saved color palettes |
+| **Pixel Art** | Select | Select from saved pixel art drawings |
+| **Text Alignment** | Select | Text alignment: left, center, right |
 
 #### Sensors
 
-These entities appear in the **Sensors** section of the device page. Use these "fake camera" entities to add a quick preview on your dashboard with a "Picture Entity" card. For more responsive and more configurable previews you can use the custom [Preview Card](#yeelight-preview-card-customyeelight-cube-lamp-preview-card)
+| Entity | Type | Description |
+| :-- | :-- | :-- |
+| **Matrix Preview (Round)** | Camera | Live preview with round pixels |
+| **Matrix Preview (Square)** | Camera | Live preview with square pixels |
 
-<table>
-  <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Entities/Lamp-Entities-2.png" alt="Lamp Entities - Sensors"></td>
-  </tr>
-</table>
-
-| Entity                      | Type   | Description                                                     |
-| --------------------------- | ------ | --------------------------------------------------------------- |
-| **Matrix Preview (Round)**  | Camera | Live camera feed of the lamp state, rendered with round pixels  |
-| **Matrix Preview (Square)** | Camera | Live camera feed of the lamp state, rendered with square pixels |
+> [!TIP]
+> Use these camera entities with a "Picture Entity" card for quick previews. For more responsive previews, use the custom [Preview Card](#-preview-card-customyeelight-cube-lamp-preview-card).
 
 #### Configuration
 
-These entities appear in the **Configuration** section of the device page. They control color adjustments and animated transitions effects.
-
-<table>
-  <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Entities/Lamp-Entities-3.png" alt="Lamp Entities - Configuration"></td>
-  </tr>
-</table>
-
-| Entity                     | Type            | Description                                                       |
-| -------------------------- | --------------- | ----------------------------------------------------------------- |
-| **Color: Hue Shift**       | Number (slider) | Shift all colors around the color wheel (−180° to +180°)          |
-| **Color: Temperature**     | Number (slider) | Warm/cool color temperature adjustment (−100 to +100)             |
-| **Effects: Grayscale**     | Number (slider) | Grayscale intensity (0–100%)                                      |
-| **Effects: Invert**        | Number (slider) | Color inversion intensity (0–100%)                                |
-| **Effects: Tint Hue**      | Number (slider) | Tint color hue (0°–360°)                                          |
-| **Effects: Tint Strength** | Number (slider) | Tint overlay intensity (0–100%)                                   |
-| **Intensity: Saturation**  | Number (slider) | Color saturation level (0–200%)                                   |
-| **Intensity: Vibrance**    | Number (slider) | Vibrance / adaptive saturation (0–200%)                           |
-| **Tone: Contrast**         | Number (slider) | Contrast level (0–200%)                                           |
-| **Tone: Glow**             | Number (slider) | Bloom / glow effect strength (0–100%)                             |
-| **Transition Duration**    | Number (slider) | Total transition time in seconds (0.2–10s)                        |
-| **Transition Effect**      | Select          | Choose from 24 transition animations when switching display modes |
-| **Transition Steps**       | Number (slider) | Number of animation steps for transitions (1–10)                  |
+| Entity | Type | Description |
+| :-- | :-- | :-- |
+| **Color: Hue Shift** | Number | Shift colors around the wheel (−180° to +180°) |
+| **Color: Temperature** | Number | Warm/cool adjustment (−100 to +100) |
+| **Effects: Grayscale** | Number | Grayscale intensity (0–100%) |
+| **Effects: Invert** | Number | Color inversion intensity (0–100%) |
+| **Effects: Tint Hue** | Number | Tint color hue (0°–360°) |
+| **Effects: Tint Strength** | Number | Tint overlay intensity (0–100%) |
+| **Intensity: Saturation** | Number | Saturation level (0–200%) |
+| **Intensity: Vibrance** | Number | Adaptive saturation (0–200%) |
+| **Tone: Contrast** | Number | Contrast level (0–200%) |
+| **Tone: Glow** | Number | Bloom / glow effect (0–100%) |
+| **Transition Duration** | Number | Transition time (0.2–10s) |
+| **Transition Effect** | Select | Choose from 14+ transition animations |
+| **Transition Steps** | Number | Animation steps (1–10) |
 
 #### Diagnostic
 
-These entities appear in the **Diagnostic** section of the device page.
+| Entity | Type | Description |
+| :-- | :-- | :-- |
+| **Force Refresh** | Button | Re-activate connection for a stuck lamp |
+| **IP Address** | Sensor | Current IP address (updated after rediscovery) |
 
-<table>
-  <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Entities/Lamp-Entities-4.png" alt="Lamp Entities - Diagnostic"></td>
-  </tr>
-</table>
+### Global Entities
 
-| Entity            | Type   | Description                                                |
-| ----------------- | ------ | ---------------------------------------------------------- |
-| **Force Refresh** | Button | Recover a stuck lamp by re-activating connection           |
-| **IP Address**    | Sensor | Current IP address of the lamp (updated after rediscovery) |
+These sensor entities are created **once per integration install** and shared across all lamps.
 
-### Global entities
-
-These three sensor entities are created **once per integration install**. They are shared across all lamps (not tied to a specific device). They store and expose the palettes, pixel art, and font maps that the devices and cards can read.
+<details>
+<summary>View global entities details</summary>
 
 <table>
   <tr>
@@ -485,129 +495,97 @@ These three sensor entities are created **once per integration install**. They a
   </tr>
 </table>
 
----
+#### `sensor.yeelight_cube_saved_pixel_arts` - Saved Drawings
 
-#### `sensor.yeelight_cube_saved_pixel_arts` -> Saved Drawings
+Stores all pixel art designs created with the Draw Card.
 
-Stores all pixel art designs (drawings) created with the Draw Card and exposes them to the custom cards and services.
-
-| Attribute      | Type    | Description                                                                     |
-| -------------- | ------- | ------------------------------------------------------------------------------- |
-| `pixel_arts`   | list    | Ordered list of saved pixel arts. Each entry has a `name` and a `pixels` array. |
-| `count`        | integer | Number of saved pixel arts                                                      |
-| `content_hash` | string  | MD5 hash of the list. It changes whenever the list is modified                  |
+| Attribute | Type | Description |
+| :-- | :-- | :-- |
+| `pixel_arts` | list | Ordered list of saved pixel arts (each has `name` + `pixels`) |
+| `count` | integer | Number of saved pixel arts |
+| `content_hash` | string | MD5 hash; changes on every modification |
 
 **State:** `"N drawings"` (e.g. `"3 drawings"`)
 
-**Default on fresh install:** State is `"0 drawings"`, `pixel_arts` is an empty list. No pixel art is pre-loaded, you create drawings using the Draw Card and save them with the `save_pixel_art` action.
-
-**How to use:** The index you pass to `apply_pixel_art`, `remove_pixel_art`, `rename_pixel_art`, and `get_pixel_art` corresponds to the **position of the entry in the `pixel_arts` list** (0-based). To see all saved drawings and their indexes:
+**How to use:** The index in `pixel_arts` corresponds to the index passed to `apply_pixel_art`, `remove_pixel_art`, etc. (0-based):
 
 ```yaml
-# In a template sensor or Developer Tools → Template
+# In Developer Tools → Template
 {{ state_attr('sensor.yeelight_cube_saved_pixel_arts', 'pixel_arts')
    | map(attribute='name') | list }}
-# Example result: ['Magic Lamp', 'Bat', 'Whale']
-# → 'Magic Lamp' is at index 0, 'Bat' at index 1, 'Whale' at index 2
+# → ['Magic Lamp', 'Bat', 'Whale']
+# 'Magic Lamp' = index 0, 'Bat' = index 1, 'Whale' = index 2
 ```
 
 ---
 
-#### `sensor.yeelight_cube_color_palettes` -> Color Palettes
+#### `sensor.yeelight_cube_color_palettes` - Color Palettes
 
-Stores all saved color palettes and exposes them to the Palette Card and Draw Card.
+Stores all saved color palettes.
 
-| Attribute      | Type    | Description                                                                   |
-| -------------- | ------- | ----------------------------------------------------------------------------- |
-| `palettes_v2`  | list    | Ordered list of saved palettes. Each entry has a `name` and a `colors` array. |
-| `count`        | integer | Number of saved palettes                                                      |
-| `content_hash` | string  | MD5 hash of the list, changes whenever the list is modified                   |
+| Attribute | Type | Description |
+| :-- | :-- | :-- |
+| `palettes_v2` | list | Ordered list of palettes (each has `name` + `colors`) |
+| `count` | integer | Number of saved palettes |
+| `content_hash` | string | MD5 hash; changes on every modification |
 
-**State:** numeric count of saved palettes (e.g. `3`)
-
-**Default on fresh install:** `palettes_v2` is an empty list. No palettes are pre-loaded, create them with the Palette Card or `save_palette` action.
+**State:** numeric count (e.g. `3`)
 
 ---
 
-#### `sensor.yeelight_cube_font_letter_map` -> Font Characters
+#### `sensor.yeelight_cube_font_letter_map` - Font Characters
 
-Exposes the **read-only** bitmap font character maps used for text rendering in the cards.
+Read-only bitmap font maps used for text rendering.
 
-| Attribute   | Type   | Description                                                                                     |
-| ----------- | ------ | ----------------------------------------------------------------------------------------------- |
-| `font_maps` | object | Dictionary with keys `"basic"`, `"fat"`, and `"italic"`. Each maps characters to pixel bitmaps. |
+| Attribute | Type | Description |
+| :-- | :-- | :-- |
+| `font_maps` | object | Dictionary with keys `"basic"`, `"fat"`, `"italic"` mapping characters to pixel bitmaps |
 
-**State:** always `"ready"`
+**State:** always `"ready"` - content is static and never changes at runtime.
 
-**Default on fresh install:** Always populated with the 3 built-in fonts (`basic`, `fat`, `italic`). This sensor is static, its content never changes at runtime.
+</details>
 
 ---
 
 ## Automations & Node-RED
 
-All functionality exposed through HA entities (light, selectors, sliders, text, switches) can be targeted by standard automations, scripts, and Node-RED flows. In addition, this integration registers a set of **custom actions (services)** under the `yeelight_cube` domain that give you fine-grained programmatic control.
+All entities (light, selectors, sliders, text, switches) can be used in standard automations, scripts, and Node-RED flows. The integration also registers **custom actions (services)** under the `yeelight_cube` domain.
 
-### Calling Custom Actions
-
-In **Home Assistant automations / scripts**, use the `action` step:
-
-```yaml
-action: yeelight_cube.set_custom_text
-data:
-  entity_id: light.cubelite_192_168_4_102
-  text: "HELLO"
-```
-
-<table>
-  <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Set-Custom-Text.png" alt="Action - set_custom_text"></td>
-  </tr>
-</table>
-
-In **Node-RED**, use an **Action node**:
-
-- **Action**: e.g. `yeelight_cube.set_custom_text`
-- **Data**: JSON object e.g. `{"text":msg.payload,"entity_id":"light.cubelite_192_168_4_102"}`
-
-<table>
-  <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/NodeRED-Set-Custom-Text.png" alt="NodeRED - set_custom_text"></td>
-  </tr>
-</table>
-<!-- TODO: screenshot: Node-RED flow using Call Service node targeting yeelight_cube.apply_pixel_art -->
-<!-- TODO: screenshot: HA automation YAML editor calling yeelight_cube.set_mode -->
-
-### Key Actions Reference
-
+> [!NOTE]
 > For a complete reference of all available actions with full field descriptions and examples, see [SERVICES.md](SERVICES.md).
+
+### Quick Reference
 
 #### Display Control
 
-| Action                          | Description                | Key fields                                    |
-| ------------------------------- | -------------------------- | --------------------------------------------- |
-| `yeelight_cube.set_custom_text` | Display text on the matrix | `text`, `entity_id`                           |
-| `yeelight_cube.set_mode`        | Switch display mode        | `mode` (e.g. `"Angle Gradient"`), `entity_id` |
-| `yeelight_cube.set_solid_color` | Set a single solid color   | `rgb_color` ([R,G,B]), `entity_id`            |
-| `yeelight_cube.set_angle`       | Set gradient angle         | `angle` (0–360), `entity_id`                  |
-| `yeelight_cube.set_brightness`  | Set brightness %           | `brightness` (1–100), `entity_id`             |
+| Action | Description | Key Fields |
+| :-- | :-- | :-- |
+| `yeelight_cube.set_custom_text` | Display text on the matrix | `text`, `entity_id` |
+| `yeelight_cube.set_mode` | Switch display mode | `mode`, `entity_id` |
+| `yeelight_cube.set_solid_color` | Set a single solid color | `rgb_color`, `entity_id` |
+| `yeelight_cube.set_angle` | Set gradient angle | `angle` (0–360), `entity_id` |
+| `yeelight_cube.set_brightness` | Set brightness | `brightness` (1–100), `entity_id` |
 
 #### Pixel Art
 
-| Action                              | Description                     | Key fields                                     |
-| ----------------------------------- | ------------------------------- | ---------------------------------------------- |
-| `yeelight_cube.apply_custom_pixels` | Push 100-pixel array to lamp    | `pixels` (array of 100 `[R,G,B]`), `entity_id` |
-| `yeelight_cube.apply_pixel_art`     | Apply saved pixel art by index  | `idx`, `entity_id`                             |
-| `yeelight_cube.save_pixel_art`      | Save a pixel array as named art | `pixels`, `name`                               |
+| Action | Description | Key Fields |
+| :-- | :-- | :-- |
+| `yeelight_cube.apply_custom_pixels` | Push pixel array to lamp | `pixels`, `entity_id` |
+| `yeelight_cube.apply_pixel_art` | Apply saved art by index | `idx`, `entity_id` |
+| `yeelight_cube.save_pixel_art` | Save a pixel array as named art | `pixels`, `name` |
 
 #### Palettes & Colors
 
-| Action                          | Description                  | Key fields                                          |
-| ------------------------------- | ---------------------------- | --------------------------------------------------- |
-| `yeelight_cube.load_palette`    | Apply saved palette by index | `idx`, `entity_id`                                  |
-| `yeelight_cube.save_palette`    | Save a new color palette     | `palette` (array of `[R,G,B]`), `name`, `entity_id` |
-| `yeelight_cube.set_text_colors` | Set gradient/sequence colors | `text_colors` (array of `[R,G,B]`), `entity_id`     |
+| Action | Description | Key Fields |
+| :-- | :-- | :-- |
+| `yeelight_cube.load_palette` | Apply saved palette by index | `idx`, `entity_id` |
+| `yeelight_cube.save_palette` | Save a new color palette | `palette`, `name`, `entity_id` |
+| `yeelight_cube.set_text_colors` | Set gradient/sequence colors | `text_colors`, `entity_id` |
 
-### Example: Automation: Show notification text on the lamp
+### Example Automations
+
+<details>
+<summary>🔔 Doorbell: flash text on lamp</summary>
 
 ```yaml
 automation:
@@ -627,15 +605,51 @@ automation:
         mode: "Text Color Sequence"
 ```
 
-### Example: Node-RED: Cycle through pixel art designs
+</details>
+
+<details>
+<summary>🔄 Node-RED: cycle through pixel art designs</summary>
 
 Use an **Inject** node → **Change** node (set `msg.payload.idx`) → **Call Service** node:
 
-- Domain: `yeelight_cube`
-- Service: `apply_pixel_art`
-- Data: `{"idx": {{payload.idx}}, "entity_id": "light.yeelight_cube_192_168_4_139"}`
+- **Domain**: `yeelight_cube`
+- **Service**: `apply_pixel_art`
+- **Data**: `{"idx": {{payload.idx}}, "entity_id": "light.yeelight_cube_192_168_4_139"}`
 
-<!-- TODO: screenshot: Node-RED flow cycling pixel art with a counter node -->
+</details>
+
+### Calling Custom Actions
+
+<details>
+<summary>View HA and Node-RED examples</summary>
+
+**Home Assistant automations / scripts:**
+
+```yaml
+action: yeelight_cube.set_custom_text
+data:
+  entity_id: light.cubelite_192_168_4_102
+  text: "HELLO"
+```
+
+<table>
+  <tr>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Set-Custom-Text.png" alt="Action - set_custom_text"></td>
+  </tr>
+</table>
+
+**Node-RED** - use an Action node:
+
+- **Action**: `yeelight_cube.set_custom_text`
+- **Data**: `{"text": msg.payload, "entity_id": "light.cubelite_192_168_4_102"}`
+
+<table>
+  <tr>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/NodeRED-Set-Custom-Text.png" alt="NodeRED - set_custom_text"></td>
+  </tr>
+</table>
+
+</details>
 
 ---
 
@@ -643,56 +657,64 @@ Use an **Inject** node → **Change** node (set `msg.payload.idx`) → **Call Se
 
 The lamp supports the following display modes, selectable via the **Display Mode** entity or the Gradient Card:
 
-| Mode                         | Description                                                         |
-| ---------------------------- | ------------------------------------------------------------------- |
-| **Solid Color**              | Fill the entire matrix with a single color                          |
-| **Letter Gradient**          | Apply a horizontal gradient to each character of the displayed text |
-| **Column Gradient**          | Vertical gradient across the 20 columns                             |
-| **Row Gradient**             | Horizontal gradient across the 5 rows                               |
-| **Angle Gradient**           | Gradient at a configurable angle (use the angle slider)             |
-| **Radial Gradient**          | Gradient radiating outward from the center                          |
-| **Letter Vertical Gradient** | Vertical gradient applied per character                             |
-| **Letter Angle Gradient**    | Angled gradient applied per character                               |
-| **Text Color Sequence**      | Each character gets a different color from the sequence             |
-| **Panel Color Sequence**     | Color sequence applied across all pixels                            |
-| **Custom Draw**              | Pixel art mode (use the Draw Card to paint individual pixels)       |
+| Mode | Description |
+| :-- | :-- |
+| **Solid Color** | Fill the entire matrix with a single color |
+| **Letter Gradient** | Horizontal gradient per character |
+| **Column Gradient** | Vertical gradient across 20 columns |
+| **Row Gradient** | Horizontal gradient across 5 rows |
+| **Angle Gradient** | Gradient at a configurable angle |
+| **Radial Gradient** | Gradient radiating from center |
+| **Letter Vertical Gradient** | Vertical gradient per character |
+| **Letter Angle Gradient** | Angled gradient per character |
+| **Text Color Sequence** | Each character gets a different color |
+| **Panel Color Sequence** | Color sequence across all pixels |
+| **Custom Draw** | Pixel art mode (use the Draw Card) |
 
 ---
 
 ## Transition Effects
 
-When switching between display modes or pixel art, you can apply animated transitions:
+When switching between display modes or pixel art, animated transitions can be applied:
 
-Fade Through Black, Direct Crossfade, Random Dissolve, Wipe (Right/Left/Down/Up), Slide (Left/Right/Up/Down), Card From (Right/Left/Top/Bottom), Explode & Reform, Snake, Wave Wipe, Iris (Circle Wipe), Vertical Flip, Curtain, Gravity Drop, Pixel Migration
+| Effect | | Effect |
+| :-- | :-- | :-- |
+| Fade Through Black | | Slide Left / Right / Up / Down |
+| Direct Crossfade | | Card From Right / Left / Top / Bottom |
+| Random Dissolve | | Explode & Reform |
+| Wipe Right / Left / Down / Up | | Snake / Wave Wipe / Iris |
+| Vertical Flip | | Curtain / Gravity Drop / Pixel Migration |
 
-Configure the effect, step count and duration via the **Transition Effect**, **Transition Steps** and **Transition Duration** entities.
+Configure via the **Transition Effect**, **Transition Steps**, and **Transition Duration** entities.
 
 ---
 
 ## Requirements
 
-- **Home Assistant** 2024.1.0 or newer
-- **Yeelight Cube Smart Lamp Lite** (or compatible matrix/panel device) on the same local network
-- Python packages `yeelight` and `Pillow` (installed automatically by HA)
+| Requirement | Details |
+| :-- | :-- |
+| **Home Assistant** | 2024.1.0 or newer |
+| **Hardware** | Yeelight Cube Smart Lamp Lite (or compatible matrix device) on the same LAN |
+| **Python packages** | `yeelight` and `Pillow` (installed automatically by HA) |
 
 ---
 
 ## Troubleshooting
 
-| Problem                                 | Solution                                                                                                                                 |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| **Cards not showing**                   | Clear browser cache with `Ctrl+F5` after installing or updating                                                                          |
-| **Device not found**                    | Ensure the lamp is on the same network. Check the IP in the Yeelight Station app. The integration also auto-discovers lamps via Zeroconf |
-| **Conflicts with Yeelight integration** | This integration automatically dismisses built-in Yeelight discovery for your Cube devices and prevents it from managing them            |
-| **Lamp appears stuck / unresponsive**   | Press the **Force Refresh** button entity, or use the force refresh button on the Lamp Preview card                                      |
-| **Colors look off on the hardware**     | Color accuracy correction is built-in and applied automatically. It compensates for LED channel imbalance                                |
-| **Lamp changed IP address**             | The integration automatically re-discovers lamps on the network. You can also update the IP from the integration's Configure page        |
+| Problem | Solution |
+| :-- | :-- |
+| **Cards not showing** | Clear browser cache with `Ctrl+F5` after installing or updating |
+| **Device not found** | Ensure the lamp is on the same network. Check IP in the Yeelight Station app. Auto-discovery via Zeroconf is also available |
+| **Conflicts with Yeelight integration** | This integration automatically suppresses built-in Yeelight discovery for Cube devices |
+| **Lamp stuck / unresponsive** | Press the **Force Refresh** button entity, or use the refresh button on the Preview card |
+| **Colors look off** | Color accuracy correction is built-in and applied automatically |
+| **Lamp changed IP** | Auto-rediscovery handles this. You can also update the IP from the Configure page |
 
 ---
 
 ## License
 
-See [LICENSE](LICENSE) for details.
+MIT - see [LICENSE](LICENSE) for details.
 
 ---
 
@@ -700,4 +722,19 @@ See [LICENSE](LICENSE) for details.
 
 If you find this integration useful, consider supporting development:
 
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-yellow?logo=buy-me-a-coffee&logoColor=white&style=for-the-badge)](https://buymeacoffee.com/max.src)
+[![Buy Me a Coffee][bmac_badge_large]][bmac]
+
+---
+
+**Yeelight Cube Lite - Made with ❤️ for the Home Assistant community**
+
+<!-- Badge references -->
+[ha_badge]: https://img.shields.io/badge/Home%20Assistant-Compatible-green
+[ha_link]: https://www.home-assistant.io/
+[hacs_badge]: https://img.shields.io/badge/HACS-Custom-41BDF5
+[hacs_link]: https://hacs.xyz/
+[release_badge]: https://img.shields.io/github/v/release/Max-src/yeelight-cube-lite
+[release]: https://github.com/Max-src/yeelight-cube-lite/releases
+[bmac_badge]: https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-yellow?logo=buy-me-a-coffee&logoColor=white
+[bmac_badge_large]: https://img.shields.io/badge/Buy%20Me%20a%20Coffee-support-yellow?logo=buy-me-a-coffee&logoColor=white&style=for-the-badge
+[bmac]: https://buymeacoffee.com/max.src

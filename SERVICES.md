@@ -6,7 +6,7 @@ This document provides comprehensive documentation for all available services in
 
 ## 📋 Service Categories
 
-### 🎨 **Text Services**
+### 📝 **Text Services**
 
 Display and control text on your Yeelight Cube Smart Lamp Lite
 
@@ -32,7 +32,7 @@ Discovery and device management
 
 ---
 
-## 🎨 Text Services
+## 📝 Text Services
 
 ### `set_custom_text`
 
@@ -53,7 +53,7 @@ data:
 
 ### `set_text_colors`
 
-**Apply colors to the lamp**
+**Set individual RGB colors for each character in the displayed text**
 
 ```yaml
 service: yeelight_cube.set_text_colors
@@ -256,21 +256,22 @@ service: yeelight_cube.apply_custom_pixels
 data:
   entity_id: light.cubelite_192_168_4_102
   pixels:
-    - { "position": 0, "color": [255, 0, 0] }
-    - { "position": 1, "color": [0, 255, 0] }
-    - { "position": 2, "color": [0, 0, 255] }
+    - { "position": 49, "color": [255, 255, 0] }
+    - { "position": 50, "color": [255, 255, 0] }
+    - { "position": 22, "color": [255, 0, 255] }
+    - { "position": 77, "color": [0, 255, 255] }
     # only non-black pixels needed — all others are off by default
 ```
 
 <table>
   <tr>
-    <td><img src="images/Actions/Action-Apply-Custom-Pixels-1.png" alt="Action - apply_custom_pixels"></td>
+    <td><img src="images/Actions/Action-Apply-Custom-Pixels-Sparse.png" alt="Action - apply_custom_pixels (sparse)"></td>
   </tr>
 </table>
 
 The `position` field also accepts a **list of indexes**, letting you assign the same color to multiple pixels in one entry (compact/grouped form):
 
-```
+```yaml
 service: yeelight_cube.apply_custom_pixels
 data:
   entity_id: light.cubelite_192_168_4_102
@@ -391,6 +392,8 @@ pixels:
     color: [255, 191, 1]
   - position: 8
     color: [255, 191, 1]
+  - position: 68
+    color: [255, 136, 0]
   # ...
 ```
 
@@ -416,7 +419,7 @@ By default (`replace: false`) the provided arts are **appended** to the existing
 
 Set `replace: true` to perform a full replacement (reordering use-case, or a full restore from backup).
 
-> ⚠️ **`replace: true` is destructive — replaces everything.** Export first via the Draw Card gallery export button if you need a backup.
+> ⚠️ **`replace: true` is destructive — replaces everything.** Use the Draw Card gallery export button to back up your collection, and the import button to restore it if needed.
 
 ```yaml
 # Append (non-destructive, default)
@@ -852,6 +855,12 @@ All services are fully compatible with Node-RED and provide:
 ]
 ```
 
+<table>
+  <tr>
+    <td><img src="images/Actions/NodeRED-Set-Custom-Text.png" alt="Node-RED - set_custom_text"></td>
+  </tr>
+</table>
+
 ---
 
 ## 🔍 Service Response Data
@@ -889,7 +898,7 @@ Returns: Boolean indicating if device is managed
 | **Palettes**      | `save_palette`, `load_palette`, `set_palettes`               | Manage color collections    |
 | **Text Settings** | `set_font`, `set_alignment`, `set_orientation`               | Text formatting             |
 | **Color Effects** | `set_preview_adjustments`, `set_color_accuracy`              | Real-time color adjustments |
-| **Management**    | `create_cube_discovery`, `test_display`, `force_refresh`     | Device setup & diagnostics  |
+| **Management**    | `create_cube_discovery`, `test_display`, `force_rediscovery` | Device setup & diagnostics  |
 
 ---
 
