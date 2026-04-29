@@ -1,45 +1,33 @@
-﻿﻿# Complete Service Reference
+# Complete Service Reference
 
-This document provides comprehensive documentation for all available services in the Yeelight Cube Lite Component for controlling Yeelight Cube Smart Lamp Lite devices.
+Full documentation for all custom actions (services) registered under the `yeelight_cube` domain.
 
-> For a general overview of the integration, including installation, setup, cards and entities, see [README.md](README.md).
+> [!NOTE]
+> For general setup, cards, and entities, see [README.md](README.md).
 
-## 📋 Service Categories
+---
 
-### 📝 **Text Services**
+## Table of Contents
 
-Display and control text on your Yeelight Cube Smart Lamp Lite
-
-### 🖼️ **Drawing Services**
-
-Create and manage pixel art on your device
-
-### 🌈 **Gradient Services**
-
-Control gradient effects and display modes
-
-### 🎨 **Palette Services**
-
-Manage color palettes
-
-### ⚙️ **Configuration Services**
-
-Device settings and properties
-
-### 🔧 **Device Management**
-
-Discovery and device management
+**[`Text Services`](#-text-services)** · **[`Drawing Services`](#-drawing-services)** · **[`Gradient Services`](#-gradient-services)** · **[`Palette Services`](#-palette-services)** · **[`Configuration Services`](#-configuration-services)** · **[`Device Management`](#-device-management)** · **[`Multi-Entity Operations`](#-multi-entity-operations)** · **[`Node-RED Integration`](#-node-red-integration)** · **[`Service Response Data`](#-service-response-data)** · **[`Quick Reference`](#-quick-reference)**
 
 ---
 
 ## 📝 Text Services
 
+Control what text is displayed on the lamp and how it looks.
+
 ### `set_custom_text`
 
-**Display text on the lamp**
+Display text on the lamp.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `text` | Yes | Text to display on the matrix |
+| `entity_id` | Yes | Target lamp entity |
 
 ```yaml
-service: yeelight_cube.set_custom_text
+action: yeelight_cube.set_custom_text
 data:
   text: "HELLO"
   entity_id: light.cubelite_192_168_4_102
@@ -47,16 +35,23 @@ data:
 
 <table>
   <tr>
-    <td><img src="images/Actions/Action-Set-Custom-Text.png" alt="Action - set_custom_text"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Set-Custom-Text.png" alt="Action - set_custom_text"></td>
   </tr>
 </table>
 
+---
+
 ### `set_text_colors`
 
-**Set individual RGB colors for each character in the displayed text**
+Set individual RGB colors for each character in the displayed text.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `text_colors` | Yes | List of `[R, G, B]` arrays, one per character |
+| `entity_id` | Yes | Target lamp entity |
 
 ```yaml
-service: yeelight_cube.set_text_colors
+action: yeelight_cube.set_text_colors
 data:
   text_colors: [[255, 0, 0], [0, 255, 0], [0, 0, 255]]
   entity_id: light.cubelite_192_168_4_102
@@ -64,59 +59,82 @@ data:
 
 <table>
   <tr>
-    <td><img src="images/Actions/Action-Set-Text-Colors.png" alt="Action - set_text_colors"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Set-Text-Colors.png" alt="Action - set_text_colors"></td>
   </tr>
 </table>
+
+---
 
 ### `set_font`
 
-**Change text font**
+Change the text font.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `font` | Yes | Font name: `basic`, `fat`, or `italic` |
+| `entity_id` | Yes | Target lamp entity |
 
 ```yaml
-service: yeelight_cube.set_font
+action: yeelight_cube.set_font
 data:
-  font: "fat" # basic, fat, italic
+  font: "fat"
   entity_id: light.cubelite_192_168_4_102
 ```
 
 <table>
   <tr>
-    <td><img src="images/Actions/Action-Set-Font.png" alt="Action - set_font"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Set-Font.png" alt="Action - set_font"></td>
   </tr>
 </table>
+
+---
 
 ### `set_alignment`
 
-**Set text alignment**
+Set text alignment.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `alignment` | Yes | Alignment: `left`, `center`, or `right` |
+| `entity_id` | Yes | Target lamp entity |
 
 ```yaml
-service: yeelight_cube.set_alignment
+action: yeelight_cube.set_alignment
 data:
-  alignment: "right" # left, center, right
+  alignment: "right"
   entity_id: light.cubelite_192_168_4_102
 ```
 
 <table>
   <tr>
-    <td><img src="images/Actions/Action-Set-Alignment.png" alt="Action - set_alignment"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Set-Alignment.png" alt="Action - set_alignment"></td>
   </tr>
 </table>
 
+---
+
 ### `set_orientation`
 
-**Control display orientation**
+Control display orientation.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `orientation` | Yes | Orientation: `normal` or `flipped` |
+| `entity_id` | Yes | Target lamp entity |
+
+> [!NOTE]
+> Lamp preview on dashboards will stay upright. Only the content displayed on the physical lamp will be rotated.
 
 ```yaml
-service: yeelight_cube.set_orientation
+action: yeelight_cube.set_orientation
 data:
-  orientation: "flipped" # normal, flipped
+  orientation: "flipped"
   entity_id: light.cubelite_192_168_4_102
 ```
 
 <table>
   <tr>
-    <td><img src="images/Actions/Action-Set-Orientation.png" alt="Action - set_orientation">
-    <br />(lamp preview on dashboards will stay up-right, only the content displayed on the lamp will be rotated)</td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Set-Orientation.png" alt="Action - set_orientation"></td>
   </tr>
 </table>
 
@@ -124,135 +142,35 @@ data:
 
 ## 🖼️ Drawing Services
 
+Push pixel art to the lamp, and manage the saved pixel art collection.
+
 ### `apply_custom_pixels`
 
-**Display a pixel art frame on the lamp. The lamp has 100 pixels arranged in a 20×5 grid (20 columns, 5 rows). Positions are numbered 0–99, left-to-right then bottom-to-top (position 0 = bottom-left, position 99 = top-right).**
+Display a pixel art frame on the lamp. The lamp has 100 pixels arranged in a 20×5 grid (20 columns, 5 rows). Positions are numbered 0-99, left-to-right then bottom-to-top (position 0 = bottom-left, position 99 = top-right).
 
-**Each entry is an object with `position` (0–99) and `color` ([R, G, B]). Rules:**
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `pixels` | Yes | Array of `{ position, color }` entries |
+| `entity_id` | Yes | Target lamp entity |
 
-- **You can send any number of entries** — you don't need to specify all 100 pixels.
-- **Missing positions are treated as black** (off).
-- **Entries can be in any order.**
-- **If a position appears more than once, the last entry takes priority** (overrides earlier ones).
-- **Positions outside 0–99 are ignored.**
+**Pixel entry rules:**
 
-```yaml
-service: yeelight_cube.apply_custom_pixels
-data:
-  entity_id: light.cubelite_192_168_4_102
-  pixels:
-    [ { "position": 0, "color": [255, 0, 0] },
-	{ "position": 1, "color": [0, 255, 0] },
-	{ "position": 2, "color": [0, 0, 255] },
-	{ "position": 3, "color": [0, 0, 0] },
-	{ "position": 4, "color": [0, 0, 0] },
-	{ "position": 5, "color": [0, 0, 0] },
-	{ "position": 6, "color": [0, 0, 0] },
-	{ "position": 7, "color": [0, 0, 0] },
-	{ "position": 8, "color": [0, 0, 0] },
-	{ "position": 9, "color": [0, 0, 0] },
-	{ "position": 10, "color": [0, 0, 0] },
-	{ "position": 11, "color": [0, 0, 0] },
-	{ "position": 12, "color": [0, 0, 0] },
-	{ "position": 13, "color": [0, 0, 0] },
-	{ "position": 14, "color": [0, 0, 0] },
-	{ "position": 15, "color": [0, 0, 0] },
-	{ "position": 16, "color": [0, 0, 0] },
-	{ "position": 17, "color": [0, 0, 0] },
-	{ "position": 18, "color": [0, 0, 0] },
-	{ "position": 19, "color": [0, 0, 0] },
-	{ "position": 20, "color": [0, 0, 0] },
-	{ "position": 21, "color": [0, 0, 0] },
-	{ "position": 22, "color": [0, 0, 0] },
-	{ "position": 23, "color": [0, 0, 0] },
-	{ "position": 24, "color": [0, 0, 0] },
-	{ "position": 25, "color": [0, 0, 0] },
-	{ "position": 26, "color": [0, 0, 0] },
-	{ "position": 27, "color": [0, 0, 0] },
-	{ "position": 28, "color": [0, 0, 0] },
-	{ "position": 29, "color": [0, 0, 0] },
-	{ "position": 30, "color": [0, 0, 0] },
-	{ "position": 31, "color": [0, 0, 0] },
-	{ "position": 32, "color": [0, 0, 0] },
-	{ "position": 33, "color": [0, 0, 0] },
-	{ "position": 34, "color": [0, 0, 0] },
-	{ "position": 35, "color": [0, 0, 0] },
-	{ "position": 36, "color": [0, 0, 0] },
-	{ "position": 37, "color": [0, 0, 0] },
-	{ "position": 38, "color": [0, 0, 0] },
-	{ "position": 39, "color": [0, 0, 0] },
-	{ "position": 40, "color": [0, 0, 0] },
-	{ "position": 41, "color": [0, 0, 0] },
-	{ "position": 42, "color": [0, 0, 0] },
-	{ "position": 43, "color": [0, 0, 0] },
-	{ "position": 44, "color": [0, 0, 0] },
-	{ "position": 45, "color": [0, 0, 0] },
-	{ "position": 46, "color": [0, 0, 0] },
-	{ "position": 47, "color": [0, 0, 0] },
-	{ "position": 48, "color": [0, 0, 0] },
-	{ "position": 49, "color": [0, 0, 0] },
-	{ "position": 50, "color": [0, 0, 0] },
-	{ "position": 51, "color": [0, 0, 0] },
-	{ "position": 52, "color": [0, 0, 0] },
-	{ "position": 53, "color": [0, 0, 0] },
-	{ "position": 54, "color": [0, 0, 0] },
-	{ "position": 55, "color": [0, 0, 0] },
-	{ "position": 56, "color": [0, 0, 0] },
-	{ "position": 57, "color": [0, 0, 0] },
-	{ "position": 58, "color": [0, 0, 0] },
-	{ "position": 59, "color": [0, 0, 0] },
-	{ "position": 60, "color": [0, 0, 0] },
-	{ "position": 61, "color": [0, 0, 0] },
-	{ "position": 62, "color": [0, 0, 0] },
-	{ "position": 63, "color": [0, 0, 0] },
-	{ "position": 64, "color": [0, 0, 0] },
-	{ "position": 65, "color": [0, 0, 0] },
-	{ "position": 66, "color": [0, 0, 0] },
-	{ "position": 67, "color": [0, 0, 0] },
-	{ "position": 68, "color": [0, 0, 0] },
-	{ "position": 69, "color": [0, 0, 0] },
-	{ "position": 70, "color": [0, 0, 0] },
-	{ "position": 71, "color": [0, 0, 0] },
-	{ "position": 72, "color": [0, 0, 0] },
-	{ "position": 73, "color": [0, 0, 0] },
-	{ "position": 74, "color": [0, 0, 0] },
-	{ "position": 75, "color": [0, 0, 0] },
-	{ "position": 76, "color": [0, 0, 0] },
-	{ "position": 77, "color": [0, 0, 0] },
-	{ "position": 78, "color": [0, 0, 0] },
-	{ "position": 79, "color": [0, 0, 0] },
-	{ "position": 80, "color": [0, 0, 0] },
-	{ "position": 81, "color": [0, 0, 0] },
-	{ "position": 82, "color": [0, 0, 0] },
-	{ "position": 83, "color": [0, 0, 0] },
-	{ "position": 84, "color": [0, 0, 0] },
-	{ "position": 85, "color": [0, 0, 0] },
-	{ "position": 86, "color": [0, 0, 0] },
-	{ "position": 87, "color": [0, 0, 0] },
-	{ "position": 88, "color": [0, 0, 0] },
-	{ "position": 89, "color": [0, 0, 0] },
-	{ "position": 90, "color": [0, 0, 0] },
-	{ "position": 91, "color": [0, 0, 0] },
-	{ "position": 92, "color": [0, 0, 0] },
-	{ "position": 93, "color": [0, 0, 0] },
-	{ "position": 94, "color": [0, 0, 0] },
-	{ "position": 95, "color": [0, 0, 0] },
-	{ "position": 96, "color": [0, 0, 0] },
-	{ "position": 97, "color": [0, 0, 0] },
-	{ "position": 98, "color": [0, 0, 0] },
-	{ "position": 99, "color": [0, 0, 0] }]
-```
+| Rule | Description |
+| :-- | :-- |
+| **Partial frames** | You don't need to specify all 100 pixels |
+| **Missing positions** | Treated as black (off) |
+| **Order** | Entries can be in any order |
+| **Duplicates** | Last entry for a position wins |
+| **Out of range** | Positions outside 0-99 are ignored |
+| **Grouped positions** | `position` accepts a single index or a list of indexes |
 
-<table>
-  <tr>
-    <td><img src="images/Actions/Action-Apply-Custom-Pixels-1.png" alt="Action - apply_custom_pixels"></td>
-  </tr>
-</table>
+<details>
+<summary>View examples</summary>
 
-You can also omit black pixels entirely — unspecified positions default to off:
+**Sparse frame** - only non-black pixels needed, all others default to off:
 
 ```yaml
-service: yeelight_cube.apply_custom_pixels
+action: yeelight_cube.apply_custom_pixels
 data:
   entity_id: light.cubelite_192_168_4_102
   pixels:
@@ -260,19 +178,18 @@ data:
     - { "position": 50, "color": [255, 255, 0] }
     - { "position": 22, "color": [255, 0, 255] }
     - { "position": 77, "color": [0, 255, 255] }
-    # only non-black pixels needed — all others are off by default
 ```
 
 <table>
   <tr>
-    <td><img src="images/Actions/Action-Apply-Custom-Pixels-Sparse.png" alt="Action - apply_custom_pixels (sparse)"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Apply-Custom-Pixels-Sparse.png" alt="Action - apply_custom_pixels (sparse)"></td>
   </tr>
 </table>
 
-The `position` field also accepts a **list of indexes**, letting you assign the same color to multiple pixels in one entry (compact/grouped form):
+**Grouped positions** - assign the same color to multiple pixels in one entry:
 
 ```yaml
-service: yeelight_cube.apply_custom_pixels
+action: yeelight_cube.apply_custom_pixels
 data:
   entity_id: light.cubelite_192_168_4_102
   pixels:
@@ -285,105 +202,142 @@ data:
 
 <table>
   <tr>
-    <td><img src="images/Actions/Action-Apply-Custom-Pixels-2.png" alt="Action - apply_custom_pixels"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Apply-Custom-Pixels-2.png" alt="Action - apply_custom_pixels (grouped)"></td>
   </tr>
 </table>
 
-### `save_pixel_art`
-
-**Save drawing in the list of pixel arts**
-
-Each entry requires a `color` and a `position`. The `position` field accepts either a **single index** or a **list of indexes**, allowing multiple pixels of the same color to be grouped into one entry. Both forms can be freely mixed in the same call.
-
-> **Round-trip compatibility:** The response from `get_pixel_art` (with `group_by_color: true`) uses the same `position` key as a list, so you can paste the response directly into `save_pixel_art` or `apply_custom_pixels` without any editing.
+**Full 100-pixel frame** - every pixel explicitly defined:
 
 ```yaml
-service: yeelight_cube.save_pixel_art
+action: yeelight_cube.apply_custom_pixels
+data:
+  entity_id: light.cubelite_192_168_4_102
+  pixels:
+    - { "position": 0, "color": [255, 0, 0] }
+    - { "position": 1, "color": [0, 255, 0] }
+    - { "position": 2, "color": [0, 0, 255] }
+    # ... positions 3-99 with their colors
+```
+
+<table>
+  <tr>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Apply-Custom-Pixels-1.png" alt="Action - apply_custom_pixels (full)"></td>
+  </tr>
+</table>
+
+</details>
+
+---
+
+### `save_pixel_art`
+
+Save a drawing to the pixel art collection.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `name` | Yes | Name for the saved pixel art |
+| `pixels` | Yes | Array of `{ position, color }` entries (single or grouped positions) |
+
+> [!TIP]
+> The response from `get_pixel_art` (with `group_by_color: true`) uses the same format, so you can paste it directly into `save_pixel_art` without editing.
+
+```yaml
+action: yeelight_cube.save_pixel_art
 data:
   name: "My Artwork"
   pixels:
-    # Single position
     - { "position": 0, "color": [255, 0, 0] }
-    # Multiple positions as a list
     - { "position": [5, 6, 7, 8, 9], "color": [0, 255, 0] }
 ```
 
 <table>
   <tr>
-    <td><img src="images/Actions/Action-Save-Pixel-Art.png" alt="Action - save_pixel_art"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Save-Pixel-Art.png" alt="Action - save_pixel_art"></td>
   </tr>
 </table>
 
+---
+
 ### `apply_pixel_art`
 
-**Load saved pixel art by index**
+Load a saved pixel art by index and display it on the lamp.
 
-> **Finding the right index:** The `idx` parameter refers to the 0-based position of the drawing in the `sensor.yeelight_cube_saved_pixel_arts` sensor's `pixel_arts` attribute. Use the template below in **Developer Tools → Template** to list all saved drawings with their indexes:
->
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `idx` | Yes | 0-based index of the pixel art |
+| `entity_id` | Yes | Target lamp entity (single or list) |
+
+> [!TIP]
+> Use this template in **Developer Tools > Template** to list all saved drawings with their indexes:
 > ```jinja
 > {% set arts = state_attr('sensor.yeelight_cube_saved_pixel_arts', 'pixel_arts') %}
 > {% for art in arts %}{{ loop.index0 }}: {{ art.name }}
 > {% endfor %}
 > ```
->
-> **Default on fresh install:** The list is empty, no pixel arts are loaded by default. Create and save drawings using the Draw Card first, then use their index here.
 
 ```yaml
-# Single lamp
-service: yeelight_cube.apply_pixel_art
+action: yeelight_cube.apply_pixel_art
 data:
   idx: 0
   entity_id: light.cubelite_192_168_4_102
 ```
 
-```yaml
-# Multiple lamps in one call — all receive the same pixel art simultaneously
-service: yeelight_cube.apply_pixel_art
-data:
-  idx: 0
-  entity_id:
-    - light.cubelite_192_168_4_102
-    - light.cubelite_192_168_4_145
-```
+---
 
 ### `remove_pixel_art`
 
-**Delete saved pixel art**
+Delete a saved pixel art.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `idx` | Yes | 0-based index of the pixel art to delete |
 
 ```yaml
-service: yeelight_cube.remove_pixel_art
+action: yeelight_cube.remove_pixel_art
 data:
   idx: 0
 ```
 
+---
+
 ### `rename_pixel_art`
 
-**Rename saved pixel art**
+Rename a saved pixel art.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `idx` | Yes | 0-based index of the pixel art |
+| `name` | Yes | New name |
 
 ```yaml
-service: yeelight_cube.rename_pixel_art
+action: yeelight_cube.rename_pixel_art
 data:
   idx: 0
   name: "Updated Artwork"
 ```
 
+---
+
 ### `get_pixel_art`
 
-**Retrieve saved pixel art data. Returns the pixel art in the same format accepted by `save_pixel_art`, so the response can be used directly to re-save or send to another system.**
+Retrieve saved pixel art data. Returns the pixel art in the same format accepted by `save_pixel_art`, so the response can be used directly to re-save or send to another system.
 
-| Parameter        | Default      | Description                                                                                                                                                               |
-| ---------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `idx`            | _(required)_ | 0-based index of the pixel art to retrieve                                                                                                                                |
-| `group_by_color` | `false`      | Return the internal grouped format — each entry has a `color` and a `position` list. Default (`false`) expands to flat `[{position, color}]` ready for `save_pixel_art`. |
+| Field | Required | Default | Description |
+| :-- | :-- | :-- | :-- |
+| `idx` | Yes | - | 0-based index of the pixel art |
+| `group_by_color` | No | `false` | Group pixels by color instead of flat list |
 
 ```yaml
-service: yeelight_cube.get_pixel_art
+action: yeelight_cube.get_pixel_art
 data:
   idx: 0
   group_by_color: true
 ```
 
-Response without `group_by_color` (one entry per pixel):
+<details>
+<summary>View response formats</summary>
+
+**Default** (`group_by_color: false`) - one entry per pixel:
 
 ```yaml
 name: "Magic Lamp"
@@ -397,9 +351,7 @@ pixels:
   # ...
 ```
 
-Response with `group_by_color: true` (pixels grouped by color — ready to pass directly back to `save_pixel_art` or `apply_custom_pixels`):
-
-> **Note:** HA's developer tools serializes the response in YAML block style (each list item on its own line). This is cosmetically different from the compact inline form shown below, but represents identical data and can be copy-pasted directly into any service call without modification.
+**Grouped** (`group_by_color: true`) - pixels grouped by color:
 
 ```yaml
 name: "Magic Lamp"
@@ -411,28 +363,39 @@ pixels:
   # ...
 ```
 
+> [!NOTE]
+> HA's developer tools serializes the response in YAML block style (each list item on its own line). This is cosmetically different from the compact inline form shown above, but represents identical data and can be copy-pasted directly into any service call.
+
+</details>
+
+---
+
 ### `update_pixel_arts`
 
-**Append arts to, or fully replace, the saved pixel art collection.** Used by the Draw Card for reordering and file imports. Also the correct way to restore a collection from a JSON backup.
+Append arts to, or fully replace, the saved pixel art collection. Used by the Draw Card for reordering and file imports.
 
-By default (`replace: false`) the provided arts are **appended** to the existing collection — safe for adding new entries without touching what's already there.
+| Field | Required | Default | Description |
+| :-- | :-- | :-- | :-- |
+| `pixel_arts` | Yes | - | Array of `{ name, pixels }` objects |
+| `replace` | No | `false` | `true` = full replacement; `false` = append |
 
-Set `replace: true` to perform a full replacement (reordering use-case, or a full restore from backup).
+> [!WARNING]
+> `replace: true` is destructive and replaces the entire collection. Use the Draw Card gallery export button to back up first.
 
-> ⚠️ **`replace: true` is destructive — replaces everything.** Use the Draw Card gallery export button to back up your collection, and the import button to restore it if needed.
+<details>
+<summary>View examples</summary>
+
+**Append** (non-destructive, default):
 
 ```yaml
-# Append (non-destructive, default)
-service: yeelight_cube.update_pixel_arts
+action: yeelight_cube.update_pixel_arts
 data:
   pixel_arts:
     - name: "Red Corner"
       pixels:
         - { "position": 0, "color": [255, 0, 0] }
         - { "position": 1, "color": [255, 0, 0] }
-        - { "position": 2, "color": [255, 0, 0] }
         - { "position": 20, "color": [255, 0, 0] }
-        - { "position": 21, "color": [255, 0, 0] }
     - name: "Rainbow Stripes"
       pixels:
         - { "position": [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19], "color": [255,0,0] }
@@ -442,9 +405,10 @@ data:
         - { "position": [80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99], "color": [0,80,255] }
 ```
 
+**Replace** (destructive):
+
 ```yaml
-# Replace (destructive)
-service: yeelight_cube.update_pixel_arts
+action: yeelight_cube.update_pixel_arts
 data:
   replace: true
   pixel_arts:
@@ -457,12 +421,21 @@ data:
         - { "position": [80,81,82,83,84,85,86,87,88,89,90,91,92,93,94,95,96,97,98,99], "color": [0,80,255] }
 ```
 
+</details>
+
+---
+
 ### `display_image`
 
-**Display a base64-encoded image on the cube (resized/cropped to 20×5)**
+Display a base64-encoded image on the lamp (resized/cropped to 20×5).
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `image_b64` | Yes | Base64-encoded image string |
+| `entity_id` | Yes | Target lamp entity |
 
 ```yaml
-service: yeelight_cube.display_image
+action: yeelight_cube.display_image
 data:
   image_b64: "<base64-encoded image string>"
   entity_id: light.cubelite_192_168_4_102
@@ -472,70 +445,104 @@ data:
 
 ## 🌈 Gradient Services
 
+Switch display modes, set gradient angles, and control how colors fill the lamp.
+
 ### `set_mode`
 
-**Change display mode**
+Change the display mode.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `mode` | Yes | Display mode (see table below) |
+| `entity_id` | Yes | Target lamp entity |
+
+| Mode | Description |
+| :-- | :-- |
+| **Solid Color** | Single color fill |
+| **Letter Gradient** | Gradient per letter |
+| **Column Gradient** | Vertical gradient across 20 columns |
+| **Row Gradient** | Horizontal gradient across 5 rows |
+| **Angle Gradient** | Gradient at a configurable angle |
+| **Radial Gradient** | Circular gradient from center |
+| **Letter Vertical Gradient** | Vertical gradient applied per character |
+| **Letter Angle Gradient** | Angled gradient applied per character |
+| **Text Color Sequence** | Each character gets a different color |
+| **Panel Color Sequence** | Color sequence applied across all pixels |
+| **Custom Draw** | Pixel art mode (use the Draw Card) |
 
 ```yaml
-service: yeelight_cube.set_mode
+action: yeelight_cube.set_mode
 data:
-  mode: "Angle Gradient" # See mode options below
+  mode: "Angle Gradient"
   entity_id: light.cubelite_192_168_4_102
 ```
 
-**Available Modes:**
-
-- `Solid Color` - Single color fill
-- `Letter Gradient` - Gradient per letter
-- `Column Gradient` - Vertical gradient across 20 columns
-- `Row Gradient` - Horizontal gradient across 5 rows
-- `Angle Gradient` - Gradient at a configurable angle
-- `Radial Gradient` - Circular gradient from center
-- `Letter Vertical Gradient` - Vertical gradient applied per character
-- `Letter Angle Gradient` - Angled gradient applied per character
-- `Text Color Sequence` - Each character gets a different color from the sequence
-- `Panel Color Sequence` - Color sequence applied across all pixels
-- `Custom Draw` - Pixel art mode (use the Draw Card)
+---
 
 ### `set_solid_color`
 
-**Set a single solid RGB color on the lamp (shortcut for Solid Color mode)**
+Set a single solid RGB color on the lamp (shortcut for Solid Color mode).
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `rgb_color` | Yes | `[R, G, B]` array (0-255) |
+| `entity_id` | Yes | Target lamp entity |
 
 ```yaml
-service: yeelight_cube.set_solid_color
+action: yeelight_cube.set_solid_color
 data:
   rgb_color: [255, 128, 0]
   entity_id: light.cubelite_192_168_4_102
 ```
 
+---
+
 ### `set_angle`
 
-**Set gradient angle (for Angle Gradient mode)**
+Set the gradient angle (for Angle Gradient mode).
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `angle` | Yes | Angle in degrees (0-360) |
+| `entity_id` | Yes | Target lamp entity |
 
 ```yaml
-service: yeelight_cube.set_angle
+action: yeelight_cube.set_angle
 data:
-  angle: 45.0 # 0-360 degrees
+  angle: 45.0
   entity_id: light.cubelite_192_168_4_102
 ```
+
+---
 
 ### `set_panel_mode`
 
-**Control gradient coverage area**
+Control whether gradients apply to the whole panel or text only.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `panel_mode` | Yes | `true` = whole panel, `false` = text only |
+| `entity_id` | Yes | Target lamp entity |
 
 ```yaml
-service: yeelight_cube.set_panel_mode
+action: yeelight_cube.set_panel_mode
 data:
-  panel_mode: true # true = whole panel, false = text only
+  panel_mode: true
   entity_id: light.cubelite_192_168_4_102
 ```
 
+---
+
 ### `preview_gradient_modes`
 
-**Cycle through all gradient modes sequentially for a visual preview**
+Cycle through all gradient modes sequentially for a visual preview.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `entity_id` | Yes | Target lamp entity |
 
 ```yaml
-service: yeelight_cube.preview_gradient_modes
+action: yeelight_cube.preview_gradient_modes
 data:
   entity_id: light.cubelite_192_168_4_102
 ```
@@ -544,114 +551,192 @@ data:
 
 ## 🎨 Palette Services
 
+Save, load, and manage color palettes shared across all cards and lamps.
+
 ### `save_palette`
 
-**Save a color palette**
+Save a color palette.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `palette` | Yes | List of `[R, G, B]` arrays |
+| `name` | Yes | Palette name |
+| `entity_id` | Yes | Target lamp entity |
 
 ```yaml
-service: yeelight_cube.save_palette
+action: yeelight_cube.save_palette
 data:
   palette: [[255, 0, 0], [0, 255, 0], [0, 0, 255]]
   name: "RGB Rainbow"
   entity_id: light.cubelite_192_168_4_102
 ```
 
+---
+
 ### `load_palette`
 
-**Load saved palette by index**
+Load a saved palette by index.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `idx` | Yes | 0-based index of the palette |
+| `entity_id` | Yes | Target lamp entity |
 
 ```yaml
-service: yeelight_cube.load_palette
+action: yeelight_cube.load_palette
 data:
   idx: 0
   entity_id: light.cubelite_192_168_4_102
 ```
 
+---
+
 ### `remove_palette`
 
-**Delete saved palette**
+Delete a saved palette.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `idx` | Yes | 0-based index of the palette to delete |
 
 ```yaml
-service: yeelight_cube.remove_palette
+action: yeelight_cube.remove_palette
 data:
   idx: 0
 ```
 
+---
+
 ### `rename_palette`
 
-**Rename saved palette**
+Rename a saved palette.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `idx` | Yes | 0-based index of the palette |
+| `name` | Yes | New name |
 
 ```yaml
-service: yeelight_cube.rename_palette
+action: yeelight_cube.rename_palette
 data:
   idx: 0
   name: "Updated Palette"
 ```
 
+---
+
 ### `set_palettes`
 
-**Set complete palette collection**
+Set the complete palette collection (full replacement).
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `palettes` | Yes | Array of `{ name, colors }` objects |
 
 ```yaml
-service: yeelight_cube.set_palettes
+action: yeelight_cube.set_palettes
 data:
-  palettes: [{ "name": "Palette1", "colors": [[255, 0, 0], [0, 255, 0]] }, ...]
+  palettes:
+    - name: "Palette1"
+      colors: [[255, 0, 0], [0, 255, 0]]
+    - name: "Palette2"
+      colors: [[0, 0, 255], [255, 255, 0]]
 ```
 
 ---
 
 ## ⚙️ Configuration Services
 
+Adjust brightness, color effects, and hardware calibration.
+
 ### `set_brightness`
 
-**Set lamp brightness as a percentage**
+Set lamp brightness as a percentage.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `brightness` | Yes | Brightness level (1-100%) |
+| `entity_id` | Yes | Target lamp entity |
 
 ```yaml
-service: yeelight_cube.set_brightness
+action: yeelight_cube.set_brightness
 data:
-  brightness: 75 # 1-100%
+  brightness: 75
   entity_id: light.cubelite_192_168_4_102
 ```
+
+---
 
 ### `set_preview_adjustments`
 
-**Apply real-time color effects to the lamp output**
+Apply real-time color effects to the lamp output.
+
+| Field | Required | Range | Description |
+| :-- | :-- | :-- | :-- |
+| `hue_shift` | No | -180 to +180 | Color wheel rotation |
+| `temperature` | No | -100 to +100 | Cool/warm adjustment |
+| `saturation` | No | 0-200 | Color richness |
+| `vibrance` | No | 0-200 | Smart saturation |
+| `contrast` | No | 0-200 | Contrast level |
+| `glow` | No | 0-100 | Bloom on highlights |
+| `grayscale` | No | 0-100 | Grayscale intensity |
+| `invert` | No | 0-100 | Color inversion |
+| `tint_hue` | No | 0-360 | Color for tint overlay |
+| `tint_strength` | No | 0-100 | Tint overlay intensity |
+| `entity_id` | Yes | - | Target lamp entity |
 
 ```yaml
-service: yeelight_cube.set_preview_adjustments
+action: yeelight_cube.set_preview_adjustments
 data:
-  hue_shift: 0 # -180 to +180 (color wheel rotation)
-  temperature: 0 # -100 to +100 (cool/warm)
-  saturation: 100 # 0-200 (color richness)
-  vibrance: 100 # 0-200 (smart saturation)
-  contrast: 100 # 0-200
-  glow: 0 # 0-100 (bloom on highlights)
-  grayscale: 0 # 0-100
-  invert: 0 # 0-100
-  tint_hue: 0 # 0-360 (color for tint overlay)
-  tint_strength: 0 # 0-100
+  hue_shift: 0
+  temperature: 0
+  saturation: 100
+  vibrance: 100
+  contrast: 100
+  glow: 0
+  grayscale: 0
+  invert: 0
+  tint_hue: 0
+  tint_strength: 0
   entity_id: light.cubelite_192_168_4_102
 ```
 
+---
+
 ### `set_color_accuracy`
 
-**Toggle hardware colour accuracy correction (per-channel gain)**
+Toggle hardware color accuracy correction (per-channel gain).
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `enabled` | Yes | `true` to enable, `false` to disable |
+| `entity_id` | Yes | Target lamp entity |
 
 ```yaml
-service: yeelight_cube.set_color_accuracy
+action: yeelight_cube.set_color_accuracy
 data:
   enabled: true
   entity_id: light.cubelite_192_168_4_102
 ```
 
+---
+
 ### `set_color_calibration`
 
-**Adjust colour correction calibration values at runtime (debug/advanced)**
+Adjust color correction calibration values at runtime (advanced/debug). All fields except `entity_id` are optional - only provided values are updated. Changes are not persisted across restarts.
 
-All fields are optional — only provided values are updated. Changes are not persisted across restarts.
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `gamma_r` | No | Red gamma correction |
+| `gamma_g` | No | Green gamma correction |
+| `gamma_b` | No | Blue gamma correction |
+| `gain_r` | No | Red channel gain |
+| `gain_g` | No | Green channel gain |
+| `gain_b` | No | Blue channel gain |
+| `entity_id` | Yes | Target lamp entity |
 
 ```yaml
-service: yeelight_cube.set_color_calibration
+action: yeelight_cube.set_color_calibration
 data:
   gamma_r: 0.85
   gamma_g: 0.75
@@ -666,92 +751,147 @@ data:
 
 ## 🔧 Device Management
 
+Manage device discovery, connection, and integration-level settings.
+
 ### `add_managed_device`
 
-**Add device to managed list**
+Add a device to the managed list.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `ip_address` | Yes | Device IP address |
 
 ```yaml
-service: yeelight_cube.add_managed_device
+action: yeelight_cube.add_managed_device
 data:
   ip_address: "192.168.1.100"
 ```
+
+---
 
 ### `remove_managed_device`
 
-**Remove device from managed list**
+Remove a device from the managed list.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `ip_address` | Yes | Device IP address |
 
 ```yaml
-service: yeelight_cube.remove_managed_device
+action: yeelight_cube.remove_managed_device
 data:
   ip_address: "192.168.1.100"
 ```
+
+---
 
 ### `is_device_managed`
 
-**Check if device is managed**
+Check if a device is managed.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `ip_address` | Yes | Device IP address |
 
 ```yaml
-service: yeelight_cube.is_device_managed
+action: yeelight_cube.is_device_managed
 data:
   ip_address: "192.168.1.100"
 ```
 
+---
+
 ### `list_managed_devices`
 
-**List all managed devices**
+List all managed devices. No parameters required.
 
 ```yaml
-service: yeelight_cube.list_managed_devices
+action: yeelight_cube.list_managed_devices
 ```
+
+---
 
 ### `test_device_detection`
 
-**Test device detection logic**
+Test device detection logic.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `device_model` | Yes | Device model identifier |
+| `device_name` | Yes | Device name |
+| `device_id` | Yes | Device ID |
 
 ```yaml
-service: yeelight_cube.test_device_detection
+action: yeelight_cube.test_device_detection
 data:
   device_model: "cubelite"
   device_name: "Yeelight Cube Lite"
   device_id: "0x12345678"
 ```
 
+---
+
 ### `ignore_yeelight_discovery`
 
-**Ignore IP in Yeelight integration**
+Ignore an IP in the built-in Yeelight integration.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `ip_address` | Yes | IP address to ignore |
 
 ```yaml
-service: yeelight_cube.ignore_yeelight_discovery
+action: yeelight_cube.ignore_yeelight_discovery
 data:
   ip_address: "192.168.4.139"
 ```
+
+---
 
 ### `ignore_specific_yeelight`
 
-**Ignore specific device in Yeelight integration**
+Ignore a specific device in the built-in Yeelight integration.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `ip_address` | Yes | IP address to ignore |
 
 ```yaml
-service: yeelight_cube.ignore_specific_yeelight
+action: yeelight_cube.ignore_specific_yeelight
 data:
   ip_address: "192.168.4.139"
 ```
+
+---
 
 ### `force_rediscovery`
 
-**Force device rediscovery**
+Force device rediscovery.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `ip_address` | Yes | Device IP address |
 
 ```yaml
-service: yeelight_cube.force_rediscovery
+action: yeelight_cube.force_rediscovery
 data:
   ip_address: "192.168.4.139"
 ```
 
+---
+
 ### `trigger_manual_discovery`
 
-**Manually trigger discovery**
+Manually trigger discovery for a device.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `ip_address` | Yes | Device IP address |
+| `device_name` | Yes | Device name |
+| `device_model` | Yes | Device model identifier |
+| `device_id` | Yes | Device ID |
 
 ```yaml
-service: yeelight_cube.trigger_manual_discovery
+action: yeelight_cube.trigger_manual_discovery
 data:
   ip_address: "192.168.4.139"
   device_name: "CubeLite Test"
@@ -759,37 +899,53 @@ data:
   device_id: "0x12345678"
 ```
 
+---
+
 ### `create_cube_discovery`
 
-**Create discovery flow for cube**
+Create a discovery flow for a cube.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `ip_address` | Yes | Device IP address |
+| `device_name` | Yes | Device name |
 
 ```yaml
-service: yeelight_cube.create_cube_discovery
+action: yeelight_cube.create_cube_discovery
 data:
   ip_address: "192.168.4.139"
   device_name: "My CubeLite"
 ```
 
+---
+
 ### `test_display`
 
-**Test cube connectivity and display**
+Test cube connectivity and display.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `entity_id` | Yes | Target lamp entity |
 
 ```yaml
-service: yeelight_cube.test_display
+action: yeelight_cube.test_display
 data:
   entity_id: light.cubelite_192_168_4_102
 ```
 
 ---
 
-## 🎯 Multi-Entity Operations
+## 🔗 Multi-Entity Operations
 
-All services that accept `entity_id` support targeting multiple lamps in a **single call** by passing a list instead of a single string. All targets receive the command simultaneously.
+All services that accept `entity_id` support targeting multiple lamps in a single call by passing a list. All targets receive the command simultaneously.
 
-### Example: Synchronized pixel art on all lamps (single call)
+<details>
+<summary>View examples</summary>
+
+**Synchronized pixel art on all lamps:**
 
 ```yaml
-service: yeelight_cube.apply_pixel_art
+action: yeelight_cube.apply_pixel_art
 data:
   idx: 0
   entity_id:
@@ -798,11 +954,10 @@ data:
     - light.cubelite_192_168_4_139
 ```
 
-### Example: Synchronized Text Display
+**Same text on all lamps:**
 
 ```yaml
-# Show same text on all cubes in one call
-service: yeelight_cube.set_custom_text
+action: yeelight_cube.set_custom_text
 data:
   text: "SYNC"
   entity_id:
@@ -810,33 +965,29 @@ data:
     - light.cubelite_192_168_4_145
 ```
 
-### Example: Different Content Per Cube
+**Different content per lamp:**
 
 ```yaml
-# Show different content on each cube
-- service: yeelight_cube.set_custom_text
+- action: yeelight_cube.set_custom_text
   data:
     text: "CUBE 1"
     entity_id: light.cubelite_192_168_4_102
-- service: yeelight_cube.set_custom_text
+- action: yeelight_cube.set_custom_text
   data:
     text: "CUBE 2"
     entity_id: light.cubelite_192_168_4_145
 ```
 
+</details>
+
 ---
 
-## 📱 Node-RED Integration
+## 🔄 Node-RED Integration
 
-All services are fully compatible with Node-RED and provide:
+All services are fully compatible with Node-RED with parameter descriptions, entity selectors, input validation, dropdown menus for mode selection, and sliders for numeric values.
 
-- **Parameter descriptions** and examples
-- **Entity selectors** for device targeting
-- **Input validation** and type checking
-- **Dropdown menus** for mode selection
-- **Sliders** for numeric values
-
-### Example Node-RED Flow
+<details>
+<summary>View Node-RED example</summary>
 
 ```json
 [
@@ -857,49 +1008,39 @@ All services are fully compatible with Node-RED and provide:
 
 <table>
   <tr>
-    <td><img src="images/Actions/NodeRED-Set-Custom-Text.png" alt="Node-RED - set_custom_text"></td>
+    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/NodeRED-Set-Custom-Text.png" alt="Node-RED - set_custom_text"></td>
   </tr>
 </table>
 
----
-
-## 🔍 Service Response Data
-
-Some services return data that can be used in automations:
-
-### `list_managed_devices`
-
-Returns: List of managed IP addresses
-
-### `get_pixel_art`
-
-Returns `{ name: string, pixels: [...] }` in one of two shapes depending on `group_by_color`:
-
-- **Default** (`group_by_color: false`): `pixels` is `[{ position: int, color: [R, G, B] }, ...]` — one entry per pixel, same format as `save_pixel_art` flat input.
-- **Grouped** (`group_by_color: true`): `pixels` is `[{ color: [R, G, B], position: [int, ...] }, ...]` — one entry per distinct color, compatible with the multi-position form of `save_pixel_art`.
-
-### `test_device_detection`
-
-Returns: Boolean indicating if device would be detected
-
-### `is_device_managed`
-
-Returns: Boolean indicating if device is managed
+</details>
 
 ---
 
-## ⚡ Quick Reference
+## 📋 Service Response Data
 
-| Category          | Primary Services                                             | Purpose                     |
-| ----------------- | ------------------------------------------------------------ | --------------------------- |
-| **Text**          | `set_custom_text`, `set_text_colors`                         | Display text with colors    |
-| **Drawing**       | `apply_custom_pixels`, `save_pixel_art`, `apply_pixel_art`   | Create and manage pixel art |
-| **Gradients**     | `set_mode`, `set_solid_color`, `set_angle`, `set_panel_mode` | Control display modes       |
-| **Palettes**      | `save_palette`, `load_palette`, `set_palettes`               | Manage color collections    |
-| **Text Settings** | `set_font`, `set_alignment`, `set_orientation`               | Text formatting             |
-| **Color Effects** | `set_preview_adjustments`, `set_color_accuracy`              | Real-time color adjustments |
-| **Management**    | `create_cube_discovery`, `test_display`, `force_rediscovery` | Device setup & diagnostics  |
+Some services return data that can be used in automations.
+
+| Service | Returns |
+| :-- | :-- |
+| `list_managed_devices` | List of managed IP addresses |
+| `get_pixel_art` | `{ name, pixels }` in flat or grouped format (see [get_pixel_art](#get_pixel_art)) |
+| `test_device_detection` | Boolean indicating if device would be detected |
+| `is_device_managed` | Boolean indicating if device is managed |
 
 ---
 
-_For more examples and advanced usage, see the main [README.md](README.md)_
+## 📖 Quick Reference
+
+| Category | Primary Services | Purpose |
+| :-- | :-- | :-- |
+| **Text** | `set_custom_text`, `set_text_colors` | Display text with colors |
+| **Drawing** | `apply_custom_pixels`, `save_pixel_art`, `apply_pixel_art` | Create and manage pixel art |
+| **Gradients** | `set_mode`, `set_solid_color`, `set_angle`, `set_panel_mode` | Control display modes |
+| **Palettes** | `save_palette`, `load_palette`, `set_palettes` | Manage color collections |
+| **Text Settings** | `set_font`, `set_alignment`, `set_orientation` | Text formatting |
+| **Color Effects** | `set_preview_adjustments`, `set_color_accuracy` | Real-time color adjustments |
+| **Management** | `create_cube_discovery`, `test_display`, `force_rediscovery` | Device setup & diagnostics |
+
+---
+
+For more examples and advanced usage, see the main [README.md](README.md).
