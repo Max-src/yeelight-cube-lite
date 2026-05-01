@@ -100,6 +100,29 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Yeelight Cube Lite component."""
     _LOGGER.debug("Yeelight Cube Lite async_setup() called")
 
+    # Register static HTTP path to serve frontend JS card files.
+    # Done here in async_setup (component level) so it runs exactly once on
+    # every HA startup, regardless of how many entries exist or whether any
+    # entry later fails/restarts.  async_setup_entry is too late and too
+    # unreliable for this — it is guarded by a sentinel that skips on reload.
+    www_path = os.path.join(os.path.dirname(__file__), "www")
+    if os.path.isdir(www_path):
+        try:
+            from homeassistant.components.http import StaticPathConfig  # type: ignore
+            await hass.http.async_register_static_paths(
+                [StaticPathConfig(FRONTEND_URL_BASE, www_path, False)]
+            )
+        except (ImportError, AttributeError):
+            hass.http.register_static_path(FRONTEND_URL_BASE, www_path, False)
+        _LOGGER.debug("Yeelight Cube Lite: Registered frontend static path at %s -> %s", FRONTEND_URL_BASE, www_path)
+    else:
+        _LOGGER.warning(
+            "Yeelight Cube Lite: www directory not found at %s — "
+            "Lovelace cards will return 404. "
+            "Ensure the www folder was copied to the component directory.",
+            www_path,
+        )
+
     # Schedule an SSDP scan for CubeLite devices after HA is fully started.
     # This creates discovery flows so CubeLite devices show up in the
     # "Discovered" section of the Integrations page under our integration.
@@ -314,46 +337,30 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         get_conflict_prevention(hass)
         async_setup_services(hass)
         
-        # Register static path to serve frontend JS card files
-        www_path = os.path.join(os.path.dirname(__file__), "www")
-        if os.path.isdir(www_path):
-            try:
-                # HA 2024.7+ uses async_register_static_paths
-                # cache_headers=False: we handle cache busting via ?v= query params
-                # Setting True can cause stale 404s in HA's CachingStaticResource
-                from homeassistant.components.http import StaticPathConfig  # type: ignore
-                await hass.http.async_register_static_paths(
-                    [StaticPathConfig(FRONTEND_URL_BASE, www_path, False)]
-                )
-            except (ImportError, AttributeError):
-                # Fallback for older HA versions
-                hass.http.register_static_path(FRONTEND_URL_BASE, www_path, False)
-            _LOGGER.debug("Yeelight Cube Lite: Registered frontend at %s", FRONTEND_URL_BASE)
-            
-            # Read version from manifest.json for cache-busting query params
-            try:
-                import json as _json
-                _manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
-                with open(_manifest_path, encoding="utf-8") as _mf:
-                    _version = _json.load(_mf).get("version", "0")
-            except Exception:
-                _version = "0"
-            
-            # Register cards as Lovelace resources (same mechanism as HACS plugins).
-            # This is more reliable than add_extra_js_url because HA loads these
-            # resources the same way as Mushroom, card-mod, and other HACS cards.
-            await _async_register_lovelace_resources(
-                hass, FRONTEND_CARD_FILES, FRONTEND_URL_BASE, _version
-            )
-            
-            # Also register via add_extra_js_url as a fallback
-            try:
-                from homeassistant.components.frontend import add_extra_js_url  # type: ignore
-                for card_file in FRONTEND_CARD_FILES:
-                    card_url = f"{FRONTEND_URL_BASE}/{card_file}?v={_version}"
-                    add_extra_js_url(hass, card_url)
-            except (ImportError, Exception):
-                pass
+        # Read version from manifest.json for cache-busting query params
+        try:
+            import json as _json
+            _manifest_path = os.path.join(os.path.dirname(__file__), "manifest.json")
+            with open(_manifest_path, encoding="utf-8") as _mf:
+                _version = _json.load(_mf).get("version", "0")
+        except Exception:
+            _version = "0"
+
+        # Register cards as Lovelace resources (same mechanism as HACS plugins).
+        # This is more reliable than add_extra_js_url because HA loads these
+        # resources the same way as Mushroom, card-mod, and other HACS cards.
+        await _async_register_lovelace_resources(
+            hass, FRONTEND_CARD_FILES, FRONTEND_URL_BASE, _version
+        )
+
+        # Also register via add_extra_js_url as a fallback
+        try:
+            from homeassistant.components.frontend import add_extra_js_url  # type: ignore
+            for card_file in FRONTEND_CARD_FILES:
+                card_url = f"{FRONTEND_URL_BASE}/{card_file}?v={_version}"
+                add_extra_js_url(hass, card_url)
+        except (ImportError, Exception):
+            pass
         
         _LOGGER.debug("Yeelight Cube Lite: Storage, conflict prevention, and services initialized")
     
