@@ -1,4 +1,4 @@
-add_managed_device:
+﻿add_managed_device:
   name: Add Managed Device
   description: Add a device IP to the managed devices list to prevent discovery conflicts
   fields:
@@ -121,9 +121,9 @@ load_palette:
           min: 0
           mode: box
     entity_id:
-      description: Specific entity ID to apply the palette to (optional, applies to all if not specified)
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
       example: "light.yeelight_cube_192_168_1_100"
-      required: false
+      required: true
       selector:
         entity:
           domain: light
@@ -133,9 +133,9 @@ preview_gradient_modes:
   description: Generate full 5x20 preview matrices for all gradient modes using the entity's current text, colors, and angle. Returns previews via event bus.
   fields:
     entity_id:
-      description: Entity ID to generate previews for (uses entity's current text, colors, and angle)
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
       example: "light.yeelight_cube_192_168_1_100"
-      required: false
+      required: true
       selector:
         entity:
           domain: light
@@ -151,9 +151,9 @@ set_custom_text:
       selector:
         text:
     entity_id:
-      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
       example: "light.cubelite_192_168_4_139"
-      required: false
+      required: true
       selector:
         entity:
           domain: light
@@ -169,9 +169,9 @@ set_text_colors:
       selector:
         object:
     entity_id:
-      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
       example: "light.cubelite_192_168_4_247"
-      required: false
+      required: true
       selector:
         entity:
           domain: light
@@ -194,9 +194,9 @@ apply_custom_pixels:
       selector:
         object:
     entity_id:
-      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
       example: "light.cubelite_192_168_4_139"
-      required: false
+      required: true
       selector:
         entity:
           domain: light
@@ -223,16 +223,16 @@ set_mode:
             - "Text Color Sequence"
             - "Panel Color Sequence"
             - "Custom Draw"
-    panel_mode:
-      description: Whether to apply gradients to entire panel (true) or just text areas (false). If provided, sets both panel_mode and mode in one call to avoid redundant updates.
+    full_panel:
+      description: Whether to apply gradients to entire panel (true) or just text areas (false). If provided, sets both full_panel and mode in one call to avoid redundant updates.
       example: true
       required: false
       selector:
         boolean:
     entity_id:
-      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
       example: "light.cubelite_192_168_4_247"
-      required: false
+      required: true
       selector:
         entity:
           domain: light
@@ -252,27 +252,27 @@ set_angle:
           step: 1
           mode: slider
     entity_id:
-      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
       example: "light.cubelite_192_168_4_139"
-      required: false
+      required: true
       selector:
         entity:
           domain: light
 
-set_panel_mode:
+set_full_panel:
   name: Set Panel Mode
   description: Set whether gradients apply to the entire panel or just text areas.
   fields:
-    panel_mode:
+    full_panel:
       description: Whether to apply gradients to entire panel (true) or just text areas (false)
       example: true
       required: true
       selector:
         boolean:
     entity_id:
-      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
       example: "light.cubelite_192_168_4_247"
-      required: false
+      required: true
       selector:
         entity:
           domain: light
@@ -286,9 +286,9 @@ set_solid_color:
       example: [255, 0, 0]
       required: true
     entity_id:
-      description: Target specific cube entity. If not provided, uses default entity.
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
       example: "light.cubelite_192_168_4_139"
-      required: false
+      required: true
       selector:
         entity:
           domain: light
@@ -308,9 +308,9 @@ set_brightness:
           step: 1
           mode: slider
     entity_id:
-      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
       example: "light.cubelite_192_168_4_139"
-      required: false
+      required: true
       selector:
         entity:
           domain: light
@@ -347,8 +347,8 @@ apply_pixel_art:
           min: 0
           mode: box
     entity_id:
-      description: Target specific cube entity (e.g., light.cubelite_192_168_4_139). If not provided, uses default entity.
-      required: false
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
+      required: true
       selector:
         entity:
           domain: light
@@ -443,9 +443,9 @@ save_palette:
       selector:
         text:
     entity_id:
-      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
       example: "light.cubelite_192_168_4_139"
-      required: false
+      required: true
       selector:
         entity:
           domain: light
@@ -509,8 +509,8 @@ set_orientation:
             - "normal"
             - "flipped"
     entity_id:
-      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
-      required: false
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
+      required: true
       selector:
         entity:
           domain: light
@@ -530,8 +530,8 @@ set_font:
             - "koubit"
             - "josefin"
     entity_id:
-      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
-      required: false
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
+      required: true
       selector:
         entity:
           domain: light
@@ -551,8 +551,8 @@ set_alignment:
             - "center"
             - "right"
     entity_id:
-      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
-      required: false
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
+      required: true
       selector:
         entity:
           domain: light
@@ -571,8 +571,8 @@ display_image:
         text:
           multiline: true
     entity_id:
-      description: Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity.
-      required: false
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
+      required: true
       selector:
         entity:
           domain: light
@@ -693,9 +693,9 @@ set_preview_adjustments:
           max: 100
           mode: slider
     entity_id:
-      description: Target specific cube entity. If not provided, uses default entity.
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
       example: "light.yeelight_cube_192_168_1_100"
-      required: false
+      required: true
       selector:
         entity:
           domain: light
@@ -709,9 +709,9 @@ force_refresh:
     normal display updates are not reaching it.
   fields:
     entity_id:
-      description: Target specific cube entity. If not provided, uses default entity.
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
       example: "light.yeelight_cube_192_168_1_100"
-      required: false
+      required: true
       selector:
         entity:
           domain: light
@@ -732,9 +732,9 @@ set_color_accuracy:
       selector:
         boolean:
     entity_id:
-      description: Target specific cube entity. If not provided, uses default entity.
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
       example: "light.yeelight_cube_192_168_1_100"
-      required: false
+      required: true
       selector:
         entity:
           domain: light
@@ -927,9 +927,9 @@ set_color_calibration:
           step: 1
           mode: slider
     entity_id:
-      description: Target specific cube entity.
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
       example: "light.yeelight_cube_192_168_1_100"
-      required: false
+      required: true
       selector:
         entity:
           domain: light

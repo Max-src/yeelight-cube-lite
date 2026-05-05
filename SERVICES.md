@@ -1,9 +1,12 @@
-# Complete Service Reference
+﻿# Complete Service Reference
 
 Full documentation for all custom actions (services) registered under the `yeelight_cube` domain.
 
 > [!NOTE]
 > For general setup, cards, and entities, see [README.md](README.md).
+
+> [!NOTE]
+> **`entity_id`** is required by all lamp services. When calling services directly from automations, scripts, or Developer Tools, you must provide it explicitly.
 
 ---
 
@@ -48,6 +51,7 @@ Set individual RGB colors for each character in the displayed text.
 | Field | Required | Description |
 | :-- | :-- | :-- |
 | `text_colors` | Yes | List of `[R, G, B]` arrays, one per character |
+| `save_as_palette` | No | Save these colors as a new palette at the same time (default: `false`) |
 | `entity_id` | Yes | Target lamp entity |
 
 ```yaml
@@ -454,6 +458,7 @@ Change the display mode.
 | Field | Required | Description |
 | :-- | :-- | :-- |
 | `mode` | Yes | Display mode (see table below) |
+| `full_panel` | No | Fill the entire 20×5 pixel grid (`true`) or restrict the gradient to text pixels only (`false`). Setting this alongside `mode` avoids a redundant second call. |
 | `entity_id` | Yes | Target lamp entity |
 
 | Mode | Description |
@@ -515,19 +520,19 @@ data:
 
 ---
 
-### `set_panel_mode`
+### `set_full_panel`
 
-Control whether gradients apply to the whole panel or text only.
+Control whether gradients fill the entire 20×5 pixel grid or only the text pixels.
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
-| `panel_mode` | Yes | `true` = whole panel, `false` = text only |
+| `full_panel` | Yes | `true` = fill entire panel, `false` = text pixels only |
 | `entity_id` | Yes | Target lamp entity |
 
 ```yaml
-action: yeelight_cube.set_panel_mode
+action: yeelight_cube.set_full_panel
 data:
-  panel_mode: true
+  full_panel: true
   entity_id: light.cubelite_192_168_4_102
 ```
 
@@ -535,17 +540,22 @@ data:
 
 ### `preview_gradient_modes`
 
-Cycle through all gradient modes sequentially for a visual preview.
+Generate preview matrix data for all gradient modes using the entity's current text, colors, and angle. This service does **not** change what is displayed on the lamp — instead it fires a `yeelight_cube_gradient_preview_response` event containing rendered 20×5 pixel matrices for every mode, which the Gradient Card reads to display live mode previews without touching the lamp.
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
 | `entity_id` | Yes | Target lamp entity |
+| `apply_brightness` | No | Include current brightness in the preview matrices (default: `false`) |
 
 ```yaml
 action: yeelight_cube.preview_gradient_modes
 data:
   entity_id: light.cubelite_192_168_4_102
+  apply_brightness: false
 ```
+
+> [!NOTE]
+> Results are delivered via the **`yeelight_cube_gradient_preview_response`** event on the HA event bus, not as a direct return value. The event payload includes `previews` (a dict of mode name → 100-pixel color list), `text`, `angle`, `brightness`, `full_panel`, and other current display state values.
 
 ---
 
@@ -560,7 +570,7 @@ Save a color palette.
 | Field | Required | Description |
 | :-- | :-- | :-- |
 | `palette` | Yes | List of `[R, G, B]` arrays |
-| `name` | Yes | Palette name |
+| `name` | No | Palette name. Auto-generated if omitted. |
 | `entity_id` | Yes | Target lamp entity |
 
 ```yaml
@@ -721,29 +731,97 @@ data:
 
 ---
 
-### `set_color_calibration`
+### `force_refresh`
 
-Adjust color correction calibration values at runtime (advanced/debug). All fields except `entity_id` are optional - only provided values are updated. Changes are not persisted across restarts.
+Force the lamp to reconnect and re-send the current display state using a fresh TCP connection, bypassing the persistent socket. Use this when the lamp is stuck or unresponsive and normal display updates are not reaching it — it has the same effect as pressing the **Force Refresh** button entity.
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
-| `gamma_r` | No | Red gamma correction |
-| `gamma_g` | No | Green gamma correction |
-| `gamma_b` | No | Blue gamma correction |
-| `gain_r` | No | Red channel gain |
-| `gain_g` | No | Green channel gain |
-| `gain_b` | No | Blue channel gain |
+| `entity_id` | Yes | Target lamp entity. Supports a list for multiple lamps. |
+
+```yaml
+action: yeelight_cube.force_refresh
+data:
+  entity_id: light.cubelite_192_168_4_102
+```
+
+> [!TIP]
+> For a one-off recovery from the UI, use the **Force Refresh** button entity instead. Use this service when you need to trigger recovery from an automation or script.
+
+---
+
+### `set_color_calibration`
+
+Advanced calibration service for the hardware color correction pipeline. All parameters are optional — only provided values are updated. Changes take effect immediately but are **not persisted across restarts**. This service is designed for iterative tuning; once you find values that work, update the corresponding code defaults.
+
+> [!NOTE]
+> These parameters are tuned interactively using the internal Calibration Card. The Calibration Card is not part of the public component release.
+
+The color pipeline has three independent systems:
+
+#### System 1 — Per-channel gamma curve
+
+Soft-corrects colors at low brightness by applying a per-channel inverse gamma curve. Useful when the lamp's physical LEDs produce off-hue colors at dim settings.
+
+| Field | Default | Range | Description |
+| :-- | :-- | :-- | :-- |
+| `gamma_r` | `0.85` | 0.1–1.0 | Red gamma correction. Lower = stronger boost on the red channel at low brightness |
+| `gamma_g` | `0.75` | 0.1–1.0 | Green gamma correction. Default is lower than red because green LEDs tend to be stronger |
+| `gamma_b` | `0.65` | 0.1–1.0 | Blue gamma correction. Generally needs the strongest correction to prevent washed-out blues |
+| `hw_threshold` | `50` | 10–100 | Hardware brightness % above which gamma correction is fully **off**. At higher brightness the raw LED colors are more accurate |
+| `hw_full` | `10` | 1–50 | Hardware brightness % at/below which gamma correction is fully **on** (100%). Between `hw_full` and `hw_threshold`, correction blends smoothly from 100% → 0% |
+| `channel_balance` | `0.5` | 0.0–1.0 | Blend between uniform correction (`0` = hue-safe, same curve on all channels) and per-channel correction (`1.0` = each channel corrected independently). Values near 1.0 improve blue/purple accuracy but may shift hues slightly |
+
+#### System 2 — Per-channel gain multipliers
+
+A linear gain multiplier applied to each RGB channel after rendering, always active. Used to compensate for the lamp's color channel imbalance — LEDs of different colors emit at different intensities, causing neutral white to look greenish and blues to appear washed-out.
+
+| Field | Default | Range | Description |
+| :-- | :-- | :-- | :-- |
+| `gain_r` | `1.00` | 0.5–1.5 | Red channel multiplier. At `1.00` no scaling is applied |
+| `gain_g` | `0.87` | 0.5–1.5 | Green channel multiplier. Reducing below `1.0` fixes the typical green-cast in whites and yellows |
+| `gain_b` | `0.72` | 0.5–1.5 | Blue channel multiplier. Reducing below `1.0` makes deep blues and purples richer instead of faded |
+
+#### System 3 — Brightness curve
+
+Controls how the user-facing brightness slider (1–100%) maps to the hardware brightness register and an optional per-pixel RGB darkening pass. Using RGB darkening at low brightness values provides smoother dimming than the hardware PWM alone.
+
+| Field | Default | Range | Description |
+| :-- | :-- | :-- | :-- |
+| `brightness_transition` | `25` | 5–80 | User brightness % that separates the low range (RGB darkening) from the high range (hardware PWM). Below this threshold the hardware stays at `max_hw_brightness` and only RGB darkening changes |
+| `min_hw_brightness` | `1` | 1–50 | Hardware brightness % used at 0% user brightness |
+| `max_hw_brightness` | `100` | 50–100 | Hardware brightness % used at the `brightness_transition` point |
+| `max_darken` | `94` | 50–100 | RGB darkening % at 0% user brightness (bottom of the low range). A value of `94` means pixels are multiplied by 0.06 |
+| `min_darken` | `0` | 0–50 | RGB darkening % at 100% user brightness. `0` = full color output |
+| `dark_at_20` | `85` | 0–100 | RGB darkening % at 20% into the high range (between `brightness_transition` and 100%). Shapes the high-range brightness curve |
+| `dark_at_50` | `70` | 0–100 | RGB darkening % at 50% into the high range |
+| `dark_at_80` | `40` | 0–100 | RGB darkening % at 80% into the high range |
+| `low_min_darken` | `80` | 0–100 | RGB darkening % at the very bottom of the low range (0% user brightness). Lower values retain more per-pixel color variation at minimum brightness |
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
 | `entity_id` | Yes | Target lamp entity |
 
 ```yaml
 action: yeelight_cube.set_color_calibration
 data:
+  # System 1 — gamma curve
   gamma_r: 0.85
   gamma_g: 0.75
   gamma_b: 0.65
+  hw_threshold: 50
+  hw_full: 10
+  channel_balance: 0.5
+  # System 2 — gain
   gain_r: 1.00
   gain_g: 0.87
   gain_b: 0.72
+  # System 3 — brightness curve
+  brightness_transition: 25
+  max_darken: 94
+  dark_at_20: 85
+  dark_at_50: 70
+  dark_at_80: 40
   entity_id: light.cubelite_192_168_4_102
 ```
 
@@ -1024,6 +1102,7 @@ Some services return data that can be used in automations.
 | :-- | :-- |
 | `list_managed_devices` | List of managed IP addresses |
 | `get_pixel_art` | `{ name, pixels }` in flat or grouped format (see [get_pixel_art](#get_pixel_art)) |
+| `preview_gradient_modes` | Fires `yeelight_cube_gradient_preview_response` event with 20×5 pixel matrices per mode |
 | `test_device_detection` | Boolean indicating if device would be detected |
 | `is_device_managed` | Boolean indicating if device is managed |
 
@@ -1035,10 +1114,11 @@ Some services return data that can be used in automations.
 | :-- | :-- | :-- |
 | **Text** | `set_custom_text`, `set_text_colors` | Display text with colors |
 | **Drawing** | `apply_custom_pixels`, `save_pixel_art`, `apply_pixel_art` | Create and manage pixel art |
-| **Gradients** | `set_mode`, `set_solid_color`, `set_angle`, `set_panel_mode` | Control display modes |
+| **Gradients** | `set_mode`, `set_solid_color`, `set_angle`, `set_full_panel` | Control display modes |
 | **Palettes** | `save_palette`, `load_palette`, `set_palettes` | Manage color collections |
 | **Text Settings** | `set_font`, `set_alignment`, `set_orientation` | Text formatting |
 | **Color Effects** | `set_preview_adjustments`, `set_color_accuracy` | Real-time color adjustments |
+| **Calibration** | `set_color_calibration`, `force_refresh` | Hardware tuning & lamp recovery |
 | **Management** | `create_cube_discovery`, `test_display`, `force_rediscovery` | Device setup & diagnostics |
 
 ---

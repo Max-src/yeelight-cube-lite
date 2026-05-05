@@ -1,4 +1,4 @@
-import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
+﻿import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
 import {
   exportImportButtonStyles,
   getExportImportButtonClass,
@@ -2224,7 +2224,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           // Single merged call instead of two separate calls
           await this.callServiceOnTargetEntities("set_mode", {
             mode: mode,
-            panel_mode: applyToPanel,
+            full_panel: applyToPanel,
           });
 
           // Reduced wait time since only 1 call now
@@ -2279,7 +2279,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         try {
           await this.callServiceOnTargetEntities("set_mode", {
             mode: mode,
-            panel_mode: applyToPanel,
+            full_panel: applyToPanel,
           });
 
           await new Promise((resolve) => setTimeout(resolve, 100));
@@ -2305,8 +2305,8 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         const applyToPanel = e.target.checked;
 
         // Simply set the panel mode flag on all target entities
-        await this.callServiceOnTargetEntities("set_panel_mode", {
-          panel_mode: applyToPanel,
+        await this.callServiceOnTargetEntities("set_full_panel", {
+          full_panel: applyToPanel,
         });
 
         // Re-render to update states

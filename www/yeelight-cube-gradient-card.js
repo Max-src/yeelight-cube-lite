@@ -1,4 +1,4 @@
-import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
+﻿import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
 import { BLACK_THRESHOLD } from "./draw_card_const.js";
 import {
   renderGalleryDisplay,
@@ -506,14 +506,14 @@ class YeelightCubeGradientCard extends HTMLElement {
     }
 
     // Track entity state changes to auto-reload gallery previews (debounced)
-    // Only reload if text, angle, colors, or panel_mode changed
+    // Only reload if text, angle, colors, or full_panel changed
     const entityId = this._getPrimaryEntity();
     if (hass && entityId) {
       const stateObj = hass.states[entityId];
       const currentText = stateObj?.attributes?.custom_text;
       const currentAngle = stateObj?.attributes?.angle;
       const currentColors = stateObj?.attributes?.text_colors;
-      const currentPanelMode = stateObj?.attributes?.panel_mode || false;
+      const currentPanelMode = stateObj?.attributes?.full_panel || false;
       const colorsHash = currentColors ? JSON.stringify(currentColors) : null;
       if (
         this._lastPreviewText !== currentText ||
@@ -581,7 +581,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         if (
           a.angle !== b.angle ||
           a.mode !== b.mode ||
-          a.panel_mode !== b.panel_mode ||
+          a.full_panel !== b.full_panel ||
           a.custom_text !== b.custom_text
         )
           return true;
@@ -595,7 +595,7 @@ class YeelightCubeGradientCard extends HTMLElement {
 
     // --- Optimistic Panel Mode: clear only when backend matches ---
     if (this._optimisticPanelMode !== undefined && entity) {
-      const backendPanelMode = entity.attributes.panel_mode || false;
+      const backendPanelMode = entity.attributes.full_panel || false;
       if (backendPanelMode === this._optimisticPanelMode) {
         this._optimisticPanelMode = undefined;
       }
@@ -788,7 +788,7 @@ class YeelightCubeGradientCard extends HTMLElement {
     const applyToWholePanel =
       this._optimisticPanelMode !== undefined
         ? this._optimisticPanelMode
-        : stateObj.attributes.panel_mode || false;
+        : stateObj.attributes.full_panel || false;
     // Fill panel column selector: detect active column count from custom_text
     const currentCustomText = stateObj.attributes.custom_text || "";
     const fillPanelCols =
@@ -2093,8 +2093,8 @@ class YeelightCubeGradientCard extends HTMLElement {
         // Disable checkbox while updating
         panelCheckbox.disabled = true;
 
-        this.callServiceOnTargetEntities("set_panel_mode", {
-          panel_mode: applyToPanel,
+        this.callServiceOnTargetEntities("set_full_panel", {
+          full_panel: applyToPanel,
         })
           .then(() => {
             // Re-enable checkbox, but do NOT clear optimistic state here
@@ -2554,7 +2554,7 @@ class YeelightCubeGradientCard extends HTMLElement {
     try {
       await this.callServiceOnTargetEntities("set_mode", {
         mode,
-        panel_mode: applyToPanel,
+        full_panel: applyToPanel,
       });
       await new Promise((resolve) => setTimeout(resolve, 100));
       this._optimisticMode = null;
@@ -2962,7 +2962,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         text: event.data.text,
         angle: Math.round(event.data.angle * 10) / 10,
         brightness: event.data.brightness,
-        panel_mode: event.data.panel_mode,
+        full_panel: event.data.full_panel,
       });
 
       const cache = window._yeelightPreviewCache;

@@ -1,4 +1,4 @@
-
+﻿
 
 import logging
 import asyncio
@@ -113,7 +113,7 @@ ORIENTATION_NORMAL = "normal"
 ORIENTATION_FLIPPED = "flipped"
 
 # Virtual character sentinel for panel mode.
-# When panel_mode is on, the text is replaced by this single character
+# When full_panel is on, the text is replaced by this single character
 # whose positions cover the entire 5x20 display (all 100 pixels).
 # All rendering modes see one "giant letter" filling the whole panel
 # and work via the normal text rendering path -- no special branches needed.
@@ -884,7 +884,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         self._brightness = 255  # Store brightness as 0-255 internally
         self._text_colors = [(255, 0, 0), (0, 0, 255)]  # [solid/gradient start, gradient end]
         self._mode = "Solid Color"
-        self._panel_mode = False  # Whether to apply gradients to whole panel instead of just text
+        self._full_panel = False  # Whether to apply gradients to whole panel instead of just text
         self._angle = 0.0
         self._background_color = (0, 0, 0)
         self._alignment = "center"  # Default alignment is center
@@ -1549,7 +1549,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             "font": self._font,
             "orientation": self._orientation,
             "rgb_color": self._rgb_color,
-            "panel_mode": self._panel_mode,
+            "full_panel": self._full_panel,
             # Color effects (used by lamp preview card)
             "preview_hue_shift": self._preview_hue_shift,
             "preview_temperature": self._preview_temperature,
@@ -3316,14 +3316,14 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             # If not in custom draw mode, clear custom pixels so text/other modes work as expected
             if not getattr(self, '_custom_draw_active', False):
                 self._custom_pixels = None
-            if self._custom_text or self._panel_mode:
+            if self._custom_text or self._full_panel:
                 # --- Panel mode override -----------------------------------
-                # When panel_mode is on, replace the actual text with a single
+                # When full_panel is on, replace the actual text with a single
                 # virtual character (PANEL_FULL_CHAR) that covers every pixel
                 # on the 5x20 display.  All rendering modes then see one
                 # "giant letter" filling the whole panel and work through the
                 # normal text rendering path -- no special branches needed.
-                if self._panel_mode:
+                if self._full_panel:
                     effective_text = PANEL_FULL_CHAR  # single char whose positions = all 100 pixels
                     total_columns = TOTAL_COLUMNS
                     total_text_width = TOTAL_COLUMNS  # fills the full width
@@ -3699,7 +3699,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 # no text set -- without this, the lamp stays on the old display).
                 _LOGGER.debug(
                     f"[DISPLAY] [{self._ip}] No content to render "
-                    f"(text='{self._custom_text}', panel={self._panel_mode}, "
+                    f"(text='{self._custom_text}', panel={self._full_panel}, "
                     f"draw_active={getattr(self, '_custom_draw_active', False)}, "
                     f"mode='{self._mode}') -- pushing background-only display"
                 )
@@ -4435,9 +4435,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         preview_matrix = [light_entity._background_color] * 100
         
         # Get entity's current state
-        # When panel_mode is on, use the virtual full-panel character just like
+        # When full_panel is on, use the virtual full-panel character just like
         # the actual rendering code does -- so the preview fills all 100 LEDs.
-        if light_entity._panel_mode:
+        if light_entity._full_panel:
             text = PANEL_FULL_CHAR
         else:
             text = light_entity._custom_text or ""
@@ -4452,7 +4452,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         
         # Calculate text layout (same as actual rendering)
         total_columns = TOTAL_COLUMNS
-        if light_entity._panel_mode:
+        if light_entity._full_panel:
             total_text_width = TOTAL_COLUMNS
             current_offset = 0
         else:
@@ -4716,7 +4716,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 "brightness": target_entity._brightness,
                 "darken_percent": target_entity._preview_darken,
                 "apply_brightness": apply_brightness,
-                "panel_mode": target_entity._panel_mode,
+                "full_panel": target_entity._full_panel,
             }
         )
         
@@ -4727,7 +4727,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         "preview_gradient_modes",
         handle_preview_gradient_modes,
         schema=vol.Schema({
-            vol.Optional("entity_id"): _entity_id_or_list,
+            vol.Required("entity_id"): _entity_id_or_list,
             vol.Optional("apply_brightness"): bool
         })
     )
@@ -4738,7 +4738,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         handle_load_palette,
         schema=vol.Schema({
             vol.Required("idx"): cv.positive_int,
-            vol.Optional("entity_id"): _entity_id_or_list
+            vol.Required("entity_id"): _entity_id_or_list
         })
     )
 
@@ -5098,7 +5098,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         handle_apply_pixel_art,
         schema=vol.Schema({
             vol.Required("idx"): vol.All(int, vol.Range(min=0)),
-            vol.Optional("entity_id"): _entity_id_or_list,
+            vol.Required("entity_id"): _entity_id_or_list,
         }, extra=vol.ALLOW_EXTRA)
     )
     hass.services.async_register(
@@ -5107,7 +5107,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         handle_apply_custom_pixels,
         schema=vol.Schema({
             vol.Required("pixels", description="Array of 100 RGB color arrays representing the 10x10 matrix pixels, e.g. [[255,0,0], [0,255,0], ...]"): list,
-            vol.Optional("entity_id", description="Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity."): _entity_id_or_list,
+            vol.Required("entity_id", description="Target lamp entity (e.g. light.cubelite_192_168_4_102)"): _entity_id_or_list,
         }, extra=vol.ALLOW_EXTRA)
     )
     
@@ -5160,7 +5160,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         handle_set_brightness,
         schema=vol.Schema({
             vol.Required("brightness", description="Brightness percentage (1-100)"): vol.All(vol.Coerce(int), vol.Range(min=1, max=100)),
-            vol.Optional("entity_id", description="Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity."): _entity_id_or_list,
+            vol.Required("entity_id", description="Target lamp entity (e.g. light.cubelite_192_168_4_102)"): _entity_id_or_list,
         }, extra=vol.ALLOW_EXTRA)
     )
     
@@ -5186,7 +5186,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         handle_set_orientation,
         schema=vol.Schema({
             vol.Required("orientation"): vol.In(["normal", "flipped"]),
-            vol.Optional("entity_id", description="Target specific cube entity. If not provided, uses default entity."): _entity_id_or_list,
+            vol.Required("entity_id", description="Target lamp entity (e.g. light.cubelite_192_168_4_102)"): _entity_id_or_list,
         })
     )
     async def handle_set_font(service_call):
@@ -5216,7 +5216,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         handle_set_font,
         schema=vol.Schema({
             vol.Required("font"): vol.In(list(FONT_MAPS.keys())),
-            vol.Optional("entity_id", description="Target specific cube entity. If not provided, uses default entity."): _entity_id_or_list,
+            vol.Required("entity_id", description="Target lamp entity (e.g. light.cubelite_192_168_4_102)"): _entity_id_or_list,
         })
     )
     async def handle_set_alignment(service_call):
@@ -5246,10 +5246,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         handle_set_alignment,
         schema=vol.Schema({
             vol.Required("alignment"): vol.In(["left", "center", "right"]),
-            vol.Optional("entity_id", description="Target specific cube entity. If not provided, uses default entity."): _entity_id_or_list,
+            vol.Required("entity_id", description="Target lamp entity (e.g. light.cubelite_192_168_4_102)"): _entity_id_or_list,
         })
     )
-    # Note: handle_remove_palette is defined later in the file (after handle_set_panel_mode)
+    # Note: handle_remove_palette is defined later in the file (after handle_set_full_panel)
     # to avoid duplicate service registration
     
     async def handle_set_palettes(service_call):
@@ -5354,7 +5354,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 [vol.All(vol.ExactSequence((cv.byte, cv.byte, cv.byte)), vol.Coerce(tuple))]
             ),
             vol.Optional("name"): cv.string,
-            vol.Optional("entity_id"): _entity_id_or_list,
+            vol.Required("entity_id"): _entity_id_or_list,
         })
     )
     async def handle_rename_palette(service_call):
@@ -5439,7 +5439,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         handle_set_custom_text,
         schema=vol.Schema({
             vol.Required("text", description="Text to display on the cube matrix"): cv.string,
-            vol.Optional("entity_id", description="Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity."): _entity_id_or_list,
+            vol.Required("entity_id", description="Target lamp entity (e.g. light.cubelite_192_168_4_102)"): _entity_id_or_list,
         })
     )
     async def handle_set_angle(service_call):
@@ -5478,7 +5478,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         handle_set_angle,
         schema=vol.Schema({
             vol.Required("angle", description="Gradient angle in degrees (0-360). Used for angle-based gradient modes."): vol.Coerce(float),
-            vol.Optional("entity_id", description="Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity."): _entity_id_or_list,
+            vol.Required("entity_id", description="Target lamp entity (e.g. light.cubelite_192_168_4_102)"): _entity_id_or_list,
         })
     )
     async def handle_set_text_colors(service_call):
@@ -5516,7 +5516,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         handle_set_text_colors,
         schema=vol.Schema({
             vol.Required("text_colors", description="Array of RGB color arrays, e.g. [[255,0,0], [0,255,0]] for red to green gradient"): vol.All(list, [vol.All(list, [cv.positive_int])]),
-            vol.Optional("entity_id", description="Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity."): _entity_id_or_list,
+            vol.Required("entity_id", description="Target lamp entity (e.g. light.cubelite_192_168_4_102)"): _entity_id_or_list,
             vol.Optional("save_as_palette", default=False, description="Save these colors as a palette for later use"): bool,
         })
     )
@@ -5568,7 +5568,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         handle_display_image,
         schema=vol.Schema({
             vol.Required("image_b64"): cv.string,
-            vol.Optional("entity_id", description="Target specific cube entity. If not provided, uses default entity."): _entity_id_or_list,
+            vol.Required("entity_id", description="Target lamp entity (e.g. light.cubelite_192_168_4_102)"): _entity_id_or_list,
         })
     )
     # Store the light entity and palettes in hass.data for palette sensor registration and frontend use
@@ -5581,7 +5581,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     async def handle_set_mode(service_call):
         # Supports multi-entity parallel dispatch
         mode = service_call.data.get("mode")
-        panel_mode = service_call.data.get("panel_mode")
+        full_panel = service_call.data.get("full_panel")
         
         text_modes = [
             "Solid Color",
@@ -5608,9 +5608,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             if not target_entity._is_on and not target_entity._should_auto_turn_on():
                 _LOGGER.debug(f"[AUTO-TURN-ON] set_mode command ignored - lamp is off and auto-turn-on is disabled")
                 return
-            if panel_mode is not None:
-                target_entity._panel_mode = panel_mode
-                _LOGGER.debug(f"[set_mode] Also setting panel_mode to {panel_mode}")
+            if full_panel is not None:
+                target_entity._full_panel = full_panel
+                _LOGGER.debug(f"[set_mode] Also setting full_panel to {full_panel}")
             if mode == "Custom Draw":
                 target_entity._custom_draw_active = True
             else:
@@ -5641,8 +5641,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 "Panel Color Sequence",
                 "Custom Draw",
             ]),
-            vol.Optional("panel_mode", description="Whether to apply gradients to entire panel (true) or just text areas (false). If provided, sets panel_mode and mode in one call."): cv.boolean,
-            vol.Optional("entity_id", description="Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity."): _entity_id_or_list,
+            vol.Optional("full_panel", description="Whether to apply gradients to entire panel (true) or just text areas (false). If provided, sets full_panel and mode in one call."): cv.boolean,
+            vol.Required("entity_id", description="Target lamp entity (e.g. light.cubelite_192_168_4_102)"): _entity_id_or_list,
         })
     )
 
@@ -5672,29 +5672,29 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 vol.All(vol.ExactSequence((cv.byte, cv.byte, cv.byte)), vol.Coerce(tuple)),
                 cv.string
             ),
-            vol.Optional("entity_id", description="Target specific cube entity. If not provided, uses default entity."): _entity_id_or_list,
+            vol.Required("entity_id", description="Target lamp entity (e.g. light.cubelite_192_168_4_102)"): _entity_id_or_list,
         })
     )
 
-    async def handle_set_panel_mode(service_call):
+    async def handle_set_full_panel(service_call):
         # Supports multi-entity parallel dispatch
-        panel_mode = service_call.data.get("panel_mode", False)
+        full_panel = service_call.data.get("full_panel", False)
 
-        targets = _resolve_entities(service_call, "SET_PANEL_MODE")
+        targets = _resolve_entities(service_call, "set_full_panel")
         if not targets:
             return
 
         async def _apply_one(target_entity):
             _LOGGER.warning(
                 f"[PANEL] [{getattr(target_entity, '_ip', '?')}] "
-                f"Setting panel_mode={panel_mode} (was {target_entity._panel_mode})"
+                f"Setting full_panel={full_panel} (was {target_entity._full_panel})"
             )
-            target_entity._panel_mode = panel_mode
+            target_entity._full_panel = full_panel
             # When enabling panel mode, deactivate custom draw so the display
             # switches back to the text/gradient rendering path.  The pixel art
             # branch in _apply_display_mode_internal would otherwise take
-            # priority and ignore panel_mode entirely.
-            if panel_mode:
+            # priority and ignore full_panel entirely.
+            if full_panel:
                 target_entity._custom_draw_active = False
                 target_entity._custom_pixels = None
             target_entity.async_schedule_update_ha_state()
@@ -5704,11 +5704,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 
     hass.services.async_register(
         DOMAIN,
-        "set_panel_mode",
-        handle_set_panel_mode,
+        "set_full_panel",
+        handle_set_full_panel,
         schema=vol.Schema({
-            vol.Required("panel_mode", description="Whether to apply gradients to entire panel (true) or just text areas (false)"): cv.boolean,
-            vol.Optional("entity_id", description="Target specific cube entity (light.cubelite_x_x_x_x). If not provided, uses default entity."): _entity_id_or_list,
+            vol.Required("full_panel", description="Whether to apply gradients to entire panel (true) or just text areas (false)"): cv.boolean,
+            vol.Required("entity_id", description="Target lamp entity (e.g. light.cubelite_192_168_4_102)"): _entity_id_or_list,
         })
     )
 
@@ -5800,7 +5800,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         "test_display",
         handle_test_display,
         schema=vol.Schema({
-            vol.Optional("entity_id", description="Target specific cube entity. If not provided, uses default entity."): _entity_id_or_list,
+            vol.Required("entity_id", description="Target lamp entity (e.g. light.cubelite_192_168_4_102)"): _entity_id_or_list,
         }),
         supports_response=False
     )
@@ -5872,7 +5872,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             vol.Optional("glow", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
             vol.Optional("tint_hue", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=360)),
             vol.Optional("tint_strength", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
-            vol.Optional("entity_id"): _entity_id_or_list,
+            vol.Required("entity_id"): _entity_id_or_list,
         })
     )
     
@@ -5890,7 +5890,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         "force_refresh",
         handle_force_refresh,
         schema=vol.Schema({
-            vol.Optional("entity_id"): _entity_id_or_list,
+            vol.Required("entity_id"): _entity_id_or_list,
         })
     )
 
@@ -5922,7 +5922,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         handle_set_color_accuracy,
         schema=vol.Schema({
             vol.Required("enabled"): vol.Coerce(bool),
-            vol.Optional("entity_id"): _entity_id_or_list,
+            vol.Required("entity_id"): _entity_id_or_list,
         })
     )
 
@@ -6000,7 +6000,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             vol.Optional("dark_at_50"): vol.Coerce(int),
             vol.Optional("dark_at_80"): vol.Coerce(int),
             vol.Optional("low_min_darken"): vol.Coerce(int),
-            vol.Optional("entity_id"): _entity_id_or_list,
+            vol.Required("entity_id"): _entity_id_or_list,
         })
     )
     return True
