@@ -62,7 +62,7 @@ export async function callServiceOnTargetEntities(
       callerTag,
       timestamp: new Date().toISOString(),
     };
-    console.error(
+    console.log(
       `[${callerTag}] Dispatching yeelight_cube.${serviceName}`,
       payload,
     );
