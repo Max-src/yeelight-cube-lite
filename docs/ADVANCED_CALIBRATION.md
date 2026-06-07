@@ -14,7 +14,7 @@ lamp without restarting Home Assistant. Changes are applied immediately but are
 defaults in [`light.py`](../light.py) so they survive a restart.
 
 All current values are also published on the light entity as
-`calib_*` attributes, so a tuning UI can read back the live state.
+`calib_*` attributes, so you can read back the live state.
 
 ---
 
@@ -142,32 +142,20 @@ can look almost identically dim, so small slider moves near the bottom appear to
 do little. Unlike the old dual-range model there is no transition point to
 cross — both curves are continuous — so the levers are smooth: lower
 `darken_floor` (brighter minimum), lower `hw_curve` (lifts the low range), or
-lower `darken_curve` (darkens earlier so the mid feels brighter). The in-card
-calibration **wizard** automates finding these values empirically against your
-unit.
+lower `darken_curve` (darkens earlier so the mid feels brighter).
 
 ---
 
 ## Tuning workflow
 
-1. Load the internal calibration card (development build only — see below) and
-   point it at your lamp entity.
-2. Either drag the raw sliders or run the guided **wizard**. The wizard takes
-   exclusive control of the lamp (so automations can't disturb the test) and
-   walks you through, in order:
-   1. **Channel floors** — find the lowest level each of red/green/blue is still
-      lit and the right color, with a zoom to refine → `floor_r/g/b`.
-   2. **Brightness curve** — set the minimum, then even out a dim→bright ramp
-      with no fade-to-grey → `darken_floor`, `hw_curve`, `darken_curve`.
-   3. **White balance** (green, then blue) → `gain_g`, `gain_b`.
-   4. **Color check** — flood each primary/secondary and nudge what looks wrong;
-      full brightness tunes `gain_*`, dim tunes `gamma_*` (gamma is capped so
-      colors stay saturated).
-   5. **Verify** and **Summary** — confirm, then copy the numbers.
-3. Each change calls `set_color_calibration` and re-renders immediately.
-4. When satisfied, use **Copy Values** (or the wizard summary) and paste the
-   numbers into the corresponding constants/defaults in
-   [`light.py`](../light.py):
+1. Call `set_color_calibration` against your lamp entity to adjust one or more
+   parameters. Changes apply immediately and re-render the current frame, so you
+   can watch the lamp while you dial values in. Only the keys you pass are
+   updated; everything else keeps its current value.
+2. Read the live state back from the light entity's `calib_*` attributes to
+   confirm what is currently applied.
+3. When satisfied, paste the numbers into the corresponding constants/defaults
+   in [`light.py`](../light.py) so they survive a restart:
    - System 1 → `self._calib_gamma_*`, `_calib_hw_*`, `_calib_channel_balance`
    - System 2 → `self._calib_gain_*`
    - System 3 → the `HW_FLOOR_PERCENT`, `DARKEN_FLOOR_PERCENT`,
@@ -175,7 +163,7 @@ unit.
      matching `_calib_*` initializers).
    - Per-channel floors → `self._calib_floor_r/g/b`.
 
-### Calling the service directly
+### Example service call
 
 ```yaml
 action: yeelight_cube.set_color_calibration
@@ -204,12 +192,3 @@ data:
 ```
 
 All fields are optional — only the keys you pass are updated.
-
----
-
-## The internal calibration card
-
-The tuning UI (`yeelight-cube-calibration-card.js`, type
-`yeelight-cube-calibration-card`) is a **development-only** card and is excluded
-from the published repository. It is auto-registered as a Lovelace resource only
-when the JS file is present on disk, so production installs never see it.
