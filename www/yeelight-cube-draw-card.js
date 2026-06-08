@@ -1887,7 +1887,7 @@ class YeelightCubeDrawCard extends LitElement {
   }
 
   _savePalette(colors, name = "Custom Palette") {
-    savePalette(this.hass, this.paletteSensor, colors);
+    savePalette(this.hass, this.paletteSensor, colors, this.entity);
   }
 
   _saveRecentPalette() {

@@ -2334,11 +2334,14 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         const currentColors = this._getCurrentColors();
 
         try {
-          // Save palette globally (no entity_id = uses first light entity as default)
-          // Note: config.entity is the palette sensor, not a light entity
+          const primaryEntity = this._getPrimaryEntity();
+          if (!primaryEntity) {
+            console.error("[ColorList Card] No primary entity available for save_palette");
+            return;
+          }
           await this._hass.callService("yeelight_cube", "save_palette", {
             palette: currentColors,
-            // Don't pass entity_id - let the service use the default light_entity
+            entity_id: primaryEntity,
           });
 
           // Force sensor update to get fresh data immediately

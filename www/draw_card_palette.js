@@ -1,11 +1,15 @@
 // Palette management helpers for Yeelight Cube Lite Draw Card
 import { hexToRgb, rgbToHex } from "./draw_utils.js";
 
-export function savePalette(hass, paletteSensor, colors) {
+export function savePalette(hass, paletteSensor, colors, entityId = null) {
   if (!hass || !paletteSensor) return;
   const rgbColors = colors.map((c) => hexToRgb(c));
+  const serviceData = { palette: rgbColors };
+  if (entityId) {
+    serviceData.entity_id = entityId;
+  }
   hass
-    .callService("yeelight_cube", "save_palette", { palette: rgbColors })
+    .callService("yeelight_cube", "save_palette", serviceData)
     .then(() => {
       hass.callService("homeassistant", "update_entity", {
         entity_id: paletteSensor,
