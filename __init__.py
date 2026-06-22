@@ -105,16 +105,70 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     # every HA startup, regardless of how many entries exist or whether any
     # entry later fails/restarts.  async_setup_entry is too late and too
     # unreliable for this — it is guarded by a sentinel that skips on reload.
+    #
+    # IMPORTANT — caching:
+    # The card files import their dependencies with un-versioned relative URLs
+    # (e.g. `import { x } from "./gallery-mode-utils.js"`).  aiohttp's plain
+    # static serving sends no Cache-Control, so browsers apply *heuristic*
+    # freshness (≈10% of the file's age) and keep serving a stale dependency
+    # for minutes after a deploy.  A freshly-deployed card that imports a NEW
+    # export from a STALE cached dependency fails to evaluate → the custom
+    # element is never defined → Lovelace shows an error card.  This is the
+    # intermittent "works after waiting / hard refresh" symptom.
+    #
+    # Fix: serve every file under /yeelight_cube/ with `Cache-Control: no-cache`
+    # via a small custom handler.  The browser then revalidates on each load
+    # (cheap 304 when unchanged) and always picks up a new deploy immediately —
+    # no version bumping and no need to touch dozens of import statements.
     www_path = os.path.join(os.path.dirname(__file__), "www")
     if os.path.isdir(www_path):
+        registered = False
         try:
-            from homeassistant.components.http import StaticPathConfig  # type: ignore
-            await hass.http.async_register_static_paths(
-                [StaticPathConfig(FRONTEND_URL_BASE, www_path, False)]
+            from aiohttp import web  # type: ignore
+
+            real_root = os.path.realpath(www_path)
+
+            async def _serve_frontend_file(request):
+                """Serve a www/ asset with no-cache revalidation headers."""
+                rel = request.match_info.get("filename", "")
+                real_file = os.path.realpath(os.path.join(real_root, rel))
+                # Path-traversal guard: resolved path must stay inside www/.
+                if (
+                    real_file != real_root
+                    and not real_file.startswith(real_root + os.sep)
+                ) or not os.path.isfile(real_file):
+                    raise web.HTTPNotFound()
+                return web.FileResponse(
+                    real_file,
+                    headers={"Cache-Control": "no-cache, must-revalidate"},
+                )
+
+            hass.http.app.router.add_get(
+                f"{FRONTEND_URL_BASE}/{{filename:.*}}", _serve_frontend_file
             )
-        except (ImportError, AttributeError):
-            hass.http.register_static_path(FRONTEND_URL_BASE, www_path, False)
-        _LOGGER.debug("Yeelight Cube Lite: Registered frontend static path at %s -> %s", FRONTEND_URL_BASE, www_path)
+            registered = True
+            _LOGGER.debug(
+                "Yeelight Cube Lite: Serving frontend assets at %s with no-cache headers",
+                FRONTEND_URL_BASE,
+            )
+        except Exception:
+            # Fall back to plain static serving if the custom route can't be
+            # registered (e.g. unexpected aiohttp/HA internals change).
+            _LOGGER.debug(
+                "Yeelight Cube Lite: custom no-cache route unavailable, "
+                "falling back to static path serving",
+                exc_info=True,
+            )
+
+        if not registered:
+            try:
+                from homeassistant.components.http import StaticPathConfig  # type: ignore
+                await hass.http.async_register_static_paths(
+                    [StaticPathConfig(FRONTEND_URL_BASE, www_path, False)]
+                )
+            except (ImportError, AttributeError):
+                hass.http.register_static_path(FRONTEND_URL_BASE, www_path, False)
+            _LOGGER.debug("Yeelight Cube Lite: Registered frontend static path at %s -> %s", FRONTEND_URL_BASE, www_path)
     else:
         _LOGGER.warning(
             "Yeelight Cube Lite: www directory not found at %s — "

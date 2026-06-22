@@ -5792,12 +5792,17 @@ ${(() => {
 }
 
 if (!customElements.get("yeelight-cube-gradient-card")) {
-  customElements.define("yeelight-cube-gradient-card", YeelightCubeGradientCard);
+  customElements.define(
+    "yeelight-cube-gradient-card",
+    YeelightCubeGradientCard,
+  );
 }
 
 if (typeof window !== "undefined") {
   window.customCards = window.customCards || [];
-  if (!window.customCards.some((c) => c.type === "yeelight-cube-gradient-card")) {
+  if (
+    !window.customCards.some((c) => c.type === "yeelight-cube-gradient-card")
+  ) {
     window.customCards.push({
       type: "yeelight-cube-gradient-card",
       name: "Yeelight Gradient Card",

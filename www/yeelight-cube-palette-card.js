@@ -2115,7 +2115,9 @@ if (!customElements.get("yeelight-cube-palette-card")) {
 
 if (typeof window !== "undefined") {
   window.customCards = window.customCards || [];
-  if (!window.customCards.some((c) => c.type === "yeelight-cube-palette-card")) {
+  if (
+    !window.customCards.some((c) => c.type === "yeelight-cube-palette-card")
+  ) {
     window.customCards.push({
       type: "yeelight-cube-palette-card",
       name: "Yeelight Palettes Card",
