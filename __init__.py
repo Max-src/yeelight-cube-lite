@@ -1,6 +1,7 @@
 import logging
 import os
 import asyncio
+import mimetypes
 import socket as _socket_module
 from homeassistant.core import HomeAssistant, callback as ha_callback # type: ignore
 from homeassistant.config_entries import ConfigEntry # type: ignore
@@ -35,6 +36,18 @@ FRONTEND_URL_BASE = f"/{DOMAIN}"
 
 # Unique prefix to tag resources we manage so we can update/identify them
 _RESOURCE_TAG = "yeelight_cube_auto"
+
+# Ensure ES-module assets are always served with a JavaScript MIME type.
+# Browsers enforce strict MIME checking for module scripts: if a .js/.mjs file
+# is served as text/plain or application/octet-stream the module is REJECTED
+# and its custom element never registers ("Custom element doesn't exist").
+# Some minimal container images lack /etc/mime.types, so the stdlib guesser can
+# return the wrong type -- register the correct ones explicitly here.
+mimetypes.add_type("text/javascript", ".js")
+mimetypes.add_type("text/javascript", ".mjs")
+mimetypes.add_type("text/css", ".css")
+mimetypes.add_type("application/json", ".json")
+mimetypes.add_type("application/json", ".map")
 
 
 async def _async_register_lovelace_resources(
@@ -128,8 +141,23 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
             real_root = os.path.realpath(www_path)
 
+            # Explicit extension -> Content-Type map for the asset types we
+            # serve.  Used to force a correct module MIME even if the stdlib
+            # mimetypes DB is incomplete on the host.
+            _CONTENT_TYPES = {
+                ".js": "text/javascript",
+                ".mjs": "text/javascript",
+                ".css": "text/css",
+                ".json": "application/json",
+                ".map": "application/json",
+                ".svg": "image/svg+xml",
+                ".png": "image/png",
+                ".woff2": "font/woff2",
+            }
+
             async def _serve_frontend_file(request):
-                """Serve a www/ asset with no-cache revalidation headers."""
+                """Serve a www/ asset with no-cache revalidation headers and a
+                guaranteed-correct Content-Type for ES modules."""
                 rel = request.match_info.get("filename", "")
                 real_file = os.path.realpath(os.path.join(real_root, rel))
                 # Path-traversal guard: resolved path must stay inside www/.
@@ -138,10 +166,12 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                     and not real_file.startswith(real_root + os.sep)
                 ) or not os.path.isfile(real_file):
                     raise web.HTTPNotFound()
-                return web.FileResponse(
-                    real_file,
-                    headers={"Cache-Control": "no-cache, must-revalidate"},
-                )
+                ext = os.path.splitext(real_file)[1].lower()
+                headers = {"Cache-Control": "no-cache, must-revalidate"}
+                ctype = _CONTENT_TYPES.get(ext)
+                if ctype:
+                    headers["Content-Type"] = ctype
+                return web.FileResponse(real_file, headers=headers)
 
             hass.http.app.router.add_get(
                 f"{FRONTEND_URL_BASE}/{{filename:.*}}", _serve_frontend_file
