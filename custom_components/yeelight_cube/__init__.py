@@ -126,13 +126,26 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     # freshness (≈10% of the file's age) and keep serving a stale dependency
     # for minutes after a deploy.  A freshly-deployed card that imports a NEW
     # export from a STALE cached dependency fails to evaluate → the custom
-    # element is never defined → Lovelace shows an error card.  This is the
-    # intermittent "works after waiting / hard refresh" symptom.
+    # element is never defined → Lovelace shows an error card.
     #
-    # Fix: serve every file under /yeelight_cube/ with `Cache-Control: no-cache`
-    # via a small custom handler.  The browser then revalidates on each load
-    # (cheap 304 when unchanged) and always picks up a new deploy immediately —
-    # no version bumping and no need to touch dozens of import statements.
+    # A plain `no-cache` header fixes staleness but has a downside: it forces
+    # the browser to make a *blocking network request* for every asset on
+    # every load.  If the Home Assistant backend is briefly unreachable at that
+    # moment (e.g. a reverse proxy / tunnel returning 502 Bad Gateway on a cold
+    # morning load, which also makes HA's own frontend chunks and the websocket
+    # fail), the fetch errors out with no cached fallback, so the cards fail to
+    # load until a manual reload once the backend is warm.
+    #
+    # Fix: use `max-age=0, must-revalidate, stale-while-revalidate`.  The
+    # browser serves the cached copy immediately (no blocking network request,
+    # so a transient backend 502 no longer breaks the cards) and revalidates in
+    # the background, picking up a new deploy on the next load.  `stale-if-error`
+    # is added as a belt-and-suspenders hint for any intermediary proxy/CDN to
+    # serve the last good copy when the origin returns a 5xx.
+    _CACHE_CONTROL = (
+        "max-age=0, must-revalidate, "
+        "stale-while-revalidate=86400, stale-if-error=86400"
+    )
     www_path = os.path.join(os.path.dirname(__file__), "www")
     if os.path.isdir(www_path):
         registered = False
@@ -156,7 +169,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             }
 
             async def _serve_frontend_file(request):
-                """Serve a www/ asset with no-cache revalidation headers and a
+                """Serve a www/ asset with cache-revalidation headers that stay
+                resilient to a transient backend outage, plus a
                 guaranteed-correct Content-Type for ES modules."""
                 rel = request.match_info.get("filename", "")
                 real_file = os.path.realpath(os.path.join(real_root, rel))
@@ -167,7 +181,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 ) or not os.path.isfile(real_file):
                     raise web.HTTPNotFound()
                 ext = os.path.splitext(real_file)[1].lower()
-                headers = {"Cache-Control": "no-cache, must-revalidate"}
+                headers = {"Cache-Control": _CACHE_CONTROL}
                 ctype = _CONTENT_TYPES.get(ext)
                 if ctype:
                     headers["Content-Type"] = ctype
