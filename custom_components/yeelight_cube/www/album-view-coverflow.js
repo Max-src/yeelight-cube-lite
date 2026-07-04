@@ -43,6 +43,19 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
     return typeof v === "number" ? `${v}px` : "16px";
   })();
 
+  // Album card width scales with the card_size slider (a percentage where
+  // 100 = the historical 240px baseline).  Previously the width was hardcoded
+  // to 240px, so the preview-size slider had no effect in album mode.  Callers
+  // pass their size value as `card_size` (the draw card forwards the pixel-art
+  // preview size; the palette card forwards its own card size).  Clamp to a
+  // sane range so the coverflow never collapses or overflows its container.
+  const albumSizePct = Math.max(
+    30,
+    Math.min(200, Number(config.card_size) || 100),
+  );
+  const albumCardWidth = Math.round((240 * albumSizePct) / 100);
+  const albumCardHalf = albumCardWidth / 2;
+
   return `
     .${classPrefix}-album-wrapper {
       position: relative;
@@ -64,7 +77,7 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
     }
     
     .${classPrefix}-album-item {
-      width: 240px;
+      width: ${albumCardWidth}px;
       max-height: 420px;
       cursor: pointer;
       background: var(--card-background-color, white);
@@ -74,7 +87,7 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
       position: absolute;
       left: 50%;
       top: 50%;
-      margin-left: -120px;
+      margin-left: -${albumCardHalf}px;
       transform: translateY(-50%);
       transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
       transform-style: preserve-3d;
