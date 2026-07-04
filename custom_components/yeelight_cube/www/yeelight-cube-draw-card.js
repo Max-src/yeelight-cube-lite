@@ -2791,6 +2791,21 @@ class YeelightCubeDrawCard extends LitElement {
           .list-item-content {
           padding-left: 30px;
         }
+        /* When the title is hidden the preview is the only in-flow content;
+           centre it in the row (it would otherwise be left-aligned) and scale
+           from the centre so it stays centred at any preview size. The title's
+           delete-button padding is dropped too, since there is no title text to
+           protect from the (absolutely positioned) delete button. */
+        .pixelart-list-item .list-item-content:not(:has(.list-item-name)) {
+          justify-content: center;
+          padding-left: 0 !important;
+          padding-right: 0 !important;
+        }
+        .pixelart-list-item
+          .list-item-content:not(:has(.list-item-name))
+          .list-item-preview {
+          transform-origin: center center;
+        }
       </style>
       <div
         class="pixelart-gallery-list"

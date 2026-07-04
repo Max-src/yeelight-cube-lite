@@ -168,6 +168,27 @@ export const galleryModeStyles = `
     overflow: hidden;
   }
 
+  /* ── Collapse the footer when it holds no in-flow content ──
+   * The footer only carries the title and/or an INSIDE (flex-child) delete
+   * button.  When the title is hidden AND the delete button is either "none"
+   * or positioned "outside", the footer is empty and would otherwise reserve
+   * 48px of blank space under the item.  An outside button is position:absolute
+   * (out of flow) so it keeps floating over the corner even when the footer has
+   * zero height — therefore we collapse via min-height/padding/border only,
+   * never display:none (which would also hide an absolutely-positioned button).
+   * This matches the carousel/album modes, which reserve no empty space. */
+  .gallery-item-footer:not(:has(.gallery-item-title)):not(:has(.delete-btn-cross.btn-pos-inside)) {
+    min-height: 0;
+    padding: 0;
+    border-top: none;
+  }
+  /* With the footer collapsed the image is the only visible content, so round
+   * all of its corners (it is otherwise only top-rounded, leaving a flat
+   * bottom). */
+  .gallery-item:has(> .gallery-item-footer:not(:has(.gallery-item-title)):not(:has(.delete-btn-cross.btn-pos-inside))) > .gallery-item-image {
+    border-radius: var(--gi-radius, 12px);
+  }
+
   /* Responsive adjustments */
   @media (max-width: 768px) {
     .gallery-grid {
