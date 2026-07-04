@@ -833,7 +833,26 @@ class YeelightCubePaletteCard extends HTMLElement {
 
         /* Album Mode - Cover Flow Style - Use shared styles */
         ${getAlbumStyles(this.config, "palettes")}
-        
+
+        /* Album card size — driven by the "Display Card Size" slider, aligned
+         * with the pixel-art album feature. getAlbumStyles() (shared module)
+         * already scales the width, but this rule is emitted from the palette
+         * card's own (always-fresh) style block so the slider takes effect
+         * immediately and independently of the shared module's cache state.
+         * Width scales from the 240px baseline (100%), clamped 30–200%;
+         * margin-left is half the width to keep the card centred in the
+         * coverflow. Same formula as the pixel-art album. */
+        .palettes-album-item {
+          width: ${Math.round(
+            (240 * Math.max(30, Math.min(200, this.config.card_size || 50))) /
+              100,
+          )}px !important;
+          margin-left: -${Math.round(
+            (120 * Math.max(30, Math.min(200, this.config.card_size || 50))) /
+              100,
+          )}px !important;
+        }
+
         /* Additional palette-specific album styles */
         .palettes-album-item .album-gradient {
           height: 55%;
