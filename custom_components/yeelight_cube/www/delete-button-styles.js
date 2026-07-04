@@ -189,13 +189,13 @@ export const deleteButtonStyles = `
   }
 
   /* Shared cross arms.
-   * Centering uses `inset:0; margin:auto` (not top/left:50% + translate).
+   * Centering uses inset:0 + margin:auto (not top/left:50% + translate).
    * This centres the arm exactly within the button's padding box in BOTH axes
-   * regardless of the button's size, border or padding, and — crucially — with
+   * regardless of the button's size, border or padding, and -- crucially -- with
    * no percentage-translate, so there is never a sub-pixel offset that makes the
-   * × look shifted (the old translate(-50%,-50%) produced a -0.75px shift on the
-   * 1.5px black-style arm, which anti-aliased off-centre). Only rotation is left
-   * on the pseudo-element, applied about its own centre. */
+   * cross look shifted (the old translate(-50%,-50%) produced a -0.75px shift on
+   * the 1.5px black-style arm, which anti-aliased off-centre). Only rotation is
+   * left on the pseudo-element, applied about its own centre. */
   .delete-btn-cross::before,
   .delete-btn-cross::after {
     content: '' !important;
