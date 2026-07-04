@@ -188,20 +188,27 @@ export const deleteButtonStyles = `
     box-sizing: border-box;
   }
 
-  /* Shared cross arms */
+  /* Shared cross arms.
+   * Centering uses `inset:0; margin:auto` (not top/left:50% + translate).
+   * This centres the arm exactly within the button's padding box in BOTH axes
+   * regardless of the button's size, border or padding, and — crucially — with
+   * no percentage-translate, so there is never a sub-pixel offset that makes the
+   * × look shifted (the old translate(-50%,-50%) produced a -0.75px shift on the
+   * 1.5px black-style arm, which anti-aliased off-centre). Only rotation is left
+   * on the pseudo-element, applied about its own centre. */
   .delete-btn-cross::before,
   .delete-btn-cross::after {
     content: '' !important;
     position: absolute !important;
+    inset: 0 !important;
+    margin: auto !important;
     width: 14px !important;
     height: 2px !important;
     border-radius: 1px !important;
-    top: 50% !important;
-    left: 50% !important;
     pointer-events: none;
   }
-  .delete-btn-cross::before { transform: translate(-50%, -50%) rotate(45deg) !important; }
-  .delete-btn-cross::after  { transform: translate(-50%, -50%) rotate(-45deg) !important; }
+  .delete-btn-cross::before { transform: rotate(45deg) !important; }
+  .delete-btn-cross::after  { transform: rotate(-45deg) !important; }
 
   /* ── Default — soft tint, red cross ── */
   .delete-btn-cross:not(.red-style):not(.black-style):not(.dot-style):not(.glass-style) {
@@ -242,8 +249,6 @@ export const deleteButtonStyles = `
   .delete-btn-cross.black-style::after {
     background: rgba(255, 255, 255, 0.9) !important;
     box-shadow: none !important;
-    width: 14px !important;
-    height: 1.5px !important;
   }
   .delete-btn-cross.black-style:hover {
     background: linear-gradient(135deg, #3a3a3a 0%, #252525 50%, #101010 100%) !important;
