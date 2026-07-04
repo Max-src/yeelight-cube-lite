@@ -4457,6 +4457,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     hex_color = rgb_to_hex(tuple(color))
                     module.set_colors([hex_color])
             await target_entity.async_apply_display_mode(update_type='pixel_art')
+            # Push the updated state so consumers watching the `text_colors`
+            # attribute (e.g. the gradient card's live preview) refresh
+            # immediately.  Without this the new colours are only exposed on the
+            # next unrelated state write (e.g. an angle change), which is why the
+            # preview appeared stale until the user moved the angle wheel.
+            if target_entity.hass is not None:
+                target_entity.async_schedule_update_ha_state()
             _LOGGER.debug(f"[palette-backend] Applied palette idx {idx} to {target_entity._ip}")
 
         _fire_and_forget(*[_apply_one(t) for t in targets])

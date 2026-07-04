@@ -2163,13 +2163,15 @@ export const drawCardStyles = css`
     gap: 8px;
   }
 
+  /* Carousel delete button — visual chrome only.
+   * Size, flex-centering and the × cross are owned by the shared
+   * .delete-btn-cross base (delete-button-styles.js) so this button stays
+   * pixel-identical to the palette card's carousel delete button in every
+   * position (inside/outside).  Overriding width/height/font-size here caused
+   * the cross to render off-centre when switched to "inside", so those are
+   * intentionally NOT set. */
   .pixelart-delete-title-row {
     background: var(--card-background-color, rgba(255, 255, 255, 0.9));
-    border-radius: 50%;
-    width: 24px;
-    height: 24px;
-    padding: 0;
-    font-size: 1em;
     flex-shrink: 0;
   }
 
