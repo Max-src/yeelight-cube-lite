@@ -61,7 +61,7 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         device_id = discovery_data.get("device_id", "")
         device_name = discovery_data.get("name", model or "Yeelight Cube Lite")
 
-        _LOGGER.warning(
+        _LOGGER.debug(
             "[DISCOVERY] CubeLite discovered via SSDP: ip=%s model=%s id=%s",
             ip, model, device_id,
         )
@@ -93,8 +93,7 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_zeroconf(self, discovery_info: ZeroconfServiceInfo):
         """Handle zeroconf discovery of Yeelight devices."""
-        # Log everything at WARNING level so it's always visible in HA logs
-        _LOGGER.warning(
+        _LOGGER.debug(
             "[ZEROCONF] Discovery received: name=%s host=%s properties=%s",
             discovery_info.name, discovery_info.host, discovery_info.properties,
         )
@@ -125,7 +124,7 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 model = parsed.get("model", "")
             if not device_id:
                 device_id = parsed.get("devid", "")
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "[ZEROCONF] Parsed service name: %s", parsed,
             )
 
@@ -135,14 +134,14 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Build a combined name for matching: prefer fn, then model, then service name
         match_name = device_name or model or name_lower
 
-        _LOGGER.warning(
+        _LOGGER.debug(
             "[ZEROCONF] Extracted: model=%s device_name=%s device_id=%s match_name=%s",
             model, device_name, device_id, match_name,
         )
 
         # Filter: only handle CubeLite devices, abort for all other Yeelight devices
         if not is_cube_device(model, match_name, device_id):
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "[ZEROCONF] NOT a cube device, aborting: model=%s match_name=%s id=%s",
                 model, match_name, device_id,
             )
@@ -152,14 +151,14 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._discovered_name = device_name or model or "Yeelight Cube Lite"
         self._discovered_device_id = device_id
 
-        _LOGGER.warning(
+        _LOGGER.debug(
             "[ZEROCONF] Cube device confirmed: name=%s ip=%s device_id=%s",
             self._discovered_name, self._discovered_ip, device_id,
         )
 
         # Log existing entries for debugging
         for entry in self._async_current_entries():
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "[ZEROCONF]   Existing entry: unique_id=%s ip=%s device_id=%s state=%s",
                 entry.unique_id, entry.data.get(CONF_IP),
                 entry.data.get(CONF_DEVICE_ID), entry.state,

@@ -144,7 +144,7 @@ class _YeelightCubeMatrixCameraBase(Camera):
         _t1 = _time.time()
         self.async_update_token()
         self.async_write_ha_state()
-        _LOGGER.warning(
+        _LOGGER.debug(
             f"[TIMING] camera{self._SUFFIX} async_refresh_preview: "
             f"render={(_t1 - _t0)*1000:.1f}ms "
             f"total={(_time.time() - _t0)*1000:.1f}ms"

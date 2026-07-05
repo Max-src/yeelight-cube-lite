@@ -496,7 +496,7 @@ class CubeMatrix:
                         if not data:
                             # EOF — peer closed the connection
                             if all_data:
-                                _LOGGER.warning(
+                                _LOGGER.debug(
                                     f"[FAST] Drained {len(all_data)} bytes then got EOF "
                                     f"(peer closed): {all_data[:200]}"
                                 )
@@ -566,7 +566,7 @@ class CubeMatrix:
                     if self._fx_activated_on_socket:
                         # Socket is in FX data mode — must close and reopen
                         age = time.time() - self._fast_socket_time
-                        _LOGGER.warning(
+                        _LOGGER.debug(
                             f"[FAST #{cmd_id}] Closing FX-active socket before activate_fx_mode "
                             f"(socket already in FX data mode, socket_age={age:.0f}s, "
                             f"total_cmds={self._total_commands_sent})"
@@ -579,7 +579,7 @@ class CubeMatrix:
                     else:
                         # Socket exists but NOT in FX data mode — try to reuse
                         # it directly for FX activation (avoids costly close→reconnect).
-                        _LOGGER.warning(
+                        _LOGGER.debug(
                             f"[FAST #{cmd_id}] Reusing existing socket for activate_fx_mode "
                             f"(fx_on_sock=False, socket_age="
                             f"{time.time() - self._fast_socket_time:.1f}s)"
@@ -596,7 +596,7 @@ class CubeMatrix:
                         # this, the immediate reconnect hits a Cube that's still
                         # processing the old connection's close and times out.
                         connect_timeout = RECOVERY_CONNECT_TIMEOUT if (self._device_unreachable or self._consecutive_failures > 0) else CONNECT_TIMEOUT
-                        _LOGGER.warning(
+                        _LOGGER.debug(
                             f"[FAST #{cmd_id}] Existing socket broken ({type(sock_err).__name__}: {sock_err}) "
                             f"— waiting 100ms then reconnecting "
                             f"(connect_timeout={connect_timeout}s, total_cmds={self._total_commands_sent})"
@@ -622,7 +622,7 @@ class CubeMatrix:
                 else:
                     # No socket yet — open a fresh one and keep it
                     connect_timeout = RECOVERY_CONNECT_TIMEOUT if (self._device_unreachable or self._consecutive_failures > 0) else CONNECT_TIMEOUT
-                    _LOGGER.warning(
+                    _LOGGER.debug(
                         f"[FAST #{cmd_id}] Opening new socket for {command} "
                         f"(connect_timeout={connect_timeout}s, failures={self._consecutive_failures}, "
                         f"total_cmds={self._total_commands_sent})"
