@@ -505,6 +505,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if entry.entry_id not in hass.data[DOMAIN]:
         hass.data[DOMAIN][entry.entry_id] = {}
     
+    # Remember which IP this setup is connected to.  _async_entry_updated uses
+    # this to reload ONLY on a genuine IP change — options toggles (auto_turn_on,
+    # flip_orientation) and device_id acquisition also fire the update listener
+    # but must NOT tear down the whole entry.
+    hass.data[DOMAIN][entry.entry_id]["active_ip"] = ip_address
+    
     # Quick TCP probe to verify the device is reachable before proceeding.
     # ConfigEntryNotReady MUST be raised here (component-level setup) for
     # HA's automatic retry with exponential back-off to work.
@@ -612,9 +618,9 @@ async def _async_ssdp_discover_cubelite(hass: HomeAssistant) -> None:
     try:
         from yeelight import discover_bulbs  # type: ignore
 
-        _LOGGER.warning("[SSDP-SCAN] Scanning for CubeLite devices...")
+        _LOGGER.debug("[SSDP-SCAN] Scanning for CubeLite devices...")
         bulbs = await hass.async_add_executor_job(discover_bulbs, 5)
-        _LOGGER.warning("[SSDP-SCAN] Found %d Yeelight devices total", len(bulbs))
+        _LOGGER.debug("[SSDP-SCAN] Found %d Yeelight devices total", len(bulbs))
 
         for bulb in bulbs:
             capabilities = bulb.get("capabilities", {})
@@ -623,7 +629,7 @@ async def _async_ssdp_discover_cubelite(hass: HomeAssistant) -> None:
             device_id = str(capabilities.get("id", ""))
             device_name = capabilities.get("name", "") or model
 
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "[SSDP-SCAN]   Device: ip=%s model=%s id=%s name=%s",
                 bulb_ip, model, device_id, device_name,
             )
@@ -631,7 +637,7 @@ async def _async_ssdp_discover_cubelite(hass: HomeAssistant) -> None:
             if not _is_cubelite_model(model):
                 continue  # Not a CubeLite
 
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "[SSDP-SCAN] Found CubeLite: ip=%s model=%s id=%s — creating discovery flow",
                 bulb_ip, model, device_id,
             )
@@ -681,9 +687,9 @@ async def _async_try_rediscover(
     try:
         from yeelight import discover_bulbs  # type: ignore
 
-        _LOGGER.warning("[REDISCOVER] Scanning for CubeLite devices via SSDP...")
+        _LOGGER.info("[REDISCOVER] Scanning for CubeLite devices via SSDP...")
         bulbs = await hass.async_add_executor_job(discover_bulbs, 5)
-        _LOGGER.warning("[REDISCOVER] Found %d Yeelight devices on the network", len(bulbs))
+        _LOGGER.debug("[REDISCOVER] Found %d Yeelight devices on the network", len(bulbs))
 
         stored_device_id = entry.data.get(CONF_DEVICE_ID, "")
 
@@ -702,7 +708,7 @@ async def _async_try_rediscover(
             bulb_ip = bulb.get("ip", "")
             device_id = str(capabilities.get("id", ""))
 
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "[REDISCOVER]   Device: ip=%s model=%s id=%s is_cubelite=%s",
                 bulb_ip, model, device_id, _is_cubelite_model(model),
             )
@@ -713,7 +719,7 @@ async def _async_try_rediscover(
             cubelites.append((bulb_ip, device_id, model))
 
             if stored_device_id and device_id and device_id == stored_device_id:
-                _LOGGER.warning(
+                _LOGGER.info(
                     "[REDISCOVER] Matched by device_id '%s': %s -> %s. "
                     "Updating entry %s",
                     device_id, old_ip, bulb_ip, entry.entry_id,
@@ -730,7 +736,7 @@ async def _async_try_rediscover(
             if bulb_ip in configured_ips:
                 continue  # Already assigned to another entry
 
-            _LOGGER.warning(
+            _LOGGER.info(
                 "[REDISCOVER] CubeLite found at %s (was %s, no device_id match). "
                 "Updating entry %s (device_id=%s, model=%s)",
                 bulb_ip, old_ip, entry.entry_id, device_id, model,
@@ -744,7 +750,7 @@ async def _async_try_rediscover(
             )
             return bulb_ip
 
-        _LOGGER.warning("[REDISCOVER] No unmapped CubeLite devices found on the network")
+        _LOGGER.info("[REDISCOVER] No unmapped CubeLite devices found on the network")
         return None
 
     except Exception as exc:
@@ -753,16 +759,25 @@ async def _async_try_rediscover(
 
 
 async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle config entry updates (e.g. IP changed via zeroconf rediscovery).
+    """Handle config entry updates.
     
-    When a device gets a new IP via DHCP, zeroconf rediscovery calls
-    _abort_if_unique_id_configured(updates={CONF_IP: new_ip}) which updates
-    entry.data. HA then calls this listener, and we reload the entry so the
-    CubeMatrix reconnects to the new IP.
+    Reload ONLY when the stored IP differs from the IP this entry is currently
+    connected to (e.g. DHCP change picked up by zeroconf/SSDP rediscovery).
+    Other updates — options toggles (auto_turn_on, flip_orientation), device_id
+    acquisition during setup — also fire this listener but must not trigger a
+    disruptive full reload of all platforms.
     """
+    new_ip = entry.data.get(CONF_IP)
+    active_ip = hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get("active_ip")
+    if active_ip is not None and new_ip == active_ip:
+        _LOGGER.debug(
+            "Config entry updated for %s — IP unchanged (%s), no reload needed",
+            entry.title, new_ip,
+        )
+        return
     _LOGGER.info(
-        "Config entry updated for %s — reloading (new IP: %s)",
-        entry.title, entry.data.get(CONF_IP),
+        "Config entry updated for %s — reloading (IP changed: %s → %s)",
+        entry.title, active_ip, new_ip,
     )
     await hass.config_entries.async_reload(entry.entry_id)
 
