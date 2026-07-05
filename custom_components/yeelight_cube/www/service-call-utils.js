@@ -55,15 +55,17 @@ export async function callServiceOnTargetEntities(
   };
 
   try {
-    console.log(
-      `[${callerTag}] Dispatching yeelight_cube.${serviceName}`,
-      payload,
-    );
     await hass.callService("yeelight_cube", serviceName, payload);
   } catch (error) {
     console.error(
       `[${callerTag}] Error calling ${serviceName} for ${JSON.stringify(entityIdValue)}:`,
       error,
     );
+    // Re-throw so callers' try/catch blocks actually see failures.
+    // Previously errors were swallowed here, which made every caller's
+    // error handling dead code: optimistic UI state never rolled back and
+    // failures were invisible to the user.  Fire-and-forget callers that
+    // don't await are unaffected (rejection is logged above either way).
+    throw error;
   }
 }
