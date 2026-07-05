@@ -182,11 +182,10 @@ class YeelightCubeDrawCard extends LitElement {
     return StorageUtils;
   }
 
-  connectedCallback() {
-    super.connectedCallback();
-    document.addEventListener("mousedown", this._handleTabsOutsideClick);
-    document.addEventListener("mousedown", this._handleFloatingOutsideClick);
-  }
+  // NOTE: connectedCallback is defined ONCE, further down in this class.
+  // A second definition here previously shadowed it silently (JS keeps only
+  // the last class member with a given name), so the document mousedown
+  // listeners for tabs/floating palette modes were never attached.
 
   _handleTabsOutsideClick = (e) => {
     if (this.config?.palette_card_mode !== "tabs") return;
@@ -1099,6 +1098,11 @@ class YeelightCubeDrawCard extends LitElement {
       EVT_ACTION_VISIBILITY_RESET,
       this._onActionVisibilityReset,
     );
+
+    // Outside-click handlers for tabs/floating palette modes (merged from a
+    // former duplicate connectedCallback definition that never ran).
+    document.addEventListener("mousedown", this._handleTabsOutsideClick);
+    document.addEventListener("mousedown", this._handleFloatingOutsideClick);
   }
 
   set hass(hass) {
@@ -1138,6 +1142,19 @@ class YeelightCubeDrawCard extends LitElement {
     const currentPixelArts = currentStateObj?.attributes?.pixel_arts || [];
 
     // If we have pending operations, check if incoming data would overwrite our optimistic state
+    // PENDING-CACHE EXPIRY: the optimistic reorder state only exists to bridge
+    // the gap until the backend echoes our update_pixel_arts call back.  If it
+    // is older than the expected echo window, drop it and accept backend state
+    // — otherwise one mismatched echo (e.g. an external rename/add during the
+    // reorder) would make this card reject ALL hass updates forever.
+    if (
+      this._pendingReorderedPixelArts &&
+      this._pendingReorderTs &&
+      Date.now() - this._pendingReorderTs > 5000
+    ) {
+      this._pendingReorderedPixelArts = null;
+      this._pendingReorderTs = null;
+    }
     if (this._pendingReorderedPixelArts) {
       const pendingCount = this._pendingReorderedPixelArts.length;
 
@@ -1149,6 +1166,7 @@ class YeelightCubeDrawCard extends LitElement {
 
         if (namesMatch) {
           this._pendingReorderedPixelArts = null;
+          this._pendingReorderTs = null;
           this._hass = hass; // Accept the websocket update
         } else {
           return; // Reject the stale websocket update
@@ -1159,6 +1177,7 @@ class YeelightCubeDrawCard extends LitElement {
       } else {
         // Incoming has FEWER items - might be a newer delete
         this._pendingReorderedPixelArts = null;
+        this._pendingReorderTs = null;
         this._hass = hass;
       }
     } else {
@@ -3361,8 +3380,9 @@ class YeelightCubeDrawCard extends LitElement {
           this._isDragging = true;
 
           // Store the reordered array locally so delete operations use the correct indices
-          // until the websocket confirms the reorder
+          // until the websocket confirms the reorder (expires after 5s — see set hass)
           this._pendingReorderedPixelArts = reorderedPixelArts;
+          this._pendingReorderTs = Date.now();
 
           this._saveReorderedPixelArts(reorderedPixelArts);
         } else {
@@ -3404,6 +3424,7 @@ class YeelightCubeDrawCard extends LitElement {
         console.error("[PixelArt] Failed to save reordered pixel arts:", error);
         this._isDragging = false;
         this._pendingReorderedPixelArts = null; // Clear on error
+        this._pendingReorderTs = null;
       });
   }
 
@@ -3841,6 +3862,7 @@ class YeelightCubeDrawCard extends LitElement {
     // Update pending reordered array if we're using it
     if (usingPendingReorder) {
       this._pendingReorderedPixelArts = updatedPixelArts;
+      this._pendingReorderTs = Date.now(); // refresh echo window
     }
 
     // Create a modified hass object with updated pixel arts
