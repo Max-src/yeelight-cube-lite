@@ -198,8 +198,10 @@ class YeelightCubePaletteSelect(SelectEntity):
         """Run when entity is added to hass."""
         await super().async_added_to_hass()
         
-        # Listen for palette update events
-        self.hass.bus.async_listen(f"{DOMAIN}_palettes_updated", self._handle_palette_update)
+        # Listen for palette update events (unsubscribed automatically on removal)
+        self.async_on_remove(
+            self.hass.bus.async_listen(f"{DOMAIN}_palettes_updated", self._handle_palette_update)
+        )
         _LOGGER.debug(f"[PALETTE SELECT] Registered for palette update events")
     
     async def _handle_palette_update(self, event):
@@ -372,8 +374,10 @@ class YeelightCubePixelArtSelect(SelectEntity):
         # Register ourselves with the light entity so it can notify us
         self._light_entity._pixel_art_select_entity = self
 
-        # Listen for pixel art update events
-        self.hass.bus.async_listen(f"{DOMAIN}_pixel_arts_updated", self._handle_pixel_arts_update)
+        # Listen for pixel art update events (unsubscribed automatically on removal)
+        self.async_on_remove(
+            self.hass.bus.async_listen(f"{DOMAIN}_pixel_arts_updated", self._handle_pixel_arts_update)
+        )
         _LOGGER.debug(f"[PIXEL ART SELECT] Registered for pixel art update events, linked to {self._ip}")
 
         # Sync initial state from light entity

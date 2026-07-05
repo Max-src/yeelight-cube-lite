@@ -17,6 +17,10 @@ class YeelightCubeBaseSensor(Entity):
 class PaletteSensor(YeelightCubeBaseSensor):
     """Sensor exposing the current palettes_v2 list for the Yeelight Cube Lite."""
     
+    # Keep the (potentially large) palette list out of the recorder database.
+    # Cards read it live from the state machine; history is useless for it.
+    _unrecorded_attributes = frozenset({"palettes_v2"})
+    
     def __init__(self, hass):
         super().__init__(hass)
         self._attr_unique_id = "yeelight_cube_color_palettes"
@@ -26,8 +30,10 @@ class PaletteSensor(YeelightCubeBaseSensor):
     async def async_added_to_hass(self):
         """Register event listener when added to hass."""
         await super().async_added_to_hass()
-        # Listen for palette update events
-        self.hass.bus.async_listen(f"{DOMAIN}_palettes_updated", self._handle_update)
+        # Listen for palette update events (unsubscribed automatically on removal)
+        self.async_on_remove(
+            self.hass.bus.async_listen(f"{DOMAIN}_palettes_updated", self._handle_update)
+        )
     
     async def _handle_update(self, event):
         """Force state update when palettes change."""
@@ -71,11 +77,10 @@ class PaletteSensor(YeelightCubeBaseSensor):
             palettes = []
         
         # Calculate MD5 hash for cards to detect changes
-        # Include timestamp to ensure hash changes even if palette content is identical
-        import json, hashlib, logging, time
+        import json, hashlib, logging
         _LOGGER = logging.getLogger(__name__)
         
-        # Create hash from palette content + count (timestamp in separate field)
+        # Create hash from palette content + count
         hash_data = {
             "palettes": palettes,
             "count": len(palettes)
@@ -89,11 +94,13 @@ class PaletteSensor(YeelightCubeBaseSensor):
             "palettes_v2": palettes,
             "content_hash": content_hash,
             "count": len(palettes),
-            "last_updated": time.time()  # Force attribute change
         }
 
 class LetterMapSensor(YeelightCubeBaseSensor):
     """Sensor exposing the static letter map for the Yeelight Cube Lite."""
+    
+    # Static font data is large and never changes — keep it out of the recorder.
+    _unrecorded_attributes = frozenset({"font_maps"})
     
     def __init__(self, hass):
         super().__init__(hass)
@@ -113,12 +120,16 @@ class LetterMapSensor(YeelightCubeBaseSensor):
 class PixelArtSensor(YeelightCubeBaseSensor):
     """Sensor exposing the current pixel art list for the Yeelight Cube Lite."""
     
+    # Keep the pixel art data (>16KB) out of the recorder database.
+    # This is the supported mechanism (HA 2023.6+); previously a
+    # capability_attributes override was used, which had no such effect.
+    _unrecorded_attributes = frozenset({"pixel_arts"})
+    
     def __init__(self, hass):
         super().__init__(hass)
         self._attr_unique_id = "yeelight_cube_saved_pixel_arts"
         self._attr_name = "Saved Drawings"
         self._attr_icon = "mdi:image-multiple"
-        # Exclude from recorder - data is too large (>16KB) for database
         self._attr_force_update = False
         
     @property
@@ -130,19 +141,14 @@ class PixelArtSensor(YeelightCubeBaseSensor):
     def entity_registry_enabled_default(self):
         """Keep entity enabled by default."""
         return True
-    
-    @property
-    def capability_attributes(self):
-        """Return capability attributes - used to prevent recorder storage."""
-        # By returning None, we signal this entity shouldn't be stored in recorder
-        # The data is too large (>16KB) and would cause database issues
-        return None
         
     async def async_added_to_hass(self):
         """Register event listener when added to hass."""
         await super().async_added_to_hass()
-        # Listen for pixel arts update events
-        self.hass.bus.async_listen(f"{DOMAIN}_pixel_arts_updated", self._handle_update)
+        # Listen for pixel arts update events (unsubscribed automatically on removal)
+        self.async_on_remove(
+            self.hass.bus.async_listen(f"{DOMAIN}_pixel_arts_updated", self._handle_update)
+        )
     
     async def _handle_update(self, event):
         """Force state update when pixel arts change."""
@@ -178,7 +184,7 @@ class PixelArtSensor(YeelightCubeBaseSensor):
             pixel_arts = []
         
         # Calculate MD5 hash for cards to detect changes
-        import json, hashlib, time
+        import json, hashlib
         hash_data = {
             "pixel_arts": pixel_arts,
             "count": len(pixel_arts)
@@ -191,7 +197,6 @@ class PixelArtSensor(YeelightCubeBaseSensor):
             "pixel_arts": list(pixel_arts),
             "content_hash": content_hash,
             "count": len(pixel_arts),
-            "last_updated": time.time()
         }
 
 class YeelightCubeIPSensor(Entity):
