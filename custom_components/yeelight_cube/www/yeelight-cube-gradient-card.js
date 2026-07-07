@@ -980,9 +980,13 @@ class YeelightCubeGradientCard extends HTMLElement {
         : FILL_PANEL_CHAR_TO_COLS[currentCustomText] || 0;
     const colorMode = currentMode;
 
-    // Get panel toggle style + shape from config
+    // Get panel toggle style + shape + alignment from config
     const panelToggleStyle = this.config.panel_toggle_style || "minimal";
     const panelToggleShape = this.config.panel_toggle_shape || "round";
+    const labelAlign = this.config.active_mode_label_align || "left";
+    const panelToggleAlign = this.config.panel_toggle_align || "left";
+    const _alignToJustify = (a) =>
+      a === "center" ? "center" : a === "right" ? "flex-end" : "flex-start";
 
     // Check if rotary should be in header
     const rotaryInHeader = this.config.rotary_in_header === true;
@@ -1011,9 +1015,11 @@ class YeelightCubeGradientCard extends HTMLElement {
           <div class="control-section">
             ${
               this.config.show_active_mode_label === true
-                ? `<div class="gc-active-mode-label" id="gc-active-mode-label" title="Currently active mode">
-                     <span class="gc-aml-dot"></span>
-                     <span class="gc-aml-text">${colorMode}</span>
+                ? `<div style="display:flex;justify-content:${_alignToJustify(labelAlign)};width:100%;margin:4px 0 8px;">
+                     <div class="gc-active-mode-label" id="gc-active-mode-label" title="Currently active mode" style="margin:0;">
+                       <span class="gc-aml-dot"></span>
+                       <span class="gc-aml-text">${colorMode}</span>
+                     </div>
                    </div>`
                 : ""
             }
@@ -1033,7 +1039,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         </div>
         <div id="preview-anchor" style="display:none;"></div>
         ${showPanelToggle ? `
-        <div class="panel-section-wrapper" style="margin-bottom: 16px;">
+        <div class="panel-section-wrapper" style="margin-bottom: 16px;${panelToggleStyle !== "card" && panelToggleStyle !== "tabs" ? `display:flex;justify-content:${_alignToJustify(panelToggleAlign)};` : ""}">
           ${this._renderPanelToggle(applyToWholePanel, panelToggleStyle, panelToggleShape)}
           <div class="panel-toggle default" style="margin-top: 4px; display: none; align-items: center; gap: 8px;">
             <label for="fill-panel-cols" style="white-space: nowrap;">Fill Panel Test:</label>
@@ -2190,7 +2196,6 @@ class YeelightCubeGradientCard extends HTMLElement {
           display: inline-flex;
           align-items: center;
           gap: 6px;
-          margin: 4px 0 8px;
           padding: 3px 10px;
           border-radius: 999px;
           background: color-mix(

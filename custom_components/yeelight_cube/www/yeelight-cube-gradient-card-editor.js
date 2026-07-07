@@ -451,6 +451,31 @@ class YeelightCubeGradientCardEditor extends LitElement {
                 <span class="toggle-slider"></span>
               </label>
             </div>
+            ${cfg.show_active_mode_label === true
+              ? html`
+                  <div class="form-row">
+                    <label>Alignment</label>
+                    ${createButtonGroup(
+                      [
+                        { value: "left", label: "Left" },
+                        { value: "center", label: "Center" },
+                        { value: "right", label: "Right" },
+                      ],
+                      cfg.active_mode_label_align || "left",
+                      createButtonGroupChangeHandler(
+                        "active_mode_label_align",
+                        (value) => {
+                          this._config = {
+                            ...this._config,
+                            active_mode_label_align: value,
+                          };
+                          this._fireConfigChanged();
+                        },
+                      ),
+                    )}
+                  </div>
+                `
+              : ""}
           </div>
         </div>
 
@@ -932,6 +957,35 @@ class YeelightCubeGradientCardEditor extends LitElement {
                         },
                       ),
                     )}
+                  </div>
+                  ${
+                    (cfg.panel_toggle_style || "minimal") !== "card" &&
+                    (cfg.panel_toggle_style || "minimal") !== "tabs"
+                      ? html`
+                          <div class="form-row">
+                            <label>Alignment</label>
+                            ${createButtonGroup(
+                              [
+                                { value: "left", label: "Left" },
+                                { value: "center", label: "Center" },
+                                { value: "right", label: "Right" },
+                              ],
+                              cfg.panel_toggle_align || "left",
+                              createButtonGroupChangeHandler(
+                                "panel_toggle_align",
+                                (value) => {
+                                  this._config = {
+                                    ...this._config,
+                                    panel_toggle_align: value,
+                                  };
+                                  this._fireConfigChanged();
+                                },
+                              ),
+                            )}
+                          </div>
+                        `
+                      : ""
+                  }
                   </div>
                 `
               : ""}
