@@ -1951,29 +1951,8 @@ export const drawCardStyles = css`
     margin: 0 0 10px;
   }
 
-  .carousel-indicators {
-    display: flex;
-    gap: 8px;
-    min-height: 12px; /* Ensure enough space for scaled dots */
-  }
-
-  .carousel-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--disabled-text-color, #bdbdbd);
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-
-  .carousel-dot.active {
-    background: var(--primary-color, #03a9f4);
-    transform: scale(1.5);
-  }
-
-  .carousel-dot:hover {
-    background: var(--primary-color-dark, #0288d1);
-  }
+  /* Carousel dot styles: shared carouselStyles (imported above) is the
+     source of truth. No local overrides needed here. */
 
   /* Pixel Art Item Base Styles */
   .pixelart-item {

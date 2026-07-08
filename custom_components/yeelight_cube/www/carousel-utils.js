@@ -375,6 +375,7 @@ export const carouselStyles = `
     /* padding-top: 30px; */
     position: relative;
     overflow: visible;
+    cursor: pointer;
   }
 
   /* Delete button positioning for card mode */

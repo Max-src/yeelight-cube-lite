@@ -2216,6 +2216,13 @@ class YeelightCubeGradientCard extends HTMLElement {
           background: var(--primary-color, #0969da);
         }
 
+        /* Gradient carousel: transparent wrapper — item handles its own background */
+        .gc-preview-shell .carousel-content-card {
+          background: transparent !important;
+          box-shadow: none !important;
+          padding: 0 !important;
+        }
+
         /* Shared carousel component styles (carousel-utils) */
         ${carouselStyles}
 
@@ -3801,6 +3808,7 @@ class YeelightCubeGradientCard extends HTMLElement {
 
       return {
         title: mode.replace(" Gradient", ""),
+        name: mode, // used by renderCarouselString for dot tooltips
         colorData: flippedColors,
         dataMode: mode, // For click handler
         metadata: null,
@@ -3841,9 +3849,8 @@ class YeelightCubeGradientCard extends HTMLElement {
         : galleryPreviewSize;
 
     // ── Carousel display mode ─────────────────────────────────────────
-    // Self-contained string renderer: no Lit / ha-icon dependencies,
-    // delegated click via data-action attributes handled in
-    // _attachPreviewEventListeners.
+    // Uses the shared renderCarouselString() so buttons and dots are
+    // visually identical to every other carousel in the component suite.
     if (displayMode === "carousel") {
       if (this._carouselIndex == null) {
         const activeIdx = items.findIndex(
@@ -3860,72 +3867,44 @@ class YeelightCubeGradientCard extends HTMLElement {
       const item = items[ci];
       if (!item) return ``;
 
-      const btnStyle = (disabled) =>
-        `display:inline-flex;align-items:center;justify-content:center;
-         width:36px;height:36px;flex:0 0 36px;
-         border:1px solid var(--divider-color,#d0d7de);
-         border-radius:${selectorShape === "round" ? "50%" : selectorShape === "square" ? "0" : "8px"};
-         background:var(--secondary-background-color,#f6f8fa);
-         color:var(--primary-text-color,#333);
-         cursor:${disabled ? "default" : "pointer"};
-         opacity:${disabled ? 0.35 : 1};
-         font-size:18px;line-height:1;user-select:none;
-         transition:background 0.15s,box-shadow 0.15s;`;
-
-      const dotHtml = items
-        .map(
-          (_, idx) =>
-            `<span data-action="set-index" data-index="${idx}"
-               style="display:inline-block;width:${idx === ci ? 12 : 7}px;
-                      height:${idx === ci ? 7 : 7}px;
-                      border-radius:999px;
-                      background:${idx === ci ? "var(--primary-color,#03a9f4)" : "var(--divider-color,#ccc)"};
-                      cursor:pointer;
-                      transition:all 0.2s ease;"></span>`,
-        )
-        .join("");
-
-      const previewHtml = `
-        <div class="gallery-item gc-carousel-item" data-mode="${item.dataMode}"
-             data-action="select-mode"
-             style="cursor:pointer;display:flex;flex-direction:column;align-items:center;
-                    gap:6px;padding:10px;border-radius:8px;
-                    background:${galleryBgColor === "transparent" ? "transparent" : galleryBgColor};
-                    max-width:100%;box-sizing:border-box;transition:all 0.2s ease;">
-          ${renderMatrixPreview(item.colorData, {
-            rows,
-            cols,
-            bgColor: galleryBgColor,
-            pixelStyle: galleryPixelStyle,
-            pixelGap: galleryPixelGap,
-            previewSize: galleryPreviewSize,
-            ignoreBlackPixels,
-            matrixBoxShadow: this.config.gallery_matrix_box_shadow === true,
-            pixelBoxShadow: galleryPixelBoxShadow,
-          })}
-          ${
-            showTitles
-              ? `<div style="font-size:13px;font-weight:500;${galleryBgColor === "black" ? "color:#fff;" : "color:var(--primary-text-color);"}">${
-                  item.dataMode
-                }</div>`
-              : ""
-          }
-        </div>`;
+      // Map selector shape → carousel button shape for visual consistency
+      const gcCarouselButtonShape =
+        selectorShape === "round"
+          ? "circle"
+          : selectorShape === "square"
+            ? "square"
+            : "rect";
 
       return `
-        <div class="gc-preview-shell" ${shellAttrs}
-             style="margin-top:12px;border-radius:8px;">
-          <div style="display:flex;align-items:center;gap:8px;width:100%;box-sizing:border-box;">
-            <button data-action="navigate" data-direction="-1"
-                    style="${btnStyle(false)}">&#8249;</button>
-            <div style="flex:1;min-width:0;">${previewHtml}</div>
-            <button data-action="navigate" data-direction="1"
-                    style="${btnStyle(false)}">&#8250;</button>
-          </div>
-          <div style="display:flex;align-items:center;justify-content:center;
-                      gap:5px;margin-top:8px;flex-wrap:wrap;">
-            ${dotHtml}
-          </div>
+        <div class="gc-preview-shell" ${shellAttrs} style="margin-top:12px;border-radius:8px;">
+          ${renderCarouselString({
+            items,
+            currentIndex: ci,
+            buttonShape: gcCarouselButtonShape,
+            showAsCard: true,
+            carouselId: "gc-gradient-carousel",
+            wrapNavigation: false,
+            renderItemString: (it) => `
+              <div class="gallery-item gc-carousel-item" data-mode="${it.dataMode}"
+                   data-action="select-mode"
+                   style="cursor:pointer;display:flex;flex-direction:column;align-items:center;
+                          gap:6px;padding:10px;border-radius:8px;
+                          background:${galleryBgColor === "transparent" ? "transparent" : galleryBgColor};
+                          max-width:100%;box-sizing:border-box;transition:all 0.2s ease;">
+                ${renderMatrixPreview(it.colorData, {
+                  rows,
+                  cols,
+                  bgColor: galleryBgColor,
+                  pixelStyle: galleryPixelStyle,
+                  pixelGap: galleryPixelGap,
+                  previewSize: galleryPreviewSize,
+                  ignoreBlackPixels,
+                  matrixBoxShadow: this.config.gallery_matrix_box_shadow === true,
+                  pixelBoxShadow: galleryPixelBoxShadow,
+                })}
+                ${showTitles ? `<div style="font-size:13px;font-weight:500;${galleryBgColor === "black" ? "color:#fff;" : "color:var(--primary-text-color);"}">` + it.dataMode + `</div>` : ""}
+              </div>`,
+          })}
         </div>`;
     }
 

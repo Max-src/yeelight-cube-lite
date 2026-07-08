@@ -960,6 +960,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           flex-direction: column;
           /* min-height: 250px; */
           position: relative;
+          cursor: pointer;
         }
         
         .palette-item-carousel .palette-title {
