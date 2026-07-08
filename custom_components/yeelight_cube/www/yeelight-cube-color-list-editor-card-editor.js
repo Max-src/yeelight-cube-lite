@@ -15,7 +15,12 @@ import {
   createToggleRow,
   createSliderRow,
 } from "./form-row-utils.js";
-import { fireEvent, renderModeSettingsSection } from "./editor_ui_utils.js";
+import {
+  fireEvent,
+  renderModeSettingsSection,
+  roundedCardsToSliderValue,
+  renderDeleteButtonSettings,
+} from "./editor_ui_utils.js";
 
 class YeelightCubeColorListEditorCardEditor extends LitElement {
   static get properties() {
@@ -426,13 +431,7 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
               : ""}
             ${createSliderRow(
               "Card Roundness",
-              (() => {
-                const v = cfg.rounded_cards;
-                if (v === undefined || v === true || v === "round") return 16;
-                if (v === false || v === "square") return 0;
-                if (v === "rounded") return 4;
-                return typeof v === "number" ? v : parseInt(v, 10) || 16;
-              })(),
+              roundedCardsToSliderValue(cfg.rounded_cards),
               { min: 0, max: 28, step: 1 },
               (e) => {
                 this._config = {
@@ -461,100 +460,13 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                 )
               : ""}
             <!-- Delete button settings last (button lives on the cards) -->
-            <div class="form-row">
-              <label>Delete Button Style</label>
-              ${createButtonGroup(
-                [
-                  { value: "none", label: "None" },
-                  { value: "default", label: "Default" },
-                  { value: "glass", label: "Glass" },
-                  { value: "red", label: "Red" },
-                  { value: "black", label: "Black" },
-                  { value: "dot", label: "Dot" },
-                ],
-                cfg.remove_button_style || "default",
-                createButtonGroupChangeHandler(
-                  "remove_button_style",
-                  (value) => {
-                    this._config = {
-                      ...this._config,
-                      remove_button_style: value,
-                    };
-                    this._fireConfigChanged();
-                  },
-                ),
-              )}
-            </div>
-            ${(cfg.remove_button_style || "default") !== "none"
-              ? renderModeSettingsSection(
-                  "Delete Button Settings",
-                  html`
-                    <div class="form-row">
-                      <label>Button Shape</label>
-                      ${createButtonGroup(
-                        [
-                          { value: "round", label: "Round" },
-                          { value: "rounded", label: "Rounded" },
-                          { value: "square", label: "Square" },
-                        ],
-                        cfg.delete_button_shape || "round",
-                        createButtonGroupChangeHandler(
-                          "delete_button_shape",
-                          (value) => {
-                            this._config = {
-                              ...this._config,
-                              delete_button_shape: value,
-                            };
-                            this._fireConfigChanged();
-                          },
-                        ),
-                      )}
-                    </div>
-                    <div class="form-row">
-                      <label>Button Position</label>
-                      ${createButtonGroup(
-                        [
-                          { value: "inside", label: "Inside" },
-                          { value: "outside", label: "Outside" },
-                        ],
-                        cfg.delete_button_inside === true
-                          ? "inside"
-                          : "outside",
-                        createButtonGroupChangeHandler(
-                          "delete_button_inside",
-                          (value) => {
-                            this._config = {
-                              ...this._config,
-                              delete_button_inside: value === "inside",
-                            };
-                            this._fireConfigChanged();
-                          },
-                        ),
-                      )}
-                    </div>
-                    <div class="form-row">
-                      <label>Delete Button Position</label>
-                      ${createButtonGroup(
-                        [
-                          { value: "left", label: "Left" },
-                          { value: "right", label: "Right" },
-                        ],
-                        cfg.delete_button_left === true ? "left" : "right",
-                        createButtonGroupChangeHandler(
-                          "delete_button_left",
-                          (value) => {
-                            this._config = {
-                              ...this._config,
-                              delete_button_left: value === "left",
-                            };
-                            this._fireConfigChanged();
-                          },
-                        ),
-                      )}
-                    </div>
-                  `,
-                )
-              : ""}
+            ${renderDeleteButtonSettings(cfg, {
+              styleKey: "remove_button_style",
+              commit: (key, value) => {
+                this._config = { ...this._config, [key]: value };
+                this._fireConfigChanged();
+              },
+            })}
           </div>
         </div>
 

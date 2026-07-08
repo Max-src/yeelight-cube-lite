@@ -3,6 +3,9 @@ import {
   sharedEditorStyles,
   renderModeSettingsSection,
   renderModeInfoMessage,
+  roundedCardsToSliderValue,
+  renderDeleteButtonSettings,
+  renderCarouselNavSettings,
 } from "./editor_ui_utils.js";
 import {
   createButtonGroup,
@@ -566,55 +569,30 @@ class YeelightCubeDrawCardEditor extends LitElement {
             ${(this.config.palette_card_mode || "side") === "carousel"
               ? renderModeSettingsSection(
                   "Carousel Mode Settings",
-                  html`
-                    <div class="form-row">
-                      <label>Navigation Button Shape</label>
-                      ${createButtonGroup(
-                        [
-                          { value: "circle", label: "Circle" },
-                          { value: "rect", label: "Rounded" },
-                          { value: "square", label: "Square" },
-                        ],
-                        this.config.palette_carousel_button_shape || "rect",
-                        createButtonGroupChangeHandler(
-                          "palette_carousel_button_shape",
-                          (value) => {
-                            this.config.palette_carousel_button_shape = value;
-                            this._fireConfigChanged();
-                          },
-                        ),
-                      )}
-                    </div>
-                    ${createToggleRow(
-                      "Wrap Navigation (Infinite Loop)",
-                      "palette_carousel_wrap_navigation",
-                      this.config.palette_carousel_wrap_navigation === true,
-                      (e) =>
-                        this._onSwitchChange(
-                          e,
-                          "palette_carousel_wrap_navigation",
-                        ),
-                    )}
-                    ${createSliderRow(
+                  renderCarouselNavSettings(this.config, {
+                    shapeKey: "palette_carousel_button_shape",
+                    shapeDefault: "rect",
+                    onShapeChange: (value) => {
+                      this.config.palette_carousel_button_shape = value;
+                      this._fireConfigChanged();
+                    },
+                    wrapKey: "palette_carousel_wrap_navigation",
+                    onWrapChange: (e) =>
+                      this._onSwitchChange(
+                        e,
+                        "palette_carousel_wrap_navigation",
+                      ),
+                    extra: createSliderRow(
                       "Card Roundness",
-                      (() => {
-                        const v = this.config.rounded_cards;
-                        if (v === undefined || v === true || v === "round")
-                          return 16;
-                        if (v === false || v === "square") return 0;
-                        if (v === "rounded") return 4;
-                        return typeof v === "number"
-                          ? v
-                          : parseInt(v, 10) || 16;
-                      })(),
+                      roundedCardsToSliderValue(this.config.rounded_cards),
                       { min: 0, max: 28, step: 1 },
                       (e) => {
                         this.config.rounded_cards = parseInt(e.target.value);
                         this._fireConfigChanged();
                       },
                       "px",
-                    )}
-                  `,
+                    ),
+                  }),
                 )
               : (this.config.palette_card_mode || "side") === "side"
                 ? renderModeSettingsSection(
@@ -646,16 +624,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                       )}
                       ${createSliderRow(
                         "Card Roundness",
-                        (() => {
-                          const v = this.config.rounded_cards;
-                          if (v === undefined || v === true || v === "round")
-                            return 16;
-                          if (v === false || v === "square") return 0;
-                          if (v === "rounded") return 4;
-                          return typeof v === "number"
-                            ? v
-                            : parseInt(v, 10) || 16;
-                        })(),
+                        roundedCardsToSliderValue(this.config.rounded_cards),
                         { min: 0, max: 28, step: 1 },
                         (e) => {
                           this.config.rounded_cards = parseInt(e.target.value);
@@ -1259,33 +1228,17 @@ class YeelightCubeDrawCardEditor extends LitElement {
               : this.config.pixel_art_gallery_mode === "carousel"
                 ? renderModeSettingsSection(
                     "Carousel Mode Settings",
-                    html`
-                      <div class="form-row">
-                        <label>Navigation Button Shape</label>
-                        ${createButtonGroup(
-                          [
-                            { value: "circle", label: "Circle" },
-                            { value: "rect", label: "Rounded" },
-                            { value: "square", label: "Square" },
-                          ],
-                          this.config.carousel_button_shape || "rect",
-                          createButtonGroupChangeHandler(
-                            "carousel_button_shape",
-                            (value) => {
-                              this.config.carousel_button_shape = value;
-                              this._fireConfigChanged();
-                            },
-                          ),
-                        )}
-                      </div>
-                      ${createToggleRow(
-                        "Wrap Navigation (Infinite Loop)",
-                        "carousel_wrap_navigation",
-                        this.config.carousel_wrap_navigation === true,
-                        (e) =>
-                          this._onSwitchChange(e, "carousel_wrap_navigation"),
-                      )}
-                    `,
+                    renderCarouselNavSettings(this.config, {
+                      shapeKey: "carousel_button_shape",
+                      shapeDefault: "rect",
+                      onShapeChange: (value) => {
+                        this.config.carousel_button_shape = value;
+                        this._fireConfigChanged();
+                      },
+                      wrapKey: "carousel_wrap_navigation",
+                      onWrapChange: (e) =>
+                        this._onSwitchChange(e, "carousel_wrap_navigation"),
+                    }),
                   )
                 : this.config.pixel_art_gallery_mode === "compact"
                   ? renderModeSettingsSection(
@@ -1317,13 +1270,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
             <!-- 4. Card container settings -->
             ${createSliderRow(
               "Card Roundness",
-              (() => {
-                const v = this.config.rounded_cards;
-                if (v === undefined || v === true || v === "round") return 16;
-                if (v === false || v === "square") return 0;
-                if (v === "rounded") return 4;
-                return typeof v === "number" ? v : parseInt(v, 10) || 16;
-              })(),
+              roundedCardsToSliderValue(this.config.rounded_cards),
               { min: 0, max: 28, step: 1 },
               (e) => {
                 this.config.rounded_cards = parseInt(e.target.value);
@@ -1436,92 +1383,14 @@ class YeelightCubeDrawCardEditor extends LitElement {
               : ""}
 
             <!-- 8. Delete button settings (last - buttons on cards) -->
-            <div class="form-row">
-              <label>Delete Button Style</label>
-              ${createButtonGroup(
-                [
-                  { value: "none", label: "None" },
-                  { value: "default", label: "Default" },
-                  { value: "glass", label: "Glass" },
-                  { value: "red", label: "Red" },
-                  { value: "black", label: "Black" },
-                  { value: "dot", label: "Dot" },
-                ],
-                this.config.pixel_art_remove_button_style || "default",
-                createButtonGroupChangeHandler(
-                  "pixel_art_remove_button_style",
-                  (value) => {
-                    this.config.pixel_art_remove_button_style = value;
-                    this._fireConfigChanged();
-                    this.requestUpdate();
-                  },
-                ),
-              )}
-            </div>
-            ${(this.config.pixel_art_remove_button_style || "default") !==
-            "none"
-              ? html`
-                  <div class="form-row">
-                    <label>Button Shape</label>
-                    ${createButtonGroup(
-                      [
-                        { value: "round", label: "Round" },
-                        { value: "rounded", label: "Rounded" },
-                        { value: "square", label: "Square" },
-                      ],
-                      this.config.delete_button_shape || "round",
-                      createButtonGroupChangeHandler(
-                        "delete_button_shape",
-                        (value) => {
-                          this.config.delete_button_shape = value;
-                          this._fireConfigChanged();
-                          this.requestUpdate();
-                        },
-                      ),
-                    )}
-                  </div>
-                  <div class="form-row">
-                    <label>Button Position</label>
-                    ${createButtonGroup(
-                      [
-                        { value: "inside", label: "Inside" },
-                        { value: "outside", label: "Outside" },
-                      ],
-                      this.config.delete_button_inside === true
-                        ? "inside"
-                        : "outside",
-                      createButtonGroupChangeHandler(
-                        "delete_button_inside",
-                        (value) => {
-                          this.config.delete_button_inside = value === "inside";
-                          this._fireConfigChanged();
-                          this.requestUpdate();
-                        },
-                      ),
-                    )}
-                  </div>
-                  <div class="form-row">
-                    <label>Delete Button Position</label>
-                    ${createButtonGroup(
-                      [
-                        { value: "left", label: "Left" },
-                        { value: "right", label: "Right" },
-                      ],
-                      this.config.delete_button_left === true
-                        ? "left"
-                        : "right",
-                      createButtonGroupChangeHandler(
-                        "delete_button_left",
-                        (value) => {
-                          this.config.delete_button_left = value === "left";
-                          this._fireConfigChanged();
-                          this.requestUpdate();
-                        },
-                      ),
-                    )}
-                  </div>
-                `
-              : ""}
+            ${renderDeleteButtonSettings(this.config, {
+              styleKey: "pixel_art_remove_button_style",
+              commit: (key, value) => {
+                this.config[key] = value;
+                this._fireConfigChanged();
+                this.requestUpdate();
+              },
+            })}
           </div>
         </div>
 

@@ -2,6 +2,24 @@
 // Provides consistent form elements and styles
 
 import { html, css } from "./lib/lit-all.js";
+import {
+  createButtonGroup,
+  createButtonGroupChangeHandler,
+} from "./button-group-utils.js";
+import { createToggleRow } from "./form-row-utils.js";
+import { normalizeButtonShape } from "./carousel-utils.js";
+
+/**
+ * Canonical shape option triad shared by every shape selector in the editors
+ * (carousel nav buttons, delete buttons, swatches, selectors). Defining it once
+ * prevents the value/label drift that previously caused "Rounded" to map to
+ * different stored values across cards.
+ */
+export const SHAPE_OPTIONS = [
+  { value: "square", label: "Square" },
+  { value: "rounded", label: "Rounded" },
+  { value: "round", label: "Round" },
+];
 
 /**
  * Dispatch a custom event, compatible with Home Assistant's event system.
@@ -429,5 +447,155 @@ export function renderModeInfoMessage(message) {
     >
       ${message}
     </div>
+  `;
+}
+
+/**
+ * Convert the legacy `rounded_cards` config value into a 0-28 px slider value.
+ * Shared across all editors so the "Card Roundness" slider behaves identically
+ * everywhere and legacy values (true/false/"round"/"rounded"/"square") keep
+ * working.
+ *
+ * @param {number|boolean|string|undefined} v - Raw rounded_cards config value
+ * @returns {number} Slider value in pixels (0-28)
+ */
+export function roundedCardsToSliderValue(v) {
+  if (v === undefined || v === true || v === "round") return 16;
+  if (v === false || v === "square") return 0;
+  if (v === "rounded") return 4;
+  return typeof v === "number" ? v : parseInt(v, 10) || 16;
+}
+
+/**
+ * Render the shared carousel navigation settings (button shape + wrap toggle)
+ * used inside the "Carousel Mode Settings" block of the palette and draw
+ * editors. Centralizes the canonical shape options so all carousels stay in
+ * sync, while each editor keeps its own persistence via the provided callbacks.
+ *
+ * @param {Object} config - The editor's current config object
+ * @param {Object} options
+ * @param {string} options.shapeKey - Config key for the nav button shape
+ * @param {string} [options.shapeDefault="rounded"] - Default shape when unset
+ * @param {(value: string) => void} options.onShapeChange - Persists a new shape
+ * @param {string} options.wrapKey - Config key for the wrap-navigation toggle
+ * @param {(e: Event) => void} options.onWrapChange - Change handler for the toggle
+ * @param {TemplateResult|string} [options.extra=""] - Optional extra rows appended
+ * @returns {TemplateResult}
+ */
+export function renderCarouselNavSettings(config, options) {
+  const {
+    shapeKey,
+    shapeDefault = "rounded",
+    onShapeChange,
+    wrapKey,
+    onWrapChange,
+    extra = "",
+  } = options;
+  return html`
+    <div class="form-row">
+      <label>Navigation Button Shape</label>
+      ${createButtonGroup(
+        SHAPE_OPTIONS,
+        normalizeButtonShape(config[shapeKey] || shapeDefault),
+        createButtonGroupChangeHandler(shapeKey, (value) =>
+          onShapeChange(value),
+        ),
+      )}
+    </div>
+    ${createToggleRow(
+      "Wrap Navigation (Infinite Loop)",
+      wrapKey,
+      config[wrapKey] === true,
+      onWrapChange,
+    )}
+    ${extra}
+  `;
+}
+
+/**
+ * Render the shared "Delete Button" settings block used by the palette, draw
+ * and color-list editors. Centralizes the markup and the boolean conversions
+ * for the inside/left positions so every editor stays visually and behaviorally
+ * identical.
+ *
+ * @param {Object} config - The editor's current config object
+ * @param {Object} options
+ * @param {string} [options.styleKey="remove_button_style"] - Config key that
+ *   stores the delete-button style (draw card uses "pixel_art_remove_button_style")
+ * @param {(key: string, value: *) => void} options.commit - Persists a config
+ *   change using the host editor's own update mechanism. Values are already
+ *   converted (booleans for inside/left) so the callback only needs to store
+ *   and re-render.
+ * @returns {TemplateResult}
+ */
+export function renderDeleteButtonSettings(config, options) {
+  const { styleKey = "remove_button_style", commit } = options;
+  const style = config[styleKey] || "default";
+  return html`
+    <div class="form-row">
+      <label>Delete Button Style</label>
+      ${createButtonGroup(
+        [
+          { value: "none", label: "None" },
+          { value: "default", label: "Default" },
+          { value: "glass", label: "Glass" },
+          { value: "red", label: "Red" },
+          { value: "black", label: "Black" },
+          { value: "dot", label: "Dot" },
+        ],
+        style,
+        createButtonGroupChangeHandler(styleKey, (value) =>
+          commit(styleKey, value),
+        ),
+      )}
+    </div>
+    ${style !== "none"
+      ? renderModeSettingsSection(
+          "Delete Button Settings",
+          html`
+            <div class="form-row">
+              <label>Button Shape</label>
+              ${createButtonGroup(
+                [
+                  { value: "round", label: "Round" },
+                  { value: "rounded", label: "Rounded" },
+                  { value: "square", label: "Square" },
+                ],
+                config.delete_button_shape || "round",
+                createButtonGroupChangeHandler("delete_button_shape", (value) =>
+                  commit("delete_button_shape", value),
+                ),
+              )}
+            </div>
+            <div class="form-row">
+              <label>Button Position</label>
+              ${createButtonGroup(
+                [
+                  { value: "inside", label: "Inside" },
+                  { value: "outside", label: "Outside" },
+                ],
+                config.delete_button_inside === true ? "inside" : "outside",
+                createButtonGroupChangeHandler(
+                  "delete_button_inside",
+                  (value) => commit("delete_button_inside", value === "inside"),
+                ),
+              )}
+            </div>
+            <div class="form-row">
+              <label>Delete Button Position</label>
+              ${createButtonGroup(
+                [
+                  { value: "left", label: "Left" },
+                  { value: "right", label: "Right" },
+                ],
+                config.delete_button_left === true ? "left" : "right",
+                createButtonGroupChangeHandler("delete_button_left", (value) =>
+                  commit("delete_button_left", value === "left"),
+                ),
+              )}
+            </div>
+          `,
+        )
+      : ""}
   `;
 }

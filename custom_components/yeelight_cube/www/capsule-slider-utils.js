@@ -201,13 +201,14 @@ export function getCapsuleCSS() {
       gap: 16px;
       padding: 8px 12px;
       border-radius: 50px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
     }
     .capsule-pill-subtle {
       background: var(--card-background-color, #fff);
+      box-shadow: 0 3px 12px rgba(0, 0, 0, 0.22), 0 1px 4px rgba(0, 0, 0, 0.14);
     }
     .capsule-pill-filled {
       background: var(--secondary-background-color, #2c2c2c);
+      box-shadow: 0 3px 12px rgba(0, 0, 0, 0.22), 0 1px 4px rgba(0, 0, 0, 0.14);
     }
     .capsule-pill-flat {
       background: transparent;
@@ -287,18 +288,6 @@ export function getCapsuleCSS() {
     .capsule-theme-flat {
       background: transparent;
       padding: 5px 0;
-    }
-    .capsule-theme-subtle {
-      background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 40%, var(--card-background-color, #fff) 60%);
-      border-radius: 12px;
-      padding: 8px 14px;
-      border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.08));
-    }
-    .capsule-theme-filled {
-      background: var(--secondary-background-color, #2c2c2c);
-      border-radius: 12px;
-      padding: 8px 14px;
-      border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.08));
     }
     /* Capsule pill has its own chrome → reset outer container for subtle/filled */
     .capsule-theme-subtle,

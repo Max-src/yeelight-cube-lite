@@ -8,6 +8,32 @@
 import { html } from "./lib/lit-all.js";
 
 /**
+ * Normalize a navigation-button shape value to the canonical vocabulary
+ * shared across all cards: `square` | `rounded` | `round`.
+ *
+ * Legacy values are still accepted so existing dashboards keep working:
+ *   - "circle" -> "round"   (fully circular, border-radius 50%)
+ *   - "rect"   -> "rounded" (soft corners, border-radius 8px)
+ *
+ * @param {string} shape - Raw shape value (canonical or legacy)
+ * @returns {string} Canonical shape value
+ */
+export function normalizeButtonShape(shape) {
+  switch (shape) {
+    case "circle":
+      return "round";
+    case "rect":
+      return "rounded";
+    case "round":
+    case "rounded":
+    case "square":
+      return shape;
+    default:
+      return "rounded";
+  }
+}
+
+/**
  * Calculate which indicator dots to show with ellipsis for large item counts
  * Shows current item and nearby items, with ellipsis for hidden ranges
  *
@@ -115,6 +141,9 @@ export function renderCarousel(options) {
     roundedCards = true,
   } = options;
 
+  // Canonicalize the nav-button shape (accepts legacy circle/rect too)
+  const navShape = normalizeButtonShape(buttonShape);
+
   // Normalize rounded_cards to px value
   const cardBorderRadius = (() => {
     const v = roundedCards;
@@ -181,7 +210,7 @@ export function renderCarousel(options) {
           : ""}"
       >
         <button
-          class="carousel-nav-btn carousel-nav-external nav-btn-${buttonShape} ${validIndex ===
+          class="carousel-nav-btn carousel-nav-external nav-btn-${navShape} ${validIndex ===
             0 && !wrapNavigation
             ? "disabled"
             : ""}"
@@ -203,7 +232,7 @@ export function renderCarousel(options) {
           ${renderItem ? renderItem(items[validIndex], validIndex) : ""}
         </div>
         <button
-          class="carousel-nav-btn carousel-nav-external nav-btn-${buttonShape} ${validIndex ===
+          class="carousel-nav-btn carousel-nav-external nav-btn-${navShape} ${validIndex ===
             items.length - 1 && !wrapNavigation
             ? "disabled"
             : ""}"
@@ -279,11 +308,13 @@ export const carouselStyles = `
   }
 
   /* Button shape variants */
-  .carousel-nav-btn.nav-btn-circle {
+  .carousel-nav-btn.nav-btn-circle,
+  .carousel-nav-btn.nav-btn-round {
     border-radius: 50% !important;
   }
 
-  .carousel-nav-btn.nav-btn-rect {
+  .carousel-nav-btn.nav-btn-rect,
+  .carousel-nav-btn.nav-btn-rounded {
     border-radius: 8px !important;
   }
 
@@ -545,6 +576,9 @@ export function renderCarouselString(options) {
     roundedCards = true,
   } = options;
 
+  // Canonicalize the nav-button shape (accepts legacy circle/rect too)
+  const navShape = normalizeButtonShape(buttonShape);
+
   // Normalize rounded_cards to px value
   const cardBorderRadius = (() => {
     const v = roundedCards;
@@ -591,7 +625,7 @@ export function renderCarouselString(options) {
         showAsCard ? "carousel-with-card" : ""
       }">
         <button
-          class="carousel-nav-btn carousel-nav-external nav-btn-${buttonShape} ${
+          class="carousel-nav-btn carousel-nav-external nav-btn-${navShape} ${
             leftDisabled ? "disabled" : ""
           }"
           title="Previous"
@@ -615,7 +649,7 @@ export function renderCarouselString(options) {
           ${content}
         </div>
         <button
-          class="carousel-nav-btn carousel-nav-external nav-btn-${buttonShape} ${
+          class="carousel-nav-btn carousel-nav-external nav-btn-${navShape} ${
             rightDisabled ? "disabled" : ""
           }"
           title="Next"

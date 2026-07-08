@@ -4,7 +4,9 @@ import {
   sharedEditorStyles,
   fireEvent,
   renderModeSettingsSection,
-  renderModeInfoMessage,
+  roundedCardsToSliderValue,
+  renderDeleteButtonSettings,
+  renderCarouselNavSettings,
 } from "./editor_ui_utils.js";
 
 import {
@@ -198,38 +200,22 @@ class YeelightCubePaletteCardEditor extends LitElement {
             ${config.display_mode === "carousel"
               ? renderModeSettingsSection(
                   "Carousel Mode Settings",
-                  html`
-                    <div class="form-row">
-                      <label>Navigation Button Shape</label>
-                      ${createButtonGroup(
-                        [
-                          { value: "circle", label: "Circle" },
-                          { value: "rect", label: "Rounded" },
-                          { value: "square", label: "Square" },
-                        ],
-                        config.palette_carousel_button_shape || "square",
-                        createButtonGroupChangeHandler(
-                          "palette_carousel_button_shape",
-                          (value) => {
-                            this.config.palette_carousel_button_shape = value;
-                            this.config = { ...this.config };
-                            this.requestUpdate();
-                            this._fireConfigChanged();
-                          },
-                        ),
-                      )}
-                    </div>
-                    ${createToggleRow(
-                      "Wrap Navigation (Infinite Loop)",
-                      "palette_carousel_wrap_navigation",
-                      config.palette_carousel_wrap_navigation === true,
-                      (e) =>
-                        this._onSwitchChange(
-                          e,
-                          "palette_carousel_wrap_navigation",
-                        ),
-                    )}
-                  `,
+                  renderCarouselNavSettings(config, {
+                    shapeKey: "palette_carousel_button_shape",
+                    shapeDefault: "square",
+                    onShapeChange: (value) => {
+                      this.config.palette_carousel_button_shape = value;
+                      this.config = { ...this.config };
+                      this.requestUpdate();
+                      this._fireConfigChanged();
+                    },
+                    wrapKey: "palette_carousel_wrap_navigation",
+                    onWrapChange: (e) =>
+                      this._onSwitchChange(
+                        e,
+                        "palette_carousel_wrap_navigation",
+                      ),
+                  }),
                 )
               : config.display_mode === "album"
                 ? renderModeSettingsSection(
@@ -243,40 +229,27 @@ class YeelightCubePaletteCardEditor extends LitElement {
                       )}
                     `,
                   )
-                : config.display_mode === "compact"
+                : config.display_mode === "list" ||
+                    config.display_mode === "gallery"
                   ? renderModeSettingsSection(
-                      "Compact Mode Settings",
-                      renderModeInfoMessage(
-                        "No additional compact mode settings available.",
-                      ),
-                    )
-                  : config.display_mode === "list" ||
                       config.display_mode === "gallery"
-                    ? renderModeSettingsSection(
-                        config.display_mode === "gallery"
-                          ? "Gallery Mode Settings"
-                          : "List Mode Settings",
-                        html`
-                          ${createSliderRow(
-                            "Items Per Page (0 = no pagination)",
-                            config.items_per_page || 0,
-                            { min: 0, max: 50, step: 1 },
-                            (e) => this._onSliderChange("items_per_page", e),
-                          )}
-                        `,
-                      )
-                    : ""}
+                        ? "Gallery Mode Settings"
+                        : "List Mode Settings",
+                      html`
+                        ${createSliderRow(
+                          "Items Per Page (0 = no pagination)",
+                          config.items_per_page || 0,
+                          { min: 0, max: 50, step: 1 },
+                          (e) => this._onSliderChange("items_per_page", e),
+                        )}
+                      `,
+                    )
+                  : ""}
 
             <!-- 3. Card container settings -->
             ${createSliderRow(
               "Card Roundness",
-              (() => {
-                const v = config.rounded_cards;
-                if (v === undefined || v === true || v === "round") return 16;
-                if (v === false || v === "square") return 0;
-                if (v === "rounded") return 4;
-                return typeof v === "number" ? v : parseInt(v, 10) || 16;
-              })(),
+              roundedCardsToSliderValue(config.rounded_cards),
               { min: 0, max: 28, step: 1 },
               (e) => this._onSliderChange("rounded_cards", e),
               "px",
@@ -340,90 +313,15 @@ class YeelightCubePaletteCardEditor extends LitElement {
             )}
 
             <!-- 6. Delete button settings -->
-            <div class="form-row">
-              <label>Delete Button Style</label>
-              ${createButtonGroup(
-                [
-                  { value: "none", label: "None" },
-                  { value: "default", label: "Default" },
-                  { value: "glass", label: "Glass" },
-                  { value: "red", label: "Red" },
-                  { value: "black", label: "Black" },
-                  { value: "dot", label: "Dot" },
-                ],
-                config.remove_button_style || "default",
-                createButtonGroupChangeHandler(
-                  "remove_button_style",
-                  (value) => {
-                    this._onButtonGroupChange("remove_button_style", value);
-                  },
-                ),
-              )}
-            </div>
-            ${(config.remove_button_style || "default") !== "none"
-              ? html`
-                  <div class="form-row">
-                    <label>Button Shape</label>
-                    ${createButtonGroup(
-                      [
-                        { value: "round", label: "Round" },
-                        { value: "rounded", label: "Rounded" },
-                        { value: "square", label: "Square" },
-                      ],
-                      config.delete_button_shape || "round",
-                      createButtonGroupChangeHandler(
-                        "delete_button_shape",
-                        (value) => {
-                          this._onButtonGroupChange(
-                            "delete_button_shape",
-                            value,
-                          );
-                        },
-                      ),
-                    )}
-                  </div>
-                  <div class="form-row">
-                    <label>Button Position</label>
-                    ${createButtonGroup(
-                      [
-                        { value: "inside", label: "Inside" },
-                        { value: "outside", label: "Outside" },
-                      ],
-                      config.delete_button_inside === true
-                        ? "inside"
-                        : "outside",
-                      createButtonGroupChangeHandler(
-                        "delete_button_inside",
-                        (value) => {
-                          this._onButtonGroupChange(
-                            "delete_button_inside",
-                            value,
-                          );
-                        },
-                      ),
-                    )}
-                  </div>
-                  <div class="form-row">
-                    <label>Delete Button Position</label>
-                    ${createButtonGroup(
-                      [
-                        { value: "left", label: "Left" },
-                        { value: "right", label: "Right" },
-                      ],
-                      config.delete_button_left === true ? "left" : "right",
-                      createButtonGroupChangeHandler(
-                        "delete_button_left",
-                        (value) => {
-                          this._onButtonGroupChange(
-                            "delete_button_left",
-                            value,
-                          );
-                        },
-                      ),
-                    )}
-                  </div>
-                `
-              : ""}
+            ${renderDeleteButtonSettings(config, {
+              styleKey: "remove_button_style",
+              commit: (key, value) => {
+                this.config[key] = value;
+                this.config = { ...this.config };
+                this.requestUpdate();
+                this._fireConfigChanged();
+              },
+            })}
           </div>
         </div>
 
