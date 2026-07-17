@@ -39,13 +39,13 @@
         },
         "switch": {
             "clock_show_date": {
-                "name": "Clock show date"
+                "name": "Show date"
             },
             "clock_12_hour": {
-                "name": "Clock 12-hour format"
+                "name": "12-hour format"
             },
             "clock_colon_blink": {
-                "name": "Clock colon blink"
+                "name": "Blink colon"
             }
         }
     }

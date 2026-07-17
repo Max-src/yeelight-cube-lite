@@ -27,5 +27,26 @@
                 "title": "Yeelight Cube Lite Options"
             }
         }
+    },
+    "entity": {
+        "select": {
+            "content_mode": {
+                "name": "Content mode"
+            },
+            "clock_style": {
+                "name": "Clock style"
+            }
+        },
+        "switch": {
+            "clock_show_date": {
+                "name": "Show date"
+            },
+            "clock_12_hour": {
+                "name": "12-hour format"
+            },
+            "clock_colon_blink": {
+                "name": "Blink colon"
+            }
+        }
     }
 }
