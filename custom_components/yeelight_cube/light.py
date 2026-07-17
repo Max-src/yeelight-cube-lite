@@ -2,6 +2,7 @@
 
 import logging
 import asyncio
+import base64
 import copy
 import math
 import random
@@ -21,8 +22,19 @@ from homeassistant.config_entries import ConfigEntry # type: ignore
 from homeassistant.helpers.event import async_track_state_change_event # type: ignore
 from homeassistant.helpers import config_validation as cv # type: ignore
 from homeassistant.helpers import entity_registry as er # type: ignore
+from homeassistant.util import dt as dt_util # type: ignore
 from yeelight import BulbException # type: ignore
-from .const import DOMAIN, CONF_IP, CONF_DEVICE_ID
+from .const import (
+    CONF_DEVICE_ID,
+    CONF_IP,
+    DEFAULT_MATRIX_DISPLAY_MODE,
+    DEFAULT_NATIVE_CLOCK_STYLE,
+    DOMAIN,
+    MATRIX_DISPLAY_MODES,
+    NATIVE_CLOCK_APPLY,
+    NATIVE_CLOCK_EFFECT_ID,
+    NATIVE_CLOCK_STYLES,
+)
 from .cube_matrix import CubeMatrix, RECONNECT_COOLDOWN_INITIAL, CONNECT_TIMEOUT, RECOVERY_CONNECT_TIMEOUT
 from .layout import Layout, Module, FONT_MAPS, TOTAL_COLUMNS, TOTAL_ROWS
 from . import async_save_data
@@ -771,7 +783,8 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         self._custom_text = "HELLO"
         self._brightness = 255  # Store brightness as 0-255 internally
         self._text_colors = [(255, 0, 0), (0, 0, 255)]  # [solid/gradient start, gradient end]
-        self._mode = "Solid Color"
+        self._mode = DEFAULT_MATRIX_DISPLAY_MODE
+        self._matrix_mode = DEFAULT_MATRIX_DISPLAY_MODE
         self._full_panel = False  # Whether to apply gradients to whole panel instead of just text
         self._angle = 0.0
         self._background_color = (0, 0, 0)
@@ -779,6 +792,11 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         self._font = "basic"  # Font key for FONT_MAPS (use "basic" as default)
         self._orientation = ORIENTATION_NORMAL  # "normal" or "flipped"
         self._rgb_color = (255, 0, 0)  # Default red color for Home Assistant color picker
+        self._native_clock_style = DEFAULT_NATIVE_CLOCK_STYLE
+        self._native_clock_show_date = False
+        self._native_clock_12_hour = False
+        self._native_clock_colon_blink = True
+        self._native_clock_timezone_offset = None
         
         # Text scrolling functionality
         self._scroll_speed = 0.2  # Scroll speed in seconds per step
@@ -890,6 +908,17 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         
         # Reference to display mode select entity for bidirectional updates
         self._mode_select_entity = None
+
+        # Reference to top-level Matrix/Clock selector
+        self._content_mode_select_entity = None
+
+        # Reference to native clock style select entity
+        self._clock_style_select_entity = None
+
+        # References to native clock option switches
+        self._clock_show_date_switch_entity = None
+        self._clock_12_hour_switch_entity = None
+        self._clock_colon_blink_switch_entity = None
         
         # Reference to alignment select entity for bidirectional updates
         self._alignment_select_entity = None
@@ -1402,6 +1431,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             _LOGGER.error(f"Invalid orientation value: {orientation}")
             return
         self._orientation = orientation
+        self._notify_camera_preview()
         await self.async_apply_display_mode(update_type='text_change')
         if self.hass is not None:
             self.async_schedule_update_ha_state()
@@ -1460,6 +1490,10 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
     @property
     def custom_text(self):
         return self._custom_text
+
+    @property
+    def content_mode(self):
+        return self._mode if self._mode == "Clock" else "Matrix"
     
     def _should_auto_turn_on(self) -> bool:
         """Check if lamp should auto-turn-on when receiving commands while off."""
@@ -1488,8 +1522,23 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             "_update_epoch": time.time(),
             # Display configuration
             "mode": self._mode,
+            "content_mode": self.content_mode,
+            "matrix_mode": self._matrix_mode,
+            "custom_draw_active": self._custom_draw_active,
             "text_colors": self._text_colors,
             "custom_text": self._custom_text,
+            "clock_style": (
+                f"Style {self._native_clock_style} - "
+                f"{NATIVE_CLOCK_STYLES.get(self._native_clock_style, NATIVE_CLOCK_STYLES[DEFAULT_NATIVE_CLOCK_STYLE])['name']}"
+            ),
+            "clock_style_name": NATIVE_CLOCK_STYLES.get(
+                self._native_clock_style,
+                NATIVE_CLOCK_STYLES[DEFAULT_NATIVE_CLOCK_STYLE],
+            )["name"],
+            "clock_style_id": self._native_clock_style,
+            "clock_show_date": self._native_clock_show_date,
+            "clock_12_hour": self._native_clock_12_hour,
+            "clock_colon_blink": self._native_clock_colon_blink,
             "background_color": self._background_color,
             "alignment": self._alignment,
             "angle": self._angle,
@@ -1678,11 +1727,30 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             else:
                 # Fallback for old state: if mode == 'Custom Draw', treat as custom_draw_active
                 self._custom_draw_active = old_state.attributes.get("mode") == "Custom Draw"
-            if old_state.attributes.get("mode") is not None and old_state.attributes["mode"] != "Custom Draw":
-                self._mode = old_state.attributes["mode"]
-            elif not hasattr(self, "_mode") or not getattr(self, "_mode", None):
-                # Always set a default mode if not present
-                self._mode = "Solid Color"
+            restored_mode = old_state.attributes.get("mode")
+            if restored_mode in MATRIX_DISPLAY_MODES or restored_mode == "Clock":
+                self._mode = restored_mode
+            matrix_mode = old_state.attributes.get("matrix_mode")
+            if matrix_mode in MATRIX_DISPLAY_MODES:
+                self._matrix_mode = matrix_mode
+            elif self._mode in MATRIX_DISPLAY_MODES:
+                self._matrix_mode = self._mode
+            if old_state.attributes.get("clock_style_id") is not None:
+                clock_style = int(old_state.attributes["clock_style_id"])
+                if clock_style in NATIVE_CLOCK_STYLES:
+                    self._native_clock_style = clock_style
+            if old_state.attributes.get("clock_show_date") is not None:
+                self._native_clock_show_date = bool(
+                    old_state.attributes["clock_show_date"]
+                )
+            if old_state.attributes.get("clock_12_hour") is not None:
+                self._native_clock_12_hour = bool(
+                    old_state.attributes["clock_12_hour"]
+                )
+            if old_state.attributes.get("clock_colon_blink") is not None:
+                self._native_clock_colon_blink = bool(
+                    old_state.attributes["clock_colon_blink"]
+                )
             if old_state.attributes.get("custom_text") is not None:
                 self._custom_text = old_state.attributes["custom_text"]
             if old_state.attributes.get("background_color") is not None:
@@ -1919,6 +1987,16 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
     async def _internal_turn_on(self, **kwargs):
         """Internal turn_on implementation -- runs under the global lock."""
         _LOGGER.debug(f"[TURN_ON] Executing - is_on: {self._is_on}, custom_text: '{self._custom_text}', mode: '{self._mode}'")
+
+        if self._mode == "Clock":
+            self._is_on = True
+            if "brightness" in kwargs:
+                self._brightness = max(1, min(255, kwargs["brightness"]))
+                await self._set_native_mode_brightness()
+            await self._activate_native_clock()
+            if self.hass is not None:
+                self.async_schedule_update_ha_state()
+            return
         
         # Ensure FX mode is active using raw TCP (proven reliable).
         # ensure_fx_ready() handles activate_fx_mode + set_bright atomically.
@@ -2098,6 +2176,12 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             old_brightness = self._brightness
             self._brightness = max(1, min(255, brightness))  # Clamp to 1-255 for ON state
             _LOGGER.debug(f"[BRIGHTNESS #{call_id}] Brightness changed: {old_brightness} -> {self._brightness}")
+
+            if self._mode == "Clock":
+                await self._set_native_mode_brightness()
+                if self.hass is not None:
+                    self.async_schedule_update_ha_state()
+                return
             
             # Calculate BOTH hardware brightness and darkness percentage
             hardware_brightness, darken_percent = self._calculate_brightness_values(self._brightness)
@@ -2366,8 +2450,22 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         _LOGGER.debug("[BRIGHTNESS RETRY] Retry processor finished (no pending brightness)")
 
     async def async_update(self, *args, **kwargs):
-        # No-op: do not call async_schedule_update_ha_state here to avoid NoEntitySpecifiedError
-        pass
+        """Refresh the native clock when the local UTC offset changes."""
+        if self._mode != "Clock" or not self._is_on:
+            return
+
+        timezone_hours = self._native_clock_timezone_hours()
+        if (
+            self._native_clock_timezone_offset is not None
+            and timezone_hours != self._native_clock_timezone_offset
+        ):
+            _LOGGER.info(
+                "[CLOCK] [%s] UTC offset changed from %+d to %+d; refreshing clock",
+                self._ip,
+                self._native_clock_timezone_offset,
+                timezone_hours,
+            )
+            await self.async_apply_display_mode(update_type="display_update")
 
     async def erase_all(self):
         background_color_hex = rgb_to_hex(self._background_color)
@@ -3253,9 +3351,81 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         finally:
             self._transition_active = False
 
+    async def _set_native_mode_brightness(self) -> None:
+        """Apply HA brightness directly while a firmware-native mode is active."""
+        hardware_brightness = max(1, min(100, round(self._brightness * 100 / 255)))
+        await self._cube_matrix.send_raw_command(
+            "set_bright",
+            [hardware_brightness],
+        )
+        self._last_hardware_brightness = hardware_brightness
+        self._preview_darken = 0
+        self._last_applied_darken = 0
+
+    @staticmethod
+    def _native_clock_timezone_hours() -> int:
+        """Return the current local UTC offset in whole hours."""
+        offset = dt_util.now().utcoffset()
+        return int(offset.total_seconds() / 3600) if offset else 0
+
+    async def _activate_native_clock(self) -> None:
+        """Activate the Cube Lite firmware clock through Yeelight LAN control."""
+        timezone_hours = self._native_clock_timezone_hours()
+        style_id = self._native_clock_style
+        style = NATIVE_CLOCK_STYLES.get(
+            style_id,
+            NATIVE_CLOCK_STYLES[DEFAULT_NATIVE_CLOCK_STYLE],
+        )
+        clock_data = bytes(
+            (
+                2 if self._native_clock_show_date else 1,
+                timezone_hours & 0xFF,
+                1 if self._native_clock_12_hour else 0,
+                # Firmware flag is inverted: 0 blinks, 1 keeps the colon steady.
+                0 if self._native_clock_colon_blink else 1,
+            )
+        )
+        effect_config = {
+            "mode": NATIVE_CLOCK_EFFECT_ID,
+            "mixer": style["mixer"],
+            "data": base64.b64encode(clock_data).decode("ascii"),
+        }
+        if "color" in style:
+            effect_config["color"] = [style["color"]]
+
+        params = [
+            NATIVE_CLOCK_EFFECT_ID,
+            style_id,
+            NATIVE_CLOCK_APPLY,
+            effect_config,
+        ]
+
+        self._cube_matrix._close_fast_socket()
+        await asyncio.sleep(0.1)
+        await self._cube_matrix.send_raw_command("set_fx_effect", params)
+        self._is_on = True
+        self._fx_mode_is_direct = False
+        self._last_fx_mode_time = 0.0
+        self._native_clock_timezone_offset = timezone_hours
+        self._notify_camera_preview()
+        if self.hass is not None:
+            self.async_schedule_update_ha_state()
+        _LOGGER.debug(
+            "[CLOCK] [%s] Activated native clock style=%s timezone=%+d",
+            self._ip,
+            style_id,
+            timezone_hours,
+        )
+
     async def _apply_display_mode_internal(self, skip_post_delay: bool = False):
         """Internal method that actually applies the display mode - called by queue processor"""
         try:
+            if self._mode == "Clock":
+                self._is_scrolling = False
+                self.stop_scroll_timer()
+                await self._activate_native_clock()
+                return
+
             background_color_hex = rgb_to_hex(self._background_color)
             _LOGGER.debug(f"Setting background color: {background_color_hex}")
             for module in self._layout.device_layout:
@@ -4214,7 +4384,10 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
     # Together these fully determine what the panel is showing: content,
     # mode, colors, layout, brightness and all colour effects.
     _DISPLAY_STATE_ATTRS = (
-        "_custom_text", "_text_colors", "_mode", "_full_panel", "_angle",
+        "_custom_text", "_text_colors", "_mode", "_matrix_mode", "_native_clock_style",
+        "_native_clock_show_date", "_native_clock_12_hour",
+        "_native_clock_colon_blink", "_full_panel",
+        "_angle",
         "_background_color", "_alignment", "_font", "_orientation", "_rgb_color",
         "_brightness", "_custom_pixels", "_custom_draw_active",
         "_active_pixel_art_name", "_scroll_enabled", "_scroll_speed",
@@ -4258,7 +4431,12 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         for ref in (
             self._text_input_entity,
             self._pixel_art_select_entity,
+            self._content_mode_select_entity,
             self._mode_select_entity,
+            self._clock_style_select_entity,
+            self._clock_show_date_switch_entity,
+            self._clock_12_hour_switch_entity,
+            self._clock_colon_blink_switch_entity,
             self._alignment_select_entity,
             self._font_select_entity,
             self._angle_number_entity,
@@ -4495,7 +4673,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             text = light_entity._custom_text or ""
         colors = light_entity._text_colors or [(255, 0, 0)]
         angle = light_entity._angle
-        
+
         if not text:
             # No text - just show background
             if apply_brightness:
@@ -5040,6 +5218,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 _LOGGER.debug(f"[AUTO-TURN-ON] apply_pixel_art command ignored - lamp is off and auto-turn-on is disabled")
                 return
             target_entity._custom_pixels = _expand_pixels(art["pixels"])
+            target_entity._mode = "Custom Draw"
+            target_entity._matrix_mode = "Custom Draw"
             target_entity._custom_draw_active = True
             target_entity._active_pixel_art_name = art.get("name", f"Pixel Art {idx + 1}")
             if not target_entity._custom_text:
@@ -5051,6 +5231,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             await target_entity.async_apply_display_mode(update_type='pixel_art')
             if target_entity._pixel_art_select_entity:
                 target_entity._pixel_art_select_entity.async_update_from_light()
+            if target_entity._mode_select_entity:
+                target_entity._mode_select_entity.async_update_from_light()
+            if target_entity._content_mode_select_entity:
+                target_entity._content_mode_select_entity.async_update_from_light()
             _LOGGER.debug(f"[pixelart-backend] Applied pixel art idx {idx} to {target_entity._ip}.")
 
         _fire_and_forget(*[_apply_one(t) for t in targets])
@@ -5072,6 +5256,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 _LOGGER.debug(f"[AUTO-TURN-ON] apply_custom_pixels command ignored - lamp is off and auto-turn-on is disabled")
                 return
             target_entity._custom_pixels = _expand_pixels(pixels)
+            target_entity._mode = "Custom Draw"
+            target_entity._matrix_mode = "Custom Draw"
             target_entity._custom_draw_active = True
             if not target_entity._custom_text:
                 target_entity._custom_text = "HELLO"
@@ -5082,6 +5268,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             if target_entity.hass is not None:
                 target_entity.async_schedule_update_ha_state()
             await target_entity.async_apply_display_mode(update_type='pixel_art', bypass_lock=bypass_lock)
+            if target_entity._mode_select_entity:
+                target_entity._mode_select_entity.async_update_from_light()
+            if target_entity._content_mode_select_entity:
+                target_entity._content_mode_select_entity.async_update_from_light()
 
         _fire_and_forget(*[_apply_one(t) for t in targets])
 
@@ -5617,8 +5807,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 _LOGGER.debug(f"[AUTO-TURN-ON] display_image command ignored - lamp is off and auto-turn-on is disabled")
                 return
             target_entity._custom_pixels = custom_pixels
+            target_entity._mode = "Custom Draw"
+            target_entity._matrix_mode = "Custom Draw"
             target_entity._custom_draw_active = True
             await target_entity.async_apply_display_mode(update_type='pixel_art')
+            if target_entity._mode_select_entity:
+                target_entity._mode_select_entity.async_update_from_light()
+            if target_entity._content_mode_select_entity:
+                target_entity._content_mode_select_entity.async_update_from_light()
 
         _fire_and_forget(*[_apply_one(t) for t in targets])
 
@@ -5644,6 +5840,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         full_panel = service_call.data.get("full_panel")
         
         text_modes = [
+            "Clock",
             "Solid Color",
             "Letter Gradient",
             "Column Gradient",
@@ -5671,15 +5868,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             if full_panel is not None:
                 target_entity._full_panel = full_panel
                 _LOGGER.debug(f"[set_mode] Also setting full_panel to {full_panel}")
+            if mode in MATRIX_DISPLAY_MODES:
+                target_entity._matrix_mode = mode
+                target_entity._mode = mode
             if mode == "Custom Draw":
                 target_entity._custom_draw_active = True
-            else:
+            elif mode == "Clock":
                 target_entity._mode = mode
+                target_entity._custom_draw_active = False
+            else:
                 target_entity._custom_draw_active = False
                 target_entity._custom_pixels = None
             await target_entity.async_apply_display_mode(update_type='color_change')
             if target_entity._mode_select_entity:
                 target_entity._mode_select_entity.async_update_from_light()
+            if target_entity._content_mode_select_entity:
+                target_entity._content_mode_select_entity.async_update_from_light()
 
         _fire_and_forget(*[_apply_one(t) for t in targets])
 
@@ -5689,6 +5893,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         handle_set_mode,
         schema=vol.Schema({
             vol.Required("mode", description="Display mode for text/gradients"): vol.In([
+                "Clock",
                 "Solid Color",
                 "Letter Gradient", 
                 "Column Gradient",

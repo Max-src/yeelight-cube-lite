@@ -22,6 +22,7 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a
 | :-- | :-- |
 | **Full matrix control** | 20×5 RGB, individual pixel-level color |
 | **Brightness** | Full brightness control |
+| **Native clock** | 14 firmware clock styles with date, 12/24-hour, and colon blink options |
 | **Colors & gradients** | Gradient support across multiple modes |
 | **Color effects** | Hue shift, saturation, vibrance, tint, glow, contrast, invert, grayscale |
 | **Transitions** | 14+ animated transition effects |
@@ -439,9 +440,11 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | :-- | :-- | :-- |
 | **Auto Turn On** | Switch | Automatically turn on the lamp when a new mode or drawing is applied |
 | **Yeelight Cube Lite** | Light | Main light entity (on/off, RGB color, brightness) |
-| **Display Mode** | Select | Switch between display modes (see [Display Modes](#display-modes)) |
+| **Content Mode** | Select | Switch between Matrix and the firmware-native Clock |
+| **Display Mode** | Select | Choose the Matrix render mode (see [Display Modes](#display-modes)) |
+| **Clock Style** | Select | Choose one of the 14 native clock styles |
 | **Display Text** | Text | Text input for custom text display on the matrix |
-| **Flip Orientation** | Switch | Flip display horizontally (for upside-down mounting) |
+| **Flip Orientation** | Switch | Rotate matrix content for upside-down mounting |
 | **Font** | Select | Choose text font: basic, fat, italic |
 | **Gradient Angle** | Number | Angle for angle-based gradient modes (0°–360°) |
 | **Palette** | Select | Select from saved color palettes |
@@ -462,6 +465,9 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 
 | Entity | Type | Description |
 | :-- | :-- | :-- |
+| **Clock Show Date** | Switch | Alternate the date with the current time in Clock mode |
+| **Clock 12-Hour Format** | Switch | Use 12-hour time instead of 24-hour time |
+| **Clock Colon Blink** | Switch | Blink the time separator in Clock mode |
 | **Color: Hue Shift** | Number | Shift colors around the wheel (−180° to +180°) |
 | **Color: Temperature** | Number | Warm/cool adjustment (−100 to +100) |
 | **Effects: Grayscale** | Number | Grayscale intensity (0–100%) |
@@ -656,7 +662,14 @@ data:
 
 ## Display Modes
 
-The lamp supports the following display modes, selectable via the **Display Mode** entity or the Gradient Card:
+The **Content Mode** entity selects the active content source:
+
+| Content mode | Description |
+| :-- | :-- |
+| **Matrix** | Render text, gradients, palettes, or drawings through the integration |
+| **Clock** | Run the Cube Lite firmware's native clock effect |
+
+When Matrix content is active, the **Display Mode** entity or Gradient Card selects the renderer:
 
 | Mode | Description |
 | :-- | :-- |
@@ -671,6 +684,18 @@ The lamp supports the following display modes, selectable via the **Display Mode
 | **Text Color Sequence** | Each character gets a different color |
 | **Panel Color Sequence** | Color sequence across all pixels |
 | **Custom Draw** | Pixel art mode (use the Draw Card) |
+
+### Native Clock
+
+Clock mode provides 14 firmware styles and separate options for date display,
+12/24-hour time, and colon blinking. Brightness and orientation previews remain
+available while Clock mode is active.
+
+The clock command uses the Cube Lite's private LAN protocol. The firmware does
+not report the active clock configuration back to Home Assistant, so entity
+states represent the last settings requested by this integration. Camera
+previews approximate the firmware palettes and may differ slightly from the
+physical LEDs.
 
 ---
 

@@ -202,16 +202,17 @@ apply_custom_pixels:
           domain: light
 
 set_mode:
-  name: Set Display Mode
-  description: Set the display mode for text and gradients on the cube.
+  name: Set Mode
+  description: Set the clock, text, gradient, or drawing mode on the cube.
   fields:
     mode:
-      description: Display mode for text/gradients
+      description: Clock, text, gradient, or drawing mode
       example: "Angle Gradient"
       required: true
       selector:
         select:
           options:
+            - "Clock"
             - "Solid Color"
             - "Letter Gradient"
             - "Column Gradient"
