@@ -640,6 +640,7 @@ _CLOCK_STYLE_TO_ID = {
 class YeelightCubeClockStyleSelect(SelectEntity):
     """Select a native firmware clock face."""
 
+    _attr_entity_category = EntityCategory.CONFIG
     _attr_has_entity_name = True
     _attr_should_poll = False
     _attr_translation_key = "clock_style"

@@ -34,18 +34,18 @@
                 "name": "Content mode"
             },
             "clock_style": {
-                "name": "Clock style"
+                "name": "Clock: Style"
             }
         },
         "switch": {
             "clock_show_date": {
-                "name": "Show date"
+                "name": "Clock: Show date"
             },
             "clock_12_hour": {
-                "name": "12-hour format"
+                "name": "Clock: 12-hour format"
             },
             "clock_colon_blink": {
-                "name": "Blink colon"
+                "name": "Clock: Blink colon"
             }
         }
     }
