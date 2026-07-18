@@ -452,7 +452,7 @@ Switch display modes, set gradient angles, and control how colors fill the lamp.
 
 ### `set_mode`
 
-Change the display mode.
+Change the active native clock or Matrix display mode.
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
@@ -462,6 +462,7 @@ Change the display mode.
 
 | Mode | Description |
 | :-- | :-- |
+| **Clock** | Firmware-native clock using the configured clock style and options |
 | **Solid Color** | Single color fill |
 | **Letter Gradient** | Gradient per letter |
 | **Column Gradient** | Vertical gradient across 20 columns |
@@ -480,6 +481,10 @@ data:
   mode: "Angle Gradient"
   entity_id: light.cubelite_192_168_4_102
 ```
+
+`Clock` uses the Cube Lite private LAN command and has no device state readback.
+The Clock Style, Clock Show Date, Clock 12-Hour Format, and Clock Colon Blink
+entities configure the values sent when Clock mode is activated.
 
 ---
 

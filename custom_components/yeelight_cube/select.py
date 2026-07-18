@@ -7,7 +7,15 @@ from homeassistant.core import HomeAssistant, callback # type: ignore
 from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 
-from .const import DOMAIN, CONF_IP
+from .const import (
+    CONF_IP,
+    CONTENT_MODES,
+    DEFAULT_MATRIX_DISPLAY_MODE,
+    DEFAULT_NATIVE_CLOCK_STYLE,
+    DOMAIN,
+    MATRIX_DISPLAY_MODES,
+    NATIVE_CLOCK_STYLES,
+)
 from .layout import FONT_MAPS
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,11 +39,22 @@ async def async_setup_entry(
     # Create all select entities
     palette_select = YeelightCubePaletteSelect(light_entity, ip, entry, hass)
     pixel_art_select = YeelightCubePixelArtSelect(light_entity, ip, entry, hass)
+    content_mode_select = YeelightCubeContentModeSelect(light_entity, entry)
     mode_select = YeelightCubeDisplayModeSelect(light_entity, entry)
+    clock_style_select = YeelightCubeClockStyleSelect(light_entity, entry)
     alignment_select = YeelightCubeAlignmentSelect(light_entity, entry)
     font_select = YeelightCubeFontSelect(light_entity, entry)
     transition_select = YeelightCubeTransitionSelect(light_entity, entry)
-    async_add_entities([palette_select, pixel_art_select, mode_select, alignment_select, font_select, transition_select])
+    async_add_entities([
+        palette_select,
+        pixel_art_select,
+        content_mode_select,
+        mode_select,
+        clock_style_select,
+        alignment_select,
+        font_select,
+        transition_select,
+    ])
     
     return True
 
@@ -309,6 +328,8 @@ class YeelightCubePixelArtSelect(SelectEntity):
 
         # Apply pixel art to the light entity (same logic as handle_apply_pixel_art)
         self._light_entity._custom_pixels = art["pixels"]
+        self._light_entity._mode = "Custom Draw"
+        self._light_entity._matrix_mode = "Custom Draw"
         self._light_entity._custom_draw_active = True
         self._light_entity._active_pixel_art_name = option
         # Stop scroll timer — pixel art mode doesn't scroll
@@ -332,6 +353,10 @@ class YeelightCubePixelArtSelect(SelectEntity):
         # Also trigger light entity state update
         if self._light_entity.hass is not None:
             self._light_entity.async_write_ha_state()
+        if self._light_entity._mode_select_entity:
+            self._light_entity._mode_select_entity.async_update_from_light()
+        if self._light_entity._content_mode_select_entity:
+            self._light_entity._content_mode_select_entity.async_update_from_light()
 
     @callback
     def async_update_from_light(self):
@@ -342,7 +367,11 @@ class YeelightCubePixelArtSelect(SelectEntity):
         Otherwise, clear the selection.
         """
         name = getattr(self._light_entity, '_active_pixel_art_name', None)
-        if name and name in self._attr_options:
+        is_active = (
+            getattr(self._light_entity, "_mode", None) == "Custom Draw"
+            and getattr(self._light_entity, "_custom_draw_active", False)
+        )
+        if is_active and name and name in self._attr_options:
             self._attr_current_option = name
         else:
             self._attr_current_option = None
@@ -389,26 +418,112 @@ class YeelightCubePixelArtSelect(SelectEntity):
         self.async_update_from_pixel_art_sensor()
 
 
-# --- Valid display mode values (must match light.py handle_set_mode) ---
-DISPLAY_MODES = [
-    "Solid Color",
-    "Letter Gradient",
-    "Column Gradient",
-    "Row Gradient",
-    "Angle Gradient",
-    "Radial Gradient",
-    "Letter Vertical Gradient",
-    "Letter Angle Gradient",
-    "Text Color Sequence",
-    "Panel Color Sequence",
-    "Custom Draw",
-]
-
 ALIGNMENT_OPTIONS = ["left", "center", "right"]
 
 
+class YeelightCubeContentModeSelect(SelectEntity):
+    """Select the active content source: matrix or clock."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_translation_key = "content_mode"
+
+    def __init__(self, light_entity, config_entry: ConfigEntry):
+        self._light_entity = light_entity
+        self._config_entry = config_entry
+        self._attr_unique_id = (
+            f"{light_entity._attr_unique_id}_content_mode_select"
+        )
+        self._attr_icon = "mdi:layers-triple"
+        self._attr_options = list(CONTENT_MODES)
+        self._attr_current_option = self._content_mode()
+
+    def _content_mode(self) -> str:
+        mode = getattr(self._light_entity, "_mode", DEFAULT_MATRIX_DISPLAY_MODE)
+        return mode if mode == "Clock" else "Matrix"
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
+            "name": self._light_entity._attr_name,
+            "manufacturer": "Yeelight",
+            "model": "Cube Matrix",
+        }
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def current_option(self) -> str | None:
+        return self._content_mode()
+
+    async def async_select_option(self, option: str) -> None:
+        if option not in CONTENT_MODES:
+            _LOGGER.error("[CONTENT MODE] Invalid mode: %s", option)
+            return
+        if (
+            not self._light_entity._is_on
+            and not self._light_entity._should_auto_turn_on()
+        ):
+            _LOGGER.debug(
+                "[CONTENT MODE] Lamp is off and auto-turn-on is disabled, ignoring"
+            )
+            return
+
+        current_mode = getattr(
+            self._light_entity, "_mode", DEFAULT_MATRIX_DISPLAY_MODE
+        )
+        if current_mode in MATRIX_DISPLAY_MODES:
+            self._light_entity._matrix_mode = current_mode
+
+        if option == "Matrix":
+            matrix_mode = getattr(
+                self._light_entity,
+                "_matrix_mode",
+                DEFAULT_MATRIX_DISPLAY_MODE,
+            )
+            if matrix_mode not in MATRIX_DISPLAY_MODES:
+                matrix_mode = DEFAULT_MATRIX_DISPLAY_MODE
+                self._light_entity._matrix_mode = matrix_mode
+            if matrix_mode == "Custom Draw" and not self._light_entity._custom_pixels:
+                matrix_mode = DEFAULT_MATRIX_DISPLAY_MODE
+                self._light_entity._matrix_mode = matrix_mode
+            self._light_entity._mode = matrix_mode
+            self._light_entity._custom_draw_active = (
+                matrix_mode == "Custom Draw"
+                and bool(self._light_entity._custom_pixels)
+            )
+        else:
+            self._light_entity._mode = option
+            self._light_entity._custom_draw_active = False
+
+        await self._light_entity.async_apply_display_mode(
+            update_type="color_change"
+        )
+        self.async_update_from_light()
+        if self._light_entity._mode_select_entity:
+            self._light_entity._mode_select_entity.async_update_from_light()
+        if self._light_entity._pixel_art_select_entity:
+            self._light_entity._pixel_art_select_entity.async_update_from_light()
+        if self._light_entity.hass is not None:
+            self._light_entity.async_write_ha_state()
+
+    @callback
+    def async_update_from_light(self):
+        self._attr_current_option = self._content_mode()
+        if self.hass is not None:
+            self.async_write_ha_state()
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        self._light_entity._content_mode_select_entity = self
+        self.async_update_from_light()
+
+
 class YeelightCubeDisplayModeSelect(SelectEntity):
-    """Select entity for choosing the display mode on the Yeelight Cube Lite."""
+    """Select the render mode used by Matrix content."""
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
         """Initialize the display mode selector entity."""
@@ -417,8 +532,10 @@ class YeelightCubeDisplayModeSelect(SelectEntity):
         self._attr_name = f"{light_entity._attr_name} Display Mode"
         self._attr_unique_id = f"{light_entity._attr_unique_id}_display_mode_select"
         self._attr_icon = "mdi:view-dashboard-variant"
-        self._attr_options = DISPLAY_MODES
-        self._attr_current_option = getattr(light_entity, '_mode', 'Solid Color')
+        self._attr_options = list(MATRIX_DISPLAY_MODES)
+        self._attr_current_option = getattr(
+            light_entity, "_matrix_mode", DEFAULT_MATRIX_DISPLAY_MODE
+        )
 
     @property
     def device_info(self):
@@ -440,17 +557,19 @@ class YeelightCubeDisplayModeSelect(SelectEntity):
 
     @property
     def current_option(self) -> str | None:
-        """Return the current mode from the light entity."""
-        # If custom draw is active, report "Custom Draw"
-        if getattr(self._light_entity, '_custom_draw_active', False):
-            return "Custom Draw"
-        return getattr(self._light_entity, '_mode', 'Solid Color')
+        """Return the current or last-used Matrix render mode."""
+        mode = getattr(self._light_entity, "_mode", DEFAULT_MATRIX_DISPLAY_MODE)
+        if mode in MATRIX_DISPLAY_MODES:
+            return mode
+        return getattr(
+            self._light_entity, "_matrix_mode", DEFAULT_MATRIX_DISPLAY_MODE
+        )
 
     async def async_select_option(self, option: str) -> None:
         """Handle display mode selection — apply the chosen mode to the lamp."""
         _LOGGER.debug(f"[MODE SELECT] User selected: '{option}' for {self._light_entity._ip}")
 
-        if option not in DISPLAY_MODES:
+        if option not in MATRIX_DISPLAY_MODES:
             _LOGGER.error(f"[MODE SELECT] Invalid mode: '{option}'")
             return
 
@@ -459,10 +578,13 @@ class YeelightCubeDisplayModeSelect(SelectEntity):
             _LOGGER.debug("[MODE SELECT] Lamp is off and auto-turn-on is disabled, ignoring")
             return
 
+        self._light_entity._matrix_mode = option
+        self._light_entity._mode = option
         if option == "Custom Draw":
-            self._light_entity._custom_draw_active = True
+            self._light_entity._custom_draw_active = bool(
+                self._light_entity._custom_pixels
+            )
         else:
-            self._light_entity._mode = option
             self._light_entity._custom_draw_active = False
             self._light_entity._custom_pixels = None
             # Switching to a text mode clears pixel art selection
@@ -478,14 +600,18 @@ class YeelightCubeDisplayModeSelect(SelectEntity):
             self.async_write_ha_state()
         if self._light_entity.hass is not None:
             self._light_entity.async_write_ha_state()
+        if self._light_entity._content_mode_select_entity:
+            self._light_entity._content_mode_select_entity.async_update_from_light()
 
     @callback
     def async_update_from_light(self):
         """Called by external code to sync the dropdown with the light entity's mode."""
-        if getattr(self._light_entity, '_custom_draw_active', False):
-            self._attr_current_option = "Custom Draw"
-        else:
-            self._attr_current_option = getattr(self._light_entity, '_mode', 'Solid Color')
+        mode = getattr(self._light_entity, "_mode", DEFAULT_MATRIX_DISPLAY_MODE)
+        if mode in MATRIX_DISPLAY_MODES:
+            self._light_entity._matrix_mode = mode
+        self._attr_current_option = getattr(
+            self._light_entity, "_matrix_mode", DEFAULT_MATRIX_DISPLAY_MODE
+        )
         if self.hass is not None:
             self.async_write_ha_state()
 
@@ -494,6 +620,101 @@ class YeelightCubeDisplayModeSelect(SelectEntity):
         await super().async_added_to_hass()
         self._light_entity._mode_select_entity = self
         _LOGGER.debug(f"[MODE SELECT] Registered for {self._light_entity._ip}, current mode={self._light_entity._mode}")
+
+
+def _clock_style_label(style_id: int) -> str:
+    """Return the descriptive name for a native clock style."""
+    style = NATIVE_CLOCK_STYLES.get(style_id, {})
+    return style.get("name", "Unknown")
+
+
+_CLOCK_STYLE_OPTIONS = [
+    _clock_style_label(style_id) for style_id in NATIVE_CLOCK_STYLES
+]
+_CLOCK_STYLE_TO_ID = {
+    _clock_style_label(style_id): style_id for style_id in NATIVE_CLOCK_STYLES
+}
+
+
+class YeelightCubeClockStyleSelect(SelectEntity):
+    """Select a native firmware clock face."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_translation_key = "clock_style"
+
+    def __init__(self, light_entity, config_entry: ConfigEntry):
+        self._light_entity = light_entity
+        self._config_entry = config_entry
+        self._attr_unique_id = f"{light_entity._attr_unique_id}_clock_style_select"
+        self._attr_icon = "mdi:clock-digital"
+        self._attr_options = _CLOCK_STYLE_OPTIONS
+        self._attr_current_option = self._style_label()
+
+    def _style_label(self) -> str:
+        style_id = getattr(
+            self._light_entity,
+            "_native_clock_style",
+            DEFAULT_NATIVE_CLOCK_STYLE,
+        )
+        return _clock_style_label(style_id)
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
+            "name": self._light_entity._attr_name,
+            "manufacturer": "Yeelight",
+            "model": "Cube Matrix",
+        }
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def current_option(self) -> str | None:
+        return self._style_label()
+
+    async def async_select_option(self, option: str) -> None:
+        style_id = _CLOCK_STYLE_TO_ID.get(option)
+        if style_id is None:
+            _LOGGER.error(f"[CLOCK STYLE] Unknown option: '{option}'")
+            return
+
+        self._light_entity._native_clock_style = style_id
+        self._attr_current_option = option
+
+        if (
+            self._light_entity._mode == "Clock"
+            and (
+                self._light_entity._is_on
+                or self._light_entity._should_auto_turn_on()
+            )
+        ):
+            await self._light_entity.async_apply_display_mode(
+                update_type="color_change"
+            )
+
+        if self.hass is not None:
+            self.async_write_ha_state()
+        if self._light_entity.hass is not None:
+            self._light_entity.async_write_ha_state()
+
+    @callback
+    def async_update_from_light(self):
+        self._attr_current_option = self._style_label()
+        if self.hass is not None:
+            self.async_write_ha_state()
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        self._light_entity._clock_style_select_entity = self
+        self.async_update_from_light()
+        _LOGGER.debug(
+            f"[CLOCK STYLE] Registered for {self._light_entity._ip}, "
+            f"current style={self._light_entity._native_clock_style}"
+        )
 
 
 class YeelightCubeAlignmentSelect(SelectEntity):
