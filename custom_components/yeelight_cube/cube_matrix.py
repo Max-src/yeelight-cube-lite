@@ -473,6 +473,60 @@ class CubeMatrix:
 
         await asyncio.to_thread(_send)
 
+    async def query_raw_command(
+        self, command: str, params: list = None, timeout: float = 2.0
+    ) -> str:
+        """DEBUG: send a command on a fresh TCP connection and RETURN the reply.
+
+        Unlike send_raw_command (send-only), this reads whatever the lamp
+        sends back and returns it as a decoded string. Used by the FX
+        decoder/capture card to probe responses (e.g. get_prop) and to see
+        how the device replies to experimental commands. Not for hot paths.
+        """
+        if params is None:
+            params = []
+        command_dict = {"id": 1, "method": command, "params": params}
+        request = (
+            json.dumps(command_dict, separators=(",", ":")) + "\r\n"
+        ).encode("utf8")
+
+        def _send() -> str:
+            import struct
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            reply = ""
+            try:
+                sock.connect((self._ip, self._port))
+                sock.sendall(request)
+                chunks = []
+                try:
+                    # Read whatever arrives within the timeout window. The lamp
+                    # may push notify messages too; grab a couple of reads.
+                    for _ in range(4):
+                        data = sock.recv(4096)
+                        if not data:
+                            break
+                        chunks.append(data)
+                        if b"\r\n" in data:
+                            break
+                except socket.timeout:
+                    pass
+                reply = b"".join(chunks).decode("utf8", "replace").strip()
+                _LOGGER.debug(
+                    f"[QUERY] [{self._ip}] {command} -> {reply!r}"
+                )
+            finally:
+                try:
+                    sock.setsockopt(
+                        socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
+                    )
+                    sock.close()
+                except Exception:
+                    pass
+            return reply
+
+        return await asyncio.to_thread(_send)
+
     async def send_command_fast(self, command: str, params: list = None):
         """
         Send command to Yeelight Cube Lite using a PERSISTENT socket (send-only).

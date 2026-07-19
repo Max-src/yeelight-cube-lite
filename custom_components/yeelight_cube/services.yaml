@@ -218,6 +218,133 @@ apply_custom_pixels:
         entity:
           domain: light
 
+send_fx_effect:
+  name: "DEBUG: Send FX Effect (raw)"
+  description: >-
+    LOCAL DEBUG ONLY. Sends a raw private LAN command (default set_fx_effect)
+    to the lamp for reverse-engineering. Either provide params (raw JSON array,
+    sent verbatim) or the structured fields (mode/style_id/apply/mixer/color/
+    data_bytes). Not a stable API.
+  fields:
+    entity_id:
+      description: Target lamp entity ID.
+      example: "light.cubelite_192_168_4_139"
+      required: true
+      selector:
+        entity:
+          domain: light
+    method:
+      description: LAN method name.
+      example: "set_fx_effect"
+      required: false
+      default: "set_fx_effect"
+      selector:
+        text:
+    params:
+      description: Raw params JSON array (sent verbatim, overrides the structured fields).
+      example: '[40, 6, 4, {"mode":40,"mixer":0,"color":[33553920]}]'
+      required: false
+      selector:
+        object:
+    mode:
+      description: Effect type (40 = clock).
+      example: 40
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 255
+          mode: box
+    style_id:
+      description: Style slot ID.
+      example: 6
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 255
+          mode: box
+    apply:
+      description: Apply/commit opcode (4 for clock).
+      example: 4
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 255
+          mode: box
+    mixer:
+      description: Firmware mixer/animation preset ID.
+      example: 39
+      required: false
+      selector:
+        number:
+          min: 0
+          max: 255
+          mode: box
+    color:
+      description: Raw color integer (single int or list of ints).
+      example: 33553920
+      required: false
+      selector:
+        object:
+    data_bytes:
+      description: "Raw data payload as a byte list, e.g. clock: [date(1/2), tz, 12h(0/1), colon(0=blink/1=steady)]."
+      example: "[1, 0, 0, 0]"
+      required: false
+      selector:
+        object:
+    data:
+      description: Base64-encoded data payload (alternative to data_bytes).
+      required: false
+      selector:
+        text:
+    close_socket:
+      description: Close the fast socket before sending (recommended for fx commands).
+      example: true
+      required: false
+      default: true
+      selector:
+        boolean:
+    persist:
+      description: >-
+        If true and this is the native clock effect (mode 40) with a known
+        style_id (1-14), also update the light's stored clock style so a Force
+        Refresh / state update keeps it instead of reverting.
+      example: true
+      required: false
+      default: false
+      selector:
+        boolean:
+
+query_raw:
+  name: "DEBUG: Query Raw (capture reply)"
+  description: >-
+    LOCAL DEBUG ONLY. Sends a raw command to the lamp and returns the device's
+    reply. Useful for probing (e.g. get_prop) and observing responses to
+    experimental commands. Not a stable API.
+  fields:
+    entity_id:
+      description: Target lamp entity ID.
+      example: "light.cubelite_192_168_4_139"
+      required: true
+      selector:
+        entity:
+          domain: light
+    method:
+      description: LAN method name to send.
+      example: "get_prop"
+      required: false
+      default: "get_prop"
+      selector:
+        text:
+    params:
+      description: Params JSON array for the method.
+      example: '["power", "bright", "rgb"]'
+      required: false
+      selector:
+        object:
+
 set_mode:
   name: Set Mode
   description: Set the clock, text, gradient, or drawing mode on the cube.

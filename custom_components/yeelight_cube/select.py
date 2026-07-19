@@ -508,6 +508,15 @@ class YeelightCubeContentModeSelect(SelectEntity):
             self._light_entity._mode_select_entity.async_update_from_light()
         if self._light_entity._pixel_art_select_entity:
             self._light_entity._pixel_art_select_entity.async_update_from_light()
+        # Keep native-effect helper entities in sync so their UI reflects the
+        # current selection when switching into Native Effect content mode.
+        if option == "Native Effect":
+            if self._light_entity._native_effect_select_entity:
+                self._light_entity._native_effect_select_entity.async_write_ha_state()
+            if self._light_entity._native_effect_direction_select_entity:
+                self._light_entity._native_effect_direction_select_entity.async_update_from_light()
+            if self._light_entity._native_effect_speed_entity:
+                self._light_entity._native_effect_speed_entity.async_write_ha_state()
         if self._light_entity.hass is not None:
             self._light_entity.async_write_ha_state()
 

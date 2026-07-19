@@ -43,3 +43,5 @@ yeelight-cube-angle-gradient-card.js
 
 # Internal-only development cards (not shipped in the public repo)
 yeelight-cube-calibration-card.js
+yeelight-cube-fx-explorer-card.js
+yeelight-cube-fx-decoder-card.js

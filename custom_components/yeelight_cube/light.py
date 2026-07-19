@@ -5561,6 +5561,218 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
 
         _fire_and_forget(*[_apply_one(t) for t in targets])
 
+    async def handle_send_fx_effect(service_call):
+        """DEBUG: send a raw LAN command (default ``set_fx_effect``).
+
+        Local exploration/reverse-engineering tool used by the FX Explorer
+        card. NOT part of the stable API -- do not rely on it in automations.
+
+        Either supply ``params`` directly (a raw JSON array sent verbatim), or
+        supply the structured fields (mode/style_id/apply/mixer/color/data*)
+        and this handler assembles the standard 4-element params list:
+            [mode, style_id, apply, {mode, mixer, [color], [data]}]
+        """
+        method = service_call.data.get("method") or "set_fx_effect"
+        raw_params = service_call.data.get("params")
+        close_socket = bool(service_call.data.get("close_socket", True))
+        persist = bool(service_call.data.get("persist", False))
+
+        target = _resolve_entity(service_call, "SEND_FX_EFFECT")
+        if target is None:
+            return {"ok": False, "error": "entity not found"}
+
+        if raw_params is not None:
+            params = raw_params
+        else:
+            mode = int(service_call.data.get("mode", NATIVE_CLOCK_EFFECT_ID))
+            style_id = int(service_call.data.get("style_id", 0))
+            apply = int(service_call.data.get("apply", NATIVE_CLOCK_APPLY))
+            mixer = int(service_call.data.get("mixer", 0))
+            config = {"mode": mode, "mixer": mixer}
+            data_b64 = service_call.data.get("data")
+            data_bytes = service_call.data.get("data_bytes")
+            if data_b64 is not None:
+                config["data"] = data_b64
+            elif data_bytes is not None:
+                config["data"] = base64.b64encode(
+                    bytes(int(b) & 0xFF for b in data_bytes)
+                ).decode("ascii")
+            # The firmware clock effect (mode 40) REQUIRES a data payload
+            # (date/timezone/12h/colon). If none was supplied explicitly, build
+            # it from the lamp's current clock settings -- exactly like
+            # _activate_native_clock -- otherwise the clock renders blank.
+            if mode == NATIVE_CLOCK_EFFECT_ID and "data" not in config:
+                tz_hours = target._native_clock_timezone_hours()
+                clock_data = bytes(
+                    (
+                        2 if getattr(target, "_native_clock_show_date", False) else 1,
+                        tz_hours & 0xFF,
+                        1 if getattr(target, "_native_clock_12_hour", False) else 0,
+                        # Inverted: 0 blinks, 1 keeps the colon steady.
+                        0 if getattr(target, "_native_clock_colon_blink", True) else 1,
+                    )
+                )
+                config["data"] = base64.b64encode(clock_data).decode("ascii")
+            color = service_call.data.get("color")
+            if color is not None:
+                config["color"] = color if isinstance(color, list) else [int(color)]
+            params = [mode, style_id, apply, config]
+
+        # Derive effect mode/style for optional persistence (from whichever
+        # branch built params). params = [mode, style_id, apply, config].
+        effect_mode = None
+        effect_style = None
+        effect_config = None
+        try:
+            if isinstance(params, list) and len(params) >= 2:
+                effect_mode = int(params[0])
+                effect_style = int(params[1])
+            if isinstance(params, list) and len(params) >= 4 and isinstance(
+                params[3], dict
+            ):
+                effect_config = params[3]
+        except (TypeError, ValueError):
+            pass
+
+        # Is this a firmware fx command (clock or native effect)? Both need the
+        # set_bright prelude + settle, otherwise the raw command often doesn't
+        # render until a Force Refresh replays it.
+        is_fx = method == "set_fx_effect"
+        # Map a native-effect id -> name for persistence, if it matches.
+        native_effect_name = None
+        for _name, _spec in NATIVE_EFFECTS.items():
+            if _spec.get("effect_id") == effect_mode and effect_mode is not None:
+                native_effect_name = _name
+                break
+
+        try:
+            async def _do_send():
+                if close_socket:
+                    target._cube_matrix._close_fast_socket()
+                # Mirror _activate_native_clock / _activate_native_effect's
+                # prelude (set_bright + short settle) for any firmware fx so
+                # the effect renders immediately.
+                if is_fx:
+                    await target._set_native_mode_brightness()
+                    await asyncio.sleep(0.1)
+                await target._cube_matrix.send_raw_command(method, params)
+
+            # Run under the device hardware lock so the send is serialized with
+            # the persistent socket / background loop (prevents the command from
+            # being clobbered mid-flight).
+            await target._execute_hardware_op(_do_send, "fx_explorer_send")
+            _LOGGER.warning(
+                "[FX-EXPLORER] %s -> %s params=%s", target.entity_id, method, params
+            )
+
+            # Keep entity bookkeeping consistent with a native activation so the
+            # camera preview and later refreshes behave correctly.
+            if is_fx:
+                target._is_on = True
+                target._fx_mode_is_direct = False
+                target._last_fx_mode_time = 0.0
+                notify = getattr(target, "_notify_camera_preview", None)
+                if notify:
+                    notify()
+
+            persisted = False
+            # Persist for the native clock effect (known style ID) OR a native
+            # animation effect, so a Force Refresh / state update re-applies it
+            # instead of reverting. Arbitrary/unknown raw values can't be
+            # persisted through the state model and are left as live-only.
+            if (
+                persist
+                and effect_mode == NATIVE_CLOCK_EFFECT_ID
+                and effect_style in NATIVE_CLOCK_STYLES
+            ):
+                target._native_clock_style = effect_style
+                target._mode = "Clock"
+                target._is_on = True
+                if target.hass is not None:
+                    target.async_schedule_update_ha_state()
+                    target._refresh_linked_entities()
+                persisted = True
+                _LOGGER.warning(
+                    "[FX-EXPLORER] persisted clock style=%s on %s",
+                    effect_style,
+                    target.entity_id,
+                )
+            elif persist and native_effect_name is not None:
+                target._native_effect = native_effect_name
+                target._mode = "Native Effect"
+                target._is_on = True
+                if isinstance(effect_config, dict):
+                    if "rate" in effect_config:
+                        try:
+                            target._native_effect_speed = max(
+                                0, min(100, int(effect_config["rate"]))
+                            )
+                        except (TypeError, ValueError):
+                            pass
+                    if "direction" in effect_config:
+                        # Reverse-map the numeric direction to its name.
+                        for _dname, _dval in NATIVE_EFFECT_DIRECTION_VALUES.items():
+                            if _dval == effect_config["direction"]:
+                                target._native_effect_direction = _dname
+                                break
+                if target.hass is not None:
+                    target.async_schedule_update_ha_state()
+                    target._refresh_linked_entities()
+                persisted = True
+                _LOGGER.warning(
+                    "[FX-EXPLORER] persisted native effect=%s on %s",
+                    native_effect_name,
+                    target.entity_id,
+                )
+            return {
+                "ok": True,
+                "method": method,
+                "params": params,
+                "persisted": persisted,
+            }
+        except Exception as e:  # noqa: BLE001 -- debug tool, surface any error
+            _LOGGER.error("[FX-EXPLORER] send failed: %s", e, exc_info=True)
+            return {"ok": False, "error": str(e), "method": method, "params": params}
+
+    async def handle_query_raw(service_call):
+        """DEBUG: send a raw command and RETURN the lamp's reply.
+
+        Companion to send_fx_effect for the decoder/capture card. Lets you
+        probe the device (e.g. get_prop) and observe how it responds to
+        experimental commands. Not a stable API.
+        """
+        method = service_call.data.get("method") or "get_prop"
+        params = service_call.data.get("params")
+        if params is None:
+            params = []
+        target = _resolve_entity(service_call, "QUERY_RAW")
+        if target is None:
+            return {"ok": False, "error": "entity not found"}
+        try:
+            reply = await target._cube_matrix.query_raw_command(method, params)
+            _LOGGER.warning(
+                "[FX-QUERY] %s -> %s params=%s reply=%r",
+                target.entity_id,
+                method,
+                params,
+                reply,
+            )
+            parsed = None
+            try:
+                parsed = json.loads(reply) if reply else None
+            except (ValueError, TypeError):
+                parsed = None
+            return {
+                "ok": True,
+                "method": method,
+                "params": params,
+                "reply": reply,
+                "parsed": parsed,
+            }
+        except Exception as e:  # noqa: BLE001 -- debug tool
+            _LOGGER.error("[FX-QUERY] query failed: %s", e, exc_info=True)
+            return {"ok": False, "error": str(e), "method": method, "params": params}
+
     async def handle_get_pixel_art(service_call):
         idx = service_call.data.get("idx")
         group_by_color = service_call.data.get("group_by_color", False)
@@ -5640,7 +5852,42 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             vol.Required("entity_id", description="Target lamp entity (e.g. light.cubelite_192_168_4_102)"): _entity_id_or_list,
         }, extra=vol.ALLOW_EXTRA)
     )
+
+    # DEBUG: raw firmware command explorer (used by the FX Explorer card).
+    # Local reverse-engineering tool -- not a stable API.
+    hass.services.async_register(
+        DOMAIN,
+        "send_fx_effect",
+        handle_send_fx_effect,
+        schema=vol.Schema({
+            vol.Required("entity_id"): _entity_id_or_list,
+            vol.Optional("method"): cv.string,
+            vol.Optional("params"): list,
+            vol.Optional("mode"): int,
+            vol.Optional("style_id"): int,
+            vol.Optional("apply"): int,
+            vol.Optional("mixer"): int,
+            vol.Optional("data"): cv.string,
+            vol.Optional("data_bytes"): list,
+            vol.Optional("color"): vol.Any(int, [int]),
+            vol.Optional("close_socket"): bool,
+            vol.Optional("persist"): bool,
+        }, extra=vol.ALLOW_EXTRA),        supports_response=SupportsResponse.OPTIONAL,
+    )
     
+    # DEBUG: raw query (send + capture the lamp's reply) for the decoder card.
+    hass.services.async_register(
+        DOMAIN,
+        "query_raw",
+        handle_query_raw,
+        schema=vol.Schema({
+            vol.Required("entity_id"): _entity_id_or_list,
+            vol.Optional("method"): cv.string,
+            vol.Optional("params"): list,
+        }, extra=vol.ALLOW_EXTRA),
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+
     hass.services.async_register(
         DOMAIN,
         "update_pixel_arts",
@@ -6164,6 +6411,14 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                 target_entity._mode_select_entity.async_update_from_light()
             if target_entity._content_mode_select_entity:
                 target_entity._content_mode_select_entity.async_update_from_light()
+            # Keep native-effect helper entities in sync.
+            if mode == "Native Effect":
+                if target_entity._native_effect_select_entity:
+                    target_entity._native_effect_select_entity.async_write_ha_state()
+                if target_entity._native_effect_direction_select_entity:
+                    target_entity._native_effect_direction_select_entity.async_update_from_light()
+                if target_entity._native_effect_speed_entity:
+                    target_entity._native_effect_speed_entity.async_write_ha_state()
 
         _fire_and_forget(*[_apply_one(t) for t in targets])
 
