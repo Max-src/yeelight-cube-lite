@@ -157,8 +157,15 @@ class YeelightCubeGradientAngleNumber(NumberEntity):
 
     @property
     def native_value(self) -> float:
-        """Return the current angle from the light entity."""
-        return getattr(self._light_entity, '_angle', 0.0)
+        """Return the current angle from the light entity.
+
+        Rounded to 1 decimal for display only; the light entity keeps the
+        full-precision ``_angle`` used for rendering.
+        """
+        try:
+            return round(float(getattr(self._light_entity, '_angle', 0.0)), 1)
+        except (TypeError, ValueError):
+            return 0.0
 
     async def async_set_native_value(self, value: float) -> None:
         """Set the gradient angle and apply to the lamp."""
