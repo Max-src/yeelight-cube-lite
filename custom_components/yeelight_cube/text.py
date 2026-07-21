@@ -89,7 +89,16 @@ class YeelightCubeCustomTextInput(TextEntity):
         self._light_entity._custom_pixels = None
         self._light_entity._custom_draw_active = False
         self._light_entity._active_pixel_art_name = None
-        
+
+        # Leaving pixel-art (Custom Draw) for text: restore a valid text render
+        # mode so the renderer doesn't fall through all branches and blank the
+        # panel, and the mode-select entity stays consistent.
+        if self._light_entity._mode == "Custom Draw":
+            self._light_entity._mode = "Solid Color"
+            self._light_entity._matrix_mode = "Solid Color"
+            if self._light_entity._mode_select_entity:
+                self._light_entity._mode_select_entity.async_update_from_light()
+
         # Notify pixel art select entity (deselect)
         if self._light_entity._pixel_art_select_entity:
             self._light_entity._pixel_art_select_entity.async_update_from_light()

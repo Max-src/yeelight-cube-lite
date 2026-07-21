@@ -51,6 +51,12 @@ from .image_utils import image_to_matrix
 _LOGGER = logging.getLogger(__name__)
 _LOGGER.debug("Yeelight Cube Lite light.py module loaded")
 
+# Matrix display modes that render text/gradients (everything MATRIX_DISPLAY_MODES
+# offers EXCEPT "Custom Draw", which is pixel-art and has its own render branch).
+# Used to normalise a stale non-text mode back to a valid text mode so the text
+# renderer never falls through all branches and blanks the panel.
+TEXT_RENDER_MODES = tuple(m for m in MATRIX_DISPLAY_MODES if m != "Custom Draw")
+
 LIGHT_SERVICE_NAMES = (
     "preview_gradient_modes",
     "load_palette",
@@ -3743,6 +3749,22 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             if not getattr(self, '_custom_draw_active', False):
                 self._custom_pixels = None
             if self._custom_text or self._full_panel:
+                # SAFETY NET: the text/gradient renderer below only handles the
+                # text render modes.  If we reach here with a non-text mode
+                # left over -- e.g. "Custom Draw" after a pixel art was cleared
+                # by a text call (set_custom_text sets _custom_draw_active=False
+                # but the mode string lingers) -- NONE of the mode branches match
+                # and the panel renders all-black.  Normalise any unrecognised
+                # mode to "Solid Color" so text is ALWAYS rendered.  This keeps
+                # every pixel-art -> text (and similar) transition reliable.
+                if self._mode not in TEXT_RENDER_MODES:
+                    _LOGGER.debug(
+                        "[DISPLAY] [%s] Normalising non-text mode '%s' -> 'Solid Color' for text render",
+                        self._ip, self._mode,
+                    )
+                    self._mode = "Solid Color"
+                    if self._matrix_mode not in TEXT_RENDER_MODES:
+                        self._matrix_mode = "Solid Color"
                 # --- Panel mode override -----------------------------------
                 # When full_panel is on, replace the actual text with a single
                 # virtual character (PANEL_FULL_CHAR) that covers every pixel
@@ -6214,6 +6236,15 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             target_entity._custom_pixels = None
             target_entity._custom_draw_active = False
             target_entity._active_pixel_art_name = None
+            # Leaving pixel-art (Custom Draw) for text: restore a valid text
+            # render mode so the mode-select entity and renderer stay consistent
+            # -- otherwise _mode lingers as "Custom Draw" and the text render
+            # would blank the panel (see TEXT_RENDER_MODES safety net).
+            if target_entity._mode not in TEXT_RENDER_MODES:
+                target_entity._mode = "Solid Color"
+                target_entity._matrix_mode = "Solid Color"
+                if target_entity._mode_select_entity:
+                    target_entity._mode_select_entity.async_update_from_light()
             if target_entity._text_input_entity and hasattr(target_entity._text_input_entity, 'hass') and target_entity._text_input_entity.hass is not None:
                 target_entity._text_input_entity.async_update_from_light()
             if target_entity._pixel_art_select_entity:

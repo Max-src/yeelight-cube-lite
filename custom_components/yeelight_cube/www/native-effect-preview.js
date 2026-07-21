@@ -123,8 +123,9 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
       let color;
 
       if (effect === "Ribbon") {
-        const level = 0.25 + 0.75 * Math.sin((x * 2.5 + y - phase) * TAU) ** 2;
-        color = hsv(x * 0.75 + phase * 0.08, 0.9, level);
+        // The whole panel is one uniform color that slowly morphs through
+        // the spectrum as phase advances -- no spatial variation.
+        color = hsv((((phase * 0.08) % 1.0) + 1.0) % 1.0, 0.9, 0.88);
       } else if (effect === "Starry Sky") {
         const twinkle =
           Math.max(0.0, Math.sin((noise * 3.0 + phase) * TAU)) ** 7;

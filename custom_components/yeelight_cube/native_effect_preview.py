@@ -75,8 +75,10 @@ def render_native_effect(
             noise = _noise(col, row, frame)
 
             if effect == "Ribbon":
-                level = 0.25 + 0.75 * (math.sin((x * 2.5 + y - phase) * math.tau) ** 2)
-                color = _hsv(x * 0.75 + phase * 0.08, 0.9, level)
+                # The whole panel is one uniform color that slowly morphs
+                # through the spectrum as phase advances -- no spatial
+                # variation across pixels.
+                color = _hsv(phase * 0.08 % 1.0, 0.9, 0.88)
             elif effect == "Starry Sky":
                 twinkle = max(0.0, math.sin((noise * 3.0 + phase) * math.tau)) ** 7
                 color = _rgb(110, 165, 255, 0.08 + 0.92 * twinkle)
