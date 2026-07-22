@@ -345,6 +345,20 @@ query_raw:
       selector:
         object:
 
+set_default:
+  name: "DEBUG: Save Current State As Default"
+  description: >-
+    LOCAL DEBUG ONLY. Sends the documented set_default command so the lamp
+    restores its CURRENT state after a power cut. Not a stable API.
+  fields:
+    entity_id:
+      description: Target lamp entity ID.
+      example: "light.cubelite_192_168_4_139"
+      required: true
+      selector:
+        entity:
+          domain: light
+
 set_mode:
   name: Set Mode
   description: Set the clock, text, gradient, or drawing mode on the cube.

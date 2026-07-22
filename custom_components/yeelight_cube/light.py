@@ -4937,8 +4937,12 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
     """Register entity-facing actions once at component setup."""
 
     # Services should only be registered ONCE (not per device)
-    # Skip ALL service registration if already registered to avoid duplicate handlers
-    if hass.services.has_service(DOMAIN, "save_pixel_art"):
+    # Skip ALL service registration if already registered to avoid duplicate handlers.
+    # The sentinel MUST be the most recently ADDED service so that reloading the
+    # integration (without a full HA restart) re-registers everything and picks
+    # up newly added services. Re-registering existing services just overwrites
+    # their handlers, which is harmless.
+    if hass.services.has_service(DOMAIN, "set_default"):
         _LOGGER.debug("[SERVICES] Light services already registered")
         return True
     
@@ -5812,6 +5816,12 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                 if is_fx:
                     await target._set_native_mode_brightness()
                     await asyncio.sleep(0.1)
+                # Color flow (start_cf) renders only while the panel is powered
+                # on, and runs entirely in firmware afterwards. Power on first so
+                # the flow is visible even if the panel was off/idle.
+                if method == "start_cf":
+                    await target._cube_matrix.send_raw_command("set_power", ["on"])
+                    await asyncio.sleep(0.1)
                 await target._cube_matrix.send_raw_command(method, params)
 
             # Run under the device hardware lock so the send is serialized with
@@ -5831,6 +5841,12 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                 notify = getattr(target, "_notify_camera_preview", None)
                 if notify:
                     notify()
+            elif method == "start_cf":
+                # Color flow leaves the panel on but not in direct FX mode.
+                # It is live-only (not persistable through the state model).
+                target._is_on = True
+                target._fx_mode_is_direct = False
+                target._last_fx_mode_time = 0.0
 
             persisted = False
             # Persist for the native clock effect (known style ID) OR a native
@@ -5965,6 +5981,24 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             _LOGGER.error("[FX-QUERY] query failed: %s", e, exc_info=True)
             return {"ok": False, "error": str(e), "method": method, "params": params}
 
+    async def handle_set_default(service_call):
+        """DEBUG: Snapshot the lamp's CURRENT state as its power-on default.
+
+        Sends the documented ``set_default`` command so that after a power cut
+        the Cube restores whatever it is showing right now. Not a stable API.
+        """
+        target = _resolve_entity(service_call, "SET_DEFAULT")
+        if target is None:
+            return {"ok": False, "error": "entity not found"}
+        try:
+            target._cube_matrix._close_fast_socket()
+            await target._cube_matrix.send_raw_command("set_default", [])
+            _LOGGER.warning("[SET-DEFAULT] %s saved current state as default", target.entity_id)
+            return {"ok": True}
+        except Exception as e:  # noqa: BLE001 -- debug tool
+            _LOGGER.error("[SET-DEFAULT] failed: %s", e, exc_info=True)
+            return {"ok": False, "error": str(e)}
+
     async def handle_get_pixel_art(service_call):
         idx = service_call.data.get("idx")
         group_by_color = service_call.data.get("group_by_color", False)
@@ -6076,6 +6110,17 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             vol.Required("entity_id"): _entity_id_or_list,
             vol.Optional("method"): cv.string,
             vol.Optional("params"): list,
+        }, extra=vol.ALLOW_EXTRA),
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+
+    # DEBUG: spec-lab experiments (music mode benchmark, set_default, notify).
+    hass.services.async_register(
+        DOMAIN,
+        "set_default",
+        handle_set_default,
+        schema=vol.Schema({
+            vol.Required("entity_id"): _entity_id_or_list,
         }, extra=vol.ALLOW_EXTRA),
         supports_response=SupportsResponse.OPTIONAL,
     )

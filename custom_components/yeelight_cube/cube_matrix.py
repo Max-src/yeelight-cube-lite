@@ -391,18 +391,6 @@ class CubeMatrix:
                 _LOGGER.warning(f"Draw command failed: {e}")
 
 
-    async def enable_music_mode_recovery(self):
-        """Enable music mode as a recovery mechanism when getting 'illegal request' errors"""
-        try:
-            _LOGGER.debug("Attempting to enable music mode for recovery...")
-            # Try to enable music mode - this typically requires the device IP and a local port
-            await asyncio.to_thread(self.device.start_music, port=54321)
-            _LOGGER.debug("Music mode enabled successfully for recovery")
-            return True
-        except Exception as e:
-            _LOGGER.error(f"Failed to enable music mode: {e}")
-            return False
-
     def _close_fast_socket(self):
         """Close the persistent fast socket if open.
         
