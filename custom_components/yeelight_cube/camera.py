@@ -294,6 +294,14 @@ class _YeelightCubeMatrixCameraBase(Camera):
                         col,
                     )
             offset += width + 1
+
+        # Mirror the firmware clock face for left/up mounts.  The hardware
+        # native clock cannot rotate, but the preview should show what a
+        # software-rendered clock would look like in those orientations.
+        device_orientation = getattr(le, "_device_orientation", "right")
+        if device_orientation in ("left", "up"):
+            matrix = matrix[::-1]
+
         return matrix
 
     @staticmethod
@@ -368,7 +376,8 @@ class _YeelightCubeMatrixCameraBase(Camera):
         flipped = getattr(self._light_entity, "_orientation", None) == "flipped"
         # Regular-mode pixels have already been transformed before being sent
         # to the lamp, so apply the inverse transform for an upright preview.
-        # Native Clock previews are generated locally and need no inverse.
+        # Native Clock/Effect previews now bake device orientation into the
+        # pixel buffer, so the renderer uses normal rects for those modes.
         undo_device_flip = flipped and not self._is_native_preview_mode()
         rects = _RECTS_FLIPPED if undo_device_flip else _RECTS_NORMAL
 

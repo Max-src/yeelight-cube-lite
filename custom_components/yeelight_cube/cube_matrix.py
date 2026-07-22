@@ -482,6 +482,11 @@ class CubeMatrix:
         sends back and returns it as a decoded string. Used by the FX
         decoder/capture card to probe responses (e.g. get_prop) and to see
         how the device replies to experimental commands. Not for hot paths.
+
+        IMPORTANT: While a firmware-native renderer (clock/effect) is active,
+        the Cube can reset its mode when a SECOND TCP connection is opened.
+        We therefore close the persistent fast socket before probing so the
+        lamp only sees one connection at a time.
         """
         if params is None:
             params = []
@@ -489,6 +494,14 @@ class CubeMatrix:
         request = (
             json.dumps(command_dict, separators=(",", ":")) + "\r\n"
         ).encode("utf8")
+
+        # Close the persistent fast socket first. The Cube's firmware is
+        # sensitive to concurrent TCP connections while native renderers are
+        # running; leaving it open causes the lamp to drop the active effect
+        # when the probe connection arrives.
+        self._close_fast_socket()
+        # Give the Cube TCP stack a moment to clean up the closed socket.
+        await asyncio.sleep(0.1)
 
         def _send() -> str:
             import struct

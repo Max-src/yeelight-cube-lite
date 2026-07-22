@@ -879,6 +879,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         self._native_clock_12_hour = False
         self._native_clock_colon_blink = True
         self._native_clock_timezone_offset = None
+        self._native_clock_color = None  # ARGB int override, None = use style color
         self._native_effect = DEFAULT_NATIVE_EFFECT
         self._native_effect_speed = 50
         self._native_effect_direction = "Up"
@@ -1699,6 +1700,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             "clock_show_date": self._native_clock_show_date,
             "clock_12_hour": self._native_clock_12_hour,
             "clock_colon_blink": self._native_clock_colon_blink,
+            "clock_color": self._native_clock_color,
             "native_effect": self._native_effect,
             "native_effect_speed": self._native_effect_speed,
             "native_effect_direction": self._native_effect_direction,
@@ -1922,6 +1924,11 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 self._native_clock_colon_blink = bool(
                     old_state.attributes["clock_colon_blink"]
                 )
+            if old_state.attributes.get("clock_color") is not None:
+                try:
+                    self._native_clock_color = int(old_state.attributes["clock_color"])
+                except (TypeError, ValueError):
+                    self._native_clock_color = None
             native_effect = old_state.attributes.get("native_effect")
             if native_effect in NATIVE_EFFECTS:
                 self._native_effect = native_effect
@@ -3602,15 +3609,16 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         offset = dt_util.now().utcoffset()
         return int(offset.total_seconds() / 3600) if offset else 0
 
-    async def _activate_native_clock(self) -> None:
-        """Activate the Cube Lite firmware clock through Yeelight LAN control."""
+    def _native_clock_data_bytes(self) -> bytes:
+        """Build the 4-byte clock payload sent inside the set_fx_effect data field.
+
+        Byte 0: 1 = time only, 2 = alternate date/time
+        Byte 1: timezone offset in whole hours (signed, wrapped to u8)
+        Byte 2: 0 = 24-hour, 1 = 12-hour
+        Byte 3: 0 = blink colon, 1 = steady colon
+        """
         timezone_hours = self._native_clock_timezone_hours()
-        style_id = self._native_clock_style
-        style = NATIVE_CLOCK_STYLES.get(
-            style_id,
-            NATIVE_CLOCK_STYLES[DEFAULT_NATIVE_CLOCK_STYLE],
-        )
-        clock_data = bytes(
+        return bytes(
             (
                 2 if self._native_clock_show_date else 1,
                 timezone_hours & 0xFF,
@@ -3619,13 +3627,34 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 0 if self._native_clock_colon_blink else 1,
             )
         )
+
+    def _resolve_native_clock_color(self, style: dict) -> int | None:
+        """Return the ARGB color integer to send for the current clock style.
+
+        Priority: user override (``_native_clock_color`` attribute) > style default.
+        """
+        override = getattr(self, "_native_clock_color", None)
+        if override is not None:
+            return override
+        return style.get("color")
+
+    async def _activate_native_clock(self) -> None:
+        """Activate the Cube Lite firmware clock through Yeelight LAN control."""
+        timezone_hours = self._native_clock_timezone_hours()
+        style_id = self._native_clock_style
+        style = NATIVE_CLOCK_STYLES.get(
+            style_id,
+            NATIVE_CLOCK_STYLES[DEFAULT_NATIVE_CLOCK_STYLE],
+        )
+        clock_data = self._native_clock_data_bytes()
         effect_config = {
             "mode": NATIVE_CLOCK_EFFECT_ID,
             "mixer": style["mixer"],
             "data": base64.b64encode(clock_data).decode("ascii"),
         }
-        if "color" in style:
-            effect_config["color"] = [style["color"]]
+        clock_color = self._resolve_native_clock_color(style)
+        if clock_color is not None:
+            effect_config["color"] = [int(clock_color)]
 
         params = [
             NATIVE_CLOCK_EFFECT_ID,
@@ -4774,7 +4803,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
     _DISPLAY_STATE_ATTRS = (
         "_custom_text", "_text_colors", "_mode", "_matrix_mode", "_native_clock_style",
         "_native_clock_show_date", "_native_clock_12_hour",
-        "_native_clock_colon_blink", "_full_panel",
+        "_native_clock_colon_blink", "_native_clock_color", "_full_panel",
         "_native_effect", "_native_effect_speed", "_native_effect_direction",
         "_angle",
         "_background_color", "_alignment", "_font", "_orientation",
@@ -5726,17 +5755,9 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             # it from the lamp's current clock settings -- exactly like
             # _activate_native_clock -- otherwise the clock renders blank.
             if mode == NATIVE_CLOCK_EFFECT_ID and "data" not in config:
-                tz_hours = target._native_clock_timezone_hours()
-                clock_data = bytes(
-                    (
-                        2 if getattr(target, "_native_clock_show_date", False) else 1,
-                        tz_hours & 0xFF,
-                        1 if getattr(target, "_native_clock_12_hour", False) else 0,
-                        # Inverted: 0 blinks, 1 keeps the colon steady.
-                        0 if getattr(target, "_native_clock_colon_blink", True) else 1,
-                    )
-                )
-                config["data"] = base64.b64encode(clock_data).decode("ascii")
+                config["data"] = base64.b64encode(
+                    target._native_clock_data_bytes()
+                ).decode("ascii")
             color = service_call.data.get("color")
             if color is not None:
                 config["color"] = color if isinstance(color, list) else [int(color)]
@@ -5824,6 +5845,41 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                 target._native_clock_style = effect_style
                 target._mode = "Clock"
                 target._is_on = True
+                # Persist the color if the raw call supplied one, so subsequent
+                # activations keep the same custom color.
+                if isinstance(effect_config, dict) and "color" in effect_config:
+                    color_value = effect_config["color"]
+                    if isinstance(color_value, list) and color_value:
+                        target._native_clock_color = int(color_value[0])
+                    else:
+                        target._native_clock_color = int(color_value)
+                elif isinstance(effect_config, dict) and "color" not in effect_config:
+                    target._native_clock_color = None
+                # Decode the 4-byte data payload to persist clock settings so
+                # subsequent activations (brightness change, refresh, etc.) use
+                # the values the caller explicitly sent rather than reverting to
+                # the old entity state.  Format (matches _native_clock_data_bytes):
+                #   [show_date(1/2), tz_offset, 12h(0/1), colon_steady(0=blink)]
+                if isinstance(effect_config, dict) and "data" in effect_config:
+                    try:
+                        clock_bytes = base64.b64decode(effect_config["data"])
+                        if len(clock_bytes) >= 1:
+                            target._native_clock_show_date = clock_bytes[0] == 2
+                        if len(clock_bytes) >= 3:
+                            target._native_clock_12_hour = clock_bytes[2] == 1
+                        if len(clock_bytes) >= 4:
+                            # Firmware byte is inverted: 0 = blink, 1 = steady
+                            target._native_clock_colon_blink = clock_bytes[3] == 0
+                    except Exception:
+                        pass
+                # Record the current UTC offset so the periodic ``async_update``
+                # timezone check does not immediately fire a SECOND clock
+                # activation (which races this one for the hardware lock and
+                # visibly resets the panel). ``_activate_native_clock`` sets this
+                # on the normal path; the raw FX path must do the same.
+                target._native_clock_timezone_offset = (
+                    target._native_clock_timezone_hours()
+                )
                 if target.hass is not None:
                     target.async_schedule_update_ha_state()
                     target._refresh_linked_entities()

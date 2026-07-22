@@ -21,6 +21,151 @@ import {
   resolveCapsuleThickness,
 } from "./capsule-slider-utils.js";
 
+// ── Clock face pixel renderer (mirrors Python camera.py _get_clock_preview) ──
+// Basic-font glyph data: each value is a list of positions (row*20+col)
+const _CLOCK_FONT = {
+  0: [1, 20, 22, 40, 42, 60, 62, 81, 0, 2, 80, 82],
+  1: [0, 1, 2, 21, 41, 61, 81, 80],
+  2: [0, 1, 2, 20, 41, 62, 80, 81, 82, 42, 40],
+  3: [0, 1, 22, 41, 62, 80, 81, 2, 42, 82],
+  4: [2, 22, 40, 41, 42, 60, 62, 80, 82],
+  5: [0, 1, 22, 40, 41, 60, 80, 81, 82, 2, 42],
+  6: [1, 20, 22, 40, 41, 60, 81, 82, 80, 42, 0, 2],
+  7: [1, 21, 41, 62, 80, 81, 82],
+  8: [1, 20, 22, 41, 60, 62, 81, 0, 2, 80, 82, 40, 42],
+  9: [0, 1, 22, 41, 42, 60, 62, 81, 80, 82, 40, 2],
+  ":": [20, 60],
+  " ": [],
+};
+
+function _clockGlyphWidth(glyph) {
+  return new Set(glyph.map((p) => p % 20)).size;
+}
+
+function _clockGradientColor(palette, factor) {
+  factor = Math.max(0.0, Math.min(1.0, factor));
+  if (palette.length === 1) return palette[0];
+  const scaled = factor * (palette.length - 1);
+  const idx = Math.min(palette.length - 2, Math.floor(scaled));
+  const local = scaled - idx;
+  const s = palette[idx],
+    e = palette[idx + 1];
+  return [
+    Math.round(s[0] + (e[0] - s[0]) * local),
+    Math.round(s[1] + (e[1] - s[1]) * local),
+    Math.round(s[2] + (e[2] - s[2]) * local),
+  ];
+}
+
+function _clockPixelColor(styleId, charIndex, col) {
+  const fixed = {
+    2: [0, 221, 255],
+    4: [255, 255, 255],
+    5: [34, 238, 178],
+    6: [255, 238, 0],
+    7: [255, 44, 222],
+    8: [255, 45, 40],
+    9: [0, 222, 255],
+    10: [132, 24, 238],
+  };
+  if (fixed[styleId]) return fixed[styleId];
+  if (styleId === 3)
+    return [
+      [243, 38, 229],
+      [43, 120, 255],
+      [21, 223, 131],
+      [125, 255, 23],
+    ][charIndex % 4];
+  if (styleId === 12)
+    return [
+      [70, 132, 255],
+      [255, 230, 39],
+    ][charIndex % 2];
+  const palettes = {
+    1: [
+      [255, 55, 20],
+      [255, 201, 30],
+      [44, 238, 88],
+      [38, 157, 255],
+      [230, 31, 224],
+    ],
+    11: [
+      [255, 93, 19],
+      [235, 64, 91],
+      [124, 25, 242],
+    ],
+    13: [
+      [35, 92, 230],
+      [73, 143, 255],
+      [229, 246, 255],
+    ],
+    14: [
+      [25, 143, 255],
+      [56, 183, 255],
+      [230, 248, 255],
+    ],
+  };
+  return _clockGradientColor(palettes[styleId] || [[255, 238, 0]], col / 19);
+}
+
+/**
+ * Render one clock frame as 100 [r,g,b] pixels (row-major, row 0 = top).
+ * Mirrors _get_clock_preview() in camera.py, including colon blink.
+ */
+function renderClockFrame(attrs) {
+  const COLS = 20;
+  const now = new Date();
+  const tsSec = now.getTime() / 1000;
+
+  const showDate = !!attrs.clock_show_date;
+  const datePhase = showDate && Math.floor(tsSec / 5) % 2 === 1;
+
+  let text;
+  if (datePhase) {
+    text =
+      String(now.getMonth() + 1).padStart(2, "0") +
+      String(now.getDate()).padStart(2, "0");
+  } else {
+    let h = now.getHours();
+    if (attrs.clock_12_hour) h = h % 12 || 12;
+    text =
+      String(h).padStart(2, "0") +
+      ":" +
+      String(now.getMinutes()).padStart(2, "0");
+  }
+
+  const colonVisible = !(
+    !datePhase &&
+    !!attrs.clock_colon_blink &&
+    now.getSeconds() % 2 === 1
+  );
+
+  const styleId = attrs.clock_style_id ?? 6;
+  const matrix = Array.from({ length: 100 }, () => [0, 0, 0]);
+  const chars = [...text];
+  const glyphs = chars.map((c) => _CLOCK_FONT[c] || []);
+  const widths = glyphs.map(_clockGlyphWidth);
+  const totalWidth =
+    widths.reduce((a, b) => a + b, 0) + Math.max(0, chars.length - 1);
+  let offset = Math.max(0, Math.floor((COLS - totalWidth) / 2));
+
+  for (let i = 0; i < chars.length; i++) {
+    const width = widths[i];
+    if (chars[i] === ":" && !colonVisible) {
+      offset += width + 1;
+      continue;
+    }
+    for (const pos of glyphs[i]) {
+      const col = (pos % COLS) + offset;
+      const row = Math.floor(pos / COLS);
+      if (col >= 0 && col < COLS && row >= 0 && row < 5)
+        matrix[row * COLS + col] = _clockPixelColor(styleId, i, col);
+    }
+    offset += width + 1;
+  }
+  return matrix;
+}
+
 // ==============  EFFECTS REGISTRY  ==============
 // Single source of truth for all effect metadata.
 // All effect definitions throughout this card derive from these two tables.
@@ -2115,13 +2260,17 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       !this._isInitialRenderComplete ||
       !this.shadowRoot.querySelector(".lamp-preview-css");
 
-    // Firmware Native Effect mode runs an animation the plugin can't read back,
-    // so the static matrix_colors attribute is meaningless there. When active,
-    // we drive a client-side animation loop (see _startNativeAnimation) and
-    // skip overwriting the matrix with the static colors on smart updates.
+    // Firmware Native Effect and Clock modes run animations the plugin can't
+    // read back, so the static matrix_colors attribute is meaningless there.
+    // When active, we drive client-side animation loops and skip overwriting
+    // the matrix with the static (stale) colors on smart updates.
     const isNativeAnimating =
       this.config.show_lamp_preview !== false &&
       stateObj.attributes.content_mode === "Native Effect" &&
+      stateObj.state === "on";
+    const isClockAnimating =
+      this.config.show_lamp_preview !== false &&
+      stateObj.attributes.content_mode === "Clock" &&
       stateObj.state === "on";
 
     if (needsFullRender) {
@@ -2176,9 +2325,10 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     } else {
       // Smart update: Only update matrix colors and slider values
       const _tSmart = performance.now();
-      // When a native animation owns the matrix, don't clobber it with the
-      // static (stale) matrix_colors attribute.
-      if (!isNativeAnimating) this._updateMatrixColors(gridColors, stateObj);
+      // When a native animation or clock animation owns the matrix, don't
+      // clobber it with the static (stale) matrix_colors attribute.
+      if (!isNativeAnimating && !isClockAnimating)
+        this._updateMatrixColors(gridColors, stateObj);
       this._updateSliderValues(displayBrightness, effects); // Use cached value to prevent jumping
       this._updatePowerButton(stateObj);
 
@@ -2189,9 +2339,11 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       });
     }
 
-    // Start/stop the client-side native-effect animation to match current mode.
+    // Start/stop the client-side animations to match current mode.
     if (isNativeAnimating) this._startNativeAnimation();
     else this._stopNativeAnimation();
+    if (isClockAnimating) this._startClockAnimation();
+    else this._stopClockAnimation();
   }
 
   // Convert a 100-entry matrix_colors array (RGB tuples) to CSS colors using
@@ -2229,6 +2381,35 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       clearInterval(this._nativeAnimTimer);
       this._nativeAnimTimer = null;
     }
+  }
+
+  // Begin the client-side clock animation (updates every 500 ms so the
+  // colon blink and minute changes are always visible).
+  _startClockAnimation() {
+    if (this._clockAnimTimer) return;
+    this._clockAnimTimer = setInterval(() => this._clockAnimFrame(), 500);
+    this._clockAnimFrame(); // draw the first frame immediately
+  }
+
+  _stopClockAnimation() {
+    if (this._clockAnimTimer) {
+      clearInterval(this._clockAnimTimer);
+      this._clockAnimTimer = null;
+    }
+  }
+
+  _clockAnimFrame() {
+    const st = this._hass?.states?.[this.config?.entity];
+    if (!st || st.state !== "on" || st.attributes.content_mode !== "Clock") {
+      this._stopClockAnimation();
+      return;
+    }
+    const dots = this.shadowRoot?.querySelectorAll(".lamp-dot");
+    if (!dots || dots.length !== 100) return; // matrix not rendered yet
+
+    const pix = renderClockFrame(st.attributes);
+    const grid = this._matrixColorsToGridColors(pix, st);
+    this._updateMatrixColors(grid, st);
   }
 
   _nativeAnimFrame() {
@@ -6169,8 +6350,9 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     clearTimeout(this._userBrightnessTimeout);
     clearTimeout(this._powerToggleSafetyTimer);
 
-    // Stop the native-effect animation loop if running.
+    // Stop the client-side animation loops if running.
     this._stopNativeAnimation();
+    this._stopClockAnimation();
 
     this._brightnessDebounceTimer = null;
     this._realBrightnessDebounceTimer = null;

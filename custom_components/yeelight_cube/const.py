@@ -13,6 +13,10 @@ NATIVE_CLOCK_EFFECT_ID = 40
 # The Station app uses apply=2 for the clock renderer. apply=4 is reserved for
 # regular preset animations and leaves mode 40 selected without activating it.
 NATIVE_CLOCK_APPLY = 2
+# Clock styles. Entries with ``mixer`` use a firmware gradient/palette;
+# entries with ``color`` use a single ARGB integer (e.g. 0x01FFEE00).
+# The user can override the color on any style by setting ``_native_clock_color``;
+# when unset, the style's own color (if any) is used.
 NATIVE_CLOCK_STYLES = {
     1: {"name": "Rainbow Gradient", "mixer": 39},
     2: {"name": "Aqua", "mixer": 42},
