@@ -256,7 +256,7 @@ class _YeelightCubeMatrixCameraBase(Camera):
         show_date = bool(getattr(le, "_native_clock_show_date", False))
         date_phase = show_date and int(now.timestamp() // 5) % 2 == 1
         if date_phase:
-            text = now.strftime("%m%d")
+            text = now.strftime("%m.%d")
         else:
             clock_format = (
                 "%I:%M"

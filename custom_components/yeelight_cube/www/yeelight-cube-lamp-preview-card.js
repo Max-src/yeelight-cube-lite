@@ -139,6 +139,7 @@ function renderClockFrame(attrs, fontMap, metrics) {
   if (datePhase) {
     text =
       String(now.getMonth() + 1).padStart(2, "0") +
+      "." +
       String(now.getDate()).padStart(2, "0");
   } else {
     let h = now.getHours();
