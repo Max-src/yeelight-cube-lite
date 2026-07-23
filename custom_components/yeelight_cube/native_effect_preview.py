@@ -74,17 +74,17 @@ def render_native_effect(
             wave = (math.sin((u * 2.0 - phase) * math.tau) + 1.0) / 2.0
             noise = _noise(col, row, frame)
 
-            if effect == "Ribbon":
+            if effect == "Streamer":
                 # The whole panel is one uniform color that slowly morphs
                 # through the spectrum as phase advances -- no spatial
                 # variation across pixels.
                 color = _hsv(phase * 0.08 % 1.0, 0.9, 0.88)
-            elif effect == "Starry Sky":
+            elif effect == "Starry sky":
                 twinkle = max(0.0, math.sin((noise * 3.0 + phase) * math.tau)) ** 7
                 color = _rgb(110, 165, 255, 0.08 + 0.92 * twinkle)
             elif effect == "Spectrum":
                 color = _hsv(x * 0.9, 1.0, 0.82 + 0.18 * math.sin((x + phase * 0.08) * math.tau))
-            elif effect == "Waves":
+            elif effect == "Ocean Waves":
                 # Concentric ripples radiating from a source point at the
                 # "bottom" centre (along the flow axis), matching the real
                 # firmware effect: deep-blue troughs, cyan crests, wide bands.
@@ -103,17 +103,17 @@ def render_native_effect(
                 curtain = (math.sin((v * 1.6 + phase * 0.22) * math.tau + u * 2.0) + 1.0) / 2.0
                 color = _palette(((18, 255, 143), (20, 126, 255), (192, 55, 255)), curtain)
                 color = _rgb(*color, 0.3 + 0.7 * wave)
-            elif effect == "Fire":
+            elif effect == "Bonfire":
                 # Flames rise along the flow axis (u); flicker varies across it (v).
                 heat = max(0.0, 1.0 - u + noise * 0.45 - 0.2 * math.sin((v * 3 + phase) * math.tau))
                 color = _palette(((70, 0, 0), (255, 35, 0), (255, 200, 0), (255, 255, 180)), min(1.0, heat))
-            elif effect == "Bouncing Ball":
+            elif effect == "Pinball":
                 center_x = (math.sin(phase * 1.7) + 1.0) * 0.5
                 center_y = abs(math.sin(phase * 2.3))
                 distance = math.hypot((x - center_x) * 1.8, y - center_y)
                 level = max(0.03, 1.0 - distance * 3.6)
                 color = _rgb(255, 65, 190, level)
-            elif effect == "Meteor":
+            elif effect == "Shooting Star":
                 position = (u - phase * 0.7) % 1.0
                 trail = max(0.0, 1.0 - position * 5.0)
                 color = _rgb(130 + 125 * trail, 170 + 85 * trail, 255, 0.08 + 0.92 * trail)
@@ -122,7 +122,7 @@ def render_native_effect(
                 height = 0.46 + 0.25 * math.sin((v * 1.5 - phase * 0.35) * math.tau)
                 level = 0.15 if u > height else 0.55 + 0.45 * wave
                 color = _rgb(0, 145, 255, level)
-            elif effect == "Building Blocks":
+            elif effect == "Building block":
                 block = (int((u * 8 - phase * 2.0)) + int(v * 4)) % 6
                 color = ((255, 58, 52), (255, 190, 24), (46, 224, 95), (35, 155, 255), (164, 64, 255), (255, 67, 190))[block]
             elif effect == "Hacking":

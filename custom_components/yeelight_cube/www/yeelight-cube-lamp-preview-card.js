@@ -2477,7 +2477,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     const dots = this.shadowRoot?.querySelectorAll(".lamp-dot");
     if (!dots || dots.length !== 100) return; // matrix not rendered yet
 
-    const effect = st.attributes.native_effect || "Ribbon";
+    const effect = st.attributes.native_effect || "Streamer";
     const dir = st.attributes.native_effect_direction || "Up";
     const speed = Math.max(
       1,

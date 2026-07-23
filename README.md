@@ -755,7 +755,7 @@ action: yeelight_cube.set_button_effects
 data:
   entity_id: light.yeelight_cube_lite
   effects:
-    - Ribbon
+    - Streamer
     - Rainbow
     - "Clock: Yellow"
 ```

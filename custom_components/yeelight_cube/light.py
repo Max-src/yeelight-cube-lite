@@ -42,6 +42,7 @@ from .const import (
     NATIVE_CLOCK_STYLES,
     NATIVE_EFFECT_APPLY,
     NATIVE_EFFECT_DIRECTION_VALUES,
+    NATIVE_EFFECT_RENAMES,
     NATIVE_EFFECTS,
     POWER_ON_STATES,
 )
@@ -1974,11 +1975,13 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 except (TypeError, ValueError):
                     self._native_clock_color = None
             native_effect = old_state.attributes.get("native_effect")
+            # Migrate legacy names (e.g. "Ribbon") to current app names.
+            native_effect = NATIVE_EFFECT_RENAMES.get(native_effect, native_effect)
             if native_effect in NATIVE_EFFECTS:
                 self._native_effect = native_effect
             if old_state.attributes.get("native_effect_speed") is not None:
                 self._native_effect_speed = max(
-                    1, min(100, int(old_state.attributes["native_effect_speed"]))
+                    1, min(255, int(old_state.attributes["native_effect_speed"]))
                 )
             native_direction = old_state.attributes.get("native_effect_direction")
             if native_direction in NATIVE_EFFECT_DIRECTION_VALUES:
@@ -1989,9 +1992,10 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             button_effects = old_state.attributes.get("button_effects")
             if isinstance(button_effects, list):
                 self._button_effects = [
-                    name
+                    NATIVE_EFFECT_RENAMES.get(name, name)
                     for name in button_effects
-                    if name in NATIVE_EFFECTS or name.startswith("Clock: ")
+                    if NATIVE_EFFECT_RENAMES.get(name, name) in NATIVE_EFFECTS
+                    or name.startswith("Clock: ")
                 ][:8]
             if old_state.attributes.get("custom_text") is not None:
                 self._custom_text = old_state.attributes["custom_text"]
@@ -6079,7 +6083,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                     if "rate" in effect_config:
                         try:
                             target._native_effect_speed = max(
-                                0, min(100, int(effect_config["rate"]))
+                                1, min(255, int(effect_config["rate"]))
                             )
                         except (TypeError, ValueError):
                             pass

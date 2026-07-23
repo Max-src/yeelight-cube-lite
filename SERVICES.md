@@ -828,7 +828,7 @@ Cube Lite's physical button.
 action: yeelight_cube.set_button_effects
 data:
   effects:
-    - Ribbon
+    - Streamer
     - Rainbow
     - "Clock: Yellow"
   entity_id: light.cubelite_a904

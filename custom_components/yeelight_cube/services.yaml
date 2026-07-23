@@ -135,7 +135,7 @@ set_button_effects:
     effects:
       description: Ordered native effect or clock style names. The first item is button slot 1.
       required: true
-      example: '["Ribbon", "Rainbow", "Clock: Yellow"]'
+      example: '["Streamer", "Rainbow", "Clock: Yellow"]'
       selector:
         object:
     entity_id:

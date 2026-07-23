@@ -405,9 +405,9 @@ class YeelightCubeNativeEffectSpeedNumber(NumberEntity):
         self._attr_unique_id = f"{light_entity._attr_unique_id}_native_effect_speed"
         self._attr_icon = "mdi:speedometer"
         self._attr_native_min_value = 1.0
-        self._attr_native_max_value = 100.0
+        self._attr_native_max_value = 255.0
         self._attr_native_step = 1.0
-        self._attr_native_unit_of_measurement = "%"
+        self._attr_native_unit_of_measurement = None
         self._attr_mode = NumberMode.SLIDER
 
     @property
@@ -429,7 +429,7 @@ class YeelightCubeNativeEffectSpeedNumber(NumberEntity):
         return float(self._light_entity._native_effect_speed)
 
     async def async_set_native_value(self, value: float) -> None:
-        self._light_entity._native_effect_speed = max(1, min(100, int(value)))
+        self._light_entity._native_effect_speed = max(1, min(255, int(value)))
         spec = NATIVE_EFFECTS[self._light_entity._native_effect]
         if (
             spec.get("speed")

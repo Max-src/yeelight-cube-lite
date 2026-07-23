@@ -122,11 +122,11 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
       const noise = noiseAt(col, row, frame);
       let color;
 
-      if (effect === "Ribbon") {
+      if (effect === "Streamer") {
         // The whole panel is one uniform color that slowly morphs through
         // the spectrum as phase advances -- no spatial variation.
         color = hsv((((phase * 0.08) % 1.0) + 1.0) % 1.0, 0.9, 0.88);
-      } else if (effect === "Starry Sky") {
+      } else if (effect === "Starry sky") {
         const twinkle =
           Math.max(0.0, Math.sin((noise * 3.0 + phase) * TAU)) ** 7;
         color = rgb(110, 165, 255, 0.08 + 0.92 * twinkle);
@@ -136,7 +136,7 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
           1.0,
           0.82 + 0.18 * Math.sin((x + phase * 0.08) * TAU),
         );
-      } else if (effect === "Waves") {
+      } else if (effect === "Ocean Waves") {
         // Concentric ripples radiating from a source point at the "bottom"
         // centre (along the flow axis), matching the real firmware effect:
         // deep-blue troughs, cyan crests, wide bands.
@@ -167,7 +167,7 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
           curtain,
         );
         color = rgb(base[0], base[1], base[2], 0.3 + 0.7 * wave);
-      } else if (effect === "Fire") {
+      } else if (effect === "Bonfire") {
         // Flames rise along the flow axis (u); flicker varies across it (v).
         const heat = Math.max(
           0.0,
@@ -182,13 +182,13 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
           ],
           Math.min(1.0, heat),
         );
-      } else if (effect === "Bouncing Ball") {
+      } else if (effect === "Pinball") {
         const centerX = (Math.sin(phase * 1.7) + 1.0) * 0.5;
         const centerY = Math.abs(Math.sin(phase * 2.3));
         const distance = Math.hypot((x - centerX) * 1.8, y - centerY);
         const level = Math.max(0.03, 1.0 - distance * 3.6);
         color = rgb(255, 65, 190, level);
-      } else if (effect === "Meteor") {
+      } else if (effect === "Shooting Star") {
         const position = (((u - phase * 0.7) % 1.0) + 1.0) % 1.0;
         const trail = Math.max(0.0, 1.0 - position * 5.0);
         color = rgb(
@@ -202,7 +202,7 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
         const height = 0.46 + 0.25 * Math.sin((v * 1.5 - phase * 0.35) * TAU);
         const level = u > height ? 0.15 : 0.55 + 0.45 * wave;
         color = rgb(0, 145, 255, level);
-      } else if (effect === "Building Blocks") {
+      } else if (effect === "Building block") {
         const block =
           (((Math.trunc(u * 8 - phase * 2.0) + Math.trunc(v * 4)) % 6) + 6) % 6;
         color = [

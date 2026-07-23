@@ -244,7 +244,7 @@ class _YeelightCubeMatrixCameraBase(Camera):
         speed = max(1, min(100, int(getattr(le, "_native_effect_speed", 50))))
         phase = _time.monotonic() * (0.25 + speed / 55.0)
         return render_native_effect(
-            getattr(le, "_native_effect", "Ribbon"),
+            getattr(le, "_native_effect", "Streamer"),
             phase,
             getattr(le, "_native_effect_direction", "Up"),
         )
