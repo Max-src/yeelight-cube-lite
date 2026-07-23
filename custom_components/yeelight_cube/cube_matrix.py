@@ -109,8 +109,8 @@ class CubeMatrix:
             command_socket = self.device._Bulb__socket
             if command_socket is not None:
                 command_socket.close()
-        except Exception:
-            pass
+        except Exception as exc:
+            _LOGGER.debug("[%s] close_command_socket failed: %s", self._ip, exc)
         finally:
             self.device._Bulb__socket = None
 
@@ -235,11 +235,11 @@ class CubeMatrix:
                         self.device._Bulb__socket.setsockopt(
                             socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0)
                         )
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        _LOGGER.debug("[%s] Failed to set SO_LINGER on old socket: %s", self._ip, exc)
                     self.device._Bulb__socket.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                _LOGGER.debug("[%s] Failed to close old command socket: %s", self._ip, exc)
             self.device._Bulb__socket = None
             
             # PROBE: Quick TCP connect test to verify device is actually reachable
@@ -347,15 +347,6 @@ class CubeMatrix:
                 await asyncio.sleep(2)
         _LOGGER.error(f"Could not connect to Yeelight Cube Lite after retries.")
 
-    def draw_matrices_async(self, rgb_data: str):
-        """Queue matrix draw operation (fire-and-forget, legacy).
-        
-        WARNING: This creates an untracked asyncio task. Prefer draw_matrices()
-        which is awaitable and serialized through the command lock.
-        """
-        _LOGGER.debug(f"Queueing matrix draw operation (fire-and-forget)")
-        asyncio.create_task(self._draw_with_recovery_silent(rgb_data))
-
     async def draw_matrices(self, rgb_data: str):
         """Send matrix draw command (awaitable, serialized).
         
@@ -406,8 +397,8 @@ class CubeMatrix:
                     socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0)
                 )
                 self._fast_socket.close()
-            except Exception:
-                pass
+            except Exception as exc:
+                _LOGGER.debug("[%s] Failed to close fast socket: %s", self._ip, exc)
             self._fast_socket = None
             self._fast_socket_time = 0.0
             self._fx_activated_on_socket = False
@@ -456,8 +447,8 @@ class CubeMatrix:
                             struct.pack('ii', 1, 0),
                         )
                     sock.close()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    _LOGGER.debug("[%s] Failed to close raw command socket: %s", self._ip, exc)
 
         await asyncio.to_thread(_send)
 
@@ -522,8 +513,8 @@ class CubeMatrix:
                         socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
                     )
                     sock.close()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    _LOGGER.debug("[%s] Failed to close query socket: %s", self._ip, exc)
             return reply
 
         return await asyncio.to_thread(_send)
@@ -632,7 +623,11 @@ class CubeMatrix:
                                 f"fx_on_sock={self._fx_activated_on_socket}): "
                                 f"{all_data[:300]}"
                             )
-                except Exception:
+                except Exception as exc:
+                    _LOGGER.debug(
+                        "[%s] _check_peer_closed caught exception (%s) — treating socket as dead",
+                        self._ip, exc
+                    )
                     return True  # Error — socket is dead
                 return False
             
@@ -771,7 +766,8 @@ class CubeMatrix:
                     if lib_sock is not None:
                         lib_sock.close()
                         self.device._Bulb__socket = None
-                except Exception:
+                except Exception as exc:
+                    _LOGGER.debug("[%s] Failed to invalidate library socket: %s", self._ip, exc)
                     self.device._Bulb__socket = None
                 
                 self._total_commands_sent += 1

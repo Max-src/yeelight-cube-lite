@@ -4,6 +4,7 @@ import logging
 import asyncio
 import base64
 import copy
+import json
 import math
 import random
 import time
@@ -1092,8 +1093,22 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             for cam in cams:
                 try:
                     cam.async_refresh_preview()
-                except Exception:
-                    pass  # camera not yet ready -- ignore
+                except Exception as exc:
+                    _LOGGER.debug(
+                        "[%s] Camera preview notification failed: %s",
+                        self._ip, exc
+                    )
+
+    def _create_tracked_task(self, coro, *, name=None):
+        """Create a background task and track it for cleanup on entity removal.
+
+        All fire-and-forget work that belongs to this entity should be created
+        through this helper so it is cancelled in async_will_remove_from_hass().
+        """
+        task = asyncio.create_task(coro, name=name)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+        return task
 
     @property
     def _palettes(self):
@@ -1381,7 +1396,9 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             except Exception as e:
                 _LOGGER.warning(f"[RETRY] [{self._ip}] Unexpected error in display retry: {e}")
         
-        self._retry_display_task = asyncio.create_task(_delayed_retry())
+        self._retry_display_task = self._create_tracked_task(
+            _delayed_retry(), name=f"yeelight_cube_display_retry_{self._ip}"
+        )
         _LOGGER.debug(
             f"[RETRY] [{self._ip}] Scheduled retry {self._display_retry_count}/{self.MAX_DISPLAY_RETRIES} "
             f"in {delay:.1f}s (cooldown={cooldown:.0f}s, failures={self._cube_matrix._consecutive_failures})"
@@ -1804,7 +1821,9 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 break
         
         # Start periodic health check to detect devices coming back online
-        self._health_check_task = asyncio.create_task(self._periodic_health_check())
+        self._health_check_task = self._create_tracked_task(
+            self._periodic_health_check(), name=f"yeelight_cube_health_check_{self._ip}"
+        )
         
         # Register entity by entity_id now that it's available
         # Remove the temporary IP-based registration first to avoid duplicates
@@ -2100,27 +2119,29 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         # Step 1: Kill persistent socket
         cm._close_fast_socket()
 
-        # Step 2: activate_fx_mode on fresh TCP.
         # When the lamp was in a firmware-native mode (clock, native animation,
-        # or color flow), a bare RST-then-immediate-connect disrupts the
-        # renderer and causes the lamp to reset to the ribbon/loading state.
-        # The fix mirrors what _activate_native_clock does: wait for the TCP
-        # stack to settle, then use a graceful FIN so the firmware can finish
-        # its current render cycle before accepting the mode change.
+        # or color flow), give the native renderer + the Cube's TCP stack a
+        # brief moment to settle after we drop the persistent socket.  This
+        # shortens the ribbon/loading flash during the transition.
+        #
+        # IMPORTANT: we still activate_fx_mode on a FRESH TCP connection closed
+        # with RST (abortive_close=True, the default).  That is the ONLY pattern
+        # the Cube firmware reliably honours for activate_fx_mode.  A graceful
+        # FIN here caused the firmware to SILENTLY IGNORE the mode change: the
+        # code then optimistically set _fx_mode_is_direct=True, update_leds was
+        # sent to a lamp that was never actually in direct mode, and the panel
+        # stayed stuck on the ribbon indefinitely.
         coming_from_native = self._in_native_fw_mode
         if coming_from_native:
             _LOGGER.debug(
-                "[ENSURE_FX] [%s] Coming from native mode — using graceful settle "
-                "before activate_fx_mode",
+                "[ENSURE_FX] [%s] Coming from native mode -- settling before "
+                "activate_fx_mode",
                 self._ip,
             )
             await asyncio.sleep(0.3)  # Let native renderer + Cube TCP stack settle
 
-        await cm.send_raw_command(
-            "activate_fx_mode",
-            [{"mode": "direct"}],
-            abortive_close=not coming_from_native,  # Graceful FIN when leaving native mode
-        )
+        # Step 2: activate_fx_mode on fresh TCP (RST close -- proven reliable)
+        await cm.send_raw_command("activate_fx_mode", [{"mode": "direct"}])
 
         await asyncio.sleep(0.05)  # Firmware settle (50ms is sufficient on LAN)
 
@@ -2133,7 +2154,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         self._in_native_fw_mode = False  # Successfully switched to direct FX mode
         self._last_fx_mode_time = time.time()
         self._last_hardware_brightness = hardware_brightness
-        
+
         _LOGGER.debug(
             f"[ENSURE_FX] [{self._ip}] [OK] FX ready -- brightness={hardware_brightness}%"
         )
@@ -2617,7 +2638,9 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
     def _start_brightness_retry_task(self):
         """Start background task to retry failed brightness when connection recovers"""
         if self._brightness_retry_task is None or self._brightness_retry_task.done():
-            self._brightness_retry_task = asyncio.create_task(self._process_brightness_retries())
+            self._brightness_retry_task = self._create_tracked_task(
+                self._process_brightness_retries(), name=f"yeelight_cube_brightness_retry_{self._ip}"
+            )
     
     async def _process_brightness_retries(self):
         """
@@ -4804,7 +4827,10 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         # Update display and continue scrolling (fire-and-forget to avoid blocking scroll timer)
         # Don't await here - let the queue handle it asynchronously
         # This prevents queue processing delays from slowing down the scroll animation
-        self.hass.async_create_task(self.async_apply_display_mode())
+        self._create_tracked_task(
+            self.async_apply_display_mode(),
+            name=f"yeelight_cube_scroll_step_{self._ip}"
+        )
         
         # Determine timer delay - first and last positions pause longer
         if self._scroll_offset == 0 or self._scroll_offset == self._max_scroll_offset:
@@ -6951,7 +6977,10 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                 target_entity.async_schedule_update_ha_state()
             for entity in target_entity._preview_number_entities.values():
                 entity.async_update_from_light()
-            hass.async_create_task(target_entity.async_apply_display_mode())
+            target_entity._create_tracked_task(
+                target_entity.async_apply_display_mode(),
+                name=f"yeelight_cube_apply_preview_adjustments_{target_entity._ip}"
+            )
 
         _fire_and_forget(*[_apply_one(t) for t in targets])
 
@@ -7012,7 +7041,10 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             if target_entity.hass is not None:
                 target_entity.async_schedule_update_ha_state()
             # Re-render the display with correction applied/removed
-            hass.async_create_task(target_entity.async_apply_display_mode())
+            target_entity._create_tracked_task(
+                target_entity.async_apply_display_mode(),
+                name=f"yeelight_cube_apply_color_accuracy_{target_entity._ip}"
+            )
 
         _fire_and_forget(*[_apply_one(t) for t in targets])
 
@@ -7070,7 +7102,10 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                 if target_entity.hass is not None:
                     target_entity.async_schedule_update_ha_state()
                 # Re-render so new calibration takes effect immediately
-                hass.async_create_task(target_entity.async_apply_display_mode())
+                target_entity._create_tracked_task(
+                    target_entity.async_apply_display_mode(),
+                    name=f"yeelight_cube_apply_calibration_{target_entity._ip}"
+                )
 
         _fire_and_forget(*[_apply_one(t) for t in targets])
 
