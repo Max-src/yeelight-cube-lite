@@ -2770,6 +2770,36 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 f"-- calibration lock active"
             )
             return
+        # FIRMWARE-NATIVE MODE OWNERSHIP: while the lamp is physically showing a
+        # firmware clock / native animation / color flow, suppress *incidental*
+        # matrix re-renders that would clobber it -- e.g. a sensor/template-driven
+        # set_custom_text (text_change), a periodic refresh (display_update), or a
+        # stale retry (display_retry).  This is the common "one lamp shows a clock,
+        # an automation keeps pushing text to it" conflict.
+        #
+        # DELIBERATE switches to matrix content (pixel_art, color_change from the
+        # content-mode select, turn_on, brightness_change) are NOT in this set, so
+        # they pass through; when they render, _apply_impl -> ensure_fx_ready()
+        # clears _in_native_fw_mode, so subsequent updates flow normally again.
+        #
+        # Persisted Clock / Native Effect modes (_mode in those values) route to
+        # their own activation path in _apply_display_mode_internal and must NOT
+        # be suppressed, so they are excluded by the _mode check.
+        _NATIVE_COMPETING_UPDATE_TYPES = {
+            "text_change", "display_update", "display_retry",
+        }
+        if (
+            self._in_native_fw_mode
+            and self._mode not in ("Clock", "Native Effect")
+            and update_type in _NATIVE_COMPETING_UPDATE_TYPES
+            and not bypass_lock
+        ):
+            _LOGGER.debug(
+                "[DISPLAY] [%s] Update '%s' suppressed -- lamp is in a firmware-native "
+                "mode. Switch the content mode or apply a drawing to leave it.",
+                self._ip, update_type,
+            )
+            return
         # NOTE: _apply_cooldown removed. It was silently DROPPING updates
         # when they arrived within 100ms of each other (e.g., rapid pixel
         # drawing or fast slider changes). The queue's coalescing logic
