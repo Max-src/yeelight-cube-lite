@@ -1,6 +1,6 @@
 from homeassistant.helpers.entity import Entity # type: ignore
 from homeassistant.config_entries import ConfigEntry # type: ignore
-from .layout import FONT_MAPS
+from .layout import FONT_MAPS, FONT_METRICS
 from .const import DOMAIN, CONF_IP, CONF_DEVICE_ID
 
 class YeelightCubeBaseSensor(Entity):
@@ -100,7 +100,7 @@ class LetterMapSensor(YeelightCubeBaseSensor):
     """Sensor exposing the static letter map for the Yeelight Cube Lite."""
     
     # Static font data is large and never changes — keep it out of the recorder.
-    _unrecorded_attributes = frozenset({"font_maps"})
+    _unrecorded_attributes = frozenset({"font_maps", "font_metrics"})
     
     def __init__(self, hass):
         super().__init__(hass)
@@ -114,8 +114,10 @@ class LetterMapSensor(YeelightCubeBaseSensor):
 
     @property
     def extra_state_attributes(self):
-        # Expose all available fonts and their letter maps
-        return {"font_maps": FONT_MAPS}
+        # Expose all available fonts, their letter maps, and per-font spacing
+        # metrics (monospace advances) so frontend cards render text/clock with
+        # the exact same layout the lamp uses.
+        return {"font_maps": FONT_MAPS, "font_metrics": FONT_METRICS}
 
 class PixelArtSensor(YeelightCubeBaseSensor):
     """Sensor exposing the current pixel art list for the Yeelight Cube Lite."""

@@ -365,6 +365,64 @@ FONT_MAPS: Dict[str, Dict[str, List[int]]] = {
         }
 }
 
+# ── "native" font ────────────────────────────────────────────────────────
+# Mirrors the Cube Lite firmware's built-in clock font.  It is SEEDED from the
+# "basic" font (a straight copy) and then corrected glyph-by-glyph via the Font
+# Editor card until it matches the hardware.  Only the digits/colon are used by
+# the clock, but the whole set is present so "Native" is usable for matrix text
+# too.  Editing these arrays is the ONLY place the bundled glyphs live -- users
+# never have to edit fonts by hand.
+#
+# Corrected glyphs (differ from "basic" to match the firmware clock face):
+_NATIVE_FONT_OVERRIDES: Dict[str, List[int]] = {
+    # <char>: [positions]  -- confirmed via the Font Editor card (row*20+col,
+    # row 0 = bottom).  Anything not listed falls back to the basic glyph.
+    "0": [0, 1, 2, 20, 22, 40, 42, 60, 62, 80, 81, 82],
+    "1": [2, 22, 42, 62, 82],
+    "3": [0, 1, 2, 22, 40, 41, 42, 62, 80, 81, 82],
+    "7": [2, 22, 42, 62, 80, 81, 82],
+}
+FONT_MAPS["native"] = {**FONT_MAPS["basic"], **_NATIVE_FONT_OVERRIDES}
+
+# ── Per-font spacing metrics ──────────────────────────────────────────────
+# A font absent from FONT_METRICS uses PROPORTIONAL spacing: each character
+# advances the cursor by its glyph column-span + 1 gap column.
+#
+# A monospace font advances the cursor by a FIXED number of columns for every
+# character ("advance" = glyph cell + trailing gap), with optional per-character
+# overrides for narrow glyphs (colon/period/etc.).  These values are tunable.
+FONT_METRICS: Dict[str, Dict[str, Any]] = {
+    "native": {
+        "monospace": True,
+        "advance": 4,            # digits: 3 glyph columns + 1 gap column
+        "advance_overrides": {   # narrow glyphs: 1 column + 1 gap
+            ":": 2,
+            ".": 2,
+            ",": 2,
+            "'": 2,
+            "!": 2,
+            "|": 2,
+            " ": 4,
+        },
+    },
+}
+
+
+def char_advance(font: str, letter: str, glyph_positions: List[int]) -> int:
+    """Columns the cursor advances after drawing ``letter`` in ``font``.
+
+    Shared by the light renderer and the camera clock preview so text spacing is
+    identical everywhere.  Monospace fonts use a fixed advance (with per-char
+    overrides); proportional fonts use the glyph's column span + 1 gap column.
+    """
+    metrics = FONT_METRICS.get(font)
+    if metrics and metrics.get("monospace"):
+        overrides = metrics.get("advance_overrides", {})
+        return int(overrides.get(letter, metrics.get("advance", 4)))
+    unique_columns = {position % TOTAL_COLUMNS for position in glyph_positions}
+    return len(unique_columns) + 1
+
+
 class Layout:
     def __init__(self, layout_orientation: str, base: str, device_layout: List[Any] = []):
         self.layout_orientation = layout_orientation

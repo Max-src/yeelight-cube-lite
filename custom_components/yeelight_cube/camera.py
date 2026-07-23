@@ -19,7 +19,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: i
 from homeassistant.util import dt as dt_util  # type: ignore
 
 from .const import DOMAIN, CONF_IP
-from .layout import FONT_MAPS
+from .layout import FONT_MAPS, char_advance
 from .native_effect_preview import render_native_effect
 
 _LOGGER = logging.getLogger(__name__)
@@ -270,19 +270,26 @@ class _YeelightCubeMatrixCameraBase(Camera):
             and now.second % 2 == 1
         )
 
-        font = FONT_MAPS["basic"]
+        # The firmware clock uses the bundled "native" font (monospace: every
+        # digit occupies a fixed cell, colon/period are narrow) so the preview
+        # matches the hardware exactly.
+        font_key = "native"
+        font = FONT_MAPS[font_key]
         glyphs = [font.get(char, []) for char in text]
-        widths = [len({position % COLS for position in glyph}) for glyph in glyphs]
-        total_width = sum(widths) + max(0, len(glyphs) - 1)
+        advances = [
+            char_advance(font_key, char, glyph)
+            for char, glyph in zip(text, glyphs)
+        ]
+        total_width = (sum(advances) - 1) if advances else 0
         offset = max(0, (COLS - total_width) // 2)
         style_id = int(getattr(le, "_native_clock_style", 6))
         matrix = [(0, 0, 0)] * 100
 
-        for char_index, (char, glyph, width) in enumerate(
-            zip(text, glyphs, widths)
+        for char_index, (char, glyph, advance) in enumerate(
+            zip(text, glyphs, advances)
         ):
             if char == ":" and not colon_visible:
-                offset += width + 1
+                offset += advance
                 continue
             for position in glyph:
                 col = position % COLS + offset
@@ -293,7 +300,7 @@ class _YeelightCubeMatrixCameraBase(Camera):
                         char_index,
                         col,
                     )
-            offset += width + 1
+            offset += advance
 
         # Mirror the firmware clock face for left/up mounts.  The hardware
         # native clock cannot rotate, but the preview should show what a

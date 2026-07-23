@@ -42,6 +42,19 @@ function _clockGlyphWidth(glyph) {
   return new Set(glyph.map((p) => p % 20)).size;
 }
 
+// Columns the cursor advances after a character.  Mirrors layout.char_advance:
+// monospace fonts (the firmware "native" clock font) use a fixed advance with
+// per-char overrides; otherwise proportional (glyph width + 1 gap).
+function _clockCharAdvance(letter, glyph, metrics) {
+  if (metrics && metrics.monospace) {
+    const ov = metrics.advance_overrides || {};
+    return Object.prototype.hasOwnProperty.call(ov, letter)
+      ? ov[letter]
+      : (metrics.advance ?? 4);
+  }
+  return _clockGlyphWidth(glyph) + 1;
+}
+
 function _clockGradientColor(palette, factor) {
   factor = Math.max(0.0, Math.min(1.0, factor));
   if (palette.length === 1) return palette[0];
@@ -111,8 +124,10 @@ function _clockPixelColor(styleId, charIndex, col) {
 /**
  * Render one clock frame as 100 [r,g,b] pixels (row-major, row 0 = top).
  * Mirrors _get_clock_preview() in camera.py, including colon blink.
+ * `fontMap`/`metrics` come from the Font Characters sensor ("native" font).
+ * When absent, falls back to the embedded Basic-style glyphs (proportional).
  */
-function renderClockFrame(attrs) {
+function renderClockFrame(attrs, fontMap, metrics) {
   const COLS = 20;
   const now = new Date();
   const tsSec = now.getTime() / 1000;
@@ -143,16 +158,19 @@ function renderClockFrame(attrs) {
   const styleId = attrs.clock_style_id ?? 6;
   const matrix = Array.from({ length: 100 }, () => [0, 0, 0]);
   const chars = [...text];
-  const glyphs = chars.map((c) => _CLOCK_FONT[c] || []);
-  const widths = glyphs.map(_clockGlyphWidth);
-  const totalWidth =
-    widths.reduce((a, b) => a + b, 0) + Math.max(0, chars.length - 1);
+  const font = fontMap || _CLOCK_FONT;
+  const glyphs = chars.map((c) => font[c] || _CLOCK_FONT[c] || []);
+  const advances = glyphs.map((g, i) =>
+    _clockCharAdvance(chars[i], g, metrics),
+  );
+  // Total drawn width = sum of advances minus the trailing gap of the last glyph.
+  const totalWidth = Math.max(0, advances.reduce((a, b) => a + b, 0) - 1);
   let offset = Math.max(0, Math.floor((COLS - totalWidth) / 2));
 
   for (let i = 0; i < chars.length; i++) {
-    const width = widths[i];
+    const advance = advances[i];
     if (chars[i] === ":" && !colonVisible) {
-      offset += width + 1;
+      offset += advance;
       continue;
     }
     for (const pos of glyphs[i]) {
@@ -161,7 +179,7 @@ function renderClockFrame(attrs) {
       if (col >= 0 && col < COLS && row >= 0 && row < 5)
         matrix[row * COLS + col] = _clockPixelColor(styleId, i, col);
     }
-    offset += width + 1;
+    offset += advance;
   }
   return matrix;
 }
@@ -2407,9 +2425,34 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     const dots = this.shadowRoot?.querySelectorAll(".lamp-dot");
     if (!dots || dots.length !== 100) return; // matrix not rendered yet
 
-    const pix = renderClockFrame(st.attributes);
+    const { fontMap, metrics } = this._getNativeClockFont();
+    const pix = renderClockFrame(st.attributes, fontMap, metrics);
     const grid = this._matrixColorsToGridColors(pix, st);
     this._updateMatrixColors(grid, st);
+  }
+
+  // Locate the component's "Font Characters" sensor and return the bundled
+  // "native" clock font + its monospace metrics, so the preview matches the
+  // font the lamp actually renders.  Cached per hass object for cheap lookups.
+  _getNativeClockFont() {
+    const states = this._hass?.states;
+    if (!states) return { fontMap: null, metrics: null };
+    if (this._nativeFontCacheStates === states && this._nativeFontCache)
+      return this._nativeFontCache;
+    let result = { fontMap: null, metrics: null };
+    for (const eid in states) {
+      const a = states[eid]?.attributes;
+      if (a && a.font_maps && a.font_maps.native) {
+        result = {
+          fontMap: a.font_maps.native,
+          metrics: (a.font_metrics || {}).native || null,
+        };
+        break;
+      }
+    }
+    this._nativeFontCacheStates = states;
+    this._nativeFontCache = result;
+    return result;
   }
 
   _nativeAnimFrame() {

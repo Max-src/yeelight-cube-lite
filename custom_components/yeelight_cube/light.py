@@ -43,7 +43,7 @@ from .const import (
     POWER_ON_STATES,
 )
 from .cube_matrix import CubeMatrix, RECONNECT_COOLDOWN_INITIAL, CONNECT_TIMEOUT, RECOVERY_CONNECT_TIMEOUT
-from .layout import Layout, Module, FONT_MAPS, TOTAL_COLUMNS, TOTAL_ROWS
+from .layout import Layout, Module, FONT_MAPS, FONT_METRICS, char_advance, TOTAL_COLUMNS, TOTAL_ROWS
 from . import async_save_data
 
 from .color_utils import hex_to_rgb, rgb_to_hex
@@ -3960,7 +3960,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 else:
                     effective_text = self._custom_text
                     total_columns = TOTAL_COLUMNS
-                    total_text_width = sum(self.letter_size(self.get_positions_for_letter(letter)) + 1 for letter in self._custom_text) - 1
+                    total_text_width = sum(self._char_advance(letter) for letter in self._custom_text) - 1
                     current_offset = self.calculate_text_offset(total_text_width, total_columns)
                 _LOGGER.debug(f"[DISPLAY] Rendering text: '{effective_text}' with mode: '{self._mode}' and colors: {self._text_colors}")
                 _LOGGER.debug(f"[DISPLAY] Text layout - total_width: {total_text_width}, offset: {current_offset}")
@@ -4018,7 +4018,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                                     color_hex = rgb_to_hex(color)
                                     self.place_pixels(color_hex, self._flip_positions([adjusted_pos]))
                             pixel_index += 1
-                        current_offset += self.letter_size(letter_positions) + 1
+                        current_offset += self._char_advance(letter)
                 elif self._mode == "Letter Gradient":
                     for i, letter in enumerate(effective_text):
                         gradient_color = get_color(i)
@@ -4056,7 +4056,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                             
                             if colored_positions:
                                 self.place_pixels(col_color_hex, self._flip_positions(colored_positions))
-                        current_offset += letter_width + 1
+                        current_offset += self._char_advance(letter)
                 elif self._mode == "Row Gradient":
                     colors = get_color()
                     total_rows = TOTAL_ROWS
@@ -4086,7 +4086,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                             
                             if row_positions:
                                 self.place_pixels(row_color_hex, self._flip_positions(row_positions))
-                        current_offset += letter_width + 1
+                        current_offset += self._char_advance(letter)
                 elif self._mode == "Angle Gradient":
                     colors = get_color()
                     angle_radians = math.radians(self._angle)
@@ -4123,7 +4123,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                                     )
                                     gradient_color_hex = rgb_to_hex(tuple(min(255, max(0, v)) for v in gradient_color))
                                     self.place_pixels(gradient_color_hex, self._flip_positions([adjusted_pos]))
-                        current_offset += self.letter_size(letter_positions) + 1
+                        current_offset += self._char_advance(letter)
                 elif self._mode == "Radial Gradient":
                     colors = get_color()
                     # Center of the display
@@ -4153,7 +4153,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                                     )
                                     gradient_color_hex = rgb_to_hex(tuple(min(255, max(0, v)) for v in gradient_color))
                                     self.place_pixels(gradient_color_hex, self._flip_positions([adjusted_pos]))
-                        current_offset += self.letter_size(letter_positions) + 1
+                        current_offset += self._char_advance(letter)
                 elif self._mode == "Letter Angle Gradient":
                     colors = get_color()
                     angle_radians = math.radians(self._angle)
@@ -4163,7 +4163,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     for letter in effective_text:
                         letter_positions = self.get_positions_for_letter(letter)
                         if not letter_positions:
-                            current_offset += 1
+                            current_offset += self._char_advance(letter)
                             continue
                         rows = []
                         cols = []
@@ -4214,7 +4214,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                                     )
                                     gradient_color_hex = rgb_to_hex(tuple(min(255, max(0, v)) for v in gradient_color))
                                     self.place_pixels(gradient_color_hex, self._flip_positions([adjusted_pos]))
-                        current_offset += self.letter_size(letter_positions) + 1
+                        current_offset += self._char_advance(letter)
                 elif self._mode == "Letter Vertical Gradient":
                     colors = get_color()
                     
@@ -4270,7 +4270,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                                         gradient_color_hex,
                                         self._flip_positions(valid_positions)
                                     )
-                        current_offset += letter_width + 1
+                        current_offset += self._char_advance(letter)
                 
                 # Apply changes for text modes
                 _LOGGER.debug(f"[DISPLAY] Text rendering complete, about to apply() to lamp")
@@ -4370,7 +4370,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         space_to_add = current_offset
         if letter_index > 0:
             for i in range(letter_index):
-                space_to_add += 1 + self.letter_size(self.get_positions_for_letter(self._custom_text[i]))
+                space_to_add += self._char_advance(self._custom_text[i])
         letter_positions = self.get_positions_for_letter(letter)
         valid_positions = self._filter_visible_positions(letter_positions, space_to_add)
         
@@ -4383,16 +4383,16 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         _LOGGER.debug(f"[PLACE_LETTERS] Starting with color: {color}, letters: '{letters}', offset: {current_offset}, flip: {flip}")
         
         # Calculate total text width for debugging
-        total_width = sum(self.letter_size(self.get_positions_for_letter(letter)) + 1 for letter in letters) - 1
+        total_width = sum(self._char_advance(letter) for letter in letters) - 1
         _LOGGER.debug(f"[PLACE_LETTERS] Total text width: {total_width} columns, display width: {TOTAL_COLUMNS}")
         
         space_to_add = current_offset
         total_pixels_placed = 0
         for i in range(len(letters)):
             if i > 0:
-                prev_letter_size = self.letter_size(self.get_positions_for_letter(letters[i - 1]))
-                space_to_add += 1 + prev_letter_size
-                _LOGGER.debug(f"[PLACE_LETTERS] Letter {i}: added {1 + prev_letter_size} to offset (prev letter '{letters[i - 1]}' size={prev_letter_size})")
+                prev_advance = self._char_advance(letters[i - 1])
+                space_to_add += prev_advance
+                _LOGGER.debug(f"[PLACE_LETTERS] Letter {i}: added {prev_advance} to offset (prev letter '{letters[i - 1]}')")
             
             letter_positions = self.get_positions_for_letter(letters[i])
             _LOGGER.debug(f"[PLACE_LETTERS] Letter '{letters[i]}' at index {i}: base_positions={letter_positions}, space_to_add={space_to_add}")
@@ -4453,6 +4453,17 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             column_index = position % TOTAL_COLUMNS
             unique_columns.add(column_index)
         return len(unique_columns)
+
+    def _char_advance(self, letter: str) -> int:
+        """Columns to advance the cursor after ``letter`` in the current font.
+
+        Delegates to layout.char_advance so the light renderer, the preview
+        service and the camera clock preview all share ONE spacing rule.  For a
+        proportional font this is the glyph column-span + 1 gap; for a monospace
+        font (e.g. "native") it is the font's fixed advance (with per-char
+        overrides for narrow glyphs like the colon).
+        """
+        return char_advance(self._font, letter, self.get_positions_for_letter(letter))
 
     def get_positions_for_letter(self, letter: str):
         # Panel mode virtual character: covers the entire 5x20 display
@@ -5232,7 +5243,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             total_text_width = TOTAL_COLUMNS
             current_offset = 0
         else:
-            total_text_width = sum(light_entity.letter_size(light_entity.get_positions_for_letter(letter)) + 1 for letter in text) - 1
+            total_text_width = sum(light_entity._char_advance(letter) for letter in text) - 1
             current_offset = light_entity.calculate_text_offset(total_text_width, total_columns)
         
         # Render based on mode (simplified version of _apply_display_mode_internal)
@@ -5247,7 +5258,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                         virtual_col = orig_col + current_offset
                         if 0 <= virtual_col < TOTAL_COLUMNS:
                             preview_matrix[adjusted_pos] = color
-                current_offset += light_entity.letter_size(letter_positions) + 1
+                current_offset += light_entity._char_advance(letter)
         
         elif mode == "Letter Gradient":
             for i, letter in enumerate(text):
@@ -5260,7 +5271,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                         virtual_col = orig_col + current_offset
                         if 0 <= virtual_col < TOTAL_COLUMNS:
                             preview_matrix[adjusted_pos] = gradient_color
-                current_offset += light_entity.letter_size(letter_positions) + 1
+                current_offset += light_entity._char_advance(letter)
         
         elif mode == "Column Gradient":
             for letter in text:
@@ -5276,7 +5287,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                             virtual_col = orig_col + current_offset
                             if 0 <= virtual_col < TOTAL_COLUMNS and (pos % TOTAL_COLUMNS) == col_index:
                                 preview_matrix[adjusted_pos] = col_color
-                current_offset += letter_width + 1
+                current_offset += light_entity._char_advance(letter)
         
         elif mode == "Row Gradient":
             for letter in text:
@@ -5291,7 +5302,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                                 virtual_col = orig_col + current_offset
                                 if 0 <= virtual_col < TOTAL_COLUMNS:
                                     preview_matrix[adjusted_pos] = row_color
-                current_offset += light_entity.letter_size(letter_positions) + 1
+                current_offset += light_entity._char_advance(letter)
         
         elif mode == "Angle Gradient":
             angle_radians = math.radians(angle)
@@ -5320,7 +5331,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                             normalized_projection = (projection - min_proj) / proj_range
                             gradient_color = light_entity.calculate_multi_gradient_color(colors, normalized_projection * (len(colors) - 1), len(colors))
                             preview_matrix[adjusted_pos] = tuple(min(255, max(0, v)) for v in gradient_color)
-                current_offset += light_entity.letter_size(letter_positions) + 1
+                current_offset += light_entity._char_advance(letter)
         
         elif mode == "Radial Gradient":
             center_col = (total_columns - 1) / 2
@@ -5342,7 +5353,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                             norm = dist / max_dist if max_dist > 0 else 0
                             gradient_color = light_entity.calculate_multi_gradient_color(colors, norm * (len(colors) - 1), len(colors))
                             preview_matrix[adjusted_pos] = tuple(min(255, max(0, v)) for v in gradient_color)
-                current_offset += light_entity.letter_size(letter_positions) + 1
+                current_offset += light_entity._char_advance(letter)
         
         elif mode == "Letter Angle Gradient":
             angle_radians = math.radians(angle)
@@ -5352,7 +5363,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             for letter in text:
                 letter_positions = light_entity.get_positions_for_letter(letter)
                 if not letter_positions:
-                    current_offset += 1
+                    current_offset += light_entity._char_advance(letter)
                     continue
                 
                 # Calculate letter bounding box
@@ -5395,7 +5406,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                             normalized_projection = (projection - min_proj) / proj_range
                             gradient_color = light_entity.calculate_multi_gradient_color(colors, normalized_projection * (len(colors) - 1), len(colors))
                             preview_matrix[adjusted_pos] = tuple(min(255, max(0, v)) for v in gradient_color)
-                current_offset += light_entity.letter_size(letter_positions) + 1
+                current_offset += light_entity._char_advance(letter)
         
         elif mode == "Letter Vertical Gradient":
             for letter in text:
@@ -5425,7 +5436,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                                     virtual_col = orig_col + current_offset
                                     if 0 <= virtual_col < TOTAL_COLUMNS:
                                         preview_matrix[adjusted_pos] = tuple(min(255, max(0, val)) for val in gradient_color)
-                current_offset += letter_width + 1
+                current_offset += light_entity._char_advance(letter)
         
         elif mode == "Text Color Sequence":
             # Random color sequence
@@ -5445,7 +5456,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                             color = shuffled_colors[pixel_index % len(shuffled_colors)]
                             preview_matrix[adjusted_pos] = color
                     pixel_index += 1
-                current_offset += light_entity.letter_size(letter_positions) + 1
+                current_offset += light_entity._char_advance(letter)
         
         # Apply final brightness/darkness adjustments (same as matrix_colors in extra_state_attributes)
         if apply_brightness:
