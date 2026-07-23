@@ -2062,75 +2062,45 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
     # Entity-facing service handlers are registered once from component setup.
 
     async def ensure_fx_ready(self):
-        """Ensure FX mode is active using raw TCP (fresh connection per command).
-        
-        This is the proven-reliable approach: the Yeelight Cube Lite firmware
-        always processes activate_fx_mode correctly on a FRESH TCP connection,
-        but sometimes silently ignores it on a reused/persistent socket.
-        
-        Called automatically by _apply_impl before sending pixel data.
-        Also available as the force_refresh service for manual recovery.
-        
+        """Ensure FX mode is active using raw TCP (one fresh connection for activate_fx_mode).
+
         Steps:
-          0. Quick TCP probe -- fail fast if device is unreachable
           1. Close any existing persistent socket (clean slate)
-          2. Send activate_fx_mode on a fresh TCP connection (RST-closed after)
-          3. Send set_bright on a fresh TCP connection (RST-closed after)
-          4. Reset internal state flags
-        
-        After this, the next send_command_fast call will open a fresh
-        persistent socket for update_leds -- the Cube accepts pixel data
-        on any connection once FX mode is device-level active.
+          2. Optional 300ms settle when leaving a firmware-native mode
+          3. Send activate_fx_mode on a fresh TCP connection (RST-closed)
+          4. Sleep 150ms -- firmware settle time before opening the persistent socket
+          5. Reset state flags (_last_hardware_brightness = 0 forces brightness
+             re-send on the next apply call)
+
+        The caller is responsible for sending set_bright AFTER this returns.
+        In _apply_impl, set_bright is sent on the persistent socket (via
+        send_command_fast) immediately after ensure_fx_ready, so both
+        set_bright and update_leds travel on the same TCP connection.  This
+        avoids the extra RST connection that was causing the firmware to exit
+        direct mode before update_leds arrived ("illegal request" errors).
+
+        Why no TCP probe:
+        A probe RST before activate_fx_mode was a third rapid RST connection
+        that could confuse the Cube firmware. Dead devices are handled by the
+        APPLY_HARD_TIMEOUT / circuit-breaker mechanism instead.
         """
         cm = self._cube_matrix
-        
+
         _LOGGER.debug(
             f"[ENSURE_FX] [{self._ip}] Activating FX mode via raw TCP "
             f"[{cm._state_summary()}]"
         )
-        
-        # Step 0: Quick TCP probe -- fail immediately if device is unreachable.
-        # Without this, we'd burn up to 3s on send_raw_command(activate_fx_mode)
-        # + 1.5s on send_raw_command(set_bright) = 4.5s total for a dead device.
-        # The probe uses a 0.5s connect + RST close, so we fail in <1s instead.
-        import socket as _socket
-        import struct as _struct
-        probe_ok = False
-        try:
-            sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-            sock.settimeout(0.5)
-            sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_LINGER, _struct.pack('ii', 1, 0))
-            await asyncio.to_thread(sock.connect, (self._ip, cm._port))
-            sock.close()
-            probe_ok = True
-        except Exception:
-            try:
-                sock.close()
-            except Exception:
-                pass
-        
-        if not probe_ok:
-            _LOGGER.warning(
-                f"[ENSURE_FX] [{self._ip}] [!] Fast probe FAILED -- device unreachable, "
-                f"skipping FX activation to avoid {1.5*2:.0f}s timeout"
-            )
-            raise TimeoutError(f"Device {self._ip} unreachable (fast probe failed)")
-        
+
         # Step 1: Kill persistent socket
         cm._close_fast_socket()
 
-        # When the lamp was in a firmware-native mode (clock, native animation,
-        # or color flow), give the native renderer + the Cube's TCP stack a
-        # brief moment to settle after we drop the persistent socket.  This
-        # shortens the ribbon/loading flash during the transition.
+        # Step 2 (optional): When leaving a firmware-native mode (clock, native
+        # animation, color flow), give the renderer + TCP stack time to settle
+        # before we open a new connection.  This shortens the ribbon flash.
         #
-        # IMPORTANT: we still activate_fx_mode on a FRESH TCP connection closed
-        # with RST (abortive_close=True, the default).  That is the ONLY pattern
-        # the Cube firmware reliably honours for activate_fx_mode.  A graceful
-        # FIN here caused the firmware to SILENTLY IGNORE the mode change: the
-        # code then optimistically set _fx_mode_is_direct=True, update_leds was
-        # sent to a lamp that was never actually in direct mode, and the panel
-        # stayed stuck on the ribbon indefinitely.
+        # activate_fx_mode is always RST-closed (abortive_close=True, the
+        # default).  A graceful FIN here caused the firmware to silently ignore
+        # the mode change, leaving the lamp stuck on the ribbon indefinitely.
         coming_from_native = self._in_native_fw_mode
         if coming_from_native:
             _LOGGER.debug(
@@ -2140,23 +2110,28 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             )
             await asyncio.sleep(0.3)  # Let native renderer + Cube TCP stack settle
 
-        # Step 2: activate_fx_mode on fresh TCP (RST close -- proven reliable)
+        # Step 3: activate_fx_mode on a SINGLE fresh TCP (RST close)
         await cm.send_raw_command("activate_fx_mode", [{"mode": "direct"}])
 
-        await asyncio.sleep(0.05)  # Firmware settle (50ms is sufficient on LAN)
+        # Step 4: Let the firmware fully enter direct mode before anything else
+        # connects.  50ms was too tight -- the subsequent set_bright RST was
+        # arriving while the lamp was still transitioning, causing it to exit
+        # direct mode before update_leds arrived.  150ms is reliable on LAN.
+        await asyncio.sleep(0.15)
 
-        # Step 3: set_bright on fresh TCP
-        hardware_brightness, _ = self._calculate_brightness_values(self._brightness)
-        await cm.send_raw_command("set_bright", [hardware_brightness])
-
-        # Step 4: Update state
+        # Step 5: Update state.
+        # _last_hardware_brightness is reset to 0 (sentinel) so _apply_impl
+        # unconditionally re-sends set_bright on the persistent socket -- both
+        # the direct path (if not _fx_mode_is_direct) and the indirect path
+        # (force_refresh → _apply_display_mode_internal → _apply_impl else-branch
+        # sees hardware_brightness != 0 and sends set_bright).
         self._fx_mode_is_direct = True
-        self._in_native_fw_mode = False  # Successfully switched to direct FX mode
+        self._in_native_fw_mode = False
         self._last_fx_mode_time = time.time()
-        self._last_hardware_brightness = hardware_brightness
+        self._last_hardware_brightness = 0  # Sentinel: force brightness re-confirm
 
         _LOGGER.debug(
-            f"[ENSURE_FX] [{self._ip}] [OK] FX ready -- brightness={hardware_brightness}%"
+            f"[ENSURE_FX] [{self._ip}] [OK] FX activated -- set_bright will follow on persistent socket"
         )
 
     async def _force_refresh_impl(self):
@@ -4503,9 +4478,17 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             hardware_brightness, darken_percent = self._calculate_brightness_values(self._brightness)
             if not self._fx_mode_is_direct:
                 await self.ensure_fx_ready()
-                hardware_brightness = self._last_hardware_brightness  # ensure_fx_ready sets this
+                # Send set_bright on the PERSISTENT socket right after activation.
+                # This avoids the extra RST connection that was disrupting direct
+                # mode when set_bright was sent on a second fresh TCP in
+                # ensure_fx_ready.  set_bright and the subsequent update_leds
+                # now travel on the same persistent TCP connection.
+                await self._cube_matrix.send_command_fast("set_bright", [hardware_brightness])
+                self._last_hardware_brightness = hardware_brightness
             else:
                 # FX mode already active -- only send set_bright when value changed.
+                # _last_hardware_brightness == 0 (sentinel from ensure_fx_ready called
+                # indirectly, e.g. force_refresh path) will also trigger this branch.
                 if hardware_brightness != self._last_hardware_brightness:
                     _LOGGER.debug(
                         f"[BRIGHTNESS_DIAG] [{self._ip}] APPLY -- sending set_bright: "
