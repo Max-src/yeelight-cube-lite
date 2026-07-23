@@ -2685,10 +2685,16 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         """Refresh timezone and best-effort native device properties."""
         if self._mode == "Clock" and self._is_on:
             timezone_hours = self._native_clock_timezone_hours()
-            if (
-                self._native_clock_timezone_offset is None
-                or timezone_hours != self._native_clock_timezone_offset
-            ):
+            if self._native_clock_timezone_offset is None:
+                # First poll after startup / integration reload: the lamp is
+                # already showing the clock, and _native_clock_timezone_offset
+                # is not restored from state (starts as None).  Re-activating
+                # here would tear down and rebuild the clock "by itself" -- and
+                # if it races an in-flight manual send it can drop the panel to
+                # the ribbon.  Just record the baseline silently; a real
+                # timezone change (e.g. DST) will re-activate on a later poll.
+                self._native_clock_timezone_offset = timezone_hours
+            elif timezone_hours != self._native_clock_timezone_offset:
                 _LOGGER.info(
                     "[CLOCK] [%s] Refreshing clock UTC offset from %s to %+d",
                     self._ip,
@@ -4506,6 +4512,15 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             # on a fresh TCP connection but sometimes silently ignores it on
             # a reused persistent socket.
             hardware_brightness, darken_percent = self._calculate_brightness_values(self._brightness)
+            # Capture whether this apply is LEAVING a firmware-native renderer
+            # (clock / native animation / color flow) BEFORE ensure_fx_ready()
+            # clears the flag.  The firmware needs time to tear down the native
+            # renderer after activate_fx_mode, and the FIRST update_leds can be
+            # silently dropped during that window (accepted at TCP level, zero
+            # visual effect) -- which is why a single send left the panel stuck
+            # and a manual second send fixed it.  We re-send one frame below to
+            # make the transition deterministic.
+            leaving_native_fw_mode = self._in_native_fw_mode and not self._fx_mode_is_direct
             if not self._fx_mode_is_direct:
                 await self.ensure_fx_ready()
                 # Send set_bright on the PERSISTENT socket right after activation.
@@ -4706,6 +4721,28 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                     f"FX mode lost, will re-activate on next update"
                 )
                 raise Exception("Socket reconnected during pixel send -- FX re-activation needed")
+
+            # NATIVE-EXIT RE-SEND: When leaving a firmware-native renderer, the
+            # first update_leds above can be dropped while the firmware finishes
+            # switching into direct mode.  The socket is now healthy and in
+            # direct mode (the reconnect check above passed), so re-send the same
+            # frame once -- this is the deterministic equivalent of the manual
+            # second send that was previously needed.
+            if leaving_native_fw_mode:
+                await asyncio.sleep(0.12)
+                _LOGGER.debug(
+                    f"[APPLY] [{self._ip}] Native-exit re-send of first frame "
+                    f"(firmware just left clock/native mode)"
+                )
+                await self._cube_matrix.draw_matrices_fast(raw_rgb_data)
+                self._last_fx_mode_time = time.time()
+                if self._cube_matrix.consume_reconnected_flag():
+                    self._fx_mode_is_direct = False
+                    _LOGGER.warning(
+                        f"[APPLY] [{self._ip}] Socket reconnected during native-exit "
+                        f"re-send -- FX mode lost, will re-activate on next update"
+                    )
+                    raise Exception("Socket reconnected during native-exit re-send")
             
             # Track that this darken% was successfully rendered to lamp pixels.
             # This keeps _last_applied_darken accurate even when apply() is called
@@ -5831,6 +5868,14 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             color = service_call.data.get("color")
             if color is not None:
                 config["color"] = color if isinstance(color, list) else [int(color)]
+            # Optional animation speed. The firmware clock effect (mode 40)
+            # accepts a `rate` field just like native effects.
+            rate = service_call.data.get("rate")
+            if rate is not None:
+                try:
+                    config["rate"] = int(rate)
+                except (TypeError, ValueError):
+                    pass
             params = [mode, style_id, apply, config]
 
         # Derive effect mode/style for optional persistence (from whichever
@@ -6161,6 +6206,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             vol.Optional("style_id"): int,
             vol.Optional("apply"): int,
             vol.Optional("mixer"): int,
+            vol.Optional("rate"): int,
             vol.Optional("data"): cv.string,
             vol.Optional("data_bytes"): list,
             vol.Optional("color"): vol.Any(int, [int]),
