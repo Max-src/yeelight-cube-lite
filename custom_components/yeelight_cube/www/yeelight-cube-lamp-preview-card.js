@@ -132,8 +132,16 @@ function renderClockFrame(attrs, fontMap, metrics) {
   const now = new Date();
   const tsSec = now.getTime() / 1000;
 
-  const showDate = !!attrs.clock_show_date;
-  const datePhase = showDate && Math.floor(tsSec / 5) % 2 === 1;
+  // 3-way clock content (byte 0): time | time_date (alternate) | date.
+  // Fall back to the legacy show_date boolean for older backends.
+  let content = attrs.clock_content;
+  if (content !== "time" && content !== "time_date" && content !== "date") {
+    content = attrs.clock_show_date ? "time_date" : "time";
+  }
+  let datePhase;
+  if (content === "date") datePhase = true;
+  else if (content === "time_date") datePhase = Math.floor(tsSec / 5) % 2 === 1;
+  else datePhase = false;
 
   let text;
   if (datePhase) {

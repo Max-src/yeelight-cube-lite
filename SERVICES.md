@@ -483,8 +483,9 @@ data:
 ```
 
 `Clock` uses the Cube Lite private LAN command and has no device state readback.
-The Clock Style, Clock Show Date, Clock 12-Hour Format, and Clock Colon Blink
-entities configure the values sent when Clock mode is activated.
+The Clock Style, Clock Content (Time / Time & Date / Date only), Clock Show Date,
+Clock 12-Hour Format, and Clock Colon Blink entities configure the values sent
+when Clock mode is activated.
 
 ---
 

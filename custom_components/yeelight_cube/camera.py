@@ -253,8 +253,17 @@ class _YeelightCubeMatrixCameraBase(Camera):
         """Render the active firmware clock face into a 20x5 matrix."""
         le = self._light_entity
         now = dt_util.now()
-        show_date = bool(getattr(le, "_native_clock_show_date", False))
-        date_phase = show_date and int(now.timestamp() // 5) % 2 == 1
+        # 3-way clock content (byte 0): time | time_date (alternate) | date.
+        # Fall back to the legacy show_date boolean for older state.
+        content = getattr(le, "_native_clock_content", None)
+        if content not in ("time", "time_date", "date"):
+            content = "time_date" if getattr(le, "_native_clock_show_date", False) else "time"
+        if content == "date":
+            date_phase = True
+        elif content == "time_date":
+            date_phase = int(now.timestamp() // 5) % 2 == 1
+        else:
+            date_phase = False
         if date_phase:
             text = now.strftime("%m.%d")
         else:

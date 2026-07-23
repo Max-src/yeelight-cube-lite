@@ -158,11 +158,34 @@ class _YeelightCubeClockOptionSwitch(SwitchEntity):
 
 
 class YeelightCubeClockShowDateSwitch(_YeelightCubeClockOptionSwitch):
-    """Show the date in the native clock rotation."""
+    """Show the date in the native clock rotation.
+
+    Backward-compatible shortcut for the 3-way Clock Content select:
+    ON  -> "time_date" (alternate time + date)
+    OFF -> "time" (time only)
+    When the content is "date" (date only), this switch reads as OFF.
+    """
 
     option_attr = "_native_clock_show_date"
     option_key = "clock_show_date"
     option_icon = "mdi:calendar-clock"
+
+    async def _set_option(self, enabled: bool) -> None:
+        # Route through the 3-way content setter so the Clock Content select
+        # and this switch stay consistent.
+        await self._light_entity.async_set_native_clock_content(
+            "time_date" if enabled else "time"
+        )
+        self._attr_is_on = enabled
+        self.async_write_ha_state()
+
+    def async_update_from_light(self):
+        self._attr_is_on = (
+            getattr(self._light_entity, "_native_clock_content", "time")
+            == "time_date"
+        )
+        if self.hass is not None:
+            self.async_write_ha_state()
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()

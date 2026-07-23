@@ -30,11 +30,14 @@ from .const import (
     CONF_DEVICE_ID,
     CONF_IP,
     DEFAULT_MATRIX_DISPLAY_MODE,
+    DEFAULT_NATIVE_CLOCK_CONTENT,
     DEFAULT_NATIVE_CLOCK_STYLE,
     DEFAULT_NATIVE_EFFECT,
     DOMAIN,
     MATRIX_DISPLAY_MODES,
     NATIVE_CLOCK_APPLY,
+    NATIVE_CLOCK_CONTENT_BYTE,
+    NATIVE_CLOCK_CONTENT_OPTIONS,
     NATIVE_CLOCK_EFFECT_ID,
     NATIVE_CLOCK_STYLES,
     NATIVE_EFFECT_APPLY,
@@ -877,6 +880,10 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         self._rgb_color = (255, 0, 0)  # Default red color for Home Assistant color picker
         self._native_clock_style = DEFAULT_NATIVE_CLOCK_STYLE
         self._native_clock_show_date = False
+        # 3-way clock content: "time" | "time_date" | "date".  Source of truth
+        # for data byte 0.  _native_clock_show_date is kept in sync (== the
+        # "time_date" alternate mode) for backward compatibility.
+        self._native_clock_content = DEFAULT_NATIVE_CLOCK_CONTENT
         self._native_clock_12_hour = False
         self._native_clock_colon_blink = True
         self._native_clock_timezone_offset = None
@@ -1017,6 +1024,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         self._clock_show_date_switch_entity = None
         self._clock_12_hour_switch_entity = None
         self._clock_colon_blink_switch_entity = None
+        self._clock_content_select_entity = None
         
         # Reference to alignment select entity for bidirectional updates
         self._alignment_select_entity = None
@@ -1720,6 +1728,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             )["name"],
             "clock_style_id": self._native_clock_style,
             "clock_show_date": self._native_clock_show_date,
+            "clock_content": self._native_clock_content,
             "clock_12_hour": self._native_clock_12_hour,
             "clock_colon_blink": self._native_clock_colon_blink,
             "clock_color": self._native_clock_color,
@@ -1940,6 +1949,17 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 self._native_clock_show_date = bool(
                     old_state.attributes["clock_show_date"]
                 )
+            # Clock content (3-way): restore directly if present, otherwise
+            # migrate from the legacy boolean show_date flag.
+            restored_content = old_state.attributes.get("clock_content")
+            if restored_content in NATIVE_CLOCK_CONTENT_OPTIONS:
+                self._native_clock_content = restored_content
+            else:
+                self._native_clock_content = (
+                    "time_date" if self._native_clock_show_date else "time"
+                )
+            # Keep the compat boolean consistent with the 3-way content.
+            self._native_clock_show_date = self._native_clock_content == "time_date"
             if old_state.attributes.get("clock_12_hour") is not None:
                 self._native_clock_12_hour = bool(
                     old_state.attributes["clock_12_hour"]
@@ -3671,7 +3691,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
     def _native_clock_data_bytes(self) -> bytes:
         """Build the 4-byte clock payload sent inside the set_fx_effect data field.
 
-        Byte 0: 1 = time only, 2 = alternate date/time
+        Byte 0: 1 = time only, 2 = alternate time/date, 3 = date only
         Byte 1: timezone offset in whole hours (signed, wrapped to u8)
         Byte 2: 0 = 24-hour, 1 = 12-hour
         Byte 3: 0 = blink colon, 1 = steady colon
@@ -3679,13 +3699,34 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         timezone_hours = self._native_clock_timezone_hours()
         return bytes(
             (
-                2 if self._native_clock_show_date else 1,
+                NATIVE_CLOCK_CONTENT_BYTE.get(self._native_clock_content, 1),
                 timezone_hours & 0xFF,
                 1 if self._native_clock_12_hour else 0,
                 # Firmware flag is inverted: 0 blinks, 1 keeps the colon steady.
                 0 if self._native_clock_colon_blink else 1,
             )
         )
+
+    async def async_set_native_clock_content(self, content: str) -> None:
+        """Set the 3-way clock content and re-render if the clock is showing.
+
+        ``content`` is one of "time", "time_date" (alternate) or "date".  Keeps
+        the legacy ``_native_clock_show_date`` boolean and the linked switch /
+        select helper entities in sync.
+        """
+        if content not in NATIVE_CLOCK_CONTENT_OPTIONS:
+            _LOGGER.error("Invalid clock content: %s", content)
+            return
+        self._native_clock_content = content
+        self._native_clock_show_date = content == "time_date"
+        if self._is_on and self._mode == "Clock":
+            await self.async_apply_display_mode(update_type="color_change")
+        if self._clock_content_select_entity:
+            self._clock_content_select_entity.async_update_from_light()
+        if self._clock_show_date_switch_entity:
+            self._clock_show_date_switch_entity.async_update_from_light()
+        if self.hass is not None:
+            self.async_write_ha_state()
 
     def _resolve_native_clock_color(self, style: dict) -> int | None:
         """Return the ARGB color integer to send for the current clock style.
@@ -3813,7 +3854,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                         config["color"] = [style["color"]]
                     clock_data = bytes(
                         (
-                            2 if self._native_clock_show_date else 1,
+                            NATIVE_CLOCK_CONTENT_BYTE.get(self._native_clock_content, 1),
                             self._native_clock_timezone_hours() & 0xFF,
                             1 if self._native_clock_12_hour else 0,
                             0 if self._native_clock_colon_blink else 1,
@@ -4916,7 +4957,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
     # mode, colors, layout, brightness and all colour effects.
     _DISPLAY_STATE_ATTRS = (
         "_custom_text", "_text_colors", "_mode", "_matrix_mode", "_native_clock_style",
-        "_native_clock_show_date", "_native_clock_12_hour",
+        "_native_clock_show_date", "_native_clock_content", "_native_clock_12_hour",
         "_native_clock_colon_blink", "_native_clock_color", "_full_panel",
         "_native_effect", "_native_effect_speed", "_native_effect_direction",
         "_angle",
@@ -4974,6 +5015,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             self._mode_select_entity,
             self._clock_style_select_entity,
             self._clock_show_date_switch_entity,
+            self._clock_content_select_entity,
             self._clock_12_hour_switch_entity,
             self._clock_colon_blink_switch_entity,
             self._native_effect_select_entity,

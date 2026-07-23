@@ -11,10 +11,13 @@ from .const import (
     CONF_IP,
     CONTENT_MODES,
     DEFAULT_MATRIX_DISPLAY_MODE,
+    DEFAULT_NATIVE_CLOCK_CONTENT,
     DEFAULT_NATIVE_CLOCK_STYLE,
     DEFAULT_NATIVE_EFFECT,
     DOMAIN,
     MATRIX_DISPLAY_MODES,
+    NATIVE_CLOCK_CONTENT_LABELS,
+    NATIVE_CLOCK_CONTENT_OPTIONS,
     NATIVE_CLOCK_STYLES,
     NATIVE_EFFECT_DIRECTIONS,
     NATIVE_EFFECTS,
@@ -49,6 +52,7 @@ async def async_setup_entry(
     content_mode_select = YeelightCubeContentModeSelect(light_entity, entry)
     mode_select = YeelightCubeDisplayModeSelect(light_entity, entry)
     clock_style_select = YeelightCubeClockStyleSelect(light_entity, entry)
+    clock_content_select = YeelightCubeClockContentSelect(light_entity, entry)
     native_effect_select = YeelightCubeNativeEffectSelect(light_entity, entry)
     native_effect_direction_select = YeelightCubeNativeEffectDirectionSelect(
         light_entity, entry
@@ -66,6 +70,7 @@ async def async_setup_entry(
         content_mode_select,
         mode_select,
         clock_style_select,
+        clock_content_select,
         native_effect_select,
         native_effect_direction_select,
         power_on_state_select,
@@ -729,6 +734,81 @@ class YeelightCubeClockStyleSelect(SelectEntity):
             f"[CLOCK STYLE] Registered for {self._light_entity._ip}, "
             f"current style={self._light_entity._native_clock_style}"
         )
+
+
+_CLOCK_CONTENT_LABEL_TO_KEY = {v: k for k, v in NATIVE_CLOCK_CONTENT_LABELS.items()}
+_CLOCK_CONTENT_OPTIONS = [
+    NATIVE_CLOCK_CONTENT_LABELS[k] for k in NATIVE_CLOCK_CONTENT_OPTIONS
+]
+
+
+class YeelightCubeClockContentSelect(SelectEntity):
+    """Select what the native clock shows: Time, Time & Date, or Date only.
+
+    Drives data byte 0 of the firmware clock payload (1 = time, 2 = alternate
+    time+date, 3 = date only).  The legacy "Show Date" switch is a shortcut
+    that maps to Time <-> Time & Date and stays in sync with this select.
+    """
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_translation_key = "clock_content"
+
+    def __init__(self, light_entity, config_entry: ConfigEntry):
+        self._light_entity = light_entity
+        self._config_entry = config_entry
+        self._attr_unique_id = (
+            f"{light_entity._attr_unique_id}_clock_content_select"
+        )
+        self._attr_icon = "mdi:calendar-clock"
+        self._attr_options = _CLOCK_CONTENT_OPTIONS
+        self._attr_current_option = self._content_label()
+
+    def _content_label(self) -> str:
+        key = getattr(
+            self._light_entity,
+            "_native_clock_content",
+            DEFAULT_NATIVE_CLOCK_CONTENT,
+        )
+        return NATIVE_CLOCK_CONTENT_LABELS.get(
+            key, NATIVE_CLOCK_CONTENT_LABELS[DEFAULT_NATIVE_CLOCK_CONTENT]
+        )
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
+            "name": self._light_entity._attr_name,
+            "manufacturer": "Yeelight",
+            "model": "Cube Matrix",
+        }
+
+    @property
+    def available(self) -> bool:
+        return True
+
+    @property
+    def current_option(self) -> str | None:
+        return self._content_label()
+
+    async def async_select_option(self, option: str) -> None:
+        key = _CLOCK_CONTENT_LABEL_TO_KEY.get(option)
+        if key is None:
+            _LOGGER.error(f"[CLOCK CONTENT] Unknown option: '{option}'")
+            return
+        self._attr_current_option = option
+        await self._light_entity.async_set_native_clock_content(key)
+
+    @callback
+    def async_update_from_light(self):
+        self._attr_current_option = self._content_label()
+        if self.hass is not None:
+            self.async_write_ha_state()
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        self._light_entity._clock_content_select_entity = self
+        self.async_update_from_light()
 
 
 class YeelightCubeNativeEffectSelect(SelectEntity):

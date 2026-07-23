@@ -22,7 +22,7 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a
 | :-- | :-- |
 | **Full matrix control** | 20×5 RGB, individual pixel-level color |
 | **Brightness** | Full brightness control |
-| **Native clock** | 14 firmware clock styles with date, 12/24-hour, and colon blink options |
+| **Native clock** | 14 firmware clock styles with time / date / alternating content, 12/24-hour, and colon blink options |
 | **Native animations** | 18 LAN-compatible firmware effects with speed and direction controls where supported |
 | **Official pixel art** | 68 locally bundled, read-only drawings from the Yeelight Station app; personal drawings stay separate |
 | **Device settings** | Power-on behavior, text scrolling, and physical-button preset list |
@@ -477,7 +477,8 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 
 | Entity | Type | Description |
 | :-- | :-- | :-- |
-| **Clock Show Date** | Switch | Alternate the date with the current time in Clock mode |
+| **Clock Content** | Select | What the clock shows: Time, Time & Date (alternating), or Date only |
+| **Clock Show Date** | Switch | Shortcut for Time & Date (alternate time with the date); syncs with Clock Content |
 | **Clock 12-Hour Format** | Switch | Use 12-hour time instead of 24-hour time |
 | **Clock Colon Blink** | Switch | Blink the time separator in Clock mode |
 | **Native Effect Direction** | Select | Direction for effects that support movement |

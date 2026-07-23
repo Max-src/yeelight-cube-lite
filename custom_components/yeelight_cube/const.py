@@ -35,6 +35,19 @@ NATIVE_CLOCK_STYLES = {
 }
 DEFAULT_NATIVE_CLOCK_STYLE = 6
 
+# Clock content mode -> data byte 0 of the clock payload:
+#   1 = time only, 2 = alternate time+date, 3 = date only
+# (byte0 == 0 blanks the panel; 4+ are unused/no-op on current firmware.)
+NATIVE_CLOCK_CONTENT_BYTE = {"time": 1, "time_date": 2, "date": 3}
+DEFAULT_NATIVE_CLOCK_CONTENT = "time"
+# Ordered options + display labels for the Clock Content select entity.
+NATIVE_CLOCK_CONTENT_OPTIONS = ("time", "time_date", "date")
+NATIVE_CLOCK_CONTENT_LABELS = {
+    "time": "Time",
+    "time_date": "Time & Date",
+    "date": "Date",
+}
+
 # Native animation definitions recovered from the Yeelight Station app's
 # Cube Lite device configuration. ``mode`` is the firmware renderer while
 # ``effect_id`` selects the effect family. The four app-level GIF effects

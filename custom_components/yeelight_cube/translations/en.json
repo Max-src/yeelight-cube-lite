@@ -36,6 +36,9 @@
             "clock_style": {
                 "name": "Clock: Style"
             },
+            "clock_content": {
+                "name": "Clock: Content"
+            },
             "native_effect": {
                 "name": "Native effect"
             },
