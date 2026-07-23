@@ -906,6 +906,11 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         # FX mode tracking to avoid redundant mode changes
         self._fx_mode_is_direct = False  # Track if we're already in direct/music mode
         self._last_fx_mode_time = 0.0    # When activate_fx_mode last succeeded
+        # True when the lamp is physically in a firmware-native mode (clock,
+        # native animation, or start_cf color flow). When True, ensure_fx_ready()
+        # must use a longer settle + graceful FIN to avoid the lamp resetting to
+        # the ribbon (default loading state) during the mode transition.
+        self._in_native_fw_mode = False
         
         # Apply timing (for queue processor stats, not cooldown-gating)
         self._last_apply_time = 0
@@ -2094,18 +2099,38 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         
         # Step 1: Kill persistent socket
         cm._close_fast_socket()
-        
-        # Step 2: activate_fx_mode on fresh TCP
-        await cm.send_raw_command("activate_fx_mode", [{"mode": "direct"}])
-        
+
+        # Step 2: activate_fx_mode on fresh TCP.
+        # When the lamp was in a firmware-native mode (clock, native animation,
+        # or color flow), a bare RST-then-immediate-connect disrupts the
+        # renderer and causes the lamp to reset to the ribbon/loading state.
+        # The fix mirrors what _activate_native_clock does: wait for the TCP
+        # stack to settle, then use a graceful FIN so the firmware can finish
+        # its current render cycle before accepting the mode change.
+        coming_from_native = self._in_native_fw_mode
+        if coming_from_native:
+            _LOGGER.debug(
+                "[ENSURE_FX] [%s] Coming from native mode — using graceful settle "
+                "before activate_fx_mode",
+                self._ip,
+            )
+            await asyncio.sleep(0.3)  # Let native renderer + Cube TCP stack settle
+
+        await cm.send_raw_command(
+            "activate_fx_mode",
+            [{"mode": "direct"}],
+            abortive_close=not coming_from_native,  # Graceful FIN when leaving native mode
+        )
+
         await asyncio.sleep(0.05)  # Firmware settle (50ms is sufficient on LAN)
-        
+
         # Step 3: set_bright on fresh TCP
         hardware_brightness, _ = self._calculate_brightness_values(self._brightness)
         await cm.send_raw_command("set_bright", [hardware_brightness])
-        
+
         # Step 4: Update state
         self._fx_mode_is_direct = True
+        self._in_native_fw_mode = False  # Successfully switched to direct FX mode
         self._last_fx_mode_time = time.time()
         self._last_hardware_brightness = hardware_brightness
         
@@ -3677,6 +3702,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         await self._set_native_mode_brightness()
         self._is_on = True
         self._fx_mode_is_direct = False
+        self._in_native_fw_mode = True   # Lamp is now in firmware-native clock mode
         self._last_fx_mode_time = 0.0
         self._native_clock_timezone_offset = timezone_hours
         self._notify_camera_preview()
@@ -3717,6 +3743,7 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         await self._cube_matrix.send_raw_command("set_fx_effect", params)
         self._is_on = True
         self._fx_mode_is_direct = False
+        self._in_native_fw_mode = True   # Lamp is now in firmware-native animation mode
         self._last_fx_mode_time = 0.0
         self._notify_camera_preview()
         if self.hass is not None:
@@ -5837,6 +5864,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             if is_fx:
                 target._is_on = True
                 target._fx_mode_is_direct = False
+                target._in_native_fw_mode = True   # Lamp in firmware-native mode (FX Explorer)
                 target._last_fx_mode_time = 0.0
                 notify = getattr(target, "_notify_camera_preview", None)
                 if notify:
@@ -5846,6 +5874,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                 # It is live-only (not persistable through the state model).
                 target._is_on = True
                 target._fx_mode_is_direct = False
+                target._in_native_fw_mode = True   # Lamp in color-flow mode (FX Explorer)
                 target._last_fx_mode_time = 0.0
 
             persisted = False
