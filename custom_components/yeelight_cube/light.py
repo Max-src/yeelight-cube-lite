@@ -3802,6 +3802,8 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
         effect_config = {"mode": spec["mode"], "onoff": 1}
         if spec.get("speed"):
             effect_config["rate"] = self._native_effect_speed
+        elif spec.get("rate") is not None:
+            effect_config["rate"] = spec["rate"]
         directions = spec.get("directions")
         if directions:
             if self._native_effect_direction not in directions:
@@ -3809,6 +3811,8 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             effect_config["direction"] = NATIVE_EFFECT_DIRECTION_VALUES[
                 self._native_effect_direction
             ]
+        elif spec.get("direction_fixed") is not None:
+            effect_config["direction"] = spec["direction_fixed"]
         # Apply the spec's default color if one is defined.
         if spec.get("color") is not None:
             effect_config["color"] = [int(spec["color"])]

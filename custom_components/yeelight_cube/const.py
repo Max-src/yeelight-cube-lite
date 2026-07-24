@@ -76,11 +76,11 @@ NATIVE_EFFECTS = {
     "Tide": {"effect_id": 48, "mode": 48, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS},
     "Building block": {"effect_id": 49, "mode": 49, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS, "color": 16777471},
     "Hacking": {"effect_id": 46, "mode": 46, "speed": True, "directions": ("Up", "Down")},
-    "Flower Sea": {"effect_id": 91, "mode": 91, "speed": True},
-    "Magic": {"effect_id": 92, "mode": 92, "speed": True},
-    "Wonderland": {"effect_id": 94, "mode": 94, "speed": True},
-    "Kaleidoscope": {"effect_id": 95, "mode": 95, "speed": True},
-    "Palette": {"effect_id": 96, "mode": 96, "speed": True},
+    "Flower Sea": {"effect_id": 91, "mode": 55, "speed": False, "rate": 100, "direction_fixed": 2},
+    "Magic": {"effect_id": 92, "mode": 75, "speed": False, "rate": 50, "direction_fixed": 2},
+    "Wonderland": {"effect_id": 94, "mode": 77, "speed": False, "rate": 50, "direction_fixed": 2},
+    "Kaleidoscope": {"effect_id": 95, "mode": 80, "speed": False, "rate": 50, "direction_fixed": 2},
+    "Palette": {"effect_id": 96, "mode": 81, "speed": False, "rate": 50, "direction_fixed": 2},
 }
 DEFAULT_NATIVE_EFFECT = "Streamer"
 
