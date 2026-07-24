@@ -132,7 +132,7 @@ class YeelightCubeGradientAngleNumber(NumberEntity):
         """Initialize the gradient angle number entity."""
         self._light_entity = light_entity
         self._config_entry = config_entry
-        self._attr_name = f"{light_entity._attr_name} Gradient Angle"
+        self._attr_name = f"{light_entity._attr_name} Matrix: Gradient Angle"
         self._attr_unique_id = f"{light_entity._attr_unique_id}_gradient_angle"
         self._attr_icon = "mdi:angle-acute"
         self._attr_native_min_value = 0.0

@@ -41,7 +41,7 @@ class YeelightCubeCustomTextInput(TextEntity):
         self._light_entity = light_entity
         self._ip = ip
         self._config_entry = config_entry
-        self._attr_name = f"{light_entity._attr_name} Display Text"
+        self._attr_name = f"{light_entity._attr_name} Matrix: Display Text"
         self._attr_unique_id = f"{light_entity._attr_unique_id}_display_text"
         self._attr_native_value = light_entity._custom_text
         self._attr_icon = "mdi:format-text"

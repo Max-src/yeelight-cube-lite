@@ -92,7 +92,7 @@ class YeelightCubePaletteSelect(SelectEntity):
         self._ip = ip
         self._config_entry = config_entry
         self._hass = hass
-        self._attr_name = f"{light_entity._attr_name} Palette"
+        self._attr_name = f"{light_entity._attr_name} Matrix: Palette"
         self._attr_unique_id = f"{light_entity._attr_unique_id}_palette_select"
         self._attr_icon = "mdi:palette"
         self._attr_current_option = None
@@ -262,7 +262,7 @@ class YeelightCubePixelArtSelect(SelectEntity):
         self._ip = ip
         self._config_entry = config_entry
         self._hass = hass
-        self._attr_name = f"{light_entity._attr_name} Pixel Art"
+        self._attr_name = f"{light_entity._attr_name} Matrix: Pixel Art"
         self._attr_unique_id = f"{light_entity._attr_unique_id}_pixel_art_select"
         self._attr_icon = "mdi:image"
         self._attr_current_option = None
@@ -548,7 +548,7 @@ class YeelightCubeDisplayModeSelect(SelectEntity):
         """Initialize the display mode selector entity."""
         self._light_entity = light_entity
         self._config_entry = config_entry
-        self._attr_name = f"{light_entity._attr_name} Display Mode"
+        self._attr_name = f"{light_entity._attr_name} Matrix: Display Mode"
         self._attr_unique_id = f"{light_entity._attr_unique_id}_display_mode_select"
         self._attr_icon = "mdi:view-dashboard-variant"
         self._attr_options = list(MATRIX_DISPLAY_MODES)
@@ -982,7 +982,7 @@ class YeelightCubeAlignmentSelect(SelectEntity):
         """Initialize the text alignment selector entity."""
         self._light_entity = light_entity
         self._config_entry = config_entry
-        self._attr_name = f"{light_entity._attr_name} Text Alignment"
+        self._attr_name = f"{light_entity._attr_name} Matrix: Text Alignment"
         self._attr_unique_id = f"{light_entity._attr_unique_id}_alignment_select"
         self._attr_icon = "mdi:format-align-center"
         self._attr_options = ALIGNMENT_OPTIONS
@@ -1133,7 +1133,7 @@ class YeelightCubeFontSelect(SelectEntity):
     def __init__(self, light_entity, config_entry: ConfigEntry):
         self._light_entity = light_entity
         self._config_entry = config_entry
-        self._attr_name = f"{light_entity._attr_name} Font"
+        self._attr_name = f"{light_entity._attr_name} Matrix: Font"
         self._attr_unique_id = f"{light_entity._attr_unique_id}_font_select"
         self._attr_icon = "mdi:format-font"
         self._attr_options = _FONT_OPTIONS
@@ -1231,7 +1231,7 @@ class YeelightCubeTransitionSelect(SelectEntity):
     def __init__(self, light_entity, config_entry: ConfigEntry):
         self._light_entity = light_entity
         self._config_entry = config_entry
-        self._attr_name = f"{light_entity._attr_name} Transition Effect"
+        self._attr_name = f"{light_entity._attr_name} Matrix: Transition Effect"
         self._attr_unique_id = f"{light_entity._attr_unique_id}_transition_select"
         self._attr_icon = "mdi:animation-play"
         self._attr_options = _TRANSITION_OPTIONS
