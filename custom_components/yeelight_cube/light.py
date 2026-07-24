@@ -3809,6 +3809,9 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             effect_config["direction"] = NATIVE_EFFECT_DIRECTION_VALUES[
                 self._native_effect_direction
             ]
+        # Apply the spec's default color if one is defined.
+        if spec.get("color") is not None:
+            effect_config["color"] = [int(spec["color"])]
 
         params = [
             spec["effect_id"],

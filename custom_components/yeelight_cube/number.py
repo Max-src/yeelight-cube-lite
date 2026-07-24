@@ -397,7 +397,6 @@ class YeelightCubeNativeEffectSpeedNumber(NumberEntity):
     _attr_has_entity_name = True
     _attr_should_poll = False
     _attr_translation_key = "native_effect_speed"
-    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
         self._light_entity = light_entity
