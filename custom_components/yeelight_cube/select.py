@@ -905,6 +905,17 @@ class YeelightCubeNativeEffectDirectionSelect(SelectEntity):
         if option not in NATIVE_EFFECT_DIRECTIONS:
             raise ValueError(f"Unknown native effect direction: {option}")
         self._light_entity._native_effect_direction = option
+        # Device orientation is the persistent source of truth that the effect
+        # activation reads back. Mirror this choice into it so the direction
+        # survives reboots and is re-applied on the next activation instead of
+        # being overridden by a diverged orientation value.
+        key = option.lower()
+        self._light_entity._device_orientation = key
+        self._light_entity._orientation = (
+            "flipped" if key in ("left", "up") else "normal"
+        )
+        if self._light_entity._device_orientation_select_entity:
+            self._light_entity._device_orientation_select_entity.async_update_from_light()
         spec = NATIVE_EFFECTS[self._light_entity._native_effect]
         if (
             spec.get("directions")

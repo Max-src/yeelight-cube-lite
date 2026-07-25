@@ -3806,10 +3806,28 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
             effect_config["rate"] = spec["rate"]
         directions = spec.get("directions")
         if directions:
+            # The persistent device orientation is the source of truth for an
+            # effect's flow direction. Derive the direction from the physical
+            # mount at activation time so applying/selecting an effect (or a
+            # reboot/restore) always honors the orientation arrows -- instead of
+            # using a stale _native_effect_direction that only got synced when
+            # the orientation was changed while already in Native Effect mode.
+            desired = _DEVICE_ORIENTATION_TO_EFFECT_DIR.get(self._device_orientation)
+            if desired in directions and desired != self._native_effect_direction:
+                self._native_effect_direction = desired
+                if self._native_effect_direction_select_entity:
+                    self._native_effect_direction_select_entity.async_update_from_light()
             if self._native_effect_direction not in directions:
                 self._native_effect_direction = directions[0]
+            # Some effects render a direction differently than the firmware's
+            # nominal value; remap the selected label to the value that makes
+            # the physical animation match the on-screen arrow (verified on HW).
+            sent_direction = self._native_effect_direction
+            remap = spec.get("direction_remap")
+            if remap:
+                sent_direction = remap.get(sent_direction, sent_direction)
             effect_config["direction"] = NATIVE_EFFECT_DIRECTION_VALUES[
-                self._native_effect_direction
+                sent_direction
             ]
         elif spec.get("direction_fixed") is not None:
             effect_config["direction"] = spec["direction_fixed"]

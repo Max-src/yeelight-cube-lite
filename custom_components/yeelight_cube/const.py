@@ -62,24 +62,30 @@ NATIVE_EFFECT_DIRECTION_VALUES = {
     "Left": 2,
     "Right": 3,
 }
+# Some effects render a direction differently than the firmware's nominal
+# direction value. A ``direction_remap`` translates the user-facing direction
+# label to the value actually sent to the lamp, so the physical animation
+# matches the on-screen arrow / preview. Verified on real hardware.
+_SWAP_UP_DOWN = {"Up": "Down", "Down": "Up"}
+
 NATIVE_EFFECTS = {
     "Streamer": {"effect_id": 3, "mode": 3, "speed": True},
     "Starry sky": {"effect_id": 5, "mode": 5, "speed": True, "color": 255},
-    "Spectrum": {"effect_id": 17, "mode": 17, "directions": NATIVE_EFFECT_DIRECTIONS},
-    "Ocean Waves": {"effect_id": 42, "mode": 42, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS},
-    "Rainbow": {"effect_id": 39, "mode": 39, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS},
-    "Waterfall": {"effect_id": 32, "mode": 32, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS, "color": 255},
+    "Spectrum": {"effect_id": 17, "mode": 17, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": _SWAP_UP_DOWN},
+    "Ocean Waves": {"effect_id": 42, "mode": 42, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": _SWAP_UP_DOWN},
+    "Rainbow": {"effect_id": 39, "mode": 39, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": _SWAP_UP_DOWN},
+    "Waterfall": {"effect_id": 32, "mode": 32, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": _SWAP_UP_DOWN, "color": 255},
     "Aurora": {"effect_id": 15, "mode": 15, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS, "color": 16842496},
-    "Bonfire": {"effect_id": 34, "mode": 34, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS},
-    "Pinball": {"effect_id": 37, "mode": 37, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS},
-    "Shooting Star": {"effect_id": 47, "mode": 47, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS},
+    "Bonfire": {"effect_id": 34, "mode": 34, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": {"Right": "Down", "Down": "Right", "Left": "Up", "Up": "Left"}},
+    "Pinball": {"effect_id": 37, "mode": 37, "speed": True},
+    "Shooting Star": {"effect_id": 47, "mode": 47, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": _SWAP_UP_DOWN},
     "Tide": {"effect_id": 48, "mode": 48, "speed": True},
-    "Building block": {"effect_id": 49, "mode": 49, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS, "color": 16777471},
-    "Hacking": {"effect_id": 46, "mode": 46, "speed": True, "directions": ("Up", "Down", "Left")},
+    "Building block": {"effect_id": 49, "mode": 49, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": _SWAP_UP_DOWN, "color": 16777471},
+    "Hacking": {"effect_id": 46, "mode": 46, "speed": True, "directions": ("Up", "Down")},
     "Flower Sea": {"effect_id": 91, "mode": 55, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS},
-    "Magic": {"effect_id": 92, "mode": 75, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS},
-    "Wonderland": {"effect_id": 94, "mode": 77, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS},
-    "Kaleidoscope": {"effect_id": 95, "mode": 80, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS},
+    "Magic": {"effect_id": 92, "mode": 75, "speed": True},
+    "Wonderland": {"effect_id": 94, "mode": 77, "speed": True},
+    "Kaleidoscope": {"effect_id": 95, "mode": 80, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": _SWAP_UP_DOWN},
     "Palette": {"effect_id": 96, "mode": 81, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS},
 }
 DEFAULT_NATIVE_EFFECT = "Streamer"
