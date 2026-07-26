@@ -275,7 +275,14 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     async def _periodic_ssdp_scan(_now=None):
         await _async_ssdp_discover_cubelite(hass)
 
-    async_track_time_interval(hass, _periodic_ssdp_scan, timedelta(minutes=10))
+    # This is component-global discovery: it is intentionally kept alive for the
+    # whole HA session (not per-config-entry) so new Cubes are still found even
+    # when no entry is loaded yet. We keep the unsubscribe handle in hass.data so
+    # it is tracked/cancellable rather than orphaned (async_setup has no teardown
+    # hook of its own).
+    hass.data.setdefault(DOMAIN, {})["_ssdp_scan_unsub"] = async_track_time_interval(
+        hass, _periodic_ssdp_scan, timedelta(minutes=10)
+    )
 
     return True
 

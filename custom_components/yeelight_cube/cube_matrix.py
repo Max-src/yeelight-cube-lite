@@ -68,7 +68,6 @@ class CubeMatrix:
         # command volume that may overwhelm the Cube firmware.
         self._total_commands_sent = 0
 
-        self._failed_commands_window = []  # Track recent failures for health monitoring
         self.device_id = None  # Yeelight device ID (hex) — used for discovery suppression
         
         _LOGGER.debug(
@@ -362,25 +361,6 @@ class CubeMatrix:
         has its own error handling for BulbException, AttributeError, etc.
         """
         await self.send_command_with_recovery("update_leds", [rgb_data])
-
-    async def _draw_with_recovery_silent(self, rgb_data: str):
-        """Fire-and-forget variant that catches and logs errors silently."""
-        try:
-            await self.send_command_with_recovery("update_leds", [rgb_data])
-        except Exception as e:
-            error_msg = str(e)
-            error_type = type(e).__name__
-            is_expected = (
-                "closed" in error_msg.lower() or 
-                "connection" in error_msg.lower() or
-                "socket" in error_msg.lower() or
-                (error_type == "AttributeError" and "NoneType" in error_msg)
-            )
-            if is_expected:
-                _LOGGER.debug(f"Draw command failed with expected error ({error_type}): {error_msg}")
-            else:
-                _LOGGER.warning(f"Draw command failed: {e}")
-
 
     def _close_fast_socket(self):
         """Close the persistent fast socket if open.

@@ -40,6 +40,10 @@ SERVICE_IS_DEVICE_MANAGED_SCHEMA = vol.Schema({
     vol.Required(ATTR_IP_ADDRESS): cv.string,
 })
 
+# Takes no parameters; an explicit empty schema keeps registration consistent
+# with every other service and rejects stray/typo'd fields.
+SERVICE_LIST_MANAGED_DEVICES_SCHEMA = vol.Schema({})
+
 SERVICE_TEST_DEVICE_DETECTION_SCHEMA = vol.Schema({
     vol.Optional(ATTR_DEVICE_MODEL, default=""): cv.string,
     vol.Optional(ATTR_DEVICE_NAME, default=""): cv.string,
@@ -284,6 +288,7 @@ def async_setup_services(hass: HomeAssistant):
         DOMAIN,
         SERVICE_LIST_MANAGED_DEVICES,
         list_managed_devices,
+        schema=SERVICE_LIST_MANAGED_DEVICES_SCHEMA,
     )
     
     hass.services.async_register(

@@ -97,6 +97,11 @@ LIGHT_SERVICE_NAMES = (
     "save_state",
     "restore_state",
     "set_button_effects",
+    # Registered further below alongside the diagnostic/native-effect handlers;
+    # listed here so async_remove_light_services() tears them down on unload too.
+    "send_fx_effect",
+    "query_raw",
+    "set_default",
 )
 
 # Timing constants
@@ -214,6 +219,53 @@ _DEVICE_ORIENTATION_TO_EFFECT_DIR = {
 # All rendering modes see one "giant letter" filling the whole panel
 # and work via the normal text rendering path -- no special branches needed.
 PANEL_FULL_CHAR = "\uFFFF"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SECTION MAP — YeelightCubeLight
+# This entity is large; methods are grouped by concern in the following order.
+# (Anchors are method names, not line numbers, so they don't rot on edits.)
+#
+#   1. Color pipeline
+#      _angle_gradient_projection_for_bottom_center, calculate_multi_gradient_color,
+#      apply_color_adjustments + _apply_* helpers, _apply_color_correction,
+#      _apply_color_accuracy, _calculate_brightness_values.
+#      → Pure math: turns a base RGB + user adjustments into a final RGB.
+#
+#   2. Construction & HA lifecycle
+#      __init__, device_info, async_added_to_hass (state restore),
+#      async_will_remove_from_hass (task/timer cleanup), async_update.
+#
+#   3. Connection health / hardware op plumbing
+#      _execute_hardware_op, ensure_fx_ready, _periodic_health_check,
+#      _maybe_schedule_retry / _schedule_display_retry, calibration-lock helpers.
+#
+#   4. Public properties & control setters
+#      is_on, brightness, rgb_color(_list), orientation / device_orientation,
+#      alignment, font, content_mode, extra_state_attributes,
+#      set_* control methods, turn_on/off (+ _internal_* variants), set_brightness.
+#
+#   5. Display apply pipeline
+#      async_apply_display_mode (queue + firmware-native-mode guard),
+#      _apply_display_mode_internal (mode router / matrix renderer),
+#      _apply_impl (builds + streams the pixel frame), letter/pixel placement,
+#      _flip_position(s), _char_advance, scroll timer.
+#
+#   6. Transitions
+#      _run_transition (all transition types), _send_transition_frame, _lerp_color.
+#
+#   7. Firmware-native modes
+#      Clock: _activate_native_clock + _native_clock_* helpers.
+#      Native effects: _activate_native_effect (direction remap + orientation).
+#      Power-on state, button effects.
+#
+#   8. State snapshot & linked-entity sync
+#      _save_display_state / _restore_display_state / _refresh_linked_entities.
+#
+# Below the class:
+#   async_setup_entry            — HA light-platform setup.
+#   async_setup_light_services   — registers all `handle_*` component services.
+#   async_remove_light_services  — tears them down (see LIGHT_SERVICE_NAMES).
+# ─────────────────────────────────────────────────────────────────────────────
 
 class YeelightCubeLight(LightEntity, RestoreEntity):
 
