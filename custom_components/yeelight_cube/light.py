@@ -2010,6 +2010,23 @@ class YeelightCubeLight(LightEntity, RestoreEntity):
                 font_val = old_state.attributes["font"]
                 if font_val in FONT_MAPS:
                     self._font = font_val
+            # Restore the 4-way physical device orientation (right/down/left/up).
+            # This is the persistent source of truth for native-effect flow and
+            # matrix/pixel flip, so it must survive a HA restart. Keep the legacy
+            # normal/flipped flag consistent with it.
+            device_orientation_val = old_state.attributes.get("device_orientation")
+            if device_orientation_val in DEVICE_ORIENTATIONS:
+                self._device_orientation = device_orientation_val
+                self._orientation = _DEVICE_ORIENTATION_TO_FLIP[device_orientation_val]
+            elif old_state.attributes.get("orientation") in (
+                ORIENTATION_NORMAL,
+                ORIENTATION_FLIPPED,
+            ):
+                # Legacy state that only stored normal/flipped.
+                self._orientation = old_state.attributes["orientation"]
+                self._device_orientation = (
+                    "left" if self._orientation == ORIENTATION_FLIPPED else "right"
+                )
             if old_state.attributes.get("angle") is not None:
                 self._angle = float(old_state.attributes["angle"])
             # Restore transition settings

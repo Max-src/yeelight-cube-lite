@@ -532,6 +532,18 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       JSON.stringify(currentMatrixColors) !==
       JSON.stringify(this._lastMatrixColors);
 
+    // Detect content-mode transitions (Matrix <-> Clock <-> Native Effect).
+    // Each mode is driven by a different client-side loop (clock animation,
+    // native-effect animation, or the static matrix). A switch changes none of
+    // state/brightness/matrix_colors, so without this we may skip render() and
+    // leave the preview frozen on the previous mode's last frame (e.g. stuck on
+    // a native effect after switching to Clock).
+    const currentContentMode = this.config?.entity
+      ? hass.states[this.config.entity]?.attributes?.content_mode
+      : null;
+    const contentModeChanged = currentContentMode !== this._lastContentMode;
+    if (currentContentMode != null) this._lastContentMode = currentContentMode;
+
     if (matrixColorsChanged) {
       const updateEpoch = this.config?.entity
         ? hass.states[this.config.entity]?.attributes?._update_epoch
@@ -554,7 +566,12 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         // Always render to update matrix colors, even if dragging
         this.render();
       }, 250); // Increased from 150ms to 250ms for better performance
-    } else if (!hasPendingLocalEffects || stateChanged || matrixColorsChanged) {
+    } else if (
+      !hasPendingLocalEffects ||
+      stateChanged ||
+      matrixColorsChanged ||
+      contentModeChanged
+    ) {
       // Normal rendering for non-brightness changes
       // Always render to update matrix - slider protection is inside _updateSliderValues
       // Also render when matrix_colors change (effect updates from backend)
