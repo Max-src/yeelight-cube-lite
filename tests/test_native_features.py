@@ -10,7 +10,11 @@ ROOT = Path(__file__).parents[1] / "custom_components" / "yeelight_cube"
 CONSTANTS = runpy.run_path(ROOT / "const.py")
 PIXEL_ART = runpy.run_path(ROOT / "builtin_pixel_art.py")
 NATIVE_PREVIEW = runpy.run_path(ROOT / "native_effect_preview.py")
-LIGHT_SOURCE = (ROOT / "light.py").read_text(encoding="utf-8")
+# The light entity is split across light.py and its light_*.py mixins. Join them
+# so source-level invariant checks below still find methods wherever they live.
+LIGHT_SOURCE = "\n\n".join(
+    p.read_text(encoding="utf-8") for p in sorted(ROOT.glob("light*.py"))
+)
 INIT_SOURCE = (ROOT / "__init__.py").read_text(encoding="utf-8")
 
 

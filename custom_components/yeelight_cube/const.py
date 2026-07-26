@@ -123,6 +123,22 @@ MATRIX_DISPLAY_MODES = (
 )
 DEFAULT_MATRIX_DISPLAY_MODE = "Solid Color"
 
+# Matrix display modes that render text/gradients (everything MATRIX_DISPLAY_MODES
+# offers EXCEPT "Custom Draw", which is pixel-art with its own render branch).
+# Used to normalise a stale non-text mode back to a valid text mode so the text
+# renderer never falls through all branches and blanks the panel.
+TEXT_RENDER_MODES = tuple(m for m in MATRIX_DISPLAY_MODES if m != "Custom Draw")
+
+# Legacy 2-way content flip (kept for saved-state migration and the matrix/pixel
+# 180° flip). The 4-way DEVICE_ORIENTATIONS map onto these two values.
+ORIENTATION_NORMAL = "normal"
+ORIENTATION_FLIPPED = "flipped"
+
+# When full_panel is on, the text is replaced by this single sentinel character
+# whose glyph covers the entire 5x20 display (all 100 pixels), so every render
+# mode can treat it as one "giant letter" with no special-case branch.
+PANEL_FULL_CHAR = "\uFFFF"
+
 # Default device models that should be handled by this component
 # NOTE: Yeelight CubeLite models use "clt" prefix in their mDNS model name
 # e.g. model="yeelink.light.clt6pro", service name="yeelink-light-clt6pro-0x..."
