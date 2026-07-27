@@ -399,18 +399,61 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if DOMAIN not in hass.data:
         hass.data[DOMAIN] = {}
     
-    # Initialize storage on FIRST config entry only.
-    # Set the "storage" sentinel BEFORE the await to prevent the second entry
-    # from also entering this block while the first is loading.
-    if "storage" not in hass.data[DOMAIN]:
+    # Initialize storage on the first config entry. Other entries must wait for
+    # shared data before their entities restore runtime state.
+    is_storage_initializer = "storage" not in hass.data[DOMAIN]
+    if not is_storage_initializer:
+        storage_ready = hass.data[DOMAIN].get("storage_ready")
+        if storage_ready is not None:
+            await storage_ready.wait()
+        storage_error = hass.data[DOMAIN].get("storage_init_error")
+        if storage_error:
+            # Remove the failed sentinel so a later config-entry retry can
+            # attempt a clean storage load.
+            hass.data[DOMAIN].pop("storage", None)
+            hass.data[DOMAIN].pop("storage_ready", None)
+            raise ConfigEntryNotReady(
+                "Shared Yeelight Cube storage initialization failed: "
+                f"{storage_error}"
+            )
+
+    if is_storage_initializer:
         _LOGGER.debug("[STORAGE-INIT] First config entry - initializing storage")
         store = Store(hass, STORAGE_VERSION, STORAGE_KEY)
+        storage_ready = asyncio.Event()
         
         # Set sentinel immediately (before await) to block other entries
         hass.data[DOMAIN]["storage"] = store
+        hass.data[DOMAIN]["storage_ready"] = storage_ready
+        hass.data[DOMAIN].pop("storage_init_error", None)
+
+        # Release waiters even if migration fails before storage_ready is set.
+        setup_task = asyncio.current_task()
+        if setup_task is not None:
+            def _release_storage_waiters(task) -> None:
+                if storage_ready.is_set():
+                    return
+                if task.cancelled():
+                    error = "storage initialization was cancelled"
+                else:
+                    error = task.exception()
+                    error = (
+                        str(error)
+                        if error is not None
+                        else "storage initialization ended before completion"
+                    )
+                hass.data[DOMAIN]["storage_init_error"] = error
+                storage_ready.set()
+
+            setup_task.add_done_callback(_release_storage_waiters)
         
         # Load persisted data
-        stored_data = await store.async_load()
+        try:
+            stored_data = await store.async_load()
+        except Exception as err:
+            hass.data[DOMAIN]["storage_init_error"] = str(err)
+            storage_ready.set()
+            raise
         if stored_data is None:
             stored_data = {}
             _LOGGER.debug("[STORAGE-LOAD] No stored data found, starting fresh")
@@ -476,7 +519,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN].update({
             "palettes_v2": stored_data.get("palettes_v2", []),
             "pixel_arts": _migrated_pixel_arts,
+            "device_runtime_state": stored_data.get("device_runtime_state", {}),
         })
+        hass.data[DOMAIN].pop("storage_init_error", None)
+        storage_ready.set()
 
         # Persist migrated data immediately so the grouped format survives the next reboot
         # without needing to re-migrate from the flat on-disk format.
@@ -888,13 +934,15 @@ async def async_save_data(hass: HomeAssistant):
     
     palettes_v2 = hass.data[DOMAIN].get("palettes_v2", [])
     pixel_arts = hass.data[DOMAIN].get("pixel_arts", [])
+    device_runtime_state = hass.data[DOMAIN].get("device_runtime_state", {})
     
     _LOGGER.debug(f"[STORAGE-SAVE] About to save: {len(palettes_v2)} palettes, {len(pixel_arts)} pixel arts")
     _LOGGER.debug(f"[STORAGE-SAVE] Palette names: {[p.get('name', 'Unnamed') for p in palettes_v2[:5]]}...")
     
     data_to_save = {
         "palettes_v2": palettes_v2,
-        "pixel_arts": pixel_arts
+        "pixel_arts": pixel_arts,
+        "device_runtime_state": device_runtime_state,
     }
     
     await store.async_save(data_to_save)

@@ -11,11 +11,13 @@ from .const import (
     CONF_IP,
     CONTENT_MODES,
     DEFAULT_MATRIX_DISPLAY_MODE,
+    DEFAULT_MUSIC_FLOW_EFFECT,
     DEFAULT_NATIVE_CLOCK_CONTENT,
     DEFAULT_NATIVE_CLOCK_STYLE,
     DEFAULT_NATIVE_EFFECT,
     DOMAIN,
     MATRIX_DISPLAY_MODES,
+    MUSIC_FLOW_EFFECTS,
     NATIVE_CLOCK_CONTENT_LABELS,
     NATIVE_CLOCK_CONTENT_OPTIONS,
     NATIVE_CLOCK_STYLES,
@@ -57,6 +59,9 @@ async def async_setup_entry(
     native_effect_direction_select = YeelightCubeNativeEffectDirectionSelect(
         light_entity, entry
     )
+    music_flow_effect_select = YeelightCubeMusicFlowEffectSelect(
+        light_entity, entry
+    )
     power_on_state_select = YeelightCubePowerOnStateSelect(light_entity, entry)
     alignment_select = YeelightCubeAlignmentSelect(light_entity, entry)
     font_select = YeelightCubeFontSelect(light_entity, entry)
@@ -73,6 +78,7 @@ async def async_setup_entry(
         clock_content_select,
         native_effect_select,
         native_effect_direction_select,
+        music_flow_effect_select,
         power_on_state_select,
         alignment_select,
         font_select,
@@ -943,6 +949,57 @@ class YeelightCubeNativeEffectDirectionSelect(SelectEntity):
         await super().async_added_to_hass()
         self._light_entity._native_effect_direction_select_entity = self
         self.async_update_from_light()
+
+
+class YeelightCubeMusicFlowEffectSelect(SelectEntity):
+    """Select the firmware effect used by device-microphone Music Flow."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_translation_key = "music_flow_effect"
+
+    def __init__(self, light_entity, config_entry: ConfigEntry):
+        self._light_entity = light_entity
+        self._config_entry = config_entry
+        self._attr_unique_id = (
+            f"{light_entity._attr_unique_id}_music_flow_effect"
+        )
+        self._attr_icon = "mdi:waveform"
+        self._attr_options = list(MUSIC_FLOW_EFFECTS)
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
+            "name": self._light_entity._attr_name,
+            "manufacturer": "Yeelight",
+            "model": "Cube Lite",
+        }
+
+    @property
+    def available(self) -> bool:
+        return self._light_entity.available
+
+    @property
+    def current_option(self) -> str:
+        return getattr(
+            self._light_entity,
+            "_music_flow_effect",
+            DEFAULT_MUSIC_FLOW_EFFECT,
+        )
+
+    async def async_select_option(self, option: str) -> None:
+        await self._light_entity.async_set_music_flow_effect(option)
+        self.async_write_ha_state()
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        self._light_entity._music_flow_effect_select_entity = self
+        self.async_update_from_light()
+
+    def async_update_from_light(self):
+        if self.hass is not None:
+            self.async_write_ha_state()
 
 
 class YeelightCubePowerOnStateSelect(SelectEntity):

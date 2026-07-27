@@ -90,6 +90,39 @@ NATIVE_EFFECTS = {
 }
 DEFAULT_NATIVE_EFFECT = "Streamer"
 
+# Device-microphone music flow definitions recovered from the Yeelight app.
+# The protocol deliberately spells palette as ``palatte`` in the JSON payload.
+MUSIC_FLOW_EFFECTS = {
+    "Gather": 83,
+    "Breathing": 84,
+    "Blossom": 85,
+    "Spectrum": 86,
+    "Music Note": 87,
+    "Impact": 88,
+}
+MUSIC_FLOW_EFFECT_IDS = {
+    effect_id: name for name, effect_id in MUSIC_FLOW_EFFECTS.items()
+}
+DEFAULT_MUSIC_FLOW_EFFECT = "Breathing"
+MUSIC_FLOW_DEFAULT_PALETTE = (
+    0xFFFF3B30,
+    0xFFFF6B35,
+    0xFFFF9500,
+    0xFFFFCC00,
+    0xFFB7F321,
+    0xFF34C759,
+    0xFF00C7BE,
+    0xFF32ADE6,
+    0xFF0A84FF,
+    0xFF5E5CE6,
+    0xFF7D5FFF,
+    0xFFAF52DE,
+    0xFFFF2D55,
+    0xFFFF375F,
+    0xFFFF6B8A,
+    0xFFFFFFFF,
+)
+
 # Legacy native-effect names -> current (official Yeelight app) names.  Applied
 # when restoring saved state so lamps set to an old name keep working.
 NATIVE_EFFECT_RENAMES = {

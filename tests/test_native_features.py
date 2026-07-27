@@ -1,8 +1,13 @@
 """Tests for Cube Lite native protocol definitions and bundled presets."""
 
+import __future__
 import ast
+import asyncio
+import json
 from pathlib import Path
 import runpy
+import time
+import types
 import unittest
 
 
@@ -16,6 +21,7 @@ LIGHT_SOURCE = "\n\n".join(
     p.read_text(encoding="utf-8") for p in sorted(ROOT.glob("light*.py"))
 )
 INIT_SOURCE = (ROOT / "__init__.py").read_text(encoding="utf-8")
+CAMERA_SOURCE = (ROOT / "camera.py").read_text(encoding="utf-8")
 
 
 def _function_source(source: str, name: str) -> str:
@@ -23,9 +29,17 @@ def _function_source(source: str, name: str) -> str:
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
             lines = source.splitlines()
-            start = node.lineno - 1
+            start = min(
+                [node.lineno, *(decorator.lineno for decorator in node.decorator_list)]
+            ) - 1
+            definition_index = next(
+                index
+                for index in range(start, len(lines))
+                if lines[index].lstrip().startswith(("def ", "async def "))
+                and len(lines[index]) - len(lines[index].lstrip()) == node.col_offset
+            )
             end = len(lines)
-            for index in range(start + 1, len(lines)):
+            for index in range(definition_index + 1, len(lines)):
                 line = lines[index]
                 if not line.strip():
                     continue
@@ -37,6 +51,30 @@ def _function_source(source: str, name: str) -> str:
                     break
             return "\n".join(lines[start:end])
     raise AssertionError(f"Function {name} was not found")
+
+
+def _load_standalone_functions(source: str, names: set, extra_namespace=None) -> dict:
+    """Load selected helpers without importing Home Assistant."""
+    tree = ast.parse(source)
+    functions = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name in names
+    ]
+    namespace = {"json": json}
+    if extra_namespace:
+        namespace.update(extra_namespace)
+    exec(
+        compile(
+            ast.Module(body=functions, type_ignores=[]),
+            "<helpers>",
+            "exec",
+            flags=__future__.annotations.compiler_flag,
+        ),
+        namespace,
+    )
+    return namespace
 
 
 class NativeFeatureTests(unittest.TestCase):
@@ -79,6 +117,234 @@ class NativeFeatureTests(unittest.TestCase):
             CONSTANTS["POWER_ON_STATES"],
         )
 
+    def test_music_flow_effect_ids_match_official_app(self):
+        self.assertEqual(
+            {
+                "Gather": 83,
+                "Breathing": 84,
+                "Blossom": 85,
+                "Spectrum": 86,
+                "Music Note": 87,
+                "Impact": 88,
+            },
+            CONSTANTS["MUSIC_FLOW_EFFECTS"],
+        )
+
+    def test_music_flow_payload_uses_private_protocol_schema(self):
+        helpers = _load_standalone_functions(
+            LIGHT_SOURCE,
+            {"_build_music_flow_payload"},
+            {
+                "MUSIC_FLOW_EFFECTS": CONSTANTS["MUSIC_FLOW_EFFECTS"],
+                "MUSIC_FLOW_DEFAULT_PALETTE": CONSTANTS[
+                    "MUSIC_FLOW_DEFAULT_PALETTE"
+                ],
+            },
+        )
+        build = helpers["_build_music_flow_payload"]
+        enabled = json.loads(build(True, "Blossom"))
+        self.assertEqual(1, enabled["on"])
+        self.assertEqual(85, enabled["effect_id"])
+        self.assertEqual(16, len(enabled["palatte"]))
+        self.assertNotIn("palette", enabled)
+        self.assertEqual({"on": 0}, json.loads(build(False, "Blossom")))
+
+    def test_music_flow_property_parser_handles_device_values(self):
+        parse = _load_standalone_functions(
+            LIGHT_SOURCE,
+            {"_parse_music_flow_config"},
+        )["_parse_music_flow_config"]
+        self.assertEqual((True, 84), parse('{"on":1,"effect_id":84}'))
+        self.assertEqual((False, 88), parse({"on": "0", "effect_id": "88"}))
+        self.assertEqual((None, None), parse("not-json"))
+
+    def test_music_flow_command_uses_private_property_and_restores_content(self):
+        function = _function_source(LIGHT_SOURCE, "async_set_music_flow")
+        self.assertIn('"set_ps"', function)
+        self.assertIn('"mic_music_mode"', function)
+        self.assertIn("_music_flow_restore_power", function)
+        self.assertIn("_apply_display_mode_internal", function)
+        self.assertIn("_persist_music_flow_runtime_state", function)
+
+    def test_content_change_exits_music_flow_without_double_restore(self):
+        function = _function_source(LIGHT_SOURCE, "async_apply_display_mode")
+        self.assertIn(
+            "self.async_set_music_flow(False, restore_display=False)",
+            function,
+        )
+
+    def test_turning_music_flow_off_restores_display_and_prior_power(self):
+        helpers = _load_standalone_functions(
+            LIGHT_SOURCE,
+            {"_build_music_flow_payload", "async_set_music_flow"},
+            {
+                "asyncio": asyncio,
+                "time": time,
+                "MUSIC_FLOW_EFFECTS": CONSTANTS["MUSIC_FLOW_EFFECTS"],
+                "MUSIC_FLOW_DEFAULT_PALETTE": CONSTANTS[
+                    "MUSIC_FLOW_DEFAULT_PALETTE"
+                ],
+                "MUSIC_FLOW_HARD_TIMEOUT": 12.0,
+                "HomeAssistantError": RuntimeError,
+            },
+        )
+
+        class FakeCube:
+            def __init__(self):
+                self.commands = []
+                self.raw_commands = []
+
+            def _close_fast_socket(self):
+                return None
+
+            def close_command_socket(self):
+                return None
+
+            async def send_command_with_recovery(self, command, params):
+                self.commands.append((command, params))
+                return {"result": ["ok"]}
+
+            async def send_raw_command(self, command, params):
+                self.raw_commands.append((command, params))
+
+        applied = []
+        device = types.SimpleNamespace(
+            _music_flow_enabled=True,
+            _music_flow_effect="Breathing",
+            _music_flow_restore_power=True,
+            _is_on=True,
+            _cube_matrix=FakeCube(),
+            _last_native_state_poll=0.0,
+            _in_native_fw_mode=True,
+            hass=None,
+            _refresh_music_flow_entities=lambda: None,
+            _notify_camera_preview=lambda: None,
+        )
+
+        async def execute(func, op_name, timeout_override=None):
+            await func()
+            return True
+
+        async def apply_display(skip_post_delay=False):
+            applied.append(skip_post_delay)
+
+        async def persist_music_flow():
+            return None
+
+        device._execute_hardware_op = execute
+        device._apply_display_mode_internal = apply_display
+        device._persist_music_flow_runtime_state = persist_music_flow
+        set_music_flow = types.MethodType(helpers["async_set_music_flow"], device)
+
+        asyncio.run(set_music_flow(False))
+        self.assertFalse(device._music_flow_enabled)
+        self.assertEqual([True], applied)
+        self.assertEqual("set_ps", device._cube_matrix.commands[0][0])
+        self.assertEqual(
+            {"on": 0},
+            json.loads(device._cube_matrix.commands[0][1][1]),
+        )
+
+        device._music_flow_enabled = True
+        device._music_flow_restore_power = False
+        device._is_on = True
+        applied.clear()
+        asyncio.run(set_music_flow(False))
+        self.assertFalse(device._is_on)
+        self.assertEqual([], applied)
+        self.assertEqual(
+            [("set_power", ["off"])],
+            device._cube_matrix.raw_commands,
+        )
+
+    def test_music_flow_stop_finalizes_state_when_display_restore_fails(self):
+        helpers = _load_standalone_functions(
+            LIGHT_SOURCE,
+            {"_build_music_flow_payload", "async_set_music_flow"},
+            {
+                "asyncio": asyncio,
+                "time": time,
+                "MUSIC_FLOW_EFFECTS": CONSTANTS["MUSIC_FLOW_EFFECTS"],
+                "MUSIC_FLOW_DEFAULT_PALETTE": CONSTANTS[
+                    "MUSIC_FLOW_DEFAULT_PALETTE"
+                ],
+                "MUSIC_FLOW_HARD_TIMEOUT": 12.0,
+                "HomeAssistantError": RuntimeError,
+            },
+        )
+
+        class FakeCube:
+            def _close_fast_socket(self):
+                return None
+
+            def close_command_socket(self):
+                return None
+
+            async def send_command_with_recovery(self, command, params):
+                return {"result": ["ok"]}
+
+        calls = {"persist": 0, "entities": 0, "preview": 0}
+        device = types.SimpleNamespace(
+            _music_flow_enabled=True,
+            _music_flow_effect="Breathing",
+            _music_flow_restore_power=True,
+            _is_on=True,
+            _cube_matrix=FakeCube(),
+            _last_native_state_poll=0.0,
+            _in_native_fw_mode=True,
+            hass=None,
+            _refresh_music_flow_entities=lambda: calls.__setitem__(
+                "entities", calls["entities"] + 1
+            ),
+            _notify_camera_preview=lambda: calls.__setitem__(
+                "preview", calls["preview"] + 1
+            ),
+        )
+
+        async def execute(func, op_name, timeout_override=None):
+            try:
+                await func()
+            except RuntimeError:
+                return False
+            return True
+
+        async def apply_display(skip_post_delay=False):
+            raise RuntimeError("restore failed")
+
+        async def persist_music_flow():
+            calls["persist"] += 1
+
+        device._execute_hardware_op = execute
+        device._apply_display_mode_internal = apply_display
+        device._persist_music_flow_runtime_state = persist_music_flow
+        set_music_flow = types.MethodType(helpers["async_set_music_flow"], device)
+
+        with self.assertRaisesRegex(RuntimeError, "could not complete"):
+            asyncio.run(set_music_flow(False))
+
+        self.assertFalse(device._music_flow_enabled)
+        self.assertIsNone(device._music_flow_restore_power)
+        self.assertEqual({"persist": 1, "entities": 1, "preview": 1}, calls)
+
+    def test_music_flow_runtime_state_is_persisted_after_storage_ready(self):
+        attributes = _function_source(LIGHT_SOURCE, "extra_state_attributes")
+        restore = _function_source(LIGHT_SOURCE, "async_added_to_hass")
+        save = _function_source(INIT_SOURCE, "async_save_data")
+        setup = _function_source(INIT_SOURCE, "async_setup_entry")
+        self.assertIn('"music_flow_restore_power"', attributes)
+        self.assertIn("_restore_music_flow_runtime_state()", restore)
+        self.assertIn('"device_runtime_state"', save)
+        self.assertIn('"device_runtime_state"', setup)
+        self.assertIn("await storage_ready.wait()", setup)
+        self.assertIn("storage_ready.set()", setup)
+
+    def test_music_flow_skips_property_polling_while_active(self):
+        update = _function_source(LIGHT_SOURCE, "async_update")
+        self.assertLess(
+            update.index("if self._music_flow_enabled:"),
+            update.index("read_properties("),
+        )
+
     def test_all_native_effect_previews_are_valid_and_animated(self):
         render = NATIVE_PREVIEW["render_native_effect"]
         for name in CONSTANTS["NATIVE_EFFECTS"]:
@@ -90,6 +356,32 @@ class NativeFeatureTests(unittest.TestCase):
             for pixel in first:
                 self.assertEqual(3, len(pixel))
                 self.assertTrue(all(channel in range(256) for channel in pixel))
+
+    def test_music_flow_previews_are_static_valid_and_distinct(self):
+        render = NATIVE_PREVIEW["render_music_flow_effect"]
+        previews = {}
+        for name in CONSTANTS["MUSIC_FLOW_EFFECTS"]:
+            first = render(name)
+            self.assertEqual(first, render(name), name)
+            self.assertEqual(100, len(first), name)
+            self.assertTrue(any(pixel != (0, 0, 0) for pixel in first), name)
+            for pixel in first:
+                self.assertEqual(3, len(pixel))
+                self.assertTrue(all(channel in range(256) for channel in pixel))
+            previews[name] = tuple(first)
+        self.assertEqual(len(previews), len(set(previews.values())))
+
+    def test_matrix_cameras_use_static_music_flow_previews(self):
+        colors = _function_source(CAMERA_SOURCE, "_get_matrix_colors")
+        preview = _function_source(CAMERA_SOURCE, "_get_music_flow_preview")
+        animated = _function_source(CAMERA_SOURCE, "_is_native_preview_mode")
+        generated = _function_source(CAMERA_SOURCE, "_uses_generated_preview")
+        self.assertIn('"_music_flow_enabled"', colors)
+        self.assertIn("self._get_music_flow_preview()", colors)
+        self.assertIn("render_music_flow_effect(", preview)
+        self.assertIn('("left", "up")', preview)
+        self.assertNotIn('"_music_flow_enabled"', animated)
+        self.assertIn('"_music_flow_enabled"', generated)
 
     def test_official_gallery_contains_68_valid_drawings(self):
         drawings = PIXEL_ART["get_builtin_pixel_arts"]()

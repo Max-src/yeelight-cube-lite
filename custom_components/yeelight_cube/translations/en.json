@@ -45,6 +45,9 @@
             "native_effect_direction": {
                 "name": "Native effect: Direction"
             },
+            "music_flow_effect": {
+                "name": "Music Flow effect"
+            },
             "power_on_state": {
                 "name": "Power-on behavior"
             }
@@ -66,6 +69,9 @@
             },
             "clock_colon_blink": {
                 "name": "Clock: Blink colon"
+            },
+            "music_flow": {
+                "name": "Music Flow"
             },
             "scroll_enabled": {
                 "name": "Text scroll"
