@@ -31,6 +31,7 @@ async def async_setup_entry(
         YeelightCubeClockShowDateSwitch(config_entry, light_data),
         YeelightCubeClock12HourSwitch(config_entry, light_data),
         YeelightCubeClockColonBlinkSwitch(config_entry, light_data),
+        YeelightCubeMusicFlowSwitch(config_entry, light_data),
         YeelightCubeScrollSwitch(config_entry, light_data),
     ]
     
@@ -217,6 +218,52 @@ class YeelightCubeClockColonBlinkSwitch(_YeelightCubeClockOptionSwitch):
         await super().async_added_to_hass()
         self._light_entity._clock_colon_blink_switch_entity = self
         self.async_update_from_light()
+
+
+class YeelightCubeMusicFlowSwitch(SwitchEntity):
+    """Control Cube Lite's device-microphone Music Flow renderer."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_translation_key = "music_flow"
+
+    def __init__(self, config_entry: ConfigEntry, light_data):
+        self._config_entry = config_entry
+        self._light_entity = light_data.get("light")
+        self._attr_unique_id = (
+            f"{self._light_entity._attr_unique_id}_music_flow"
+        )
+        self._attr_icon = "mdi:music-note"
+        self._attr_is_on = self._light_entity._music_flow_enabled
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
+            "name": self._light_entity._attr_name,
+            "manufacturer": "Yeelight",
+            "model": "Cube Lite",
+        }
+
+    @property
+    def available(self) -> bool:
+        return self._light_entity.available
+
+    async def async_turn_on(self, **kwargs):
+        await self._light_entity.async_set_music_flow(True)
+
+    async def async_turn_off(self, **kwargs):
+        await self._light_entity.async_set_music_flow(False)
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        self._light_entity._music_flow_switch_entity = self
+        self.async_update_from_light()
+
+    def async_update_from_light(self):
+        self._attr_is_on = self._light_entity._music_flow_enabled
+        if self.hass is not None:
+            self.async_write_ha_state()
 
 
 class YeelightCubeScrollSwitch(SwitchEntity):

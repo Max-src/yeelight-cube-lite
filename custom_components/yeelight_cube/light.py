@@ -30,11 +30,14 @@ from .const import (
     CONF_DEVICE_ID,
     CONF_IP,
     DEFAULT_MATRIX_DISPLAY_MODE,
+    DEFAULT_MUSIC_FLOW_EFFECT,
     DEFAULT_NATIVE_CLOCK_CONTENT,
     DEFAULT_NATIVE_CLOCK_STYLE,
     DEFAULT_NATIVE_EFFECT,
     DOMAIN,
     MATRIX_DISPLAY_MODES,
+    MUSIC_FLOW_EFFECT_IDS,
+    MUSIC_FLOW_EFFECTS,
     NATIVE_CLOCK_APPLY,
     NATIVE_CLOCK_CONTENT_BYTE,
     NATIVE_CLOCK_CONTENT_OPTIONS,
@@ -58,7 +61,7 @@ from .color_utils import hex_to_rgb, rgb_to_hex
 from .image_utils import image_to_matrix
 from .light_color import ColorPipelineMixin
 from .light_transitions import TransitionMixin
-from .light_native import NativeModesMixin
+from .light_native import NativeModesMixin, _parse_music_flow_config
 from .light_render import MatrixRenderMixin
 
 _LOGGER = logging.getLogger(__name__)
@@ -127,6 +130,13 @@ FX_MODE_STALENESS_TIMEOUT = 90.0  # Seconds -- re-send activate_fx_mode when fx_
                                   # and silently ignores update_leds -- no error, no socket close.
                                   # 20s gives ~5s safety margin.  Must check time since
                                   # activate_fx_mode was sent, NOT time since last command.
+MUSIC_FLOW_EXIT_UPDATE_TYPES = {
+    "turn_off",
+    "brightness_change",
+    "text_change",
+    "color_change",
+    "pixel_art",
+}
 
 # NOTE: Per-entity and global pixel art throttle REMOVED.
 # The gradient card sends identical update_leds commands rapidly without
@@ -373,6 +383,9 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         self._native_effect = DEFAULT_NATIVE_EFFECT
         self._native_effect_speed = 50
         self._native_effect_direction = "Up"
+        self._music_flow_enabled = False
+        self._music_flow_effect = DEFAULT_MUSIC_FLOW_EFFECT
+        self._music_flow_restore_power = None
         self._power_on_state = "On"
         self._button_effects = []
         # Skip property polling during entity construction. Startup already
@@ -561,6 +574,8 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         self._native_effect_select_entity = None
         self._native_effect_direction_select_entity = None
         self._native_effect_speed_entity = None
+        self._music_flow_switch_entity = None
+        self._music_flow_effect_select_entity = None
         self._power_on_state_select_entity = None
         self._device_orientation_select_entity = None
         self._scroll_enabled_switch_entity = None
@@ -1019,13 +1034,21 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 self._connection_error = False
                 self._hard_timeout_times.clear()  # Clear circuit breaker
                 
-                # Trigger a full display update (turn_on type so it isn't blocked)
-                _LOGGER.debug(
-                    f"[BRIGHTNESS_DIAG] [{self._ip}] HEALTH RECOVERY -- will apply display mode. "
-                    f"user={self._brightness}/255, last_hw={self._last_hardware_brightness}, "
-                    f"darken={self._preview_darken}%, fx_direct={self._fx_mode_is_direct}"
-                )
-                await self.async_apply_display_mode(update_type='turn_on')
+                if self._music_flow_enabled:
+                    _LOGGER.debug(
+                        "[MUSIC FLOW] [%s] HEALTH RECOVERY -- restarting "
+                        "the requested Music Flow renderer",
+                        self._ip,
+                    )
+                    await self.async_set_music_flow(True)
+                else:
+                    # Trigger a full display update (turn_on type so it isn't blocked)
+                    _LOGGER.debug(
+                        f"[BRIGHTNESS_DIAG] [{self._ip}] HEALTH RECOVERY -- will apply display mode. "
+                        f"user={self._brightness}/255, last_hw={self._last_hardware_brightness}, "
+                        f"darken={self._preview_darken}%, fx_direct={self._fx_mode_is_direct}"
+                    )
+                    await self.async_apply_display_mode(update_type='turn_on')
                 
             except asyncio.CancelledError:
                 _LOGGER.debug(f"[HEALTH] [{self._ip}] Health check cancelled")
@@ -1125,14 +1148,14 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
 
     @property
     def supported_color_modes(self):
-        if self._mode in ("Clock", "Native Effect"):
+        if self._music_flow_enabled or self._mode in ("Clock", "Native Effect"):
             return {ColorMode.BRIGHTNESS}
         return {ColorMode.RGB}
 
     @property
     def color_mode(self):
         # Current active color mode
-        if self._mode in ("Clock", "Native Effect"):
+        if self._music_flow_enabled or self._mode in ("Clock", "Native Effect"):
             return ColorMode.BRIGHTNESS
         return ColorMode.RGB
 
@@ -1217,6 +1240,9 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             "native_effect": self._native_effect,
             "native_effect_speed": self._native_effect_speed,
             "native_effect_direction": self._native_effect_direction,
+            "music_flow_enabled": self._music_flow_enabled,
+            "music_flow_effect": self._music_flow_effect,
+            "music_flow_restore_power": self._music_flow_restore_power,
             "power_on_state": self._power_on_state,
             "button_effects": list(self._button_effects),
             "background_color": self._background_color,
@@ -1467,6 +1493,18 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             native_direction = old_state.attributes.get("native_effect_direction")
             if native_direction in NATIVE_EFFECT_DIRECTION_VALUES:
                 self._native_effect_direction = native_direction
+            if old_state.attributes.get("music_flow_enabled") is not None:
+                self._music_flow_enabled = bool(
+                    old_state.attributes["music_flow_enabled"]
+                )
+            music_flow_effect = old_state.attributes.get("music_flow_effect")
+            if music_flow_effect in MUSIC_FLOW_EFFECTS:
+                self._music_flow_effect = music_flow_effect
+            music_flow_restore_power = old_state.attributes.get(
+                "music_flow_restore_power"
+            )
+            if isinstance(music_flow_restore_power, bool):
+                self._music_flow_restore_power = music_flow_restore_power
             power_on_state = old_state.attributes.get("power_on_state")
             if power_on_state in POWER_ON_STATES:
                 self._power_on_state = power_on_state
@@ -1533,6 +1571,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 self._scroll_speed = float(old_state.attributes["scroll_speed"])
             if old_state.attributes.get("scroll_enabled") is not None:
                 self._scroll_enabled = bool(old_state.attributes["scroll_enabled"])
+        self._restore_music_flow_runtime_state()
         # Palettes and pixel arts are accessed via @property from global storage
         # No restoration needed - __init__.py loads from Store into hass.data[DOMAIN]
         _LOGGER.debug(f"[RESTORE] Entity initialized. Palettes: {len(self._palettes)}, Pixel Arts: {len(self._pixel_arts)}")
@@ -1544,7 +1583,11 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         
         # Apply initial display mode to show HELLO
         # Use 'turn_on' type so this isn't blocked by the retry limit after HA restart
-        if self._is_on:
+        if self._is_on and self._music_flow_enabled:
+            _LOGGER.debug(
+                "[INIT] Music flow was active before restart; preserving renderer"
+            )
+        elif self._is_on:
             await self.async_apply_display_mode(update_type='turn_on')
         else:
             _LOGGER.debug(f"[INIT] Light is off, not applying display mode")
@@ -1710,6 +1753,14 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 f"[CALIB_LOCK] [{self._ip}] turn_on ignored -- calibration lock active"
             )
             return
+
+        # Brightness remains adjustable while Music Flow owns the display.
+        # Explicit color content must first release the firmware renderer so
+        # the requested RGB/text colors are not silently ignored.
+        if self._music_flow_enabled and any(
+            key in kwargs for key in ("rgb_color", "text_colors")
+        ):
+            await self.async_set_music_flow(False, restore_display=False)
         
         # Update HA state IMMEDIATELY for responsive UI
         self._is_on = True
@@ -1728,6 +1779,15 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
     async def _internal_turn_on(self, **kwargs):
         """Internal turn_on implementation -- runs under the global lock."""
         _LOGGER.debug(f"[TURN_ON] Executing - is_on: {self._is_on}, custom_text: '{self._custom_text}', mode: '{self._mode}'")
+
+        if self._music_flow_enabled:
+            if "brightness" in kwargs:
+                self._brightness = max(1, min(255, kwargs["brightness"]))
+                await self._set_native_mode_brightness()
+            self._is_on = True
+            if self.hass is not None:
+                self.async_schedule_update_ha_state()
+            return
 
         if self._mode == "Clock":
             self._is_on = True
@@ -1823,13 +1883,20 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
     async def _internal_turn_off(self, **kwargs):
         """Internal turn_off implementation that executes in the queue."""
         _LOGGER.debug(f"[TURN_OFF] Executing turn_off")
-        if self._mode in ("Clock", "Native Effect"):
+        was_music_flow_enabled = self._music_flow_enabled
+        if was_music_flow_enabled or self._mode in ("Clock", "Native Effect"):
             self._cube_matrix._close_fast_socket()
             await self._cube_matrix.send_raw_command("set_power", ["off"])
         else:
             await self.erase_all()
             await self.apply()
         self._is_on = False
+        self._music_flow_enabled = False
+        self._music_flow_restore_power = None
+        if was_music_flow_enabled:
+            await self._persist_music_flow_runtime_state()
+            self._refresh_music_flow_entities()
+        self._notify_camera_preview()
         # NOTE: Do NOT reset _fx_mode_is_direct here!
         # The FX socket is still alive after sending blank pixel data.
         # On turn_on we just reuse the existing socket -- no activate_fx_mode
@@ -1929,7 +1996,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             self._brightness = max(1, min(255, brightness))  # Clamp to 1-255 for ON state
             _LOGGER.debug(f"[BRIGHTNESS #{call_id}] Brightness changed: {old_brightness} -> {self._brightness}")
 
-            if self._mode in ("Clock", "Native Effect"):
+            if self._music_flow_enabled or self._mode in ("Clock", "Native Effect"):
                 await self._set_native_mode_brightness()
                 if self.hass is not None:
                     self.async_schedule_update_ha_state()
@@ -2205,6 +2272,11 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
 
     async def async_update(self, *args, **kwargs):
         """Refresh timezone and best-effort native device properties."""
+        # Opening a standard LAN-control connection can stop the Cube's
+        # microphone renderer. Preserve Music Flow until a user command exits it.
+        if self._music_flow_enabled:
+            return
+
         if self._mode == "Clock" and self._is_on:
             timezone_hours = self._native_clock_timezone_hours()
             if self._native_clock_timezone_offset is None:
@@ -2241,11 +2313,16 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         self._last_native_state_poll = now
         try:
             props = await self._cube_matrix.read_properties(
-                ["power", "bright", "init_power_opt"]
+                ["power", "bright", "init_power_opt", "mic_music_mode"]
             )
+            music_state_changed = False
             power = str(props.get("power", "")).lower()
             if power in ("on", "off"):
                 self._is_on = power == "on"
+                if power == "off" and self._music_flow_enabled:
+                    self._music_flow_enabled = False
+                    self._music_flow_restore_power = None
+                    music_state_changed = True
             brightness = props.get("bright")
             if brightness not in (None, ""):
                 self._brightness = max(
@@ -2256,6 +2333,32 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 if str(power_value) == str(value):
                     self._power_on_state = label
                     break
+            music_enabled, music_effect_id = _parse_music_flow_config(
+                props.get("mic_music_mode")
+            )
+            if music_enabled is not None:
+                music_state_changed = (
+                    music_state_changed
+                    or music_enabled != self._music_flow_enabled
+                )
+                self._music_flow_enabled = music_enabled
+                if music_enabled:
+                    self._is_on = True
+                    self._fx_mode_is_direct = False
+                    self._in_native_fw_mode = True
+            music_effect = MUSIC_FLOW_EFFECT_IDS.get(music_effect_id)
+            if music_effect is not None:
+                music_state_changed = (
+                    music_state_changed
+                    or music_effect != self._music_flow_effect
+                )
+                self._music_flow_effect = music_effect
+            if music_state_changed:
+                await self._persist_music_flow_runtime_state()
+                self._refresh_music_flow_entities()
+                self._notify_camera_preview()
+                if self.hass is not None:
+                    self.async_write_ha_state()
         except Exception as err:
             _LOGGER.debug("[%s] Native property polling unavailable: %s", self._ip, err)
 
@@ -2298,6 +2401,17 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 f"-- calibration lock active"
             )
             return
+
+        if self._music_flow_enabled:
+            if update_type not in MUSIC_FLOW_EXIT_UPDATE_TYPES:
+                _LOGGER.debug(
+                    "[MUSIC FLOW] [%s] Ignoring background display update '%s'",
+                    self._ip,
+                    update_type,
+                )
+                return
+            await self.async_set_music_flow(False, restore_display=False)
+
         # FIRMWARE-NATIVE MODE OWNERSHIP: while the lamp is physically showing a
         # firmware clock / native animation / color flow, suppress *incidental*
         # matrix re-renders that would clobber it -- e.g. a sensor/template-driven
@@ -3084,6 +3198,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         "_native_clock_show_date", "_native_clock_content", "_native_clock_12_hour",
         "_native_clock_colon_blink", "_native_clock_color", "_full_panel",
         "_native_effect", "_native_effect_speed", "_native_effect_direction",
+        "_music_flow_effect",
         "_angle",
         "_background_color", "_alignment", "_font", "_orientation",
         "_device_orientation", "_rgb_color",
@@ -3145,6 +3260,8 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             self._native_effect_select_entity,
             self._native_effect_direction_select_entity,
             self._native_effect_speed_entity,
+            self._music_flow_switch_entity,
+            self._music_flow_effect_select_entity,
             self._power_on_state_select_entity,
             self._scroll_enabled_switch_entity,
             self._scroll_speed_entity,

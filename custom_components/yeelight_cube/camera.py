@@ -20,7 +20,7 @@ from homeassistant.util import dt as dt_util  # type: ignore
 
 from .const import DOMAIN, CONF_IP
 from .layout import FONT_MAPS, char_advance
-from .native_effect_preview import render_native_effect
+from .native_effect_preview import render_music_flow_effect, render_native_effect
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -176,10 +176,17 @@ class _YeelightCubeMatrixCameraBase(Camera):
         self._cached_image = self._render_matrix(colors)
 
     def _is_native_preview_mode(self) -> bool:
+        """Return whether the preview changes without an HA state update."""
         return getattr(self._light_entity, "_mode", None) in (
             "Clock",
             "Native Effect",
         )
+
+    def _uses_generated_preview(self) -> bool:
+        """Return whether pixels are generated locally instead of cached content."""
+        return bool(
+            getattr(self._light_entity, "_music_flow_enabled", False)
+        ) or self._is_native_preview_mode()
 
     def _get_matrix_colors(self) -> list[tuple]:
         """Get brightness-corrected matrix colours with perceptual boost.
@@ -205,7 +212,9 @@ class _YeelightCubeMatrixCameraBase(Camera):
             return [(0, 0, 0)] * 100
 
         mode = getattr(le, "_mode", None)
-        if mode == "Clock":
+        if getattr(le, "_music_flow_enabled", False):
+            base = self._get_music_flow_preview()
+        elif mode == "Clock":
             base = self._get_clock_preview()
         elif mode == "Native Effect":
             base = self._get_native_effect_preview()
@@ -248,6 +257,18 @@ class _YeelightCubeMatrixCameraBase(Camera):
             phase,
             getattr(le, "_native_effect_direction", "Up"),
         )
+
+    def _get_music_flow_preview(self) -> list[tuple[int, int, int]]:
+        """Render a fixed illustration of the active Music Flow effect."""
+        matrix = render_music_flow_effect(
+            getattr(self._light_entity, "_music_flow_effect", "Breathing")
+        )
+        device_orientation = getattr(
+            self._light_entity, "_device_orientation", "right"
+        )
+        if device_orientation in ("left", "up"):
+            matrix = matrix[::-1]
+        return matrix
 
     def _get_clock_preview(self) -> list[tuple[int, int, int]]:
         """Render the active firmware clock face into a 20x5 matrix."""
@@ -394,7 +415,7 @@ class _YeelightCubeMatrixCameraBase(Camera):
         # to the lamp, so apply the inverse transform for an upright preview.
         # Native Clock/Effect previews now bake device orientation into the
         # pixel buffer, so the renderer uses normal rects for those modes.
-        undo_device_flip = flipped and not self._is_native_preview_mode()
+        undo_device_flip = flipped and not self._uses_generated_preview()
         rects = _RECTS_FLIPPED if undo_device_flip else _RECTS_NORMAL
 
         for i, rgb in enumerate(colors):

@@ -8,6 +8,38 @@ import math
 COLS = 20
 ROWS = 5
 BLACK = (0, 0, 0)
+_MUSIC_FLOW_FLOWERS = (
+    (4, 2, (255, 55, 160)),
+    (10, 1, (255, 126, 40)),
+    (16, 3, (63, 210, 255)),
+)
+_MUSIC_FLOW_SPECTRUM_HEIGHTS = (
+    1, 2, 3, 5, 4, 2, 3, 4, 5, 3, 2, 4, 5, 4, 2, 3, 5, 4, 2, 1
+)
+_MUSIC_FLOW_NOTE_PIXELS = frozenset(
+    {
+        (4, 0),
+        (5, 0),
+        (4, 1),
+        (5, 1),
+        (6, 1),
+        (6, 2),
+        (6, 3),
+        (6, 4),
+        (7, 4),
+        (8, 4),
+        (9, 4),
+        (10, 4),
+        (11, 4),
+        (12, 4),
+        (13, 1),
+        (14, 1),
+        (13, 2),
+        (14, 2),
+        (14, 3),
+        (14, 4),
+    }
+)
 
 
 def _clamp(value: float) -> int:
@@ -55,6 +87,82 @@ def _palette(stops: tuple[tuple[int, int, int], ...], position: float):
         _clamp(start[channel] + (end[channel] - start[channel]) * local)
         for channel in range(3)
     )
+
+
+def render_music_flow_effect(effect: str) -> list[tuple[int, int, int]]:
+    """Return a deterministic 20x5 illustration of a Music Flow effect."""
+    pixels: list[tuple[int, int, int]] = []
+
+    for row in range(ROWS):
+        for col in range(COLS):
+            x = col / (COLS - 1)
+            y = row / (ROWS - 1)
+
+            if effect == "Gather":
+                distance = math.hypot((x - 0.5) * 1.35, (y - 0.5) * 0.8)
+                funnel = abs(y - 0.5) < 0.12 + abs(x - 0.5) * 0.55
+                level = max(0.08, 1.0 - distance)
+                if funnel:
+                    level = min(1.0, level + 0.38)
+                color = _hsv(0.78 - x * 0.65, 0.92, level)
+            elif effect == "Breathing":
+                distance = math.hypot((x - 0.5) * 1.15, (y - 0.5) * 1.7)
+                level = max(0.04, 1.0 - distance)
+                color = _palette(
+                    (
+                        (18, 13, 72),
+                        (82, 38, 214),
+                        (255, 64, 181),
+                        (255, 225, 247),
+                    ),
+                    level,
+                )
+                color = _rgb(*color, 0.22 + level * 0.78)
+            elif effect == "Blossom":
+                color = (7, 2, 18)
+                for center_col, center_row, petal_color in _MUSIC_FLOW_FLOWERS:
+                    dx = col - center_col
+                    dy = row - center_row
+                    if dx == 0 and dy == 0:
+                        color = (255, 244, 115)
+                        break
+                    if (abs(dx), abs(dy)) in ((1, 0), (0, 1), (1, 1)):
+                        color = petal_color
+                        break
+            elif effect == "Spectrum":
+                if row < _MUSIC_FLOW_SPECTRUM_HEIGHTS[col]:
+                    color = _hsv(x * 0.86, 0.95, 0.58 + row * 0.1)
+                else:
+                    color = BLACK
+            elif effect == "Music Note":
+                if (col, row) in _MUSIC_FLOW_NOTE_PIXELS:
+                    color = _hsv(0.82 + x * 0.48, 0.8, 1.0)
+                else:
+                    color = (2, 5, 22)
+            elif effect == "Impact":
+                dx = col - (COLS - 1) / 2
+                dy = row - (ROWS - 1) / 2
+                distance = math.hypot(dx / 9.5, dy / 2.0)
+                ray = (
+                    row == 2
+                    or col in (9, 10)
+                    or abs(abs(dx) - abs(dy) * 2.8) < 0.75
+                )
+                if distance < 0.18:
+                    color = (255, 255, 235)
+                elif ray:
+                    color = _palette(
+                        ((255, 28, 86), (255, 117, 25), (255, 235, 83)),
+                        max(0.0, 1.0 - distance),
+                    )
+                else:
+                    color = _rgb(96, 8, 112, max(0.08, 0.38 - distance * 0.2))
+            else:
+                color = _hsv(x * 0.86, 0.9, 0.35 + 0.65 * y)
+
+            pixels.append(color)
+
+    return pixels
 
 
 def render_native_effect(

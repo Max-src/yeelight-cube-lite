@@ -24,6 +24,7 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a
 | **Brightness** | Full brightness control |
 | **Native clock** | 14 firmware clock styles with time / date / alternating content, 12/24-hour, and colon blink options |
 | **Native animations** | 18 LAN-compatible firmware effects with speed and direction controls where supported |
+| **Music Flow** | 6 device-microphone reactive effects with display and power-state restoration |
 | **Official pixel art** | 68 locally bundled, read-only drawings from the Yeelight Station app; personal drawings stay separate |
 | **Device settings** | Power-on behavior, text scrolling, and physical-button preset list |
 | **Colors & gradients** | Gradient support across multiple modes |
@@ -455,6 +456,8 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Display Mode** | Select | Choose the Matrix render mode (see [Display Modes](#display-modes)) |
 | **Clock Style** | Select | Choose one of the 14 native clock styles |
 | **Native Effect** | Select | Choose one of the 18 LAN-compatible firmware-native animations |
+| **Music Flow** | Switch | Start or stop device-microphone reactive lighting; restores the previous display and power state when stopped |
+| **Music Flow Effect** | Select | Choose Gather, Breathing, Blossom, Spectrum, Music Note, or Impact |
 | **Display Text** | Text | Text input for custom text display on the matrix |
 | **Device Orientation** | Select | Physical mount orientation: Right / Down / Left / Up (applies to all modes) |
 | **Font** | Select | Choose text font: basic, fat, italic |
@@ -467,8 +470,8 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 
 | Entity | Type | Description |
 | :-- | :-- | :-- |
-| **Matrix Preview (Round)** | Camera | Live preview with round pixels |
-| **Matrix Preview (Square)** | Camera | Live preview with square pixels |
+| **Matrix Preview (Round)** | Camera | Local matrix preview with round pixels; Music Flow uses a static effect illustration |
+| **Matrix Preview (Square)** | Camera | Local matrix preview with square pixels; Music Flow uses a static effect illustration |
 
 > [!TIP]
 > Use these camera entities with a "Picture Entity" card for quick previews. For more responsive previews, use the custom [Preview Card](#-preview-card-customyeelight-cube-lamp-preview-card).
@@ -760,6 +763,73 @@ data:
     - "Clock: Yellow"
 ```
 
+### Music Flow
+
+The **Music Flow** switch starts the Cube Lite firmware's microphone-reactive
+renderer locally on the device. **Music Flow Effect** selects one of the six
+official modes: Gather, Breathing, Blossom, Spectrum, Music Note, or Impact.
+
+Music Flow is a temporary overlay rather than a **Content Mode**. The
+integration remembers the underlying Matrix, Clock, or Native Effect content
+and returns to it when Music Flow stops. The selected effect can be changed
+while Music Flow is off and will be used the next time it starts.
+
+The integration also preserves the lamp's previous power state:
+
+- If the lamp was on, stopping Music Flow restores the previous display.
+- If the lamp was off, stopping Music Flow turns the lamp off again.
+- If Home Assistant restarts while Music Flow is active, the switch, effect,
+  and prior power state are restored from per-device integration storage.
+- If the Music Flow stop command succeeds but redrawing the previous display
+  fails, Home Assistant still records Music Flow as off. Reselect a content
+  mode or use **Force Refresh** to retry the display render.
+
+Periodic native-property polling is paused while Music Flow is active because
+opening another control transaction can interrupt the firmware renderer.
+Selecting Matrix, Clock, Native Effect, text, or pixel art is treated as an
+explicit content change and stops Music Flow first.
+
+Both Matrix Preview cameras show a deterministic static illustration for the
+selected effect. These are locally generated 20x5 identifiers, not live frames
+from the lamp:
+
+| Music Flow Effect | Static preview cue |
+| :-- | :-- |
+| Gather | Multicolor bands converging on the center |
+| Breathing | Purple-pink center glow |
+| Blossom | Three flower shapes |
+| Spectrum | Rainbow equalizer bars |
+| Music Note | Musical-note glyph |
+| Impact | Center burst |
+
+Round and Square previews use the same RGB pixels and differ only in pixel
+shape. Brightness and device orientation are applied locally. Generating or
+viewing a preview sends no command to the lamp.
+
+> [!NOTE]
+> The firmware does not expose live microphone-animation frames. Changes made
+> from another app while Music Flow is active may not be reflected in Home
+> Assistant until Music Flow stops or another HA command runs.
+
+```yaml
+sequence:
+  - action: select.select_option
+    target:
+      entity_id: select.my_cube_music_flow_effect
+    data:
+      option: Spectrum
+  - action: switch.turn_on
+    target:
+      entity_id: switch.my_cube_music_flow
+  - delay: "00:00:30"
+  - action: switch.turn_off
+    target:
+      entity_id: switch.my_cube_music_flow
+```
+
+Replace the example entity IDs with the Music Flow entities created for your
+Cube Lite.
+
 ---
 
 ## Transition Effects
@@ -797,6 +867,10 @@ Configure via the **Transition Effect**, **Transition Steps**, and **Transition 
 | **Conflicts with Yeelight integration** | This integration automatically suppresses built-in Yeelight discovery for Cube devices |
 | **Lamp stuck / unresponsive** | Press the **Force Refresh** button entity, or use the refresh button on the Preview card |
 | **Colors look off** | Color accuracy correction is built-in and applied automatically |
+| **Music Flow does not react to sound** | Music Flow uses the microphone inside the lamp, not a Home Assistant microphone. Play audio near the lamp and try another Music Flow Effect |
+| **Changing content stops Music Flow** | This is expected. Selecting Matrix, Clock, Native Effect, text, or pixel art exits Music Flow and applies the requested content |
+| **Music Flow turns off but the old display does not return** | The stop command has already been recorded. Press **Force Refresh** or reselect Matrix, Clock, or Native Effect to retry the display render |
+| **Music Flow preview is not animated** | This is expected. The camera shows a locally generated static identifier because the lamp does not expose live microphone-animation frames |
 | **Lamp changed IP** | Auto-rediscovery handles this. You can also update the IP from the Configure page |
 
 ---
