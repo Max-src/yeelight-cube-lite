@@ -201,18 +201,12 @@ class YeelightCubePaletteSelect(SelectEntity):
         if self._light_entity._pixel_art_select_entity:
             self._light_entity._pixel_art_select_entity.async_update_from_light()
         
-        # If the current mode uses colors, apply the changes to the lamp
-        if self._light_entity._mode == "Panel Color Sequence":
-            colors = palette["colors"]
-            for i, module in enumerate(self._light_entity._layout.device_layout):
-                color = colors[i % len(colors)]
-                hex_color = '#%02x%02x%02x' % tuple(color)
-                module.set_colors([hex_color])
-            await self._light_entity.apply()
-            _LOGGER.debug(f"[PALETTE SELECT] Applied palette to Panel Color Sequence mode")
-        else:
-            # For other modes, just update the display
-            await self._light_entity.async_apply_display_mode()
+        # Route every palette change through the display state machine. This
+        # lets Music Flow exit cleanly before Panel Color Sequence activates
+        # direct matrix mode and keeps the switch/device state synchronized.
+        await self._light_entity.async_apply_display_mode(
+            update_type="color_change"
+        )
         
         # Update the current selection
         self._attr_current_option = option

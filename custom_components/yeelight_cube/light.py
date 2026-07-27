@@ -131,7 +131,6 @@ FX_MODE_STALENESS_TIMEOUT = 90.0  # Seconds -- re-send activate_fx_mode when fx_
                                   # 20s gives ~5s safety margin.  Must check time since
                                   # activate_fx_mode was sent, NOT time since last command.
 MUSIC_FLOW_EXIT_UPDATE_TYPES = {
-    "turn_on",
     "turn_off",
     "brightness_change",
     "text_change",
@@ -1035,13 +1034,21 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 self._connection_error = False
                 self._hard_timeout_times.clear()  # Clear circuit breaker
                 
-                # Trigger a full display update (turn_on type so it isn't blocked)
-                _LOGGER.debug(
-                    f"[BRIGHTNESS_DIAG] [{self._ip}] HEALTH RECOVERY -- will apply display mode. "
-                    f"user={self._brightness}/255, last_hw={self._last_hardware_brightness}, "
-                    f"darken={self._preview_darken}%, fx_direct={self._fx_mode_is_direct}"
-                )
-                await self.async_apply_display_mode(update_type='turn_on')
+                if self._music_flow_enabled:
+                    _LOGGER.debug(
+                        "[MUSIC FLOW] [%s] HEALTH RECOVERY -- restarting "
+                        "the requested Music Flow renderer",
+                        self._ip,
+                    )
+                    await self.async_set_music_flow(True)
+                else:
+                    # Trigger a full display update (turn_on type so it isn't blocked)
+                    _LOGGER.debug(
+                        f"[BRIGHTNESS_DIAG] [{self._ip}] HEALTH RECOVERY -- will apply display mode. "
+                        f"user={self._brightness}/255, last_hw={self._last_hardware_brightness}, "
+                        f"darken={self._preview_darken}%, fx_direct={self._fx_mode_is_direct}"
+                    )
+                    await self.async_apply_display_mode(update_type='turn_on')
                 
             except asyncio.CancelledError:
                 _LOGGER.debug(f"[HEALTH] [{self._ip}] Health check cancelled")
@@ -1746,6 +1753,14 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 f"[CALIB_LOCK] [{self._ip}] turn_on ignored -- calibration lock active"
             )
             return
+
+        # Brightness remains adjustable while Music Flow owns the display.
+        # Explicit color content must first release the firmware renderer so
+        # the requested RGB/text colors are not silently ignored.
+        if self._music_flow_enabled and any(
+            key in kwargs for key in ("rgb_color", "text_colors")
+        ):
+            await self.async_set_music_flow(False, restore_display=False)
         
         # Update HA state IMMEDIATELY for responsive UI
         self._is_on = True

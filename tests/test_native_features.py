@@ -22,6 +22,7 @@ LIGHT_SOURCE = "\n\n".join(
 )
 INIT_SOURCE = (ROOT / "__init__.py").read_text(encoding="utf-8")
 CAMERA_SOURCE = (ROOT / "camera.py").read_text(encoding="utf-8")
+SELECT_SOURCE = (ROOT / "select.py").read_text(encoding="utf-8")
 
 
 def _function_source(source: str, name: str) -> str:
@@ -172,6 +173,122 @@ class NativeFeatureTests(unittest.TestCase):
             "self.async_set_music_flow(False, restore_display=False)",
             function,
         )
+
+    def test_rgb_turn_on_exits_music_flow_before_applying_color(self):
+        async_turn_on = _load_standalone_functions(
+            LIGHT_SOURCE,
+            {"async_turn_on"},
+            {
+                "_LOGGER": types.SimpleNamespace(debug=lambda *args: None),
+            },
+        )["async_turn_on"]
+        events = []
+        device = types.SimpleNamespace(
+            _calibration_lock=False,
+            _music_flow_enabled=True,
+            _is_on=True,
+            _brightness=255,
+            _rgb_color=(255, 255, 255),
+            hass=None,
+        )
+
+        async def set_music_flow(enabled, restore_display=True):
+            events.append(("music_flow", enabled, restore_display))
+            device._music_flow_enabled = enabled
+
+        async def internal_turn_on(**kwargs):
+            events.append(("turn_on", kwargs))
+
+        async def execute(func, op_name):
+            events.append(("execute", op_name))
+            await func()
+            return True
+
+        device.async_set_music_flow = set_music_flow
+        device._internal_turn_on = internal_turn_on
+        device._execute_hardware_op = execute
+        turn_on = types.MethodType(async_turn_on, device)
+
+        asyncio.run(turn_on(rgb_color=(12, 34, 56), brightness=128))
+
+        self.assertEqual(
+            ("music_flow", False, False),
+            events[0],
+        )
+        self.assertEqual(("execute", "turn_on"), events[1])
+        self.assertEqual(
+            ("turn_on", {"rgb_color": (12, 34, 56), "brightness": 128}),
+            events[2],
+        )
+        self.assertEqual((12, 34, 56), device._rgb_color)
+        self.assertEqual(128, device._brightness)
+
+    def test_brightness_only_turn_on_preserves_music_flow(self):
+        async_turn_on = _load_standalone_functions(
+            LIGHT_SOURCE,
+            {"async_turn_on"},
+            {
+                "_LOGGER": types.SimpleNamespace(debug=lambda *args: None),
+            },
+        )["async_turn_on"]
+        events = []
+        device = types.SimpleNamespace(
+            _calibration_lock=False,
+            _music_flow_enabled=True,
+            _is_on=True,
+            _brightness=255,
+            _rgb_color=(255, 255, 255),
+            hass=None,
+        )
+
+        async def set_music_flow(enabled, restore_display=True):
+            events.append(("music_flow", enabled, restore_display))
+
+        async def internal_turn_on(**kwargs):
+            events.append(("turn_on", kwargs))
+
+        async def execute(func, op_name):
+            await func()
+            return True
+
+        device.async_set_music_flow = set_music_flow
+        device._internal_turn_on = internal_turn_on
+        device._execute_hardware_op = execute
+        turn_on = types.MethodType(async_turn_on, device)
+
+        asyncio.run(turn_on(brightness=96))
+
+        self.assertFalse(any(event[0] == "music_flow" for event in events))
+        self.assertEqual([("turn_on", {"brightness": 96})], events)
+
+    def test_palette_selection_uses_guarded_display_state_machine(self):
+        function = _function_source(SELECT_SOURCE, "async_select_option")
+        palette_branch = function[
+            function.index("[PALETTE SELECT]") :
+        ]
+        self.assertIn(
+            'async_apply_display_mode(\n            update_type="color_change"',
+            palette_branch,
+        )
+        self.assertNotIn("._light_entity.apply()", palette_branch)
+
+    def test_health_recovery_restarts_active_music_flow(self):
+        health_check = _function_source(LIGHT_SOURCE, "_periodic_health_check")
+        self.assertIn("if self._music_flow_enabled:", health_check)
+        self.assertIn("await self.async_set_music_flow(True)", health_check)
+        self.assertLess(
+            health_check.index("await self.async_set_music_flow(True)"),
+            health_check.index(
+                "await self.async_apply_display_mode(update_type='turn_on')"
+            ),
+        )
+        exit_types = LIGHT_SOURCE[
+            LIGHT_SOURCE.index("MUSIC_FLOW_EXIT_UPDATE_TYPES") :
+            LIGHT_SOURCE.index(
+                "MUSIC_FLOW_EXIT_UPDATE_TYPES"
+            ) + 250
+        ]
+        self.assertNotIn('"turn_on"', exit_types)
 
     def test_turning_music_flow_off_restores_display_and_prior_power(self):
         helpers = _load_standalone_functions(
