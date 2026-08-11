@@ -70,9 +70,6 @@
             "clock_colon_blink": {
                 "name": "Clock: Blink colon"
             },
-            "music_flow": {
-                "name": "Music Flow"
-            },
             "scroll_enabled": {
                 "name": "Text scroll"
             }

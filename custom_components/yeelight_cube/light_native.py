@@ -367,9 +367,9 @@ class NativeModesMixin:
             raise
 
     def _refresh_music_flow_entities(self) -> None:
-        """Synchronize the dedicated music flow controls with light state."""
+        """Synchronize the content-mode and effect controls with light state."""
         for ref in (
-            self._music_flow_switch_entity,
+            self._content_mode_select_entity,
             self._music_flow_effect_select_entity,
         ):
             if ref is not None and getattr(ref, "hass", None) is not None:

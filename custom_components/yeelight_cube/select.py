@@ -449,6 +449,8 @@ class YeelightCubeContentModeSelect(SelectEntity):
         self._attr_current_option = self._content_mode()
 
     def _content_mode(self) -> str:
+        if getattr(self._light_entity, "_music_flow_enabled", False):
+            return "Music Flow"
         mode = getattr(self._light_entity, "_mode", DEFAULT_MATRIX_DISPLAY_MODE)
         return mode if mode in ("Clock", "Native Effect") else "Matrix"
 
@@ -487,6 +489,18 @@ class YeelightCubeContentModeSelect(SelectEntity):
         )
         if current_mode in MATRIX_DISPLAY_MODES:
             self._light_entity._matrix_mode = current_mode
+
+        if option == "Music Flow":
+            # Music Flow is the device's built-in microphone renderer, not a
+            # matrix mode. Turning it on suppresses matrix content until another
+            # content mode is selected (which exits it via async_apply_display_mode).
+            await self._light_entity.async_set_music_flow(True)
+            self.async_update_from_light()
+            if self._light_entity._music_flow_effect_select_entity:
+                self._light_entity._music_flow_effect_select_entity.async_update_from_light()
+            if self._light_entity.hass is not None:
+                self._light_entity.async_write_ha_state()
+            return
 
         if option == "Matrix":
             matrix_mode = getattr(

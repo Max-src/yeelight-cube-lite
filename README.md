@@ -452,11 +452,10 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | :-- | :-- | :-- |
 | **Auto Turn On** | Switch | Automatically turn on the lamp when a new mode or drawing is applied |
 | **Yeelight Cube Lite** | Light | Main light entity (on/off and brightness; RGB color in Matrix mode) |
-| **Content Mode** | Select | Switch between Matrix, firmware-native Clock, and Native Effect |
+| **Content Mode** | Select | Switch between Matrix, firmware-native Clock, Native Effect, and Music Flow |
 | **Display Mode** | Select | Choose the Matrix render mode (see [Display Modes](#display-modes)) |
 | **Clock Style** | Select | Choose one of the 14 native clock styles |
 | **Native Effect** | Select | Choose one of the 18 LAN-compatible firmware-native animations |
-| **Music Flow** | Switch | Start or stop device-microphone reactive lighting; restores the previous display and power state when stopped |
 | **Music Flow Effect** | Select | Choose Gather, Breathing, Blossom, Spectrum, Music Note, or Impact |
 | **Display Text** | Text | Text input for custom text display on the matrix |
 | **Device Orientation** | Select | Physical mount orientation: Right / Down / Left / Up (applies to all modes) |
@@ -691,6 +690,7 @@ The **Content Mode** entity selects the active content source:
 | **Matrix** | Render text, gradients, palettes, or drawings through the integration |
 | **Clock** | Run the Cube Lite firmware's native clock effect |
 | **Native Effect** | Run one of 18 LAN-compatible firmware-native animations |
+| **Music Flow** | Run the firmware's microphone-reactive renderer (see [Music Flow](#music-flow)) |
 
 When Matrix content is active, the **Display Mode** entity or Gradient Card selects the renderer:
 
@@ -765,21 +765,23 @@ data:
 
 ### Music Flow
 
-The **Music Flow** switch starts the Cube Lite firmware's microphone-reactive
-renderer locally on the device. **Music Flow Effect** selects one of the six
-official modes: Gather, Breathing, Blossom, Spectrum, Music Note, or Impact.
+Selecting **Music Flow** in the **Content Mode** selector starts the Cube Lite
+firmware's microphone-reactive renderer locally on the device. **Music Flow
+Effect** selects one of the six official modes: Gather, Breathing, Blossom,
+Spectrum, Music Note, or Impact.
 
-Music Flow is a temporary overlay rather than a **Content Mode**. The
-integration remembers the underlying Matrix, Clock, or Native Effect content
-and returns to it when Music Flow stops. The selected effect can be changed
-while Music Flow is off and will be used the next time it starts.
+Music Flow behaves as an overlay on top of the underlying content. The
+integration remembers the previous Matrix, Clock, or Native Effect content and
+returns to it when Music Flow stops. The selected effect can be changed while
+Music Flow is inactive and will be used the next time it starts.
 
 The integration also preserves the lamp's previous power state:
 
 - If the lamp was on, stopping Music Flow restores the previous display.
 - If the lamp was off, stopping Music Flow turns the lamp off again.
-- If Home Assistant restarts while Music Flow is active, the switch, effect,
-  and prior power state are restored from per-device integration storage.
+- If Home Assistant restarts while Music Flow is active, the Music Flow content
+  mode, effect, and prior power state are restored from per-device integration
+  storage.
 - If the Music Flow stop command succeeds but redrawing the previous display
   fails, Home Assistant still records Music Flow as off. Reselect a content
   mode or use **Force Refresh** to retry the display render.

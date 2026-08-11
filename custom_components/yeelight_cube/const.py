@@ -140,7 +140,7 @@ POWER_ON_STATES = {"Off": 0, "On": 1, "Toggle": 2}
 # Content sources and matrix render modes are intentionally separate. Clock is
 # a native firmware experience; the remaining modes render the plugin's 20x5
 # matrix content.
-CONTENT_MODES = ("Matrix", "Clock", "Native Effect")
+CONTENT_MODES = ("Matrix", "Clock", "Native Effect", "Music Flow")
 MATRIX_DISPLAY_MODES = (
     "Solid Color",
     "Letter Gradient",

@@ -574,7 +574,6 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         self._native_effect_select_entity = None
         self._native_effect_direction_select_entity = None
         self._native_effect_speed_entity = None
-        self._music_flow_switch_entity = None
         self._music_flow_effect_select_entity = None
         self._power_on_state_select_entity = None
         self._device_orientation_select_entity = None
@@ -1189,6 +1188,8 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
 
     @property
     def content_mode(self):
+        if self._music_flow_enabled:
+            return "Music Flow"
         return self._mode if self._mode in ("Clock", "Native Effect") else "Matrix"
     
     def _should_auto_turn_on(self) -> bool:
@@ -3260,7 +3261,6 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             self._native_effect_select_entity,
             self._native_effect_direction_select_entity,
             self._native_effect_speed_entity,
-            self._music_flow_switch_entity,
             self._music_flow_effect_select_entity,
             self._power_on_state_select_entity,
             self._scroll_enabled_switch_entity,
