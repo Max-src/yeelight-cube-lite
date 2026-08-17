@@ -127,9 +127,27 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
         // the spectrum as phase advances -- no spatial variation.
         color = hsv((((phase * 0.08) % 1.0) + 1.0) % 1.0, 0.9, 0.88);
       } else if (effect === "Starry sky") {
-        const twinkle =
-          Math.max(0.0, Math.sin((noise * 3.0 + phase) * TAU)) ** 7;
-        color = rgb(110, 165, 255, 0.08 + 0.92 * twinkle);
+        // Sparse blue stars that pop on and slowly fade to black. Each pixel
+        // runs its own cycle (stable random phase + rate) so stars appear and
+        // fade independently instead of the whole panel jumping between states.
+        // `phase` already scales with the effect speed, so a higher speed
+        // shortens the fade -- matching the real firmware, where speed controls
+        // the fade rate rather than a spawn rate.
+        const seed = noiseAt(col, row, 0);
+        const seed2 = noiseAt(col, row, 999);
+        const cycleRate = 0.25 + 0.3 * seed2;
+        const local = (((phase * cycleRate + seed) % 1.0) + 1.0) % 1.0;
+        const rise = 0.04;
+        const fade = 0.34;
+        let level;
+        if (local < rise) {
+          level = local / rise;
+        } else if (local < rise + fade) {
+          level = 1.0 - (local - rise) / fade;
+        } else {
+          level = 0.0;
+        }
+        color = rgb(30, 140, 255, level);
       } else if (effect === "Spectrum") {
         color = hsv(
           x * 0.9,

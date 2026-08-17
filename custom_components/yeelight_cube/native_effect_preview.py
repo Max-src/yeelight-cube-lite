@@ -188,8 +188,26 @@ def render_native_effect(
                 # variation across pixels.
                 color = _hsv(phase * 0.08 % 1.0, 0.9, 0.88)
             elif effect == "Starry sky":
-                twinkle = max(0.0, math.sin((noise * 3.0 + phase) * math.tau)) ** 7
-                color = _rgb(110, 165, 255, 0.08 + 0.92 * twinkle)
+                # Sparse blue stars that pop on and slowly fade to black. Each
+                # pixel runs its own cycle (stable random phase + rate) so stars
+                # appear and fade independently instead of the whole panel
+                # jumping between states. ``phase`` already scales with the
+                # effect speed, so a higher speed shortens the fade -- matching
+                # the real firmware, where speed controls the fade rate rather
+                # than a spawn rate.
+                seed = _noise(col, row, 0)
+                seed2 = _noise(col, row, 999)
+                cycle_rate = 0.25 + 0.3 * seed2
+                local = (phase * cycle_rate + seed) % 1.0
+                rise = 0.04
+                fade = 0.34
+                if local < rise:
+                    level = local / rise
+                elif local < rise + fade:
+                    level = 1.0 - (local - rise) / fade
+                else:
+                    level = 0.0
+                color = _rgb(30, 140, 255, level)
             elif effect == "Spectrum":
                 color = _hsv(x * 0.9, 1.0, 0.82 + 0.18 * math.sin((x + phase * 0.08) * math.tau))
             elif effect == "Ocean Waves":
