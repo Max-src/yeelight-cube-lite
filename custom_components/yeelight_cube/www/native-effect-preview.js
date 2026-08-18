@@ -192,7 +192,22 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
         const ripple = (Math.sin((dist * 1.0 - phase) * TAU) + 1.0) / 2.0;
         color = hsv(0.64 - 0.07 * ripple, 0.97, 0.12 + 0.88 * ripple);
       } else if (effect === "Rainbow") {
-        color = hsv(u - phase * 0.18, 0.95, 0.95);
+        // Swap the Right<->Down and Left<->Up direction pairs to match the lamp.
+        const rainbowRemap = {
+          Right: "Down",
+          Down: "Right",
+          Left: "Up",
+          Up: "Left",
+        };
+        const [ru] = flowCoordinates(
+          col,
+          row,
+          rainbowRemap[direction] || direction,
+        );
+        // Smoothly sweep the hue magenta -> red, then hard-jump back to magenta
+        // and loop -- a sharp trailing switch instead of a smooth fade-out.
+        const s = (((ru - phase * 0.18) % 1.0) + 1.0) % 1.0;
+        color = hsv(s * 0.85, 0.95, 0.95);
       } else if (effect === "Waterfall") {
         const trail =
           Math.max(

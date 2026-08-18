@@ -240,7 +240,13 @@ def render_native_effect(
                 ripple = (math.sin((dist * 1.0 - phase) * math.tau) + 1.0) / 2.0
                 color = _hsv(0.64 - 0.07 * ripple, 0.97, 0.12 + 0.88 * ripple)
             elif effect == "Rainbow":
-                color = _hsv(u - phase * 0.18, 0.95, 0.95)
+                # Swap the Right<->Down and Left<->Up direction pairs to match the lamp.
+                _rainbow_remap = {"Right": "Down", "Down": "Right", "Left": "Up", "Up": "Left"}
+                ru, _ = _flow_coordinates(col, row, _rainbow_remap.get(direction, direction))
+                # Smoothly sweep the hue magenta -> red, then hard-jump back to magenta
+                # and loop -- a sharp trailing switch instead of a smooth fade-out.
+                s = (ru - phase * 0.18) % 1.0
+                color = _hsv(s * 0.85, 0.95, 0.95)
             elif effect == "Waterfall":
                 trail = max(0.0, math.sin((u * 3.0 - phase * 1.4 + noise * 0.3) * math.tau)) ** 3
                 color = _rgb(20, 125 + 110 * trail, 255, 0.18 + 0.82 * trail)
