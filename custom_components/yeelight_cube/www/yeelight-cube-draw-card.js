@@ -1,4 +1,5 @@
 import { LitElement, html, repeat, unsafeHTML } from "./lib/lit-all.js";
+import { escapeHtml } from "./html-escape-utils.js";
 import { getInitialMatrix, parseConfig } from "./draw_card_state.js";
 import { drawCardStyles } from "./draw_card_styles.js";
 import { compactModeStyles } from "./compact-mode-styles.js";
@@ -1194,6 +1195,32 @@ class YeelightCubeDrawCard extends LitElement {
     const prevHash = this._lastPixelArtHash;
     const currHash = stateObj?.attributes?.content_hash;
 
+    // The global hass may carry a STALE pixel_arts array: HA doesn't push large
+    // attributes over the state feed — only scalars like content_hash/count. So
+    // `this._hass = hass` above can silently revert the gallery to pre-rename
+    // data on any unrelated state change. If we've already fetched the array for
+    // this exact content_hash, re-inject it to keep the fresh names.
+    if (
+      this._freshPixelArts &&
+      this._freshPixelArtsHash != null &&
+      currHash === this._freshPixelArtsHash &&
+      stateObj.attributes?.pixel_arts !== this._freshPixelArts
+    ) {
+      this._hass = {
+        ...this._hass,
+        states: {
+          ...this._hass.states,
+          [pixelartSensor]: {
+            ...stateObj,
+            attributes: {
+              ...stateObj.attributes,
+              pixel_arts: this._freshPixelArts,
+            },
+          },
+        },
+      };
+    }
+
     if (prevCount !== currCount || prevHash !== currHash) {
       this._lastPixelArtCount = currCount;
       this._lastPixelArtHash = currHash;
@@ -2075,7 +2102,9 @@ class YeelightCubeDrawCard extends LitElement {
     }
 
     const stateObj = this.hass.states[pixelartSensor];
-    const pixelArts = stateObj.attributes.pixel_arts || [];
+    const pixelArts = this._applyPendingRenames(
+      stateObj.attributes.pixel_arts || [],
+    );
 
     if (pixelArts.length === 0) {
       return html`
@@ -2518,7 +2547,7 @@ class YeelightCubeDrawCard extends LitElement {
               <span class="title-text${
                 allowRename ? " editable" : ""
               }" data-index="${idx}">
-                ${art.name || "Unnamed"}
+                ${escapeHtml(art.name) || "Unnamed"}
               </span>
             </div>
           `
@@ -3587,6 +3616,28 @@ class YeelightCubeDrawCard extends LitElement {
     }
   }
 
+  // Overlay locally-renamed titles onto the pixel-art list so a rename shows
+  // immediately and survives websocket ticks that re-inject the pre-rename
+  // array. Each override is dropped once the backend echoes the new name (or
+  // after a safety timeout) to avoid getting stuck.
+  _applyPendingRenames(pixelArts) {
+    if (!this._pendingRenames || this._pendingRenames.size === 0)
+      return pixelArts;
+    const now = Date.now();
+    let changed = false;
+    const result = pixelArts.map((art, i) => {
+      const pending = this._pendingRenames.get(i);
+      if (!pending) return art;
+      if (art.name === pending.name || now - pending.ts > 15000) {
+        this._pendingRenames.delete(i);
+        return art;
+      }
+      changed = true;
+      return { ...art, name: pending.name };
+    });
+    return changed ? result : pixelArts;
+  }
+
   async _handleRenameClick(e, idx) {
     e.preventDefault();
     e.stopPropagation();
@@ -3628,25 +3679,13 @@ class YeelightCubeDrawCard extends LitElement {
       return;
     }
 
-    // Optimistically update the UI immediately by patching local hass state.
-    // This survives subsequent websocket re-renders (HA doesn't resend large arrays).
-    const updatedPixelArts = pixelArts.map((art, i) =>
-      i === idx ? { ...art, name: newName.trim() } : art,
-    );
-    const updatedState = {
-      ...stateObj,
-      attributes: {
-        ...stateObj.attributes,
-        pixel_arts: updatedPixelArts,
-      },
-    };
-    this.hass = {
-      ...this.hass,
-      states: {
-        ...this.hass.states,
-        [sensorEntityId]: updatedState,
-      },
-    };
+    // Overlay the new name locally so it shows immediately and keeps showing
+    // through websocket ticks that re-inject the pre-rename array. Do NOT patch
+    // hass here: the overlay clears itself only once the raw server array
+    // echoes the new name, so patching hass would make it clear prematurely and
+    // the next tick would revert to the old name.
+    if (!this._pendingRenames) this._pendingRenames = new Map();
+    this._pendingRenames.set(idx, { name: newName.trim(), ts: Date.now() });
     this.pixelArtVersion = (this.pixelArtVersion || 0) + 1;
     this.requestUpdate();
 
@@ -3662,29 +3701,20 @@ class YeelightCubeDrawCard extends LitElement {
         entity_id: sensorEntityId,
       });
 
+      // The content_hash-triggered fetch in `set hass` can race the backend and
+      // cache the pre-rename array, leaving _hass stale until a full reload.
+      // Force a fresh fetch (retrying until the server echoes the new name) so
+      // the overlay can retire cleanly and pagination re-renders show the truth.
+      await this._forceRefreshPixelArts(sensorEntityId, idx, newName.trim());
+
       // Trigger UI update
       window.dispatchEvent(new Event("pixelart-saved"));
     } catch (error) {
       console.error("[Rename] Failed to rename pixel art:", error);
       alert("Failed to rename pixel art. Please try again.");
 
-      // Revert optimistic update on error
-      const revertedPixelArts = updatedPixelArts.map((art, i) =>
-        i === idx ? { ...art, name: currentName } : art,
-      );
-      this.hass = {
-        ...this.hass,
-        states: {
-          ...this.hass.states,
-          [sensorEntityId]: {
-            ...updatedState,
-            attributes: {
-              ...updatedState.attributes,
-              pixel_arts: revertedPixelArts,
-            },
-          },
-        },
-      };
+      // Drop the overlay so the UI falls back to the real (unchanged) name.
+      this._pendingRenames.delete(idx);
       this.pixelArtVersion = (this.pixelArtVersion || 0) + 1;
       this.requestUpdate();
     }
@@ -3802,11 +3832,22 @@ class YeelightCubeDrawCard extends LitElement {
     if (this._fetchingPixelArts) return;
     this._fetchingPixelArts = true;
     try {
-      const freshState = await this._hass.callApi(
-        "GET",
-        `states/${sensorEntityId}`,
-      );
-      if (freshState?.attributes?.pixel_arts) {
+      // The scalar content_hash arrives via websocket first; the REST endpoint can
+      // still return a pre-update snapshot for a tick. Retry until the fetched
+      // content_hash matches the advertised one so we never cache a stale (e.g.
+      // pre-rename) array over good data.
+      const expectedHash = this._lastPixelArtHash;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const freshState = await this._hass.callApi(
+          "GET",
+          `states/${sensorEntityId}`,
+        );
+        if (!freshState?.attributes?.pixel_arts) break;
+        const freshHash = freshState.attributes?.content_hash;
+        if (expectedHash != null && freshHash !== expectedHash && attempt < 4) {
+          await new Promise((r) => setTimeout(r, 200));
+          continue;
+        }
         // Patch _hass directly (not via setter) to avoid re-triggering set hass logic
         this._hass = {
           ...this._hass,
@@ -3821,13 +3862,60 @@ class YeelightCubeDrawCard extends LitElement {
             },
           },
         };
+        this._freshPixelArts = freshState.attributes.pixel_arts;
+        this._freshPixelArtsHash = freshHash;
+        this._lastPixelArtHash = freshHash;
+        this._lastPixelArtCount = freshState.attributes?.count;
         this.pixelArtVersion = (this.pixelArtVersion || 0) + 1;
         this.requestUpdate();
+        break;
       }
     } catch (err) {
       console.warn("[PixelArt] Failed to fetch fresh pixel arts:", err);
     } finally {
       this._fetchingPixelArts = false;
+    }
+  }
+
+  // Fetch fresh pixel_arts (bypassing the debounce) and only commit once the
+  // server actually echoes `expectedName` at `idx`. Applying intermediate reads
+  // could cache a pre-rename snapshot, so stale attempts are skipped, not stored.
+  async _forceRefreshPixelArts(sensorEntityId, idx, expectedName) {
+    if (!this._hass || !sensorEntityId) return;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      try {
+        const freshState = await this._hass.callApi(
+          "GET",
+          `states/${sensorEntityId}`,
+        );
+        const arts = freshState?.attributes?.pixel_arts;
+        if (arts && arts[idx]?.name === expectedName) {
+          this._hass = {
+            ...this._hass,
+            states: {
+              ...this._hass.states,
+              [sensorEntityId]: {
+                ...this._hass.states[sensorEntityId],
+                attributes: {
+                  ...this._hass.states[sensorEntityId].attributes,
+                  pixel_arts: arts,
+                },
+              },
+            },
+          };
+          this._freshPixelArts = arts;
+          this._freshPixelArtsHash = freshState.attributes?.content_hash;
+          this._lastPixelArtHash = freshState.attributes?.content_hash;
+          this._lastPixelArtCount = freshState.attributes?.count;
+          this.pixelArtVersion = (this.pixelArtVersion || 0) + 1;
+          this.requestUpdate();
+          return; // server confirmed
+        }
+      } catch (err) {
+        console.warn("[Rename] Force refresh failed:", err);
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 200));
     }
   }
 
