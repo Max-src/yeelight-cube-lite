@@ -940,10 +940,23 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                     self._cube_matrix._consecutive_failures > 0 or
                     self._display_retry_count > 0
                 )
+                # "Silent" firmware modes (Clock / Native Effect / Music Flow)
+                # pause get_prop polling and push no frames, so a mains power cut
+                # is never noticed: the lamp reboots to a firmware default while
+                # HA still believes the mode is active. Probe these on a SHORT
+                # fixed cadence so we reliably catch the brief unreachable window
+                # and re-assert the mode on return -- exactly the re-apply that a
+                # Home Assistant restart performs (which the user confirmed works).
+                silent_mode = self._is_on and (
+                    self._mode in ("Clock", "Native Effect")
+                    or self._music_flow_enabled
+                )
                 last_success = self._cube_matrix._last_success_time
                 time_since_success = time.time() - last_success if last_success > 0 else 999
                 if has_active_issues:
                     interval = 10  # Aggressive probing during failures
+                elif silent_mode:
+                    interval = 10  # Catch power-cut outages while in a native mode
                 elif time_since_success < 300:  # online within last 5 minutes
                     interval = 15
                 else:
@@ -975,8 +988,13 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                     self._cube_matrix._consecutive_failures > 0 or
                     self._display_retry_count > 0
                 )
-                if not is_stuck:
+                if not is_stuck and not silent_mode:
                     continue
+                # Only re-apply the mode when we are actually RECOVERING from a
+                # detected outage. A healthy proactive probe in silent mode must
+                # leave the running renderer untouched (re-applying every cycle
+                # would restart the clock/effect repeatedly).
+                recovering = is_stuck
                 
                 _LOGGER.debug(
                     f"[HEALTH] [{self._ip}] Probing device (unreachable={self._cube_matrix._device_unreachable}, "
@@ -1001,6 +1019,11 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                     sock.close()
                     sock = None
                 except (OSError, ConnectionRefusedError, TimeoutError):
+                    # The lamp is not answering -- record it so the next
+                    # successful probe knows to re-assert the mode. This is what
+                    # lets a mains power cut, detected proactively in a silent
+                    # mode, recover on return.
+                    self._cube_matrix._device_unreachable = True
                     # Log at WARNING so the user can see probes are happening
                     _LOGGER.warning(
                         f"[HEALTH] [{self._ip}] Probe failed -- still unreachable "
@@ -1013,6 +1036,11 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                             sock.close()
                         except Exception:
                             pass
+                    continue
+                
+                # Proactive healthy probe (silent mode, nothing was wrong): the
+                # lamp answered, so leave the running renderer untouched.
+                if not recovering:
                     continue
                 
                 # Device is back! Reset everything and trigger a fresh display.
