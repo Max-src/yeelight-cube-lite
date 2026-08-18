@@ -209,7 +209,21 @@ def render_native_effect(
                     level = 0.0
                 color = _rgb(30, 140, 255, level)
             elif effect == "Spectrum":
-                color = _hsv(x * 0.9, 1.0, 0.82 + 0.18 * math.sin((x + phase * 0.08) * math.tau))
+                # A full rainbow gradient painted pixel-by-pixel, red -> magenta.
+                # "Right" scans line-by-line (bottom-left red, top-right magenta);
+                # "Down" scans column-by-column (bottom-left red, top-right magenta);
+                # "Left"/"Up" are the 180-degree rotations of "Right"/"Down".
+                last = COLS * ROWS - 1
+                if direction in ("Down", "Up"):
+                    index = col * ROWS + row
+                    if direction == "Up":
+                        index = last - index
+                else:
+                    index = (ROWS - 1 - row) * COLS + col
+                    if direction == "Left":
+                        index = last - index
+                t = index / last
+                color = _hsv(t * 0.83, 1.0, 0.82 + 0.18 * math.sin((t + phase * 0.08) * math.tau))
             elif effect == "Ocean Waves":
                 # Concentric ripples radiating from a source point at the
                 # "bottom" centre (along the flow axis), matching the real

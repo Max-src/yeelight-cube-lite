@@ -149,10 +149,24 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
         }
         color = rgb(30, 140, 255, level);
       } else if (effect === "Spectrum") {
+        // A full rainbow gradient painted pixel-by-pixel, red -> magenta.
+        // "Right" scans line-by-line (bottom-left red, top-right magenta);
+        // "Down" scans column-by-column (bottom-left red, top-right magenta);
+        // "Left"/"Up" are the 180-degree rotations of "Right"/"Down".
+        const last = PREVIEW_COLS * PREVIEW_ROWS - 1;
+        let index;
+        if (direction === "Down" || direction === "Up") {
+          index = col * PREVIEW_ROWS + row;
+          if (direction === "Up") index = last - index;
+        } else {
+          index = (PREVIEW_ROWS - 1 - row) * PREVIEW_COLS + col;
+          if (direction === "Left") index = last - index;
+        }
+        const t = index / last;
         color = hsv(
-          x * 0.9,
+          t * 0.83,
           1.0,
-          0.82 + 0.18 * Math.sin((x + phase * 0.08) * TAU),
+          0.82 + 0.18 * Math.sin((t + phase * 0.08) * TAU),
         );
       } else if (effect === "Ocean Waves") {
         // Concentric ripples radiating from a source point at the "bottom"
