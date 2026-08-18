@@ -1,4 +1,5 @@
 ﻿import { BLACK_THRESHOLD } from "./draw_card_const.js";
+import { escapeHtml } from "./html-escape-utils.js";
 import {
   renderGalleryDisplay,
   renderMatrixPreview,
@@ -993,7 +994,7 @@ class YeelightCubeGradientCard extends HTMLElement {
 
     const cardContent = `
       <div style="padding:16px;">
-        ${!showCard && cardTitle ? `<div style="font-weight:600;font-size:1.1em;margin-bottom:8px;">${cardTitle}</div>` : ""}
+        ${!showCard && cardTitle ? `<div style="font-weight:600;font-size:1.1em;margin-bottom:8px;">${escapeHtml(cardTitle)}</div>` : ""}
         ${
           rotaryInHeader && showAngleSection
             ? `
@@ -1038,7 +1039,9 @@ class YeelightCubeGradientCard extends HTMLElement {
           </div>
         </div>
         <div id="preview-anchor" style="display:none;"></div>
-        ${showPanelToggle ? `
+        ${
+          showPanelToggle
+            ? `
         <div class="panel-section-wrapper" style="margin-bottom: 16px;${panelToggleStyle !== "card" && panelToggleStyle !== "tabs" ? `display:flex;justify-content:${_alignToJustify(panelToggleAlign)};` : ""}">
           ${this._renderPanelToggle(applyToWholePanel, panelToggleStyle, panelToggleShape)}
           <div class="panel-toggle default" style="margin-top: 4px; display: none; align-items: center; gap: 8px;">
@@ -1053,7 +1056,9 @@ class YeelightCubeGradientCard extends HTMLElement {
                 .join("")}
             </select>
           </div>
-        </div>` : ""}
+        </div>`
+            : ""
+        }
         `
             : ""
         }
@@ -2245,7 +2250,7 @@ class YeelightCubeGradientCard extends HTMLElement {
       </style>
       ${
         showCard
-          ? `<ha-card${cardTitle ? ` header="${cardTitle}"` : ""}><div class="card-content">${cardContent}</div></ha-card>`
+          ? `<ha-card${cardTitle ? ` header="${escapeHtml(cardTitle)}"` : ""}><div class="card-content">${cardContent}</div></ha-card>`
           : `<div class="card-content">${cardContent}</div>`
       }
     `;
@@ -2332,7 +2337,10 @@ class YeelightCubeGradientCard extends HTMLElement {
       if (previewAnchor && previewAnchor.parentNode) {
         // insertBefore requires the reference node to be a direct child of the
         // parent — use parentNode (the padding div), not cardContentDiv itself.
-        previewAnchor.parentNode.insertBefore(this._previewElement, previewAnchor);
+        previewAnchor.parentNode.insertBefore(
+          this._previewElement,
+          previewAnchor,
+        );
       } else {
         cardContentDiv.appendChild(this._previewElement);
       }
@@ -2463,12 +2471,19 @@ class YeelightCubeGradientCard extends HTMLElement {
     if (tabsEl) {
       tabsEl.dataset.active = applyToPanel ? "1" : "0";
       tabsEl.querySelectorAll(".tab-btn").forEach((btn) => {
-        btn.classList.toggle("active", (btn.dataset.panelSeg === "true") === applyToPanel);
+        btn.classList.toggle(
+          "active",
+          (btn.dataset.panelSeg === "true") === applyToPanel,
+        );
       });
     }
-    const chipEl = root.querySelector(".panel-toggle.chip[data-chip-toggle='true']");
+    const chipEl = root.querySelector(
+      ".panel-toggle.chip[data-chip-toggle='true']",
+    );
     if (chipEl) chipEl.classList.toggle("active", applyToPanel);
-    const minimalEl = root.querySelector(".panel-toggle.minimal[data-minimal-toggle='true']");
+    const minimalEl = root.querySelector(
+      ".panel-toggle.minimal[data-minimal-toggle='true']",
+    );
     if (minimalEl) minimalEl.classList.toggle("active", applyToPanel);
 
     // 3. Fill-panel column selector value
@@ -3899,7 +3914,8 @@ class YeelightCubeGradientCard extends HTMLElement {
                   pixelGap: galleryPixelGap,
                   previewSize: galleryPreviewSize,
                   ignoreBlackPixels,
-                  matrixBoxShadow: this.config.gallery_matrix_box_shadow === true,
+                  matrixBoxShadow:
+                    this.config.gallery_matrix_box_shadow === true,
                   pixelBoxShadow: galleryPixelBoxShadow,
                 })}
                 ${showTitles ? `<div style="font-size:13px;font-weight:500;${galleryBgColor === "black" ? "color:#fff;" : "color:var(--primary-text-color);"}">` + it.dataMode + `</div>` : ""}

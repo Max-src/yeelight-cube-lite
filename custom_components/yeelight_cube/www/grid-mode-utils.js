@@ -8,6 +8,7 @@
  * from delete-button-styles.js.  The caller passes deleteButtonClass, posClass,
  * and sideClass through the options bag.
  */
+import { escapeHtml } from "./html-escape-utils.js";
 
 /**
  * Grid Mode Styles - CSS for grid layout
@@ -236,7 +237,8 @@ export function renderGridMode(items, renderItemContent, options = {}) {
   return `<div class="items-grid">${items
     .map((item, idx) => {
       const metaText = showMeta && getMetaText ? getMetaText(item, idx) : "";
-      const itemTitle = item.name || item.title || `Item ${idx + 1}`;
+      const itemTitle =
+        escapeHtml(item.name || item.title) || `Item ${idx + 1}`;
 
       // Build delete button HTML
       const deleteButtonHtml = showDelete

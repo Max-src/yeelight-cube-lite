@@ -1097,8 +1097,8 @@ class YeelightCubePaletteCard extends HTMLElement {
       </style>
       ${
         showCard
-          ? `<ha-card${cardTitle ? ` header="${cardTitle}"` : ""}><div class="card-content${showItemBorder ? " item-card-border" : ""}">${contentHtml}</div></ha-card>`
-          : `${cardTitle ? `<div id="card-title" style="font-weight:600;font-size:1.1em;margin-bottom:8px;padding:16px 16px 0;">${cardTitle}</div>` : ""}<div class="card-content${showItemBorder ? " item-card-border" : ""}">${contentHtml}</div>`
+          ? `<ha-card${cardTitle ? ` header="${escapeHtml(cardTitle)}"` : ""}><div class="card-content${showItemBorder ? " item-card-border" : ""}">${contentHtml}</div></ha-card>`
+          : `${cardTitle ? `<div id="card-title" style="font-weight:600;font-size:1.1em;margin-bottom:8px;padding:16px 16px 0;">${escapeHtml(cardTitle)}</div>` : ""}<div class="card-content${showItemBorder ? " item-card-border" : ""}">${contentHtml}</div>`
       }
     `;
     // Remember the shell we just built so a subsequent data-only change can take
@@ -1917,7 +1917,7 @@ class YeelightCubePaletteCard extends HTMLElement {
               showPaletteTitle
                 ? `<div class="album-title" data-idx="${idx}">
                 <span class="title-text${allowTitleEdit ? " editable" : ""}">${
-                  palette.name || "Palette " + (idx + 1)
+                  escapeHtml(palette.name) || "Palette " + (idx + 1)
                 }</span>
               </div>`
                 : ""
@@ -1937,7 +1937,7 @@ class YeelightCubePaletteCard extends HTMLElement {
               showPaletteTitle
                 ? `<div class="album-title" data-idx="${idx}">
                 <span class="title-text${allowTitleEdit ? " editable" : ""}">${
-                  palette.name || "Palette " + (idx + 1)
+                  escapeHtml(palette.name) || "Palette " + (idx + 1)
                 }</span>
               </div>`
                 : ""
