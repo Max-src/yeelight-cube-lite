@@ -243,18 +243,67 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
         }
         color = rgb(30, 140, 255, level);
       } else if (effect === "Aurora") {
-        // Curtains hang perpendicular to the flow (v) and shift along it (u).
-        const curtain =
-          (Math.sin((v * 1.6 + phase * 0.22) * TAU + u * 2.0) + 1.0) / 2.0;
-        const base = palette(
-          [
-            [18, 255, 143],
-            [20, 126, 255],
-            [192, 55, 255],
-          ],
-          curtain,
+        // Snake of green LEDs travelling along the raster path (row-major
+        // index). A ~40px segment (bright ~7px centre, long gradient tails)
+        // slides pixel by pixel and disappears off an edge. Each snake spawns
+        // at a random position -- off an edge (slides in) or on-screen in the
+        // middle (fades in slowly) -- and heads up or down; a single snake
+        // never reverses. Randomised so it never feels like a loop. Overlaps
+        // take the brightest value (max-combine).
+        const cellCount = PREVIEW_COLS * PREVIEW_ROWS;
+        // Left/Right run the snake row-major (line by line); Up/Down run it
+        // column-major (column by column).
+        const idx =
+          direction === "Up" || direction === "Down"
+            ? col * PREVIEW_ROWS + row
+            : row * PREVIEW_COLS + col;
+        const coreHalf = 3.5; // ~7px bright centre
+        const falloff = 24.0; // coreHalf+falloff = 27.5 -> 55px segment
+        const reach = coreHalf + falloff;
+        const last = cellCount - 1;
+        const v = 9.0; // pixels per phase unit
+        const fadeIn = 2.2; // phase units to fade a snake in (slow centre appear)
+        const span = last + 2 * reach;
+        const minTravel = 0.4 * span; // keep snakes on-screen long enough
+        const maxLife = span / v;
+        const spawn = maxLife / 3.5; // avg ~2.5 snakes (mostly 2-3) on screen
+        let t = 0.0;
+        const nLo = Math.floor((phase - maxLife) / spawn) - 1;
+        const nHi = Math.floor(phase / spawn) + 1;
+        for (let n = nLo; n <= nHi; n++) {
+          const emit =
+            n * spawn + (noiseAt(n + 4096, 7, 0) - 0.5) * spawn * 0.4;
+          const age = phase - emit;
+          if (age < 0.0) continue;
+          const p0 = -reach + noiseAt(n + 4096, 11, 0) * span;
+          let dir;
+          if (p0 < 0)
+            dir = 1; // off the top edge -> must slide down
+          else if (p0 > last)
+            dir = -1; // off the bottom edge -> must slide up
+          else {
+            dir = noiseAt(n + 4096, 9, 0) < 0.5 ? 1 : -1;
+            // Flip if this direction would exit too soon (avoids flicker).
+            const travel = dir > 0 ? last + reach - p0 : p0 + reach;
+            if (travel < minTravel) dir = -dir;
+          }
+          const life = dir > 0 ? (last + reach - p0) / v : (p0 + reach) / v;
+          if (age > life) continue;
+          const center = p0 + dir * v * age;
+          const fade = Math.min(1.0, age / fadeIn);
+          const d = Math.abs(idx - center);
+          let ti = 0.0;
+          if (d <= coreHalf) ti = 1.0;
+          else if (d <= reach) ti = 1.0 - (d - coreHalf) / falloff;
+          ti *= fade;
+          if (ti > t) t = ti;
+        }
+        // Lerp dark blue-grey -> brighter deep green.
+        color = rgb(
+          14 + (15 - 14) * t,
+          20 + (200 - 20) * t,
+          34 + (75 - 34) * t,
         );
-        color = rgb(base[0], base[1], base[2], 0.3 + 0.7 * wave);
       } else if (effect === "Bonfire") {
         // Flames rise along the flow axis (u); flicker varies across it (v).
         const heat = Math.max(

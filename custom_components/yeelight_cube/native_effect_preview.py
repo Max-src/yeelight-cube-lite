@@ -278,10 +278,66 @@ def render_native_effect(
                     n += 1
                 color = _rgb(30, 140, 255, level)
             elif effect == "Aurora":
-                # Curtains hang perpendicular to the flow (v) and shift along it (u).
-                curtain = (math.sin((v * 1.6 + phase * 0.22) * math.tau + u * 2.0) + 1.0) / 2.0
-                color = _palette(((18, 255, 143), (20, 126, 255), (192, 55, 255)), curtain)
-                color = _rgb(*color, 0.3 + 0.7 * wave)
+                # Snake of green LEDs travelling along the raster path
+                # (row-major index). A ~40px segment (bright ~7px centre, long
+                # gradient tails) slides pixel by pixel and disappears off an
+                # edge. Each snake spawns at a random position -- off an edge
+                # (slides in) or on-screen in the middle (fades in slowly) --
+                # and heads up or down; a single snake never reverses.
+                # Randomised so it never feels like a loop. Overlaps take the
+                # brightest value (max-combine).
+                cell_count = COLS * ROWS
+                # Left/Right run the snake row-major (line by line); Up/Down run
+                # it column-major (column by column).
+                if direction in ("Up", "Down"):
+                    idx = col * ROWS + row
+                else:
+                    idx = row * COLS + col
+                core_half = 3.5  # ~7px bright centre
+                falloff = 24.0  # core_half + falloff = 27.5 -> 55px segment
+                reach = core_half + falloff
+                last = cell_count - 1
+                v = 9.0  # pixels per phase unit
+                fade_in = 2.2  # phase units to fade a snake in (slow centre appear)
+                span = last + 2 * reach
+                min_travel = 0.4 * span  # keep snakes on-screen long enough
+                max_life = span / v
+                spawn = max_life / 3.5  # avg ~2.5 snakes (mostly 2-3) on screen
+                t = 0.0
+                n = math.floor((phase - max_life) / spawn) - 1
+                n_hi = math.floor(phase / spawn) + 1
+                while n <= n_hi:
+                    emit = n * spawn + (_noise(n + 4096, 7, 0) - 0.5) * spawn * 0.4
+                    age = phase - emit
+                    if age >= 0.0:
+                        p0 = -reach + _noise(n + 4096, 11, 0) * span
+                        if p0 < 0:
+                            a_dir = 1  # off the top edge -> must slide down
+                        elif p0 > last:
+                            a_dir = -1  # off the bottom edge -> must slide up
+                        else:
+                            a_dir = 1 if _noise(n + 4096, 9, 0) < 0.5 else -1
+                            # Flip if this direction would exit too soon.
+                            travel = last + reach - p0 if a_dir > 0 else p0 + reach
+                            if travel < min_travel:
+                                a_dir = -a_dir
+                        life = (last + reach - p0) / v if a_dir > 0 else (p0 + reach) / v
+                        if age <= life:
+                            center = p0 + a_dir * v * age
+                            fade = min(1.0, age / fade_in)
+                            d = abs(idx - center)
+                            if d <= core_half:
+                                ti = 1.0
+                            elif d <= reach:
+                                ti = 1.0 - (d - core_half) / falloff
+                            else:
+                                ti = 0.0
+                            ti *= fade
+                            if ti > t:
+                                t = ti
+                    n += 1
+                # Lerp dark blue-grey -> brighter deep green.
+                color = _rgb(14 + (15 - 14) * t, 20 + (200 - 20) * t, 34 + (75 - 34) * t)
             elif effect == "Bonfire":
                 # Flames rise along the flow axis (u); flicker varies across it (v).
                 heat = max(0.0, 1.0 - u + noise * 0.45 - 0.2 * math.sin((v * 3 + phase) * math.tau))
