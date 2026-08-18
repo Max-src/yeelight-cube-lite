@@ -169,11 +169,25 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
           0.82 + 0.18 * Math.sin((t + phase * 0.08) * TAU),
         );
       } else if (effect === "Ocean Waves") {
-        // Concentric ripples radiating from a source point at the "bottom"
-        // centre (along the flow axis), matching the real firmware effect:
-        // deep-blue troughs, cyan crests, wide bands.
-        const du = u; // 0 at the source edge (u=0), grows toward u=1
-        const dv = (v - 0.5) * 2.2; // perpendicular spread, aspect-weighted
+        // Right/Left reuse Up/Down coordinates so device-orientation rotation renders correctly.
+        let ow_u, ow_v;
+        if (direction === "Right") {
+          ow_u = y;
+          ow_v = x;
+        } else if (direction === "Left") {
+          ow_u = 1.0 - y;
+          ow_v = x;
+        } else {
+          ow_u = u;
+          ow_v = v;
+        }
+        // Source offset matches physical lamp: Down/Right shift left, Up/Left shift right.
+        const vCenter =
+          direction === "Down" || direction === "Right"
+            ? 0.5 - 2.0 / 19.0
+            : 0.5 + 2.0 / 19.0;
+        const du = ow_u;
+        const dv = (ow_v - vCenter) * 2.2;
         const dist = Math.hypot(du, dv);
         const ripple = (Math.sin((dist * 1.0 - phase) * TAU) + 1.0) / 2.0;
         color = hsv(0.64 - 0.07 * ripple, 0.97, 0.12 + 0.88 * ripple);

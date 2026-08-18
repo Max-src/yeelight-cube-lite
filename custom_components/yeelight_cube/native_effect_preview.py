@@ -225,11 +225,17 @@ def render_native_effect(
                 t = index / last
                 color = _hsv(t * 0.83, 1.0, 0.82 + 0.18 * math.sin((t + phase * 0.08) * math.tau))
             elif effect == "Ocean Waves":
-                # Concentric ripples radiating from a source point at the
-                # "bottom" centre (along the flow axis), matching the real
-                # firmware effect: deep-blue troughs, cyan crests, wide bands.
-                du = u  # 0 at the source edge (u=0), grows toward u=1
-                dv = (v - 0.5) * 2.2  # perpendicular spread, aspect-weighted
+                # Right/Left reuse Up/Down coordinates so device-orientation rotation renders correctly.
+                if direction == "Right":
+                    ow_u, ow_v = y, x
+                elif direction == "Left":
+                    ow_u, ow_v = 1.0 - y, x
+                else:
+                    ow_u, ow_v = u, v
+                # Source offset matches physical lamp: Down/Right shift left, Up/Left shift right.
+                v_center = 0.5 - 2.0 / 19.0 if direction in ("Down", "Right") else 0.5 + 2.0 / 19.0
+                du = ow_u
+                dv = (ow_v - v_center) * 2.2
                 dist = math.hypot(du, dv)
                 ripple = (math.sin((dist * 1.0 - phase) * math.tau) + 1.0) / 2.0
                 color = _hsv(0.64 - 0.07 * ripple, 0.97, 0.12 + 0.88 * ripple)
