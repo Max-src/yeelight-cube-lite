@@ -209,12 +209,39 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
         const s = (((ru - phase * 0.18) % 1.0) + 1.0) % 1.0;
         color = hsv(s * 0.85, 0.95, 0.95);
       } else if (effect === "Waterfall") {
-        const trail =
-          Math.max(
-            0.0,
-            Math.sin((u * 3.0 - phase * 1.4 + noise * 0.3) * TAU),
-          ) ** 3;
-        color = rgb(20, 125 + 110 * trail, 255, 0.18 + 0.82 * trail);
+        // Blue dots spawn on one edge and travel to the opposite edge at a
+        // constant speed, each leaving a fixed-length trail fading to black.
+        // Spawn times per lane are jittered (irregular) so dots appear at
+        // random moments rather than a fixed rhythm. Direction picks the axis:
+        //   Right: top->bottom, Left: bottom->top (lanes = columns)
+        //   Down:  left->right, Up:   right->left (lanes = rows)
+        let lane;
+        let pos;
+        if (direction === "Left" || direction === "Right") {
+          lane = col;
+          pos = direction === "Right" ? PREVIEW_ROWS - 1 - row : row;
+        } else {
+          lane = row;
+          pos = direction === "Down" ? col : PREVIEW_COLS - 1 - col;
+        }
+        const v = 7.0; // pixels per phase unit (same speed everywhere)
+        const trailPixels = 7.5;
+        const spawn = 2.5; // avg phase units between spawns per lane
+        const lo = phase - (pos + trailPixels) / v;
+        const hi = phase - pos / v;
+        let level = 0.0;
+        const nStart = Math.floor(lo / spawn) - 1;
+        const nEnd = Math.ceil(hi / spawn) + 1;
+        for (let n = nStart; n <= nEnd; n++) {
+          // Jitter each spawn slot's emission time within its interval.
+          const emit =
+            n * spawn + (noiseAt(lane, n + 1024, 0) - 0.5) * spawn * 0.9;
+          if (emit >= lo && emit <= hi) {
+            const d = (phase - emit) * v - pos; // distance behind the head
+            level = Math.max(level, 1.0 - d / trailPixels);
+          }
+        }
+        color = rgb(30, 140, 255, level);
       } else if (effect === "Aurora") {
         // Curtains hang perpendicular to the flow (v) and shift along it (u).
         const curtain =
