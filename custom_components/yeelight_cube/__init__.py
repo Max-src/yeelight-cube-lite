@@ -12,6 +12,7 @@ from homeassistant.helpers.event import async_call_later # type: ignore
 from homeassistant.helpers import entity_registry as er # type: ignore
 from .const import DOMAIN, CONF_IP, CONF_DEVICE_ID
 from .conflict_prevention import get_conflict_prevention
+from .name_utils import normalize_display_name
 from .services import async_setup_services, async_remove_services
 import homeassistant.helpers.config_validation as cv  # type: ignore
 
@@ -470,8 +471,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _raw_pixel_arts = stored_data.get("pixel_arts", [])
         _migrated_pixel_arts = []
         _needs_save = False  # Track whether any art was actually migrated (avoid unnecessary writes)
-        for _art in _raw_pixel_arts:
+        for _idx, _art in enumerate(_raw_pixel_arts):
             if isinstance(_art, dict) and isinstance(_art.get("pixels"), list):
+                _safe_name = normalize_display_name(
+                    _art.get("name", "Unnamed"), f"Pixel Art {_idx + 1}"
+                )
+                if _safe_name != _art.get("name"):
+                    _needs_save = True
+                _art = {**_art, "name": _safe_name}
                 _pixels = _art["pixels"]
                 # Detect if already in grouped format:
                 # new format uses "position" as a list; legacy grouped format used "positions" (plural)

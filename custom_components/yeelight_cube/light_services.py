@@ -41,6 +41,7 @@ from .const import (
 )
 from .image_utils import image_to_matrix
 from .layout import FONT_MAPS, TOTAL_COLUMNS, TOTAL_ROWS
+from .name_utils import normalize_display_name
 from .light import (
     DEVICE_ORIENTATIONS,
     LIGHT_SERVICE_NAMES,
@@ -613,7 +614,9 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                 and isinstance(art["pixels"], list)
             ):
                 valid_pixel_arts.append({
-                    "name": str(art["name"]),
+                    "name": normalize_display_name(
+                        art["name"], f"Pixel Art {len(valid_pixel_arts) + 1}"
+                    ),
                     "pixels": _normalize_pixels(art["pixels"]),
                 })
         
@@ -688,6 +691,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         pixel_arts = hass.data[DOMAIN]["pixel_arts"]
         if not name:
             name = f"Pixel Art {len(pixel_arts) + 1}"
+        name = normalize_display_name(name, f"Pixel Art {len(pixel_arts) + 1}")
         
         # Add to global storage
         pixel_arts.append({"name": name, "pixels": pixels})
@@ -748,6 +752,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             and 0 <= idx < len(pixel_arts)
             and isinstance(new_name, str)
         ):
+            new_name = normalize_display_name(new_name, f"Pixel Art {idx + 1}")
             pixel_arts[idx]["name"] = new_name
             
             # Pixel arts are global - just fire event for sensor and save
@@ -1438,7 +1443,12 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                     and isinstance(pal["colors"], list)
                     and all(isinstance(c, (list, tuple)) and len(c) == 3 for c in pal["colors"])
                 ):
-                    valid_palettes.append({"name": str(pal["name"]), "colors": [tuple(c) for c in pal["colors"]]})
+                    valid_palettes.append({
+                        "name": normalize_display_name(
+                            pal["name"], f"Palette {len(valid_palettes) + 1}"
+                        ),
+                        "colors": [tuple(c) for c in pal["colors"]],
+                    })
             # Store palettes globally
             if DOMAIN not in hass.data:
                 hass.data[DOMAIN] = {}
@@ -1476,6 +1486,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         # Generate default name if not provided
         if not name:
             name = f"Palette {len(palettes)+1}"
+        name = normalize_display_name(name, f"Palette {len(palettes) + 1}")
         
         # Create a deduplication key based on palette colors and name
         palette_key = f"save_{name}_{len(palette) if palette else 0}"
@@ -1540,6 +1551,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             and 0 <= idx < len(palettes)
             and isinstance(new_name, str)
         ):
+            new_name = normalize_display_name(new_name, f"Palette {idx + 1}")
             palettes[idx]["name"] = new_name
             # Update ALL entities' HA state (palettes are exposed as state attributes)
             for entity_obj in _ENTITY_REGISTRY.values():
