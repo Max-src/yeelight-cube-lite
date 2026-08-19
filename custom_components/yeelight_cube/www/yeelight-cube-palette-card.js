@@ -1352,8 +1352,37 @@ class YeelightCubePaletteCard extends HTMLElement {
   }
 
   handleGalleryTitleClick(event, idx) {
-    // Palette card doesn't currently support title editing
-    // This is a placeholder for future implementation
+    if (this.config.allow_title_edit !== true) return;
+    event.stopPropagation();
+    const titleEl = event.currentTarget || event.target;
+    this._renamePalette(idx, titleEl?.textContent?.trim() || "", titleEl);
+  }
+
+  // Prompt for a new palette name and persist it via the backend. Shared by the
+  // list/album title handler and the gallery/carousel inline-onclick handler.
+  _renamePalette(idx, currentName, titleEl) {
+    const newName = prompt("Enter new palette name:", currentName);
+    if (newName === null || newName.trim() === "") return;
+    this._hass
+      .callService("yeelight_cube", "rename_palette", {
+        idx: idx,
+        name: newName.trim(),
+      })
+      .then(() => {
+        if (titleEl) titleEl.textContent = newName.trim();
+        const stateObj = this._hass.states[this.config.palette_sensor];
+        if (stateObj && stateObj.attributes) {
+          if (Array.isArray(stateObj.attributes.palettes_v2)) {
+            stateObj.attributes.palettes_v2[idx].name = newName.trim();
+          } else if (Array.isArray(stateObj.attributes.palettes)) {
+            stateObj.attributes.palettes[idx].name = newName.trim();
+          }
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to rename palette:", error);
+        alert("Failed to rename palette. Please try again.");
+      });
   }
 
   addEventListeners(palettes, allowTitleEdit, showCard) {
@@ -1552,41 +1581,14 @@ class YeelightCubePaletteCard extends HTMLElement {
       // Edit palette title
       root.querySelectorAll(".title-text").forEach((el) => {
         el.addEventListener("click", (e) => {
-          const paletteTitle = e.target.closest(".palette-title");
+          // Album/coverflow renders the title inside .album-title; list and
+          // carousel use .palette-title. Accept either so rename works in all
+          // modes, and stop the click reaching the item's apply handler.
+          const paletteTitle = e.target.closest(".palette-title, .album-title");
           if (!paletteTitle || !paletteTitle.dataset) return; // Safety check
+          e.stopPropagation();
           const idx = parseInt(paletteTitle.dataset.idx);
-          const newName = prompt(
-            "Enter new palette name:",
-            e.target.textContent.trim(),
-          );
-          if (newName !== null && newName.trim() !== "") {
-            // Call the service and immediately update UI on success
-            this._hass
-              .callService("yeelight_cube", "rename_palette", {
-                idx: idx,
-                name: newName.trim(),
-              })
-              .then(() => {
-                // Success: immediately update the UI
-                e.target.textContent = newName.trim();
-
-                // Also update the cached state so re-renders show the new name
-                const stateObj = this._hass.states[this.config.palette_sensor];
-                if (stateObj && stateObj.attributes) {
-                  // Update palettes_v2 if available, else palettes
-                  if (Array.isArray(stateObj.attributes.palettes_v2)) {
-                    stateObj.attributes.palettes_v2[idx].name = newName.trim();
-                  } else if (Array.isArray(stateObj.attributes.palettes)) {
-                    stateObj.attributes.palettes[idx].name = newName.trim();
-                  }
-                }
-              })
-              .catch((error) => {
-                // Error: show user feedback
-                console.error("Failed to rename palette:", error);
-                alert("Failed to rename palette. Please try again.");
-              });
-          }
+          this._renamePalette(idx, e.target.textContent.trim(), e.target);
         });
       });
     }
@@ -2075,7 +2077,11 @@ class YeelightCubePaletteCard extends HTMLElement {
         ${
           showPaletteTitle
             ? `
-                <div class="palette-title">
+                <div class="palette-title${allowTitleEdit ? " editable" : ""}"${
+                  allowTitleEdit
+                    ? ` onclick="event.stopPropagation(); this.getRootNode().host.handleGalleryTitleClick(event, ${idx});"`
+                    : ""
+                }>
                   ${escapeHtml(palette.name) || `Palette ${idx + 1}`}
                 </div>
               `
