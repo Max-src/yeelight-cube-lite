@@ -2104,7 +2104,13 @@ class YeelightCubeDrawCard extends LitElement {
     const stateObj = this.hass.states[pixelartSensor];
     const pixelArts = this._applyPendingRenames(
       stateObj.attributes.pixel_arts || [],
-    );
+    ).map((art) => {
+      const name =
+        typeof art?.name === "string"
+          ? art.name.replace(/[<>]/g, "")
+          : art?.name;
+      return name === art?.name ? art : { ...art, name };
+    });
 
     if (pixelArts.length === 0) {
       return html`
