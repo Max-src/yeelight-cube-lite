@@ -289,7 +289,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     }
     const stateObj = hass.states[entityId];
     if (!stateObj) {
-      this.shadowRoot.innerHTML = `<ha-card><div style="padding:16px;color:var(--error-color,#db4437)">Entity not found: ${entityId}<br><small style="color:var(--secondary-text-color)">Check the card configuration — the selected entity may have been removed or renamed.</small></div></ha-card>`;
+      this.shadowRoot.innerHTML = `<ha-card><div style="padding:16px;color:var(--error-color,#db4437)">Entity not found: ${escapeHtml(entityId)}<br><small style="color:var(--secondary-text-color)">Check the card configuration — the selected entity may have been removed or renamed.</small></div></ha-card>`;
       this._isInitialRenderComplete = false;
       return;
     }

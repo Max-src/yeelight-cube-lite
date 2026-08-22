@@ -2133,7 +2133,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     if (!stateObj) {
       this.shadowRoot.innerHTML = `<ha-card>
         <div style="padding: 16px;">
-          <h3>Entity not found: ${entityId}</h3>
+          <h3>Entity not found: ${escapeHtml(entityId)}</h3>
           <p>Please check your configuration and ensure the entity exists.</p>
         </div>
       </ha-card>`;

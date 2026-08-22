@@ -908,7 +908,7 @@ class YeelightCubeGradientCard extends HTMLElement {
       const message =
         entityCount === 0
           ? "No entities configured"
-          : `Primary entity (${String(primaryEntity)}) not found`;
+          : `Primary entity (${escapeHtml(String(primaryEntity))}) not found`;
       this.shadowRoot.innerHTML = `<ha-card><div style="padding: 16px;">${message}</div></ha-card>`;
       this._skeletonKey = null; // force full rebuild when the entity recovers
       return;

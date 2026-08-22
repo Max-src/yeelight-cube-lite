@@ -6,6 +6,7 @@
  */
 
 import { html } from "./lib/lit-all.js";
+import { escapeHtml } from "./html-escape-utils.js";
 
 /**
  * Normalize a navigation-button shape value to the canonical vocabulary
@@ -607,7 +608,7 @@ export function renderCarouselString(options) {
       const itemName = items[dot.index]?.name || `Item ${dot.index + 1}`;
       return `<span 
         class="carousel-dot ${isActive ? "active" : ""}" 
-        title="${itemName}"
+        title="${escapeHtml(itemName)}"
         data-carousel-id="${carouselId}"
         data-action="set-index"
         data-index="${dot.index}"
