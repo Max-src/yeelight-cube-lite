@@ -320,11 +320,55 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
           Math.min(1.0, heat),
         );
       } else if (effect === "Pinball") {
-        const centerX = (Math.sin(phase * 1.7) + 1.0) * 0.5;
-        const centerY = Math.abs(Math.sin(phase * 2.3));
-        const distance = Math.hypot((x - centerX) * 1.8, y - centerY);
-        const level = Math.max(0.03, 1.0 - distance * 3.6);
-        color = rgb(255, 65, 190, level);
+        // Triangle-wave bounce with constant velocity reflecting off walls.
+        // Incommensurate x/y speed ratios keep the path dense and non-repeating.
+        const tri = (t) => 1.0 - Math.abs((((t % 2.0) + 2.0) % 2.0) - 1.0);
+        // The bounce table is 2x the visible area (centred): coords span
+        // [-0.5, 1.5]. Frequencies are halved vs. the visible-only version so
+        // the on-screen ball speed is unchanged despite the larger table.
+        const ext = (t) => tri(t) * 2.0 - 0.5;
+        const clamp01 = (c) => Math.max(0.0, Math.min(1.0, c));
+        const ball1At = (p) => [ext(p * 0.309), ext(p * 0.207 + 0.5)];
+        const ball2At = (p) => [ext(p * 0.381 + 1.3), ext(p * 0.267 + 0.9)];
+        // Trailing trace: children sample each ball's OWN past positions, so
+        // they follow its exact bouncing path. `spread` oscillates 0 (fused) ->
+        // 1 (split) -> 0, shared by both balls so they divide/fuse in sync, and
+        // never affects the main-ball position. Children are identical balls
+        // (same colour and brightness), not faded ghosts.
+        const spread = (1.0 - Math.cos(phase * 1.25)) * 0.5;
+        const lag = 0.6;
+        const offsets = [0.0, spread * lag, spread * lag * 2.0];
+        // A ball out in the margin shows as a half-ball pinned to the border it
+        // exited (clamped), sliding until it re-enters and moves freely again.
+        let level = 0.03;
+        for (const ballAt of [ball1At, ball2At]) {
+          for (const dp of offsets) {
+            const [bx, by] = ballAt(phase - dp);
+            const points = [
+              [clamp01(bx), clamp01(by)],
+              [clamp01(1.0 - bx), clamp01(1.0 - by)],
+            ];
+            for (const [px, py] of points) {
+              const d = Math.hypot((x - px) * 2.17, y - py);
+              const contrib = Math.max(0.0, 1.0 - d * 3.6);
+              if (contrib > level) level = contrib;
+            }
+          }
+        }
+        // Slow shared colour cycle: red -> violet -> pink -> blue -> cyan -> magenta -> red.
+        const ballColor = palette(
+          [
+            [255, 0, 0],
+            [148, 0, 211],
+            [255, 105, 180],
+            [0, 0, 255],
+            [0, 255, 255],
+            [255, 0, 255],
+            [255, 0, 0],
+          ],
+          (phase * 0.12) % 1.0,
+        );
+        color = rgb(ballColor[0], ballColor[1], ballColor[2], level);
       } else if (effect === "Shooting Star") {
         const position = (((u - phase * 0.7) % 1.0) + 1.0) % 1.0;
         const trail = Math.max(0.0, 1.0 - position * 5.0);
