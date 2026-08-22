@@ -370,14 +370,57 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
         );
         color = rgb(ballColor[0], ballColor[1], ballColor[2], level);
       } else if (effect === "Shooting Star") {
-        const position = (((u - phase * 0.7) % 1.0) + 1.0) % 1.0;
-        const trail = Math.max(0.0, 1.0 - position * 5.0);
-        color = rgb(
-          130 + 125 * trail,
-          170 + 85 * trail,
-          255,
-          0.08 + 0.92 * trail,
-        );
+        // Black sky with independent shooting stars. Five slots cap the count
+        // at 5; each runs its own spawn -> travel -> idle-gap cycle (~50% duty)
+        // so 0 and 5 are both rare. Per spawn the lane, colour (10 rainbow
+        // hues), speed and length (4-9 px) are random, and a fresh spawn can
+        // reuse a busy lane. Direction picks the travel axis and sense:
+        //   Left top->bottom, Right bottom->top (lanes = columns)
+        //   Down left->right,  Up   right->left  (lanes = rows)
+        const vertical = direction !== "Up" && direction !== "Down";
+        const increasing = direction === "Left" || direction === "Down";
+        const span = vertical ? PREVIEW_ROWS : PREVIEW_COLS;
+        const laneCount = vertical ? PREVIEW_COLS : PREVIEW_ROWS;
+        const laneIdx = vertical ? col : row;
+        const pos = vertical ? row : col;
+        const sphase = phase * 0.4; // 2.5x slower than the raw animation phase
+        const SLOTS = 5;
+        let best = 0.0;
+        let starR = 0;
+        let starG = 0;
+        let starB = 0;
+        for (let s = 0; s < SLOTS; s++) {
+          const rate = 0.55 + 0.5 * noiseAt(s, 0, 7);
+          const t = sphase * rate + noiseAt(s, 0, 8) * 7.0;
+          const cyc = Math.floor(t);
+          const local = t - cyc;
+          const fallLen = 0.3 + 0.4 * noiseAt(s, cyc, 33);
+          if (local >= fallLen) continue; // idle gap: no star this slot
+          const starLane = Math.floor(noiseAt(s, cyc, 11) * laneCount);
+          if (starLane !== laneIdx) continue;
+          const length = 4 + Math.min(5, Math.floor(noiseAt(s, cyc, 44) * 6));
+          const prog = local / fallLen;
+          const travel = span + length + 1;
+          let lo;
+          let hi;
+          if (increasing) {
+            const head = -1.0 + prog * travel;
+            lo = head - length;
+            hi = head;
+          } else {
+            const head = span - prog * travel;
+            lo = head;
+            hi = head + length;
+          }
+          const dseg = Math.max(0.0, lo - pos, pos - hi);
+          const lvl = Math.max(0.0, Math.min(1.0, 1.2 - dseg * 0.7));
+          if (lvl > best) {
+            best = lvl;
+            const hue = Math.floor(noiseAt(s, cyc, 22) * 10) / 10;
+            [starR, starG, starB] = hsv(hue, 1.0, 1.0);
+          }
+        }
+        color = best > 0 ? rgb(starR, starG, starB, best) : [0, 0, 0];
       } else if (effect === "Tide") {
         // Water rises along the flow axis (u); ripples run across it (v).
         const height = 0.46 + 0.25 * Math.sin((v * 1.5 - phase * 0.35) * TAU);

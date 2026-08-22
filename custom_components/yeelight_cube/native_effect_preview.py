@@ -43,7 +43,8 @@ _MUSIC_FLOW_NOTE_PIXELS = frozenset(
 
 
 def _clamp(value: float) -> int:
-    return max(0, min(255, round(value)))
+    # Round half up to match JS Math.round (channel values are always >= 0).
+    return max(0, min(255, math.floor(value + 0.5)))
 
 
 def _rgb(red: float, green: float, blue: float, level: float = 1.0):
@@ -343,15 +344,101 @@ def render_native_effect(
                 heat = max(0.0, 1.0 - u + noise * 0.45 - 0.2 * math.sin((v * 3 + phase) * math.tau))
                 color = _palette(((70, 0, 0), (255, 35, 0), (255, 200, 0), (255, 255, 180)), min(1.0, heat))
             elif effect == "Pinball":
-                center_x = (math.sin(phase * 1.7) + 1.0) * 0.5
-                center_y = abs(math.sin(phase * 2.3))
-                distance = math.hypot((x - center_x) * 1.8, y - center_y)
-                level = max(0.03, 1.0 - distance * 3.6)
-                color = _rgb(255, 65, 190, level)
+                # Triangle-wave bounce (constant velocity, incommensurate x/y
+                # speeds) on a table 2x the visible area: a ball in the margin
+                # is clamped to the border it exited, sliding as a half-ball.
+                # Each ball is point-mirrored through the panel centre, and both
+                # periodically split into a two-child trailing trace (identical
+                # colour/brightness, in sync) while slowly cycling colour.
+                def _tri(t):
+                    return 1.0 - abs((t % 2.0) - 1.0)
+
+                def _ext(t):
+                    return _tri(t) * 2.0 - 0.5
+
+                def _clamp01(c):
+                    return max(0.0, min(1.0, c))
+
+                def _ball1(p):
+                    return _ext(p * 0.309), _ext(p * 0.207 + 0.5)
+
+                def _ball2(p):
+                    return _ext(p * 0.381 + 1.3), _ext(p * 0.267 + 0.9)
+
+                spread = (1.0 - math.cos(phase * 1.25)) * 0.5
+                lag = 0.6
+                offsets = (0.0, spread * lag, spread * lag * 2.0)
+                level = 0.03
+                for _ball in (_ball1, _ball2):
+                    for _dp in offsets:
+                        bx, by = _ball(phase - _dp)
+                        for px, py in (
+                            (_clamp01(bx), _clamp01(by)),
+                            (_clamp01(1.0 - bx), _clamp01(1.0 - by)),
+                        ):
+                            d = math.hypot((x - px) * 2.17, y - py)
+                            contrib = max(0.0, 1.0 - d * 3.6)
+                            if contrib > level:
+                                level = contrib
+                ball_color = _palette(
+                    (
+                        (255, 0, 0),
+                        (148, 0, 211),
+                        (255, 105, 180),
+                        (0, 0, 255),
+                        (0, 255, 255),
+                        (255, 0, 255),
+                        (255, 0, 0),
+                    ),
+                    (phase * 0.12) % 1.0,
+                )
+                color = _rgb(ball_color[0], ball_color[1], ball_color[2], level)
             elif effect == "Shooting Star":
-                position = (u - phase * 0.7) % 1.0
-                trail = max(0.0, 1.0 - position * 5.0)
-                color = _rgb(130 + 125 * trail, 170 + 85 * trail, 255, 0.08 + 0.92 * trail)
+                # Black sky with independent shooting stars. Five slots cap the
+                # count at 5; each runs its own spawn -> travel -> idle-gap cycle
+                # (~50% duty) so 0 and 5 are both rare. Per spawn the lane,
+                # colour (10 rainbow hues), speed and length (4-9 px) are random,
+                # and a fresh spawn can reuse a busy lane. Direction picks the
+                # travel axis and sense:
+                #   Left top->bottom, Right bottom->top (lanes = columns)
+                #   Down left->right,  Up   right->left  (lanes = rows)
+                vertical = direction not in ("Up", "Down")
+                increasing = direction in ("Left", "Down")
+                span = ROWS if vertical else COLS
+                lane_count = COLS if vertical else ROWS
+                lane_idx = col if vertical else row
+                pos = row if vertical else col
+                sphase = phase * 0.4  # 2.5x slower than the raw animation phase
+                best = 0.0
+                star = BLACK
+                for s in range(5):
+                    rate = 0.55 + 0.5 * _noise(s, 0, 7)
+                    t = sphase * rate + _noise(s, 0, 8) * 7.0
+                    cyc = math.floor(t)
+                    local = t - cyc
+                    fall_len = 0.3 + 0.4 * _noise(s, cyc, 33)
+                    if local >= fall_len:
+                        continue
+                    if int(_noise(s, cyc, 11) * lane_count) != lane_idx:
+                        continue
+                    length = 4 + min(5, int(_noise(s, cyc, 44) * 6))
+                    prog = local / fall_len
+                    travel = span + length + 1
+                    if increasing:
+                        head = -1.0 + prog * travel
+                        lo, hi = head - length, head
+                    else:
+                        head = span - prog * travel
+                        lo, hi = head, head + length
+                    dseg = max(0.0, lo - pos, pos - hi)
+                    lvl = max(0.0, min(1.0, 1.2 - dseg * 0.7))
+                    if lvl > best:
+                        best = lvl
+                        hue = int(_noise(s, cyc, 22) * 10) / 10
+                        star = _hsv(hue, 1.0, 1.0)
+                color = (
+                    _rgb(star[0], star[1], star[2], best) if best > 0 else BLACK
+                )
             elif effect == "Tide":
                 # Water rises along the flow axis (u); ripples run across it (v).
                 height = 0.46 + 0.25 * math.sin((v * 1.5 - phase * 0.35) * math.tau)

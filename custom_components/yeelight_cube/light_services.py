@@ -974,6 +974,16 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                 notify = getattr(target, "_notify_camera_preview", None)
                 if notify:
                     notify()
+                # Always reflect the current firmware mode in the entity state so
+                # the lamp preview card switches away from any previous animation
+                # (e.g. Pinball → Clock) even when persist is unchecked.
+                if effect_mode == NATIVE_CLOCK_EFFECT_ID:
+                    target._mode = "Clock"
+                elif native_effect_name is not None:
+                    target._mode = "Native Effect"
+                    target._native_effect = native_effect_name
+                if target.hass is not None:
+                    target.async_write_ha_state()
             elif method == "start_cf":
                 # Color flow leaves the panel on but not in direct FX mode.
                 # It is live-only (not persistable through the state model).
