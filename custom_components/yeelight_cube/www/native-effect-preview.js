@@ -14,6 +14,32 @@ export const PREVIEW_COLS = 20;
 export const PREVIEW_ROWS = 5;
 
 const TAU = Math.PI * 2;
+const TIDE_HEAD_PATHS = [
+  {
+    positions: [
+      16.0, 34.0, 21.0, 40.0, 24.0, 46.0, 29.0, 49.0, 35.0, 58.0, 40.0, 61.0,
+      46.0, 65.0, 49.0, 70.0,
+    ],
+    durations: [
+      5.4, 7.1, 5.8, 6.6, 7.7, 5.2, 6.9, 7.4, 5.6, 6.3, 7.9, 5.1, 6.8, 7.2, 5.9,
+      6.5,
+    ],
+    cycleDuration: 103.4,
+    timeOffset: 0.0,
+  },
+  {
+    positions: [
+      3.0, -16.0, -1.0, -23.0, -5.0, -22.0, -1.0, -15.0, 4.0, -19.0, -3.0,
+      -23.0, -1.0, -16.0, 2.0, -19.0,
+    ],
+    durations: [
+      6.2, 5.3, 7.6, 6.8, 5.7, 7.3, 6.1, 5.5, 7.9, 6.4, 5.1, 7.0, 6.7, 5.8, 7.5,
+      6.0,
+    ],
+    cycleDuration: 102.9,
+    timeOffset: 3.17,
+  },
+];
 
 function clamp(value) {
   return Math.max(0, Math.min(255, Math.round(value)));
@@ -102,6 +128,24 @@ function palette(stops, position) {
     clamp(start[1] + (end[1] - start[1]) * local),
     clamp(start[2] + (end[2] - start[2]) * local),
   ];
+}
+
+function tideHeadPosition(time, headIndex) {
+  const path = TIDE_HEAD_PATHS[headIndex];
+  let local =
+    (((time + path.timeOffset) % path.cycleDuration) + path.cycleDuration) %
+    path.cycleDuration;
+  for (let index = 0; index < path.durations.length; index++) {
+    const duration = path.durations[index];
+    if (local <= duration) {
+      const start = path.positions[index];
+      const end = path.positions[(index + 1) % path.positions.length];
+      const unwrapped = start + (end - start) * (local / duration);
+      return ((unwrapped % PREVIEW_COLS) + PREVIEW_COLS) % PREVIEW_COLS;
+    }
+    local -= duration;
+  }
+  return path.positions[0];
 }
 
 /**
@@ -422,10 +466,51 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
         }
         color = best > 0 ? rgb(starR, starG, starB, best) : [0, 0, 0];
       } else if (effect === "Tide") {
-        // Water rises along the flow axis (u); ripples run across it (v).
-        const height = 0.46 + 0.25 * Math.sin((v * 1.5 - phase * 0.35) * TAU);
-        const level = u > height ? 0.15 : 0.55 + 0.45 * wave;
-        color = rgb(0, 145, 255, level);
+        // Independent heads on the top and bottom rows paint in either
+        // direction for 2-3 seconds at a time. They wrap across the panel edges
+        // and leave fading trails, with opposite row offsets bending each trail.
+        const historyStep = 0.125;
+        const historyStart = Math.floor(phase / historyStep) * historyStep;
+        let bestLevel = 0.0;
+        let paintHue = 0.0;
+        for (let sample = 0; sample <= 72; sample++) {
+          const sampleTime =
+            sample === 0 ? phase : historyStart - (sample - 1) * historyStep;
+          const age = phase - sampleTime;
+          const fade =
+            age <= 1.0 ? 1.0 : Math.max(0.0, 1.0 - (age - 1.0) / 3.0);
+          for (let headIndex = 0; headIndex < 2; headIndex++) {
+            const anchorRow = headIndex === 0 ? 0 : PREVIEW_ROWS - 1;
+            const rowDistance = Math.abs(row - anchorRow);
+            const rowTime = sampleTime - rowDistance * 0.11;
+            const rowOffset =
+              (row - anchorRow) * (headIndex === 0 ? 2.0 : -2.0);
+            const head =
+              (tideHeadPosition(rowTime, headIndex) +
+                rowOffset +
+                PREVIEW_COLS) %
+              PREVIEW_COLS;
+            const directDistance = Math.abs(col - head);
+            const distance = Math.min(
+              directDistance,
+              PREVIEW_COLS - directDistance,
+            );
+            const coverage = Math.max(0.0, Math.min(1.0, 1.35 - distance));
+            const level = coverage * fade;
+            if (level > bestLevel) {
+              bestLevel = level;
+              paintHue =
+                sampleTime * 0.045 -
+                col / PREVIEW_COLS -
+                row * 0.075 +
+                headIndex * 0.12;
+            }
+          }
+        }
+        color =
+          bestLevel > 0
+            ? rgb(...hsv(paintHue, 1.0, 1.0), bestLevel)
+            : [0, 0, 0];
       } else if (effect === "Building block") {
         const block =
           (((Math.trunc(u * 8 - phase * 2.0) + Math.trunc(v * 4)) % 6) + 6) % 6;

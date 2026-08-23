@@ -8,6 +8,88 @@ import math
 COLS = 20
 ROWS = 5
 BLACK = (0, 0, 0)
+_TIDE_HEAD_PATHS = (
+    (
+        (
+            16.0,
+            34.0,
+            21.0,
+            40.0,
+            24.0,
+            46.0,
+            29.0,
+            49.0,
+            35.0,
+            58.0,
+            40.0,
+            61.0,
+            46.0,
+            65.0,
+            49.0,
+            70.0,
+        ),
+        (
+            5.4,
+            7.1,
+            5.8,
+            6.6,
+            7.7,
+            5.2,
+            6.9,
+            7.4,
+            5.6,
+            6.3,
+            7.9,
+            5.1,
+            6.8,
+            7.2,
+            5.9,
+            6.5,
+        ),
+        103.4,
+        0.0,
+    ),
+    (
+        (
+            3.0,
+            -16.0,
+            -1.0,
+            -23.0,
+            -5.0,
+            -22.0,
+            -1.0,
+            -15.0,
+            4.0,
+            -19.0,
+            -3.0,
+            -23.0,
+            -1.0,
+            -16.0,
+            2.0,
+            -19.0,
+        ),
+        (
+            6.2,
+            5.3,
+            7.6,
+            6.8,
+            5.7,
+            7.3,
+            6.1,
+            5.5,
+            7.9,
+            6.4,
+            5.1,
+            7.0,
+            6.7,
+            5.8,
+            7.5,
+            6.0,
+        ),
+        102.9,
+        3.17,
+    ),
+)
 _MUSIC_FLOW_FLOWERS = (
     (4, 2, (255, 55, 160)),
     (10, 1, (255, 126, 40)),
@@ -88,6 +170,18 @@ def _palette(stops: tuple[tuple[int, int, int], ...], position: float):
         _clamp(start[channel] + (end[channel] - start[channel]) * local)
         for channel in range(3)
     )
+
+
+def _tide_head_position(time: float, head_index: int) -> float:
+    positions, durations, cycle_duration, time_offset = _TIDE_HEAD_PATHS[head_index]
+    local = (time + time_offset) % cycle_duration
+    for index, duration in enumerate(durations):
+        if local <= duration:
+            start = positions[index]
+            end = positions[(index + 1) % len(positions)]
+            return (start + (end - start) * (local / duration)) % COLS
+        local -= duration
+    return positions[0]
 
 
 def render_music_flow_effect(effect: str) -> list[tuple[int, int, int]]:
@@ -440,10 +534,54 @@ def render_native_effect(
                     _rgb(star[0], star[1], star[2], best) if best > 0 else BLACK
                 )
             elif effect == "Tide":
-                # Water rises along the flow axis (u); ripples run across it (v).
-                height = 0.46 + 0.25 * math.sin((v * 1.5 - phase * 0.35) * math.tau)
-                level = 0.15 if u > height else 0.55 + 0.45 * wave
-                color = _rgb(0, 145, 255, level)
+                # Independent heads on the top and bottom rows paint in either
+                # direction for 2-3 seconds at a time. They wrap across the
+                # panel edges and leave fading trails, with opposite row offsets
+                # bending each trail.
+                history_step = 0.125
+                history_start = math.floor(phase / history_step) * history_step
+                best_level = 0.0
+                paint_hue = 0.0
+                for sample in range(73):
+                    sample_time = (
+                        phase
+                        if sample == 0
+                        else history_start - (sample - 1) * history_step
+                    )
+                    age = phase - sample_time
+                    fade = (
+                        1.0
+                        if age <= 1.0
+                        else max(0.0, 1.0 - (age - 1.0) / 3.0)
+                    )
+                    for head_index in range(2):
+                        anchor_row = 0 if head_index == 0 else ROWS - 1
+                        row_distance = abs(row - anchor_row)
+                        row_time = sample_time - row_distance * 0.11
+                        row_offset = (row - anchor_row) * (
+                            2.0 if head_index == 0 else -2.0
+                        )
+                        head = (
+                            _tide_head_position(row_time, head_index) + row_offset
+                            + COLS
+                        ) % COLS
+                        direct_distance = abs(col - head)
+                        distance = min(direct_distance, COLS - direct_distance)
+                        coverage = max(0.0, min(1.0, 1.35 - distance))
+                        level = coverage * fade
+                        if level > best_level:
+                            best_level = level
+                            paint_hue = (
+                                sample_time * 0.045
+                                - col / COLS
+                                - row * 0.075
+                                + head_index * 0.12
+                            )
+                color = (
+                    _rgb(*_hsv(paint_hue, 1.0, 1.0), best_level)
+                    if best_level > 0
+                    else BLACK
+                )
             elif effect == "Building block":
                 block = (int((u * 8 - phase * 2.0)) + int(v * 4)) % 6
                 color = ((255, 58, 52), (255, 190, 24), (46, 224, 95), (35, 155, 255), (164, 64, 255), (255, 67, 190))[block]
