@@ -184,6 +184,90 @@ def _tide_head_position(time: float, head_index: int) -> float:
     return positions[0]
 
 
+_BUILDING_BLOCK_BLUE = (0, 135, 255)
+
+
+# Left/Right stack along columns (dots travel over rows); Up/Down stack along
+# rows (dots travel over columns). Dots land at the far end of their lane and
+# pile back toward the entry side; movement matches the direction arrow.
+def _building_block_cells(phase: float, direction: str) -> list:
+    spawn_dt = 0.48  # phase units between successive dots
+    rise = 1.5  # cells travelled per phase unit
+    lane_gap = 2.0 / rise  # keep >= 2 empty cells between moving dots
+    hold = 0.4  # brief full-panel pause before the reset
+    reset_hold = 0.75
+    vertical = direction in ("Left", "Right")
+    lane_count = COLS if vertical else ROWS
+    lane_length = ROWS if vertical else COLS
+    total = lane_count * lane_length
+    moving_forward = direction in ("Right", "Up")
+    counts = [0] * lane_count
+    last_spawn = [-lane_gap] * lane_count
+    events = []
+    spawn_time = reset_hold
+    last_landing = 0.0
+
+    for k in range(total):
+        if k > 0:
+            spawn_time += spawn_dt
+        start_lane = min(lane_count - 1, int(_noise(k, 0, 777) * lane_count))
+        lane = -1
+        for offset in range(lane_count):
+            candidate = (start_lane + offset) % lane_count
+            if (
+                counts[candidate] < lane_length
+                and spawn_time - last_spawn[candidate] >= lane_gap
+            ):
+                lane = candidate
+                break
+        if lane < 0:
+            spawn_time = min(
+                last_spawn[candidate] + lane_gap
+                for candidate in range(lane_count)
+                if counts[candidate] < lane_length
+            )
+            for offset in range(lane_count):
+                candidate = (start_lane + offset) % lane_count
+                if (
+                    counts[candidate] < lane_length
+                    and spawn_time - last_spawn[candidate] >= lane_gap - 1e-9
+                ):
+                    lane = candidate
+                    break
+        target_pos = (
+            lane_length - 1 - counts[lane] if moving_forward else counts[lane]
+        )
+        counts[lane] += 1
+        last_spawn[lane] = spawn_time
+        events.append((lane, target_pos, spawn_time))
+        start_pos = 0 if moving_forward else lane_length - 1
+        last_landing = max(
+            last_landing,
+            spawn_time + abs(target_pos - start_pos) / rise,
+        )
+
+    cycle = last_landing + hold
+    local = ((phase % cycle) + cycle) % cycle
+    grid: list = [None] * total
+    for lane, target_pos, spawn_time in events:
+        if local < spawn_time:
+            continue
+        pos = (
+            rise * (local - spawn_time)
+            if moving_forward
+            else lane_length - 1 - rise * (local - spawn_time)
+        )
+        if moving_forward and pos > target_pos:
+            pos = target_pos
+        if not moving_forward and pos < target_pos:
+            pos = target_pos
+        cell = math.floor(pos + 0.5)
+        if 0 <= cell < lane_length:
+            index = cell * COLS + lane if vertical else lane * COLS + cell
+            grid[index] = _BUILDING_BLOCK_BLUE
+    return grid
+
+
 def render_music_flow_effect(effect: str) -> list[tuple[int, int, int]]:
     """Return a deterministic 20x5 illustration of a Music Flow effect."""
     pixels: list[tuple[int, int, int]] = []
@@ -268,6 +352,7 @@ def render_native_effect(
     """Return one animated 20x5 approximation of a firmware effect."""
     frame = int(phase * 5)
     pixels: list[tuple[int, int, int]] = []
+    building_block_grid = None  # lazily built once per frame
 
     for row in range(ROWS):
         for col in range(COLS):
@@ -583,8 +668,9 @@ def render_native_effect(
                     else BLACK
                 )
             elif effect == "Building block":
-                block = (int((u * 8 - phase * 2.0)) + int(v * 4)) % 6
-                color = ((255, 58, 52), (255, 190, 24), (46, 224, 95), (35, 155, 255), (164, 64, 255), (255, 67, 190))[block]
+                if building_block_grid is None:
+                    building_block_grid = _building_block_cells(phase, direction)
+                color = building_block_grid[row * COLS + col] or BLACK
             elif effect == "Hacking":
                 head = (phase * 0.8 + _noise(col, 0, 0)) % 1.0
                 distance = (head - u) % 1.0

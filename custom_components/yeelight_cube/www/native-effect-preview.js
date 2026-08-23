@@ -148,6 +148,99 @@ function tideHeadPosition(time, headIndex) {
   return path.positions[0];
 }
 
+const BUILDING_BLOCK_BLUE = [0, 135, 255];
+
+// Left/Right stack along columns (dots travel over rows); Up/Down stack along
+// rows (dots travel over columns). Dots land at the far end of their lane and
+// pile back toward the entry side; movement matches the direction arrow.
+function buildingBlockCells(phase, direction) {
+  const spawnDt = 0.48; // phase units between successive dots
+  const rise = 1.5; // cells travelled per phase unit
+  const laneGap = 2.0 / rise; // keep >= 2 empty cells between moving dots
+  const hold = 0.4; // brief full-panel pause before the reset
+  const resetHold = 0.75;
+  const vertical = direction === "Left" || direction === "Right";
+  const laneCount = vertical ? PREVIEW_COLS : PREVIEW_ROWS;
+  const laneLength = vertical ? PREVIEW_ROWS : PREVIEW_COLS;
+  const total = laneCount * laneLength;
+  const movingForward = direction === "Right" || direction === "Up";
+  const counts = new Array(laneCount).fill(0);
+  const lastSpawn = new Array(laneCount).fill(-laneGap);
+  const events = [];
+  let spawnTime = resetHold;
+  let lastLanding = 0.0;
+
+  for (let k = 0; k < total; k++) {
+    if (k > 0) spawnTime += spawnDt;
+    const startLane = Math.min(
+      laneCount - 1,
+      Math.floor(noiseAt(k, 0, 777) * laneCount),
+    );
+    let lane = -1;
+    for (let offset = 0; offset < laneCount; offset++) {
+      const candidate = (startLane + offset) % laneCount;
+      if (
+        counts[candidate] < laneLength &&
+        spawnTime - lastSpawn[candidate] >= laneGap
+      ) {
+        lane = candidate;
+        break;
+      }
+    }
+    if (lane < 0) {
+      let earliest = Infinity;
+      for (let candidate = 0; candidate < laneCount; candidate++) {
+        if (counts[candidate] < laneLength) {
+          earliest = Math.min(earliest, lastSpawn[candidate] + laneGap);
+        }
+      }
+      spawnTime = earliest;
+      for (let offset = 0; offset < laneCount; offset++) {
+        const candidate = (startLane + offset) % laneCount;
+        if (
+          counts[candidate] < laneLength &&
+          spawnTime - lastSpawn[candidate] >= laneGap - 1e-9
+        ) {
+          lane = candidate;
+          break;
+        }
+      }
+    }
+    const targetPos = movingForward
+      ? laneLength - 1 - counts[lane]
+      : counts[lane];
+    counts[lane] += 1;
+    lastSpawn[lane] = spawnTime;
+    events.push([lane, targetPos, spawnTime]);
+    const startPos = movingForward ? 0 : laneLength - 1;
+    lastLanding = Math.max(
+      lastLanding,
+      spawnTime + Math.abs(targetPos - startPos) / rise,
+    );
+  }
+
+  const cycle = lastLanding + hold;
+  const local = ((phase % cycle) + cycle) % cycle;
+  const grid = new Array(total).fill(null);
+  for (const [lane, targetPos, eventTime] of events) {
+    const spawnTime = eventTime;
+    if (local < spawnTime) continue;
+    let pos = movingForward
+      ? rise * (local - spawnTime)
+      : laneLength - 1 - rise * (local - spawnTime);
+    if (movingForward && pos > targetPos) pos = targetPos;
+    if (!movingForward && pos < targetPos) pos = targetPos;
+    const cell = Math.floor(pos + 0.5);
+    if (cell >= 0 && cell < laneLength) {
+      const index = vertical
+        ? cell * PREVIEW_COLS + lane
+        : lane * PREVIEW_COLS + cell;
+      grid[index] = BUILDING_BLOCK_BLUE;
+    }
+  }
+  return grid;
+}
+
 /**
  * Render one animated 20x5 approximation frame of a firmware effect.
  * Returns a flat array of 100 [r,g,b] tuples in row-major order
@@ -156,6 +249,7 @@ function tideHeadPosition(time, headIndex) {
 export function renderNativeEffect(effect, phase, direction = "Up") {
   const frame = Math.floor(phase * 5);
   const pixels = [];
+  let buildingBlockGrid = null; // lazily built once per frame
 
   for (let row = 0; row < PREVIEW_ROWS; row++) {
     for (let col = 0; col < PREVIEW_COLS; col++) {
@@ -512,16 +606,10 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
             ? rgb(...hsv(paintHue, 1.0, 1.0), bestLevel)
             : [0, 0, 0];
       } else if (effect === "Building block") {
-        const block =
-          (((Math.trunc(u * 8 - phase * 2.0) + Math.trunc(v * 4)) % 6) + 6) % 6;
-        color = [
-          [255, 58, 52],
-          [255, 190, 24],
-          [46, 224, 95],
-          [35, 155, 255],
-          [164, 64, 255],
-          [255, 67, 190],
-        ][block];
+        if (buildingBlockGrid === null) {
+          buildingBlockGrid = buildingBlockCells(phase, direction);
+        }
+        color = buildingBlockGrid[row * PREVIEW_COLS + col] || [0, 0, 0];
       } else if (effect === "Hacking") {
         const head = (phase * 0.8 + noiseAt(col, 0, 0)) % 1.0;
         const distance = (((head - u) % 1.0) + 1.0) % 1.0;

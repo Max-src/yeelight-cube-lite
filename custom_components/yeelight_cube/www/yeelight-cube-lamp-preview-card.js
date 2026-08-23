@@ -387,6 +387,8 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     this._effectDebounceTimer = null;
     this._renderDebounceTimer = null; // Debounce rendering to avoid flicker
     this._renderScheduled = false;
+    this._nativeAnimKey = null;
+    this._nativeAnimStartedAt = null;
 
     // Local state for optimistic UI updates
     this._localBrightness = null;
@@ -2425,6 +2427,8 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       clearInterval(this._nativeAnimTimer);
       this._nativeAnimTimer = null;
     }
+    this._nativeAnimKey = null;
+    this._nativeAnimStartedAt = null;
   }
 
   // Begin the client-side clock animation (updates every 500 ms so the
@@ -2500,8 +2504,15 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       1,
       Math.min(100, Number(st.attributes.native_effect_speed ?? 50)),
     );
+    const now = performance.now();
+    const animationKey = `${effect}\u0000${dir}`;
+    if (animationKey !== this._nativeAnimKey) {
+      this._nativeAnimKey = animationKey;
+      this._nativeAnimStartedAt = now;
+    }
     // Match the camera's phase mapping (native_effect_preview usage).
-    const phase = (performance.now() / 1000) * (0.25 + speed / 55.0);
+    const phase =
+      ((now - this._nativeAnimStartedAt) / 1000) * (0.25 + speed / 55.0);
     const pix = renderNativeEffect(effect, phase, dir); // row-major, top->bottom
 
     // _updateMatrixColors already applies the top/bottom flip that matches the

@@ -124,6 +124,8 @@ class _YeelightCubeMatrixCameraBase(Camera):
         self._attr_frame_interval = 1
         self._attr_content_type = "image/png"
         self._cached_image: bytes | None = None
+        self._native_preview_key: tuple[str, str] | None = None
+        self._native_preview_started_at: float | None = None
 
     # ── Device grouping ────────────────────────────────────────────────
     @property
@@ -251,11 +253,18 @@ class _YeelightCubeMatrixCameraBase(Camera):
         """Render a local approximation of the active firmware animation."""
         le = self._light_entity
         speed = max(1, min(100, int(getattr(le, "_native_effect_speed", 50))))
-        phase = _time.monotonic() * (0.25 + speed / 55.0)
+        effect = getattr(le, "_native_effect", "Streamer")
+        direction = getattr(le, "_native_effect_direction", "Up")
+        now = _time.monotonic()
+        animation_key = (effect, direction)
+        if animation_key != self._native_preview_key:
+            self._native_preview_key = animation_key
+            self._native_preview_started_at = now
+        phase = (now - self._native_preview_started_at) * (0.25 + speed / 55.0)
         return render_native_effect(
-            getattr(le, "_native_effect", "Streamer"),
+            effect,
             phase,
-            getattr(le, "_native_effect_direction", "Up"),
+            direction,
         )
 
     def _get_music_flow_preview(self) -> list[tuple[int, int, int]]:
