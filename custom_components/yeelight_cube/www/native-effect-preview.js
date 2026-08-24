@@ -691,10 +691,89 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
           color = rgb(25, 255, 85, level);
         }
       } else if (effect === "Flower Sea") {
-        const petal = Math.abs(
-          Math.sin((x * 3.5 + y * 2.0 + phase * 0.25) * TAU),
-        );
-        color = hsv(0.82 + 0.22 * x + phase * 0.03, 0.75, 0.25 + 0.75 * petal);
+        // Aurora-style flowing snakes, but each area is ~2x larger and rendered
+        // in shades of pink: a baby-pink sea deepening to hot pink / near-magenta
+        // where areas overlap. Each snake carries its own pink hue.
+        const cellCount = PREVIEW_COLS * PREVIEW_ROWS;
+        const idx =
+          direction === "Up" || direction === "Down"
+            ? col * PREVIEW_ROWS + row
+            : row * PREVIEW_COLS + col;
+        const coreHalf = 7.0; // 2x Aurora
+        const falloff = 48.0; // 2x Aurora
+        const reach = coreHalf + falloff;
+        const last = cellCount - 1;
+        const v = 9.0;
+        const fadeIn = 0.73; // 3x faster appear than Aurora
+        const span = last + 2 * reach;
+        const minTravel = 0.4 * span;
+        const maxLife = span / v;
+        const spawn = maxLife / 3.5;
+        let t = 0.0;
+        let winHue = 0.95; // warm baby-pink for snake peaks
+        const nLo = Math.floor((phase - maxLife) / spawn) - 1;
+        const nHi = Math.floor(phase / spawn) + 1;
+        for (let n = nLo; n <= nHi; n++) {
+          const emit =
+            n * spawn + (noiseAt(n + 4096, 7, 0) - 0.5) * spawn * 0.4;
+          const age = phase - emit;
+          if (age < 0.0) continue;
+          const p0 = -reach + noiseAt(n + 4096, 11, 0) * span;
+          let dir;
+          if (p0 < 0) dir = 1;
+          else if (p0 > last) dir = -1;
+          else {
+            dir = noiseAt(n + 4096, 9, 0) < 0.5 ? 1 : -1;
+            const travel = dir > 0 ? last + reach - p0 : p0 + reach;
+            if (travel < minTravel) dir = -dir;
+          }
+          const life = dir > 0 ? (last + reach - p0) / v : (p0 + reach) / v;
+          if (age > life) continue;
+          const center = p0 + dir * v * age;
+          const fade = Math.min(1.0, age / fadeIn);
+          const d = Math.abs(idx - center);
+          let ti = 0.0;
+          if (d <= coreHalf) ti = 1.0;
+          else if (d <= reach) ti = 1.0 - (d - coreHalf) / falloff;
+          ti *= fade;
+          if (ti > t) {
+            t = ti;
+            winHue = 0.93 + 0.05 * noiseAt(n + 8192, 13, 0);
+          }
+        }
+        // Half-sized snake always spawning from the centre; adds ~1 extra snake.
+        const coreHalf2 = 3.5;
+        const falloff2 = 24.0;
+        const reach2 = coreHalf2 + falloff2;
+        const p0c = last / 2.0;
+        const maxLife2 = (p0c + reach2) / v;
+        const spawn2 = maxLife2;
+        const nLo2 = Math.floor((phase - maxLife2) / spawn2) - 1;
+        const nHi2 = Math.floor(phase / spawn2) + 1;
+        for (let n = nLo2; n <= nHi2; n++) {
+          const emit2 =
+            n * spawn2 + (noiseAt(n + 8888, 7, 0) - 0.5) * spawn2 * 0.2;
+          const age2 = phase - emit2;
+          if (age2 < 0.0) continue;
+          const dir2 = noiseAt(n + 8888, 9, 0) < 0.5 ? 1 : -1;
+          const life2 =
+            dir2 > 0 ? (last + reach2 - p0c) / v : (p0c + reach2) / v;
+          if (age2 > life2) continue;
+          const center2 = p0c + dir2 * v * age2;
+          const fade2 = Math.min(1.0, age2 / fadeIn);
+          const d2 = Math.abs(idx - center2);
+          let ti2 = 0.0;
+          if (d2 <= coreHalf2) ti2 = 1.0;
+          else if (d2 <= reach2) ti2 = 1.0 - (d2 - coreHalf2) / falloff2;
+          ti2 *= fade2;
+          if (ti2 > t) {
+            t = ti2;
+            winHue = 0.93 + 0.05 * noiseAt(n + 9999, 13, 0);
+          }
+        }
+        // Background is hot pink; snake peaks are warm bright baby pink.
+        const hue = 0.9 + (winHue - 0.9) * t;
+        color = hsv(hue, 0.85 - 0.45 * t, 0.55 + 0.45 * t);
       } else if (effect === "Magic") {
         const angle = Math.atan2(y - 0.5, x - 0.5) / TAU;
         const radius = Math.hypot((x - 0.5) * 1.6, y - 0.5);

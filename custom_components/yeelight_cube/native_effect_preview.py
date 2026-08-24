@@ -738,8 +738,92 @@ def render_native_effect(
                     level = 1.0 if distance < 0.08 else max(0.04, 0.65 - distance * 1.8)
                     color = _rgb(25, 255, 85, level)
             elif effect == "Flower Sea":
-                petal = abs(math.sin((x * 3.5 + y * 2.0 + phase * 0.25) * math.tau))
-                color = _hsv(0.82 + 0.22 * x + phase * 0.03, 0.75, 0.25 + 0.75 * petal)
+                # Aurora-style flowing snakes, but each area is ~2x larger and
+                # rendered in shades of pink: a baby-pink sea deepening to hot
+                # pink / near-magenta where areas overlap. Each snake carries its
+                # own pink hue.
+                cell_count = COLS * ROWS
+                if direction in ("Up", "Down"):
+                    idx = col * ROWS + row
+                else:
+                    idx = row * COLS + col
+                core_half = 7.0  # 2x Aurora
+                falloff = 48.0  # 2x Aurora
+                reach = core_half + falloff
+                last = cell_count - 1
+                v = 9.0
+                fade_in = 0.73  # 3x faster appear than Aurora
+                span = last + 2 * reach
+                min_travel = 0.4 * span
+                max_life = span / v
+                spawn = max_life / 3.5
+                t = 0.0
+                win_hue = 0.95  # warm baby-pink for snake peaks
+                n = math.floor((phase - max_life) / spawn) - 1
+                n_hi = math.floor(phase / spawn) + 1
+                while n <= n_hi:
+                    emit = n * spawn + (_noise(n + 4096, 7, 0) - 0.5) * spawn * 0.4
+                    age = phase - emit
+                    if age >= 0.0:
+                        p0 = -reach + _noise(n + 4096, 11, 0) * span
+                        if p0 < 0:
+                            a_dir = 1
+                        elif p0 > last:
+                            a_dir = -1
+                        else:
+                            a_dir = 1 if _noise(n + 4096, 9, 0) < 0.5 else -1
+                            travel = last + reach - p0 if a_dir > 0 else p0 + reach
+                            if travel < min_travel:
+                                a_dir = -a_dir
+                        life = (last + reach - p0) / v if a_dir > 0 else (p0 + reach) / v
+                        if age <= life:
+                            center = p0 + a_dir * v * age
+                            fade = min(1.0, age / fade_in)
+                            d = abs(idx - center)
+                            if d <= core_half:
+                                ti = 1.0
+                            elif d <= reach:
+                                ti = 1.0 - (d - core_half) / falloff
+                            else:
+                                ti = 0.0
+                            ti *= fade
+                            if ti > t:
+                                t = ti
+                                win_hue = 0.93 + 0.05 * _noise(n + 8192, 13, 0)
+                    n += 1
+                # Half-sized snake always spawning from the centre; adds ~1 extra snake.
+                core_half2 = 3.5
+                falloff2 = 24.0
+                reach2 = core_half2 + falloff2
+                p0c = last / 2.0
+                max_life2 = (p0c + reach2) / v
+                spawn2 = max_life2
+                n2 = math.floor((phase - max_life2) / spawn2) - 1
+                n2_hi = math.floor(phase / spawn2) + 1
+                while n2 <= n2_hi:
+                    emit2 = n2 * spawn2 + (_noise(n2 + 8888, 7, 0) - 0.5) * spawn2 * 0.2
+                    age2 = phase - emit2
+                    if age2 >= 0.0:
+                        dir2 = 1 if _noise(n2 + 8888, 9, 0) < 0.5 else -1
+                        life2 = (last + reach2 - p0c) / v if dir2 > 0 else (p0c + reach2) / v
+                        if age2 <= life2:
+                            center2 = p0c + dir2 * v * age2
+                            fade2 = min(1.0, age2 / fade_in)
+                            d2 = abs(idx - center2)
+                            if d2 <= core_half2:
+                                ti2 = 1.0
+                            elif d2 <= reach2:
+                                ti2 = 1.0 - (d2 - core_half2) / falloff2
+                            else:
+                                ti2 = 0.0
+                            ti2 *= fade2
+                            if ti2 > t:
+                                t = ti2
+                                win_hue = 0.93 + 0.05 * _noise(n2 + 9999, 13, 0)
+                    n2 += 1
+                # Background is hot pink; snake peaks are warm bright baby pink.
+                hue = 0.90 + (win_hue - 0.90) * t
+                color = _hsv(hue, 0.85 - 0.45 * t, 0.55 + 0.45 * t)
             elif effect == "Magic":
                 angle = math.atan2(y - 0.5, x - 0.5) / math.tau
                 radius = math.hypot((x - 0.5) * 1.6, y - 0.5)
