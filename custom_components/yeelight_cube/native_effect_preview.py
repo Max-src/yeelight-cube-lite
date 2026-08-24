@@ -380,12 +380,113 @@ def render_music_flow_effect(effect: str) -> list[tuple[int, int, int]]:
     return pixels
 
 
+def _render_magic(phase: float) -> list[tuple[int, int, int]]:
+    """Render the two-field Magic effect with measured frame-level limits."""
+    def waypoint(seed_x, seed_y, index):
+        return (
+            _noise(seed_x, index, 0) * 2.0 - 1.0,
+            _noise(seed_y, index, 0) * 2.0 - 1.0,
+        )
+
+    def wander(seed_x, seed_y, tt):
+        index = math.floor(tt)
+        fraction = tt - index
+        p0 = waypoint(seed_x, seed_y, index - 1)
+        p1 = waypoint(seed_x, seed_y, index)
+        p2 = waypoint(seed_x, seed_y, index + 1)
+        p3 = waypoint(seed_x, seed_y, index + 2)
+        fraction2 = fraction * fraction
+        fraction3 = fraction2 * fraction
+        return tuple(
+            0.5
+            * (
+                2.0 * p1[axis]
+                + (-p0[axis] + p2[axis]) * fraction
+                + (2.0 * p0[axis] - 5.0 * p1[axis] + 4.0 * p2[axis] - p3[axis]) * fraction2
+                + (-p0[axis] + 3.0 * p1[axis] - 3.0 * p2[axis] + p3[axis]) * fraction3
+            )
+            for axis in range(2)
+        )
+
+    oscillation = math.sin(phase * 0.40)
+    radii = (27.0 + 13.0 * oscillation, 27.0 - 13.0 * oscillation)
+    points = []
+    for index, (seed_x, seed_y, offset) in enumerate(((11, 12, 0.0), (13, 14, 2.7))):
+        wx, wy = wander(seed_x, seed_y, phase * 0.225 + offset)
+        stretch = 0.25 * math.sin(phase * 0.31 + index * 1.7)
+        points.append((9.5 + 20.0 * wx, 2.0 + 5.0 * wy, radii[index], 1.0 + stretch, 1.0 - stretch))
+
+    hues = []
+    for row in range(ROWS):
+        for col in range(COLS):
+            samples = []
+            for px, py, radius, scale_x, scale_y in points:
+                distance = math.hypot((col - px) * scale_x, (row - py) * scale_y)
+                radial = max(0.0, distance / radius - 0.03)
+                source_hue = 0.88 * math.tanh(2.4 * radial) ** 0.75
+                weight = 1.0 / (distance * distance * 0.08 + 1.0)
+                samples.append((source_hue, weight))
+            sine_sum = sum(weight * math.sin(math.tau * hue) for hue, weight in samples)
+            cosine_sum = sum(weight * math.cos(math.tau * hue) for hue, weight in samples)
+            hue = math.atan2(sine_sum, cosine_sum) / math.tau % 1.0
+            reddest_source = min(source_hue for source_hue, _ in samples)
+            dominant_hue = max(samples, key=lambda sample: sample[1])[0]
+            if reddest_source < 0.025:
+                hue = reddest_source
+            elif hue < 0.075 or hue > 0.96:
+                hue = max(0.08, dominant_hue)
+            if hue < 0.075:
+                hue *= 0.08 / 0.075
+            elif hue < 0.14:
+                hue = 0.08 + (hue - 0.075) * 0.12 / 0.065
+            elif hue < 0.44:
+                hue = 0.20 + (hue - 0.14) * 0.23 / 0.30
+            elif hue < 0.59:
+                hue = 0.43 + (hue - 0.44) * 0.15 / 0.15
+            elif hue < 0.75:
+                hue = 0.58 + (hue - 0.59) * 0.17 / 0.16
+            hues.append(hue)
+
+    ordered_hues = sorted(hues)
+    extended_hues = ordered_hues + [hue + 1.0 for hue in ordered_hues]
+    hue_span = min(extended_hues[index + 89] - extended_hues[index] for index in range(100))
+    if hue_span < 0.217:
+        sine_mean = sum(math.sin(math.tau * hue) for hue in hues) / len(hues)
+        cosine_mean = sum(math.cos(math.tau * hue) for hue in hues) / len(hues)
+        center = math.atan2(sine_mean, cosine_mean) / math.tau % 1.0
+        scale = 0.217 / max(hue_span, 1e-6)
+        hues = [
+            (center + ((hue - center + 0.5) % 1.0 - 0.5) * scale) % 1.0
+            for hue in hues
+        ]
+
+    def cool_count(values):
+        return sum(0.58 <= hue < 0.96 for hue in values)
+
+    if cool_count(hues) > 88:
+        for step in range(1, 51):
+            shift = step * 0.01
+            shifted = [(hue - shift) % 1.0 for hue in hues]
+            if cool_count(shifted) <= 88:
+                hues = shifted
+                break
+            shifted = [(hue + shift) % 1.0 for hue in hues]
+            if cool_count(shifted) <= 88:
+                hues = shifted
+                break
+
+    return [_hsv(hue, 1.0, 1.0) for hue in hues]
+
+
 def render_native_effect(
     effect: str,
     phase: float,
     direction: str = "Up",
 ) -> list[tuple[int, int, int]]:
     """Return one animated 20x5 approximation of a firmware effect."""
+    if effect == "Magic":
+        return _render_magic(phase)
+
     frame = int(phase * 5)
     pixels: list[tuple[int, int, int]] = []
     building_block_grid = None  # lazily built once per frame
@@ -824,10 +925,6 @@ def render_native_effect(
                 # Background is hot pink; snake peaks are warm bright baby pink.
                 hue = 0.90 + (win_hue - 0.90) * t
                 color = _hsv(hue, 0.85 - 0.45 * t, 0.55 + 0.45 * t)
-            elif effect == "Magic":
-                angle = math.atan2(y - 0.5, x - 0.5) / math.tau
-                radius = math.hypot((x - 0.5) * 1.6, y - 0.5)
-                color = _hsv(angle + radius - phase * 0.2, 0.85, 0.35 + 0.65 * wave)
             elif effect == "Wonderland":
                 color = _hsv(0.48 + x * 0.36 + phase * 0.025, 0.48, 0.55 + 0.45 * wave)
             elif effect == "Kaleidoscope":

@@ -289,12 +289,136 @@ function buildingBlockCells(phase, direction) {
   return grid;
 }
 
+function renderMagic(phase) {
+  const waypoint = (seedX, seedY, index) => [
+    noiseAt(seedX, index, 0) * 2.0 - 1.0,
+    noiseAt(seedY, index, 0) * 2.0 - 1.0,
+  ];
+  const wander = (seedX, seedY, time) => {
+    const index = Math.floor(time);
+    const fraction = time - index;
+    const p0 = waypoint(seedX, seedY, index - 1);
+    const p1 = waypoint(seedX, seedY, index);
+    const p2 = waypoint(seedX, seedY, index + 1);
+    const p3 = waypoint(seedX, seedY, index + 2);
+    const fraction2 = fraction * fraction;
+    const fraction3 = fraction2 * fraction;
+    return [0, 1].map(
+      (axis) =>
+        0.5 *
+        (2.0 * p1[axis] +
+          (-p0[axis] + p2[axis]) * fraction +
+          (2.0 * p0[axis] - 5.0 * p1[axis] + 4.0 * p2[axis] - p3[axis]) *
+            fraction2 +
+          (-p0[axis] + 3.0 * p1[axis] - 3.0 * p2[axis] + p3[axis]) * fraction3),
+    );
+  };
+
+  const oscillation = Math.sin(phase * 0.4);
+  const radii = [27.0 + 13.0 * oscillation, 27.0 - 13.0 * oscillation];
+  const settings = [
+    [11, 12, 0.0],
+    [13, 14, 2.7],
+  ];
+  const points = settings.map(([seedX, seedY, offset], index) => {
+    const [wx, wy] = wander(seedX, seedY, phase * 0.225 + offset);
+    const stretch = 0.25 * Math.sin(phase * 0.31 + index * 1.7);
+    return [
+      9.5 + 20.0 * wx,
+      2.0 + 5.0 * wy,
+      radii[index],
+      1.0 + stretch,
+      1.0 - stretch,
+    ];
+  });
+
+  let hues = [];
+  for (let row = 0; row < PREVIEW_ROWS; row++) {
+    for (let col = 0; col < PREVIEW_COLS; col++) {
+      const samples = points.map(([px, py, radius, scaleX, scaleY]) => {
+        const distance = Math.hypot((col - px) * scaleX, (row - py) * scaleY);
+        const radial = Math.max(0.0, distance / radius - 0.03);
+        return [
+          0.88 * Math.tanh(2.4 * radial) ** 0.75,
+          1.0 / (distance * distance * 0.08 + 1.0),
+        ];
+      });
+      const sineSum = samples.reduce(
+        (sum, [hue, weight]) => sum + weight * Math.sin(TAU * hue),
+        0.0,
+      );
+      const cosineSum = samples.reduce(
+        (sum, [hue, weight]) => sum + weight * Math.cos(TAU * hue),
+        0.0,
+      );
+      let hue = Math.atan2(sineSum, cosineSum) / TAU;
+      if (hue < 0.0) hue += 1.0;
+      const reddestSource = Math.min(
+        ...samples.map(([sourceHue]) => sourceHue),
+      );
+      const dominantHue = samples.reduce((dominant, sample) =>
+        sample[1] > dominant[1] ? sample : dominant,
+      )[0];
+      if (reddestSource < 0.025) hue = reddestSource;
+      else if (hue < 0.075 || hue > 0.96) hue = Math.max(0.08, dominantHue);
+      if (hue < 0.075) hue *= 0.08 / 0.075;
+      else if (hue < 0.14) hue = 0.08 + ((hue - 0.075) * 0.12) / 0.065;
+      else if (hue < 0.44) hue = 0.2 + ((hue - 0.14) * 0.23) / 0.3;
+      else if (hue < 0.59) hue = 0.43 + ((hue - 0.44) * 0.15) / 0.15;
+      else if (hue < 0.75) hue = 0.58 + ((hue - 0.59) * 0.17) / 0.16;
+      hues.push(hue);
+    }
+  }
+
+  const orderedHues = [...hues].sort((left, right) => left - right);
+  const extendedHues = orderedHues.concat(orderedHues.map((hue) => hue + 1.0));
+  let hueSpan = Infinity;
+  for (let index = 0; index < 100; index++) {
+    hueSpan = Math.min(hueSpan, extendedHues[index + 89] - extendedHues[index]);
+  }
+  if (hueSpan < 0.217) {
+    const sineMean =
+      hues.reduce((sum, hue) => sum + Math.sin(TAU * hue), 0.0) / hues.length;
+    const cosineMean =
+      hues.reduce((sum, hue) => sum + Math.cos(TAU * hue), 0.0) / hues.length;
+    let center = Math.atan2(sineMean, cosineMean) / TAU;
+    if (center < 0.0) center += 1.0;
+    const scale = 0.217 / Math.max(hueSpan, 1e-6);
+    hues = hues.map((hue) => {
+      const difference = ((((hue - center + 0.5) % 1.0) + 1.0) % 1.0) - 0.5;
+      return (((center + difference * scale) % 1.0) + 1.0) % 1.0;
+    });
+  }
+
+  const coolCount = (values) =>
+    values.filter((hue) => hue >= 0.58 && hue < 0.96).length;
+  if (coolCount(hues) > 88) {
+    for (let step = 1; step <= 50; step++) {
+      const shift = step * 0.01;
+      let shifted = hues.map((hue) => (((hue - shift) % 1.0) + 1.0) % 1.0);
+      if (coolCount(shifted) <= 88) {
+        hues = shifted;
+        break;
+      }
+      shifted = hues.map((hue) => (hue + shift) % 1.0);
+      if (coolCount(shifted) <= 88) {
+        hues = shifted;
+        break;
+      }
+    }
+  }
+
+  return hues.map((hue) => hsv(hue, 1.0, 1.0));
+}
+
 /**
  * Render one animated 20x5 approximation frame of a firmware effect.
  * Returns a flat array of 100 [r,g,b] tuples in row-major order
  * (row 0 = top, col 0 = left).
  */
 export function renderNativeEffect(effect, phase, direction = "Up") {
+  if (effect === "Magic") return renderMagic(phase);
+
   const frame = Math.floor(phase * 5);
   const pixels = [];
   let buildingBlockGrid = null; // lazily built once per frame
@@ -774,10 +898,6 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
         // Background is hot pink; snake peaks are warm bright baby pink.
         const hue = 0.9 + (winHue - 0.9) * t;
         color = hsv(hue, 0.85 - 0.45 * t, 0.55 + 0.45 * t);
-      } else if (effect === "Magic") {
-        const angle = Math.atan2(y - 0.5, x - 0.5) / TAU;
-        const radius = Math.hypot((x - 0.5) * 1.6, y - 0.5);
-        color = hsv(angle + radius - phase * 0.2, 0.85, 0.35 + 0.65 * wave);
       } else if (effect === "Wonderland") {
         color = hsv(0.48 + x * 0.36 + phase * 0.025, 0.48, 0.55 + 0.45 * wave);
       } else if (effect === "Kaleidoscope") {
