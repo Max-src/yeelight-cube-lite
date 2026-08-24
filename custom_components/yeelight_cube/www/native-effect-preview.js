@@ -150,6 +150,54 @@ function tideHeadPosition(time, headIndex) {
 
 const BUILDING_BLOCK_BLUE = [0, 135, 255];
 
+const HACKING_GREENS = [
+  [60, 255, 80],
+  [0, 210, 45],
+  [25, 165, 50],
+];
+// Glyphs in display orientation (row 0 = top): 4 wide x 3 tall, centred with an
+// empty row above and below. 0 is a hollow box; 1 has a top-left tick.
+const HACKING_ZERO = [
+  [1, 1, 1, 1],
+  [1, 0, 0, 1],
+  [1, 1, 1, 1],
+];
+const HACKING_ONE = [
+  [1, 0, 0, 0],
+  [1, 1, 1, 1],
+  [1, 0, 0, 1],
+];
+const HACKING_GLYPH_ROWS = 3;
+const HACKING_DIGIT_COUNT = 128; // long enough that the scroll loop is unnoticeable
+let hackingStripCache = null;
+
+// Deterministic strip of random 0/1 digits, one gap column between each,
+// laid out once and reused (independent of phase).
+function hackingStrip() {
+  if (hackingStripCache) return hackingStripCache;
+  const specs = [];
+  let width = 0;
+  for (let d = 0; d < HACKING_DIGIT_COUNT; d++) {
+    const glyph = noiseAt(d, 0, 101) > 0.5 ? HACKING_ONE : HACKING_ZERO;
+    const shade = Math.min(2, Math.floor(noiseAt(d, 0, 202) * 3));
+    specs.push({ glyph, shade, x: width });
+    width += glyph[0].length + 1; // 1-column gap after each digit
+  }
+  const cells = new Array(width * HACKING_GLYPH_ROWS).fill(null);
+  const shades = new Array(width).fill(null); // per-column digit shade (incl. gap)
+  for (const { glyph, shade, x } of specs) {
+    const color = HACKING_GREENS[shade];
+    for (let xx = 0; xx < glyph[0].length + 1; xx++) shades[x + xx] = color;
+    for (let gr = 0; gr < HACKING_GLYPH_ROWS; gr++) {
+      for (let gx = 0; gx < glyph[gr].length; gx++) {
+        if (glyph[gr][gx]) cells[gr * width + x + gx] = color;
+      }
+    }
+  }
+  hackingStripCache = { cells, shades, width };
+  return hackingStripCache;
+}
+
 // Left/Right stack along columns (dots travel over rows); Up/Down stack along
 // rows (dots travel over columns). Dots land at the far end of their lane and
 // pile back toward the entry side; movement matches the direction arrow.
@@ -611,11 +659,37 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
         }
         color = buildingBlockGrid[row * PREVIEW_COLS + col] || [0, 0, 0];
       } else if (effect === "Hacking") {
-        const head = (phase * 0.8 + noiseAt(col, 0, 0)) % 1.0;
-        const distance = (((head - u) % 1.0) + 1.0) % 1.0;
-        const level =
-          distance < 0.08 ? 1.0 : Math.max(0.04, 0.65 - distance * 1.8);
-        color = rgb(25, 255, 85, level);
+        if (direction === "Down" || direction === "Up") {
+          if (row < 1 || row > 3) {
+            color = [0, 0, 0];
+          } else {
+            const { cells, shades, width } = hackingStrip();
+            const offset = Math.floor(phase * 1.5);
+            const down = direction === "Down";
+            const x = down
+              ? (((col + offset) % width) + width) % width
+              : (((offset - col) % width) + width) % width;
+            const gr = down ? row - 1 : 3 - row;
+            const entryCol = down ? PREVIEW_COLS - 1 : 0;
+            // Hardware artefact: while a character is still scrolling in, the
+            // entry-edge column lights all 3 rows, tinted with the shade of the
+            // character currently leaving the opposite edge.
+            if (col === entryCol && x % 5 <= 2) {
+              const exitPos = down
+                ? ((offset % width) + width) % width
+                : (((offset - (PREVIEW_COLS - 1)) % width) + width) % width;
+              color = shades[exitPos] || [0, 0, 0];
+            } else {
+              color = cells[gr * width + x] || [0, 0, 0];
+            }
+          }
+        } else {
+          const head = (phase * 0.8 + noiseAt(col, 0, 0)) % 1.0;
+          const distance = (((head - u) % 1.0) + 1.0) % 1.0;
+          const level =
+            distance < 0.08 ? 1.0 : Math.max(0.04, 0.65 - distance * 1.8);
+          color = rgb(25, 255, 85, level);
+        }
       } else if (effect === "Flower Sea") {
         const petal = Math.abs(
           Math.sin((x * 3.5 + y * 2.0 + phase * 0.25) * TAU),

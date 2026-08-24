@@ -186,6 +186,42 @@ def _tide_head_position(time: float, head_index: int) -> float:
 
 _BUILDING_BLOCK_BLUE = (0, 135, 255)
 
+_HACKING_GREENS = ((60, 255, 80), (0, 210, 45), (25, 165, 50))
+# Glyphs in display orientation (row 0 = top): 4 wide x 3 tall, centred with an
+# empty row above and below. 0 is a hollow box; 1 has a top-left tick.
+_HACKING_ZERO = ((1, 1, 1, 1), (1, 0, 0, 1), (1, 1, 1, 1))
+_HACKING_ONE = ((1, 0, 0, 0), (1, 1, 1, 1), (1, 0, 0, 1))
+_HACKING_GLYPH_ROWS = 3
+_HACKING_DIGIT_COUNT = 128
+_hacking_strip_cache = None
+
+
+def _hacking_strip():
+    # Deterministic strip of random 0/1 digits with a one-column gap between
+    # each, laid out once and reused (independent of phase).
+    global _hacking_strip_cache
+    if _hacking_strip_cache is not None:
+        return _hacking_strip_cache
+    specs = []
+    width = 0
+    for d in range(_HACKING_DIGIT_COUNT):
+        glyph = _HACKING_ONE if _noise(d, 0, 101) > 0.5 else _HACKING_ZERO
+        shade = min(2, int(_noise(d, 0, 202) * 3))
+        specs.append((glyph, shade, width))
+        width += len(glyph[0]) + 1
+    cells = [None] * (width * _HACKING_GLYPH_ROWS)
+    shades = [None] * width  # per-column digit shade (incl. gap)
+    for glyph, shade, x in specs:
+        color = _HACKING_GREENS[shade]
+        for xx in range(len(glyph[0]) + 1):
+            shades[x + xx] = color
+        for gr in range(_HACKING_GLYPH_ROWS):
+            for gx in range(len(glyph[gr])):
+                if glyph[gr][gx]:
+                    cells[gr * width + x + gx] = color
+    _hacking_strip_cache = (cells, shades, width)
+    return _hacking_strip_cache
+
 
 # Left/Right stack along columns (dots travel over rows); Up/Down stack along
 # rows (dots travel over columns). Dots land at the far end of their lane and
@@ -672,10 +708,35 @@ def render_native_effect(
                     building_block_grid = _building_block_cells(phase, direction)
                 color = building_block_grid[row * COLS + col] or BLACK
             elif effect == "Hacking":
-                head = (phase * 0.8 + _noise(col, 0, 0)) % 1.0
-                distance = (head - u) % 1.0
-                level = 1.0 if distance < 0.08 else max(0.04, 0.65 - distance * 1.8)
-                color = _rgb(25, 255, 85, level)
+                if direction in ("Down", "Up"):
+                    if row < 1 or row > 3:
+                        color = BLACK
+                    else:
+                        cells, shades, width = _hacking_strip()
+                        offset = math.floor(phase * 1.5)
+                        down = direction == "Down"
+                        if down:
+                            x = (col + offset) % width
+                            gr = row - 1
+                            entry_col = COLS - 1
+                            exit_pos = offset % width
+                        else:
+                            x = (offset - col) % width
+                            gr = 3 - row
+                            entry_col = 0
+                            exit_pos = (offset - (COLS - 1)) % width
+                        # Hardware artefact: while a character is still scrolling
+                        # in, the entry-edge column lights all 3 rows, tinted with
+                        # the shade of the character leaving the opposite edge.
+                        if col == entry_col and x % 5 <= 2:
+                            color = shades[exit_pos] or BLACK
+                        else:
+                            color = cells[gr * width + x] or BLACK
+                else:
+                    head = (phase * 0.8 + _noise(col, 0, 0)) % 1.0
+                    distance = ((head - u) % 1.0 + 1.0) % 1.0
+                    level = 1.0 if distance < 0.08 else max(0.04, 0.65 - distance * 1.8)
+                    color = _rgb(25, 255, 85, level)
             elif effect == "Flower Sea":
                 petal = abs(math.sin((x * 3.5 + y * 2.0 + phase * 0.25) * math.tau))
                 color = _hsv(0.82 + 0.22 * x + phase * 0.03, 0.75, 0.25 + 0.75 * petal)
