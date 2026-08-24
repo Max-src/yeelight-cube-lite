@@ -478,6 +478,70 @@ def _render_magic(phase: float) -> list[tuple[int, int, int]]:
     return [_hsv(hue, 1.0, 1.0) for hue in hues]
 
 
+def _render_wonderland(phase: float) -> list[tuple[int, int, int]]:
+    """Render cyan and pink fields drifting through a periwinkle base."""
+    def waypoint(seed_x, seed_y, index):
+        return (
+            _noise(seed_x, index, 0) * 2.0 - 1.0,
+            _noise(seed_y, index, 0) * 2.0 - 1.0,
+        )
+
+    def wander(seed_x, seed_y, tt):
+        index = math.floor(tt)
+        fraction = tt - index
+        p0 = waypoint(seed_x, seed_y, index - 1)
+        p1 = waypoint(seed_x, seed_y, index)
+        p2 = waypoint(seed_x, seed_y, index + 1)
+        p3 = waypoint(seed_x, seed_y, index + 2)
+        fraction2 = fraction * fraction
+        fraction3 = fraction2 * fraction
+        return tuple(
+            0.5
+            * (
+                2.0 * p1[axis]
+                + (-p0[axis] + p2[axis]) * fraction
+                + (2.0 * p0[axis] - 5.0 * p1[axis] + 4.0 * p2[axis] - p3[axis]) * fraction2
+                + (-p0[axis] + 3.0 * p1[axis] - 3.0 * p2[axis] + p3[axis]) * fraction3
+            )
+            for axis in range(2)
+        )
+
+    oscillation = math.sin(phase * 0.18)
+    radii = (5.0 + 1.5 * oscillation, 6.2 - 1.5 * oscillation)
+    fields = []
+    settings = ((11, 12, 0.0, 0.54, 4.0), (13, 14, 2.7, 0.84, 6.0))
+    for index, (seed_x, seed_y, offset, hue, peak) in enumerate(settings):
+        wx, wy = wander(seed_x, seed_y, phase * 0.29 + offset)
+        stretch = 0.20 * math.sin(phase * 0.18 + index * 1.7)
+        fields.append(
+            (
+                9.5 + 20.0 * wx,
+                2.0 + 8.0 * wy,
+                radii[index],
+                hue,
+                1.0 + stretch,
+                (1.0 - stretch) * 1.8,
+                peak,
+            )
+        )
+
+    pixels = []
+    base_hue = 0.65
+    for row in range(ROWS):
+        for col in range(COLS):
+            sine_sum = math.sin(math.tau * base_hue)
+            cosine_sum = math.cos(math.tau * base_hue)
+            for px, py, radius, hue, scale_x, scale_y, peak in fields:
+                distance = math.hypot((col - px) * scale_x, (row - py) * scale_y)
+                weight = peak / (distance * distance / (radius * radius) + 1.0)
+                sine_sum += weight * math.sin(math.tau * hue)
+                cosine_sum += weight * math.cos(math.tau * hue)
+            hue = math.atan2(sine_sum, cosine_sum) / math.tau % 1.0
+            softness = min(1.0, max(0.0, (hue - 0.54) / 0.30))
+            pixels.append(_hsv(hue, 0.72 - 0.20 * softness, 1.0))
+    return pixels
+
+
 def render_native_effect(
     effect: str,
     phase: float,
@@ -486,6 +550,8 @@ def render_native_effect(
     """Return one animated 20x5 approximation of a firmware effect."""
     if effect == "Magic":
         return _render_magic(phase)
+    if effect == "Wonderland":
+        return _render_wonderland(phase)
 
     frame = int(phase * 5)
     pixels: list[tuple[int, int, int]] = []
@@ -925,8 +991,6 @@ def render_native_effect(
                 # Background is hot pink; snake peaks are warm bright baby pink.
                 hue = 0.90 + (win_hue - 0.90) * t
                 color = _hsv(hue, 0.85 - 0.45 * t, 0.55 + 0.45 * t)
-            elif effect == "Wonderland":
-                color = _hsv(0.48 + x * 0.36 + phase * 0.025, 0.48, 0.55 + 0.45 * wave)
             elif effect == "Kaleidoscope":
                 sx = abs(x - 0.5) * 2.0
                 sy = abs(y - 0.5) * 2.0

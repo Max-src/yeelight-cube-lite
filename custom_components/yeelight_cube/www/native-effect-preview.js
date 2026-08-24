@@ -411,6 +411,72 @@ function renderMagic(phase) {
   return hues.map((hue) => hsv(hue, 1.0, 1.0));
 }
 
+function renderWonderland(phase) {
+  const waypoint = (seedX, seedY, index) => [
+    noiseAt(seedX, index, 0) * 2.0 - 1.0,
+    noiseAt(seedY, index, 0) * 2.0 - 1.0,
+  ];
+  const wander = (seedX, seedY, time) => {
+    const index = Math.floor(time);
+    const fraction = time - index;
+    const p0 = waypoint(seedX, seedY, index - 1);
+    const p1 = waypoint(seedX, seedY, index);
+    const p2 = waypoint(seedX, seedY, index + 1);
+    const p3 = waypoint(seedX, seedY, index + 2);
+    const fraction2 = fraction * fraction;
+    const fraction3 = fraction2 * fraction;
+    return [0, 1].map(
+      (axis) =>
+        0.5 *
+        (2.0 * p1[axis] +
+          (-p0[axis] + p2[axis]) * fraction +
+          (2.0 * p0[axis] - 5.0 * p1[axis] + 4.0 * p2[axis] - p3[axis]) *
+            fraction2 +
+          (-p0[axis] + 3.0 * p1[axis] - 3.0 * p2[axis] + p3[axis]) * fraction3),
+    );
+  };
+
+  const oscillation = Math.sin(phase * 0.18);
+  const radii = [5.0 + 1.5 * oscillation, 6.2 - 1.5 * oscillation];
+  const settings = [
+    [11, 12, 0.0, 0.54, 4.0],
+    [13, 14, 2.7, 0.84, 6.0],
+  ];
+  const fields = settings.map(([seedX, seedY, offset, hue, peak], index) => {
+    const [wx, wy] = wander(seedX, seedY, phase * 0.29 + offset);
+    const stretch = 0.2 * Math.sin(phase * 0.18 + index * 1.7);
+    return [
+      9.5 + 20.0 * wx,
+      2.0 + 8.0 * wy,
+      radii[index],
+      hue,
+      1.0 + stretch,
+      (1.0 - stretch) * 1.8,
+      peak,
+    ];
+  });
+
+  const pixels = [];
+  const baseHue = 0.65;
+  for (let row = 0; row < PREVIEW_ROWS; row++) {
+    for (let col = 0; col < PREVIEW_COLS; col++) {
+      let sineSum = Math.sin(TAU * baseHue);
+      let cosineSum = Math.cos(TAU * baseHue);
+      for (const [px, py, radius, hue, scaleX, scaleY, peak] of fields) {
+        const distance = Math.hypot((col - px) * scaleX, (row - py) * scaleY);
+        const weight = peak / ((distance * distance) / (radius * radius) + 1.0);
+        sineSum += weight * Math.sin(TAU * hue);
+        cosineSum += weight * Math.cos(TAU * hue);
+      }
+      let hue = Math.atan2(sineSum, cosineSum) / TAU;
+      if (hue < 0.0) hue += 1.0;
+      const softness = Math.min(1.0, Math.max(0.0, (hue - 0.54) / 0.3));
+      pixels.push(hsv(hue, 0.72 - 0.2 * softness, 1.0));
+    }
+  }
+  return pixels;
+}
+
 /**
  * Render one animated 20x5 approximation frame of a firmware effect.
  * Returns a flat array of 100 [r,g,b] tuples in row-major order
@@ -418,6 +484,7 @@ function renderMagic(phase) {
  */
 export function renderNativeEffect(effect, phase, direction = "Up") {
   if (effect === "Magic") return renderMagic(phase);
+  if (effect === "Wonderland") return renderWonderland(phase);
 
   const frame = Math.floor(phase * 5);
   const pixels = [];
@@ -898,8 +965,6 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
         // Background is hot pink; snake peaks are warm bright baby pink.
         const hue = 0.9 + (winHue - 0.9) * t;
         color = hsv(hue, 0.85 - 0.45 * t, 0.55 + 0.45 * t);
-      } else if (effect === "Wonderland") {
-        color = hsv(0.48 + x * 0.36 + phase * 0.025, 0.48, 0.55 + 0.45 * wave);
       } else if (effect === "Kaleidoscope") {
         const sx = Math.abs(x - 0.5) * 2.0;
         const sy = Math.abs(y - 0.5) * 2.0;
