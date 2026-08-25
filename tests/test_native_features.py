@@ -3,6 +3,7 @@
 import __future__
 import ast
 import asyncio
+import colorsys
 import json
 from pathlib import Path
 import runpy
@@ -511,6 +512,240 @@ class NativeFeatureTests(unittest.TestCase):
                     lines = [frame[r * 20:(r + 1) * 20] for r in range(5)]
                 for line in lines:
                     self.assertEqual(1, len(set(line)), direction)
+
+    def test_kaleidoscope_rows_form_one_continuous_folded_rainbow(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+        directions = ("Right", "Down", "Left", "Up")
+        frames = {
+            direction: render("Kaleidoscope", 3.0, direction)
+            for direction in directions
+        }
+        self.assertEqual(4, len({tuple(frame) for frame in frames.values()}))
+        for frame in frames.values():
+            self.assertEqual(100, len(frame))
+            for pixel in frame:
+                self.assertEqual(3, len(pixel))
+                self.assertTrue(all(channel in range(256) for channel in pixel))
+        self.assertTrue(any(max(pixel) == 255 for pixel in frames["Right"]))
+
+        def pixel_distance(first, second):
+            return sum(abs(a - b) for a, b in zip(first, second))
+
+        # Consecutive rows meet at alternating physical edges. Those joins are
+        # ordinary neighboring points on one path, not independently offset
+        # lanes, so no row boundary may produce a color discontinuity.
+        for step in range(300):
+            frame = render("Kaleidoscope", step * 0.1, "Right")
+            for row in range(4):
+                fold_col = 19 if row % 2 == 0 else 0
+                self.assertLessEqual(
+                    pixel_distance(
+                        frame[row * 20 + fold_col],
+                        frame[(row + 1) * 20 + fold_col],
+                    ),
+                    75,
+                )
+
+        def net_shift(direction, row):
+            total = 0
+            for step in range(60):
+                start = 2.0 + step * 0.5
+                first = render("Kaleidoscope", start, direction)
+                second = render("Kaleidoscope", start + 0.4, direction)
+                first_row = first[row * 20:(row + 1) * 20]
+                second_row = second[row * 20:(row + 1) * 20]
+                best = (1e9, 0)
+                for shift in range(-4, 5):
+                    total_dist = count = 0
+                    for col in range(max(0, -shift), min(20, 20 - shift)):
+                        total_dist += pixel_distance(
+                            first_row[col], second_row[col + shift]
+                        )
+                        count += 1
+                    if total_dist / count < best[0]:
+                        best = (total_dist / count, shift)
+                total += best[1]
+            return total
+
+        # Neighbouring rows scroll in opposite directions (odd/even fold) so the
+        # rainbow's two halves slide apart across each row pair.
+        right = [net_shift("Right", row) for row in range(5)]
+        self.assertTrue(all(right), right)
+        for row in range(1, 5):
+            self.assertNotEqual(right[row - 1] > 0, right[row] > 0, right)
+
+        # Left is the mirror of Right: every lane slides the opposite way.
+        left = [net_shift("Left", row) for row in range(5)]
+        for right_dir, left_dir in zip(right, left):
+            self.assertNotEqual(right_dir > 0, left_dir > 0, (right, left))
+
+        # Rows never collapse to a single repeated line; the panel shows five
+        # distinct lanes as the folded rainbow slides across.
+        distinct = max(
+            len({
+                tuple(render("Kaleidoscope", step * 0.3, "Right")[row * 20:(row + 1) * 20])
+                for row in range(5)
+            })
+            for step in range(60)
+        )
+        self.assertEqual(5, distinct)
+
+        # Rows alternate between broad low-diversity fields and narrower rich
+        # rainbow passages. Two consecutive folded rows reveal substantially
+        # more of the spectrum than a typical single row.
+        single = []
+        pair_together = []
+        for step in range(300):
+            frame = render("Kaleidoscope", step * 0.2, "Right")
+            row_buckets = []
+            for row in range(5):
+                buckets = {
+                    round(
+                        colorsys.rgb_to_hsv(
+                            *(channel / 255 for channel in frame[row * 20 + col])
+                        )[0]
+                        * 12
+                    )
+                    for col in range(20)
+                }
+                single.append(len(buckets))
+                row_buckets.append(buckets)
+            for pair in (0, 2):
+                pair_together.append(len(row_buckets[pair] | row_buckets[pair + 1]))
+        single.sort()
+        median_single = single[len(single) // 2]
+        self.assertGreaterEqual(single[len(single) // 10], 2)
+        self.assertLessEqual(single[len(single) // 10], 3)
+        self.assertLessEqual(median_single, 6)
+        self.assertGreaterEqual(single[len(single) * 9 // 10], 8)
+        self.assertGreater(
+            sum(pair_together) / len(pair_together), median_single + 1
+        )
+
+    def test_kaleidoscope_updown_uses_moving_snakes(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+        snake_events = NATIVE_PREVIEW["_kaleidoscope_snake_events"]
+        snake_emit = NATIVE_PREVIEW["_kaleidoscope_snake_emit"]
+        mirror_column = NATIVE_PREVIEW["_kaleidoscope_mirror_column"]
+
+        # A rainbow snake winds column-by-column, so columns are NOT flat: its
+        # bright head reads as a moving point and the trail gives vertical
+        # variation within columns most of the time.
+        nonuniform_frames = 0
+        red_head_frames = 0
+        varied_frames = 0
+        blue_dominant_frames = 0
+        for step in range(200):
+            phase = step * 0.25
+            frame = render("Kaleidoscope", phase, "Down")
+            columns_varying = sum(
+                1
+                for col in range(20)
+                if len({frame[row * 20 + col] for row in range(5)}) > 1
+            )
+            if columns_varying >= 3:
+                nonuniform_frames += 1
+            if any(pixel[0] > 180 and max(pixel[1:]) < 80 for pixel in frame):
+                red_head_frames += 1
+            hues = [
+                colorsys.rgb_to_hsv(*(channel / 255 for channel in pixel))[0]
+                for pixel in frame
+            ]
+            if max(hues) - min(hues) > 0.5:
+                varied_frames += 1
+            if sum(0.55 <= hue < 0.75 for hue in hues) > 50:
+                blue_dominant_frames += 1
+        self.assertGreater(nonuniform_frames, 150)
+        self.assertGreater(red_head_frames, 120)
+        self.assertGreater(varied_frames, 150)
+        self.assertLess(blue_dominant_frames, 10)
+
+        # Fronts repeatedly expand from one-based column 8. The 16-column fold
+        # reaches the left edge and meets its next reflection at column 16.
+        self.assertEqual(
+            [7, 6, 5, 4, 3, 2, 1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 7, 6, 5, 4],
+            [mirror_column(col) for col in range(20)],
+        )
+
+        # Two to four independently timed parent fronts overlap continuously,
+        # so the panel never pauses or collapses to one active zone.
+        for step in range(-1000, 1001):
+            events = snake_events(step * 0.05)
+            active = len(events)
+            self.assertGreaterEqual(active, 2)
+            self.assertLessEqual(active, 4)
+            for radius, velocity, trail, hue_span, _event in events:
+                self.assertGreaterEqual(radius, 0.0)
+                self.assertGreater(velocity, 0.0)
+                self.assertGreaterEqual(trail, 18.0)
+                self.assertLessEqual(trail, 30.0)
+                self.assertGreaterEqual(hue_span, 0.65)
+                self.assertLessEqual(hue_span, 0.98)
+
+        # Every spawn has its own deterministic lifetime and therefore a
+        # different launch speed. Quartic ease-out moves quickly at ignition,
+        # then continuously decelerates until the snake nearly stops at death.
+        launch_speeds = []
+        trail_lengths = []
+        hue_spans = []
+        emission_gaps = [
+            snake_emit(event + 1) - snake_emit(event)
+            for event in range(-100, 100)
+        ]
+        self.assertLess(min(emission_gaps), 1.5)
+        self.assertGreater(max(emission_gaps), 5.0)
+        for event in range(-20, 21):
+            emit = snake_emit(event)
+            radius, launch_speed, trail, hue_span, event_id = next(
+                item for item in snake_events(emit) if item[4] == float(event)
+            )
+            self.assertEqual(0.0, radius)
+            self.assertEqual(float(event), event_id)
+            launch_speeds.append(round(launch_speed, 6))
+            trail_lengths.append(round(trail, 6))
+            hue_spans.append(round(hue_span, 6))
+
+            travel = 8 * 5 + (5 - 1) + trail
+            lifetime = 4.0 * travel / launch_speed
+            samples = [
+                next(
+                    item
+                    for item in snake_events(emit + lifetime * fraction)
+                    if item[4] == float(event)
+                )
+                for fraction in (0.25, 0.5, 0.75, 0.95)
+            ]
+            radii = [item[0] for item in samples]
+            velocities = [item[1] for item in samples]
+            self.assertEqual(radii, sorted(radii))
+            self.assertEqual(velocities, sorted(velocities, reverse=True))
+            self.assertLess(velocities[-1], launch_speed * 0.01)
+        self.assertGreater(len(set(launch_speeds)), 20)
+        self.assertGreater(max(launch_speeds) - min(launch_speeds), 5.0)
+        self.assertGreater(len(set(trail_lengths)), 20)
+        self.assertGreater(max(trail_lengths) - min(trail_lengths), 8.0)
+        self.assertGreater(len(set(hue_spans)), 20)
+        self.assertGreater(max(hue_spans) - min(hue_spans), 0.2)
+
+        # Every Down frame has exact reflected columns around index 7 and a
+        # period of 16, matching the symmetry visible in the recording.
+        mirror_pairs = (
+            (0, 14), (1, 13), (2, 12), (3, 11), (4, 10), (5, 9), (6, 8),
+            (0, 16), (1, 17), (2, 18), (3, 19),
+        )
+        for step in range(200):
+            down = render("Kaleidoscope", step * 0.2, "Down")
+            for row in range(5):
+                for first, second in mirror_pairs:
+                    self.assertEqual(
+                        down[row * 20 + first], down[row * 20 + second]
+                    )
+
+        # Up is the same physical animation with the display rotated 180°.
+        for step in range(100):
+            down = render("Kaleidoscope", step * 0.3, "Down")
+            up = render("Kaleidoscope", step * 0.3, "Up")
+            self.assertEqual(list(reversed(down)), up)
 
     def test_music_flow_previews_are_static_valid_and_distinct(self):
         render = NATIVE_PREVIEW["render_music_flow_effect"]

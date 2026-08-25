@@ -644,6 +644,126 @@ def _render_flower_sea(
     return pixels
 
 
+def _render_kaleidoscope(
+    phase: float,
+    direction: str,
+) -> list[tuple[int, int, int]]:
+    """Render counter-moving rows or bidirectional rainbow fronts."""
+    if direction in ("Up", "Down"):
+        return _render_kaleidoscope_snakes(phase, direction)
+    return _render_kaleidoscope_rows(phase, direction)
+
+
+def _kaleidoscope_base_hue(phase: float) -> float:
+    return (
+        0.47
+        + 0.105 * math.sin(phase * 0.16)
+        + 0.06 * math.sin(phase * 0.16 * 0.37 + 1.4)
+    ) % 1.0
+
+
+def _render_kaleidoscope_rows(
+    phase: float,
+    direction: str,
+) -> list[tuple[int, int, int]]:
+    # One continuous rainbow path folds through all five rows. A cycle still
+    # spans about two rows, but it now crosses every row boundary naturally.
+    wavelength = 55.0
+    speed = 8.8
+    base_hue = _kaleidoscope_base_hue(phase)
+    arrow = -1.0 if direction == "Left" else 1.0
+
+    pixels = []
+    for row in range(ROWS):
+        for col in range(COLS):
+            folded_col = col if row % 2 == 0 else COLS - 1 - col
+            position = row * COLS + folded_col
+            # A smooth path-wide warp breaks the mechanical stripe spacing
+            # without introducing discontinuities where the rows fold.
+            warped = position + 1.8 * math.sin(
+                math.tau * (position / (ROWS * COLS) + phase * 0.035)
+            )
+            progress = (warped - arrow * speed * phase) / wavelength % 1.0
+            raw_hue = (base_hue + progress) % 1.0
+            # The firmware dwells in broad cyan fields between narrower full
+            # spectrum passages instead of distributing every hue uniformly.
+            hue = (raw_hue + 0.145 * math.sin(math.tau * raw_hue)) % 1.0
+            pixels.append(_hsv(hue, 0.97, 1.0))
+    return pixels
+
+
+def _kaleidoscope_snake_emit(event: int) -> float:
+    return event * 3.25 + (_noise(event + 101, 17, 0) - 0.5) * 2.0
+
+
+def _kaleidoscope_snake_events(
+    phase: float,
+) -> list[tuple[float, float, float, float, float]]:
+    spawn_dt = 3.25
+    branch_len = 8 * ROWS + (ROWS - 1)
+    latest = math.floor(phase / spawn_dt)
+    events = []
+    for event in range(latest - 8, latest + 2):
+        emit = _kaleidoscope_snake_emit(event)
+        age = phase - emit
+        lifetime = 8.0 + 3.0 * _noise(event + 47, 9, 0)
+        if not 0.0 <= age < lifetime:
+            continue
+        trail = 18.0 + 12.0 * _noise(event + 73, 11, 0)
+        hue_span = 0.65 + 0.33 * _noise(event + 89, 13, 0)
+        progress = age / lifetime
+        remaining = 1.0 - progress
+        travel = branch_len + trail
+        radius = travel * (1.0 - remaining**4)
+        velocity = 4.0 * travel * remaining**3 / lifetime
+        events.append((radius, velocity, trail, hue_span, float(event)))
+    return events
+
+
+def _kaleidoscope_mirror_column(col: int) -> int:
+    return abs((col + 1) % 16 - 8)
+
+
+def _render_kaleidoscope_snakes(
+    phase: float,
+    direction: str,
+) -> list[tuple[int, int, int]]:
+    base_hue = (_kaleidoscope_base_hue(phase) - 0.08) % 1.0
+
+    # Down originates at one-based column 8 (index 7). The branch repeats
+    # every 16 columns, meeting its reflection at one-based column 16.
+    path_hue: list[float | None] = [None] * (ROWS * COLS)
+    path_age = [math.inf] * (ROWS * COLS)
+    for radius, _velocity, trail, hue_span, _event in _kaleidoscope_snake_events(
+        phase
+    ):
+        for row in range(ROWS):
+            for col in range(COLS):
+                mirror_col = _kaleidoscope_mirror_column(col)
+                branch_row = row if mirror_col % 2 == 0 else ROWS - 1 - row
+                branch_pos = mirror_col * ROWS + branch_row
+                distance = radius - branch_pos
+                index = row * COLS + col
+                if not (0.0 <= distance < trail and distance < path_age[index]):
+                    continue
+                path_age[index] = distance
+                progress = distance / trail
+                path_hue[index] = (
+                    0.02
+                    + hue_span * progress**1.15
+                    + 0.05 * math.sin(math.tau * progress)
+                ) % 1.0
+
+    hues = [base_hue if value is None else value for value in path_hue]
+    sats = [0.9 if value is None else 0.98 for value in path_hue]
+
+    pixels = [_hsv(hue, sat, 1.0) for hue, sat in zip(hues, sats)]
+    if direction == "Up":
+        pixels.reverse()
+    return pixels
+
+
+
 def render_native_effect(
     effect: str,
     phase: float,
@@ -656,6 +776,8 @@ def render_native_effect(
         return _render_wonderland(phase)
     if effect == "Flower Sea":
         return _render_flower_sea(phase, direction)
+    if effect == "Kaleidoscope":
+        return _render_kaleidoscope(phase, direction)
 
     frame = int(phase * 5)
     pixels: list[tuple[int, int, int]] = []
@@ -1008,11 +1130,6 @@ def render_native_effect(
                     distance = ((head - u) % 1.0 + 1.0) % 1.0
                     level = 1.0 if distance < 0.08 else max(0.04, 0.65 - distance * 1.8)
                     color = _rgb(25, 255, 85, level)
-            elif effect == "Kaleidoscope":
-                sx = abs(x - 0.5) * 2.0
-                sy = abs(y - 0.5) * 2.0
-                pattern = (math.sin((sx + sy - phase * 0.35) * math.tau * 2.0) + 1.0) / 2.0
-                color = _hsv(sx * 0.35 + sy * 0.4 + phase * 0.05, 0.9, 0.22 + 0.78 * pattern)
             elif effect == "Palette":
                 index = (int(x * 8) + int(y * 3) + int(phase * 0.7)) % 8
                 color = _hsv(index / 8.0, 0.72, 0.95)

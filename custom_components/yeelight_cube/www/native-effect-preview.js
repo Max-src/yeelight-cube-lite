@@ -581,6 +581,127 @@ function renderFlowerSea(phase, direction) {
   return pixels;
 }
 
+function renderKaleidoscope(phase, direction) {
+  if (direction === "Up" || direction === "Down") {
+    return renderKaleidoscopeSnakes(phase, direction);
+  }
+  return renderKaleidoscopeRows(phase, direction);
+}
+
+function kaleidoscopeBaseHue(phase) {
+  return (
+    (((0.47 +
+      0.105 * Math.sin(phase * 0.16) +
+      0.06 * Math.sin(phase * 0.16 * 0.37 + 1.4)) %
+      1.0) +
+      1.0) %
+    1.0
+  );
+}
+
+function renderKaleidoscopeRows(phase, direction) {
+  // One continuous rainbow path folds through all five rows. A cycle still
+  // spans about two rows, but it now crosses every row boundary naturally.
+  const wavelength = 55.0;
+  const speed = 8.8;
+  const baseHue = kaleidoscopeBaseHue(phase);
+  const arrow = direction === "Left" ? -1.0 : 1.0;
+
+  const pixels = [];
+  for (let row = 0; row < PREVIEW_ROWS; row++) {
+    for (let col = 0; col < PREVIEW_COLS; col++) {
+      const foldedCol = row % 2 === 0 ? col : PREVIEW_COLS - 1 - col;
+      const position = row * PREVIEW_COLS + foldedCol;
+      // A smooth path-wide warp breaks the mechanical stripe spacing without
+      // introducing discontinuities where the rows fold.
+      const warped =
+        position +
+        1.8 *
+          Math.sin(
+            TAU * (position / (PREVIEW_ROWS * PREVIEW_COLS) + phase * 0.035),
+          );
+      const progress =
+        ((((warped - arrow * speed * phase) / wavelength) % 1.0) + 1.0) % 1.0;
+      const rawHue = (((baseHue + progress) % 1.0) + 1.0) % 1.0;
+      // The firmware dwells in broad cyan fields between narrower full
+      // spectrum passages instead of distributing every hue uniformly.
+      const hue =
+        (((rawHue + 0.145 * Math.sin(TAU * rawHue)) % 1.0) + 1.0) % 1.0;
+      pixels.push(hsv(hue, 0.97, 1.0));
+    }
+  }
+  return pixels;
+}
+
+function kaleidoscopeSnakeEmit(event) {
+  return event * 3.25 + (noiseAt(event + 101, 17, 0) - 0.5) * 2.0;
+}
+
+function kaleidoscopeSnakeEvents(phase) {
+  const spawnDt = 3.25;
+  const branchLen = 8 * PREVIEW_ROWS + (PREVIEW_ROWS - 1);
+  const latest = Math.floor(phase / spawnDt);
+  const events = [];
+  for (let event = latest - 8; event <= latest + 1; event++) {
+    const emit = kaleidoscopeSnakeEmit(event);
+    const age = phase - emit;
+    const lifetime = 8.0 + 3.0 * noiseAt(event + 47, 9, 0);
+    if (age < 0.0 || age >= lifetime) continue;
+    const trail = 18.0 + 12.0 * noiseAt(event + 73, 11, 0);
+    const hueSpan = 0.65 + 0.33 * noiseAt(event + 89, 13, 0);
+    const progress = age / lifetime;
+    const remaining = 1.0 - progress;
+    const travel = branchLen + trail;
+    const radius = travel * (1.0 - remaining ** 4);
+    const velocity = (4.0 * travel * remaining ** 3) / lifetime;
+    events.push([radius, velocity, trail, hueSpan, event]);
+  }
+  return events;
+}
+
+function kaleidoscopeMirrorColumn(col) {
+  return Math.abs(((col + 1) % 16) - 8);
+}
+
+function renderKaleidoscopeSnakes(phase, direction) {
+  const baseHue = (((kaleidoscopeBaseHue(phase) - 0.08) % 1.0) + 1.0) % 1.0;
+
+  // Down originates at one-based column 8 (index 7). The branch repeats
+  // every 16 columns, meeting its reflection at one-based column 16.
+  const pathHue = new Array(PREVIEW_ROWS * PREVIEW_COLS).fill(null);
+  const pathAge = new Array(PREVIEW_ROWS * PREVIEW_COLS).fill(Infinity);
+  for (const [radius, , trail, hueSpan] of kaleidoscopeSnakeEvents(phase)) {
+    for (let row = 0; row < PREVIEW_ROWS; row++) {
+      for (let col = 0; col < PREVIEW_COLS; col++) {
+        const mirrorCol = kaleidoscopeMirrorColumn(col);
+        const branchRow = mirrorCol % 2 === 0 ? row : PREVIEW_ROWS - 1 - row;
+        const branchPos = mirrorCol * PREVIEW_ROWS + branchRow;
+        const distance = radius - branchPos;
+        const index = row * PREVIEW_COLS + col;
+        if (distance < 0.0 || distance >= trail || distance >= pathAge[index]) {
+          continue;
+        }
+        pathAge[index] = distance;
+        const progress = distance / trail;
+        pathHue[index] =
+          (((0.02 +
+            hueSpan * progress ** 1.15 +
+            0.05 * Math.sin(TAU * progress)) %
+            1.0) +
+            1.0) %
+          1.0;
+      }
+    }
+  }
+
+  const hues = pathHue.map((value) => (value === null ? baseHue : value));
+  const sats = pathHue.map((value) => (value === null ? 0.9 : 0.98));
+
+  const pixels = hues.map((hue, index) => hsv(hue, sats[index], 1.0));
+  if (direction === "Up") pixels.reverse();
+  return pixels;
+}
+
 /**
  * Render one animated 20x5 approximation frame of a firmware effect.
  * Returns a flat array of 100 [r,g,b] tuples in row-major order
@@ -590,6 +711,7 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
   if (effect === "Magic") return renderMagic(phase);
   if (effect === "Wonderland") return renderWonderland(phase);
   if (effect === "Flower Sea") return renderFlowerSea(phase, direction);
+  if (effect === "Kaleidoscope") return renderKaleidoscope(phase, direction);
 
   const frame = Math.floor(phase * 5);
   const pixels = [];
@@ -986,16 +1108,6 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
             distance < 0.08 ? 1.0 : Math.max(0.04, 0.65 - distance * 1.8);
           color = rgb(25, 255, 85, level);
         }
-      } else if (effect === "Kaleidoscope") {
-        const sx = Math.abs(x - 0.5) * 2.0;
-        const sy = Math.abs(y - 0.5) * 2.0;
-        const pattern =
-          (Math.sin((sx + sy - phase * 0.35) * TAU * 2.0) + 1.0) / 2.0;
-        color = hsv(
-          sx * 0.35 + sy * 0.4 + phase * 0.05,
-          0.9,
-          0.22 + 0.78 * pattern,
-        );
       } else if (effect === "Palette") {
         const index =
           (Math.trunc(x * 8) + Math.trunc(y * 3) + Math.trunc(phase * 0.7)) % 8;
