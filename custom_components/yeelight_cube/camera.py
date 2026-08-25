@@ -140,13 +140,18 @@ class _YeelightCubeMatrixCameraBase(Camera):
     # ── Lifecycle ──────────────────────────────────────────────────────
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        self._pre_render()
+        await self._async_pre_render()
 
     # ── Direct push (called by light entity) ───────────────────────────
     @callback
     def async_refresh_preview(self) -> None:
+        # Render off-loop, then bump the token and write state so the frontend
+        # never fetches a stale frame (render -> token -> state ordering).
+        self.hass.async_create_task(self._async_refresh_preview())
+
+    async def _async_refresh_preview(self) -> None:
         _t0 = _time.time()
-        self._pre_render()
+        await self._async_pre_render()
         _t1 = _time.time()
         self.async_update_token()
         self.async_write_ha_state()
@@ -162,7 +167,7 @@ class _YeelightCubeMatrixCameraBase(Camera):
     ) -> bytes | None:
         """Return the full-size PNG.  Browser handles display scaling."""
         if self._cached_image is None or self._is_native_preview_mode():
-            self._pre_render()
+            await self._async_pre_render()
         return self._cached_image
 
     def camera_image(
@@ -176,6 +181,13 @@ class _YeelightCubeMatrixCameraBase(Camera):
     def _pre_render(self) -> None:
         colors = self._get_matrix_colors()
         self._cached_image = self._render_matrix(colors)
+
+    async def _async_pre_render(self) -> None:
+        """Compute colours on the loop, encode the PNG in an executor thread."""
+        colors = self._get_matrix_colors()
+        self._cached_image = await self.hass.async_add_executor_job(
+            self._render_matrix, colors
+        )
 
     def _is_native_preview_mode(self) -> bool:
         """Return whether the preview changes without an HA state update."""

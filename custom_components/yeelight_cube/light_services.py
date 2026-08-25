@@ -1736,9 +1736,12 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             _LOGGER.error("No image_b64 provided to display_image service.")
             return
 
-        # Process image once (shared across all targets)
+        # Process image once (shared across all targets). PIL decode/resize is
+        # CPU-bound, so run it off the event loop.
         try:
-            matrix = image_to_matrix(image_b64, width=20, height=5)
+            matrix = await hass.async_add_executor_job(
+                image_to_matrix, image_b64, 20, 5
+            )
             flipped_matrix = []
             for row in range(5):
                 start = row * 20
