@@ -474,6 +474,44 @@ class NativeFeatureTests(unittest.TestCase):
                 self.assertEqual(3, len(pixel))
                 self.assertTrue(all(channel in range(256) for channel in pixel))
 
+    def test_flower_sea_uses_four_directions_and_pink_purple_palette(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+        directions = ("Right", "Down", "Left", "Up")
+        for phase in (0.37, 7.5, 18.8):
+            frames = [tuple(render("Flower Sea", phase, direction)) for direction in directions]
+            self.assertEqual(4, len(set(frames)))
+
+        pixels = [
+            pixel
+            for phase in range(30)
+            for pixel in render("Flower Sea", phase, "Right")
+        ]
+        self.assertTrue(any(red > 100 and blue > red + 12 and blue > green + 25 for red, green, blue in pixels))
+
+        def is_near_white(pixel):
+            maximum = max(pixel)
+            return maximum > 184 and maximum - min(pixel) < maximum * 0.28
+
+        for direction in directions:
+            for step in range(20):
+                startup = render("Flower Sea", step * 0.05, direction)
+                self.assertFalse(any(map(is_near_white, startup)))
+            for phase in range(60):
+                frame = render("Flower Sea", phase, direction)
+                self.assertLessEqual(sum(map(is_near_white, frame)), 15)
+
+        # Whole rows (Right/Left) or whole columns (Up/Down) must be uniform so
+        # a region can never colour only part of a line.
+        for direction, vertical in (("Right", False), ("Left", False), ("Up", True), ("Down", True)):
+            for phase in range(40):
+                frame = render("Flower Sea", phase / 2, direction)
+                if vertical:
+                    lines = [[frame[r * 20 + c] for r in range(5)] for c in range(20)]
+                else:
+                    lines = [frame[r * 20:(r + 1) * 20] for r in range(5)]
+                for line in lines:
+                    self.assertEqual(1, len(set(line)), direction)
+
     def test_music_flow_previews_are_static_valid_and_distinct(self):
         render = NATIVE_PREVIEW["render_music_flow_effect"]
         previews = {}

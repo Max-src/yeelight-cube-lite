@@ -477,6 +477,110 @@ function renderWonderland(phase) {
   return pixels;
 }
 
+function renderFlowerSea(phase, direction) {
+  const velocity = 0.16;
+  const fadeIn = 0.73;
+  const events = [];
+
+  const addEvents = (coreHalf, falloff, seed, centered = false) => {
+    const reach = coreHalf + falloff;
+    const span = 1.0 + 2.0 * reach;
+    const maxLife = (centered ? 0.5 + reach : span) / velocity;
+    const spawn = centered ? maxLife : maxLife / 3.5;
+    const eventStart = Math.floor((phase - maxLife) / spawn) - 1;
+    const eventEnd = Math.floor(phase / spawn) + 1;
+    for (let event = eventStart; event <= eventEnd; event++) {
+      const jitter = centered ? 0.2 : 0.4;
+      const emit =
+        event * spawn + (noiseAt(event + seed, 7, 0) - 0.5) * spawn * jitter;
+      const age = phase - emit;
+      if (age < 0.0) continue;
+      const start = centered
+        ? 0.5
+        : -reach + noiseAt(event + seed, 11, 0) * span;
+      let travelDirection;
+      if (centered) {
+        travelDirection = noiseAt(event + seed, 9, 0) < 0.5 ? 1 : -1;
+      } else if (start < 0.0) {
+        travelDirection = 1;
+      } else if (start > 1.0) {
+        travelDirection = -1;
+      } else {
+        travelDirection = noiseAt(event + seed, 9, 0) < 0.5 ? 1 : -1;
+        const minimumTravel = 0.4 * span;
+        const travel =
+          travelDirection > 0 ? 1.0 + reach - start : start + reach;
+        if (travel < minimumTravel) travelDirection = -travelDirection;
+      }
+      const life =
+        travelDirection > 0
+          ? (1.0 + reach - start) / velocity
+          : (start + reach) / velocity;
+      if (age > life) continue;
+      const saturationNoise = noiseAt(event + seed + 6144, 17, 0);
+      const peakSaturation = centered
+        ? 0.5 + 0.28 * saturationNoise
+        : 0.3 + 0.42 * saturationNoise;
+      events.push([
+        start + travelDirection * velocity * age,
+        coreHalf,
+        falloff,
+        Math.min(1.0, age / fadeIn),
+        0.78 + 0.2 * noiseAt(event + seed + 4096, 13, 0) ** 0.7,
+        peakSaturation,
+      ]);
+    }
+  };
+
+  addEvents(0.08, 0.4, 4096);
+  addEvents(0.04, 0.2, 8888, true);
+
+  const vertical = direction === "Up" || direction === "Down";
+  const bandCount = vertical ? PREVIEW_COLS : PREVIEW_ROWS;
+  const reverse = direction === "Left" || direction === "Up";
+
+  const bandColors = [];
+  for (let band = 0; band < bandCount; band++) {
+    let position = bandCount > 1 ? band / (bandCount - 1) : 0.5;
+    if (reverse) position = 1.0 - position;
+    let level = 0.0;
+    let hue = 0.93;
+    let peakSaturation = 0.98;
+    for (const [
+      center,
+      coreHalf,
+      falloff,
+      fade,
+      eventHue,
+      eventSaturation,
+    ] of events) {
+      const distance = Math.abs(position - center);
+      let contribution = 0.0;
+      if (distance <= coreHalf) contribution = fade;
+      else if (distance <= coreHalf + falloff) {
+        contribution = fade * (1.0 - (distance - coreHalf) / falloff);
+      }
+      if (contribution > level) {
+        level = contribution;
+        hue = eventHue;
+        peakSaturation = eventSaturation;
+      }
+    }
+    const saturation = 0.98 - (0.98 - peakSaturation) * level ** 2;
+    const value = 0.72 + 0.28 * level;
+    const colorHue = 0.93 + (hue - 0.93) * Math.sqrt(level);
+    bandColors.push(hsv(colorHue, saturation, value));
+  }
+
+  const pixels = [];
+  for (let row = 0; row < PREVIEW_ROWS; row++) {
+    for (let col = 0; col < PREVIEW_COLS; col++) {
+      pixels.push(bandColors[vertical ? col : row]);
+    }
+  }
+  return pixels;
+}
+
 /**
  * Render one animated 20x5 approximation frame of a firmware effect.
  * Returns a flat array of 100 [r,g,b] tuples in row-major order
@@ -485,6 +589,7 @@ function renderWonderland(phase) {
 export function renderNativeEffect(effect, phase, direction = "Up") {
   if (effect === "Magic") return renderMagic(phase);
   if (effect === "Wonderland") return renderWonderland(phase);
+  if (effect === "Flower Sea") return renderFlowerSea(phase, direction);
 
   const frame = Math.floor(phase * 5);
   const pixels = [];
@@ -881,90 +986,6 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
             distance < 0.08 ? 1.0 : Math.max(0.04, 0.65 - distance * 1.8);
           color = rgb(25, 255, 85, level);
         }
-      } else if (effect === "Flower Sea") {
-        // Aurora-style flowing snakes, but each area is ~2x larger and rendered
-        // in shades of pink: a baby-pink sea deepening to hot pink / near-magenta
-        // where areas overlap. Each snake carries its own pink hue.
-        const cellCount = PREVIEW_COLS * PREVIEW_ROWS;
-        const idx =
-          direction === "Up" || direction === "Down"
-            ? col * PREVIEW_ROWS + row
-            : row * PREVIEW_COLS + col;
-        const coreHalf = 7.0; // 2x Aurora
-        const falloff = 48.0; // 2x Aurora
-        const reach = coreHalf + falloff;
-        const last = cellCount - 1;
-        const v = 9.0;
-        const fadeIn = 0.73; // 3x faster appear than Aurora
-        const span = last + 2 * reach;
-        const minTravel = 0.4 * span;
-        const maxLife = span / v;
-        const spawn = maxLife / 3.5;
-        let t = 0.0;
-        let winHue = 0.95; // warm baby-pink for snake peaks
-        const nLo = Math.floor((phase - maxLife) / spawn) - 1;
-        const nHi = Math.floor(phase / spawn) + 1;
-        for (let n = nLo; n <= nHi; n++) {
-          const emit =
-            n * spawn + (noiseAt(n + 4096, 7, 0) - 0.5) * spawn * 0.4;
-          const age = phase - emit;
-          if (age < 0.0) continue;
-          const p0 = -reach + noiseAt(n + 4096, 11, 0) * span;
-          let dir;
-          if (p0 < 0) dir = 1;
-          else if (p0 > last) dir = -1;
-          else {
-            dir = noiseAt(n + 4096, 9, 0) < 0.5 ? 1 : -1;
-            const travel = dir > 0 ? last + reach - p0 : p0 + reach;
-            if (travel < minTravel) dir = -dir;
-          }
-          const life = dir > 0 ? (last + reach - p0) / v : (p0 + reach) / v;
-          if (age > life) continue;
-          const center = p0 + dir * v * age;
-          const fade = Math.min(1.0, age / fadeIn);
-          const d = Math.abs(idx - center);
-          let ti = 0.0;
-          if (d <= coreHalf) ti = 1.0;
-          else if (d <= reach) ti = 1.0 - (d - coreHalf) / falloff;
-          ti *= fade;
-          if (ti > t) {
-            t = ti;
-            winHue = 0.93 + 0.05 * noiseAt(n + 8192, 13, 0);
-          }
-        }
-        // Half-sized snake always spawning from the centre; adds ~1 extra snake.
-        const coreHalf2 = 3.5;
-        const falloff2 = 24.0;
-        const reach2 = coreHalf2 + falloff2;
-        const p0c = last / 2.0;
-        const maxLife2 = (p0c + reach2) / v;
-        const spawn2 = maxLife2;
-        const nLo2 = Math.floor((phase - maxLife2) / spawn2) - 1;
-        const nHi2 = Math.floor(phase / spawn2) + 1;
-        for (let n = nLo2; n <= nHi2; n++) {
-          const emit2 =
-            n * spawn2 + (noiseAt(n + 8888, 7, 0) - 0.5) * spawn2 * 0.2;
-          const age2 = phase - emit2;
-          if (age2 < 0.0) continue;
-          const dir2 = noiseAt(n + 8888, 9, 0) < 0.5 ? 1 : -1;
-          const life2 =
-            dir2 > 0 ? (last + reach2 - p0c) / v : (p0c + reach2) / v;
-          if (age2 > life2) continue;
-          const center2 = p0c + dir2 * v * age2;
-          const fade2 = Math.min(1.0, age2 / fadeIn);
-          const d2 = Math.abs(idx - center2);
-          let ti2 = 0.0;
-          if (d2 <= coreHalf2) ti2 = 1.0;
-          else if (d2 <= reach2) ti2 = 1.0 - (d2 - coreHalf2) / falloff2;
-          ti2 *= fade2;
-          if (ti2 > t) {
-            t = ti2;
-            winHue = 0.93 + 0.05 * noiseAt(n + 9999, 13, 0);
-          }
-        }
-        // Background is hot pink; snake peaks are warm bright baby pink.
-        const hue = 0.9 + (winHue - 0.9) * t;
-        color = hsv(hue, 0.85 - 0.45 * t, 0.55 + 0.45 * t);
       } else if (effect === "Kaleidoscope") {
         const sx = Math.abs(x - 0.5) * 2.0;
         const sy = Math.abs(y - 0.5) * 2.0;
