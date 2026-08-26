@@ -702,6 +702,147 @@ function renderKaleidoscopeSnakes(phase, direction) {
   return pixels;
 }
 
+const PALETTE_HUES = [
+  0.5, 0.52, 0.54, 0.56, 0.58, 0.6, 0.62, 0.64, 0.68, 0.72, 0.32, 0.38, 0.46,
+  0.04, 0.08, 0.12, 0.16, 0.78, 0.84, 0.88,
+];
+
+function paletteHue(event) {
+  const index = Math.min(
+    PALETTE_HUES.length - 1,
+    Math.floor(noiseAt(event + 1701, 19, 0) * PALETTE_HUES.length),
+  );
+  return PALETTE_HUES[index];
+}
+
+function renderPalette(phase, direction) {
+  // Horizontal arrows produce sparse daubs; vertical arrows produce broad,
+  // overlapping colour fields with occasional near-dark troughs.
+  const broad = direction === "Up" || direction === "Down";
+  phase *= broad ? 1.5 : 1.25;
+  const spawn = broad ? 0.9 : 0.58;
+  const maxLifetime = broad ? 7.2 : 4.8;
+  let activity = 1.0;
+  if (broad) {
+    const activityIndex = Math.floor(phase / 4.0);
+    let activityFraction = phase / 4.0 - activityIndex;
+    activityFraction = activityFraction ** 2 * (3.0 - 2.0 * activityFraction);
+    const activityNoise =
+      noiseAt(activityIndex + 1901, 31, 0) +
+      (noiseAt(activityIndex + 1902, 31, 0) -
+        noiseAt(activityIndex + 1901, 31, 0)) *
+        activityFraction;
+    activity = 0.04 + 1.75 * activityNoise ** 1.3;
+  }
+
+  const latest = Math.floor(phase / spawn);
+  const events = [];
+  for (
+    let event = latest - Math.ceil(maxLifetime / spawn) - 2;
+    event <= latest + 1;
+    event++
+  ) {
+    const emit =
+      event * spawn + (noiseAt(event + 1201, 7, 0) - 0.5) * spawn * 0.9;
+    const lifetime = broad
+      ? 2.8 + 4.2 * noiseAt(event + 1301, 11, 0)
+      : 2.4 + 2.4 * noiseAt(event + 1301, 11, 0);
+    const age = phase - emit;
+    if (age < 0.0 || age >= lifetime) continue;
+    const progress = age / lifetime;
+    const envelope = Math.sin(Math.PI * progress) ** 0.7 * activity;
+    let centerX;
+    let centerY;
+    let radiusX;
+    let radiusY;
+    if (broad) {
+      centerX = -3.0 + 25.0 * noiseAt(event + 1401, 13, 0);
+      centerY = -1.0 + 6.0 * noiseAt(event + 1501, 17, 0);
+      radiusX = 2.2 + 8.6 * noiseAt(event + 1601, 23, 0);
+      radiusY = 1.2 + 4.3 * noiseAt(event + 1651, 29, 0);
+    } else {
+      centerX = 19.0 * noiseAt(event + 1401, 13, 0);
+      centerY = 4.0 * noiseAt(event + 1501, 17, 0);
+      radiusX = 0.75 + 2.25 * noiseAt(event + 1601, 23, 0);
+      radiusY = 0.65 + 0.9 * noiseAt(event + 1651, 29, 0);
+    }
+    events.push([
+      centerX,
+      centerY,
+      radiusX,
+      radiusY,
+      envelope,
+      paletteHue(event),
+    ]);
+  }
+
+  const pixels = [];
+  const reverse = direction === "Left" || direction === "Up";
+  for (let row = 0; row < PREVIEW_ROWS; row++) {
+    for (let col = 0; col < PREVIEW_COLS; col++) {
+      const sampleCol = reverse ? PREVIEW_COLS - 1 - col : col;
+      const sampleRow = reverse ? PREVIEW_ROWS - 1 - row : row;
+      let color;
+      if (broad) {
+        let sineSum = 0.0;
+        let cosineSum = 0.0;
+        let levelSum = 0.0;
+        for (const [
+          centerX,
+          centerY,
+          radiusX,
+          radiusY,
+          envelope,
+          hue,
+        ] of events) {
+          const dx = (sampleCol - centerX) / radiusX;
+          const dy = (sampleRow - centerY) / radiusY;
+          const distance = Math.hypot(dx, dy);
+          const weight = envelope * Math.max(0.0, 1.0 - distance) ** 1.35;
+          const fieldHue = (((hue + dx * 0.1) % 1.0) + 1.0) % 1.0;
+          sineSum += weight * Math.sin(TAU * fieldHue);
+          cosineSum += weight * Math.cos(TAU * fieldHue);
+          levelSum += weight;
+        }
+        if (levelSum <= 0.025) {
+          color = [0, 0, 0];
+        } else {
+          const hue =
+            (((Math.atan2(sineSum, cosineSum) / TAU) % 1.0) + 1.0) % 1.0;
+          color = hsv(hue, 0.88, Math.min(1.0, levelSum * 1.7));
+        }
+      } else {
+        let bestLevel = 0.0;
+        let bestHue = 0.0;
+        for (const [
+          centerX,
+          centerY,
+          radiusX,
+          radiusY,
+          envelope,
+          hue,
+        ] of events) {
+          const dx = Math.abs(sampleCol - centerX) / radiusX;
+          const dy = Math.abs(sampleRow - centerY) / radiusY;
+          const distance = dx + dy;
+          const level = envelope * Math.max(0.0, 1.25 - distance);
+          if (level > bestLevel) {
+            bestLevel = level;
+            bestHue =
+              (((hue + (sampleCol - centerX) * 0.018) % 1.0) + 1.0) % 1.0;
+          }
+        }
+        color =
+          bestLevel > 0.03
+            ? hsv(bestHue, 0.92, Math.min(1.0, bestLevel))
+            : [0, 0, 0];
+      }
+      pixels.push(color);
+    }
+  }
+  return pixels;
+}
+
 /**
  * Render one animated 20x5 approximation frame of a firmware effect.
  * Returns a flat array of 100 [r,g,b] tuples in row-major order
@@ -712,6 +853,7 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
   if (effect === "Wonderland") return renderWonderland(phase);
   if (effect === "Flower Sea") return renderFlowerSea(phase, direction);
   if (effect === "Kaleidoscope") return renderKaleidoscope(phase, direction);
+  if (effect === "Palette") return renderPalette(phase, direction);
 
   const frame = Math.floor(phase * 5);
   const pixels = [];
@@ -1108,10 +1250,6 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
             distance < 0.08 ? 1.0 : Math.max(0.04, 0.65 - distance * 1.8);
           color = rgb(25, 255, 85, level);
         }
-      } else if (effect === "Palette") {
-        const index =
-          (Math.trunc(x * 8) + Math.trunc(y * 3) + Math.trunc(phase * 0.7)) % 8;
-        color = hsv(index / 8.0, 0.72, 0.95);
       } else {
         color = hsv(x + phase * 0.05, 0.8, 0.35 + 0.65 * wave);
       }

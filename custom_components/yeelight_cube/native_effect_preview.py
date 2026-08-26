@@ -763,6 +763,126 @@ def _render_kaleidoscope_snakes(
     return pixels
 
 
+_PALETTE_HUES = (
+    0.50,
+    0.52,
+    0.54,
+    0.56,
+    0.58,
+    0.60,
+    0.62,
+    0.64,
+    0.68,
+    0.72,
+    0.32,
+    0.38,
+    0.46,
+    0.04,
+    0.08,
+    0.12,
+    0.16,
+    0.78,
+    0.84,
+    0.88,
+)
+
+
+def _palette_hue(event: int) -> float:
+    index = min(
+        len(_PALETTE_HUES) - 1,
+        int(_noise(event + 1701, 19, 0) * len(_PALETTE_HUES)),
+    )
+    return _PALETTE_HUES[index]
+
+
+def _render_palette(
+    phase: float,
+    direction: str,
+) -> list[tuple[int, int, int]]:
+    """Render sparse daubs horizontally and broad colour fields vertically."""
+    broad = direction in ("Up", "Down")
+    phase *= 1.50 if broad else 1.25
+    spawn = 0.90 if broad else 0.58
+    max_lifetime = 7.2 if broad else 4.8
+    activity = 1.0
+    if broad:
+        activity_index = math.floor(phase / 4.0)
+        activity_fraction = phase / 4.0 - activity_index
+        activity_fraction = activity_fraction**2 * (3.0 - 2.0 * activity_fraction)
+        activity_noise = _noise(activity_index + 1901, 31, 0) + (
+            _noise(activity_index + 1902, 31, 0)
+            - _noise(activity_index + 1901, 31, 0)
+        ) * activity_fraction
+        activity = 0.04 + 1.75 * activity_noise**1.3
+    latest = math.floor(phase / spawn)
+    events = []
+    for event in range(latest - math.ceil(max_lifetime / spawn) - 2, latest + 2):
+        emit = event * spawn + (_noise(event + 1201, 7, 0) - 0.5) * spawn * 0.90
+        lifetime = (
+            2.8 + 4.2 * _noise(event + 1301, 11, 0)
+            if broad
+            else 2.4 + 2.4 * _noise(event + 1301, 11, 0)
+        )
+        age = phase - emit
+        if not 0.0 <= age < lifetime:
+            continue
+        progress = age / lifetime
+        envelope = math.sin(math.pi * progress) ** 0.7 * activity
+        if broad:
+            center_x = -3.0 + 25.0 * _noise(event + 1401, 13, 0)
+            center_y = -1.0 + 6.0 * _noise(event + 1501, 17, 0)
+            radius_x = 2.2 + 8.6 * _noise(event + 1601, 23, 0)
+            radius_y = 1.2 + 4.3 * _noise(event + 1651, 29, 0)
+        else:
+            center_x = 19.0 * _noise(event + 1401, 13, 0)
+            center_y = 4.0 * _noise(event + 1501, 17, 0)
+            radius_x = 0.75 + 2.25 * _noise(event + 1601, 23, 0)
+            radius_y = 0.65 + 0.90 * _noise(event + 1651, 29, 0)
+        events.append(
+            (center_x, center_y, radius_x, radius_y, envelope, _palette_hue(event))
+        )
+
+    pixels = []
+    reverse = direction in ("Left", "Up")
+    for row in range(ROWS):
+        for col in range(COLS):
+            sample_col = COLS - 1 - col if reverse else col
+            sample_row = ROWS - 1 - row if reverse else row
+            if broad:
+                sine_sum = 0.0
+                cosine_sum = 0.0
+                level_sum = 0.0
+                for center_x, center_y, radius_x, radius_y, envelope, hue in events:
+                    dx = (sample_col - center_x) / radius_x
+                    dy = (sample_row - center_y) / radius_y
+                    distance = math.hypot(dx, dy)
+                    weight = envelope * max(0.0, 1.0 - distance) ** 1.35
+                    field_hue = (hue + dx * 0.10) % 1.0
+                    sine_sum += weight * math.sin(math.tau * field_hue)
+                    cosine_sum += weight * math.cos(math.tau * field_hue)
+                    level_sum += weight
+                if level_sum <= 0.025:
+                    color = BLACK
+                else:
+                    hue = math.atan2(sine_sum, cosine_sum) / math.tau % 1.0
+                    value = min(1.0, level_sum * 1.70)
+                    color = _hsv(hue, 0.88, value)
+            else:
+                best_level = 0.0
+                best_hue = 0.0
+                for center_x, center_y, radius_x, radius_y, envelope, hue in events:
+                    dx = abs(sample_col - center_x) / radius_x
+                    dy = abs(sample_row - center_y) / radius_y
+                    distance = dx + dy
+                    level = envelope * max(0.0, 1.25 - distance)
+                    if level > best_level:
+                        best_level = level
+                        best_hue = (hue + (sample_col - center_x) * 0.018) % 1.0
+                color = _hsv(best_hue, 0.92, min(1.0, best_level)) if best_level > 0.03 else BLACK
+            pixels.append(color)
+    return pixels
+
+
 
 def render_native_effect(
     effect: str,
@@ -778,6 +898,8 @@ def render_native_effect(
         return _render_flower_sea(phase, direction)
     if effect == "Kaleidoscope":
         return _render_kaleidoscope(phase, direction)
+    if effect == "Palette":
+        return _render_palette(phase, direction)
 
     frame = int(phase * 5)
     pixels: list[tuple[int, int, int]] = []
@@ -1130,9 +1252,6 @@ def render_native_effect(
                     distance = ((head - u) % 1.0 + 1.0) % 1.0
                     level = 1.0 if distance < 0.08 else max(0.04, 0.65 - distance * 1.8)
                     color = _rgb(25, 255, 85, level)
-            elif effect == "Palette":
-                index = (int(x * 8) + int(y * 3) + int(phase * 0.7)) % 8
-                color = _hsv(index / 8.0, 0.72, 0.95)
             else:
                 color = _hsv(x + phase * 0.05, 0.8, 0.35 + 0.65 * wave)
 

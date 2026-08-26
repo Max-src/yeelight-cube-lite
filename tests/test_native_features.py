@@ -513,6 +513,112 @@ class NativeFeatureTests(unittest.TestCase):
                 for line in lines:
                     self.assertEqual(1, len(set(line)), direction)
 
+    def test_palette_uses_sparse_horizontal_daubs_and_broad_vertical_fields(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+
+        def active_mask(frame):
+            return [max(pixel) > 40 for pixel in frame]
+
+        def component_count(mask):
+            remaining = {index for index, active in enumerate(mask) if active}
+            count = 0
+            while remaining:
+                count += 1
+                pending = [remaining.pop()]
+                while pending:
+                    index = pending.pop()
+                    row, col = divmod(index, 20)
+                    for neighbor in (
+                        index - 20 if row else -1,
+                        index + 20 if row < 4 else -1,
+                        index - 1 if col else -1,
+                        index + 1 if col < 19 else -1,
+                    ):
+                        if neighbor in remaining:
+                            remaining.remove(neighbor)
+                            pending.append(neighbor)
+            return count
+
+        horizontal_counts = []
+        vertical_counts = []
+        horizontal_components = []
+        vertical_components = []
+        cool_pixels = 0
+        warm_pixels = 0
+        purple_pixels = 0
+        active_pixels = 0
+        right_frames = []
+        down_frames = []
+        for step in range(400):
+            phase = step * 0.2
+            right = render("Palette", phase, "Right")
+            down = render("Palette", phase, "Down")
+            right_frames.append(tuple(right))
+            down_frames.append(tuple(down))
+            horizontal = active_mask(right)
+            vertical = active_mask(down)
+            horizontal_counts.append(sum(horizontal))
+            vertical_counts.append(sum(vertical))
+            horizontal_components.append(component_count(horizontal))
+            vertical_components.append(component_count(vertical))
+            for frame, mask in ((right, horizontal), (down, vertical)):
+                for pixel, active in zip(frame, mask):
+                    if not active:
+                        continue
+                    active_pixels += 1
+                    hue = colorsys.rgb_to_hsv(*(channel / 255 for channel in pixel))[0]
+                    if 0.48 <= hue < 0.75:
+                        cool_pixels += 1
+                    elif hue < 0.20:
+                        warm_pixels += 1
+                    elif hue >= 0.75:
+                        purple_pixels += 1
+
+        def frame_changes(frames):
+            changes = [
+                sum(
+                    abs(first_channel - second_channel)
+                    for first_pixel, second_pixel in zip(first, second)
+                    for first_channel, second_channel in zip(
+                        first_pixel, second_pixel
+                    )
+                )
+                / 300
+                for first, second in zip(frames, frames[1:])
+            ]
+            changes.sort()
+            return changes
+
+        horizontal_counts.sort()
+        vertical_counts.sort()
+        horizontal_components.sort()
+        vertical_components.sort()
+        self.assertGreaterEqual(horizontal_counts[40], 8)
+        self.assertLessEqual(horizontal_counts[360], 32)
+        self.assertGreaterEqual(vertical_counts[360], 80)
+        self.assertLess(vertical_counts[40], 30)
+        self.assertGreater(
+            vertical_counts[200], horizontal_counts[200] * 2
+        )
+        self.assertGreaterEqual(horizontal_components[200], 3)
+        self.assertLessEqual(vertical_components[200], 2)
+        self.assertGreater(cool_pixels / active_pixels, 0.5)
+        self.assertGreater(warm_pixels / active_pixels, 0.14)
+        self.assertGreater(purple_pixels / active_pixels, 0.10)
+        self.assertGreater(len(set(right_frames)), 350)
+        self.assertGreater(frame_changes(right_frames)[200], 2.0)
+        self.assertGreater(frame_changes(down_frames)[200], 5.0)
+
+        for phase in (0.37, 8.6, 23.4, 51.9):
+            self.assertEqual(
+                render("Palette", phase, "Left"),
+                list(reversed(render("Palette", phase, "Right"))),
+            )
+            self.assertEqual(
+                render("Palette", phase, "Up"),
+                list(reversed(render("Palette", phase, "Down"))),
+            )
+
     def test_kaleidoscope_rows_form_one_continuous_folded_rainbow(self):
         render = NATIVE_PREVIEW["render_native_effect"]
         directions = ("Right", "Down", "Left", "Up")
