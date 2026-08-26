@@ -29,12 +29,15 @@ COLS = 20
 ROWS = 5
 
 # ── Image rendering parameters ────────────────────────────────────────
-PIXEL_SIZE = 20
-PIXEL_GAP = 4
-PADDING = 12
-CELL_SIZE = PIXEL_SIZE + PIXEL_GAP               # 24
-IMG_WIDTH = PADDING * 2 + COLS * CELL_SIZE - PIXEL_GAP   # 500
-IMG_HEIGHT = PADDING * 2 + ROWS * CELL_SIZE - PIXEL_GAP  # 140
+# Smaller than a full-res render (cheaper PNG encode, fewer bytes) but large
+# enough that the round camera's ellipses still rasterise as clean circles --
+# 10px was too coarse and upscaled into rounded squares.
+PIXEL_SIZE = 16
+PIXEL_GAP = 3
+PADDING = 10
+CELL_SIZE = PIXEL_SIZE + PIXEL_GAP               # 19
+IMG_WIDTH = PADDING * 2 + COLS * CELL_SIZE - PIXEL_GAP   # 397
+IMG_HEIGHT = PADDING * 2 + ROWS * CELL_SIZE - PIXEL_GAP  # 112
 
 # ── Pre-computed pixel coordinates (row, col) → (x0, y0, x1, y1) ─────
 # Built once at import time so _render_matrix does zero arithmetic.
@@ -121,7 +124,8 @@ class _YeelightCubeMatrixCameraBase(Camera):
         self._attr_unique_id = f"{light_entity._attr_unique_id}{self._UID_SUFFIX}"
         self._attr_icon = "mdi:led-strip-variant"
         self._attr_is_streaming = False
-        self._attr_frame_interval = 1
+        # MJPEG poll interval for the HA camera proxy -> ~3 fps preview refresh.
+        self._attr_frame_interval = 0.3
         self._attr_content_type = "image/png"
         self._cached_image: bytes | None = None
         self._native_preview_key: tuple[str, str] | None = None
@@ -427,7 +431,7 @@ class _YeelightCubeMatrixCameraBase(Camera):
         raise NotImplementedError
 
     def _render_matrix(self, colors: list[tuple]) -> bytes:
-        """Render the 20×5 matrix and return lossless PNG bytes (~4 KB)."""
+        """Render the 20×5 matrix and return lossless PNG bytes (~1 KB)."""
         img = Image.new("RGB", (IMG_WIDTH, IMG_HEIGHT), (0, 0, 0))
         draw = ImageDraw.Draw(img)
 
@@ -449,7 +453,10 @@ class _YeelightCubeMatrixCameraBase(Camera):
             self._draw_pixel(draw, rects[i], (r, g, b))
 
         buf = io.BytesIO()
-        img.save(buf, format="PNG")
+        # compress_level=1: fastest zlib setting; the image is tiny and
+        # few-coloured, so the extra bytes are negligible but the encode is
+        # noticeably cheaper per frame.
+        img.save(buf, format="PNG", compress_level=1)
         return buf.getvalue()
 
 
