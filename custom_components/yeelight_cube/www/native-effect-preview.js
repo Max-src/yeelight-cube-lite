@@ -107,6 +107,32 @@ function noiseAt(col, row, frame) {
   return Number((value ^ (value >> 16n)) & 0xffn) / 255.0;
 }
 
+function smoothstep(value) {
+  return value * value * (3.0 - 2.0 * value);
+}
+
+function valueNoise2d(x, y, frame) {
+  const col = Math.floor(x);
+  const row = Math.floor(y);
+  const colMix = smoothstep(x - col);
+  const rowMix = smoothstep(y - row);
+  const top =
+    noiseAt(col, row, frame) +
+    (noiseAt(col + 1, row, frame) - noiseAt(col, row, frame)) * colMix;
+  const bottom =
+    noiseAt(col, row + 1, frame) +
+    (noiseAt(col + 1, row + 1, frame) - noiseAt(col, row + 1, frame)) * colMix;
+  return top + (bottom - top) * rowMix;
+}
+
+function valueNoise3d(x, y, time) {
+  const frame = Math.floor(time);
+  const frameMix = smoothstep(time - frame);
+  const current = valueNoise2d(x, y, frame);
+  const following = valueNoise2d(x, y, frame + 1);
+  return current + (following - current) * frameMix;
+}
+
 function flowCoordinates(col, row, direction) {
   const x = col / (PREVIEW_COLS - 1);
   const y = row / (PREVIEW_ROWS - 1);
@@ -805,6 +831,33 @@ function renderBlueYellow(phase, direction) {
   return pixels;
 }
 
+function renderIceBlue(phase, direction) {
+  void direction;
+  const stops = [
+    [8, 165, 255],
+    [85, 189, 255],
+    [145, 211, 255],
+  ];
+  const time = phase * 1.5;
+  const pixels = [];
+
+  for (let row = 0; row < PREVIEW_ROWS; row++) {
+    for (let col = 0; col < PREVIEW_COLS; col++) {
+      const broad = valueNoise3d(col / 4.0, row / 3.0, time);
+      const detail = valueNoise3d(
+        col / 2.0 + 2.3,
+        row / 1.65 - 1.2,
+        time * 0.73 + 8.1,
+      );
+      let level = (broad + 0.35 * detail) / 1.35;
+      level = 0.5 + (level - 0.5) * 1.7;
+      pixels.push(palette(stops, level));
+    }
+  }
+
+  return pixels;
+}
+
 const PALETTE_HUES = [
   0.5, 0.52, 0.54, 0.56, 0.58, 0.6, 0.62, 0.64, 0.68, 0.72, 0.32, 0.38, 0.46,
   0.04, 0.08, 0.12, 0.16, 0.78, 0.84, 0.88,
@@ -957,6 +1010,7 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
   if (effect === "Flower Sea") return renderFlowerSea(phase, direction);
   if (effect === "Kaleidoscope") return renderKaleidoscope(phase, direction);
   if (effect === "Blue Yellow") return renderBlueYellow(phase, direction);
+  if (effect === "Ice Blue") return renderIceBlue(phase, direction);
   if (effect === "Blue White") return renderBlueWhite(phase, direction);
   if (effect === "Palette") return renderPalette(phase, direction);
 

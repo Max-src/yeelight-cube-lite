@@ -148,6 +148,32 @@ def _noise(col: int, row: int, frame: int) -> float:
     return ((value ^ (value >> 16)) & 0xFF) / 255.0
 
 
+def _smoothstep(value: float) -> float:
+    return value * value * (3.0 - 2.0 * value)
+
+
+def _value_noise_2d(x: float, y: float, frame: int) -> float:
+    col = math.floor(x)
+    row = math.floor(y)
+    col_mix = _smoothstep(x - col)
+    row_mix = _smoothstep(y - row)
+    top = _noise(col, row, frame) + (
+        _noise(col + 1, row, frame) - _noise(col, row, frame)
+    ) * col_mix
+    bottom = _noise(col, row + 1, frame) + (
+        _noise(col + 1, row + 1, frame) - _noise(col, row + 1, frame)
+    ) * col_mix
+    return top + (bottom - top) * row_mix
+
+
+def _value_noise_3d(x: float, y: float, time: float) -> float:
+    frame = math.floor(time)
+    frame_mix = _smoothstep(time - frame)
+    current = _value_noise_2d(x, y, frame)
+    following = _value_noise_2d(x, y, frame + 1)
+    return current + (following - current) * frame_mix
+
+
 def _flow_coordinates(col: int, row: int, direction: str) -> tuple[float, float]:
     x = col / (COLS - 1)
     y = row / (ROWS - 1)
@@ -882,6 +908,31 @@ def _render_blue_yellow(
     return pixels
 
 
+def _render_ice_blue(
+    phase: float,
+    direction: str,
+) -> list[tuple[int, int, int]]:
+    """Render the softly morphing cyan cloud field used by mixer 58."""
+    del direction
+    stops = ((8, 165, 255), (85, 189, 255), (145, 211, 255))
+    time = phase * 1.5
+    pixels = []
+
+    for row in range(ROWS):
+        for col in range(COLS):
+            broad = _value_noise_3d(col / 4.0, row / 3.0, time)
+            detail = _value_noise_3d(
+                col / 2.0 + 2.3,
+                row / 1.65 - 1.2,
+                time * 0.73 + 8.1,
+            )
+            level = (broad + 0.35 * detail) / 1.35
+            level = 0.5 + (level - 0.5) * 1.7
+            pixels.append(_palette(stops, level))
+
+    return pixels
+
+
 _PALETTE_HUES = (
     0.50,
     0.52,
@@ -1019,6 +1070,8 @@ def render_native_effect(
         return _render_kaleidoscope(phase, direction)
     if effect == "Blue Yellow":
         return _render_blue_yellow(phase, direction)
+    if effect == "Ice Blue":
+        return _render_ice_blue(phase, direction)
     if effect == "Blue White":
         return _render_blue_white(phase, direction)
     if effect == "Palette":

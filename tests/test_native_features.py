@@ -1007,6 +1007,65 @@ class NativeFeatureTests(unittest.TestCase):
                 break
         self.assertTrue(ordered_boundary)
 
+    def test_ice_blue_matches_cloud_palette_speed_and_clock_mixer(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+
+        self.assertEqual("Ice Blue", CONSTANTS["CLOCK_MIXER_EFFECTS"][58])
+        self.assertIn('58: "Ice Blue"', CLOCK_CARD_SOURCE)
+
+        for phase in (0.37, 8.6, 23.4, 51.9):
+            frame = render("Ice Blue", phase, "Right")
+            for direction in ("Up", "Down", "Left"):
+                self.assertEqual(frame, render("Ice Blue", phase, direction))
+            self.assertTrue(all(blue == 255 for _, _, blue in frame))
+            self.assertTrue(all(8 <= red <= 145 for red, _, _ in frame))
+            self.assertTrue(all(165 <= green <= 211 for _, green, _ in frame))
+
+        frame = render("Ice Blue", 8.6, "Right")
+        self.assertGreater(max(red for red, _, _ in frame) - min(red for red, _, _ in frame), 60)
+        distinct_rows = {
+            tuple(frame[row * 20:(row + 1) * 20]) for row in range(5)
+        }
+        self.assertEqual(5, len(distinct_rows))
+
+        phase_per_second = 0.25 + 50 / 55.0
+
+        def _correlation(first, second):
+            first_values = [pixel[0] for pixel in first]
+            second_values = [pixel[0] for pixel in second]
+            first_mean = sum(first_values) / len(first_values)
+            second_mean = sum(second_values) / len(second_values)
+            numerator = sum(
+                (left - first_mean) * (right - second_mean)
+                for left, right in zip(first_values, second_values)
+            )
+            denominator = (
+                sum((value - first_mean) ** 2 for value in first_values)
+                * sum((value - second_mean) ** 2 for value in second_values)
+            ) ** 0.5
+            return numerator / denominator
+
+        correlations = []
+        for seconds in (0.1, 0.5, 1.0):
+            samples = []
+            for step in range(100):
+                phase = step * 0.37
+                samples.append(
+                    _correlation(
+                        render("Ice Blue", phase, "Right"),
+                        render(
+                            "Ice Blue",
+                            phase + seconds * phase_per_second,
+                            "Right",
+                        ),
+                    )
+                )
+            correlations.append(sum(samples) / len(samples))
+
+        self.assertGreater(correlations[0], 0.9)
+        self.assertTrue(0.15 < correlations[1] < 0.55)
+        self.assertLess(abs(correlations[2]), 0.2)
+
     def test_music_flow_previews_are_static_valid_and_distinct(self):
         render = NATIVE_PREVIEW["render_music_flow_effect"]
         previews = {}
