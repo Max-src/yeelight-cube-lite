@@ -159,27 +159,26 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     # fail), the fetch errors out with no cached fallback, so the cards fail to
     # load until a manual reload once the backend is warm.
     #
-    # Fix: `max-age=0, stale-while-revalidate=86400, stale-if-error=86400`.
-    # - max-age=0            -> always treat the cached copy as stale, so a new
-    #                           deploy is always revalidated (no stale JS).
-    # - stale-while-revalidate-> serve the cached copy immediately and revalidate
-    #                           in the BACKGROUND (non-blocking), so a transient
-    #                           backend 502 during load no longer breaks a card
-    #                           that was cached on a previous visit.
-    # - stale-if-error       -> if revalidation returns a 5xx / network error,
-    #                           keep serving the last good copy.
-    # NOTE: `must-revalidate` is intentionally NOT used -- it forbids serving a
-    # stale copy on a failed revalidation, which directly contradicts (and can
-    # override) stale-while-revalidate / stale-if-error.
+    # Fix: `no-cache, stale-if-error=86400`.
+    # - no-cache       -> the browser must REVALIDATE the cached copy before
+    #                     using it (a conditional GET). Unchanged assets return a
+    #                     cheap 304; a fresh deploy returns 200 with the new file,
+    #                     so an update always applies on the very next load with
+    #                     no stale JS. (stale-while-revalidate was used here
+    #                     before, but it serves the OLD copy first and revalidates
+    #                     in the background -- so edits only appeared on the
+    #                     *second* reload.)
+    # - stale-if-error -> if that revalidation hits a 5xx / network error (e.g. a
+    #                     transient reverse-proxy 502 on a cold load), keep
+    #                     serving the last good cached copy, preserving outage
+    #                     resilience.
     #
     # Honest limitations: this only helps assets that were cached on a PREVIOUS
     # load.  A truly first-ever load (empty cache) during a backend outage still
     # fails, and it cannot fix HA's own frontend_latest/*.js 502s -- those are
     # served by HA core, not by us.  The real cure for the cold-load 502s is on
     # the reverse-proxy / tunnel side.
-    _CACHE_CONTROL = (
-        "max-age=0, stale-while-revalidate=86400, stale-if-error=86400"
-    )
+    _CACHE_CONTROL = "no-cache, stale-if-error=86400"
     www_path = os.path.join(os.path.dirname(__file__), "www")
     if os.path.isdir(www_path):
         registered = False

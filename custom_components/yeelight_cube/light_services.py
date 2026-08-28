@@ -974,15 +974,66 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                 notify = getattr(target, "_notify_camera_preview", None)
                 if notify:
                     notify()
-                # Always reflect the current firmware mode in the entity state so
-                # the lamp preview card switches away from any previous animation
-                # (e.g. Pinball → Clock) even when persist is unchecked.
+                # Always reflect the current firmware command in the entity
+                # state so the lamp-preview card matches exactly what selecting
+                # the same clock style / effect from the device settings page
+                # would show -- not just the mode, but the specific style,
+                # colour and options (so clock_style_id, and thus the masked
+                # effect / colour the card renders, are correct even when
+                # persist is unchecked).
                 if effect_mode == NATIVE_CLOCK_EFFECT_ID:
                     target._mode = "Clock"
+                    if effect_style in NATIVE_CLOCK_STYLES:
+                        target._native_clock_style = effect_style
+                    if isinstance(effect_config, dict):
+                        if "color" in effect_config:
+                            _color = effect_config["color"]
+                            target._native_clock_color = (
+                                int(_color[0])
+                                if isinstance(_color, list) and _color
+                                else int(_color)
+                            )
+                        else:
+                            target._native_clock_color = None
+                        if "data" in effect_config:
+                            try:
+                                _cb = base64.b64decode(effect_config["data"])
+                                if len(_cb) >= 1:
+                                    target._native_clock_content = {
+                                        1: "time",
+                                        2: "time_date",
+                                        3: "date",
+                                    }.get(_cb[0], target._native_clock_content)
+                                    target._native_clock_show_date = _cb[0] == 2
+                                if len(_cb) >= 3:
+                                    target._native_clock_12_hour = _cb[2] == 1
+                                if len(_cb) >= 4:
+                                    # Firmware byte is inverted: 0 blinks, 1 steady.
+                                    target._native_clock_colon_blink = _cb[3] == 0
+                            except Exception:
+                                pass
                 elif native_effect_name is not None:
                     target._mode = "Native Effect"
                     target._native_effect = native_effect_name
+                    if isinstance(effect_config, dict):
+                        if "rate" in effect_config:
+                            try:
+                                target._native_effect_speed = max(
+                                    1, min(255, int(effect_config["rate"]))
+                                )
+                            except (TypeError, ValueError):
+                                pass
+                        if "direction" in effect_config:
+                            for _dn, _dv in NATIVE_EFFECT_DIRECTION_VALUES.items():
+                                if _dv == effect_config["direction"]:
+                                    target._native_effect_direction = _dn
+                                    break
                 if target.hass is not None:
+                    if (
+                        effect_mode == NATIVE_CLOCK_EFFECT_ID
+                        or native_effect_name is not None
+                    ):
+                        target._refresh_linked_entities()
                     target.async_write_ha_state()
             elif method == "start_cf":
                 # Color flow leaves the panel on but not in direct FX mode.

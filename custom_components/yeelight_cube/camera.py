@@ -18,7 +18,15 @@ from homeassistant.core import HomeAssistant, callback  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: ignore
 from homeassistant.util import dt as dt_util  # type: ignore
 
-from .const import DOMAIN, CONF_IP
+from .const import (
+    DOMAIN,
+    CONF_IP,
+    CLOCK_MIXER_EFFECTS,
+    CLOCK_MIXER_EFFECT_DIRECTION,
+    CLOCK_MIXER_EFFECT_SPEED,
+    DEFAULT_NATIVE_CLOCK_STYLE,
+    NATIVE_CLOCK_STYLES,
+)
 from .layout import FONT_MAPS, char_advance
 from .native_effect_preview import render_music_flow_effect, render_native_effect
 
@@ -340,6 +348,20 @@ class _YeelightCubeMatrixCameraBase(Camera):
         style_id = int(getattr(le, "_native_clock_style", 6))
         matrix = [(0, 0, 0)] * 100
 
+        # Styles whose mixer is a native effect show that effect through the lit
+        # glyph pixels; render it once and mask it below. Others use the
+        # solid/gradient colour.
+        style = NATIVE_CLOCK_STYLES.get(
+            style_id, NATIVE_CLOCK_STYLES[DEFAULT_NATIVE_CLOCK_STYLE]
+        )
+        effect_name = CLOCK_MIXER_EFFECTS.get(style.get("mixer", 0))
+        effect_frame = None
+        if effect_name is not None:
+            phase = _time.monotonic() * (0.25 + CLOCK_MIXER_EFFECT_SPEED / 55.0)
+            effect_frame = render_native_effect(
+                effect_name, phase, CLOCK_MIXER_EFFECT_DIRECTION
+            )
+
         for char_index, (char, glyph, advance) in enumerate(
             zip(text, glyphs, advances)
         ):
@@ -350,11 +372,14 @@ class _YeelightCubeMatrixCameraBase(Camera):
                 col = position % COLS + offset
                 row = position // COLS
                 if 0 <= col < COLS and 0 <= row < ROWS:
-                    matrix[row * COLS + col] = self._clock_pixel_color(
-                        style_id,
-                        char_index,
-                        col,
-                    )
+                    if effect_frame is not None:
+                        matrix[row * COLS + col] = effect_frame[row * COLS + col]
+                    else:
+                        matrix[row * COLS + col] = self._clock_pixel_color(
+                            style_id,
+                            char_index,
+                            col,
+                        )
             offset += advance
 
         # Mirror the firmware clock face for left/up mounts.  The hardware

@@ -8,6 +8,7 @@ from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 
 from .const import (
+    ALL_NATIVE_EFFECTS,
     CONF_IP,
     CONTENT_MODES,
     DEFAULT_MATRIX_DISPLAY_MODE,
@@ -16,6 +17,7 @@ from .const import (
     DEFAULT_NATIVE_CLOCK_STYLE,
     DEFAULT_NATIVE_EFFECT,
     DOMAIN,
+    EXTENDED_NATIVE_EFFECTS,
     MATRIX_DISPLAY_MODES,
     MUSIC_FLOW_EFFECTS,
     NATIVE_CLOCK_CONTENT_LABELS,
@@ -837,7 +839,19 @@ class YeelightCubeNativeEffectSelect(SelectEntity):
         self._config_entry = config_entry
         self._attr_unique_id = f"{light_entity._attr_unique_id}_native_effect"
         self._attr_icon = "mdi:creation"
-        self._attr_options = list(NATIVE_EFFECTS)
+
+    @property
+    def options(self) -> list:
+        # Extended ("discovered") effects only appear when the switch is on; the
+        # currently-selected effect is always kept so HA never warns about an
+        # out-of-list value if the switch is toggled off while one is active.
+        names = list(NATIVE_EFFECTS)
+        if getattr(self._light_entity, "_extended_effects_enabled", False):
+            names += list(EXTENDED_NATIVE_EFFECTS)
+        current = getattr(self._light_entity, "_native_effect", DEFAULT_NATIVE_EFFECT)
+        if current not in names:
+            names.append(current)
+        return names
 
     @property
     def device_info(self):
@@ -857,8 +871,15 @@ class YeelightCubeNativeEffectSelect(SelectEntity):
         return getattr(self._light_entity, "_native_effect", DEFAULT_NATIVE_EFFECT)
 
     async def async_select_option(self, option: str) -> None:
-        if option not in NATIVE_EFFECTS:
+        if option not in ALL_NATIVE_EFFECTS:
             raise ValueError(f"Unknown native effect: {option}")
+        if (
+            option in EXTENDED_NATIVE_EFFECTS
+            and not getattr(self._light_entity, "_extended_effects_enabled", False)
+        ):
+            raise ValueError(
+                f"Extended effect '{option}' requires the Experimental Features switch"
+            )
         self._light_entity._native_effect = option
         if self._light_entity._native_effect_direction_select_entity:
             self._light_entity._native_effect_direction_select_entity.async_update_from_light()
@@ -904,12 +925,12 @@ class YeelightCubeNativeEffectDirectionSelect(SelectEntity):
 
     @property
     def available(self) -> bool:
-        spec = NATIVE_EFFECTS[self._light_entity._native_effect]
+        spec = ALL_NATIVE_EFFECTS[self._light_entity._native_effect]
         return self._light_entity.available and bool(spec.get("directions"))
 
     @property
     def current_option(self) -> str:
-        directions = NATIVE_EFFECTS[self._light_entity._native_effect].get(
+        directions = ALL_NATIVE_EFFECTS[self._light_entity._native_effect].get(
             "directions", NATIVE_EFFECT_DIRECTIONS
         )
         current = self._light_entity._native_effect_direction
@@ -930,7 +951,7 @@ class YeelightCubeNativeEffectDirectionSelect(SelectEntity):
         )
         if self._light_entity._device_orientation_select_entity:
             self._light_entity._device_orientation_select_entity.async_update_from_light()
-        spec = NATIVE_EFFECTS[self._light_entity._native_effect]
+        spec = ALL_NATIVE_EFFECTS[self._light_entity._native_effect]
         if (
             spec.get("directions")
             and self._light_entity._mode == "Native Effect"
@@ -944,7 +965,7 @@ class YeelightCubeNativeEffectDirectionSelect(SelectEntity):
 
     @callback
     def async_update_from_light(self):
-        directions = NATIVE_EFFECTS[self._light_entity._native_effect].get(
+        directions = ALL_NATIVE_EFFECTS[self._light_entity._native_effect].get(
             "directions", NATIVE_EFFECT_DIRECTIONS
         )
         self._attr_options = list(directions)

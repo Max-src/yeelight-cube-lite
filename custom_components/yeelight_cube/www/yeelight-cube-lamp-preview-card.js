@@ -22,6 +22,45 @@ import {
 } from "./capsule-slider-utils.js";
 
 // ── Clock face pixel renderer (mirrors Python camera.py _get_clock_preview) ──
+// Clock styles whose mixer is a native effect: the effect is rendered across
+// the whole panel and masked to the lit glyph pixels (mirrors const.py).
+const CLOCK_MIXER_EFFECTS = {
+  39: "Rainbow",
+  42: "Ocean Waves",
+  17: "Spectrum",
+  59: "Blue White",
+};
+const CLOCK_MIXER_EFFECT_DIRECTION = "Down";
+const CLOCK_MIXER_EFFECT_SPEED = 50;
+
+// Clock style id -> firmware mixer (mirrors NATIVE_CLOCK_STYLES in const.py).
+// Read from the always-present clock_style_id so effect detection never depends
+// on the nested clock_style object being serialised in the entity state.
+const CLOCK_STYLE_MIXER = {
+  1: 39,
+  2: 42,
+  3: 17,
+  4: 0,
+  5: 0,
+  6: 0,
+  7: 0,
+  8: 0,
+  9: 0,
+  10: 0,
+  11: 54,
+  12: 57,
+  13: 59,
+  14: 58,
+};
+
+function _clockStyleMixer(attrs) {
+  const id = attrs.clock_style_id;
+  if (typeof id === "number" && id in CLOCK_STYLE_MIXER)
+    return CLOCK_STYLE_MIXER[id];
+  const nested = attrs.clock_style;
+  return nested && typeof nested.mixer === "number" ? nested.mixer : 0;
+}
+
 // Basic-font glyph data: each value is a list of positions (row*20+col)
 const _CLOCK_FONT = {
   0: [1, 20, 22, 40, 42, 60, 62, 81, 0, 2, 80, 82],
@@ -127,7 +166,7 @@ function _clockPixelColor(styleId, charIndex, col) {
  * `fontMap`/`metrics` come from the Font Characters sensor ("native" font).
  * When absent, falls back to the embedded Basic-style glyphs (proportional).
  */
-function renderClockFrame(attrs, fontMap, metrics) {
+function renderClockFrame(attrs, fontMap, metrics, phase = 0) {
   const COLS = 20;
   const now = new Date();
   const tsSec = now.getTime() / 1000;
@@ -165,6 +204,13 @@ function renderClockFrame(attrs, fontMap, metrics) {
   );
 
   const styleId = attrs.clock_style_id ?? 6;
+  // Styles whose mixer is a native effect show that effect through the lit
+  // glyph pixels; render it once and mask it below.
+  const mixer = _clockStyleMixer(attrs);
+  const effectName = CLOCK_MIXER_EFFECTS[mixer];
+  const effectFrame = effectName
+    ? renderNativeEffect(effectName, phase, CLOCK_MIXER_EFFECT_DIRECTION)
+    : null;
   const matrix = Array.from({ length: 100 }, () => [0, 0, 0]);
   const chars = [...text];
   const font = fontMap || _CLOCK_FONT;
@@ -186,7 +232,9 @@ function renderClockFrame(attrs, fontMap, metrics) {
       const col = (pos % COLS) + offset;
       const row = Math.floor(pos / COLS);
       if (col >= 0 && col < COLS && row >= 0 && row < 5)
-        matrix[row * COLS + col] = _clockPixelColor(styleId, i, col);
+        matrix[row * COLS + col] = effectFrame
+          ? effectFrame[row * COLS + col]
+          : _clockPixelColor(styleId, i, col);
     }
     offset += advance;
   }
@@ -2431,12 +2479,22 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     this._nativeAnimStartedAt = null;
   }
 
-  // Begin the client-side clock animation (updates every 500 ms so the
-  // colon blink and minute changes are always visible).
+  // Begin the client-side clock animation. Solid/gradient styles only need a
+  // slow tick for the colon blink and minute changes (500 ms); styles whose
+  // mixer is a native effect animate that effect, so they tick at 100 ms.
   _startClockAnimation() {
-    if (this._clockAnimTimer) return;
-    this._clockAnimTimer = setInterval(() => this._clockAnimFrame(), 500);
+    const interval = this._clockAnimInterval();
+    if (this._clockAnimTimer && this._clockAnimTimerMs === interval) return;
+    this._stopClockAnimation();
+    this._clockAnimTimerMs = interval;
+    this._clockAnimTimer = setInterval(() => this._clockAnimFrame(), interval);
     this._clockAnimFrame(); // draw the first frame immediately
+  }
+
+  _clockAnimInterval() {
+    const attrs = this._hass?.states?.[this.config?.entity]?.attributes;
+    const mixer = attrs ? _clockStyleMixer(attrs) : 0;
+    return CLOCK_MIXER_EFFECTS[mixer] ? 100 : 500;
   }
 
   _stopClockAnimation() {
@@ -2444,6 +2502,8 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       clearInterval(this._clockAnimTimer);
       this._clockAnimTimer = null;
     }
+    this._clockAnimTimerMs = null;
+    this._clockAnimStartedAt = null;
   }
 
   _clockAnimFrame() {
@@ -2455,8 +2515,13 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     const dots = this.shadowRoot?.querySelectorAll(".lamp-dot");
     if (!dots || dots.length !== 100) return; // matrix not rendered yet
 
+    const now = performance.now();
+    if (this._clockAnimStartedAt == null) this._clockAnimStartedAt = now;
+    const phase =
+      ((now - this._clockAnimStartedAt) / 1000) *
+      (0.25 + CLOCK_MIXER_EFFECT_SPEED / 55.0);
     const { fontMap, metrics } = this._getNativeClockFont();
-    const pix = renderClockFrame(st.attributes, fontMap, metrics);
+    const pix = renderClockFrame(st.attributes, fontMap, metrics, phase);
     const grid = this._matrixColorsToGridColors(pix, st);
     this._updateMatrixColors(grid, st);
   }

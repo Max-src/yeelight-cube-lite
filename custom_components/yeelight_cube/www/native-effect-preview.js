@@ -581,7 +581,19 @@ function renderFlowerSea(phase, direction) {
   return pixels;
 }
 
+// The lamp's four Kaleidoscope variants read 90 deg rotated from the on-screen
+// arrow (verified on hardware): selecting Right looks like the preview's Up,
+// Down like Right, Left like Down, Up like Left. Relabel so each arrow shows the
+// variant the lamp actually plays.
+const KALEIDOSCOPE_PREVIEW_DIRECTION = {
+  Up: "Left",
+  Left: "Down",
+  Down: "Right",
+  Right: "Up",
+};
+
 function renderKaleidoscope(phase, direction) {
+  direction = KALEIDOSCOPE_PREVIEW_DIRECTION[direction] || direction;
   if (direction === "Up" || direction === "Down") {
     return renderKaleidoscopeSnakes(phase, direction);
   }
@@ -659,8 +671,15 @@ function kaleidoscopeSnakeEvents(phase) {
   return events;
 }
 
+function mirroredPathDistance(position, origin, period) {
+  return Math.abs(
+    ((((position - origin + period / 2.0) % period) + period) % period) -
+      period / 2.0,
+  );
+}
+
 function kaleidoscopeMirrorColumn(col) {
-  return Math.abs(((col + 1) % 16) - 8);
+  return Math.round(mirroredPathDistance(col, 7.0, 16.0));
 }
 
 function renderKaleidoscopeSnakes(phase, direction) {
@@ -699,6 +718,48 @@ function renderKaleidoscopeSnakes(phase, direction) {
 
   const pixels = hues.map((hue, index) => hsv(hue, sats[index], 1.0));
   if (direction === "Up") pixels.reverse();
+  return pixels;
+}
+
+function blueWhiteOrigin(phase) {
+  // Slow drift of the source/end, matching the recording's ~140 s wander.
+  return (
+    (((9.5 +
+      5.8 * Math.sin(phase * 0.045 + 0.7) +
+      1.6 * Math.sin(phase * 0.045 * 0.39 + 2.1)) %
+      PREVIEW_COLS) +
+      PREVIEW_COLS) %
+    PREVIEW_COLS
+  );
+}
+
+function renderBlueWhite(phase, direction) {
+  // The lamp plays this identically for every arrow, so direction is ignored
+  // (always the horizontal "right" form).
+  void direction;
+  const origin = blueWhiteOrigin(phase);
+  // The front travels the half period (0 = source, 8 = the meeting fold), then
+  // a new one is reborn at the source; floor keeps Python/JS wrapping identical.
+  const travel = phase * 0.17;
+  const front = 8.0 * (travel - Math.floor(travel));
+  const sigma = 1.25;
+  const pixels = [];
+
+  for (let row = 0; row < PREVIEW_ROWS; row++) {
+    for (let col = 0; col < PREVIEW_COLS; col++) {
+      const position = col + (row / (PREVIEW_ROWS - 1) - 0.5) * 0.7;
+      const distance = mirroredPathDistance(position, origin, 16.0);
+      const spread = distance <= front ? sigma : sigma * 0.6;
+      let white = Math.exp(
+        -((distance - front) ** 2) / (2.0 * spread * spread),
+      );
+      if (distance < front) {
+        white = Math.max(white, 0.4 * Math.exp(-(front - distance) / 2.2));
+      }
+      pixels.push(rgb(16.0 + 224.0 * white, 104.0 + 142.0 * white, 255.0));
+    }
+  }
+
   return pixels;
 }
 
@@ -853,6 +914,7 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
   if (effect === "Wonderland") return renderWonderland(phase);
   if (effect === "Flower Sea") return renderFlowerSea(phase, direction);
   if (effect === "Kaleidoscope") return renderKaleidoscope(phase, direction);
+  if (effect === "Blue White") return renderBlueWhite(phase, direction);
   if (effect === "Palette") return renderPalette(phase, direction);
 
   const frame = Math.floor(phase * 5);

@@ -15,6 +15,7 @@ from homeassistant.exceptions import HomeAssistantError  # type: ignore
 from homeassistant.util import dt as dt_util  # type: ignore
 
 from .const import (
+    ALL_NATIVE_EFFECTS,
     DEFAULT_NATIVE_CLOCK_STYLE,
     DEFAULT_NATIVE_EFFECT,
     DOMAIN,
@@ -209,8 +210,8 @@ class NativeModesMixin:
         # Imported lazily to avoid a circular import at module load: light.py
         # imports this mixin, and this map lives in light.py's module scope.
         from .light import _DEVICE_ORIENTATION_TO_EFFECT_DIR
-        spec = NATIVE_EFFECTS.get(
-            self._native_effect, NATIVE_EFFECTS[DEFAULT_NATIVE_EFFECT]
+        spec = ALL_NATIVE_EFFECTS.get(
+            self._native_effect, ALL_NATIVE_EFFECTS[DEFAULT_NATIVE_EFFECT]
         )
         effect_config = {"mode": spec["mode"], "onoff": 1}
         if spec.get("speed"):

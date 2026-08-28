@@ -28,12 +28,30 @@ NATIVE_CLOCK_STYLES = {
     8: {"name": "Red", "mixer": 0, "color": 33423360},
     9: {"name": "Cyan", "mixer": 0, "color": 12046834},
     10: {"name": "Purple", "mixer": 0, "color": 16263678},
-    11: {"name": "Sunset Gradient", "mixer": 54},
+    11: {"name": "Sunset", "mixer": 54},
     12: {"name": "Blue Yellow", "mixer": 57},
-    13: {"name": "Blue White Fade", "mixer": 59},
-    14: {"name": "Ice Blue Gradient", "mixer": 58},
+    13: {"name": "Blue White", "mixer": 59},
+    14: {"name": "Ice Blue", "mixer": 58},
 }
 DEFAULT_NATIVE_CLOCK_STYLE = 6
+
+# Clock styles whose firmware ``mixer`` is a standalone native effect. For
+# these the lamp runs that effect across the whole panel and lets its colour
+# through only on the lit time/date pixels (everything else stays black), so
+# the characters animate with the effect. The preview reproduces this by
+# rendering the effect and masking it to the glyph pixels. The remaining
+# Mixers without a dedicated software renderer keep a static gradient
+# approximation.
+CLOCK_MIXER_EFFECTS = {
+    39: "Rainbow",
+    42: "Ocean Waves",
+    17: "Spectrum",
+    59: "Blue White",
+}
+# The clock command carries no direction/speed for the mixer; "Down" gives the
+# horizontal colour sweep across the characters the lamp shows, 50 is neutral.
+CLOCK_MIXER_EFFECT_DIRECTION = "Down"
+CLOCK_MIXER_EFFECT_SPEED = 50
 
 # Clock content mode -> data byte 0 of the clock payload:
 #   1 = time only, 2 = alternate time+date, 3 = date only
@@ -89,6 +107,43 @@ NATIVE_EFFECTS = {
     "Palette": {"effect_id": 96, "mode": 81, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS},
 }
 DEFAULT_NATIVE_EFFECT = "Streamer"
+
+# "Extended" native effects: firmware animation ``mode`` values that exist in
+# the Cube Lite hardware but were never exposed as selectable effects in the
+# official Yeelight app. Reached by sending effect_id 3 with the mode, e.g.
+# [3, 0, 4, {"mode": 58, "onoff": 1, "rate": 50, "direction": 2}] (the
+# full-panel form of the clock gradient mixer 58). We expose every mode in the
+# 1-99 range that isn't already an official effect (or the clock renderer);
+# names are placeholders (the mode number) until renamed. Hidden behind the
+# "Experimental Features" switch.
+_OFFICIAL_EFFECT_MODES = {spec["mode"] for spec in NATIVE_EFFECTS.values()} | {
+    NATIVE_CLOCK_EFFECT_ID
+}
+# Named extended effects; every other slot keeps its mode number as a
+# placeholder name. These four are the full-panel form of the clock gradient
+# mixers 54/57/58/59 and share the clock styles' names.
+_EXTENDED_EFFECT_NAMES = {
+    54: "Sunset",
+    57: "Blue Yellow",
+    58: "Ice Blue",
+    59: "Blue White",
+}
+EXTENDED_NATIVE_EFFECTS = {
+    _EXTENDED_EFFECT_NAMES.get(mode, str(mode)): {
+        "effect_id": 3,
+        "mode": mode,
+        "speed": True,
+        "directions": NATIVE_EFFECT_DIRECTIONS,
+        "extended": True,
+    }
+    for mode in range(1, 100)
+    if mode not in _OFFICIAL_EFFECT_MODES
+}
+
+# All selectable native effects (official + extended). Spec lookups (activation,
+# direction, speed) use this so a selected extended effect resolves; the select
+# entity decides which names are actually offered based on the switch.
+ALL_NATIVE_EFFECTS = {**NATIVE_EFFECTS, **EXTENDED_NATIVE_EFFECTS}
 
 # Device-microphone music flow definitions recovered from the Yeelight app.
 # The protocol deliberately spells palette as ``palatte`` in the JSON payload.

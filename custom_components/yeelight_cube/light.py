@@ -35,6 +35,7 @@ from .const import (
     DEFAULT_NATIVE_CLOCK_STYLE,
     DEFAULT_NATIVE_EFFECT,
     DOMAIN,
+    ALL_NATIVE_EFFECTS,
     MATRIX_DISPLAY_MODES,
     MUSIC_FLOW_EFFECT_IDS,
     MUSIC_FLOW_EFFECTS,
@@ -383,6 +384,8 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         self._native_effect = DEFAULT_NATIVE_EFFECT
         self._native_effect_speed = 50
         self._native_effect_direction = "Up"
+        # Reveal firmware effects that the official app never exposed.
+        self._extended_effects_enabled = False
         self._music_flow_enabled = False
         self._music_flow_effect = DEFAULT_MUSIC_FLOW_EFFECT
         self._music_flow_restore_power = None
@@ -574,6 +577,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         self._native_effect_select_entity = None
         self._native_effect_direction_select_entity = None
         self._native_effect_speed_entity = None
+        self._extended_effects_switch_entity = None
         self._music_flow_effect_select_entity = None
         self._power_on_state_select_entity = None
         self._device_orientation_select_entity = None
@@ -1133,7 +1137,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         # For native effects, steer the effect's flow to match the mounting,
         # but only if the current effect supports that direction.
         if self._mode == "Native Effect":
-            spec = NATIVE_EFFECTS.get(self._native_effect, {})
+            spec = ALL_NATIVE_EFFECTS.get(self._native_effect, {})
             directions = spec.get("directions")
             desired = _DEVICE_ORIENTATION_TO_EFFECT_DIR.get(orientation)
             if directions and desired in directions:
@@ -1269,6 +1273,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             "native_effect": self._native_effect,
             "native_effect_speed": self._native_effect_speed,
             "native_effect_direction": self._native_effect_direction,
+            "extended_effects_enabled": self._extended_effects_enabled,
             "music_flow_enabled": self._music_flow_enabled,
             "music_flow_effect": self._music_flow_effect,
             "music_flow_restore_power": self._music_flow_restore_power,
@@ -1513,8 +1518,12 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             native_effect = old_state.attributes.get("native_effect")
             # Migrate legacy names (e.g. "Ribbon") to current app names.
             native_effect = NATIVE_EFFECT_RENAMES.get(native_effect, native_effect)
-            if native_effect in NATIVE_EFFECTS:
+            if native_effect in ALL_NATIVE_EFFECTS:
                 self._native_effect = native_effect
+            if old_state.attributes.get("extended_effects_enabled") is not None:
+                self._extended_effects_enabled = bool(
+                    old_state.attributes["extended_effects_enabled"]
+                )
             if old_state.attributes.get("native_effect_speed") is not None:
                 self._native_effect_speed = max(
                     1, min(255, int(old_state.attributes["native_effect_speed"]))

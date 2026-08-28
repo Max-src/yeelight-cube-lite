@@ -644,11 +644,24 @@ def _render_flower_sea(
     return pixels
 
 
+# The lamp's four Kaleidoscope variants read 90 deg rotated from the on-screen
+# arrow (verified on hardware): selecting Right looks like the preview's Up,
+# Down like Right, Left like Down, Up like Left. Relabel so each arrow shows the
+# variant the lamp actually plays.
+_KALEIDOSCOPE_PREVIEW_DIRECTION = {
+    "Up": "Left",
+    "Left": "Down",
+    "Down": "Right",
+    "Right": "Up",
+}
+
+
 def _render_kaleidoscope(
     phase: float,
     direction: str,
 ) -> list[tuple[int, int, int]]:
     """Render counter-moving rows or bidirectional rainbow fronts."""
+    direction = _KALEIDOSCOPE_PREVIEW_DIRECTION.get(direction, direction)
     if direction in ("Up", "Down"):
         return _render_kaleidoscope_snakes(phase, direction)
     return _render_kaleidoscope_rows(phase, direction)
@@ -720,8 +733,16 @@ def _kaleidoscope_snake_events(
     return events
 
 
+def _mirrored_path_distance(
+    position: float,
+    origin: float,
+    period: float,
+) -> float:
+    return abs((position - origin + period / 2.0) % period - period / 2.0)
+
+
 def _kaleidoscope_mirror_column(col: int) -> int:
-    return abs((col + 1) % 16 - 8)
+    return round(_mirrored_path_distance(col, 7.0, 16.0))
 
 
 def _render_kaleidoscope_snakes(
@@ -760,6 +781,51 @@ def _render_kaleidoscope_snakes(
     pixels = [_hsv(hue, sat, 1.0) for hue, sat in zip(hues, sats)]
     if direction == "Up":
         pixels.reverse()
+    return pixels
+
+
+def _blue_white_origin(phase: float) -> float:
+    # Slow drift of the source/end, matching the recording's ~140 s wander.
+    return (
+        9.5
+        + 5.8 * math.sin(phase * 0.045 + 0.7)
+        + 1.6 * math.sin(phase * 0.045 * 0.39 + 2.1)
+    ) % COLS
+
+
+def _render_blue_white(
+    phase: float,
+    direction: str,
+) -> list[tuple[int, int, int]]:
+    """Render a white front born at a wandering source that travels outward and
+    lights up fully when it meets its mirror reflection at the fold. The lamp
+    plays this identically for every arrow, so direction is ignored (always the
+    horizontal "right" form)."""
+    del direction
+    origin = _blue_white_origin(phase)
+    # The front travels the half period (0 = source, 8 = the meeting fold), then
+    # a new one is reborn at the source; floor keeps Python/JS wrapping identical.
+    travel = phase * 0.17
+    front = 8.0 * (travel - math.floor(travel))
+    sigma = 1.25
+    pixels = []
+
+    for row in range(ROWS):
+        for col in range(COLS):
+            position = col + (row / (ROWS - 1) - 0.5) * 0.7
+            distance = _mirrored_path_distance(position, origin, 16.0)
+            spread = sigma if distance <= front else sigma * 0.6
+            white = math.exp(-((distance - front) ** 2) / (2.0 * spread * spread))
+            if distance < front:
+                white = max(white, 0.4 * math.exp(-(front - distance) / 2.2))
+            pixels.append(
+                _rgb(
+                    16.0 + 224.0 * white,
+                    104.0 + 142.0 * white,
+                    255.0,
+                )
+            )
+
     return pixels
 
 
@@ -898,6 +964,8 @@ def render_native_effect(
         return _render_flower_sea(phase, direction)
     if effect == "Kaleidoscope":
         return _render_kaleidoscope(phase, direction)
+    if effect == "Blue White":
+        return _render_blue_white(phase, direction)
     if effect == "Palette":
         return _render_palette(phase, direction)
 

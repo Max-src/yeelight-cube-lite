@@ -24,6 +24,10 @@ LIGHT_SOURCE = "\n\n".join(
 INIT_SOURCE = (ROOT / "__init__.py").read_text(encoding="utf-8")
 CAMERA_SOURCE = (ROOT / "camera.py").read_text(encoding="utf-8")
 SELECT_SOURCE = (ROOT / "select.py").read_text(encoding="utf-8")
+SWITCH_SOURCE = (ROOT / "switch.py").read_text(encoding="utf-8")
+CLOCK_CARD_SOURCE = (
+    ROOT / "www" / "yeelight-cube-lamp-preview-card.js"
+).read_text(encoding="utf-8")
 
 
 def _function_source(source: str, name: str) -> str:
@@ -632,7 +636,9 @@ class NativeFeatureTests(unittest.TestCase):
             for pixel in frame:
                 self.assertEqual(3, len(pixel))
                 self.assertTrue(all(channel in range(256) for channel in pixel))
-        self.assertTrue(any(max(pixel) == 255 for pixel in frames["Right"]))
+        # After the on-screen direction relabel, the folded-rainbow rows family
+        # is shown for the Down (and Up) arrows.
+        self.assertTrue(any(max(pixel) == 255 for pixel in frames["Down"]))
 
         def pixel_distance(first, second):
             return sum(abs(a - b) for a, b in zip(first, second))
@@ -641,7 +647,7 @@ class NativeFeatureTests(unittest.TestCase):
         # ordinary neighboring points on one path, not independently offset
         # lanes, so no row boundary may produce a color discontinuity.
         for step in range(300):
-            frame = render("Kaleidoscope", step * 0.1, "Right")
+            frame = render("Kaleidoscope", step * 0.1, "Down")
             for row in range(4):
                 fold_col = 19 if row % 2 == 0 else 0
                 self.assertLessEqual(
@@ -675,21 +681,21 @@ class NativeFeatureTests(unittest.TestCase):
 
         # Neighbouring rows scroll in opposite directions (odd/even fold) so the
         # rainbow's two halves slide apart across each row pair.
-        right = [net_shift("Right", row) for row in range(5)]
-        self.assertTrue(all(right), right)
+        down = [net_shift("Down", row) for row in range(5)]
+        self.assertTrue(all(down), down)
         for row in range(1, 5):
-            self.assertNotEqual(right[row - 1] > 0, right[row] > 0, right)
+            self.assertNotEqual(down[row - 1] > 0, down[row] > 0, down)
 
-        # Left is the mirror of Right: every lane slides the opposite way.
-        left = [net_shift("Left", row) for row in range(5)]
-        for right_dir, left_dir in zip(right, left):
-            self.assertNotEqual(right_dir > 0, left_dir > 0, (right, left))
+        # Up is the mirror of Down: every lane slides the opposite way.
+        up = [net_shift("Up", row) for row in range(5)]
+        for down_dir, up_dir in zip(down, up):
+            self.assertNotEqual(down_dir > 0, up_dir > 0, (down, up))
 
         # Rows never collapse to a single repeated line; the panel shows five
         # distinct lanes as the folded rainbow slides across.
         distinct = max(
             len({
-                tuple(render("Kaleidoscope", step * 0.3, "Right")[row * 20:(row + 1) * 20])
+                tuple(render("Kaleidoscope", step * 0.3, "Down")[row * 20:(row + 1) * 20])
                 for row in range(5)
             })
             for step in range(60)
@@ -702,7 +708,7 @@ class NativeFeatureTests(unittest.TestCase):
         single = []
         pair_together = []
         for step in range(300):
-            frame = render("Kaleidoscope", step * 0.2, "Right")
+            frame = render("Kaleidoscope", step * 0.2, "Down")
             row_buckets = []
             for row in range(5):
                 buckets = {
@@ -736,14 +742,15 @@ class NativeFeatureTests(unittest.TestCase):
 
         # A rainbow snake winds column-by-column, so columns are NOT flat: its
         # bright head reads as a moving point and the trail gives vertical
-        # variation within columns most of the time.
+        # variation within columns most of the time. After the direction
+        # relabel, the snake family is shown for the Left (and Right) arrows.
         nonuniform_frames = 0
         red_head_frames = 0
         varied_frames = 0
         blue_dominant_frames = 0
         for step in range(200):
             phase = step * 0.25
-            frame = render("Kaleidoscope", phase, "Down")
+            frame = render("Kaleidoscope", phase, "Left")
             columns_varying = sum(
                 1
                 for col in range(20)
@@ -840,18 +847,68 @@ class NativeFeatureTests(unittest.TestCase):
             (0, 16), (1, 17), (2, 18), (3, 19),
         )
         for step in range(200):
-            down = render("Kaleidoscope", step * 0.2, "Down")
+            down = render("Kaleidoscope", step * 0.2, "Left")
             for row in range(5):
                 for first, second in mirror_pairs:
                     self.assertEqual(
                         down[row * 20 + first], down[row * 20 + second]
                     )
 
-        # Up is the same physical animation with the display rotated 180°.
+        # Right is the same physical animation with the display rotated 180.
         for step in range(100):
-            down = render("Kaleidoscope", step * 0.3, "Down")
-            up = render("Kaleidoscope", step * 0.3, "Up")
+            down = render("Kaleidoscope", step * 0.3, "Left")
+            up = render("Kaleidoscope", step * 0.3, "Right")
             self.assertEqual(list(reversed(down)), up)
+
+    def test_blue_white_uses_wandering_reflected_ridges(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+        origin = NATIVE_PREVIEW["_blue_white_origin"]
+
+        self.assertEqual("Blue White", CONSTANTS["CLOCK_MIXER_EFFECTS"][59])
+        self.assertIn('59: "Blue White"', CLOCK_CARD_SOURCE)
+
+        frames = [render("Blue White", step * 0.2, "Right") for step in range(300)]
+        self.assertGreater(len({tuple(frame) for frame in frames}), 290)
+        self.assertGreater(max(origin(step * 0.2) for step in range(800)), 15.0)
+        self.assertLess(min(origin(step * 0.2) for step in range(800)), 5.0)
+
+        white_pixels = blue_pixels = 0
+        for frame in frames:
+            for red, green, blue in frame:
+                self.assertEqual(255, blue)
+                self.assertLessEqual(red, green)
+                if red > 180 and green > 200:
+                    white_pixels += 1
+                if red < 45 and 80 < green < 150:
+                    blue_pixels += 1
+        self.assertGreater(white_pixels, 1000)
+        self.assertGreater(blue_pixels, 10000)
+
+        # The travelling front must light up fully white where it meets its
+        # mirror at the fold (origin + 8), never reading blue at the meeting.
+        fold_peak = 0
+        for step in range(700):
+            phase = step * 0.1
+            antipode = round((origin(phase) + 8) % 20)
+            frame = render("Blue White", phase, "Right")
+            for col in (antipode - 1, antipode, (antipode + 1) % 20):
+                fold_peak = max(fold_peak, frame[2 * 20 + col][1])
+        self.assertGreater(fold_peak, 220)
+
+        # The lamp plays Blue White identically for every arrow, so all four
+        # directions match the horizontal "right" form.
+        for phase in (0.37, 8.6, 23.4, 51.9):
+            right = render("Blue White", phase, "Right")
+            for direction in ("Up", "Down", "Left"):
+                self.assertEqual(right, render("Blue White", phase, direction))
+
+        # Recorded horizontal frames are nearly column-uniform, but the lower
+        # rows trail by about one column instead of being exact copies.
+        frame = render("Blue White", 8.6, "Right")
+        distinct_rows = {
+            tuple(frame[row * 20:(row + 1) * 20]) for row in range(5)
+        }
+        self.assertGreaterEqual(len(distinct_rows), 4)
 
     def test_music_flow_previews_are_static_valid_and_distinct(self):
         render = NATIVE_PREVIEW["render_music_flow_effect"]
@@ -878,6 +935,116 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertIn('("left", "up")', preview)
         self.assertNotIn('"_music_flow_enabled"', animated)
         self.assertIn('"_music_flow_enabled"', generated)
+
+    def test_clock_mixer_effects_map_to_supported_native_effects(self):
+        mixer_effects = CONSTANTS["CLOCK_MIXER_EFFECTS"]
+        native_effects = CONSTANTS["ALL_NATIVE_EFFECTS"]
+        clock_styles = CONSTANTS["NATIVE_CLOCK_STYLES"]
+        render = NATIVE_PREVIEW["render_native_effect"]
+        # Every mapped effect must be a real, renderable native effect.
+        for mixer, effect_name in mixer_effects.items():
+            self.assertIn(effect_name, native_effects)
+            frame = render(effect_name, 3.0, CONSTANTS["CLOCK_MIXER_EFFECT_DIRECTION"])
+            self.assertEqual(100, len(frame))
+        # The mixer ids must match the corresponding clock styles' mixers, and a
+        # mixer must resolve to the same effect that shares its firmware id.
+        self.assertEqual("Rainbow", mixer_effects[clock_styles[1]["mixer"]])
+        self.assertEqual("Ocean Waves", mixer_effects[clock_styles[2]["mixer"]])
+        self.assertEqual("Spectrum", mixer_effects[clock_styles[3]["mixer"]])
+        for mixer, effect_name in mixer_effects.items():
+            self.assertEqual(mixer, native_effects[effect_name]["mode"])
+        # The direction must produce colour variation across columns so the
+        # masked clock characters sweep horizontally rather than banding by row.
+        frame = render("Rainbow", 0.0, CONSTANTS["CLOCK_MIXER_EFFECT_DIRECTION"])
+        columns = {tuple(frame[c]) for c in range(20)}
+        self.assertGreater(len(columns), 10)
+
+    def test_clock_preview_masks_native_effect_and_keeps_colon_blink(self):
+        clock = _function_source(CAMERA_SOURCE, "_get_clock_preview")
+        # Mixer-effect styles render the effect and mask it to the glyph pixels.
+        self.assertIn("CLOCK_MIXER_EFFECTS", clock)
+        self.assertIn("render_native_effect(", clock)
+        self.assertIn("effect_frame[row * COLS + col]", clock)
+        # Colon blink, date/12h/offset handling stay intact.
+        self.assertIn('char == ":"', clock)
+        self.assertIn("colon_visible", clock)
+        self.assertIn("_native_clock_12_hour", clock)
+        # The JS card mirrors the same masking and colon-blink behaviour.
+        self.assertIn("CLOCK_MIXER_EFFECTS", CLOCK_CARD_SOURCE)
+        self.assertIn("renderNativeEffect(effectName", CLOCK_CARD_SOURCE)
+        self.assertIn("effectFrame[row * COLS + col]", CLOCK_CARD_SOURCE)
+        self.assertIn("colonVisible", CLOCK_CARD_SOURCE)
+
+    def test_fx_explorer_reflects_clock_style_for_live_preview(self):
+        handler = _function_source(LIGHT_SOURCE, "handle_send_fx_effect")
+        # Everything before the persist blocks is the always-reflect path that
+        # runs even when persist is unchecked (the fx-explorer card default).
+        reflect = handler.split("persisted = False")[0]
+        # Selecting a clock style must update the style itself (not just the
+        # mode) so the preview card renders the correct masked effect / colour,
+        # and must refresh the linked settings controls -- matching a normal
+        # clock-style selection from the device page.
+        self.assertIn('target._mode = "Clock"', reflect)
+        self.assertIn("target._native_clock_style = effect_style", reflect)
+        self.assertIn("target._refresh_linked_entities()", reflect)
+        # The card derives the effect from clock_style_id, so it must be the
+        # attribute that gets updated.
+        self.assertIn("clock_style_id", CLOCK_CARD_SOURCE)
+        self.assertIn("_clockStyleMixer", CLOCK_CARD_SOURCE)
+
+    def test_extended_native_effects_are_hidden_gradient_modes(self):
+        official = CONSTANTS["NATIVE_EFFECTS"]
+        extended = CONSTANTS["EXTENDED_NATIVE_EFFECTS"]
+        merged = CONSTANTS["ALL_NATIVE_EFFECTS"]
+        official_modes = {spec["mode"] for spec in official.values()}
+        clock_mode = CONSTANTS["NATIVE_CLOCK_EFFECT_ID"]
+        # Every firmware mode in 1..99 that isn't already an official effect (or
+        # the clock renderer) is exposed as an extended effect via effect_id 3.
+        expected_modes = {
+            m for m in range(1, 100)
+            if m not in official_modes and m != clock_mode
+        }
+        self.assertEqual(
+            expected_modes, {spec["mode"] for spec in extended.values()}
+        )
+        # Official effect modes and the clock mode must be skipped.
+        for skipped in (3, 5, 42, 46, 47, 48, 49, 55, 80, 81):
+            self.assertNotIn(str(skipped), extended)
+        self.assertNotIn(str(clock_mode), extended)
+        # The four named clock-gradient effects use their given names + modes.
+        named = {"Sunset": 54, "Blue Yellow": 57, "Ice Blue": 58, "Blue White": 59}
+        for effect_name, mode in named.items():
+            self.assertIn(effect_name, extended)
+            self.assertEqual(mode, extended[effect_name]["mode"])
+        for name, spec in extended.items():
+            self.assertEqual(3, spec["effect_id"])
+            self.assertTrue(spec.get("extended"))
+            self.assertTrue(spec.get("speed"))
+            self.assertNotIn(spec["mode"], official_modes)
+            # Unnamed slots keep the mode number as a placeholder name.
+            if name not in named:
+                self.assertEqual(name, str(spec["mode"]))
+        # Official list is untouched; merged is the exact union.
+        self.assertEqual(18, len(official))
+        self.assertEqual({**official, **extended}, merged)
+
+    def test_extended_effects_are_gated_behind_the_switch(self):
+        # The effect dropdown only offers the extended effects when enabled, and
+        # refuses to select one while the switch is off.
+        self.assertIn("EXTENDED_NATIVE_EFFECTS", SELECT_SOURCE)
+        self.assertIn("_extended_effects_enabled", SELECT_SOURCE)
+        self.assertIn("requires the Experimental Features switch", SELECT_SOURCE)
+        # A dedicated switch toggles the feature and refreshes the dropdown.
+        self.assertIn("class YeelightCubeExtendedEffectsSwitch", SWITCH_SOURCE)
+        self.assertIn(
+            "YeelightCubeExtendedEffectsSwitch(config_entry, light_data)",
+            SWITCH_SOURCE,
+        )
+        self.assertIn("_native_effect_select_entity", SWITCH_SOURCE)
+        # The toggle is persisted on the light for restore, and spec lookups use
+        # the merged dict so a selected extended effect still activates.
+        self.assertIn('"extended_effects_enabled"', LIGHT_SOURCE)
+        self.assertIn("ALL_NATIVE_EFFECTS", LIGHT_SOURCE)
 
     def test_official_gallery_contains_68_valid_drawings(self):
         drawings = PIXEL_ART["get_builtin_pixel_arts"]()

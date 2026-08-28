@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant, callback  # type: ignore
 from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: ignore
 
-from .const import DOMAIN, CONF_IP, NATIVE_EFFECTS
+from .const import DOMAIN, CONF_IP, ALL_NATIVE_EFFECTS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -420,7 +420,7 @@ class YeelightCubeNativeEffectSpeedNumber(NumberEntity):
 
     @property
     def available(self) -> bool:
-        spec = NATIVE_EFFECTS[self._light_entity._native_effect]
+        spec = ALL_NATIVE_EFFECTS[self._light_entity._native_effect]
         return self._light_entity.available and bool(spec.get("speed"))
 
     @property
@@ -429,7 +429,7 @@ class YeelightCubeNativeEffectSpeedNumber(NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         self._light_entity._native_effect_speed = max(1, min(255, int(value)))
-        spec = NATIVE_EFFECTS[self._light_entity._native_effect]
+        spec = ALL_NATIVE_EFFECTS[self._light_entity._native_effect]
         if (
             spec.get("speed")
             and self._light_entity._mode == "Native Effect"

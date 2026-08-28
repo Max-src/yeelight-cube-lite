@@ -32,6 +32,7 @@ async def async_setup_entry(
         YeelightCubeClock12HourSwitch(config_entry, light_data),
         YeelightCubeClockColonBlinkSwitch(config_entry, light_data),
         YeelightCubeScrollSwitch(config_entry, light_data),
+        YeelightCubeExtendedEffectsSwitch(config_entry, light_data),
     ]
     
     async_add_entities(switches)
@@ -97,6 +98,63 @@ class YeelightCubeAutoTurnOnSwitch(SwitchEntity):
     def available(self) -> bool:
         """Return True if entity is available."""
         return self._light_entity is not None
+
+
+class YeelightCubeExtendedEffectsSwitch(SwitchEntity):
+    """Reveal firmware native effects the official Yeelight app never exposed.
+
+    When on, the Native Effect dropdown also offers the "discovered" effects
+    (the full-panel gradient modes 54/57/58/59). Off by default.
+    """
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+
+    def __init__(self, config_entry: ConfigEntry, light_data):
+        self._config_entry = config_entry
+        self._light_entity = light_data.get("light")
+        self._attr_name = "Experimental Features"
+        self._attr_unique_id = (
+            f"{self._light_entity._attr_unique_id}_extended_effects"
+        )
+        self._attr_icon = "mdi:flask-outline"
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
+            "name": self._light_entity._attr_name,
+            "manufacturer": "Yeelight",
+            "model": "Cube Matrix",
+        }
+
+    @property
+    def available(self) -> bool:
+        return self._light_entity is not None
+
+    @property
+    def is_on(self) -> bool:
+        return bool(getattr(self._light_entity, "_extended_effects_enabled", False))
+
+    async def async_turn_on(self, **kwargs):
+        await self._set_enabled(True)
+
+    async def async_turn_off(self, **kwargs):
+        await self._set_enabled(False)
+
+    async def _set_enabled(self, value: bool) -> None:
+        self._light_entity._extended_effects_enabled = value
+        # Refresh the effect dropdown so the extended options appear/disappear.
+        select = getattr(self._light_entity, "_native_effect_select_entity", None)
+        if select is not None and getattr(select, "hass", None) is not None:
+            select.async_write_ha_state()
+        self.async_write_ha_state()
+        if self._light_entity.hass is not None:
+            self._light_entity.async_write_ha_state()
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        self._light_entity._extended_effects_switch_entity = self
 
 
 class _YeelightCubeClockOptionSwitch(SwitchEntity):
