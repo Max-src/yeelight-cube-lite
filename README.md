@@ -854,9 +854,9 @@ Configure via the **Transition Effect**, **Transition Steps**, and **Transition 
 
 | Requirement | Details |
 | :-- | :-- |
-| **Home Assistant** | 2024.1.0 or newer |
+| **Home Assistant** | 2024.12.0 or newer |
 | **Hardware** | Yeelight Cube Smart Lamp Lite (or compatible matrix device) on the same LAN |
-| **Python packages** | `yeelight` and `Pillow` (installed automatically by HA) |
+| **Python packages** | `yeelight` (installed automatically by HA); `Pillow` is provided by Home Assistant core |
 
 ---
 
