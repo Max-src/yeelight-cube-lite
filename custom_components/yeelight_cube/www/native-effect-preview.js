@@ -721,7 +721,7 @@ function renderKaleidoscopeSnakes(phase, direction) {
   return pixels;
 }
 
-function blueWhiteOrigin(phase) {
+function bluePulseOrigin(phase) {
   // Slow drift of the source/end, matching the recording's ~140 s wander.
   return (
     (((9.5 +
@@ -733,30 +733,72 @@ function blueWhiteOrigin(phase) {
   );
 }
 
-function renderBlueWhite(phase, direction) {
-  // The lamp plays this identically for every arrow, so direction is ignored
-  // (always the horizontal "right" form).
-  void direction;
-  const origin = blueWhiteOrigin(phase);
-  // The front travels the half period (0 = source, 8 = the meeting fold), then
-  // a new one is reborn at the source; floor keeps Python/JS wrapping identical.
-  const travel = phase * 0.17;
+function bluePulseOffsets(phase, rate, rowSkew) {
+  const origin = bluePulseOrigin(phase);
+  const travel = phase * rate;
   const front = 8.0 * (travel - Math.floor(travel));
-  const sigma = 1.25;
-  const pixels = [];
+  const offsets = [];
 
   for (let row = 0; row < PREVIEW_ROWS; row++) {
     for (let col = 0; col < PREVIEW_COLS; col++) {
-      const position = col + (row / (PREVIEW_ROWS - 1) - 0.5) * 0.7;
+      const position = col + (row / (PREVIEW_ROWS - 1) - 0.5) * rowSkew;
       const distance = mirroredPathDistance(position, origin, 16.0);
-      const spread = distance <= front ? sigma : sigma * 0.6;
-      let white = Math.exp(
-        -((distance - front) ** 2) / (2.0 * spread * spread),
-      );
-      if (distance < front) {
-        white = Math.max(white, 0.4 * Math.exp(-(front - distance) / 2.2));
+      offsets.push(distance - front);
+    }
+  }
+
+  return offsets;
+}
+
+function renderBlueWhite(phase, direction) {
+  void direction;
+  const sigma = 1.25;
+  return bluePulseOffsets(phase, 0.17, 0.7).map((offset) => {
+    const spread = offset <= 0.0 ? sigma : sigma * 0.6;
+    let level = Math.exp(-(offset ** 2) / (2.0 * spread * spread));
+    if (offset < 0.0) {
+      level = Math.max(level, 0.4 * Math.exp(offset / 2.2));
+    }
+    return rgb(16.0 + 224.0 * level, 104.0 + 142.0 * level, 255.0);
+  });
+}
+
+function renderBlueYellow(phase, direction) {
+  void direction;
+  const background = [16, 104, 255];
+  const vividBlue = [0, 172, 255];
+  const white = [238, 249, 255];
+  const yellow = [255, 226, 20];
+  // Mirror-symmetric yellow rings expand outward from a drifting center and
+  // reflect at the fold edges, so sections continuously join and separate. A
+  // periodic ring train (period 8) keeps the outward motion seamless.
+  const origin = bluePulseOrigin(phase);
+  const front = phase * 0.7;
+  const ringPeriod = 8.0;
+  const pixels = [];
+
+  for (let row = 0; row < PREVIEW_ROWS; row++) {
+    const rowOffset = (row / (PREVIEW_ROWS - 1) - 0.5) * 1.0;
+    for (let col = 0; col < PREVIEW_COLS; col++) {
+      const distance = mirroredPathDistance(col + rowOffset, origin, 16.0);
+      const ring =
+        (((distance - front) % ringPeriod) + ringPeriod) % ringPeriod;
+      const radius = Math.min(ring, ringPeriod - ring);
+      if (radius <= 0.7) {
+        pixels.push(yellow);
+      } else if (radius < 1.1) {
+        pixels.push(palette([yellow, white], (radius - 0.7) / 0.4));
+      } else if (radius <= 1.5) {
+        pixels.push(white);
+      } else if (radius < 2.0) {
+        pixels.push(palette([white, vividBlue], (radius - 1.5) / 0.5));
+      } else if (radius <= 2.6) {
+        pixels.push(vividBlue);
+      } else if (radius < 3.2) {
+        pixels.push(palette([vividBlue, background], (radius - 2.6) / 0.6));
+      } else {
+        pixels.push(background);
       }
-      pixels.push(rgb(16.0 + 224.0 * white, 104.0 + 142.0 * white, 255.0));
     }
   }
 
@@ -914,6 +956,7 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
   if (effect === "Wonderland") return renderWonderland(phase);
   if (effect === "Flower Sea") return renderFlowerSea(phase, direction);
   if (effect === "Kaleidoscope") return renderKaleidoscope(phase, direction);
+  if (effect === "Blue Yellow") return renderBlueYellow(phase, direction);
   if (effect === "Blue White") return renderBlueWhite(phase, direction);
   if (effect === "Palette") return renderPalette(phase, direction);
 

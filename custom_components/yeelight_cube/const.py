@@ -46,6 +46,7 @@ CLOCK_MIXER_EFFECTS = {
     39: "Rainbow",
     42: "Ocean Waves",
     17: "Spectrum",
+    57: "Blue Yellow",
     59: "Blue White",
 }
 # The clock command carries no direction/speed for the mixer; "Down" gives the

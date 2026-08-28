@@ -862,7 +862,7 @@ class NativeFeatureTests(unittest.TestCase):
 
     def test_blue_white_uses_wandering_reflected_ridges(self):
         render = NATIVE_PREVIEW["render_native_effect"]
-        origin = NATIVE_PREVIEW["_blue_white_origin"]
+        origin = NATIVE_PREVIEW["_blue_pulse_origin"]
 
         self.assertEqual("Blue White", CONSTANTS["CLOCK_MIXER_EFFECTS"][59])
         self.assertIn('59: "Blue White"', CLOCK_CARD_SOURCE)
@@ -909,6 +909,103 @@ class NativeFeatureTests(unittest.TestCase):
             tuple(frame[row * 20:(row + 1) * 20]) for row in range(5)
         }
         self.assertGreaterEqual(len(distinct_rows), 4)
+
+    def test_blue_yellow_uses_distinct_color_zones_and_clock_mixer(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+
+        self.assertEqual("Blue Yellow", CONSTANTS["CLOCK_MIXER_EFFECTS"][57])
+        self.assertIn('57: "Blue Yellow"', CLOCK_CARD_SOURCE)
+
+        for phase in (0.37, 8.6, 23.4, 51.9):
+            yellow = render("Blue Yellow", phase, "Right")
+            white = render("Blue White", phase, "Right")
+            for direction in ("Up", "Down", "Left"):
+                self.assertEqual(yellow, render("Blue Yellow", phase, direction))
+            self.assertNotEqual(yellow, white)
+
+        # The pattern scrolls continuously: no frame-to-frame jump anywhere
+        # (a bouncing/reset front would spike this), so the loop is seamless.
+        previous = render("Blue Yellow", 0.0, "Right")
+        max_delta = 0
+        for step in range(1, 4000):
+            current = render("Blue Yellow", step * 0.05, "Right")
+            max_delta = max(
+                max_delta,
+                max(
+                    abs(left - right)
+                    for before_pixel, after_pixel in zip(previous, current)
+                    for left, right in zip(before_pixel, after_pixel)
+                ),
+            )
+            previous = current
+        self.assertLess(max_delta, 60)
+
+        # The effect is mirror-symmetric with multiple sections, not a single
+        # blob: at some frame the top row shows two or more separate yellow runs.
+        def _yellow_runs(frame):
+            row = frame[0:20]
+            runs = 0
+            inside = False
+            for red, _, blue in row:
+                is_yellow = red - blue > 40
+                if is_yellow and not inside:
+                    runs += 1
+                inside = is_yellow
+            return runs
+
+        max_runs = max(
+            _yellow_runs(render("Blue Yellow", step * 0.2, "Right"))
+            for step in range(300)
+        )
+        self.assertGreaterEqual(max_runs, 2)
+
+        pixels = [
+            pixel
+            for step in range(300)
+            for pixel in render("Blue Yellow", step * 0.2, "Right")
+        ]
+        self.assertTrue(
+            any(red > 230 and green > 220 and blue < 80 for red, green, blue in pixels)
+        )
+        self.assertTrue(
+            any(red < 90 and green < 150 and blue > 240 for red, green, blue in pixels)
+        )
+        self.assertTrue(
+            any(red > 150 and green > 190 and blue > 180 for red, green, blue in pixels)
+        )
+
+        # Clear frames contain yellow, then a white separator, then vivid blue.
+        ordered_boundary = False
+        for step in range(300):
+            frame = render("Blue Yellow", step * 0.2, "Right")
+            for row in range(5):
+                line = frame[row * 20:(row + 1) * 20]
+                for col in range(15):
+                    red, green, blue = line[col]
+                    if not (red > 230 and green > 220 and blue < 80):
+                        continue
+                    following = line[col + 1:col + 6]
+                    white_index = next(
+                        (
+                            index
+                            for index, pixel in enumerate(following)
+                            if min(pixel) > 180
+                        ),
+                        None,
+                    )
+                    if white_index is None:
+                        continue
+                    ordered_boundary = any(
+                        pixel[0] < 60 and pixel[1] > 145 and pixel[2] > 240
+                        for pixel in following[white_index + 1:]
+                    )
+                    if ordered_boundary:
+                        break
+                if ordered_boundary:
+                    break
+            if ordered_boundary:
+                break
+        self.assertTrue(ordered_boundary)
 
     def test_music_flow_previews_are_static_valid_and_distinct(self):
         render = NATIVE_PREVIEW["render_music_flow_effect"]

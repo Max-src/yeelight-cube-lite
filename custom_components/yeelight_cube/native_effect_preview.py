@@ -784,7 +784,7 @@ def _render_kaleidoscope_snakes(
     return pixels
 
 
-def _blue_white_origin(phase: float) -> float:
+def _blue_pulse_origin(phase: float) -> float:
     # Slow drift of the source/end, matching the recording's ~140 s wander.
     return (
         9.5
@@ -793,38 +793,91 @@ def _blue_white_origin(phase: float) -> float:
     ) % COLS
 
 
+def _blue_pulse_offsets(
+    phase: float,
+    rate: float,
+    row_skew: float,
+) -> list[float]:
+    origin = _blue_pulse_origin(phase)
+    travel = phase * rate
+    front = 8.0 * (travel - math.floor(travel))
+    offsets = []
+
+    for row in range(ROWS):
+        for col in range(COLS):
+            position = col + (row / (ROWS - 1) - 0.5) * row_skew
+            distance = _mirrored_path_distance(position, origin, 16.0)
+            offsets.append(distance - front)
+
+    return offsets
+
+
 def _render_blue_white(
     phase: float,
     direction: str,
 ) -> list[tuple[int, int, int]]:
-    """Render a white front born at a wandering source that travels outward and
-    lights up fully when it meets its mirror reflection at the fold. The lamp
-    plays this identically for every arrow, so direction is ignored (always the
-    horizontal "right" form)."""
+    """Render the direction-independent Blue White pulse."""
     del direction
-    origin = _blue_white_origin(phase)
-    # The front travels the half period (0 = source, 8 = the meeting fold), then
-    # a new one is reborn at the source; floor keeps Python/JS wrapping identical.
-    travel = phase * 0.17
-    front = 8.0 * (travel - math.floor(travel))
+    pixels = []
     sigma = 1.25
+    for offset in _blue_pulse_offsets(phase, 0.17, 0.7):
+        spread = sigma if offset <= 0.0 else sigma * 0.6
+        level = math.exp(-(offset**2) / (2.0 * spread * spread))
+        if offset < 0.0:
+            level = max(level, 0.4 * math.exp(offset / 2.2))
+        pixels.append(
+            _rgb(
+                16.0 + 224.0 * level,
+                104.0 + 142.0 * level,
+                255.0,
+            )
+        )
+    return pixels
+
+
+def _render_blue_yellow(
+    phase: float,
+    direction: str,
+) -> list[tuple[int, int, int]]:
+    """Render mirror-symmetric yellow rings expanding from a drifting center.
+
+    Yellow bands are born merged at the center, split into mirror halves and
+    travel outward to the fold edges where they reflect, while a fresh ring
+    emerges at the center -- so sections continuously join and separate. A
+    periodic ring train (period 8 in distance) keeps the outward motion seamless
+    with no reset jump.
+    """
+    del direction
+    background = (16, 104, 255)
+    vivid_blue = (0, 172, 255)
+    white = (238, 249, 255)
+    yellow = (255, 226, 20)
+    origin = _blue_pulse_origin(phase)
+    front = phase * 0.7  # outward-only, so rings never contract
+    ring_period = 8.0
     pixels = []
 
     for row in range(ROWS):
+        row_offset = (row / (ROWS - 1) - 0.5) * 1.0
         for col in range(COLS):
-            position = col + (row / (ROWS - 1) - 0.5) * 0.7
-            distance = _mirrored_path_distance(position, origin, 16.0)
-            spread = sigma if distance <= front else sigma * 0.6
-            white = math.exp(-((distance - front) ** 2) / (2.0 * spread * spread))
-            if distance < front:
-                white = max(white, 0.4 * math.exp(-(front - distance) / 2.2))
-            pixels.append(
-                _rgb(
-                    16.0 + 224.0 * white,
-                    104.0 + 142.0 * white,
-                    255.0,
-                )
-            )
+            distance = _mirrored_path_distance(col + row_offset, origin, 16.0)
+            ring = (distance - front) % ring_period
+            radius = min(ring, ring_period - ring)
+            if radius <= 0.7:
+                color = yellow
+            elif radius < 1.1:
+                color = _palette((yellow, white), (radius - 0.7) / 0.4)
+            elif radius <= 1.5:
+                color = white
+            elif radius < 2.0:
+                color = _palette((white, vivid_blue), (radius - 1.5) / 0.5)
+            elif radius <= 2.6:
+                color = vivid_blue
+            elif radius < 3.2:
+                color = _palette((vivid_blue, background), (radius - 2.6) / 0.6)
+            else:
+                color = background
+            pixels.append(color)
 
     return pixels
 
@@ -964,6 +1017,8 @@ def render_native_effect(
         return _render_flower_sea(phase, direction)
     if effect == "Kaleidoscope":
         return _render_kaleidoscope(phase, direction)
+    if effect == "Blue Yellow":
+        return _render_blue_yellow(phase, direction)
     if effect == "Blue White":
         return _render_blue_white(phase, direction)
     if effect == "Palette":
