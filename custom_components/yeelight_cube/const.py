@@ -125,14 +125,15 @@ _OFFICIAL_EFFECT_MODES = {spec["mode"] for spec in NATIVE_EFFECTS.values()} | {
     NATIVE_CLOCK_EFFECT_ID
 }
 # Named extended effects; every other slot keeps its mode number as a
-# placeholder name. These four are the full-panel form of the clock gradient
-# mixers 54/57/58/59 and share the clock styles' names.
+# placeholder name. Named modes are also exposed as animated clock mixer
+# backgrounds and share the clock styles' names.
 _EXTENDED_EFFECT_NAMES = {
     54: "Sunset",
     56: "Carousel",
     57: "Blue Yellow",
     58: "Ice Blue",
     59: "Blue White",
+    60: "Spectrum Crumble",
 }
 EXTENDED_NATIVE_EFFECTS = {
     _EXTENDED_EFFECT_NAMES.get(mode, str(mode)): {
@@ -159,10 +160,18 @@ ALL_NATIVE_EFFECTS = {**NATIVE_EFFECTS, **EXTENDED_NATIVE_EFFECTS}
 _MODE_TO_EFFECT_NAME = {
     spec["mode"]: name for name, spec in ALL_NATIVE_EFFECTS.items()
 }
+# Effect modes that must not back the clock: their animation goes fully dark for
+# long stretches each cycle, so the masked characters would vanish (mode 60,
+# Spectrum Crumble, spends most of its cycle black).
+_NON_CLOCK_EFFECT_MODES = {60}
 _BASE_CLOCK_MIXERS = {style["mixer"] for style in NATIVE_CLOCK_STYLES.values()}
 _next_clock_style_id = max(NATIVE_CLOCK_STYLES) + 1
 for _clock_mode in range(1, 100):
-    if _clock_mode in _BASE_CLOCK_MIXERS or _clock_mode == NATIVE_CLOCK_EFFECT_ID:
+    if (
+        _clock_mode in _BASE_CLOCK_MIXERS
+        or _clock_mode == NATIVE_CLOCK_EFFECT_ID
+        or _clock_mode in _NON_CLOCK_EFFECT_MODES
+    ):
         continue
     NATIVE_CLOCK_STYLES[_next_clock_style_id] = {
         "name": _MODE_TO_EFFECT_NAME.get(_clock_mode, str(_clock_mode)),

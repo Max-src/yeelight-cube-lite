@@ -1214,6 +1214,39 @@ class NativeFeatureTests(unittest.TestCase):
         phase_per_second = 0.25 + 50 / 55.0
         self.assertAlmostEqual(2.041, 2.366 / phase_per_second, places=3)
 
+    def test_spectrum_crumble_matches_directional_flow_and_excludes_clock(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+        phase_per_second = 0.25 + 50 / 55.0
+
+        # Mode 60 is a selectable native effect but must NOT be a clock option:
+        # it goes fully dark for most of its cycle, so masked characters vanish.
+        self.assertNotIn(60, CONSTANTS["CLOCK_MIXER_EFFECTS"])
+        self.assertNotIn('60: "Spectrum', CLOCK_CARD_SOURCE)
+        style_mixers = {
+            style["mixer"] for style in CONSTANTS["NATIVE_CLOCK_STYLES"].values()
+        }
+        self.assertNotIn(60, style_mixers)
+
+        lit_counts = []
+        for seconds in (0.0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 4.5, 6.0):
+            frame = render("Spectrum Crumble", seconds * phase_per_second, "Up")
+            self.assertEqual(100, len(frame))
+            lit_counts.append(sum(max(pixel) > 25 for pixel in frame))
+        self.assertEqual([0, 28, 57, 86, 100, 58, 10, 0, 0], lit_counts)
+
+        full = render("Spectrum Crumble", 2.0 * phase_per_second, "Up")
+        self.assertGreater(full[0][0], full[0][1])
+        self.assertGreater(full[-1][0], full[-1][1])
+        self.assertGreater(full[-1][2], full[-1][0])
+
+        frames = {
+            tuple(render("Spectrum Crumble", 1.2, direction))
+            for direction in ("Up", "Down", "Left", "Right")
+        }
+        self.assertEqual(4, len(frames))
+        cycle_seconds = 8.954 / phase_per_second
+        self.assertAlmostEqual(7.725, cycle_seconds, places=3)
+
     def test_music_flow_previews_are_static_valid_and_distinct(self):
         render = NATIVE_PREVIEW["render_music_flow_effect"]
         previews = {}
@@ -1358,6 +1391,7 @@ class NativeFeatureTests(unittest.TestCase):
             "Blue Yellow": 57,
             "Ice Blue": 58,
             "Blue White": 59,
+            "Spectrum Crumble": 60,
         }
         for effect_name, mode in named.items():
             self.assertIn(effect_name, extended)
@@ -1405,10 +1439,15 @@ class NativeFeatureTests(unittest.TestCase):
         experimental = CONSTANTS["EXPERIMENTAL_CLOCK_STYLE_IDS"]
         clock_mode = CONSTANTS["NATIVE_CLOCK_EFFECT_ID"]
 
-        # Every native-effect mode is available as a clock background.
+        # Every native-effect mode is available as a clock background, except
+        # modes explicitly excluded because they read poorly as a clock.
         style_mixers = {style["mixer"] for style in clock_styles.values()}
+        non_clock_modes = {60}
         for spec in all_effects.values():
-            self.assertIn(spec["mode"], style_mixers)
+            if spec["mode"] in non_clock_modes:
+                self.assertNotIn(spec["mode"], style_mixers)
+            else:
+                self.assertIn(spec["mode"], style_mixers)
         # The clock renderer is never offered as its own background.
         self.assertNotIn(clock_mode, style_mixers)
 

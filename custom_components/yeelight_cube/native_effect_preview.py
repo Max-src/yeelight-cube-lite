@@ -1031,6 +1031,51 @@ def _render_carousel(
     return pixels
 
 
+def _render_spectrum_crumble(
+    phase: float,
+    direction: str,
+) -> list[tuple[int, int, int]]:
+    """Render mode 60's Spectrum field flowing in and dissolving to black."""
+    cycle_length = 8.954
+    cycle = math.floor(phase / cycle_length)
+    local = phase - cycle * cycle_length
+    last = COLS * ROWS - 1
+    pixels = []
+
+    for row in range(ROWS):
+        for col in range(COLS):
+            if direction in ("Down", "Up"):
+                index = col * ROWS + row
+                if direction == "Down":
+                    index = last - index
+            else:
+                index = (ROWS - 1 - row) * COLS + col
+                if direction == "Left":
+                    index = last - index
+
+            position = index / last
+            rise_start = 1.95 * position
+            rise = _smoothstep(min(1.0, max(0.0, (local - rise_start) / 0.24)))
+            release_noise = _noise(col + cycle * 29, row, 3061)
+            duration_noise = _noise(col + cycle * 31, row, 3163)
+            fade_start = 1.85 + 2.30 * position + 0.64 * (release_noise - 0.5)
+            fade_duration = 0.62 + 0.48 * duration_noise
+            fade = _smoothstep(
+                min(1.0, max(0.0, (local - fade_start) / fade_duration))
+            )
+            level = rise * (1.0 - fade)
+            if local > fade_start and level > 0.0:
+                shimmer = _value_noise_3d(
+                    col * 0.73 + cycle * 3.1,
+                    row * 0.91,
+                    local * 3.2,
+                )
+                level *= 0.58 + 0.42 * shimmer
+            pixels.append(_hsv(position * 0.83, 1.0, level))
+
+    return pixels
+
+
 _PALETTE_HUES = (
     0.50,
     0.52,
@@ -1174,6 +1219,8 @@ def render_native_effect(
         return _render_sunset(phase, direction)
     if effect == "Carousel":
         return _render_carousel(phase, direction)
+    if effect == "Spectrum Crumble":
+        return _render_spectrum_crumble(phase, direction)
     if effect == "Blue White":
         return _render_blue_white(phase, direction)
     if effect == "Palette":

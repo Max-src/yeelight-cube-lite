@@ -954,6 +954,52 @@ function renderCarousel(phase, direction) {
   return pixels;
 }
 
+function renderSpectrumCrumble(phase, direction) {
+  const cycleLength = 8.954;
+  const cycle = Math.floor(phase / cycleLength);
+  const local = phase - cycle * cycleLength;
+  const last = PREVIEW_COLS * PREVIEW_ROWS - 1;
+  const pixels = [];
+
+  for (let row = 0; row < PREVIEW_ROWS; row += 1) {
+    for (let col = 0; col < PREVIEW_COLS; col += 1) {
+      let index;
+      if (direction === "Down" || direction === "Up") {
+        index = col * PREVIEW_ROWS + row;
+        if (direction === "Down") index = last - index;
+      } else {
+        index = (PREVIEW_ROWS - 1 - row) * PREVIEW_COLS + col;
+        if (direction === "Left") index = last - index;
+      }
+
+      const position = index / last;
+      const riseStart = 1.95 * position;
+      const rise = smoothstep(
+        Math.min(1.0, Math.max(0.0, (local - riseStart) / 0.24)),
+      );
+      const releaseNoise = noiseAt(col + cycle * 29, row, 3061);
+      const durationNoise = noiseAt(col + cycle * 31, row, 3163);
+      const fadeStart = 1.85 + 2.3 * position + 0.64 * (releaseNoise - 0.5);
+      const fadeDuration = 0.62 + 0.48 * durationNoise;
+      const fade = smoothstep(
+        Math.min(1.0, Math.max(0.0, (local - fadeStart) / fadeDuration)),
+      );
+      let level = rise * (1.0 - fade);
+      if (local > fadeStart && level > 0.0) {
+        const shimmer = valueNoise3d(
+          col * 0.73 + cycle * 3.1,
+          row * 0.91,
+          local * 3.2,
+        );
+        level *= 0.58 + 0.42 * shimmer;
+      }
+      pixels.push(hsv(position * 0.83, 1.0, level));
+    }
+  }
+
+  return pixels;
+}
+
 const PALETTE_HUES = [
   0.5, 0.52, 0.54, 0.56, 0.58, 0.6, 0.62, 0.64, 0.68, 0.72, 0.32, 0.38, 0.46,
   0.04, 0.08, 0.12, 0.16, 0.78, 0.84, 0.88,
@@ -1109,6 +1155,8 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
   if (effect === "Ice Blue") return renderIceBlue(phase, direction);
   if (effect === "Sunset") return renderSunset(phase, direction);
   if (effect === "Carousel") return renderCarousel(phase, direction);
+  if (effect === "Spectrum Crumble")
+    return renderSpectrumCrumble(phase, direction);
   if (effect === "Blue White") return renderBlueWhite(phase, direction);
   if (effect === "Palette") return renderPalette(phase, direction);
 
