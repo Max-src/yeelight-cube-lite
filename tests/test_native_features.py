@@ -1066,6 +1066,154 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertTrue(0.15 < correlations[1] < 0.55)
         self.assertLess(abs(correlations[2]), 0.2)
 
+    def test_sunset_matches_row_sweeps_palette_cadence_and_clock_mixer(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+
+        self.assertEqual("Sunset", CONSTANTS["CLOCK_MIXER_EFFECTS"][54])
+        self.assertIn('54: "Sunset"', CLOCK_CARD_SOURCE)
+
+        for phase in (0.37, 8.6, 23.4, 51.9):
+            frame = render("Sunset", phase, "Right")
+            for row in range(5):
+                self.assertEqual(1, len(set(frame[row * 20 : (row + 1) * 20])))
+            for direction in ("Up", "Down", "Left"):
+                self.assertEqual(frame, render("Sunset", phase, direction))
+
+        top_first = render("Sunset", 1.98, "Right")
+        bottom_first = render("Sunset", 3.96, "Right")
+        self.assertNotEqual(top_first[:20], top_first[-20:])
+        self.assertEqual(top_first[40:60], top_first[-20:])
+        self.assertNotEqual(bottom_first[:20], bottom_first[-20:])
+        self.assertEqual(bottom_first[:20], bottom_first[40:60])
+
+        held_colors = [
+            render("Sunset", (event + 0.6) * 0.99, "Right")[0]
+            for event in range(56)
+        ]
+        green_count = sum(
+            red < 10 and green > 245 and blue < 40
+            for red, green, blue in held_colors
+        )
+        pale_count = sum(red > 120 for red, _green, _blue in held_colors)
+        self.assertTrue(1 <= green_count <= 4)
+        self.assertGreater(pale_count, 30)
+        self.assertTrue(
+            any(red < 50 and green > 185 and blue > 245 for red, green, blue in held_colors)
+        )
+        self.assertFalse(
+            any(green < 150 and blue > 245 for _red, green, blue in held_colors)
+        )
+
+        for event in range(-10, 20):
+            held = render("Sunset", (event + 0.55) * 0.99, "Right")
+            self.assertEqual(
+                held,
+                render("Sunset", (event + 0.75) * 0.99, "Right"),
+            )
+
+        phase_per_second = 0.25 + 50 / 55.0
+
+        def _correlation(first, second):
+            first_values = [pixel[1] - pixel[2] for pixel in first]
+            second_values = [pixel[1] - pixel[2] for pixel in second]
+            first_mean = sum(first_values) / len(first_values)
+            second_mean = sum(second_values) / len(second_values)
+            numerator = sum(
+                (left - first_mean) * (right - second_mean)
+                for left, right in zip(first_values, second_values)
+            )
+            denominator = (
+                sum((value - first_mean) ** 2 for value in first_values)
+                * sum((value - second_mean) ** 2 for value in second_values)
+            ) ** 0.5
+            return numerator / denominator if denominator else 1.0
+
+        def _color_correlation(seconds):
+            first = []
+            second = []
+            for step in range(400):
+                phase = step * 0.19
+                first.extend(render("Sunset", phase, "Right"))
+                second.extend(
+                    render(
+                        "Sunset", phase + seconds * phase_per_second, "Right"
+                    )
+                )
+            return _correlation(first, second)
+
+        self.assertGreater(_color_correlation(0.1), 0.9)
+        self.assertTrue(0.3 < _color_correlation(0.5) < 0.6)
+        self.assertLess(abs(_color_correlation(0.85)), 0.15)
+
+    def test_carousel_matches_pivoting_bands_and_clock_mixer(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+
+        self.assertEqual("Carousel", CONSTANTS["CLOCK_MIXER_EFFECTS"][56])
+        self.assertEqual(
+            {"name": "Carousel", "mixer": 56},
+            CONSTANTS["NATIVE_CLOCK_STYLES"][15],
+        )
+        self.assertIn('56: "Carousel"', CLOCK_CARD_SOURCE)
+        self.assertIn('15: 56', CLOCK_CARD_SOURCE)
+
+        directions = ("Right", "Down", "Left", "Up")
+        peak_red = {direction: 0 for direction in directions}
+        for phase in (0.0, 0.37, 1.0, 2.1):
+            frames = {
+                direction: render("Carousel", phase, direction)
+                for direction in directions
+            }
+            self.assertEqual(4, len({tuple(frame) for frame in frames.values()}))
+            for direction, frame in frames.items():
+                self.assertEqual(100, len(frame))
+                self.assertEqual(
+                    frame,
+                    render("Carousel", phase + 2.366, direction),
+                )
+                self.assertTrue(
+                    all(blue == 255 for _red, _green, blue in frame)
+                )
+                peak_red[direction] = max(
+                    peak_red[direction],
+                    max(red for red, _green, _blue in frame),
+                )
+                self.assertEqual(0, min(red for red, _green, _blue in frame))
+        self.assertTrue(all(red > 200 for red in peak_red.values()))
+
+        self.assertEqual(
+            render("Carousel", 0.5, "Up"),
+            render("Carousel", 0.5, "unknown"),
+        )
+
+        frame = render("Carousel", 0.0, "Right")
+        pivot = [frame[row * 20 + 8] for row in range(5)]
+        edge = [frame[row * 20] for row in range(5)]
+        self.assertLessEqual(
+            max(
+                max(pixel[channel] for pixel in pivot)
+                - min(pixel[channel] for pixel in pivot)
+                for channel in range(3)
+            ),
+            1,
+        )
+        self.assertGreater(len(set(edge)), 3)
+
+        # Arrow -> field mapping (corrected 90 deg vs the recordings): Right has
+        # a tight vertical pivot at column 8 while Left flows strongly along the
+        # rows there. This guards against the directions silently re-rotating.
+        left_col8 = [render("Carousel", 0.0, "Left")[row * 20 + 8] for row in range(5)]
+        self.assertGreater(
+            max(
+                max(pixel[channel] for pixel in left_col8)
+                - min(pixel[channel] for pixel in left_col8)
+                for channel in range(3)
+            ),
+            15,
+        )
+
+        phase_per_second = 0.25 + 50 / 55.0
+        self.assertAlmostEqual(2.041, 2.366 / phase_per_second, places=3)
+
     def test_music_flow_previews_are_static_valid_and_distinct(self):
         render = NATIVE_PREVIEW["render_music_flow_effect"]
         previews = {}
@@ -1131,6 +1279,42 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertIn("effectFrame[row * COLS + col]", CLOCK_CARD_SOURCE)
         self.assertIn("colonVisible", CLOCK_CARD_SOURCE)
 
+    def test_clock_style_sends_and_previews_mixer_direction(self):
+        resolve = CONSTANTS["resolve_clock_mixer_direction"]
+        mixer_effects = CONSTANTS["CLOCK_MIXER_EFFECTS"]
+
+        # Every clock mixer effect is direction-capable and flows in the
+        # selected native-effect direction.
+        for label in ("Right", "Down", "Left", "Up"):
+            for effect_name in mixer_effects.values():
+                self.assertEqual(label, resolve(label, effect_name))
+        # A direction-less effect or unknown mixer yields no direction byte.
+        self.assertIsNone(resolve("Up", "Magic"))
+        self.assertIsNone(resolve("Up", None))
+
+        # The clock activation command carries a firmware direction byte taken
+        # from the selected native-effect direction, remapped per effect.
+        activate = _function_source(LIGHT_SOURCE, "_activate_native_clock")
+        self.assertIn("resolve_clock_mixer_direction(", activate)
+        self.assertIn("self._native_effect_direction", activate)
+        self.assertIn('effect_config["direction"]', activate)
+        self.assertIn("direction_remap", activate)
+
+        # The fx-explorer reflects a clock command's direction byte so the
+        # preview tracks whatever direction was applied on the lamp.
+        reflect = _function_source(LIGHT_SOURCE, "handle_send_fx_effect")
+        self.assertIn("target._native_effect_direction = _dn", reflect)
+
+        # Both previews resolve the mixer direction from the native-effect
+        # direction (never the mount, so the clock face is not flipped).
+        clock_preview = _function_source(CAMERA_SOURCE, "_get_clock_preview")
+        self.assertIn("resolve_clock_mixer_direction(", clock_preview)
+        self.assertIn("_native_effect_direction", clock_preview)
+        self.assertIn("native_effect_direction", CLOCK_CARD_SOURCE)
+        self.assertIn(
+            "renderNativeEffect(effectName, phase, direction)", CLOCK_CARD_SOURCE
+        )
+
     def test_fx_explorer_reflects_clock_style_for_live_preview(self):
         handler = _function_source(LIGHT_SOURCE, "handle_send_fx_effect")
         # Everything before the persist blocks is the always-reflect path that
@@ -1167,8 +1351,14 @@ class NativeFeatureTests(unittest.TestCase):
         for skipped in (3, 5, 42, 46, 47, 48, 49, 55, 80, 81):
             self.assertNotIn(str(skipped), extended)
         self.assertNotIn(str(clock_mode), extended)
-        # The four named clock-gradient effects use their given names + modes.
-        named = {"Sunset": 54, "Blue Yellow": 57, "Ice Blue": 58, "Blue White": 59}
+        # Named clock-mixer effects use their given names + modes.
+        named = {
+            "Sunset": 54,
+            "Carousel": 56,
+            "Blue Yellow": 57,
+            "Ice Blue": 58,
+            "Blue White": 59,
+        }
         for effect_name, mode in named.items():
             self.assertIn(effect_name, extended)
             self.assertEqual(mode, extended[effect_name]["mode"])
@@ -1197,6 +1387,13 @@ class NativeFeatureTests(unittest.TestCase):
             SWITCH_SOURCE,
         )
         self.assertIn("_native_effect_select_entity", SWITCH_SOURCE)
+        # Discovered clock styles follow the same gate and refresh immediately.
+        self.assertIn("EXPERIMENTAL_CLOCK_STYLE_IDS", SELECT_SOURCE)
+        self.assertIn("_clock_style_select_entity", SWITCH_SOURCE)
+        self.assertIn(
+            15,
+            CONSTANTS["EXPERIMENTAL_CLOCK_STYLE_IDS"],
+        )
         # The toggle is persisted on the light for restore, and spec lookups use
         # the merged dict so a selected extended effect still activates.
         self.assertIn('"extended_effects_enabled"', LIGHT_SOURCE)

@@ -8,6 +8,14 @@ import math
 COLS = 20
 ROWS = 5
 BLACK = (0, 0, 0)
+
+# ── Row orientation convention (READ BEFORE ADDING A PREVIEW) ────────────
+# render_native_effect() returns rows with ROW 0 = the panel's PHYSICAL
+# BOTTOM: camera.py maps preview row 0 to the image bottom (_dr_n = ROWS-1-r)
+# and the lamp-preview card does the same. Videos captured to reverse-engineer
+# an effect have array row 0 = image TOP, so any phase field / row term fit
+# from a recording MUST index the row axis flipped (ROWS - 1 - row) or the
+# preview renders upside down. _render_carousel is the reference example.
 _TIDE_HEAD_PATHS = (
     (
         (
@@ -122,8 +130,6 @@ _MUSIC_FLOW_NOTE_PIXELS = frozenset(
         (14, 4),
     }
 )
-
-
 def _clamp(value: float) -> int:
     # Round half up to match JS Math.round (channel values are always >= 0).
     return max(0, min(255, math.floor(value + 0.5)))
@@ -933,6 +939,98 @@ def _render_ice_blue(
     return pixels
 
 
+def _sunset_target(event: int) -> tuple[int, int, int]:
+    color = _noise(event + 2189, 37, 0)
+    shade = _noise(event + 2290, 43, 0)
+    if color < 0.04:
+        return (0, 255, 12)
+    if color < 0.40:
+        return _rgb(10 + 35 * shade, 190 + 45 * shade, 255)
+    return _rgb(145 + 75 * shade, 170 + 60 * shade, 255)
+
+
+def _sunset_event_start(event: int, row: int) -> float:
+    row_position = row / (ROWS - 1) - 0.5
+    sweep_direction = 1 if _noise(event + 2400, 41, 0) >= 0.5 else -1
+    return event + sweep_direction * 0.22 * row_position
+
+
+def _render_sunset(
+    phase: float,
+    direction: str,
+) -> list[tuple[int, int, int]]:
+    """Render Sunset's alternating top-to-bottom and bottom-to-top washes."""
+    del direction
+    target_time = phase / 0.99
+    pixels = []
+
+    for row in range(ROWS):
+        nearby_event = math.floor(target_time)
+        events = range(nearby_event - 1, nearby_event + 2)
+        event = max(
+            candidate
+            for candidate in events
+            if _sunset_event_start(candidate, row) <= target_time
+        )
+        event_start = _sunset_event_start(event, row)
+        transition = min(1.0, (target_time - event_start) / 0.35)
+        color = _palette(
+            (_sunset_target(event - 1), _sunset_target(event)),
+            _smoothstep(transition),
+        )
+        pixels.extend([color] * COLS)
+
+    return pixels
+
+
+def _render_carousel(
+    phase: float,
+    direction: str,
+) -> list[tuple[int, int, int]]:
+    """Render mode 56's direction-specific pivoting blue and violet bands."""
+    # Fields keyed by the on-screen arrow. The recordings were rotated 90 deg
+    # vs the hardware arrows, so each arrow maps to the field that matches the
+    # lamp (Right<-Up, Down<-Right, Left<-Down, Up<-Left recordings).
+    phase_fields = {
+        "Right": (0.483350, 0.0, 0.504720, -0.062360, 0.0),
+        "Down": (0.380380, -0.026969, 0.191370, -0.046688, 0.003340),
+        "Left": (-0.266153, 0.002328, 0.694217, -0.064390, 0.000189),
+        "Up": (0.302916, -0.012155, -0.517179, 0.081158, -0.003279),
+    }
+    col_phase, col_curve, row_phase, row_skew, row_curve = phase_fields.get(
+        direction,
+        phase_fields["Up"],
+    )
+    pixels = []
+    time_angle = phase * math.tau / 2.366
+
+    for row in range(ROWS):
+        # Coefficients were fit from recordings whose row 0 = image top; the
+        # renderer's row 0 = panel bottom, so index the fit flipped.
+        fit_row = ROWS - 1 - row
+        for col in range(COLS):
+            col_squared = col * col
+            angle = (
+                time_angle
+                - 2.132
+                + col_phase * col
+                + col_curve * col_squared
+                + row_phase * fit_row
+                + row_skew * col * fit_row
+                + row_curve * col_squared * fit_row
+            )
+            position = (angle / math.tau) % 1.0
+            if position < 0.2 or position > 0.8:
+                distance = min(position, 1.0 - position) / 0.2
+                hue = 0.76 + 0.04 * math.sin(math.pi * distance)
+            else:
+                distance = (position - 0.2) / 0.6
+                hue = 0.63 + 0.052 * math.sin(math.pi * distance)
+            pixels.append(_hsv(hue))
+
+    return pixels
+
+
 _PALETTE_HUES = (
     0.50,
     0.52,
@@ -1072,6 +1170,10 @@ def render_native_effect(
         return _render_blue_yellow(phase, direction)
     if effect == "Ice Blue":
         return _render_ice_blue(phase, direction)
+    if effect == "Sunset":
+        return _render_sunset(phase, direction)
+    if effect == "Carousel":
+        return _render_carousel(phase, direction)
     if effect == "Blue White":
         return _render_blue_white(phase, direction)
     if effect == "Palette":

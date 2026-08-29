@@ -13,6 +13,13 @@
 export const PREVIEW_COLS = 20;
 export const PREVIEW_ROWS = 5;
 
+// Row orientation convention (READ BEFORE ADDING A PREVIEW): renderNativeEffect
+// returns rows with ROW 0 = the panel's PHYSICAL BOTTOM (camera.py maps preview
+// row 0 to the image bottom; this card does the same). Videos used to reverse-
+// engineer an effect have array row 0 = image TOP, so any phase field / row
+// term fit from a recording MUST index the row axis flipped (PREVIEW_ROWS-1-row)
+// or the preview renders upside down. renderCarousel is the reference example.
+
 const TAU = Math.PI * 2;
 const TIDE_HEAD_PATHS = [
   {
@@ -40,7 +47,6 @@ const TIDE_HEAD_PATHS = [
     timeOffset: 3.17,
   },
 ];
-
 function clamp(value) {
   return Math.max(0, Math.min(255, Math.round(value)));
 }
@@ -858,6 +864,96 @@ function renderIceBlue(phase, direction) {
   return pixels;
 }
 
+function sunsetTarget(event) {
+  const color = noiseAt(event + 2189, 37, 0);
+  const shade = noiseAt(event + 2290, 43, 0);
+  if (color < 0.04) return [0, 255, 12];
+  if (color < 0.4) {
+    return rgb(10 + 35 * shade, 190 + 45 * shade, 255);
+  }
+  return rgb(145 + 75 * shade, 170 + 60 * shade, 255);
+}
+
+function sunsetEventStart(event, row) {
+  const rowPosition = row / (PREVIEW_ROWS - 1) - 0.5;
+  const sweepDirection = noiseAt(event + 2400, 41, 0) >= 0.5 ? 1 : -1;
+  return event + sweepDirection * 0.22 * rowPosition;
+}
+
+function renderSunset(phase, direction) {
+  void direction;
+  const targetTime = phase / 0.99;
+  const pixels = [];
+
+  for (let row = 0; row < PREVIEW_ROWS; row += 1) {
+    const nearbyEvent = Math.floor(targetTime);
+    let event = nearbyEvent - 1;
+    for (
+      let candidate = nearbyEvent;
+      candidate <= nearbyEvent + 1;
+      candidate += 1
+    ) {
+      if (sunsetEventStart(candidate, row) <= targetTime) event = candidate;
+    }
+    const eventStart = sunsetEventStart(event, row);
+    let transition = Math.min(1.0, (targetTime - eventStart) / 0.35);
+    transition = smoothstep(transition);
+    const color = palette(
+      [sunsetTarget(event - 1), sunsetTarget(event)],
+      transition,
+    );
+    pixels.push(...Array.from({ length: PREVIEW_COLS }, () => color));
+  }
+
+  return pixels;
+}
+
+function renderCarousel(phase, direction) {
+  // Fields keyed by the on-screen arrow. The recordings were rotated 90 deg
+  // vs the hardware arrows, so each arrow maps to the field that matches the
+  // lamp (Right<-Up, Down<-Right, Left<-Down, Up<-Left recordings).
+  const phaseFields = {
+    Right: [0.48335, 0.0, 0.50472, -0.06236, 0.0],
+    Down: [0.38038, -0.026969, 0.19137, -0.046688, 0.00334],
+    Left: [-0.266153, 0.002328, 0.694217, -0.06439, 0.000189],
+    Up: [0.302916, -0.012155, -0.517179, 0.081158, -0.003279],
+  };
+  const [colPhase, colCurve, rowPhase, rowSkew, rowCurve] =
+    phaseFields[direction] ?? phaseFields.Up;
+  const pixels = [];
+  const timeAngle = (phase * TAU) / 2.366;
+
+  for (let row = 0; row < PREVIEW_ROWS; row += 1) {
+    // Coefficients were fit from recordings whose row 0 = image top; the
+    // renderer's row 0 = panel bottom, so index the fit flipped.
+    const fitRow = PREVIEW_ROWS - 1 - row;
+    for (let col = 0; col < PREVIEW_COLS; col += 1) {
+      const colSquared = col * col;
+      const angle =
+        timeAngle -
+        2.132 +
+        colPhase * col +
+        colCurve * colSquared +
+        rowPhase * fitRow +
+        rowSkew * col * fitRow +
+        rowCurve * colSquared * fitRow;
+      const position = (((angle / TAU) % 1.0) + 1.0) % 1.0;
+      let distance;
+      let hue;
+      if (position < 0.2 || position > 0.8) {
+        distance = Math.min(position, 1.0 - position) / 0.2;
+        hue = 0.76 + 0.04 * Math.sin(Math.PI * distance);
+      } else {
+        distance = (position - 0.2) / 0.6;
+        hue = 0.63 + 0.052 * Math.sin(Math.PI * distance);
+      }
+      pixels.push(hsv(hue));
+    }
+  }
+
+  return pixels;
+}
+
 const PALETTE_HUES = [
   0.5, 0.52, 0.54, 0.56, 0.58, 0.6, 0.62, 0.64, 0.68, 0.72, 0.32, 0.38, 0.46,
   0.04, 0.08, 0.12, 0.16, 0.78, 0.84, 0.88,
@@ -1011,6 +1107,8 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
   if (effect === "Kaleidoscope") return renderKaleidoscope(phase, direction);
   if (effect === "Blue Yellow") return renderBlueYellow(phase, direction);
   if (effect === "Ice Blue") return renderIceBlue(phase, direction);
+  if (effect === "Sunset") return renderSunset(phase, direction);
+  if (effect === "Carousel") return renderCarousel(phase, direction);
   if (effect === "Blue White") return renderBlueWhite(phase, direction);
   if (effect === "Palette") return renderPalette(phase, direction);
 

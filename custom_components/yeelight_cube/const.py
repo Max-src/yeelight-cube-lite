@@ -32,7 +32,9 @@ NATIVE_CLOCK_STYLES = {
     12: {"name": "Blue Yellow", "mixer": 57},
     13: {"name": "Blue White", "mixer": 59},
     14: {"name": "Ice Blue", "mixer": 58},
+    15: {"name": "Carousel", "mixer": 56},
 }
+EXPERIMENTAL_CLOCK_STYLE_IDS = frozenset({11, 12, 13, 14, 15})
 DEFAULT_NATIVE_CLOCK_STYLE = 6
 
 # Clock styles whose firmware ``mixer`` is a standalone native effect. For
@@ -46,6 +48,8 @@ CLOCK_MIXER_EFFECTS = {
     39: "Rainbow",
     42: "Ocean Waves",
     17: "Spectrum",
+    54: "Sunset",
+    56: "Carousel",
     57: "Blue Yellow",
     58: "Ice Blue",
     59: "Blue White",
@@ -126,6 +130,7 @@ _OFFICIAL_EFFECT_MODES = {spec["mode"] for spec in NATIVE_EFFECTS.values()} | {
 # mixers 54/57/58/59 and share the clock styles' names.
 _EXTENDED_EFFECT_NAMES = {
     54: "Sunset",
+    56: "Carousel",
     57: "Blue Yellow",
     58: "Ice Blue",
     59: "Blue White",
@@ -146,6 +151,37 @@ EXTENDED_NATIVE_EFFECTS = {
 # direction, speed) use this so a selected extended effect resolves; the select
 # entity decides which names are actually offered based on the switch.
 ALL_NATIVE_EFFECTS = {**NATIVE_EFFECTS, **EXTENDED_NATIVE_EFFECTS}
+
+# Map device orientation -> native effect direction label. Native effects and
+# the native clock's mixer both flow along the physical mount, so this is the
+# single source of truth (light.py and the clock resolver import it).
+DEVICE_ORIENTATION_TO_EFFECT_DIR = {
+    "up": "Up",
+    "down": "Down",
+    "left": "Left",
+    "right": "Right",
+}
+
+
+def resolve_clock_mixer_direction(direction, effect_name):
+    """Return the direction label for a clock style's mixer effect, or None.
+
+    A clock style whose mixer is a standalone native effect flows in the
+    selected native-effect ``direction``. Returns None when the mixer has no
+    direction-capable effect, so callers can omit the firmware ``direction``
+    byte and previews can fall back to the neutral default.
+    """
+    spec = ALL_NATIVE_EFFECTS.get(effect_name) if effect_name else None
+    if not spec:
+        return None
+    directions = spec.get("directions")
+    if not directions:
+        return None
+    if direction in directions:
+        return direction
+    if CLOCK_MIXER_EFFECT_DIRECTION in directions:
+        return CLOCK_MIXER_EFFECT_DIRECTION
+    return directions[0]
 
 # Device-microphone music flow definitions recovered from the Yeelight app.
 # The protocol deliberately spells palette as ``palatte`` in the JSON payload.

@@ -28,6 +28,8 @@ const CLOCK_MIXER_EFFECTS = {
   39: "Rainbow",
   42: "Ocean Waves",
   17: "Spectrum",
+  54: "Sunset",
+  56: "Carousel",
   57: "Blue Yellow",
   58: "Ice Blue",
   59: "Blue White",
@@ -53,6 +55,7 @@ const CLOCK_STYLE_MIXER = {
   12: 57,
   13: 59,
   14: 58,
+  15: 56,
 };
 
 function _clockStyleMixer(attrs) {
@@ -210,8 +213,12 @@ function renderClockFrame(attrs, fontMap, metrics, phase = 0) {
   // glyph pixels; render it once and mask it below.
   const mixer = _clockStyleMixer(attrs);
   const effectName = CLOCK_MIXER_EFFECTS[mixer];
+  // The mixer effect flows in the selected native-effect direction, so the
+  // preview matches whatever direction was applied to the clock on the lamp.
+  const direction =
+    attrs.native_effect_direction || CLOCK_MIXER_EFFECT_DIRECTION;
   const effectFrame = effectName
-    ? renderNativeEffect(effectName, phase, CLOCK_MIXER_EFFECT_DIRECTION)
+    ? renderNativeEffect(effectName, phase, direction)
     : null;
   const matrix = Array.from({ length: 100 }, () => [0, 0, 0]);
   const chars = [...text];

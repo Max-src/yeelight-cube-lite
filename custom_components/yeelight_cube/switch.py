@@ -103,8 +103,8 @@ class YeelightCubeAutoTurnOnSwitch(SwitchEntity):
 class YeelightCubeExtendedEffectsSwitch(SwitchEntity):
     """Reveal firmware native effects the official Yeelight app never exposed.
 
-    When on, the Native Effect dropdown also offers the "discovered" effects
-    (the full-panel gradient modes 54/57/58/59). Off by default.
+    When on, the native effect and clock style dropdowns also offer discovered
+    firmware modes. Off by default.
     """
 
     _attr_has_entity_name = True
@@ -148,6 +148,9 @@ class YeelightCubeExtendedEffectsSwitch(SwitchEntity):
         select = getattr(self._light_entity, "_native_effect_select_entity", None)
         if select is not None and getattr(select, "hass", None) is not None:
             select.async_write_ha_state()
+        clock_select = getattr(self._light_entity, "_clock_style_select_entity", None)
+        if clock_select is not None and getattr(clock_select, "hass", None) is not None:
+            clock_select.async_write_ha_state()
         self.async_write_ha_state()
         if self._light_entity.hass is not None:
             self._light_entity.async_write_ha_state()

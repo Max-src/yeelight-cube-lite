@@ -1012,6 +1012,13 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                                     target._native_clock_colon_blink = _cb[3] == 0
                             except Exception:
                                 pass
+                        # Reflect the mixer flow direction so the preview matches
+                        # the direction applied to the clock on the lamp.
+                        if "direction" in effect_config:
+                            for _dn, _dv in NATIVE_EFFECT_DIRECTION_VALUES.items():
+                                if _dv == effect_config["direction"]:
+                                    target._native_effect_direction = _dn
+                                    break
                 elif native_effect_name is not None:
                     target._mode = "Native Effect"
                     target._native_effect = native_effect_name

@@ -16,6 +16,7 @@ from homeassistant.util import dt as dt_util  # type: ignore
 
 from .const import (
     ALL_NATIVE_EFFECTS,
+    CLOCK_MIXER_EFFECTS,
     DEFAULT_NATIVE_CLOCK_STYLE,
     DEFAULT_NATIVE_EFFECT,
     DOMAIN,
@@ -29,6 +30,7 @@ from .const import (
     NATIVE_EFFECT_APPLY,
     NATIVE_EFFECT_DIRECTION_VALUES,
     NATIVE_EFFECTS,
+    resolve_clock_mixer_direction,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -170,6 +172,20 @@ class NativeModesMixin:
         clock_color = self._resolve_native_clock_color(style)
         if clock_color is not None:
             effect_config["color"] = [int(clock_color)]
+
+        # When the style's mixer is a direction-capable native effect, flow it
+        # in the selected native-effect direction just like a native effect
+        # (some firmware honours a direction byte on the clock payload).
+        effect_name = CLOCK_MIXER_EFFECTS.get(style["mixer"])
+        direction = resolve_clock_mixer_direction(
+            self._native_effect_direction, effect_name
+        )
+        if direction is not None:
+            remap = ALL_NATIVE_EFFECTS[effect_name].get("direction_remap")
+            sent_direction = remap.get(direction, direction) if remap else direction
+            effect_config["direction"] = NATIVE_EFFECT_DIRECTION_VALUES[
+                sent_direction
+            ]
 
         params = [
             NATIVE_CLOCK_EFFECT_ID,

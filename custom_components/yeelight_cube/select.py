@@ -15,6 +15,7 @@ from .const import (
     DEFAULT_MUSIC_FLOW_EFFECT,
     DEFAULT_NATIVE_CLOCK_CONTENT,
     DEFAULT_NATIVE_CLOCK_STYLE,
+    EXPERIMENTAL_CLOCK_STYLE_IDS,
     DEFAULT_NATIVE_EFFECT,
     DOMAIN,
     EXTENDED_NATIVE_EFFECTS,
@@ -663,9 +664,6 @@ def _clock_style_label(style_id: int) -> str:
     return style.get("name", "Unknown")
 
 
-_CLOCK_STYLE_OPTIONS = [
-    _clock_style_label(style_id) for style_id in NATIVE_CLOCK_STYLES
-]
 _CLOCK_STYLE_TO_ID = {
     _clock_style_label(style_id): style_id for style_id in NATIVE_CLOCK_STYLES
 }
@@ -683,8 +681,25 @@ class YeelightCubeClockStyleSelect(SelectEntity):
         self._config_entry = config_entry
         self._attr_unique_id = f"{light_entity._attr_unique_id}_clock_style_select"
         self._attr_icon = "mdi:clock-digital"
-        self._attr_options = _CLOCK_STYLE_OPTIONS
         self._attr_current_option = self._style_label()
+
+    @property
+    def options(self) -> list[str]:
+        style_ids = list(NATIVE_CLOCK_STYLES)
+        if not getattr(self._light_entity, "_extended_effects_enabled", False):
+            style_ids = [
+                style_id
+                for style_id in style_ids
+                if style_id not in EXPERIMENTAL_CLOCK_STYLE_IDS
+            ]
+        current = getattr(
+            self._light_entity,
+            "_native_clock_style",
+            DEFAULT_NATIVE_CLOCK_STYLE,
+        )
+        if current not in style_ids:
+            style_ids.append(current)
+        return [_clock_style_label(style_id) for style_id in style_ids]
 
     def _style_label(self) -> str:
         style_id = getattr(
@@ -716,6 +731,13 @@ class YeelightCubeClockStyleSelect(SelectEntity):
         if style_id is None:
             _LOGGER.error(f"[CLOCK STYLE] Unknown option: '{option}'")
             return
+        if (
+            style_id in EXPERIMENTAL_CLOCK_STYLE_IDS
+            and not getattr(self._light_entity, "_extended_effects_enabled", False)
+        ):
+            raise ValueError(
+                f"Clock style '{option}' requires the Experimental Features switch"
+            )
 
         self._light_entity._native_clock_style = style_id
         self._attr_current_option = option

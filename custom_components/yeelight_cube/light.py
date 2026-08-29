@@ -34,6 +34,7 @@ from .const import (
     DEFAULT_NATIVE_CLOCK_CONTENT,
     DEFAULT_NATIVE_CLOCK_STYLE,
     DEFAULT_NATIVE_EFFECT,
+    DEVICE_ORIENTATION_TO_EFFECT_DIR,
     DOMAIN,
     ALL_NATIVE_EFFECTS,
     MATRIX_DISPLAY_MODES,
@@ -214,14 +215,9 @@ _DEVICE_ORIENTATION_TO_FLIP = {
     "left": ORIENTATION_FLIPPED,
     "up": ORIENTATION_FLIPPED,
 }
-# Map device orientation -> native effect direction name (for effects that
-# support directions), so an effect's flow follows the physical mounting.
-_DEVICE_ORIENTATION_TO_EFFECT_DIR = {
-    "up": "Up",
-    "down": "Down",
-    "left": "Left",
-    "right": "Right",
-}
+# Native effects and the native clock's mixer follow the physical mount; the
+# orientation -> direction map is the shared source of truth in const.py.
+_DEVICE_ORIENTATION_TO_EFFECT_DIR = DEVICE_ORIENTATION_TO_EFFECT_DIR
 
 # ─────────────────────────────────────────────────────────────────────────────
 # MODULE MAP — YeelightCubeLight
