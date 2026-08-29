@@ -34,7 +34,6 @@ NATIVE_CLOCK_STYLES = {
     14: {"name": "Ice Blue", "mixer": 58},
     15: {"name": "Carousel", "mixer": 56},
 }
-EXPERIMENTAL_CLOCK_STYLE_IDS = frozenset({11, 12, 13, 14, 15})
 DEFAULT_NATIVE_CLOCK_STYLE = 6
 
 # Clock styles whose firmware ``mixer`` is a standalone native effect. For
@@ -151,6 +150,30 @@ EXTENDED_NATIVE_EFFECTS = {
 # direction, speed) use this so a selected extended effect resolves; the select
 # entity decides which names are actually offered based on the switch.
 ALL_NATIVE_EFFECTS = {**NATIVE_EFFECTS, **EXTENDED_NATIVE_EFFECTS}
+
+# Extended clock styles: expose every native-effect mode that isn't already a
+# clock mixer as a selectable clock background, so any firmware animation can
+# back the clock when Experimental Features is on. Named where the effect is
+# named, otherwise the bare mode number. style_id continues the built-in
+# sequence; the firmware drives the background from the ``mixer`` field.
+_MODE_TO_EFFECT_NAME = {
+    spec["mode"]: name for name, spec in ALL_NATIVE_EFFECTS.items()
+}
+_BASE_CLOCK_MIXERS = {style["mixer"] for style in NATIVE_CLOCK_STYLES.values()}
+_next_clock_style_id = max(NATIVE_CLOCK_STYLES) + 1
+for _clock_mode in range(1, 100):
+    if _clock_mode in _BASE_CLOCK_MIXERS or _clock_mode == NATIVE_CLOCK_EFFECT_ID:
+        continue
+    NATIVE_CLOCK_STYLES[_next_clock_style_id] = {
+        "name": _MODE_TO_EFFECT_NAME.get(_clock_mode, str(_clock_mode)),
+        "mixer": _clock_mode,
+    }
+    _next_clock_style_id += 1
+
+# Every clock style beyond the 10 firmware built-ins is experimental.
+EXPERIMENTAL_CLOCK_STYLE_IDS = frozenset(
+    style_id for style_id in NATIVE_CLOCK_STYLES if style_id > 10
+)
 
 # Map device orientation -> native effect direction label. Native effects and
 # the native clock's mixer both flow along the physical mount, so this is the

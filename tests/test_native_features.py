@@ -1399,6 +1399,47 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertIn('"extended_effects_enabled"', LIGHT_SOURCE)
         self.assertIn("ALL_NATIVE_EFFECTS", LIGHT_SOURCE)
 
+    def test_experimental_clock_styles_mirror_native_effect_modes(self):
+        clock_styles = CONSTANTS["NATIVE_CLOCK_STYLES"]
+        all_effects = CONSTANTS["ALL_NATIVE_EFFECTS"]
+        experimental = CONSTANTS["EXPERIMENTAL_CLOCK_STYLE_IDS"]
+        clock_mode = CONSTANTS["NATIVE_CLOCK_EFFECT_ID"]
+
+        # Every native-effect mode is available as a clock background.
+        style_mixers = {style["mixer"] for style in clock_styles.values()}
+        for spec in all_effects.values():
+            self.assertIn(spec["mode"], style_mixers)
+        # The clock renderer is never offered as its own background.
+        self.assertNotIn(clock_mode, style_mixers)
+
+        # Styles beyond the 10 firmware built-ins are experimental, each maps to
+        # a distinct mixer, and named modes never appear as a bare number.
+        mode_to_name = {spec["mode"]: name for name, spec in all_effects.items()}
+        seen_mixers = set()
+        for style_id, style in clock_styles.items():
+            if style_id <= 10:
+                continue
+            self.assertIn(style_id, experimental)
+            mixer = style["mixer"]
+            self.assertNotIn(mixer, seen_mixers)
+            seen_mixers.add(mixer)
+            if style_id > 15 and mixer in mode_to_name:
+                self.assertEqual(mode_to_name[mixer], style["name"])
+        # Labels stay unique so the reverse label -> id map never collapses.
+        labels = [style["name"] for style in clock_styles.values()]
+        self.assertEqual(len(labels), len(set(labels)))
+
+    def test_experimental_dropdowns_sort_by_mode_and_mixer(self):
+        # Native effects sort by firmware mode and clock styles by mixer, but
+        # only when Experimental Features is enabled.
+        self.assertIn(
+            'key=lambda name: ALL_NATIVE_EFFECTS[name]["mode"]', SELECT_SOURCE
+        )
+        self.assertIn(
+            'key=lambda style_id: NATIVE_CLOCK_STYLES[style_id]["mixer"]',
+            SELECT_SOURCE,
+        )
+
     def test_official_gallery_contains_68_valid_drawings(self):
         drawings = PIXEL_ART["get_builtin_pixel_arts"]()
         self.assertEqual(68, len(drawings))

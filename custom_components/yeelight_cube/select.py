@@ -685,11 +685,16 @@ class YeelightCubeClockStyleSelect(SelectEntity):
 
     @property
     def options(self) -> list[str]:
-        style_ids = list(NATIVE_CLOCK_STYLES)
-        if not getattr(self._light_entity, "_extended_effects_enabled", False):
+        if getattr(self._light_entity, "_extended_effects_enabled", False):
+            # Show every style sorted by firmware mixer (the background mode).
+            style_ids = sorted(
+                NATIVE_CLOCK_STYLES,
+                key=lambda style_id: NATIVE_CLOCK_STYLES[style_id]["mixer"],
+            )
+        else:
             style_ids = [
                 style_id
-                for style_id in style_ids
+                for style_id in NATIVE_CLOCK_STYLES
                 if style_id not in EXPERIMENTAL_CLOCK_STYLE_IDS
             ]
         current = getattr(
@@ -867,9 +872,14 @@ class YeelightCubeNativeEffectSelect(SelectEntity):
         # Extended ("discovered") effects only appear when the switch is on; the
         # currently-selected effect is always kept so HA never warns about an
         # out-of-list value if the switch is toggled off while one is active.
-        names = list(NATIVE_EFFECTS)
         if getattr(self._light_entity, "_extended_effects_enabled", False):
-            names += list(EXTENDED_NATIVE_EFFECTS)
+            # Show the full catalogue sorted by firmware mode number.
+            names = sorted(
+                ALL_NATIVE_EFFECTS,
+                key=lambda name: ALL_NATIVE_EFFECTS[name]["mode"],
+            )
+        else:
+            names = list(NATIVE_EFFECTS)
         current = getattr(self._light_entity, "_native_effect", DEFAULT_NATIVE_EFFECT)
         if current not in names:
             names.append(current)
