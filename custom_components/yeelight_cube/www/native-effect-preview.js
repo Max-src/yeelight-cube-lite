@@ -954,6 +954,41 @@ function renderCarousel(phase, direction) {
   return pixels;
 }
 
+function renderSpectrumChase(phase, direction) {
+  const wavePeriod = 6.04;
+  const hue = phase / (wavePeriod * 10.0);
+  const pixels = [];
+
+  for (let row = 0; row < PREVIEW_ROWS; row += 1) {
+    for (let col = 0; col < PREVIEW_COLS; col += 1) {
+      let distance;
+      if (direction === "Up" || direction === "Down") {
+        distance = 5 * col + row;
+        if (direction === "Down") distance = -distance;
+      } else {
+        distance = col + 5 * row;
+        if (direction === "Left") distance = -distance;
+      }
+
+      const travel = phase / wavePeriod - distance / 25.0;
+      const position = travel - Math.floor(travel);
+      let level;
+      if (position < 0.06) {
+        level = 0.08 + 0.92 * smoothstep(position / 0.06);
+      } else if (position < 0.34) {
+        level = 1.0;
+      } else if (position < 0.92) {
+        level = 1.0 - 0.92 * smoothstep((position - 0.34) / 0.58);
+      } else {
+        level = 0.08;
+      }
+      pixels.push(hsv(hue, 1.0, level));
+    }
+  }
+
+  return pixels;
+}
+
 function renderSpectrumCrumble(phase, direction) {
   const cycleLength = 8.954;
   const cycle = Math.floor(phase / cycleLength);
@@ -1155,6 +1190,7 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
   if (effect === "Ice Blue") return renderIceBlue(phase, direction);
   if (effect === "Sunset") return renderSunset(phase, direction);
   if (effect === "Carousel") return renderCarousel(phase, direction);
+  if (effect === "Spectrum Chase") return renderSpectrumChase(phase, direction);
   if (effect === "Spectrum Crumble")
     return renderSpectrumCrumble(phase, direction);
   if (effect === "Blue White") return renderBlueWhite(phase, direction);

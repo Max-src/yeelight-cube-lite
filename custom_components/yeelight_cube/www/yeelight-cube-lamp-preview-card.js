@@ -25,6 +25,7 @@ import {
 // Clock styles whose mixer is a native effect: the effect is rendered across
 // the whole panel and masked to the lit glyph pixels (mirrors const.py).
 const CLOCK_MIXER_EFFECTS = {
+  6: "Spectrum Chase",
   39: "Rainbow",
   42: "Ocean Waves",
   17: "Spectrum",
@@ -36,10 +37,12 @@ const CLOCK_MIXER_EFFECTS = {
 };
 const CLOCK_MIXER_EFFECT_DIRECTION = "Down";
 const CLOCK_MIXER_EFFECT_SPEED = 50;
+// Clock-mixer effects whose firmware clock always renders the background in a
+// fixed orientation, ignoring the selected native-effect direction.
+const CLOCK_MIXER_FIXED_DIRECTION = { "Spectrum Chase": "Up" };
 
-// Clock style id -> firmware mixer (mirrors NATIVE_CLOCK_STYLES in const.py).
-// Read from the always-present clock_style_id so effect detection never depends
-// on the nested clock_style object being serialised in the entity state.
+// Built-in clock style id -> firmware mixer. Generated styles are resolved
+// below from Home Assistant's string-valued clock_style attribute.
 const CLOCK_STYLE_MIXER = {
   1: 39,
   2: 42,
@@ -63,7 +66,14 @@ function _clockStyleMixer(attrs) {
   if (typeof id === "number" && id in CLOCK_STYLE_MIXER)
     return CLOCK_STYLE_MIXER[id];
   const nested = attrs.clock_style;
-  return nested && typeof nested.mixer === "number" ? nested.mixer : 0;
+  if (nested && typeof nested.mixer === "number") return nested.mixer;
+  if (typeof nested === "string") {
+    const match = Object.entries(CLOCK_MIXER_EFFECTS).find(
+      ([, effectName]) => effectName === nested,
+    );
+    if (match) return Number(match[0]);
+  }
+  return 0;
 }
 
 // Basic-font glyph data: each value is a list of positions (row*20+col)
@@ -216,7 +226,9 @@ function renderClockFrame(attrs, fontMap, metrics, phase = 0) {
   // The mixer effect flows in the selected native-effect direction, so the
   // preview matches whatever direction was applied to the clock on the lamp.
   const direction =
-    attrs.native_effect_direction || CLOCK_MIXER_EFFECT_DIRECTION;
+    CLOCK_MIXER_FIXED_DIRECTION[effectName] ||
+    attrs.native_effect_direction ||
+    CLOCK_MIXER_EFFECT_DIRECTION;
   const effectFrame = effectName
     ? renderNativeEffect(effectName, phase, direction)
     : null;

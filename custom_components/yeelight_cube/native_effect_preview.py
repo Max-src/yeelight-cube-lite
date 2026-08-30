@@ -1031,6 +1031,41 @@ def _render_carousel(
     return pixels
 
 
+def _render_spectrum_chase(
+    phase: float,
+    direction: str,
+) -> list[tuple[int, int, int]]:
+    """Render mode 6's four repeating spectrum transition waves."""
+    wave_period = 6.04
+    hue = phase / (wave_period * 10.0)
+    pixels = []
+
+    for row in range(ROWS):
+        for col in range(COLS):
+            if direction in ("Up", "Down"):
+                distance = 5 * col + row
+                if direction == "Down":
+                    distance = -distance
+            else:
+                distance = col + 5 * row
+                if direction == "Left":
+                    distance = -distance
+
+            travel = phase / wave_period - distance / 25.0
+            position = travel - math.floor(travel)
+            if position < 0.06:
+                level = 0.08 + 0.92 * _smoothstep(position / 0.06)
+            elif position < 0.34:
+                level = 1.0
+            elif position < 0.92:
+                level = 1.0 - 0.92 * _smoothstep((position - 0.34) / 0.58)
+            else:
+                level = 0.08
+            pixels.append(_hsv(hue, 1.0, level))
+
+    return pixels
+
+
 def _render_spectrum_crumble(
     phase: float,
     direction: str,
@@ -1219,6 +1254,8 @@ def render_native_effect(
         return _render_sunset(phase, direction)
     if effect == "Carousel":
         return _render_carousel(phase, direction)
+    if effect == "Spectrum Chase":
+        return _render_spectrum_chase(phase, direction)
     if effect == "Spectrum Crumble":
         return _render_spectrum_crumble(phase, direction)
     if effect == "Blue White":

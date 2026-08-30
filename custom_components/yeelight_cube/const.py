@@ -44,6 +44,7 @@ DEFAULT_NATIVE_CLOCK_STYLE = 6
 # Mixers without a dedicated software renderer keep a static gradient
 # approximation.
 CLOCK_MIXER_EFFECTS = {
+    6: "Spectrum Chase",
     39: "Rainbow",
     42: "Ocean Waves",
     17: "Spectrum",
@@ -128,6 +129,7 @@ _OFFICIAL_EFFECT_MODES = {spec["mode"] for spec in NATIVE_EFFECTS.values()} | {
 # placeholder name. Named modes are also exposed as animated clock mixer
 # backgrounds and share the clock styles' names.
 _EXTENDED_EFFECT_NAMES = {
+    6: "Spectrum Chase",
     54: "Sunset",
     56: "Carousel",
     57: "Blue Yellow",
@@ -194,6 +196,10 @@ DEVICE_ORIENTATION_TO_EFFECT_DIR = {
     "right": "Right",
 }
 
+# Clock-mixer effects whose firmware clock always renders the background in a
+# fixed orientation, ignoring the selected native-effect direction.
+CLOCK_MIXER_FIXED_DIRECTION = {"Spectrum Chase": "Up"}
+
 
 def resolve_clock_mixer_direction(direction, effect_name):
     """Return the direction label for a clock style's mixer effect, or None.
@@ -209,6 +215,9 @@ def resolve_clock_mixer_direction(direction, effect_name):
     directions = spec.get("directions")
     if not directions:
         return None
+    fixed = CLOCK_MIXER_FIXED_DIRECTION.get(effect_name)
+    if fixed in directions:
+        return fixed
     if direction in directions:
         return direction
     if CLOCK_MIXER_EFFECT_DIRECTION in directions:

@@ -1247,6 +1247,69 @@ class NativeFeatureTests(unittest.TestCase):
         cycle_seconds = 8.954 / phase_per_second
         self.assertAlmostEqual(7.725, cycle_seconds, places=3)
 
+    def test_spectrum_chase_matches_repeating_color_waves_and_clock_mixer(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+        phase_per_second = 0.25 + 50 / 55.0
+        wave_period = 6.04
+
+        self.assertEqual("Spectrum Chase", CONSTANTS["CLOCK_MIXER_EFFECTS"][6])
+        self.assertIn('6: "Spectrum Chase"', CLOCK_CARD_SOURCE)
+        self.assertIn('typeof nested === "string"', CLOCK_CARD_SOURCE)
+        self.assertIn('effectName === nested', CLOCK_CARD_SOURCE)
+        style = next(
+            style
+            for style in CONSTANTS["NATIVE_CLOCK_STYLES"].values()
+            if style["mixer"] == 6
+        )
+        self.assertEqual("Spectrum Chase", style["name"])
+
+        for direction in ("Right", "Up", "Left", "Down"):
+            frame = render("Spectrum Chase", 2.13, direction)
+            next_color = render("Spectrum Chase", 2.13 + wave_period, direction)
+            self.assertEqual(100, len(frame))
+            self.assertEqual(
+                [max(pixel) for pixel in frame],
+                [max(pixel) for pixel in next_color],
+            )
+            self.assertNotEqual(frame, next_color)
+
+            # All simultaneous waves share one hue; only their brightness is
+            # spatially shifted. A new wave never introduces a different color.
+            chromaticities = {
+                tuple(round(channel / max(pixel), 2) for channel in pixel)
+                for pixel in frame
+                if max(pixel) > 50
+            }
+            self.assertLessEqual(len(chromaticities), 2)
+
+        right = render("Spectrum Chase", 1.7, "Right")
+        up = render("Spectrum Chase", 1.7, "Up")
+        self.assertEqual(right[5], right[20])
+        self.assertEqual(up[1], up[20])
+        self.assertEqual(
+            render("Spectrum Chase", 1.7, "Left")[0],
+            right[0],
+        )
+        self.assertEqual(
+            render("Spectrum Chase", 1.7, "Down")[0],
+            up[0],
+        )
+        self.assertEqual(
+            4,
+            len(
+                {
+                    tuple(render("Spectrum Chase", 1.7, direction))
+                    for direction in ("Right", "Up", "Left", "Down")
+                }
+            ),
+        )
+        self.assertAlmostEqual(5.211, wave_period / phase_per_second, places=3)
+        self.assertAlmostEqual(
+            52.110,
+            wave_period * 10 / phase_per_second,
+            places=3,
+        )
+
     def test_music_flow_previews_are_static_valid_and_distinct(self):
         render = NATIVE_PREVIEW["render_music_flow_effect"]
         previews = {}
@@ -1315,12 +1378,20 @@ class NativeFeatureTests(unittest.TestCase):
     def test_clock_style_sends_and_previews_mixer_direction(self):
         resolve = CONSTANTS["resolve_clock_mixer_direction"]
         mixer_effects = CONSTANTS["CLOCK_MIXER_EFFECTS"]
+        fixed = CONSTANTS["CLOCK_MIXER_FIXED_DIRECTION"]
 
         # Every clock mixer effect is direction-capable and flows in the
-        # selected native-effect direction.
+        # selected native-effect direction, except effects pinned to a fixed
+        # clock orientation by the firmware.
         for label in ("Right", "Down", "Left", "Up"):
             for effect_name in mixer_effects.values():
-                self.assertEqual(label, resolve(label, effect_name))
+                expected = fixed.get(effect_name, label)
+                self.assertEqual(expected, resolve(label, effect_name))
+        # Spectrum Chase's clock background always renders Up on the hardware.
+        self.assertEqual("Up", fixed["Spectrum Chase"])
+        for label in ("Right", "Down", "Left", "Up"):
+            self.assertEqual("Up", resolve(label, "Spectrum Chase"))
+        self.assertIn('CLOCK_MIXER_FIXED_DIRECTION[effectName]', CLOCK_CARD_SOURCE)
         # A direction-less effect or unknown mixer yields no direction byte.
         self.assertIsNone(resolve("Up", "Magic"))
         self.assertIsNone(resolve("Up", None))
@@ -1386,6 +1457,7 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertNotIn(str(clock_mode), extended)
         # Named clock-mixer effects use their given names + modes.
         named = {
+            "Spectrum Chase": 6,
             "Sunset": 54,
             "Carousel": 56,
             "Blue Yellow": 57,
