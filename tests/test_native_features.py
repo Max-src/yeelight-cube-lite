@@ -1310,6 +1310,53 @@ class NativeFeatureTests(unittest.TestCase):
             places=3,
         )
 
+    def test_pastel_pulse_matches_measured_colour_maps_and_clock_mixer(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+
+        self.assertEqual("Pastel Pulse", CONSTANTS["CLOCK_MIXER_EFFECTS"][9])
+        self.assertIn('9: "Pastel Pulse"', CLOCK_CARD_SOURCE)
+        style = next(
+            style
+            for style in CONSTANTS["NATIVE_CLOCK_STYLES"].values()
+            if style["mixer"] == 9
+        )
+        self.assertEqual("Pastel Pulse", style["name"])
+        self.assertEqual(
+            "Up",
+            CONSTANTS["CLOCK_MIXER_FIXED_DIRECTION"]["Pastel Pulse"],
+        )
+
+        # At the neutral phase the breath is zero. Right/Left use the 3-diagonal
+        # map (Right as captured); Up/Down use the finer map (Up as captured).
+        right = render("Pastel Pulse", 0.0, "Right")
+        self.assertEqual(100, len(right))
+        self.assertEqual((201, 156, 255), right[0 * 20 + 11])  # violet, bottom
+        self.assertEqual((239, 183, 155), right[4 * 20 + 7])   # warm, top row
+        self.assertEqual((255, 255, 255), right[0])            # grey -> white
+
+        up = render("Pastel Pulse", 0.0, "Up")
+        self.assertEqual((14, 234, 147), up[0 * 20 + 7])       # vivid green
+        self.assertEqual((239, 174, 155), up[2 * 20 + 1])      # warm/tan island
+
+        # Down = Up rotated 180 deg; Left = Right rotated 180 deg.
+        down = render("Pastel Pulse", 0.0, "Down")
+        left = render("Pastel Pulse", 0.0, "Left")
+        self.assertEqual((255, 255, 255), down[0])             # grey -> white
+        for row in range(5):
+            for col in range(20):
+                self.assertEqual(down[row * 20 + col], up[(4 - row) * 20 + (19 - col)])
+                self.assertEqual(left[row * 20 + col], right[(4 - row) * 20 + (19 - col)])
+
+        # The field breathes subtly: a non-neutral phase shifts brightness a
+        # little without recolouring cells.
+        breathed = render("Pastel Pulse", 0.8, "Right")
+        self.assertNotEqual(right, breathed)
+        drift = sum(
+            abs(a - b) for pa, pb in zip(right, breathed) for a, b in zip(pa, pb)
+        ) / (100 * 3)
+        self.assertGreater(drift, 0.0)
+        self.assertLess(drift, 14.0)
+
     def test_music_flow_previews_are_static_valid_and_distinct(self):
         render = NATIVE_PREVIEW["render_music_flow_effect"]
         previews = {}
@@ -1458,6 +1505,7 @@ class NativeFeatureTests(unittest.TestCase):
         # Named clock-mixer effects use their given names + modes.
         named = {
             "Spectrum Chase": 6,
+            "Pastel Pulse": 9,
             "Sunset": 54,
             "Carousel": 56,
             "Blue Yellow": 57,

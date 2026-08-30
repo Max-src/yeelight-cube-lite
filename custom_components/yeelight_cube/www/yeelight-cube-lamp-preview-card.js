@@ -26,6 +26,7 @@ import {
 // the whole panel and masked to the lit glyph pixels (mirrors const.py).
 const CLOCK_MIXER_EFFECTS = {
   6: "Spectrum Chase",
+  9: "Pastel Pulse",
   39: "Rainbow",
   42: "Ocean Waves",
   17: "Spectrum",
@@ -39,7 +40,10 @@ const CLOCK_MIXER_EFFECT_DIRECTION = "Down";
 const CLOCK_MIXER_EFFECT_SPEED = 50;
 // Clock-mixer effects whose firmware clock always renders the background in a
 // fixed orientation, ignoring the selected native-effect direction.
-const CLOCK_MIXER_FIXED_DIRECTION = { "Spectrum Chase": "Up" };
+const CLOCK_MIXER_FIXED_DIRECTION = {
+  "Spectrum Chase": "Up",
+  "Pastel Pulse": "Up",
+};
 
 // Built-in clock style id -> firmware mixer. Generated styles are resolved
 // below from Home Assistant's string-valued clock_style attribute.

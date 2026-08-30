@@ -989,6 +989,277 @@ function renderSpectrumChase(phase, direction) {
   return pixels;
 }
 
+// Measured Cube Lite mode-9 colour maps (renderer coords: row 0 = physical
+// bottom, col 0 = left), flat-field corrected from calibrated recordings. The
+// horizontal-flow map serves Left as captured and Right column-mirrored; the
+// vertical-flow map serves Down as captured and Up row-mirrored.
+const PASTEL_PULSE_H = [
+  [
+    [213, 250, 255],
+    [214, 246, 255],
+    [201, 241, 255],
+    [217, 214, 146],
+    [207, 230, 215],
+    [218, 235, 243],
+    [188, 230, 209],
+    [14, 234, 147],
+    [210, 226, 234],
+    [213, 227, 236],
+    [16, 216, 245],
+    [161, 216, 244],
+    [219, 227, 230],
+    [164, 212, 250],
+    [61, 182, 255],
+    [207, 233, 233],
+    [209, 231, 234],
+    [170, 172, 255],
+    [212, 210, 241],
+    [212, 238, 233],
+  ],
+  [
+    [193, 244, 255],
+    [211, 223, 232],
+    [213, 234, 254],
+    [205, 225, 220],
+    [168, 221, 135],
+    [202, 235, 238],
+    [201, 231, 238],
+    [14, 240, 145],
+    [162, 230, 222],
+    [213, 227, 241],
+    [160, 222, 245],
+    [23, 212, 255],
+    [214, 231, 240],
+    [207, 239, 233],
+    [66, 185, 255],
+    [167, 216, 255],
+    [212, 249, 247],
+    [191, 227, 255],
+    [213, 171, 255],
+    [209, 251, 238],
+  ],
+  [
+    [197, 240, 255],
+    [239, 174, 155],
+    [204, 236, 245],
+    [209, 235, 246],
+    [146, 226, 123],
+    [175, 234, 205],
+    [205, 235, 242],
+    [149, 238, 214],
+    [17, 238, 198],
+    [210, 235, 242],
+    [209, 237, 241],
+    [25, 216, 255],
+    [155, 228, 254],
+    [218, 248, 250],
+    [149, 223, 253],
+    [98, 186, 255],
+    [181, 225, 226],
+    [182, 229, 228],
+    [167, 152, 226],
+    [150, 191, 190],
+  ],
+  [
+    [198, 242, 254],
+    [235, 184, 152],
+    [206, 230, 217],
+    [207, 242, 253],
+    [183, 239, 211],
+    [67, 247, 123],
+    [215, 240, 240],
+    [214, 247, 245],
+    [23, 243, 220],
+    [145, 240, 252],
+    [225, 241, 251],
+    [144, 233, 255],
+    [49, 201, 255],
+    [189, 235, 244],
+    [190, 214, 229],
+    [99, 160, 251],
+    [142, 178, 200],
+    [158, 201, 201],
+    [231, 234, 241],
+    [255, 255, 255],
+  ],
+  [
+    [212, 245, 255],
+    [213, 236, 232],
+    [221, 222, 142],
+    [210, 245, 250],
+    [205, 243, 243],
+    [72, 242, 117],
+    [130, 245, 205],
+    [215, 238, 241],
+    [140, 221, 221],
+    [28, 211, 229],
+    [189, 212, 222],
+    [186, 208, 221],
+    [47, 171, 246],
+    [136, 188, 218],
+    [170, 187, 198],
+    [128, 162, 184],
+    [94, 112, 185],
+    [210, 232, 235],
+    [221, 228, 231],
+    [207, 232, 231],
+  ],
+];
+
+const PASTEL_PULSE_V = [
+  [
+    [210, 232, 235],
+    [210, 232, 235],
+    [210, 232, 235],
+    [123, 148, 173],
+    [147, 160, 235],
+    [170, 179, 255],
+    [213, 225, 248],
+    [217, 247, 250],
+    [210, 254, 243],
+    [210, 242, 244],
+    [206, 209, 244],
+    [201, 156, 255],
+    [209, 158, 254],
+    [210, 204, 233],
+    [208, 224, 230],
+    [196, 233, 226],
+    [201, 230, 225],
+    [210, 237, 231],
+    [216, 234, 232],
+    [221, 235, 231],
+  ],
+  [
+    [210, 232, 235],
+    [145, 167, 173],
+    [160, 206, 230],
+    [51, 190, 255],
+    [55, 216, 255],
+    [168, 238, 255],
+    [217, 247, 248],
+    [225, 249, 245],
+    [221, 238, 244],
+    [164, 216, 255],
+    [63, 187, 255],
+    [63, 184, 255],
+    [162, 210, 255],
+    [199, 233, 226],
+    [211, 227, 232],
+    [198, 221, 233],
+    [152, 201, 243],
+    [92, 171, 255],
+    [112, 168, 255],
+    [180, 203, 237],
+  ],
+  [
+    [163, 171, 165],
+    [162, 227, 213],
+    [31, 255, 212],
+    [25, 255, 222],
+    [170, 255, 240],
+    [233, 248, 247],
+    [224, 246, 245],
+    [223, 242, 244],
+    [160, 236, 238],
+    [18, 228, 246],
+    [16, 225, 246],
+    [156, 225, 243],
+    [208, 229, 234],
+    [210, 228, 235],
+    [197, 226, 232],
+    [137, 219, 246],
+    [24, 208, 255],
+    [25, 208, 255],
+    [149, 216, 247],
+    [218, 227, 240],
+  ],
+  [
+    [182, 191, 181],
+    [188, 232, 137],
+    [180, 252, 139],
+    [207, 254, 223],
+    [222, 251, 253],
+    [217, 251, 255],
+    [220, 241, 245],
+    [190, 244, 219],
+    [97, 237, 130],
+    [69, 237, 131],
+    [170, 232, 211],
+    [197, 233, 240],
+    [206, 227, 244],
+    [195, 234, 239],
+    [151, 228, 204],
+    [19, 239, 133],
+    [20, 238, 135],
+    [142, 237, 212],
+    [207, 234, 240],
+    [230, 237, 254],
+  ],
+  [
+    [196, 214, 228],
+    [220, 255, 255],
+    [226, 255, 255],
+    [213, 255, 255],
+    [207, 255, 255],
+    [211, 249, 255],
+    [204, 234, 233],
+    [239, 183, 155],
+    [230, 175, 148],
+    [203, 225, 228],
+    [196, 235, 251],
+    [196, 237, 255],
+    [200, 233, 255],
+    [203, 229, 226],
+    [209, 207, 148],
+    [203, 215, 133],
+    [189, 227, 214],
+    [193, 239, 250],
+    [213, 238, 255],
+    [252, 253, 255],
+  ],
+];
+
+function renderPastelPulse(phase, direction) {
+  const breath = Math.sin((Math.PI * 2 * phase) / 3.2);
+  const pixels = [];
+
+  for (let row = 0; row < PREVIEW_ROWS; row += 1) {
+    for (let col = 0; col < PREVIEW_COLS; col += 1) {
+      let base;
+      if (direction === "Right") {
+        base = PASTEL_PULSE_V[row][col];
+      } else if (direction === "Left") {
+        base = PASTEL_PULSE_V[PREVIEW_ROWS - 1 - row][PREVIEW_COLS - 1 - col];
+      } else if (direction === "Up") {
+        base = PASTEL_PULSE_H[row][col];
+      } else {
+        base = PASTEL_PULSE_H[PREVIEW_ROWS - 1 - row][PREVIEW_COLS - 1 - col];
+      }
+
+      // Push low-chroma (grey/pale) cells toward white so only genuinely
+      // coloured islands stand out, matching the real panel.
+      let red = base[0];
+      let green = base[1];
+      let blue = base[2];
+      const chroma = Math.max(red, green, blue) - Math.min(red, green, blue);
+      const tint = Math.min(1.0, Math.max(0.0, (chroma - 30) / 40.0));
+      red = red * tint + 255 * (1.0 - tint);
+      green = green * tint + 255 * (1.0 - tint);
+      blue = blue * tint + 255 * (1.0 - tint);
+
+      const sign = (row + col) % 2 === 0 ? 1.0 : -1.0;
+      const gain = 1.0 + 0.05 * breath * sign;
+      pixels.push([
+        Math.max(0, Math.min(255, Math.round(red * gain))),
+        Math.max(0, Math.min(255, Math.round(green * gain))),
+        Math.max(0, Math.min(255, Math.round(blue * gain))),
+      ]);
+    }
+  }
+
+  return pixels;
+}
+
 function renderSpectrumCrumble(phase, direction) {
   const cycleLength = 8.954;
   const cycle = Math.floor(phase / cycleLength);
@@ -1179,7 +1450,7 @@ function renderPalette(phase, direction) {
 /**
  * Render one animated 20x5 approximation frame of a firmware effect.
  * Returns a flat array of 100 [r,g,b] tuples in row-major order
- * (row 0 = top, col 0 = left).
+ * (row 0 = the panel's physical bottom, col 0 = left).
  */
 export function renderNativeEffect(effect, phase, direction = "Up") {
   if (effect === "Magic") return renderMagic(phase);
@@ -1191,6 +1462,7 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
   if (effect === "Sunset") return renderSunset(phase, direction);
   if (effect === "Carousel") return renderCarousel(phase, direction);
   if (effect === "Spectrum Chase") return renderSpectrumChase(phase, direction);
+  if (effect === "Pastel Pulse") return renderPastelPulse(phase, direction);
   if (effect === "Spectrum Crumble")
     return renderSpectrumCrumble(phase, direction);
   if (effect === "Blue White") return renderBlueWhite(phase, direction);

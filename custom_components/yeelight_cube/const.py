@@ -45,6 +45,7 @@ DEFAULT_NATIVE_CLOCK_STYLE = 6
 # approximation.
 CLOCK_MIXER_EFFECTS = {
     6: "Spectrum Chase",
+    9: "Pastel Pulse",
     39: "Rainbow",
     42: "Ocean Waves",
     17: "Spectrum",
@@ -130,6 +131,7 @@ _OFFICIAL_EFFECT_MODES = {spec["mode"] for spec in NATIVE_EFFECTS.values()} | {
 # backgrounds and share the clock styles' names.
 _EXTENDED_EFFECT_NAMES = {
     6: "Spectrum Chase",
+    9: "Pastel Pulse",
     54: "Sunset",
     56: "Carousel",
     57: "Blue Yellow",
@@ -198,7 +200,10 @@ DEVICE_ORIENTATION_TO_EFFECT_DIR = {
 
 # Clock-mixer effects whose firmware clock always renders the background in a
 # fixed orientation, ignoring the selected native-effect direction.
-CLOCK_MIXER_FIXED_DIRECTION = {"Spectrum Chase": "Up"}
+CLOCK_MIXER_FIXED_DIRECTION = {
+    "Spectrum Chase": "Up",
+    "Pastel Pulse": "Up",
+}
 
 
 def resolve_clock_mixer_direction(direction, effect_name):
