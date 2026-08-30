@@ -95,7 +95,7 @@ _SWAP_UP_DOWN = {"Up": "Down", "Down": "Up"}
 NATIVE_EFFECTS = {
     "Streamer": {"effect_id": 3, "mode": 3, "speed": True},
     "Starry sky": {"effect_id": 5, "mode": 5, "speed": True, "color": 255},
-    "Spectrum": {"effect_id": 17, "mode": 17, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": _SWAP_UP_DOWN},
+    "Spectrum": {"effect_id": 17, "mode": 17, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": _SWAP_UP_DOWN},
     "Ocean Waves": {"effect_id": 42, "mode": 42, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": _SWAP_UP_DOWN},
     "Rainbow": {"effect_id": 39, "mode": 39, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": _SWAP_UP_DOWN},
     "Waterfall": {"effect_id": 32, "mode": 32, "speed": True, "directions": NATIVE_EFFECT_DIRECTIONS, "direction_remap": _SWAP_UP_DOWN, "color": 255},
