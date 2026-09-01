@@ -1304,6 +1304,39 @@ function renderEmber(phase, direction) {
   return pixels;
 }
 
+function renderTwinkle(phase, direction) {
+  const pixels = [];
+  for (let row = 0; row < PREVIEW_ROWS; row += 1) {
+    for (let col = 0; col < PREVIEW_COLS; col += 1) {
+      let sampleCol = col;
+      let sampleRow = row;
+      if (direction === "Left") {
+        sampleCol = PREVIEW_COLS - 1 - col;
+      } else if (direction === "Down") {
+        sampleRow = PREVIEW_ROWS - 1 - row;
+      }
+
+      const period = 2.02 + 0.33 * noiseAt(sampleCol + 797, sampleRow + 149, 0);
+      const offset = period * noiseAt(sampleCol + 431, sampleRow + 887, 0);
+      const local = (phase + offset) / period;
+      const cycle = Math.floor(local);
+      const progress = local - cycle;
+
+      const hueNoise = noiseAt(sampleCol + cycle * 37, sampleRow + 1231, 4079);
+      const hue = 0.6 + 0.2 * hueNoise;
+      const saturation =
+        0.25 + 0.62 * noiseAt(sampleCol + cycle * 43, sampleRow + 1877, 4211);
+      const target =
+        0.82 + 0.18 * noiseAt(sampleCol + cycle * 47, sampleRow + 2081, 4253);
+      const decay = (1.0 - progress) ** 0.48;
+      const level = target * smoothstep(decay);
+      pixels.push(hsv(hue, saturation, level));
+    }
+  }
+
+  return pixels;
+}
+
 function renderSpectrumCrumble(phase, direction) {
   const cycleLength = 8.954;
   const cycle = Math.floor(phase / cycleLength);
@@ -1508,6 +1541,7 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
   if (effect === "Spectrum Chase") return renderSpectrumChase(phase, direction);
   if (effect === "Pastel Pulse") return renderPastelPulse(phase, direction);
   if (effect === "Ember") return renderEmber(phase, direction);
+  if (effect === "Twinkle") return renderTwinkle(phase, direction);
   if (effect === "Spectrum Crumble")
     return renderSpectrumCrumble(phase, direction);
   if (effect === "Blue White") return renderBlueWhite(phase, direction);

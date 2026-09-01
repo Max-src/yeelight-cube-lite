@@ -1409,6 +1409,55 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertGreater(lit, 0.75)
         self.assertLess(hot, 0.45)
 
+    def test_twinkle_matches_measured_independent_fade_pulses(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+
+        self.assertEqual("Twinkle", CONSTANTS["CLOCK_MIXER_EFFECTS"][79])
+        self.assertIn('79: "Twinkle"', CLOCK_CARD_SOURCE)
+        style = next(
+            style
+            for style in CONSTANTS["NATIVE_CLOCK_STYLES"].values()
+            if style["mixer"] == 79
+        )
+        self.assertEqual("Twinkle", style["name"])
+
+        phase = 1.7
+        right = render("Twinkle", phase, "Right")
+        left = render("Twinkle", phase, "Left")
+        up = render("Twinkle", phase, "Up")
+        down = render("Twinkle", phase, "Down")
+        self.assertEqual(100, len(right))
+        for row in range(5):
+            for col in range(20):
+                self.assertEqual(left[row * 20 + col], right[row * 20 + 19 - col])
+                self.assertEqual(down[row * 20 + col], up[(4 - row) * 20 + col])
+
+        # At rate 50, the recording shows independent resets mainly every
+        # 54-63 frames and only about 13% of samples below value 70.
+        phase_rate = 0.25 + 50 / 55.0
+        frames = [
+            render("Twinkle", frame / 30.0 * phase_rate, "Right")
+            for frame in range(817)
+        ]
+        values = [[max(pixel) for pixel in frame] for frame in frames]
+        dark = sum(value < 70 for frame in values for value in frame)
+        self.assertGreater(dark / (817 * 100), 0.09)
+        self.assertLess(dark / (817 * 100), 0.16)
+        reset_gaps = []
+        for cell in range(100):
+            resets = [
+                frame
+                for frame in range(1, len(values))
+                if values[frame][cell] - values[frame - 1][cell] > 80
+            ]
+            reset_gaps.extend(
+                later - earlier for earlier, later in zip(resets, resets[1:])
+            )
+        reset_gaps.sort()
+        self.assertGreaterEqual(reset_gaps[len(reset_gaps) // 10], 52)
+        self.assertLessEqual(reset_gaps[9 * len(reset_gaps) // 10], 62)
+        self.assertTrue(all(blue >= red and blue >= green for red, green, blue in right))
+
     def test_music_flow_previews_are_static_valid_and_distinct(self):
         render = NATIVE_PREVIEW["render_music_flow_effect"]
         previews = {}
@@ -1565,6 +1614,7 @@ class NativeFeatureTests(unittest.TestCase):
             "Ice Blue": 58,
             "Blue White": 59,
             "Spectrum Crumble": 60,
+            "Twinkle": 79,
         }
         for effect_name, mode in named.items():
             self.assertIn(effect_name, extended)

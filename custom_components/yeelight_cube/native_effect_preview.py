@@ -1215,6 +1215,46 @@ def _render_ember(
     return pixels
 
 
+def _render_twinkle(
+    phase: float,
+    direction: str,
+) -> list[tuple[int, int, int]]:
+    """Render mode 79's independently phased purple and pink fade pulses."""
+    pixels = []
+    for row in range(ROWS):
+        for col in range(COLS):
+            if direction == "Left":
+                sample_col, sample_row = COLS - 1 - col, row
+            elif direction == "Down":
+                sample_col, sample_row = col, ROWS - 1 - row
+            else:
+                sample_col, sample_row = col, row
+
+            period = 2.02 + 0.33 * _noise(sample_col + 797, sample_row + 149, 0)
+            offset = period * _noise(sample_col + 431, sample_row + 887, 0)
+            local = (phase + offset) / period
+            cycle = math.floor(local)
+            progress = local - cycle
+
+            hue_noise = _noise(sample_col + cycle * 37, sample_row + 1231, 4079)
+            hue = 0.60 + 0.20 * hue_noise
+            saturation = 0.25 + 0.62 * _noise(
+                sample_col + cycle * 43,
+                sample_row + 1877,
+                4211,
+            )
+            target = 0.82 + 0.18 * _noise(
+                sample_col + cycle * 47,
+                sample_row + 2081,
+                4253,
+            )
+            decay = (1.0 - progress) ** 0.48
+            level = target * _smoothstep(decay)
+            pixels.append(_hsv(hue, saturation, level))
+
+    return pixels
+
+
 _PALETTE_HUES = (
     0.50,
     0.52,
@@ -1364,6 +1404,8 @@ def render_native_effect(
         return _render_pastel_pulse(phase, direction)
     if effect == "Ember":
         return _render_ember(phase, direction)
+    if effect == "Twinkle":
+        return _render_twinkle(phase, direction)
     if effect == "Spectrum Crumble":
         return _render_spectrum_crumble(phase, direction)
     if effect == "Blue White":

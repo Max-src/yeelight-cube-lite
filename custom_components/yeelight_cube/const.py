@@ -47,6 +47,7 @@ CLOCK_MIXER_EFFECTS = {
     6: "Spectrum Chase",
     9: "Pastel Pulse",
     24: "Ember",
+    79: "Twinkle",
     39: "Rainbow",
     42: "Ocean Waves",
     17: "Spectrum",
@@ -140,6 +141,7 @@ _EXTENDED_EFFECT_NAMES = {
     58: "Ice Blue",
     59: "Blue White",
     60: "Spectrum Crumble",
+    79: "Twinkle",
 }
 EXTENDED_NATIVE_EFFECTS = {
     _EXTENDED_EFFECT_NAMES.get(mode, str(mode)): {
