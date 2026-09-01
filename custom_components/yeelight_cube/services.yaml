@@ -419,7 +419,8 @@ bulb_call:
       selector:
         object:
     kwargs:
-      description: Optional keyword args, e.g. {\"light_type\": 0} (0=Main, 1=Ambient).
+      description: >-
+        Optional keyword args for write methods, e.g. light_type 0=Main 1=Ambient.
       example: '{"light_type": 0}'
       required: false
       selector:
