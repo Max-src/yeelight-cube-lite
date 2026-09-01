@@ -54,7 +54,7 @@
         },
         "number": {
             "native_effect_speed": {
-                "name": "Native effect: Speed"
+                "name": "Animation speed"
             },
             "scroll_speed": {
                 "name": "Text scroll: Interval"

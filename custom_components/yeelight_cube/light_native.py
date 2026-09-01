@@ -167,6 +167,7 @@ class NativeModesMixin:
         effect_config = {
             "mode": NATIVE_CLOCK_EFFECT_ID,
             "mixer": style["mixer"],
+            "rate": self._native_effect_speed,
             "data": base64.b64encode(clock_data).decode("ascii"),
         }
         clock_color = self._resolve_native_clock_color(style)

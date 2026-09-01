@@ -420,26 +420,36 @@ class YeelightCubeNativeEffectSpeedNumber(NumberEntity):
 
     @property
     def available(self) -> bool:
-        spec = ALL_NATIVE_EFFECTS[self._light_entity._native_effect]
-        return self._light_entity.available and bool(spec.get("speed"))
+        light = self._light_entity
+        if not light.available:
+            return False
+        # The firmware clock accepts the same rate byte, so the slider applies
+        # to clock mode too; otherwise it depends on the selected effect.
+        if light._mode == "Clock":
+            return True
+        spec = ALL_NATIVE_EFFECTS[light._native_effect]
+        return bool(spec.get("speed"))
 
     @property
     def native_value(self) -> float:
         return float(self._light_entity._native_effect_speed)
 
     async def async_set_native_value(self, value: float) -> None:
-        self._light_entity._native_effect_speed = max(1, min(255, int(value)))
-        spec = ALL_NATIVE_EFFECTS[self._light_entity._native_effect]
-        if (
-            spec.get("speed")
-            and self._light_entity._mode == "Native Effect"
-            and self._light_entity._is_on
-        ):
-            await self._light_entity.async_apply_display_mode(
-                update_type="color_change"
+        light = self._light_entity
+        light._native_effect_speed = max(1, min(255, int(value)))
+        if light._mode == "Clock":
+            reapply = light._is_on
+        else:
+            spec = ALL_NATIVE_EFFECTS[light._native_effect]
+            reapply = (
+                bool(spec.get("speed"))
+                and light._mode == "Native Effect"
+                and light._is_on
             )
+        if reapply:
+            await light.async_apply_display_mode(update_type="color_change")
         self.async_write_ha_state()
-        self._light_entity.async_write_ha_state()
+        light.async_write_ha_state()
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
