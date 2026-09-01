@@ -1167,6 +1167,54 @@ def _render_spectrum_crumble(
     return pixels
 
 
+_EMBER_PALETTE = (
+    (255, 0, 40),
+    (255, 0, 28),
+    (255, 3, 18),
+    (255, 15, 10),
+    (255, 45, 10),
+    (255, 80, 14),
+    (255, 120, 25),
+    (255, 170, 75),
+    (255, 210, 145),
+)
+
+
+def _render_ember(
+    phase: float,
+    direction: str,
+) -> list[tuple[int, int, int]]:
+    """Render mode 24's slowly evolving, direction-stretched heat field."""
+    pixels = []
+    for row in range(ROWS):
+        for col in range(COLS):
+            if direction in ("Left", "Right"):
+                along = COLS - 1 - col if direction == "Left" else col
+                across = ROWS - 1 - row
+            else:
+                along = ROWS - 1 - row if direction == "Down" else row
+                across = col
+
+            time_offset = (_noise(along + 811, across + 337, 0) - 0.5) * 1.30
+            broad = _value_noise_3d(
+                along,
+                across * 0.40,
+                phase * 0.50 + time_offset,
+            )
+            fine = _value_noise_3d(
+                along * 1.73 + 17.2,
+                across * 1.37 + 8.1,
+                phase * 0.68 + time_offset * 1.9,
+            )
+            heat = broad * 0.85 + fine * 0.15
+            heat = min(1.0, max(0.0, (heat - 0.12) / 0.70))
+            heat = _smoothstep(heat)
+            red, green, blue = _palette(_EMBER_PALETTE, heat)
+            pixels.append(_rgb(red, green, blue, heat))
+
+    return pixels
+
+
 _PALETTE_HUES = (
     0.50,
     0.52,
@@ -1314,6 +1362,8 @@ def render_native_effect(
         return _render_spectrum_chase(phase, direction)
     if effect == "Pastel Pulse":
         return _render_pastel_pulse(phase, direction)
+    if effect == "Ember":
+        return _render_ember(phase, direction)
     if effect == "Spectrum Crumble":
         return _render_spectrum_crumble(phase, direction)
     if effect == "Blue White":

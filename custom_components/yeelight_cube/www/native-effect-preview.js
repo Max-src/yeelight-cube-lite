@@ -1260,6 +1260,50 @@ function renderPastelPulse(phase, direction) {
   return pixels;
 }
 
+const EMBER_PALETTE = [
+  [255, 0, 40],
+  [255, 0, 28],
+  [255, 3, 18],
+  [255, 15, 10],
+  [255, 45, 10],
+  [255, 80, 14],
+  [255, 120, 25],
+  [255, 170, 75],
+  [255, 210, 145],
+];
+
+function renderEmber(phase, direction) {
+  const pixels = [];
+  for (let row = 0; row < PREVIEW_ROWS; row += 1) {
+    for (let col = 0; col < PREVIEW_COLS; col += 1) {
+      let along;
+      let across;
+      if (direction === "Left" || direction === "Right") {
+        along = direction === "Left" ? PREVIEW_COLS - 1 - col : col;
+        across = PREVIEW_ROWS - 1 - row;
+      } else {
+        along = direction === "Down" ? PREVIEW_ROWS - 1 - row : row;
+        across = col;
+      }
+
+      const timeOffset = (noiseAt(along + 811, across + 337, 0) - 0.5) * 1.3;
+      const broad = valueNoise3d(along, across * 0.4, phase * 0.5 + timeOffset);
+      const fine = valueNoise3d(
+        along * 1.73 + 17.2,
+        across * 1.37 + 8.1,
+        phase * 0.68 + timeOffset * 1.9,
+      );
+      let heat = broad * 0.85 + fine * 0.15;
+      heat = Math.min(1.0, Math.max(0.0, (heat - 0.12) / 0.7));
+      heat = smoothstep(heat);
+      const [red, green, blue] = palette(EMBER_PALETTE, heat);
+      pixels.push(rgb(red, green, blue, heat));
+    }
+  }
+
+  return pixels;
+}
+
 function renderSpectrumCrumble(phase, direction) {
   const cycleLength = 8.954;
   const cycle = Math.floor(phase / cycleLength);
@@ -1463,6 +1507,7 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
   if (effect === "Carousel") return renderCarousel(phase, direction);
   if (effect === "Spectrum Chase") return renderSpectrumChase(phase, direction);
   if (effect === "Pastel Pulse") return renderPastelPulse(phase, direction);
+  if (effect === "Ember") return renderEmber(phase, direction);
   if (effect === "Spectrum Crumble")
     return renderSpectrumCrumble(phase, direction);
   if (effect === "Blue White") return renderBlueWhite(phase, direction);

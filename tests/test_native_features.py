@@ -1357,6 +1357,58 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertGreater(drift, 0.0)
         self.assertLess(drift, 14.0)
 
+    def test_ember_matches_measured_heat_field_and_clock_mixer(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+
+        self.assertEqual("Ember", CONSTANTS["CLOCK_MIXER_EFFECTS"][24])
+        self.assertIn('24: "Ember"', CLOCK_CARD_SOURCE)
+        style = next(
+            style
+            for style in CONSTANTS["NATIVE_CLOCK_STYLES"].values()
+            if style["mixer"] == 24
+        )
+        self.assertEqual("Ember", style["name"])
+        self.assertNotIn("Ember", CONSTANTS["CLOCK_MIXER_FIXED_DIRECTION"])
+
+        phase = 2.3
+        right = render("Ember", phase, "Right")
+        left = render("Ember", phase, "Left")
+        up = render("Ember", phase, "Up")
+        down = render("Ember", phase, "Down")
+        self.assertEqual(100, len(right))
+        for row in range(5):
+            for col in range(20):
+                self.assertEqual(left[row * 20 + col], right[row * 20 + 19 - col])
+                self.assertEqual(down[row * 20 + col], up[(4 - row) * 20 + col])
+
+        # Hardware footage shows strong coherence perpendicular to the selected
+        # direction and nearly independent values along it.
+        def mean_difference(frame, row_step, col_step):
+            differences = []
+            for row in range(5 - row_step):
+                for col in range(20 - col_step):
+                    first = frame[row * 20 + col]
+                    second = frame[(row + row_step) * 20 + col + col_step]
+                    differences.append(
+                        sum(abs(a - b) for a, b in zip(first, second)) / 3
+                    )
+            return sum(differences) / len(differences)
+
+        self.assertLess(mean_difference(right, 1, 0), mean_difference(right, 0, 1))
+        self.assertLess(mean_difference(up, 0, 1), mean_difference(up, 1, 0))
+
+        # Across sampled phases, most cells glow but only a minority reach the
+        # cream-hot end of the palette, as measured in both recordings.
+        sampled = [
+            pixel
+            for sample_phase in (0.0, 1.0, 2.0, 3.0, 4.0, 5.0)
+            for pixel in render("Ember", sample_phase, "Right")
+        ]
+        lit = sum(max(pixel) > 25 for pixel in sampled) / len(sampled)
+        hot = sum(max(pixel) > 200 for pixel in sampled) / len(sampled)
+        self.assertGreater(lit, 0.75)
+        self.assertLess(hot, 0.45)
+
     def test_music_flow_previews_are_static_valid_and_distinct(self):
         render = NATIVE_PREVIEW["render_music_flow_effect"]
         previews = {}
@@ -1506,6 +1558,7 @@ class NativeFeatureTests(unittest.TestCase):
         named = {
             "Spectrum Chase": 6,
             "Pastel Pulse": 9,
+            "Ember": 24,
             "Sunset": 54,
             "Carousel": 56,
             "Blue Yellow": 57,
