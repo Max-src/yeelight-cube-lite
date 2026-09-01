@@ -345,6 +345,86 @@ query_raw:
       selector:
         object:
 
+get_capabilities:
+  name: "DEBUG: Get Capabilities (SSDP)"
+  description: >-
+    LOCAL DEBUG ONLY. Runs the yeelight library's SSDP get_capabilities probe
+    and returns the advertised capability headers (id, model, fw_ver, power,
+    bright, rgb, support, ...). Works regardless of content mode. Not a stable API.
+  fields:
+    entity_id:
+      description: Target lamp entity ID.
+      example: "light.cubelite_192_168_4_139"
+      required: true
+      selector:
+        entity:
+          domain: light
+
+bulb_call:
+  name: "DEBUG: Read/Call Bulb Member"
+  description: >-
+    LOCAL DEBUG ONLY. Reads a read-only member of the yeelight Bulb object
+    (e.g. get_model_specs, bulb_type, capabilities) or invokes an allowlisted
+    write method with positional args (e.g. set_rgb with [255, 0, 0]). Anything
+    outside the allowlists is rejected. Not a stable API.
+  fields:
+    entity_id:
+      description: Target lamp entity ID.
+      example: "light.cubelite_192_168_4_139"
+      required: true
+      selector:
+        entity:
+          domain: light
+    member:
+      description: Bulb attribute/method to read (read-only) or call (write).
+      example: "set_rgb"
+      required: true
+      selector:
+        select:
+          custom_value: true
+          options:
+            - "get_capabilities"
+            - "get_model_specs"
+            - "get_properties"
+            - "bulb_type"
+            - "capabilities"
+            - "model"
+            - "music_mode"
+            - "music_mode_state"
+            - "last_properties"
+            - "set_rgb"
+            - "set_hsv"
+            - "set_color_temp"
+            - "set_brightness"
+            - "turn_on"
+            - "turn_off"
+            - "toggle"
+            - "dev_toggle"
+            - "ensure_on"
+            - "set_default"
+            - "set_name"
+            - "set_power_mode"
+            - "set_adjust"
+            - "set_scene"
+            - "cron_add"
+            - "cron_del"
+            - "cron_get"
+            - "stop_flow"
+            - "stop_music"
+            - "send_command"
+    args:
+      description: Positional args for write methods, e.g. [255, 0, 0] for set_rgb.
+      example: "[255, 0, 0]"
+      required: false
+      selector:
+        object:
+    kwargs:
+      description: Optional keyword args, e.g. {\"light_type\": 0} (0=Main, 1=Ambient).
+      example: '{"light_type": 0}'
+      required: false
+      selector:
+        object:
+
 set_default:
   name: "DEBUG: Save Current State As Default"
   description: >-

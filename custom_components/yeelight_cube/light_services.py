@@ -1183,6 +1183,178 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             _LOGGER.error("[FX-QUERY] query failed: %s", e, exc_info=True)
             return {"ok": False, "error": str(e), "method": method, "params": params}
 
+    async def handle_get_capabilities(service_call):
+        """DEBUG: fetch the lamp's SSDP capabilities (yeelight get_capabilities).
+
+        Mirrors ``Bulb.get_capabilities()`` from the yeelight library: sends an
+        SSDP M-SEARCH to the device and returns the advertised capability
+        headers (id, model, fw_ver, power, bright, rgb, support, ...). This is a
+        UDP discovery query, NOT a LAN JSON-RPC call, so it works regardless of
+        the active content mode. Not a stable API.
+        """
+        target = _resolve_entity(service_call, "GET_CAPABILITIES")
+        if target is None:
+            return {"ok": False, "error": "entity not found"}
+        try:
+            caps = await hass.async_add_executor_job(
+                target._cube_matrix.device.get_capabilities
+            )
+            _LOGGER.warning(
+                "[FX-CAPS] %s -> %r", target.entity_id, caps
+            )
+            if not caps:
+                return {
+                    "ok": True,
+                    "capabilities": {},
+                    "note": "lamp sent no SSDP reply (check IP / same subnet)",
+                }
+            return {"ok": True, "capabilities": dict(caps)}
+        except Exception as e:  # noqa: BLE001 -- debug tool
+            _LOGGER.error("[FX-CAPS] get_capabilities failed: %s", e, exc_info=True)
+            return {"ok": False, "error": str(e)}
+
+    # Read-only yeelight Bulb members exposed to the FX Explorer introspection
+    # buttons. Methods are invoked with no args; properties are read. Members
+    # that change device state (turn_*/set_*/start_flow/...) are excluded.
+    _BULB_INFO_MEMBERS = (
+        "get_capabilities",
+        "get_model_specs",
+        "get_properties",
+        "bulb_type",
+        "capabilities",
+        "model",
+        "music_mode",
+        "music_mode_state",
+        "last_properties",
+    )
+    # Write methods callable with positional ``args`` (and optional ``kwargs``),
+    # e.g. set_rgb(r, g, b). These DO change the lamp. Enum-typed leading args
+    # (PowerMode/SceneClass/CronType) and the light_type kwarg are coerced from
+    # ints below. start_music/listen are omitted (they block or can freeze the
+    # library if the bulb can't connect back); start_flow/set_capabilities need
+    # Python objects and are handled via the raw start_cf sender instead.
+    _BULB_ACTION_MEMBERS = (
+        "set_rgb",
+        "set_hsv",
+        "set_color_temp",
+        "set_brightness",
+        "turn_on",
+        "turn_off",
+        "toggle",
+        "dev_toggle",
+        "ensure_on",
+        "set_default",
+        "set_name",
+        "set_power_mode",
+        "set_adjust",
+        "set_scene",
+        "cron_add",
+        "cron_del",
+        "cron_get",
+        "stop_flow",
+        "stop_music",
+        "send_command",
+    )
+
+    def _coerce_bulb_call(member, args, kwargs):
+        """Convert enum-typed args/kwargs (ints from JSON) to yeelight enums."""
+        try:
+            from yeelight import CronType, LightType, PowerMode, SceneClass
+        except Exception:  # noqa: BLE001 -- library always present at runtime
+            return args, kwargs
+        if "light_type" in kwargs:
+            try:
+                kwargs["light_type"] = LightType(int(kwargs["light_type"]))
+            except (ValueError, TypeError):
+                pass
+        if args:
+            enum_for = {
+                "set_power_mode": PowerMode,
+                "set_scene": SceneClass,
+                "cron_add": CronType,
+                "cron_del": CronType,
+                "cron_get": CronType,
+            }.get(member)
+            if enum_for is not None:
+                try:
+                    args[0] = enum_for(int(args[0]))
+                except (ValueError, TypeError):
+                    pass
+        return args, kwargs
+
+    async def handle_bulb_call(service_call):
+        """DEBUG: read or invoke an allowlisted member of the yeelight Bulb.
+
+        ``member`` must be in the read-only introspection allowlist (invoked with
+        no args / read as a property) or the write-action allowlist (invoked with
+        the positional ``args`` list and optional ``kwargs`` dict, e.g. ``set_rgb``
+        with ``[255, 0, 0]``). Enum params (light_type/PowerMode/SceneClass/
+        CronType) may be given as ints. Anything else is rejected. Not a stable API.
+        """
+        member = service_call.data.get("member")
+        raw_args = service_call.data.get("args")
+        args = list(raw_args) if isinstance(raw_args, (list, tuple)) else []
+        raw_kwargs = service_call.data.get("kwargs")
+        kwargs = dict(raw_kwargs) if isinstance(raw_kwargs, dict) else {}
+        target = _resolve_entity(service_call, "BULB_CALL")
+        if target is None:
+            return {"ok": False, "error": "entity not found"}
+        is_action = member in _BULB_ACTION_MEMBERS
+        if member not in _BULB_INFO_MEMBERS and not is_action:
+            return {
+                "ok": False,
+                "error": f"member not allowed: {member!r}",
+                "allowed": list(_BULB_INFO_MEMBERS + _BULB_ACTION_MEMBERS),
+            }
+        bulb = target._cube_matrix.device
+        if is_action:
+            args, kwargs = _coerce_bulb_call(member, args, kwargs)
+        # Write actions and the read members that open the control socket use the
+        # library socket; close it afterwards so no connection lingers.
+        uses_control_socket = is_action or member in ("get_properties", "bulb_type")
+
+        def _call():
+            attr = getattr(bulb, member)
+            if callable(attr):
+                value = attr(*args, **kwargs) if is_action else attr()
+            else:
+                value = attr
+            if uses_control_socket:
+                try:
+                    target._cube_matrix.close_command_socket()
+                except Exception:  # noqa: BLE001
+                    pass
+            return value
+
+        try:
+            value = await hass.async_add_executor_job(_call)
+            # Normalize enums/sets/other non-JSON types to strings.
+            safe = json.loads(json.dumps(value, default=str))
+            safe_args = json.loads(json.dumps(args, default=str))
+            _LOGGER.warning(
+                "[FX-BULB] %s .%s(args=%s kwargs=%s) -> %r",
+                target.entity_id,
+                member,
+                args if is_action else "",
+                kwargs if is_action else "",
+                value,
+            )
+            return {
+                "ok": True,
+                "member": member,
+                "args": safe_args if is_action else [],
+                "value": safe,
+            }
+        except Exception as e:  # noqa: BLE001 -- debug tool
+            _LOGGER.error(
+                "[FX-BULB] %s.%s failed: %s",
+                target.entity_id,
+                member,
+                e,
+                exc_info=True,
+            )
+            return {"ok": False, "member": member, "error": str(e)}
+
     async def handle_set_default(service_call):
         """DEBUG: Snapshot the lamp's CURRENT state as its power-on default.
 
@@ -1313,6 +1485,31 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             vol.Required("entity_id"): _entity_id_or_list,
             vol.Optional("method"): cv.string,
             vol.Optional("params"): list,
+        }, extra=vol.ALLOW_EXTRA),
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+
+    # DEBUG: SSDP capabilities probe (yeelight Bulb.get_capabilities) for the card.
+    hass.services.async_register(
+        DOMAIN,
+        "get_capabilities",
+        handle_get_capabilities,
+        schema=vol.Schema({
+            vol.Required("entity_id"): _entity_id_or_list,
+        }, extra=vol.ALLOW_EXTRA),
+        supports_response=SupportsResponse.OPTIONAL,
+    )
+
+    # DEBUG: read-only yeelight Bulb introspection (get_model_specs, bulb_type, ...).
+    hass.services.async_register(
+        DOMAIN,
+        "bulb_call",
+        handle_bulb_call,
+        schema=vol.Schema({
+            vol.Required("entity_id"): _entity_id_or_list,
+            vol.Required("member"): cv.string,
+            vol.Optional("args"): list,
+            vol.Optional("kwargs"): dict,
         }, extra=vol.ALLOW_EXTRA),
         supports_response=SupportsResponse.OPTIONAL,
     )

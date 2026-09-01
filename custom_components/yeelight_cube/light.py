@@ -108,6 +108,8 @@ LIGHT_SERVICE_NAMES = (
     # listed here so async_remove_light_services() tears them down on unload too.
     "send_fx_effect",
     "query_raw",
+    "get_capabilities",
+    "bulb_call",
     "set_default",
 )
 
