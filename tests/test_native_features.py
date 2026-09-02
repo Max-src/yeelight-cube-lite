@@ -1411,6 +1411,9 @@ class NativeFeatureTests(unittest.TestCase):
 
     def test_solar_flare_matches_measured_drifting_plasma_clusters(self):
         render = NATIVE_PREVIEW["render_native_effect"]
+        palette = NATIVE_PREVIEW["_SOLAR_FLARE_PALETTE"]
+        spawn_cols = set(NATIVE_PREVIEW["_SOLAR_FLARE_SPAWN_COLS"])
+        darkest = palette[0]
 
         self.assertEqual("Solar Flare", CONSTANTS["CLOCK_MIXER_EFFECTS"][19])
         self.assertIn('19: "Solar Flare"', CLOCK_CARD_SOURCE)
@@ -1429,86 +1432,134 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertEqual(100, len(right))
         for row in range(5):
             for col in range(20):
-                self.assertEqual(left[row * 20 + col], right[row * 20 + 19 - col])
-                self.assertEqual(down[row * 20 + col], up[(4 - row) * 20 + col])
-
-        right_frames = [
-            render("Solar Flare", sample / 20, "Right") for sample in range(121)
-        ]
-        down_frames = [
-            render("Solar Flare", sample / 20, "Down") for sample in range(121)
-        ]
-
-        # Measured palette: dim wine field, red-dominant bands, rare cream.
-        core_pixels = [px for frame in (*right_frames, *down_frames) for px in frame]
-        self.assertTrue(
-            all(r >= g and r >= b for r, g, b in core_pixels if max((r, g, b)) > 100)
-        )
-        self.assertTrue(any(px[0] > 200 and px[1] < 80 for px in core_pixels))
-        self.assertTrue(any(max(px) > 200 and px[1] > 60 for px in core_pixels))
-        cream = sum(min(px) > 120 for px in core_pixels)
-        self.assertGreater(cream, 0)
-        self.assertLess(cream / len(core_pixels), 0.08)
-
-        # Unified effect: down travels the same long 20-cell axis as right;
-        # only the card's portrait rotation makes it sweep vertically on screen.
-        self.assertEqual(
-            render("Solar Flare", 1.3, "Down"),
-            render("Solar Flare", 1.3, "Right"),
-        )
-
-        # Measured jet mechanics: a lane fills from the source border at the
-        # measured fast rate (~1.5 cells per 33 ms at default speed).
-        def lane_extent(frame, lane):
-            cells = [max(frame[lane * 20 + col]) > 150 for col in range(20)]
-            return max((c for c in range(20) if cells[c]), default=-1)
-
-        growth = []
-        for lane in range(5):
-            extents = [
-                lane_extent(render("Solar Flare", k * 0.033, "Right"), lane)
-                for k in range(70)
-            ]
-            fronts = [
-                (a, b)
-                for a, b in zip(extents, extents[1:])
-                if a >= 0 and b > a
-            ]
-            growth.extend(b - a for a, b in fronts)
-        self.assertTrue(growth)
-        self.assertGreater(max(growth), 1)  # fast fill, >30 cells/s
-        # Long firings hold the whole lane; the streak reaches the far end.
-        full = any(
-            all(max(frame[lane * 20 + col]) > 150 for col in range(20))
-            for lane in range(5)
-            for frame in (render("Solar Flare", k * 0.1, "Right") for k in range(60))
-        )
-        self.assertTrue(full)
-        # After firing stops the streak retracts (extent shrinks) instead of
-        # vanishing instantly: shrink steps must be small and gradual.
-        shrink = [
-            a - b
-            for lane in range(5)
-            for a, b in (
-                (
-                    lane_extent(render("Solar Flare", k * 0.1, "Right"), lane),
-                    lane_extent(render("Solar Flare", (k + 1) * 0.1, "Right"), lane),
+                # Left is Right rotated 180 degrees.
+                self.assertEqual(
+                    left[row * 20 + col], right[(4 - row) * 20 + (19 - col)]
                 )
-                for k in range(60)
-            )
-            if a > 3 and 0 < a - b
-        ]
-        self.assertTrue(shrink)
-        self.assertLessEqual(min(shrink), 3)
+                # Up is Down rotated 180 degrees.
+                self.assertEqual(
+                    up[row * 20 + col], down[(4 - row) * 20 + (19 - col)]
+                )
 
-        # Bright cream cores stay sparse.
-        self.assertLess(
-            max(sum(min(pixel) > 120 for pixel in frame) for frame in right_frames),
-            13,
+        frames = [render("Solar Flare", k * 0.1, "Right") for k in range(120)]
+
+        # Every pixel lies on the smooth gradient between two adjacent palette
+        # colours (fades now interpolate instead of snapping to a palette step).
+        def level_of(color):
+            best_level = 0.0
+            best_dist = None
+            for lo in range(len(palette) - 1):
+                c0 = palette[lo]
+                c1 = palette[lo + 1]
+                dx = (c1[0] - c0[0], c1[1] - c0[1], c1[2] - c0[2])
+                denom = dx[0] ** 2 + dx[1] ** 2 + dx[2] ** 2
+                if denom == 0:
+                    t = 0.0
+                else:
+                    t = (
+                        (color[0] - c0[0]) * dx[0]
+                        + (color[1] - c0[1]) * dx[1]
+                        + (color[2] - c0[2]) * dx[2]
+                    ) / denom
+                    t = max(0.0, min(1.0, t))
+                proj = (c0[0] + dx[0] * t, c0[1] + dx[1] * t, c0[2] + dx[2] * t)
+                dist = (
+                    (proj[0] - color[0]) ** 2
+                    + (proj[1] - color[1]) ** 2
+                    + (proj[2] - color[2]) ** 2
+                )
+                if best_dist is None or dist < best_dist:
+                    best_dist = dist
+                    best_level = lo + t
+            return best_level, best_dist
+
+        for frame in frames:
+            for pixel in frame:
+                # Rounding leaves each channel within 0.5 of the ideal gradient.
+                self.assertLessEqual(level_of(pixel)[1], 1.0)
+
+        # The panel starts entirely at the darkest colour.
+        self.assertTrue(all(pixel == darkest for pixel in frames[0]))
+
+        # Animation is alive.
+        self.assertNotEqual(frames[0], render("Solar Flare", 0.8, "Right"))
+
+        def level(color):
+            return int(round(level_of(color)[0]))
+
+        # A flare is a bright head with a fading tail BEHIND it and a short
+        # ramp-up gradient AHEAD of it (both sides lit, head is the local peak).
+        def has_front_ramp(frame):
+            for row in range(5):
+                base = row * 20
+                for col in range(1, 18):
+                    here = level(frame[base + col])
+                    ahead = level(frame[base + col + 1])
+                    behind = level(frame[base + col - 1])
+                    if here > ahead > 0 and behind > 0:
+                        return True
+            return False
+
+        self.assertTrue(any(has_front_ramp(frame) for frame in frames))
+
+        # Flares ignite on the ignition row, shown at the top of the panel
+        # (array row 4 after the Y flip).
+        self.assertTrue(
+            any(level(frame[4 * 20 + col]) > 0 for frame in frames for col in range(20))
         )
-        self.assertNotEqual(
-            render("Solar Flare", 0.0, "Right"),
-            render("Solar Flare", 0.8, "Right"),
+
+        # Wrapping: flares only ignite on one row, so any lit cell on the other
+        # rows proves the streak wrapped to the next row's left edge.
+        self.assertTrue(
+            any(
+                level(frame[row * 20 + col]) > 0
+                for frame in frames
+                for row in range(0, 4)
+                for col in range(20)
+            )
+        )
+
+        # Reach distribution: 80% of flares stay within the top 3 rows, 95%
+        # within 4, and any that reach the bottom row start at col 0/1/2.
+        events_fn = NATIVE_PREVIEW["_solar_flare_events"]
+        flares = {}
+        for sample in range(4, 200):
+            for ts, col, dist, trail in events_fn(sample * 0.5):
+                flares[round(ts, 4)] = (col, col + dist, trail)
+        reaches = list(flares.values())
+        total = len(reaches)
+        self.assertGreater(total, 60)
+        within3 = sum(1 for _, reach, _ in reaches if reach <= 59) / total
+        within4 = sum(1 for _, reach, _ in reaches if reach <= 79) / total
+        self.assertGreaterEqual(within3, 0.72)
+        self.assertLessEqual(within3, 0.88)
+        self.assertGreaterEqual(within4, 0.90)
+        # Only columns 0/1/2 may reach rows 3-4 (reach >= 60).
+        self.assertTrue(all(col in (0, 1, 2) for col, reach, _ in reaches if reach >= 60))
+        # Flares only ever ignite at the allowed spawn columns.
+        self.assertTrue(all(col in spawn_cols for col, _, _ in reaches))
+        # Common near-row dots carry a short trail; the rare far-reaching flares
+        # are long streaks that fill their whole path until they fade.
+        near = [trail for _, reach, trail in reaches if reach < 60]
+        far = [trail for _, reach, trail in reaches if reach >= 60]
+        self.assertTrue(near and far)
+        self.assertTrue(all(t <= 22 for t in near))
+        self.assertTrue(all(t >= 40 for t in far))
+        near.sort()
+        self.assertLess(near[len(near) // 2], 14)  # median near-row trail is short
+        self.assertGreater(len({round(t, 1) for t in near}), len(near) // 2)  # trails vary
+
+        # Every dot shares one horizontal speed (only fade distance varies).
+        self.assertIsInstance(NATIVE_PREVIEW["_SOLAR_FLARE_SPEED"], float)
+
+        # Bright dots stay visible reaching the bottom display row (canonical
+        # row 4 -> array row 0 after the Y flip) — not just a dark remnant.
+        self.assertTrue(
+            any(
+                level(render("Solar Flare", k * 0.05, "Right")[col]) >= 2
+                for k in range(400)
+                for col in range(20)
+            )
         )
 
     def test_twinkle_matches_measured_independent_fade_pulses(self):

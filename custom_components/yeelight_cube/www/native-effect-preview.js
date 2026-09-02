@@ -1261,9 +1261,7 @@ function renderPastelPulse(phase, direction) {
 }
 
 const SOLAR_FLARE_PALETTE = [
-  [16, 8, 26],
-  [36, 14, 52],
-  [88, 16, 48],
+  [110, 16, 26],
   [190, 24, 58],
   [235, 32, 62],
   [250, 60, 40],
@@ -1273,106 +1271,173 @@ const SOLAR_FLARE_PALETTE = [
   [245, 225, 210],
 ];
 
-// 16 s of the mode 19 reference recording (VID_20260901_131355) sampled at
-// 10 fps, run-length encoded as tier digits + base36 counts. Each frame is
-// 100 digits (5 lanes x 20 cells, cell 0 at the source border): 0 dark field,
-// 1 crimson glow, 2 red jet body, 3 orange, 4 cream tip.
-const SOLAR_FLARE_RLE =
-  "11420210i20e10320310120140120h11420610e20210220410320610420430220c11520210320510a4011082" +
-  "0410420310120640120810320111520310620310820410820310520g11n20110320210420510a20510720711" +
-  "o20510520410720110120110d20311q20810140110320410220111m20210o20a11s20210u20410220211p205" +
-  "10u20210340120140111r20310v40120140120140420111p20110t40120140120140130340320212f4012014" +
-  "0120140120130740230120211p20210j40120140120140120130120130520130511o20330120310e40120140" +
-  "120130120130120130120a11o20a10b40120140120130120130120c11o20f10640120140120130120e11o20i" +
-  "10340120130120130120e11420310h20k10140120130120g11420610e20k10140120130120g11420b1094012" +
-  "0j10140120130120g11420d10720340220f10140120640220a11420h10320840220a10140120840220140230" +
-  "120411420j10120b30140120710130120b30140130240130120111420h10330320h10130120h30111420g104" +
-  "20330120g10120j11420910b20k10120j11420c10820j10220j11420310720710320540120e10120j1142061" +
-  "0820q10120j10k20410h20a10920510620510520j10o20310i20810720510920510220j11420410620710320" +
-  "210j20740220711a20410820610k20b40120310p20310q20110u20910120110220611o20310i20710a20211r" +
-  "20510d20310f40111p20310220510a20112c20410220410920212a20410320210a20312c20310f2031182011" +
-  "1220110h20211s2011br20130112t20310700312k20410100711h20210i40110140110f20200b10900111720" +
-  "210e40110140120130120410b00b10900111n40110140120130120810700b10900110200110200111h401101" +
-  "40120130120c10300b10900111320110j40110140120130120f00b10900111320510f40110140120130120f0" +
-  "0b10900210100110100310w20810c40110140120h00b10100110700910100110t20c10840110140120h00d10" +
-  "700910100110t20f10540110130120130140310120b00d10700910100110t20j10140110130120740520500d" +
-  "10700910100110f00110d20i10240110130120a30140420200e10600c10c00610a4032031082011054011013" +
-  "0120g40100e10600d10800910100110820230140320210c40110120i00e10600d10b00610a20830140130120" +
-  "310640110120i00b10100110700910100110f00110d20b30320310340110120230140120e00b10900810c201" +
-  "10j20h30120240110120i00b10900910b20410g20140120410620830110120i00b10900910d20710b2031012" +
-  "0240120110c30110120i00d10700b10g20510820140220110420410830110120i00d10700c10c00110100310" +
-  "320510320630140120110420410320110120i00d10700c10c001101004105205401201106202301202103205" +
-  "10120i00f10500110200a10d00410100210b20210100410220510220110120510920310100e10600d1072011" +
-  "0200210400110100110g20110200110420510120510620210500e10600e10c00410f00610220210520110120" +
-  "310f00f10500f10500510400510a00910320310120110120110120110f00g10400f10800710e00a106201101" +
-  "20110120110e40100g10400f10500d10920200910720110120110120110f00g10400f10500f10b0011020051" +
-  "0620110120110600310800h10300g10400f10700510200610520110120110400710600h10300g10400g10600" +
-  "b10720110500a10400h10300h10300h10500d10520110600910400h10300g10400g10600d105201104002101" +
-  "00210300110600h10300g10400f10700d10a00410300110430110200h10300g10400g10800c1080031010061" +
-  "0120310120100h10300g10400g10420110300c10800610200410220200h10300h10300h10400210100d10600" +
-  "b10220110300i10200i10200i10300g10500f10120200j10100i10200i10200i10300i10100j10100j10100i" +
-  "10200j10100j10100j10100j10100i10200j10100j10100i10200i10200i10200i10200i10200i10200i1020" +
-  "0i10200i10300h30110100j10100i10200i10200i10200i10200j10100j10100j10100j10100j10100j10100" +
-  "j10100j10100j10100j10100j10100j10100j10100h10100110100j10100j10100j10100j10100i101201013" +
-  "10100j10100j10101n10100j10100j10100j10100j10100i10200i10200i10200i10200i10200j10100j1010" +
-  "0j10100j1010kj10100j10100j10101n10105j10102r10100j10100j10101n10100j10100j10100j10101310" +
-  "100j10100j10100j10100h10100110100j10100j10100j10100j10100j10100j10100j10100i10200j10100j" +
-  "10100j10100j10100j10100j10100j10100j10100j10100j10100j10100h10300j10100j10100j10100j1010" +
-  "0j10100j10100j10100j10100j10100j10100j10100j1010aj10107710100i1010dc10103v10100j10104z10" +
-  "102r10100j10100j10101n10100j10100j10101n10105j10100j1010zz0ih";
+// Flares may only ignite on the top row at these columns.
+const SOLAR_FLARE_SPAWN_COLS = [0, 1, 2, 4, 9, 14, 19];
+const SOLAR_FLARE_SPAWN_INTERVAL = 0.5;
+const SOLAR_FLARE_MAX_LIFE = 12.0;
+// Every dot moves at the SAME horizontal speed; only its trail length varies.
+// Near-row dots have short trails; the rare far-reaching flares (from columns
+// 0-2) are long streaks that fill their whole path.
+const SOLAR_FLARE_SPEED = 36.0; // cells per phase unit
+const SOLAR_FLARE_FADE_LEAD = 0.8; // phase units before arrival the tail starts fading
+const SOLAR_FLARE_FADE_TIME = 1.2; // phase units the whole-length fade takes
 
-const SOLAR_FLARE_FRAMES = (() => {
-  const parts = [];
-  for (let index = 0; index < SOLAR_FLARE_RLE.length; index += 3) {
-    const tier = SOLAR_FLARE_RLE[index];
-    const count = parseInt(SOLAR_FLARE_RLE.slice(index + 1, index + 3), 36);
-    parts.push(tier.repeat(count));
+// Damped ringing artefact near the spawn cell of flares starting on cols 0-2:
+// the origin overshoots bright, the next cell undershoots dim, alternating and
+// decaying over a few cells until it settles to the correct level.
+const SOLAR_FLARE_RING_CELLS = 6;
+const SOLAR_FLARE_RING_AMPL = 1.5; // peak over/undershoot at the origin, in palette-level units
+const SOLAR_FLARE_RING_DECAY = 0.6; // per-cell amplitude decay
+const SOLAR_FLARE_RING = [];
+{
+  let ringW = SOLAR_FLARE_RING_AMPL;
+  for (let ringK = 0; ringK < SOLAR_FLARE_RING_CELLS; ringK += 1) {
+    SOLAR_FLARE_RING.push(ringK % 2 === 0 ? ringW : -ringW);
+    ringW *= SOLAR_FLARE_RING_DECAY;
   }
-  const flat = parts.join("");
-  const frames = [];
-  for (let i = 0; i < flat.length; i += 100)
-    frames.push(flat.slice(i, i + 100));
-  return frames;
-})();
+}
 
-const SOLAR_FLARE_TIER_HEAT = [0.0, 0.0, 0.48, 0.68, 1.0];
+function solarFlareEvents(phase) {
+  // Deterministic flares active at `phase`; each ignites on the top row and
+  // streaks right (wrapping to the next row) at the shared speed as a bright
+  // head with a fading tail. `dist` sets how far it stays lit (per-dot fade).
+  const interval = SOLAR_FLARE_SPAWN_INTERVAL;
+  const latest = Math.floor(phase / interval);
+  const first = latest - Math.ceil(SOLAR_FLARE_MAX_LIFE / interval) - 1;
+  const events = [];
+  for (let e = first; e <= latest; e += 1) {
+    if (noiseAt(e, 211, 0) < 0.4) continue;
+    const ts = e * interval + (noiseAt(e, 223, 0) - 0.5) * 0.4;
+    if (ts < 0.0 || ts > phase) continue;
+    let col = SOLAR_FLARE_SPAWN_COLS[Math.floor(noiseAt(e, 227, 0) * 7) % 7];
+    // Reach distribution: 80% within rows 0-2 (any column), 15% row 3, 5% row
+    // 4 — only columns 0/1/2 may reach rows 3-4.
+    const band = noiseAt(e, 241, 0);
+    let low;
+    let high;
+    if (band < 0.8) {
+      low = col + 2;
+      high = 59;
+    } else {
+      col = [0, 1, 2][Math.floor(noiseAt(e, 257, 0) * 3) % 3];
+      low = band < 0.95 ? 60 : 80;
+      high = band < 0.95 ? 79 : 99;
+    }
+    let reach = low + (high - low) * noiseAt(e, 251, 0);
+    if (reach < col + 2) reach = col + 2;
+    const dist = reach - col;
+    // Near-row flares carry a short trail; rare far-reaching flares are long
+    // streaks that fill their whole path.
+    const trail = band < 0.8 ? 4.0 + 16.0 * noiseAt(e, 263, 0) ** 2 : dist;
+    events.push({ ts, col, dist, trail });
+  }
+  return events;
+}
 
 function renderSolarFlare(phase, direction) {
-  // Replay mode 19 directly from the quantised hardware recording: every
-  // frame shown is one the lamp actually displayed, stepped at the
-  // recording's own 10 fps cadence.
-  const steps = SOLAR_FLARE_FRAMES.length;
-  const step = Math.floor(phase * 8.63) % steps;
-  const frame = SOLAR_FLARE_FRAMES[step];
+  const levels = SOLAR_FLARE_PALETTE.length;
+  const top = levels - 1;
+  const cellCount = 100; // 5 rows x 20 cols, index = row * 20 + col
+  const speed = SOLAR_FLARE_SPEED;
+
+  const canon = new Array(cellCount).fill(0.0);
+  for (const { ts, col, dist, trail } of solarFlareEvents(phase)) {
+    const age = phase - ts;
+    const reach = col + dist;
+    const reachCell = Math.min(Math.floor(reach), cellCount - 1);
+    // Flares born on columns 0-2 ring: their origin cells over/undershoot.
+    const ring = col < 3;
+    if (reach >= 60.0) {
+      // Far flares (rows 3-4): the point keeps moving while the whole tail
+      // behind it already fades together, finishing just after arrival.
+      const growth = dist / speed;
+      const fadeStart = Math.max(0.0, growth - SOLAR_FLARE_FADE_LEAD);
+      const tailLevel =
+        top * (1.0 - Math.max(0.0, age - fadeStart) / SOLAR_FLARE_FADE_TIME);
+      if (age < growth) {
+        const head = col + speed * age;
+        const headCell = Math.min(Math.floor(head), reachCell);
+        for (let pos = col; pos < headCell; pos += 1) {
+          let lvl = tailLevel;
+          if (ring && pos - col < SOLAR_FLARE_RING_CELLS) {
+            lvl += SOLAR_FLARE_RING[pos - col];
+          }
+          if (lvl > canon[pos]) canon[pos] = lvl;
+        }
+        if (canon[headCell] < top) canon[headCell] = top;
+        const ramp = 3.0 + 5.0 * Math.min(1.0, trail / 40.0);
+        const rampLast = Math.min(Math.floor(head + ramp), reachCell);
+        for (let pos = headCell + 1; pos <= rampLast; pos += 1) {
+          const level = top * (1.0 - (pos - head) / ramp);
+          if (level > canon[pos]) canon[pos] = level;
+        }
+      } else if (tailLevel > 0.0) {
+        for (let pos = col; pos <= reachCell; pos += 1) {
+          let lvl = tailLevel;
+          if (ring && pos - col < SOLAR_FLARE_RING_CELLS) {
+            lvl += SOLAR_FLARE_RING[pos - col];
+          }
+          if (lvl > canon[pos]) canon[pos] = lvl;
+        }
+      }
+      continue;
+    }
+    // Normal flares: a moving comet with a short fading tail. Skip once the
+    // whole comet has passed `reach`.
+    const head = col + speed * age;
+    if (head - trail > reach) continue;
+    const last = Math.min(Math.floor(head), reachCell);
+    for (let pos = col; pos <= last; pos += 1) {
+      let level = top * (1.0 - (head - pos) / trail);
+      if (ring && pos - col < SOLAR_FLARE_RING_CELLS) {
+        level += SOLAR_FLARE_RING[pos - col];
+      }
+      if (level > canon[pos]) canon[pos] = level;
+    }
+    // Short ramp-up gradient AHEAD of the head (3-8 cells, scaled to tail).
+    const ramp = 3.0 + 5.0 * Math.min(1.0, trail / 40.0);
+    const rampLast = Math.min(Math.floor(head + ramp), reachCell);
+    for (let pos = last + 1; pos <= rampLast; pos += 1) {
+      const level = top * (1.0 - (pos - head) / ramp);
+      if (level > canon[pos]) canon[pos] = level;
+    }
+  }
 
   const pixels = [];
   for (let row = 0; row < PREVIEW_ROWS; row += 1) {
     for (let col = 0; col < PREVIEW_COLS; col += 1) {
-      let lane;
-      let cell;
-      if (direction === "Right" || direction === "Down") {
-        lane = row;
-        cell = col;
+      // Y is flipped: the ignition row is shown at the top of the panel.
+      let source;
+      if (direction === "Right") {
+        source = (PREVIEW_ROWS - 1 - row) * 20 + col;
       } else if (direction === "Left") {
-        lane = row;
-        cell = PREVIEW_COLS - 1 - col;
+        // Right rotated 180 degrees.
+        source = row * 20 + (PREVIEW_COLS - 1 - col);
+      } else if (direction === "Down") {
+        // Same canonical sequence, counted column-major from top-right: down
+        // the rightmost column first, then the next column left.
+        source =
+          (PREVIEW_COLS - 1 - col) * PREVIEW_ROWS + (PREVIEW_ROWS - 1 - row);
       } else {
-        // Up
-        lane = PREVIEW_ROWS - 1 - row;
-        cell = col;
+        // Up: Down rotated 180 degrees.
+        source = col * PREVIEW_ROWS + row;
       }
-      const tier = frame[lane * 20 + cell];
-      let heat;
-      if (tier === "0") {
-        const texture = valueNoise3d(cell * 0.31, lane * 0.47, phase * 0.18);
-        heat = 0.1 + 0.06 * texture;
-      } else if (tier === "1") {
-        const texture = valueNoise3d(cell * 0.31, lane * 0.47, phase * 0.18);
-        heat = 0.22 + 0.05 * texture;
+      let level = canon[source];
+      if (level < 0.0) level = 0.0;
+      else if (level > top) level = top;
+      const lo = Math.floor(level);
+      const frac = level - lo;
+      if (frac <= 0.0 || lo >= top) {
+        pixels.push(SOLAR_FLARE_PALETTE[lo]);
       } else {
-        heat = SOLAR_FLARE_TIER_HEAT[Number(tier)];
+        const c0 = SOLAR_FLARE_PALETTE[lo];
+        const c1 = SOLAR_FLARE_PALETTE[lo + 1];
+        pixels.push([
+          Math.floor(c0[0] + (c1[0] - c0[0]) * frac + 0.5),
+          Math.floor(c0[1] + (c1[1] - c0[1]) * frac + 0.5),
+          Math.floor(c0[2] + (c1[2] - c0[2]) * frac + 0.5),
+        ]);
       }
-      pixels.push(palette(SOLAR_FLARE_PALETTE, heat));
     }
   }
 
