@@ -20,6 +20,18 @@ def parse_service_name(name: str) -> dict:
     return {}
 
 
+def normalize_device_id(device_id) -> str:
+    """Normalize a hardware device id for comparison across sources.
+
+    SSDP capabilities report ids like ``0x0000000012345678`` while zeroconf
+    properties may carry them without the prefix or leading zeros.
+    """
+    did = str(device_id or "").strip().lower()
+    if did.startswith("0x"):
+        did = did[2:]
+    return did.lstrip("0")
+
+
 def is_cube_device(device_model: str, device_name: str, device_id: str = "") -> bool:
     """Check if a device should be handled by this component based on various criteria."""
     

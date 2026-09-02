@@ -46,6 +46,7 @@ DEFAULT_NATIVE_CLOCK_STYLE = 6
 CLOCK_MIXER_EFFECTS = {
     6: "Spectrum Chase",
     9: "Pastel Pulse",
+    19: "Solar Flare",
     24: "Ember",
     79: "Twinkle",
     39: "Rainbow",
@@ -134,6 +135,7 @@ _OFFICIAL_EFFECT_MODES = {spec["mode"] for spec in NATIVE_EFFECTS.values()} | {
 _EXTENDED_EFFECT_NAMES = {
     6: "Spectrum Chase",
     9: "Pastel Pulse",
+    19: "Solar Flare",
     24: "Ember",
     54: "Sunset",
     56: "Carousel",

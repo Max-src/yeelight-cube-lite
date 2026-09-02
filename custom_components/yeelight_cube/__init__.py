@@ -2,6 +2,7 @@ import logging
 import os
 import asyncio
 import mimetypes
+import re
 import socket as _socket_module
 from homeassistant.core import HomeAssistant, callback as ha_callback # type: ignore
 from homeassistant.config_entries import ConfigEntry # type: ignore
@@ -585,6 +586,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # flip_orientation) and device_id acquisition also fire the update listener
     # but must NOT tear down the whole entry.
     hass.data[DOMAIN][entry.entry_id]["active_ip"] = ip_address
+
+    # Resync a stale auto-generated title: some IP-update paths (e.g. HA's
+    # _abort_if_unique_id_configured) can only update entry data, so the
+    # title keeps showing the IP from creation time. Only rewrite titles
+    # that match the auto-generated pattern — never a user-customized name.
+    title_match = re.fullmatch(
+        r"(?:Yeelight Cube|CubeLite.*) \((\d{1,3}(?:\.\d{1,3}){3})\)",
+        entry.title or "",
+    )
+    if title_match and title_match.group(1) != ip_address:
+        _LOGGER.info(
+            "[SETUP] Updating stale entry title '%s' to current IP %s",
+            entry.title, ip_address,
+        )
+        hass.config_entries.async_update_entry(
+            entry, title=f"Yeelight Cube ({ip_address})"
+        )
     
     # Quick TCP probe to verify the device is reachable before proceeding.
     # ConfigEntryNotReady MUST be raised here (component-level setup) for
@@ -740,6 +758,28 @@ async def _async_ssdp_discover_cubelite(hass: HomeAssistant) -> None:
         _LOGGER.warning("[SSDP-SCAN] Scan failed: %s", exc)
 
 
+def _async_dismiss_own_discovery_flows(
+    hass: HomeAssistant, device_id: str, ip: str
+) -> None:
+    """Abort pending yeelight_cube discovery flows for a just-remapped device."""
+    from .discovery import normalize_device_id
+
+    for flow in hass.config_entries.flow.async_progress_by_handler(DOMAIN):
+        context_uid = str(flow.get("context", {}).get("unique_id") or "")
+        if context_uid and (
+            normalize_device_id(context_uid) == normalize_device_id(device_id)
+            or context_uid == ip
+        ):
+            try:
+                hass.config_entries.flow.async_abort(flow["flow_id"])
+                _LOGGER.debug(
+                    "[REDISCOVER] Dismissed stale discovery flow %s (unique_id=%s)",
+                    flow["flow_id"], context_uid,
+                )
+            except Exception:  # noqa: BLE001 — flow may already be gone
+                pass
+
+
 async def _async_try_rediscover(
     hass: HomeAssistant, entry: ConfigEntry, old_ip: str
 ) -> str | None:
@@ -761,6 +801,7 @@ async def _async_try_rediscover(
     """
     try:
         from yeelight import discover_bulbs  # type: ignore
+        from .discovery import normalize_device_id
 
         _LOGGER.info("[REDISCOVER] Scanning for CubeLite devices via SSDP...")
         bulbs = await hass.async_add_executor_job(discover_bulbs, 5)
@@ -793,7 +834,12 @@ async def _async_try_rediscover(
 
             cubelites.append((bulb_ip, device_id, model))
 
-            if stored_device_id and device_id and device_id == stored_device_id:
+            if (
+                stored_device_id
+                and device_id
+                and normalize_device_id(device_id)
+                == normalize_device_id(stored_device_id)
+            ):
                 _LOGGER.info(
                     "[REDISCOVER] Matched by device_id '%s': %s -> %s. "
                     "Updating entry %s",
@@ -803,27 +849,35 @@ async def _async_try_rediscover(
                 hass.config_entries.async_update_entry(
                     entry, data=new_data,
                     title=f"Yeelight Cube ({bulb_ip})",
+                    unique_id=device_id,
                 )
+                _async_dismiss_own_discovery_flows(hass, device_id, bulb_ip)
                 return bulb_ip
 
         # --- Pass 2 (legacy fallback): first unmapped CubeLite ---
-        for bulb_ip, device_id, model in cubelites:
-            if bulb_ip in configured_ips:
-                continue  # Already assigned to another entry
+        # Only when this entry has NO stored device_id: with an id stored, a
+        # loose match could remap the entry to a DIFFERENT physical lamp.
+        if not stored_device_id:
+            for bulb_ip, device_id, model in cubelites:
+                if bulb_ip in configured_ips:
+                    continue  # Already assigned to another entry
 
-            _LOGGER.info(
-                "[REDISCOVER] CubeLite found at %s (was %s, no device_id match). "
-                "Updating entry %s (device_id=%s, model=%s)",
-                bulb_ip, old_ip, entry.entry_id, device_id, model,
-            )
-            new_data = {**entry.data, CONF_IP: bulb_ip}
-            if device_id:
-                new_data[CONF_DEVICE_ID] = device_id
-            hass.config_entries.async_update_entry(
-                entry, data=new_data,
-                title=f"Yeelight Cube ({bulb_ip})",
-            )
-            return bulb_ip
+                _LOGGER.info(
+                    "[REDISCOVER] CubeLite found at %s (was %s, no device_id match). "
+                    "Updating entry %s (device_id=%s, model=%s)",
+                    bulb_ip, old_ip, entry.entry_id, device_id, model,
+                )
+                new_data = {**entry.data, CONF_IP: bulb_ip}
+                if device_id:
+                    new_data[CONF_DEVICE_ID] = device_id
+                hass.config_entries.async_update_entry(
+                    entry, data=new_data,
+                    title=f"Yeelight Cube ({bulb_ip})",
+                    unique_id=device_id or entry.unique_id,
+                )
+                if device_id:
+                    _async_dismiss_own_discovery_flows(hass, device_id, bulb_ip)
+                return bulb_ip
 
         _LOGGER.info("[REDISCOVER] No unmapped CubeLite devices found on the network")
         return None

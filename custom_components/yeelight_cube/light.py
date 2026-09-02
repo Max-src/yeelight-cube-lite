@@ -544,6 +544,8 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         self._health_check_task = None
         # Health check interval is adaptive (computed dynamically):
         # 10s during active failures, 15s when recently online, 60s when long-dead
+        # Throttle runtime SSDP rediscovery (lamp may have changed IP via DHCP).
+        self._last_rediscovery_attempt = 0.0
         
         # Base (un-darkened) matrix colors for immediate brightness preview.
         # Snapshotted in apply() right before brightness darkening.  Used by
@@ -1038,6 +1040,9 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                             sock.close()
                         except Exception:
                             pass
+                    # The lamp may have moved to a new DHCP address: scan for
+                    # it by hardware id and remap the config entry (throttled).
+                    await self._async_maybe_rediscover()
                     continue
                 
                 # Proactive healthy probe (silent mode, nothing was wrong): the
@@ -1087,7 +1092,37 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         
         _LOGGER.debug(f"[HEALTH] [{self._ip}] Health check stopped")
 
-        
+    async def _async_maybe_rediscover(self):
+        """Scan for this lamp at a new IP after failed probes (throttled).
+
+        DHCP can move the lamp while the entry is loaded; probing the stale IP
+        forever can never recover. Rediscovery matches by hardware device_id
+        and updates the config entry, whose update listener reloads the entry
+        with the new address.
+        """
+        now = time.time()
+        if now - self._last_rediscovery_attempt < 60:
+            return
+        self._last_rediscovery_attempt = now
+        if self._config_entry is None or self.hass is None:
+            return
+        try:
+            from . import _async_try_rediscover
+
+            new_ip = await _async_try_rediscover(
+                self.hass, self._config_entry, self._ip
+            )
+            if new_ip and new_ip != self._ip:
+                _LOGGER.warning(
+                    "[HEALTH] [%s] Lamp found at new IP %s -- config entry "
+                    "updated, reloading with the new address",
+                    self._ip, new_ip,
+                )
+        except Exception as exc:
+            _LOGGER.debug(
+                "[HEALTH] [%s] Runtime rediscovery failed: %s", self._ip, exc
+            )
+
     # Removed duplicate/empty __init__ definition
     @property
     def orientation(self):

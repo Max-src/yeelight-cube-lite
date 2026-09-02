@@ -1409,6 +1409,108 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertGreater(lit, 0.75)
         self.assertLess(hot, 0.45)
 
+    def test_solar_flare_matches_measured_drifting_plasma_clusters(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+
+        self.assertEqual("Solar Flare", CONSTANTS["CLOCK_MIXER_EFFECTS"][19])
+        self.assertIn('19: "Solar Flare"', CLOCK_CARD_SOURCE)
+        style = next(
+            style
+            for style in CONSTANTS["NATIVE_CLOCK_STYLES"].values()
+            if style["mixer"] == 19
+        )
+        self.assertEqual("Solar Flare", style["name"])
+
+        phase = 1.0
+        right = render("Solar Flare", phase, "Right")
+        left = render("Solar Flare", phase, "Left")
+        up = render("Solar Flare", phase, "Up")
+        down = render("Solar Flare", phase, "Down")
+        self.assertEqual(100, len(right))
+        for row in range(5):
+            for col in range(20):
+                self.assertEqual(left[row * 20 + col], right[row * 20 + 19 - col])
+                self.assertEqual(down[row * 20 + col], up[(4 - row) * 20 + col])
+
+        right_frames = [
+            render("Solar Flare", sample / 20, "Right") for sample in range(121)
+        ]
+        down_frames = [
+            render("Solar Flare", sample / 20, "Down") for sample in range(121)
+        ]
+
+        # Measured palette: dim wine field, red-dominant bands, rare cream.
+        core_pixels = [px for frame in (*right_frames, *down_frames) for px in frame]
+        self.assertTrue(
+            all(r >= g and r >= b for r, g, b in core_pixels if max((r, g, b)) > 100)
+        )
+        self.assertTrue(any(px[0] > 200 and px[1] < 80 for px in core_pixels))
+        self.assertTrue(any(max(px) > 200 and px[1] > 60 for px in core_pixels))
+        cream = sum(min(px) > 120 for px in core_pixels)
+        self.assertGreater(cream, 0)
+        self.assertLess(cream / len(core_pixels), 0.08)
+
+        # Unified effect: down travels the same long 20-cell axis as right;
+        # only the card's portrait rotation makes it sweep vertically on screen.
+        self.assertEqual(
+            render("Solar Flare", 1.3, "Down"),
+            render("Solar Flare", 1.3, "Right"),
+        )
+
+        # Measured jet mechanics: a lane fills from the source border at the
+        # measured fast rate (~1.5 cells per 33 ms at default speed).
+        def lane_extent(frame, lane):
+            cells = [max(frame[lane * 20 + col]) > 150 for col in range(20)]
+            return max((c for c in range(20) if cells[c]), default=-1)
+
+        growth = []
+        for lane in range(5):
+            extents = [
+                lane_extent(render("Solar Flare", k * 0.033, "Right"), lane)
+                for k in range(70)
+            ]
+            fronts = [
+                (a, b)
+                for a, b in zip(extents, extents[1:])
+                if a >= 0 and b > a
+            ]
+            growth.extend(b - a for a, b in fronts)
+        self.assertTrue(growth)
+        self.assertGreater(max(growth), 1)  # fast fill, >30 cells/s
+        # Long firings hold the whole lane; the streak reaches the far end.
+        full = any(
+            all(max(frame[lane * 20 + col]) > 150 for col in range(20))
+            for lane in range(5)
+            for frame in (render("Solar Flare", k * 0.1, "Right") for k in range(60))
+        )
+        self.assertTrue(full)
+        # After firing stops the streak retracts (extent shrinks) instead of
+        # vanishing instantly: shrink steps must be small and gradual.
+        shrink = [
+            a - b
+            for lane in range(5)
+            for a, b in (
+                (
+                    lane_extent(render("Solar Flare", k * 0.1, "Right"), lane),
+                    lane_extent(render("Solar Flare", (k + 1) * 0.1, "Right"), lane),
+                )
+                for k in range(60)
+            )
+            if a > 3 and 0 < a - b
+        ]
+        self.assertTrue(shrink)
+        self.assertLessEqual(min(shrink), 3)
+
+        # Bright cream cores stay sparse.
+        self.assertLess(
+            max(sum(min(pixel) > 120 for pixel in frame) for frame in right_frames),
+            13,
+        )
+        self.assertNotEqual(
+            render("Solar Flare", 0.0, "Right"),
+            render("Solar Flare", 0.8, "Right"),
+        )
+
     def test_twinkle_matches_measured_independent_fade_pulses(self):
         render = NATIVE_PREVIEW["render_native_effect"]
 
@@ -1607,6 +1709,7 @@ class NativeFeatureTests(unittest.TestCase):
         named = {
             "Spectrum Chase": 6,
             "Pastel Pulse": 9,
+            "Solar Flare": 19,
             "Ember": 24,
             "Sunset": 54,
             "Carousel": 56,

@@ -5,7 +5,7 @@ from homeassistant.helpers import config_validation as cv # type: ignore
 from homeassistant.core import callback # type: ignore
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo # type: ignore
 from .const import DOMAIN, CONF_IP, CONF_DEVICE_ID
-from .discovery import is_cube_device, parse_service_name
+from .discovery import is_cube_device, parse_service_name, normalize_device_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -75,9 +75,65 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         await self.async_set_unique_id(unique_id)
         self._abort_if_unique_id_configured(updates={CONF_IP: ip})
 
+        # Match by stored hardware device_id: entries added manually have a
+        # legacy IP-based unique_id, so the check above misses them.  Without
+        # this, a DHCP change makes the SAME lamp show up as a new discovered
+        # device instead of remapping the existing entry.
+        if device_id:
+            for entry in self._async_current_entries():
+                stored = entry.data.get(CONF_DEVICE_ID, "")
+                if not stored or normalize_device_id(stored) != normalize_device_id(device_id):
+                    continue
+                if entry.data.get(CONF_IP) != ip or entry.unique_id != unique_id:
+                    _LOGGER.info(
+                        "Remapping Yeelight Cube entry %s to new IP %s "
+                        "(was %s, device_id=%s)",
+                        entry.entry_id, ip, entry.data.get(CONF_IP), device_id,
+                    )
+                    self.hass.config_entries.async_update_entry(
+                        entry,
+                        unique_id=unique_id,
+                        title=f"Yeelight Cube ({ip})",
+                        data={**entry.data, CONF_IP: ip},
+                    )
+                return self.async_abort(reason="already_configured")
+
         # Check if this IP is already configured under any entry
         for entry in self._async_current_entries():
             if entry.data.get(CONF_IP) == ip:
+                if device_id and not entry.data.get(CONF_DEVICE_ID):
+                    # Same IP, entry predates device_id storage — adopt it.
+                    self.hass.config_entries.async_update_entry(
+                        entry,
+                        unique_id=unique_id,
+                        data={**entry.data, CONF_DEVICE_ID: device_id},
+                    )
+                return self.async_abort(reason="already_configured")
+
+        # Legacy fallback: adopt an entry without a stored device_id whose
+        # lamp is unreachable — it is almost certainly this device after an
+        # IP change (mirrors the zeroconf migration path).
+        if device_id:
+            for entry in self._async_current_entries():
+                if entry.data.get(CONF_DEVICE_ID):
+                    continue
+                if entry.state not in (
+                    config_entries.ConfigEntryState.SETUP_ERROR,
+                    config_entries.ConfigEntryState.SETUP_RETRY,
+                ):
+                    continue
+                old_ip = entry.data.get(CONF_IP, "?")
+                _LOGGER.info(
+                    "Migrating orphaned Yeelight Cube entry %s "
+                    "(old IP %s -> new IP %s, device_id=%s)",
+                    entry.entry_id, old_ip, ip, device_id,
+                )
+                self.hass.config_entries.async_update_entry(
+                    entry,
+                    unique_id=unique_id,
+                    title=f"Yeelight Cube ({ip})",
+                    data={**entry.data, CONF_IP: ip, CONF_DEVICE_ID: device_id},
+                )
                 return self.async_abort(reason="already_configured")
 
         # Format title like the built-in Yeelight: "CubeLite 0xABCD (192.168.4.144)"

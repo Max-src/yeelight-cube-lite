@@ -27,6 +27,7 @@ import {
 const CLOCK_MIXER_EFFECTS = {
   6: "Spectrum Chase",
   9: "Pastel Pulse",
+  19: "Solar Flare",
   24: "Ember",
   79: "Twinkle",
   39: "Rainbow",
