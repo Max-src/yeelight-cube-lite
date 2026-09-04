@@ -1794,6 +1794,31 @@ function renderFireworks(phase, direction) {
 // Hue cycles the ribbon scrolls per phase unit (whole panel = one full rainbow).
 const RAINBOW_FLOW_SPEED = 0.24;
 const RAINBOW_FLOW_TOTAL = PREVIEW_COLS * PREVIEW_ROWS;
+const PULSE_PERIOD = 8.2 * (0.25 + 50 / 55.0);
+// Measured path profile: black through red, amber, white, and cool blue-white.
+const PULSE_STOPS = [
+  [0, 0, 0],
+  [235, 5, 24],
+  [240, 130, 65],
+  [220, 195, 175],
+  [210, 205, 215],
+  [185, 212, 245],
+  [170, 216, 255],
+  [165, 214, 255],
+  [165, 212, 253],
+  [165, 215, 255],
+  [165, 218, 255],
+];
+
+function pulsePathIndex(row, col, direction) {
+  const last = PREVIEW_COLS * PREVIEW_ROWS - 1;
+  if (direction === "Down" || direction === "Up") {
+    const index = col * PREVIEW_ROWS + row;
+    return direction === "Up" ? last - index : index;
+  }
+  const index = (PREVIEW_ROWS - 1 - row) * PREVIEW_COLS + col;
+  return direction === "Left" ? last - index : index;
+}
 
 // Right: scans right-to-left color order per row (reversed rainbow),
 // scrolling toward the bottom; the hue and phase sign are flipped together
@@ -1846,6 +1871,23 @@ function renderRainbowFlow(phase, direction) {
   return pixels;
 }
 
+// Mode 18 follows Spectrum's direction-indexed pixel order but folds one warm
+// colour profile around the panel midpoint, expanding and contracting in place.
+function renderPulse(phase, direction) {
+  const pulse = 0.5 - 0.5 * Math.cos((TAU * phase) / PULSE_PERIOD);
+  const last = PREVIEW_COLS * PREVIEW_ROWS - 1;
+  const pixels = [];
+  for (let row = 0; row < PREVIEW_ROWS; row += 1) {
+    for (let col = 0; col < PREVIEW_COLS; col += 1) {
+      const index = pulsePathIndex(row, col, direction);
+      const centerDistance = Math.abs((2.0 * index) / last - 1.0);
+      const profile = (1.0 - centerDistance) * pulse;
+      pixels.push(palette(PULSE_STOPS, profile));
+    }
+  }
+  return pixels;
+}
+
 /**
  * Render one animated 20x5 approximation frame of a firmware effect.
  * Returns a flat array of 100 [r,g,b] tuples in row-major order
@@ -1854,6 +1896,7 @@ function renderRainbowFlow(phase, direction) {
 export function renderNativeEffect(effect, phase, direction = "Up") {
   if (effect === "Fireworks") return renderFireworks(phase, direction);
   if (effect === "Rainbow Flow") return renderRainbowFlow(phase, direction);
+  if (effect === "Pulse") return renderPulse(phase, direction);
   if (effect === "Magic") return renderMagic(phase);
   if (effect === "Wonderland") return renderWonderland(phase);
   if (effect === "Flower Sea") return renderFlowerSea(phase, direction);

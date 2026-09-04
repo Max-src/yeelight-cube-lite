@@ -1649,6 +1649,34 @@ def _render_fireworks(
 _RAINBOW_FLOW_SPEED = 0.24
 _RAINBOW_FLOW_TOTAL = COLS * ROWS
 
+# Mode 18 (Pulse) repeats every 8.2 seconds at neutral speed. Preview phase
+# advances at 0.25 + 50/55 units per second, giving a 9.5045-unit cycle.
+_PULSE_PERIOD = 8.2 * (0.25 + 50 / 55.0)
+
+# Measured path profile: black through red, amber, white, and cool blue-white.
+_PULSE_STOPS = (
+    (0, 0, 0),
+    (235, 5, 24),
+    (240, 130, 65),
+    (220, 195, 175),
+    (210, 205, 215),
+    (185, 212, 245),
+    (170, 216, 255),
+    (165, 214, 255),
+    (165, 212, 253),
+    (165, 215, 255),
+    (165, 218, 255),
+)
+
+
+def _pulse_path_index(row: int, col: int, direction: str) -> int:
+    last = COLS * ROWS - 1
+    if direction in ("Down", "Up"):
+        index = col * ROWS + row
+        return last - index if direction == "Up" else index
+    index = (ROWS - 1 - row) * COLS + col
+    return last - index if direction == "Left" else index
+
 
 def _rainbow_flow_right_hue(row: int, col: int, phase: float) -> float:
     """Right: scans right-to-left color order per row (reversed rainbow),
@@ -1691,6 +1719,23 @@ def _render_rainbow_flow(
     return pixels
 
 
+def _render_pulse(
+    phase: float,
+    direction: str,
+) -> list[tuple[int, int, int]]:
+    """Render mode 18's single direction-indexed expanding colour profile."""
+    pulse = 0.5 - 0.5 * math.cos(math.tau * phase / _PULSE_PERIOD)
+    last = COLS * ROWS - 1
+    pixels = []
+    for row in range(ROWS):
+        for col in range(COLS):
+            index = _pulse_path_index(row, col, direction)
+            center_distance = abs(2.0 * index / last - 1.0)
+            profile = (1.0 - center_distance) * pulse
+            pixels.append(_palette(_PULSE_STOPS, profile))
+    return pixels
+
+
 def render_native_effect(
     effect: str,
     phase: float,
@@ -1701,6 +1746,8 @@ def render_native_effect(
         return _render_fireworks(phase, direction)
     if effect == "Rainbow Flow":
         return _render_rainbow_flow(phase, direction)
+    if effect == "Pulse":
+        return _render_pulse(phase, direction)
     if effect == "Magic":
         return _render_magic(phase)
     if effect == "Wonderland":

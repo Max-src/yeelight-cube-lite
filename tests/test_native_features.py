@@ -1316,6 +1316,69 @@ class NativeFeatureTests(unittest.TestCase):
         # It animates (scrolls) over time.
         self.assertNotEqual(frame, render("Rainbow Flow", 1.5, "Right"))
 
+    def test_pulse_matches_measured_directional_profile_and_clock_mixer(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+        spec = CONSTANTS["ALL_NATIVE_EFFECTS"]["Pulse"]
+
+        self.assertEqual(3, spec["effect_id"])
+        self.assertEqual(18, spec["mode"])
+        self.assertEqual("Pulse", CONSTANTS["CLOCK_MIXER_EFFECTS"][18])
+        self.assertIn('18: "Pulse"', CLOCK_CARD_SOURCE)
+        style = next(
+            style
+            for style in CONSTANTS["NATIVE_CLOCK_STYLES"].values()
+            if style["mixer"] == 18
+        )
+        self.assertEqual("Pulse", style["name"])
+
+        phase_per_second = 0.25 + 50 / 55.0
+        period = 8.2 * phase_per_second
+
+        # The cycle repeats exactly.
+        self.assertEqual(
+            render("Pulse", 0.3, "Right"),
+            render("Pulse", 0.3 + period, "Right"),
+        )
+
+        # Each cycle starts and ends with every pixel fully black.
+        black = render("Pulse", 0.0, "Right")
+        self.assertEqual({(0, 0, 0)}, set(black))
+        self.assertEqual(black, render("Pulse", period, "Right"))
+
+        # At half-cycle the profile is fully unfolded: one continuous black ->
+        # red -> white -> blue-white profile folded around the path midpoint.
+        bright = render("Pulse", period / 2, "Right")
+        self.assertEqual(100, len(bright))
+        self.assertTrue(any(max(pixel) < 25 for pixel in bright))
+        self.assertTrue(
+            any(pixel[2] > 150 and pixel[2] > pixel[0] for pixel in bright)
+        )
+        self.assertEqual(bright, list(reversed(bright)))
+        self.assertGreater(len({tuple(pixel) for pixel in bright}), 40)
+
+        # Right/Left use row-major indexing; Up/Down use column-major indexing.
+        up = render("Pulse", period / 2, "Up")
+        self.assertNotEqual(bright, up)
+        self.assertEqual(bright, render("Pulse", period / 2, "Left"))
+        self.assertEqual(up, render("Pulse", period / 2, "Down"))
+        # Adjacent path pixels vary smoothly and there is only one cool zone.
+        path_index = NATIVE_PREVIEW["_pulse_path_index"]
+        right_path = [None] * 100
+        for row in range(5):
+            for col in range(20):
+                right_path[path_index(row, col, "Right")] = bright[row * 20 + col]
+        cool = [blue - red for red, _, blue in right_path]
+        cool_runs = 0
+        in_run = False
+        for value, pixel in zip(cool, right_path):
+            is_cool = value > 0 and max(pixel) > 25
+            if is_cool and not in_run:
+                cool_runs += 1
+                in_run = True
+            elif not is_cool:
+                in_run = False
+        self.assertEqual(1, cool_runs)
+
     def test_spectrum_chase_matches_repeating_color_waves_and_clock_mixer(self):
         render = NATIVE_PREVIEW["render_native_effect"]
         phase_per_second = 0.25 + 50 / 55.0
@@ -1831,6 +1894,7 @@ class NativeFeatureTests(unittest.TestCase):
             "Spectrum Chase": 6,
             "Pastel Pulse": 9,
             "Fireworks": 10,
+            "Pulse": 18,
             "Solar Flare": 19,
             "Ember": 24,
             "Sunset": 54,
