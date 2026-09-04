@@ -46,6 +46,7 @@ DEFAULT_NATIVE_CLOCK_STYLE = 6
 CLOCK_MIXER_EFFECTS = {
     6: "Spectrum Chase",
     9: "Pastel Pulse",
+    10: "Fireworks",
     19: "Solar Flare",
     24: "Ember",
     79: "Twinkle",
@@ -135,6 +136,7 @@ _OFFICIAL_EFFECT_MODES = {spec["mode"] for spec in NATIVE_EFFECTS.values()} | {
 _EXTENDED_EFFECT_NAMES = {
     6: "Spectrum Chase",
     9: "Pastel Pulse",
+    10: "Fireworks",
     19: "Solar Flare",
     24: "Ember",
     54: "Sunset",
@@ -145,9 +147,17 @@ _EXTENDED_EFFECT_NAMES = {
     60: "Spectrum Crumble",
     79: "Twinkle",
 }
+# Some firmware modes only unlock their full (colored) renderer when the outer
+# set_fx_effect command id (the first array element) is a specific value rather
+# than the default. Fireworks (mode 10) shows white-only particles under the
+# clock command id 40; command id 71 enables the colored confetti burst. Keyed
+# by firmware mode (which equals a clock style's ``mixer``).
+_EXTENDED_EFFECT_IDS = {10: 71}
+# Public view used by the clock builder to override the command id per mixer.
+CLOCK_MIXER_COMMAND_IDS = dict(_EXTENDED_EFFECT_IDS)
 EXTENDED_NATIVE_EFFECTS = {
     _EXTENDED_EFFECT_NAMES.get(mode, str(mode)): {
-        "effect_id": 3,
+        "effect_id": _EXTENDED_EFFECT_IDS.get(mode, 3),
         "mode": mode,
         "speed": True,
         "directions": NATIVE_EFFECT_DIRECTIONS,
@@ -209,6 +219,7 @@ DEVICE_ORIENTATION_TO_EFFECT_DIR = {
 CLOCK_MIXER_FIXED_DIRECTION = {
     "Spectrum Chase": "Up",
     "Pastel Pulse": "Up",
+    "Solar Flare": "Up",
 }
 
 

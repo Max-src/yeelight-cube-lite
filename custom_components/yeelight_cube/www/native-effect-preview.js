@@ -1708,12 +1708,96 @@ function renderPalette(phase, direction) {
   return pixels;
 }
 
+const FIREWORKS_CYCLE = 2.9;
+const FIREWORKS_ROCKET_SPEED = 9.0;
+const FIREWORKS_BURST_TIME = 0.82;
+const FIREWORKS_PARTICLES = 46;
+
+function fireworksOrient(x, y, direction) {
+  let u = x / (PREVIEW_COLS - 1);
+  let v = y / (PREVIEW_ROWS - 1);
+  if (direction === "Up") {
+    u = 1.0 - u;
+    v = 1.0 - v;
+  } else if (direction === "Right") {
+    [u, v] = [v, 1.0 - u];
+  } else if (direction === "Left") {
+    [u, v] = [1.0 - v, u];
+  }
+  return [u * (PREVIEW_COLS - 1), v * (PREVIEW_ROWS - 1)];
+}
+
+function renderFireworks(phase, direction) {
+  const event = Math.floor(phase / FIREWORKS_CYCLE);
+  const age = phase - event * FIREWORKS_CYCLE;
+  const targetX = 1.5 + 16.0 * noiseAt(event, 701, 10);
+  const targetY = 1.2 + 2.7 * noiseAt(event, 709, 10);
+  const distance = Math.hypot(19.0 - targetX, targetY);
+  const launchTime = distance / FIREWORKS_ROCKET_SPEED;
+  const levels = Array.from({ length: PREVIEW_ROWS * PREVIEW_COLS }, () => [
+    0, 0, 0,
+  ]);
+
+  const add = (rawX, rawY, color, strength) => {
+    const [x, y] = fireworksOrient(rawX, rawY, direction);
+    const col = Math.floor(x + 0.5);
+    const row = Math.floor(y + 0.5);
+    if (col < 0 || col >= PREVIEW_COLS || row < 0 || row >= PREVIEW_ROWS)
+      return;
+    const index = row * PREVIEW_COLS + col;
+    const candidate = color.map((channel) => channel * strength);
+    const candidateSum = candidate[0] + candidate[1] + candidate[2];
+    const current = levels[index];
+    if (candidateSum > current[0] + current[1] + current[2])
+      levels[index] = candidate;
+  };
+
+  if (age < launchTime) {
+    const travel = launchTime > 0.0 ? age / launchTime : 1.0;
+    const x = 19.0 + (targetX - 19.0) * travel;
+    const y = targetY * travel;
+    add(x, y, [235, 250, 255], 1.0);
+    if (travel > 0.04) {
+      const previous = Math.max(0.0, travel - 0.035);
+      add(
+        19.0 + (targetX - 19.0) * previous,
+        targetY * previous,
+        [110, 205, 255],
+        0.42,
+      );
+    }
+  } else {
+    const burstAge = age - launchTime;
+    if (burstAge < FIREWORKS_BURST_TIME) {
+      const fade = Math.min(1.0, (FIREWORKS_BURST_TIME - burstAge) / 0.28);
+      for (let particle = 0; particle < FIREWORKS_PARTICLES; particle += 1) {
+        const angle = TAU * noiseAt(event, particle, 727);
+        const radial = 4.5 + 14.5 * noiseAt(event, particle, 733);
+        const velocityX = Math.cos(angle) * radial;
+        const velocityY = Math.sin(angle) * (2.0 + radial * 0.3);
+        const x = targetX + velocityX * burstAge;
+        const y = targetY + velocityY * burstAge - 4.8 * burstAge * burstAge;
+        const hue = noiseAt(event, particle, 739);
+        const value = fade * (0.78 + 0.22 * noiseAt(event, particle, 743));
+        add(x, y, hsv(hue, 0.94, value), 1.0);
+      }
+    }
+  }
+
+  return levels.map(([red, green, blue]) => [
+    clamp(red),
+    clamp(green),
+    clamp(blue),
+  ]);
+}
+
 /**
  * Render one animated 20x5 approximation frame of a firmware effect.
  * Returns a flat array of 100 [r,g,b] tuples in row-major order
  * (row 0 = the panel's physical bottom, col 0 = left).
  */
 export function renderNativeEffect(effect, phase, direction = "Up") {
+  if (effect === "Fireworks") return renderFireworks(phase, direction);
   if (effect === "Magic") return renderMagic(phase);
   if (effect === "Wonderland") return renderWonderland(phase);
   if (effect === "Flower Sea") return renderFlowerSea(phase, direction);
@@ -1812,7 +1896,7 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
         const du = ow_u;
         const dv = (ow_v - vCenter) * 2.2;
         const dist = Math.hypot(du, dv);
-        const ripple = (Math.sin((dist * 1.0 - phase) * TAU) + 1.0) / 2.0;
+        const ripple = (Math.sin((dist * 1.0 - phase * 0.5) * TAU) + 1.0) / 2.0;
         color = hsv(0.64 - 0.07 * ripple, 0.97, 0.12 + 0.88 * ripple);
       } else if (effect === "Rainbow") {
         // Swap the Right<->Down and Left<->Up direction pairs to match the lamp.

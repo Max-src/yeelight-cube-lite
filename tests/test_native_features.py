@@ -1247,6 +1247,46 @@ class NativeFeatureTests(unittest.TestCase):
         cycle_seconds = 8.954 / phase_per_second
         self.assertAlmostEqual(7.725, cycle_seconds, places=3)
 
+    def test_fireworks_matches_rocket_burst_and_special_effect_id(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+        spec = CONSTANTS["ALL_NATIVE_EFFECTS"]["Fireworks"]
+
+        self.assertEqual(71, spec["effect_id"])
+        self.assertEqual(10, spec["mode"])
+        self.assertEqual("Fireworks", CONSTANTS["CLOCK_MIXER_EFFECTS"][10])
+        self.assertIn('10: "Fireworks"', CLOCK_CARD_SOURCE)
+        # The colored confetti only unlocks when the clock command id (1st array
+        # element) is overridden to 71; the clock config still uses mode 40.
+        self.assertEqual(71, CONSTANTS["CLOCK_MIXER_COMMAND_IDS"][10])
+        activate = _function_source(LIGHT_SOURCE, "_activate_native_clock")
+        self.assertIn("CLOCK_MIXER_COMMAND_IDS", activate)
+        style = next(
+            style
+            for style in CONSTANTS["NATIVE_CLOCK_STYLES"].values()
+            if style["mixer"] == 10
+        )
+        self.assertEqual("Fireworks", style["name"])
+
+        # Direction 1 / Down begins at the physical bottom-right with a white
+        # rocket; the other directions rotate that same launch corner.
+        down = render("Fireworks", 0.0, "Down")
+        up = render("Fireworks", 0.0, "Up")
+        right = render("Fireworks", 0.0, "Right")
+        left = render("Fireworks", 0.0, "Left")
+        self.assertGreater(min(down[19]), 200)
+        self.assertGreater(min(up[80]), 200)
+        self.assertGreater(min(right[0]), 200)
+        self.assertGreater(min(left[99]), 200)
+
+        burst = render("Fireworks", 2.2, "Down")
+        burst_pixels = [pixel for pixel in burst if pixel != (0, 0, 0)]
+        self.assertGreaterEqual(len(burst_pixels), 12)
+        self.assertGreaterEqual(
+            len({pixel for pixel in burst_pixels if max(pixel) - min(pixel) > 60}),
+            8,
+        )
+        self.assertTrue(all(pixel == (0, 0, 0) for pixel in render("Fireworks", 2.8)))
+
     def test_spectrum_chase_matches_repeating_color_waves_and_clock_mixer(self):
         render = NATIVE_PREVIEW["render_native_effect"]
         phase_per_second = 0.25 + 50 / 55.0
@@ -1744,7 +1784,7 @@ class NativeFeatureTests(unittest.TestCase):
         official_modes = {spec["mode"] for spec in official.values()}
         clock_mode = CONSTANTS["NATIVE_CLOCK_EFFECT_ID"]
         # Every firmware mode in 1..99 that isn't already an official effect (or
-        # the clock renderer) is exposed as an extended effect via effect_id 3.
+        # the clock renderer) is exposed as an extended effect.
         expected_modes = {
             m for m in range(1, 100)
             if m not in official_modes and m != clock_mode
@@ -1760,6 +1800,7 @@ class NativeFeatureTests(unittest.TestCase):
         named = {
             "Spectrum Chase": 6,
             "Pastel Pulse": 9,
+            "Fireworks": 10,
             "Solar Flare": 19,
             "Ember": 24,
             "Sunset": 54,
@@ -1774,7 +1815,7 @@ class NativeFeatureTests(unittest.TestCase):
             self.assertIn(effect_name, extended)
             self.assertEqual(mode, extended[effect_name]["mode"])
         for name, spec in extended.items():
-            self.assertEqual(3, spec["effect_id"])
+            self.assertEqual(71 if name == "Fireworks" else 3, spec["effect_id"])
             self.assertTrue(spec.get("extended"))
             self.assertTrue(spec.get("speed"))
             self.assertNotIn(spec["mode"], official_modes)

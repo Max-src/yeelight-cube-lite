@@ -1563,6 +1563,86 @@ def _render_palette(
     return pixels
 
 
+_FIREWORKS_CYCLE = 2.9
+_FIREWORKS_ROCKET_SPEED = 9.0
+_FIREWORKS_BURST_TIME = 0.82
+_FIREWORKS_PARTICLES = 46
+
+
+def _fireworks_orient(x: float, y: float, direction: str) -> tuple[float, float]:
+    """Map normalized Down-direction coordinates to the selected direction."""
+    u = x / (COLS - 1)
+    v = y / (ROWS - 1)
+    if direction == "Up":
+        u, v = 1.0 - u, 1.0 - v
+    elif direction == "Right":
+        u, v = v, 1.0 - u
+    elif direction == "Left":
+        u, v = 1.0 - v, u
+    return u * (COLS - 1), v * (ROWS - 1)
+
+
+def _render_fireworks(
+    phase: float,
+    direction: str,
+) -> list[tuple[int, int, int]]:
+    """Render mode 10 as a white rocket followed by a confetti burst."""
+    event = int(math.floor(phase / _FIREWORKS_CYCLE))
+    age = phase - event * _FIREWORKS_CYCLE
+    target_x = 1.5 + 16.0 * _noise(event, 701, 10)
+    target_y = 1.2 + 2.7 * _noise(event, 709, 10)
+    distance = math.hypot(19.0 - target_x, target_y)
+    launch_time = distance / _FIREWORKS_ROCKET_SPEED
+    levels = [(0.0, 0.0, 0.0)] * (ROWS * COLS)
+
+    def add(x: float, y: float, color: tuple[int, int, int], strength: float) -> None:
+        x, y = _fireworks_orient(x, y, direction)
+        col = int(math.floor(x + 0.5))
+        row = int(math.floor(y + 0.5))
+        if not (0 <= col < COLS and 0 <= row < ROWS):
+            return
+        index = row * COLS + col
+        candidate = tuple(channel * strength for channel in color)
+        if sum(candidate) > sum(levels[index]):
+            levels[index] = candidate
+
+    if age < launch_time:
+        travel = age / launch_time if launch_time > 0.0 else 1.0
+        x = 19.0 + (target_x - 19.0) * travel
+        y = target_y * travel
+        add(x, y, (235, 250, 255), 1.0)
+        if travel > 0.04:
+            previous = max(0.0, travel - 0.035)
+            add(
+                19.0 + (target_x - 19.0) * previous,
+                target_y * previous,
+                (110, 205, 255),
+                0.42,
+            )
+    else:
+        burst_age = age - launch_time
+        if burst_age < _FIREWORKS_BURST_TIME:
+            fade = min(1.0, (_FIREWORKS_BURST_TIME - burst_age) / 0.28)
+            for particle in range(_FIREWORKS_PARTICLES):
+                angle = math.tau * _noise(event, particle, 727)
+                radial = 4.5 + 14.5 * _noise(event, particle, 733)
+                velocity_x = math.cos(angle) * radial
+                velocity_y = math.sin(angle) * (2.0 + radial * 0.30)
+                x = target_x + velocity_x * burst_age
+                y = target_y + velocity_y * burst_age - 4.8 * burst_age * burst_age
+                hue = _noise(event, particle, 739)
+                value = fade * (0.78 + 0.22 * _noise(event, particle, 743))
+                add(x, y, _hsv(hue, 0.94, value), 1.0)
+
+    return [
+        (
+            max(0, min(255, int(math.floor(red + 0.5)))),
+            max(0, min(255, int(math.floor(green + 0.5)))),
+            max(0, min(255, int(math.floor(blue + 0.5)))),
+        )
+        for red, green, blue in levels
+    ]
+
 
 def render_native_effect(
     effect: str,
@@ -1570,6 +1650,8 @@ def render_native_effect(
     direction: str = "Up",
 ) -> list[tuple[int, int, int]]:
     """Return one animated 20x5 approximation of a firmware effect."""
+    if effect == "Fireworks":
+        return _render_fireworks(phase, direction)
     if effect == "Magic":
         return _render_magic(phase)
     if effect == "Wonderland":
@@ -1670,7 +1752,7 @@ def render_native_effect(
                 du = ow_u
                 dv = (ow_v - v_center) * 2.2
                 dist = math.hypot(du, dv)
-                ripple = (math.sin((dist * 1.0 - phase) * math.tau) + 1.0) / 2.0
+                ripple = (math.sin((dist * 1.0 - phase * 0.5) * math.tau) + 1.0) / 2.0
                 color = _hsv(0.64 - 0.07 * ripple, 0.97, 0.12 + 0.88 * ripple)
             elif effect == "Rainbow":
                 # Swap the Right<->Down and Left<->Up direction pairs to match the lamp.

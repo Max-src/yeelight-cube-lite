@@ -16,6 +16,7 @@ from homeassistant.util import dt as dt_util  # type: ignore
 
 from .const import (
     ALL_NATIVE_EFFECTS,
+    CLOCK_MIXER_COMMAND_IDS,
     CLOCK_MIXER_EFFECTS,
     DEFAULT_NATIVE_CLOCK_STYLE,
     DEFAULT_NATIVE_EFFECT,
@@ -188,8 +189,12 @@ class NativeModesMixin:
                 sent_direction
             ]
 
+        # A few mixers only render in full colour when the outer command id
+        # (first array element) is overridden; otherwise the default clock id is
+        # used. The config still carries mode 40 so the clock face renders.
+        command_id = CLOCK_MIXER_COMMAND_IDS.get(style["mixer"], NATIVE_CLOCK_EFFECT_ID)
         params = [
-            NATIVE_CLOCK_EFFECT_ID,
+            command_id,
             style_id,
             NATIVE_CLOCK_APPLY,
             effect_config,

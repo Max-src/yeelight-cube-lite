@@ -27,6 +27,7 @@ import {
 const CLOCK_MIXER_EFFECTS = {
   6: "Spectrum Chase",
   9: "Pastel Pulse",
+  10: "Fireworks",
   19: "Solar Flare",
   24: "Ember",
   79: "Twinkle",
@@ -46,6 +47,7 @@ const CLOCK_MIXER_EFFECT_SPEED = 50;
 const CLOCK_MIXER_FIXED_DIRECTION = {
   "Spectrum Chase": "Up",
   "Pastel Pulse": "Up",
+  "Solar Flare": "Up",
 };
 
 // Built-in clock style id -> firmware mixer. Generated styles are resolved

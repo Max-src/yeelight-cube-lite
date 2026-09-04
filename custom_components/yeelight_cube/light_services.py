@@ -897,7 +897,13 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                     config["rate"] = int(rate)
                 except (TypeError, ValueError):
                     pass
-            params = [mode, style_id, apply, config]
+            # The first array element (command/effect id) usually equals the
+            # config mode, but some renderers only unlock their full output
+            # under a different command id (e.g. Fireworks needs 71 while the
+            # clock config keeps mode 40). Allow overriding it independently.
+            command_id = service_call.data.get("effect_id")
+            command_id = int(command_id) if command_id is not None else mode
+            params = [command_id, style_id, apply, config]
 
         # Derive effect mode/style for optional persistence (from whichever
         # branch built params). params = [mode, style_id, apply, config].
@@ -914,6 +920,17 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                 effect_config = params[3]
         except (TypeError, ValueError):
             pass
+
+        # Treat as a clock command when the effect CONFIG selects the clock
+        # renderer (mode 40), even if the outer command id was overridden (e.g.
+        # Fireworks uses command id 71 with a clock config).
+        config_mode = (
+            effect_config.get("mode") if isinstance(effect_config, dict) else None
+        )
+        is_clock_command = (
+            config_mode == NATIVE_CLOCK_EFFECT_ID
+            or effect_mode == NATIVE_CLOCK_EFFECT_ID
+        )
 
         # Is this a firmware fx command (clock or native effect)? Both need the
         # set_bright prelude + settle, otherwise the raw command often doesn't
@@ -935,8 +952,9 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                 # activation (see _activate_native_clock). So for clock we send
                 # the fx command first, then brightness. Native effects are the
                 # opposite -- they want the set_bright prelude first so they
-                # render immediately.
-                is_clock = effect_mode == NATIVE_CLOCK_EFFECT_ID
+                # render immediately. Detect the clock from the CONFIG mode so an
+                # overridden command id (e.g. Fireworks 71) still counts.
+                is_clock = is_clock_command
                 if is_fx and is_clock:
                     await asyncio.sleep(0.1)
                     await target._cube_matrix.send_raw_command(
@@ -981,7 +999,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                 # colour and options (so clock_style_id, and thus the masked
                 # effect / colour the card renders, are correct even when
                 # persist is unchecked).
-                if effect_mode == NATIVE_CLOCK_EFFECT_ID:
+                if is_clock_command:
                     target._mode = "Clock"
                     if effect_style in NATIVE_CLOCK_STYLES:
                         target._native_clock_style = effect_style
@@ -1037,7 +1055,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                                     break
                 if target.hass is not None:
                     if (
-                        effect_mode == NATIVE_CLOCK_EFFECT_ID
+                        is_clock_command
                         or native_effect_name is not None
                     ):
                         target._refresh_linked_entities()
@@ -1057,7 +1075,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             # persisted through the state model and are left as live-only.
             if (
                 persist
-                and effect_mode == NATIVE_CLOCK_EFFECT_ID
+                and is_clock_command
                 and effect_style in NATIVE_CLOCK_STYLES
             ):
                 target._native_clock_style = effect_style
@@ -1464,6 +1482,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             vol.Optional("method"): cv.string,
             vol.Optional("params"): list,
             vol.Optional("mode"): int,
+            vol.Optional("effect_id"): int,
             vol.Optional("style_id"): int,
             vol.Optional("apply"): int,
             vol.Optional("mixer"): int,
