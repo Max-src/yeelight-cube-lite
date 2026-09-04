@@ -60,6 +60,7 @@ CLOCK_MIXER_EFFECTS = {
     57: "Blue Yellow",
     58: "Ice Blue",
     59: "Blue White",
+    70: "Spectrum Bands",
 }
 # The clock command carries no direction/speed for the mixer; "Down" gives the
 # horizontal colour sweep across the characters the lamp shows, 50 is neutral.
@@ -149,8 +150,10 @@ _EXTENDED_EFFECT_NAMES = {
     58: "Ice Blue",
     59: "Blue White",
     60: "Spectrum Crumble",
+    70: "Spectrum Bands",
     79: "Twinkle",
 }
+_EXTENDED_EFFECT_SPEED = {70: False}
 # Some firmware modes only unlock their full (colored) renderer when the outer
 # set_fx_effect command id (the first array element) is a specific value rather
 # than the default. Fireworks (mode 10) shows white-only particles under the
@@ -163,7 +166,7 @@ EXTENDED_NATIVE_EFFECTS = {
     _EXTENDED_EFFECT_NAMES.get(mode, str(mode)): {
         "effect_id": _EXTENDED_EFFECT_IDS.get(mode, 3),
         "mode": mode,
-        "speed": True,
+        "speed": _EXTENDED_EFFECT_SPEED.get(mode, True),
         "directions": NATIVE_EFFECT_DIRECTIONS,
         "extended": True,
     }
@@ -224,6 +227,8 @@ CLOCK_MIXER_FIXED_DIRECTION = {
     "Spectrum Chase": "Up",
     "Pastel Pulse": "Up",
     "Solar Flare": "Up",
+    "Pulse": "Up",
+    "Spectrum Bands": "Right",
 }
 
 

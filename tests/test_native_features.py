@@ -1379,6 +1379,60 @@ class NativeFeatureTests(unittest.TestCase):
                 in_run = False
         self.assertEqual(1, cool_runs)
 
+    def test_spectrum_bands_matches_static_column_gradient_and_clock_mixer(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+        spec = CONSTANTS["ALL_NATIVE_EFFECTS"]["Spectrum Bands"]
+
+        self.assertEqual(3, spec["effect_id"])
+        self.assertEqual(70, spec["mode"])
+        self.assertFalse(spec["speed"])
+        self.assertEqual("Spectrum Bands", CONSTANTS["CLOCK_MIXER_EFFECTS"][70])
+        self.assertIn('70: "Spectrum Bands"', CLOCK_CARD_SOURCE)
+        style = next(
+            style
+            for style in CONSTANTS["NATIVE_CLOCK_STYLES"].values()
+            if style["mixer"] == 70
+        )
+        self.assertEqual("Spectrum Bands", style["name"])
+
+        up = render("Spectrum Bands", 0.0, "Up")
+        down = render("Spectrum Bands", 0.0, "Down")
+        right = render("Spectrum Bands", 0.0, "Right")
+        left = render("Spectrum Bands", 0.0, "Left")
+
+        # Static: phase has no effect.
+        self.assertEqual(right, render("Spectrum Bands", 100.0, "Right"))
+        # Every direction has uniform columns (5 identical pixels per column).
+        for frame in (up, down, right, left):
+            for col in range(20):
+                self.assertEqual(1, len({frame[row * 20 + col] for row in range(5)}))
+
+        # Right is one full spectrum across all 20 columns: red left -> magenta
+        # right, 20 distinct hues.
+        self.assertEqual(20, len(set(right)))
+        self.assertGreater(right[0][0], right[0][1] * 5)
+        self.assertGreater(right[19][2], right[19][1] * 5)
+
+        # Down is a red -> blue spectrum repeating every five columns.
+        down_top = down[0:20]
+        self.assertEqual(5, len(set(down_top)))
+        self.assertEqual(down_top[0:5], down_top[5:10])
+        self.assertEqual(down_top[0:5], down_top[10:15])
+        self.assertEqual(down_top[0:5], down_top[15:20])
+        self.assertGreater(down_top[0][2], down_top[0][0])
+        self.assertGreater(down_top[4][0], down_top[4][2])
+
+        # Left is Right rotated 180 degrees; Up is Down rotated 180 degrees.
+        def rot180(frame):
+            return [
+                frame[(4 - row) * 20 + (19 - col)]
+                for row in range(5)
+                for col in range(20)
+            ]
+
+        self.assertEqual(left, rot180(right))
+        self.assertEqual(up, rot180(down))
+
     def test_spectrum_chase_matches_repeating_color_waves_and_clock_mixer(self):
         render = NATIVE_PREVIEW["render_native_effect"]
         phase_per_second = 0.25 + 50 / 55.0
@@ -1824,6 +1878,15 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertEqual("Up", fixed["Spectrum Chase"])
         for label in ("Right", "Down", "Left", "Up"):
             self.assertEqual("Up", resolve(label, "Spectrum Chase"))
+        # Pulse's clock background always renders Up too, regardless of the
+        # selected native-effect direction.
+        self.assertEqual("Up", fixed["Pulse"])
+        for label in ("Right", "Down", "Left", "Up"):
+            self.assertEqual("Up", resolve(label, "Pulse"))
+        # Spectrum Bands is the exception that renders Right, not Up.
+        self.assertEqual("Right", fixed["Spectrum Bands"])
+        for label in ("Right", "Down", "Left", "Up"):
+            self.assertEqual("Right", resolve(label, "Spectrum Bands"))
         self.assertIn('CLOCK_MIXER_FIXED_DIRECTION[effectName]', CLOCK_CARD_SOURCE)
         # A direction-less effect or unknown mixer yields no direction byte.
         self.assertIsNone(resolve("Up", "Magic"))
@@ -1903,6 +1966,7 @@ class NativeFeatureTests(unittest.TestCase):
             "Ice Blue": 58,
             "Blue White": 59,
             "Spectrum Crumble": 60,
+            "Spectrum Bands": 70,
             "Twinkle": 79,
         }
         for effect_name, mode in named.items():
@@ -1911,7 +1975,7 @@ class NativeFeatureTests(unittest.TestCase):
         for name, spec in extended.items():
             self.assertEqual(71 if name == "Fireworks" else 3, spec["effect_id"])
             self.assertTrue(spec.get("extended"))
-            self.assertTrue(spec.get("speed"))
+            self.assertEqual(name != "Spectrum Bands", spec.get("speed"))
             self.assertNotIn(spec["mode"], official_modes)
             # Unnamed slots keep the mode number as a placeholder name.
             if name not in named:

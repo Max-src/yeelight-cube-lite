@@ -41,6 +41,7 @@ const CLOCK_MIXER_EFFECTS = {
   57: "Blue Yellow",
   58: "Ice Blue",
   59: "Blue White",
+  70: "Spectrum Bands",
 };
 const CLOCK_MIXER_EFFECT_DIRECTION = "Down";
 const CLOCK_MIXER_EFFECT_SPEED = 50;
@@ -50,6 +51,8 @@ const CLOCK_MIXER_FIXED_DIRECTION = {
   "Spectrum Chase": "Up",
   "Pastel Pulse": "Up",
   "Solar Flare": "Up",
+  Pulse: "Up",
+  "Spectrum Bands": "Right",
 };
 
 // Built-in clock style id -> firmware mixer. Generated styles are resolved

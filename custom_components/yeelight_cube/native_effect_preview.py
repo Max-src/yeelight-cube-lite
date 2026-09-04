@@ -1678,6 +1678,28 @@ def _pulse_path_index(row: int, col: int, direction: str) -> int:
     return last - index if direction == "Left" else index
 
 
+# Right (and its 180-degree rotation Left): one full spectrum across all
+# columns. Down (and its 180-degree rotation Up): a red->blue spectrum that
+# repeats every ROWS columns, each column a single solid hue (measured).
+_SPECTRUM_BANDS_RL_HUES = (0.66, 0.58, 0.44, 0.29, 0.0)
+
+
+def _render_spectrum_bands(direction: str) -> list[tuple[int, int, int]]:
+    pixels = []
+    for row in range(ROWS):
+        for col in range(COLS):
+            if direction == "Right":
+                hue = (col / (COLS - 1)) * 0.83
+            elif direction == "Left":  # Right rotated 180 degrees
+                hue = ((COLS - 1 - col) / (COLS - 1)) * 0.83
+            elif direction == "Down":
+                hue = _SPECTRUM_BANDS_RL_HUES[col % ROWS]
+            else:  # Up = Down rotated 180 degrees
+                hue = _SPECTRUM_BANDS_RL_HUES[(COLS - 1 - col) % ROWS]
+            pixels.append(_hsv(hue, 1.0, 0.95))
+    return pixels
+
+
 def _rainbow_flow_right_hue(row: int, col: int, phase: float) -> float:
     """Right: scans right-to-left color order per row (reversed rainbow),
     scrolling toward the bottom; the hue and phase sign are flipped together
@@ -1748,6 +1770,8 @@ def render_native_effect(
         return _render_rainbow_flow(phase, direction)
     if effect == "Pulse":
         return _render_pulse(phase, direction)
+    if effect == "Spectrum Bands":
+        return _render_spectrum_bands(direction)
     if effect == "Magic":
         return _render_magic(phase)
     if effect == "Wonderland":

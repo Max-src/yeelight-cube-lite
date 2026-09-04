@@ -1820,6 +1820,33 @@ function pulsePathIndex(row, col, direction) {
   return direction === "Left" ? last - index : index;
 }
 
+// Right (and its 180-degree rotation Left): one full spectrum across all
+// columns. Down (and its 180-degree rotation Up): a red->blue spectrum that
+// repeats every PREVIEW_ROWS columns, each column a single solid hue (measured).
+const SPECTRUM_BANDS_RL_HUES = [0.66, 0.58, 0.44, 0.29, 0.0];
+
+function renderSpectrumBands(direction) {
+  const pixels = [];
+  for (let row = 0; row < PREVIEW_ROWS; row += 1) {
+    for (let col = 0; col < PREVIEW_COLS; col += 1) {
+      let hue;
+      if (direction === "Right") {
+        hue = (col / (PREVIEW_COLS - 1)) * 0.83;
+      } else if (direction === "Left") {
+        // Right rotated 180 degrees
+        hue = ((PREVIEW_COLS - 1 - col) / (PREVIEW_COLS - 1)) * 0.83;
+      } else if (direction === "Down") {
+        hue = SPECTRUM_BANDS_RL_HUES[col % PREVIEW_ROWS];
+      } else {
+        // Up = Down rotated 180 degrees
+        hue = SPECTRUM_BANDS_RL_HUES[(PREVIEW_COLS - 1 - col) % PREVIEW_ROWS];
+      }
+      pixels.push(hsv(hue, 1.0, 0.95));
+    }
+  }
+  return pixels;
+}
+
 // Right: scans right-to-left color order per row (reversed rainbow),
 // scrolling toward the bottom; the hue and phase sign are flipped together
 // so the scroll direction stays downward.
@@ -1897,6 +1924,7 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
   if (effect === "Fireworks") return renderFireworks(phase, direction);
   if (effect === "Rainbow Flow") return renderRainbowFlow(phase, direction);
   if (effect === "Pulse") return renderPulse(phase, direction);
+  if (effect === "Spectrum Bands") return renderSpectrumBands(direction);
   if (effect === "Magic") return renderMagic(phase);
   if (effect === "Wonderland") return renderWonderland(phase);
   if (effect === "Flower Sea") return renderFlowerSea(phase, direction);
