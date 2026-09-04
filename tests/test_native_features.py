@@ -1287,6 +1287,35 @@ class NativeFeatureTests(unittest.TestCase):
         )
         self.assertTrue(all(pixel == (0, 0, 0) for pixel in render("Fireworks", 2.8)))
 
+    def test_rainbow_flow_matches_dot_by_dot_rainbow_ribbon(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+
+        # Mode 4 (Rainbow Flow) is a full rainbow that advances hue per-pixel in
+        # reading order (diagonal bands) and is available as a clock mixer.
+        self.assertEqual(4, CONSTANTS["ALL_NATIVE_EFFECTS"]["Rainbow Flow"]["mode"])
+        self.assertEqual(3, CONSTANTS["ALL_NATIVE_EFFECTS"]["Rainbow Flow"]["effect_id"])
+        self.assertEqual("Rainbow Flow", CONSTANTS["CLOCK_MIXER_EFFECTS"][4])
+
+        frame = render("Rainbow Flow", 0.0, "Right")
+        self.assertEqual(100, len(frame))
+
+        # Dot-by-dot: adjacent columns within a row differ (a continuous
+        # gradient), unlike Rainbow which paints each row a single colour.
+        top_row = [frame[(4 - 0) * 20 + col] for col in range(20)]
+        self.assertGreater(len({tuple(p) for p in top_row}), 12)
+
+        # The whole panel spans a full spectrum (hues cover all six sectors).
+        hues = set()
+        for pixel in frame:
+            red, green, blue = (channel / 255 for channel in pixel)
+            hue, sat, val = colorsys.rgb_to_hsv(red, green, blue)
+            if sat > 0.2 and val > 0.2:
+                hues.add(int(hue * 6) % 6)
+        self.assertGreaterEqual(len(hues), 5)
+
+        # It animates (scrolls) over time.
+        self.assertNotEqual(frame, render("Rainbow Flow", 1.5, "Right"))
+
     def test_spectrum_chase_matches_repeating_color_waves_and_clock_mixer(self):
         render = NATIVE_PREVIEW["render_native_effect"]
         phase_per_second = 0.25 + 50 / 55.0
@@ -1798,6 +1827,7 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertNotIn(str(clock_mode), extended)
         # Named clock-mixer effects use their given names + modes.
         named = {
+            "Rainbow Flow": 4,
             "Spectrum Chase": 6,
             "Pastel Pulse": 9,
             "Fireworks": 10,

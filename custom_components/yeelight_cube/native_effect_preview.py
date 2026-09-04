@@ -1644,6 +1644,53 @@ def _render_fireworks(
     ]
 
 
+# Hue cycles the ribbon scrolls per phase unit (whole panel = one full rainbow).
+# Hue cycles the ribbon scrolls per phase unit (whole panel = one full rainbow).
+_RAINBOW_FLOW_SPEED = 0.24
+_RAINBOW_FLOW_TOTAL = COLS * ROWS
+
+
+def _rainbow_flow_right_hue(row: int, col: int, phase: float) -> float:
+    """Right: scans right-to-left color order per row (reversed rainbow),
+    scrolling toward the bottom; the hue and phase sign are flipped together
+    so the scroll direction stays downward."""
+    index = (ROWS - 1 - row) * COLS + col
+    return (0.5 - index / _RAINBOW_FLOW_TOTAL + phase * _RAINBOW_FLOW_SPEED) % 1.0
+
+
+def _rainbow_flow_down_hue(row: int, col: int, phase: float) -> float:
+    """Down: scans top-to-bottom per column, scrolling leftward; the rainbow
+    order along that path is mirrored (both the hue and phase sign are
+    flipped together so the scroll direction stays leftward)."""
+    index = (COLS - 1 - col) * ROWS + row
+    return (0.5 - index / _RAINBOW_FLOW_TOTAL + phase * _RAINBOW_FLOW_SPEED) % 1.0
+
+
+def _render_rainbow_flow(
+    phase: float,
+    direction: str,
+) -> list[tuple[int, int, int]]:
+    """Render mode 4 (Rainbow Flow): a full rainbow that runs dot-by-dot along
+    the panel and scrolls over time. Unlike Rainbow (uniform per row) the hue
+    advances every pixel, so the bands look diagonal. Left/Up are Right/Down
+    evaluated at the 180-degree-rotated coordinates, so they are exact
+    rotations of Right/Down (matching the real lamp behaviour per direction).
+    """
+    pixels = []
+    for row in range(ROWS):
+        for col in range(COLS):
+            if direction == "Right":
+                hue = _rainbow_flow_right_hue(row, col, phase)
+            elif direction == "Left":
+                hue = _rainbow_flow_right_hue(ROWS - 1 - row, COLS - 1 - col, phase)
+            elif direction == "Down":
+                hue = _rainbow_flow_down_hue(row, col, phase)
+            else:  # Up
+                hue = _rainbow_flow_down_hue(ROWS - 1 - row, COLS - 1 - col, phase)
+            pixels.append(_hsv(hue, 0.95, 0.92))
+    return pixels
+
+
 def render_native_effect(
     effect: str,
     phase: float,
@@ -1652,6 +1699,8 @@ def render_native_effect(
     """Return one animated 20x5 approximation of a firmware effect."""
     if effect == "Fireworks":
         return _render_fireworks(phase, direction)
+    if effect == "Rainbow Flow":
+        return _render_rainbow_flow(phase, direction)
     if effect == "Magic":
         return _render_magic(phase)
     if effect == "Wonderland":

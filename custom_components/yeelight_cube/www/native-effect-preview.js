@@ -1791,6 +1791,61 @@ function renderFireworks(phase, direction) {
   ]);
 }
 
+// Hue cycles the ribbon scrolls per phase unit (whole panel = one full rainbow).
+const RAINBOW_FLOW_SPEED = 0.24;
+const RAINBOW_FLOW_TOTAL = PREVIEW_COLS * PREVIEW_ROWS;
+
+// Right: scans right-to-left color order per row (reversed rainbow),
+// scrolling toward the bottom; the hue and phase sign are flipped together
+// so the scroll direction stays downward.
+function rainbowFlowRightHue(row, col, phase) {
+  const index = (PREVIEW_ROWS - 1 - row) * PREVIEW_COLS + col;
+  const hue = 0.5 - index / RAINBOW_FLOW_TOTAL + phase * RAINBOW_FLOW_SPEED;
+  return ((hue % 1.0) + 1.0) % 1.0;
+}
+
+// Down: scans top-to-bottom per column, scrolling leftward; the rainbow order
+// along that path is mirrored (both the hue and phase sign are flipped
+// together so the scroll direction stays leftward).
+function rainbowFlowDownHue(row, col, phase) {
+  const index = (PREVIEW_COLS - 1 - col) * PREVIEW_ROWS + row;
+  const hue = 0.5 - index / RAINBOW_FLOW_TOTAL + phase * RAINBOW_FLOW_SPEED;
+  return ((hue % 1.0) + 1.0) % 1.0;
+}
+
+// Mode 4 (Rainbow Flow): a full rainbow that runs dot-by-dot along the panel
+// and scrolls over time (diagonal bands), unlike Rainbow (uniform per row).
+// Left/Up are Right/Down evaluated at the 180-degree-rotated coordinates, so
+// they are exact rotations of Right/Down.
+function renderRainbowFlow(phase, direction) {
+  const pixels = [];
+  for (let row = 0; row < PREVIEW_ROWS; row += 1) {
+    for (let col = 0; col < PREVIEW_COLS; col += 1) {
+      let hue;
+      if (direction === "Right") {
+        hue = rainbowFlowRightHue(row, col, phase);
+      } else if (direction === "Left") {
+        hue = rainbowFlowRightHue(
+          PREVIEW_ROWS - 1 - row,
+          PREVIEW_COLS - 1 - col,
+          phase,
+        );
+      } else if (direction === "Down") {
+        hue = rainbowFlowDownHue(row, col, phase);
+      } else {
+        // Up
+        hue = rainbowFlowDownHue(
+          PREVIEW_ROWS - 1 - row,
+          PREVIEW_COLS - 1 - col,
+          phase,
+        );
+      }
+      pixels.push(hsv(hue, 0.95, 0.92));
+    }
+  }
+  return pixels;
+}
+
 /**
  * Render one animated 20x5 approximation frame of a firmware effect.
  * Returns a flat array of 100 [r,g,b] tuples in row-major order
@@ -1798,6 +1853,7 @@ function renderFireworks(phase, direction) {
  */
 export function renderNativeEffect(effect, phase, direction = "Up") {
   if (effect === "Fireworks") return renderFireworks(phase, direction);
+  if (effect === "Rainbow Flow") return renderRainbowFlow(phase, direction);
   if (effect === "Magic") return renderMagic(phase);
   if (effect === "Wonderland") return renderWonderland(phase);
   if (effect === "Flower Sea") return renderFlowerSea(phase, direction);

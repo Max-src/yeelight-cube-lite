@@ -18,9 +18,9 @@ NATIVE_CLOCK_APPLY = 2
 # The user can override the color on any style by setting ``_native_clock_color``;
 # when unset, the style's own color (if any) is used.
 NATIVE_CLOCK_STYLES = {
-    1: {"name": "Rainbow Gradient", "mixer": 39},
-    2: {"name": "Aqua", "mixer": 42},
-    3: {"name": "Four Color Gradient", "mixer": 17},
+    1: {"name": "Rainbow", "mixer": 39},
+    2: {"name": "Ocean Waves", "mixer": 42},
+    3: {"name": "Spectrum", "mixer": 17},
     4: {"name": "White", "mixer": 0, "color": 33554430},
     5: {"name": "Mint", "mixer": 0, "color": 261958},
     6: {"name": "Yellow", "mixer": 0, "color": 33553920},
@@ -44,6 +44,7 @@ DEFAULT_NATIVE_CLOCK_STYLE = 6
 # Mixers without a dedicated software renderer keep a static gradient
 # approximation.
 CLOCK_MIXER_EFFECTS = {
+    4: "Rainbow Flow",
     6: "Spectrum Chase",
     9: "Pastel Pulse",
     10: "Fireworks",
@@ -134,6 +135,7 @@ _OFFICIAL_EFFECT_MODES = {spec["mode"] for spec in NATIVE_EFFECTS.values()} | {
 # placeholder name. Named modes are also exposed as animated clock mixer
 # backgrounds and share the clock styles' names.
 _EXTENDED_EFFECT_NAMES = {
+    4: "Rainbow Flow",
     6: "Spectrum Chase",
     9: "Pastel Pulse",
     10: "Fireworks",

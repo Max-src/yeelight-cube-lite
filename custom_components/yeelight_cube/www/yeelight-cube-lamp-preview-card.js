@@ -25,6 +25,7 @@ import {
 // Clock styles whose mixer is a native effect: the effect is rendered across
 // the whole panel and masked to the lit glyph pixels (mirrors const.py).
 const CLOCK_MIXER_EFFECTS = {
+  4: "Rainbow Flow",
   6: "Spectrum Chase",
   9: "Pastel Pulse",
   10: "Fireworks",
