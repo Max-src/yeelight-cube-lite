@@ -36,35 +36,11 @@ NATIVE_CLOCK_STYLES = {
 }
 DEFAULT_NATIVE_CLOCK_STYLE = 6
 
-# Clock styles whose firmware ``mixer`` is a standalone native effect. For
-# these the lamp runs that effect across the whole panel and lets its colour
-# through only on the lit time/date pixels (everything else stays black), so
-# the characters animate with the effect. The preview reproduces this by
-# rendering the effect and masking it to the glyph pixels. The remaining
-# Mixers without a dedicated software renderer keep a static gradient
-# approximation.
-CLOCK_MIXER_EFFECTS = {
-    4: "Rainbow Flow",
-    6: "Spectrum Chase",
-    9: "Pastel Pulse",
-    10: "Fireworks",
-    18: "Pulse",
-    19: "Solar Flare",
-    24: "Ember",
-    35: "Color Trails",
-    79: "Twinkle",
-    39: "Rainbow",
-    42: "Ocean Waves",
-    17: "Spectrum",
-    54: "Sunset",
-    56: "Carousel",
-    57: "Blue Yellow",
-    58: "Ice Blue",
-    59: "Blue White",
-    70: "Spectrum Bands",
-}
-# The clock command carries no direction/speed for the mixer; "Down" gives the
-# horizontal colour sweep across the characters the lamp shows, 50 is neutral.
+# Clock styles whose firmware ``mixer`` is a standalone native effect are
+# handled by CLOCK_MIXER_EFFECTS, derived after the native-effect tables are
+# built (see below). The clock command carries no direction/speed for the
+# mixer; "Down" gives the horizontal colour sweep across the characters the
+# lamp shows, 50 is neutral.
 CLOCK_MIXER_EFFECT_DIRECTION = "Down"
 CLOCK_MIXER_EFFECT_SPEED = 50
 
@@ -193,6 +169,21 @@ _MODE_TO_EFFECT_NAME = {
 # long stretches each cycle, so the masked characters would vanish (mode 60,
 # Spectrum Crumble, spends most of its cycle black).
 _NON_CLOCK_EFFECT_MODES = {60}
+# Clock styles whose firmware ``mixer`` is a standalone native effect: the lamp
+# runs that effect across the whole panel and lets its colour through only on
+# the lit time/date pixels, so the characters animate with the effect. The
+# preview reproduces this by rendering the effect and masking it to the glyph
+# pixels. Every named effect with a real renderer qualifies; direction-less
+# effects simply omit the sweep. Excluded: unnamed placeholder modes, effects
+# that go mostly black (``_NON_CLOCK_EFFECT_MODES``), and Hacking (its partial
+# up/down-only directions make the clock sweep ambiguous).
+CLOCK_MIXER_EFFECTS = {
+    spec["mode"]: name
+    for name, spec in ALL_NATIVE_EFFECTS.items()
+    if not name.isdigit()
+    and spec.get("directions") in (None, NATIVE_EFFECT_DIRECTIONS)
+    and spec["mode"] not in _NON_CLOCK_EFFECT_MODES
+}
 _BASE_CLOCK_MIXERS = {style["mixer"] for style in NATIVE_CLOCK_STYLES.values()}
 _next_clock_style_id = max(NATIVE_CLOCK_STYLES) + 1
 for _clock_mode in range(1, 100):
@@ -257,6 +248,23 @@ def resolve_clock_mixer_direction(direction, effect_name):
     if CLOCK_MIXER_EFFECT_DIRECTION in directions:
         return CLOCK_MIXER_EFFECT_DIRECTION
     return directions[0]
+
+
+def clock_style_default_color(style):
+    """Return the ARGB colour a clock style sends by default, or None.
+
+    A style's own ``color`` wins; otherwise, when its ``mixer`` is a native
+    effect that carries a default colour (e.g. Waterfall = 255), that colour is
+    used so the clock sends the same colour the standalone effect does.
+    """
+    if style.get("color") is not None:
+        return style["color"]
+    mixer = style.get("mixer")
+    mixer_effect = next(
+        (spec for spec in ALL_NATIVE_EFFECTS.values() if spec.get("mode") == mixer),
+        None,
+    )
+    return mixer_effect.get("color") if mixer_effect else None
 
 # Device-microphone music flow definitions recovered from the Yeelight app.
 # The protocol deliberately spells palette as ``palatte`` in the JSON payload.

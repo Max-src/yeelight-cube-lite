@@ -43,6 +43,22 @@ const CLOCK_MIXER_EFFECTS = {
   58: "Ice Blue",
   59: "Blue White",
   70: "Spectrum Bands",
+  // Official effects that also support all four directions (mirrors const.py).
+  32: "Waterfall",
+  15: "Aurora",
+  34: "Bonfire",
+  47: "Shooting Star",
+  49: "Building block",
+  55: "Flower Sea",
+  80: "Kaleidoscope",
+  81: "Palette",
+  // Named effects with no direction control still back the clock (no sweep).
+  3: "Streamer",
+  5: "Starry sky",
+  37: "Pinball",
+  48: "Tide",
+  75: "Magic",
+  77: "Wonderland",
 };
 const CLOCK_MIXER_EFFECT_DIRECTION = "Down";
 const CLOCK_MIXER_EFFECT_SPEED = 50;

@@ -1940,6 +1940,77 @@ class NativeFeatureTests(unittest.TestCase):
         columns = {tuple(frame[c]) for c in range(20)}
         self.assertGreater(len(columns), 10)
 
+    def test_named_renderable_effects_back_the_clock(self):
+        mixer_effects = CONSTANTS["CLOCK_MIXER_EFFECTS"]
+        effects = CONSTANTS["ALL_NATIVE_EFFECTS"]
+        dirs = CONSTANTS["NATIVE_EFFECT_DIRECTIONS"]
+        # Named effects must show through the clock (previously only a curated
+        # subset did) -- including four-direction effects and direction-less
+        # ones like Starry sky (whose blue colour previously fell back to the
+        # default yellow gradient).
+        for name in (
+            "Waterfall",
+            "Aurora",
+            "Bonfire",
+            "Shooting Star",
+            "Building block",
+            "Flower Sea",
+            "Kaleidoscope",
+            "Palette",
+            "Starry sky",
+            "Streamer",
+            "Pinball",
+            "Tide",
+            "Magic",
+            "Wonderland",
+        ):
+            self.assertEqual(name, mixer_effects[effects[name]["mode"]])
+            self.assertIn(f'{effects[name]["mode"]}: "{name}"', CLOCK_CARD_SOURCE)
+        # Every named effect with a full/absent direction set (except mostly-
+        # black modes) qualifies; partial-direction Hacking and unnamed
+        # placeholder modes do not.
+        for name, spec in effects.items():
+            eligible = (
+                not name.isdigit()
+                and spec.get("directions") in (None, dirs)
+                and spec["mode"] not in CONSTANTS["_NON_CLOCK_EFFECT_MODES"]
+            )
+            self.assertEqual(eligible, spec["mode"] in mixer_effects)
+        self.assertNotIn("Hacking", mixer_effects.values())
+
+    def test_clock_style_inherits_mixer_effect_default_color(self):
+        effects = CONSTANTS["ALL_NATIVE_EFFECTS"]
+        styles = CONSTANTS["NATIVE_CLOCK_STYLES"]
+        default_color = CONSTANTS["clock_style_default_color"]
+        # Every effect that carries a default colour (e.g. Waterfall = 255) must
+        # be reachable as a clock style whose mixer equals that effect's mode,
+        # and the shared helper must resolve that colour from the style.
+        colored = {
+            name: spec
+            for name, spec in effects.items()
+            if spec.get("color") is not None
+        }
+        self.assertIn("Waterfall", colored)
+        for name, spec in colored.items():
+            style = next(
+                (s for s in styles.values() if s.get("mixer") == spec["mode"]),
+                None,
+            )
+            self.assertIsNotNone(style, f"no clock style backs {name}")
+            self.assertEqual(spec["color"], default_color(style))
+        # A solid-colour style keeps its own colour; a mixer effect without a
+        # default colour resolves to None.
+        self.assertEqual(styles[6]["color"], default_color(styles[6]))
+        self.assertIsNone(default_color({"mixer": 39}))
+        # Both clock payload builders resolve the colour through the shared
+        # helper so none of them can silently drop the mixer effect's colour.
+        resolve = _function_source(LIGHT_SOURCE, "_resolve_native_clock_color")
+        self.assertIn("clock_style_default_color", resolve)
+        activate = _function_source(LIGHT_SOURCE, "_activate_native_clock")
+        self.assertIn("_resolve_native_clock_color", activate)
+        persist = _function_source(LIGHT_SOURCE, "_effect_persist_item")
+        self.assertIn("clock_style_default_color", persist)
+
     def test_clock_preview_masks_native_effect_and_keeps_colon_blink(self):
         clock = _function_source(CAMERA_SOURCE, "_get_clock_preview")
         # Mixer-effect styles render the effect and mask it to the glyph pixels.
@@ -1959,14 +2030,20 @@ class NativeFeatureTests(unittest.TestCase):
     def test_clock_style_sends_and_previews_mixer_direction(self):
         resolve = CONSTANTS["resolve_clock_mixer_direction"]
         mixer_effects = CONSTANTS["CLOCK_MIXER_EFFECTS"]
+        effects = CONSTANTS["ALL_NATIVE_EFFECTS"]
         fixed = CONSTANTS["CLOCK_MIXER_FIXED_DIRECTION"]
 
-        # Every clock mixer effect is direction-capable and flows in the
-        # selected native-effect direction, except effects pinned to a fixed
-        # clock orientation by the firmware.
+        # Four-direction clock mixer effects flow in the selected native-effect
+        # direction (unless pinned to a fixed orientation); direction-less
+        # effects resolve to None so the clock omits the direction byte.
         for label in ("Right", "Down", "Left", "Up"):
             for effect_name in mixer_effects.values():
-                expected = fixed.get(effect_name, label)
+                if effect_name in fixed:
+                    expected = fixed[effect_name]
+                elif effects[effect_name].get("directions"):
+                    expected = label
+                else:
+                    expected = None
                 self.assertEqual(expected, resolve(label, effect_name))
         # Spectrum Chase's clock background always renders Up on the hardware.
         self.assertEqual("Up", fixed["Spectrum Chase"])

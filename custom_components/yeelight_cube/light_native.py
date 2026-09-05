@@ -18,6 +18,7 @@ from .const import (
     ALL_NATIVE_EFFECTS,
     CLOCK_MIXER_COMMAND_IDS,
     CLOCK_MIXER_EFFECTS,
+    clock_style_default_color,
     DEFAULT_NATIVE_CLOCK_STYLE,
     DEFAULT_NATIVE_EFFECT,
     DOMAIN,
@@ -149,12 +150,13 @@ class NativeModesMixin:
     def _resolve_native_clock_color(self, style: dict) -> int | None:
         """Return the ARGB color integer to send for the current clock style.
 
-        Priority: user override (``_native_clock_color`` attribute) > style default.
+        Priority: user override (``_native_clock_color`` attribute) > style
+        default (its own colour, else its mixer effect's default colour).
         """
         override = getattr(self, "_native_clock_color", None)
         if override is not None:
             return override
-        return style.get("color")
+        return clock_style_default_color(style)
 
     async def _activate_native_clock(self) -> None:
         """Activate the Cube Lite firmware clock through Yeelight LAN control."""

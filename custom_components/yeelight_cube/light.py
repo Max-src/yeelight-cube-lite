@@ -29,6 +29,7 @@ from yeelight import BulbException # type: ignore
 from .const import (
     CONF_DEVICE_ID,
     CONF_IP,
+    clock_style_default_color,
     DEFAULT_MATRIX_DISPLAY_MODE,
     DEFAULT_MUSIC_FLOW_EFFECT,
     DEFAULT_NATIVE_CLOCK_CONTENT,
@@ -2760,8 +2761,9 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             for style_id, style in NATIVE_CLOCK_STYLES.items():
                 if style["name"] == style_name:
                     config = {"mode": NATIVE_CLOCK_EFFECT_ID, "mixer": style["mixer"]}
-                    if "color" in style:
-                        config["color"] = [style["color"]]
+                    color = clock_style_default_color(style)
+                    if color is not None:
+                        config["color"] = [int(color)]
                     clock_data = bytes(
                         (
                             NATIVE_CLOCK_CONTENT_BYTE.get(self._native_clock_content, 1),
