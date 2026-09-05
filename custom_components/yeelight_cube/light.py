@@ -1826,6 +1826,11 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             )
             return
 
+        # Remember whether the lamp was already on: a brightness-only turn_on on
+        # an already-running native effect must not re-activate it (that restarts
+        # the animation from frame zero), it should only push the new brightness.
+        was_on = self._is_on
+
         # Brightness remains adjustable while Music Flow owns the display.
         # Explicit color content must first release the firmware renderer so
         # the requested RGB/text colors are not silently ignored.
@@ -1844,12 +1849,13 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             self.async_schedule_update_ha_state()
         
         await self._execute_hardware_op(
-            lambda: self._internal_turn_on(**kwargs),
+            lambda: self._internal_turn_on(_was_on=was_on, **kwargs),
             "turn_on"
         )
     
     async def _internal_turn_on(self, **kwargs):
         """Internal turn_on implementation -- runs under the global lock."""
+        was_on = kwargs.pop("_was_on", False)
         _LOGGER.debug(f"[TURN_ON] Executing - is_on: {self._is_on}, custom_text: '{self._custom_text}', mode: '{self._mode}'")
 
         if self._music_flow_enabled:
@@ -1865,7 +1871,12 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             self._is_on = True
             if "brightness" in kwargs:
                 self._brightness = max(1, min(255, kwargs["brightness"]))
-            await self._activate_native_clock()
+            # Brightness-only change on the already-running clock: just push the
+            # brightness so the clock is not torn down and rebuilt.
+            if was_on and set(kwargs) <= {"brightness"}:
+                await self._set_native_mode_brightness()
+            else:
+                await self._activate_native_clock()
             if self.hass is not None:
                 self.async_schedule_update_ha_state()
             return
@@ -1873,7 +1884,13 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             self._is_on = True
             if "brightness" in kwargs:
                 self._brightness = max(1, min(255, kwargs["brightness"]))
-            await self._activate_native_effect()
+            # Brightness-only change on an already-running effect: push the new
+            # brightness only. Re-activating here would restart the animation
+            # from the first frame (mirrors _internal_set_brightness).
+            if was_on and set(kwargs) <= {"brightness"}:
+                await self._set_native_mode_brightness()
+            else:
+                await self._activate_native_effect()
             if self.hass is not None:
                 self.async_schedule_update_ha_state()
             return

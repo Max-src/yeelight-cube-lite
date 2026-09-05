@@ -222,7 +222,7 @@ class NativeFeatureTests(unittest.TestCase):
         )
         self.assertEqual(("execute", "turn_on"), events[1])
         self.assertEqual(
-            ("turn_on", {"rgb_color": (12, 34, 56), "brightness": 128}),
+            ("turn_on", {"rgb_color": (12, 34, 56), "brightness": 128, "_was_on": True}),
             events[2],
         )
         self.assertEqual((12, 34, 56), device._rgb_color)
@@ -264,7 +264,7 @@ class NativeFeatureTests(unittest.TestCase):
         asyncio.run(turn_on(brightness=96))
 
         self.assertFalse(any(event[0] == "music_flow" for event in events))
-        self.assertEqual([("turn_on", {"brightness": 96})], events)
+        self.assertEqual([("turn_on", {"brightness": 96, "_was_on": True})], events)
 
     def test_palette_selection_uses_guarded_display_state_machine(self):
         function = _function_source(SELECT_SOURCE, "async_select_option")
@@ -1987,6 +1987,23 @@ class NativeFeatureTests(unittest.TestCase):
                 None,
             )
             self.assertIsNone(style, f"{name} must not have a clock style")
+
+    def test_brightness_only_turn_on_keeps_native_mode_running(self):
+        starter = _function_source(LIGHT_SOURCE, "async_turn_on")
+        turn_on = _function_source(LIGHT_SOURCE, "_internal_turn_on")
+        # async_turn_on forwards the prior on-state so the internal handler can
+        # tell a brightness-only change from a genuine (re)activation.
+        self.assertIn("was_on = self._is_on", starter)
+        self.assertIn("_was_on=was_on", starter)
+        self.assertIn('was_on = kwargs.pop("_was_on", False)', turn_on)
+        # Both the clock and native-effect branches only push brightness for a
+        # brightness-only change on an already-running mode -- re-activating
+        # would restart the firmware animation from the first frame.
+        self.assertEqual(
+            2, turn_on.count('if was_on and set(kwargs) <= {"brightness"}:')
+        )
+        self.assertIn("await self._set_native_mode_brightness()", turn_on)
+
 
 
     def test_clock_style_inherits_mixer_effect_default_color(self):
