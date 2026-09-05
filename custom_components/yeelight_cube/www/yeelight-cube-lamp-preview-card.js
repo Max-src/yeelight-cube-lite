@@ -47,11 +47,8 @@ const CLOCK_MIXER_EFFECTS = {
   32: "Waterfall",
   15: "Aurora",
   34: "Bonfire",
-  47: "Shooting Star",
-  49: "Building block",
   55: "Flower Sea",
   80: "Kaleidoscope",
-  81: "Palette",
   // Named effects with no direction control still back the clock (no sweep).
   3: "Streamer",
   5: "Starry sky",
@@ -59,6 +56,8 @@ const CLOCK_MIXER_EFFECTS = {
   48: "Tide",
   75: "Magic",
   77: "Wonderland",
+  // Hacking, Shooting Star, Building block, and Palette are deliberately
+  // omitted: the firmware rejects these mixer/clock combinations.
 };
 const CLOCK_MIXER_EFFECT_DIRECTION = "Down";
 const CLOCK_MIXER_EFFECT_SPEED = 50;

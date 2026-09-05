@@ -165,10 +165,11 @@ ALL_NATIVE_EFFECTS = {**NATIVE_EFFECTS, **EXTENDED_NATIVE_EFFECTS}
 _MODE_TO_EFFECT_NAME = {
     spec["mode"]: name for name, spec in ALL_NATIVE_EFFECTS.items()
 }
-# Effect modes that must not back the clock: their animation goes fully dark for
-# long stretches each cycle, so the masked characters would vanish (mode 60,
-# Spectrum Crumble, spends most of its cycle black).
-_NON_CLOCK_EFFECT_MODES = {60}
+# Effect modes that must not back the clock: some (mode 60, Spectrum Crumble)
+# go fully dark for long stretches each cycle, so the masked characters would
+# vanish; others (Hacking, Shooting Star, Building block, Palette) are firmware
+# combinations the hardware rejects outright when sent as the clock's mixer.
+_NON_CLOCK_EFFECT_MODES = {60, 46, 47, 49, 81}
 # Clock styles whose firmware ``mixer`` is a standalone native effect: the lamp
 # runs that effect across the whole panel and lets its colour through only on
 # the lit time/date pixels, so the characters animate with the effect. The

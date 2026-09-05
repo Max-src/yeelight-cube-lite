@@ -1952,11 +1952,8 @@ class NativeFeatureTests(unittest.TestCase):
             "Waterfall",
             "Aurora",
             "Bonfire",
-            "Shooting Star",
-            "Building block",
             "Flower Sea",
             "Kaleidoscope",
-            "Palette",
             "Starry sky",
             "Streamer",
             "Pinball",
@@ -1976,26 +1973,45 @@ class NativeFeatureTests(unittest.TestCase):
                 and spec["mode"] not in CONSTANTS["_NON_CLOCK_EFFECT_MODES"]
             )
             self.assertEqual(eligible, spec["mode"] in mixer_effects)
-        self.assertNotIn("Hacking", mixer_effects.values())
+        # Hacking, Shooting Star, Building block, and Palette are excluded: the
+        # firmware rejects these clock/mixer combinations on real hardware.
+        for name in ("Hacking", "Shooting Star", "Building block", "Palette"):
+            self.assertNotIn(name, mixer_effects.values())
+            self.assertNotIn(effects[name]["mode"], mixer_effects)
+            style = next(
+                (
+                    s
+                    for s in CONSTANTS["NATIVE_CLOCK_STYLES"].values()
+                    if s.get("mixer") == effects[name]["mode"]
+                ),
+                None,
+            )
+            self.assertIsNone(style, f"{name} must not have a clock style")
+
 
     def test_clock_style_inherits_mixer_effect_default_color(self):
         effects = CONSTANTS["ALL_NATIVE_EFFECTS"]
         styles = CONSTANTS["NATIVE_CLOCK_STYLES"]
         default_color = CONSTANTS["clock_style_default_color"]
         # Every effect that carries a default colour (e.g. Waterfall = 255) must
-        # be reachable as a clock style whose mixer equals that effect's mode,
-        # and the shared helper must resolve that colour from the style.
+        # be reachable as a clock style whose mixer equals that effect's mode
+        # (unless the effect is excluded from the clock entirely), and the
+        # shared helper must resolve that colour from the style.
         colored = {
             name: spec
             for name, spec in effects.items()
             if spec.get("color") is not None
         }
         self.assertIn("Waterfall", colored)
+        non_clock = CONSTANTS["_NON_CLOCK_EFFECT_MODES"]
         for name, spec in colored.items():
             style = next(
                 (s for s in styles.values() if s.get("mixer") == spec["mode"]),
                 None,
             )
+            if spec["mode"] in non_clock:
+                self.assertIsNone(style, f"{name} must not have a clock style")
+                continue
             self.assertIsNotNone(style, f"no clock style backs {name}")
             self.assertEqual(spec["color"], default_color(style))
         # A solid-colour style keeps its own colour; a mixer effect without a
@@ -2188,9 +2204,10 @@ class NativeFeatureTests(unittest.TestCase):
         clock_mode = CONSTANTS["NATIVE_CLOCK_EFFECT_ID"]
 
         # Every native-effect mode is available as a clock background, except
-        # modes explicitly excluded because they read poorly as a clock.
+        # modes explicitly excluded because they read poorly as a clock or the
+        # firmware rejects the clock/mixer combination.
         style_mixers = {style["mixer"] for style in clock_styles.values()}
-        non_clock_modes = {60}
+        non_clock_modes = CONSTANTS["_NON_CLOCK_EFFECT_MODES"]
         for spec in all_effects.values():
             if spec["mode"] in non_clock_modes:
                 self.assertNotIn(spec["mode"], style_mixers)
