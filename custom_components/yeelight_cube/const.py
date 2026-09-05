@@ -51,6 +51,7 @@ CLOCK_MIXER_EFFECTS = {
     18: "Pulse",
     19: "Solar Flare",
     24: "Ember",
+    35: "Color Trails",
     79: "Twinkle",
     39: "Rainbow",
     42: "Ocean Waves",
@@ -144,6 +145,7 @@ _EXTENDED_EFFECT_NAMES = {
     18: "Pulse",
     19: "Solar Flare",
     24: "Ember",
+    35: "Color Trails",
     54: "Sunset",
     56: "Carousel",
     57: "Blue Yellow",
@@ -228,6 +230,7 @@ CLOCK_MIXER_FIXED_DIRECTION = {
     "Pastel Pulse": "Up",
     "Solar Flare": "Up",
     "Pulse": "Up",
+    "Color Trails": "Right",
     "Spectrum Bands": "Right",
 }
 
@@ -298,6 +301,7 @@ NATIVE_EFFECT_RENAMES = {
     "Bouncing Ball": "Pinball",
     "Meteor": "Shooting Star",
     "Building Blocks": "Building block",
+    "Color Snakes": "Color Trails",
 }
 
 POWER_ON_STATES = {"Off": 0, "On": 1, "Toggle": 2}

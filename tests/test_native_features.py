@@ -1433,6 +1433,100 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertEqual(left, rot180(right))
         self.assertEqual(up, rot180(down))
 
+    def test_color_trails_mode_and_clock_mixer_are_named(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+        spec = CONSTANTS["ALL_NATIVE_EFFECTS"]["Color Trails"]
+
+        self.assertEqual(3, spec["effect_id"])
+        self.assertEqual(35, spec["mode"])
+        self.assertTrue(spec["speed"])
+        self.assertEqual("Color Trails", CONSTANTS["CLOCK_MIXER_EFFECTS"][35])
+        style = next(
+            style
+            for style in CONSTANTS["NATIVE_CLOCK_STYLES"].values()
+            if style["mixer"] == 35
+        )
+        self.assertEqual("Color Trails", style["name"])
+        self.assertIn('35: "Color Trails"', CLOCK_CARD_SOURCE)
+
+        fixed_palette = {
+            (0, 0, 0),
+            (255, 8, 22),
+            (92, 245, 20),
+            (12, 238, 205),
+            (20, 116, 255),
+            (139, 91, 255),
+        }
+        right_frames = [
+            render("Color Trails", step * 0.1, "Right") for step in range(200)
+        ]
+        up_frames = [
+            render("Color Trails", step * 0.1, "Up") for step in range(200)
+        ]
+        self.assertGreater(len({tuple(frame) for frame in right_frames}), 190)
+        self.assertGreater(len({tuple(frame) for frame in up_frames}), 190)
+        self.assertEqual(
+            fixed_palette,
+            {pixel for frame in up_frames for pixel in frame},
+        )
+        self.assertGreater(
+            len({pixel for frame in right_frames for pixel in frame}),
+            100,
+        )
+        # Each gradient frame keeps nearly the whole rainbow visible. Hue
+        # origins differ per trail, preventing overlapping heads from making
+        # red/orange dominate as they did when every gradient began at red.
+        for frame in right_frames:
+            hue_sectors = set()
+            orange_pixels = 0
+            lit_pixels = 0
+            for red, green, blue in frame:
+                if (red, green, blue) == (0, 0, 0):
+                    continue
+                hue, saturation, _value = colorsys.rgb_to_hsv(
+                    red / 255,
+                    green / 255,
+                    blue / 255,
+                )
+                if saturation < 0.5:
+                    continue
+                sector = int(hue * 12) % 12
+                hue_sectors.add(sector)
+                orange_pixels += sector in (1, 2)
+                lit_pixels += 1
+            self.assertGreaterEqual(len(hue_sectors), 11)
+            self.assertLess(orange_pixels / lit_pixels, 0.34)
+
+        # Right and Left restart the same gradient sequence on the firmware;
+        # Up and Down likewise share the fixed-colour trail sequence.
+        for phase in (0.37, 3.2, 11.8):
+            right = render("Color Trails", phase, "Right")
+            left = render("Color Trails", phase, "Left")
+            down = render("Color Trails", phase, "Down")
+            up = render("Color Trails", phase, "Up")
+            self.assertEqual(right, left)
+            self.assertEqual(up, down)
+            self.assertNotEqual(right, up)
+
+        fixed = CONSTANTS["CLOCK_MIXER_FIXED_DIRECTION"]
+        resolve = CONSTANTS["resolve_clock_mixer_direction"]
+        self.assertEqual("Right", fixed["Color Trails"])
+        for direction in ("Right", "Down", "Left", "Up"):
+            self.assertEqual("Right", resolve(direction, "Color Trails"))
+        self.assertIn('"Color Trails": "Right"', CLOCK_CARD_SOURCE)
+
+        # At least one constant-hue body changes lane through a vertical pair,
+        # rather than all colors being independent straight row bands.
+        has_lane_change = False
+        for frame in up_frames:
+            for row in range(4):
+                for col in range(20):
+                    pixel = frame[row * 20 + col]
+                    if pixel != (0, 0, 0) and pixel == frame[(row + 1) * 20 + col]:
+                        has_lane_change = True
+                        break
+        self.assertTrue(has_lane_change)
+
     def test_spectrum_chase_matches_repeating_color_waves_and_clock_mixer(self):
         render = NATIVE_PREVIEW["render_native_effect"]
         phase_per_second = 0.25 + 50 / 55.0
@@ -1960,6 +2054,7 @@ class NativeFeatureTests(unittest.TestCase):
             "Pulse": 18,
             "Solar Flare": 19,
             "Ember": 24,
+            "Color Trails": 35,
             "Sunset": 54,
             "Carousel": 56,
             "Blue Yellow": 57,

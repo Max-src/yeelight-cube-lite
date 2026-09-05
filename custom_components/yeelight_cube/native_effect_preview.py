@@ -1683,6 +1683,84 @@ def _pulse_path_index(row: int, col: int, direction: str) -> int:
 # repeats every ROWS columns, each column a single solid hue (measured).
 _SPECTRUM_BANDS_RL_HUES = (0.66, 0.58, 0.44, 0.29, 0.0)
 
+_COLOR_TRAIL_COLORS = (
+    (255, 8, 22),
+    (92, 245, 20),
+    (12, 238, 205),
+    (20, 116, 255),
+    (139, 91, 255),
+)
+_COLOR_TRAIL_SPAWN = 0.62
+_COLOR_TRAIL_GRADIENT_SPAWN = 0.50
+
+
+def _color_trail_route(event: int) -> tuple[int, tuple[tuple[int, int], ...]]:
+    row = min(ROWS - 1, int(_noise(event + 3501, 7, 0) * ROWS))
+    turns = []
+    for turn in range(2):
+        col = 4 + turn * 7 + min(4, int(_noise(event + 3601, turn, 0) * 5))
+        step = -1 if _noise(event + 3701, turn, 0) < 0.5 else 1
+        if not 0 <= row + step < ROWS:
+            step = -step
+        row += step
+        turns.append((col, row))
+    return min(ROWS - 1, int(_noise(event + 3501, 7, 0) * ROWS)), tuple(turns)
+
+
+def _render_color_trails(
+    phase: float,
+    direction: str,
+) -> list[tuple[int, int, int]]:
+    """Render mode 35's long trails crossing sparse one-row lane changes."""
+    gradient = direction in ("Right", "Left")
+    spawn = _COLOR_TRAIL_GRADIENT_SPAWN if gradient else _COLOR_TRAIL_SPAWN
+    levels = [[(0, 0, 0), math.inf] for _ in range(COLS * ROWS)]
+    center_event = math.floor(phase / spawn)
+    for event in range(center_event - 12, center_event + 2):
+        emit = event * spawn + (
+            _noise(event + 3101, 5, 0) - 0.5
+        ) * 0.18
+        age = phase - emit
+        if age < 0.0:
+            continue
+        speed = 7.2 + 2.2 * _noise(event + 3201, 11, 0)
+        length = 12 + min(12, int(_noise(event + 3301, 13, 0) * 13))
+        travel = 1 if _noise(event + 3401, 17, 0) < 0.5 else -1
+        head = -1.0 + age * speed if travel > 0 else COLS - age * speed
+        if age > (COLS + length + 1) / speed:
+            continue
+        start_row, turns = _color_trail_route(event)
+        fixed_color = _COLOR_TRAIL_COLORS[
+            min(4, int(_noise(event + 3801, 19, 0) * 5))
+        ]
+        hue_origin = (
+            event * 0.38196601125 + 0.08 * _noise(event + 3901, 23, 0)
+        ) % 1.0
+        for col in range(COLS):
+            distance = (head - col) * travel
+            if not 0.0 <= distance < length:
+                continue
+            color = (
+                _hsv(hue_origin + distance / 24.0, 0.95, 0.98)
+                if gradient
+                else fixed_color
+            )
+            row = start_row
+            connector = None
+            for turn_col, next_row in turns:
+                previous_row = row
+                if col >= turn_col:
+                    row = next_row
+                if col == turn_col:
+                    connector = (previous_row, next_row)
+            rows = connector or (row,)
+            for snake_row in rows:
+                index = snake_row * COLS + col
+                if distance < levels[index][1]:
+                    levels[index] = [color, distance]
+
+    return [pixel for pixel, _distance in levels]
+
 
 def _render_spectrum_bands(direction: str) -> list[tuple[int, int, int]]:
     pixels = []
@@ -1770,6 +1848,8 @@ def render_native_effect(
         return _render_rainbow_flow(phase, direction)
     if effect == "Pulse":
         return _render_pulse(phase, direction)
+    if effect == "Color Trails":
+        return _render_color_trails(phase, direction)
     if effect == "Spectrum Bands":
         return _render_spectrum_bands(direction)
     if effect == "Magic":

@@ -32,6 +32,7 @@ const CLOCK_MIXER_EFFECTS = {
   18: "Pulse",
   19: "Solar Flare",
   24: "Ember",
+  35: "Color Trails",
   79: "Twinkle",
   39: "Rainbow",
   42: "Ocean Waves",
@@ -52,6 +53,7 @@ const CLOCK_MIXER_FIXED_DIRECTION = {
   "Pastel Pulse": "Up",
   "Solar Flare": "Up",
   Pulse: "Up",
+  "Color Trails": "Right",
   "Spectrum Bands": "Right",
 };
 

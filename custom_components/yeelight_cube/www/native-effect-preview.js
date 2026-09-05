@@ -1824,6 +1824,85 @@ function pulsePathIndex(row, col, direction) {
 // columns. Down (and its 180-degree rotation Up): a red->blue spectrum that
 // repeats every PREVIEW_ROWS columns, each column a single solid hue (measured).
 const SPECTRUM_BANDS_RL_HUES = [0.66, 0.58, 0.44, 0.29, 0.0];
+const COLOR_TRAIL_COLORS = [
+  [255, 8, 22],
+  [92, 245, 20],
+  [12, 238, 205],
+  [20, 116, 255],
+  [139, 91, 255],
+];
+const COLOR_TRAIL_SPAWN = 0.62;
+const COLOR_TRAIL_GRADIENT_SPAWN = 0.5;
+
+function colorTrailRoute(event) {
+  const startRow = Math.min(
+    PREVIEW_ROWS - 1,
+    Math.floor(noiseAt(event + 3501, 7, 0) * PREVIEW_ROWS),
+  );
+  let row = startRow;
+  const turns = [];
+  for (let turn = 0; turn < 2; turn += 1) {
+    const col =
+      4 +
+      turn * 7 +
+      Math.min(4, Math.floor(noiseAt(event + 3601, turn, 0) * 5));
+    let step = noiseAt(event + 3701, turn, 0) < 0.5 ? -1 : 1;
+    if (row + step < 0 || row + step >= PREVIEW_ROWS) step = -step;
+    row += step;
+    turns.push([col, row]);
+  }
+  return [startRow, turns];
+}
+
+function renderColorTrails(phase, direction) {
+  const gradient = direction === "Right" || direction === "Left";
+  const spawn = gradient ? COLOR_TRAIL_GRADIENT_SPAWN : COLOR_TRAIL_SPAWN;
+  const levels = Array.from({ length: PREVIEW_COLS * PREVIEW_ROWS }, () => [
+    [0, 0, 0],
+    Infinity,
+  ]);
+  const centerEvent = Math.floor(phase / spawn);
+  for (let event = centerEvent - 12; event < centerEvent + 2; event += 1) {
+    const emit = event * spawn + (noiseAt(event + 3101, 5, 0) - 0.5) * 0.18;
+    const age = phase - emit;
+    if (age < 0) continue;
+    const speed = 7.2 + 2.2 * noiseAt(event + 3201, 11, 0);
+    const length =
+      12 + Math.min(12, Math.floor(noiseAt(event + 3301, 13, 0) * 13));
+    const travel = noiseAt(event + 3401, 17, 0) < 0.5 ? 1 : -1;
+    const head = travel > 0 ? -1 + age * speed : PREVIEW_COLS - age * speed;
+    if (age > (PREVIEW_COLS + length + 1) / speed) continue;
+    const [startRow, turns] = colorTrailRoute(event);
+    const fixedColor =
+      COLOR_TRAIL_COLORS[
+        Math.min(4, Math.floor(noiseAt(event + 3801, 19, 0) * 5))
+      ];
+    const hueOriginRaw =
+      event * 0.38196601125 + 0.08 * noiseAt(event + 3901, 23, 0);
+    const hueOrigin = ((hueOriginRaw % 1.0) + 1.0) % 1.0;
+    for (let col = 0; col < PREVIEW_COLS; col += 1) {
+      const distance = (head - col) * travel;
+      if (distance < 0 || distance >= length) continue;
+      const color = gradient
+        ? hsv(hueOrigin + distance / 24.0, 0.95, 0.98)
+        : fixedColor;
+      let row = startRow;
+      let connector = null;
+      for (const [turnCol, nextRow] of turns) {
+        const previousRow = row;
+        if (col >= turnCol) row = nextRow;
+        if (col === turnCol) connector = [previousRow, nextRow];
+      }
+      const rows = connector || [row];
+      for (const snakeRow of rows) {
+        const index = snakeRow * PREVIEW_COLS + col;
+        if (distance < levels[index][1]) levels[index] = [color, distance];
+      }
+    }
+  }
+
+  return levels.map(([pixel]) => pixel);
+}
 
 function renderSpectrumBands(direction) {
   const pixels = [];
@@ -1924,6 +2003,7 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
   if (effect === "Fireworks") return renderFireworks(phase, direction);
   if (effect === "Rainbow Flow") return renderRainbowFlow(phase, direction);
   if (effect === "Pulse") return renderPulse(phase, direction);
+  if (effect === "Color Trails") return renderColorTrails(phase, direction);
   if (effect === "Spectrum Bands") return renderSpectrumBands(direction);
   if (effect === "Magic") return renderMagic(phase);
   if (effect === "Wonderland") return renderWonderland(phase);
