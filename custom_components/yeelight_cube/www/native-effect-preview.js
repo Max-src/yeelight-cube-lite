@@ -1810,6 +1810,61 @@ const PULSE_STOPS = [
   [165, 218, 255],
 ];
 
+// Mode 11 has a short horizontal wave and a longer row-major vertical path.
+const MONOCHROME_WAVE_HORIZONTAL_PERIOD = 6.4;
+const MONOCHROME_WAVE_HORIZONTAL_SPEED = 1.8;
+const MONOCHROME_WAVE_HORIZONTAL_SCALE = 0.55;
+const MONOCHROME_WAVE_ROW_SKEW = 0.2;
+const MONOCHROME_WAVE_VERTICAL_PERIOD = 32.0;
+const MONOCHROME_WAVE_VERTICAL_SPEED = 6.0;
+const MONOCHROME_WAVE_VERTICAL_SCALE = 3.65;
+
+function monochromeWavePosition(row, col, direction) {
+  if (direction === "Right") {
+    return (
+      PREVIEW_COLS -
+      1 -
+      col +
+      (PREVIEW_ROWS - 1 - row - (PREVIEW_ROWS - 1) / 2) *
+        MONOCHROME_WAVE_ROW_SKEW
+    );
+  }
+  if (direction === "Left") {
+    return col + (row - (PREVIEW_ROWS - 1) / 2) * MONOCHROME_WAVE_ROW_SKEW;
+  }
+  if (direction === "Down") {
+    return row * PREVIEW_COLS - col;
+  }
+  return (PREVIEW_ROWS - 1 - row) * PREVIEW_COLS - (PREVIEW_COLS - 1 - col);
+}
+
+function renderMonochromeWaves(phase, direction) {
+  const horizontal = direction === "Right" || direction === "Left";
+  const period = horizontal
+    ? MONOCHROME_WAVE_HORIZONTAL_PERIOD
+    : MONOCHROME_WAVE_VERTICAL_PERIOD;
+  const speed = horizontal
+    ? MONOCHROME_WAVE_HORIZONTAL_SPEED
+    : MONOCHROME_WAVE_VERTICAL_SPEED;
+  const scale = horizontal
+    ? MONOCHROME_WAVE_HORIZONTAL_SCALE
+    : MONOCHROME_WAVE_VERTICAL_SCALE;
+  const travel = phase * speed;
+  const pixels = [];
+  for (let row = 0; row < PREVIEW_ROWS; row += 1) {
+    for (let col = 0; col < PREVIEW_COLS; col += 1) {
+      const position = monochromeWavePosition(row, col, direction);
+      const wrapped =
+        ((((position - travel + period / 2) % period) + period) % period) -
+        period / 2;
+      const distanceCubed = Math.abs(wrapped) ** 3;
+      const level = clamp((255 * distanceCubed) / (distanceCubed + scale ** 3));
+      pixels.push([level, level, level]);
+    }
+  }
+  return pixels;
+}
+
 function pulsePathIndex(row, col, direction) {
   const last = PREVIEW_COLS * PREVIEW_ROWS - 1;
   if (direction === "Down" || direction === "Up") {
@@ -2002,6 +2057,8 @@ function renderPulse(phase, direction) {
 export function renderNativeEffect(effect, phase, direction = "Up") {
   if (effect === "Fireworks") return renderFireworks(phase, direction);
   if (effect === "Rainbow Flow") return renderRainbowFlow(phase, direction);
+  if (effect === "Monochrome Waves")
+    return renderMonochromeWaves(phase, direction);
   if (effect === "Pulse") return renderPulse(phase, direction);
   if (effect === "Color Trails") return renderColorTrails(phase, direction);
   if (effect === "Spectrum Bands") return renderSpectrumBands(direction);

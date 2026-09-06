@@ -1668,6 +1668,70 @@ _PULSE_STOPS = (
     (165, 218, 255),
 )
 
+# Mode 11 has distinct horizontal and vertical paths. Right/Left repeat every
+# 6.4 columns with a slight row skew. Down/Up traverse the 100 pixels row by
+# row, with a 32-pixel wavelength and a proportionally wider dark trough.
+_MONOCHROME_WAVE_HORIZONTAL_PERIOD = 6.4
+_MONOCHROME_WAVE_HORIZONTAL_SPEED = 1.8
+_MONOCHROME_WAVE_HORIZONTAL_SCALE = 0.55
+_MONOCHROME_WAVE_ROW_SKEW = 0.2
+_MONOCHROME_WAVE_VERTICAL_PERIOD = 32.0
+_MONOCHROME_WAVE_VERTICAL_SPEED = 6.0
+_MONOCHROME_WAVE_VERTICAL_SCALE = 3.65
+
+
+def _monochrome_wave_position(row: int, col: int, direction: str) -> float:
+    if direction == "Right":
+        return (COLS - 1 - col) + (
+            (ROWS - 1 - row) - (ROWS - 1) / 2
+        ) * _MONOCHROME_WAVE_ROW_SKEW
+    if direction == "Left":
+        return col + (row - (ROWS - 1) / 2) * _MONOCHROME_WAVE_ROW_SKEW
+    if direction == "Down":
+        return row * COLS - col
+    return (ROWS - 1 - row) * COLS - (COLS - 1 - col)
+
+
+def _render_monochrome_waves(
+    phase: float,
+    direction: str,
+) -> list[tuple[int, int, int]]:
+    """Render mode 11's soft black scan lines moving across a white field."""
+    horizontal = direction in ("Right", "Left")
+    period = (
+        _MONOCHROME_WAVE_HORIZONTAL_PERIOD
+        if horizontal
+        else _MONOCHROME_WAVE_VERTICAL_PERIOD
+    )
+    speed = (
+        _MONOCHROME_WAVE_HORIZONTAL_SPEED
+        if horizontal
+        else _MONOCHROME_WAVE_VERTICAL_SPEED
+    )
+    scale = (
+        _MONOCHROME_WAVE_HORIZONTAL_SCALE
+        if horizontal
+        else _MONOCHROME_WAVE_VERTICAL_SCALE
+    )
+    travel = phase * speed
+    pixels = []
+    for row in range(ROWS):
+        for col in range(COLS):
+            position = _monochrome_wave_position(row, col, direction)
+            distance = abs(
+                (position - travel + period / 2)
+                % period
+                - period / 2
+            )
+            distance_cubed = distance**3
+            level = _clamp(
+                255
+                * distance_cubed
+                / (distance_cubed + scale**3)
+            )
+            pixels.append((level, level, level))
+    return pixels
+
 
 def _pulse_path_index(row: int, col: int, direction: str) -> int:
     last = COLS * ROWS - 1
@@ -1846,6 +1910,8 @@ def render_native_effect(
         return _render_fireworks(phase, direction)
     if effect == "Rainbow Flow":
         return _render_rainbow_flow(phase, direction)
+    if effect == "Monochrome Waves":
+        return _render_monochrome_waves(phase, direction)
     if effect == "Pulse":
         return _render_pulse(phase, direction)
     if effect == "Color Trails":

@@ -118,6 +118,7 @@ _EXTENDED_EFFECT_NAMES = {
     6: "Spectrum Chase",
     9: "Pastel Pulse",
     10: "Fireworks",
+    11: "Monochrome Waves",
     18: "Pulse",
     19: "Solar Flare",
     24: "Ember",
@@ -220,6 +221,7 @@ DEVICE_ORIENTATION_TO_EFFECT_DIR = {
 CLOCK_MIXER_FIXED_DIRECTION = {
     "Spectrum Chase": "Up",
     "Pastel Pulse": "Up",
+    "Monochrome Waves": "Left",
     "Solar Flare": "Up",
     "Pulse": "Up",
     "Color Trails": "Right",

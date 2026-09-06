@@ -29,6 +29,7 @@ const CLOCK_MIXER_EFFECTS = {
   6: "Spectrum Chase",
   9: "Pastel Pulse",
   10: "Fireworks",
+  11: "Monochrome Waves",
   18: "Pulse",
   19: "Solar Flare",
   24: "Ember",
@@ -66,6 +67,7 @@ const CLOCK_MIXER_EFFECT_SPEED = 50;
 const CLOCK_MIXER_FIXED_DIRECTION = {
   "Spectrum Chase": "Up",
   "Pastel Pulse": "Up",
+  "Monochrome Waves": "Left",
   "Solar Flare": "Up",
   Pulse: "Up",
   "Color Trails": "Right",

@@ -1379,6 +1379,63 @@ class NativeFeatureTests(unittest.TestCase):
                 in_run = False
         self.assertEqual(1, cool_runs)
 
+    def test_monochrome_waves_matches_measured_scan_lines_and_clock_mixer(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+        spec = CONSTANTS["ALL_NATIVE_EFFECTS"]["Monochrome Waves"]
+
+        self.assertEqual(3, spec["effect_id"])
+        self.assertEqual(11, spec["mode"])
+        self.assertEqual("Monochrome Waves", CONSTANTS["CLOCK_MIXER_EFFECTS"][11])
+        self.assertIn('11: "Monochrome Waves"', CLOCK_CARD_SOURCE)
+        style_id, style = next(
+            (style_id, style)
+            for style_id, style in CONSTANTS["NATIVE_CLOCK_STYLES"].items()
+            if style["mixer"] == 11
+        )
+        self.assertEqual(26, style_id)
+        self.assertEqual("Monochrome Waves", style["name"])
+
+        right = render("Monochrome Waves", 0.0, "Right")
+        self.assertEqual(100, len(right))
+        self.assertTrue(all(red == green == blue for red, green, blue in right))
+        levels = {red for red, _, _ in right}
+        self.assertEqual(0, min(levels))
+        self.assertGreater(max(levels), 250)
+        self.assertGreater(len(levels), 10)
+        self.assertNotEqual(right, render("Monochrome Waves", 0.2, "Right"))
+
+        cycle = 6.4 / 1.8
+        self.assertEqual(right, render("Monochrome Waves", cycle, "Right"))
+        position = NATIVE_PREVIEW["_monochrome_wave_position"]
+        # Right/Left are the original horizontal previews rotated 180 degrees.
+        self.assertEqual(19.4, position(0, 0, "Right"))
+        self.assertEqual(-0.4, position(0, 0, "Left"))
+
+        def rot180(frame):
+            return [
+                frame[(4 - row) * 20 + (19 - col)]
+                for row in range(5)
+                for col in range(20)
+            ]
+
+        self.assertEqual(
+            render("Monochrome Waves", 0.0, "Left"),
+            rot180(right),
+        )
+        self.assertEqual(
+            render("Monochrome Waves", 0.0, "Down"),
+            rot180(render("Monochrome Waves", 0.0, "Up")),
+        )
+        down = render("Monochrome Waves", 0.0, "Down")
+        self.assertEqual(down, render("Monochrome Waves", 32.0 / 6.0, "Down"))
+        # Down follows one continuous row-major path instead of rotating the
+        # short horizontal wave onto the five-pixel axis.
+        self.assertEqual(20, position(1, 0, "Down") - position(0, 0, "Down"))
+        self.assertNotEqual(down, right)
+        fixed = CONSTANTS["CLOCK_MIXER_FIXED_DIRECTION"]
+        self.assertEqual("Left", fixed["Monochrome Waves"])
+        self.assertIn('"Monochrome Waves": "Left"', CLOCK_CARD_SOURCE)
+
     def test_spectrum_bands_matches_static_column_gradient_and_clock_mixer(self):
         render = NATIVE_PREVIEW["render_native_effect"]
         spec = CONSTANTS["ALL_NATIVE_EFFECTS"]["Spectrum Bands"]
@@ -2161,6 +2218,7 @@ class NativeFeatureTests(unittest.TestCase):
             "Spectrum Chase": 6,
             "Pastel Pulse": 9,
             "Fireworks": 10,
+            "Monochrome Waves": 11,
             "Pulse": 18,
             "Solar Flare": 19,
             "Ember": 24,
