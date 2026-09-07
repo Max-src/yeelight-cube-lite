@@ -286,11 +286,17 @@ class _YeelightCubeMatrixCameraBase(Camera):
             self._native_preview_key = animation_key
             self._native_preview_started_at = now
         phase = (now - self._native_preview_started_at) * (0.25 + speed / 55.0)
-        return render_native_effect(
+        frame = render_native_effect(
             effect,
             phase,
             direction,
         )
+        # Flip vertically so the preview matches the lamp's physical orientation.
+        return [
+            frame[(ROWS - 1 - row) * COLS + col]
+            for row in range(ROWS)
+            for col in range(COLS)
+        ]
 
     def _get_music_flow_preview(self) -> list[tuple[int, int, int]]:
         """Render a fixed illustration of the active Music Flow effect."""

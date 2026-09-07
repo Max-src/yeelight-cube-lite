@@ -1742,6 +1742,62 @@ def _pulse_path_index(row: int, col: int, direction: str) -> int:
     return last - index if direction == "Left" else index
 
 
+# Preview px/phase; 2.4x slower than the measured hardware rate per user request.
+_PRISM_SPEED = 5.668 / 2.4
+_PRISM_SPACING = 5.78
+_PRISM_HALF_WIDTH = 1.05
+_PRISM_COLORS = (
+    (242, 0, 0),
+    (242, 81, 0),
+    (242, 162, 0),
+    (242, 242, 0),
+    (162, 242, 0),
+    (81, 242, 0),
+    (0, 242, 0),
+    (0, 242, 81),
+    (0, 242, 161),
+    (0, 242, 242),
+    (0, 161, 242),
+    (0, 81, 242),
+    (0, 0, 242),
+    (81, 0, 242),
+    (162, 0, 242),
+    (242, 0, 242),
+)
+
+
+def _prism_path_index(row: int, col: int, direction: str) -> int:
+    if direction in ("Up", "Down"):
+        return row * COLS + col
+    return col * ROWS + row
+
+
+def _render_prism(
+    phase: float,
+    direction: str,
+) -> list[tuple[int, int, int]]:
+    """Render mode 22's mirrored domino trains moving toward the center."""
+    if phase <= 0:
+        return [BLACK] * (COLS * ROWS)
+
+    travel = phase * _PRISM_SPEED
+    center = travel - 0.1
+    last = COLS * ROWS - 1
+    pixels = []
+    for row in range(ROWS):
+        for col in range(COLS):
+            index = _prism_path_index(row, col, direction)
+            distance = min(index, last - index)
+            relative = center - distance
+            slot = math.floor(relative / _PRISM_SPACING + 0.5)
+            offset = relative - slot * _PRISM_SPACING
+            if slot < 0 or abs(offset) > _PRISM_HALF_WIDTH:
+                pixels.append(BLACK)
+                continue
+            pixels.append(_PRISM_COLORS[slot % 16])
+    return pixels
+
+
 # Right (and its 180-degree rotation Left): one full spectrum across all
 # columns. Down (and its 180-degree rotation Up): a red->blue spectrum that
 # repeats every ROWS columns, each column a single solid hue (measured).
@@ -1914,6 +1970,8 @@ def render_native_effect(
         return _render_monochrome_waves(phase, direction)
     if effect == "Pulse":
         return _render_pulse(phase, direction)
+    if effect == "Prism":
+        return _render_prism(phase, direction)
     if effect == "Color Trails":
         return _render_color_trails(phase, direction)
     if effect == "Spectrum Bands":

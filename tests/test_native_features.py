@@ -1436,6 +1436,69 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertEqual("Left", fixed["Monochrome Waves"])
         self.assertIn('"Monochrome Waves": "Left"', CLOCK_CARD_SOURCE)
 
+    def test_prism_matches_measured_domino_trains_and_clock_mixer(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+        path_index = NATIVE_PREVIEW["_prism_path_index"]
+        speed = NATIVE_PREVIEW["_PRISM_SPEED"]
+        spacing = NATIVE_PREVIEW["_PRISM_SPACING"]
+        spec = CONSTANTS["ALL_NATIVE_EFFECTS"]["Prism"]
+
+        self.assertEqual(3, spec["effect_id"])
+        self.assertEqual(22, spec["mode"])
+        self.assertEqual("Prism", CONSTANTS["CLOCK_MIXER_EFFECTS"][22])
+        self.assertIn('22: "Prism"', CLOCK_CARD_SOURCE)
+        style_id, style = next(
+            (style_id, style)
+            for style_id, style in CONSTANTS["NATIVE_CLOCK_STYLES"].items()
+            if style["mixer"] == 22
+        )
+        self.assertEqual(36, style_id)
+        self.assertEqual("Prism", style["name"])
+
+        black = render("Prism", 0.0, "Up")
+        first = render("Prism", 0.01, "Up")
+        self.assertTrue(all(pixel == (0, 0, 0) for pixel in black))
+        # A tiny phase lights only the two path ends (the entry heads).
+        self.assertEqual(2, sum(pixel != (0, 0, 0) for pixel in first))
+        self.assertNotEqual((0, 0, 0), first[0])
+        self.assertNotEqual((0, 0, 0), first[99])
+
+        # Far enough that both streams have reached the center (fully filled).
+        phase = 70.0
+        mature = render("Prism", phase, "Up")
+        period = 16 * spacing / speed
+        self.assertEqual(mature, render("Prism", phase + period, "Up"))
+        self.assertGreater(sum(pixel != (0, 0, 0) for pixel in mature), 30)
+        self.assertTrue(
+            all(
+                any(
+                    pixel != (0, 0, 0)
+                    for pixel in render("Prism", phase + offset, "Up")
+                )
+                for offset in (0, 2, 4, 6, 8, 10, 12, 14)
+            )
+        )
+
+        self.assertEqual(0, path_index(0, 0, "Up"))
+        self.assertEqual(99, path_index(4, 19, "Up"))
+        self.assertEqual(
+            render("Prism", phase, "Up"),
+            render("Prism", phase, "Down"),
+        )
+        self.assertEqual(
+            render("Prism", phase, "Left"),
+            render("Prism", phase, "Right"),
+        )
+        self.assertNotEqual(
+            render("Prism", phase, "Up"),
+            render("Prism", phase, "Right"),
+        )
+        self.assertEqual(
+            "Right",
+            CONSTANTS["CLOCK_MIXER_FIXED_DIRECTION"]["Prism"],
+        )
+        self.assertIn('Prism: "Right"', CLOCK_CARD_SOURCE)
+
     def test_spectrum_bands_matches_static_column_gradient_and_clock_mixer(self):
         render = NATIVE_PREVIEW["render_native_effect"]
         spec = CONSTANTS["ALL_NATIVE_EFFECTS"]["Spectrum Bands"]
@@ -2221,6 +2284,7 @@ class NativeFeatureTests(unittest.TestCase):
             "Monochrome Waves": 11,
             "Pulse": 18,
             "Solar Flare": 19,
+            "Prism": 22,
             "Ember": 24,
             "Color Trails": 35,
             "Sunset": 54,

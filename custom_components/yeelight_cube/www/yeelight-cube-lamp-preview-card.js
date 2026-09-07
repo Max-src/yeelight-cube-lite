@@ -32,6 +32,7 @@ const CLOCK_MIXER_EFFECTS = {
   11: "Monochrome Waves",
   18: "Pulse",
   19: "Solar Flare",
+  22: "Prism",
   24: "Ember",
   35: "Color Trails",
   79: "Twinkle",
@@ -69,6 +70,7 @@ const CLOCK_MIXER_FIXED_DIRECTION = {
   "Pastel Pulse": "Up",
   "Monochrome Waves": "Left",
   "Solar Flare": "Up",
+  Prism: "Right",
   Pulse: "Up",
   "Color Trails": "Right",
   "Spectrum Bands": "Right",
@@ -2632,12 +2634,15 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     // Match the camera's phase mapping (native_effect_preview usage).
     const phase =
       ((now - this._nativeAnimStartedAt) / 1000) * (0.25 + speed / 55.0);
-    const pix = renderNativeEffect(effect, phase, dir); // row-major, top->bottom
-
-    // _updateMatrixColors already applies the top/bottom flip that matches the
-    // matrix_colors convention, so feed the effect pixels in their natural
-    // row-major order (row 0 = top). Reversing rows here double-flips and
-    // inverts the Up/Down orientation vs the camera.
+    const raw = renderNativeEffect(effect, phase, dir); // row-major, index=row*20+col
+    // Flip vertically so the preview matches the lamp's physical orientation
+    // (kept identical to the camera's _get_native_effect_preview flip).
+    const pix = [];
+    for (let row = 4; row >= 0; row -= 1) {
+      for (let col = 0; col < 20; col += 1) {
+        pix.push(raw[row * 20 + col]);
+      }
+    }
     const grid = this._matrixColorsToGridColors(pix, st);
     this._updateMatrixColors(grid, st);
   }

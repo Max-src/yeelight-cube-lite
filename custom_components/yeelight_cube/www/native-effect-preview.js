@@ -1875,6 +1875,62 @@ function pulsePathIndex(row, col, direction) {
   return direction === "Left" ? last - index : index;
 }
 
+// Preview px/phase; 2.4x slower than the measured hardware rate per user request.
+const PRISM_SPEED = 5.668 / 2.4;
+const PRISM_SPACING = 5.78;
+const PRISM_HALF_WIDTH = 1.05;
+const PRISM_COLORS = [
+  [242, 0, 0],
+  [242, 81, 0],
+  [242, 162, 0],
+  [242, 242, 0],
+  [162, 242, 0],
+  [81, 242, 0],
+  [0, 242, 0],
+  [0, 242, 81],
+  [0, 242, 161],
+  [0, 242, 242],
+  [0, 161, 242],
+  [0, 81, 242],
+  [0, 0, 242],
+  [81, 0, 242],
+  [162, 0, 242],
+  [242, 0, 242],
+];
+
+function prismPathIndex(row, col, direction) {
+  if (direction === "Up" || direction === "Down") {
+    return row * PREVIEW_COLS + col;
+  }
+  return col * PREVIEW_ROWS + row;
+}
+
+function renderPrism(phase, direction) {
+  if (phase <= 0) {
+    return Array.from({ length: PREVIEW_COLS * PREVIEW_ROWS }, () => [0, 0, 0]);
+  }
+
+  const travel = phase * PRISM_SPEED;
+  const center = travel - 0.1;
+  const last = PREVIEW_COLS * PREVIEW_ROWS - 1;
+  const pixels = [];
+  for (let row = 0; row < PREVIEW_ROWS; row += 1) {
+    for (let col = 0; col < PREVIEW_COLS; col += 1) {
+      const index = prismPathIndex(row, col, direction);
+      const distance = Math.min(index, last - index);
+      const relative = center - distance;
+      const slot = Math.floor(relative / PRISM_SPACING + 0.5);
+      const offset = relative - slot * PRISM_SPACING;
+      if (slot < 0 || Math.abs(offset) > PRISM_HALF_WIDTH) {
+        pixels.push([0, 0, 0]);
+        continue;
+      }
+      pixels.push(PRISM_COLORS[slot % 16]);
+    }
+  }
+  return pixels;
+}
+
 // Right (and its 180-degree rotation Left): one full spectrum across all
 // columns. Down (and its 180-degree rotation Up): a red->blue spectrum that
 // repeats every PREVIEW_ROWS columns, each column a single solid hue (measured).
@@ -2060,6 +2116,7 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
   if (effect === "Monochrome Waves")
     return renderMonochromeWaves(phase, direction);
   if (effect === "Pulse") return renderPulse(phase, direction);
+  if (effect === "Prism") return renderPrism(phase, direction);
   if (effect === "Color Trails") return renderColorTrails(phase, direction);
   if (effect === "Spectrum Bands") return renderSpectrumBands(direction);
   if (effect === "Magic") return renderMagic(phase);
