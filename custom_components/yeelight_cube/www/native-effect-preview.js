@@ -2270,7 +2270,7 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
           }
         }
         color = rgb(30, 140, 255, level);
-      } else if (effect === "Aurora") {
+      } else if (effect === "Aurora" || effect === "Drift") {
         // Snake of green LEDs travelling along the raster path (row-major
         // index). A ~40px segment (bright ~7px centre, long gradient tails)
         // slides pixel by pixel and disappears off an edge. Each snake spawns
@@ -2279,12 +2279,12 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
         // never reverses. Randomised so it never feels like a loop. Overlaps
         // take the brightest value (max-combine).
         const cellCount = PREVIEW_COLS * PREVIEW_ROWS;
-        // Left/Right run the snake row-major (line by line); Up/Down run it
+        // Up/Down run the snake row-major (line by line); Left/Right run it
         // column-major (column by column).
         const idx =
           direction === "Up" || direction === "Down"
-            ? col * PREVIEW_ROWS + row
-            : row * PREVIEW_COLS + col;
+            ? row * PREVIEW_COLS + col
+            : col * PREVIEW_ROWS + row;
         const coreHalf = 3.5; // ~7px bright centre
         const falloff = 24.0; // coreHalf+falloff = 27.5 -> 55px segment
         const reach = coreHalf + falloff;
@@ -2326,12 +2326,17 @@ export function renderNativeEffect(effect, phase, direction = "Up") {
           ti *= fade;
           if (ti > t) t = ti;
         }
-        // Lerp dark blue-grey -> brighter deep green.
-        color = rgb(
-          14 + (15 - 14) * t,
-          20 + (200 - 20) * t,
-          34 + (75 - 34) * t,
-        );
+        if (effect === "Drift") {
+          // Drift is the Aurora snake in monochrome (black -> white).
+          color = rgb(255 * t, 255 * t, 255 * t);
+        } else {
+          // Lerp dark blue-grey -> brighter deep green.
+          color = rgb(
+            14 + (15 - 14) * t,
+            20 + (200 - 20) * t,
+            34 + (75 - 34) * t,
+          );
+        }
       } else if (effect === "Bonfire") {
         // Flames rise along the flow axis (u); flicker varies across it (v).
         const heat = Math.max(

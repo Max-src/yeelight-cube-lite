@@ -1499,6 +1499,43 @@ class NativeFeatureTests(unittest.TestCase):
         )
         self.assertIn('Prism: "Right"', CLOCK_CARD_SOURCE)
 
+    def test_drift_is_monochrome_aurora_and_clock_mixer(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+        spec = CONSTANTS["ALL_NATIVE_EFFECTS"]["Drift"]
+
+        self.assertEqual(3, spec["effect_id"])
+        self.assertEqual(61, spec["mode"])
+        self.assertTrue(spec["speed"])
+        self.assertEqual("Drift", CONSTANTS["CLOCK_MIXER_EFFECTS"][61])
+        self.assertIn('61: "Drift"', CLOCK_CARD_SOURCE)
+        style_id, style = next(
+            (style_id, style)
+            for style_id, style in CONSTANTS["NATIVE_CLOCK_STYLES"].items()
+            if style["mixer"] == 61
+        )
+        self.assertEqual(63, style_id)
+        self.assertEqual("Drift", style["name"])
+
+        # Drift is the Aurora snake rendered in monochrome (black -> white):
+        # every pixel is a pure grey whose brightness tracks Aurora's own.
+        for direction in ("Right", "Left", "Up", "Down"):
+            for phase in (0.0, 3.0, 8.6, 23.4, 51.9):
+                drift = render("Drift", phase, direction)
+                aurora = render("Aurora", phase, direction)
+                self.assertTrue(all(red == green == blue for red, green, blue in drift))
+                for (grey, _, _), (_, green, _) in zip(drift, aurora):
+                    # Recover the shared snake brightness from each palette.
+                    self.assertAlmostEqual(grey / 255.0, (green - 20) / 180.0, delta=0.02)
+
+        # The snake actually animates a bright moving core.
+        self.assertTrue(any(max(pixel) > 200 for pixel in render("Drift", 8.6, "Up")))
+
+        self.assertEqual(
+            "Right",
+            CONSTANTS["CLOCK_MIXER_FIXED_DIRECTION"]["Drift"],
+        )
+        self.assertIn('Drift: "Right"', CLOCK_CARD_SOURCE)
+
     def test_spectrum_bands_matches_static_column_gradient_and_clock_mixer(self):
         render = NATIVE_PREVIEW["render_native_effect"]
         spec = CONSTANTS["ALL_NATIVE_EFFECTS"]["Spectrum Bands"]
@@ -2293,6 +2330,7 @@ class NativeFeatureTests(unittest.TestCase):
             "Ice Blue": 58,
             "Blue White": 59,
             "Spectrum Crumble": 60,
+            "Drift": 61,
             "Spectrum Bands": 70,
             "Twinkle": 79,
         }

@@ -130,6 +130,7 @@ _EXTENDED_EFFECT_NAMES = {
     58: "Ice Blue",
     59: "Blue White",
     60: "Spectrum Crumble",
+    61: "Drift",
     70: "Spectrum Bands",
     79: "Twinkle",
 }
@@ -228,6 +229,7 @@ CLOCK_MIXER_FIXED_DIRECTION = {
     "Pulse": "Up",
     "Color Trails": "Right",
     "Spectrum Bands": "Right",
+    "Drift": "Right",
 }
 
 

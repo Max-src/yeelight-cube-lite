@@ -44,6 +44,7 @@ const CLOCK_MIXER_EFFECTS = {
   57: "Blue Yellow",
   58: "Ice Blue",
   59: "Blue White",
+  61: "Drift",
   70: "Spectrum Bands",
   // Official effects that also support all four directions (mirrors const.py).
   32: "Waterfall",
@@ -74,6 +75,7 @@ const CLOCK_MIXER_FIXED_DIRECTION = {
   Pulse: "Up",
   "Color Trails": "Right",
   "Spectrum Bands": "Right",
+  Drift: "Right",
 };
 
 // Built-in clock style id -> firmware mixer. Generated styles are resolved

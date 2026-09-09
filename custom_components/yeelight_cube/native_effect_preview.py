@@ -2116,7 +2116,7 @@ def render_native_effect(
                         level = max(level, 1.0 - d / trail_pixels)
                     n += 1
                 color = _rgb(30, 140, 255, level)
-            elif effect == "Aurora":
+            elif effect in ("Aurora", "Drift"):
                 # Snake of green LEDs travelling along the raster path
                 # (row-major index). A ~40px segment (bright ~7px centre, long
                 # gradient tails) slides pixel by pixel and disappears off an
@@ -2126,12 +2126,12 @@ def render_native_effect(
                 # Randomised so it never feels like a loop. Overlaps take the
                 # brightest value (max-combine).
                 cell_count = COLS * ROWS
-                # Left/Right run the snake row-major (line by line); Up/Down run
+                # Up/Down run the snake row-major (line by line); Left/Right run
                 # it column-major (column by column).
                 if direction in ("Up", "Down"):
-                    idx = col * ROWS + row
-                else:
                     idx = row * COLS + col
+                else:
+                    idx = col * ROWS + row
                 core_half = 3.5  # ~7px bright centre
                 falloff = 24.0  # core_half + falloff = 27.5 -> 55px segment
                 reach = core_half + falloff
@@ -2175,8 +2175,12 @@ def render_native_effect(
                             if ti > t:
                                 t = ti
                     n += 1
-                # Lerp dark blue-grey -> brighter deep green.
-                color = _rgb(14 + (15 - 14) * t, 20 + (200 - 20) * t, 34 + (75 - 34) * t)
+                if effect == "Drift":
+                    # Drift is the Aurora snake in monochrome (black -> white).
+                    color = _rgb(255 * t, 255 * t, 255 * t)
+                else:
+                    # Lerp dark blue-grey -> brighter deep green.
+                    color = _rgb(14 + (15 - 14) * t, 20 + (200 - 20) * t, 34 + (75 - 34) * t)
             elif effect == "Bonfire":
                 # Flames rise along the flow axis (u); flicker varies across it (v).
                 heat = max(0.0, 1.0 - u + noise * 0.45 - 0.2 * math.sin((v * 3 + phase) * math.tau))
