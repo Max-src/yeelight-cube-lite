@@ -13,8 +13,6 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   Twinkle (mode 79), Solar Flare, Fireworks, Rainbow Flow, Pulse (mode 18),
   Spectrum Bands (mode 70), Color Trails (mode 35), Monochrome Waves (mode 11),
   Prism (mode 22), and Drift (a monochrome Aurora).
-- **FX Explorer** gained `get_capabilities`, `query_raw`, and full Bulb API
-  helpers for probing firmware behaviour.
 
 ### Changed
 - Renamed the **speed** setting to **Animation speed** and applied it to the
