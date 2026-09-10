@@ -105,6 +105,7 @@ LIGHT_SERVICE_NAMES = (
     "save_state",
     "restore_state",
     "set_button_effects",
+    "set_clock_style",
     # Registered further below alongside the diagnostic/native-effect handlers;
     # listed here so async_remove_light_services() tears them down on unload too.
     "send_fx_effect",

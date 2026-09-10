@@ -145,6 +145,72 @@ set_button_effects:
         entity:
           domain: light
 
+set_clock_style:
+  name: Set Clock Style
+  description: >-
+    Configure the firmware clock in one call: style, colour override, content
+    and time format. Any subset of fields may be provided. Drives the Clock
+    card. By default the lamp switches to Clock mode so the change is visible.
+  fields:
+    entity_id:
+      description: Target lamp entity ID.
+      required: true
+      example: "light.cubelite_192_168_4_139"
+      selector:
+        entity:
+          domain: light
+    style:
+      description: Clock style name (e.g. "Yellow", "Blue White") or numeric style id.
+      required: false
+      example: "Blue White"
+      selector:
+        text:
+    color:
+      description: >-
+        RGB colour override [r, g, b] applied to the clock, or "clear" to drop
+        the override and use the style's own colour.
+      required: false
+      example: "[255, 120, 0]"
+      selector:
+        object:
+    content:
+      description: What the clock shows.
+      required: false
+      example: "time_date"
+      selector:
+        select:
+          options:
+            - "time"
+            - "time_date"
+            - "date"
+    twelve_hour:
+      description: Use 12-hour time (true) or 24-hour time (false).
+      required: false
+      example: false
+      selector:
+        boolean:
+    colon_blink:
+      description: Blink the colon separator (true) or keep it steady (false).
+      required: false
+      example: true
+      selector:
+        boolean:
+    speed:
+      description: Animation speed for effect-backed clock styles (1-255).
+      required: false
+      example: 50
+      selector:
+        number:
+          min: 1
+          max: 255
+          mode: slider
+    activate:
+      description: Switch the lamp to Clock mode so the change shows immediately.
+      required: false
+      default: true
+      selector:
+        boolean:
+
 preview_gradient_modes:
   name: Preview Gradient Modes
   description: Generate full 5x20 preview matrices for all gradient modes using the entity's current text, colors, and angle. Returns previews via event bus.

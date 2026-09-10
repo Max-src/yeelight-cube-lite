@@ -31,6 +31,7 @@ FRONTEND_CARD_FILES = [
     "yeelight-cube-draw-card.js",
     "yeelight-cube-palette-card.js",
     "yeelight-cube-color-list-editor-card.js",
+    "yeelight-cube-clock-card.js",
 ]
 
 FRONTEND_URL_BASE = f"/{DOMAIN}"

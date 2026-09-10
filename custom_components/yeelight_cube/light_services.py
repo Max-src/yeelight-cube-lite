@@ -30,8 +30,10 @@ from . import async_save_data
 from .color_utils import hex_to_rgb, rgb_to_hex
 from .const import (
     DOMAIN,
+    EXPERIMENTAL_CLOCK_STYLE_IDS,
     MATRIX_DISPLAY_MODES,
     NATIVE_CLOCK_APPLY,
+    NATIVE_CLOCK_CONTENT_OPTIONS,
     NATIVE_CLOCK_EFFECT_ID,
     NATIVE_CLOCK_STYLES,
     NATIVE_EFFECT_DIRECTION_VALUES,
@@ -2587,6 +2589,125 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         schema=vol.Schema({
             vol.Required("entity_id"): _entity_id_or_list,
         })
+    )
+
+    async def handle_set_clock_style(service_call):
+        """Configure the firmware clock (style, colour, content, format).
+
+        A single clean action the Clock card drives: any subset of the fields
+        may be provided. ``style`` accepts a style name or numeric id; ``color``
+        is an ``[r, g, b]`` override (or ``"clear"`` / null to drop it back to
+        the style's own colour). By default the lamp is switched to Clock mode
+        (``activate``) so the change is visible immediately.
+        """
+        targets = _resolve_entities(service_call, "SET_CLOCK_STYLE")
+        if not targets:
+            return
+        data = service_call.data
+        style = data.get("style")
+        has_color = "color" in data
+        color = data.get("color")
+        content = data.get("content")
+        twelve_hour = data.get("twelve_hour")
+        colon_blink = data.get("colon_blink")
+        speed = data.get("speed")
+        activate = data.get("activate", True)
+
+        # Resolve a style name or numeric id to a NATIVE_CLOCK_STYLES key.
+        style_id = None
+        if style is not None:
+            if isinstance(style, int) or (
+                isinstance(style, str) and str(style).lstrip("-").isdigit()
+            ):
+                sid = int(style)
+                if sid in NATIVE_CLOCK_STYLES:
+                    style_id = sid
+            else:
+                style_id = next(
+                    (
+                        sid
+                        for sid, spec in NATIVE_CLOCK_STYLES.items()
+                        if spec["name"] == style
+                    ),
+                    None,
+                )
+            if style_id is None:
+                raise HomeAssistantError(f"Unknown clock style: {style}")
+
+        # Encode an [r, g, b] override into the firmware's 0x01RRGGBB clock
+        # colour integer (high byte 0x01 = custom colour, matching the built-in
+        # style presets like Yellow = 0x01FFFE00).
+        clock_color = None
+        clear_color = False
+        if has_color:
+            if color in (None, "clear") or color == []:
+                clear_color = True
+            elif isinstance(color, (list, tuple)) and len(color) >= 3:
+                r = int(color[0]) & 0xFF
+                g = int(color[1]) & 0xFF
+                b = int(color[2]) & 0xFF
+                clock_color = 0x01000000 | (r << 16) | (g << 8) | b
+            else:
+                raise HomeAssistantError("color must be [r, g, b] or 'clear'")
+
+        async def _apply_one(target):
+            if not target._is_on and not target._should_auto_turn_on():
+                return
+            if style_id is not None:
+                # Experimental styles need the extended catalogue on; enabling
+                # it here keeps the select entity and this action consistent.
+                if (
+                    style_id in EXPERIMENTAL_CLOCK_STYLE_IDS
+                    and not target._extended_effects_enabled
+                ):
+                    target._extended_effects_enabled = True
+                target._native_clock_style = style_id
+            if has_color:
+                target._native_clock_color = None if clear_color else clock_color
+            if content is not None:
+                target._native_clock_content = content
+                target._native_clock_show_date = content == "time_date"
+            if twelve_hour is not None:
+                target._native_clock_12_hour = bool(twelve_hour)
+            if colon_blink is not None:
+                target._native_clock_colon_blink = bool(colon_blink)
+            if speed is not None:
+                target._native_effect_speed = max(1, min(255, int(speed)))
+            if activate:
+                target._mode = "Clock"
+                target._custom_draw_active = False
+            if target._mode == "Clock" and (
+                target._is_on or target._should_auto_turn_on()
+            ):
+                await target.async_apply_display_mode(update_type="color_change")
+            target._refresh_linked_entities()
+            if speed is not None and target._native_effect_speed_entity:
+                target._native_effect_speed_entity.async_write_ha_state()
+            target.async_write_ha_state()
+
+        _fire_and_forget(*[_apply_one(t) for t in targets])
+
+    hass.services.async_register(
+        DOMAIN,
+        "set_clock_style",
+        handle_set_clock_style,
+        schema=vol.Schema({
+            vol.Required("entity_id"): _entity_id_or_list,
+            vol.Optional("style"): vol.Any(cv.string, vol.Coerce(int)),
+            vol.Optional("color"): vol.Any(
+                None,
+                "clear",
+                vol.All(
+                    [vol.All(vol.Coerce(int), vol.Range(min=0, max=255))],
+                    vol.Length(min=3, max=3),
+                ),
+            ),
+            vol.Optional("content"): vol.In(NATIVE_CLOCK_CONTENT_OPTIONS),
+            vol.Optional("twelve_hour"): cv.boolean,
+            vol.Optional("colon_blink"): cv.boolean,
+            vol.Optional("speed"): vol.All(vol.Coerce(int), vol.Range(min=1, max=255)),
+            vol.Optional("activate"): cv.boolean,
+        }),
     )
 
     async def handle_set_button_effects(service_call):
