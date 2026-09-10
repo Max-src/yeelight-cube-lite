@@ -3,6 +3,37 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.1] - 2026-09-10
+
+### Added
+- **Many new experimental native effects**, each with a matching software
+  preview (camera + Lovelace cards) and, where applicable, a clock style:
+  Blue Yellow, Ice Blue, Carousel (mode 56), Spectrum Crumble (mode 60),
+  Spectrum Chase (mode 6), Pastel Pulse (mode 9), Ember (mode 24),
+  Twinkle (mode 79), Solar Flare, Fireworks, Rainbow Flow, Pulse (mode 18),
+  Spectrum Bands (mode 70), Color Trails (mode 35), Monochrome Waves (mode 11),
+  Prism (mode 22), and Drift (a monochrome Aurora).
+- **FX Explorer** gained `get_capabilities`, `query_raw`, and full Bulb API
+  helpers for probing firmware behaviour.
+
+### Changed
+- Renamed the **speed** setting to **Animation speed** and applied it to the
+  clock as well.
+- **Experimental dropdowns are now sorted** and the set of experimental clock
+  styles was expanded.
+- Widened clock-mixer effect coverage and aligned clock style names with their
+  effects.
+
+### Fixed
+- Native effect animation no longer restarts on a brightness-only change.
+- Removed clock styles that the firmware rejects.
+- Fixed clock-mixer default color inheritance.
+- Fixed lamp IP rediscovery.
+- Enabled speed control for the Spectrum native effect.
+- Corrected native-effect preview orientation.
+- Fixed hassfest YAML validation by using a block scalar for the kwargs
+  description.
+
 ## [1.3.0] - 2026-08-28
 
 ### Added
