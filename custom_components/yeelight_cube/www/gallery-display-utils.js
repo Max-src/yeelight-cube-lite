@@ -434,6 +434,19 @@ export function renderGridMode(items, options = {}) {
  * @returns {string} HTML string
  */
 export function renderCompactMode(items, options = {}) {
+  return renderCompactFlavor(items, options, /*strip=*/ false);
+}
+
+/**
+ * Render items in strip mode: one horizontally SCROLLABLE row of mini
+ * previews (never wraps). Same item markup as compact mode — only the
+ * container behaviour differs.
+ */
+export function renderStripMode(items, options = {}) {
+  return renderCompactFlavor(items, options, /*strip=*/ true);
+}
+
+function renderCompactFlavor(items, options = {}, strip = false) {
   items = sanitizeItems(items);
   const {
     previewSize = 200,
@@ -456,8 +469,19 @@ export function renderCompactMode(items, options = {}) {
       : "color: var(--primary-text-color);";
   const isBgTransparent = bgColor === "transparent";
 
-  return `
-    <div class="gallery-display-compact" style="
+  // Strip: single non-wrapping scrollable row; compact: centered wrapping row.
+  const containerStyle = strip
+    ? `
+      display: flex;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      gap: 8px;
+      align-items: flex-start;
+      max-width: 100%;
+      box-sizing: border-box;
+      padding: 4px 4px 8px 4px;
+    `
+    : `
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
@@ -466,7 +490,10 @@ export function renderCompactMode(items, options = {}) {
       max-width: 100%;
       box-sizing: border-box;
       padding: 4px;
-    ">
+    `;
+
+  return `
+    <div class="${strip ? "gallery-display-strip" : "gallery-display-compact"}" style="${containerStyle}">
       ${items
         .map((item, idx) => {
           const isActive =
@@ -484,6 +511,7 @@ export function renderCompactMode(items, options = {}) {
                flex-direction: column;
                align-items: center;
                gap: 4px;
+               ${strip ? "flex: 0 0 auto;" : ""}
                padding: ${showCards ? "6px" : "2px"};
                border-radius: ${showCards ? "6px" : "4px"};
                background: ${itemBg};
@@ -964,6 +992,8 @@ export function renderGalleryDisplay(
       return renderGalleryMode(items, options);
     case "compact":
       return renderCompactMode(items, options);
+    case "strip":
+      return renderStripMode(items, options);
     case "wheel":
       return renderWheelMode(items, options);
     default:
@@ -984,6 +1014,22 @@ export const galleryDisplayStyles = `
   .gallery-compact-item:hover {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
     transform: scale(1.05);
+  }
+
+  /* Strip mode: thin, unobtrusive horizontal scrollbar */
+  .gallery-display-strip {
+    scrollbar-width: thin;
+    scrollbar-color: var(--divider-color, #ccc) transparent;
+  }
+  .gallery-display-strip::-webkit-scrollbar {
+    height: 6px;
+  }
+  .gallery-display-strip::-webkit-scrollbar-thumb {
+    background: var(--divider-color, #ccc);
+    border-radius: 3px;
+  }
+  .gallery-display-strip::-webkit-scrollbar-track {
+    background: transparent;
   }
 
   .gallery-display-inline .gallery-item:hover {

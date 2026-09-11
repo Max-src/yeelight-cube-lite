@@ -3,9 +3,8 @@
 // ============================================================================
 //
 // Select, configure and visualise the firmware clock: pick a clock style from
-// an animated live-preview gallery (or a compact curated "scheme" row), set the
-// content (Time / Time & Date / Date), 12/24-hour and colon-blink format, and an
-// optional colour override.
+// an animated live-preview gallery, set the content (Time / Time & Date /
+// Date), 12/24-hour and colon-blink format, and an optional colour override.
 //
 // Everything shared with the lamp-preview card (the clock renderer, mixer
 // tables and glyph font) lives in ./clock-preview-utils.js so there is no
@@ -22,7 +21,7 @@ import {
 import { renderCarouselString, carouselStyles } from "./carousel-utils.js";
 import { initializeWheelNavigation } from "./wheel-navigation-utils.js";
 import {
-  renderSliderControl,
+  renderSliderGroup,
   createSliderHandlers,
   sliderControlStyles,
   sliderKeys,
@@ -47,8 +46,8 @@ import {
   getClockStyles,
   renderClockFrame,
   flipMatrixVertical,
-  DEFAULT_SCHEME_STYLES,
 } from "./clock-preview-utils.js";
+import { previewBrightnessScale } from "./draw_card_const.js";
 
 const CONTENT_OPTIONS = [
   { value: "time", label: "Time" },
@@ -136,16 +135,32 @@ class YeelightCubeClockCard extends HTMLElement {
     this._wheelController = null;
     this._wheelCenterIndex = 0;
     this._speedPreview = null;
-    // Shared multi-style slider (same control as the preview card's brightness)
-    this._speedKeys = sliderKeys("speed");
+    this._brightnessPreview = null;
+    // Two independent sliders on one host (shared appearance config), wired
+    // through the shared module with distinct namespaces so their handlers and
+    // DOM don't collide.
+    this._sliderKeys = sliderKeys("slider");
     Object.assign(
       this,
       createSliderHandlers({
         host: this,
+        ns: "speed",
         getConfig: () => this._speedGc(),
         onCommit: (pct) => this._applySpeed(this._pctToRaw(pct)),
         onLive: (pct) => {
           this._speedPreview = this._pctToRaw(pct);
+        },
+      }),
+    );
+    Object.assign(
+      this,
+      createSliderHandlers({
+        host: this,
+        ns: "brightness",
+        getConfig: () => this._brightnessGc(),
+        onCommit: (pct) => this._applyBrightness(this._pctToBri(pct)),
+        onLive: (pct) => {
+          this._brightnessPreview = pct;
         },
       }),
     );
@@ -165,16 +180,52 @@ class YeelightCubeClockCard extends HTMLElement {
     );
   }
 
+  // Brightness maps 1-100% ↔ HA 3-255 (same curve as the lamp-preview card).
+  _pctToBri(pct) {
+    return Math.max(3, Math.min(255, Math.round(3 + ((pct - 1) * 252) / 99)));
+  }
+
+  _briToPct(bri) {
+    return Math.max(
+      1,
+      Math.min(
+        100,
+        Math.round(1 + ((Math.max(3, Math.min(255, bri)) - 3) * 99) / 252),
+      ),
+    );
+  }
+
+  // Both sliders share the appearance config (slider_*); only colour + icons
+  // differ per slider.
   _speedGc() {
-    return sliderConfigToGc(this.config, this._speedKeys, {
+    return sliderConfigToGc(this.config, this._sliderKeys, {
       color: "#5aa9ff",
       unit: "%",
-      iconLeft: this.config.speed_show_icon_left !== false ? "🐢" : null,
-      iconRight: this.config.speed_show_icon_right !== false ? "⚡" : null,
+      iconLeft: this.config.slider_show_icon_left !== false ? "🐢" : null,
+      iconRight: this.config.slider_show_icon_right !== false ? "⚡" : null,
+    });
+  }
+
+  _brightnessGc() {
+    return sliderConfigToGc(this.config, this._sliderKeys, {
+      color: "#ffb74d",
+      unit: "%",
+      iconLeft: this.config.slider_show_icon_left !== false ? "🌙" : null,
+      iconRight: this.config.slider_show_icon_right !== false ? "☀️" : null,
     });
   }
 
   setConfig(config) {
+    const cfg = { ...config };
+    // Migrate legacy per-speed slider appearance keys to the shared slider_*
+    // keys now driving both the brightness and speed sliders.
+    const K = sliderKeys("slider");
+    const oldK = sliderKeys("speed");
+    for (const f of Object.keys(K)) {
+      if (cfg[K[f]] === undefined && cfg[oldK[f]] !== undefined) {
+        cfg[K[f]] = cfg[oldK[f]];
+      }
+    }
     this.config = {
       title: "Clock",
       show_card_background: true,
@@ -203,21 +254,22 @@ class YeelightCubeClockCard extends HTMLElement {
       lamp_spacing_mode: "normal", // none | subtle | normal
       lamp_ignore_black_pixels: false,
       lamp_matrix_box_shadow: false,
-      show_scheme_row: true,
-      scheme_row_styles: DEFAULT_SCHEME_STYLES,
       show_content_toggle: true,
       show_format_toggles: true,
       show_color_override: false,
-      // Animation speed slider (shared multi-style slider, like brightness)
+      // Sliders: brightness + animation speed share one appearance config
+      // (slider_*); each can be shown/hidden independently.
+      show_brightness: false,
       show_animation_speed: true,
-      speed_style: "slider", // slider | bar | wheel | matrix | rotary | capsule
-      speed_theme: "subtle",
-      speed_thickness: 6,
-      speed_variant: "thin",
-      speed_show_icon_left: true, // 🐢 slow icon on the capsule
-      speed_show_icon_right: true, // ⚡ fast icon on the capsule
+      slider_style: "slider", // slider | bar | wheel | matrix | rotary | capsule
+      slider_width: 100,
+      slider_theme: "subtle",
+      slider_thickness: 6,
+      slider_variant: "thin",
+      slider_show_icon_left: true, // 🐢 / 🌙 lower icon on the capsule
+      slider_show_icon_right: true, // ⚡ / ☀️ upper icon on the capsule
       show_active_label: true,
-      ...config,
+      ...cfg,
     };
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     this._stateSignature = null;
@@ -258,9 +310,12 @@ class YeelightCubeClockCard extends HTMLElement {
   set hass(hass) {
     this._hass = hass;
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
-    // Once the lamp echoes the applied speed, drop the live-drag override so
-    // the preview follows the real value again.
-    if (!this._anySliderDragging) this._speedPreview = null;
+    // Once the lamp echoes the applied values, drop the live-drag overrides so
+    // the previews follow the real values again.
+    if (!this._anySliderDragging) {
+      this._speedPreview = null;
+      this._brightnessPreview = null;
+    }
     // Only rebuild the DOM when a relevant attribute changes; the animation
     // loop repaints the previews in place so live updates stay cheap.
     const sig = this._computeStateSignature();
@@ -284,7 +339,8 @@ class YeelightCubeClockCard extends HTMLElement {
       this._wheelController.destroy();
       this._wheelController = null;
     }
-    this._slDestroy?.();
+    this._slSpeedDestroy?.();
+    this._slBrightnessDestroy?.();
   }
 
   // ── Selector helpers (shared design language with the gradient card) ──────
@@ -303,6 +359,7 @@ class YeelightCubeClockCard extends HTMLElement {
     const style = this._selectorStyle();
     if (style === "preview-wheel") return "wheel";
     if (style === "preview-carousel") return "carousel";
+    if (style === "preview-strip") return "strip";
     return "list";
   }
 
@@ -376,6 +433,7 @@ class YeelightCubeClockCard extends HTMLElement {
       a.native_effect_direction,
       a.extended_effects_enabled,
       a.content_mode,
+      a.brightness,
       this._stateObj()?.state,
     ].join("|");
   }
@@ -491,6 +549,19 @@ class YeelightCubeClockCard extends HTMLElement {
 
   _applySpeed(value) {
     this._callSetClock({ speed: Math.max(1, Math.min(255, value | 0)) });
+  }
+
+  _applyBrightness(bri) {
+    const brightness = Math.max(3, Math.min(255, bri | 0));
+    const list = this.config.target_entities;
+    const entities =
+      Array.isArray(list) && list.length
+        ? list
+        : [this._primaryEntity()].filter(Boolean);
+    if (!this._hass || !entities.length) return;
+    this._hass
+      .callService("light", "turn_on", { entity_id: entities, brightness })
+      .catch(() => this.render());
   }
 
   // ── Preview-selector interaction (wheel / carousel / active marking) ──────
@@ -669,7 +740,7 @@ class YeelightCubeClockCard extends HTMLElement {
   }
 
   // Build a tile's dot grid exactly once, caching the cell nodes on the element.
-  // Card-owned tiles (current preview + scheme row) use the Lamp Preview
+  // Card-owned tiles (current preview) use the Lamp Preview
   // appearance settings.
   _ensureGrid(el) {
     if (el._cells) return el._cells;
@@ -744,8 +815,19 @@ class YeelightCubeClockCard extends HTMLElement {
     const frame = flipMatrixVertical(
       renderClockFrame(attrs, fontMap, metrics, phase),
     );
+    const brightnessRaw =
+      this._brightnessPreview != null
+        ? this._pctToBri(this._brightnessPreview)
+        : Number(this._attrs().brightness) || 255;
+    const brightnessScale = isCurrent
+      ? previewBrightnessScale(brightnessRaw, this._attrs().preview_darken)
+      : 1;
     for (let i = 0; i < cells.length; i++) {
-      const p = frame[i] || [0, 0, 0];
+      const source = frame[i] || [0, 0, 0];
+      const p =
+        brightnessScale === 1
+          ? source
+          : source.map((channel) => Math.round(channel * brightnessScale));
       const isOff = (p[0] | p[1] | p[2]) === 0;
       const bg = isOff ? emptyBg : `rgb(${p[0]},${p[1]},${p[2]})`;
       // The initial render bakes box-shadow only on lit pixels (shared
@@ -803,9 +885,6 @@ class YeelightCubeClockCard extends HTMLElement {
     if (this.config.show_current_preview !== false) {
       sections.push(this._renderCurrentPreview(current));
     }
-    if (this.config.show_scheme_row !== false) {
-      sections.push(this._renderSchemeRow(current));
-    }
     sections.push(this._renderStyleSelector(sel, current));
     if (this.config.show_content_toggle !== false) {
       sections.push(this._renderContentToggle(a));
@@ -816,8 +895,11 @@ class YeelightCubeClockCard extends HTMLElement {
     if (this.config.show_color_override) {
       sections.push(this._renderColorOverride(a));
     }
-    if (this.config.show_animation_speed !== false) {
-      sections.push(this._renderSpeedSlider(a));
+    if (
+      this.config.show_brightness === true ||
+      this.config.show_animation_speed !== false
+    ) {
+      sections.push(this._renderSliders(a));
     }
 
     const showCard = this.config.show_card_background !== false;
@@ -826,11 +908,7 @@ class YeelightCubeClockCard extends HTMLElement {
       : "";
     const activeLabel =
       this.config.show_active_label !== false
-        ? `<div class="active-label">${escapeHtml(current?.name || "")}${
-            current?.experimental
-              ? ' <span class="exp-tag">experimental</span>'
-              : ""
-          }</div>`
+        ? `<div class="active-label">${escapeHtml(current?.name || "")}</div>`
         : "";
 
     const inner = `${title}${activeLabel}${sections.join("")}`;
@@ -869,35 +947,6 @@ class YeelightCubeClockCard extends HTMLElement {
       </div>`;
   }
 
-  _renderSchemeRow(current) {
-    const names =
-      Array.isArray(this.config.scheme_row_styles) &&
-      this.config.scheme_row_styles.length
-        ? this.config.scheme_row_styles
-        : DEFAULT_SCHEME_STYLES;
-    const size = Math.round(this._previewSizePx() * 0.7);
-    const tiles = names
-      .map((name) => clockStyleByName(name))
-      .filter(Boolean)
-      .map(
-        (style) => `
-        <button class="scheme-chip${
-          current?.name === style.name ? " active" : ""
-        }" data-apply-style="${escapeHtml(style.name)}" title="${escapeHtml(
-          style.name,
-        )}">
-          ${this._previewTile(style, { size })}
-          <span class="scheme-name">${escapeHtml(style.name)}</span>
-        </button>`,
-      )
-      .join("");
-    return `
-      <div class="section">
-        <div class="section-title">Quick schemes</div>
-        <div class="scheme-row">${tiles}</div>
-      </div>`;
-  }
-
   _renderStyleSelector(sel, current) {
     const inner = TEXT_SELECTOR_STYLES.includes(sel)
       ? this._renderTextSelector(sel, current)
@@ -926,7 +975,7 @@ class YeelightCubeClockCard extends HTMLElement {
                 (s) =>
                   `<option value="${escapeHtml(s.name)}" ${
                     active === s.name ? "selected" : ""
-                  }>${escapeHtml(s.name)}${s.experimental ? " ★" : ""}</option>`,
+                  }>${escapeHtml(s.name)}</option>`,
               )
               .join("")}
           </select>
@@ -992,7 +1041,11 @@ class YeelightCubeClockCard extends HTMLElement {
     }`;
     const previewSize = this._previewSizePx();
     const effectivePreviewSize =
-      sel === "preview-grid" ? Math.round(previewSize * 0.5) : previewSize;
+      sel === "preview-grid"
+        ? Math.round(previewSize * 0.5)
+        : sel === "preview-strip"
+          ? Math.round(previewSize * 0.4)
+          : previewSize;
     const pixelStyle = this.config.gallery_pixel_style || "square";
     const bgName = this.config.gallery_background_color || "black";
     // The shared renderers colour titles white only when the bg is exactly
@@ -1076,7 +1129,7 @@ class YeelightCubeClockCard extends HTMLElement {
       pixelGap,
       previewSize: effectivePreviewSize,
       ignoreBlackPixels,
-      showCards: displayMode === "wheel",
+      showCards: displayMode === "wheel" || displayMode === "strip",
       showTitles,
       onClickEnabled: true,
       matrixBoxShadow,
@@ -1128,12 +1181,44 @@ class YeelightCubeClockCard extends HTMLElement {
       </div>`;
   }
 
-  _renderSpeedSlider(a) {
-    const raw = Math.max(1, Math.min(255, Number(a.native_effect_speed) || 50));
+  _renderSliders(a) {
+    const showBrightness = this.config.show_brightness === true;
+    const showSpeed = this.config.show_animation_speed !== false;
+    if (!showBrightness && !showSpeed) return "";
+
+    const controls = [];
+    if (showBrightness) {
+      const briRaw =
+        this._brightnessPreview != null
+          ? this._pctToBri(this._brightnessPreview)
+          : Number(this._attrs().brightness) || 3;
+      const briPct =
+        this._brightnessPreview != null
+          ? this._brightnessPreview
+          : this._briToPct(briRaw);
+      controls.push({
+        label: "Brightness",
+        gc: this._brightnessGc(),
+        value: briPct,
+        ns: "brightness",
+      });
+    }
+    if (showSpeed) {
+      const raw = Math.max(
+        1,
+        Math.min(255, Number(a.native_effect_speed) || 50),
+      );
+      controls.push({
+        label: "Animation speed",
+        gc: this._speedGc(),
+        value: this._rawToPct(raw),
+        ns: "speed",
+      });
+    }
     return `
       <div class="section">
-        <div class="section-title">Animation speed</div>
-        ${renderSliderControl(this._speedGc(), this._rawToPct(raw))}
+        <div class="section-title">Sliders</div>
+        ${renderSliderGroup(controls)}
       </div>`;
   }
 
@@ -1156,13 +1241,6 @@ class YeelightCubeClockCard extends HTMLElement {
   _attachHandlers() {
     const root = this.shadowRoot;
     if (!root) return;
-
-    // Scheme row tiles
-    root.querySelectorAll("[data-apply-style]").forEach((el) => {
-      el.addEventListener("click", () =>
-        this._applyStyle(el.dataset.applyStyle),
-      );
-    });
 
     // Text selectors: filled buttons + chips share the data-mode contract
     root
@@ -1286,27 +1364,12 @@ class YeelightCubeClockCard extends HTMLElement {
       }
       .card-title { font-size: 1.15em; font-weight: 600; margin-bottom: 2px; }
       .active-label { font-size: 0.9em; color: var(--secondary-text-color, #9aa); margin-bottom: 10px; }
-      .exp-tag { font-size: 0.75em; color: #d9a441; border: 1px solid #d9a44155; border-radius: 6px; padding: 1px 5px; margin-left: 4px; }
       .section { margin-top: 14px; }
       .section-title { font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--secondary-text-color, #9aa); margin-bottom: 6px; }
 
       .current-preview { display: flex; justify-content: center; padding: 6px 0 2px; }
       .current-preview-inner { width: 100%; }
       .clock-preview { width: 100%; }
-
-      .scheme-chip {
-        display: flex; flex-direction: column; align-items: stretch; gap: 6px;
-        background: var(--secondary-background-color, #2a2a2a);
-        border: 2px solid transparent;
-        border-radius: 10px; padding: 8px; cursor: pointer;
-        transition: border-color 0.15s, transform 0.1s;
-      }
-      .scheme-chip:hover { transform: translateY(-1px); }
-      .scheme-chip.active { border-color: var(--primary-color, #03a9f4); }
-      .scheme-name { font-size: 0.82em; text-align: center; color: var(--primary-text-color, #eee); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-      .scheme-row { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; }
-      .scheme-chip { flex: 0 0 auto; width: 96px; }
 
       .toggle-chips { display: flex; flex-wrap: wrap; gap: 6px; }
       .fmt-chip {

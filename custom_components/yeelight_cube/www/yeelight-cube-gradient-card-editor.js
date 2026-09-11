@@ -618,6 +618,11 @@ class YeelightCubeGradientCardEditor extends LitElement {
                           title: "Fixed two-column grid of live mode previews",
                         },
                         {
+                          value: "preview-strip",
+                          label: "Strip",
+                          title: "Horizontal scrollable strip of mini previews",
+                        },
+                        {
                           value: "preview-carousel",
                           label: "Carousel",
                           title:
@@ -728,31 +733,43 @@ class YeelightCubeGradientCardEditor extends LitElement {
                         )}
                       `,
                     )
-                  : renderModeSettingsSection(
-                      cfg.mode_selector_style === "preview-grid"
-                        ? "Grid Mode Settings"
-                        : "List Mode Settings",
-                      html`
-                        ${createToggleRow(
-                          "Highlight Active Mode",
-                          "highlight_active_mode",
-                          cfg.highlight_active_mode !== false,
-                          (e) => this._valueChanged(e),
-                        )}
-                        ${createSliderRow(
-                          "Items Per Page (0 = no pagination)",
-                          cfg.items_per_page || 0,
-                          { min: 0, max: 9, step: 1 },
-                          (e) => {
-                            this._config = {
-                              ...this._config,
-                              items_per_page: parseInt(e.target.value, 10),
-                            };
-                            this._fireConfigChanged();
-                          },
-                        )}
-                      `,
-                    )
+                  : cfg.mode_selector_style === "preview-strip"
+                    ? renderModeSettingsSection(
+                        "Strip Mode Settings",
+                        html`
+                          ${createToggleRow(
+                            "Highlight Active Mode",
+                            "highlight_active_mode",
+                            cfg.highlight_active_mode !== false,
+                            (e) => this._valueChanged(e),
+                          )}
+                        `,
+                      )
+                    : renderModeSettingsSection(
+                        cfg.mode_selector_style === "preview-grid"
+                          ? "Grid Mode Settings"
+                          : "List Mode Settings",
+                        html`
+                          ${createToggleRow(
+                            "Highlight Active Mode",
+                            "highlight_active_mode",
+                            cfg.highlight_active_mode !== false,
+                            (e) => this._valueChanged(e),
+                          )}
+                          ${createSliderRow(
+                            "Items Per Page (0 = no pagination)",
+                            cfg.items_per_page || 0,
+                            { min: 0, max: 9, step: 1 },
+                            (e) => {
+                              this._config = {
+                                ...this._config,
+                                items_per_page: parseInt(e.target.value, 10),
+                              };
+                              this._fireConfigChanged();
+                            },
+                          )}
+                        `,
+                      )
               : ""}
 
             <!-- Shared appearance axes: apply to EVERY selector style -->

@@ -18,6 +18,10 @@ export const orderableListStyles = css`
     flex-direction: column;
     gap: 6px;
     margin: 10px 0;
+    max-height: 320px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-right: 4px;
   }
   .orderable-list-row {
     display: flex;

@@ -124,7 +124,7 @@ export const GRADIENT_MODES = [
 // served the exact same purpose, so they are now ONE selector with a single
 // `mode_selector_style` config key covering every presentation:
 //   Text styles:    "filled" | "dropdown" | "chips"
-//   Preview styles: "preview-list" | "preview-grid" |
+//   Preview styles: "preview-list" | "preview-grid" | "preview-strip" |
 //                   "preview-carousel" | "preview-wheel"
 // Preview styles render live mini-matrix previews of every mode (click to
 // apply); text styles are lightweight and skip ALL preview backend calls.
@@ -2780,13 +2780,16 @@ class YeelightCubeGradientCard extends HTMLElement {
     const galleryPixelBoxShadow =
       gallerySpacingMode === "subtle" || gallerySpacingMode === "normal";
     const ignoreBlackPixels = this.config.gallery_ignore_black_pixels === true;
-    // Grid mode halves the effective preview size (matches _renderPreviewGrid).
-    // Without this, the surgical updater writes full-size SVGs into 2-column
-    // cells, overflowing the container and making all sizes look identical.
+    // Effective preview size must match _renderPreviewGrid exactly, or the
+    // surgical updater rewrites items at a different size than the initial
+    // render (grid = half, strip = mini), causing a size "jump" on every update.
+    const selectorStyle = this._getModeSelectorStyle();
     const effectivePreviewSize =
-      this._getModeSelectorStyle() === "preview-grid"
+      selectorStyle === "preview-grid"
         ? Math.round(galleryPreviewSize * 0.5)
-        : galleryPreviewSize;
+        : selectorStyle === "preview-strip"
+          ? Math.round(galleryPreviewSize * 0.4)
+          : galleryPreviewSize;
 
     for (const item of items) {
       const previewColors = previewData.previews[item.dataset.mode];
@@ -2955,6 +2958,7 @@ class YeelightCubeGradientCard extends HTMLElement {
     const style = this._getModeSelectorStyle();
     if (style === "preview-wheel") return "wheel";
     if (style === "preview-carousel") return "carousel";
+    if (style === "preview-strip") return "strip";
     return "list";
   }
 
@@ -3488,7 +3492,7 @@ class YeelightCubeGradientCard extends HTMLElement {
     //   compact → cards when titles on, plain when titles off
     //   wheel → always cards
     const showCards =
-      displayMode === "wheel"
+      displayMode === "wheel" || displayMode === "strip"
         ? true
         : displayMode === "compact"
           ? showTitles
@@ -3548,10 +3552,13 @@ class YeelightCubeGradientCard extends HTMLElement {
     // naturally within 2-column cells and the size slider has a visible
     // effect on item height.  Without this, items are clipped (overflow:hidden)
     // because a 450px preview doesn\'t fit a ~230px-wide column.
+    // Strip mode: mini previews (scrollable row), so scale down further.
     const effectivePreviewSize =
       selectorStyle === "preview-grid"
         ? Math.round(galleryPreviewSize * 0.5)
-        : galleryPreviewSize;
+        : selectorStyle === "preview-strip"
+          ? Math.round(galleryPreviewSize * 0.4)
+          : galleryPreviewSize;
 
     // ── Carousel display mode ─────────────────────────────────────────
     // Uses the shared renderCarouselString() so buttons and dots are

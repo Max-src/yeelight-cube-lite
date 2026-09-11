@@ -8,12 +8,7 @@ import {
   clockStyleMixer,
   renderClockFrame,
 } from "./clock-preview-utils.js";
-import {
-  BLACK_THRESHOLD,
-  PREVIEW_MIN_BRIGHTNESS_BOOST,
-  PREVIEW_MAX_DARKEN_PERCENT,
-  PREVIEW_BRIGHTNESS_GAMMA,
-} from "./draw_card_const.js";
+import { BLACK_THRESHOLD, previewBrightnessScale } from "./draw_card_const.js";
 import {
   exportImportButtonStyles,
   getExportImportButtonClass,
@@ -24,7 +19,7 @@ import {
   resolveCapsuleThickness,
 } from "./capsule-slider-utils.js";
 import {
-  renderSliderControl,
+  renderSliderGroup,
   createSliderHandlers,
   sliderControlStyles,
   sliderConfigToGc,
@@ -178,6 +173,7 @@ const EFFECT_NAMES = Object.keys(EFFECTS_REGISTRY);
 // controls without a config migration. One source of truth for both.
 export const BRIGHTNESS_SLIDER_KEYS = {
   style: "brightness_slider_style",
+  width: "brightness_slider_width",
   theme: "brightness_theme",
   thickness: "brightness_slider_thickness",
   color: "brightness_matrix_color",
@@ -390,6 +386,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       show_brightness_slider: true, // NEW: Show brightness slider by default
       show_brightness_percentage: true, // NEW: Show brightness percentage value
       brightness_slider_style: "slider", // NEW: Style for brightness slider (slider, bar, rotary)
+      brightness_slider_width: 100,
       brightness_slider_appearance: "default", // Legacy: Appearance for slider mode (migrated to thickness)
       brightness_slider_thickness: 6, // Track thickness in px (2-20, replaces appearance)
       brightness_label_mode: "text", // NEW: Brightness label mode (none, text, icon, icon_text)
@@ -1623,13 +1620,10 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     // This is guaranteed monotonic (power + constant floor), never flat,
     // and controlled by just GAMMA (curve shape) and BOOST (floor height).
     const darkenPercent = stateObj.attributes.preview_darken ?? 0;
-    const _minFactor = 1 - PREVIEW_MAX_DARKEN_PERCENT / 100; // 0.06
-    const _darkenFactor = Math.max(_minFactor, 1 - darkenPercent / 100);
-    const _floor = PREVIEW_MIN_BRIGHTNESS_BOOST * _minFactor; // ≈ 0.48
-    const _t = entityBrightness / 255; // normalised lamp brightness 0..1
-    const _effective =
-      _floor + (1 - _floor) * Math.pow(_t, PREVIEW_BRIGHTNESS_GAMMA);
-    const previewBoost = _effective / _darkenFactor;
+    const previewBoost = previewBrightnessScale(
+      entityBrightness,
+      darkenPercent,
+    );
 
     const gridColors = matrixColors.map((rgb) => {
       if (!Array.isArray(rgb) || rgb.length !== 3) rgb = [0, 0, 0];
@@ -1800,13 +1794,10 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   _matrixColorsToGridColors(matrixColors, stateObj) {
     const entityBrightness = stateObj?.attributes?.brightness ?? 255;
     const darkenPercent = stateObj?.attributes?.preview_darken ?? 0;
-    const _minFactor = 1 - PREVIEW_MAX_DARKEN_PERCENT / 100;
-    const _darkenFactor = Math.max(_minFactor, 1 - darkenPercent / 100);
-    const _floor = PREVIEW_MIN_BRIGHTNESS_BOOST * _minFactor;
-    const _t = entityBrightness / 255;
-    const _effective =
-      _floor + (1 - _floor) * Math.pow(_t, PREVIEW_BRIGHTNESS_GAMMA);
-    const previewBoost = _effective / _darkenFactor;
+    const previewBoost = previewBrightnessScale(
+      entityBrightness,
+      darkenPercent,
+    );
     return matrixColors.map((c) => {
       let px = c;
       if (!Array.isArray(px) || px.length !== 3) px = [0, 0, 0];
@@ -2290,7 +2281,9 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     // The full multi-style control (render + interactions + CSS) lives in the
     // shared ./slider-control-utils.js module — same control the clock card uses.
     if (this.config.show_brightness_slider === true) {
-      html += renderSliderControl(this._brightnessGc(), brightness);
+      html += renderSliderGroup([
+        { gc: this._brightnessGc(), value: brightness },
+      ]);
     }
 
     return html;

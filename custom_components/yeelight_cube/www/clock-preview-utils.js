@@ -254,20 +254,6 @@ export function getClockStyles(includeExperimental) {
     : CLOCK_STYLES.filter((s) => !s.experimental);
 }
 
-// Default curated styles for the clock card's compact "quick schemes" row.
-// Shared with the card's editor so the "reset to defaults" action and the
-// card's fallback (when scheme_row_styles is unset) never drift apart.
-export const DEFAULT_SCHEME_STYLES = [
-  "White",
-  "Yellow",
-  "Red",
-  "Blue White",
-  "Blue Yellow",
-  "Ice Blue",
-  "Sunset",
-  "Rainbow",
-];
-
 // Resolve the firmware mixer for a set of light attributes (or a style object).
 export function clockStyleMixer(attrs) {
   const id = attrs.clock_style_id;

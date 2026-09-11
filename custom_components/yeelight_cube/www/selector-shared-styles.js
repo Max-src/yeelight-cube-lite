@@ -16,6 +16,7 @@ export const TEXT_SELECTOR_STYLES = ["filled", "dropdown", "chips"];
 export const PREVIEW_SELECTOR_STYLES = [
   "preview-list",
   "preview-grid",
+  "preview-strip",
   "preview-carousel",
   "preview-wheel",
 ];

@@ -8,10 +8,7 @@ import {
 import { createButtonGroup, buttonGroupStyles } from "./button-group-utils.js";
 import { createToggleRow, createSliderRow } from "./form-row-utils.js";
 import { createYeelightCubeEntityPicker } from "./entity-selector-utils.js";
-import {
-  getClockStyles,
-  DEFAULT_SCHEME_STYLES,
-} from "./clock-preview-utils.js";
+import { getClockStyles } from "./clock-preview-utils.js";
 import { renderSliderSettings, sliderKeys } from "./slider-control-utils.js";
 import {
   renderOrderableList,
@@ -38,6 +35,11 @@ const PREVIEW_STYLE_CHOICES = [
     value: "preview-grid",
     label: "Grid",
     title: "Fixed two-column grid of live clock previews",
+  },
+  {
+    value: "preview-strip",
+    label: "Strip",
+    title: "Horizontal scrollable strip of mini previews",
   },
   {
     value: "preview-carousel",
@@ -91,7 +93,17 @@ class YeelightCubeClockCardEditor extends LitElement {
   }
 
   setConfig(config) {
-    this.config = { ...config };
+    const cfg = { ...config };
+    // Mirror the card's legacy speed_* → shared slider_* migration so existing
+    // customizations show up in the editor controls.
+    const K = sliderKeys("slider");
+    const oldK = sliderKeys("speed");
+    for (const f of Object.keys(K)) {
+      if (cfg[K[f]] === undefined && cfg[oldK[f]] !== undefined) {
+        cfg[K[f]] = cfg[oldK[f]];
+      }
+    }
+    this.config = cfg;
     this.localTitle = config.title || "";
     this.requestUpdate();
   }
@@ -122,6 +134,7 @@ class YeelightCubeClockCardEditor extends LitElement {
       "chips",
       "preview-list",
       "preview-grid",
+      "preview-strip",
       "preview-carousel",
       "preview-wheel",
     ];
@@ -309,25 +322,6 @@ class YeelightCubeClockCardEditor extends LitElement {
           `,
         )}
         ${this._section(
-          "schemes",
-          "Quick schemes",
-          html`
-            ${createToggleRow(
-              "Show quick-schemes row",
-              "show_scheme_row",
-              config.show_scheme_row !== false,
-              (e) => this._onToggle(e, "show_scheme_row"),
-            )}
-            <div
-              class="hint"
-              style="font-size:0.9em;color:var(--secondary-text-color,#666);margin-bottom:4px;"
-            >
-              Styles shown in the compact row, in this order.
-            </div>
-            ${this._renderSchemeList()}
-          `,
-        )}
-        ${this._section(
           "style",
           "Clock style",
           html`
@@ -433,6 +427,17 @@ class YeelightCubeClockCardEditor extends LitElement {
                           "gallery_wrap_navigation",
                           config.gallery_wrap_navigation === true,
                           (e) => this._onToggle(e, "gallery_wrap_navigation"),
+                        ),
+                      )
+                    : ""}
+                  ${this._selectorStyle(config) === "preview-strip"
+                    ? renderModeSettingsSection(
+                        "Strip Mode Settings",
+                        createToggleRow(
+                          "Highlight Active Style",
+                          "highlight_active_mode",
+                          config.highlight_active_mode !== false,
+                          (e) => this._onToggle(e, "highlight_active_mode"),
                         ),
                       )
                     : ""}
@@ -556,8 +561,14 @@ class YeelightCubeClockCardEditor extends LitElement {
         )}
         ${this._section(
           "speed",
-          "Animation Speed",
+          "Sliders",
           html`
+            ${createToggleRow(
+              "Show brightness slider",
+              "show_brightness",
+              config.show_brightness === true,
+              (e) => this._onToggle(e, "show_brightness"),
+            )}
             ${createToggleRow(
               "Show animation speed slider",
               "show_animation_speed",
@@ -566,7 +577,7 @@ class YeelightCubeClockCardEditor extends LitElement {
             )}
             ${renderSliderSettings(
               config,
-              sliderKeys("speed"),
+              sliderKeys("slider"),
               (key, value) => {
                 this.config = { ...this.config, [key]: value };
                 this.requestUpdate();
@@ -574,8 +585,8 @@ class YeelightCubeClockCardEditor extends LitElement {
               },
               {
                 icons: {
-                  leftLabel: "Show Slow Icon (🐢)",
-                  rightLabel: "Show Fast Icon (⚡)",
+                  leftLabel: "Show lower icon (🐢 / 🌙)",
+                  rightLabel: "Show upper icon (⚡ / ☀️)",
                 },
               },
             )}
@@ -583,37 +594,6 @@ class YeelightCubeClockCardEditor extends LitElement {
         )}
       </div>
     `;
-  }
-
-  // Current quick-schemes list, falling back to the shared default when unset.
-  _schemeList() {
-    const list = this.config?.scheme_row_styles;
-    return Array.isArray(list) && list.length
-      ? list
-      : [...DEFAULT_SCHEME_STYLES];
-  }
-
-  _setSchemeList(list) {
-    this.config = { ...this.config, scheme_row_styles: list };
-    this.requestUpdate();
-    this._fire();
-  }
-
-  _renderSchemeList() {
-    const list = this._schemeList();
-    const allNames = getClockStyles(true).map((s) => s.name);
-    return renderOrderableList({
-      items: list,
-      available: allNames.filter((n) => !list.includes(n)),
-      onUpdate: (l) => this._setSchemeList(l),
-      onReset: () => {
-        this.config = { ...this.config };
-        delete this.config.scheme_row_styles;
-        this.requestUpdate();
-        this._fire();
-      },
-      addPlaceholder: "Add a style…",
-    });
   }
 
   // Ordered list of styles shown in the selector (all styles when unset).

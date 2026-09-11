@@ -40,7 +40,7 @@ const H = "this.getRootNode().host";
  * (1-100). Returns an HTML string.
  *
  * gc: {
- *   style, thickness, theme, color, showValue, unit,
+ *   style, width, thickness, theme, color, showValue, unit,
  *   variant, barFill,
  *   wheelStep, wheelStyle, wheelLabels,
  *   matrixCols, matrixRows, matrixDir, matrixPixelStyle,
@@ -49,16 +49,31 @@ const H = "this.getRootNode().host";
  *   valueDisplay, valueSide, iconLeft, iconRight, snap, capsuleVariant,
  * }
  */
-export function renderSliderControl(gc, value) {
+export function renderSliderControl(gc, value, ns = "") {
   const style = gc.style || "slider";
+  const width = Math.max(30, Math.min(100, Number(gc.width) || 100));
   const thickness = gc.thickness ?? 6;
   const theme = gc.theme || "subtle";
   const color = gc.color || "#ff9800";
   const unit = gc.unit ?? "%";
   const showValue = gc.showValue !== false;
   const v = value;
+  // Capsule exposes its non-track pill content so the step-button row can
+  // mirror it (see the shared mirror-spacer layout below).
+  let capsuleLeftContent = "";
+  let capsuleRightContent = "";
+  // Matrix caps its grid width; the step-button area mirrors that same cap so
+  // the buttons stay centred on the (left-aligned) grid rather than the row.
+  let trackMaxWidth = 0;
 
-  let html = `<div class="brightness-slider-container brightness-style-${style} brightness-theme-${theme}" style="--slider-thickness: ${thickness}px; --brightness-color: ${color};" onwheel="${H}._slWheel(event)">`;
+  // Namespacing lets several independent sliders live on one host: handler
+  // method names are suffixed (e.g. _slSpeedChange) and DOM queries scope to
+  // the container carrying data-sl-ns. Empty ns keeps the historical names.
+  const nsCap = ns ? ns.charAt(0).toUpperCase() + ns.slice(1) : "";
+  const SL = `${H}._sl${nsCap}`;
+  const idOf = (b) => (ns ? `${b}-${ns}` : b);
+
+  let html = `<div class="brightness-slider-container brightness-style-${style} brightness-theme-${theme}" data-sl-ns="${ns}" style="--slider-thickness: ${thickness}px; --brightness-color: ${color};" onwheel="${SL}Wheel(event)">`;
 
   if (style === "bar") {
     const barFill = gc.barFill || "solid";
@@ -70,11 +85,11 @@ export function renderSliderControl(gc, value) {
           <div class="brightness-bar-seams"></div>
           <input type="range" min="1" max="100" value="${v}"
             class="brightness-slider brightness-slider-bar"
-            onmousedown="${H}._slStartDrag(); this.closest('.brightness-bar-track')?.classList.remove('bar-stripes-idle');"
-            ontouchstart="${H}._slStartDrag(); this.closest('.brightness-bar-track')?.classList.remove('bar-stripes-idle');"
-            onmouseup="${H}._slEndDrag(); this.closest('.brightness-bar-track')?.classList.add('bar-stripes-idle');"
-            ontouchend="${H}._slEndDrag(); this.closest('.brightness-bar-track')?.classList.add('bar-stripes-idle');"
-            oninput="${H}._slChange(event)" />
+            onmousedown="${SL}StartDrag(); this.closest('.brightness-bar-track')?.classList.remove('bar-stripes-idle');"
+            ontouchstart="${SL}StartDrag(); this.closest('.brightness-bar-track')?.classList.remove('bar-stripes-idle');"
+            onmouseup="${SL}EndDrag(); this.closest('.brightness-bar-track')?.classList.add('bar-stripes-idle');"
+            ontouchend="${SL}EndDrag(); this.closest('.brightness-bar-track')?.classList.add('bar-stripes-idle');"
+            oninput="${SL}Change(event)" />
         </div>
         ${showValue ? `<div class="brightness-value-right">${v}${unit}</div>` : ""}
       </div>`;
@@ -98,7 +113,7 @@ export function renderSliderControl(gc, value) {
           <button type="button" class="brightness-wheel-tick wheel-style-${wheelStyle}${
             i === activeIndex ? " active" : ""
           }" data-value="${sv}" data-index="${i}" style="width:${tickW}px;flex:0 0 ${tickW}px;"
-            onclick="${H}._slWheelTick(${sv})">
+            onclick="${SL}WheelTick(${sv})">
             <span class="wheel-tick-mark"></span>
             ${showWheelLabels ? `<span class="wheel-tick-label">${sv}</span>` : ""}
           </button>`,
@@ -109,9 +124,9 @@ export function renderSliderControl(gc, value) {
         <div class="brightness-wheel-value">${showValue ? `${v}${unit}` : ""}</div>
         <div class="brightness-wheel-viewport wheel-style-${wheelStyle}"
           style="height:${thickness * 5 + 20}px;"
-          onwheel="${H}._slWheelStep(event)"
-          onmousedown="${H}._slWheelDragStart(event)"
-          ontouchstart="${H}._slWheelDragStart(event)">
+          onwheel="${SL}WheelStep(event)"
+          onmousedown="${SL}WheelDragStart(event)"
+          ontouchstart="${SL}WheelDragStart(event)">
           <div class="brightness-wheel-caret"></div>
           <div class="brightness-wheel-fade brightness-wheel-fade-left"></div>
           <div class="brightness-wheel-fade brightness-wheel-fade-right"></div>
@@ -121,7 +136,7 @@ export function renderSliderControl(gc, value) {
         </div>
         <input type="range" min="${step}" max="100" step="${step}" value="${stops[activeIndex]}"
           class="brightness-slider brightness-slider-wheel" style="display:none;"
-          oninput="${H}._slChange(event)" />
+          oninput="${SL}Change(event)" />
       </div>`;
   } else if (style === "matrix") {
     const cols = Math.max(3, Math.min(20, parseInt(gc.matrixCols) || 10));
@@ -130,6 +145,7 @@ export function renderSliderControl(gc, value) {
     const matrixPixelStyle = gc.matrixPixelStyle || "rounded";
     const cellPx = thickness * 3 + 4;
     const total = cols * rows;
+    trackMaxWidth = cols * (cellPx + 3) + 16;
     const litCount = Math.max(1, Math.round((v / 100) * total));
     let cells = "";
     for (let r = 0; r < rows; r++) {
@@ -145,14 +161,14 @@ export function renderSliderControl(gc, value) {
       <div class="brightness-matrix-wrapper">
         <div class="brightness-matrix-grid pixel-shape-${matrixPixelStyle}" data-total="${total}"
              style="box-sizing:border-box;grid-template-columns:repeat(${cols},1fr);gap:3px;max-width:${cols * (cellPx + 3) + 16}px;"
-             onmousedown="${H}._slMatrixDown(event)"
-             ontouchstart="${H}._slMatrixDown(event)">
+             onmousedown="${SL}MatrixDown(event)"
+             ontouchstart="${SL}MatrixDown(event)">
           ${cells}
         </div>
         ${showValue ? `<div class="brightness-matrix-value">${v}${unit}</div>` : ""}
         <input type="range" min="1" max="100" value="${v}"
           class="brightness-slider brightness-slider-matrix" style="display:none;"
-          oninput="${H}._slChange(event)" />
+          oninput="${SL}Change(event)" />
       </div>`;
   } else if (style === "rotary") {
     const rotaryStyle = gc.rotaryStyle || "glow";
@@ -166,10 +182,10 @@ export function renderSliderControl(gc, value) {
     const dialKnobX = (50 + radius * Math.cos(dialKnobAngleRad)).toFixed(2);
     const dialKnobY = (50 + radius * Math.sin(dialKnobAngleRad)).toFixed(2);
     html += `
-      <div class="brightness-rotary-wrapper" onwheel="${H}._slWheel(event)">
+      <div class="brightness-rotary-wrapper" onwheel="${SL}Wheel(event)">
         <div class="brightness-rotary-container rotary-style-${rotaryStyle}"
-             onmousedown="${H}._slRotaryStart(event)"
-             ontouchstart="${H}._slRotaryStart(event)"
+             onmousedown="${SL}RotaryStart(event)"
+             ontouchstart="${SL}RotaryStart(event)"
              style="position: relative; z-index: 10; --rotary-stroke: ${thickness * 2};">
           <svg class="brightness-rotary-svg" viewBox="0 0 100 100">
             <defs>
@@ -207,21 +223,21 @@ export function renderSliderControl(gc, value) {
     let bValueText = "";
     let bUnderHtml = null;
 
-    const inputBase = `class="brightness-capsule-input" type="number" min="1" max="100" step="1" value="${v}" onfocus="${H}._slTyping=true" onblur="${H}._slValueBlur(event)" onkeydown="if(event.key==='Enter')this.blur()" oninput="${H}._slValueInput(event)" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"`;
+    const inputBase = `class="brightness-capsule-input" type="number" min="1" max="100" step="1" value="${v}" onfocus="${SL}Typing=true" onblur="${SL}ValueBlur(event)" onkeydown="if(event.key==='Enter')this.blur()" oninput="${SL}ValueInput(event)" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"`;
 
     if (bvd !== "none") {
       const isInput = bvd === "input";
       if (bvs === "under") {
         if (isInput) {
-          bUnderHtml = `<div class="brightness-capsule-slot capsule-value-under"><input id="sl-value-input" ${inputBase} /></div>`;
+          bUnderHtml = `<div class="brightness-capsule-slot capsule-value-under"><input id="${idOf("sl-value-input")}" ${inputBase} /></div>`;
         } else {
           bShowValue = true;
           bValueText = `${v}${unit}`;
         }
       } else {
         const inputHtml = isInput
-          ? `<input id="sl-value-input" ${inputBase} />`
-          : `<input id="sl-value-text" class="brightness-capsule-input" type="text" value="${v}${unit}" readonly tabindex="-1" />`;
+          ? `<input id="${idOf("sl-value-input")}" ${inputBase} />`
+          : `<input id="${idOf("sl-value-text")}" class="brightness-capsule-input" type="text" value="${v}${unit}" readonly tabindex="-1" />`;
         if (bvs === "left") {
           const iconHtml = bIconLeft
             ? `<div class="capsule-icon capsule-icon-left">${bIconLeft}</div>`
@@ -238,6 +254,17 @@ export function renderSliderControl(gc, value) {
       }
     }
 
+    capsuleLeftContent = bLeftSlot
+      ? bLeftSlot
+      : bIconLeft
+        ? `<div class="capsule-icon capsule-icon-left">${bIconLeft}</div>`
+        : "";
+    capsuleRightContent = bRightSlot
+      ? bRightSlot
+      : bIconRight
+        ? `<div class="capsule-icon capsule-icon-right">${bIconRight}</div>`
+        : "";
+
     html += `<div class="brightness-capsule-host${gc.capsuleVariant === "thick" ? " capsule-variant-thick" : ""}">`;
     html += renderCapsuleHTML({
       theme,
@@ -249,9 +276,9 @@ export function renderSliderControl(gc, value) {
       iconRight: bIconRight,
       leftSlotHtml: bLeftSlot,
       rightSlotHtml: bRightSlot,
-      hostInputHandler: `${H}._slChange(event)`,
-      hostDragStart: `${H}._slStartDrag()`,
-      hostDragEnd: `${H}._slEndDrag()`,
+      hostInputHandler: `${SL}Change(event)`,
+      hostDragStart: `${SL}StartDrag()`,
+      hostDragEnd: `${SL}EndDrag()`,
       showValue: bShowValue,
       valueText: bValueText,
       underHtml: bUnderHtml,
@@ -271,9 +298,9 @@ export function renderSliderControl(gc, value) {
             <div class="brightness-glow-thumb" style="left: ${v}%"></div>
             <input type="range" min="1" max="100" value="${v}"
               class="brightness-slider brightness-slider-glow"
-              onmousedown="${H}._slStartDrag()" ontouchstart="${H}._slStartDrag()"
-              onmouseup="${H}._slEndDrag()" ontouchend="${H}._slEndDrag()"
-              oninput="${H}._slChange(event)" />
+              onmousedown="${SL}StartDrag()" ontouchstart="${SL}StartDrag()"
+              onmouseup="${SL}EndDrag()" ontouchend="${SL}EndDrag()"
+              oninput="${SL}Change(event)" />
           </div>
           ${showValue ? `<div class="brightness-value-right">${v}${unit}</div>` : ""}
         </div>`;
@@ -283,9 +310,9 @@ export function renderSliderControl(gc, value) {
           <input type="range" min="1" max="100" value="${v}"
             class="brightness-slider brightness-slider-variable slider-variant-${variant}"
             style="--slider-pct:${v}%"
-            onmousedown="${H}._slStartDrag()" ontouchstart="${H}._slStartDrag()"
-            onmouseup="${H}._slEndDrag()" ontouchend="${H}._slEndDrag()"
-            oninput="${H}._slChange(event)" />
+            onmousedown="${SL}StartDrag()" ontouchstart="${SL}StartDrag()"
+            onmouseup="${SL}EndDrag()" ontouchend="${SL}EndDrag()"
+            oninput="${SL}Change(event)" />
           ${showValue ? `<span class="brightness-value-slider">${v}${unit}</span>` : ""}
         </div>`;
     }
@@ -296,10 +323,43 @@ export function renderSliderControl(gc, value) {
     const globalStep = Math.max(1, Math.min(25, parseInt(gc.stepSize) || 5));
     const stepPos = gc.stepPosition || "below";
     if (stepPos === "below") {
+      // Align the buttons under the TRACK, not the whole control, by mirroring
+      // the value/side content next to the track with an invisible spacer that
+      // reuses the exact same markup — so the button area always equals the
+      // track width regardless of value text, icons or control width.
+      let mGap = 12;
+      let mPadX = 0;
+      let mLeft = "";
+      let mRight = "";
+      if (style === "capsule") {
+        mGap = 16;
+        mPadX = 12;
+        mLeft = capsuleLeftContent;
+        mRight = capsuleRightContent;
+      } else if (showValue && style === "bar") {
+        mGap = 8;
+        mRight = `<div class="brightness-value-right">${v}${unit}</div>`;
+      } else if (showValue && style === "matrix") {
+        mRight = `<div class="brightness-matrix-value">${v}${unit}</div>`;
+      } else if (showValue && style === "slider") {
+        mRight =
+          (gc.variant || "thin") === "glow"
+            ? `<div class="brightness-value-right">${v}${unit}</div>`
+            : `<span class="brightness-value-slider">${v}${unit}</span>`;
+      }
+      const spacer = (inner) =>
+        inner
+          ? `<div class="brightness-step-spacer" aria-hidden="true">${inner}</div>`
+          : "";
       html += `
-        <div class="brightness-step-buttons brightness-step-below">
-          <button class="rotary-step-btn" title="Decrease by ${globalStep}%" onclick="${H}._slRotaryStep(-${globalStep})">&#x2212;</button>
-          <button class="rotary-step-btn" title="Increase by ${globalStep}%" onclick="${H}._slRotaryStep(${globalStep})">&#x2b;</button>
+        <div class="brightness-step-buttons brightness-step-below"
+             style="--slider-step-gap:${mGap}px;--slider-step-pad-x:${mPadX}px;--slider-step-track-max:${trackMaxWidth ? `${trackMaxWidth}px` : "none"};">
+          ${spacer(mLeft)}
+          <div class="brightness-step-btn-area">
+            <button class="rotary-step-btn" title="Decrease by ${globalStep}%" onclick="${SL}RotaryStep(-${globalStep})">&#x2212;</button>
+            <button class="rotary-step-btn" title="Increase by ${globalStep}%" onclick="${SL}RotaryStep(${globalStep})">&#x2b;</button>
+          </div>
+          ${spacer(mRight)}
         </div>`;
     }
   }
@@ -313,13 +373,35 @@ export function renderSliderControl(gc, value) {
     const inner = html.slice(lastDiv, closingIdx + 6);
     html = html.slice(0, lastDiv);
     html += `<div class="brightness-sides-row">
-      <button class="rotary-step-btn rotary-step-side" title="Decrease by ${globalStep}%" onclick="${H}._slRotaryStep(-${globalStep})">&#x2212;</button>
+      <button class="rotary-step-btn rotary-step-side" title="Decrease by ${globalStep}%" onclick="${SL}RotaryStep(-${globalStep})">&#x2212;</button>
       ${inner}
-      <button class="rotary-step-btn rotary-step-side" title="Increase by ${globalStep}%" onclick="${H}._slRotaryStep(${globalStep})">&#x2b;</button>
+      <button class="rotary-step-btn rotary-step-side" title="Increase by ${globalStep}%" onclick="${SL}RotaryStep(${globalStep})">&#x2b;</button>
     </div>`;
   }
 
-  return html;
+  return `<div class="brightness-control-width" style="width:${width}%">${html}</div>`;
+}
+
+/**
+ * Render one or more labelled controls in a responsive shared layout.
+ * Control Width sets each item's preferred share of the available row; items
+ * wrap only when their combined widths no longer fit.
+ */
+export function renderSliderGroup(controls) {
+  const items = controls
+    .filter(Boolean)
+    .map(({ label = "", gc, value, ns = "" }) => {
+      const width = Math.max(30, Math.min(100, Number(gc.width) || 100));
+      const style = gc.style || "slider";
+      return `
+        <div class="brightness-control-item brightness-control-item-${style}"
+             style="--brightness-control-width:${width}%">
+          ${label ? `<div class="brightness-control-label">${label}</div>` : ""}
+          ${renderSliderControl({ ...gc, width: 100 }, value, ns)}
+        </div>`;
+    })
+    .join("");
+  return `<div class="brightness-control-group">${items}</div>`;
 }
 
 /**
@@ -327,12 +409,18 @@ export function renderSliderControl(gc, value) {
  * object onto the host (e.g. `Object.assign(this, createSliderHandlers({...}))`)
  * so the inline `this.getRootNode().host._sl*` handlers resolve.
  *
+ * Pass a unique `ns` to run several independent sliders on one host: the
+ * returned method names are suffixed (e.g. `_slSpeedChange`) and DOM queries
+ * scope to the container carrying `data-sl-ns="<ns>"`. Empty ns keeps the
+ * historical `_sl*` names / whole-shadow-root queries.
+ *
  * @param {Object} p
  * @param {HTMLElement} p.host       - the custom element (has .shadowRoot)
  * @param {Function} p.getConfig     - returns the current generic config (gc)
  * @param {Function} p.onCommit      - (value1to100) => void, debounced apply
  * @param {Function} [p.onLive]      - (value1to100) => void, immediate feedback
  * @param {number}  [p.commitDelay]  - debounce ms (default 500)
+ * @param {string}  [p.ns]           - namespace (must match renderSliderControl)
  */
 export function createSliderHandlers({
   host,
@@ -340,8 +428,19 @@ export function createSliderHandlers({
   onCommit,
   onLive,
   commitDelay = 500,
+  ns = "",
 }) {
+  const nsCap = ns ? ns.charAt(0).toUpperCase() + ns.slice(1) : "";
+  const typingProp = `_sl${nsCap}Typing`;
+  const rotaryProp = `_sl${nsCap}RotaryDragging`;
+  const idOf = (b) => (ns ? `${b}-${ns}` : b);
   const root = () => host.shadowRoot;
+  // Scope internal queries to THIS slider's container so several sliders on one
+  // host never clobber each other (falls back to whole root if not found).
+  const scoped = () =>
+    host.shadowRoot?.querySelector(
+      `.brightness-slider-container[data-sl-ns="${ns}"]`,
+    ) || host.shadowRoot;
   let commitTimer = null;
   let dragCleanup = null;
 
@@ -362,18 +461,18 @@ export function createSliderHandlers({
         Math.abs(v - value) < Math.abs(stops[best] - value) ? i : best,
       0,
     );
-    const tick = root()?.querySelector(".brightness-wheel-tick");
+    const tick = scoped()?.querySelector(".brightness-wheel-tick");
     const tickW = tick ? tick.offsetWidth || 52 : 52;
-    const track = root()?.querySelector(".brightness-wheel-track");
+    const track = scoped()?.querySelector(".brightness-wheel-track");
     if (track)
       track.style.setProperty(
         "--wheel-shift",
         `${-(activeIndex * tickW + tickW / 2)}px`,
       );
-    root()
+    scoped()
       ?.querySelectorAll(".brightness-wheel-tick")
       .forEach((t, i) => t.classList.toggle("active", i === activeIndex));
-    const val = root()?.querySelector(".brightness-wheel-value");
+    const val = scoped()?.querySelector(".brightness-wheel-value");
     if (val)
       val.textContent =
         gc.showValue !== false ? `${value}${gc.unit ?? "%"}` : "";
@@ -381,7 +480,7 @@ export function createSliderHandlers({
 
   const updateMatrixVisual = (value) => {
     const gc = getConfig();
-    const grid = root()?.querySelector(".brightness-matrix-grid");
+    const grid = scoped()?.querySelector(".brightness-matrix-grid");
     if (!grid) return;
     const total = parseInt(grid.dataset.total) || 1;
     const litCount = Math.max(1, Math.round((value / 100) * total));
@@ -390,7 +489,7 @@ export function createSliderHandlers({
       cell.classList.toggle("lit", level <= litCount);
     });
     if (gc.showValue !== false) {
-      const val = root()?.querySelector(".brightness-matrix-value");
+      const val = scoped()?.querySelector(".brightness-matrix-value");
       if (val) val.textContent = `${value}${gc.unit ?? "%"}`;
     }
   };
@@ -398,14 +497,14 @@ export function createSliderHandlers({
   const syncValueDisplay = (value) => {
     const r = root();
     if (!r) return;
-    const input = r.getElementById("sl-value-input");
-    const text = r.getElementById("sl-value-text");
+    const input = r.getElementById(idOf("sl-value-input"));
+    const text = r.getElementById(idOf("sl-value-text"));
     const gc = getConfig();
     const suffix = gc.unit ?? "%";
-    const valueText = r.querySelector(
+    const valueText = scoped()?.querySelector(
       ".brightness-capsule-host .capsule-value-text",
     );
-    if (input && !host._slTyping) input.value = value;
+    if (input && !host[typingProp]) input.value = value;
     if (text) text.value = `${value}${suffix}`;
     if (valueText) valueText.textContent = `${value}${suffix}`;
   };
@@ -418,10 +517,10 @@ export function createSliderHandlers({
     const showValue = gc.showValue !== false;
     const suffix = gc.unit ?? "%";
     if (style === "bar") {
-      const barFill = root()?.querySelector(".brightness-bar-fill");
+      const barFill = scoped()?.querySelector(".brightness-bar-fill");
       if (barFill) barFill.style.width = `${value}%`;
       if (showValue) {
-        const vr = root()?.querySelector(".brightness-value-right");
+        const vr = scoped()?.querySelector(".brightness-value-right");
         if (vr) vr.textContent = `${value}${suffix}`;
       }
     } else if (style === "wheel") {
@@ -435,27 +534,27 @@ export function createSliderHandlers({
       const arcLength = (circumference * 270) / 360;
       const progressArcLength = (angle / 270) * arcLength;
       const da = `${progressArcLength} ${circumference}`;
-      root()
+      scoped()
         ?.querySelectorAll(".rotary-progress, .rotary-gloss-overlay")
         .forEach((el) => (el.style.strokeDasharray = da));
-      const knobArm = root()?.querySelector(".rotary-knob-arm");
+      const knobArm = scoped()?.querySelector(".rotary-knob-arm");
       if (knobArm)
         knobArm.style.setProperty("--knob-angle", `${225 + angle}deg`);
-      const dialKnob = root()?.querySelector(".rotary-dial-knob");
+      const dialKnob = scoped()?.querySelector(".rotary-dial-knob");
       if (dialKnob) {
         const rad = (angle * Math.PI) / 180;
         dialKnob.setAttribute("cx", (50 + 40 * Math.cos(rad)).toFixed(2));
         dialKnob.setAttribute("cy", (50 + 40 * Math.sin(rad)).toFixed(2));
       }
       if (showValue) {
-        const rv = root()?.querySelector(".rotary-value");
+        const rv = scoped()?.querySelector(".rotary-value");
         if (rv) rv.textContent = `${value}${suffix}`;
       }
     } else if (style === "capsule") {
       const bvd = gc.valueDisplay || (showValue ? "text" : "none");
       const bvs = gc.valueSide || "under";
       updateCapsuleVisuals(
-        root(),
+        scoped(),
         value,
         bvd !== "none" && bvs === "under" && bvd !== "input"
           ? `${value}${suffix}`
@@ -465,19 +564,19 @@ export function createSliderHandlers({
       syncValueDisplay(value);
     } else {
       if ((gc.variant || "thin") === "glow") {
-        const glowFill = root()?.querySelector(".brightness-glow-fill");
+        const glowFill = scoped()?.querySelector(".brightness-glow-fill");
         if (glowFill) glowFill.style.width = `${value}%`;
-        const glowThumb = root()?.querySelector(".brightness-glow-thumb");
+        const glowThumb = scoped()?.querySelector(".brightness-glow-thumb");
         if (glowThumb) glowThumb.style.left = `${value}%`;
         if (showValue) {
-          const vr = root()?.querySelector(".brightness-value-right");
+          const vr = scoped()?.querySelector(".brightness-value-right");
           if (vr) vr.textContent = `${value}${suffix}`;
         }
       } else if (showValue) {
-        const vs = root()?.querySelector(".brightness-value-slider");
+        const vs = scoped()?.querySelector(".brightness-value-slider");
         if (vs) vs.textContent = `${value}${suffix}`;
       }
-      const thickSlider = root()?.querySelector(".slider-variant-thick");
+      const thickSlider = scoped()?.querySelector(".slider-variant-thick");
       if (thickSlider)
         thickSlider.style.setProperty("--slider-pct", `${value}%`);
     }
@@ -512,23 +611,23 @@ export function createSliderHandlers({
     commit(value);
   };
 
-  const handlers = {
-    _slUpdateVisuals: updateVisuals,
+  const base = {
+    UpdateVisuals: updateVisuals,
 
-    _slStartDrag() {
+    StartDrag() {
       host._anySliderDragging = true;
     },
-    _slEndDrag() {
+    EndDrag() {
       setTimeout(() => {
         host._anySliderDragging = false;
       }, 50);
     },
 
-    _slChange(event) {
+    Change(event) {
       applyValue(event.target.value);
     },
 
-    _slWheel(event) {
+    Wheel(event) {
       event.preventDefault();
       const container = event.currentTarget;
       const slider =
@@ -544,10 +643,10 @@ export function createSliderHandlers({
       }
     },
 
-    _slRotaryStep(delta) {
+    RotaryStep(delta) {
       const input =
-        root()?.querySelector(".brightness-slider") ||
-        root()?.querySelector(".capsule-input");
+        scoped()?.querySelector(".brightness-slider") ||
+        scoped()?.querySelector(".capsule-input");
       if (!input) return;
       const cur = parseInt(input.value) || 1;
       const nv = clamp(cur + delta);
@@ -555,16 +654,16 @@ export function createSliderHandlers({
       applyValue(nv);
     },
 
-    _slWheelTick(value) {
-      const input = root()?.querySelector(".brightness-slider-wheel");
+    WheelTick(value) {
+      const input = scoped()?.querySelector(".brightness-slider-wheel");
       if (input) input.value = value;
       applyValue(value);
     },
 
-    _slWheelStep(event) {
+    WheelStep(event) {
       event.preventDefault();
       event.stopPropagation();
-      const input = root()?.querySelector(".brightness-slider-wheel");
+      const input = scoped()?.querySelector(".brightness-slider-wheel");
       if (!input) return;
       const stops = getWheelStops();
       const cur = parseInt(input.value) || stops[0];
@@ -583,7 +682,7 @@ export function createSliderHandlers({
       applyValue(value);
     },
 
-    _slWheelDragStart(event) {
+    WheelDragStart(event) {
       event.preventDefault();
       const viewport = event.currentTarget;
       const startX = event.clientX ?? event.touches?.[0]?.clientX ?? 0;
@@ -625,7 +724,7 @@ export function createSliderHandlers({
       document.addEventListener("touchend", end);
     },
 
-    _slMatrixDown(event) {
+    MatrixDown(event) {
       event.preventDefault();
       host._anySliderDragging = true;
       const grid = event.currentTarget;
@@ -635,7 +734,7 @@ export function createSliderHandlers({
       );
       const applyAt = (cx, cy) => {
         if (cx === undefined || cy === undefined) return;
-        const el = root().elementFromPoint(cx, cy);
+        const el = host.shadowRoot.elementFromPoint(cx, cy);
         if (el?.classList?.contains("brightness-matrix-cell")) {
           const level = parseInt(el.dataset.level) || 1;
           const val = clamp(Math.round((level / total) * 100));
@@ -676,8 +775,8 @@ export function createSliderHandlers({
       document.addEventListener("touchend", end);
     },
 
-    _slRotaryStart(event) {
-      host._slRotaryDragging = true;
+    RotaryStart(event) {
+      host[rotaryProp] = true;
       host._anySliderDragging = true;
       const container = event.currentTarget;
       const rotaryClick = (e) => {
@@ -699,12 +798,12 @@ export function createSliderHandlers({
       };
       rotaryClick(event);
       const move = (e) => {
-        if (!host._slRotaryDragging) return;
+        if (!host[rotaryProp]) return;
         e.preventDefault();
         rotaryClick(e);
       };
       const end = () => {
-        host._slRotaryDragging = false;
+        host[rotaryProp] = false;
         setTimeout(() => (host._anySliderDragging = false), 50);
         document.removeEventListener("mousemove", move);
         document.removeEventListener("mouseup", end);
@@ -719,15 +818,15 @@ export function createSliderHandlers({
       document.addEventListener("touchend", end);
     },
 
-    _slValueInput(event) {
+    ValueInput(event) {
       let val = parseInt(event.target.value);
       if (isNaN(val)) return;
       val = clamp(val);
-      updateCapsuleVisuals(root(), val, null, ".brightness-capsule-host");
+      updateCapsuleVisuals(scoped(), val, null, ".brightness-capsule-host");
     },
 
-    _slValueBlur(event) {
-      host._slTyping = false;
+    ValueBlur(event) {
+      host[typingProp] = false;
       let val = parseInt(event.target.value);
       if (isNaN(val)) val = 1;
       val = clamp(val);
@@ -736,7 +835,7 @@ export function createSliderHandlers({
     },
 
     // Called from disconnectedCallback to clean up any in-flight drag listeners.
-    _slDestroy() {
+    Destroy() {
       if (commitTimer) clearTimeout(commitTimer);
       if (dragCleanup) {
         document.removeEventListener("mousemove", dragCleanup.move);
@@ -748,11 +847,38 @@ export function createSliderHandlers({
     },
   };
 
+  // Namespace the handler keys (e.g. UpdateVisuals -> _slSpeedUpdateVisuals) so
+  // the inline `${SL}...` calls emitted by renderSliderControl resolve.
+  const handlers = {};
+  for (const k in base) handlers[`_sl${nsCap}${k}`] = base[k];
   return handlers;
 }
 
 // Full CSS for the slider control (all styles). Include once in the shadow root.
 export const sliderControlStyles = `
+  .brightness-control-group {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 16px;
+  }
+  .brightness-control-item {
+    flex: 0 1 calc(var(--brightness-control-width, 100%) - 8px);
+    min-width: 0;
+  }
+  .brightness-control-label {
+    font-size: 0.82em;
+    color: var(--secondary-text-color, #9aa);
+    margin-bottom: 2px;
+  }
+  .brightness-control-item-rotary .brightness-control-label {
+    text-align: center;
+  }
+  .brightness-control-width {
+    max-width: 100%;
+    margin-inline: auto;
+  }
         .brightness-slider-container {
           margin: 10px 0;
           padding: 10px 0;
@@ -1156,18 +1282,18 @@ export const sliderControlStyles = `
         .pixel-shape-round .brightness-matrix-cell { border-radius: 50%; }
         .brightness-matrix-value { font-size: 13px; font-weight: 600; color: var(--primary-text-color); min-width: 40px; text-align: right; }
         .brightness-value-right { font-size: 13px; font-weight: 600; color: var(--primary-text-color); min-width: 40px; text-align: right; }
-        .brightness-rotary-wrapper { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-        .brightness-rotary-container { position: relative; width: 160px; height: 160px; padding: 10px; cursor: pointer; user-select: none; }
+        .brightness-rotary-wrapper { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; }
+        .brightness-rotary-container { position: relative; width: 100%; height: auto; aspect-ratio: 1; box-sizing: border-box; padding: 6.25%; cursor: pointer; user-select: none; container-type: inline-size; }
         .brightness-rotary-container::before {
           content: "";
           position: absolute;
-          inset: 16px;
+          inset: 10%;
           border-radius: 50%;
           background: radial-gradient(circle at 50% 36%, color-mix(in srgb, var(--card-background-color, #fff) 86%, #000) 0%, var(--card-background-color, #fff) 72%);
           box-shadow: inset 0 2px 7px rgba(0, 0, 0, 0.3), inset 0 -1px 3px rgba(255, 255, 255, 0.06), 0 6px 16px rgba(0, 0, 0, 0.18);
           pointer-events: none;
         }
-        .brightness-rotary-svg { position: relative; width: 100%; height: 100%; transform: rotate(135deg); pointer-events: none; overflow: visible; }
+        .brightness-rotary-svg { display: block; position: relative; width: 100%; height: 100%; transform: rotate(135deg); pointer-events: none; overflow: visible; }
         .rotary-bg { fill: none; stroke: var(--divider-color, rgba(0, 0, 0, 0.14)); stroke-width: var(--rotary-stroke, 12); stroke-linecap: round; opacity: 0.55; }
         .rotary-progress-glow {
           fill: none; stroke: url(#brightnessRotaryGrad); stroke-width: var(--rotary-stroke, 12); stroke-linecap: round;
@@ -1176,20 +1302,44 @@ export const sliderControlStyles = `
         }
         .rotary-progress-gloss { fill: none; stroke: url(#brightnessRotaryGrad); stroke-width: var(--rotary-stroke, 12); stroke-linecap: round; transition: stroke-dasharray 0.1s ease; }
         .rotary-gloss-overlay { fill: none; stroke: url(#rotaryGlossGrad); stroke-width: var(--rotary-stroke, 12); stroke-linecap: round; transition: stroke-dasharray 0.1s ease; pointer-events: none; }
-        .rotary-progress-thick { fill: none; stroke: #ff9800; stroke-width: calc(var(--rotary-stroke, 12) * 1.4); stroke-linecap: butt; transition: stroke-dasharray 0.1s ease; opacity: 0.9; }
+        .rotary-progress-thick { fill: none; stroke: #ff9800; stroke-width: calc(var(--rotary-stroke, 12) * 1.4); stroke-linecap: round; transition: stroke-dasharray 0.1s ease; opacity: 0.9; }
         .rotary-progress-dial { fill: none; stroke: var(--primary-color, #1976d2); stroke-width: var(--rotary-stroke, 12); stroke-linecap: round; transition: stroke-dasharray 0.1s ease; }
         .rotary-style-dial .rotary-bg { opacity: 0.15; }
         .rotary-style-dial .brightness-rotary-container::before { background: none; box-shadow: none; }
         .rotary-style-dial .rotary-label { font-size: 14px; color: var(--secondary-text-color); }
-        .rotary-style-dial .rotary-value { font-size: 28px; font-weight: 700; text-shadow: none; }
+        .rotary-style-dial .rotary-value { font-size: clamp(16px, 18cqi, 28px); font-weight: 700; text-shadow: none; }
         .rotary-dial-knob { fill: var(--card-background-color, #fff); stroke: var(--primary-color, #1976d2); stroke-width: 3; filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.25)); transition: cx 0.1s ease, cy 0.1s ease; }
-        .brightness-step-below { display: flex; gap: 10px; justify-content: center; margin-top: 6px; padding-top: 2px; }
+        .brightness-step-below {
+          display: flex;
+          align-items: center;
+          gap: var(--slider-step-gap, 12px);
+          width: 100%;
+          margin-top: 6px;
+          padding: 2px var(--slider-step-pad-x, 0px) 0;
+          box-sizing: border-box;
+        }
+        .brightness-step-btn-area {
+          flex: 1;
+          max-width: var(--slider-step-track-max, none);
+          display: flex;
+          gap: 10px;
+          justify-content: center;
+          min-width: 0;
+        }
+        .brightness-step-spacer {
+          visibility: hidden;
+          pointer-events: none;
+          display: flex;
+          align-items: center;
+        }
         .brightness-sides-row { display: flex; align-items: center; gap: 8px; }
         .brightness-sides-row .brightness-slider-container { flex: 1; min-width: 0; }
         .rotary-step-side { flex: 0 0 auto; }
         .rotary-step-btn {
+          flex: 0 0 auto;
           width: 40px;
           height: 40px;
+          box-sizing: border-box;
           border-radius: 50%;
           border: 2px solid var(--divider-color, rgba(0,0,0,0.15));
           background: var(--card-background-color, #fff);
@@ -1210,7 +1360,7 @@ export const sliderControlStyles = `
         .rotary-knob-arm { position: absolute; inset: 0; transform: rotate(var(--knob-angle, 225deg)); transition: transform 0.1s ease; pointer-events: none; z-index: 6; }
         .rotary-knob {
           position: absolute;
-          top: 24px;
+          top: 15%;
           left: 50%;
           transform: translate(-50%, -50%);
           width: calc(var(--rotary-stroke, 12) * 0.9px);
@@ -1229,14 +1379,9 @@ export const sliderControlStyles = `
           border-radius: 5px !important;
           box-shadow: 0 1px 4px rgba(0,0,0,0.28) !important;
         }
-        .rotary-progress {
-          fill: none; stroke: url(#brightnessRotaryGrad); stroke-width: var(--rotary-stroke, 12); stroke-linecap: round;
-          transition: stroke-dasharray 0.1s ease;
-          filter: drop-shadow(0 0 3px rgba(255, 152, 0, 0.85)) drop-shadow(0 0 8px rgba(255, 145, 0, 0.5));
-        }
         .rotary-center-content { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }
         .rotary-label { font-size: 16px; font-weight: 500; color: var(--secondary-text-color); text-align: center; }
-        .rotary-value { font-size: 24px; font-weight: bold; color: var(--primary-text-color); text-shadow: 0 0 10px rgba(255, 152, 0, 0.35); }
+        .rotary-value { font-size: clamp(16px, 15cqi, 24px); font-weight: bold; color: var(--primary-text-color); text-shadow: 0 0 10px rgba(255, 152, 0, 0.35); }
         .brightness-slider-rotary { position: absolute; opacity: 0; pointer-events: none; }
         ${getCapsuleCSS()}
         .brightness-capsule-host { width: 100%; }
@@ -1293,6 +1438,7 @@ export function sliderKeys(prefix) {
   const p = (s) => `${prefix}_${s}`;
   return {
     style: p("style"),
+    width: p("width"),
     theme: p("theme"),
     thickness: p("thickness"),
     color: p("color"),
@@ -1325,6 +1471,7 @@ export function sliderConfigToGc(config, K, overrides = {}) {
   const g = (k, d) => (config[k] !== undefined ? config[k] : d);
   return {
     style: g(K.style, "slider"),
+    width: g(K.width, 100),
     theme: g(K.theme, "subtle"),
     thickness: g(K.thickness, 6),
     color: g(K.matrixColor, g(K.color, "#ff9800")),
@@ -1594,6 +1741,13 @@ export function renderSliderSettings(config, K, onChange, opts = {}) {
         )
       : ""}
     ${bg(K.style, STYLE_CHOICES, style, html`<span>Slider Style</span>`)}
+    ${createSliderRow(
+      "Control Width",
+      g(K.width, 100),
+      { min: 30, max: 100, step: 5 },
+      (e) => onChange(K.width, parseInt(e.target.value, 10)),
+      "%",
+    )}
     ${bg(
       K.theme,
       [

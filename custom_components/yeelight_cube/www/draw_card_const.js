@@ -40,6 +40,17 @@ export const PREVIEW_MIN_BRIGHTNESS_BOOST = 8.0;
 export const PREVIEW_MAX_DARKEN_PERCENT = 94;
 export const PREVIEW_BRIGHTNESS_GAMMA = 1.35;
 
+export function previewBrightnessScale(brightness, darkenPercent = 0) {
+  const minFactor = 1 - PREVIEW_MAX_DARKEN_PERCENT / 100;
+  const darkenFactor = Math.max(minFactor, 1 - darkenPercent / 100);
+  const floor = PREVIEW_MIN_BRIGHTNESS_BOOST * minFactor;
+  const level = Math.max(0, Math.min(255, Number(brightness) || 0)) / 255;
+  return (
+    (floor + (1 - floor) * Math.pow(level, PREVIEW_BRIGHTNESS_GAMMA)) /
+    darkenFactor
+  );
+}
+
 // --- Recent colors ---
 export const MAX_RECENT_COLORS = 10;
 
