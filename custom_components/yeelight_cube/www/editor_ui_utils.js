@@ -22,6 +22,43 @@ export const SHAPE_OPTIONS = [
 ];
 
 /**
+ * Shared selector appearance rows (gradient + clock card editors):
+ *  - "Item Shape"   → `selector_shape`        (cards / list items / chips)
+ *  - "Button Shape" → `selector_button_shape` (carousel / wheel nav arrows,
+ *    shown only when `showButtonShape` — i.e. the active style has buttons)
+ * One definition so both editors stay identical in naming, order and keys.
+ */
+export function renderSelectorShapeRows(cfg, onChange, options = {}) {
+  const { showButtonShape = false } = options;
+  return html`
+    <div class="form-row">
+      <label>Item Shape</label>
+      ${createButtonGroup(
+        SHAPE_OPTIONS,
+        cfg.selector_shape || "rounded",
+        createButtonGroupChangeHandler("selector_shape", (value) =>
+          onChange("selector_shape", value),
+        ),
+      )}
+    </div>
+    ${showButtonShape
+      ? html`
+          <div class="form-row">
+            <label>Button Shape</label>
+            ${createButtonGroup(
+              SHAPE_OPTIONS,
+              cfg.selector_button_shape || cfg.selector_shape || "rounded",
+              createButtonGroupChangeHandler("selector_button_shape", (value) =>
+                onChange("selector_button_shape", value),
+              ),
+            )}
+          </div>
+        `
+      : ""}
+  `;
+}
+
+/**
  * Dispatch a custom event, compatible with Home Assistant's event system.
  * Shared across all editor cards to avoid duplicating this helper.
  */

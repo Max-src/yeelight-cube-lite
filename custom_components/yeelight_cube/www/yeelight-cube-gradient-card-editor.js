@@ -14,17 +14,18 @@ import {
   fireEvent,
   sharedEditorStyles,
   renderModeSettingsSection,
+  renderSelectorShapeRows,
 } from "./editor_ui_utils.js";
 import {
   formRowStyles,
   createToggleRow,
   createSliderRow,
 } from "./form-row-utils.js";
-
-// localStorage key and event for gradient mode visibility
-const LS_GRADIENT_MODE_VISIBILITY = "yeelight-gradient-mode-visibility";
-const EVT_GRADIENT_MODE_VISIBILITY_RESET =
-  "yeelight-gradient-mode-visibility-reset";
+import {
+  renderOrderableList,
+  orderableListStyles,
+} from "./orderable-list-utils.js";
+import { GRADIENT_MODES } from "./yeelight-cube-gradient-card.js";
 
 class YeelightCubeGradientCardEditor extends LitElement {
   static get properties() {
@@ -160,40 +161,33 @@ class YeelightCubeGradientCardEditor extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    // Auto-disable visibility edit mode when editor closes
-    if (this._config && this._config.edit_gradient_modes) {
-      this._config = { ...this._config, edit_gradient_modes: false };
-      this._fireConfigChanged();
-    }
   }
 
-  _hasGradientModeVisibilityChanges() {
-    try {
-      const stored = localStorage.getItem(LS_GRADIENT_MODE_VISIBILITY);
-      if (!stored) return false;
-      const parsed = JSON.parse(stored);
-      return Object.values(parsed).some((v) => v === false);
-    } catch {
-      return false;
-    }
+  // Ordered list of modes shown in the selector (all modes when unset).
+  _visibleModeList() {
+    const list = this._config?.visible_modes;
+    return Array.isArray(list) && list.length ? list : [...GRADIENT_MODES];
   }
 
-  _resetGradientModeVisibility() {
-    try {
-      localStorage.removeItem(LS_GRADIENT_MODE_VISIBILITY);
-      window.dispatchEvent(
-        new CustomEvent(EVT_GRADIENT_MODE_VISIBILITY_RESET, {
-          bubbles: true,
-          composed: true,
-        }),
-      );
-      this.requestUpdate();
-    } catch (error) {
-      console.error(
-        "[Gradient Editor] Error resetting mode visibility:",
-        error,
-      );
-    }
+  _renderVisibleModeList() {
+    const list = this._visibleModeList();
+    return renderOrderableList({
+      items: list,
+      available: GRADIENT_MODES.filter((n) => !list.includes(n)),
+      onUpdate: (l) => {
+        this._config = { ...this._config, visible_modes: l };
+        this._fireConfigChanged();
+        this.requestUpdate();
+      },
+      onReset: () => {
+        this._config = { ...this._config };
+        delete this._config.visible_modes;
+        this._fireConfigChanged();
+        this.requestUpdate();
+      },
+      addPlaceholder: "Add a mode…",
+      resetLabel: "Reset to all modes",
+    });
   }
 
   getConfig() {
@@ -324,6 +318,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
       formRowStyles,
       buttonGroupStyles,
       entitySelectorStyles,
+      orderableListStyles,
       css`
         /* Color info group styles (specific to this component) */
         .color-info-group {
@@ -549,6 +544,32 @@ class YeelightCubeGradientCardEditor extends LitElement {
               )}
             </div>
 
+            ${createToggleRow(
+              "Customize visible modes",
+              "custom_visible_modes",
+              cfg.custom_visible_modes === true,
+              (e) => {
+                this._config = {
+                  ...this._config,
+                  custom_visible_modes: e.target.checked,
+                };
+                this._fireConfigChanged();
+                this.requestUpdate();
+              },
+            )}
+            ${cfg.custom_visible_modes === true
+              ? renderModeSettingsSection(
+                  "Visible Modes",
+                  html`
+                    <div
+                      style="font-size:0.9em;color:var(--secondary-text-color,#666);margin-bottom:4px;"
+                    >
+                      Modes shown in the selector, in this order.
+                    </div>
+                    ${this._renderVisibleModeList()}
+                  `,
+                )
+              : ""}
             ${!(cfg.mode_selector_style || "preview-list").startsWith(
               "preview-",
             )
@@ -718,26 +739,35 @@ class YeelightCubeGradientCardEditor extends LitElement {
                           cfg.highlight_active_mode !== false,
                           (e) => this._valueChanged(e),
                         )}
+                        ${createSliderRow(
+                          "Items Per Page (0 = no pagination)",
+                          cfg.items_per_page || 0,
+                          { min: 0, max: 9, step: 1 },
+                          (e) => {
+                            this._config = {
+                              ...this._config,
+                              items_per_page: parseInt(e.target.value, 10),
+                            };
+                            this._fireConfigChanged();
+                          },
+                        )}
                       `,
                     )
               : ""}
 
             <!-- Shared appearance axes: apply to EVERY selector style -->
-            <div class="form-row">
-              <label>Shape</label>
-              ${createButtonGroup(
-                [
-                  { value: "square", label: "Square" },
-                  { value: "rounded", label: "Rounded" },
-                  { value: "round", label: "Round" },
-                ],
-                cfg.selector_shape || "rounded",
-                createButtonGroupChangeHandler("selector_shape", (value) => {
-                  this._config = { ...this._config, selector_shape: value };
-                  this._fireConfigChanged();
-                }),
-              )}
-            </div>
+            ${renderSelectorShapeRows(
+              cfg,
+              (key, value) => {
+                this._config = { ...this._config, [key]: value };
+                this._fireConfigChanged();
+              },
+              {
+                showButtonShape:
+                  cfg.mode_selector_style === "preview-carousel" ||
+                  cfg.mode_selector_style === "preview-wheel",
+              },
+            )}
             ${createSliderRow(
               "Size",
               cfg.gallery_preview_size || 50,
@@ -753,47 +783,6 @@ class YeelightCubeGradientCardEditor extends LitElement {
             )}
             ${(cfg.mode_selector_style || "preview-list").startsWith("preview-")
               ? html`
-                  <div class="toggle-row">
-                    <label class="toggle-label">Mode Visibility</label>
-                    <div style="display:flex;align-items:center;gap:8px;">
-                      ${this._hasGradientModeVisibilityChanges()
-                        ? html`
-                            <button
-                              type="button"
-                              @click="${this._resetGradientModeVisibility}"
-                              style="padding:4px 10px;border:1px solid var(--divider-color, #ddd);border-radius:4px;background:var(--secondary-background-color, #f5f5f5);color:var(--secondary-text-color, #666);cursor:pointer;font-size:0.8em;white-space:nowrap;"
-                              title="Show all modes (reset visibility to all visible)"
-                            >
-                              👁 Reset
-                            </button>
-                          `
-                        : ""}
-                      <label class="toggle-switch">
-                        <input
-                          type="checkbox"
-                          id="edit_gradient_modes"
-                          .checked="${this._config.edit_gradient_modes ??
-                          false}"
-                          @change="${(e) => {
-                            this._config = {
-                              ...this._config,
-                              edit_gradient_modes: e.target.checked,
-                            };
-                            this._fireConfigChanged();
-                          }}"
-                        />
-                        <span class="toggle-slider"></span>
-                      </label>
-                    </div>
-                  </div>
-                  <div
-                    style="font-size:0.85em;color:var(--secondary-text-color, #666);margin-top:2px;margin-bottom:8px;"
-                  >
-                    Enable mode editing: show/hide toggles appear on each
-                    gradient preview. Toggle visibility by clicking the eye icon
-                    (👁) on each mode.
-                  </div>
-
                   <div class="form-row">
                     <label>Preview Background Color</label>
                     <div style="display: flex; flex-direction: column;">

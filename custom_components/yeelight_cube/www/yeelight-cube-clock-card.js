@@ -32,9 +32,15 @@ import {
   TEXT_SELECTOR_STYLES,
   PREVIEW_SELECTOR_STYLES,
   resolveSelectorShape,
+  resolveSelectorButtonShape,
   selectorShapeToCarouselButtonShape,
   selectorSharedStyles,
 } from "./selector-shared-styles.js";
+import {
+  paginationStyles,
+  renderPagination,
+  attachPaginationListeners,
+} from "./pagination-utils.js";
 import {
   CLOCK_MIXER_EFFECT_SPEED,
   clockStyleByName,
@@ -409,7 +415,20 @@ class YeelightCubeClockCard extends HTMLElement {
     const a = this._attrs();
     // Experimental styles follow the entity's Experimental Features switch
     // exactly — no separate card-level override.
-    return getClockStyles(!!a.extended_effects_enabled);
+    const styles = getClockStyles(!!a.extended_effects_enabled);
+    // Optional user-curated visibility/order (editor drag-drop list).
+    if (
+      this.config?.custom_visible_styles === true &&
+      Array.isArray(this.config.visible_styles) &&
+      this.config.visible_styles.length
+    ) {
+      const byName = new Map(styles.map((s) => [s.name, s]));
+      const picked = this.config.visible_styles
+        .map((n) => byName.get(n))
+        .filter(Boolean);
+      if (picked.length) return picked;
+    }
+    return styles;
   }
 
   // Build the attrs object a preview needs, mixing the current format settings
@@ -663,9 +682,9 @@ class YeelightCubeClockCard extends HTMLElement {
     const spacing = this.config.lamp_spacing_mode || "normal";
     const gap = this._spacingGap(spacing);
     const pad = Math.max(2, gap * 2);
-    const pixelShadow = this._spacingShadow(spacing)
-      ? "box-shadow:0 0 2px #0008;"
-      : "";
+    // Shadow is state-dependent (ignored-black pixels get none) — stored on the
+    // element so _paintPreview keeps it in sync as pixels turn on/off.
+    el._pixelShadow = this._spacingShadow(spacing) ? "0 0 2px #0008" : "";
     const matrixShadow =
       this.config.lamp_matrix_box_shadow === true
         ? "box-shadow:0 2px 8px rgba(0,0,0,0.5);"
@@ -675,10 +694,13 @@ class YeelightCubeClockCard extends HTMLElement {
     const grid = document.createElement("div");
     grid.style.cssText = `display:grid;grid-template-columns:repeat(${cols},1fr);gap:${gap}px;background:${bg};padding:${pad}px;border-radius:4px;width:100%;box-sizing:border-box;${matrixShadow}`;
     const emptyBg = el._ignoreBlack ? "transparent" : "#000";
+    // Empty cells: no shadow when ignore-black hides them (matches the shared
+    // renderMatrixPreview rule), shadow otherwise (visible black pixel).
+    const emptyShadow = el._ignoreBlack ? "" : el._pixelShadow;
     const cells = [];
     for (let i = 0; i < cols * rows; i++) {
       const d = document.createElement("div");
-      d.style.cssText = `aspect-ratio:1/1;border-radius:${radius};background:${emptyBg};${pixelShadow}`;
+      d.style.cssText = `aspect-ratio:1/1;border-radius:${radius};background:${emptyBg};${emptyShadow ? `box-shadow:${emptyShadow};` : ""}`;
       grid.appendChild(d);
       cells.push(d);
     }
@@ -705,6 +727,11 @@ class YeelightCubeClockCard extends HTMLElement {
         cells = Array.from(matrix.children);
         el._cells = cells;
         el._ignoreBlack = this._galleryIgnoreBlack();
+        el._pixelShadow = this._spacingShadow(
+          this.config.gallery_spacing_mode || "normal",
+        )
+          ? "0 0 2px #0008"
+          : "";
       }
     }
     const style = clockStyleByName(styleName) || this._currentStyle();
@@ -719,12 +746,20 @@ class YeelightCubeClockCard extends HTMLElement {
     );
     for (let i = 0; i < cells.length; i++) {
       const p = frame[i] || [0, 0, 0];
-      const bg =
-        (p[0] | p[1] | p[2]) === 0 ? emptyBg : `rgb(${p[0]},${p[1]},${p[2]})`;
+      const isOff = (p[0] | p[1] | p[2]) === 0;
+      const bg = isOff ? emptyBg : `rgb(${p[0]},${p[1]},${p[2]})`;
+      // The initial render bakes box-shadow only on lit pixels (shared
+      // renderMatrixPreview rule); keep it in sync as pixels turn on/off or
+      // ghost outlines linger where digits/colons used to be.
+      const sh = isOff && el._ignoreBlack ? "" : el._pixelShadow || "";
       const cell = cells[i];
       if (cell._bg !== bg) {
         cell.style.background = bg;
         cell._bg = bg;
+      }
+      if (cell._sh !== sh) {
+        cell.style.boxShadow = sh;
+        cell._sh = sh;
       }
     }
   }
@@ -985,7 +1020,9 @@ class YeelightCubeClockCard extends HTMLElement {
           ${renderCarouselString({
             items,
             currentIndex: this._carouselIndex,
-            buttonShape: selectorShapeToCarouselButtonShape(shape),
+            buttonShape: selectorShapeToCarouselButtonShape(
+              resolveSelectorButtonShape(this.config),
+            ),
             showAsCard: true,
             carouselId: "cc-clock-carousel",
             wrapNavigation: this.config.gallery_wrap_navigation === true,
@@ -1015,7 +1052,23 @@ class YeelightCubeClockCard extends HTMLElement {
         </div>`;
     }
 
-    const galleryHtml = renderGalleryDisplay(items, displayMode, {
+    // List / grid modes: optional pagination via the shared utility (same
+    // config key + controls as the palette and draw cards).
+    let pagedItems = items;
+    let paginationHtml = "";
+    const itemsPerPage = parseInt(this.config.items_per_page) || 0;
+    if (displayMode === "list" && itemsPerPage > 0) {
+      const result = renderPagination({
+        items,
+        currentPage: this._selectorPage || 0,
+        itemsPerPage,
+      });
+      pagedItems = result.items;
+      paginationHtml = result.html;
+      this._selectorPage = result.currentPage;
+    }
+
+    const galleryHtml = renderGalleryDisplay(pagedItems, displayMode, {
       rows: 5,
       cols: 20,
       bgColor: rendererBg,
@@ -1031,6 +1084,7 @@ class YeelightCubeClockCard extends HTMLElement {
       wheelNavPosition: this.config.wheel_nav_position || "bottom",
       wheelHeight: this.config.wheel_height || 300,
       wheelDisplayStyle: showTitles ? "default" : "compact",
+      navButtonShape: resolveSelectorButtonShape(this.config),
       currentMode: null, // highlight applied afterwards as DOM attributes
       highlightActive: this.config.highlight_active_mode !== false,
     });
@@ -1038,6 +1092,7 @@ class YeelightCubeClockCard extends HTMLElement {
     return `
       <div class="gc-preview-shell" ${shellAttrs} style="margin-top: 12px; border-radius: 8px;">
         ${galleryHtml}
+        ${paginationHtml}
       </div>`;
   }
 
@@ -1168,6 +1223,21 @@ class YeelightCubeClockCard extends HTMLElement {
               this._applyStyle(item.dataset.mode),
             );
           });
+        // Pagination controls (shadowRoot is rebuilt each render, so this
+        // never double-binds).
+        const shell = root.querySelector(".gc-preview-shell");
+        if (shell) {
+          attachPaginationListeners(shell, (pageOrAction) => {
+            const cur = this._selectorPage || 0;
+            this._selectorPage =
+              pageOrAction === "prev"
+                ? Math.max(0, cur - 1)
+                : pageOrAction === "next"
+                  ? cur + 1
+                  : pageOrAction;
+            this.render();
+          });
+        }
       }
     }
 
@@ -1274,6 +1344,7 @@ class YeelightCubeClockCard extends HTMLElement {
 
       /* Shared design language: text selectors + shape/size axes */
       ${selectorSharedStyles}
+      ${paginationStyles}
       /* Shared preview renderers (gallery list/grid/wheel + carousel) */
       ${galleryDisplayStyles}
       ${carouselStyles}

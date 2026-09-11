@@ -32,6 +32,18 @@ export function resolveSelectorShape(cfg) {
   return v === "square" || v === "round" ? v : "rounded";
 }
 
+/**
+ * Second appearance axis: the shape of the selector's NAV BUTTONS (carousel
+ * arrows, wheel arrows) — independent from the item shape. Falls back to the
+ * item shape when unset (the historical behaviour, where carousel buttons
+ * followed the single "Shape" setting).
+ */
+export function resolveSelectorButtonShape(cfg) {
+  const v = cfg?.selector_button_shape;
+  if (v === "square" || v === "round" || v === "rounded") return v;
+  return resolveSelectorShape(cfg);
+}
+
 /** Map a selector shape to the carousel nav-button shape for visual parity. */
 export function selectorShapeToCarouselButtonShape(shape) {
   return shape === "round" ? "circle" : shape === "square" ? "square" : "rect";

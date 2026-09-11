@@ -858,6 +858,12 @@ function renderWheelNavButtons(options) {
   const isSideLayout = options.wheelNavPosition === "sides";
   const { BUTTON } = WHEEL_MODE;
 
+  // Nav-button shape (shared selector appearance axis); default keeps the
+  // historical circular look when no shape is passed.
+  const navRadius =
+    { square: "0", rounded: "8px", round: "50%" }[options.navButtonShape] ||
+    BUTTON.BORDER_RADIUS;
+
   const containerStyle = isSideLayout
     ? `
       top: 50%;
@@ -892,7 +898,7 @@ function renderWheelNavButtons(options) {
               style="
                 background: ${BUTTON.BACKGROUND};
                 border: ${BUTTON.BORDER};
-                border-radius: ${BUTTON.BORDER_RADIUS};
+                border-radius: ${navRadius};
                 width: ${BUTTON.SIZE};
                 height: ${BUTTON.SIZE};
                 cursor: pointer;
@@ -916,7 +922,7 @@ function renderWheelNavButtons(options) {
               style="
                 background: ${BUTTON.BACKGROUND};
                 border: ${BUTTON.BORDER};
-                border-radius: ${BUTTON.BORDER_RADIUS};
+                border-radius: ${navRadius};
                 width: ${BUTTON.SIZE};
                 height: ${BUTTON.SIZE};
                 cursor: pointer;

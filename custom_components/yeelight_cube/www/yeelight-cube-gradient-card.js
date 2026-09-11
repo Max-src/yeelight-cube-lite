@@ -31,8 +31,15 @@ import {
   TEXT_SELECTOR_STYLES,
   PREVIEW_SELECTOR_STYLES,
   resolveSelectorShape,
+  resolveSelectorButtonShape,
+  selectorShapeToCarouselButtonShape,
   selectorSharedStyles,
 } from "./selector-shared-styles.js";
+import {
+  paginationStyles,
+  renderPagination,
+  attachPaginationListeners,
+} from "./pagination-utils.js";
 
 /**
  * Convert gallery_preview_size config value (%) to pixels.
@@ -74,10 +81,9 @@ const FILL_PANEL_CHAR_TO_COLS = Object.fromEntries(
   Object.entries(FILL_PANEL_CHARS).map(([k, v]) => [v, Number(k)]),
 );
 
-// localStorage key and event for gradient mode visibility
-const LS_GRADIENT_MODE_VISIBILITY = "yeelight-gradient-mode-visibility";
-const EVT_GRADIENT_MODE_VISIBILITY_RESET =
-  "yeelight-gradient-mode-visibility-reset";
+// Mode visibility is config-based: `custom_visible_modes` (boolean) +
+// `visible_modes` (ordered array) set from the editor's drag-drop list.
+// The old localStorage + eye-overlay edit mode has been removed.
 
 // Global preview caches that survive card recreation.
 // Keyed by entity_id so multiple gradient cards for DIFFERENT lamps on the
@@ -98,8 +104,9 @@ function getPreviewCache(entityId) {
   return window._yeelightPreviewCaches[key];
 }
 
-/** All gradient mode names, in display/iteration order. */
-const GRADIENT_MODES = [
+/** All gradient mode names, in display/iteration order. Exported so the
+ * editor's visible-modes drag-drop list offers the same canonical set. */
+export const GRADIENT_MODES = [
   "Solid Color",
   "Letter Gradient",
   "Column Gradient",
@@ -205,181 +212,30 @@ class YeelightCubeGradientCard extends HTMLElement {
     this._lastWheelMode = null; // Track wheel mode to prevent unnecessary syncs
     this._wheelCenterIndex = 0; // Track center item in wheel mode
     this._wheelNavigationController = null; // Controller for wheel navigation
-    this._modeVisibility = this._loadModeVisibility(); // Gradient mode visibility map
-    // ---
-    // Listen for visibility reset from editor
-    this._onVisibilityReset = () => {
-      this._modeVisibility = {};
-      this._lastPreviewDataHash = null; // Force re-render
-      this._updatePreviewSection();
-    };
-    window.addEventListener(
-      EVT_GRADIENT_MODE_VISIBILITY_RESET,
-      this._onVisibilityReset,
-    );
     // All preview data is now stored in window._yeelightPreviewCaches (see top of file)
     // This ensures preview data persists across card destruction/recreation.
   }
 
-  // --- Mode Visibility helpers ---
-  _loadModeVisibility() {
-    try {
-      const stored = localStorage.getItem(LS_GRADIENT_MODE_VISIBILITY);
-      return stored ? JSON.parse(stored) : {};
-    } catch {
-      return {};
-    }
-  }
-
-  _saveModeVisibility() {
-    try {
-      localStorage.setItem(
-        LS_GRADIENT_MODE_VISIBILITY,
-        JSON.stringify(this._modeVisibility),
-      );
-    } catch (e) {
-      console.error("[Gradient Card] Error saving mode visibility:", e);
-    }
-  }
-
+  // --- Mode Visibility helpers (config-based) ---
   _isModeVisible(mode) {
-    return this._modeVisibility[mode] !== false;
+    if (this.config?.custom_visible_modes !== true) return true;
+    const list = this.config.visible_modes;
+    return !Array.isArray(list) || !list.length || list.includes(mode);
   }
 
-  _toggleModeVisibility(mode) {
-    this._modeVisibility[mode] = !this._isModeVisible(mode);
-    this._saveModeVisibility();
-    this._lastPreviewDataHash = null; // Force re-render
-
-    // For wheel mode, destroy the controller so we get a full rebuild
-    // (surgical update doesn't handle item count changes)
-    if (this._wheelNavigationController) {
-      this._wheelNavigationController.destroy();
-      this._wheelNavigationController = null;
+  /** Gradient mode names in display order, honoring the visible-modes config. */
+  _orderedModes() {
+    if (
+      this.config?.custom_visible_modes === true &&
+      Array.isArray(this.config.visible_modes) &&
+      this.config.visible_modes.length
+    ) {
+      const picked = this.config.visible_modes.filter((m) =>
+        GRADIENT_MODES.includes(m),
+      );
+      if (picked.length) return picked;
     }
-
-    this._updatePreviewSection();
-  }
-
-  /**
-   * Inject eye-icon visibility overlays on preview items when in edit mode.
-   * Also sets opacity on hidden items and attaches click handlers for toggling.
-   */
-  _injectVisibilityOverlays(root, editMode) {
-    if (!root) return;
-
-    // Select both gallery and wheel items
-    const allItems = root.querySelectorAll(
-      ".gallery-item[data-mode], .wheel-item[data-mode], .wheel-compact-item[data-mode]",
-    );
-
-    allItems.forEach((item) => {
-      const mode = item.dataset.mode;
-      if (!mode) return;
-
-      const isVisible = this._isModeVisible(mode);
-      const isWheelItem =
-        item.classList.contains("wheel-item") ||
-        item.classList.contains("wheel-compact-item");
-
-      if (editMode) {
-        // For non-wheel items, set opacity directly
-        // For wheel items, the wheel controller manages opacity, so use a filter instead
-        if (isWheelItem) {
-          item.style.filter = isVisible ? "" : "grayscale(1) brightness(0.5)";
-        } else {
-          item.style.opacity = isVisible ? "1" : "0.3";
-        }
-        item.style.position = "relative";
-
-        // Remove any existing overlay (avoid duplicates)
-        const existing = item.querySelector(".gradient-mode-visibility-toggle");
-        if (existing) existing.remove();
-
-        // Create eye overlay
-        const overlay = document.createElement("div");
-        overlay.className = "gradient-mode-visibility-toggle";
-        overlay.title = isVisible ? "Hide this mode" : "Show this mode";
-        overlay.innerHTML = "👁";
-
-        // Wheel items have overflow:hidden, so position overlay inside the item
-        // Gallery items can use the top-positioned overlay
-        if (isWheelItem) {
-          overlay.style.cssText = `
-            position: absolute;
-            top: 4px;
-            right: 4px;
-            font-size: 16px;
-            color: ${isVisible ? "var(--primary-color, #0077cc)" : "var(--divider-color, #ccc)"};
-            cursor: pointer;
-            z-index: 100;
-            user-select: none;
-            background: ${isVisible ? "color-mix(in srgb, var(--primary-color, #0077cc) 15%, transparent)" : "color-mix(in srgb, var(--divider-color, #ccc) 30%, transparent)"};
-            border-radius: 4px;
-            padding: 4px;
-            border: 2px solid ${isVisible ? "color-mix(in srgb, var(--primary-color, #0077cc) 40%, transparent)" : "color-mix(in srgb, var(--divider-color, #ccc) 50%, transparent)"};
-            line-height: 1;
-            width: 22px;
-            height: 22px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            pointer-events: auto;
-          `;
-        } else {
-          overlay.style.cssText = `
-            position: absolute;
-            top: -8px;
-            left: 50%;
-            transform: translateX(-50%);
-            font-size: 16px;
-            color: ${isVisible ? "var(--primary-color, #0077cc)" : "var(--divider-color, #ccc)"};
-            cursor: pointer;
-            z-index: 10;
-            user-select: none;
-            background: ${isVisible ? "color-mix(in srgb, var(--primary-color, #0077cc) 10%, transparent)" : "color-mix(in srgb, var(--divider-color, #ccc) 20%, transparent)"};
-            border-radius: 4px;
-            padding: 4px;
-            border: 2px solid ${isVisible ? "color-mix(in srgb, var(--primary-color, #0077cc) 30%, transparent)" : "color-mix(in srgb, var(--divider-color, #ccc) 40%, transparent)"};
-            line-height: 1;
-            width: 22px;
-            height: 22px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          `;
-        }
-
-        overlay.addEventListener("click", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          this._toggleModeVisibility(mode);
-        });
-
-        // For wheel items, also stop mousedown/touchstart propagation
-        // so the wheel's drag handlers don't intercept the click
-        if (isWheelItem) {
-          overlay.addEventListener("mousedown", (e) => {
-            e.stopPropagation();
-          });
-          overlay.addEventListener(
-            "touchstart",
-            (e) => {
-              e.stopPropagation();
-            },
-            { passive: true },
-          );
-        }
-
-        item.insertBefore(overlay, item.firstChild);
-      } else {
-        // Normal mode: ensure no leftover overlays and reset opacity/filter
-        const existing = item.querySelector(".gradient-mode-visibility-toggle");
-        if (existing) existing.remove();
-        item.style.opacity = "";
-        item.style.filter = "";
-      }
-    });
+    return GRADIENT_MODES;
   }
 
   // Helper method to call services on target entities.
@@ -396,14 +252,6 @@ class YeelightCubeGradientCard extends HTMLElement {
   }
 
   connectedCallback() {
-    // Re-register visibility reset listener (removed in disconnectedCallback)
-    if (this._onVisibilityReset) {
-      window.addEventListener(
-        EVT_GRADIENT_MODE_VISIBILITY_RESET,
-        this._onVisibilityReset,
-      );
-    }
-
     // Re-establish preview event subscription lost during disconnection.
     // disconnectedCallback unsubscribes, but the persistent _previewElement
     // survives, so the creation-time setTimeout that calls
@@ -437,13 +285,6 @@ class YeelightCubeGradientCard extends HTMLElement {
     if (this._wheelNavigationController) {
       this._wheelNavigationController.destroy();
       this._wheelNavigationController = null;
-    }
-    // Clean up visibility reset listener
-    if (this._onVisibilityReset) {
-      window.removeEventListener(
-        EVT_GRADIENT_MODE_VISIBILITY_RESET,
-        this._onVisibilityReset,
-      );
     }
     // NOTE: Do NOT clear window._yeelightPreviewCaches here.
     // The global cache is designed to survive card recreation (see top of file).
@@ -1984,6 +1825,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         /* Text selectors (filled/dropdown/chips), hover ring, shape/size axes
            and pending pulse — shared with the clock card. */
         ${selectorSharedStyles}
+        ${paginationStyles}
 
         .panel-toggle input[type="checkbox"] {
           margin: 0;
@@ -2217,8 +2059,14 @@ class YeelightCubeGradientCard extends HTMLElement {
                 ignoreBlack: this.config.gallery_ignore_black_pixels,
                 displayMode: this._getModeSelectorStyle(),
                 showTitles: this.config.preview_show_titles,
-                editGradientModes: this.config.edit_gradient_modes,
-                modeVisibility: JSON.stringify(this._modeVisibility),
+                visibleModes: JSON.stringify(
+                  this.config.custom_visible_modes === true
+                    ? this.config.visible_modes || null
+                    : null,
+                ),
+                buttonShape: resolveSelectorButtonShape(this.config),
+                itemsPerPage: this.config.items_per_page || 0,
+                selectorPage: this._selectorPage || 0,
                 wheelHeight: this.config.wheel_height,
                 wheelNavPosition: this.config.wheel_nav_position,
               })
@@ -2667,12 +2515,6 @@ class YeelightCubeGradientCard extends HTMLElement {
       });
     }
 
-    // Inject visibility overlays in edit mode (for initial render)
-    this._injectVisibilityOverlays(
-      root,
-      this.config?.edit_gradient_modes === true,
-    );
-
     // NOTE: Preview item click handlers are bound in _attachPreviewEventListeners(),
     // not here, to avoid double-binding when the preview DOM is updated.
   }
@@ -2795,9 +2637,8 @@ class YeelightCubeGradientCard extends HTMLElement {
     const displayMode = this._getDisplayMode();
 
     // For wheel mode, try surgical update first (only update preview images)
-    // But if wheel doesn't exist yet, or we're in edit mode, fall through to full render
-    const editMode = this.config?.edit_gradient_modes === true;
-    if (displayMode === "wheel" && !editMode) {
+    // But if wheel doesn't exist yet, fall through to full render
+    if (displayMode === "wheel") {
       const wheelExists = this.shadowRoot?.querySelector(
         ".wheel-item[data-mode]",
       );
@@ -2885,9 +2726,11 @@ class YeelightCubeGradientCard extends HTMLElement {
       ib: cfg.gallery_ignore_black_pixels,
       titles: cfg.preview_show_titles,
       shadow: cfg.gallery_matrix_box_shadow,
-      edit: cfg.edit_gradient_modes === true,
-      vis: this._modeVisibility,
+      vis: cfg.custom_visible_modes === true ? cfg.visible_modes || null : null,
       shape: resolveSelectorShape(cfg),
+      bshape: resolveSelectorButtonShape(cfg),
+      ipp: cfg.items_per_page || 0,
+      pg: this._selectorPage || 0,
       ci: this._carouselIndex ?? null, // carousel slide is part of presentation
     });
   }
@@ -2902,14 +2745,14 @@ class YeelightCubeGradientCard extends HTMLElement {
   _updateGalleryItemPreviews() {
     const previewData = this._previewCache().data;
     if (!previewData) return false;
-    // Edit mode injects overlay elements — use the full rebuild path there.
-    if (this.config?.edit_gradient_modes === true) return false;
+    // Paginated views render a slice — use the full rebuild path there.
+    if ((parseInt(this.config.items_per_page) || 0) > 0) return false;
 
     const rows = previewData.rows || 5;
     const cols = previewData.cols || 20;
 
-    const expectedModes = GRADIENT_MODES.filter(
-      (m) => previewData.previews[m] && this._isModeVisible(m),
+    const expectedModes = this._orderedModes().filter(
+      (m) => previewData.previews[m],
     );
     const items = Array.from(
       this.shadowRoot?.querySelectorAll(
@@ -3300,10 +3143,23 @@ class YeelightCubeGradientCard extends HTMLElement {
     // Mark the active mode item in the DOM
     this._markActiveMode();
 
-    const editMode = this.config?.edit_gradient_modes === true;
-
-    // Inject visibility overlays in edit mode
-    this._injectVisibilityOverlays(root, editMode);
+    // Pagination (list / grid modes) — delegated listener on the persistent
+    // container, bound once (the container survives innerHTML swaps).
+    const pagContainer = root.querySelector(".preview-grid-container");
+    if (pagContainer && !pagContainer._gcPaginationBound) {
+      pagContainer._gcPaginationBound = true;
+      attachPaginationListeners(pagContainer, (pageOrAction) => {
+        const cur = this._selectorPage || 0;
+        this._selectorPage =
+          pageOrAction === "prev"
+            ? Math.max(0, cur - 1)
+            : pageOrAction === "next"
+              ? cur + 1
+              : pageOrAction;
+        this._lastPreviewDataHash = null; // Force preview re-render
+        this._updatePreviewSection();
+      });
+    }
 
     // Preview item clicks - apply the selected mode
     // Guarded: each DOM element is marked once to prevent duplicate listeners
@@ -3314,9 +3170,6 @@ class YeelightCubeGradientCard extends HTMLElement {
       item._gcClickBound = true;
       boundCount++;
       item.addEventListener("click", (e) => {
-        // In edit mode, ignore clicks on items (only eye icon should work)
-        if (this.config?.edit_gradient_modes === true) return;
-
         const mode = e.currentTarget.dataset.mode;
         if (!mode) return;
 
@@ -3368,7 +3221,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         item.addEventListener("click", (e) => {
           e.stopPropagation();
           const mode = item.dataset.mode;
-          if (mode && this.config?.edit_gradient_modes !== true) {
+          if (mode) {
             this._selectMode(mode);
           }
         });
@@ -3402,13 +3255,12 @@ class YeelightCubeGradientCard extends HTMLElement {
 
   /** Ordered list of currently visible gradient modes (matches preview items). */
   _getVisibleModeList() {
-    // Fall back to the full gradient mode list when preview data hasn't
+    // Fall back to the full visible mode list when preview data hasn't
     // arrived yet so carousel navigation works from the very first render.
     const data = this._previewCache().data;
-    if (!data) return GRADIENT_MODES.filter((m) => this._isModeVisible(m));
-    return GRADIENT_MODES.filter(
-      (m) => data.previews[m] && this._isModeVisible(m),
-    );
+    const modes = this._orderedModes();
+    if (!data) return modes;
+    return modes.filter((m) => data.previews[m]);
   }
 
   // In carousel mode navigation IS selection: one item displayed at a time,
@@ -3535,9 +3387,6 @@ class YeelightCubeGradientCard extends HTMLElement {
       currentCenterIndex: this._wheelCenterIndex,
       immediate: isReInitializing, // Skip animation delay if re-initializing
       onModeSelect: async (mode, index) => {
-        // In edit mode, ignore mode selection (only eye icon should work)
-        if (this.config?.edit_gradient_modes === true) return;
-
         this._wheelCenterIndex = index;
         await this._selectMode(mode);
       },
@@ -3583,8 +3432,14 @@ class YeelightCubeGradientCard extends HTMLElement {
           ignoreBlack: this.config.gallery_ignore_black_pixels,
           displayMode: this._getModeSelectorStyle(),
           showTitles: this.config.preview_show_titles,
-          editGradientModes: this.config.edit_gradient_modes,
-          modeVisibility: JSON.stringify(this._modeVisibility),
+          visibleModes: JSON.stringify(
+            this.config.custom_visible_modes === true
+              ? this.config.visible_modes || null
+              : null,
+          ),
+          buttonShape: resolveSelectorButtonShape(this.config),
+          itemsPerPage: this.config.items_per_page || 0,
+          selectorPage: this._selectorPage || 0,
           wheelHeight: this.config.wheel_height,
           wheelNavPosition: this.config.wheel_nav_position,
         })
@@ -3638,36 +3493,32 @@ class YeelightCubeGradientCard extends HTMLElement {
         : displayMode === "compact"
           ? showTitles
           : false; // list = always plain
-    const editMode = this.config.edit_gradient_modes === true;
 
-    // Prepare items for the shared gallery utility
-    const items = GRADIENT_MODES.map((mode) => {
-      const previewColors = previewData.previews[mode];
-      if (!previewColors) return null;
+    // Prepare items for the shared gallery utility (visible modes only, in
+    // the user's configured order).
+    const items = this._orderedModes()
+      .map((mode) => {
+        const previewColors = previewData.previews[mode];
+        if (!previewColors) return null;
 
-      const isVisible = this._isModeVisible(mode);
-
-      // In normal mode, skip hidden items entirely
-      if (!editMode && !isVisible) return null;
-
-      // Flip vertically: reverse rows to fix upside-down display
-      const flippedColors = [];
-      for (let row = rows - 1; row >= 0; row--) {
-        for (let col = 0; col < cols; col++) {
-          const color = previewColors[row * cols + col];
-          flippedColors.push(color);
+        // Flip vertically: reverse rows to fix upside-down display
+        const flippedColors = [];
+        for (let row = rows - 1; row >= 0; row--) {
+          for (let col = 0; col < cols; col++) {
+            const color = previewColors[row * cols + col];
+            flippedColors.push(color);
+          }
         }
-      }
 
-      return {
-        title: mode.replace(" Gradient", ""),
-        name: mode, // used by renderCarouselString for dot tooltips
-        colorData: flippedColors,
-        dataMode: mode, // For click handler
-        metadata: null,
-        _hidden: !isVisible, // Internal flag for edit mode styling
-      };
-    }).filter((item) => item !== null);
+        return {
+          title: mode.replace(" Gradient", ""),
+          name: mode, // used by renderCarouselString for dot tooltips
+          colorData: flippedColors,
+          dataMode: mode, // For click handler
+          metadata: null,
+        };
+      })
+      .filter((item) => item !== null);
 
     // Render using shared utility.
     // IMPORTANT: the active-mode highlight is NOT baked into the HTML here.
@@ -3687,6 +3538,7 @@ class YeelightCubeGradientCard extends HTMLElement {
     // shell's data attributes + CSS overrides so the shared renderers stay
     // untouched and every display mode obeys the same shape setting.
     const selectorShape = resolveSelectorShape(this.config);
+    const selectorButtonShape = resolveSelectorButtonShape(this.config);
     const selectorStyle = this._getModeSelectorStyle();
     const shellAttrs = `data-shape="${selectorShape}"${
       selectorStyle === "preview-grid" ? ' data-columns="2"' : ""
@@ -3720,20 +3572,13 @@ class YeelightCubeGradientCard extends HTMLElement {
       const item = items[ci];
       if (!item) return ``;
 
-      // Map selector shape → carousel button shape for visual consistency
-      const gcCarouselButtonShape =
-        selectorShape === "round"
-          ? "circle"
-          : selectorShape === "square"
-            ? "square"
-            : "rect";
-
       return `
         <div class="gc-preview-shell" ${shellAttrs} style="margin-top:12px;border-radius:8px;">
           ${renderCarouselString({
             items,
             currentIndex: ci,
-            buttonShape: gcCarouselButtonShape,
+            buttonShape:
+              selectorShapeToCarouselButtonShape(selectorButtonShape),
             showAsCard: true,
             carouselId: "gc-gradient-carousel",
             wrapNavigation: this.config.gallery_wrap_navigation === true,
@@ -3762,7 +3607,23 @@ class YeelightCubeGradientCard extends HTMLElement {
         </div>`;
     }
 
-    const galleryHtml = renderGalleryDisplay(items, displayMode, {
+    // List / grid modes: optional pagination via the shared utility (same
+    // config key + controls as the palette and draw cards).
+    let pagedItems = items;
+    let paginationHtml = "";
+    const itemsPerPage = parseInt(this.config.items_per_page) || 0;
+    if (displayMode === "list" && itemsPerPage > 0) {
+      const result = renderPagination({
+        items,
+        currentPage: this._selectorPage || 0,
+        itemsPerPage,
+      });
+      pagedItems = result.items;
+      paginationHtml = result.html;
+      this._selectorPage = result.currentPage;
+    }
+
+    const galleryHtml = renderGalleryDisplay(pagedItems, displayMode, {
       rows,
       cols,
       bgColor: galleryBgColor,
@@ -3778,6 +3639,7 @@ class YeelightCubeGradientCard extends HTMLElement {
       wheelNavPosition: this.config.wheel_nav_position || "bottom",
       wheelHeight: this.config.wheel_height || 300,
       wheelDisplayStyle: showTitles ? "default" : "compact",
+      navButtonShape: selectorButtonShape,
       currentMode: null, // never bake the highlight — see comment above
       highlightActive,
     });
@@ -3785,6 +3647,7 @@ class YeelightCubeGradientCard extends HTMLElement {
     return `
       <div class="gc-preview-shell" ${shellAttrs} style="margin-top: 12px; border-radius: 8px;">
         ${galleryHtml}
+        ${paginationHtml}
       </div>
     `;
   }
@@ -6549,7 +6412,7 @@ ${(() => {
     const selShape = resolveSelectorShape(this.config);
     const selScale = resolveSelectorTextScale(this.config);
     const selAttrs = `data-shape="${selShape}"`;
-    const modes = [
+    const allModes = [
       { value: "Solid Color", label: "Solid" },
       { value: "Letter Gradient", label: "Letter Grad" },
       { value: "Column Gradient", label: "Column Grad" },
@@ -6560,6 +6423,11 @@ ${(() => {
       { value: "Letter Angle Gradient", label: "Letter Angle" },
       { value: "Text Color Sequence", label: "Color Seq" },
     ];
+    // Same visibility/order config as the preview styles.
+    const byValue = new Map(allModes.map((m) => [m.value, m]));
+    const modes = this._orderedModes()
+      .map((name) => byValue.get(name))
+      .filter(Boolean);
 
     switch (style) {
       case "chips":

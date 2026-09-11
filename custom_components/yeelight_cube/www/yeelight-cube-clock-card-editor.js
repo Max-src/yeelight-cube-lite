@@ -1,8 +1,9 @@
-import { LitElement, html, css } from "./lib/lit-all.js";
+import { LitElement, html } from "./lib/lit-all.js";
 
 import {
   sharedEditorStyles,
   renderModeSettingsSection,
+  renderSelectorShapeRows,
 } from "./editor_ui_utils.js";
 import { createButtonGroup, buttonGroupStyles } from "./button-group-utils.js";
 import { createToggleRow, createSliderRow } from "./form-row-utils.js";
@@ -12,6 +13,10 @@ import {
   DEFAULT_SCHEME_STYLES,
 } from "./clock-preview-utils.js";
 import { renderSliderSettings, sliderKeys } from "./slider-control-utils.js";
+import {
+  renderOrderableList,
+  orderableListStyles,
+} from "./orderable-list-utils.js";
 
 const TEXT_STYLE_CHOICES = [
   { value: "filled", label: "Filled" },
@@ -46,12 +51,6 @@ const PREVIEW_STYLE_CHOICES = [
   },
 ];
 
-const SHAPE_CHOICES = [
-  { value: "square", label: "Square" },
-  { value: "rounded", label: "Rounded" },
-  { value: "round", label: "Round" },
-];
-
 const PIXEL_STYLE_CHOICES = [
   { value: "rounded", label: "Rounded" },
   { value: "circle", label: "Circle" },
@@ -69,82 +68,6 @@ const SPACING_CHOICES = [
   { value: "subtle", label: "Subtle" },
   { value: "normal", label: "Normal" },
 ];
-
-const schemeListStyles = css`
-  .scheme-list {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    margin: 10px 0;
-  }
-  .scheme-list-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--card-background-color, #fff);
-    border: 1px solid var(--divider-color, #d0d7de);
-    border-radius: 8px;
-    padding: 6px 8px;
-  }
-  .scheme-list-row.dragging {
-    opacity: 0.5;
-  }
-  .scheme-list-row.drag-over {
-    border-color: var(--primary-color, #03a9f4);
-    box-shadow: inset 0 0 0 1px var(--primary-color, #03a9f4);
-  }
-  .scheme-drag-handle {
-    cursor: grab;
-    color: var(--secondary-text-color, #999);
-    font-size: 1em;
-    line-height: 1;
-    user-select: none;
-    padding: 0 2px;
-  }
-  .scheme-list-name {
-    flex: 1;
-    font-size: 0.92em;
-    color: var(--primary-text-color, #333);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .scheme-list-row button {
-    border: none;
-    background: var(--secondary-background-color, #f0f0f0);
-    color: var(--primary-text-color, #333);
-    border-radius: 6px;
-    width: 26px;
-    height: 26px;
-    cursor: pointer;
-    font-size: 0.9em;
-    line-height: 1;
-  }
-  .scheme-list-row button:disabled {
-    opacity: 0.35;
-    cursor: default;
-  }
-  .scheme-list-row button.remove {
-    color: var(--error-color, #d32f2f);
-  }
-  .scheme-add-row {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
-  .scheme-add-row select {
-    flex: 1;
-  }
-  .scheme-reset-btn {
-    background: none;
-    border: 1px solid var(--divider-color, #d0d7de);
-    border-radius: 8px;
-    padding: 6px 10px;
-    font-size: 0.85em;
-    color: var(--primary-text-color, #333);
-    cursor: pointer;
-  }
-`;
 
 class YeelightCubeClockCardEditor extends LitElement {
   static get properties() {
@@ -164,7 +87,7 @@ class YeelightCubeClockCardEditor extends LitElement {
   }
 
   static get styles() {
-    return [sharedEditorStyles, buttonGroupStyles, schemeListStyles];
+    return [sharedEditorStyles, buttonGroupStyles, orderableListStyles];
   }
 
   setConfig(config) {
@@ -408,6 +331,26 @@ class YeelightCubeClockCardEditor extends LitElement {
           "style",
           "Clock style",
           html`
+            ${createToggleRow(
+              "Customize visible styles",
+              "custom_visible_styles",
+              config.custom_visible_styles === true,
+              (e) => this._onToggle(e, "custom_visible_styles"),
+            )}
+            ${config.custom_visible_styles === true
+              ? renderModeSettingsSection(
+                  "Visible Styles",
+                  html`
+                    <div
+                      class="hint"
+                      style="font-size:0.9em;color:var(--secondary-text-color,#666);margin-bottom:4px;"
+                    >
+                      Styles shown in the selector, in this order.
+                    </div>
+                    ${this._renderVisibleStyleList()}
+                  `,
+                )
+              : ""}
             <!-- Same two-level selector UI as the gradient card: family
                  first, then that family's style picker + settings. -->
             <div class="form-row">
@@ -473,6 +416,12 @@ class YeelightCubeClockCardEditor extends LitElement {
                             (e) => this._onSlider("wheel_height", e),
                             "px",
                           )}
+                          ${createToggleRow(
+                            "Highlight Active Style",
+                            "highlight_active_mode",
+                            config.highlight_active_mode !== false,
+                            (e) => this._onToggle(e, "highlight_active_mode"),
+                          )}
                         `,
                       )
                     : ""}
@@ -487,20 +436,34 @@ class YeelightCubeClockCardEditor extends LitElement {
                         ),
                       )
                     : ""}
+                  ${this._selectorStyle(config) === "preview-list" ||
+                  this._selectorStyle(config) === "preview-grid"
+                    ? renderModeSettingsSection(
+                        this._selectorStyle(config) === "preview-grid"
+                          ? "Grid Mode Settings"
+                          : "List Mode Settings",
+                        html`
+                          ${createToggleRow(
+                            "Highlight Active Style",
+                            "highlight_active_mode",
+                            config.highlight_active_mode !== false,
+                            (e) => this._onToggle(e, "highlight_active_mode"),
+                          )}
+                          ${createSliderRow(
+                            "Items Per Page (0 = no pagination)",
+                            config.items_per_page || 0,
+                            { min: 0, max: 9, step: 1 },
+                            (e) => this._onSlider("items_per_page", e),
+                          )}
+                        `,
+                      )
+                    : ""}
                   ${createToggleRow(
                     "Show Style Titles",
                     "preview_show_titles",
                     config.preview_show_titles !== false,
                     (e) => this._onToggle(e, "preview_show_titles"),
                   )}
-                  ${this._selectorStyle(config) !== "preview-carousel"
-                    ? createToggleRow(
-                        "Highlight Active Style",
-                        "highlight_active_mode",
-                        config.highlight_active_mode !== false,
-                        (e) => this._onToggle(e, "highlight_active_mode"),
-                      )
-                    : ""}
                   ${createSliderRow(
                     "Size",
                     config.preview_size ?? 55,
@@ -551,15 +514,20 @@ class YeelightCubeClockCardEditor extends LitElement {
                     (e) => this._onToggle(e, "gallery_matrix_box_shadow"),
                   )}
                 `}
-            <!-- Shared appearance axis: applies to EVERY selector style -->
-            <div class="form-row">
-              <label>Shape</label>
-              ${createButtonGroup(
-                SHAPE_CHOICES,
-                config.selector_shape || "rounded",
-                (e) => this._onButtonGroup("selector_shape", e),
-              )}
-            </div>
+            <!-- Shared appearance axes: apply to EVERY selector style -->
+            ${renderSelectorShapeRows(
+              config,
+              (key, value) => {
+                this.config = { ...this.config, [key]: value };
+                this.requestUpdate();
+                this._fire();
+              },
+              {
+                showButtonShape:
+                  this._selectorStyle(config) === "preview-carousel" ||
+                  this._selectorStyle(config) === "preview-wheel",
+              },
+            )}
           `,
         )}
         ${this._section(
@@ -634,125 +602,48 @@ class YeelightCubeClockCardEditor extends LitElement {
   _renderSchemeList() {
     const list = this._schemeList();
     const allNames = getClockStyles(true).map((s) => s.name);
-    const available = allNames.filter((n) => !list.includes(n));
-
-    const rows = list.map(
-      (name, idx) => html`
-        <div
-          class="scheme-list-row"
-          draggable="true"
-          data-idx="${idx}"
-          @dragstart="${(e) => this._onSchemeDragStart(e, idx)}"
-          @dragover="${this._onSchemeDragOver}"
-          @dragleave="${this._onSchemeDragLeave}"
-          @drop="${(e) => this._onSchemeDrop(e, idx)}"
-          @dragend="${this._onSchemeDragEnd}"
-        >
-          <span class="scheme-drag-handle" title="Drag to reorder">⋮⋮</span>
-          <button
-            title="Move up"
-            ?disabled="${idx === 0}"
-            @click="${() => this._onSchemeMove(idx, -1)}"
-          >
-            ▲
-          </button>
-          <button
-            title="Move down"
-            ?disabled="${idx === list.length - 1}"
-            @click="${() => this._onSchemeMove(idx, 1)}"
-          >
-            ▼
-          </button>
-          <span class="scheme-list-name">${name}</span>
-          <button
-            class="remove"
-            title="Remove"
-            @click="${() => this._onSchemeRemove(idx)}"
-          >
-            ✕
-          </button>
-        </div>
-      `,
-    );
-
-    return html`
-      <div class="scheme-list">${rows}</div>
-      <div class="scheme-add-row">
-        <select @change="${this._onSchemeAdd}">
-          <option value="">Add a style…</option>
-          ${available.map((n) => html`<option value="${n}">${n}</option>`)}
-        </select>
-        <button class="scheme-reset-btn" @click="${this._onSchemeReset}">
-          Reset to defaults
-        </button>
-      </div>
-    `;
+    return renderOrderableList({
+      items: list,
+      available: allNames.filter((n) => !list.includes(n)),
+      onUpdate: (l) => this._setSchemeList(l),
+      onReset: () => {
+        this.config = { ...this.config };
+        delete this.config.scheme_row_styles;
+        this.requestUpdate();
+        this._fire();
+      },
+      addPlaceholder: "Add a style…",
+    });
   }
 
-  _onSchemeDragStart(e, idx) {
-    this._dragIdx = idx;
-    e.dataTransfer.effectAllowed = "move";
-    // Firefox needs data set for the drag to start.
-    try {
-      e.dataTransfer.setData("text/plain", String(idx));
-    } catch (_) {}
-    e.currentTarget.classList.add("dragging");
+  // Ordered list of styles shown in the selector (all styles when unset).
+  _visibleStyleList() {
+    const list = this.config?.visible_styles;
+    return Array.isArray(list) && list.length
+      ? list
+      : getClockStyles(true).map((s) => s.name);
   }
 
-  _onSchemeDragOver(e) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    e.currentTarget.classList.add("drag-over");
-  }
-
-  _onSchemeDragLeave(e) {
-    e.currentTarget.classList.remove("drag-over");
-  }
-
-  _onSchemeDrop(e, targetIdx) {
-    e.preventDefault();
-    e.currentTarget.classList.remove("drag-over");
-    const from = this._dragIdx;
-    if (from == null || from === targetIdx) return;
-    const list = [...this._schemeList()];
-    const [moved] = list.splice(from, 1);
-    list.splice(targetIdx, 0, moved);
-    this._dragIdx = null;
-    this._setSchemeList(list);
-  }
-
-  _onSchemeDragEnd(e) {
-    this._dragIdx = null;
-    this.shadowRoot
-      ?.querySelectorAll(".scheme-list-row")
-      .forEach((r) => r.classList.remove("dragging", "drag-over"));
-  }
-
-  _onSchemeAdd(e) {
-    const value = e.target.value;
-    if (!value) return;
-    this._setSchemeList([...this._schemeList(), value]);
-    e.target.value = "";
-  }
-
-  _onSchemeRemove(idx) {
-    const list = this._schemeList().filter((_, i) => i !== idx);
-    this._setSchemeList(list);
-  }
-
-  _onSchemeMove(idx, delta) {
-    const list = [...this._schemeList()];
-    const target = idx + delta;
-    if (target < 0 || target >= list.length) return;
-    [list[idx], list[target]] = [list[target], list[idx]];
-    this._setSchemeList(list);
-  }
-
-  _onSchemeReset() {
-    this.config = { ...this.config };
-    delete this.config.scheme_row_styles;
-    this.requestUpdate();
-    this._fire();
+  _renderVisibleStyleList() {
+    const list = this._visibleStyleList();
+    const allNames = getClockStyles(true).map((s) => s.name);
+    return renderOrderableList({
+      items: list,
+      available: allNames.filter((n) => !list.includes(n)),
+      onUpdate: (l) => {
+        this.config = { ...this.config, visible_styles: l };
+        this.requestUpdate();
+        this._fire();
+      },
+      onReset: () => {
+        this.config = { ...this.config };
+        delete this.config.visible_styles;
+        this.requestUpdate();
+        this._fire();
+      },
+      addPlaceholder: "Add a style…",
+      resetLabel: "Reset to all styles",
+    });
   }
 
   _onTitleInput(e) {
