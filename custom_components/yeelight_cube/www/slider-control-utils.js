@@ -35,6 +35,10 @@ import { renderModeSettingsSection } from "./editor_ui_utils.js";
 
 const H = "this.getRootNode().host";
 
+function resolveWheelStyle(style) {
+  return style === "bars" || style === "mesh" ? "mesh" : "ticks";
+}
+
 /**
  * Render the slider control for a generic config `gc` and current `value`
  * (1-100). Returns an HTML string.
@@ -53,7 +57,9 @@ export function renderSliderControl(gc, value, ns = "") {
   const style = gc.style || "slider";
   const width = Math.max(30, Math.min(100, Number(gc.width) || 100));
   const thickness = gc.thickness ?? 6;
-  const theme = gc.theme || "subtle";
+  // Two theme states only: "flat" (plain) or "subtle" (card). Any legacy value
+  // (e.g. the removed "filled") collapses to the card look.
+  const theme = gc.theme === "flat" ? "flat" : "subtle";
   const color = gc.color || "#ff9800";
   const unit = gc.unit ?? "%";
   const showValue = gc.showValue !== false;
@@ -95,7 +101,7 @@ export function renderSliderControl(gc, value, ns = "") {
       </div>`;
   } else if (style === "wheel") {
     const step = Math.max(1, Math.min(50, parseInt(gc.wheelStep) || 10));
-    const wheelStyle = gc.wheelStyle || "ticks";
+    const wheelStyle = resolveWheelStyle(gc.wheelStyle);
     const showWheelLabels = gc.wheelLabels !== false;
     const stops = [];
     for (let s = step; s <= 100; s += step) stops.push(s);
@@ -110,7 +116,7 @@ export function renderSliderControl(gc, value, ns = "") {
     const ticks = stops
       .map(
         (sv, i) => `
-          <button type="button" class="brightness-wheel-tick wheel-style-${wheelStyle}${
+          <button type="button" class="brightness-wheel-tick${
             i === activeIndex ? " active" : ""
           }" data-value="${sv}" data-index="${i}" style="width:${tickW}px;flex:0 0 ${tickW}px;"
             onclick="${SL}WheelTick(${sv})">
@@ -288,34 +294,18 @@ export function renderSliderControl(gc, value, ns = "") {
     });
     html += `</div>`;
   } else {
-    // Default "slider" style with thin / thick / glow variants
-    const variant = gc.variant || "thin";
-    if (variant === "glow") {
-      html += `
-        <div class="brightness-bar-wrapper brightness-glow-wrapper">
-          <div class="brightness-glow-track">
-            <div class="brightness-glow-fill" style="width: ${v}%"></div>
-            <div class="brightness-glow-thumb" style="left: ${v}%"></div>
-            <input type="range" min="1" max="100" value="${v}"
-              class="brightness-slider brightness-slider-glow"
-              onmousedown="${SL}StartDrag()" ontouchstart="${SL}StartDrag()"
-              onmouseup="${SL}EndDrag()" ontouchend="${SL}EndDrag()"
-              oninput="${SL}Change(event)" />
-          </div>
-          ${showValue ? `<div class="brightness-value-right">${v}${unit}</div>` : ""}
-        </div>`;
-    } else {
-      html += `
-        <div class="brightness-slider-wrapper${showValue ? "" : " brightness-slider-full"}" style="--slider-pct:${v}%">
-          <input type="range" min="1" max="100" value="${v}"
-            class="brightness-slider brightness-slider-variable slider-variant-${variant}"
-            style="--slider-pct:${v}%"
-            onmousedown="${SL}StartDrag()" ontouchstart="${SL}StartDrag()"
-            onmouseup="${SL}EndDrag()" ontouchend="${SL}EndDrag()"
-            oninput="${SL}Change(event)" />
-          ${showValue ? `<span class="brightness-value-slider">${v}${unit}</span>` : ""}
-        </div>`;
-    }
+    // Default "slider" style with thin / thick variants
+    const variant = gc.variant === "thick" ? "thick" : "thin";
+    html += `
+      <div class="brightness-slider-wrapper${showValue ? "" : " brightness-slider-full"}" style="--slider-pct:${v}%">
+        <input type="range" min="1" max="100" value="${v}"
+          class="brightness-slider brightness-slider-variable slider-variant-${variant}"
+          style="--slider-pct:${v}%"
+          onmousedown="${SL}StartDrag()" ontouchstart="${SL}StartDrag()"
+          onmouseup="${SL}EndDrag()" ontouchend="${SL}EndDrag()"
+          oninput="${SL}Change(event)" />
+        ${showValue ? `<span class="brightness-value-slider">${v}${unit}</span>` : ""}
+      </div>`;
   }
 
   // Step buttons (below / sides)
@@ -342,10 +332,7 @@ export function renderSliderControl(gc, value, ns = "") {
       } else if (showValue && style === "matrix") {
         mRight = `<div class="brightness-matrix-value">${v}${unit}</div>`;
       } else if (showValue && style === "slider") {
-        mRight =
-          (gc.variant || "thin") === "glow"
-            ? `<div class="brightness-value-right">${v}${unit}</div>`
-            : `<span class="brightness-value-slider">${v}${unit}</span>`;
+        mRight = `<span class="brightness-value-slider">${v}${unit}</span>`;
       }
       const spacer = (inner) =>
         inner
@@ -563,16 +550,7 @@ export function createSliderHandlers({
       );
       syncValueDisplay(value);
     } else {
-      if ((gc.variant || "thin") === "glow") {
-        const glowFill = scoped()?.querySelector(".brightness-glow-fill");
-        if (glowFill) glowFill.style.width = `${value}%`;
-        const glowThumb = scoped()?.querySelector(".brightness-glow-thumb");
-        if (glowThumb) glowThumb.style.left = `${value}%`;
-        if (showValue) {
-          const vr = scoped()?.querySelector(".brightness-value-right");
-          if (vr) vr.textContent = `${value}${suffix}`;
-        }
-      } else if (showValue) {
+      if (showValue) {
         const vs = scoped()?.querySelector(".brightness-value-slider");
         if (vs) vs.textContent = `${value}${suffix}`;
       }
@@ -854,8 +832,7 @@ export function createSliderHandlers({
   return handlers;
 }
 
-// Full CSS for the slider control (all styles). Include once in the shadow root.
-export const sliderControlStyles = `
+const sliderLayoutStyles = `
   .brightness-control-group {
     display: flex;
     flex-wrap: wrap;
@@ -879,555 +856,829 @@ export const sliderControlStyles = `
     max-width: 100%;
     margin-inline: auto;
   }
-        .brightness-slider-container {
-          margin: 10px 0;
-          padding: 10px 0;
-          text-align: center;
-        }
-        .brightness-label {
-          font-size: 13px;
-          font-weight: 600;
-          margin-bottom: 10px;
-          color: var(--primary-text-color);
-          text-align: left;
-        }
-        .brightness-slider-wrapper {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          width: 100%;
-        }
-        .brightness-slider-full {
-          gap: 0;
-        }
-        .brightness-value-slider {
-          font-size: 13px;
-          font-weight: 600;
-          color: var(--primary-text-color);
-          min-width: 40px;
-          text-align: right;
-          flex-shrink: 0;
-        }
-        .brightness-percentage-standalone {
-          font-size: 16px;
-          font-weight: 600;
-          color: var(--primary-text-color);
-          text-align: center;
-          padding: 8px 0;
-        }
-        .brightness-slider-variable {
-          width: 100%;
-          outline: none;
-          -webkit-appearance: none;
-          cursor: pointer;
-        }
-        .brightness-slider-variable.slider-variant-thin {
-          height: var(--slider-thickness, 6px);
-          border-radius: calc(var(--slider-thickness, 6px) / 2);
-          background: linear-gradient(to right, #ff9800, var(--divider-color, #444));
-        }
-        .brightness-slider-variable.slider-variant-thin::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          width: calc(var(--slider-thickness, 6px) * 3.2);
-          height: calc(var(--slider-thickness, 6px) * 3.2);
-          border-radius: 50%;
-          background: var(--accent-color, #ff9800);
-          cursor: pointer;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
-        .brightness-slider-variable.slider-variant-thin::-moz-range-thumb {
-          width: calc(var(--slider-thickness, 6px) * 3.2);
-          height: calc(var(--slider-thickness, 6px) * 3.2);
-          border-radius: 50%;
-          background: var(--accent-color, #ff9800);
-          border: none;
-          cursor: pointer;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
-        .brightness-slider-variable.slider-variant-thick {
-          height: calc(var(--slider-thickness, 6px) * 4);
-          border-radius: 6px;
-          background: linear-gradient(to right,
-            #ff9800 0%,
-            #ffc56b var(--slider-pct, 50%),
-            var(--divider-color, rgba(0,0,0,0.14)) var(--slider-pct, 50%),
-            var(--divider-color, rgba(0,0,0,0.14)) 100%);
-          outline: none;
-          -webkit-appearance: none;
-          cursor: pointer;
-        }
-        .brightness-slider-variable.slider-variant-thick::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          width: calc(var(--slider-thickness, 6px) * 3);
-          height: calc(var(--slider-thickness, 6px) * 7);
-          border-radius: 5px;
-          background: var(--card-background-color, #fff);
-          border: 2px solid var(--divider-color, #ccc);
-          cursor: pointer;
-          box-shadow: 0 1px 4px rgba(0,0,0,0.25);
-        }
-        .brightness-slider-variable.slider-variant-thick::-moz-range-thumb {
-          width: calc(var(--slider-thickness, 6px) * 3);
-          height: calc(var(--slider-thickness, 6px) * 7);
-          border-radius: 5px;
-          background: var(--card-background-color, #fff);
-          border: 2px solid var(--divider-color, #ccc);
-          cursor: pointer;
-          box-shadow: 0 1px 4px rgba(0,0,0,0.25);
-        }
-        .brightness-slider-variable:not([class*="slider-variant-"]) {
-          height: var(--slider-thickness, 6px);
-          border-radius: calc(var(--slider-thickness, 6px) / 2);
-          background: linear-gradient(to right, var(--disabled-text-color, #333), var(--card-background-color, #fff));
-        }
-        .brightness-slider-variable:not([class*="slider-variant-"])::-webkit-slider-thumb {
-          -webkit-appearance: none; appearance: none;
-          width: calc(var(--slider-thickness, 6px) * 3);
-          height: calc(var(--slider-thickness, 6px) * 3);
-          border-radius: 50%;
-          background: var(--accent-color, #ff9800);
-          cursor: pointer;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
-        .brightness-slider-variable:not([class*="slider-variant-"])::-moz-range-thumb {
-          width: calc(var(--slider-thickness, 6px) * 3);
-          height: calc(var(--slider-thickness, 6px) * 3);
-          border-radius: 50%;
-          background: var(--accent-color, #ff9800);
-          border: none;
-          cursor: pointer;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
-        .brightness-bar-wrapper {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          width: 100%;
-        }
-        .brightness-bar-wrapper.brightness-bar-full {
-          gap: 8px;
-        }
-        .brightness-bar-track {
-          position: relative;
-          flex: 1;
-          height: calc(var(--slider-thickness, 6px) * 5.5);
-          background: var(--disabled-color, rgba(255,255,255,0.1));
-          border-radius: calc(var(--slider-thickness, 6px) * 2);
-          overflow: hidden;
-        }
-        .brightness-bar-fill {
-          position: absolute;
-          top: 0;
-          left: 0;
-          height: 100%;
-          background: linear-gradient(90deg, #ffa726 0%, #ffb74d 100%);
-          border-radius: 12px;
-          transition: width 0.1s ease;
-          pointer-events: none;
-        }
-        .brightness-slider-bar {
-          position: absolute;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          background: transparent;
-          -webkit-appearance: none;
-          cursor: pointer;
-          outline: none;
-        }
-        .brightness-slider-bar::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          width: 0;
-          height: 0;
-          opacity: 0;
-        }
-        .brightness-slider-bar::-moz-range-thumb {
-          width: 0;
-          height: 0;
-          opacity: 0;
-          border: none;
-        }
-        .brightness-bar-seams {
-          position: absolute;
-          inset: 0;
-          pointer-events: none;
-          display: none;
-        }
-        .bar-fill-pulse .brightness-bar-fill {
-          background: linear-gradient(90deg,
-            color-mix(in srgb, var(--brightness-color, #ff9800) 90%, #000) 0%,
-            var(--brightness-color, #ff9800) 60%,
-            color-mix(in srgb, var(--brightness-color, #ff9800) 60%, #fff) 100%);
-          animation: barPulseGlow 2s ease-in-out infinite;
-        }
-        @keyframes barPulseGlow {
-          0%, 100% { box-shadow: 0 0 6px color-mix(in srgb, var(--brightness-color, #ff9800) 40%, transparent); opacity: 1; }
-          50%       { box-shadow: 0 0 18px color-mix(in srgb, var(--brightness-color, #ff9800) 85%, transparent), 0 0 32px color-mix(in srgb, var(--brightness-color, #ff9800) 40%, transparent); opacity: 0.92; }
-        }
-        .bar-fill-stripes .brightness-bar-fill {
-          background:
-            repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.22) 0, rgba(255, 255, 255, 0.22) 8px, transparent 8px, transparent 16px),
-            linear-gradient(90deg, color-mix(in srgb, var(--brightness-color, #ff9800) 90%, #000) 0%, var(--brightness-color, #ff9800) 100%);
-          background-size: 22px 100%, 100% 100%;
-          animation: barStripesShift 0.8s linear infinite;
-        }
-        .bar-fill-stripes.bar-stripes-idle .brightness-bar-fill {
-          animation-play-state: paused;
-        }
-        @keyframes barStripesShift {
-          from { background-position: 0 0, 0 0; }
-          to { background-position: 22px 0, 0 0; }
-        }
-        .bar-fill-gloss .brightness-bar-fill {
-          background:
-            linear-gradient(180deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.08) 46%, rgba(0, 0, 0, 0.12) 54%, rgba(0, 0, 0, 0) 100%),
-            linear-gradient(90deg, color-mix(in srgb, var(--brightness-color, #ff9800) 80%, #000) 0%, color-mix(in srgb, var(--brightness-color, #ff9800) 70%, #fff) 100%);
-          box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.5);
-        }
-        .brightness-glow-wrapper { gap: 12px; }
-        .brightness-glow-track {
-          position: relative;
-          flex: 1;
-          height: calc(var(--slider-thickness, 6px) * 3.5);
-          background: var(--primary-background-color, rgba(0, 0, 0, 0.35));
-          border-radius: 999px;
-          box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.5);
-          overflow: visible;
-        }
-        .brightness-glow-fill {
-          position: absolute;
-          top: 0;
-          left: 0;
-          height: 100%;
-          background: linear-gradient(90deg, color-mix(in srgb, var(--brightness-color, #ff9800) 90%, #000) 0%, var(--brightness-color, #ff9800) 55%, color-mix(in srgb, var(--brightness-color, #ff9800) 60%, #fff) 100%);
-          border-radius: 999px;
-          box-shadow: 0 0 8px color-mix(in srgb, var(--brightness-color, #ff9800) 75%, transparent), 0 0 16px color-mix(in srgb, var(--brightness-color, #ff9800) 45%, transparent);
-          transition: width 0.1s ease;
-          pointer-events: none;
-        }
-        .brightness-glow-thumb {
-          position: absolute;
-          top: 50%;
-          transform: translate(-50%, -50%);
-          width: calc(var(--slider-thickness, 6px) * 3.5 + 6px);
-          height: calc(var(--slider-thickness, 6px) * 3.5 + 6px);
-          border-radius: 50%;
-          background: radial-gradient(circle at 35% 30%, #fff 0%, #ffd38a 45%, #ff9800 100%);
-          box-shadow: 0 0 6px rgba(255, 200, 100, 0.9), 0 0 14px rgba(255, 150, 0, 0.6), 0 2px 4px rgba(0, 0, 0, 0.3);
-          transition: left 0.1s ease;
-          pointer-events: none;
-          z-index: 3;
-        }
-        .brightness-slider-glow {
-          position: absolute;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          background: transparent;
-          -webkit-appearance: none;
-          cursor: pointer;
-          outline: none;
-          z-index: 2;
-        }
-        .brightness-slider-glow::-webkit-slider-thumb { -webkit-appearance: none; width: 0; height: 0; opacity: 0; }
-        .brightness-slider-glow::-moz-range-thumb { width: 0; height: 0; opacity: 0; border: none; }
-        .brightness-wheel-wrapper {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 6px;
-          width: 100%;
-        }
-        .brightness-wheel-value {
-          font-size: 22px;
-          font-weight: 700;
-          color: var(--primary-text-color);
-          text-shadow: 0 0 10px rgba(255, 152, 0, 0.3);
-        }
-        .brightness-wheel-viewport {
-          position: relative;
-          width: 100%;
-          min-height: 40px;
-          overflow: hidden;
-          border-radius: 12px;
-          background: color-mix(in srgb, var(--card-background-color, #fff) 84%, #000);
-          box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.28);
-          cursor: ew-resize;
-          touch-action: none;
-          user-select: none;
-        }
-        .brightness-wheel-viewport.wheel-style-dots .brightness-wheel-track { align-items: center; }
-        .wheel-style-dots .wheel-tick-mark {
-          width: calc(var(--slider-thickness, 6px) * 1.5 + 4px) !important;
-          height: calc(var(--slider-thickness, 6px) * 1.5 + 4px) !important;
-          min-width: 8px;
-          min-height: 8px;
-          border-radius: 50% !important;
-          background: var(--secondary-text-color, #aaa) !important;
-          opacity: 0.7;
-        }
-        .wheel-style-dots .brightness-wheel-tick.active .wheel-tick-mark {
-          background: var(--brightness-color, #ff9800) !important;
-          box-shadow: 0 0 6px color-mix(in srgb, var(--brightness-color, #ff9800) 70%, transparent) !important;
-          opacity: 1;
-          width: calc(var(--slider-thickness, 6px) * 2 + 6px) !important;
-          height: calc(var(--slider-thickness, 6px) * 2 + 6px) !important;
-        }
-        .brightness-wheel-viewport.wheel-style-mesh,
-        .brightness-wheel-viewport.wheel-style-bars {
-          background-image:
-            repeating-linear-gradient(45deg, rgba(0,0,0,0.07) 0, rgba(0,0,0,0.07) 1px, transparent 0, transparent 50%),
-            repeating-linear-gradient(-45deg, rgba(0,0,0,0.07) 0, rgba(0,0,0,0.07) 1px, transparent 0, transparent 50%);
-          background-size: 7px 7px;
-        }
-        .wheel-style-mesh .wheel-tick-mark,
-        .wheel-style-bars .wheel-tick-mark {
-          background: color-mix(in srgb, var(--brightness-color, #ff9800) 55%, var(--secondary-text-color, #888)) !important;
-        }
-        .wheel-style-mesh .brightness-wheel-tick.active .wheel-tick-mark,
-        .wheel-style-bars .brightness-wheel-tick.active .wheel-tick-mark {
-          background: var(--brightness-color, #ff9800) !important;
-          box-shadow: 0 0 8px color-mix(in srgb, var(--brightness-color, #ff9800) 80%, transparent) !important;
-          height: 70% !important;
-          width: 4px !important;
-        }
-        .brightness-wheel-track {
-          position: absolute;
-          left: 50%;
-          top: 0;
-          height: 100%;
-          display: flex;
-          align-items: center;
-          transform: translateX(var(--wheel-shift, -26px));
-          transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
-        }
-        .brightness-wheel-tick {
-          height: 100%;
-          flex: 0 0 52px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          gap: 4px;
-          background: none;
-          border: none;
-          cursor: pointer;
-          padding: 0;
-          opacity: 0.45;
-          transform: scale(0.82);
-          transition: opacity 0.18s ease, transform 0.18s ease;
-        }
-        .brightness-wheel-tick .wheel-tick-mark {
-          width: 3px;
-          height: calc(50% - 6px);
-          max-height: 22px;
-          border-radius: 3px;
-          background: var(--secondary-text-color, #888);
-        }
-        .brightness-wheel-tick .wheel-tick-label {
-          font-size: 12px;
-          font-weight: 600;
-          color: var(--secondary-text-color, #888);
-        }
-        .brightness-wheel-tick.active { opacity: 1; transform: scale(1.08); }
-        .brightness-wheel-tick.active .wheel-tick-mark {
-          height: calc(65% - 4px);
-          max-height: 28px;
-          background: linear-gradient(180deg, #ffcf7a, #ff8f00);
-          box-shadow: 0 0 8px rgba(255, 152, 0, 0.7);
-        }
-        .brightness-wheel-tick.active .wheel-tick-label { color: var(--primary-text-color); }
-        .brightness-wheel-caret {
-          position: absolute;
-          top: 0;
-          left: 50%;
-          transform: translateX(-50%);
-          width: 2px;
-          height: 100%;
-          background: linear-gradient(180deg, transparent, rgba(255, 152, 0, 0.85), transparent);
-          z-index: 3;
-          pointer-events: none;
-        }
-        .brightness-wheel-fade { position: absolute; top: 0; width: 34px; height: 100%; z-index: 2; pointer-events: none; }
-        .brightness-wheel-fade-left { left: 0; background: linear-gradient(90deg, color-mix(in srgb, var(--card-background-color, #fff) 84%, #000), transparent); }
-        .brightness-wheel-fade-right { right: 0; background: linear-gradient(270deg, color-mix(in srgb, var(--card-background-color, #fff) 84%, #000), transparent); }
-        .brightness-matrix-wrapper { display: flex; align-items: center; gap: 12px; width: 100%; }
-        .brightness-matrix-grid {
-          flex: 1;
-          display: grid;
-          gap: 4px;
-          padding: 8px;
-          border-radius: 10px;
-          background: #101012;
-          box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.55);
-          cursor: pointer;
-          user-select: none;
-          touch-action: none;
-        }
-        .brightness-matrix-cell {
-          aspect-ratio: 1 / 1;
-          border-radius: 3px;
-          background: #2a2a2e;
-          box-shadow: inset 0 0 2px rgba(0, 0, 0, 0.6);
-          transition: background 0.12s ease, box-shadow 0.12s ease;
-        }
-        .brightness-matrix-cell.lit {
-          background: radial-gradient(circle at 40% 35%, color-mix(in srgb, var(--brightness-color, #ff9800) 15%, #fff) 0%, var(--brightness-color, #ff9800) 55%, color-mix(in srgb, var(--brightness-color, #ff9800) 80%, #000) 100%);
-          box-shadow: 0 0 6px color-mix(in srgb, var(--brightness-color, #ff9800) 75%, transparent), inset 0 0 2px rgba(255, 255, 255, 0.4);
-        }
-        .pixel-shape-square .brightness-matrix-cell { border-radius: 0; }
-        .pixel-shape-rounded .brightness-matrix-cell { border-radius: 3px; }
-        .pixel-shape-round .brightness-matrix-cell { border-radius: 50%; }
-        .brightness-matrix-value { font-size: 13px; font-weight: 600; color: var(--primary-text-color); min-width: 40px; text-align: right; }
-        .brightness-value-right { font-size: 13px; font-weight: 600; color: var(--primary-text-color); min-width: 40px; text-align: right; }
-        .brightness-rotary-wrapper { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; }
-        .brightness-rotary-container { position: relative; width: 100%; height: auto; aspect-ratio: 1; box-sizing: border-box; padding: 6.25%; cursor: pointer; user-select: none; container-type: inline-size; }
-        .brightness-rotary-container::before {
-          content: "";
-          position: absolute;
-          inset: 10%;
-          border-radius: 50%;
-          background: radial-gradient(circle at 50% 36%, color-mix(in srgb, var(--card-background-color, #fff) 86%, #000) 0%, var(--card-background-color, #fff) 72%);
-          box-shadow: inset 0 2px 7px rgba(0, 0, 0, 0.3), inset 0 -1px 3px rgba(255, 255, 255, 0.06), 0 6px 16px rgba(0, 0, 0, 0.18);
-          pointer-events: none;
-        }
-        .brightness-rotary-svg { display: block; position: relative; width: 100%; height: 100%; transform: rotate(135deg); pointer-events: none; overflow: visible; }
-        .rotary-bg { fill: none; stroke: var(--divider-color, rgba(0, 0, 0, 0.14)); stroke-width: var(--rotary-stroke, 12); stroke-linecap: round; opacity: 0.55; }
-        .rotary-progress-glow {
-          fill: none; stroke: url(#brightnessRotaryGrad); stroke-width: var(--rotary-stroke, 12); stroke-linecap: round;
-          transition: stroke-dasharray 0.1s ease;
-          filter: drop-shadow(0 0 3px rgba(255, 152, 0, 0.85)) drop-shadow(0 0 8px rgba(255, 145, 0, 0.5));
-        }
-        .rotary-progress-gloss { fill: none; stroke: url(#brightnessRotaryGrad); stroke-width: var(--rotary-stroke, 12); stroke-linecap: round; transition: stroke-dasharray 0.1s ease; }
-        .rotary-gloss-overlay { fill: none; stroke: url(#rotaryGlossGrad); stroke-width: var(--rotary-stroke, 12); stroke-linecap: round; transition: stroke-dasharray 0.1s ease; pointer-events: none; }
-        .rotary-progress-thick { fill: none; stroke: #ff9800; stroke-width: calc(var(--rotary-stroke, 12) * 1.4); stroke-linecap: round; transition: stroke-dasharray 0.1s ease; opacity: 0.9; }
-        .rotary-progress-dial { fill: none; stroke: var(--primary-color, #1976d2); stroke-width: var(--rotary-stroke, 12); stroke-linecap: round; transition: stroke-dasharray 0.1s ease; }
-        .rotary-style-dial .rotary-bg { opacity: 0.15; }
-        .rotary-style-dial .brightness-rotary-container::before { background: none; box-shadow: none; }
-        .rotary-style-dial .rotary-label { font-size: 14px; color: var(--secondary-text-color); }
-        .rotary-style-dial .rotary-value { font-size: clamp(16px, 18cqi, 28px); font-weight: 700; text-shadow: none; }
-        .rotary-dial-knob { fill: var(--card-background-color, #fff); stroke: var(--primary-color, #1976d2); stroke-width: 3; filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.25)); transition: cx 0.1s ease, cy 0.1s ease; }
-        .brightness-step-below {
-          display: flex;
-          align-items: center;
-          gap: var(--slider-step-gap, 12px);
-          width: 100%;
-          margin-top: 6px;
-          padding: 2px var(--slider-step-pad-x, 0px) 0;
-          box-sizing: border-box;
-        }
-        .brightness-step-btn-area {
-          flex: 1;
-          max-width: var(--slider-step-track-max, none);
-          display: flex;
-          gap: 10px;
-          justify-content: center;
-          min-width: 0;
-        }
-        .brightness-step-spacer {
-          visibility: hidden;
-          pointer-events: none;
-          display: flex;
-          align-items: center;
-        }
-        .brightness-sides-row { display: flex; align-items: center; gap: 8px; }
-        .brightness-sides-row .brightness-slider-container { flex: 1; min-width: 0; }
-        .rotary-step-side { flex: 0 0 auto; }
-        .rotary-step-btn {
-          flex: 0 0 auto;
-          width: 40px;
-          height: 40px;
-          box-sizing: border-box;
-          border-radius: 50%;
-          border: 2px solid var(--divider-color, rgba(0,0,0,0.15));
-          background: var(--card-background-color, #fff);
-          color: var(--primary-text-color, #333);
-          font-size: 22px;
-          line-height: 1;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          box-shadow: 0 1px 5px rgba(0, 0, 0, 0.12);
-          transition: box-shadow 0.15s ease, transform 0.1s ease;
-          user-select: none;
-        }
-        .rotary-step-btn:hover { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); transform: scale(1.05); }
-        .rotary-step-btn:active { transform: scale(0.95); }
-        .rotary-style-thick .brightness-rotary-container::before { display: none; }
-        .rotary-knob-arm { position: absolute; inset: 0; transform: rotate(var(--knob-angle, 225deg)); transition: transform 0.1s ease; pointer-events: none; z-index: 6; }
-        .rotary-knob {
-          position: absolute;
-          top: 15%;
-          left: 50%;
-          transform: translate(-50%, -50%);
-          width: calc(var(--rotary-stroke, 12) * 0.9px);
-          height: calc(var(--rotary-stroke, 12) * 1.9px);
-          min-width: 10px;
-          min-height: 22px;
-          border-radius: 5px;
-          background: var(--card-background-color, #fff);
-          border: 2px solid var(--divider-color, #ccc);
-          box-shadow: 0 1px 5px rgba(0, 0, 0, 0.35);
-        }
-        .capsule-variant-thick .capsule-track { height: calc(var(--capsule-thickness, 6px) * 4) !important; border-radius: 6px !important; }
-        .capsule-variant-thick .capsule-thumb {
-          width: calc(var(--capsule-thickness, 6px) * 3) !important;
-          height: calc(var(--capsule-thickness, 6px) * 6.5) !important;
-          border-radius: 5px !important;
-          box-shadow: 0 1px 4px rgba(0,0,0,0.28) !important;
-        }
-        .rotary-center-content { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }
-        .rotary-label { font-size: 16px; font-weight: 500; color: var(--secondary-text-color); text-align: center; }
-        .rotary-value { font-size: clamp(16px, 15cqi, 24px); font-weight: bold; color: var(--primary-text-color); text-shadow: 0 0 10px rgba(255, 152, 0, 0.35); }
-        .brightness-slider-rotary { position: absolute; opacity: 0; pointer-events: none; }
-        ${getCapsuleCSS()}
-        .brightness-capsule-host { width: 100%; }
-        .capsule-snap-ticks { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; }
-        .capsule-snap-tick { position: absolute; top: 50%; width: 5px; height: 5px; transform: translate(-50%, -50%); background: var(--primary-text-color, #333); border-radius: 50%; opacity: 0.35; }
-        .brightness-capsule-slot { flex-shrink: 0; display: flex; align-items: center; justify-content: center; gap: 2px; }
-        .brightness-capsule-input {
-          width: 52px;
-          height: 26px;
-          border: 1px solid var(--divider-color, rgba(128,128,128,0.3));
-          border-radius: 5px;
-          background: transparent;
-          color: var(--primary-text-color, #333);
-          font-size: 13px;
-          font-weight: 700;
-          text-align: center;
-          box-sizing: border-box;
-          padding: 0;
-          -moz-appearance: textfield;
-          outline: none;
-        }
-        .brightness-capsule-input::-webkit-outer-spin-button,
-        .brightness-capsule-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-        .brightness-capsule-input[readonly] { cursor: default; }
-        .capsule-value-under { display: flex; justify-content: center; padding: 8px 0; }
-        .brightness-slider-container.brightness-theme-flat,
-        .brightness-slider-container.brightness-theme-subtle,
-        .brightness-slider-container.brightness-theme-filled { background: transparent; padding: 10px 0; border: none; box-shadow: none; }
-        .brightness-theme-flat .brightness-slider-variable { background: linear-gradient(to right, var(--brightness-color, #ff9800), var(--divider-color, #d0d0d0)); }
-        .brightness-theme-subtle .brightness-label,
-        .brightness-theme-subtle .brightness-value-slider,
-        .brightness-theme-subtle .brightness-value-right,
-        .brightness-theme-filled .brightness-label,
-        .brightness-theme-filled .brightness-value-slider,
-        .brightness-theme-filled .brightness-value-right,
-        .brightness-theme-flat .brightness-label { color: var(--primary-text-color); }
-        .brightness-theme-subtle .brightness-bar-track { background: var(--divider-color, rgba(0, 0, 0, 0.08)); }
-        .brightness-theme-filled .brightness-bar-track { background: var(--primary-background-color, rgba(0, 0, 0, 0.3)); }
-        .brightness-theme-flat .brightness-bar-track { background: var(--divider-color, rgba(0, 0, 0, 0.06)); }
-        .brightness-theme-subtle .rotary-bg { stroke: var(--divider-color, rgba(0, 0, 0, 0.1)); }
-        .brightness-theme-filled .rotary-bg { stroke: var(--primary-background-color, rgba(0, 0, 0, 0.3)); }
-        .brightness-theme-flat .rotary-bg { stroke: var(--divider-color, rgba(0, 0, 0, 0.08)); }
-        .brightness-theme-filled .rotary-label, .brightness-theme-subtle .rotary-label { color: var(--secondary-text-color); }
-        .brightness-theme-filled .rotary-value, .brightness-theme-subtle .rotary-value { color: var(--primary-text-color); }
-        .brightness-value { font-size: 12px; color: var(--secondary-text-color); margin-top: 4px; }
+  .brightness-slider-container {
+    text-align: center;
+  }
+  .brightness-label {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 10px;
+    color: var(--primary-text-color);
+    text-align: left;
+  }
+  .brightness-slider-wrapper,
+  .brightness-bar-wrapper,
+  .brightness-matrix-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+  }
+  .brightness-slider-full {
+    gap: 0;
+  }
+  .brightness-value-slider,
+  .brightness-matrix-value,
+  .brightness-value-right {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--primary-text-color);
+    min-width: 40px;
+    text-align: right;
+  }
+  .brightness-value-slider {
+    flex-shrink: 0;
+  }
+  .brightness-percentage-standalone {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--primary-text-color);
+    text-align: center;
+    padding: 8px 0;
+  }
+  .brightness-value {
+    font-size: 12px;
+    color: var(--secondary-text-color);
+    margin-top: 4px;
+  }
 `;
+
+const rangeSliderStyles = `
+  .brightness-slider-variable {
+    width: 100%;
+    outline: none;
+    -webkit-appearance: none;
+    cursor: pointer;
+  }
+  .brightness-slider-variable.slider-variant-thin {
+    height: var(--slider-thickness, 6px);
+    border-radius: calc(var(--slider-thickness, 6px) / 2);
+    background: linear-gradient(to right, #ff9800, var(--divider-color, #444));
+  }
+  .brightness-slider-variable.slider-variant-thin::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: calc(var(--slider-thickness, 6px) * 3.2);
+    height: calc(var(--slider-thickness, 6px) * 3.2);
+    border-radius: 50%;
+    background: var(--accent-color, #ff9800);
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+  .brightness-slider-variable.slider-variant-thin::-moz-range-thumb {
+    width: calc(var(--slider-thickness, 6px) * 3.2);
+    height: calc(var(--slider-thickness, 6px) * 3.2);
+    border-radius: 50%;
+    background: var(--accent-color, #ff9800);
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+  .brightness-slider-variable.slider-variant-thick {
+    height: calc(var(--slider-thickness, 6px) * 4);
+    border-radius: 6px;
+    background: linear-gradient(
+      to right,
+      #ff9800 0%,
+      #ffc56b var(--slider-pct, 50%),
+      var(--divider-color, rgba(0, 0, 0, 0.14)) var(--slider-pct, 50%),
+      var(--divider-color, rgba(0, 0, 0, 0.14)) 100%
+    );
+  }
+  .brightness-slider-variable.slider-variant-thick::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: calc(var(--slider-thickness, 6px) * 3);
+    height: calc(var(--slider-thickness, 6px) * 7);
+    border-radius: 5px;
+    background: var(--card-background-color, #fff);
+    border: 2px solid var(--divider-color, #ccc);
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  }
+  .brightness-slider-variable.slider-variant-thick::-moz-range-thumb {
+    width: calc(var(--slider-thickness, 6px) * 3);
+    height: calc(var(--slider-thickness, 6px) * 7);
+    border-radius: 5px;
+    background: var(--card-background-color, #fff);
+    border: 2px solid var(--divider-color, #ccc);
+    cursor: pointer;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  }
+  .brightness-slider-variable:not([class*="slider-variant-"]) {
+    height: var(--slider-thickness, 6px);
+    border-radius: calc(var(--slider-thickness, 6px) / 2);
+    background: linear-gradient(
+      to right,
+      var(--disabled-text-color, #333),
+      var(--card-background-color, #fff)
+    );
+  }
+  .brightness-slider-variable:not(
+      [class*="slider-variant-"]
+    )::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: calc(var(--slider-thickness, 6px) * 3);
+    height: calc(var(--slider-thickness, 6px) * 3);
+    border-radius: 50%;
+    background: var(--accent-color, #ff9800);
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+  .brightness-slider-variable:not([class*="slider-variant-"])::-moz-range-thumb {
+    width: calc(var(--slider-thickness, 6px) * 3);
+    height: calc(var(--slider-thickness, 6px) * 3);
+    border-radius: 50%;
+    background: var(--accent-color, #ff9800);
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+`;
+
+const barSliderStyles = `
+  .brightness-bar-wrapper.brightness-bar-full {
+    gap: 8px;
+  }
+  .brightness-bar-track {
+    position: relative;
+    flex: 1;
+    height: calc(var(--slider-thickness, 6px) * 5.5);
+    background: var(--disabled-color, rgba(255, 255, 255, 0.1));
+    border-radius: calc(var(--slider-thickness, 6px) * 2);
+    overflow: hidden;
+  }
+  .brightness-bar-fill {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    background: linear-gradient(90deg, #ffa726 0%, #ffb74d 100%);
+    border-radius: 12px;
+    transition: width 0.1s ease;
+    pointer-events: none;
+  }
+  .brightness-slider-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    -webkit-appearance: none;
+    cursor: pointer;
+    outline: none;
+  }
+  .brightness-slider-bar::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 0;
+    height: 0;
+    opacity: 0;
+  }
+  .brightness-slider-bar::-moz-range-thumb {
+    width: 0;
+    height: 0;
+    opacity: 0;
+    border: none;
+  }
+  .brightness-bar-seams {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    display: none;
+  }
+  .bar-fill-pulse .brightness-bar-fill {
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--brightness-color, #ff9800) 90%, #000) 0%,
+      var(--brightness-color, #ff9800) 60%,
+      color-mix(in srgb, var(--brightness-color, #ff9800) 60%, #fff) 100%
+    );
+    animation: barPulseGlow 2s ease-in-out infinite;
+  }
+  @keyframes barPulseGlow {
+    0%,
+    100% {
+      box-shadow: 0 0 6px
+        color-mix(in srgb, var(--brightness-color, #ff9800) 40%, transparent);
+      opacity: 1;
+    }
+    50% {
+      box-shadow:
+        0 0 18px
+          color-mix(in srgb, var(--brightness-color, #ff9800) 85%, transparent),
+        0 0 32px
+          color-mix(in srgb, var(--brightness-color, #ff9800) 40%, transparent);
+      opacity: 0.92;
+    }
+  }
+  .bar-fill-stripes .brightness-bar-fill {
+    background:
+      repeating-linear-gradient(
+        -45deg,
+        rgba(255, 255, 255, 0.22) 0,
+        rgba(255, 255, 255, 0.22) 8px,
+        transparent 8px,
+        transparent 16px
+      ),
+      linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--brightness-color, #ff9800) 90%, #000) 0%,
+        var(--brightness-color, #ff9800) 100%
+      );
+    background-size:
+      22px 100%,
+      100% 100%;
+    animation: barStripesShift 0.8s linear infinite;
+  }
+  .bar-fill-stripes.bar-stripes-idle .brightness-bar-fill {
+    animation-play-state: paused;
+  }
+  @keyframes barStripesShift {
+    from {
+      background-position:
+        0 0,
+        0 0;
+    }
+    to {
+      background-position:
+        22px 0,
+        0 0;
+    }
+  }
+  .bar-fill-gloss .brightness-bar-fill {
+    background:
+      linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.55) 0%,
+        rgba(255, 255, 255, 0.08) 46%,
+        rgba(0, 0, 0, 0.12) 54%,
+        rgba(0, 0, 0, 0) 100%
+      ),
+      linear-gradient(
+        90deg,
+        color-mix(in srgb, var(--brightness-color, #ff9800) 80%, #000) 0%,
+        color-mix(in srgb, var(--brightness-color, #ff9800) 70%, #fff) 100%
+      );
+    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.5);
+  }
+`;
+
+const wheelSliderStyles = `
+  .brightness-wheel-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+  }
+  .brightness-wheel-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--primary-text-color);
+    text-shadow: 0 0 10px rgba(255, 152, 0, 0.3);
+  }
+  .brightness-wheel-viewport {
+    --wheel-mark-color: var(--secondary-text-color, #888);
+    --wheel-active-color: linear-gradient(180deg, #ffcf7a, #ff8f00);
+    --wheel-active-shadow: 0 0 8px rgba(255, 152, 0, 0.7);
+    --wheel-active-height: calc(65% - 4px);
+    --wheel-active-width: 3px;
+    position: relative;
+    width: 100%;
+    min-height: 40px;
+    overflow: hidden;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--card-background-color, #fff) 84%, #000);
+    box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.28);
+    cursor: ew-resize;
+    touch-action: none;
+    user-select: none;
+  }
+  .brightness-wheel-viewport.wheel-style-mesh {
+    --wheel-mark-color: color-mix(
+      in srgb,
+      var(--brightness-color, #ff9800) 55%,
+      var(--secondary-text-color, #888)
+    );
+    --wheel-active-color: var(--brightness-color, #ff9800);
+    --wheel-active-shadow: 0 0 8px
+      color-mix(in srgb, var(--brightness-color, #ff9800) 80%, transparent);
+    --wheel-active-height: 70%;
+    --wheel-active-width: 4px;
+    background-image:
+      repeating-linear-gradient(
+        45deg,
+        rgba(0, 0, 0, 0.07) 0,
+        rgba(0, 0, 0, 0.07) 1px,
+        transparent 0,
+        transparent 50%
+      ),
+      repeating-linear-gradient(
+        -45deg,
+        rgba(0, 0, 0, 0.07) 0,
+        rgba(0, 0, 0, 0.07) 1px,
+        transparent 0,
+        transparent 50%
+      );
+    background-size: 7px 7px;
+  }
+  .brightness-wheel-track {
+    position: absolute;
+    left: 50%;
+    top: 0;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    transform: translateX(var(--wheel-shift, -26px));
+    transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .brightness-wheel-tick {
+    height: 100%;
+    flex: 0 0 52px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    opacity: 0.45;
+    transform: scale(0.82);
+    transition:
+      opacity 0.18s ease,
+      transform 0.18s ease;
+  }
+  .brightness-wheel-tick .wheel-tick-mark {
+    width: 3px;
+    height: calc(50% - 6px);
+    max-height: 22px;
+    border-radius: 3px;
+    background: var(--wheel-mark-color);
+  }
+  .brightness-wheel-tick .wheel-tick-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--secondary-text-color, #888);
+  }
+  .brightness-wheel-tick.active {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+  .brightness-wheel-tick.active .wheel-tick-mark {
+    width: var(--wheel-active-width);
+    height: var(--wheel-active-height);
+    max-height: 28px;
+    background: var(--wheel-active-color);
+    box-shadow: var(--wheel-active-shadow);
+  }
+  .brightness-wheel-tick.active .wheel-tick-label {
+    color: var(--primary-text-color);
+  }
+  .brightness-wheel-caret {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    height: 100%;
+    background: linear-gradient(
+      180deg,
+      transparent,
+      rgba(255, 152, 0, 0.85),
+      transparent
+    );
+    z-index: 3;
+    pointer-events: none;
+  }
+  .brightness-wheel-fade {
+    position: absolute;
+    top: 0;
+    width: 34px;
+    height: 100%;
+    z-index: 2;
+    pointer-events: none;
+  }
+  .brightness-wheel-fade-left {
+    left: 0;
+    background: linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--card-background-color, #fff) 84%, #000),
+      transparent
+    );
+  }
+  .brightness-wheel-fade-right {
+    right: 0;
+    background: linear-gradient(
+      270deg,
+      color-mix(in srgb, var(--card-background-color, #fff) 84%, #000),
+      transparent
+    );
+  }
+`;
+
+const matrixSliderStyles = `
+  .brightness-matrix-grid {
+    flex: 1;
+    display: grid;
+    gap: 4px;
+    padding: 8px;
+    border-radius: 10px;
+    background: #101012;
+    box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.55);
+    cursor: pointer;
+    user-select: none;
+    touch-action: none;
+  }
+  .brightness-matrix-cell {
+    aspect-ratio: 1 / 1;
+    border-radius: 3px;
+    background: #2a2a2e;
+    box-shadow: inset 0 0 2px rgba(0, 0, 0, 0.6);
+    transition:
+      background 0.12s ease,
+      box-shadow 0.12s ease;
+  }
+  .brightness-matrix-cell.lit {
+    background: radial-gradient(
+      circle at 40% 35%,
+      color-mix(in srgb, var(--brightness-color, #ff9800) 15%, #fff) 0%,
+      var(--brightness-color, #ff9800) 55%,
+      color-mix(in srgb, var(--brightness-color, #ff9800) 80%, #000) 100%
+    );
+    box-shadow:
+      0 0 6px
+        color-mix(in srgb, var(--brightness-color, #ff9800) 75%, transparent),
+      inset 0 0 2px rgba(255, 255, 255, 0.4);
+  }
+  .pixel-shape-square .brightness-matrix-cell {
+    border-radius: 0;
+  }
+  .pixel-shape-rounded .brightness-matrix-cell {
+    border-radius: 3px;
+  }
+  .pixel-shape-round .brightness-matrix-cell {
+    border-radius: 50%;
+  }
+`;
+
+const rotarySliderStyles = `
+  .brightness-rotary-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+  }
+  .brightness-rotary-container {
+    position: relative;
+    width: 100%;
+    height: auto;
+    aspect-ratio: 1;
+    box-sizing: border-box;
+    padding: 6.25%;
+    cursor: pointer;
+    user-select: none;
+    container-type: inline-size;
+  }
+  .brightness-rotary-container::before {
+    content: "";
+    position: absolute;
+    inset: 10%;
+    border-radius: 50%;
+    background: radial-gradient(
+      circle at 50% 36%,
+      color-mix(in srgb, var(--card-background-color, #fff) 86%, #000) 0%,
+      var(--card-background-color, #fff) 72%
+    );
+    box-shadow:
+      inset 0 2px 7px rgba(0, 0, 0, 0.3),
+      inset 0 -1px 3px rgba(255, 255, 255, 0.06),
+      0 6px 16px rgba(0, 0, 0, 0.18);
+    pointer-events: none;
+  }
+  .brightness-rotary-svg {
+    display: block;
+    position: relative;
+    width: 100%;
+    height: 100%;
+    transform: rotate(135deg);
+    pointer-events: none;
+    overflow: visible;
+  }
+  .rotary-bg {
+    fill: none;
+    stroke: var(--divider-color, rgba(0, 0, 0, 0.14));
+    stroke-width: var(--rotary-stroke, 12);
+    stroke-linecap: round;
+    opacity: 0.55;
+  }
+  .rotary-progress-glow {
+    fill: none;
+    stroke: url(#brightnessRotaryGrad);
+    stroke-width: var(--rotary-stroke, 12);
+    stroke-linecap: round;
+    transition: stroke-dasharray 0.1s ease;
+    filter: drop-shadow(0 0 3px rgba(255, 152, 0, 0.85))
+      drop-shadow(0 0 8px rgba(255, 145, 0, 0.5));
+  }
+  .rotary-progress-gloss {
+    fill: none;
+    stroke: url(#brightnessRotaryGrad);
+    stroke-width: var(--rotary-stroke, 12);
+    stroke-linecap: round;
+    transition: stroke-dasharray 0.1s ease;
+  }
+  .rotary-gloss-overlay {
+    fill: none;
+    stroke: url(#rotaryGlossGrad);
+    stroke-width: var(--rotary-stroke, 12);
+    stroke-linecap: round;
+    transition: stroke-dasharray 0.1s ease;
+    pointer-events: none;
+  }
+  .rotary-progress-thick {
+    fill: none;
+    stroke: #ff9800;
+    stroke-width: calc(var(--rotary-stroke, 12) * 1.4);
+    stroke-linecap: round;
+    transition: stroke-dasharray 0.1s ease;
+    opacity: 0.9;
+  }
+  .rotary-progress-dial {
+    fill: none;
+    stroke: var(--primary-color, #1976d2);
+    stroke-width: var(--rotary-stroke, 12);
+    stroke-linecap: round;
+    transition: stroke-dasharray 0.1s ease;
+  }
+  .rotary-style-dial .rotary-bg {
+    opacity: 0.15;
+  }
+  .rotary-style-dial .brightness-rotary-container::before {
+    background: none;
+    box-shadow: none;
+  }
+  .rotary-style-dial .rotary-label {
+    font-size: 14px;
+    color: var(--secondary-text-color);
+  }
+  .rotary-style-dial .rotary-value {
+    font-size: clamp(16px, 18cqi, 28px);
+    font-weight: 700;
+    text-shadow: none;
+  }
+  .rotary-dial-knob {
+    fill: var(--card-background-color, #fff);
+    stroke: var(--primary-color, #1976d2);
+    stroke-width: 3;
+    filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.25));
+    transition:
+      cx 0.1s ease,
+      cy 0.1s ease;
+  }
+  .rotary-style-thick .brightness-rotary-container::before {
+    display: none;
+  }
+  .rotary-knob-arm {
+    position: absolute;
+    inset: 0;
+    transform: rotate(var(--knob-angle, 225deg));
+    transition: transform 0.1s ease;
+    pointer-events: none;
+    z-index: 6;
+  }
+  .rotary-knob {
+    position: absolute;
+    top: 15%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: calc(var(--rotary-stroke, 12) * 0.9px);
+    height: calc(var(--rotary-stroke, 12) * 1.9px);
+    min-width: 10px;
+    min-height: 22px;
+    border-radius: 5px;
+    background: var(--card-background-color, #fff);
+    border: 2px solid var(--divider-color, #ccc);
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.35);
+  }
+  .rotary-center-content {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    pointer-events: none;
+  }
+  .rotary-label {
+    font-size: 16px;
+    font-weight: 500;
+    color: var(--secondary-text-color);
+    text-align: center;
+  }
+  .rotary-value {
+    font-size: clamp(16px, 15cqi, 24px);
+    font-weight: bold;
+    color: var(--primary-text-color);
+    text-shadow: 0 0 10px rgba(255, 152, 0, 0.35);
+  }
+  .brightness-slider-rotary {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+`;
+
+const sliderStepButtonStyles = `
+  .brightness-step-below {
+    display: flex;
+    align-items: center;
+    gap: var(--slider-step-gap, 12px);
+    width: 100%;
+    margin-top: 6px;
+    padding: 2px var(--slider-step-pad-x, 0px) 0;
+    box-sizing: border-box;
+  }
+  .brightness-step-btn-area {
+    flex: 1;
+    max-width: var(--slider-step-track-max, none);
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    min-width: 0;
+  }
+  .brightness-step-spacer {
+    visibility: hidden;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+  }
+  .brightness-sides-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .brightness-sides-row .brightness-slider-container {
+    flex: 1;
+    min-width: 0;
+  }
+  .rotary-step-side {
+    flex: 0 0 auto;
+  }
+  .rotary-step-btn {
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    box-sizing: border-box;
+    border-radius: 50%;
+    border: 2px solid var(--divider-color, rgba(0, 0, 0, 0.15));
+    background: var(--card-background-color, #fff);
+    color: var(--primary-text-color, #333);
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.12);
+    transition:
+      box-shadow 0.15s ease,
+      transform 0.1s ease;
+    user-select: none;
+  }
+  .rotary-step-btn:hover {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    transform: scale(1.05);
+  }
+  .rotary-step-btn:active {
+    transform: scale(0.95);
+  }
+`;
+
+const capsuleSliderStyles = `
+  ${getCapsuleCSS()}
+  .capsule-variant-thick .capsule-track {
+    height: calc(var(--capsule-thickness, 6px) * 4);
+    border-radius: 6px;
+  }
+  .capsule-variant-thick .capsule-thumb {
+    width: calc(var(--capsule-thickness, 6px) * 3);
+    height: calc(var(--capsule-thickness, 6px) * 6.5);
+    border-radius: 5px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
+  }
+  .brightness-capsule-host {
+    width: 100%;
+  }
+  .capsule-snap-ticks {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    z-index: 1;
+  }
+  .capsule-snap-tick {
+    position: absolute;
+    top: 50%;
+    width: 5px;
+    height: 5px;
+    transform: translate(-50%, -50%);
+    background: var(--primary-text-color, #333);
+    border-radius: 50%;
+    opacity: 0.35;
+  }
+  .brightness-capsule-slot {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+  }
+  .brightness-capsule-input {
+    width: 52px;
+    height: 26px;
+    border: 1px solid var(--divider-color, rgba(128, 128, 128, 0.3));
+    border-radius: 5px;
+    background: transparent;
+    color: var(--primary-text-color, #333);
+    font-size: 13px;
+    font-weight: 700;
+    text-align: center;
+    box-sizing: border-box;
+    padding: 0;
+    -moz-appearance: textfield;
+    outline: none;
+  }
+  .brightness-capsule-input::-webkit-outer-spin-button,
+  .brightness-capsule-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .brightness-capsule-input[readonly] {
+    cursor: default;
+  }
+  .capsule-value-under {
+    display: flex;
+    justify-content: center;
+    padding: 8px 0;
+  }
+`;
+
+const sliderThemeStyles = `
+  .brightness-slider-container.brightness-theme-flat,
+  .brightness-slider-container.brightness-style-capsule {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+  }
+  .brightness-slider-container:not(
+      .brightness-style-capsule
+    ).brightness-theme-subtle {
+    border-radius: 12px;
+    padding: 12px 14px;
+    box-shadow:
+      0 3px 12px rgba(0, 0, 0, 0.22),
+      0 1px 4px rgba(0, 0, 0, 0.14);
+    background: var(--card-background-color, #fff);
+  }
+  .brightness-theme-flat .brightness-slider-variable {
+    background: linear-gradient(
+      to right,
+      var(--brightness-color, #ff9800),
+      var(--divider-color, #d0d0d0)
+    );
+  }
+  .brightness-theme-subtle .brightness-bar-track {
+    background: var(--divider-color, rgba(0, 0, 0, 0.08));
+  }
+  .brightness-theme-flat .brightness-bar-track {
+    background: var(--divider-color, rgba(0, 0, 0, 0.06));
+  }
+  .brightness-theme-subtle .rotary-bg {
+    stroke: var(--divider-color, rgba(0, 0, 0, 0.1));
+  }
+  .brightness-theme-flat .rotary-bg {
+    stroke: var(--divider-color, rgba(0, 0, 0, 0.08));
+  }
+`;
+
+export const sliderControlStyles = [
+  sliderLayoutStyles,
+  rangeSliderStyles,
+  barSliderStyles,
+  wheelSliderStyles,
+  matrixSliderStyles,
+  rotarySliderStyles,
+  sliderStepButtonStyles,
+  capsuleSliderStyles,
+  sliderThemeStyles,
+].join("\n");
 
 // ── Config key mapping ──────────────────────────────────────────────────────
 // Consumers may use any config key names; a `keys` map (K) decouples the shared
@@ -1479,7 +1730,7 @@ export function sliderConfigToGc(config, K, overrides = {}) {
     variant: g(K.variant, "thin"),
     barFill: g(K.barFill, "solid"),
     wheelStep: g(K.wheelStep, 10),
-    wheelStyle: g(K.wheelStyle, "ticks"),
+    wheelStyle: resolveWheelStyle(g(K.wheelStyle, "ticks")),
     wheelLabels: g(K.wheelLabels, true),
     matrixCols: g(K.matrixCols, 10),
     matrixRows: g(K.matrixRows, 2),
@@ -1559,7 +1810,6 @@ export function renderSliderSettings(config, K, onChange, opts = {}) {
         [
           { value: "thin", label: "Thin" },
           { value: "thick", label: "Thick" },
-          { value: "glow", label: "Glow" },
         ],
         g(K.variant, "thin"),
         html`<span>Slider Variant</span>`,
@@ -1587,12 +1837,10 @@ export function renderSliderSettings(config, K, onChange, opts = {}) {
         ${bg(
           K.wheelStyle,
           [
-            { value: "ticks", label: "Ticks" },
-            { value: "dots", label: "Dots" },
-            { value: "bars", label: "Bars" },
+            { value: "ticks", label: "Classic" },
             { value: "mesh", label: "Mesh" },
           ],
-          g(K.wheelStyle, "ticks"),
+          resolveWheelStyle(g(K.wheelStyle, "ticks")),
           html`<span>Wheel Style</span>`,
         )}
         ${createToggleRow(
@@ -1748,15 +1996,11 @@ export function renderSliderSettings(config, K, onChange, opts = {}) {
       (e) => onChange(K.width, parseInt(e.target.value, 10)),
       "%",
     )}
-    ${bg(
+    ${createToggleRow(
+      "Card background",
       K.theme,
-      [
-        { value: "flat", label: "Flat" },
-        { value: "subtle", label: "Subtle" },
-        { value: "filled", label: "Filled" },
-      ],
-      g(K.theme, "subtle"),
-      html`<span>Theme</span>`,
+      g(K.theme, "subtle") !== "flat",
+      (e) => onChange(K.theme, e.target.checked ? "subtle" : "flat"),
     )}
     ${modeSection}
     ${createToggleRow("Step Buttons", K.stepButtons, stepButtonsOn, (e) =>
