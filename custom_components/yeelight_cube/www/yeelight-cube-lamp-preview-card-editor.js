@@ -1,3 +1,4 @@
+import { renderActionButtonSettings } from "./action-button-ui.js";
 import { LitElement, html, css } from "./lib/lit-all.js";
 import {
   createButtonGroup,
@@ -318,61 +319,14 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
               cfg.show_force_refresh_button !== false,
               (e) => this._onToggleChange(e),
             )}
-            <div class="form-row">
-              <label>Buttons Style</label>
-              ${createButtonGroup(
-                [
-                  { value: "modern", label: "Modern" },
-                  { value: "classic", label: "Classic" },
-                  { value: "outline", label: "Outline" },
-                  { value: "gradient", label: "Gradient" },
-                  { value: "icon", label: "Icon" },
-                  { value: "pill", label: "Pill" },
-                ],
-                cfg.buttons_style || "classic",
-                createButtonGroupChangeHandler("buttons_style", (value) => {
-                  this._config = {
-                    ...this._config,
-                    buttons_style: value,
-                  };
-                  this._fireConfigChanged();
-                }),
-              )}
-            </div>
-            ${(cfg.buttons_style || "classic") !== "icon"
-              ? html`
-                  <div class="form-row">
-                    <label>Content Mode</label>
-                    ${createButtonGroup(
-                      [
-                        { value: "icon", label: "Icon" },
-                        { value: "text", label: "Text" },
-                        { value: "icon_text", label: "Icon + Text" },
-                      ],
-                      cfg.buttons_content_mode || "icon_text",
-                      createButtonGroupChangeHandler(
-                        "buttons_content_mode",
-                        (value) => {
-                          this._config = {
-                            ...this._config,
-                            buttons_content_mode: value,
-                          };
-                          this._fireConfigChanged();
-                        },
-                      ),
-                    )}
-                  </div>
-                `
-              : html`
-                  <div class="form-row" style="opacity: 0.5;">
-                    <label>Content Mode</label>
-                    <div
-                      style="font-size: 0.85em; color: var(--secondary-text-color, #888);"
-                    >
-                      Icon style always uses icon-only
-                    </div>
-                  </div>
-                `}
+            ${renderActionButtonSettings(
+              cfg,
+              (key, value) => {
+                this._config = { ...this._config, [key]: value };
+                this._fireConfigChanged();
+              },
+              { defaultStyle: "classic" },
+            )}
           </div>
         </div>
 

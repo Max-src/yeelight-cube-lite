@@ -12,6 +12,14 @@
 // action.
 
 import { escapeHtml } from "./html-escape-utils.js";
+import "./clock-preset-manager.js";
+import {
+  clockPresetLibrary,
+  clockPresetKey,
+  clockStylesWithPresets,
+  matchingClockPreset,
+  clockStyleAction,
+} from "./clock-preset-utils.js";
 import {
   bindColorPicker,
   closeColorPicker,
@@ -97,6 +105,7 @@ function clockColorToRgb(intColor) {
 // frame's lit pixels (styles are static, so a module-level cache is safe).
 const _swatchCache = new Map();
 function styleSwatchBackground(style) {
+  if (style.presetId) return `rgb(${style.color.join(",")})`;
   if (_swatchCache.has(style.name)) return _swatchCache.get(style.name);
   const frame = renderClockFrame(
     {
@@ -317,6 +326,7 @@ class YeelightCubeClockCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
+    if (this._presetManager) this._presetManager.hass = hass;
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     // Once the lamp echoes the applied values, drop the live-drag overrides so
     // the previews follow the real values again.
@@ -444,6 +454,7 @@ class YeelightCubeClockCard extends HTMLElement {
       a.content_mode,
       a.brightness,
       this._stateObj()?.state,
+      JSON.stringify(clockPresetLibrary(this._hass)),
     ].join("|");
   }
 
@@ -482,18 +493,20 @@ class YeelightCubeClockCard extends HTMLElement {
     const a = this._attrs();
     // Experimental styles follow the entity's Experimental Features switch
     // exactly — no separate card-level override.
-    const styles = getClockStyles(!!a.extended_effects_enabled);
+    const styles = clockStylesWithPresets(
+      getClockStyles(!!a.extended_effects_enabled),
+      clockPresetLibrary(this._hass),
+    );
     // Optional user-curated visibility/order (editor drag-drop list).
     if (
       this.config?.custom_visible_styles === true &&
-      Array.isArray(this.config.visible_styles) &&
-      this.config.visible_styles.length
+      Array.isArray(this.config.visible_styles)
     ) {
-      const byName = new Map(styles.map((s) => [s.name, s]));
+      const byName = new Map(styles.map((s) => [clockPresetKey(s), s]));
       const picked = this.config.visible_styles
         .map((n) => byName.get(n))
         .filter(Boolean);
-      if (picked.length) return picked;
+      return picked;
     }
     return styles;
   }
@@ -511,6 +524,10 @@ class YeelightCubeClockCard extends HTMLElement {
       clock_colon_blink: a.clock_colon_blink,
       native_effect_direction: a.native_effect_direction,
     };
+    if (style.presetId) {
+      attrs.clock_style = "White";
+      attrs.clock_color_rgb = style.color;
+    }
     if (withOverride) {
       const rgb = clockColorToRgb(a.clock_color);
       if (rgb) attrs.clock_color_rgb = rgb;
@@ -520,6 +537,11 @@ class YeelightCubeClockCard extends HTMLElement {
 
   _currentStyle() {
     const a = this._attrs();
+    const preset = matchingClockPreset(
+      clockStylesWithPresets([], clockPresetLibrary(this._hass)),
+      a,
+    );
+    if (preset) return preset;
     if (typeof a.clock_style === "string") {
       const s = clockStyleByName(a.clock_style);
       if (s) return s;
@@ -540,8 +562,12 @@ class YeelightCubeClockCard extends HTMLElement {
   }
 
   _applyStyle(name) {
+    const style = this._styleList().find(
+      (item) => clockPresetKey(item) === name,
+    );
+    if (!style) return;
     this._lastSelfSelect = Date.now();
-    this._callSetClock({ style: name, activate: true });
+    this._callSetClock(clockStyleAction(style));
   }
 
   _applyContent(content) {
@@ -580,7 +606,7 @@ class YeelightCubeClockCard extends HTMLElement {
     const highlight = this.config.highlight_active_mode !== false;
     // Host attribute drives the shared wheel-centered CSS.
     this.dataset.highlightActive = highlight ? "true" : "false";
-    const currentName = this._currentStyle()?.name || null;
+    const currentName = clockPresetKey(this._currentStyle());
     const isCarousel =
       this._isPreviewSelector() && this._displayMode() === "carousel";
     root.querySelectorAll("[data-mode]").forEach((item) => {
@@ -613,7 +639,7 @@ class YeelightCubeClockCard extends HTMLElement {
         this._wheelCenterIndex = index;
         this._applyStyle(mode);
       },
-      getCurrentMode: () => this._currentStyle()?.name || null,
+      getCurrentMode: () => clockPresetKey(this._currentStyle()),
     });
     const itemsInDom =
       this.shadowRoot?.querySelectorAll(
@@ -629,10 +655,10 @@ class YeelightCubeClockCard extends HTMLElement {
 
   // Carousel navigation IS selection (same mechanic as the gradient card).
   _carouselNavigate(direction) {
-    const names = this._styleList().map((s) => s.name);
+    const names = this._styleList().map(clockPresetKey);
     if (!names.length) return;
     if (this._carouselIndex == null) {
-      const idx = names.indexOf(this._currentStyle()?.name);
+      const idx = names.indexOf(clockPresetKey(this._currentStyle()));
       this._carouselIndex = idx >= 0 ? idx : 0;
     }
     const wrap = this.config.gallery_wrap_navigation === true;
@@ -646,7 +672,7 @@ class YeelightCubeClockCard extends HTMLElement {
   }
 
   _carouselSetIndex(index) {
-    const names = this._styleList().map((s) => s.name);
+    const names = this._styleList().map(clockPresetKey);
     if (!names.length) return;
     const clamped = Math.max(0, Math.min(index, names.length - 1));
     if (clamped === this._carouselIndex) return;
@@ -814,7 +840,9 @@ class YeelightCubeClockCard extends HTMLElement {
           : "";
       }
     }
-    const style = clockStyleByName(styleName) || this._currentStyle();
+    const style =
+      this._styleList().find((item) => clockPresetKey(item) === styleName) ||
+      this._currentStyle();
     if (!style) return;
     const emptyBg = el._ignoreBlack ? "transparent" : "#000";
     const attrs = this._previewAttrs(style, { withOverride: isCurrent });
@@ -885,8 +913,8 @@ class YeelightCubeClockCard extends HTMLElement {
       this._carouselIndex != null &&
       Date.now() - (this._lastSelfSelect || 0) > 5000
     ) {
-      const names = this._styleList().map((s) => s.name);
-      const idx = names.indexOf(current?.name);
+      const names = this._styleList().map(clockPresetKey);
+      const idx = names.indexOf(clockPresetKey(current));
       if (idx >= 0) this._carouselIndex = idx;
     }
 
@@ -894,7 +922,12 @@ class YeelightCubeClockCard extends HTMLElement {
     if (this.config.show_current_preview !== false) {
       sections.push(this._renderCurrentPreview(current));
     }
-    sections.push(this._renderStyleSelector(sel, current));
+    if (
+      this.config.show_brightness === true ||
+      this.config.show_animation_speed !== false
+    ) {
+      sections.push(this._renderSliders(a));
+    }
     if (this.config.show_content_toggle !== false) {
       sections.push(this._renderContentToggle(a));
     }
@@ -904,12 +937,7 @@ class YeelightCubeClockCard extends HTMLElement {
     if (this.config.show_color_override) {
       sections.push(this._renderColorOverride(a));
     }
-    if (
-      this.config.show_brightness === true ||
-      this.config.show_animation_speed !== false
-    ) {
-      sections.push(this._renderSliders(a));
-    }
+    sections.push(this._renderStyleSelector(sel, current));
 
     const showCard = this.config.show_card_background !== false;
     const title = this.config.title
@@ -941,7 +969,7 @@ class YeelightCubeClockCard extends HTMLElement {
   _previewTile(style, { current = false, size } = {}) {
     const px = size || this._previewSizePx();
     return `<div class="clock-preview" data-clock-preview data-style-name="${escapeHtml(
-      style.name,
+      clockPresetKey(style),
     )}" data-current="${current ? "1" : "0"}" data-size="${px}"></div>`;
   }
 
@@ -973,7 +1001,7 @@ class YeelightCubeClockCard extends HTMLElement {
     const shape = resolveSelectorShape(this.config);
     const scale = this._selectorTextScale();
     const selAttrs = `data-shape="${shape}" style="--gc-sel-scale:${scale}; display: flex; flex-wrap: wrap; gap: 6px;"`;
-    const active = current?.name;
+    const active = clockPresetKey(current);
 
     if (sel === "dropdown") {
       return `
@@ -982,9 +1010,9 @@ class YeelightCubeClockCard extends HTMLElement {
             ${styles
               .map(
                 (s) =>
-                  `<option value="${escapeHtml(s.name)}" ${
-                    active === s.name ? "selected" : ""
-                  }>${escapeHtml(s.name)}</option>`,
+                  `<option value="${escapeHtml(clockPresetKey(s))}" ${
+                    active === clockPresetKey(s) ? "selected" : ""
+                  }>${escapeHtml(s.name)}${s.presetId ? " (Custom)" : ""}</option>`,
               )
               .join("")}
           </select>
@@ -997,10 +1025,10 @@ class YeelightCubeClockCard extends HTMLElement {
           ${styles
             .map(
               (s) => `
-            <button class="mode-chip ${active === s.name ? "active" : ""}"
-                    data-mode="${escapeHtml(s.name)}" title="${escapeHtml(s.name)}">
+                <button class="mode-chip ${active === clockPresetKey(s) ? "active" : ""}"
+                  data-mode="${escapeHtml(clockPresetKey(s))}" title="${escapeHtml(s.name)}">
               <span class="mode-chip-swatch" style="background:${styleSwatchBackground(s)}"></span>
-              <span class="mode-chip-label">${escapeHtml(s.name)}</span>
+              <span class="mode-chip-label">${escapeHtml(s.name)}${s.presetId ? " <small>Custom</small>" : ""}</span>
             </button>`,
             )
             .join("")}
@@ -1013,9 +1041,10 @@ class YeelightCubeClockCard extends HTMLElement {
         ${styles
           .map(
             (s) => `
-          <button class="mode-btn-filled ${active === s.name ? "active" : ""}"
-                  data-mode="${escapeHtml(s.name)}" title="${escapeHtml(s.name)}">
+            <button class="mode-btn-filled ${active === clockPresetKey(s) ? "active" : ""}"
+              data-mode="${escapeHtml(clockPresetKey(s))}" title="${escapeHtml(s.name)}">
             ${escapeHtml(s.name)}
+            ${s.presetId ? "<small>Custom</small>" : ""}
           </button>`,
           )
           .join("")}
@@ -1027,12 +1056,12 @@ class YeelightCubeClockCard extends HTMLElement {
     const phase = this._phase();
     const { fontMap, metrics } = this._getNativeClockFont();
     return this._styleList().map((s) => ({
-      title: s.name,
-      name: s.name,
+      title: s.name + (s.presetId ? " (Custom)" : ""),
+      name: s.name + (s.presetId ? " (Custom)" : ""),
       colorData: flipMatrixVertical(
         renderClockFrame(this._previewAttrs(s), fontMap, metrics, phase),
       ),
-      dataMode: s.name,
+      dataMode: clockPresetKey(s),
       metadata: null,
     }));
   }
@@ -1070,7 +1099,9 @@ class YeelightCubeClockCard extends HTMLElement {
 
     if (displayMode === "carousel") {
       if (this._carouselIndex == null) {
-        const idx = items.findIndex((it) => it.dataMode === current?.name);
+        const idx = items.findIndex(
+          (it) => it.dataMode === clockPresetKey(current),
+        );
         this._carouselIndex = idx >= 0 ? idx : 0;
       }
       this._carouselIndex = Math.max(
@@ -1108,7 +1139,7 @@ class YeelightCubeClockCard extends HTMLElement {
                     forceAspectRatio: true,
                   })}
                 </div>
-                ${showTitles ? `<div style="font-size:13px;font-weight:500;${bgName === "black" ? "color:#fff;" : "color:var(--primary-text-color);"}">${escapeHtml(it.dataMode)}</div>` : ""}
+                ${showTitles ? `<div style="font-size:13px;font-weight:500;${bgName === "black" ? "color:#fff;" : "color:var(--primary-text-color);"}">${escapeHtml(it.title)}</div>` : ""}
               </div>`,
           })}
         </div>`;
@@ -1245,12 +1276,26 @@ class YeelightCubeClockCard extends HTMLElement {
             <button type="button" class="seg-btn${rgb ? " active" : ""}" data-color-mode="custom" aria-pressed="${!!rgb}">Custom</button>
           </div>
         </div>
+        <div data-preset-save></div>
       </div>`;
   }
 
   _attachHandlers() {
     const root = this.shadowRoot;
     if (!root) return;
+    const presetSlot = root.querySelector("[data-preset-save]");
+    if (presetSlot && this.config.show_save_preset_button !== false) {
+      this._presetManager ??= document.createElement(
+        "yeelight-clock-preset-manager",
+      );
+      this._presetManager.hass = this._hass;
+      this._presetManager.buttonStyle = this.config.buttons_style || "modern";
+      this._presetManager.contentMode =
+        this.config.buttons_content_mode || "icon_text";
+      const rgb = clockColorToRgb(this._attrs().clock_color);
+      this._presetManager.initialColor = rgb ? rgbToHex(rgb) : "#ffee00";
+      presetSlot.append(this._presetManager);
+    }
 
     // Text selectors: filled buttons + chips share the data-mode contract
     root

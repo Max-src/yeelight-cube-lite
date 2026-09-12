@@ -1,4 +1,11 @@
 import { LitElement, html } from "./lib/lit-all.js";
+import "./clock-preset-manager.js";
+import { renderActionButtonSettings } from "./action-button-ui.js";
+import {
+  clockPresetLibrary,
+  clockPresetKey,
+  clockStylesWithPresets,
+} from "./clock-preset-utils.js";
 
 import {
   sharedEditorStyles,
@@ -220,9 +227,7 @@ class YeelightCubeClockCardEditor extends LitElement {
     const selectedEntities =
       config.target_entities || (config.entity ? [config.entity] : []);
 
-    // Sections are ordered to match how the elements appear on the card:
-    // Global Settings → Lamp Preview → Quick schemes → Clock style →
-    // Content & Controls (content, format, colour override) → Animation Speed.
+    // Editor sections follow the card's visual order.
     return html`
       <div class="editor-root">
         ${this._section(
@@ -326,9 +331,113 @@ class YeelightCubeClockCardEditor extends LitElement {
           `,
         )}
         ${this._section(
+          "speed",
+          "Sliders",
+          html`
+            ${createToggleRow(
+              "Show brightness slider",
+              "show_brightness",
+              config.show_brightness === true,
+              (e) => this._onToggle(e, "show_brightness"),
+            )}
+            ${createToggleRow(
+              "Show animation speed slider",
+              "show_animation_speed",
+              config.show_animation_speed !== false,
+              (e) => this._onToggle(e, "show_animation_speed"),
+            )}
+            ${renderSliderSettings(
+              config,
+              sliderKeys("slider"),
+              (key, value) => {
+                this.config = { ...this.config, [key]: value };
+                this.requestUpdate();
+                this._fire();
+              },
+              {
+                icons: {
+                  leftLabel: "Show lower icon (🐢 / 🌙)",
+                  rightLabel: "Show upper icon (⚡ / ☀️)",
+                },
+              },
+            )}
+          `,
+        )}
+        ${this._section(
+          "display",
+          "Content & Controls",
+          html`
+            ${createToggleRow(
+              "Show content toggle",
+              "show_content_toggle",
+              config.show_content_toggle !== false,
+              (e) => this._onToggle(e, "show_content_toggle"),
+            )}
+            ${createToggleRow(
+              "Show format toggles",
+              "show_format_toggles",
+              config.show_format_toggles !== false,
+              (e) => this._onToggle(e, "show_format_toggles"),
+            )}
+            ${createToggleRow(
+              "Show colour override",
+              "show_color_override",
+              !!config.show_color_override,
+              (e) => this._onToggle(e, "show_color_override"),
+            )}
+            ${config.show_color_override
+              ? html`
+                  <div class="form-row">
+                    <label>Colour override style</label>
+                    ${createButtonGroup(
+                      colorPickerStyleChoices,
+                      resolveColorPickerStyle(config.color_override_style),
+                      (event) => {
+                        const value = event.currentTarget.dataset.value;
+                        this.config = {
+                          ...this.config,
+                          color_override_style: value,
+                        };
+                        this.requestUpdate();
+                        this._fire();
+                      },
+                    )}
+                  </div>
+                `
+              : ""}
+            ${createToggleRow(
+              "Show save-as-preset button",
+              "show_save_preset_button",
+              config.show_save_preset_button !== false,
+              (e) => this._onToggle(e, "show_save_preset_button"),
+            )}
+            ${config.show_save_preset_button !== false
+              ? renderModeSettingsSection(
+                  "Save button style",
+                  renderActionButtonSettings(config, (key, value) => {
+                    this.config = { ...this.config, [key]: value };
+                    this.requestUpdate();
+                    this._fire();
+                  }),
+                )
+              : ""}
+          `,
+        )}
+        ${this._section(
           "style",
           "Clock style",
           html`
+            ${renderModeSettingsSection(
+              "Custom colour clocks",
+              html`
+                <yeelight-clock-preset-manager
+                  .hass=${this._hass}
+                  .showLibrary=${true}
+                  .buttonStyle=${config.buttons_style || "modern"}
+                  .contentMode=${config.buttons_content_mode || "icon_text"}
+                ></yeelight-clock-preset-manager>
+              `,
+            )}
             ${createToggleRow(
               "Customize visible styles",
               "custom_visible_styles",
@@ -539,83 +648,6 @@ class YeelightCubeClockCardEditor extends LitElement {
             )}
           `,
         )}
-        ${this._section(
-          "display",
-          "Content & Controls",
-          html`
-            ${createToggleRow(
-              "Show content toggle",
-              "show_content_toggle",
-              config.show_content_toggle !== false,
-              (e) => this._onToggle(e, "show_content_toggle"),
-            )}
-            ${createToggleRow(
-              "Show format toggles",
-              "show_format_toggles",
-              config.show_format_toggles !== false,
-              (e) => this._onToggle(e, "show_format_toggles"),
-            )}
-            ${createToggleRow(
-              "Show colour override",
-              "show_color_override",
-              !!config.show_color_override,
-              (e) => this._onToggle(e, "show_color_override"),
-            )}
-            ${config.show_color_override
-              ? html`
-                  <div class="form-row">
-                    <label>Colour override style</label>
-                    ${createButtonGroup(
-                      colorPickerStyleChoices,
-                      resolveColorPickerStyle(config.color_override_style),
-                      (event) => {
-                        const value = event.currentTarget.dataset.value;
-                        this.config = {
-                          ...this.config,
-                          color_override_style: value,
-                        };
-                        this.requestUpdate();
-                        this._fire();
-                      },
-                    )}
-                  </div>
-                `
-              : ""}
-          `,
-        )}
-        ${this._section(
-          "speed",
-          "Sliders",
-          html`
-            ${createToggleRow(
-              "Show brightness slider",
-              "show_brightness",
-              config.show_brightness === true,
-              (e) => this._onToggle(e, "show_brightness"),
-            )}
-            ${createToggleRow(
-              "Show animation speed slider",
-              "show_animation_speed",
-              config.show_animation_speed !== false,
-              (e) => this._onToggle(e, "show_animation_speed"),
-            )}
-            ${renderSliderSettings(
-              config,
-              sliderKeys("slider"),
-              (key, value) => {
-                this.config = { ...this.config, [key]: value };
-                this.requestUpdate();
-                this._fire();
-              },
-              {
-                icons: {
-                  leftLabel: "Show lower icon (🐢 / 🌙)",
-                  rightLabel: "Show upper icon (⚡ / ☀️)",
-                },
-              },
-            )}
-          `,
-        )}
       </div>
     `;
   }
@@ -623,15 +655,28 @@ class YeelightCubeClockCardEditor extends LitElement {
   // Ordered list of styles shown in the selector (all styles when unset).
   _visibleStyleList() {
     const list = this.config?.visible_styles;
-    return Array.isArray(list) && list.length
-      ? list
-      : getClockStyles(true).map((s) => s.name);
+    const all = clockStylesWithPresets(
+      getClockStyles(true),
+      clockPresetLibrary(this._hass),
+    ).map(clockPresetKey);
+    return Array.isArray(list) ? list.filter((key) => all.includes(key)) : all;
   }
 
   _renderVisibleStyleList() {
     const list = this._visibleStyleList();
-    const allNames = getClockStyles(true).map((s) => s.name);
+    const allStyles = clockStylesWithPresets(
+      getClockStyles(true),
+      clockPresetLibrary(this._hass),
+    );
+    const allNames = allStyles.map(clockPresetKey);
+    const labels = new Map(
+      allStyles.map((style) => [
+        clockPresetKey(style),
+        style.name + (style.presetId ? " (Custom)" : ""),
+      ]),
+    );
     return renderOrderableList({
+      labelFor: (key) => labels.get(key) || key,
       items: list,
       available: allNames.filter((n) => !list.includes(n)),
       onUpdate: (l) => {

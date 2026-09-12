@@ -7,7 +7,7 @@ import {
   deleteButtonStyles,
   deleteButtonPositionStyles,
 } from "./delete-button-styles.js";
-import { exportImportButtonStyles } from "./export-import-button-utils.js";
+import { exportImportButtonStyles } from "./action-button-utils.js";
 import { carouselStyles } from "./carousel-utils.js";
 
 export const drawCardStyles = css`
@@ -714,64 +714,6 @@ export const drawCardStyles = css`
     box-sizing: border-box;
   }
 
-  /* Actions row layout for consistent button widths */
-  .actions-row {
-    display: flex;
-    width: 100%;
-    gap: 8px;
-    align-items: stretch;
-  }
-
-  .actions-row .action-item {
-    flex: 1 1 0;
-    min-width: 0;
-    display: flex;
-  }
-
-  .actions-row.icon-mode {
-    justify-content: center;
-    gap: 12px;
-  }
-
-  .actions-row.icon-mode .action-item {
-    flex: 0 0 auto;
-  }
-
-  .actions-row .action-item button,
-  .actions-row .action-item .upload-label {
-    width: 100%;
-    flex: 1;
-    min-height: 44px;
-    box-sizing: border-box;
-    /* Stack icon + text vertically so content fits in equal-width columns */
-    flex-direction: column;
-    gap: 2px;
-    padding: 6px 4px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    font-size: 0.85em;
-  }
-
-  .actions-row .action-item button .btn-text,
-  .actions-row .action-item .upload-label .btn-text {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
-    /* font-size: 0.85em; */
-    line-height: 1.2;
-  }
-
-  /* In icon style, buttons must keep their fixed circular dimensions */
-  .actions-row.icon-mode .action-item button,
-  .actions-row.icon-mode .action-item .upload-label {
-    width: 48px;
-    height: 48px;
-    min-height: 48px;
-    flex: 0 0 48px;
-    padding: 0;
-    border-radius: 50%;
-  }
   .toolbar {
     display: flex;
     align-items: center;

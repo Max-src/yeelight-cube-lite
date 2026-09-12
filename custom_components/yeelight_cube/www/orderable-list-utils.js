@@ -110,6 +110,7 @@ export function renderOrderableList({
   onReset,
   addPlaceholder = "Add an item…",
   resetLabel = "Reset to defaults",
+  labelFor = (name) => name,
 }) {
   const onDragStart = (e, idx) => {
     e.dataTransfer.effectAllowed = "move";
@@ -187,7 +188,7 @@ export function renderOrderableList({
         >
           ▼
         </button>
-        <span class="orderable-list-name">${name}</span>
+        <span class="orderable-list-name">${labelFor(name)}</span>
         <button class="remove" title="Remove" @click="${() => onRemove(idx)}">
           ✕
         </button>
@@ -200,7 +201,9 @@ export function renderOrderableList({
     <div class="orderable-add-row">
       <select @change="${onAdd}">
         <option value="">${addPlaceholder}</option>
-        ${available.map((n) => html`<option value="${n}">${n}</option>`)}
+        ${available.map(
+          (n) => html`<option value="${n}">${labelFor(n)}</option>`,
+        )}
       </select>
       ${onReset
         ? html`

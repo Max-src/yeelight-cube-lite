@@ -1,4 +1,5 @@
-﻿import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
+﻿import { getActionRowClass } from "./action-button-utils.js";
+import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
 import { escapeHtml } from "./html-escape-utils.js";
 import {
   openColorPicker,
@@ -9,7 +10,7 @@ import {
   exportImportButtonStyles,
   getExportImportButtonClass,
   renderButtonContent,
-} from "./export-import-button-utils.js";
+} from "./action-button-utils.js";
 import {
   deleteButtonStyles,
   getDeleteButtonClass,
@@ -649,9 +650,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
             buttonLeft,
           })}
         </div>
-        <div class="action-row${
-          this.config.buttons_style === "icon" ? " icon-mode" : ""
-        }">
+        <div class="${getActionRowClass({ buttonStyle: this.config.buttons_style, contentMode: this.config.buttons_content_mode })}">
             ${(() => {
               const contentMode =
                 this.config.buttons_style === "icon"

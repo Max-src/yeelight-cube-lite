@@ -1,10 +1,13 @@
 """Service definitions for Yeelight Cube Lite component."""
 import logging
+import asyncio
 import voluptuous as vol # type: ignore
 from homeassistant.core import HomeAssistant, ServiceCall, callback # type: ignore
 from homeassistant.helpers import config_validation as cv # type: ignore
 from homeassistant.helpers.discovery_flow import async_create_flow # type: ignore
-from .const import DOMAIN
+from .const import DOMAIN, NATIVE_CLOCK_STYLES
+from .clock_presets import save_clock_preset, delete_clock_preset
+from homeassistant.exceptions import HomeAssistantError
 from .conflict_prevention import get_conflict_prevention
 from .discovery import is_cube_device
 from .rediscovery_utils import force_rediscovery, trigger_manual_discovery
@@ -77,6 +80,50 @@ SERVICE_IGNORE_SPECIFIC_YEELIGHT_SCHEMA = vol.Schema({
 @callback
 def async_setup_services(hass: HomeAssistant):
     """Set up services for Yeelight Cube Lite component."""
+    preset_lock = asyncio.Lock()
+
+    async def update_clock_presets(call):
+        from . import async_save_data
+
+        async with preset_lock:
+            domain_data = hass.data.get(DOMAIN, {})
+            ready = domain_data.get("storage_ready")
+            if ready is not None:
+                await ready.wait()
+            if not domain_data.get("storage") or domain_data.get("storage_init_error"):
+                raise HomeAssistantError("Clock preset storage is not ready")
+            previous = domain_data.get("clock_presets", [])
+            try:
+                if call.service == "delete_clock_preset":
+                    updated = delete_clock_preset(previous, call.data["preset_id"])
+                else:
+                    updated = save_clock_preset(
+                        previous, call.data["name"], call.data["color"],
+                        [style["name"] for style in NATIVE_CLOCK_STYLES.values()],
+                        call.data.get("preset_id"),
+                    )
+            except ValueError as error:
+                raise HomeAssistantError(str(error)) from error
+            domain_data["clock_presets"] = updated
+            try:
+                await async_save_data(hass)
+            except Exception:
+                domain_data["clock_presets"] = previous
+                raise
+            hass.bus.async_fire(f"{DOMAIN}_clock_presets_updated")
+
+    hass.services.async_register(
+        DOMAIN, "save_clock_preset", update_clock_presets,
+        schema=vol.Schema({
+            vol.Required("name"): cv.string,
+            vol.Required("color"): vol.All(cv.ensure_list, [vol.All(int, vol.Range(min=0, max=255))], vol.Length(min=3, max=3)),
+            vol.Optional("preset_id"): cv.string,
+        }),
+    )
+    hass.services.async_register(
+        DOMAIN, "delete_clock_preset", update_clock_presets,
+        schema=vol.Schema({vol.Required("preset_id"): cv.string}),
+    )
     
     async def add_managed_device(call: ServiceCall):
         """Add a device to the managed list."""
@@ -336,6 +383,8 @@ def async_setup_services(hass: HomeAssistant):
 @callback
 def async_remove_services(hass: HomeAssistant):
     """Remove services for Yeelight Cube Lite component."""
+    hass.services.async_remove(DOMAIN, "save_clock_preset")
+    hass.services.async_remove(DOMAIN, "delete_clock_preset")
     hass.services.async_remove(DOMAIN, SERVICE_ADD_MANAGED_DEVICE)
     hass.services.async_remove(DOMAIN, SERVICE_REMOVE_MANAGED_DEVICE)
     hass.services.async_remove(DOMAIN, SERVICE_IS_DEVICE_MANAGED)

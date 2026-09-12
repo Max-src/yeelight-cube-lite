@@ -1,3 +1,4 @@
+import { renderActionButtonSettings } from "./action-button-ui.js";
 import { LitElement, html, css } from "./lib/lit-all.js";
 import {
   sharedEditorStyles,
@@ -913,58 +914,18 @@ class YeelightCubeDrawCardEditor extends LitElement {
                   }),
                 )}
               </div>
-              <div class="form-row">
-                <label>Button Style</label>
-                ${createButtonGroup(
-                  [
-                    { value: "modern", label: "Modern" },
-                    { value: "classic", label: "Classic" },
-                    { value: "outline", label: "Outline" },
-                    { value: "gradient", label: "Gradient" },
-                    { value: "icon", label: "Icon" },
-                    { value: "pill", label: "Pill" },
-                  ],
-                  this.config.tool_buttons_style || "modern",
-                  createButtonGroupChangeHandler(
-                    "tool_buttons_style",
-                    (value) => {
-                      this.config.tool_buttons_style = value;
-                      this._fireConfigChanged();
-                    },
-                  ),
-                )}
-              </div>
-              ${(this.config.tool_buttons_style || "modern") !== "icon"
-                ? html`
-                    <div class="form-row">
-                      <label>Content Mode</label>
-                      ${createButtonGroup(
-                        [
-                          { value: "icon", label: "Icon" },
-                          { value: "text", label: "Text" },
-                          { value: "icon_text", label: "Icon + Text" },
-                        ],
-                        this.config.tool_content_mode || "icon",
-                        createButtonGroupChangeHandler(
-                          "tool_content_mode",
-                          (value) => {
-                            this.config.tool_content_mode = value;
-                            this._fireConfigChanged();
-                          },
-                        ),
-                      )}
-                    </div>
-                  `
-                : html`
-                    <div class="form-row" style="opacity: 0.5;">
-                      <label>Content Mode</label>
-                      <div
-                        style="font-size: 0.85em; color: var(--secondary-text-color, #888);"
-                      >
-                        Icon style always uses icon-only
-                      </div>
-                    </div>
-                  `}
+              ${renderActionButtonSettings(
+                this.config,
+                (key, value) => {
+                  this.config[key] = value;
+                  this._fireConfigChanged();
+                },
+                {
+                  styleKey: "tool_buttons_style",
+                  contentKey: "tool_content_mode",
+                  defaultContentMode: "icon",
+                },
+              )}
             </div>
           </div>
         </div>
@@ -1114,58 +1075,18 @@ class YeelightCubeDrawCardEditor extends LitElement {
             <div
               style="margin-top:16px;border-top:1px solid var(--divider-color, #e0e0e0);padding-top:16px;"
             >
-              <div class="form-row">
-                <label>Button Style</label>
-                ${createButtonGroup(
-                  [
-                    { value: "modern", label: "Modern" },
-                    { value: "classic", label: "Classic" },
-                    { value: "outline", label: "Outline" },
-                    { value: "gradient", label: "Gradient" },
-                    { value: "icon", label: "Icon" },
-                    { value: "pill", label: "Pill" },
-                  ],
-                  this.config.actions_buttons_style || "modern",
-                  createButtonGroupChangeHandler(
-                    "actions_buttons_style",
-                    (value) => {
-                      this.config.actions_buttons_style = value;
-                      this._fireConfigChanged();
-                    },
-                  ),
-                )}
-              </div>
-              ${(this.config.actions_buttons_style || "modern") !== "icon"
-                ? html`
-                    <div class="form-row">
-                      <label>Content Mode</label>
-                      ${createButtonGroup(
-                        [
-                          { value: "icon", label: "Icon" },
-                          { value: "text", label: "Text" },
-                          { value: "icon_text", label: "Icon + Text" },
-                        ],
-                        this.config.actions_content_mode || "icon",
-                        createButtonGroupChangeHandler(
-                          "actions_content_mode",
-                          (value) => {
-                            this.config.actions_content_mode = value;
-                            this._fireConfigChanged();
-                          },
-                        ),
-                      )}
-                    </div>
-                  `
-                : html`
-                    <div class="form-row" style="opacity: 0.5;">
-                      <label>Content Mode</label>
-                      <div
-                        style="font-size: 0.85em; color: var(--secondary-text-color, #888);"
-                      >
-                        Icon style always uses icon-only
-                      </div>
-                    </div>
-                  `}
+              ${renderActionButtonSettings(
+                this.config,
+                (key, value) => {
+                  this.config[key] = value;
+                  this._fireConfigChanged();
+                },
+                {
+                  styleKey: "actions_buttons_style",
+                  contentKey: "actions_content_mode",
+                  defaultContentMode: "icon",
+                },
+              )}
             </div>
           </div>
         </div>
@@ -1419,58 +1340,17 @@ class YeelightCubeDrawCardEditor extends LitElement {
               this.config.show_pixelart_import_button !== false,
               (e) => this._onSwitchChange(e, "show_pixelart_import_button"),
             )}
-            <div class="form-row">
-              <label>Button Style</label>
-              ${createButtonGroup(
-                [
-                  { value: "modern", label: "Modern" },
-                  { value: "classic", label: "Classic" },
-                  { value: "outline", label: "Outline" },
-                  { value: "gradient", label: "Gradient" },
-                  { value: "icon", label: "Icon" },
-                  { value: "pill", label: "Pill" },
-                ],
-                this.config.pixelart_buttons_style || "modern",
-                createButtonGroupChangeHandler(
-                  "pixelart_buttons_style",
-                  (value) => {
-                    this.config.pixelart_buttons_style = value;
-                    this._fireConfigChanged();
-                  },
-                ),
-              )}
-            </div>
-            ${(this.config.pixelart_buttons_style || "modern") !== "icon"
-              ? html`
-                  <div class="form-row">
-                    <label>Content Mode</label>
-                    ${createButtonGroup(
-                      [
-                        { value: "icon", label: "Icon" },
-                        { value: "text", label: "Text" },
-                        { value: "icon_text", label: "Icon + Text" },
-                      ],
-                      this.config.pixelart_content_mode || "icon_text",
-                      createButtonGroupChangeHandler(
-                        "pixelart_content_mode",
-                        (value) => {
-                          this.config.pixelart_content_mode = value;
-                          this._fireConfigChanged();
-                        },
-                      ),
-                    )}
-                  </div>
-                `
-              : html`
-                  <div class="form-row" style="opacity: 0.5;">
-                    <label>Content Mode</label>
-                    <div
-                      style="font-size: 0.85em; color: var(--secondary-text-color, #888);"
-                    >
-                      Icon style always uses icon-only
-                    </div>
-                  </div>
-                `}
+            ${renderActionButtonSettings(
+              this.config,
+              (key, value) => {
+                this.config[key] = value;
+                this._fireConfigChanged();
+              },
+              {
+                styleKey: "pixelart_buttons_style",
+                contentKey: "pixelart_content_mode",
+              },
+            )}
           </div>
         </div>
       </div>

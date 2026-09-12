@@ -13,7 +13,7 @@ import {
   exportImportButtonStyles,
   getExportImportButtonClass,
   renderButtonContent,
-} from "./export-import-button-utils.js";
+} from "./action-button-utils.js";
 import {
   resolveCapsuleTheme,
   resolveCapsuleThickness,

@@ -1,3 +1,4 @@
+import { getActionRowClass } from "./action-button-utils.js";
 import { LitElement, html, repeat, unsafeHTML } from "./lib/lit-all.js";
 import { escapeHtml } from "./html-escape-utils.js";
 import { getInitialMatrix, parseConfig } from "./draw_card_state.js";
@@ -18,7 +19,7 @@ import {
   exportImportButtonStyles,
   renderButtonContent as renderExportImportButtonContent,
   getExportImportButtonClass,
-} from "./export-import-button-utils.js";
+} from "./action-button-utils.js";
 import { renderCarousel } from "./carousel-utils.js";
 import { listModeStyles } from "./list-mode-utils.js";
 import { galleryModeStyles, renderGalleryMode } from "./gallery-mode-utils.js";
@@ -1673,11 +1674,7 @@ class YeelightCubeDrawCard extends LitElement {
     const statusType = isImportStatus ? this._importStatus.type : null;
 
     return html`
-      <div
-        class="action-row${contentMode === "icon" || buttonStyle === "icon"
-          ? " icon-mode"
-          : ""}"
-      >
+      <div class=${getActionRowClass({ buttonStyle, contentMode })}>
         ${showExportBtn
           ? html`
               <button

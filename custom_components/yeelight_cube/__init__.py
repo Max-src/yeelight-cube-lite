@@ -525,6 +525,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 _migrated_pixel_arts.append(_art)
 
         hass.data[DOMAIN].update({
+            "clock_presets": stored_data.get("clock_presets", []),
             "palettes_v2": stored_data.get("palettes_v2", []),
             "pixel_arts": _migrated_pixel_arts,
             "device_runtime_state": stored_data.get("device_runtime_state", {}),
@@ -1001,6 +1002,7 @@ async def async_save_data(hass: HomeAssistant):
     _LOGGER.debug(f"[STORAGE-SAVE] Palette names: {[p.get('name', 'Unnamed') for p in palettes_v2[:5]]}...")
     
     data_to_save = {
+        "clock_presets": hass.data[DOMAIN].get("clock_presets", []),
         "palettes_v2": palettes_v2,
         "pixel_arts": pixel_arts,
         "device_runtime_state": device_runtime_state,

@@ -1,3 +1,4 @@
+import { renderActionButtonSettings } from "./action-button-ui.js";
 import { LitElement, html, css } from "./lib/lit-all.js";
 
 import {
@@ -350,56 +351,9 @@ class YeelightCubePaletteCardEditor extends LitElement {
               config.show_import_button !== false,
               (e) => this._onSwitchChange(e, "show_import_button"),
             )}
-            <div class="form-row">
-              <label>Button Style</label>
-              ${createButtonGroup(
-                [
-                  { value: "modern", label: "Modern" },
-                  { value: "classic", label: "Classic" },
-                  { value: "outline", label: "Outline" },
-                  { value: "gradient", label: "Gradient" },
-                  { value: "icon", label: "Icon" },
-                  { value: "pill", label: "Pill" },
-                ],
-                config.buttons_style || "modern",
-                createButtonGroupChangeHandler("buttons_style", (value) => {
-                  this._onButtonGroupChange("buttons_style", value);
-                }),
-              )}
-            </div>
-            ${(config.buttons_style || "modern") !== "icon"
-              ? html`
-                  <div class="form-row">
-                    <label>Content Mode</label>
-                    ${createButtonGroup(
-                      [
-                        { value: "icon", label: "Icon" },
-                        { value: "text", label: "Text" },
-                        { value: "icon_text", label: "Icon + Text" },
-                      ],
-                      config.buttons_content_mode || "icon_text",
-                      createButtonGroupChangeHandler(
-                        "buttons_content_mode",
-                        (value) => {
-                          this._onButtonGroupChange(
-                            "buttons_content_mode",
-                            value,
-                          );
-                        },
-                      ),
-                    )}
-                  </div>
-                `
-              : html`
-                  <div class="form-row" style="opacity: 0.5;">
-                    <label>Content Mode</label>
-                    <div
-                      style="font-size: 0.85em; color: var(--secondary-text-color, #888);"
-                    >
-                      Icon style always uses icon-only
-                    </div>
-                  </div>
-                `}
+            ${renderActionButtonSettings(config, (key, value) => {
+              this._onButtonGroupChange(key, value);
+            })}
           </div>
         </div>
       </div>

@@ -145,6 +145,33 @@ set_button_effects:
         entity:
           domain: light
 
+save_clock_preset:
+  name: Save Clock Colour Preset
+  description: Create or update a shared named solid-colour clock without changing the lamp.
+  fields:
+    name:
+      required: true
+      selector:
+        text:
+    color:
+      required: true
+      description: RGB colour as three integers from 0 to 255.
+      selector:
+        color_rgb:
+    preset_id:
+      description: Existing preset ID when editing; omit to create a preset.
+      selector:
+        text:
+
+delete_clock_preset:
+  name: Delete Clock Colour Preset
+  description: Remove a saved clock colour without changing the lamp.
+  fields:
+    preset_id:
+      required: true
+      selector:
+        text:
+
 set_clock_style:
   name: Set Clock Style
   description: >-

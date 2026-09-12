@@ -1,3 +1,4 @@
+import { getActionRowClass } from "./action-button-utils.js";
 import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
 import { escapeHtml } from "./html-escape-utils.js";
 import { compactModeStyles } from "./compact-mode-styles.js";
@@ -11,7 +12,7 @@ import {
   exportImportButtonStyles,
   renderButtonContent,
   getExportImportButtonClass,
-} from "./export-import-button-utils.js";
+} from "./action-button-utils.js";
 import {
   getAlbumStyles,
   renderAlbumView,
@@ -2130,7 +2131,7 @@ class YeelightCubePaletteCard extends HTMLElement {
         ? "icon"
         : this.config.buttons_content_mode || "icon_text";
 
-    const rowClass = `action-row${contentMode === "icon" ? " icon-mode" : ""}`;
+    const rowClass = getActionRowClass({ buttonStyle, contentMode });
 
     return `
       <div class='${rowClass}'>

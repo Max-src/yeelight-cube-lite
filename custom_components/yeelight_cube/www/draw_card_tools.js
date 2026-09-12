@@ -1,10 +1,12 @@
 // Tool Management Module for Yeelight Cube Lite Draw Card
 import { html } from "./lib/lit-all.js";
 import { handleColorPickerClick } from "./color-picker-utils.js";
+import { getExportImportButtonClass } from "./action-button-utils.js";
 import {
-  getExportImportButtonClass,
-  renderButtonContent,
-} from "./export-import-button-utils.js";
+  renderActionButton,
+  renderActionButtonContent,
+  renderActionRow,
+} from "./action-button-ui.js";
 import {
   TOOL_CONFIG,
   DEFAULT_TOOL_ORDER,
@@ -157,10 +159,6 @@ export class ToolManager {
     const toolStyle = config?.tool_buttons_style || "modern";
     const toolContentMode =
       toolStyle === "icon" ? "icon" : config?.tool_content_mode || "icon";
-    const showIcon =
-      toolContentMode === "icon" || toolContentMode === "icon_text";
-    const showText =
-      toolContentMode === "text" || toolContentMode === "icon_text";
 
     const getToolClass = (selected) => {
       const base = getExportImportButtonClass(
@@ -172,19 +170,6 @@ export class ToolManager {
         return `${base} tool-shape-${paintShape}`;
       }
       return base;
-    };
-
-    // Get tool icon html
-    const getToolIcon = (tool) => {
-      const cfg = TOOL_CONFIG[tool];
-      const icon = cfg ? cfg.icon : "mdi:help";
-      return html`<ha-icon icon="${icon}"></ha-icon>`;
-    };
-
-    // Get tool label
-    const getToolLabel = (tool) => {
-      const cfg = TOOL_CONFIG[tool];
-      return cfg ? cfg.label : tool;
     };
 
     // Visibility toggle template
@@ -251,9 +236,11 @@ export class ToolManager {
           title="${this.getToolTitle(tool)}"
           @click="${clickHandler}"
         >
-          ${showIcon ? getToolIcon(tool) : ""}${showText
-            ? html`<span class="btn-text">${getToolLabel(tool)}</span>`
-            : ""}
+          ${renderActionButtonContent(
+            TOOL_CONFIG[tool]?.icon || "mdi:help",
+            TOOL_CONFIG[tool]?.label || tool,
+            toolContentMode,
+          )}
         </button>
       </div>
     `;
@@ -620,30 +607,23 @@ export class ActionManager {
       actionsStyle === "icon" ? "icon" : cfg.actions_content_mode || "icon";
 
     const btnClass = (type) => getExportImportButtonClass(type, actionsStyle);
-    const showIcon = contentMode === "icon" || contentMode === "icon_text";
-    const showText = contentMode === "text" || contentMode === "icon_text";
 
     switch (action) {
       case "clear":
         return {
-          element: html`
-            <button
-              class="${btnClass("clear")}"
-              title="Clear"
-              @click="${() => {
-                this.card.matrixOperations.clearMatrix();
-                this.card.constructor
-                  .getStorageUtils()
-                  .saveMatrix(this.card.matrix);
-              }}"
-            >
-              ${showIcon
-                ? html`<ha-icon icon="mdi:restore"></ha-icon>`
-                : ""}${showText
-                ? html`<span class="btn-text">Clear</span>`
-                : ""}
-            </button>
-          `,
+          element: renderActionButton({
+            action: "clear",
+            buttonStyle: actionsStyle,
+            contentMode,
+            icon: "mdi:restore",
+            label: "Clear",
+            onClick: () => {
+              this.card.matrixOperations.clearMatrix();
+              this.card.constructor
+                .getStorageUtils()
+                .saveMatrix(this.card.matrix);
+            },
+          }),
         };
 
       case "upload":
@@ -653,11 +633,11 @@ export class ActionManager {
               class="upload-label ${btnClass("upload")}"
               title="Upload Image"
             >
-              ${showIcon
-                ? html`<ha-icon icon="mdi:arrow-up-circle-outline"></ha-icon>`
-                : ""}${showText
-                ? html`<span class="btn-text">Upload</span>`
-                : ""}
+              ${renderActionButtonContent(
+                "mdi:arrow-up-circle-outline",
+                "Upload",
+                contentMode,
+              )}
               <input
                 type="file"
                 accept="image/*"
@@ -670,40 +650,27 @@ export class ActionManager {
 
       case "save":
         return {
-          element: html`
-            <button
-              class="${btnClass("save")}"
-              title="Save as Pixel Art"
-              @click="${() => this.card._savePixelArt()}"
-            >
-              ${showIcon
-                ? html`<ha-icon icon="mdi:content-save"></ha-icon>`
-                : ""}${showText ? html`<span class="btn-text">Save</span>` : ""}
-            </button>
-          `,
+          element: renderActionButton({
+            action: "save",
+            buttonStyle: actionsStyle,
+            contentMode,
+            icon: "mdi:content-save",
+            label: "Save",
+            title: "Save as Pixel Art",
+            onClick: () => this.card._savePixelArt(),
+          }),
         };
 
       case "apply":
         return {
-          element: html`
-            <button
-              class="${btnClass("apply")}"
-              title="Apply"
-              @click="${() => {
-                // console.error("[YeelightDrawCard] Apply button clicked", {
-                //   entity: this.card?.entity,
-                //   target_entities: this.card?.config?.target_entities,
-                // });
-                return this.card._sendToLamp();
-              }}"
-            >
-              ${showIcon
-                ? html`<ha-icon icon="mdi:send"></ha-icon>`
-                : ""}${showText
-                ? html`<span class="btn-text">Apply</span>`
-                : ""}
-            </button>
-          `,
+          element: renderActionButton({
+            action: "apply",
+            buttonStyle: actionsStyle,
+            contentMode,
+            icon: "mdi:send",
+            label: "Apply",
+            onClick: () => this.card._sendToLamp(),
+          }),
         };
 
       default:
@@ -735,7 +702,6 @@ export class ActionManager {
   renderActionsSection(config, paintShape) {
     const actionsOrder = this.getActionsOrder(config);
     const actionsStyle = config?.actions_buttons_style || "modern";
-    const isIconMode = actionsStyle === "icon";
 
     const renderedActions = actionsOrder
       .map((action, index) => {
@@ -743,10 +709,10 @@ export class ActionManager {
       })
       .filter((action) => action !== null);
 
-    return html`
-      <div class="actions-row${isIconMode ? " icon-mode" : ""}">
-        ${renderedActions}
-      </div>
-    `;
+    return renderActionRow(renderedActions, {
+      buttonStyle: actionsStyle,
+      contentMode: config?.actions_content_mode || "icon",
+      slotted: true,
+    });
   }
 }

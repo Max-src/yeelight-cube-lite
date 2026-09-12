@@ -14,6 +14,35 @@ class YeelightCubeBaseSensor(Entity):
         # Return None for integration-level entities
         return None
 
+class ClockPresetSensor(YeelightCubeBaseSensor):
+    """Shared named solid-colour clocks, excluded from recorder history."""
+
+    _unrecorded_attributes = frozenset({"clock_presets"})
+
+    def __init__(self, hass):
+        super().__init__(hass)
+        self._attr_unique_id = "yeelight_cube_clock_presets"
+        self._attr_name = "Clock Colour Presets"
+        self._attr_icon = "mdi:clock-outline"
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        self.async_on_remove(self.hass.bus.async_listen(
+            f"{DOMAIN}_clock_presets_updated", self._handle_update,
+        ))
+
+    async def _handle_update(self, event):
+        self.async_write_ha_state()
+
+    @property
+    def state(self):
+        return len(self.hass.data[DOMAIN].get("clock_presets", []))
+
+    @property
+    def extra_state_attributes(self):
+        return {"clock_presets": self.hass.data[DOMAIN].get("clock_presets", [])}
+
+
 class PaletteSensor(YeelightCubeBaseSensor):
     """Sensor exposing the current palettes_v2 list for the Yeelight Cube Lite."""
     
@@ -259,6 +288,7 @@ def _create_and_register_sensors(hass, async_add_entities, owner_entry_id):
     _LOGGER = logging.getLogger(__name__)
 
     sensors = [
+        ClockPresetSensor(hass),
         LetterMapSensor(hass),
         PaletteSensor(hass),
         PixelArtSensor(hass),
