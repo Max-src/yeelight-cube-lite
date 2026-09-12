@@ -1,6 +1,11 @@
 ﻿import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
 import { escapeHtml } from "./html-escape-utils.js";
 import {
+  openColorPicker,
+  closeColorPicker,
+  bindColorPickerTrigger,
+} from "./color-picker-utils.js";
+import {
   exportImportButtonStyles,
   getExportImportButtonClass,
   renderButtonContent,
@@ -2402,14 +2407,17 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       });
     }
     const self = this;
-    // Color input handlers - prevent direct clicks from opening native picker
-    // All color picking now goes through _openColorPickerAt() called by wrapper handlers
     root.querySelectorAll("input[type=color]").forEach((input) => {
-      // Block any direct clicks on color inputs to prevent native picker double-open
-      input.addEventListener("click", (e) => {
+      bindColorPickerTrigger(input, (e) => {
         e.preventDefault();
         e.stopPropagation();
-        // Do NOT open picker here - wrapper handlers (bar, swatch, row, tile, etc.) handle it
+        const bounds = input.getBoundingClientRect();
+        this._openColorPickerAt(
+          parseInt(input.dataset.idx),
+          input.value,
+          e.detail ? e.pageX : bounds.left + window.scrollX,
+          e.detail ? e.pageY : bounds.bottom + window.scrollY,
+        );
       });
     });
     root.querySelectorAll("input.hex-input").forEach((input) => {
@@ -2454,7 +2462,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     root
       .querySelectorAll('.color-row, [data-color-row="true"]')
       .forEach((row) => {
-        row.addEventListener("click", (e) => {
+        bindColorPickerTrigger(row, (e) => {
           // Don't trigger if clicking on buttons, inputs, or drag handle
           if (
             e.target.tagName === "BUTTON" ||
@@ -2481,7 +2489,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
     // Card color bar click handler (for cards mode with pointer-events: none on color picker)
     root.querySelectorAll(".card-color-bar.clickable").forEach((bar) => {
-      bar.addEventListener("click", (e) => {
+      bindColorPickerTrigger(bar, (e) => {
         // Don't trigger if clicking on delete button or other interactive elements
         if (
           e.target.tagName === "BUTTON" ||
@@ -2501,6 +2509,28 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         }
       });
     });
+
+    root
+      .querySelectorAll(
+        ".tile-color-preview, .chip-color-swatch, .compact-swatch, .color-grid-swatch",
+      )
+      .forEach((swatch) => {
+        bindColorPickerTrigger(swatch, (event) => {
+          if (event.target.closest("button, .drag-handle")) return;
+          const container =
+            swatch.closest(".tile-item, .color-grid-item") || swatch;
+          const input = container.querySelector('input[type="color"]');
+          if (!input) return;
+          event.preventDefault();
+          event.stopPropagation();
+          this._openColorPickerAt(
+            parseInt(input.dataset.idx),
+            input.value,
+            event.pageX,
+            event.pageY,
+          );
+        });
+      });
 
     // Remove button - Use event delegation on container instead of individual buttons
     // This dramatically improves performance by avoiding iteration through all buttons on every render
@@ -2814,96 +2844,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
           { passive: true },
         );
       });
-
-      // TILES MODE: Add color picker click handler for tile-color-preview
-      if (newModesLayout === "tiles") {
-        root.querySelectorAll(".tile-item").forEach((item) => {
-          const colorPicker = item.querySelector(".tile-color-input");
-          const colorPreview = item.querySelector(".tile-color-preview");
-
-          if (colorPicker && colorPreview) {
-            let mouseDownTime = 0;
-            let hasMoved = false;
-
-            colorPreview.addEventListener("click", (e) => {
-              // Don't trigger if clicking on remove button
-              if (e.target.closest(".tile-remove")) return;
-
-              // Only trigger if it was a click, not a drag
-              if (!hasMoved && Date.now() - mouseDownTime < 300) {
-                e.preventDefault();
-                e.stopPropagation();
-                const idx = parseInt(colorPicker.dataset.idx);
-                this._openColorPickerAt(
-                  idx,
-                  colorPicker.value,
-                  e.pageX,
-                  e.pageY,
-                );
-              }
-            });
-
-            colorPreview.addEventListener("mousedown", (e) => {
-              if (e.target.closest(".tile-remove")) return;
-              mouseDownTime = Date.now();
-              hasMoved = false;
-            });
-
-            colorPreview.addEventListener("mousemove", () => {
-              hasMoved = true;
-            });
-
-            // Touch equivalents for tile color picker detection
-            colorPreview.addEventListener(
-              "touchstart",
-              (e) => {
-                if (e.target.closest(".tile-remove")) return;
-                mouseDownTime = Date.now();
-                hasMoved = false;
-              },
-              { passive: true },
-            );
-
-            colorPreview.addEventListener(
-              "touchmove",
-              () => {
-                hasMoved = true;
-              },
-              { passive: true },
-            );
-          }
-        });
-      }
-
-      // CHIPS MODE: Add color picker click handler for chip-color-swatch
-      if (newModesLayout === "chips") {
-        root.querySelectorAll(".chip-color-swatch").forEach((swatch) => {
-          const colorPicker = swatch.querySelector(".chip-color-input");
-          if (colorPicker) {
-            swatch.addEventListener("click", (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              const idx = parseInt(colorPicker.dataset.idx);
-              this._openColorPickerAt(idx, colorPicker.value, e.pageX, e.pageY);
-            });
-          }
-        });
-      }
-
-      // COMPACT MODE: Add color picker click handler for compact-swatch
-      if (newModesLayout === "compact") {
-        root.querySelectorAll(".compact-swatch").forEach((swatch) => {
-          const colorPicker = swatch.querySelector(".compact-color-input");
-          if (colorPicker) {
-            swatch.addEventListener("click", (e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              const idx = parseInt(colorPicker.dataset.idx);
-              this._openColorPickerAt(idx, colorPicker.value, e.pageX, e.pageY);
-            });
-          }
-        });
-      }
     }
 
     // Drag reorder setup if enabled
@@ -3880,79 +3820,9 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         // Prevent dragging when clicking on color picker or remove button
         const colorPicker = item.querySelector(".grid-color-picker");
         const removeBtn = item.querySelector(".grid-remove-btn");
-        const swatch = item.querySelector(".color-grid-swatch");
         const colorInfo = item.querySelector(".color-grid-info");
 
-        let dragStartX = 0;
-        let dragStartY = 0;
-        let mouseDownTime = 0;
-        let hasMoved = false;
-
-        if (colorPicker && swatch) {
-          // Click on swatch triggers color picker at click position
-          swatch.addEventListener("click", (e) => {
-            // Don't trigger if clicking on remove button
-            if (e.target.classList.contains("grid-remove-btn")) return;
-
-            // Only trigger if it was a click, not a drag
-            if (!hasMoved && Date.now() - mouseDownTime < 300) {
-              e.preventDefault();
-              e.stopPropagation();
-
-              const idx = parseInt(colorPicker.dataset.idx);
-              this._openColorPickerAt(idx, colorPicker.value, e.pageX, e.pageY);
-            }
-          });
-
-          // Track mouse down position and time
-          swatch.addEventListener("mousedown", (e) => {
-            if (e.target.classList.contains("grid-remove-btn")) return;
-
-            dragStartX = e.pageX;
-            dragStartY = e.pageY;
-            mouseDownTime = Date.now();
-            hasMoved = false;
-          });
-
-          // Track if mouse moved (indicates drag intent)
-          swatch.addEventListener("mousemove", (e) => {
-            if (mouseDownTime > 0) {
-              const dx = Math.abs(e.pageX - dragStartX);
-              const dy = Math.abs(e.pageY - dragStartY);
-              if (dx > 5 || dy > 5) {
-                hasMoved = true;
-              }
-            }
-          });
-
-          // Touch equivalents for grid swatch click vs drag detection
-          swatch.addEventListener(
-            "touchstart",
-            (e) => {
-              if (e.target.classList.contains("grid-remove-btn")) return;
-              const touch = e.touches[0];
-              dragStartX = touch.pageX;
-              dragStartY = touch.pageY;
-              mouseDownTime = Date.now();
-              hasMoved = false;
-            },
-            { passive: true },
-          );
-
-          swatch.addEventListener(
-            "touchmove",
-            (e) => {
-              if (mouseDownTime > 0 && e.touches[0]) {
-                const dx = Math.abs(e.touches[0].pageX - dragStartX);
-                const dy = Math.abs(e.touches[0].pageY - dragStartY);
-                if (dx > 5 || dy > 5) {
-                  hasMoved = true;
-                }
-              }
-            },
-            { passive: true },
-          );
-
+        if (colorPicker) {
           colorPicker.addEventListener("mousedown", (e) => {
             e.stopPropagation();
           });
@@ -4529,92 +4399,42 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     return sensorColors.slice(); // Return a copy
   }
 
-  // Opens a color picker at the given page coordinates for the color at index idx.
-  // Creates a temporary invisible <input type="color"> appended to document.body
-  // positioned at (clickX, clickY) so the browser anchors its picker popup there.
   _openColorPickerAt(idx, currentValue, clickX, clickY) {
-    // Clean up any previous picker without triggering a re-render (we're about to reopen)
     this._cleanupColorPicker(true);
-
-    this._usingColorPicker = true; // Prevent re-renders
-
-    const root = this.shadowRoot;
-
-    // Create temporary input at click position
-    const tempInput = document.createElement("input");
-    tempInput.type = "color";
-    tempInput.value = currentValue;
-    tempInput.style.cssText = `
-      position: absolute;
-      left: ${clickX}px;
-      top: ${clickY}px;
-      width: 1px;
-      height: 1px;
-      padding: 0;
-      border: 0;
-      margin: 0;
-      opacity: 0.01;
-      pointer-events: none;
-    `;
-
-    // Store reference for cleanup
-    this._activeTempInput = tempInput;
-
-    // Add to body temporarily
-    document.body.appendChild(tempInput);
-
-    // Force layout so the browser knows the position before the picker opens
-    void tempInput.getBoundingClientRect();
-
-    // Set up event listener for color change
-    tempInput.addEventListener("input", (e) => {
-      const hex = e.target.value;
-      const rgb = this.hexToRgb(hex);
-      if (rgb) {
-        // Get current colors (not stale closure)
+    this._usingColorPicker = true;
+    openColorPicker(this, {
+      value: currentValue,
+      pageX: clickX,
+      pageY: clickY,
+      onInput: (hex) => {
+        const rgb = this.hexToRgb(hex);
+        if (!rgb) return;
         const currentColors = this._getCurrentColors();
+        if (idx >= currentColors.length) return;
         currentColors[idx] = rgb;
-
-        // Update the original hidden input if it exists
-        if (root) {
-          const originalInput = root.querySelector(
-            `input[type="color"][data-idx='${idx}']`,
-          );
-          if (originalInput) originalInput.value = hex;
-
-          const hexInput = root.querySelector(
-            `input.hex-input[data-idx='${idx}']`,
-          );
-          if (hexInput) hexInput.value = hex;
-        }
-
-        // Optimistically update all visual elements for instant feedback
+        const root = this.shadowRoot;
+        const originalInput = root?.querySelector(
+          `input[type="color"][data-idx='${idx}']`,
+        );
+        if (originalInput) originalInput.value = hex;
+        const hexInput = root?.querySelector(
+          `input.hex-input[data-idx='${idx}']`,
+        );
+        if (hexInput) hexInput.value = hex;
         this._updateColorVisuals(idx, rgb, hex);
         this.saveColors(currentColors);
-      }
+      },
+      onClose: () => {
+        if (!this._usingColorPicker) return;
+        this._usingColorPicker = false;
+        this._flushPendingRender();
+      },
     });
-
-    // Only clean up on 'change' event (fires when user confirms or cancels the picker).
-    // Do NOT listen to 'blur' — it fires immediately when the picker dialog opens,
-    // which would destroy the input and close the picker before the user can interact.
-    tempInput.addEventListener("change", () => {
-      this._cleanupColorPicker(false);
-    });
-
-    // Open the color picker
-    tempInput.click();
   }
 
-  // Clean up the active temporary color picker input
-  // skipFlush: true when we're about to immediately reopen (avoids a useless render cycle)
   _cleanupColorPicker(skipFlush) {
-    if (this._activeTempInput) {
-      if (this._activeTempInput.parentNode) {
-        this._activeTempInput.parentNode.removeChild(this._activeTempInput);
-      }
-      this._activeTempInput = null;
-    }
     this._usingColorPicker = false;
+    closeColorPicker(this);
     if (!skipFlush) {
       this._flushPendingRender();
     }
@@ -6271,16 +6091,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       this._dragCleanup = null;
     }
 
-    // Remove any temp color picker inputs left on document.body
-    document.querySelectorAll('input[type="color"]').forEach((input) => {
-      if (
-        input.style.opacity === "0" &&
-        input.style.pointerEvents === "none" &&
-        input.parentNode === document.body
-      ) {
-        document.body.removeChild(input);
-      }
-    });
+    this._cleanupColorPicker(true);
 
     // Reset interaction flags
     this._renderScheduled = false;

@@ -26,6 +26,7 @@ import {
   updateCapsuleVisuals,
 } from "./capsule-slider-utils.js";
 import { html } from "./lib/lit-all.js";
+import { handleColorPickerClick } from "./color-picker-utils.js";
 import {
   createButtonGroup,
   createButtonGroupChangeHandler,
@@ -1791,6 +1792,7 @@ export function renderSliderSettings(config, K, onChange, opts = {}) {
       <input
         type="color"
         .value="${g(key, fallback)}"
+        @click="${(event) => handleColorPickerClick(event)}"
         @input="${(e) => onChange(key, e.target.value)}"
         style="width:60px;height:32px;border:none;cursor:pointer;border-radius:6px;"
       />

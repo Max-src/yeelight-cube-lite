@@ -11,6 +11,10 @@ import { createYeelightCubeEntityPicker } from "./entity-selector-utils.js";
 import { getClockStyles } from "./clock-preview-utils.js";
 import { renderSliderSettings, sliderKeys } from "./slider-control-utils.js";
 import {
+  colorPickerStyleChoices,
+  resolveColorPickerStyle,
+} from "./color-picker-utils.js";
+import {
   renderOrderableList,
   orderableListStyles,
 } from "./orderable-list-utils.js";
@@ -557,6 +561,26 @@ class YeelightCubeClockCardEditor extends LitElement {
               !!config.show_color_override,
               (e) => this._onToggle(e, "show_color_override"),
             )}
+            ${config.show_color_override
+              ? html`
+                  <div class="form-row">
+                    <label>Colour override style</label>
+                    ${createButtonGroup(
+                      colorPickerStyleChoices,
+                      resolveColorPickerStyle(config.color_override_style),
+                      (event) => {
+                        const value = event.currentTarget.dataset.value;
+                        this.config = {
+                          ...this.config,
+                          color_override_style: value,
+                        };
+                        this.requestUpdate();
+                        this._fire();
+                      },
+                    )}
+                  </div>
+                `
+              : ""}
           `,
         )}
         ${this._section(

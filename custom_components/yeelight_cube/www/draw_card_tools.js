@@ -1,5 +1,6 @@
 // Tool Management Module for Yeelight Cube Lite Draw Card
 import { html } from "./lib/lit-all.js";
+import { handleColorPickerClick } from "./color-picker-utils.js";
 import {
   getExportImportButtonClass,
   renderButtonContent,
@@ -222,6 +223,7 @@ export class ToolManager {
             type="color"
             .value="${this.card.selectedColor}"
             title="Pick Color"
+            @click="${(event) => handleColorPickerClick(event, this.card)}"
             @input="${(e) => this.card._onColorPicker(e)}"
             class="color-picker-btn tool-shape-${paintShape}"
             style="background:${this.card.selectedColor};"

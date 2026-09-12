@@ -12,6 +12,13 @@
 // action.
 
 import { escapeHtml } from "./html-escape-utils.js";
+import {
+  bindColorPicker,
+  closeColorPicker,
+  renderColorPicker,
+  colorPickerStyles,
+  resolveColorPickerStyle,
+} from "./color-picker-utils.js";
 import { callServiceOnTargetEntities } from "./service-call-utils.js";
 import {
   renderGalleryDisplay,
@@ -257,6 +264,7 @@ class YeelightCubeClockCard extends HTMLElement {
       show_content_toggle: true,
       show_format_toggles: true,
       show_color_override: false,
+      color_override_style: "swatch",
       // Sliders: brightness + animation speed share one appearance config
       // (slider_*); each can be shown/hidden independently.
       show_brightness: false,
@@ -334,6 +342,7 @@ class YeelightCubeClockCard extends HTMLElement {
   }
 
   disconnectedCallback() {
+    closeColorPicker(this);
     this._stopAnimation();
     if (this._wheelController) {
       this._wheelController.destroy();
@@ -1225,15 +1234,16 @@ class YeelightCubeClockCard extends HTMLElement {
   _renderColorOverride(a) {
     const rgb = clockColorToRgb(a.clock_color);
     const hex = rgb ? rgbToHex(rgb) : "#ffee00";
-    const active = rgb ? " active" : "";
+    const style = resolveColorPickerStyle(this.config.color_override_style);
     return `
       <div class="section">
         <div class="section-title">Colour override</div>
-        <div class="color-row">
-          <input type="color" class="color-picker" value="${hex}" />
-          <button class="color-clear${active}" data-color-clear>
-            ${rgb ? "Clear override" : "Using style colour"}
-          </button>
+        <div class="clock-color-control clock-color-${style}">
+          ${renderColorPicker(hex, style)}
+          <div class="segmented clock-color-mode" role="group" aria-label="Colour source">
+            <button type="button" class="seg-btn${rgb ? "" : " active"}" data-color-mode="style" aria-pressed="${!rgb}">Style</button>
+            <button type="button" class="seg-btn${rgb ? " active" : ""}" data-color-mode="custom" aria-pressed="${!!rgb}">Custom</button>
+          </div>
         </div>
       </div>`;
   }
@@ -1338,15 +1348,22 @@ class YeelightCubeClockCard extends HTMLElement {
 
     const picker = root.querySelector(".color-picker");
     if (picker) {
-      picker.addEventListener("change", (e) => {
-        const rgb = hexToRgb(e.target.value);
-        if (rgb) this._applyColor(rgb);
+      bindColorPicker(picker, this, {
+        onChange: (hex) => {
+          const rgb = hexToRgb(hex);
+          if (rgb) this._applyColor(rgb);
+        },
       });
     }
-    const clearBtn = root.querySelector("[data-color-clear]");
-    if (clearBtn) {
-      clearBtn.addEventListener("click", () => this._applyColor("clear"));
-    }
+    root.querySelectorAll("[data-color-mode]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const color =
+          button.dataset.colorMode === "style"
+            ? "clear"
+            : hexToRgb(picker.value);
+        if (color) this._applyColor(color);
+      });
+    });
   }
 
   _styles() {
@@ -1395,15 +1412,10 @@ class YeelightCubeClockCard extends HTMLElement {
       .seg-btn:last-child { border-right: none; }
       .seg-btn.active { background: var(--primary-color, #03a9f4); color: #fff; }
 
-      .color-row { display: flex; align-items: center; gap: 10px; }
-      .color-picker { width: 48px; height: 36px; border: none; background: none; cursor: pointer; }
-      .color-clear {
-        padding: 8px 12px; border-radius: 8px; cursor: pointer;
-        background: var(--secondary-background-color, #2a2a2a);
-        color: var(--primary-text-color, #eee);
-        border: 1px solid var(--divider-color, #444);
-      }
-      .color-clear.active { border-color: var(--primary-color, #03a9f4); }
+      ${colorPickerStyles}
+      .clock-color-control { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+      .clock-color-mode { flex: 1 1 140px; min-height: 38px; box-sizing: border-box; }
+      .clock-color-row .clock-color-mode { flex-basis: 100%; }
 
       /* Shared design language: text selectors + shape/size axes */
       ${selectorSharedStyles}
