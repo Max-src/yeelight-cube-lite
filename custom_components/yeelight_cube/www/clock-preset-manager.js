@@ -10,6 +10,7 @@ class ClockPresetManager extends LitElement {
     hass: { attribute: false },
     initialColor: { attribute: false },
     showLibrary: { type: Boolean },
+    compact: { type: Boolean, reflect: true },
     buttonStyle: { type: String },
     contentMode: { type: String },
     editing: { state: true },
@@ -35,6 +36,15 @@ class ClockPresetManager extends LitElement {
     :host {
       display: block;
       color: var(--primary-text-color, #222);
+    }
+    /* Inline in the colour row: drop the leading action-row margin and match
+       the height of the neighbouring control buttons. */
+    :host([compact]) .action-row {
+      margin-top: 0;
+    }
+    :host([compact]) .action-row .shared-action-button {
+      min-height: 44px;
+      padding: 8px 12px;
     }
     input {
       font: inherit;
@@ -212,6 +222,8 @@ class ClockPresetManager extends LitElement {
           action: this.showLibrary ? "add" : "save",
           icon: this.showLibrary ? "mdi:plus" : "mdi:content-save-outline",
           label: this.showLibrary ? "Add colour clock" : "Save as preset",
+          // Inline in the colour row the button fills its slot like the source toggle.
+          compact: !this.compact,
           disabled: !available || this.busy,
           onClick: () => this._open(),
         }),

@@ -385,42 +385,49 @@ class YeelightCubeClockCardEditor extends LitElement {
               !!config.show_color_override,
               (e) => this._onToggle(e, "show_color_override"),
             )}
-            ${config.show_color_override
-              ? html`
-                  <div class="form-row">
-                    <label>Colour override style</label>
-                    ${createButtonGroup(
-                      colorPickerStyleChoices,
-                      resolveColorPickerStyle(config.color_override_style),
-                      (event) => {
-                        const value = event.currentTarget.dataset.value;
-                        this.config = {
-                          ...this.config,
-                          color_override_style: value,
-                        };
-                        this.requestUpdate();
-                        this._fire();
-                      },
-                    )}
-                  </div>
-                `
-              : ""}
+            ${
+              // CONVENTION: a setting that only applies when a toggle/mode is on
+              // MUST be (1) gated by that condition AND (2) wrapped in a blue
+              // renderModeSettingsSection so the dependency is visually obvious.
+              // See renderModeSettingsSection in editor_ui_utils.js.
+              config.show_color_override
+                ? renderModeSettingsSection(
+                    "Colour override style",
+                    html`
+                      <div class="form-row">
+                        <label>Presentation</label>
+                        ${createButtonGroup(
+                          colorPickerStyleChoices,
+                          resolveColorPickerStyle(config.color_override_style),
+                          (event) => {
+                            const value = event.currentTarget.dataset.value;
+                            this.config = {
+                              ...this.config,
+                              color_override_style: value,
+                            };
+                            this.requestUpdate();
+                            this._fire();
+                          },
+                        )}
+                      </div>
+                    `,
+                  )
+                : ""
+            }
             ${createToggleRow(
               "Show save-as-preset button",
               "show_save_preset_button",
               config.show_save_preset_button !== false,
               (e) => this._onToggle(e, "show_save_preset_button"),
             )}
-            ${config.show_save_preset_button !== false
-              ? renderModeSettingsSection(
-                  "Save button style",
-                  renderActionButtonSettings(config, (key, value) => {
-                    this.config = { ...this.config, [key]: value };
-                    this.requestUpdate();
-                    this._fire();
-                  }),
-                )
-              : ""}
+            ${renderModeSettingsSection(
+              "Control buttons",
+              renderActionButtonSettings(config, (key, value) => {
+                this.config = { ...this.config, [key]: value };
+                this.requestUpdate();
+                this._fire();
+              }),
+            )}
           `,
         )}
         ${this._section(

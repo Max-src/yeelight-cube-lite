@@ -451,6 +451,13 @@ export class EditorConfigManager {
  * Renders a mode-specific settings section with consistent styling
  * Used for conditional settings that appear based on selected mode
  *
+ * CONVENTION (read before adding any editor setting):
+ * Any setting that is only meaningful when a parent toggle/mode is enabled MUST
+ * be BOTH (1) gated by that condition (so it is hidden when inactive) AND
+ * (2) wrapped in this blue section, so its dependency on the parent is visually
+ * obvious. Never render a dependent setting as a bare form-row next to its
+ * parent toggle. This prevents the recurring "orphaned conditional setting" bug.
+ *
  * @param {string} title - Section title (e.g., "Carousel Mode Settings")
  * @param {TemplateResult} content - LitElement html template with settings controls
  * @returns {TemplateResult} Styled settings section

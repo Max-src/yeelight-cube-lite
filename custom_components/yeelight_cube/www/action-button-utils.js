@@ -104,23 +104,126 @@ export function actionButtonModel({
   compact = false,
   type = "button",
   title,
+  selected,
+  role,
+  value,
+  tabIndex,
+  states,
 } = {}) {
   const options = resolveActionButtonOptions({ buttonStyle, contentMode });
+  const stateful = typeof selected === "boolean";
+  // A stateful button with on/off states is a single toggle that always shows
+  // the current value (12h/24h). Radio groups (no states) show selection.
+  const currentValue = stateful && role !== "radio" && Boolean(states);
+  const state = currentValue ? states[selected ? "on" : "off"] : undefined;
+  // Stateful buttons reuse the shared tool/tool-active appearance so every
+  // button style keeps its identity across cards (gradient stays gradient,
+  // outline stays outline...). Selected/current = the prominent active look.
+  const activeLook = stateful && (Boolean(currentValue) || selected === true);
+  const resolvedAction = stateful
+    ? activeLook
+      ? "tool-active"
+      : "tool"
+    : action;
   return {
     ...options,
-    className: `${getActionButtonClass(action, options.buttonStyle)} shared-action-button${compact ? " action-compact" : ""}${busy ? " action-busy" : ""}`,
-    icon: busy ? "mdi:loading" : icon,
-    label: busy ? busyLabel : label,
-    title: busy ? busyLabel : title || label,
+    className: `${getActionButtonClass(resolvedAction, options.buttonStyle)} shared-action-button${stateful ? " action-state" : ""}${compact ? " action-compact" : ""}${busy ? " action-busy" : ""}`,
+    icon: busy ? "mdi:loading" : state?.icon || icon,
+    label: busy ? busyLabel : state?.label || label,
+    title: busy ? busyLabel : state?.title || title || state?.label || label,
     disabled: disabled || busy,
     busy,
+    selected: stateful && !currentValue ? selected : undefined,
+    role: role === "radio" ? "radio" : undefined,
+    value,
+    tabIndex,
     type: ["button", "submit", "reset"].includes(type) ? type : "button",
   };
 }
 
 export function renderActionButtonHTML(options = {}) {
   const model = actionButtonModel(options);
-  return `<button type="${model.type}" class="${model.className}" title="${escapeHtml(model.title)}" aria-label="${escapeHtml(model.title)}" aria-busy="${model.busy}" ${model.disabled ? "disabled" : ""}>${renderButtonContent(model.icon, model.label, model.contentMode)}</button>`;
+  const state =
+    model.selected === undefined
+      ? ""
+      : ` ${model.role === "radio" ? "aria-checked" : "aria-pressed"}="${model.selected}"`;
+  return `<button type="${model.type}" class="${model.className}" title="${escapeHtml(model.title)}" aria-label="${escapeHtml(model.title)}" aria-busy="${model.busy}"${state}${model.role ? ' role="radio"' : ""}${model.value !== undefined ? ` data-value="${escapeHtml(String(model.value))}"` : ""}${model.tabIndex !== undefined ? ` tabindex="${model.tabIndex === -1 ? -1 : 0}"` : ""} ${model.disabled ? "disabled" : ""}>${renderButtonContent(model.icon, model.label, model.contentMode)}</button>`;
+}
+
+export function actionButtonGroupModel({
+  items,
+  value,
+  multiple = false,
+  ...options
+}) {
+  const selected = (item) =>
+    multiple ? !!item.selected : item.value === value;
+  const focusItem =
+    items.find((item) => selected(item) && !item.disabled) ||
+    items.find((item) => !item.disabled);
+  return items.map((item) => ({
+    ...options,
+    action: "tool",
+    ...item,
+    selected: selected(item),
+    role: multiple ? undefined : "radio",
+    tabIndex: multiple || item === focusItem ? 0 : -1,
+  }));
+}
+
+export function renderActionButtonGroupHTML(options) {
+  return `<div class="shared-button-group ${getActionRowClass(options)}" role="${options.multiple ? "group" : "radiogroup"}" aria-label="${escapeHtml(options.label)}">${actionButtonGroupModel(options).map(renderActionButtonHTML).join("")}</div>`;
+}
+
+export function bindActionButtonGroup(group, onChange) {
+  if (!group) return;
+  group.onclick = (event) => handleActionButtonGroupEvent(event, onChange);
+  group.onkeydown = (event) => handleActionButtonGroupEvent(event, onChange);
+}
+
+export function handleActionButtonGroupEvent(event, onChange) {
+  const group = event.currentTarget;
+  const activate = (button) => {
+    if (!button || button.disabled) return;
+    if (
+      group.getAttribute("role") === "radiogroup" &&
+      button.getAttribute("aria-checked") === "true"
+    )
+      return;
+    onChange(button.dataset.value);
+  };
+  if (event.type === "click") {
+    activate(event.target.closest("button[data-value]"));
+  } else if (event.type === "keydown") {
+    if (group.getAttribute("role") !== "radiogroup") return;
+    const keys = [
+      "ArrowLeft",
+      "ArrowRight",
+      "ArrowUp",
+      "ArrowDown",
+      "Home",
+      "End",
+    ];
+    if (!keys.includes(event.key)) return;
+    const buttons = [
+      ...group.querySelectorAll("button[data-value]:not(:disabled)"),
+    ];
+    const index = buttons.indexOf(event.target.closest("button"));
+    if (index < 0) return;
+    event.preventDefault();
+    const backwards = event.key === "ArrowLeft" || event.key === "ArrowUp";
+    const next =
+      event.key === "Home"
+        ? 0
+        : event.key === "End"
+          ? buttons.length - 1
+          : (index + (backwards ? -1 : 1) + buttons.length) % buttons.length;
+    buttons.forEach((button, position) => {
+      button.tabIndex = position === next ? 0 : -1;
+    });
+    buttons[next].focus();
+    activate(buttons[next]);
+  }
 }
 
 /**
@@ -806,6 +909,45 @@ export const actionButtonStyles = `
     flex: 0 0 auto;
     width: auto;
   }
+  .shared-button-group.action-row {
+    margin-top: 0;
+    gap: 8px;
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+  .shared-button-group .shared-action-button:not(.btn-style-icon) {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+    min-height: 44px;
+    padding: 8px 10px;
+  }
+  .shared-button-group.icon-mode .shared-action-button:not(.btn-style-icon) {
+    flex: 0 0 auto;
+  }
+  .shared-button-group .shared-action-button.btn-style-icon {
+    flex: 0 0 48px;
+    width: 48px;
+    height: 48px;
+  }
+  .shared-button-group .btn-text {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  /* Stateful group buttons reuse the shared tool/tool-active look (see the
+     .tool-btn rules above) so every style keeps its identity. Neutralise the
+     tool-active scale AND outer ring so selected/unselected stay the same box
+     size - only the fill changes. */
+  .shared-button-group .tool-btn.tool-active {
+    transform: none;
+    box-shadow: none;
+  }
+  .action-row.icon-mode {
+    justify-content: var(--action-row-icon-align, center);
+  }
+  .shared-button-group.action-row.icon-mode {
+    justify-content: flex-start;
+  }
   .shared-action-button:disabled {
     opacity: 0.5;
     cursor: default;
@@ -831,6 +973,7 @@ export const actionButtonStyles = `
   @keyframes action-button-spin { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) {
     .shared-action-button.action-busy ha-icon { animation: none; }
+    .shared-action-button.action-state { transition: none; }
   }
 `;
 

@@ -63,11 +63,16 @@ import {
   flipMatrixVertical,
 } from "./clock-preview-utils.js";
 import { previewBrightnessScale } from "./draw_card_const.js";
+import {
+  actionButtonStyles,
+  renderActionButtonGroupHTML,
+  bindActionButtonGroup,
+} from "./action-button-utils.js";
 
 const CONTENT_OPTIONS = [
-  { value: "time", label: "Time" },
-  { value: "time_date", label: "Time & Date" },
-  { value: "date", label: "Date" },
+  { value: "time", label: "Time", icon: "mdi:clock-outline" },
+  { value: "time_date", label: "Time & Date", icon: "mdi:calendar-clock" },
+  { value: "date", label: "Date", icon: "mdi:calendar" },
 ];
 
 function hexToRgb(hex) {
@@ -931,7 +936,10 @@ class YeelightCubeClockCard extends HTMLElement {
     if (this.config.show_content_toggle !== false) {
       sections.push(this._renderContentToggle(a));
     }
-    if (this.config.show_format_toggles !== false) {
+    // 12/24-hour and colon only affect the time, so hide them for date-only.
+    const content =
+      a.clock_content || (a.clock_show_date ? "time_date" : "time");
+    if (this.config.show_format_toggles !== false && content !== "date") {
       sections.push(this._renderFormatToggles(a));
     }
     if (this.config.show_color_override) {
@@ -949,6 +957,10 @@ class YeelightCubeClockCard extends HTMLElement {
         : "";
 
     const inner = `${title}${activeLabel}${sections.join("")}`;
+    const focusedButton = this.shadowRoot.activeElement;
+    const focusedControl = focusedButton?.closest("[data-clock-control]")
+      ?.dataset.clockControl;
+    const focusedValue = focusedButton?.dataset.value;
     this.shadowRoot.innerHTML = `
       ${this._styles()}
       ${
@@ -958,6 +970,22 @@ class YeelightCubeClockCard extends HTMLElement {
       }`;
 
     this._attachHandlers();
+    if (focusedControl && focusedValue) {
+      const group = this.shadowRoot.querySelector(
+        `[data-clock-control="${focusedControl}"] .shared-button-group`,
+      );
+      const button = [...(group?.querySelectorAll("button") || [])].find(
+        (item) => item.dataset.value === focusedValue,
+      );
+      if (button && !button.disabled) {
+        if (group.getAttribute("role") === "radiogroup") {
+          group.querySelectorAll("button").forEach((item) => {
+            item.tabIndex = item === button ? 0 : -1;
+          });
+        }
+        button.focus({ preventScroll: true });
+      }
+    }
     this._markActive();
     if (this._isPreviewSelector() && this._displayMode() === "wheel") {
       this._setupWheelNavigation();
@@ -1189,18 +1217,20 @@ class YeelightCubeClockCard extends HTMLElement {
       </div>`;
   }
 
+  _controlGroup(options) {
+    return renderActionButtonGroupHTML({
+      buttonStyle: this.config.buttons_style || "modern",
+      contentMode: this.config.buttons_content_mode || "icon_text",
+      ...options,
+    });
+  }
+
   _renderContentToggle(a) {
     const cur = a.clock_content || (a.clock_show_date ? "time_date" : "time");
-    const btns = CONTENT_OPTIONS.map(
-      (o) =>
-        `<button class="seg-btn${cur === o.value ? " active" : ""}" data-content="${
-          o.value
-        }">${o.label}</button>`,
-    ).join("");
     return `
       <div class="section">
         <div class="section-title">Content</div>
-        <div class="segmented">${btns}</div>
+        <div data-clock-control="content">${this._controlGroup({ label: "Content", items: CONTENT_OPTIONS, value: cur })}</div>
       </div>`;
   }
 
@@ -1208,16 +1238,52 @@ class YeelightCubeClockCard extends HTMLElement {
     const twelve = !!a.clock_12_hour;
     const blink = !!a.clock_colon_blink;
     return `
-      <div class="section">
+      <div class="section" style="--ctl-accent: color-mix(in srgb, var(--primary-color, #1976d2) 58%, #12a594);">
         <div class="section-title">Format</div>
-        <div class="toggle-chips">
-          <button class="fmt-chip${twelve ? " active" : ""}" data-fmt="twelve">
-            ${twelve ? "12-hour" : "24-hour"}
-          </button>
-          <button class="fmt-chip${blink ? " active" : ""}" data-fmt="colon">
-            Colon ${blink ? "blinks" : "steady"}
-          </button>
-        </div>
+        <div data-clock-control="format" style="--primary-color: var(--ctl-accent); --primary-color-dark: color-mix(in srgb, var(--ctl-accent) 74%, #000);">${this._controlGroup(
+          {
+            label: "Format",
+            multiple: true,
+            items: [
+              {
+                value: "twelve",
+                label: "12-hour",
+                icon: "mdi:hours-12",
+                selected: twelve,
+                states: {
+                  on: {
+                    label: "12-hour",
+                    icon: "mdi:hours-12",
+                    title: "12-hour. Switch to 24-hour",
+                  },
+                  off: {
+                    label: "24-hour",
+                    icon: "mdi:hours-24",
+                    title: "24-hour. Switch to 12-hour",
+                  },
+                },
+              },
+              {
+                value: "colon",
+                label: "Colon blinks",
+                icon: "mdi:animation-outline",
+                selected: blink,
+                states: {
+                  on: {
+                    label: "Colon blinks",
+                    icon: "mdi:animation-play-outline",
+                    title: "Colon blinks. Switch to steady",
+                  },
+                  off: {
+                    label: "Colon steady",
+                    icon: "mdi:pause-circle-outline",
+                    title: "Colon steady. Enable blinking",
+                  },
+                },
+              },
+            ],
+          },
+        )}</div>
       </div>`;
   }
 
@@ -1266,17 +1332,44 @@ class YeelightCubeClockCard extends HTMLElement {
     const rgb = clockColorToRgb(a.clock_color);
     const hex = rgb ? rgbToHex(rgb) : "#ffee00";
     const style = resolveColorPickerStyle(this.config.color_override_style);
+    // Icon-only controls pack tight; text controls fill the row.
+    const iconMode =
+      this.config.buttons_style === "icon" ||
+      this.config.buttons_content_mode === "icon";
     return `
-      <div class="section">
+      <div class="section" style="--ctl-accent: color-mix(in srgb, var(--primary-color, #1976d2) 58%, #7c5cbf);">
         <div class="section-title">Colour override</div>
-        <div class="clock-color-control clock-color-${style}">
+        <div class="clock-color-control clock-color-${style}${iconMode ? " compact-icons" : ""}">
           ${renderColorPicker(hex, style)}
-          <div class="segmented clock-color-mode" role="group" aria-label="Colour source">
-            <button type="button" class="seg-btn${rgb ? "" : " active"}" data-color-mode="style" aria-pressed="${!rgb}">Style</button>
-            <button type="button" class="seg-btn${rgb ? " active" : ""}" data-color-mode="custom" aria-pressed="${!!rgb}">Custom</button>
-          </div>
+          <div class="clock-color-mode" data-clock-control="color" style="--primary-color: var(--ctl-accent); --primary-color-dark: color-mix(in srgb, var(--ctl-accent) 74%, #000);">${this._controlGroup(
+            {
+              label: "Colour source",
+              multiple: true,
+              items: [
+                {
+                  // Single toggle: custom colour on = custom, off = firmware style.
+                  value: "source",
+                  label: "Custom colour",
+                  icon: "mdi:eyedropper",
+                  selected: !!rgb,
+                  states: {
+                    on: {
+                      label: "Custom colour",
+                      icon: "mdi:eyedropper",
+                      title: "Custom colour. Switch to style colour",
+                    },
+                    off: {
+                      label: "Style colour",
+                      icon: "mdi:palette",
+                      title: "Style colour. Switch to custom colour",
+                    },
+                  },
+                },
+              ],
+            },
+          )}</div>
+          <div class="clock-color-save" data-preset-save></div>
         </div>
-        <div data-preset-save></div>
       </div>`;
   }
 
@@ -1289,6 +1382,7 @@ class YeelightCubeClockCard extends HTMLElement {
         "yeelight-clock-preset-manager",
       );
       this._presetManager.hass = this._hass;
+      this._presetManager.compact = true;
       this._presetManager.buttonStyle = this.config.buttons_style || "modern";
       this._presetManager.contentMode =
         this.config.buttons_content_mode || "icon_text";
@@ -1374,22 +1468,21 @@ class YeelightCubeClockCard extends HTMLElement {
       }
     }
 
-    root.querySelectorAll("[data-content]").forEach((el) => {
-      el.addEventListener("click", () =>
-        this._applyContent(el.dataset.content),
-      );
-    });
-
-    root.querySelectorAll("[data-fmt]").forEach((el) => {
-      el.addEventListener("click", () => {
+    bindActionButtonGroup(
+      root.querySelector('[data-clock-control="content"] .shared-button-group'),
+      (value) => this._applyContent(value),
+    );
+    bindActionButtonGroup(
+      root.querySelector('[data-clock-control="format"] .shared-button-group'),
+      (value) => {
         const a = this._attrs();
-        if (el.dataset.fmt === "twelve") {
-          this._applyFormat({ twelve_hour: !a.clock_12_hour });
-        } else {
-          this._applyFormat({ colon_blink: !a.clock_colon_blink });
-        }
-      });
-    });
+        this._applyFormat(
+          value === "twelve"
+            ? { twelve_hour: !a.clock_12_hour }
+            : { colon_blink: !a.clock_colon_blink },
+        );
+      },
+    );
 
     const picker = root.querySelector(".color-picker");
     if (picker) {
@@ -1400,20 +1493,19 @@ class YeelightCubeClockCard extends HTMLElement {
         },
       });
     }
-    root.querySelectorAll("[data-color-mode]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const color =
-          button.dataset.colorMode === "style"
-            ? "clear"
-            : hexToRgb(picker.value);
+    bindActionButtonGroup(
+      root.querySelector('[data-clock-control="color"] .shared-button-group'),
+      () => {
+        const rgb = clockColorToRgb(this._attrs().clock_color);
+        const color = rgb ? "clear" : hexToRgb(picker?.value);
         if (color) this._applyColor(color);
-      });
-    });
+      },
+    );
   }
 
   _styles() {
     return `<style>
-      :host { display: block; }
+      :host { display: block; --action-row-icon-align: flex-start; }
       .loading, .empty { padding: 16px; color: var(--secondary-text-color, #888); }
       /* ha-card supplies the native background, border and radius when
          "Show Card Background" is on; the plain .no-bg variant drops them. */
@@ -1433,34 +1525,20 @@ class YeelightCubeClockCard extends HTMLElement {
       .current-preview-inner { width: 100%; }
       .clock-preview { width: 100%; }
 
-      .toggle-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-      .fmt-chip {
-        font-size: 0.85em;
-        background: var(--secondary-background-color, #2a2a2a);
-        color: var(--primary-text-color, #eee);
-        border: 1px solid var(--divider-color, #444);
-        border-radius: 16px; padding: 6px 12px; cursor: pointer;
-      }
-      .fmt-chip.active {
-        background: var(--primary-color, #03a9f4);
-        border-color: var(--primary-color, #03a9f4);
-        color: #fff;
-      }
-
-      .segmented { display: flex; border: 1px solid var(--divider-color, #444); border-radius: 8px; overflow: hidden; }
-      .seg-btn {
-        flex: 1; padding: 8px; border: none; cursor: pointer;
-        background: var(--secondary-background-color, #2a2a2a);
-        color: var(--primary-text-color, #eee);
-        border-right: 1px solid var(--divider-color, #444);
-      }
-      .seg-btn:last-child { border-right: none; }
-      .seg-btn.active { background: var(--primary-color, #03a9f4); color: #fff; }
-
+      ${actionButtonStyles}
       ${colorPickerStyles}
       .clock-color-control { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-      .clock-color-mode { flex: 1 1 140px; min-height: 38px; box-sizing: border-box; }
-      .clock-color-row .clock-color-mode { flex-basis: 100%; }
+      /* Source toggle fills the middle; save-as-preset takes its content width. */
+      .clock-color-mode { flex: 1 1 0; min-width: 0; box-sizing: border-box; }
+      .clock-color-save { flex: 0 1 auto; min-width: 0; display: flex; }
+      .clock-color-save:empty { display: none; }
+      .clock-color-save yeelight-clock-preset-manager { flex: 1; min-width: 0; display: flex; }
+      .clock-color-control.compact-icons .clock-color-mode,
+      .clock-color-control.compact-icons .clock-color-save { flex: 0 0 auto; }
+      /* Swatch mode: match the 48px icon-mode control buttons. */
+      .clock-color-control .picker-style-swatch { width: 48px; height: 48px; }
+      .clock-color-row .clock-color-mode,
+      .clock-color-row .clock-color-save { flex-basis: 100%; }
 
       /* Shared design language: text selectors + shape/size axes */
       ${selectorSharedStyles}

@@ -7,7 +7,11 @@ import {
   resolveActionButtonOptions,
   renderButtonContent,
   getActionRowClass,
+  actionButtonGroupModel,
+  handleActionButtonGroupEvent,
 } from "./action-button-utils.js";
+
+const nothing = Symbol.for("lit-nothing");
 
 export function renderActionRow(content, options = {}) {
   return html`<div class=${getActionRowClass(options)}>${content}</div>`;
@@ -25,11 +29,32 @@ export function renderActionButton(options = {}) {
     title=${model.title}
     aria-label=${model.title}
     aria-busy=${String(model.busy)}
+    role=${model.role ?? nothing}
+    aria-checked=${model.role === "radio" && model.selected !== undefined
+      ? String(model.selected)
+      : nothing}
+    aria-pressed=${model.role !== "radio" && model.selected !== undefined
+      ? String(model.selected)
+      : nothing}
+    data-value=${model.value ?? nothing}
+    tabindex=${model.tabIndex ?? nothing}
     ?disabled=${model.disabled}
     @click=${options.onClick}
   >
     ${renderActionButtonContent(model.icon, model.label, model.contentMode)}
   </button>`;
+}
+
+export function renderActionButtonGroup(options, onChange) {
+  return html`<div
+    class="shared-button-group ${getActionRowClass(options)}"
+    role=${options.multiple ? "group" : "radiogroup"}
+    aria-label=${options.label}
+    @click=${(event) => handleActionButtonGroupEvent(event, onChange)}
+    @keydown=${(event) => handleActionButtonGroupEvent(event, onChange)}
+  >
+    ${actionButtonGroupModel(options).map(renderActionButton)}
+  </div>`;
 }
 
 export function renderActionButtonSettings(
