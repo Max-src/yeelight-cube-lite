@@ -49,9 +49,10 @@ export function matchingClockPreset(styles, attrs) {
 }
 
 export function clockStyleAction(style) {
-  return {
-    style: style.presetId ? "White" : style.name,
-    color: style.presetId ? style.color : "clear",
-    activate: true,
-  };
+  // A preset IS a colour choice, so it sets one explicitly. Any other style
+  // switch omits `color` entirely so an active custom override (or "clear")
+  // persists across style changes instead of resetting to the style default.
+  return style.presetId
+    ? { style: "White", color: style.color, activate: true }
+    : { style: style.name, activate: true };
 }

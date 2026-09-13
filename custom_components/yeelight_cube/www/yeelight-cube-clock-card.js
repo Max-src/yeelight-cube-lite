@@ -517,8 +517,9 @@ class YeelightCubeClockCard extends HTMLElement {
   }
 
   // Build the attrs object a preview needs, mixing the current format settings
-  // with a specific style (and, optionally, a colour override).
-  _previewAttrs(style, { withOverride = false } = {}) {
+  // with a specific style. Non-preset styles reflect an active custom override
+  // so the whole gallery shows what picking each style would look like.
+  _previewAttrs(style) {
     const a = this._attrs();
     const attrs = {
       clock_style_id: style.id,
@@ -530,13 +531,15 @@ class YeelightCubeClockCard extends HTMLElement {
       native_effect_direction: a.native_effect_direction,
     };
     if (style.presetId) {
+      // A preset previews its OWN saved colour, not the active override.
       attrs.clock_style = "White";
       attrs.clock_color_rgb = style.color;
+      return attrs;
     }
-    if (withOverride) {
-      const rgb = clockColorToRgb(a.clock_color);
-      if (rgb) attrs.clock_color_rgb = rgb;
-    }
+    // renderClockFrame applies the override only to colour-supporting styles;
+    // incompatible effects ignore it and solid styles show it flat.
+    const rgb = clockColorToRgb(a.clock_color);
+    if (rgb) attrs.clock_color_rgb = rgb;
     return attrs;
   }
 
@@ -850,7 +853,7 @@ class YeelightCubeClockCard extends HTMLElement {
       this._currentStyle();
     if (!style) return;
     const emptyBg = el._ignoreBlack ? "transparent" : "#000";
-    const attrs = this._previewAttrs(style, { withOverride: isCurrent });
+    const attrs = this._previewAttrs(style);
     const { fontMap, metrics } = this._getNativeClockFont();
     // renderClockFrame is bottom-origin (row 0 = physical bottom); the CSS grid
     // fills top→bottom, so flip vertically or the clock renders upside-down.

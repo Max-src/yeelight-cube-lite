@@ -22,9 +22,10 @@ test("custom clocks preserve builtins and have stable identity after rename", ()
     color: [255, 120, 0],
     activate: true,
   });
+  // Non-preset styles omit `color` so an active custom override persists
+  // across style switches instead of resetting.
   assert.deepEqual(clockStyleAction(styles[0]), {
     style: "White",
-    color: "clear",
     activate: true,
   });
   assert.equal(

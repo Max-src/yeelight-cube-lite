@@ -1956,7 +1956,69 @@ def _render_pulse(
     return pixels
 
 
+# Effects the firmware can recolour with a single "colour override": each pixel
+# keeps its own brightness but adopts the override hue, so dark stays dark and
+# multi-colour effects collapse toward one colour. Effects NOT listed ignore the
+# override (they keep their own colours on the lamp). Names must match
+# _render_native_effect_raw exactly. Mirrors native-effect-preview.js.
+_COLOR_OVERRIDE_EFFECTS = {
+    "Rainbow",
+    "Ocean Waves",
+    "Spectrum",
+    "Streamer",
+    "Rainbow Flow",
+    "Starry sky",
+    "Pastel Pulse",
+    "Monochrome Waves",
+    "Aurora",
+    "Pulse",
+    "Solar Flare",
+    "Prism",
+    "Ember",
+    "Waterfall",
+    "Bonfire",
+    "Color Trails",
+    "Pinball",
+    "Tide",
+    "Drift",
+    "Spectrum Bands",
+    "Kaleidoscope",
+}
+
+
+def effect_supports_color_override(effect: str) -> bool:
+    return effect in _COLOR_OVERRIDE_EFFECTS
+
+
+def _apply_color_override(pixels, override):
+    """Recolour a frame toward ``override`` ([r,g,b]) preserving each pixel's
+    brightness (HSV value = max channel). Black stays black."""
+    o_red, o_green, o_blue = override
+    return [
+        (
+            _clamp(o_red * (max(red, green, blue) / 255)),
+            _clamp(o_green * (max(red, green, blue) / 255)),
+            _clamp(o_blue * (max(red, green, blue) / 255)),
+        )
+        for red, green, blue in pixels
+    ]
+
+
 def render_native_effect(
+    effect: str,
+    phase: float,
+    direction: str = "Up",
+    color_override=None,
+) -> list[tuple[int, int, int]]:
+    """Return one animated 20x5 approximation of a firmware effect, optionally
+    recoloured toward a single ``color_override`` for compatible effects."""
+    pixels = _render_native_effect_raw(effect, phase, direction)
+    if color_override is not None and effect_supports_color_override(effect):
+        return _apply_color_override(pixels, color_override)
+    return pixels
+
+
+def _render_native_effect_raw(
     effect: str,
     phase: float,
     direction: str = "Up",

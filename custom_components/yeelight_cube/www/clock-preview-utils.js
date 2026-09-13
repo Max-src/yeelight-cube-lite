@@ -13,7 +13,10 @@
 //
 // Keep the mixer tables and glyph handling in sync with const.py.
 
-import { renderNativeEffect } from "./native-effect-preview.js";
+import {
+  renderNativeEffect,
+  effectSupportsColorOverride,
+} from "./native-effect-preview.js";
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  PREVIEW ORIENTATION — READ THIS BEFORE RENDERING ANY PREVIEW             ║
@@ -438,10 +441,19 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0) {
   const override = Array.isArray(attrs.clock_color_rgb)
     ? attrs.clock_color_rgb
     : null;
-  const effectFrame =
-    effectName && !override
-      ? renderNativeEffect(effectName, phase, direction)
-      : null;
+  // Compatible mixer effects are recoloured toward the override (dark stays
+  // dark); incompatible effects render normally (ignore the override, matching
+  // the lamp); styles with no effect fall back to the flat override colour.
+  const overrideCompatible =
+    !!override && !!effectName && effectSupportsColorOverride(effectName);
+  const effectFrame = effectName
+    ? renderNativeEffect(
+        effectName,
+        phase,
+        direction,
+        overrideCompatible ? override : null,
+      )
+    : null;
   const matrix = Array.from({ length: 100 }, () => [0, 0, 0]);
   const chars = [...text];
   const font = fontMap || _CLOCK_FONT;
@@ -463,10 +475,10 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0) {
       const col = (pos % COLS) + offset;
       const row = Math.floor(pos / COLS);
       if (col >= 0 && col < COLS && row >= 0 && row < 5) {
-        matrix[row * COLS + col] = override
-          ? override
-          : effectFrame
-            ? effectFrame[row * COLS + col]
+        matrix[row * COLS + col] = effectFrame
+          ? effectFrame[row * COLS + col]
+          : override
+            ? override
             : _clockPixelColor(styleId, i, col);
       }
     }

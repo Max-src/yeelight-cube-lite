@@ -29,7 +29,11 @@ from .const import (
     resolve_clock_mixer_direction,
 )
 from .layout import FONT_MAPS, char_advance
-from .native_effect_preview import render_music_flow_effect, render_native_effect
+from .native_effect_preview import (
+    effect_supports_color_override,
+    render_music_flow_effect,
+    render_native_effect,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -361,7 +365,27 @@ class _YeelightCubeMatrixCameraBase(Camera):
         style = NATIVE_CLOCK_STYLES.get(
             style_id, NATIVE_CLOCK_STYLES[DEFAULT_NATIVE_CLOCK_STYLE]
         )
+        # A colour override (ARGB int) recolours compatible mixer effects (dark
+        # stays dark); incompatible styles fall back to the flat override colour.
+        override_int = getattr(le, "_native_clock_color", None)
+        override_rgb = (
+            (
+                (override_int >> 16) & 255,
+                (override_int >> 8) & 255,
+                override_int & 255,
+            )
+            if override_int is not None
+            else None
+        )
         effect_name = CLOCK_MIXER_EFFECTS.get(style.get("mixer", 0))
+        override_compatible = (
+            override_rgb is not None
+            and effect_name is not None
+            and effect_supports_color_override(effect_name)
+        )
+        # Compatible effects recolour toward the override; incompatible effects
+        # render normally (ignore it); styles with no effect fall back to the
+        # flat override colour in the mask loop below.
         effect_frame = None
         if effect_name is not None:
             phase = _time.monotonic() * (0.25 + CLOCK_MIXER_EFFECT_SPEED / 55.0)
@@ -372,7 +396,10 @@ class _YeelightCubeMatrixCameraBase(Camera):
                 or CLOCK_MIXER_EFFECT_DIRECTION
             )
             effect_frame = render_native_effect(
-                effect_name, phase, direction
+                effect_name,
+                phase,
+                direction,
+                override_rgb if override_compatible else None,
             )
 
         for char_index, (char, glyph, advance) in enumerate(
@@ -387,6 +414,8 @@ class _YeelightCubeMatrixCameraBase(Camera):
                 if 0 <= col < COLS and 0 <= row < ROWS:
                     if effect_frame is not None:
                         matrix[row * COLS + col] = effect_frame[row * COLS + col]
+                    elif override_rgb is not None:
+                        matrix[row * COLS + col] = override_rgb
                     else:
                         matrix[row * COLS + col] = self._clock_pixel_color(
                             style_id,

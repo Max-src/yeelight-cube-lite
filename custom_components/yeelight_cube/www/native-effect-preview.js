@@ -2110,7 +2110,63 @@ function renderPulse(phase, direction) {
  * Returns a flat array of 100 [r,g,b] tuples in row-major order
  * (row 0 = the panel's physical bottom, col 0 = left).
  */
-export function renderNativeEffect(effect, phase, direction = "Up") {
+// Effects the firmware can recolour with a single "colour override": each
+// pixel keeps its own brightness but adopts the override hue, so dark stays
+// dark and multi-colour effects collapse toward one colour. Effects NOT listed
+// ignore the override (they keep their own colours on the lamp). Names must
+// match renderNativeEffectRaw exactly (e.g. "Starry sky" lowercase).
+export const COLOR_OVERRIDE_EFFECTS = new Set([
+  "Rainbow",
+  "Ocean Waves",
+  "Spectrum",
+  "Streamer",
+  "Rainbow Flow",
+  "Starry sky",
+  "Pastel Pulse",
+  "Monochrome Waves",
+  "Aurora",
+  "Pulse",
+  "Solar Flare",
+  "Prism",
+  "Ember",
+  "Waterfall",
+  "Bonfire",
+  "Color Trails",
+  "Pinball",
+  "Tide",
+  "Drift",
+  "Spectrum Bands",
+  "Kaleidoscope",
+]);
+
+export function effectSupportsColorOverride(effect) {
+  return COLOR_OVERRIDE_EFFECTS.has(effect);
+}
+
+// Recolour a rendered frame toward `override` ([r,g,b]) while preserving each
+// pixel's brightness (its HSV value = max channel). Black stays black.
+function applyColorOverride(pixels, override) {
+  const [or_, og, ob] = override;
+  return pixels.map(([r, g, b]) => {
+    const level = Math.max(r, g, b) / 255;
+    return [clamp(or_ * level), clamp(og * level), clamp(ob * level)];
+  });
+}
+
+export function renderNativeEffect(
+  effect,
+  phase,
+  direction = "Up",
+  colorOverride = null,
+) {
+  const pixels = renderNativeEffectRaw(effect, phase, direction);
+  if (colorOverride && effectSupportsColorOverride(effect)) {
+    return applyColorOverride(pixels, colorOverride);
+  }
+  return pixels;
+}
+
+function renderNativeEffectRaw(effect, phase, direction = "Up") {
   if (effect === "Fireworks") return renderFireworks(phase, direction);
   if (effect === "Rainbow Flow") return renderRainbowFlow(phase, direction);
   if (effect === "Monochrome Waves")
