@@ -1,5 +1,9 @@
 import { BLACK_THRESHOLD } from "./draw_card_const.js";
 import { escapeHtml } from "./html-escape-utils.js";
+import {
+  renderItemIndicators,
+  itemBrowserStyles,
+} from "./item-browser-utils.js";
 
 /**
  * Shared utility for rendering gallery/preview display modes
@@ -315,6 +319,7 @@ export function renderGalleryMode(items, options = {}) {
                ">${item.metadata}</div>`
               : ""
           }
+          ${renderItemIndicators(item.indicators)}
         </div>
       `;
         })
@@ -419,6 +424,7 @@ export function renderGridMode(items, options = {}) {
                ">${item.metadata}</div>`
               : ""
           }
+          ${renderItemIndicators(item.indicators)}
         </div>
       `;
         })
@@ -512,6 +518,7 @@ function renderCompactFlavor(items, options = {}, strip = false) {
                align-items: center;
                gap: 4px;
                ${strip ? "flex: 0 0 auto;" : ""}
+               ${item.indicators?.length ? `width:${previewSize + 16}px;` : ""}
                padding: ${showCards ? "6px" : "2px"};
                border-radius: ${showCards ? "6px" : "4px"};
                background: ${itemBg};
@@ -538,6 +545,7 @@ function renderCompactFlavor(items, options = {}, strip = false) {
                ">${item.title}</div>`
               : ""
           }
+          ${renderItemIndicators(item.indicators)}
         </div>
       `;
         })
@@ -606,6 +614,7 @@ export function renderInlineMode(items, options = {}) {
               forceAspectRatio: true,
             })}
           </div>
+          ${renderItemIndicators(item.indicators)}
         </div>
       `,
         )
@@ -633,6 +642,7 @@ export function renderWheelMode(items, options = {}) {
   // Get mode-specific configuration (showTitle is derived from wheelDisplayStyle)
   const userPreviewSize = matrixOptions.previewSize;
   const config = getWheelModeConfig(wheelDisplayStyle, userPreviewSize);
+  if (items.some((item) => item.indicators?.length)) config.itemHeight += 38;
   const halfVisible = Math.floor(WHEEL_MODE.DEFAULT_VISIBLE_ITEMS / 2);
   const cursorStyle = onClickEnabled ? "cursor: pointer;" : "";
   // Scale outer/inner max-widths based on preview size
@@ -823,6 +833,7 @@ function renderWheelItems(
             ...matrixOptions,
           })}
         </div>
+        ${renderItemIndicators(item.indicators)}
       </div>
     `;
     })
@@ -1005,6 +1016,7 @@ export function renderGalleryDisplay(
  * CSS styles for gallery display (to be imported into card styles)
  */
 export const galleryDisplayStyles = `
+  ${itemBrowserStyles}
   .gallery-item-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);

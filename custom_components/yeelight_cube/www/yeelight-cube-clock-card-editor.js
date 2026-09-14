@@ -385,6 +385,70 @@ class YeelightCubeClockCardEditor extends LitElement {
               !!config.show_color_modes,
               (e) => this._onToggle(e, "show_color_modes"),
             )}
+            ${config.show_color_modes
+              ? renderModeSettingsSection(
+                  "Colour mode style",
+                  html`
+                    <div class="form-row">
+                      <label>Presentation</label>
+                      ${createButtonGroup(
+                        [
+                          {
+                            value: "buttons",
+                            label: "Buttons",
+                            title: "Icon + label buttons in a row",
+                          },
+                          {
+                            value: "dropdown",
+                            label: "Dropdown",
+                            title: "Compact dropdown list",
+                          },
+                        ],
+                        config.color_mode_selector === "dropdown"
+                          ? "dropdown"
+                          : "buttons",
+                        (event) => {
+                          const value = event.currentTarget.dataset.value;
+                          this.config = {
+                            ...this.config,
+                            color_mode_selector: value,
+                          };
+                          this.requestUpdate();
+                          this._fire();
+                        },
+                      )}
+                    </div>
+                    ${config.color_mode_selector === "dropdown"
+                      ? html`
+                          <div class="form-row">
+                            <label>Item Shape</label>
+                            ${createButtonGroup(
+                              [
+                                { value: "square", label: "Square" },
+                                { value: "rounded", label: "Rounded" },
+                                { value: "round", label: "Round" },
+                              ],
+                              ["square", "round"].includes(
+                                config.color_mode_shape,
+                              )
+                                ? config.color_mode_shape
+                                : "rounded",
+                              (event) => {
+                                const value = event.currentTarget.dataset.value;
+                                this.config = {
+                                  ...this.config,
+                                  color_mode_shape: value,
+                                };
+                                this.requestUpdate();
+                                this._fire();
+                              },
+                            )}
+                          </div>
+                        `
+                      : ""}
+                  `,
+                )
+              : ""}
             ${createToggleRow(
               "Show colour override",
               "show_color_override",
@@ -471,6 +535,7 @@ class YeelightCubeClockCardEditor extends LitElement {
                   `,
                 )
               : ""}
+            ${this._renderStyleBrowserSettings()}
             <!-- Same two-level selector UI as the gradient card: family
                  first, then that family's style picker + settings. -->
             <div class="form-row">
@@ -583,7 +648,7 @@ class YeelightCubeClockCardEditor extends LitElement {
                           ${createSliderRow(
                             "Items Per Page (0 = no pagination)",
                             config.items_per_page || 0,
-                            { min: 0, max: 9, step: 1 },
+                            { min: 0, max: 16, step: 1 },
                             (e) => this._onSlider("items_per_page", e),
                           )}
                         `,
@@ -691,7 +756,7 @@ class YeelightCubeClockCardEditor extends LitElement {
     return renderOrderableList({
       labelFor: (key) => labels.get(key) || key,
       items: list,
-      available: allNames.filter((n) => !list.includes(n)),
+      available: allNames.filter((name) => !list.includes(name)),
       onUpdate: (l) => {
         this.config = { ...this.config, visible_styles: l };
         this.requestUpdate();
@@ -706,6 +771,18 @@ class YeelightCubeClockCardEditor extends LitElement {
       addPlaceholder: "Add a style…",
       resetLabel: "Reset to all styles",
     });
+  }
+
+  _renderStyleBrowserSettings() {
+    return renderModeSettingsSection(
+      "Default style view",
+      createToggleRow(
+        "Show only responding styles",
+        "show_only_responding_styles",
+        this.config.show_only_responding_styles !== false,
+        (event) => this._onToggle(event, "show_only_responding_styles"),
+      ),
+    );
   }
 
   _onTitleInput(e) {

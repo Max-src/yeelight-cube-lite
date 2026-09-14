@@ -10,9 +10,24 @@
 // row highlight classes are cleaned up via DOM traversal, so any number of
 // lists can coexist in one editor.
 
-import { html, css } from "./lib/lit-all.js";
+import { html, css, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
+import {
+  renderItemIndicators,
+  itemBrowserStyles,
+} from "./item-browser-utils.js";
 
 export const orderableListStyles = css`
+  ${unsafeCSS(itemBrowserStyles)}
+  .orderable-list-content {
+    flex: 1;
+    min-width: 0;
+  }
+  .orderable-list-content .item-indicators {
+    justify-content: flex-start;
+  }
+  .orderable-list-content .orderable-list-name {
+    display: block;
+  }
   .orderable-list {
     display: flex;
     flex-direction: column;
@@ -111,8 +126,20 @@ export function renderOrderableList({
   addPlaceholder = "Add an item…",
   resetLabel = "Reset to defaults",
   labelFor = (name) => name,
+  optionLabelFor = labelFor,
+  displayItems = items,
+  canReorder = true,
+  indicatorsFor = () => [],
 }) {
+  canReorder =
+    canReorder &&
+    displayItems.length === items.length &&
+    displayItems.every((name, index) => name === items[index]);
   const onDragStart = (e, idx) => {
+    if (!canReorder) {
+      e.preventDefault();
+      return;
+    }
     e.dataTransfer.effectAllowed = "move";
     // Firefox needs data set for the drag to start; the payload also carries
     // the source index so no host state is required.
@@ -131,6 +158,7 @@ export function renderOrderableList({
   };
   const onDrop = (e, targetIdx) => {
     e.preventDefault();
+    if (!canReorder) return;
     e.currentTarget.classList.remove("drag-over");
     const from = parseInt(e.dataTransfer.getData("text/plain"), 10);
     if (isNaN(from) || from === targetIdx) return;
@@ -145,6 +173,7 @@ export function renderOrderableList({
       .forEach((r) => r.classList.remove("dragging", "drag-over"));
   };
   const onMove = (idx, delta) => {
+    if (!canReorder) return;
     const target = idx + delta;
     if (target < 0 || target >= items.length) return;
     const list = [...items];
@@ -161,11 +190,12 @@ export function renderOrderableList({
     e.target.value = "";
   };
 
-  const rows = items.map(
-    (name, idx) => html`
+  const rows = displayItems.map((name, displayIndex) => {
+    const idx = displayItems === items ? displayIndex : items.indexOf(name);
+    return html`
       <div
         class="orderable-list-row"
-        draggable="true"
+        draggable="${canReorder ? "true" : "false"}"
         data-idx="${idx}"
         @dragstart="${(e) => onDragStart(e, idx)}"
         @dragover="${onDragOver}"
@@ -173,28 +203,35 @@ export function renderOrderableList({
         @drop="${(e) => onDrop(e, idx)}"
         @dragend="${onDragEnd}"
       >
-        <span class="orderable-drag-handle" title="Drag to reorder">⋮⋮</span>
+        ${canReorder
+          ? html`<span class="orderable-drag-handle" title="Drag to reorder"
+              >⋮⋮</span
+            >`
+          : ""}
         <button
           title="Move up"
-          ?disabled="${idx === 0}"
+          ?disabled="${!canReorder || idx === 0}"
           @click="${() => onMove(idx, -1)}"
         >
           ▲
         </button>
         <button
           title="Move down"
-          ?disabled="${idx === items.length - 1}"
+          ?disabled="${!canReorder || idx === items.length - 1}"
           @click="${() => onMove(idx, 1)}"
         >
           ▼
         </button>
-        <span class="orderable-list-name">${labelFor(name)}</span>
+        <div class="orderable-list-content">
+          <span class="orderable-list-name">${labelFor(name)}</span>
+          ${unsafeHTML(renderItemIndicators(indicatorsFor(name)))}
+        </div>
         <button class="remove" title="Remove" @click="${() => onRemove(idx)}">
           ✕
         </button>
       </div>
-    `,
-  );
+    `;
+  });
 
   return html`
     <div class="orderable-list">${rows}</div>
@@ -202,7 +239,7 @@ export function renderOrderableList({
       <select @change="${onAdd}">
         <option value="">${addPlaceholder}</option>
         ${available.map(
-          (n) => html`<option value="${n}">${labelFor(n)}</option>`,
+          (n) => html`<option value="${n}">${optionLabelFor(n)}</option>`,
         )}
       </select>
       ${onReset

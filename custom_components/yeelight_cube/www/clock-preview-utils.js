@@ -279,6 +279,92 @@ export function getClockStyles(includeExperimental) {
     : CLOCK_STYLES.filter((s) => !s.experimental);
 }
 
+export function clockStyleColorModeState(style, mode, override = null) {
+  if (!style || !CLOCK_COLOR_MODES.some((option) => option.value === mode))
+    return "unknown";
+  if (mode === "normal") return "unchanged";
+  const known =
+    _CLOCK_STYLE_BY_ID.get(style.id) || _CLOCK_STYLE_BY_NAME.get(style.name);
+  if (!known && !style.presetId) return "unknown";
+  const mixer = style.presetId ? 0 : known.mixer;
+  if (mixer === 0) {
+    if (mode !== "bw") return "unchanged";
+    const color = style.presetId ? style.color : override;
+    const alreadyWhite = Array.isArray(color)
+      ? color.every((channel) => channel === 255)
+      : known?.name === "White";
+    return alreadyWhite ? "unchanged" : "responds";
+  }
+  const effect = CLOCK_MIXER_EFFECTS[mixer];
+  return effect
+    ? effectSupportsColorMode(effect, mode)
+      ? "responds"
+      : "unchanged"
+    : "unknown";
+}
+
+export function clockStyleIndicators(style, display, mode, override = null) {
+  if (display !== "all" && (display !== "selected" || mode === "normal"))
+    return [];
+  return CLOCK_COLOR_MODES.filter(
+    (option) =>
+      option.value !== "normal" && (display === "all" || option.value === mode),
+  ).map((option) => {
+    const state = clockStyleColorModeState(style, option.value, override);
+    return {
+      label: option.label,
+      shortLabel: {
+        bw: "B&W",
+        red_blue: "Vi",
+        white_orange: "RO",
+        blue_yellow: "Tr",
+        purple_orange: "VG",
+      }[option.value],
+      state,
+      description:
+        state === "responds"
+          ? `Responds to ${option.label}`
+          : state === "unchanged"
+            ? `Unchanged by ${option.label}`
+            : `${option.label}: response unknown`,
+    };
+  });
+}
+
+export function clockStyleBrowserOptions(mode, override = null) {
+  const state = (style) => clockStyleColorModeState(style, mode, override);
+  return {
+    filters: [
+      { value: "all", label: "All", test: () => true },
+      {
+        value: "responds",
+        label: "Responding",
+        test: (style) => mode === "normal" || state(style) === "responds",
+      },
+      {
+        value: "unchanged",
+        label: "Unchanged",
+        test: (style) => mode === "normal" || state(style) === "unchanged",
+      },
+    ],
+    sorts: [
+      { value: "manual", label: "Your order" },
+      {
+        value: "name",
+        label: "Name",
+        compare: (first, second) => first.name.localeCompare(second.name),
+      },
+      {
+        value: "responds",
+        label: "Responding first",
+        compare: (first, second) =>
+          Number(state(second) === "responds") -
+          Number(state(first) === "responds"),
+      },
+    ],
+  };
+}
+
 // Resolve the firmware mixer for a set of light attributes (or a style object).
 export function clockStyleMixer(attrs) {
   const id = attrs.clock_style_id;

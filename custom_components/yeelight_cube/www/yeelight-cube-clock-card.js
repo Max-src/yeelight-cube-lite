@@ -58,6 +58,7 @@ import {
 import {
   CLOCK_MIXER_EFFECT_SPEED,
   CLOCK_COLOR_MODES,
+  clockStyleColorModeState,
   clockStyleByName,
   getClockStyles,
   renderClockFrame,
@@ -258,6 +259,7 @@ class YeelightCubeClockCard extends HTMLElement {
       selector_shape: "rounded", // square | rounded | round
       preview_size: 55, // % -> px (same size axis as the gradient card)
       preview_show_titles: true,
+      show_only_responding_styles: true,
       highlight_active_mode: true,
       wheel_nav_position: "bottom", // none | bottom | sides
       wheel_height: 300,
@@ -279,6 +281,8 @@ class YeelightCubeClockCard extends HTMLElement {
       show_content_toggle: true,
       show_format_toggles: true,
       show_color_modes: false,
+      color_mode_selector: "buttons", // buttons | dropdown
+      color_mode_shape: "rounded", // dropdown shape: square | rounded | round
       show_color_override: false,
       color_override_style: "swatch",
       // Sliders: brightness + animation speed share one appearance config
@@ -298,6 +302,7 @@ class YeelightCubeClockCard extends HTMLElement {
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     this._stateSignature = null;
     this._carouselIndex = null;
+    this._browserSignature = null;
     this.render();
   }
 
@@ -519,6 +524,17 @@ class YeelightCubeClockCard extends HTMLElement {
     return styles;
   }
 
+  _shownStyles() {
+    const styles = this._styleList();
+    const mode = this._attrs().clock_color_mode || "normal";
+    if (this.config.show_only_responding_styles === false || mode === "normal")
+      return styles;
+    const override = clockColorToRgb(this._attrs().clock_color);
+    return styles.filter(
+      (style) => clockStyleColorModeState(style, mode, override) === "responds",
+    );
+  }
+
   // Build the attrs object a preview needs, mixing the current format settings
   // with a specific style. Non-preset styles reflect an active custom override
   // so the whole gallery shows what picking each style would look like.
@@ -671,7 +687,7 @@ class YeelightCubeClockCard extends HTMLElement {
 
   // Carousel navigation IS selection (same mechanic as the gradient card).
   _carouselNavigate(direction) {
-    const names = this._styleList().map(clockPresetKey);
+    const names = this._shownStyles().map(clockPresetKey);
     if (!names.length) return;
     if (this._carouselIndex == null) {
       const idx = names.indexOf(clockPresetKey(this._currentStyle()));
@@ -688,7 +704,7 @@ class YeelightCubeClockCard extends HTMLElement {
   }
 
   _carouselSetIndex(index) {
-    const names = this._styleList().map(clockPresetKey);
+    const names = this._shownStyles().map(clockPresetKey);
     if (!names.length) return;
     const clamped = Math.max(0, Math.min(index, names.length - 1));
     if (clamped === this._carouselIndex) return;
@@ -919,6 +935,15 @@ class YeelightCubeClockCard extends HTMLElement {
     const current = this._currentStyle();
     const a = this._attrs();
     const sel = this._selectorStyle();
+    const browserSignature = JSON.stringify(
+      this._shownStyles().map(clockPresetKey),
+    );
+    if (browserSignature !== this._browserSignature) {
+      this._browserSignature = browserSignature;
+      this._selectorPage = 0;
+      this._carouselIndex = null;
+      this._wheelCenterIndex = 0;
+    }
 
     // Carousel follows EXTERNAL style changes (automations, select entity);
     // skipped briefly after a self-initiated selection so the state echo
@@ -929,7 +954,7 @@ class YeelightCubeClockCard extends HTMLElement {
       this._carouselIndex != null &&
       Date.now() - (this._lastSelfSelect || 0) > 5000
     ) {
-      const names = this._styleList().map(clockPresetKey);
+      const names = this._shownStyles().map(clockPresetKey);
       const idx = names.indexOf(clockPresetKey(current));
       if (idx >= 0) this._carouselIndex = idx;
     }
@@ -1027,9 +1052,14 @@ class YeelightCubeClockCard extends HTMLElement {
   }
 
   _renderStyleSelector(sel, current) {
-    const inner = TEXT_SELECTOR_STYLES.includes(sel)
-      ? this._renderTextSelector(sel, current)
-      : this._renderPreviewSelector(sel, current);
+    const styles = this._shownStyles();
+    const inner = !styles.length
+      ? this._styleList().length
+        ? '<div class="item-browser-empty">No styles respond to this colour mode.</div>'
+        : '<div class="item-browser-empty">No visible styles configured.</div>'
+      : TEXT_SELECTOR_STYLES.includes(sel)
+        ? this._renderTextSelector(sel, current)
+        : this._renderPreviewSelector(sel, current);
     return `
       <div class="section">
         <div class="section-title">Clock style</div>
@@ -1039,7 +1069,7 @@ class YeelightCubeClockCard extends HTMLElement {
 
   // Text selector family — markup + classes identical to the gradient card.
   _renderTextSelector(sel, current) {
-    const styles = this._styleList();
+    const styles = this._shownStyles();
     const shape = resolveSelectorShape(this.config);
     const scale = this._selectorTextScale();
     const selAttrs = `data-shape="${shape}" style="--gc-sel-scale:${scale}; display: flex; flex-wrap: wrap; gap: 6px;"`;
@@ -1049,6 +1079,7 @@ class YeelightCubeClockCard extends HTMLElement {
       return `
         <div class="gc-selector" data-shape="${shape}" style="--gc-sel-scale:${scale};">
           <select class="mode-select" data-mode-select="true">
+            ${styles.some((style) => clockPresetKey(style) === active) ? "" : '<option value="" disabled selected>Current style outside this list</option>'}
             ${styles
               .map(
                 (s) =>
@@ -1097,7 +1128,7 @@ class YeelightCubeClockCard extends HTMLElement {
   _previewItems() {
     const phase = this._phase();
     const { fontMap, metrics } = this._getNativeClockFont();
-    return this._styleList().map((s) => ({
+    return this._shownStyles().map((s) => ({
       title: s.name + (s.presetId ? " (Custom)" : ""),
       name: s.name + (s.presetId ? " (Custom)" : ""),
       colorData: flipMatrixVertical(
@@ -1303,14 +1334,30 @@ class YeelightCubeClockCard extends HTMLElement {
 
   _renderColorMode(a) {
     const cur = a.clock_color_mode || "normal";
+    const shape = ["square", "round"].includes(this.config.color_mode_shape)
+      ? this.config.color_mode_shape
+      : "rounded";
+    const inner =
+      this.config.color_mode_selector === "dropdown"
+        ? `<div class="gc-selector" data-shape="${shape}">
+            <select class="mode-select colormode-select" aria-label="Colour mode">
+              ${CLOCK_COLOR_MODES.map(
+                (mode) =>
+                  `<option value="${escapeHtml(mode.value)}" ${
+                    cur === mode.value ? "selected" : ""
+                  }>${escapeHtml(mode.label)}</option>`,
+              ).join("")}
+            </select>
+          </div>`
+        : this._controlGroup({
+            label: "Colour mode",
+            items: CLOCK_COLOR_MODES,
+            value: cur,
+          });
     return `
       <div class="section">
         <div class="section-title">Colour mode</div>
-        <div data-clock-control="colormode">${this._controlGroup({
-          label: "Colour mode",
-          items: CLOCK_COLOR_MODES,
-          value: cur,
-        })}</div>
+        <div data-clock-control="colormode" class="colormode-buttons">${inner}</div>
       </div>`;
   }
 
@@ -1424,10 +1471,16 @@ class YeelightCubeClockCard extends HTMLElement {
       .forEach((btn) => {
         btn.addEventListener("click", () => this._applyStyle(btn.dataset.mode));
       });
-    const dropdown = root.querySelector(".mode-select");
+    const dropdown = root.querySelector(".mode-select:not(.colormode-select)");
     if (dropdown) {
       dropdown.addEventListener("change", (e) =>
         this._applyStyle(e.target.value),
+      );
+    }
+    const colorModeDropdown = root.querySelector(".colormode-select");
+    if (colorModeDropdown) {
+      colorModeDropdown.addEventListener("change", (e) =>
+        this._applyColorMode(e.target.value),
       );
     }
 
@@ -1581,6 +1634,40 @@ class YeelightCubeClockCard extends HTMLElement {
       ${carouselStyles}
       /* Shared multi-style value slider (same control as brightness) */
       ${sliderControlStyles}
+
+      /* Colour-mode buttons carry long labels ("Retro Orange", "Violet &
+         Gold"). Filled styles stay an equal-width row but stack the icon over
+         wrapped text so labels flow onto multiple lines instead of one letter
+         per row. Pill and Icon styles instead wrap onto the next row, keeping
+         visual variety across the button styles. */
+      [data-clock-control="colormode"] .shared-button-group.action-row {
+        flex-wrap: wrap;
+      }
+      [data-clock-control="colormode"]
+        .shared-action-button:not(.btn-style-icon):not(.btn-style-pill) {
+        flex-direction: column;
+        gap: 4px;
+        padding: 8px 6px;
+        line-height: 1.15;
+      }
+      [data-clock-control="colormode"] .shared-button-group .btn-text {
+        white-space: normal;
+        overflow-wrap: break-word;
+        word-break: normal;
+        text-align: center;
+      }
+      /* Pill: size to content and wrap like tags (single-line label per pill). */
+      [data-clock-control="colormode"]
+        .shared-button-group
+        .shared-action-button.btn-style-pill {
+        flex: 0 0 auto;
+        width: auto;
+      }
+      [data-clock-control="colormode"]
+        .shared-action-button.btn-style-pill
+        .btn-text {
+        white-space: nowrap;
+      }
 
       /* ── Carousel: match the gradient card exactly ──────────────────
          Transparent wrapper (each item paints its own background), keep the

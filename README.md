@@ -39,6 +39,7 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a
 | Card | Description |
 | :-- | :-- |
 | **Preview Card** | Live lamp preview with brightness and color adjustments |
+| **Clock Card** | Clock styles, colour modes, live previews, and automatic responding-style filtering |
 | **Colors Card** | Edit colors used to display text and apply gradients |
 | **Palettes Card** | Manage lists of colors (palettes) |
 | **Gradient Card** | Configure and preview gradient & color modes |
@@ -46,6 +47,23 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a
 
 > [!NOTE]
 > All cards support **light and dark themes** and adapt automatically to your Home Assistant theme.
+
+#### Clock Style Browsing
+
+In the Clock card editor's **Clock style > Default style view** section,
+**Show only responding styles** is enabled by default. Disable it to show all
+configured styles. Normal colour mode always shows the full configured list.
+
+| Setting | Values | Default |
+| :-- | :-- | :-- |
+| `show_only_responding_styles` | `true`, `false` | `true` |
+| `items_per_page` | `0` (no pagination) through `16` in the editor | `0` |
+
+Styles always follow your saved order. Filtering follows the lamp's selected
+colour mode without changing the lamp or removing saved entries. The visible-style
+editor keeps the full editable list. There are no compatibility indicators or
+filter/sort controls on the card. Previous `style_indicators`, `show_style_browser`,
+`style_filter`, and `style_sort` settings are no longer used.
 
 ---
 
