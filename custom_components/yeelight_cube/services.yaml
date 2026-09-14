@@ -222,6 +222,21 @@ set_clock_style:
       example: true
       selector:
         boolean:
+    color_mode:
+      description: >-
+        Firmware colour palette preset for compatible effects/styles. "normal"
+        keeps each effect's own colours; the others remap the palette.
+      required: false
+      example: red_blue
+      selector:
+        select:
+          options:
+            - "normal"
+            - "bw"
+            - "red_blue"
+            - "white_orange"
+            - "blue_yellow"
+            - "purple_orange"
     speed:
       description: Animation speed for effect-backed clock styles (1-255).
       required: false

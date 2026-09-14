@@ -30,6 +30,7 @@ from .const import (
 )
 from .layout import FONT_MAPS, char_advance
 from .native_effect_preview import (
+    effect_supports_color_mode,
     effect_supports_color_override,
     render_music_flow_effect,
     render_native_effect,
@@ -378,8 +379,12 @@ class _YeelightCubeMatrixCameraBase(Camera):
             else None
         )
         effect_name = CLOCK_MIXER_EFFECTS.get(style.get("mixer", 0))
+        # A palette colour mode (e.g. B&W) takes precedence over the override.
+        color_mode = getattr(le, "_native_clock_color_mode", "normal") or "normal"
+        mode_active = color_mode != "normal"
         override_compatible = (
-            override_rgb is not None
+            not mode_active
+            and override_rgb is not None
             and effect_name is not None
             and effect_supports_color_override(effect_name)
         )
@@ -400,7 +405,10 @@ class _YeelightCubeMatrixCameraBase(Camera):
                 phase,
                 direction,
                 override_rgb if override_compatible else None,
+                color_mode if mode_active else None,
             )
+        # A palette mode overrides the custom colour, so don't flat-fill with it.
+        flat_override = None if mode_active else override_rgb
 
         for char_index, (char, glyph, advance) in enumerate(
             zip(text, glyphs, advances)
@@ -414,8 +422,8 @@ class _YeelightCubeMatrixCameraBase(Camera):
                 if 0 <= col < COLS and 0 <= row < ROWS:
                     if effect_frame is not None:
                         matrix[row * COLS + col] = effect_frame[row * COLS + col]
-                    elif override_rgb is not None:
-                        matrix[row * COLS + col] = override_rgb
+                    elif flat_override is not None:
+                        matrix[row * COLS + col] = flat_override
                     else:
                         matrix[row * COLS + col] = self._clock_pixel_color(
                             style_id,

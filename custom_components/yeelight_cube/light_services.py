@@ -29,6 +29,7 @@ from homeassistant.util import dt as dt_util  # type: ignore
 from . import async_save_data
 from .color_utils import hex_to_rgb, rgb_to_hex
 from .const import (
+    CLOCK_COLOR_MODES,
     DOMAIN,
     EXPERIMENTAL_CLOCK_STYLE_IDS,
     MATRIX_DISPLAY_MODES,
@@ -2611,6 +2612,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         twelve_hour = data.get("twelve_hour")
         colon_blink = data.get("colon_blink")
         speed = data.get("speed")
+        color_mode = data.get("color_mode")
         activate = data.get("activate", True)
 
         # Resolve a style name or numeric id to a NATIVE_CLOCK_STYLES key.
@@ -2671,6 +2673,8 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                 target._native_clock_12_hour = bool(twelve_hour)
             if colon_blink is not None:
                 target._native_clock_colon_blink = bool(colon_blink)
+            if color_mode is not None:
+                target._native_clock_color_mode = color_mode
             if speed is not None:
                 target._native_effect_speed = max(1, min(255, int(speed)))
             if activate:
@@ -2705,6 +2709,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             vol.Optional("content"): vol.In(NATIVE_CLOCK_CONTENT_OPTIONS),
             vol.Optional("twelve_hour"): cv.boolean,
             vol.Optional("colon_blink"): cv.boolean,
+            vol.Optional("color_mode"): vol.In(list(CLOCK_COLOR_MODES)),
             vol.Optional("speed"): vol.All(vol.Coerce(int), vol.Range(min=1, max=255)),
             vol.Optional("activate"): cv.boolean,
         }),

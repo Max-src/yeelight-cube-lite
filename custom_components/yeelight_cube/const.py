@@ -143,6 +143,21 @@ _EXTENDED_EFFECT_SPEED = {70: False}
 _EXTENDED_EFFECT_IDS = {10: 71}
 # Public view used by the clock builder to override the command id per mixer.
 CLOCK_MIXER_COMMAND_IDS = dict(_EXTENDED_EFFECT_IDS)
+
+# Firmware "colour mode" palette presets for the clock (and compatible native
+# effects). Forcing the outer set_fx_effect command id (first array element) to
+# one of these ids remaps the effect's palette; ``None`` = normal (each effect
+# keeps its own colours). Ids discovered via the FX Explorer card. Which effects
+# actually respond varies per effect and is verified on hardware.
+CLOCK_COLOR_MODES = {
+    "normal": None,
+    "bw": 15,
+    "red_blue": 64,
+    "white_orange": 65,
+    "blue_yellow": 66,
+    "purple_orange": 67,
+}
+DEFAULT_CLOCK_COLOR_MODE = "normal"
 EXTENDED_NATIVE_EFFECTS = {
     _EXTENDED_EFFECT_NAMES.get(mode, str(mode)): {
         "effect_id": _EXTENDED_EFFECT_IDS.get(mode, 3),

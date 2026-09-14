@@ -57,6 +57,7 @@ import {
 } from "./pagination-utils.js";
 import {
   CLOCK_MIXER_EFFECT_SPEED,
+  CLOCK_COLOR_MODES,
   clockStyleByName,
   getClockStyles,
   renderClockFrame,
@@ -277,6 +278,7 @@ class YeelightCubeClockCard extends HTMLElement {
       lamp_matrix_box_shadow: false,
       show_content_toggle: true,
       show_format_toggles: true,
+      show_color_modes: false,
       show_color_override: false,
       color_override_style: "swatch",
       // Sliders: brightness + animation speed share one appearance config
@@ -453,6 +455,7 @@ class YeelightCubeClockCard extends HTMLElement {
       a.clock_12_hour,
       a.clock_colon_blink,
       a.clock_color,
+      a.clock_color_mode,
       a.native_effect_speed,
       a.native_effect_direction,
       a.extended_effects_enabled,
@@ -528,6 +531,7 @@ class YeelightCubeClockCard extends HTMLElement {
       clock_show_date: a.clock_show_date,
       clock_12_hour: a.clock_12_hour,
       clock_colon_blink: a.clock_colon_blink,
+      clock_color_mode: a.clock_color_mode,
       native_effect_direction: a.native_effect_direction,
     };
     if (style.presetId) {
@@ -584,6 +588,10 @@ class YeelightCubeClockCard extends HTMLElement {
 
   _applyFormat(patch) {
     this._callSetClock(patch);
+  }
+
+  _applyColorMode(mode) {
+    this._callSetClock({ color_mode: mode });
   }
 
   _applyColor(rgbOrClear) {
@@ -945,6 +953,9 @@ class YeelightCubeClockCard extends HTMLElement {
     if (this.config.show_format_toggles !== false && content !== "date") {
       sections.push(this._renderFormatToggles(a));
     }
+    if (this.config.show_color_modes) {
+      sections.push(this._renderColorMode(a));
+    }
     if (this.config.show_color_override) {
       sections.push(this._renderColorOverride(a));
     }
@@ -1290,6 +1301,19 @@ class YeelightCubeClockCard extends HTMLElement {
       </div>`;
   }
 
+  _renderColorMode(a) {
+    const cur = a.clock_color_mode || "normal";
+    return `
+      <div class="section">
+        <div class="section-title">Colour mode</div>
+        <div data-clock-control="colormode">${this._controlGroup({
+          label: "Colour mode",
+          items: CLOCK_COLOR_MODES,
+          value: cur,
+        })}</div>
+      </div>`;
+  }
+
   _renderSliders(a) {
     const showBrightness = this.config.show_brightness === true;
     const showSpeed = this.config.show_animation_speed !== false;
@@ -1485,6 +1509,12 @@ class YeelightCubeClockCard extends HTMLElement {
             : { colon_blink: !a.clock_colon_blink },
         );
       },
+    );
+    bindActionButtonGroup(
+      root.querySelector(
+        '[data-clock-control="colormode"] .shared-button-group',
+      ),
+      (value) => this._applyColorMode(value),
     );
 
     const picker = root.querySelector(".color-picker");

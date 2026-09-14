@@ -1990,6 +1990,38 @@ def effect_supports_color_override(effect: str) -> bool:
     return effect in _COLOR_OVERRIDE_EFFECTS
 
 
+# Effects that the firmware B&W palette mode (command id 15) converts to
+# grayscale. Verified on hardware; Starry sky / Waterfall / Aurora only convert
+# once we stop injecting their default colour (see light_native). Mirrors
+# native-effect-preview.js COLOR_MODE_BW_EFFECTS.
+_COLOR_MODE_BW_EFFECTS = {
+    "Rainbow",
+    "Ocean Waves",
+    "Spectrum",
+    "Streamer",
+    "Rainbow Flow",
+    "Starry sky",
+    "Pastel Pulse",
+    "Monochrome Waves",
+    "Aurora",
+    "Pulse",
+    "Solar Flare",
+    "Prism",
+    "Waterfall",
+    "Bonfire",
+    "Color Trails",
+    "Pinball",
+    "Tide",
+    "Drift",
+    "Spectrum Bands",
+    "Kaleidoscope",
+}
+
+
+def effect_supports_color_mode(effect: str, mode: str) -> bool:
+    return mode == "bw" and effect in _COLOR_MODE_BW_EFFECTS
+
+
 def _apply_color_override(pixels, override):
     """Recolour a frame toward ``override`` ([r,g,b]) preserving each pixel's
     brightness (HSV value = max channel). Black stays black."""
@@ -2004,15 +2036,27 @@ def _apply_color_override(pixels, override):
     ]
 
 
+def _apply_grayscale(pixels):
+    """Desaturate to B&W (value-preserving): gray = the pixel's HSV value (max
+    channel). Black stays black, white stays white."""
+    return [(max(red, green, blue),) * 3 for red, green, blue in pixels]
+
+
 def render_native_effect(
     effect: str,
     phase: float,
     direction: str = "Up",
     color_override=None,
+    color_mode=None,
 ) -> list[tuple[int, int, int]]:
     """Return one animated 20x5 approximation of a firmware effect, optionally
-    recoloured toward a single ``color_override`` for compatible effects."""
+    recoloured toward a custom colour override or a firmware palette mode."""
     pixels = _render_native_effect_raw(effect, phase, direction)
+    # A palette colour mode takes precedence over the custom colour override.
+    if color_mode is not None and color_mode != "normal":
+        if color_mode == "bw" and effect_supports_color_mode(effect, "bw"):
+            return _apply_grayscale(pixels)
+        return pixels
     if color_override is not None and effect_supports_color_override(effect):
         return _apply_color_override(pixels, color_override)
     return pixels

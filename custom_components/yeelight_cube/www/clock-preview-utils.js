@@ -16,7 +16,25 @@
 import {
   renderNativeEffect,
   effectSupportsColorOverride,
+  effectSupportsColorMode,
 } from "./native-effect-preview.js";
+
+// Firmware colour-mode palette presets (mirrors const.py CLOCK_COLOR_MODES).
+// Selecting one forces the outer command id so compatible effects re-map their
+// palette; "normal" keeps each effect's own colours. Which effects respond is
+// verified on hardware (previews are adjusted per effect separately).
+export const CLOCK_COLOR_MODES = [
+  { value: "normal", label: "Normal", icon: "mdi:palette-outline" },
+  { value: "bw", label: "B&W", icon: "mdi:invert-colors" },
+  { value: "red_blue", label: "Red-Blue", icon: "mdi:palette-swatch" },
+  { value: "white_orange", label: "White-Orange", icon: "mdi:palette-swatch" },
+  { value: "blue_yellow", label: "Blue-Yellow", icon: "mdi:palette-swatch" },
+  {
+    value: "purple_orange",
+    label: "Purple-Orange",
+    icon: "mdi:palette-swatch",
+  },
+];
 
 // ╔══════════════════════════════════════════════════════════════════════════╗
 // ║  PREVIEW ORIENTATION — READ THIS BEFORE RENDERING ANY PREVIEW             ║
@@ -441,19 +459,29 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0) {
   const override = Array.isArray(attrs.clock_color_rgb)
     ? attrs.clock_color_rgb
     : null;
+  // A palette colour mode (e.g. B&W) takes precedence over the custom override
+  // and is applied inside renderNativeEffect for compatible effects.
+  const colorMode = attrs.clock_color_mode || "normal";
+  const modeActive = colorMode !== "normal";
   // Compatible mixer effects are recoloured toward the override (dark stays
   // dark); incompatible effects render normally (ignore the override, matching
   // the lamp); styles with no effect fall back to the flat override colour.
   const overrideCompatible =
-    !!override && !!effectName && effectSupportsColorOverride(effectName);
+    !modeActive &&
+    !!override &&
+    !!effectName &&
+    effectSupportsColorOverride(effectName);
   const effectFrame = effectName
     ? renderNativeEffect(
         effectName,
         phase,
         direction,
         overrideCompatible ? override : null,
+        modeActive ? colorMode : null,
       )
     : null;
+  // A palette mode overrides the custom colour, so don't flat-fill with it.
+  const flatOverride = modeActive ? null : override;
   const matrix = Array.from({ length: 100 }, () => [0, 0, 0]);
   const chars = [...text];
   const font = fontMap || _CLOCK_FONT;
@@ -477,8 +505,8 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0) {
       if (col >= 0 && col < COLS && row >= 0 && row < 5) {
         matrix[row * COLS + col] = effectFrame
           ? effectFrame[row * COLS + col]
-          : override
-            ? override
+          : flatOverride
+            ? flatOverride
             : _clockPixelColor(styleId, i, col);
       }
     }

@@ -155,9 +155,17 @@ class YeelightCubeExtendedEffectsSwitch(SwitchEntity):
         if self._light_entity.hass is not None:
             self._light_entity.async_write_ha_state()
 
+    def async_update_from_light(self):
+        # is_on reads _extended_effects_enabled live, so rewriting state is
+        # enough to reflect the light's restored value after a reload (e.g. a
+        # DHCP IP change) where this switch was added before the light restored.
+        if self.hass is not None:
+            self.async_write_ha_state()
+
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
         self._light_entity._extended_effects_switch_entity = self
+        self.async_update_from_light()
 
 
 class _YeelightCubeClockOptionSwitch(SwitchEntity):

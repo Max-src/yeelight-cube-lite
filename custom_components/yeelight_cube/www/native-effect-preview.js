@@ -2143,6 +2143,36 @@ export function effectSupportsColorOverride(effect) {
   return COLOR_OVERRIDE_EFFECTS.has(effect);
 }
 
+// Effects that the firmware B&W palette mode (command id 15) converts to
+// grayscale. Verified on hardware; Starry sky / Waterfall / Aurora only convert
+// once we stop injecting their default colour (see light_native).
+export const COLOR_MODE_BW_EFFECTS = new Set([
+  "Rainbow",
+  "Ocean Waves",
+  "Spectrum",
+  "Streamer",
+  "Rainbow Flow",
+  "Starry sky",
+  "Pastel Pulse",
+  "Monochrome Waves",
+  "Aurora",
+  "Pulse",
+  "Solar Flare",
+  "Prism",
+  "Waterfall",
+  "Bonfire",
+  "Color Trails",
+  "Pinball",
+  "Tide",
+  "Drift",
+  "Spectrum Bands",
+  "Kaleidoscope",
+]);
+
+export function effectSupportsColorMode(effect, mode) {
+  return mode === "bw" && COLOR_MODE_BW_EFFECTS.has(effect);
+}
+
 // Recolour a rendered frame toward `override` ([r,g,b]) while preserving each
 // pixel's brightness (its HSV value = max channel). Black stays black.
 function applyColorOverride(pixels, override) {
@@ -2153,13 +2183,33 @@ function applyColorOverride(pixels, override) {
   });
 }
 
+// Desaturate a rendered frame to black & white (value-preserving grayscale):
+// gray = the pixel's HSV value (max channel). Black stays black, white stays
+// white, colours collapse to their brightness.
+function applyGrayscale(pixels) {
+  return pixels.map(([r, g, b]) => {
+    const m = Math.max(r, g, b);
+    return [m, m, m];
+  });
+}
+
 export function renderNativeEffect(
   effect,
   phase,
   direction = "Up",
   colorOverride = null,
+  colorMode = null,
 ) {
   const pixels = renderNativeEffectRaw(effect, phase, direction);
+  // A palette colour mode (from the firmware command-id remap) takes precedence
+  // over the custom colour override, matching the lamp.
+  if (colorMode && colorMode !== "normal") {
+    if (colorMode === "bw" && effectSupportsColorMode(effect, "bw")) {
+      return applyGrayscale(pixels);
+    }
+    // Other palette modes are not previewed yet: render the effect normally.
+    return pixels;
+  }
   if (colorOverride && effectSupportsColorOverride(effect)) {
     return applyColorOverride(pixels, colorOverride);
   }

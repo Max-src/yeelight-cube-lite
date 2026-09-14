@@ -29,6 +29,7 @@ from yeelight import BulbException # type: ignore
 from .const import (
     CONF_DEVICE_ID,
     CONF_IP,
+    CLOCK_COLOR_MODES,
     clock_style_default_color,
     DEFAULT_MATRIX_DISPLAY_MODE,
     DEFAULT_MUSIC_FLOW_EFFECT,
@@ -381,6 +382,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         self._native_clock_colon_blink = True
         self._native_clock_timezone_offset = None
         self._native_clock_color = None  # ARGB int override, None = use style color
+        self._native_clock_color_mode = "normal"  # palette preset (CLOCK_COLOR_MODES key)
         self._native_effect = DEFAULT_NATIVE_EFFECT
         self._native_effect_speed = 50
         self._native_effect_direction = "Up"
@@ -1305,6 +1307,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             "clock_12_hour": self._native_clock_12_hour,
             "clock_colon_blink": self._native_clock_colon_blink,
             "clock_color": self._native_clock_color,
+            "clock_color_mode": self._native_clock_color_mode,
             "native_effect": self._native_effect,
             "native_effect_speed": self._native_effect_speed,
             "native_effect_direction": self._native_effect_direction,
@@ -1550,6 +1553,9 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                     self._native_clock_color = int(old_state.attributes["clock_color"])
                 except (TypeError, ValueError):
                     self._native_clock_color = None
+            clock_color_mode = old_state.attributes.get("clock_color_mode")
+            if clock_color_mode in CLOCK_COLOR_MODES:
+                self._native_clock_color_mode = clock_color_mode
             native_effect = old_state.attributes.get("native_effect")
             # Migrate legacy names (e.g. "Ribbon") to current app names.
             native_effect = NATIVE_EFFECT_RENAMES.get(native_effect, native_effect)
@@ -1650,6 +1656,11 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         _LOGGER.debug(f"[RESTORE] Entity initialized. Palettes: {len(self._palettes)}, Pixel Arts: {len(self._pixel_arts)}")
             # Note: No need to copy back to hass.data - we're using shared references now
         self.async_schedule_update_ha_state()
+        # Push freshly restored values to every linked helper entity. On a
+        # reload (e.g. a DHCP IP change) a helper may have been added before
+        # this restore ran; without this its control shows the default — the
+        # cause of the Experimental Features switch reverting to off.
+        self._refresh_linked_entities()
         
         _LOGGER.debug(f"[INIT] After state restoration - custom_text: '{self._custom_text}', mode: '{self._mode}', is_on: {self._is_on}")
         _LOGGER.debug(f"[INIT] Calling initial async_apply_display_mode to display HELLO...")
@@ -3358,6 +3369,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             self._alignment_select_entity,
             self._font_select_entity,
             self._angle_number_entity,
+            self._extended_effects_switch_entity,
             self._device_orientation_select_entity,
         ):
             if ref is not None and getattr(ref, "hass", None) is not None:

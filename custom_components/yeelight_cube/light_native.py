@@ -16,6 +16,7 @@ from homeassistant.util import dt as dt_util  # type: ignore
 
 from .const import (
     ALL_NATIVE_EFFECTS,
+    CLOCK_COLOR_MODES,
     CLOCK_MIXER_COMMAND_IDS,
     CLOCK_MIXER_EFFECTS,
     clock_style_default_color,
@@ -174,6 +175,11 @@ class NativeModesMixin:
             "data": base64.b64encode(clock_data).decode("ascii"),
         }
         clock_color = self._resolve_native_clock_color(style)
+        # B&W mode renders the effect in grayscale via its own command id; a
+        # style-injected colour (Starry sky, Waterfall, Aurora) would override
+        # that and keep the effect coloured, so skip it for B&W.
+        if getattr(self, "_native_clock_color_mode", "normal") == "bw":
+            clock_color = None
         if clock_color is not None:
             effect_config["color"] = [int(clock_color)]
 
@@ -195,6 +201,13 @@ class NativeModesMixin:
         # (first array element) is overridden; otherwise the default clock id is
         # used. The config still carries mode 40 so the clock face renders.
         command_id = CLOCK_MIXER_COMMAND_IDS.get(style["mixer"], NATIVE_CLOCK_EFFECT_ID)
+        # A colour-mode preset remaps the palette by forcing the outer command
+        # id (B&W, Red-Blue, ...); it wins over the mixer's default command id.
+        mode_override = CLOCK_COLOR_MODES.get(
+            getattr(self, "_native_clock_color_mode", "normal")
+        )
+        if mode_override is not None:
+            command_id = mode_override
         params = [
             command_id,
             style_id,

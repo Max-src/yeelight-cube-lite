@@ -380,6 +380,12 @@ class YeelightCubeClockCardEditor extends LitElement {
               (e) => this._onToggle(e, "show_format_toggles"),
             )}
             ${createToggleRow(
+              "Show colour modes",
+              "show_color_modes",
+              !!config.show_color_modes,
+              (e) => this._onToggle(e, "show_color_modes"),
+            )}
+            ${createToggleRow(
               "Show colour override",
               "show_color_override",
               !!config.show_color_override,
