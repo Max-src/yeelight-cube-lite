@@ -7,6 +7,8 @@ import colorsys
 import json
 from pathlib import Path
 import runpy
+import shutil
+import subprocess
 import time
 import types
 import unittest
@@ -84,6 +86,52 @@ def _load_standalone_functions(source: str, names: set, extra_namespace=None) ->
 
 
 class NativeFeatureTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("node"), "Node is required for renderer parity")
+    def test_rainbow_palette_parity(self):
+        cases = [
+            ["Rainbow", phase, direction, override, mode]
+            for phase in (-2.5, -0.01, 0, 0.001, 0.125, 0.5, 1, 2.75, 5.555, 13.37)
+            for direction in ("Up", "Down", "Left", "Right")
+            for override in (None, [180, 20, 60])
+            for mode in (None, "normal", "bw", "red_blue", "white_orange", "blue_yellow", "purple_orange", "unknown")
+        ]
+        module_uri = (ROOT / "www" / "native-effect-preview.js").as_uri()
+        script = (
+            f"import {{renderNativeEffect}} from {json.dumps(module_uri)};"
+            "import {readFileSync} from 'node:fs';"
+            "const cases = JSON.parse(readFileSync(0, 'utf8'));"
+            "process.stdout.write(JSON.stringify(cases.map(args => renderNativeEffect(...args))));"
+        )
+        result = subprocess.run(
+            [shutil.which("node"), "--input-type=module", "-e", script],
+            input=json.dumps(cases), text=True, capture_output=True, check=True,
+        )
+        for case, actual in zip(cases, json.loads(result.stdout), strict=True):
+            expected = [list(pixel) for pixel in NATIVE_PREVIEW["render_native_effect"](*case)]
+            with self.subTest(case=case):
+                self.assertEqual(expected, actual)
+
+    def test_rainbow_palette_modes(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+        raw = NATIVE_PREVIEW["_render_native_effect_raw"]
+        for direction in ("Up", "Down", "Left", "Right"):
+            for phase in (-1.3, 0, 0.125, 1, 4.75):
+                normal = render("Rainbow", phase, direction)
+                self.assertEqual(normal, render("Rainbow", phase, direction, color_mode="normal"))
+                self.assertEqual(normal, raw("Rainbow", phase, direction))
+                for mode in ("bw", "red_blue", "white_orange", "blue_yellow", "purple_orange"):
+                    with self.subTest(direction=direction, phase=phase, mode=mode):
+                        pixels = render("Rainbow", phase, direction, color_mode=mode)
+                        self.assertEqual(100, len(pixels))
+                        self.assertNotEqual(normal, pixels)
+                        self.assertEqual(pixels, render("Rainbow", phase, direction, (255, 0, 0), mode))
+                        self.assertTrue(all(0 <= channel <= 255 for pixel in pixels for channel in pixel))
+                        self.assertGreater(len(set(pixels)), 1)
+                        if mode == "bw":
+                            self.assertTrue(all(red == green == blue for red, green, blue in pixels))
+                        else:
+                            self.assertEqual(render("Spectrum", phase, direction), render("Spectrum", phase, direction, color_mode=mode))
+
     def test_clock_uses_firmware_clock_apply_mode(self):
         self.assertEqual(40, CONSTANTS["NATIVE_CLOCK_EFFECT_ID"])
         self.assertEqual(2, CONSTANTS["NATIVE_CLOCK_APPLY"])

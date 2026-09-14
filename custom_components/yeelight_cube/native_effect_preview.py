@@ -2018,8 +2018,63 @@ _COLOR_MODE_BW_EFFECTS = {
 }
 
 
+_RAINBOW_MODE_PALETTES = {
+    "bw": [
+        (0, 24, 24, 24), (0.02, 126, 126, 126), (0.05, 174, 174, 174),
+        (0.1, 203, 203, 203), (0.2, 214, 214, 214), (0.4, 228, 228, 228),
+        (0.6, 252, 252, 252), (0.65, 255, 255, 255), (1, 255, 255, 255),
+    ],
+    "red_blue": [
+        (0.025, 255, 0, 65), (0.125, 255, 166, 99), (0.225, 188, 255, 95),
+        (0.325, 97, 255, 71), (0.425, 54, 255, 71), (0.525, 23, 255, 90),
+        (0.625, 23, 255, 182), (0.675, 26, 255, 240), (0.725, 28, 202, 255),
+        (0.775, 28, 147, 255), (0.825, 28, 120, 255), (0.925, 28, 73, 255),
+        (0.975, 28, 61, 255),
+    ],
+    "white_orange": [
+        (0.025, 255, 214, 120), (0.125, 255, 200, 90), (0.225, 255, 180, 70),
+        (0.325, 255, 160, 55), (0.425, 255, 140, 45), (0.525, 255, 120, 38),
+        (0.625, 255, 100, 30), (0.675, 255, 88, 26), (0.725, 255, 80, 24),
+        (0.775, 255, 76, 22), (0.825, 255, 82, 24), (0.925, 255, 100, 30),
+        (0.975, 255, 120, 38),
+    ],
+    "blue_yellow": [
+        (0.025, 39, 165, 255), (0.125, 36, 192, 255), (0.225, 36, 237, 255),
+        (0.325, 31, 255, 215), (0.425, 27, 255, 149), (0.525, 25, 255, 89),
+        (0.625, 53, 255, 45), (0.675, 81, 255, 48), (0.725, 99, 255, 52),
+        (0.775, 119, 255, 58), (0.825, 146, 255, 63), (0.925, 203, 255, 95),
+        (0.975, 230, 255, 111),
+    ],
+    "purple_orange": [
+        (0.025, 150, 55, 230), (0.125, 150, 52, 228), (0.225, 152, 50, 225),
+        (0.325, 158, 55, 222), (0.425, 165, 60, 218), (0.525, 175, 70, 205),
+        (0.625, 190, 90, 175), (0.675, 205, 115, 140), (0.725, 225, 160, 95),
+        (0.775, 245, 200, 60), (0.825, 250, 205, 50), (0.925, 255, 200, 40),
+        (0.975, 255, 195, 38),
+    ],
+}
+
+
+def _rainbow_palette_color(position, mode):
+    stops = _RAINBOW_MODE_PALETTES[mode]
+    if position <= stops[0][0]:
+        return stops[0][1:]
+    for index in range(1, len(stops)):
+        upper = stops[index]
+        if position <= upper[0]:
+            lower = stops[index - 1]
+            fraction = (position - lower[0]) / (upper[0] - lower[0])
+            return tuple(
+                _clamp(channel + (upper[channel_index + 1] - channel) * fraction + 1e-9)
+                for channel_index, channel in enumerate(lower[1:])
+            )
+    return stops[-1][1:]
+
+
 def effect_supports_color_mode(effect: str, mode: str) -> bool:
-    return mode == "bw" and effect in _COLOR_MODE_BW_EFFECTS
+    return (effect == "Rainbow" and mode in _RAINBOW_MODE_PALETTES) or (
+        mode == "bw" and effect in _COLOR_MODE_BW_EFFECTS
+    )
 
 
 def _apply_color_override(pixels, override):
@@ -2051,6 +2106,8 @@ def render_native_effect(
 ) -> list[tuple[int, int, int]]:
     """Return one animated 20x5 approximation of a firmware effect, optionally
     recoloured toward a custom colour override or a firmware palette mode."""
+    if effect == "Rainbow" and color_mode in _RAINBOW_MODE_PALETTES:
+        return _render_native_effect_raw(effect, phase, direction, color_mode)
     pixels = _render_native_effect_raw(effect, phase, direction)
     # A palette colour mode takes precedence over the custom colour override.
     if color_mode is not None and color_mode != "normal":
@@ -2066,6 +2123,7 @@ def _render_native_effect_raw(
     effect: str,
     phase: float,
     direction: str = "Up",
+    color_mode=None,
 ) -> list[tuple[int, int, int]]:
     """Return one animated 20x5 approximation of a firmware effect."""
     if effect == "Fireworks":
@@ -2191,7 +2249,7 @@ def _render_native_effect_raw(
                 # Smoothly sweep the hue magenta -> red, then hard-jump back to magenta
                 # and loop -- a sharp trailing switch instead of a smooth fade-out.
                 s = (ru - phase * 0.18) % 1.0
-                color = _hsv(s * 0.85, 0.95, 0.95)
+                color = _rainbow_palette_color(s, color_mode) if color_mode else _hsv(s * 0.85, 0.95, 0.95)
             elif effect == "Waterfall":
                 # Blue dots spawn on one edge and travel to the opposite edge at
                 # a constant speed, each leaving a fixed-length trail fading to

@@ -203,10 +203,13 @@ class NativeModesMixin:
         command_id = CLOCK_MIXER_COMMAND_IDS.get(style["mixer"], NATIVE_CLOCK_EFFECT_ID)
         # A colour-mode preset remaps the palette by forcing the outer command
         # id (B&W, Red-Blue, ...); it wins over the mixer's default command id.
+        # Solid styles (mixer 0, e.g. White/Mint/Yellow/Pink/Red/Cyan/Purple)
+        # have no animated renderer to remap - they already go B&W from the
+        # colour skip above, so leave their command id untouched.
         mode_override = CLOCK_COLOR_MODES.get(
             getattr(self, "_native_clock_color_mode", "normal")
         )
-        if mode_override is not None:
+        if mode_override is not None and effect_name is not None:
             command_id = mode_override
         params = [
             command_id,

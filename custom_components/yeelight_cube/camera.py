@@ -409,6 +409,10 @@ class _YeelightCubeMatrixCameraBase(Camera):
             )
         # A palette mode overrides the custom colour, so don't flat-fill with it.
         flat_override = None if mode_active else override_rgb
+        # Solid styles (no mixer effect) have no animated renderer to remap for
+        # B&W; the backend achieves it by omitting their colour, which the
+        # firmware renders as plain white.
+        solo_bw_fallback = effect_frame is None and color_mode == "bw"
 
         for char_index, (char, glyph, advance) in enumerate(
             zip(text, glyphs, advances)
@@ -422,6 +426,8 @@ class _YeelightCubeMatrixCameraBase(Camera):
                 if 0 <= col < COLS and 0 <= row < ROWS:
                     if effect_frame is not None:
                         matrix[row * COLS + col] = effect_frame[row * COLS + col]
+                    elif solo_bw_fallback:
+                        matrix[row * COLS + col] = (255, 255, 255)
                     elif flat_override is not None:
                         matrix[row * COLS + col] = flat_override
                     else:

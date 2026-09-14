@@ -5,6 +5,131 @@
 > real lamps. The names used for command IDs 15 and 64-67 are descriptive and
 > are not official Yeelight names.
 
+## Rainbow video measurements - 2026-09-14
+
+These results apply to **Rainbow clocks only**. The upper lamp uses the selected
+mode; the lower lamp remains on normal Rainbow. This is the reverse of the
+older Spectrum photographs described below. No firmware palette constants have
+been extracted: the implementation is a camera-grounded visual approximation.
+
+### Recordings and coverage
+
+| Recording | Frames decoded | Frames paired | LED pairs | Reset fit RMS, frames |
+| :-- | --: | --: | --: | --: |
+| `VID_20260914_103251-normal.mp4` | 130 | 126 | 4,762 | 0.482 |
+| `VID_20260914_103303-b&w.mp4` | 167 | 167 | 6,216 | 0.519 |
+| `VID_20260914_103316-blue-red.mp4` | 216 | 195 | 6,882 | 0.408 |
+| `VID_20260914_103329-white-orange.mp4` | 218 | 214 | 8,330 | 0.490 |
+| `VID_20260914_103343-blue-yellow.mp4` | 196 | 196 | 7,692 | 0.470 |
+| `VID_20260914_103355-purple-orange.mp4` | 196 | 196 | 7,496 | 0.466 |
+
+All **1,123 frames** decoded, approximately 30 fps. Geometric pairing accepted
+1,094 frames and 41,378 LED pairs. Rejected frames were still decoded and
+examined by the detector; they are not silently counted as usable measurements.
+
+### Method
+
+The reproducible probe is [debug_rainbow_palettes.py](../debug_rainbow_palettes.py).
+It requires OpenCV and NumPy in the interpreter used to run it:
+
+```powershell
+python debug_rainbow_palettes.py C:\Users\Maxime\Downloads C:\Users\Maxime\Downloads\rainbow-analysis
+```
+
+It writes per-frame positions and centre/edge RGB samples to `samples.json`,
+phase-binned medians and fit parameters to `curves.json`, midpoint detection
+images, and `time-strips.jpg`. Use `--summarize` to repeat fitting without decoding.
+The recordings and generated diagnostic files remain outside the repository.
+
+1. Detect bright connected LED regions and group them into ten rows, five per
+  lamp. Pair corresponding rows by normalized horizontal position. Skip
+  ambiguous geometry rather than assigning colours to unrelated glyph pixels.
+2. Sample median RGB at LED centres. For B&W, also recover missing dark top-row
+  LED positions from the lower lamp's geometry. Other dark/missing samples
+  remain excluded; this is not a complete radiometric measurement.
+3. Track the lower lamp's abrupt red-to-magenta resets independently by column.
+  Fit a common period and spatial phase step. Periods are 74-75 frames
+  (about 2.5 seconds), and column steps are 0.0472-0.0479 cycles. Reset residuals
+  are approximately half a frame. This verifies repeatable phase structure,
+  but does not prove perfect upper/lower synchronization.
+4. Bin upper-lamp samples by recovered lower-lamp phase in 0.05-cycle intervals.
+  Normal blue/cyan centres are heavily clipped, so hue-only pairing cannot
+  recover the middle of the cycle. Temporal phase remains usable there.
+5. For coloured modes, estimate chromaticity from less-exposed pixels around
+  each LED (maximum channel 70-200), normalize each sample to a maximum of 255,
+  and take median RGB. These edges recover the blue hidden in clipped centres.
+  They still include camera response, optical bloom, and ambient-light bias.
+
+Phase increases from the normal palette's red end toward its magenta end;
+time runs in the opposite direction in these recordings. Palettes reset
+abruptly: the preview must not interpolate from the final stop back to the first.
+Direction and speed remain controlled by the existing Rainbow renderer.
+
+### Findings and labels
+
+| Key / outer ID | Display label | Observed progression as phase increases |
+| :-- | :-- | :-- |
+| `normal` / unchanged | Normal | Existing full Rainbow, unchanged |
+| `bw` / 15 | Black & White | Dim neutral to white, with a bright plateau and hard reset |
+| `red_blue` / 64 | Vivid | Red, orange, yellow, green, cyan, blue; not a red/blue duotone |
+| `white_orange` / 65 | Retro Orange | Cool white, cream, peach, coral, red, slight warm rebound |
+| `blue_yellow` / 66 | Tropical | Blue-cyan, cyan, green, lime, pale yellow; not two alternating colours |
+| `purple_orange` / 67 | Violet & Gold | Blue/violet, pale lavender near-white transition, pale gold |
+
+> [!NOTE]
+> The `white_orange` (Retro Orange) and `purple_orange` (Violet & Gold) preview
+> palettes were subsequently hand-tuned toward the operator's description of the
+> real lamp — warmer amber/orange for Retro Orange, and more saturated violet and
+> richer gold with less white for Violet & Gold. Those two previews therefore
+> deviate from the raw camera edge samples, whose whites/reds were pushed by
+> white balance and highlight clipping. The phase structure and reset are kept.
+
+Representative **normalized edge RGB**, rounded to integers:
+
+| Phase | ID 64 | ID 65 | ID 66 | ID 67 |
+| --: | :-- | :-- | :-- | :-- |
+| 0.025 | 255, 0, 65 | 197, 252, 243 | 39, 165, 255 | 45, 89, 255 |
+| 0.225 | 188, 255, 95 | 255, 235, 217 | 36, 237, 255 | 46, 66, 255 |
+| 0.425 | 54, 255, 71 | 255, 126, 111 | 27, 255, 149 | 62, 69, 255 |
+| 0.625 | 23, 255, 182 | 255, 32, 52 | 53, 255, 45 | 103, 97, 255 |
+| 0.775 | 28, 147, 255 | 255, 3, 41 | 119, 255, 58 | 255, 248, 191 |
+| 0.975 | 28, 61, 255 | 255, 31, 44 | 230, 255, 111 | 255, 223, 132 |
+
+B&W is **not max-channel desaturation**: normal Rainbow's constant HSV value
+would produce a flat white frame, whereas the recording has a moving dim band.
+The lowest samples near reset reach roughly 20-24 per channel, but that boundary
+is sparsely sampled and threshold-biased. Its reset is about 0.025 cycle from
+the lower lamp's reset. The preview aligns its own reset to phase zero, uses a
+neutral minimum of 24, then levels 126/174/203/214/228/252/255 at phases
+0.02/0.05/0.10/0.20/0.40/0.60/0.65. This removes the camera's cool/green tint;
+the exact minimum and sub-frame transition are estimates, not firmware facts.
+
+Mean absolute channel differences against samples, excluding lower-lamp phases
+outside 0.08-0.94, are 3.22 (B&W), 10.13 (64), 9.38 (65), 7.77 (66), and 5.54 (67),
+on a 0-255 scale. B&W compares against centre green with the 0.025 phase alignment;
+coloured modes compare against normalized edge RGB. These are **in-sample
+descriptive errors**, not held-out accuracy or colourimetric calibration.
+
+### Preview scope and verification
+
+Both native-effect renderers use the same piecewise RGB phase stops for Rainbow.
+Intermediate channels use half-up rounding with a 1e-9 tolerance for binary
+floating-point midpoint differences. End stops are held until the hard reset.
+All five modes take precedence over custom colour overrides. Normal Rainbow,
+its direction mapping and timing, other effects, and transport IDs are unchanged.
+The new names are display-only; saved configurations keep their original keys.
+
+The focused tests cover all modes and directions, negative/positive phases,
+custom-colour precedence, brightness variation, channel bounds, and Python/JS
+parity across 640 frames (192,000 channels):
+
+```powershell
+python -m unittest discover -s tests -p test_native_features.py -k test_rainbow_palette
+```
+
+The earlier Spectrum findings below remain separate evidence. Do not apply
+Rainbow's fitted stops to other effects without measuring those effects.
+
 ## Protocol behavior
 
 Native effects are normally sent as:

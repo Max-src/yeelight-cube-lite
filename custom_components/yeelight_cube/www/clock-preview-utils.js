@@ -25,13 +25,17 @@ import {
 // verified on hardware (previews are adjusted per effect separately).
 export const CLOCK_COLOR_MODES = [
   { value: "normal", label: "Normal", icon: "mdi:palette-outline" },
-  { value: "bw", label: "B&W", icon: "mdi:invert-colors" },
-  { value: "red_blue", label: "Red-Blue", icon: "mdi:palette-swatch" },
-  { value: "white_orange", label: "White-Orange", icon: "mdi:palette-swatch" },
-  { value: "blue_yellow", label: "Blue-Yellow", icon: "mdi:palette-swatch" },
+  { value: "bw", label: "Black & White", icon: "mdi:invert-colors" },
+  { value: "red_blue", label: "Vivid", icon: "mdi:palette-swatch" },
+  {
+    value: "white_orange",
+    label: "Retro Orange",
+    icon: "mdi:palette-swatch",
+  },
+  { value: "blue_yellow", label: "Tropical", icon: "mdi:palette-swatch" },
   {
     value: "purple_orange",
-    label: "Purple-Orange",
+    label: "Violet & Gold",
     icon: "mdi:palette-swatch",
   },
 ];
@@ -482,6 +486,10 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0) {
     : null;
   // A palette mode overrides the custom colour, so don't flat-fill with it.
   const flatOverride = modeActive ? null : override;
+  // Solid styles (no mixer effect) have no animated renderer to remap for B&W;
+  // the backend achieves it by omitting their colour, which the firmware
+  // renders as plain white.
+  const soloBwFallback = !effectFrame && colorMode === "bw";
   const matrix = Array.from({ length: 100 }, () => [0, 0, 0]);
   const chars = [...text];
   const font = fontMap || _CLOCK_FONT;
@@ -505,9 +513,11 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0) {
       if (col >= 0 && col < COLS && row >= 0 && row < 5) {
         matrix[row * COLS + col] = effectFrame
           ? effectFrame[row * COLS + col]
-          : flatOverride
-            ? flatOverride
-            : _clockPixelColor(styleId, i, col);
+          : soloBwFallback
+            ? [255, 255, 255]
+            : flatOverride
+              ? flatOverride
+              : _clockPixelColor(styleId, i, col);
       }
     }
     offset += advance;
