@@ -624,12 +624,12 @@ const KALEIDOSCOPE_PREVIEW_DIRECTION = {
   Right: "Up",
 };
 
-function renderKaleidoscope(phase, direction) {
+function renderKaleidoscope(phase, direction, colorMode = null) {
   direction = KALEIDOSCOPE_PREVIEW_DIRECTION[direction] || direction;
   if (direction === "Up" || direction === "Down") {
-    return renderKaleidoscopeSnakes(phase, direction);
+    return renderKaleidoscopeSnakes(phase, direction, colorMode);
   }
-  return renderKaleidoscopeRows(phase, direction);
+  return renderKaleidoscopeRows(phase, direction, colorMode);
 }
 
 function kaleidoscopeBaseHue(phase) {
@@ -643,7 +643,7 @@ function kaleidoscopeBaseHue(phase) {
   );
 }
 
-function renderKaleidoscopeRows(phase, direction) {
+function renderKaleidoscopeRows(phase, direction, colorMode = null) {
   // One continuous rainbow path folds through all five rows. A cycle still
   // spans about two rows, but it now crosses every row boundary naturally.
   const wavelength = 55.0;
@@ -671,7 +671,7 @@ function renderKaleidoscopeRows(phase, direction) {
       // spectrum passages instead of distributing every hue uniformly.
       const hue =
         (((rawHue + 0.145 * Math.sin(TAU * rawHue)) % 1.0) + 1.0) % 1.0;
-      pixels.push(hsv(hue, 0.97, 1.0));
+      pixels.push(paletteModeHsv(hue, 0.97, 1.0, colorMode));
     }
   }
   return pixels;
@@ -714,7 +714,7 @@ function kaleidoscopeMirrorColumn(col) {
   return Math.round(mirroredPathDistance(col, 7.0, 16.0));
 }
 
-function renderKaleidoscopeSnakes(phase, direction) {
+function renderKaleidoscopeSnakes(phase, direction, colorMode = null) {
   const baseHue = (((kaleidoscopeBaseHue(phase) - 0.08) % 1.0) + 1.0) % 1.0;
 
   // Down originates at one-based column 8 (index 7). The branch repeats
@@ -748,7 +748,9 @@ function renderKaleidoscopeSnakes(phase, direction) {
   const hues = pathHue.map((value) => (value === null ? baseHue : value));
   const sats = pathHue.map((value) => (value === null ? 0.9 : 0.98));
 
-  const pixels = hues.map((hue, index) => hsv(hue, sats[index], 1.0));
+  const pixels = hues.map((hue, index) =>
+    paletteModeHsv(hue, sats[index], 1.0, colorMode),
+  );
   if (direction === "Up") pixels.reverse();
   return pixels;
 }
@@ -954,7 +956,7 @@ function renderCarousel(phase, direction) {
   return pixels;
 }
 
-function renderSpectrumChase(phase, direction) {
+function renderSpectrumChase(phase, direction, colorMode = null) {
   const wavePeriod = 6.04;
   const hue = phase / (wavePeriod * 10.0);
   const pixels = [];
@@ -982,7 +984,7 @@ function renderSpectrumChase(phase, direction) {
       } else {
         level = 0.08;
       }
-      pixels.push(hsv(hue, 1.0, level));
+      pixels.push(paletteModeHsv(hue, 1.0, level, colorMode));
     }
   }
 
@@ -1219,7 +1221,7 @@ const PASTEL_PULSE_V = [
   ],
 ];
 
-function renderPastelPulse(phase, direction) {
+function renderPastelPulse(phase, direction, colorMode = null) {
   const breath = Math.sin((Math.PI * 2 * phase) / 3.2);
   const pixels = [];
 
@@ -1249,6 +1251,11 @@ function renderPastelPulse(phase, direction) {
 
       const sign = (row + col) % 2 === 0 ? 1.0 : -1.0;
       const gain = 1.0 + 0.05 * breath * sign;
+      if (colorMode) {
+        const mapped = paletteModeRgb(base, colorMode);
+        pixels.push(mapped.map((channel) => clamp(channel * gain + 1e-9)));
+        continue;
+      }
       pixels.push([
         Math.max(0, Math.min(255, Math.round(red * gain))),
         Math.max(0, Math.min(255, Math.round(green * gain))),
@@ -1905,7 +1912,7 @@ function prismPathIndex(row, col, direction) {
   return col * PREVIEW_ROWS + row;
 }
 
-function renderPrism(phase, direction) {
+function renderPrism(phase, direction, colorMode = null) {
   if (phase <= 0) {
     return Array.from({ length: PREVIEW_COLS * PREVIEW_ROWS }, () => [0, 0, 0]);
   }
@@ -1925,7 +1932,7 @@ function renderPrism(phase, direction) {
         pixels.push([0, 0, 0]);
         continue;
       }
-      pixels.push(PRISM_COLORS[slot % 16]);
+      pixels.push(paletteModeRgb(PRISM_COLORS[slot % 16], colorMode));
     }
   }
   return pixels;
@@ -1965,7 +1972,7 @@ function colorTrailRoute(event) {
   return [startRow, turns];
 }
 
-function renderColorTrails(phase, direction) {
+function renderColorTrails(phase, direction, colorMode = null) {
   const gradient = direction === "Right" || direction === "Left";
   const spawn = gradient ? COLOR_TRAIL_GRADIENT_SPAWN : COLOR_TRAIL_SPAWN;
   const levels = Array.from({ length: PREVIEW_COLS * PREVIEW_ROWS }, () => [
@@ -1995,8 +2002,8 @@ function renderColorTrails(phase, direction) {
       const distance = (head - col) * travel;
       if (distance < 0 || distance >= length) continue;
       const color = gradient
-        ? hsv(hueOrigin + distance / 24.0, 0.95, 0.98)
-        : fixedColor;
+        ? paletteModeHsv(hueOrigin + distance / 24.0, 0.95, 0.98, colorMode)
+        : paletteModeRgb(fixedColor, colorMode);
       let row = startRow;
       let connector = null;
       for (const [turnCol, nextRow] of turns) {
@@ -2015,7 +2022,7 @@ function renderColorTrails(phase, direction) {
   return levels.map(([pixel]) => pixel);
 }
 
-function renderSpectrumBands(direction) {
+function renderSpectrumBands(direction, colorMode = null) {
   const pixels = [];
   for (let row = 0; row < PREVIEW_ROWS; row += 1) {
     for (let col = 0; col < PREVIEW_COLS; col += 1) {
@@ -2031,7 +2038,9 @@ function renderSpectrumBands(direction) {
         // Up = Down rotated 180 degrees
         hue = SPECTRUM_BANDS_RL_HUES[(PREVIEW_COLS - 1 - col) % PREVIEW_ROWS];
       }
-      pixels.push(hsv(hue, 1.0, 0.95));
+      const position =
+        direction === "Right" || direction === "Left" ? hue / 0.83 : null;
+      pixels.push(paletteModeHsv(hue, 1.0, 0.95, colorMode, position));
     }
   }
   return pixels;
@@ -2059,7 +2068,7 @@ function rainbowFlowDownHue(row, col, phase) {
 // and scrolls over time (diagonal bands), unlike Rainbow (uniform per row).
 // Left/Up are Right/Down evaluated at the 180-degree-rotated coordinates, so
 // they are exact rotations of Right/Down.
-function renderRainbowFlow(phase, direction) {
+function renderRainbowFlow(phase, direction, colorMode = null) {
   const pixels = [];
   for (let row = 0; row < PREVIEW_ROWS; row += 1) {
     for (let col = 0; col < PREVIEW_COLS; col += 1) {
@@ -2082,7 +2091,7 @@ function renderRainbowFlow(phase, direction) {
           phase,
         );
       }
-      pixels.push(hsv(hue, 0.95, 0.92));
+      pixels.push(paletteModeHsv(hue, 0.95, 0.92, colorMode));
     }
   }
   return pixels;
@@ -2263,8 +2272,58 @@ function rainbowPaletteColor(position, mode) {
   return stops[stops.length - 1].slice(1);
 }
 
+const COLOR_PALETTE_EFFECTS = new Set([
+  "Rainbow",
+  "Spectrum",
+  "Streamer",
+  "Rainbow Flow",
+  "Spectrum Chase",
+  "Pastel Pulse",
+  "Prism",
+  "Color Trails",
+  "Tide",
+  "Spectrum Bands",
+  "Kaleidoscope",
+]);
+const COLOR_PALETTE_MODES = new Set([
+  "red_blue",
+  "white_orange",
+  "blue_yellow",
+  "purple_orange",
+]);
+
+function paletteModeHsv(hue, saturation, value, mode, position = null) {
+  if (!mode) return hsv(hue, saturation, value);
+  const normalizedHue = ((hue % 1.0) + 1.0) % 1.0;
+  const palettePosition = position ?? Math.min(1.0, normalizedHue / 0.85);
+  return rainbowPaletteColor(palettePosition, mode).map((channel) =>
+    clamp(channel * value + 1e-9),
+  );
+}
+
+function paletteModeRgb(pixel, mode) {
+  if (!mode) return pixel;
+  const [red, green, blue] = pixel;
+  const maximum = Math.max(red, green, blue);
+  const chroma = maximum - Math.min(red, green, blue);
+  if (chroma === 0) return pixel;
+  let sector;
+  if (maximum === red) sector = (green - blue) / chroma;
+  else if (maximum === green) sector = (blue - red) / chroma + 2;
+  else sector = (red - green) / chroma + 4;
+  const position = Math.max(0, Math.min(1, sector / 6 / 0.85));
+  return paletteModeHsv(
+    sector / 6,
+    chroma / maximum,
+    maximum / 255,
+    mode,
+    position,
+  );
+}
+
 export function effectSupportsColorMode(effect, mode) {
   return (
+    (COLOR_PALETTE_EFFECTS.has(effect) && COLOR_PALETTE_MODES.has(mode)) ||
     (effect === "Rainbow" && Object.hasOwn(RAINBOW_MODE_PALETTES, mode)) ||
     (mode === "bw" && COLOR_MODE_BW_EFFECTS.has(effect))
   );
@@ -2297,7 +2356,11 @@ export function renderNativeEffect(
   colorOverride = null,
   colorMode = null,
 ) {
-  if (effect === "Rainbow" && Object.hasOwn(RAINBOW_MODE_PALETTES, colorMode)) {
+  if (
+    (COLOR_PALETTE_MODES.has(colorMode) &&
+      effectSupportsColorMode(effect, colorMode)) ||
+    (effect === "Rainbow" && colorMode === "bw")
+  ) {
     return renderNativeEffectRaw(effect, phase, direction, colorMode);
   }
   const pixels = renderNativeEffectRaw(effect, phase, direction);
@@ -2307,7 +2370,6 @@ export function renderNativeEffect(
     if (colorMode === "bw" && effectSupportsColorMode(effect, "bw")) {
       return applyGrayscale(pixels);
     }
-    // Other palette modes are not previewed yet: render the effect normally.
     return pixels;
   }
   if (colorOverride && effectSupportsColorOverride(effect)) {
@@ -2323,23 +2385,29 @@ function renderNativeEffectRaw(
   colorMode = null,
 ) {
   if (effect === "Fireworks") return renderFireworks(phase, direction);
-  if (effect === "Rainbow Flow") return renderRainbowFlow(phase, direction);
+  if (effect === "Rainbow Flow")
+    return renderRainbowFlow(phase, direction, colorMode);
   if (effect === "Monochrome Waves")
     return renderMonochromeWaves(phase, direction);
   if (effect === "Pulse") return renderPulse(phase, direction);
-  if (effect === "Prism") return renderPrism(phase, direction);
-  if (effect === "Color Trails") return renderColorTrails(phase, direction);
-  if (effect === "Spectrum Bands") return renderSpectrumBands(direction);
+  if (effect === "Prism") return renderPrism(phase, direction, colorMode);
+  if (effect === "Color Trails")
+    return renderColorTrails(phase, direction, colorMode);
+  if (effect === "Spectrum Bands")
+    return renderSpectrumBands(direction, colorMode);
   if (effect === "Magic") return renderMagic(phase);
   if (effect === "Wonderland") return renderWonderland(phase);
   if (effect === "Flower Sea") return renderFlowerSea(phase, direction);
-  if (effect === "Kaleidoscope") return renderKaleidoscope(phase, direction);
+  if (effect === "Kaleidoscope")
+    return renderKaleidoscope(phase, direction, colorMode);
   if (effect === "Blue Yellow") return renderBlueYellow(phase, direction);
   if (effect === "Ice Blue") return renderIceBlue(phase, direction);
   if (effect === "Sunset") return renderSunset(phase, direction);
   if (effect === "Carousel") return renderCarousel(phase, direction);
-  if (effect === "Spectrum Chase") return renderSpectrumChase(phase, direction);
-  if (effect === "Pastel Pulse") return renderPastelPulse(phase, direction);
+  if (effect === "Spectrum Chase")
+    return renderSpectrumChase(phase, direction, colorMode);
+  if (effect === "Pastel Pulse")
+    return renderPastelPulse(phase, direction, colorMode);
   if (effect === "Solar Flare") return renderSolarFlare(phase, direction);
   if (effect === "Ember") return renderEmber(phase, direction);
   if (effect === "Twinkle") return renderTwinkle(phase, direction);
@@ -2364,7 +2432,12 @@ function renderNativeEffectRaw(
       if (effect === "Streamer") {
         // The whole panel is one uniform color that slowly morphs through
         // the spectrum as phase advances -- no spatial variation.
-        color = hsv((((phase * 0.08) % 1.0) + 1.0) % 1.0, 0.9, 0.88);
+        color = paletteModeHsv(
+          (((phase * 0.08) % 1.0) + 1.0) % 1.0,
+          0.9,
+          0.88,
+          colorMode,
+        );
       } else if (effect === "Starry sky") {
         // Sparse blue stars that pop on and slowly fade to black. Each pixel
         // runs its own cycle (stable random phase + rate) so stars appear and
@@ -2402,10 +2475,12 @@ function renderNativeEffectRaw(
           if (direction === "Left") index = last - index;
         }
         const t = index / last;
-        color = hsv(
+        color = paletteModeHsv(
           t * 0.83,
           1.0,
           0.82 + 0.18 * Math.sin((t + phase * 0.08) * TAU),
+          colorMode,
+          t,
         );
       } else if (effect === "Ocean Waves") {
         // Right/Left reuse Up/Down coordinates so device-orientation rotation renders correctly.
@@ -2711,7 +2786,9 @@ function renderNativeEffectRaw(
         }
         color =
           bestLevel > 0
-            ? rgb(...hsv(paintHue, 1.0, 1.0), bestLevel)
+            ? colorMode
+              ? paletteModeHsv(paintHue, 1.0, bestLevel, colorMode)
+              : rgb(...hsv(paintHue, 1.0, 1.0), bestLevel)
             : [0, 0, 0];
       } else if (effect === "Building block") {
         if (buildingBlockGrid === null) {

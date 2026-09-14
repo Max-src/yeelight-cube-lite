@@ -116,19 +116,39 @@ Both native-effect renderers use the same piecewise RGB phase stops for Rainbow.
 Intermediate channels use half-up rounding with a 1e-9 tolerance for binary
 floating-point midpoint differences. End stops are held until the hard reset.
 All five modes take precedence over custom colour overrides. Normal Rainbow,
-its direction mapping and timing, other effects, and transport IDs are unchanged.
+its direction mapping and timing, and transport IDs are unchanged.
 The new names are display-only; saved configurations keep their original keys.
+
+The operator subsequently confirmed that Vivid, Retro Orange, Tropical, and
+Violet & Gold also affect Spectrum, Streamer, Rainbow Flow, Spectrum Chase,
+Pastel Pulse, Prism, Color Trails, Tide, Spectrum Bands, and Kaleidoscope.
+Only those styles and Rainbow use these four palettes; other styles ignore them.
+Existing Black & White behavior is unchanged.
+
+These additional previews reuse the current Rainbow stops, including the
+hand-tuned warm palettes. Spectrum uses its spatial phase directly; full-width
+Spectrum Bands uses its red-to-magenta index. Other hue-based renderers estimate
+palette position as normalized source hue / 0.85, capped at the final stop.
+RGB tables use source hue before fading or Pastel Pulse's whitening, with
+slightly pink reds clamped to the red endpoint. Achromatic RGB cells retain their
+original colour because their palette phase cannot be recovered from hue.
+Each effect retains its geometry, direction, timing, and brightness envelope.
+Compatibility is hardware-confirmed by the operator; the additional phase
+mappings are approximations, not separately measured firmware curves.
 
 The focused tests cover all modes and directions, negative/positive phases,
 custom-colour precedence, brightness variation, channel bounds, and Python/JS
-parity across 640 frames (192,000 channels):
+parity across 3,840 frames (1,152,000 channels). Exact parity covers all four
+palettes for all eleven styles and the original Rainbow combinations. Tide's
+pre-existing one-channel normal-mode rounding difference is outside this check.
 
 ```powershell
-python -m unittest discover -s tests -p test_native_features.py -k test_rainbow_palette
+python -m unittest discover -s tests -p test_native_features.py -k test_clock_palette
+python -m unittest discover -s tests -p test_native_features.py -k test_rainbow_palette_modes
 ```
 
-The earlier Spectrum findings below remain separate evidence. Do not apply
-Rainbow's fitted stops to other effects without measuring those effects.
+The earlier Spectrum findings below remain separate evidence; these inferred
+mappings can be refined with recordings of each additional style.
 
 ## Protocol behavior
 

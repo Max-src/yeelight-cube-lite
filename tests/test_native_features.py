@@ -86,14 +86,36 @@ def _load_standalone_functions(source: str, names: set, extra_namespace=None) ->
 
 
 class NativeFeatureTests(unittest.TestCase):
+    def test_clock_palette_supported_styles(self):
+        supported = {
+            "Rainbow", "Spectrum", "Streamer", "Rainbow Flow", "Spectrum Chase",
+            "Pastel Pulse", "Prism", "Color Trails", "Tide", "Spectrum Bands", "Kaleidoscope",
+        }
+        supports = NATIVE_PREVIEW["effect_supports_color_mode"]
+        render = NATIVE_PREVIEW["render_native_effect"]
+        for effect in set(CONSTANTS["NATIVE_EFFECTS"]) | supported:
+            for mode in ("red_blue", "white_orange", "blue_yellow", "purple_orange"):
+                with self.subTest(effect=effect, mode=mode):
+                    self.assertEqual(effect in supported, supports(effect, mode))
+                    normal = render(effect, 4.75, "Down")
+                    pixels = render(effect, 4.75, "Down", color_mode=mode)
+                    if effect in supported:
+                        self.assertNotEqual(normal, pixels)
+                        self.assertEqual(pixels, render(effect, 4.75, "Down", [255, 0, 0], mode))
+                    else:
+                        self.assertEqual(normal, pixels)
+
     @unittest.skipUnless(shutil.which("node"), "Node is required for renderer parity")
-    def test_rainbow_palette_parity(self):
+    def test_clock_palette_parity(self):
         cases = [
-            ["Rainbow", phase, direction, override, mode]
+            [effect, phase, direction, override, mode]
+            for effect in ("Rainbow", "Spectrum", "Streamer", "Rainbow Flow", "Spectrum Chase",
+                           "Pastel Pulse", "Prism", "Color Trails", "Tide", "Spectrum Bands", "Kaleidoscope")
             for phase in (-2.5, -0.01, 0, 0.001, 0.125, 0.5, 1, 2.75, 5.555, 13.37)
             for direction in ("Up", "Down", "Left", "Right")
             for override in (None, [180, 20, 60])
             for mode in (None, "normal", "bw", "red_blue", "white_orange", "blue_yellow", "purple_orange", "unknown")
+            if effect == "Rainbow" or mode in ("red_blue", "white_orange", "blue_yellow", "purple_orange")
         ]
         module_uri = (ROOT / "www" / "native-effect-preview.js").as_uri()
         script = (
@@ -110,6 +132,29 @@ class NativeFeatureTests(unittest.TestCase):
             expected = [list(pixel) for pixel in NATIVE_PREVIEW["render_native_effect"](*case)]
             with self.subTest(case=case):
                 self.assertEqual(expected, actual)
+
+    def test_clock_palette_geometry_and_anchors(self):
+        render = NATIVE_PREVIEW["render_native_effect"]
+        palette = NATIVE_PREVIEW["_rainbow_palette_color"]
+        for mode in ("red_blue", "white_orange", "blue_yellow", "purple_orange"):
+            self.assertEqual(palette(0, mode), NATIVE_PREVIEW["_palette_mode_rgb"]((255, 8, 22), mode))
+            self.assertEqual((0, 0, 0), NATIVE_PREVIEW["_palette_mode_rgb"]((0, 0, 0), mode))
+            spectrum = render("Spectrum", 0, "Right", color_mode=mode)
+            self.assertEqual(tuple(NATIVE_PREVIEW["_clamp"](channel * 0.82 + 1e-9) for channel in palette(0, mode)), spectrum[80])
+            self.assertEqual(tuple(NATIVE_PREVIEW["_clamp"](channel * 0.82 + 1e-9) for channel in palette(1, mode)), spectrum[19])
+            for effect in ("Prism", "Color Trails", "Tide", "Spectrum Chase", "Pastel Pulse"):
+                for direction in ("Up", "Down", "Left", "Right"):
+                    for phase in (0, 0.25, 2.75, 8.5):
+                        with self.subTest(effect=effect, mode=mode, direction=direction, phase=phase):
+                            normal = render(effect, phase, direction)
+                            pixels = render(effect, phase, direction, color_mode=mode)
+                            self.assertEqual([max(pixel) == 0 for pixel in normal], [max(pixel) == 0 for pixel in pixels])
+                            self.assertTrue(all(0 <= channel <= 255 for pixel in pixels for channel in pixel))
+        for mode in ("red_blue", "white_orange", "blue_yellow", "purple_orange"):
+            first = render("Streamer", 0, color_mode=mode)
+            second = render("Streamer", 3, color_mode=mode)
+            self.assertEqual(1, len(set(first)))
+            self.assertNotEqual(first, second)
 
     def test_rainbow_palette_modes(self):
         render = NATIVE_PREVIEW["render_native_effect"]
@@ -130,7 +175,7 @@ class NativeFeatureTests(unittest.TestCase):
                         if mode == "bw":
                             self.assertTrue(all(red == green == blue for red, green, blue in pixels))
                         else:
-                            self.assertEqual(render("Spectrum", phase, direction), render("Spectrum", phase, direction, color_mode=mode))
+                            self.assertEqual(render("Ocean Waves", phase, direction), render("Ocean Waves", phase, direction, color_mode=mode))
 
     def test_clock_uses_firmware_clock_apply_mode(self):
         self.assertEqual(40, CONSTANTS["NATIVE_CLOCK_EFFECT_ID"])

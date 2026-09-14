@@ -691,12 +691,13 @@ _KALEIDOSCOPE_PREVIEW_DIRECTION = {
 def _render_kaleidoscope(
     phase: float,
     direction: str,
+    color_mode=None,
 ) -> list[tuple[int, int, int]]:
     """Render counter-moving rows or bidirectional rainbow fronts."""
     direction = _KALEIDOSCOPE_PREVIEW_DIRECTION.get(direction, direction)
     if direction in ("Up", "Down"):
-        return _render_kaleidoscope_snakes(phase, direction)
-    return _render_kaleidoscope_rows(phase, direction)
+        return _render_kaleidoscope_snakes(phase, direction, color_mode)
+    return _render_kaleidoscope_rows(phase, direction, color_mode)
 
 
 def _kaleidoscope_base_hue(phase: float) -> float:
@@ -710,6 +711,7 @@ def _kaleidoscope_base_hue(phase: float) -> float:
 def _render_kaleidoscope_rows(
     phase: float,
     direction: str,
+    color_mode=None,
 ) -> list[tuple[int, int, int]]:
     # One continuous rainbow path folds through all five rows. A cycle still
     # spans about two rows, but it now crosses every row boundary naturally.
@@ -733,7 +735,7 @@ def _render_kaleidoscope_rows(
             # The firmware dwells in broad cyan fields between narrower full
             # spectrum passages instead of distributing every hue uniformly.
             hue = (raw_hue + 0.145 * math.sin(math.tau * raw_hue)) % 1.0
-            pixels.append(_hsv(hue, 0.97, 1.0))
+            pixels.append(_palette_mode_hsv(hue, 0.97, 1.0, color_mode))
     return pixels
 
 
@@ -780,6 +782,7 @@ def _kaleidoscope_mirror_column(col: int) -> int:
 def _render_kaleidoscope_snakes(
     phase: float,
     direction: str,
+    color_mode=None,
 ) -> list[tuple[int, int, int]]:
     base_hue = (_kaleidoscope_base_hue(phase) - 0.08) % 1.0
 
@@ -810,7 +813,7 @@ def _render_kaleidoscope_snakes(
     hues = [base_hue if value is None else value for value in path_hue]
     sats = [0.9 if value is None else 0.98 for value in path_hue]
 
-    pixels = [_hsv(hue, sat, 1.0) for hue, sat in zip(hues, sats)]
+    pixels = [_palette_mode_hsv(hue, sat, 1.0, color_mode) for hue, sat in zip(hues, sats)]
     if direction == "Up":
         pixels.reverse()
     return pixels
@@ -1034,6 +1037,7 @@ def _render_carousel(
 def _render_spectrum_chase(
     phase: float,
     direction: str,
+    color_mode=None,
 ) -> list[tuple[int, int, int]]:
     """Render mode 6's four repeating spectrum transition waves."""
     wave_period = 6.04
@@ -1061,7 +1065,7 @@ def _render_spectrum_chase(
                 level = 1.0 - 0.92 * _smoothstep((position - 0.34) / 0.58)
             else:
                 level = 0.08
-            pixels.append(_hsv(hue, 1.0, level))
+            pixels.append(_palette_mode_hsv(hue, 1.0, level, color_mode))
 
     return pixels
 
@@ -1090,6 +1094,7 @@ _PASTEL_PULSE_V = [
 def _render_pastel_pulse(
     phase: float,
     direction: str,
+    color_mode=None,
 ) -> list[tuple[int, int, int]]:
     """Render mode 9 from the measured colour maps with a subtle brightness pulse."""
     breath = math.sin(math.tau * phase / 3.2)
@@ -1117,6 +1122,10 @@ def _render_pastel_pulse(
 
             sign = 1.0 if (row + col) % 2 == 0 else -1.0
             gain = 1.0 + 0.05 * breath * sign
+            if color_mode:
+                mapped = _palette_mode_rgb(base, color_mode)
+                pixels.append(tuple(_clamp(channel * gain + 1e-9) for channel in mapped))
+                continue
             pixels.append((_clamp(red * gain), _clamp(green * gain), _clamp(blue * gain)))
 
     return pixels
@@ -1775,6 +1784,7 @@ def _prism_path_index(row: int, col: int, direction: str) -> int:
 def _render_prism(
     phase: float,
     direction: str,
+    color_mode=None,
 ) -> list[tuple[int, int, int]]:
     """Render mode 22's mirrored domino trains moving toward the center."""
     if phase <= 0:
@@ -1794,7 +1804,7 @@ def _render_prism(
             if slot < 0 or abs(offset) > _PRISM_HALF_WIDTH:
                 pixels.append(BLACK)
                 continue
-            pixels.append(_PRISM_COLORS[slot % 16])
+            pixels.append(_palette_mode_rgb(_PRISM_COLORS[slot % 16], color_mode))
     return pixels
 
 
@@ -1830,6 +1840,7 @@ def _color_trail_route(event: int) -> tuple[int, tuple[tuple[int, int], ...]]:
 def _render_color_trails(
     phase: float,
     direction: str,
+    color_mode=None,
 ) -> list[tuple[int, int, int]]:
     """Render mode 35's long trails crossing sparse one-row lane changes."""
     gradient = direction in ("Right", "Left")
@@ -1861,9 +1872,9 @@ def _render_color_trails(
             if not 0.0 <= distance < length:
                 continue
             color = (
-                _hsv(hue_origin + distance / 24.0, 0.95, 0.98)
+                _palette_mode_hsv(hue_origin + distance / 24.0, 0.95, 0.98, color_mode)
                 if gradient
-                else fixed_color
+                else _palette_mode_rgb(fixed_color, color_mode)
             )
             row = start_row
             connector = None
@@ -1882,7 +1893,7 @@ def _render_color_trails(
     return [pixel for pixel, _distance in levels]
 
 
-def _render_spectrum_bands(direction: str) -> list[tuple[int, int, int]]:
+def _render_spectrum_bands(direction: str, color_mode=None) -> list[tuple[int, int, int]]:
     pixels = []
     for row in range(ROWS):
         for col in range(COLS):
@@ -1894,7 +1905,8 @@ def _render_spectrum_bands(direction: str) -> list[tuple[int, int, int]]:
                 hue = _SPECTRUM_BANDS_RL_HUES[col % ROWS]
             else:  # Up = Down rotated 180 degrees
                 hue = _SPECTRUM_BANDS_RL_HUES[(COLS - 1 - col) % ROWS]
-            pixels.append(_hsv(hue, 1.0, 0.95))
+            position = hue / 0.83 if direction in ("Right", "Left") else None
+            pixels.append(_palette_mode_hsv(hue, 1.0, 0.95, color_mode, position))
     return pixels
 
 
@@ -1917,6 +1929,7 @@ def _rainbow_flow_down_hue(row: int, col: int, phase: float) -> float:
 def _render_rainbow_flow(
     phase: float,
     direction: str,
+    color_mode=None,
 ) -> list[tuple[int, int, int]]:
     """Render mode 4 (Rainbow Flow): a full rainbow that runs dot-by-dot along
     the panel and scrolls over time. Unlike Rainbow (uniform per row) the hue
@@ -1935,7 +1948,7 @@ def _render_rainbow_flow(
                 hue = _rainbow_flow_down_hue(row, col, phase)
             else:  # Up
                 hue = _rainbow_flow_down_hue(ROWS - 1 - row, COLS - 1 - col, phase)
-            pixels.append(_hsv(hue, 0.95, 0.92))
+            pixels.append(_palette_mode_hsv(hue, 0.95, 0.92, color_mode))
     return pixels
 
 
@@ -2071,8 +2084,43 @@ def _rainbow_palette_color(position, mode):
     return stops[-1][1:]
 
 
+_COLOR_PALETTE_EFFECTS = {
+    "Rainbow", "Spectrum", "Streamer", "Rainbow Flow", "Spectrum Chase",
+    "Pastel Pulse", "Prism", "Color Trails", "Tide", "Spectrum Bands", "Kaleidoscope",
+}
+_COLOR_PALETTE_MODES = {"red_blue", "white_orange", "blue_yellow", "purple_orange"}
+
+
+def _palette_mode_hsv(hue, saturation, value, mode, position=None):
+    if not mode:
+        return _hsv(hue, saturation, value)
+    normalized_hue = (hue % 1.0 + 1.0) % 1.0
+    palette_position = min(1.0, normalized_hue / 0.85) if position is None else position
+    return tuple(_clamp(channel * value + 1e-9) for channel in _rainbow_palette_color(palette_position, mode))
+
+
+def _palette_mode_rgb(pixel, mode):
+    if not mode:
+        return pixel
+    red, green, blue = pixel
+    maximum = max(red, green, blue)
+    chroma = maximum - min(red, green, blue)
+    if chroma == 0:
+        return pixel
+    if maximum == red:
+        sector = (green - blue) / chroma
+    elif maximum == green:
+        sector = (blue - red) / chroma + 2
+    else:
+        sector = (red - green) / chroma + 4
+    position = max(0, min(1, sector / 6 / 0.85))
+    return _palette_mode_hsv(sector / 6, chroma / maximum, maximum / 255, mode, position)
+
+
 def effect_supports_color_mode(effect: str, mode: str) -> bool:
-    return (effect == "Rainbow" and mode in _RAINBOW_MODE_PALETTES) or (
+    return (effect in _COLOR_PALETTE_EFFECTS and mode in _COLOR_PALETTE_MODES) or (
+        effect == "Rainbow" and mode in _RAINBOW_MODE_PALETTES
+    ) or (
         mode == "bw" and effect in _COLOR_MODE_BW_EFFECTS
     )
 
@@ -2106,7 +2154,9 @@ def render_native_effect(
 ) -> list[tuple[int, int, int]]:
     """Return one animated 20x5 approximation of a firmware effect, optionally
     recoloured toward a custom colour override or a firmware palette mode."""
-    if effect == "Rainbow" and color_mode in _RAINBOW_MODE_PALETTES:
+    if (color_mode in _COLOR_PALETTE_MODES and effect_supports_color_mode(effect, color_mode)) or (
+        effect == "Rainbow" and color_mode == "bw"
+    ):
         return _render_native_effect_raw(effect, phase, direction, color_mode)
     pixels = _render_native_effect_raw(effect, phase, direction)
     # A palette colour mode takes precedence over the custom colour override.
@@ -2129,17 +2179,17 @@ def _render_native_effect_raw(
     if effect == "Fireworks":
         return _render_fireworks(phase, direction)
     if effect == "Rainbow Flow":
-        return _render_rainbow_flow(phase, direction)
+        return _render_rainbow_flow(phase, direction, color_mode)
     if effect == "Monochrome Waves":
         return _render_monochrome_waves(phase, direction)
     if effect == "Pulse":
         return _render_pulse(phase, direction)
     if effect == "Prism":
-        return _render_prism(phase, direction)
+        return _render_prism(phase, direction, color_mode)
     if effect == "Color Trails":
-        return _render_color_trails(phase, direction)
+        return _render_color_trails(phase, direction, color_mode)
     if effect == "Spectrum Bands":
-        return _render_spectrum_bands(direction)
+        return _render_spectrum_bands(direction, color_mode)
     if effect == "Magic":
         return _render_magic(phase)
     if effect == "Wonderland":
@@ -2147,7 +2197,7 @@ def _render_native_effect_raw(
     if effect == "Flower Sea":
         return _render_flower_sea(phase, direction)
     if effect == "Kaleidoscope":
-        return _render_kaleidoscope(phase, direction)
+        return _render_kaleidoscope(phase, direction, color_mode)
     if effect == "Blue Yellow":
         return _render_blue_yellow(phase, direction)
     if effect == "Ice Blue":
@@ -2157,9 +2207,9 @@ def _render_native_effect_raw(
     if effect == "Carousel":
         return _render_carousel(phase, direction)
     if effect == "Spectrum Chase":
-        return _render_spectrum_chase(phase, direction)
+        return _render_spectrum_chase(phase, direction, color_mode)
     if effect == "Pastel Pulse":
-        return _render_pastel_pulse(phase, direction)
+        return _render_pastel_pulse(phase, direction, color_mode)
     if effect == "Solar Flare":
         return _render_solar_flare(phase, direction)
     if effect == "Ember":
@@ -2189,7 +2239,7 @@ def _render_native_effect_raw(
                 # The whole panel is one uniform color that slowly morphs
                 # through the spectrum as phase advances -- no spatial
                 # variation across pixels.
-                color = _hsv(phase * 0.08 % 1.0, 0.9, 0.88)
+                color = _palette_mode_hsv(phase * 0.08 % 1.0, 0.9, 0.88, color_mode)
             elif effect == "Starry sky":
                 # Sparse blue stars that pop on and slowly fade to black. Each
                 # pixel runs its own cycle (stable random phase + rate) so stars
@@ -2226,7 +2276,7 @@ def _render_native_effect_raw(
                     if direction == "Left":
                         index = last - index
                 t = index / last
-                color = _hsv(t * 0.83, 1.0, 0.82 + 0.18 * math.sin((t + phase * 0.08) * math.tau))
+                color = _palette_mode_hsv(t * 0.83, 1.0, 0.82 + 0.18 * math.sin((t + phase * 0.08) * math.tau), color_mode, t)
             elif effect == "Ocean Waves":
                 # Right/Left reuse Up/Down coordinates so device-orientation rotation renders correctly.
                 if direction == "Right":
@@ -2490,7 +2540,8 @@ def _render_native_effect_raw(
                                 + head_index * 0.12
                             )
                 color = (
-                    _rgb(*_hsv(paint_hue, 1.0, 1.0), best_level)
+                    (_palette_mode_hsv(paint_hue, 1.0, best_level, color_mode)
+                     if color_mode else _rgb(*_hsv(paint_hue, 1.0, 1.0), best_level))
                     if best_level > 0
                     else BLACK
                 )
