@@ -11,10 +11,34 @@ export function clockPresetKey(style) {
   return style.presetId ? `custom:${style.presetId}` : style.name;
 }
 
+export function clockPresetsByKind(presets, kind = "style") {
+  return presets.filter((preset) => (preset.kind || "style") === kind);
+}
+
+export function clockColorPresetAction(preset) {
+  return { color_mode: "normal", color: [...preset.color] };
+}
+
+export function matchingClockColorPreset(presets, attrs) {
+  if (
+    (attrs.clock_color_mode || "normal") !== "normal" ||
+    typeof attrs.clock_color !== "number"
+  )
+    return null;
+  return (
+    clockPresetsByKind(presets, "color_mode").find((preset) =>
+      preset.color.every(
+        (channel, index) =>
+          channel === ((attrs.clock_color >> (16 - index * 8)) & 255),
+      ),
+    ) || null
+  );
+}
+
 export function clockStylesWithPresets(builtins, presets) {
   return [
     ...builtins,
-    ...presets.map((preset) => ({
+    ...clockPresetsByKind(presets).map((preset) => ({
       id: 4,
       name: preset.name,
       presetId: preset.id,

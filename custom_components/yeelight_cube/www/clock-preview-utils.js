@@ -303,6 +303,20 @@ export function clockStyleColorModeState(style, mode, override = null) {
     : "unknown";
 }
 
+// A custom RGB override behaves like a colour mode: solid styles flat-fill with
+// it, colour-supporting effects recolour toward it, and other effects ignore
+// it (mirrors renderClockFrame). Presets already carry their own colour.
+export function clockStyleRespondsToCustomColor(style) {
+  if (!style) return false;
+  if (style.presetId) return true;
+  const known =
+    _CLOCK_STYLE_BY_ID.get(style.id) || _CLOCK_STYLE_BY_NAME.get(style.name);
+  if (!known) return false;
+  if (known.mixer === 0) return true;
+  const effect = CLOCK_MIXER_EFFECTS[known.mixer];
+  return effect ? effectSupportsColorOverride(effect) : false;
+}
+
 export function clockStyleIndicators(style, display, mode, override = null) {
   if (display !== "all" && (display !== "selected" || mode === "normal"))
     return [];

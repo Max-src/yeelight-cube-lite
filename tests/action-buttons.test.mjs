@@ -32,6 +32,58 @@ test("all styles and content modes share normalized rendering", () => {
   }
 });
 
+test("colour swatches replace the icon across styles and content modes", () => {
+  for (const { value: buttonStyle } of actionButtonStyleChoices) {
+    for (const { value: contentMode } of actionButtonContentChoices) {
+      const markup = renderActionButtonHTML({
+        buttonStyle,
+        contentMode,
+        label: "Amber",
+        swatch: "#ff8800",
+      });
+      const resolved = buttonStyle === "icon" ? "icon" : contentMode;
+      // The swatch stands in for the icon; no ha-icon is emitted.
+      assert.ok(!markup.includes("<ha-icon"));
+      assert.equal(markup.includes("background:#ff8800"), resolved !== "text");
+      assert.equal(markup.includes("btn-swatch"), resolved !== "text");
+      assert.equal(
+        markup.includes('class="btn-text">Amber'),
+        resolved === "icon_text",
+      );
+    }
+  }
+  // A busy swatch button shows the spinner icon instead of the swatch.
+  const busy = renderActionButtonHTML({ swatch: "#ff8800", busy: true });
+  assert.ok(busy.includes("mdi:loading") && !busy.includes("btn-swatch"));
+  assert.ok(actionButtonStyles.includes(".btn-swatch"));
+});
+
+test("filled buttons and round swatches expose reusable colour styling", () => {
+  const filled = renderActionButtonHTML({
+    label: "Amber",
+    contentMode: "text",
+    fill: "#ffffff",
+  });
+  // Light fill -> dark ink; dark fill -> light ink.
+  assert.ok(filled.includes("btn-fill"));
+  assert.ok(filled.includes("--btn-fill:#ffffff"));
+  assert.ok(filled.includes("--btn-ink:#111"));
+  assert.ok(
+    renderActionButtonHTML({ fill: "#101010", label: "x" }).includes(
+      "--btn-ink:#fff",
+    ),
+  );
+  const round = renderActionButtonHTML({
+    label: "Amber",
+    contentMode: "icon",
+    swatch: "#ff8800",
+    swatchShape: "round",
+  });
+  assert.ok(round.includes("btn-swatch-round"));
+  assert.ok(actionButtonStyles.includes(".btn-fill"));
+  assert.ok(actionButtonStyles.includes(".btn-swatch-round"));
+});
+
 test("legacy imports retain the same stylesheet and class API", () => {
   assert.equal(exportImportButtonStyles, actionButtonStyles);
   assert.equal(

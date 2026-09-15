@@ -11,6 +11,7 @@ import {
 import {
   getClockStyles,
   clockStyleColorModeState,
+  clockStyleRespondsToCustomColor,
   clockStyleIndicators,
   clockStyleBrowserOptions,
 } from "../custom_components/yeelight_cube/www/clock-preview-utils.js";
@@ -37,9 +38,14 @@ test("clock responding-only switch defaults on and preserves saved order", () =>
   const method = source.match(/  _shownStyles\(\) \{([\s\S]*?)\n  \}/)[1];
   const shownStyles = new Function(
     "clockStyleColorModeState",
+    "clockStyleRespondsToCustomColor",
     "clockColorToRgb",
     `return function () {${method}}`,
-  )(clockStyleColorModeState, () => null);
+  )(
+    clockStyleColorModeState,
+    clockStyleRespondsToCustomColor,
+    () => card._attrs().clock_color ?? null,
+  );
   const items = Object.freeze([
     style("Red"),
     style("Spectrum"),
@@ -55,6 +61,11 @@ test("clock responding-only switch defaults on and preserves saved order", () =>
     },
     _styleList: () => items,
     _attrs: () => ({ clock_color_mode: "red_blue" }),
+    _currentColorMode(a) {
+      const mode = a.clock_color_mode || "normal";
+      if (mode !== "normal") return mode;
+      return a.clock_color ? "custom" : "normal";
+    },
   };
   assert.deepEqual(
     shownStyles.call(card).map((item) => item.name),
@@ -65,10 +76,25 @@ test("clock responding-only switch defaults on and preserves saved order", () =>
   card.config.show_only_responding_styles = true;
   card._attrs = () => ({ clock_color_mode: "normal" });
   assert.deepEqual(shownStyles.call(card), items);
+  // Custom colour behaves like a mode: only colour-reacting styles remain.
+  card._attrs = () => ({ clock_color_mode: "normal", clock_color: 0x01ffee00 });
+  assert.deepEqual(
+    shownStyles.call(card).map((item) => item.name),
+    ["Red", "Spectrum", "Rainbow", "White"],
+  );
   assert.doesNotMatch(
     source,
     /renderItemIndicators|renderItemBrowserToolbar|data-browser/,
   );
+});
+
+test("custom colour response covers solids, presets and override-capable effects", () => {
+  assert.equal(clockStyleRespondsToCustomColor(style("Rainbow")), true);
+  assert.equal(clockStyleRespondsToCustomColor(style("Ocean Waves")), true);
+  assert.equal(clockStyleRespondsToCustomColor(style("White")), true);
+  assert.equal(clockStyleRespondsToCustomColor(style("Sunset")), false);
+  assert.equal(clockStyleRespondsToCustomColor(style("Amber")), true);
+  assert.equal(clockStyleRespondsToCustomColor({ name: "Unknown" }), false);
 });
 
 test("clock pagination supports 16 items per page and zero disables pagination", () => {

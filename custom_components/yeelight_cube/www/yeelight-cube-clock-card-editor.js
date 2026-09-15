@@ -18,13 +18,13 @@ import { createYeelightCubeEntityPicker } from "./entity-selector-utils.js";
 import { getClockStyles } from "./clock-preview-utils.js";
 import { renderSliderSettings, sliderKeys } from "./slider-control-utils.js";
 import {
-  colorPickerStyleChoices,
-  resolveColorPickerStyle,
-} from "./color-picker-utils.js";
-import {
   renderOrderableList,
   orderableListStyles,
 } from "./orderable-list-utils.js";
+import {
+  COLOR_PRESET_STYLE_CHOICES,
+  COLOR_PRESET_SHAPE_CHOICES,
+} from "./yeelight-cube-clock-card.js";
 
 const TEXT_STYLE_CHOICES = [
   { value: "filled", label: "Filled" },
@@ -105,6 +105,8 @@ class YeelightCubeClockCardEditor extends LitElement {
 
   setConfig(config) {
     const cfg = { ...config };
+    if (cfg.show_color_override) cfg.show_color_modes = true;
+    delete cfg.show_color_override;
     // Mirror the card's legacy speed_* → shared slider_* migration so existing
     // customizations show up in the editor controls.
     const K = sliderKeys("slider");
@@ -446,50 +448,65 @@ class YeelightCubeClockCardEditor extends LitElement {
                           </div>
                         `
                       : ""}
+                    <div class="form-row">
+                      <label>Saved colour style</label>
+                      ${createButtonGroup(
+                        COLOR_PRESET_STYLE_CHOICES,
+                        ["label", "filled", "swatch"].includes(
+                          config.color_preset_style,
+                        )
+                          ? config.color_preset_style
+                          : "label",
+                        (event) => {
+                          const value = event.currentTarget.dataset.value;
+                          this.config = {
+                            ...this.config,
+                            color_preset_style: value,
+                          };
+                          this.requestUpdate();
+                          this._fire();
+                        },
+                      )}
+                    </div>
+                    ${config.color_preset_style === "filled"
+                      ? ""
+                      : html`
+                          <div class="form-row">
+                            <label>Swatch shape</label>
+                            ${createButtonGroup(
+                              COLOR_PRESET_SHAPE_CHOICES,
+                              ["square", "rounded", "circle"].includes(
+                                config.color_preset_shape,
+                              )
+                                ? config.color_preset_shape
+                                : "rounded",
+                              (event) => {
+                                const value = event.currentTarget.dataset.value;
+                                this.config = {
+                                  ...this.config,
+                                  color_preset_shape: value,
+                                };
+                                this.requestUpdate();
+                                this._fire();
+                              },
+                            )}
+                          </div>
+                        `}
+                    ${createToggleRow(
+                      "Show 'save colour mode' button",
+                      "show_save_color_mode_button",
+                      config.show_save_color_mode_button !== false,
+                      (e) => this._onToggle(e, "show_save_color_mode_button"),
+                    )}
+                    ${createToggleRow(
+                      "Show 'save clock style' button",
+                      "show_save_clock_style_button",
+                      config.show_save_clock_style_button !== false,
+                      (e) => this._onToggle(e, "show_save_clock_style_button"),
+                    )}
                   `,
                 )
               : ""}
-            ${createToggleRow(
-              "Show colour override",
-              "show_color_override",
-              !!config.show_color_override,
-              (e) => this._onToggle(e, "show_color_override"),
-            )}
-            ${
-              // CONVENTION: a setting that only applies when a toggle/mode is on
-              // MUST be (1) gated by that condition AND (2) wrapped in a blue
-              // renderModeSettingsSection so the dependency is visually obvious.
-              // See renderModeSettingsSection in editor_ui_utils.js.
-              config.show_color_override
-                ? renderModeSettingsSection(
-                    "Colour override style",
-                    html`
-                      <div class="form-row">
-                        <label>Presentation</label>
-                        ${createButtonGroup(
-                          colorPickerStyleChoices,
-                          resolveColorPickerStyle(config.color_override_style),
-                          (event) => {
-                            const value = event.currentTarget.dataset.value;
-                            this.config = {
-                              ...this.config,
-                              color_override_style: value,
-                            };
-                            this.requestUpdate();
-                            this._fire();
-                          },
-                        )}
-                      </div>
-                    `,
-                  )
-                : ""
-            }
-            ${createToggleRow(
-              "Show save-as-preset button",
-              "show_save_preset_button",
-              config.show_save_preset_button !== false,
-              (e) => this._onToggle(e, "show_save_preset_button"),
-            )}
             ${renderModeSettingsSection(
               "Control buttons",
               renderActionButtonSettings(config, (key, value) => {
@@ -501,20 +518,21 @@ class YeelightCubeClockCardEditor extends LitElement {
           `,
         )}
         ${this._section(
+          "presets",
+          "Saved clock styles & colours",
+          html`
+            <yeelight-clock-preset-manager
+              .hass=${this._hass}
+              .showLibrary=${true}
+              .buttonStyle=${config.buttons_style || "modern"}
+              .contentMode=${config.buttons_content_mode || "icon_text"}
+            ></yeelight-clock-preset-manager>
+          `,
+        )}
+        ${this._section(
           "style",
           "Clock style",
           html`
-            ${renderModeSettingsSection(
-              "Custom colour clocks",
-              html`
-                <yeelight-clock-preset-manager
-                  .hass=${this._hass}
-                  .showLibrary=${true}
-                  .buttonStyle=${config.buttons_style || "modern"}
-                  .contentMode=${config.buttons_content_mode || "icon_text"}
-                ></yeelight-clock-preset-manager>
-              `,
-            )}
             ${createToggleRow(
               "Customize visible styles",
               "custom_visible_styles",

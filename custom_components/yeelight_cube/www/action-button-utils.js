@@ -55,6 +55,17 @@ export function getActionButtonClass(type, style = "modern") {
 
 export const getExportImportButtonClass = getActionButtonClass;
 
+// Perceived-luminance ink so text/glyphs stay legible on any fill colour.
+export function contrastInk(color) {
+  const match = /^#?([0-9a-f]{6})$/i.exec(color || "");
+  if (!match) return "#111";
+  const value = parseInt(match[1], 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return (r * 299 + g * 587 + b * 114) / 1000 > 150 ? "#111" : "#fff";
+}
+
 export const actionButtonStyleChoices = [
   { value: "modern", label: "Modern" },
   { value: "classic", label: "Classic" },
@@ -109,6 +120,9 @@ export function actionButtonModel({
   value,
   tabIndex,
   states,
+  swatch,
+  swatchShape,
+  fill,
 } = {}) {
   const options = resolveActionButtonOptions({ buttonStyle, contentMode });
   const stateful = typeof selected === "boolean";
@@ -127,7 +141,7 @@ export function actionButtonModel({
     : action;
   return {
     ...options,
-    className: `${getActionButtonClass(resolvedAction, options.buttonStyle)} shared-action-button${stateful ? " action-state" : ""}${compact ? " action-compact" : ""}${busy ? " action-busy" : ""}`,
+    className: `${getActionButtonClass(resolvedAction, options.buttonStyle)} shared-action-button${stateful ? " action-state" : ""}${compact ? " action-compact" : ""}${busy ? " action-busy" : ""}${fill ? " btn-fill" : ""}`,
     icon: busy ? "mdi:loading" : state?.icon || icon,
     label: busy ? busyLabel : state?.label || label,
     title: busy ? busyLabel : state?.title || title || state?.label || label,
@@ -137,6 +151,12 @@ export function actionButtonModel({
     role: role === "radio" ? "radio" : undefined,
     value,
     tabIndex,
+    // A colour swatch stands in for the icon (e.g. saved-colour buttons).
+    swatch: busy ? null : swatch,
+    swatchShape,
+    // A whole-button fill colour with matching contrast ink.
+    fill: busy ? null : fill,
+    ink: fill ? contrastInk(fill) : undefined,
     type: ["button", "submit", "reset"].includes(type) ? type : "button",
   };
 }
@@ -147,7 +167,10 @@ export function renderActionButtonHTML(options = {}) {
     model.selected === undefined
       ? ""
       : ` ${model.role === "radio" ? "aria-checked" : "aria-pressed"}="${model.selected}"`;
-  return `<button type="${model.type}" class="${model.className}" title="${escapeHtml(model.title)}" aria-label="${escapeHtml(model.title)}" aria-busy="${model.busy}"${state}${model.role ? ' role="radio"' : ""}${model.value !== undefined ? ` data-value="${escapeHtml(String(model.value))}"` : ""}${model.tabIndex !== undefined ? ` tabindex="${model.tabIndex === -1 ? -1 : 0}"` : ""} ${model.disabled ? "disabled" : ""}>${renderButtonContent(model.icon, model.label, model.contentMode)}</button>`;
+  const fill = model.fill
+    ? ` style="--btn-fill:${escapeHtml(model.fill)};--btn-ink:${model.ink}"`
+    : "";
+  return `<button type="${model.type}" class="${model.className}" title="${escapeHtml(model.title)}" aria-label="${escapeHtml(model.title)}" aria-busy="${model.busy}"${state}${fill}${model.role ? ' role="radio"' : ""}${model.value !== undefined ? ` data-value="${escapeHtml(String(model.value))}"` : ""}${model.tabIndex !== undefined ? ` tabindex="${model.tabIndex === -1 ? -1 : 0}"` : ""} ${model.disabled ? "disabled" : ""}>${renderButtonContent(model.icon, model.label, model.contentMode, false, null, model.swatch, model.swatchShape)}</button>`;
 }
 
 export function actionButtonGroupModel({
@@ -241,6 +264,8 @@ export function renderButtonContent(
   contentMode = "icon_text",
   isStatus = false,
   statusType = null,
+  swatch = null,
+  swatchShape = null,
 ) {
   if (isStatus) {
     const statusIcon =
@@ -258,14 +283,17 @@ export function renderButtonContent(
     }
   }
 
+  const visual = swatch
+    ? `<span class="btn-swatch${swatchShape === "square" ? " btn-swatch-square" : swatchShape === "circle" || swatchShape === "round" ? " btn-swatch-round" : ""}" style="background:${escapeHtml(swatch)}"></span>`
+    : `<ha-icon icon="${escapeHtml(icon)}"></ha-icon>`;
   switch (contentMode) {
     case "icon":
-      return `<ha-icon icon="${escapeHtml(icon)}"></ha-icon>`;
+      return visual;
     case "text":
       return escapeHtml(text);
     case "icon_text":
     default:
-      return `<ha-icon icon="${escapeHtml(icon)}"></ha-icon><span class="btn-text">${escapeHtml(text)}</span>`;
+      return `${visual}<span class="btn-text">${escapeHtml(text)}</span>`;
   }
 }
 
@@ -777,12 +805,12 @@ export const actionButtonStyles = `
   }
 
   .save-btn.btn-style-icon {
-    background: #03a9f4;
+    background: var(--primary-color, #03a9f4);
     color: var(--text-primary-color, #fff);
   }
 
   .save-btn.btn-style-icon:hover {
-    background: #0288d1;
+    background: var(--primary-color-dark, #0288d1);
   }
 
   .randomize-btn.btn-style-icon {
@@ -918,6 +946,7 @@ export const actionButtonStyles = `
   .shared-button-group .shared-action-button:not(.btn-style-icon) {
     flex: 1 1 0;
     width: auto;
+        max-width: fit-content;
     min-width: 0;
     min-height: 44px;
     padding: 8px 10px;
@@ -933,6 +962,38 @@ export const actionButtonStyles = `
   .shared-button-group .btn-text {
     white-space: normal;
     overflow-wrap: anywhere;
+  }
+  .btn-swatch {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    border-radius: 4px;
+    border: 1px solid rgba(0, 0, 0, 0.25);
+    box-sizing: border-box;
+  }
+  .btn-swatch-round {
+    border-radius: 50%;
+  }
+  .btn-swatch-square {
+    border-radius: 0;
+  }
+  /* Whole-button fill colour (e.g. saved-colour choices). The tool-active
+     selectors match the stateful/selected specificity so the fill still wins. */
+  .shared-action-button.btn-fill,
+  .tool-btn.tool-active.btn-fill {
+    background: var(--btn-fill) !important;
+    color: var(--btn-ink) !important;
+    border-color: color-mix(in srgb, var(--btn-ink) 30%, transparent) !important;
+  }
+  .shared-action-button.btn-fill ha-icon {
+    color: var(--btn-ink);
+  }
+  .shared-action-button.btn-fill[aria-checked="true"],
+  .shared-action-button.btn-fill[aria-pressed="true"] {
+    box-shadow:
+      0 0 0 2px var(--card-background-color, #fff),
+      0 0 0 4px var(--primary-color, #1976d2) !important;
   }
   /* Stateful group buttons reuse the shared tool/tool-active look (see the
      .tool-btn rules above) so every style keeps its identity. Neutralise the

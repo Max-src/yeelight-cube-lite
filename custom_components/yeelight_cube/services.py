@@ -101,6 +101,7 @@ def async_setup_services(hass: HomeAssistant):
                         previous, call.data["name"], call.data["color"],
                         [style["name"] for style in NATIVE_CLOCK_STYLES.values()],
                         call.data.get("preset_id"),
+                        kind=call.data.get("kind"),
                     )
             except ValueError as error:
                 raise HomeAssistantError(str(error)) from error
@@ -118,6 +119,7 @@ def async_setup_services(hass: HomeAssistant):
             vol.Required("name"): cv.string,
             vol.Required("color"): vol.All(cv.ensure_list, [vol.All(int, vol.Range(min=0, max=255))], vol.Length(min=3, max=3)),
             vol.Optional("preset_id"): cv.string,
+            vol.Optional("kind"): vol.In(["style", "color_mode"]),
         }),
     )
     hass.services.async_register(

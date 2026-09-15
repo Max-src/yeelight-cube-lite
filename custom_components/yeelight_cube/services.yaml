@@ -147,7 +147,7 @@ set_button_effects:
 
 save_clock_preset:
   name: Save Clock Colour Preset
-  description: Create or update a shared named solid-colour clock without changing the lamp.
+  description: Create or update a shared clock style or custom colour-mode preset without changing the lamp.
   fields:
     name:
       required: true
@@ -162,6 +162,15 @@ save_clock_preset:
       description: Existing preset ID when editing; omit to create a preset.
       selector:
         text:
+    kind:
+      description: Save as a solid-colour clock style or a colour reusable with the current clock effect. Defaults to clock style for new presets; preserves the type when editing.
+      selector:
+        select:
+          options:
+            - label: Clock style
+              value: style
+            - label: Colour mode
+              value: color_mode
 
 delete_clock_preset:
   name: Delete Clock Colour Preset

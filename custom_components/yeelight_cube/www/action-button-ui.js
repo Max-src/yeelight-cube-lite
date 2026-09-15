@@ -29,6 +29,9 @@ export function renderActionButton(options = {}) {
     title=${model.title}
     aria-label=${model.title}
     aria-busy=${String(model.busy)}
+    style=${model.fill
+      ? `--btn-fill:${model.fill};--btn-ink:${model.ink}`
+      : nothing}
     role=${model.role ?? nothing}
     aria-checked=${model.role === "radio" && model.selected !== undefined
       ? String(model.selected)
@@ -41,7 +44,15 @@ export function renderActionButton(options = {}) {
     ?disabled=${model.disabled}
     @click=${options.onClick}
   >
-    ${renderActionButtonContent(model.icon, model.label, model.contentMode)}
+    ${renderActionButtonContent(
+      model.icon,
+      model.label,
+      model.contentMode,
+      false,
+      null,
+      model.swatch,
+      model.swatchShape,
+    )}
   </button>`;
 }
 

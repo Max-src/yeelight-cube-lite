@@ -15,6 +15,20 @@ delete = MODULE["delete_clock_preset"]
 
 
 class ClockPresetTests(unittest.TestCase):
+    def test_color_modes_are_separate_and_legacy_styles_stay_styles(self):
+        legacy = [{"id": "old", "name": "Amber", "color": [255, 120, 0]}]
+        presets = save(legacy, "Amber", [255, 120, 0], ["White"], kind="color_mode")
+        self.assertEqual(len(presets), 2)
+        self.assertNotIn("kind", legacy[0])
+        self.assertEqual(presets[1]["kind"], "color_mode")
+        edited = save(presets, "Gold", [240, 160, 10], ["White"], presets[1]["id"])
+        self.assertEqual(edited[1]["kind"], "color_mode")
+        self.assertEqual(edited[1]["id"], presets[1]["id"])
+        for kind in ["style", "color_mode", "invalid"]:
+            with self.subTest(kind=kind), self.assertRaises(ValueError):
+                save(presets, "Amber", [255, 120, 0], ["White"], kind=kind)
+        self.assertEqual(save(legacy, "White", [1, 2, 3], ["White"], kind="color_mode")[-1]["kind"], "color_mode")
+
     def test_save_rename_and_delete(self):
         presets = save([], "  Warm   Amber  ", [255, 120, 0], ["White"])
         self.assertEqual(presets[0]["name"], "Warm Amber")
@@ -39,6 +53,15 @@ class ClockPresetTests(unittest.TestCase):
 
 
 class ClockPresetServiceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_color_mode_kind_persists_through_service_and_reload(self):
+        await self.update(SimpleNamespace(service="save_clock_preset", data={"name": "Amber", "color": [255, 120, 0], "kind": "color_mode"}))
+        snapshot = json.loads(json.dumps(self.store.async_save.call_args.args[0]))
+        self.assertEqual(snapshot["clock_presets"][0]["kind"], "color_mode")
+        self.data["clock_presets"] = snapshot["clock_presets"]
+        preset_id = self.data["clock_presets"][0]["id"]
+        await self.update(SimpleNamespace(service="save_clock_preset", data={"preset_id": preset_id, "name": "Gold", "color": [240, 150, 0]}))
+        self.assertEqual(self.data["clock_presets"][0]["kind"], "color_mode")
+
     def setUp(self):
         self.store = SimpleNamespace(async_save=AsyncMock())
         self.data = {"storage": self.store, "clock_presets": [], "palettes_v2": [{"name": "Existing"}]}
