@@ -142,6 +142,12 @@ class ClockPresetManager extends LitElement {
       gap: 10px;
       margin-top: 10px;
     }
+    form .shared-action-button.tool-btn {
+      background: var(--secondary-background-color, #e7e7e7);
+      color: var(--primary-text-color, #333);
+      border: 1px solid var(--divider-color, #aaa);
+      box-shadow: none;
+    }
     .form-kind {
       margin: 0;
       font-size: 13px;
@@ -298,24 +304,25 @@ class ClockPresetManager extends LitElement {
     const available = !!this.hass?.services?.yeelight_cube?.save_clock_preset;
     const library = clockPresetLibrary(this.hass);
     const presets = clockPresetsByKind(library, this.libraryKind);
-    const frame = this.editing
-      ? flipMatrixVertical(
-          renderClockFrame(
-            {
-              ...(this.kind === "color_mode" ? this.previewAttrs : {}),
-              clock_style_id:
-                this.kind === "color_mode"
-                  ? (this.previewAttrs?.clock_style_id ?? 4)
-                  : 4,
-              clock_color_mode: "normal",
-              clock_color_rgb: this._rgb(),
-              clock_content: "time",
-            },
-            null,
-            null,
-          ),
-        )
-      : [];
+    const frame =
+      this.editing && this.showLibrary
+        ? flipMatrixVertical(
+            renderClockFrame(
+              {
+                ...(this.kind === "color_mode" ? this.previewAttrs : {}),
+                clock_style_id:
+                  this.kind === "color_mode"
+                    ? (this.previewAttrs?.clock_style_id ?? 4)
+                    : 4,
+                clock_color_mode: "normal",
+                clock_color_rgb: this._rgb(),
+                clock_content: "time",
+              },
+              null,
+              null,
+            ),
+          )
+        : [];
     return html`
       ${this.showLibrary
         ? this._actionRow(
@@ -366,25 +373,31 @@ class ClockPresetManager extends LitElement {
                   this.name = event.target.value;
                 }}
             /></label>
-            <label
-              >Colour<input
-                type="color"
-                .value=${this.color}
-                ?disabled=${this.busy}
-                @click=${(event) => handleColorPickerClick(event, this)}
-                @input=${(event) => {
-                  this.color = event.target.value;
-                }}
-            /></label>
-            <div class="preview" role="img" aria-label="Clock colour preview">
-              ${frame.map(
-                (pixel) =>
-                  html`<span
-                    class="pixel"
-                    style="background:rgb(${pixel.join(",")})"
-                  ></span>`,
-              )}
-            </div>
+            ${this.showLibrary
+              ? html`<label
+                    >Colour<input
+                      type="color"
+                      .value=${this.color}
+                      ?disabled=${this.busy}
+                      @click=${(event) => handleColorPickerClick(event, this)}
+                      @input=${(event) => {
+                        this.color = event.target.value;
+                      }}
+                  /></label>
+                  <div
+                    class="preview"
+                    role="img"
+                    aria-label="Clock colour preview"
+                  >
+                    ${frame.map(
+                      (pixel) =>
+                        html`<span
+                          class="pixel"
+                          style="background:rgb(${pixel.join(",")})"
+                        ></span>`,
+                    )}
+                  </div> `
+              : ""}
             ${this._actionRow(html`
               ${this._button({
                 type: "submit",

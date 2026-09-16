@@ -52,6 +52,69 @@ function cardMethods(names, dependencies) {
   );
 }
 
+test("inline preset saves only request a name and do not generate a preview", () => {
+  const source = readFileSync(
+    new URL(
+      "../custom_components/yeelight_cube/www/clock-preset-manager.js",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const method = source.match(/  render\(\) \{([\s\S]*?)\n  \}/);
+  let frames = 0;
+  const html = (strings, ...values) =>
+    strings.reduce(
+      (result, part, index) => result + part + (values[index] ?? ""),
+      "",
+    );
+  const manager = {
+    hass: { services: { yeelight_cube: { save_clock_preset: {} } } },
+    editing: true,
+    showLibrary: false,
+    name: "Mega Yellow",
+    color: "#ffee00",
+    _rgb: () => [255, 238, 0],
+    _actionRow: (content) => content,
+    _button: (options) => options.label,
+  };
+  const invoke = new Function(
+    "html",
+    "clockPresetLibrary",
+    "clockPresetsByKind",
+    "flipMatrixVertical",
+    "renderClockFrame",
+    "SAVE_TRIGGERS",
+    `return function() {${method[1]}}`,
+  )(
+    html,
+    () => [],
+    () => [],
+    (frame) => frame,
+    () => {
+      frames++;
+      return [];
+    },
+    {
+      style: { label: "Save clock style" },
+      color_mode: { label: "Save colour mode" },
+    },
+  );
+  for (const kind of ["style", "color_mode"]) {
+    manager.kind = kind;
+    const markup = invoke.call(manager);
+    assert.match(markup, /type="text"/);
+    assert.match(markup, /Save/);
+    assert.match(markup, /Cancel/);
+    assert.doesNotMatch(markup, /type="color"|class="preview"/);
+  }
+  assert.equal(frames, 0);
+  manager.showLibrary = true;
+  const markup = invoke.call(manager);
+  assert.match(markup, /type="color"/);
+  assert.match(markup, /class="preview"/);
+  assert.equal(frames, 1);
+});
+
 test("all colour modes share ordering and hiding without deleting defaults or losing new saves", () => {
   const builtins = [
     { value: "normal", label: "Normal" },
