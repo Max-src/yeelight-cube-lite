@@ -2272,12 +2272,13 @@ function rainbowPaletteColor(position, mode) {
   return stops[stops.length - 1].slice(1);
 }
 
+// Spectrum Chase is intentionally absent: hardware confirmed it ignores these
+// firmware palette modes, so it must not be listed or previewed as recoloured.
 const COLOR_PALETTE_EFFECTS = new Set([
   "Rainbow",
   "Spectrum",
   "Streamer",
   "Rainbow Flow",
-  "Spectrum Chase",
   "Pastel Pulse",
   "Prism",
   "Color Trails",

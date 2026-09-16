@@ -25,8 +25,6 @@ def save_clock_preset(presets, name, color, builtin_names, preset_id=None, kind=
     same_kind = [item for item in presets if item.get("kind", "style") == kind]
     if any(item["id"] != preset_id and item["name"].casefold() == name.casefold() for item in same_kind):
         raise ValueError("A clock preset already uses this name")
-    if any(item["id"] != preset_id and item["color"] == list(color) for item in same_kind):
-        raise ValueError("A clock preset already uses this colour")
     if not preset_id and len(presets) >= 100:
         raise ValueError("The clock library is limited to 100 presets")
     item = {"id": preset_id or uuid4().hex, "name": name, "color": list(color), "kind": kind}

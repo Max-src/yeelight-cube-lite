@@ -109,6 +109,28 @@ export function initializeWheelNavigation(options) {
     let containerHeight =
       config.wheel_height || WHEEL_CONSTANTS.DEFAULT_CONTAINER_HEIGHT;
 
+    const tmplItemHeight = parseFloat(wheelContainer.dataset.wheelItemHeight);
+    const tmplItemStep = parseFloat(wheelContainer.dataset.wheelItemStep);
+    const tmplContainerHeight = parseFloat(
+      wheelContainer.dataset.wheelContainerHeight,
+    );
+    const tmplPaddingTop = parseFloat(wheelContainer.dataset.wheelPaddingTop);
+    if (
+      tmplItemHeight > 0 &&
+      tmplItemStep > 0 &&
+      tmplContainerHeight > 0 &&
+      tmplPaddingTop >= 0
+    ) {
+      return {
+        isCompact,
+        itemHeight: tmplItemHeight,
+        itemStep: tmplItemStep,
+        containerHeight: tmplContainerHeight,
+        baseOffset:
+          tmplPaddingTop + tmplItemHeight / 2 - tmplContainerHeight / 2,
+      };
+    }
+
     // Read actual item height and effective step from DOM
     // This ensures navigation stays in sync with rendering
     let itemHeight = 65; // fallback default
@@ -161,30 +183,6 @@ export function initializeWheelNavigation(options) {
         { isCompact },
       );
       heightSource = "fallback-no-items";
-    }
-
-    // Read wheel layout values from data attributes set by the HTML template.
-    // This guarantees JS navigation uses the EXACT same values as the template,
-    // eliminating any rounding or measurement divergence (e.g. content-box vs
-    // border-box, CSS overrides, getComputedStyle timing).
-    const tmplItemHeight = parseFloat(wheelContainer.dataset.wheelItemHeight);
-    const tmplItemStep = parseFloat(wheelContainer.dataset.wheelItemStep);
-    const tmplContainerHeight = parseFloat(
-      wheelContainer.dataset.wheelContainerHeight,
-    );
-    const tmplPaddingTop = parseFloat(wheelContainer.dataset.wheelPaddingTop);
-
-    // Use template values when available, fall back to DOM-measured values
-    if (
-      tmplItemHeight > 0 &&
-      tmplItemStep > 0 &&
-      tmplContainerHeight > 0 &&
-      tmplPaddingTop >= 0
-    ) {
-      itemHeight = tmplItemHeight;
-      itemStep = tmplItemStep;
-      containerHeight = tmplContainerHeight;
-      heightSource = "data-attr";
     }
 
     const paddingTop =

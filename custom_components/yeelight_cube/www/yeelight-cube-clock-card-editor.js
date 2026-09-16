@@ -5,6 +5,10 @@ import {
   clockPresetLibrary,
   clockPresetKey,
   clockStylesWithPresets,
+  visibleClockStyles,
+  clockStyleVisibilityConfig,
+  clockColorModeOptions,
+  clockColorModeVisibilityConfig,
 } from "./clock-preset-utils.js";
 
 import {
@@ -15,7 +19,7 @@ import {
 import { createButtonGroup, buttonGroupStyles } from "./button-group-utils.js";
 import { createToggleRow, createSliderRow } from "./form-row-utils.js";
 import { createYeelightCubeEntityPicker } from "./entity-selector-utils.js";
-import { getClockStyles } from "./clock-preview-utils.js";
+import { getClockStyles, CLOCK_COLOR_MODES } from "./clock-preview-utils.js";
 import { renderSliderSettings, sliderKeys } from "./slider-control-utils.js";
 import {
   renderOrderableList,
@@ -449,14 +453,16 @@ class YeelightCubeClockCardEditor extends LitElement {
                         `
                       : ""}
                     <div class="form-row">
-                      <label>Saved colour style</label>
+                      <label>Custom colour modes style</label>
                       ${createButtonGroup(
                         COLOR_PRESET_STYLE_CHOICES,
-                        ["label", "filled", "swatch"].includes(
-                          config.color_preset_style,
-                        )
-                          ? config.color_preset_style
-                          : "label",
+                        config.color_preset_style === "swatch"
+                          ? "filled"
+                          : ["label", "filled", "name"].includes(
+                                config.color_preset_style,
+                              )
+                            ? config.color_preset_style
+                            : "label",
                         (event) => {
                           const value = event.currentTarget.dataset.value;
                           this.config = {
@@ -468,7 +474,9 @@ class YeelightCubeClockCardEditor extends LitElement {
                         },
                       )}
                     </div>
-                    ${config.color_preset_style === "filled"
+                    ${["filled", "swatch", "name"].includes(
+                      config.color_preset_style,
+                    )
                       ? ""
                       : html`
                           <div class="form-row">
@@ -504,6 +512,10 @@ class YeelightCubeClockCardEditor extends LitElement {
                       config.show_save_clock_style_button !== false,
                       (e) => this._onToggle(e, "show_save_clock_style_button"),
                     )}
+                    ${renderModeSettingsSection(
+                      "Visible colour modes",
+                      this._renderVisibleColorModeList(),
+                    )}
                   `,
                 )
               : ""}
@@ -519,7 +531,7 @@ class YeelightCubeClockCardEditor extends LitElement {
         )}
         ${this._section(
           "presets",
-          "Saved clock styles & colours",
+          "Custom clock styles and colours",
           html`
             <yeelight-clock-preset-manager
               .hass=${this._hass}
@@ -750,12 +762,11 @@ class YeelightCubeClockCardEditor extends LitElement {
 
   // Ordered list of styles shown in the selector (all styles when unset).
   _visibleStyleList() {
-    const list = this.config?.visible_styles;
     const all = clockStylesWithPresets(
       getClockStyles(true),
       clockPresetLibrary(this._hass),
-    ).map(clockPresetKey);
-    return Array.isArray(list) ? list.filter((key) => all.includes(key)) : all;
+    );
+    return visibleClockStyles(all, this.config).map(clockPresetKey);
   }
 
   _renderVisibleStyleList() {
@@ -776,13 +787,14 @@ class YeelightCubeClockCardEditor extends LitElement {
       items: list,
       available: allNames.filter((name) => !list.includes(name)),
       onUpdate: (l) => {
-        this.config = { ...this.config, visible_styles: l };
+        this.config = clockStyleVisibilityConfig(this.config, allStyles, l);
         this.requestUpdate();
         this._fire();
       },
       onReset: () => {
         this.config = { ...this.config };
         delete this.config.visible_styles;
+        delete this.config.hidden_clock_styles;
         this.requestUpdate();
         this._fire();
       },
@@ -801,6 +813,38 @@ class YeelightCubeClockCardEditor extends LitElement {
         (event) => this._onToggle(event, "show_only_responding_styles"),
       ),
     );
+  }
+
+  _renderVisibleColorModeList() {
+    const presets = clockPresetLibrary(this._hass);
+    const all = clockColorModeOptions(CLOCK_COLOR_MODES, presets);
+    const visible = clockColorModeOptions(
+      CLOCK_COLOR_MODES,
+      presets,
+      this.config,
+    ).map((mode) => mode.value);
+    const labels = new Map(all.map((mode) => [mode.value, mode.label]));
+    return renderOrderableList({
+      labelFor: (key) => labels.get(key) || key,
+      items: visible,
+      available: all
+        .map((mode) => mode.value)
+        .filter((key) => !visible.includes(key)),
+      onUpdate: (items) => {
+        this.config = clockColorModeVisibilityConfig(this.config, all, items);
+        this.requestUpdate();
+        this._fire();
+      },
+      onReset: () => {
+        this.config = { ...this.config };
+        delete this.config.visible_color_modes;
+        delete this.config.hidden_color_modes;
+        this.requestUpdate();
+        this._fire();
+      },
+      addPlaceholder: "Show a colour mode...",
+      resetLabel: "Reset to all colour modes",
+    });
   }
 
   _onTitleInput(e) {

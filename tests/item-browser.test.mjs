@@ -88,12 +88,13 @@ test("clock responding-only switch defaults on and preserves saved order", () =>
   );
 });
 
-test("custom colour response covers solids, presets and override-capable effects", () => {
+test("custom colour response covers solids and effects, excludes fixed presets", () => {
   assert.equal(clockStyleRespondsToCustomColor(style("Rainbow")), true);
   assert.equal(clockStyleRespondsToCustomColor(style("Ocean Waves")), true);
   assert.equal(clockStyleRespondsToCustomColor(style("White")), true);
   assert.equal(clockStyleRespondsToCustomColor(style("Sunset")), false);
-  assert.equal(clockStyleRespondsToCustomColor(style("Amber")), true);
+  // Saved presets are fixed-colour styles (Normal/B&W only), not custom mode.
+  assert.equal(clockStyleRespondsToCustomColor(style("Amber")), false);
   assert.equal(clockStyleRespondsToCustomColor({ name: "Unknown" }), false);
 });
 

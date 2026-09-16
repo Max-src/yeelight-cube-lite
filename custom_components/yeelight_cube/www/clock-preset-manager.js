@@ -229,16 +229,25 @@ class ClockPresetManager extends LitElement {
     if (this.busy) return;
     this.busy = true;
     this.error = "";
+    const isNew = typeof this.editing !== "string";
     try {
       const data = {
-        name: this.name.trim(),
+        name: this.name.trim().replace(/\s+/g, " "),
         color: this._rgb(),
         kind: this.kind,
       };
-      if (typeof this.editing === "string") data.preset_id = this.editing;
+      if (!isNew) data.preset_id = this.editing;
       await this.hass.callService("yeelight_cube", "save_clock_preset", data);
       this.editing = false;
       this.libraryKind = this.kind;
+      if (isNew)
+        this.dispatchEvent(
+          new CustomEvent("clock-preset-saved", {
+            detail: { kind: data.kind, name: data.name, color: data.color },
+            bubbles: true,
+            composed: true,
+          }),
+        );
     } catch (error) {
       this.error = error.message || String(error);
     } finally {

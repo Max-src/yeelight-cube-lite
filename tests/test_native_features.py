@@ -3,6 +3,7 @@
 import __future__
 import ast
 import asyncio
+import base64
 import colorsys
 import json
 from pathlib import Path
@@ -88,7 +89,7 @@ def _load_standalone_functions(source: str, names: set, extra_namespace=None) ->
 class NativeFeatureTests(unittest.TestCase):
     def test_clock_palette_supported_styles(self):
         supported = {
-            "Rainbow", "Spectrum", "Streamer", "Rainbow Flow", "Spectrum Chase",
+            "Rainbow", "Spectrum", "Streamer", "Rainbow Flow",
             "Pastel Pulse", "Prism", "Color Trails", "Tide", "Spectrum Bands", "Kaleidoscope",
         }
         supports = NATIVE_PREVIEW["effect_supports_color_mode"]
@@ -109,7 +110,7 @@ class NativeFeatureTests(unittest.TestCase):
     def test_clock_palette_parity(self):
         cases = [
             [effect, phase, direction, override, mode]
-            for effect in ("Rainbow", "Spectrum", "Streamer", "Rainbow Flow", "Spectrum Chase",
+            for effect in ("Rainbow", "Spectrum", "Streamer", "Rainbow Flow",
                            "Pastel Pulse", "Prism", "Color Trails", "Tide", "Spectrum Bands", "Kaleidoscope")
             for phase in (-2.5, -0.01, 0, 0.001, 0.125, 0.5, 1, 2.75, 5.555, 13.37)
             for direction in ("Up", "Down", "Left", "Right")
@@ -142,7 +143,7 @@ class NativeFeatureTests(unittest.TestCase):
             spectrum = render("Spectrum", 0, "Right", color_mode=mode)
             self.assertEqual(tuple(NATIVE_PREVIEW["_clamp"](channel * 0.82 + 1e-9) for channel in palette(0, mode)), spectrum[80])
             self.assertEqual(tuple(NATIVE_PREVIEW["_clamp"](channel * 0.82 + 1e-9) for channel in palette(1, mode)), spectrum[19])
-            for effect in ("Prism", "Color Trails", "Tide", "Spectrum Chase", "Pastel Pulse"):
+            for effect in ("Prism", "Color Trails", "Tide", "Pastel Pulse"):
                 for direction in ("Up", "Down", "Left", "Right"):
                     for phase in (0, 0.25, 2.75, 8.5):
                         with self.subTest(effect=effect, mode=mode, direction=direction, phase=phase):
@@ -187,6 +188,94 @@ class NativeFeatureTests(unittest.TestCase):
             function.index('"set_fx_effect"'),
             function.index("await self._set_native_mode_brightness()"),
         )
+
+    def test_clock_color_override_cleared_for_any_active_palette_mode(self):
+        # A custom colour override must not linger once a palette mode (B&W,
+        # Vivid, Retro Orange, ...) is active on an animated style - it would
+        # otherwise re-tint the firmware's own palette remap. Solid styles
+        # have no mixer effect to protect and stay unaffected (except B&W).
+        helpers = _load_standalone_functions(
+            LIGHT_SOURCE,
+            {"_activate_native_clock", "_resolve_native_clock_color"},
+            {
+                "asyncio": asyncio,
+                "base64": base64,
+                "NATIVE_CLOCK_STYLES": CONSTANTS["NATIVE_CLOCK_STYLES"],
+                "DEFAULT_NATIVE_CLOCK_STYLE": CONSTANTS["DEFAULT_NATIVE_CLOCK_STYLE"],
+                "NATIVE_CLOCK_EFFECT_ID": CONSTANTS["NATIVE_CLOCK_EFFECT_ID"],
+                "NATIVE_CLOCK_APPLY": CONSTANTS["NATIVE_CLOCK_APPLY"],
+                "CLOCK_MIXER_COMMAND_IDS": CONSTANTS["CLOCK_MIXER_COMMAND_IDS"],
+                "CLOCK_MIXER_EFFECTS": CONSTANTS["CLOCK_MIXER_EFFECTS"],
+                "CLOCK_COLOR_MODES": CONSTANTS["CLOCK_COLOR_MODES"],
+                "clock_style_default_color": CONSTANTS["clock_style_default_color"],
+                "resolve_clock_mixer_direction": CONSTANTS["resolve_clock_mixer_direction"],
+                "ALL_NATIVE_EFFECTS": CONSTANTS["ALL_NATIVE_EFFECTS"],
+                "NATIVE_EFFECT_DIRECTION_VALUES": CONSTANTS["NATIVE_EFFECT_DIRECTION_VALUES"],
+                "_LOGGER": __import__("logging").getLogger(__name__),
+            },
+        )
+
+        class FakeCube:
+            def __init__(self):
+                self.params = None
+
+            def _close_fast_socket(self):
+                return None
+
+            async def send_raw_command(self, command, params, abortive_close=False):
+                self.params = params
+
+        def make_device(style_id, color_mode):
+            return types.SimpleNamespace(
+                _native_clock_timezone_hours=lambda: 0,
+                _native_clock_style=style_id,
+                _native_clock_data_bytes=lambda: b"",
+                _native_effect_speed=50,
+                _native_clock_color=0x01FFEE00,
+                _native_clock_color_mode=color_mode,
+                _native_effect_direction="Up",
+                _cube_matrix=FakeCube(),
+                _set_native_mode_brightness=lambda: asyncio.sleep(0),
+                _is_on=False,
+                _fx_mode_is_direct=False,
+                _in_native_fw_mode=False,
+                _last_fx_mode_time=0.0,
+                _native_clock_timezone_offset=0,
+                _notify_camera_preview=lambda: None,
+                hass=None,
+                _ip="test",
+            )
+
+        activate = helpers["_activate_native_clock"]
+
+        async def run(style_id, color_mode):
+            device = make_device(style_id, color_mode)
+            device._resolve_native_clock_color = types.MethodType(
+                helpers["_resolve_native_clock_color"], device
+            )
+            await types.MethodType(activate, device)()
+            return device._cube_matrix.params
+
+        # Animated style (Spectrum, mixer 17): normal keeps the override;
+        # any active palette mode (bw included) clears it and remaps the id.
+        params = asyncio.run(run(3, "normal"))
+        self.assertEqual([0x01FFEE00], params[3]["color"])
+        self.assertEqual(CONSTANTS["NATIVE_CLOCK_EFFECT_ID"], params[0])
+        for mode in ("bw", "red_blue", "white_orange", "blue_yellow", "purple_orange"):
+            with self.subTest(mode=mode):
+                params = asyncio.run(run(3, mode))
+                self.assertNotIn("color", params[3])
+                self.assertEqual(CONSTANTS["CLOCK_COLOR_MODES"][mode], params[0])
+
+        # Solid style (mixer 0): palette modes other than B&W leave the
+        # override and command id untouched; B&W still clears the colour.
+        for mode in ("red_blue", "white_orange", "blue_yellow", "purple_orange"):
+            with self.subTest(mode=mode):
+                params = asyncio.run(run(6, mode))
+                self.assertEqual([0x01FFEE00], params[3]["color"])
+                self.assertEqual(CONSTANTS["NATIVE_CLOCK_EFFECT_ID"], params[0])
+        params = asyncio.run(run(6, "bw"))
+        self.assertNotIn("color", params[3])
 
     def test_native_settings_reject_skipped_commands(self):
         power = _function_source(LIGHT_SOURCE, "async_set_power_on_state")

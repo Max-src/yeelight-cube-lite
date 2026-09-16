@@ -2084,8 +2084,10 @@ def _rainbow_palette_color(position, mode):
     return stops[-1][1:]
 
 
+# Spectrum Chase is intentionally absent: hardware confirmed it ignores these
+# firmware palette modes, so it must not be listed or previewed as recoloured.
 _COLOR_PALETTE_EFFECTS = {
-    "Rainbow", "Spectrum", "Streamer", "Rainbow Flow", "Spectrum Chase",
+    "Rainbow", "Spectrum", "Streamer", "Rainbow Flow",
     "Pastel Pulse", "Prism", "Color Trails", "Tide", "Spectrum Bands", "Kaleidoscope",
 }
 _COLOR_PALETTE_MODES = {"red_blue", "white_orange", "blue_yellow", "purple_orange"}

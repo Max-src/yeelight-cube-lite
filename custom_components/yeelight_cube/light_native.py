@@ -175,10 +175,19 @@ class NativeModesMixin:
             "data": base64.b64encode(clock_data).decode("ascii"),
         }
         clock_color = self._resolve_native_clock_color(style)
-        # B&W mode renders the effect in grayscale via its own command id; a
-        # style-injected colour (Starry sky, Waterfall, Aurora) would override
-        # that and keep the effect coloured, so skip it for B&W.
-        if getattr(self, "_native_clock_color_mode", "normal") == "bw":
+        # A palette colour mode (B&W, Vivid, Retro Orange, ...) remaps an
+        # animated effect's colours via the outer command id below; an
+        # additionally injected colour would conflict with that remap, so
+        # clear it for any active mode - mirrors camera.py's preview and the
+        # card's renderClockFrame(), which both drop the override whenever a
+        # mode is active. Solid styles (no mixer effect) have no remap to
+        # protect except B&W, which the firmware renders as plain white when
+        # no colour is sent.
+        effect_name = CLOCK_MIXER_EFFECTS.get(style["mixer"])
+        clock_color_mode = getattr(self, "_native_clock_color_mode", "normal")
+        if clock_color_mode == "bw" or (
+            clock_color_mode != "normal" and effect_name is not None
+        ):
             clock_color = None
         if clock_color is not None:
             effect_config["color"] = [int(clock_color)]
@@ -186,7 +195,6 @@ class NativeModesMixin:
         # When the style's mixer is a direction-capable native effect, flow it
         # in the selected native-effect direction just like a native effect
         # (some firmware honours a direction byte on the clock payload).
-        effect_name = CLOCK_MIXER_EFFECTS.get(style["mixer"])
         direction = resolve_clock_mixer_direction(
             self._native_effect_direction, effect_name
         )
@@ -206,9 +214,7 @@ class NativeModesMixin:
         # Solid styles (mixer 0, e.g. White/Mint/Yellow/Pink/Red/Cyan/Purple)
         # have no animated renderer to remap - they already go B&W from the
         # colour skip above, so leave their command id untouched.
-        mode_override = CLOCK_COLOR_MODES.get(
-            getattr(self, "_native_clock_color_mode", "normal")
-        )
+        mode_override = CLOCK_COLOR_MODES.get(clock_color_mode)
         if mode_override is not None and effect_name is not None:
             command_id = mode_override
         params = [

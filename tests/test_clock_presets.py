@@ -15,6 +15,12 @@ delete = MODULE["delete_clock_preset"]
 
 
 class ClockPresetTests(unittest.TestCase):
+    def test_reject_markup_names_for_both_kinds(self):
+        for kind in ["style", "color_mode"]:
+            for name in ['<script>alert(1)</script>', '\"><img src=x onerror=alert(1)>', '<svg onload=alert(1)>']:
+                with self.subTest(kind=kind, name=name), self.assertRaises(ValueError):
+                    save([], name, [255, 100, 180], [], kind=kind)
+
     def test_color_modes_are_separate_and_legacy_styles_stay_styles(self):
         legacy = [{"id": "old", "name": "Amber", "color": [255, 120, 0]}]
         presets = save(legacy, "Amber", [255, 120, 0], ["White"], kind="color_mode")
@@ -42,7 +48,7 @@ class ClockPresetTests(unittest.TestCase):
         presets = save([], "Amber", [255, 120, 0], ["White"])
         for name, color, preset_id in [
             ("white", [1, 2, 3], None), ("AMBER", [1, 2, 3], None),
-            ("Duplicate", [255, 120, 0], None), ("", [1, 2, 3], None),
+            ("", [1, 2, 3], None),
             ("Bad", [True, 2, 3], None), ("Bad", [256, 2, 3], None),
             ("Bad", [1, 2], None), ("Bad", [1, 2, 3], "missing"),
         ]:
@@ -50,6 +56,17 @@ class ClockPresetTests(unittest.TestCase):
                 save(presets, name, color, ["White"], preset_id)
         with self.assertRaises(ValueError):
             delete(presets, "missing")
+
+
+    def test_repeated_colours_can_be_saved_and_edited(self):
+        for kind in ["style", "color_mode"]:
+            with self.subTest(kind=kind):
+                presets = save([], "Amber", [255, 120, 0], ["White"], kind=kind)
+                presets = save(presets, "Sunlight", [255, 120, 0], ["White"], kind=kind)
+                self.assertEqual(len(presets), 2)
+                self.assertNotEqual(presets[0]["id"], presets[1]["id"])
+                edited = save(presets, "Warm", [255, 120, 0], ["White"], presets[1]["id"])
+                self.assertEqual(edited[1]["name"], "Warm")
 
 
 class ClockPresetServiceTests(unittest.IsolatedAsyncioTestCase):

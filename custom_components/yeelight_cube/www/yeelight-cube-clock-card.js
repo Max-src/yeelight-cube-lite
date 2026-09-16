@@ -15,8 +15,10 @@ import { escapeHtml } from "./html-escape-utils.js";
 import "./clock-preset-manager.js";
 import {
   clockPresetLibrary,
+  clockColorModeOptions,
   clockPresetKey,
   clockStylesWithPresets,
+  visibleClockStyles,
   matchingClockPreset,
   clockStyleAction,
   clockPresetsByKind,
@@ -71,6 +73,7 @@ import {
   actionButtonStyles,
   renderActionButtonGroupHTML,
   renderActionButtonHTML,
+  actionButtonGroupModel,
   bindActionButtonGroup,
 } from "./action-button-utils.js";
 
@@ -84,7 +87,7 @@ const CONTENT_OPTIONS = [
 export const COLOR_PRESET_STYLE_CHOICES = [
   { value: "label", label: "Swatch + name" },
   { value: "filled", label: "Filled" },
-  { value: "swatch", label: "Swatch only" },
+  { value: "name", label: "Name only" },
 ];
 
 // Swatch shape for the "swatch + name" and "swatch only" preset styles.
@@ -365,8 +368,7 @@ class YeelightCubeClockCard extends HTMLElement {
 
   set hass(hass) {
     this._hass = hass;
-    const customColor = clockColorToRgb(this._attrs().clock_color);
-    if (customColor) this._lastCustomHex = rgbToHex(customColor);
+    this._restoreCustomColor();
     if (this._presetManager) this._presetManager.hass = hass;
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     // Once the lamp echoes the applied values, drop the live-drag overrides so
@@ -479,6 +481,19 @@ class YeelightCubeClockCard extends HTMLElement {
     return this._stateObj()?.attributes || {};
   }
 
+  _restoreCustomColor() {
+    if (this._customMode !== undefined) return;
+    const attrs = this._attrs();
+    const rgb =
+      this._currentColorMode(attrs) === "custom"
+        ? clockColorToRgb(attrs.clock_color)
+        : null;
+    const preset =
+      rgb && matchingClockColorPreset(clockPresetLibrary(this._hass), attrs);
+    this._customDraft = preset ? null : rgb;
+    this._customPresetColor = preset ? rgb : null;
+  }
+
   _computeStateSignature() {
     const a = this._attrs();
     return [
@@ -533,24 +548,26 @@ class YeelightCubeClockCard extends HTMLElement {
 
   _styleList() {
     const a = this._attrs();
+    const cache = this._styleListCache;
+    if (
+      cache &&
+      cache.states === this._hass?.states &&
+      cache.config === this.config
+    )
+      return cache.styles;
     // Experimental styles follow the entity's Experimental Features switch
     // exactly — no separate card-level override.
     const styles = clockStylesWithPresets(
       getClockStyles(!!a.extended_effects_enabled),
       clockPresetLibrary(this._hass),
     );
-    // Optional user-curated visibility/order (editor drag-drop list).
-    if (
-      this.config?.custom_visible_styles === true &&
-      Array.isArray(this.config.visible_styles)
-    ) {
-      const byName = new Map(styles.map((s) => [clockPresetKey(s), s]));
-      const picked = this.config.visible_styles
-        .map((n) => byName.get(n))
-        .filter(Boolean);
-      return picked;
-    }
-    return styles;
+    const visible = visibleClockStyles(styles, this.config);
+    this._styleListCache = {
+      states: this._hass?.states,
+      config: this.config,
+      styles: visible,
+    };
+    return visible;
   }
 
   _shownStyles() {
@@ -568,20 +585,48 @@ class YeelightCubeClockCard extends HTMLElement {
   }
 
   // The colour-mode selector value: a firmware palette when one is active,
-  // otherwise "custom" when a custom RGB override is set, else "normal".
+  // otherwise "custom" when a free custom RGB override is set, else "normal".
   _currentColorMode(a) {
+    if (this._customMode) return "custom";
     const mode = a.clock_color_mode || "normal";
     if (mode !== "normal") return mode;
-    return clockColorToRgb(a.clock_color) ? "custom" : "normal";
+    const rgb = clockColorToRgb(a.clock_color);
+    if (!rgb) return "normal";
+    // The user explicitly entered Custom (even if the colour happens to match a
+    // saved preset); honour that so Custom stays selectable.
+    // A style we just saved/selected owns this colour until the HA library
+    // echoes it back as a matchable preset; treat it as a style (Normal), not a
+    // free override, so the selector doesn't flash "Custom" during that window.
+    if (
+      this._pendingStyleColor &&
+      this._pendingStyleColor.every((channel, index) => channel === rgb[index])
+    )
+      return "normal";
+    // A saved solid-colour clock style carries its colour on White; that is a
+    // style choice (like Yellow/Mint), not a free override, so it stays Normal.
+    if (this._activeStylePreset(a)) return "normal";
+    return "custom";
+  }
+
+  // The saved clock-style preset the current lamp state matches, if any.
+  _activeStylePreset(a) {
+    return (
+      matchingClockPreset(this._styleList(), a, this._selectedStylePresetId) ||
+      matchingClockPreset(
+        clockStylesWithPresets([], clockPresetLibrary(this._hass)),
+        a,
+        this._selectedStylePresetId,
+      )
+    );
   }
 
   // Selector options: Custom sits right after Normal, ahead of the palettes.
   _colorModeOptions() {
-    return [
-      CLOCK_COLOR_MODES[0],
-      { value: "custom", label: "Custom", icon: "mdi:eyedropper" },
-      ...CLOCK_COLOR_MODES.slice(1),
-    ];
+    return clockColorModeOptions(
+      CLOCK_COLOR_MODES,
+      clockPresetLibrary(this._hass),
+      this.config,
+    );
   }
 
   // Build the attrs object a preview needs, mixing the current format settings
@@ -606,18 +651,20 @@ class YeelightCubeClockCard extends HTMLElement {
       return attrs;
     }
     // renderClockFrame applies the override only to colour-supporting styles;
-    // incompatible effects ignore it and solid styles show it flat.
-    const rgb = clockColorToRgb(a.clock_color);
+    // incompatible effects ignore it and solid styles show it flat. Only a free
+    // custom colour propagates to the gallery — a selected style preset does not.
+    const rgb =
+      this._currentColorMode(a) === "custom"
+        ? this._customDraft || this._customPresetColor
+        : null;
+    if (this._customMode) attrs.clock_color_mode = "normal";
     if (rgb) attrs.clock_color_rgb = rgb;
     return attrs;
   }
 
   _currentStyle() {
     const a = this._attrs();
-    const preset = matchingClockPreset(
-      clockStylesWithPresets([], clockPresetLibrary(this._hass)),
-      a,
-    );
+    const preset = !this._customMode && this._activeStylePreset(a);
     if (preset) return preset;
     if (typeof a.clock_style === "string") {
       const s = clockStyleByName(a.clock_style);
@@ -643,8 +690,24 @@ class YeelightCubeClockCard extends HTMLElement {
       (item) => clockPresetKey(item) === name,
     );
     if (!style) return;
+    const keepCustom =
+      this._currentColorMode(this._attrs()) === "custom" && !style.presetId;
+    const action = clockStyleAction(style);
+    // Leaving a style/preset for a plain built-in style drops any residual
+    // colour override unless the user is genuinely in Custom mode (where the
+    // override is meant to follow the style change).
+    if (
+      !style.presetId &&
+      (!keepCustom || !(this._customDraft || this._customPresetColor))
+    )
+      action.color = "clear";
+    this._revealSavedStyle = null;
+    this._pendingStyleColor = null;
+    this._selectedStylePresetId = style.presetId || null;
+    this._customMode = keepCustom;
     this._lastSelfSelect = Date.now();
-    this._callSetClock(clockStyleAction(style));
+    this._callSetClock(action);
+    this.render();
   }
 
   _applyContent(content) {
@@ -656,23 +719,67 @@ class YeelightCubeClockCard extends HTMLElement {
   }
 
   _applyColorMode(mode) {
-    const currentColor = clockColorToRgb(this._attrs().clock_color);
+    if (mode === "__pick__") {
+      const anchor = this.shadowRoot.querySelector(
+        ".color-add button, .colormode-select",
+      );
+      if (anchor) {
+        if (anchor.tagName === "SELECT")
+          anchor.value =
+            [...anchor.options].find((option) => option.defaultSelected)
+              ?.value || "";
+        this._openCustomPicker(anchor);
+      }
+      return;
+    }
+    if (mode.startsWith("custom:")) {
+      this._applyColorPreset(mode.slice(7));
+      return;
+    }
+    // A colour attached to the CURRENT state only counts as "the custom
+    // colour" while Custom mode is genuinely active; if it merely belongs to
+    // an active style preset, entering Custom must not inherit it.
+    const wasCustom = this._currentColorMode(this._attrs()) === "custom";
+    const preserveStyle =
+      !!(this._activeStylePreset(this._attrs()) || this._pendingStyleColor) &&
+      (!wasCustom || !(this._customDraft || this._customPresetColor));
+    this._revealSavedStyle = null;
+    const currentColor = wasCustom ? this._customDraft : null;
     if (currentColor) this._lastCustomHex = rgbToHex(currentColor);
+    // Track the user's explicit mode choice (Custom is inferred, not a backend
+    // field, so a colour that matches a preset must not snap back to Normal).
+    this._customMode = mode === "custom";
+    this._pendingStyleColor = null;
     if (mode === "custom") {
-      const rgb =
-        clockColorToRgb(this._attrs().clock_color) ||
-        hexToRgb(this._lastCustomHex || "#ffee00");
-      this._callSetClock({ color_mode: "normal", color: rgb });
+      this._customDraft = currentColor || null;
+      if (!wasCustom) this._customPresetColor = null;
     } else if (mode === "normal") {
-      this._callSetClock({ color_mode: "normal", color: "clear" });
+      this._callSetClock({
+        color_mode: "normal",
+        ...(preserveStyle ? {} : { color: "clear" }),
+      });
     } else {
       this._callSetClock({ color_mode: mode });
     }
+    if (mode !== "custom") {
+      this._customDraft = null;
+      this._customPresetColor = null;
+    }
+    // The custom flag is local UI state; repaint now so the selector reflects
+    // it even when the backend colour (and thus the state signature) is unchanged.
+    this.render();
   }
 
   _applyColor(rgbOrClear) {
+    this._customPresetColor = null;
+    this._revealSavedStyle = null;
+    this._customDraft = Array.isArray(rgbOrClear) ? [...rgbOrClear] : null;
+    this._customMode = Array.isArray(rgbOrClear);
+    this._selectedStylePresetId = null;
+    this._pendingStyleColor = null;
     if (Array.isArray(rgbOrClear)) this._lastCustomHex = rgbToHex(rgbOrClear);
     this._callSetClock({ color_mode: "normal", color: rgbOrClear });
+    this.render();
   }
 
   _applyColorPreset(id) {
@@ -681,8 +788,17 @@ class YeelightCubeClockCard extends HTMLElement {
       "color_mode",
     ).find((item) => item.id === id);
     if (!preset) return;
+    this._selectedColorPresetId = preset.id;
+    this._selectedColorPresetName = null;
+    this._customDraft = null;
+    this._customPresetColor = [...preset.color];
+    this._revealSavedStyle = null;
+    this._customMode = true;
+    this._selectedStylePresetId = null;
+    this._pendingStyleColor = null;
     this._lastCustomHex = rgbToHex(preset.color);
     this._callSetClock(clockColorPresetAction(preset));
+    this.render();
   }
 
   // Which save-as buttons the inline preset manager should offer under Custom.
@@ -871,10 +987,8 @@ class YeelightCubeClockCard extends HTMLElement {
       },
       { root: null, rootMargin: "120px", threshold: 0 },
     );
-    // Seed as visible for an instant first paint; the observer prunes offscreen
-    // tiles on its first callback.
     tiles.forEach((el) => {
-      this._visible.add(el);
+      if (el.hasAttribute("data-clock-preview")) this._visible.add(el);
       this._io.observe(el);
     });
   }
@@ -1012,7 +1126,6 @@ class YeelightCubeClockCard extends HTMLElement {
       return;
     }
 
-    const current = this._currentStyle();
     const a = this._attrs();
     const sel = this._selectorStyle();
     const browserSignature = JSON.stringify(
@@ -1024,6 +1137,33 @@ class YeelightCubeClockCard extends HTMLElement {
       this._carouselIndex = null;
       this._wheelCenterIndex = 0;
     }
+
+    if (this._revealSavedStyle) {
+      const preset = clockStylesWithPresets(
+        [],
+        clockPresetLibrary(this._hass),
+      ).find((style) => style.name === this._revealSavedStyle);
+      if (preset) {
+        this._selectedStylePresetId = preset.presetId;
+        this._pendingStyleColor = null;
+        const shown = this._shownStyles();
+        const idx = shown.findIndex(
+          (s) => clockPresetKey(s) === clockPresetKey(preset),
+        );
+        if (idx >= 0) {
+          const mode = this._isPreviewSelector() ? this._displayMode() : null;
+          if (mode === "wheel") this._wheelCenterIndex = idx;
+          else if (mode === "carousel") this._carouselIndex = idx;
+          else {
+            const perPage = parseInt(this.config.items_per_page) || 0;
+            if (perPage > 0) this._selectorPage = Math.floor(idx / perPage);
+          }
+        }
+        this._revealSavedStyle = null;
+      }
+    }
+
+    const current = this._currentStyle();
 
     // Carousel follows EXTERNAL style changes (automations, select entity);
     // skipped briefly after a self-initiated selection so the state echo
@@ -1168,7 +1308,7 @@ class YeelightCubeClockCard extends HTMLElement {
                 (s) =>
                   `<option value="${escapeHtml(clockPresetKey(s))}" ${
                     active === clockPresetKey(s) ? "selected" : ""
-                  }>${escapeHtml(s.name)}${s.presetId ? " (Custom)" : ""}</option>`,
+                  }>${escapeHtml(s.name)}</option>`,
               )
               .join("")}
           </select>
@@ -1184,7 +1324,7 @@ class YeelightCubeClockCard extends HTMLElement {
                 <button class="mode-chip ${active === clockPresetKey(s) ? "active" : ""}"
                   data-mode="${escapeHtml(clockPresetKey(s))}" title="${escapeHtml(s.name)}">
               <span class="mode-chip-swatch" style="background:${styleSwatchBackground(s)}"></span>
-              <span class="mode-chip-label">${escapeHtml(s.name)}${s.presetId ? " <small>Custom</small>" : ""}</span>
+              <span class="mode-chip-label">${escapeHtml(s.name)}</span>
             </button>`,
             )
             .join("")}
@@ -1200,7 +1340,6 @@ class YeelightCubeClockCard extends HTMLElement {
             <button class="mode-btn-filled ${active === clockPresetKey(s) ? "active" : ""}"
               data-mode="${escapeHtml(clockPresetKey(s))}" title="${escapeHtml(s.name)}">
             ${escapeHtml(s.name)}
-            ${s.presetId ? "<small>Custom</small>" : ""}
           </button>`,
           )
           .join("")}
@@ -1212,8 +1351,8 @@ class YeelightCubeClockCard extends HTMLElement {
     const phase = this._phase();
     const { fontMap, metrics } = this._getNativeClockFont();
     return this._shownStyles().map((s) => ({
-      title: s.name + (s.presetId ? " (Custom)" : ""),
-      name: s.name + (s.presetId ? " (Custom)" : ""),
+      title: s.name,
+      name: s.name,
       colorData: flipMatrixVertical(
         renderClockFrame(this._previewAttrs(s), fontMap, metrics, phase),
       ),
@@ -1416,15 +1555,46 @@ class YeelightCubeClockCard extends HTMLElement {
   }
 
   _renderColorMode(a) {
-    const cur = this._currentColorMode(a);
+    const mode = this._currentColorMode(a);
+    const options = this._colorModeOptions();
+    const matches =
+      mode === "custom" && !this._customDraft
+        ? options.filter((option) =>
+            option.color?.every(
+              (channel, index) => channel === this._customPresetColor?.[index],
+            ),
+          )
+        : [];
+    const saved =
+      matches.find(
+        (option) => option.value === `custom:${this._selectedColorPresetId}`,
+      ) ||
+      matches.find(
+        (option) => option.label === this._selectedColorPresetName,
+      ) ||
+      matches[0];
+    const cur = mode === "custom" ? saved?.value : mode;
     const shape = ["square", "round"].includes(this.config.color_mode_shape)
       ? this.config.color_mode_shape
       : "rounded";
-    const options = this._colorModeOptions();
+    const draft = this._customMode && this._customDraft;
+    const picker = renderActionButtonHTML({
+      buttonStyle: this.config.buttons_style || "modern",
+      action: "tool",
+      value: "__pick__",
+      icon: "mdi:plus",
+      label: draft ? "Change" : "Add",
+      title: draft ? "Change unsaved colour" : "Add a colour",
+      contentMode: "icon_text",
+      selected: !!draft,
+      swatch: draft ? rgbToHex(draft) : undefined,
+      swatchShape: this._colorPresetShape(),
+    });
     const inner =
       this.config.color_mode_selector === "dropdown"
         ? `<div class="gc-selector" data-shape="${shape}">
             <select class="mode-select colormode-select" aria-label="Colour mode">
+              ${options.some((option) => option.value === cur) ? "" : `<option value="" disabled selected>${draft ? "Unsaved colour" : "Current mode hidden"}</option>`}
               ${options
                 .map(
                   (mode) =>
@@ -1435,16 +1605,38 @@ class YeelightCubeClockCard extends HTMLElement {
                 .join("")}
             </select>
           </div>`
-        : this._controlGroup({
-            label: "Colour mode",
-            items: options,
-            value: cur,
-          });
+        : `<div class="shared-button-group action-row" role="radiogroup" aria-label="Colour mode">${actionButtonGroupModel(
+            {
+              buttonStyle: this.config.buttons_style || "modern",
+              contentMode: this.config.buttons_content_mode || "icon_text",
+              items: options.map((option) =>
+                option.color
+                  ? this._colorChoiceProps(
+                      this._colorPresetStyle(),
+                      this._colorPresetShape(),
+                      {
+                        value: option.value,
+                        label: option.label,
+                        title: option.label,
+                        color: rgbToHex(option.color),
+                      },
+                    )
+                  : option,
+              ),
+              value: cur,
+            },
+          )
+            .map((option) =>
+              option.value === "__pick__"
+                ? `<span class="color-add">${picker}</span>`
+                : renderActionButtonHTML(option),
+            )
+            .join("")}</div>`;
     return `
       <div class="section" style="--ctl-accent: color-mix(in srgb, var(--primary-color, #1976d2) 58%, #7c5cbf);">
         <div class="section-title">Colour mode</div>
-        <div data-clock-control="colormode" class="colormode-buttons">${inner}</div>
-        ${cur === "custom" ? this._renderCustomColorControls(a) : ""}
+        <div data-clock-control="colormode" class="colormode-buttons unified-color-modes">${inner}</div>
+        ${draft ? this._renderCustomColorControls(a) : ""}
       </div>`;
   }
 
@@ -1452,21 +1644,16 @@ class YeelightCubeClockCard extends HTMLElement {
   // Everything rides on the shared button group so it stays aligned with the
   // rest of the card; the save buttons are filled in via _attachHandlers.
   _renderCustomColorControls(a) {
-    const presets = clockPresetsByKind(
-      clockPresetLibrary(this._hass),
-      "color_mode",
-    );
-    const savedActive = matchingClockColorPreset(presets, a);
     return `
       <div class="clock-color-control" style="margin-top:10px; --primary-color: var(--ctl-accent); --primary-color-dark: color-mix(in srgb, var(--ctl-accent) 74%, #000);">
-        ${this._renderColorChoices(a, presets, savedActive)}
-        ${savedActive ? "" : `<div class="clock-color-save" data-preset-save></div>`}
+        ${this._customDraft && this._saveKinds().length ? `<div class="clock-color-save" data-preset-save></div>` : ""}
       </div>`;
   }
 
   _colorPresetStyle() {
     const value = this.config.color_preset_style;
-    return ["label", "filled", "swatch"].includes(value) ? value : "label";
+    if (value === "swatch") return "filled";
+    return ["label", "filled", "name"].includes(value) ? value : "label";
   }
 
   _colorPresetShape() {
@@ -1503,8 +1690,8 @@ class YeelightCubeClockCard extends HTMLElement {
     // Saved colours.
     if (presetStyle === "filled")
       return { ...opts, contentMode: "text", label: "", icon: "", fill: color };
-    if (presetStyle === "swatch")
-      return { ...opts, contentMode: "text", label: "", icon: "", fill: color };
+    if (presetStyle === "name")
+      return { ...opts, contentMode: "text", icon: "" };
     return {
       ...opts,
       contentMode: "icon_text",
@@ -1513,12 +1700,13 @@ class YeelightCubeClockCard extends HTMLElement {
     };
   }
 
-  _renderColorChoices(a, presets, selected) {
+  _renderColorChoices(a, presets, selected, isSaved = !!selected) {
     const presetStyle = this._colorPresetStyle();
     const shape = this._colorPresetShape();
     const buttonStyle = this.config.buttons_style || "modern";
-    const rgb = clockColorToRgb(a.clock_color);
-    const currentHex = rgb ? rgbToHex(rgb) : this._lastCustomHex || "#ffee00";
+    const currentHex = this._customDraft
+      ? rgbToHex(this._customDraft)
+      : "#ffee00";
     const choice = (props) =>
       renderActionButtonHTML({
         buttonStyle,
@@ -1536,9 +1724,9 @@ class YeelightCubeClockCard extends HTMLElement {
         }),
       )
       .join("");
-    // With a saved colour active the picker just adds a new one; with an unsaved
-    // colour it reflects that colour and offers to replace it.
-    const picker = selected
+    // A saved colour (as a colour-mode chip or a clock-style preset) means the
+    // picker just adds a new one; an unsaved colour reflects and offers replace.
+    const picker = isSaved
       ? choice({
           value: "__pick__",
           label: "Add",
@@ -1599,15 +1787,50 @@ class YeelightCubeClockCard extends HTMLElement {
       </div>`;
   }
 
+  _onPresetSaved({ kind, name, color }) {
+    this._customDraft = null;
+    if (kind === "color_mode") {
+      this._selectedColorPresetId = null;
+      this._selectedColorPresetName = name;
+      this._customPresetColor = [...color];
+      this._customMode = true;
+      this._callSetClock(clockColorPresetAction({ color }));
+      this.render();
+      return;
+    }
+    if (kind !== "style" || !name || !Array.isArray(color)) return;
+    this._customPresetColor = null;
+    this._customMode = false;
+    this._lastSelfSelect = Date.now();
+    this._revealSavedStyle = name;
+    // That colour is now owned by the new style, not the freeform Custom
+    // slot — forget it so the next Custom pick doesn't reuse it, and mark it
+    // pending so the mode reads Normal until the library echoes the preset.
+    this._lastCustomHex = null;
+    this._pendingStyleColor = [...color];
+    this._callSetClock({
+      style: "White",
+      color_mode: "normal",
+      color,
+      activate: true,
+    });
+    this.render();
+  }
+
   _attachHandlers() {
     const root = this.shadowRoot;
     if (!root) return;
     const presetSlot = root.querySelector("[data-preset-save]");
     const saveKinds = this._saveKinds();
     if (presetSlot && saveKinds.length) {
-      this._presetManager ??= document.createElement(
-        "yeelight-clock-preset-manager",
-      );
+      if (!this._presetManager) {
+        this._presetManager = document.createElement(
+          "yeelight-clock-preset-manager",
+        );
+        this._presetManager.addEventListener("clock-preset-saved", (event) => {
+          this._onPresetSaved(event.detail || {});
+        });
+      }
       this._presetManager.hass = this._hass;
       this._presetManager.compact = true;
       this._presetManager.saveKinds = saveKinds;
@@ -1617,20 +1840,9 @@ class YeelightCubeClockCard extends HTMLElement {
       this._presetManager.buttonStyle = this.config.buttons_style || "modern";
       this._presetManager.contentMode =
         this.config.buttons_content_mode || "icon_text";
-      const rgb = clockColorToRgb(this._attrs().clock_color);
+      const rgb = this._customDraft;
       this._presetManager.initialColor = rgb ? rgbToHex(rgb) : "#ffee00";
       presetSlot.append(this._presetManager);
-    }
-    const choices = root.querySelector(
-      '[data-clock-control="colorpreset"] .shared-button-group',
-    );
-    if (choices) {
-      choices.addEventListener("click", (event) => {
-        const button = event.target.closest("button[data-value]");
-        if (!button) return;
-        if (button.dataset.value === "__pick__") this._openCustomPicker(button);
-        else this._applyColorPreset(button.dataset.value);
-      });
     }
 
     // Text selectors: filled buttons + chips share the data-mode contract
@@ -1741,7 +1953,7 @@ class YeelightCubeClockCard extends HTMLElement {
 
   // The trailing "+" choice opens the native picker; changes apply live.
   _openCustomPicker(anchor) {
-    const rgb = clockColorToRgb(this._attrs().clock_color);
+    const rgb = this._customDraft;
     const view = this.ownerDocument.defaultView;
     const bounds = anchor.getBoundingClientRect();
     const apply = (hex) => {
@@ -1749,7 +1961,7 @@ class YeelightCubeClockCard extends HTMLElement {
       if (value) this._applyColor(value);
     };
     openColorPicker(this, {
-      value: rgb ? rgbToHex(rgb) : this._lastCustomHex || "#ffee00",
+      value: rgb ? rgbToHex(rgb) : "#ffee00",
       pageX: bounds.left + view.scrollX,
       pageY: bounds.bottom + view.scrollY,
       onInput: apply,
@@ -1773,6 +1985,13 @@ class YeelightCubeClockCard extends HTMLElement {
       .card-title { font-size: 1.15em; font-weight: 600; margin-bottom: 2px; }
       .active-label { font-size: 0.9em; color: var(--secondary-text-color, #9aa); margin-bottom: 10px; }
       .section { margin-top: 14px; }
+      .unified-color-modes { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+      [data-clock-control="colormode"].unified-color-modes > .shared-button-group.action-row { display:contents; }
+      .unified-color-modes button { flex:0 0 auto; max-width:100%; min-height:36px; }
+      .unified-color-modes .btn-text { white-space:normal; overflow-wrap:anywhere; }
+      .unified-color-modes .color-add { display:inline-flex; }
+      .unified-color-modes .color-add button:not(.btn-style-modern):not(.btn-style-gradient) { border:1px dashed var(--primary-color,#1976d2); }
+      .unified-color-modes > .gc-selector { flex:1 1 180px; min-width:0; }
       /* Two titled sections (Content + Format) sit side by side when the card is
          wide enough, and wrap to their own rows otherwise. */
       .section-row { display: flex; flex-wrap: wrap; column-gap: 18px; }
@@ -1831,22 +2050,35 @@ class YeelightCubeClockCard extends HTMLElement {
       /* Shared multi-style value slider (same control as brightness) */
       ${sliderControlStyles}
 
-      /* Colour-mode buttons carry long labels ("Retro Orange", "Violet &
-         Gold"). Filled styles stay an equal-width row but stack the icon over
-         wrapped text so labels flow onto multiple lines instead of one letter
-         per row. Pill and Icon styles instead wrap onto the next row, keeping
-         visual variety across the button styles. */
       [data-clock-control="colormode"] .shared-button-group.action-row {
         flex-wrap: wrap;
       }
+      [data-clock-control="colormode"].unified-color-modes .shared-action-button {
+        flex:0 0 auto;
+        width:auto;
+        max-width:100%;
+      }
+      [data-clock-control="colormode"].unified-color-modes .shared-action-button.btn-style-icon {
+        width:44px; height:44px; min-height:44px; padding:0;
+      }
+      [data-clock-control="colormode"].unified-color-modes .shared-action-button.btn-style-pill {
+        min-height:44px;
+      }
+      [data-clock-control="colormode"].unified-color-modes .shared-button-group .shared-action-button.btn-fill {
+        min-width:44px;
+        min-height:44px;
+      }
       [data-clock-control="colormode"]
         .shared-action-button:not(.btn-style-icon):not(.btn-style-pill) {
-        flex-direction: column;
-        gap: 4px;
-        padding: 8px 6px;
+        flex-direction: row;
+        gap: 6px;
+        padding: 8px 10px;
         line-height: 1.15;
-            min-width: fit-content;
+        min-width: 36px;
+        width: auto;
+        min-height: 36px;
       }
+      .unified-color-modes .color-add .shared-action-button { min-height:36px; }
       [data-clock-control="colormode"] .shared-button-group .btn-text {
         white-space: normal;
         overflow-wrap: break-word;
