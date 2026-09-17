@@ -1,5 +1,6 @@
 import { renderDotMatrix, rgbToCss } from "./yeelight-cube-dotmatrix.js";
 import { escapeHtml } from "./html-escape-utils.js";
+import { orientationOptions, nextOrientation, renderOrientationControls } from "./orientation-control-utils.js";
 import { getInitialMatrix } from "./draw_card_state.js";
 import { renderNativeEffectOriented } from "./native-effect-preview.js";
 import {
@@ -381,6 +382,10 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   }
 
   setConfig(config) {
+    this._orientationContext = (this._orientationContext || 0) + 1;
+    this._orientationPending = null;
+    this._orientationError = null;
+    clearTimeout(this._orientationTimer);
     this.config = {
       show_card_background: true,
       size: "medium",
@@ -431,6 +436,11 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   set hass(hass) {
     const _t0 = performance.now();
     this._hass = hass;
+    if (this._orientationSettled && this._orientationPending === hass.states[this.config?.entity]?.attributes?.device_orientation) {
+      this._orientationPending = null;
+      clearTimeout(this._orientationTimer);
+    }
+    this._refreshOrientationControls();
 
     // Clean up local effects that match the entity state
     // This prevents flickering when entity state updates after a service call
@@ -2250,43 +2260,75 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
 
   // Build the 4-way device orientation control (right / down / left / up).
   _generateDeviceOrientationHtml(stateObj) {
-    const current = stateObj?.attributes?.device_orientation || "right";
-    // Order + glyphs match the official app's mount picker.
-    const opts = [
-      { key: "right", glyph: "→", label: "Right" },
-      { key: "down", glyph: "↓", label: "Down" },
-      { key: "left", glyph: "←", label: "Left" },
-      { key: "up", glyph: "↑", label: "Up" },
-    ];
-    const buttons = opts
-      .map(
-        (o) =>
-          `<button type="button" class="orient-btn${
-            o.key === current ? " active" : ""
-          }" data-orient="${o.key}" title="${o.label}"
-            onclick="this.getRootNode().host.handleOrientationSelect('${o.key}')">${o.glyph}</button>`,
-      )
-      .join("");
-    return `<div class="device-orientation-row">${buttons}</div>`;
+    const current = this._orientationPending || stateObj?.attributes?.device_orientation || "right";
+    const unavailable = !stateObj || ["unavailable", "unknown"].includes(stateObj.state);
+    return `<div class="orientation-controls">${renderOrientationControls(this.config, current, unavailable)}${this._orientationError ? `<div class="orientation-error" role="alert">${escapeHtml(this._orientationError)}</div>` : ""}</div>`;
   }
 
-  // Apply a device orientation immediately on the lamp (all modes).
-  handleOrientationSelect(orientation) {
-    if (!this._hass || !this.config?.entity) return;
-    // Optimistically highlight the chosen button for instant feedback.
-    this.shadowRoot
-      ?.querySelectorAll(".orient-btn")
-      .forEach((b) =>
-        b.classList.toggle("active", b.dataset.orient === orientation),
-      );
-    this._hass
-      .callService("yeelight_cube", "set_device_orientation", {
-        entity_id: this.config.entity,
-        orientation,
-      })
-      .catch((e) =>
-        console.error("[device-orientation] service call failed:", e),
-      );
+  _refreshOrientationControls() {
+    const container = this.shadowRoot?.querySelector(".orientation-controls");
+    if (!container) return;
+    const markup = this._generateDeviceOrientationHtml(this._hass?.states[this.config?.entity]);
+    if (container === this._orientationControlsNode && markup === this._orientationControlsMarkup) return;
+    const focused = container.contains(this.shadowRoot.activeElement)
+      ? this.shadowRoot.activeElement?.dataset.value : null;
+    container.outerHTML = markup;
+    this._orientationControlsMarkup = markup;
+    this._orientationControlsNode = this.shadowRoot.querySelector(".orientation-controls");
+    if (focused) {
+      Array.from(this.shadowRoot.querySelectorAll(".orientation-controls button"))
+        .find((button) => button.dataset.value === focused)?.focus({ preventScroll: true });
+    }
+  }
+
+  handleOrientationControl(event) {
+    const button = event.target.closest("button[data-value]");
+    if (!button || button.disabled) return;
+    const value = button.dataset.value;
+    const options = orientationOptions(this.config);
+    const current = this._orientationPending || this._hass?.states[this.config?.entity]?.attributes?.device_orientation || "right";
+    const step = { clockwise: 1, counterclockwise: -1, "half-turn": 2 }[value];
+    const target = step ? nextOrientation(current, step, options.directions) : value;
+    if (target && target !== current) this.handleOrientationSelect(target);
+  }
+
+  async handleOrientationSelect(orientation) {
+    const hass = this._hass;
+    const entity = this.config?.entity;
+    const state = hass?.states[entity];
+    if (!state || ["unavailable", "unknown"].includes(state.state) || !orientationOptions(this.config).directions.includes(orientation)) return;
+    const context = this._orientationContext;
+    const sequence = this._orientationSequence = (this._orientationSequence || 0) + 1;
+    clearTimeout(this._orientationTimer);
+    this._orientationPending = orientation;
+    this._orientationSettled = false;
+    this._orientationError = null;
+    this._refreshOrientationControls();
+    const request = (this._orientationQueue || Promise.resolve()).then(() => {
+      if (context !== this._orientationContext) return;
+      return hass.callService("yeelight_cube", "set_device_orientation", { entity_id: entity, orientation });
+    });
+    this._orientationQueue = request.catch(() => {});
+    try {
+      await request;
+      if (context !== this._orientationContext || sequence !== this._orientationSequence) return;
+      this._orientationSettled = true;
+      if (this._hass?.states[entity]?.attributes?.device_orientation === orientation) {
+        this._orientationPending = null;
+      } else {
+        this._orientationTimer = setTimeout(() => {
+          this._orientationPending = null;
+          this._orientationError = "Orientation was not confirmed. Try again.";
+          this._refreshOrientationControls();
+        }, 8000);
+      }
+    } catch (error) {
+      if (context !== this._orientationContext || sequence !== this._orientationSequence) return;
+      this._orientationPending = null;
+      this._orientationError = "Could not change orientation. Try again.";
+      console.error("[device-orientation] service call failed:", error);
+    }
+    this._refreshOrientationControls();
   }
 
   _generateLampControlsHtml(stateObj, brightness) {
@@ -3094,11 +3136,40 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         }
         .device-orientation-row {
           display: flex;
+          flex-wrap: wrap;
           justify-content: center;
           align-items: center;
           gap: 8px;
           padding: 4px 10px 10px;
           margin: 0 0 4px;
+        }
+        .orientation-buttons {
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: center;
+          align-items: center;
+          gap: 8px;
+          min-width: 0;
+          max-width: 100%;
+        }
+        .orientation-buttons .shared-action-button {
+          min-height: 40px;
+          max-width: 100%;
+          white-space: normal;
+        }
+        .orientation-error {
+          color: var(--error-color, #db4437);
+          text-align: center;
+          font-size: 0.85rem;
+          padding: 0 10px 8px;
+        }
+        .orientation-buttons button:focus-visible {
+          outline: 2px solid var(--primary-color, #03a9f4);
+          outline-offset: 2px;
+        }
+        .orientation-buttons button:disabled {
+          opacity: 0.4;
+          cursor: default;
         }
         .device-orientation-row .orient-btn {
           width: 44px;
@@ -4457,6 +4528,9 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this._orientationContext = (this._orientationContext || 0) + 1;
+    this._orientationPending = null;
+    clearTimeout(this._orientationTimer);
     // Clear all stored debounce/timeout timers
     clearTimeout(this._brightnessDebounceTimer);
     clearTimeout(this._realBrightnessDebounceTimer);

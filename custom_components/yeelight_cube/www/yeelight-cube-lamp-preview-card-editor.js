@@ -1,4 +1,17 @@
 import { renderActionButtonSettings } from "./action-button-ui.js";
+import {
+  actionButtonStyleChoices,
+  actionButtonContentChoices,
+} from "./action-button-utils.js";
+import {
+  renderOrderableList,
+  orderableListStyles,
+} from "./orderable-list-utils.js";
+import {
+  ORIENTATION_CHOICES,
+  ORIENTATION_ORDER,
+  orientationOptions,
+} from "./orientation-control-utils.js";
 import { LitElement, html, css } from "./lib/lit-all.js";
 import {
   createButtonGroup,
@@ -30,6 +43,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
       _globalOpen: { type: Boolean },
       _lampPreviewOpen: { type: Boolean },
       _lampControlOpen: { type: Boolean },
+      _deviceOrientationOpen: { type: Boolean },
       _brightnessSettingsOpen: { type: Boolean },
       _colorAdjustmentsOpen: { type: Boolean },
     };
@@ -137,7 +151,62 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
     buttonGroupStyles,
     formRowStyles,
     entitySelectorStyles,
+    orderableListStyles,
   ];
+
+  _orientationChanged(key, value) {
+    this._config = { ...this._config, [key]: value };
+    if (key === "orientation_buttons") {
+      delete this._config.orientation_layout;
+      delete this._config.orientation_half_turn;
+      delete this._config.orientation_directions;
+    }
+    this._fireConfigChanged();
+  }
+
+  _renderOrientationSettings() {
+    const options = orientationOptions(this._config);
+    const choices = (label, key, items, value) =>
+      html` <div class="form-row">
+        <label>${label}</label>
+        ${createButtonGroup(items, value, (event) =>
+          this._orientationChanged(key, event.currentTarget.dataset.value),
+        )}
+      </div>`;
+    return html`
+      ${choices(
+        "Button Style",
+        "orientation_button_style",
+        [{ value: "original", label: "Original" }, ...actionButtonStyleChoices],
+        options.style,
+      )}
+      ${!["original", "icon"].includes(options.style)
+        ? choices(
+            "Content",
+            "orientation_content_mode",
+            actionButtonContentChoices,
+            options.contentMode,
+          )
+        : ""}
+      <div class="form-row"><label>Available Directions</label></div>
+      ${renderOrderableList({
+        items: options.buttons,
+        available: ORIENTATION_CHOICES.map(({ value }) => value).filter(
+          (value) => !options.buttons.includes(value),
+        ),
+        labelFor: (value) =>
+          ORIENTATION_CHOICES.find((choice) => choice.value === value)?.label ||
+          value,
+        onUpdate: (buttons) =>
+          this._orientationChanged("orientation_buttons", buttons),
+        onReset: () =>
+          this._orientationChanged("orientation_buttons", [
+            ...ORIENTATION_ORDER,
+          ]),
+        addPlaceholder: "Add button",
+      })}
+    `;
+  }
 
   render() {
     const cfg = this._config || {};
@@ -349,14 +418,9 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
               cfg.show_device_orientation !== false,
               (e) => this._onToggleChange(e),
             )}
-            <div
-              class="form-row"
-              style="font-size: 0.85em; color: var(--secondary-text-color, #888);"
-            >
-              4-way mount control (right / down / left / up). Applies to the
-              lamp immediately for all modes; the preview rotates 90° for
-              up/down.
-            </div>
+            ${cfg.show_device_orientation !== false
+              ? this._renderOrientationSettings()
+              : ""}
           </div>
         </div>
 
