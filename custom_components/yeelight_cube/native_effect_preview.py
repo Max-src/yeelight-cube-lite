@@ -5,6 +5,15 @@ from __future__ import annotations
 import colorsys
 import math
 
+try:
+    from .effect_orientation import effect_orientation, orient_frame
+except ImportError:  # loaded standalone (tests use runpy.run_path, no package)
+    import os
+    import sys
+
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from effect_orientation import effect_orientation, orient_frame
+
 COLS = 20
 ROWS = 5
 BLACK = (0, 0, 0)
@@ -2169,6 +2178,22 @@ def render_native_effect(
     if color_override is not None and effect_supports_color_override(effect):
         return _apply_color_override(pixels, color_override)
     return pixels
+
+
+def render_native_effect_oriented(
+    effect: str,
+    phase: float,
+    direction: str = "Up",
+    color_override=None,
+    color_mode=None,
+) -> list[tuple[int, int, int]]:
+    """Orientation-corrected renderer (calibration table): render the mapped
+    ``source`` direction then flip so the preview matches the physical lamp.
+    The full-panel native-effect previews call this; render_native_effect stays
+    the literal-direction primitive used by the clock background and tests."""
+    source, flip_h, flip_v = effect_orientation(effect, direction)
+    pixels = render_native_effect(effect, phase, source, color_override, color_mode)
+    return orient_frame(pixels, flip_h, flip_v)
 
 
 def _render_native_effect_raw(

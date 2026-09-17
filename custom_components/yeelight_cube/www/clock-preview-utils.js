@@ -508,8 +508,10 @@ function _clockPixelColor(styleId, charIndex, col) {
  *
  * `attrs` fields used: clock_style_id, clock_style (name), clock_content,
  * clock_show_date, clock_12_hour, clock_colon_blink, native_effect_direction,
- * and (preview-only) clock_color_rgb -> [r,g,b] override that recolours every
- * lit glyph pixel.
+ * clock_color_mode, and a custom colour override supplied either as a decoded
+ * clock_color_rgb -> [r,g,b] or the raw firmware clock_color ARGB integer the
+ * lamp exposes (decoded here like camera.py). The override recolours every lit
+ * glyph pixel of compatible styles.
  * `fontMap`/`metrics` come from the Font Characters sensor ("native" font).
  * When absent, falls back to the embedded Basic-style glyphs (proportional).
  */
@@ -561,9 +563,18 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0) {
     CLOCK_MIXER_FIXED_DIRECTION[effectName] ||
     attrs.native_effect_direction ||
     CLOCK_MIXER_EFFECT_DIRECTION;
+  // Preview callers may supply either a decoded [r,g,b] (clock_color_rgb) or the
+  // raw firmware ARGB integer the lamp exposes as clock_color; decode the
+  // latter exactly like camera.py so every card renders the same override.
   const override = Array.isArray(attrs.clock_color_rgb)
     ? attrs.clock_color_rgb
-    : null;
+    : typeof attrs.clock_color === "number"
+      ? [
+          (attrs.clock_color >> 16) & 0xff,
+          (attrs.clock_color >> 8) & 0xff,
+          attrs.clock_color & 0xff,
+        ]
+      : null;
   // A palette colour mode (e.g. B&W) takes precedence over the custom override
   // and is applied inside renderNativeEffect for compatible effects.
   const colorMode = attrs.clock_color_mode || "normal";

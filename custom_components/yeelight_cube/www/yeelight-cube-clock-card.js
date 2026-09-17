@@ -70,6 +70,11 @@ import {
 } from "./clock-preview-utils.js";
 import { previewBrightnessScale } from "./draw_card_const.js";
 import {
+  createRafLoop,
+  paintCellBackground,
+  paintCellBoxShadow,
+} from "./matrix-animator.js";
+import {
   actionButtonStyles,
   renderActionButtonGroupHTML,
   renderActionButtonHTML,
@@ -169,8 +174,7 @@ class YeelightCubeClockCard extends HTMLElement {
     this.config = {};
     this._phaseAccum = 0;
     this._lastPhaseTs = null;
-    this._rafId = null;
-    this._lastPaint = 0;
+    this._animLoop = null;
     this._visible = new Set();
     this._io = null;
     this._stateSignature = null;
@@ -912,25 +916,19 @@ class YeelightCubeClockCard extends HTMLElement {
   // ── Animation ─────────────────────────────────────────────────────────────
   // A single rAF loop repaints ONLY the on-screen previews, in place (updating
   // each dot's background rather than rebuilding HTML), throttled to ~11 fps and
-  // paused while the tab is hidden. This keeps a long gallery of animated
-  // previews smooth instead of the jan*ky full-innerHTML rebuilds it replaced.
+  // paused while the tab is hidden (shared createRafLoop). This keeps a long
+  // gallery of animated previews smooth instead of full-innerHTML rebuilds.
   _startAnimation() {
-    if (this._rafId) return;
-    const loop = (t) => {
-      this._rafId = requestAnimationFrame(loop);
-      if (document.hidden) return;
-      if (t - this._lastPaint < 90) return; // ~11 fps
-      this._lastPaint = t;
-      this._paintVisible();
-    };
-    this._rafId = requestAnimationFrame(loop);
+    if (!this._animLoop) {
+      this._animLoop = createRafLoop(() => this._paintVisible(), {
+        minIntervalMs: 90, // ~11 fps
+      });
+    }
+    this._animLoop.start();
   }
 
   _stopAnimation() {
-    if (this._rafId) {
-      cancelAnimationFrame(this._rafId);
-      this._rafId = null;
-    }
+    if (this._animLoop) this._animLoop.stop();
     if (this._io) {
       this._io.disconnect();
       this._io = null;
@@ -1098,14 +1096,8 @@ class YeelightCubeClockCard extends HTMLElement {
       // ghost outlines linger where digits/colons used to be.
       const sh = isOff && el._ignoreBlack ? "" : el._pixelShadow || "";
       const cell = cells[i];
-      if (cell._bg !== bg) {
-        cell.style.background = bg;
-        cell._bg = bg;
-      }
-      if (cell._sh !== sh) {
-        cell.style.boxShadow = sh;
-        cell._sh = sh;
-      }
+      paintCellBackground(cell, bg);
+      paintCellBoxShadow(cell, sh);
     }
   }
 

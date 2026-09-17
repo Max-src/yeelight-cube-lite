@@ -2458,6 +2458,18 @@ class NativeFeatureTests(unittest.TestCase):
             "renderNativeEffect(effectName, phase, direction)", CLOCK_CARD_SOURCE
         )
 
+    def test_native_effect_send_keeps_firmware_direction_remap(self):
+        # REGRESSION GUARD: the firmware `direction_remap` on the SEND path is the
+        # ground truth that makes the lamp's physical flow match the arrow, and the
+        # software preview orientation table (effect_orientation.py) is calibrated
+        # AGAINST that remapped lamp. Removing the send remap silently flips the
+        # lamp's up/down for _SWAP_UP_DOWN effects (Ocean Waves, Rainbow, ...),
+        # which inverts every calibrated preview. Do NOT delete this remap when
+        # adjusting previews — correct the preview table instead.
+        activate = _function_source(LIGHT_SOURCE, "_activate_native_effect")
+        self.assertIn("direction_remap", activate)
+        self.assertIn("NATIVE_EFFECT_DIRECTION_VALUES[", activate)
+
     def test_fx_explorer_reflects_clock_style_for_live_preview(self):
         handler = _function_source(LIGHT_SOURCE, "handle_send_fx_effect")
         # Everything before the persist blocks is the always-reflect path that

@@ -34,6 +34,7 @@ from .native_effect_preview import (
     effect_supports_color_override,
     render_music_flow_effect,
     render_native_effect,
+    render_native_effect_oriented,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -291,17 +292,16 @@ class _YeelightCubeMatrixCameraBase(Camera):
             self._native_preview_key = animation_key
             self._native_preview_started_at = now
         phase = (now - self._native_preview_started_at) * (0.25 + speed / 55.0)
-        frame = render_native_effect(
+        frame = render_native_effect_oriented(
             effect,
             phase,
             direction,
         )
-        # Flip vertically so the preview matches the lamp's physical orientation.
-        return [
-            frame[(ROWS - 1 - row) * COLS + col]
-            for row in range(ROWS)
-            for col in range(COLS)
-        ]
+        # Bottom-origin frame (row 0 = physical bottom), like _get_clock_preview:
+        # return it as-is and let _render_matrix's _RECTS_NORMAL apply the single
+        # display flip. (A prior extra flip here double-flipped native effects, so
+        # they showed upside-down vs the calibration card / lamp.)
+        return frame
 
     def _get_music_flow_preview(self) -> list[tuple[int, int, int]]:
         """Render a fixed illustration of the active Music Flow effect."""

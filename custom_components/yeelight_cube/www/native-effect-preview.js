@@ -10,6 +10,8 @@
 // The math below is a 1:1 translation (including the direction-aware Fire /
 // Aurora / Tide handling).
 
+import { effectOrientation, orientFrame } from "./effect-orientation.js";
+
 export const PREVIEW_COLS = 20;
 export const PREVIEW_ROWS = 5;
 
@@ -2377,6 +2379,29 @@ export function renderNativeEffect(
     return applyColorOverride(pixels, colorOverride);
   }
   return pixels;
+}
+
+// Orientation-corrected renderer (calibration table): renders the mapped
+// `source` direction for a firmware direction, then flips the raw frame so the
+// preview matches the physical lamp. The full-panel NATIVE-EFFECT previews
+// (camera + lamp-preview card) call this; renderNativeEffect stays the literal-
+// direction primitive used by the clock background, calibration and unit tests.
+export function renderNativeEffectOriented(
+  effect,
+  phase,
+  direction = "Up",
+  colorOverride = null,
+  colorMode = null,
+) {
+  const { source, flipH, flipV } = effectOrientation(effect, direction);
+  const pixels = renderNativeEffect(
+    effect,
+    phase,
+    source,
+    colorOverride,
+    colorMode,
+  );
+  return orientFrame(pixels, flipH, flipV);
 }
 
 function renderNativeEffectRaw(

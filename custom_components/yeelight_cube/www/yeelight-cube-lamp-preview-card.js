@@ -1,7 +1,7 @@
 import { renderDotMatrix, rgbToCss } from "./yeelight-cube-dotmatrix.js";
 import { escapeHtml } from "./html-escape-utils.js";
 import { getInitialMatrix } from "./draw_card_state.js";
-import { renderNativeEffect } from "./native-effect-preview.js";
+import { renderNativeEffectOriented } from "./native-effect-preview.js";
 import {
   CLOCK_MIXER_EFFECTS,
   CLOCK_MIXER_EFFECT_SPEED,
@@ -9,6 +9,7 @@ import {
   renderClockFrame,
 } from "./clock-preview-utils.js";
 import { BLACK_THRESHOLD, previewBrightnessScale } from "./draw_card_const.js";
+import { createRafLoop, createVisibilityTracker } from "./matrix-animator.js";
 import {
   exportImportButtonStyles,
   getExportImportButtonClass,
@@ -256,6 +257,13 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     this._renderScheduled = false;
     this._nativeAnimKey = null;
     this._nativeAnimStartedAt = null;
+    // Animation loops + visibility (shared matrix-animator): pause when the tab
+    // is hidden or the card is scrolled off screen, and reuse the dot NodeList.
+    this._nativeLoop = null;
+    this._clockLoop = null;
+    this._visTracker = null;
+    this._onScreen = true;
+    this._lampDots = null;
 
     // Local state for optimistic UI updates
     this._localBrightness = null;
@@ -1751,6 +1759,8 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         }
       `;
       this._isInitialRenderComplete = true;
+      // The DOM (and its .lamp-dot nodes) was rebuilt; drop the cached NodeList.
+      this._lampDots = null;
       // Remember which orientation this DOM was built for (smart updates compare).
       this._lastPreviewOrientation =
         stateObj?.attributes?.device_orientation || "right";
@@ -1808,32 +1818,61 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     });
   }
 
+  // Lazily cache the .lamp-dot NodeList so animation frames don't re-query the
+  // DOM every tick. Invalidated (set null) whenever the matrix DOM is rebuilt.
+  _getLampDots() {
+    if (!this._lampDots || this._lampDots.length === 0) {
+      this._lampDots = this.shadowRoot?.querySelectorAll(".lamp-dot") || [];
+    }
+    return this._lampDots;
+  }
+
+  // Observe the card so animations idle while it is scrolled off screen. Paired
+  // with the tab-hidden pause inside createRafLoop.
+  _ensureVisibilityTracker() {
+    if (this._visTracker) return;
+    this._visTracker = createVisibilityTracker(this, {
+      onChange: (onScreen) => {
+        this._onScreen = onScreen;
+      },
+    });
+    this._onScreen = this._visTracker.onScreen;
+    this._visTracker.connect();
+  }
+
   // Begin the client-side approximation animation for Native Effect mode.
   _startNativeAnimation() {
-    if (this._nativeAnimTimer) return;
-    this._nativeAnimTimer = setInterval(() => this._nativeAnimFrame(), 100);
+    this._ensureVisibilityTracker();
+    if (!this._nativeLoop) {
+      this._nativeLoop = createRafLoop(() => this._nativeAnimFrame(), {
+        minIntervalMs: 100, // ~10 fps
+      });
+    }
+    if (this._nativeLoop.running) return;
     this._nativeAnimFrame(); // draw the first frame immediately
+    this._nativeLoop.start();
   }
 
   _stopNativeAnimation() {
-    if (this._nativeAnimTimer) {
-      clearInterval(this._nativeAnimTimer);
-      this._nativeAnimTimer = null;
-    }
+    if (this._nativeLoop) this._nativeLoop.stop();
     this._nativeAnimKey = null;
     this._nativeAnimStartedAt = null;
   }
 
   // Begin the client-side clock animation. Solid/gradient styles only need a
   // slow tick for the colon blink and minute changes (500 ms); styles whose
-  // mixer is a native effect animate that effect, so they tick at 100 ms.
+  // mixer is a native effect animate that effect, so they tick at 100 ms. The
+  // interval is re-evaluated each frame, so a style change adapts the rate.
   _startClockAnimation() {
-    const interval = this._clockAnimInterval();
-    if (this._clockAnimTimer && this._clockAnimTimerMs === interval) return;
-    this._stopClockAnimation();
-    this._clockAnimTimerMs = interval;
-    this._clockAnimTimer = setInterval(() => this._clockAnimFrame(), interval);
+    this._ensureVisibilityTracker();
+    if (!this._clockLoop) {
+      this._clockLoop = createRafLoop(() => this._clockAnimFrame(), {
+        minIntervalMs: () => this._clockAnimInterval(),
+      });
+    }
+    if (this._clockLoop.running) return;
     this._clockAnimFrame(); // draw the first frame immediately
+    this._clockLoop.start();
   }
 
   _clockAnimInterval() {
@@ -1843,21 +1882,18 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   }
 
   _stopClockAnimation() {
-    if (this._clockAnimTimer) {
-      clearInterval(this._clockAnimTimer);
-      this._clockAnimTimer = null;
-    }
-    this._clockAnimTimerMs = null;
+    if (this._clockLoop) this._clockLoop.stop();
     this._clockAnimStartedAt = null;
   }
 
   _clockAnimFrame() {
+    if (!this._onScreen) return;
     const st = this._hass?.states?.[this.config?.entity];
     if (!st || st.state !== "on" || st.attributes.content_mode !== "Clock") {
       this._stopClockAnimation();
       return;
     }
-    const dots = this.shadowRoot?.querySelectorAll(".lamp-dot");
+    const dots = this._getLampDots();
     if (!dots || dots.length !== 100) return; // matrix not rendered yet
 
     const now = performance.now();
@@ -1896,6 +1932,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   }
 
   _nativeAnimFrame() {
+    if (!this._onScreen) return;
     const st = this._hass?.states?.[this.config?.entity];
     if (
       !st ||
@@ -1905,7 +1942,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       this._stopNativeAnimation();
       return;
     }
-    const dots = this.shadowRoot?.querySelectorAll(".lamp-dot");
+    const dots = this._getLampDots();
     if (!dots || dots.length !== 100) return; // matrix not rendered yet
 
     const effect = st.attributes.native_effect || "Streamer";
@@ -1923,22 +1960,18 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     // Match the camera's phase mapping (native_effect_preview usage).
     const phase =
       ((now - this._nativeAnimStartedAt) / 1000) * (0.25 + speed / 55.0);
-    const raw = renderNativeEffect(effect, phase, dir); // row-major, index=row*20+col
-    // Flip vertically so the preview matches the lamp's physical orientation
-    // (kept identical to the camera's _get_native_effect_preview flip).
-    const pix = [];
-    for (let row = 4; row >= 0; row -= 1) {
-      for (let col = 0; col < 20; col += 1) {
-        pix.push(raw[row * 20 + col]);
-      }
-    }
-    const grid = this._matrixColorsToGridColors(pix, st);
+    // Bottom-origin frame (row 0 = physical bottom), like the clock path: hand
+    // it straight to _updateMatrixColors, whose layout indexFn provides the one
+    // display flip. (A prior extra flip here double-flipped native effects, so
+    // they showed upside-down vs the calibration card / lamp.)
+    const raw = renderNativeEffectOriented(effect, phase, dir);
+    const grid = this._matrixColorsToGridColors(raw, st);
     this._updateMatrixColors(grid, st);
   }
 
   // Update only matrix dot colors without rebuilding DOM
   _updateMatrixColors(gridColors, stateObj) {
-    const dots = this.shadowRoot.querySelectorAll(".lamp-dot");
+    const dots = this._getLampDots();
     if (dots.length !== gridColors.length) {
       // Mismatch - need full render
       this._isInitialRenderComplete = false;
@@ -1965,6 +1998,11 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       const colorIndex = layout.indexFn(row, col);
 
       const color = gridColors[colorIndex] || "#000000";
+
+      // Change-only: the raw colour fully determines the black/empty/display
+      // state, so skip the parse and DOM writes when it hasn't changed.
+      if (dot._rawColor === color) return;
+      dot._rawColor = color;
 
       // Check if pixel is black using RGB values (same logic as _generateMatrixHtml)
       let isBlack = false;
@@ -4431,6 +4469,12 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     // Stop the client-side animation loops if running.
     this._stopNativeAnimation();
     this._stopClockAnimation();
+    // Disconnect the off-screen visibility observer.
+    if (this._visTracker) {
+      this._visTracker.disconnect();
+      this._visTracker = null;
+    }
+    this._lampDots = null;
 
     this._brightnessDebounceTimer = null;
     this._realBrightnessDebounceTimer = null;

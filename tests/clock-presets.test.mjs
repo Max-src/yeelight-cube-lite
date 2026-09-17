@@ -25,6 +25,7 @@ import {
   clockStyleByName,
   getClockStyles,
   CLOCK_COLOR_MODES,
+  renderClockFrame,
 } from "../custom_components/yeelight_cube/www/clock-preview-utils.js";
 
 function cardMethods(names, dependencies) {
@@ -909,4 +910,43 @@ test("a just-saved style reads as Normal before the library echoes it back", () 
   card._applyStyle("Rainbow");
   assert.equal(calls.at(-1).color, "clear");
   assert.equal(card._customMode, false);
+});
+
+test("renderClockFrame decodes the lamp's clock_color so every card shares one override", () => {
+  // The lamp state exposes the custom colour as a firmware ARGB integer
+  // (clock_color); cards that forward raw attributes (lamp-preview card) must
+  // render the same override as those that pass a decoded clock_color_rgb.
+  const base = {
+    clock_style: "White",
+    clock_style_id: 4,
+    clock_content: "time",
+    clock_color_mode: "normal",
+  };
+  const yellow = [255, 238, 0];
+  const fromInt = renderClockFrame(
+    { ...base, clock_color: 0x01000000 + (255 << 16) + (238 << 8) + 0 },
+    null,
+    null,
+  );
+  const fromRgb = renderClockFrame(
+    { ...base, clock_color_rgb: yellow },
+    null,
+    null,
+  );
+  const litInt = fromInt.filter((p) => p[0] | p[1] | p[2]);
+  assert.ok(litInt.length > 0, "clock renders lit pixels");
+  assert.deepEqual(fromInt, fromRgb);
+  assert.ok(litInt.every((p) => p[0] === 255 && p[1] === 238 && p[2] === 0));
+  // A palette colour mode still overrides the custom colour (not flat-filled).
+  const bw = renderClockFrame(
+    {
+      ...base,
+      clock_color_mode: "bw",
+      clock_color: 0x01000000 + (255 << 16) + (238 << 8) + 0,
+    },
+    null,
+    null,
+  );
+  const litBw = bw.filter((p) => p[0] | p[1] | p[2]);
+  assert.ok(litBw.every((p) => p[0] === 255 && p[1] === 255 && p[2] === 255));
 });
