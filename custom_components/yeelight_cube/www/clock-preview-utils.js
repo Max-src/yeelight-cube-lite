@@ -14,10 +14,11 @@
 // Keep the mixer tables and glyph handling in sync with const.py.
 
 import {
-  renderNativeEffect,
+  renderNativeEffectOriented,
   effectSupportsColorOverride,
   effectSupportsColorMode,
 } from "./native-effect-preview.js";
+import { clockEffectDirection } from "./effect-orientation.js";
 
 // Firmware colour-mode palette presets (mirrors const.py CLOCK_COLOR_MODES).
 // Selecting one forces the outer command id so compatible effects re-map their
@@ -507,7 +508,7 @@ function _clockPixelColor(styleId, charIndex, col) {
  * Mirrors _get_clock_preview() in camera.py, including colon blink.
  *
  * `attrs` fields used: clock_style_id, clock_style (name), clock_content,
- * clock_show_date, clock_12_hour, clock_colon_blink, native_effect_direction,
+ * clock_show_date, clock_12_hour, clock_colon_blink,
  * clock_color_mode, and a custom colour override supplied either as a decoded
  * clock_color_rgb -> [r,g,b] or the raw firmware clock_color ARGB integer the
  * lamp exposes (decoded here like camera.py). The override recolours every lit
@@ -557,12 +558,7 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0) {
   // glyph pixels; render it once and mask it below.
   const mixer = clockStyleMixer(attrs);
   const effectName = CLOCK_MIXER_EFFECTS[mixer];
-  // The mixer effect flows in the selected native-effect direction, so the
-  // preview matches whatever direction was applied to the clock on the lamp.
-  const direction =
-    CLOCK_MIXER_FIXED_DIRECTION[effectName] ||
-    attrs.native_effect_direction ||
-    CLOCK_MIXER_EFFECT_DIRECTION;
+  const direction = clockEffectDirection(effectName);
   // Preview callers may supply either a decoded [r,g,b] (clock_color_rgb) or the
   // raw firmware ARGB integer the lamp exposes as clock_color; decode the
   // latter exactly like camera.py so every card renders the same override.
@@ -588,7 +584,7 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0) {
     !!effectName &&
     effectSupportsColorOverride(effectName);
   const effectFrame = effectName
-    ? renderNativeEffect(
+    ? renderNativeEffectOriented(
         effectName,
         phase,
         direction,

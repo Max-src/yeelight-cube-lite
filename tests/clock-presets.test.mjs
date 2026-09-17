@@ -25,8 +25,113 @@ import {
   clockStyleByName,
   getClockStyles,
   CLOCK_COLOR_MODES,
+  CLOCK_MIXER_EFFECTS,
+  flipMatrixVertical,
   renderClockFrame,
 } from "../custom_components/yeelight_cube/www/clock-preview-utils.js";
+import {
+  renderNativeEffect,
+  effectSupportsColorOverride,
+} from "../custom_components/yeelight_cube/www/native-effect-preview.js";
+import {
+  clockEffectDirection,
+  effectOrientation,
+  orientFrame,
+} from "../custom_components/yeelight_cube/www/effect-orientation.js";
+
+test("all clock styles display calibrated backgrounds independently of native direction", (context) => {
+  const RealDate = Date;
+  context.mock.method(
+    globalThis,
+    "Date",
+    class extends RealDate {
+      constructor() {
+        super("2026-09-17T21:53:00");
+      }
+    },
+  );
+  const mask = flipMatrixVertical(
+    renderClockFrame({ clock_style_id: 6 }, null, null),
+  );
+  for (const style of getClockStyles(true)) {
+    const effect = CLOCK_MIXER_EFFECTS[style.mixer];
+    if (!effect) continue;
+    const { source, flipH, flipV } = effectOrientation(
+      effect,
+      clockEffectDirection(effect),
+    );
+    for (const phase of [0, 0.75, 2.5]) {
+      for (const [mode, override] of [
+        ["normal", null],
+        ["normal", [180, 20, 60]],
+        ["bw", null],
+        ["red_blue", null],
+      ]) {
+        const background = orientFrame(
+          flipMatrixVertical(
+            renderNativeEffect(
+              effect,
+              phase,
+              source,
+              effectSupportsColorOverride(effect) ? override : null,
+              mode === "normal" ? null : mode,
+            ),
+          ),
+          flipH,
+          flipV,
+        );
+        const expected = mask.map((pixel, index) =>
+          pixel.some((value) => value > 0) ? background[index] : [0, 0, 0],
+        );
+        for (const direction of [undefined, "Up", "Down", "Left", "Right"]) {
+          const attrs = {
+            clock_style_id: style.id,
+            clock_color_mode: mode,
+            clock_color_rgb: override,
+            native_effect_direction: direction,
+          };
+          assert.deepEqual(
+            flipMatrixVertical(renderClockFrame(attrs, null, null, phase)),
+            expected,
+            `${style.name}, ${mode}, ${override}, ${direction}, phase=${phase}`,
+          );
+        }
+      }
+    }
+  }
+});
+
+test("Rainbow clock uses calibrated Left regardless of the lamp direction", (context) => {
+  const RealDate = Date;
+  context.mock.method(
+    globalThis,
+    "Date",
+    class extends RealDate {
+      constructor() {
+        super("2026-09-17T21:53:00");
+      }
+    },
+  );
+  const mask = renderClockFrame({ clock_style_id: 6 }, null, null);
+  for (const phase of [0, 0.75, 2.5]) {
+    const background = renderNativeEffect("Rainbow", phase, "Down");
+    const expected = mask.map((pixel, index) =>
+      pixel.some((value) => value > 0) ? background[index] : [0, 0, 0],
+    );
+    for (const direction of [undefined, "Up", "Down", "Left", "Right"]) {
+      assert.deepEqual(
+        renderClockFrame(
+          { clock_style_id: 1, native_effect_direction: direction },
+          null,
+          null,
+          phase,
+        ),
+        expected,
+        `direction=${direction}, phase=${phase}`,
+      );
+    }
+  }
+});
 
 function cardMethods(names, dependencies) {
   const source = readFileSync(

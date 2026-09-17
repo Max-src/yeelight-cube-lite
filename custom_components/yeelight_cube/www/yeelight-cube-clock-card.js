@@ -1773,8 +1773,7 @@ class YeelightCubeClockCard extends HTMLElement {
       });
     }
     return `
-      <div class="section">
-        <div class="section-title">Sliders</div>
+      <div class="section section-sliders">
         ${renderSliderGroup(controls)}
       </div>`;
   }
@@ -1977,6 +1976,12 @@ class YeelightCubeClockCard extends HTMLElement {
       .card-title { font-size: 1.15em; font-weight: 600; margin-bottom: 2px; }
       .active-label { font-size: 0.9em; color: var(--secondary-text-color, #9aa); margin-bottom: 10px; }
       .section { margin-top: 14px; }
+      /* Tighter than the default section spacing: no title, and the two
+         stacked sliders (brightness/speed) don't need a full section's worth
+         of breathing room around them. */
+      .section-sliders { margin-top: 8px; }
+      .section-sliders .brightness-control-group { gap: 6px; }
+      .section-sliders + .section { margin-top: 8px; }
       .unified-color-modes { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
       [data-clock-control="colormode"].unified-color-modes > .shared-button-group.action-row { display:contents; }
       .unified-color-modes button { flex:0 0 auto; max-width:100%; min-height:36px; }

@@ -22,18 +22,16 @@ from .const import (
     DOMAIN,
     CONF_IP,
     CLOCK_MIXER_EFFECTS,
-    CLOCK_MIXER_EFFECT_DIRECTION,
     CLOCK_MIXER_EFFECT_SPEED,
     DEFAULT_NATIVE_CLOCK_STYLE,
     NATIVE_CLOCK_STYLES,
-    resolve_clock_mixer_direction,
 )
+from .effect_orientation import clock_effect_direction
 from .layout import FONT_MAPS, char_advance
 from .native_effect_preview import (
     effect_supports_color_mode,
     effect_supports_color_override,
     render_music_flow_effect,
-    render_native_effect,
     render_native_effect_oriented,
 )
 
@@ -394,13 +392,8 @@ class _YeelightCubeMatrixCameraBase(Camera):
         effect_frame = None
         if effect_name is not None:
             phase = _time.monotonic() * (0.25 + CLOCK_MIXER_EFFECT_SPEED / 55.0)
-            direction = (
-                resolve_clock_mixer_direction(
-                    getattr(le, "_native_effect_direction", "Up"), effect_name
-                )
-                or CLOCK_MIXER_EFFECT_DIRECTION
-            )
-            effect_frame = render_native_effect(
+            direction = clock_effect_direction(effect_name)
+            effect_frame = render_native_effect_oriented(
                 effect_name,
                 phase,
                 direction,

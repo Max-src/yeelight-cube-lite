@@ -7,11 +7,73 @@ import logging
 import sys
 from types import ModuleType, SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
-from tests.test_native_features import _load_standalone_functions, ROOT, CONSTANTS
+from datetime import datetime
+from tests.test_native_features import _load_standalone_functions, ROOT, CONSTANTS, NATIVE_PREVIEW
 
 MODULE = runpy.run_path(str(Path(__file__).parents[1] / "custom_components/yeelight_cube/clock_presets.py"))
 save = MODULE["save_clock_preset"]
 delete = MODULE["delete_clock_preset"]
+
+
+class ClockPreviewTests(unittest.TestCase):
+    def setUp(self):
+        self.orientation = runpy.run_path(str(ROOT / "effect_orientation.py"))
+        self.font = {char: [0, 1, 20, 41, 60, 81] for char in "0123456789"}
+        self.font.update({":": [20, 60], ".": [0]})
+        self.clock = SimpleNamespace(_native_clock_style=6, _device_orientation="right")
+        self.camera = SimpleNamespace(
+            _light_entity=self.clock,
+            _clock_pixel_color=lambda *args: (255, 255, 255),
+        )
+        self.timer = SimpleNamespace(monotonic=lambda: 0.75)
+        namespace = {
+            **CONSTANTS, **NATIVE_PREVIEW,
+            "clock_effect_direction": self.orientation["clock_effect_direction"],
+            "dt_util": SimpleNamespace(now=lambda: datetime(2026, 9, 17, 21, 53)),
+            "_time": self.timer, "COLS": 20, "ROWS": 5,
+            "FONT_MAPS": {"native": self.font},
+            "char_advance": lambda font, char, glyph: 2 if char in ":." else 4,
+        }
+        self.render = _load_standalone_functions(
+            (ROOT / "camera.py").read_text(encoding="utf-8"),
+            {"_get_clock_preview"}, namespace,
+        )["_get_clock_preview"]
+
+    def test_all_clock_backgrounds_use_calibration_independent_of_native_direction(self):
+        mask = self.render(self.camera)
+        for elapsed in (0, 0.75, 2.5):
+            self.timer.monotonic = lambda: elapsed
+            phase = elapsed * (0.25 + CONSTANTS["CLOCK_MIXER_EFFECT_SPEED"] / 55.0)
+            for style_id, style in CONSTANTS["NATIVE_CLOCK_STYLES"].items():
+                effect = CONSTANTS["CLOCK_MIXER_EFFECTS"].get(style["mixer"])
+                if effect is None:
+                    continue
+                self.clock._native_clock_style = style_id
+                for mode, override in (("normal", None), ("normal", 0x01B4143C), ("bw", None), ("red_blue", None)):
+                    self.clock._native_clock_color_mode = mode
+                    self.clock._native_clock_color = override
+                    compatible = NATIVE_PREVIEW["effect_supports_color_override"](effect)
+                    background = NATIVE_PREVIEW["render_native_effect_oriented"](
+                        effect, phase, self.orientation["clock_effect_direction"](effect),
+                        (180, 20, 60) if override and compatible else None,
+                        None if mode == "normal" else mode,
+                    )
+                    expected = [background[index] if any(pixel) else (0, 0, 0) for index, pixel in enumerate(mask)]
+                    for direction in (None, "Up", "Down", "Left", "Right"):
+                        self.clock._native_effect_direction = direction
+                        with self.subTest(style=style_id, mode=mode, override=override, direction=direction, elapsed=elapsed):
+                            self.assertEqual(self.render(self.camera), expected)
+
+    def test_rainbow_clock_matches_literal_down_without_transforming_digits(self):
+        mask = self.render(self.camera)
+        self.clock._native_clock_style = 1
+        phase = 0.75 * (0.25 + CONSTANTS["CLOCK_MIXER_EFFECT_SPEED"] / 55.0)
+        background = NATIVE_PREVIEW["render_native_effect"]("Rainbow", phase, "Down")
+        expected = [background[index] if any(pixel) else (0, 0, 0) for index, pixel in enumerate(mask)]
+        for direction in ("Up", "Down", "Left", "Right"):
+            self.clock._native_effect_direction = direction
+            with self.subTest(direction=direction):
+                self.assertEqual(self.render(self.camera), expected)
 
 
 class ClockPresetTests(unittest.TestCase):
