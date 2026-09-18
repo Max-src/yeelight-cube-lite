@@ -557,6 +557,34 @@ set_default:
         entity:
           domain: light
 
+set_native_effect:
+  name: Set Native Effect
+  description: Select and apply a firmware animation, optionally setting its speed. Respects auto-turn-on and Experimental Features settings.
+  fields:
+    entity_id:
+      required: true
+      selector:
+        entity:
+          domain: light
+          multiple: true
+    effect:
+      description: Native effect name. Omit to retain the current effect.
+      example: Rainbow
+      selector:
+        text:
+    speed:
+      description: Animation speed for effects that support it.
+      selector:
+        number:
+          min: 1
+          max: 255
+          mode: slider
+    activate:
+      description: Switch to Native Effect mode and apply the selected animation.
+      default: true
+      selector:
+        boolean:
+
 set_mode:
   name: Set Mode
   description: Set the clock, text, gradient, or drawing mode on the cube.

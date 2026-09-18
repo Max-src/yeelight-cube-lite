@@ -1719,6 +1719,18 @@ export function sliderKeys(prefix) {
 }
 
 // Build the generic render config (gc) from a card config + key map + overrides.
+export function lightSliderConfig(config, kind, keys = sliderKeys("slider")) {
+  const speed = kind === "speed";
+  return sliderConfigToGc(config, keys, {
+    color: speed ? "#5aa9ff" : "#ffb74d",
+    unit: "%",
+    iconLeft:
+      config[keys.iconLeftShow] !== false ? (speed ? "🐢" : "🌙") : null,
+    iconRight:
+      config[keys.iconRightShow] !== false ? (speed ? "⚡" : "☀️") : null,
+  });
+}
+
 export function sliderConfigToGc(config, K, overrides = {}) {
   const g = (k, d) => (config[k] !== undefined ? config[k] : d);
   return {
@@ -1775,6 +1787,14 @@ const STYLE_CHOICES = [
  *                                      (uses K.iconLeftShow / K.iconRightShow)
  *   - thickness: number                override the displayed track thickness
  */
+export function renderLightSliderSettings(config, onChange) {
+  const keys = sliderKeys("slider");
+  return renderSliderSettings(config, keys, onChange, {
+    icons: { leftLabel: "Show Left Icon", rightLabel: "Show Right Icon" },
+    showValueToggle: { label: "Show Value", key: keys.showValue },
+  });
+}
+
 export function renderSliderSettings(config, K, onChange, opts = {}) {
   const g = (k, d) => (config[k] !== undefined ? config[k] : d);
   const bg = (key, choices, current, extra = "") =>

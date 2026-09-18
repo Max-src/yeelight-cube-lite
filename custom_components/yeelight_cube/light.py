@@ -107,6 +107,7 @@ LIGHT_SERVICE_NAMES = (
     "restore_state",
     "set_button_effects",
     "set_clock_style",
+    "set_native_effect",
     # Registered further below alongside the diagnostic/native-effect handlers;
     # listed here so async_remove_light_services() tears them down on unload too.
     "send_fx_effect",
@@ -1311,6 +1312,14 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             "native_effect": self._native_effect,
             "native_effect_speed": self._native_effect_speed,
             "native_effect_direction": self._native_effect_direction,
+            "native_effect_catalog": [
+                {"name": name, "speed": bool(spec.get("speed")),
+                 "directions": list(spec.get("directions", ())),
+                 "extended": bool(spec.get("extended")),
+                 "preview": not name.isdecimal()}
+                for name, spec in ALL_NATIVE_EFFECTS.items()
+                if not spec.get("extended") or self._extended_effects_enabled or name == self._native_effect
+            ],
             "extended_effects_enabled": self._extended_effects_enabled,
             "music_flow_enabled": self._music_flow_enabled,
             "music_flow_effect": self._music_flow_effect,

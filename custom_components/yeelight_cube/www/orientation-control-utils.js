@@ -4,6 +4,39 @@ import {
 } from "./action-button-utils.js";
 
 export const ORIENTATION_ORDER = ["right", "down", "left", "up"];
+export const orientationControlStyles = `
+  .device-orientation-row {
+    display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
+    gap: 8px; padding: 4px 10px 10px; margin: 0 0 4px;
+  }
+  .orientation-buttons {
+    display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
+    gap: 8px; min-width: 0; max-width: 100%;
+  }
+  .orientation-buttons .shared-action-button {
+    min-height: 40px; max-width: 100%; white-space: normal;
+  }
+  .orientation-error {
+    color: var(--error-color, #db4437); text-align: center;
+    font-size: 0.85rem; padding: 0 10px 8px;
+  }
+  .orientation-buttons button:focus-visible {
+    outline: 2px solid var(--primary-color, #03a9f4); outline-offset: 2px;
+  }
+  .orientation-buttons button:disabled { opacity: 0.4; cursor: default; }
+  .device-orientation-row .orient-btn {
+    width: 44px; height: 40px; border: none; border-radius: 10px;
+    background: var(--secondary-background-color, #e0e0e0);
+    color: var(--primary-text-color, #444); font-size: 1.2rem; line-height: 1;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+  }
+  .device-orientation-row .orient-btn:hover { transform: translateY(-1px); }
+  .device-orientation-row .orient-btn.active {
+    background: linear-gradient(135deg, #b026ff, #ff5e3a);
+    color: #fff; box-shadow: 0 2px 8px rgba(176, 38, 255, 0.4);
+  }
+`;
 export const ORIENTATION_CHOICES = [
   ...ORIENTATION_ORDER.map((value) => ({
     value,

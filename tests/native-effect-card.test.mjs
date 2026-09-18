@@ -1,0 +1,894 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { readFileSync } from "node:fs";
+import {
+  nativeEffectItems,
+  nativeEffectDirection,
+  nativeEffectFrame,
+  nativeEffectAction,
+  nativeEffectPreviewConfig,
+  effectCollectionKey,
+  readEffectCollections,
+  sanitizeEffectCollections,
+  nextRotationEffect,
+  rotationIntervalMs,
+} from "../custom_components/yeelight_cube/www/native-effect-card-utils.js";
+import { renderNativeEffectOriented } from "../custom_components/yeelight_cube/www/native-effect-preview.js";
+import { flipMatrixVertical } from "../custom_components/yeelight_cube/www/clock-preview-utils.js";
+import {
+  getTargetEntities,
+  callServiceOnTargetEntities,
+} from "../custom_components/yeelight_cube/www/service-call-utils.js";
+import {
+  orientationOptions,
+  nextOrientation,
+} from "../custom_components/yeelight_cube/www/orientation-control-utils.js";
+
+const rainbow = {
+  name: "Rainbow",
+  speed: true,
+  directions: ["Up", "Down", "Left", "Right"],
+};
+
+const sourceFor = (file) =>
+  readFileSync(
+    new URL(`../custom_components/yeelight_cube/www/${file}`, import.meta.url),
+    "utf8",
+  );
+const template = (strings, ...values) => ({ strings, values });
+
+function cardMethod(name, dependencies = {}) {
+  const source = sourceFor("yeelight-cube-native-effects-card.js");
+  const match = source.match(
+    new RegExp(`  (async )?${name}\\(([^\\n]*)\\) \\{([\\s\\S]*?)\\n  \\}`),
+  );
+  assert.ok(match, name);
+  return new Function(
+    ...Object.keys(dependencies),
+    `return ${match[1] || ""}function(${match[2]}) {${match[3]}}`,
+  )(...Object.values(dependencies));
+}
+
+test("light slider settings share icon toggles and non-capsule value visibility", () => {
+  const body = sourceFor("slider-control-utils.js").match(
+    /export function renderLightSliderSettings\(config, onChange\) \{([\s\S]*?)\n\}/,
+  )[1];
+  const render = new Function(
+    "sliderKeys",
+    "renderSliderSettings",
+    `return function(config, onChange) {${body}}`,
+  )(
+    () => ({ showValue: "slider_show_value" }),
+    (config, keys, change, options) => options,
+  );
+  const options = render({}, () => {});
+  assert.ok(options.icons.leftLabel);
+  assert.ok(options.icons.rightLabel);
+  assert.equal(options.showValueToggle.key, "slider_show_value");
+  for (const file of [
+    "yeelight-cube-clock-card-editor.js",
+    "yeelight-cube-native-effects-card-editor.js",
+  ])
+    assert.match(sourceFor(file), /renderLightSliderSettings\(/);
+});
+
+test("removed saved looks are ignored without losing favourites", () => {
+  assert.deepEqual(
+    sanitizeEffectCollections({
+      favourites: ["Rainbow"],
+      looks: [{ name: "Evening" }],
+    }),
+    { favourites: ["Rainbow"] },
+  );
+  for (const file of [
+    "yeelight-cube-native-effects-card.js",
+    "yeelight-cube-native-effects-card-editor.js",
+  ])
+    assert.doesNotMatch(
+      sourceFor(file),
+      /show_saved_looks|_looksSection|_saveLook|Saved Looks/,
+    );
+});
+
+test("rotation retains only effects available on every target", () => {
+  const card = {
+    config: { target_entities: ["light.first", "light.second"] },
+    _collections: { favourites: ["Rainbow", "Streamer"] },
+    _hass: {
+      states: {
+        "light.first": {
+          state: "on",
+          attributes: {
+            native_effect_catalog: [rainbow, { name: "Streamer" }],
+          },
+        },
+        "light.second": {
+          state: "on",
+          attributes: { native_effect_catalog: [rainbow] },
+        },
+      },
+    },
+    _effectAvailable: cardMethod("_effectAvailable", {
+      getTargetEntities,
+      nativeEffectItems,
+    }),
+  };
+  const names = cardMethod("_rotationNames");
+  assert.deepEqual(names.call(card), ["Rainbow"]);
+  card._hass.states["light.second"].state = "unavailable";
+  assert.deepEqual(names.call(card), []);
+});
+
+test("rotation order, shuffle and interval are bounded and do not repeat immediately", () => {
+  assert.equal(
+    nextRotationEffect(["Rainbow", "Streamer", "63", "Rainbow"], "Rainbow"),
+    "Streamer",
+  );
+  assert.equal(
+    nextRotationEffect(["Rainbow", "Streamer"], "Streamer"),
+    "Rainbow",
+  );
+  for (const random of [0, 0.5, 0.99, 1])
+    assert.equal(
+      nextRotationEffect(["Rainbow", "Streamer"], "Rainbow", true, random),
+      "Streamer",
+    );
+  assert.equal(nextRotationEffect([], "Rainbow"), undefined);
+  assert.equal(rotationIntervalMs({ rotation_interval: 1 }), 10000);
+  assert.equal(rotationIntervalMs({ rotation_interval: 9999 }), 3600000);
+  assert.equal(rotationIntervalMs({}), 60000);
+});
+
+test("rotation only schedules after success and stops for hidden, off or changed targets", async () => {
+  const timers = [];
+  const document = { hidden: false };
+  const rotate = cardMethod("_rotateNext", {
+    nextRotationEffect,
+    rotationIntervalMs,
+    document,
+    setTimeout: (callback, delay) => {
+      timers.push({ callback, delay });
+      return timers.length;
+    },
+  });
+  const card = {
+    config: {},
+    _rotationActive: true,
+    _rotationToken: 1,
+    _rotationNames: () => ["Rainbow", "Streamer"],
+    _rotationTargetsReady: () => true,
+    _effect: () => rainbow,
+    _apply: async () => true,
+    _stopRotation() {
+      this._rotationActive = false;
+      this._rotationToken++;
+    },
+  };
+  await rotate.call(card, 1);
+  assert.equal(timers.length, 1);
+  assert.equal(timers[0].delay, 60000);
+  assert.equal(card._rotationApplying, false);
+  card._apply = async () => false;
+  await rotate.call(card, 1);
+  assert.equal(card._rotationActive, false);
+  assert.equal(timers.length, 1);
+  for (const hidden of [true, false]) {
+    card._rotationActive = true;
+    document.hidden = hidden;
+    card._rotationTargetsReady = () => hidden;
+    await rotate.call(card, card._rotationToken);
+    assert.equal(card._rotationActive, false);
+  }
+  card._rotationActive = true;
+  card._rotationTargetsReady = () => true;
+  card._apply = async () => {
+    card._stopRotation();
+    return true;
+  };
+  await rotate.call(card, card._rotationToken);
+  assert.equal(timers.length, 1);
+});
+
+test("favourites allow direct removal without changing selection", () => {
+  const toggle = cardMethod("_toggleFavourite");
+  const card = {
+    _collections: {
+      favourites: ["Rainbow", "Streamer"],
+    },
+    _effect: () => rainbow,
+    _saveCollections(value) {
+      this._collections = value;
+    },
+  };
+  toggle.call(card, "Streamer");
+  assert.deepEqual(card._collections.favourites, ["Rainbow"]);
+  toggle.call(card);
+  assert.deepEqual(card._collections.favourites, []);
+  toggle.call(card);
+  assert.deepEqual(card._collections.favourites, ["Rainbow"]);
+});
+
+test("shared selectors bind text, preview and carousel navigation without duplicate callbacks", () => {
+  const body = sourceFor("style-selector-utils.js").match(
+    /export function bindStyleSelectorEvents\(\s*root,\s*\{ select, navigate, setIndex, style \},?\s*\) \{([\s\S]*?)\n\}/,
+  )[1];
+  const bindStyleSelectorEvents = new Function(
+    "root",
+    "{ select, navigate, setIndex, style }",
+    body,
+  );
+  const item = { dataset: { mode: "Rainbow" } };
+  const arrow = { dataset: { direction: "-1" } };
+  const dot = { dataset: { index: "2" } };
+  const dropdown = {};
+  const shell = {};
+  const root = {
+    querySelectorAll: (selector) =>
+      selector.includes('data-action="navigate"')
+        ? [arrow]
+        : selector.includes('data-action="set-index"')
+          ? [dot]
+          : [item],
+    querySelector: (selector) =>
+      selector.includes("mode-select") ? dropdown : shell,
+  };
+  const calls = [];
+  const options = {
+    style: "preview-carousel",
+    select: (name) => calls.push(name),
+    navigate: (delta) => calls.push(delta),
+    setIndex: (index) => calls.push(index),
+  };
+  bindStyleSelectorEvents(root, options);
+  bindStyleSelectorEvents(root, options);
+  item.onclick();
+  dropdown.onchange({ target: { value: "Streamer" } });
+  arrow.onclick({ stopPropagation() {} });
+  dot.onclick({ stopPropagation() {} });
+  shell.ontouchstart({ touches: [{ clientX: 100 }] });
+  shell.ontouchend({ changedTouches: [{ clientX: 20 }] });
+  shell.ontouchend({ changedTouches: [{ clientX: 200 }] });
+  assert.deepEqual(calls, ["Rainbow", "Streamer", -1, 2, 1]);
+  item.onclick = undefined;
+  bindStyleSelectorEvents(root, { ...options, style: "preview-wheel" });
+  assert.equal(item.onclick, undefined);
+  for (const file of [
+    "yeelight-cube-clock-card.js",
+    "yeelight-cube-native-effects-card.js",
+  ])
+    assert.match(sourceFor(file), /bindStyleSelectorEvents\(/);
+});
+
+test("native wheel selection fulfills the shared controller's promise contract", async () => {
+  const callback = sourceFor("yeelight-cube-native-effects-card.js").match(
+    /onModeSelect: (async \(name\) => \{[\s\S]*?\n\s*\})/,
+  )[1];
+  const selected = [];
+  const card = {
+    _disabled: () => false,
+    _select: (name) => selected.push(name),
+  };
+  const onSelect = new Function(`return (${callback})`).call(card);
+  const pending = onSelect("Rainbow");
+  assert.equal(typeof pending.catch, "function");
+  await pending;
+  card._busy = true;
+  await onSelect("Streamer");
+  assert.deepEqual(selected, ["Rainbow"]);
+});
+
+test("named effects exclude raw experimental mode numbers even when explicitly visible", () => {
+  const attrs = {
+    native_effect: "63",
+    native_effect_catalog: [
+      rainbow,
+      { name: "63", extended: true },
+      { name: " 64 " },
+      { name: "", extended: true },
+      { name: "Prism", extended: true },
+    ],
+  };
+  assert.deepEqual(
+    nativeEffectItems(attrs, { show_experimental: true }).map(
+      (item) => item.name,
+    ),
+    ["Rainbow", "Prism"],
+  );
+  assert.deepEqual(
+    nativeEffectItems(attrs, {
+      show_experimental: true,
+      visible_effects: ["63", "Prism"],
+    }).map((item) => item.name),
+    ["Prism"],
+  );
+});
+
+test("native and clock sliders share capsule icon configuration", () => {
+  const source = sourceFor("slider-control-utils.js");
+  const body = source.match(
+    /export function lightSliderConfig\(config, kind, keys = sliderKeys\("slider"\)\) \{([\s\S]*?)\n\}/,
+  )[1];
+  const keys = {
+    iconLeftShow: "slider_show_icon_left",
+    iconRightShow: "slider_show_icon_right",
+  };
+  const config = new Function(
+    "sliderConfigToGc",
+    `return function(config, kind, keys) {${body}}`,
+  )((cfg, map, overrides) => overrides);
+  assert.equal(config({}, "brightness", keys).iconLeft, "🌙");
+  assert.equal(config({}, "speed", keys).iconRight, "⚡");
+  assert.equal(
+    config({ slider_show_icon_left: false }, "speed", keys).iconLeft,
+    null,
+  );
+  for (const file of [
+    "yeelight-cube-clock-card.js",
+    "yeelight-cube-native-effects-card.js",
+  ])
+    assert.match(sourceFor(file), /return lightSliderConfig\(this.config,/);
+});
+
+test("native editor sections follow the card and use shared conditional controls", () => {
+  const source = sourceFor("yeelight-cube-native-effects-card-editor.js");
+  const body = source.match(/  render\(\) \{([\s\S]*?)\n  \}/)[1];
+  const records = {};
+  const dependencies = {
+    html: template,
+    getTargetEntities,
+    nativeEffectItems,
+    nativeEffectPreviewConfig,
+    createYeelightCubeEntityPicker: (...args) => {
+      records.picker = args;
+    },
+    renderMatrixAppearanceSettings: (...args) => {
+      (records.matrices ||= []).push(args);
+    },
+    renderModeSettingsSection: (title, content) => ({ title, content }),
+    createSliderRow: (...args) => {
+      records.interval = args;
+    },
+    renderActionButtonSettings: () => {
+      records.buttons = (records.buttons || 0) + 1;
+    },
+    renderLightSliderSettings: () => {
+      records.sliders = (records.sliders || 0) + 1;
+    },
+    renderStyleSelectorSettings: (config) => {
+      records.selector = true;
+      records.selectorPageSize = config.items_per_page;
+    },
+    renderOrientationSettings: () => {
+      records.orientation = true;
+    },
+    renderOrderableList: (options) => {
+      records.list = options;
+    },
+    sliderKeys: (prefix) => prefix,
+  };
+  const render = new Function(
+    ...Object.keys(dependencies),
+    `return function() {${body}}`,
+  )(...Object.values(dependencies));
+  const editor = {
+    _config: {
+      entity: "light.legacy",
+      target_entities: ["light.first", "light.second"],
+      visible_effects: ["63", "Rainbow", "Rainbow", "64"],
+    },
+    hass: {
+      states: {
+        "light.first": { attributes: { native_effect_catalog: [rainbow] } },
+      },
+    },
+    _section: (id) => {
+      (records.sections ||= []).push(id);
+    },
+    _toggle() {},
+    _choices() {},
+    _change(key, value) {
+      this._config = { ...this._config, [key]: value };
+    },
+  };
+  render.call(editor);
+  assert.deepEqual(records.sections, [
+    "general",
+    "preview",
+    "actions",
+    "sliders",
+    "orientation",
+    "effects",
+    "favourites",
+    "rotation",
+  ]);
+  assert.equal(records.picker[3], "multiple");
+  assert.deepEqual(records.picker[1], ["light.first", "light.second"]);
+  assert.deepEqual(records.list.items, ["Rainbow"]);
+  assert.equal(records.sliders, 1);
+  assert.equal(records.matrices.length, 1);
+  assert.equal(records.selector, true);
+  assert.equal(records.selectorPageSize, 8);
+  assert.equal(records.orientation, true);
+  records.picker[2]({ target: { value: ["light.second"] } });
+  assert.deepEqual(editor._config.target_entities, ["light.second"]);
+  Object.keys(records).forEach((key) => delete records[key]);
+  editor._config = {
+    ...editor._config,
+    show_preview: false,
+    show_actions: false,
+    show_brightness: false,
+    show_animation_speed: false,
+    show_device_orientation: false,
+    show_gallery: false,
+  };
+  render.call(editor);
+  for (const key of ["matrices", "buttons", "sliders", "orientation", "list"])
+    assert.equal(records[key], undefined);
+  assert.doesNotMatch(source, /<details|<summary/);
+  assert.match(
+    sourceFor("yeelight-cube-clock-card-editor.js"),
+    /renderEditorSection\(\s*id/,
+  );
+  assert.match(
+    sourceFor("yeelight-cube-lamp-preview-card-editor.js"),
+    /renderOrientationSettings\(\s*this\._config/,
+  );
+  editor._config = {
+    ...editor._config,
+    target_entities: ["light.first"],
+    show_favourites: true,
+    show_rotation: true,
+    rotation_source: "custom",
+    rotation_effects: ["Rainbow"],
+  };
+  render.call(editor);
+  assert.equal(records.matrices.length, 1);
+  assert.equal(records.interval[0], "Interval");
+  assert.deepEqual(records.list.items, ["Rainbow"]);
+  Object.keys(records).forEach((key) => delete records[key]);
+  editor._config.favourites_show_previews = false;
+  editor._config.show_rotation = false;
+  render.call(editor);
+  assert.equal(records.matrices, undefined);
+  assert.equal(records.buttons, 1);
+  assert.equal(records.interval, undefined);
+  assert.doesNotMatch(source, /show_recent|show_devices/);
+});
+
+test("shared foldable sections preserve content and support keyboard toggling", () => {
+  const source = sourceFor("editor_ui_utils.js");
+  const body = source.match(
+    /export function renderEditorSection\(id, title, open, onToggle, content\) \{([\s\S]*?)\n\}/,
+  )[1];
+  const render = new Function(
+    "html",
+    `return function(id, title, open, onToggle, content) {${body}}`,
+  )(template);
+  const content = template`<input>`;
+  let toggles = 0;
+  const result = render(
+    "preview",
+    "Lamp Preview",
+    false,
+    () => toggles++,
+    content,
+  );
+  assert.equal(result.values.at(-1), content);
+  assert.match(result.strings.join(""), /aria-expanded=/);
+  assert.match(result.strings.join(""), /\?inert=/);
+  const keydown = result.values.filter(
+    (value) => typeof value === "function",
+  )[1];
+  let prevented = 0;
+  for (const key of ["Enter", " ", "ArrowDown"])
+    keydown({ key, preventDefault: () => prevented++ });
+  assert.equal(toggles, 2);
+  assert.equal(prevented, 2);
+});
+
+test("multi-target configuration reads the first light and accepts legacy entity", () => {
+  const source = sourceFor("yeelight-cube-native-effects-card.js");
+  const body = source.match(/  setConfig\(config\) \{([\s\S]*?)\n  \}/)[1];
+  const setConfig = new Function(
+    "getTargetEntities",
+    "effectCollectionKey",
+    "readEffectCollections",
+    "window",
+    `return function(config) {${body}}`,
+  )(getTargetEntities, effectCollectionKey, readEffectCollections, {
+    localStorage: { getItem: () => null },
+  });
+  const first = { attributes: { native_effect: "Rainbow" } };
+  const second = { attributes: { native_effect: "Ocean Waves" } };
+  const card = {
+    _context: 0,
+    _stopRotation() {},
+    _hass: { states: { "light.first": first, "light.second": second } },
+  };
+  setConfig.call(card, { target_entities: ["light.first", "light.second"] });
+  assert.equal(card._state, first);
+  setConfig.call(card, { entity: "light.second" });
+  assert.equal(card._state, second);
+  assert.throws(
+    () => setConfig.call(card, { target_entities: [] }),
+    /at least one/,
+  );
+});
+
+test("preview and gallery appearance are independent with legacy pixel fallbacks", () => {
+  const body = sourceFor("yeelight-cube-native-effects-card.js").match(
+    /  _matrixAppearance\(current\) \{([\s\S]*?)\n  \}/,
+  )[1];
+  const appearance = new Function(
+    "nativeEffectPreviewConfig",
+    `return function(current) {${body}}`,
+  )(nativeEffectPreviewConfig);
+  const card = {
+    config: {
+      pixel_style: "circle",
+      pixel_gap: 0,
+      lamp_matrix_background: "white",
+      lamp_ignore_black_pixels: true,
+      lamp_preview_size: 60,
+      effect_pixel_style: "rounded",
+      effect_spacing_mode: "subtle",
+    },
+  };
+  const current = appearance.call(card, true);
+  const gallery = appearance.call(card, false);
+  assert.equal(current.width, 60);
+  assert.equal(current.pixelStyle, "circle");
+  assert.equal(current.pixelGap, 0);
+  assert.equal(current.ignoreBlackPixels, true);
+  assert.equal(gallery.pixelStyle, "rounded");
+  assert.equal(gallery.pixelBoxShadow, true);
+  assert.equal(gallery.ignoreBlackPixels, false);
+  card.config.lamp_matrix_background = "black";
+  assert.equal(appearance.call(card, true).ignoreBlackPixels, false);
+});
+test("native commands send all targets through the shared service path", async () => {
+  const source = readFileSync(
+    new URL(
+      "../custom_components/yeelight_cube/www/yeelight-cube-native-effects-card.js",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const body = source.match(
+    /  async _command\(service, data, domain = "yeelight_cube"\) \{([\s\S]*?)\n  \}/,
+  )[1];
+  const command = new Function(
+    "callServiceOnTargetEntities",
+    `return async function(service, data, domain = "yeelight_cube") {${body}}`,
+  )(callServiceOnTargetEntities);
+  const calls = [];
+  const targets = ["light.first", "light.second"];
+  const card = {
+    config: { entity: "light.legacy", target_entities: targets },
+    _stopRotation() {},
+    _context: 0,
+    _queue: Promise.resolve(),
+    _disabled: () => false,
+    _hass: {
+      callService: async (domain, service, data) =>
+        calls.push({ domain, service, data }),
+    },
+  };
+  for (const [domain, service, data] of [
+    [
+      "yeelight_cube",
+      "set_native_effect",
+      { effect: "Rainbow", activate: true },
+    ],
+    ["yeelight_cube", "set_device_orientation", { orientation: "left" }],
+    ["light", "turn_on", { brightness_pct: 60 }],
+    ["light", "turn_off", {}],
+  ]) {
+    assert.equal(await command.call(card, service, data, domain), true);
+    assert.deepEqual(calls.at(-1), {
+      domain,
+      service,
+      data: { ...data, entity_id: targets },
+    });
+  }
+  assert.equal(card._busy, false);
+  assert.deepEqual(getTargetEntities({ entity: "light.legacy" }), [
+    "light.legacy",
+  ]);
+  assert.deepEqual(
+    getTargetEntities({ entity: "light.legacy", target_entities: [] }),
+    [],
+  );
+  card.config = { entity: "light.legacy" };
+  await command.call(card, "turn_on", {}, "light");
+  assert.equal(calls.at(-1).data.entity_id, "light.legacy");
+});
+
+test("preview selection stays local and Apply includes a supported speed draft", async () => {
+  const source = readFileSync(
+    new URL(
+      "../custom_components/yeelight_cube/www/yeelight-cube-native-effects-card.js",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const selectBody = source.match(/  _select\(name\) \{([\s\S]*?)\n  \}/)[1];
+  const applyBody = source.match(
+    /  async _apply\(name = this\._effect\(\)\?\.name\) \{([\s\S]*?)\n  \}/,
+  )[1];
+  const calls = [];
+  const card = {
+    config: { auto_apply: false },
+    _stopRotation() {},
+    _speedDraft: 70,
+    _collections: { favourites: [] },
+    _saveCollections(value) {
+      this._collections = value;
+    },
+    _effect: () => rainbow,
+    _speedRaw: (value) => Math.round(1 + ((value - 1) * 254) / 99),
+    _command: async (service, data) => {
+      calls.push({ service, data });
+      return true;
+    },
+  };
+  card._apply = new Function(
+    "nativeEffectAction",
+    `return async function(name) {${applyBody}}`,
+  )(nativeEffectAction);
+  new Function("name", selectBody).call(card, "Rainbow");
+  assert.equal(card._selected, "Rainbow");
+  assert.equal(calls.length, 0);
+  await card._apply("Rainbow");
+  assert.deepEqual(calls, [
+    {
+      service: "set_native_effect",
+      data: { effect: "Rainbow", activate: true, speed: 178 },
+    },
+  ]);
+  assert.equal(card._speedDraft, null);
+  card._speedDraft = 45;
+  card._command = async () => false;
+  await card._apply("Streamer");
+  assert.equal(card._speedDraft, 45);
+  card._context = 1;
+  let finish;
+  card._command = () =>
+    new Promise((resolve) => {
+      finish = resolve;
+    });
+  const pending = card._apply("Streamer");
+  card._context++;
+  card._collections = { favourites: [] };
+  card._speedDraft = 30;
+  finish(true);
+  await pending;
+  assert.equal(card._speedDraft, 30);
+});
+
+test("collections sanitize favourites, discard legacy history and isolate target sets", () => {
+  const names = [
+    " Rainbow ",
+    "Rainbow",
+    "63",
+    " 64 ",
+    "",
+    null,
+    12,
+    "Streamer",
+  ];
+  assert.deepEqual(
+    sanitizeEffectCollections({ favourites: names, recent: names }),
+    {
+      favourites: ["Rainbow", "Streamer"],
+    },
+  );
+  const many = Array.from({ length: 120 }, (_, index) => `Effect ${index}`);
+  const cleaned = sanitizeEffectCollections({ favourites: many, recent: many });
+  assert.equal(cleaned.favourites.length, 100);
+  assert.equal(cleaned.recent, undefined);
+  assert.equal(
+    effectCollectionKey(["light.second", "light.first", "light.first"]),
+    effectCollectionKey(["light.first", "light.second"]),
+  );
+  assert.notEqual(
+    effectCollectionKey(["light.first"]),
+    effectCollectionKey(["light.second"]),
+  );
+  const saved = new Map([
+    [
+      effectCollectionKey(["light.first"]),
+      JSON.stringify({ favourites: names }),
+    ],
+  ]);
+  const storage = { getItem: (key) => saved.get(key) };
+  assert.deepEqual(
+    readEffectCollections(storage, effectCollectionKey(["light.first"]))
+      .favourites,
+    ["Rainbow", "Streamer"],
+  );
+  assert.deepEqual(
+    readEffectCollections(storage, effectCollectionKey(["light.second"]))
+      .favourites,
+    [],
+  );
+  for (const value of ["null", "broken json", "[]"])
+    assert.deepEqual(readEffectCollections({ getItem: () => value }, "key"), {
+      favourites: [],
+    });
+});
+
+test("collection storage tolerates a blocked localStorage getter on reads and writes", () => {
+  const descriptor = Object.getOwnPropertyDescriptor(
+    globalThis,
+    "localStorage",
+  );
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    get() {
+      throw new Error("denied");
+    },
+  });
+  try {
+    assert.deepEqual(readEffectCollections(undefined, "key"), {
+      favourites: [],
+    });
+    const body = sourceFor("yeelight-cube-native-effects-card.js").match(
+      /  _saveCollections\(collections\) \{([\s\S]*?)\n  \}/,
+    )[1];
+    const save = new Function(
+      "sanitizeEffectCollections",
+      `return function(collections) {${body}}`,
+    )(sanitizeEffectCollections);
+    const card = { _collectionKey: "key" };
+    save.call(card, { favourites: ["Rainbow", "Rainbow"], recent: [] });
+    assert.deepEqual(card._collections.favourites, ["Rainbow"]);
+    assert.match(card._error, /session only/);
+  } finally {
+    if (descriptor)
+      Object.defineProperty(globalThis, "localStorage", descriptor);
+    else delete globalThis.localStorage;
+  }
+});
+
+test("numeric active effects cannot become the current named effect", () => {
+  const body = sourceFor("yeelight-cube-native-effects-card.js").match(
+    /  _effect\(\) \{([\s\S]*?)\n  \}/,
+  )[1];
+  const effect = new Function(
+    "nativeEffectItems",
+    `return function() {${body}}`,
+  )(nativeEffectItems);
+  const card = {
+    _attrs: () => ({
+      native_effect: "63",
+      native_effect_catalog: [{ name: "63" }, rainbow],
+    }),
+    _items: () => [rainbow],
+  };
+  assert.equal(effect.call(card), rainbow);
+  card._items = () => [];
+  assert.equal(effect.call(card), undefined);
+});
+
+test("native effect pagination handles shared next/prev actions and clamps pages", () => {
+  const source = readFileSync(
+    new URL(
+      "../custom_components/yeelight_cube/www/yeelight-cube-native-effects-card.js",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const match = source.match(/  _changePage\(page\) \{([\s\S]*?)\n  \}/);
+  const change = new Function("page", match[1]);
+  const card = { _page: 0, _totalPages: 3 };
+  for (const [action, expected] of [
+    ["next", 1],
+    ["next", 2],
+    ["next", 2],
+    ["prev", 1],
+    [0, 0],
+    ["prev", 0],
+  ]) {
+    change.call(card, action);
+    assert.equal(card._page, expected);
+  }
+  assert.equal((source.match(/attachPaginationListeners\(/g) || []).length, 1);
+  assert.match(source, /firstUpdated\(\) \{\s*attachPaginationListeners/);
+});
+
+test("rotation keeps the latest pending direction until Home Assistant echoes it", async () => {
+  const source = readFileSync(
+    new URL(
+      "../custom_components/yeelight_cube/www/yeelight-cube-native-effects-card.js",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const body = source.match(
+    /  async handleOrientationControl\(event\) \{([\s\S]*?)\n  \}/,
+  )[1];
+  const handler = new Function(
+    "orientationOptions",
+    "nextOrientation",
+    `return async function(event) {${body}}`,
+  )(orientationOptions, nextOrientation);
+  const calls = [];
+  const card = {
+    config: {},
+    _context: 1,
+    _rotationActive: true,
+    _stopRotation() {
+      this._rotationActive = false;
+    },
+    _attrs: () => ({ device_orientation: "right" }),
+    _command: async (service, data) => {
+      calls.push(data.orientation);
+      return true;
+    },
+  };
+  const event = {
+    target: {
+      closest: () => ({ dataset: { value: "clockwise" }, disabled: false }),
+    },
+  };
+  try {
+    await handler.call(card, event);
+    assert.equal(card._rotationActive, false);
+    assert.equal(card._pendingOrientation, "down");
+    await handler.call(card, event);
+    assert.deepEqual(calls, ["down", "left"]);
+    assert.equal(card._pendingOrientation, "left");
+  } finally {
+    clearTimeout(card._orientationTimer);
+  }
+});
+test("native effect catalogue respects availability, visibility and order", () => {
+  const attrs = {
+    native_effect_catalog: [
+      rainbow,
+      { name: "Prism", extended: true },
+      { name: "Streamer" },
+    ],
+  };
+  assert.deepEqual(
+    nativeEffectItems(attrs).map((item) => item.name),
+    ["Rainbow", "Streamer"],
+  );
+  assert.deepEqual(
+    nativeEffectItems(attrs, {
+      visible_effects: ["Streamer", "missing", "Rainbow", "Streamer"],
+    }).map((item) => item.name),
+    ["Streamer", "Rainbow"],
+  );
+  assert.equal(nativeEffectItems(attrs, { show_experimental: true }).length, 3);
+  assert.equal(
+    nativeEffectItems({ ...attrs, native_effect: "Prism" }).length,
+    3,
+  );
+  assert.deepEqual(nativeEffectItems(attrs, { visible_effects: [] }), []);
+});
+
+test("native effect previews match the calibrated renderer at the applied mount and speed", () => {
+  const attrs = {
+    device_orientation: "right",
+    native_effect_direction: "Left",
+    native_effect_speed: 50,
+  };
+  assert.equal(nativeEffectDirection(rainbow, attrs), "Right");
+  assert.equal(
+    nativeEffectDirection({ directions: ["Up", "Down"] }, attrs),
+    "Up",
+  );
+  assert.deepEqual(
+    nativeEffectFrame(rainbow, attrs, 2),
+    flipMatrixVertical(
+      renderNativeEffectOriented("Rainbow", 2 * (0.25 + 50 / 55), "Right"),
+    ),
+  );
+  assert.deepEqual(nativeEffectAction("Rainbow"), {
+    effect: "Rainbow",
+    activate: true,
+  });
+  assert.throws(() => nativeEffectAction(""));
+});

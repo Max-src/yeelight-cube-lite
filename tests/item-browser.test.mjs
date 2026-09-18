@@ -107,7 +107,13 @@ test("clock pagination supports 16 items per page and zero disables pagination",
     "utf8",
   );
   assert.match(
-    source,
+    readFileSync(
+      new URL(
+        "../custom_components/yeelight_cube/www/style-selector-ui.js",
+        import.meta.url,
+      ),
+      "utf8",
+    ),
     /config\.items_per_page \|\| 0,\s*\{ min: 0, max: 16, step: 1 \}/,
   );
   assert.match(source, /this\.config\.show_only_responding_styles !== false/);

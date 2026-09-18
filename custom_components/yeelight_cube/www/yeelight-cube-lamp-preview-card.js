@@ -1,6 +1,6 @@
 import { renderDotMatrix, rgbToCss } from "./yeelight-cube-dotmatrix.js";
 import { escapeHtml } from "./html-escape-utils.js";
-import { orientationOptions, nextOrientation, renderOrientationControls } from "./orientation-control-utils.js";
+import { orientationOptions, nextOrientation, renderOrientationControls, orientationControlStyles } from "./orientation-control-utils.js";
 import { getInitialMatrix } from "./draw_card_state.js";
 import { renderNativeEffectOriented } from "./native-effect-preview.js";
 import {
@@ -3134,63 +3134,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           padding: 10px;
           margin: 10px 0;
         }
-        .device-orientation-row {
-          display: flex;
-          flex-wrap: wrap;
-          justify-content: center;
-          align-items: center;
-          gap: 8px;
-          padding: 4px 10px 10px;
-          margin: 0 0 4px;
-        }
-        .orientation-buttons {
-          display: flex;
-          flex-wrap: wrap;
-          justify-content: center;
-          align-items: center;
-          gap: 8px;
-          min-width: 0;
-          max-width: 100%;
-        }
-        .orientation-buttons .shared-action-button {
-          min-height: 40px;
-          max-width: 100%;
-          white-space: normal;
-        }
-        .orientation-error {
-          color: var(--error-color, #db4437);
-          text-align: center;
-          font-size: 0.85rem;
-          padding: 0 10px 8px;
-        }
-        .orientation-buttons button:focus-visible {
-          outline: 2px solid var(--primary-color, #03a9f4);
-          outline-offset: 2px;
-        }
-        .orientation-buttons button:disabled {
-          opacity: 0.4;
-          cursor: default;
-        }
-        .device-orientation-row .orient-btn {
-          width: 44px;
-          height: 40px;
-          border: none;
-          border-radius: 10px;
-          background: var(--secondary-background-color, #e0e0e0);
-          color: var(--primary-text-color, #444);
-          font-size: 1.2rem;
-          line-height: 1;
-          cursor: pointer;
-          transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
-        }
-        .device-orientation-row .orient-btn:hover {
-          transform: translateY(-1px);
-        }
-        .device-orientation-row .orient-btn.active {
-          background: linear-gradient(135deg, #b026ff, #ff5e3a);
-          color: #fff;
-          box-shadow: 0 2px 8px rgba(176, 38, 255, 0.4);
-        }
+        ${orientationControlStyles}
         .button-row.two-buttons {
           justify-content: center;
         }

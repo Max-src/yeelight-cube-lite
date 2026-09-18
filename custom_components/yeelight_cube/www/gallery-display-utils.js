@@ -684,12 +684,12 @@ export function renderWheelMode(items, options = {}) {
       <div class="wheel-clip-viewport" style="
         position: absolute;
         top: 0;
-        left: -16px;
-        right: -16px;
+        left: 0;
+        right: 0;
         bottom: 0;
         overflow: hidden;
         pointer-events: none;
-        padding: 0 16px;
+        padding: 0;
       ">
         <!-- Scrollable wheel container -->
         <div class="wheel-scroll-container" data-wheel-scroll="true"

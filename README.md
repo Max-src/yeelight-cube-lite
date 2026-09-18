@@ -40,6 +40,7 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a
 | :-- | :-- |
 | **Preview Card** | Live lamp preview with brightness and color adjustments |
 | **Clock Card** | Clock styles, colour modes, live previews, and automatic responding-style filtering |
+| **Native Effects Card** | Calibrated animation previews, effect browsing, brightness/speed controls, and configurable orientation buttons |
 | **Colors Card** | Edit colors used to display text and apply gradients |
 | **Palettes Card** | Manage lists of colors (palettes) |
 | **Gradient Card** | Configure and preview gradient & color modes |
@@ -758,6 +759,29 @@ uploads a GIF through a Matter-only vendor command before activation; the
 private LAN protocol cannot reproduce that transaction. Both Matrix Preview
 cameras render animated local approximations while a native effect is active
 because the firmware does not provide live frame readback.
+
+The **Native Effects Card** shares its capsule sliders and Text / Live Preview
+selectors with the Clock Card. It supports filled buttons, dropdowns, chips,
+lists, grids, strips, carousels, and wheels. Existing `effect_view` grid, list,
+buttons, and dropdown configurations remain available under **Original**.
+Browsing offers text search without filter or sort controls; raw numeric
+experimental modes are hidden.
+
+Set `target_entities` to control several lamps together (`entity` remains
+supported for a single lamp). The first target supplies the main preview and
+control values. Optional `show_favourites` and `show_rotation` sections provide
+animated, reorderable favourites and timed effect rotation. Favourites are stored
+in this browser per target set, not synced between browsers.
+
+Rotation uses favourites or an ordered `rotation_effects` list when
+`rotation_source: custom`, with a 10-3600 second `rotation_interval` and optional
+`rotation_shuffle`. It only uses effects available on every target, starts only
+on explicit Play, and stops on manual commands, service errors, an off/unavailable
+target, a hidden browser tab, or removal of the card. It runs in this browser, not
+as a Home Assistant automation, and does not automatically resume or wake lamps.
+With `auto_apply: false`, effect and speed selections stay local until **Apply**;
+brightness and orientation still apply immediately. Rotation is an explicit
+apply action and does not use the preview-only setting.
 
 While Clock or Native Effect mode is active, the integration intentionally
 pauses periodic `get_prop` polling because this firmware query can stop the

@@ -190,7 +190,7 @@ export function getCapsuleCSS() {
       font-weight: 600;
       color: var(--primary-text-color);
       text-align: center;
-      padding: 8px 0;
+      padding: 8px 0 0;
     }
     .capsule-wrapper {
       padding: 0;

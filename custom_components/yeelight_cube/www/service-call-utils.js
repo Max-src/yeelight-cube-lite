@@ -8,8 +8,12 @@
  * to finish its transition.
  */
 
+export function getTargetEntities(config) {
+  return config.target_entities || (config.entity ? [config.entity] : []);
+}
+
 /**
- * Call a Yeelight Cube Lite service on every configured target entity.
+ * Call a Home Assistant service on every configured target entity.
  *
  * When multiple entities are targeted, they are sent as a list inside ONE
  * service call (`entity_id: ["light.a", "light.b"]`).  The Python handler
@@ -22,6 +26,7 @@
  * @param {Object}   [serviceData={}] - Extra data to pass alongside `entity_id`.
  * @param {Object}   [options={}]
  * @param {string}   [options.callerTag="ServiceCall"] - Tag for console error messages.
+ * @param {string}   [options.domain="yeelight_cube"] - Service domain.
  * @returns {Promise<void>}
  */
 export async function callServiceOnTargetEntities(
@@ -31,10 +36,9 @@ export async function callServiceOnTargetEntities(
   serviceData = {},
   options = {},
 ) {
-  const { callerTag = "ServiceCall" } = options;
+  const { callerTag = "ServiceCall", domain = "yeelight_cube" } = options;
 
-  const targetEntities =
-    config.target_entities || (config.entity ? [config.entity] : []);
+  const targetEntities = getTargetEntities(config);
 
   if (targetEntities.length === 0) {
     console.warn(
@@ -55,7 +59,7 @@ export async function callServiceOnTargetEntities(
   };
 
   try {
-    await hass.callService("yeelight_cube", serviceName, payload);
+    await hass.callService(domain, serviceName, payload);
   } catch (error) {
     console.error(
       `[${callerTag}] Error calling ${serviceName} for ${JSON.stringify(entityIdValue)}:`,

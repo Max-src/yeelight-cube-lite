@@ -507,6 +507,21 @@ test("gallery reload disconnects its observer and paints only current previews b
 });
 
 test("hostile saved names remain escaped in all text selectors", () => {
+  const selectorSource = readFileSync(
+    new URL(
+      "../custom_components/yeelight_cube/www/style-selector-utils.js",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const body = selectorSource.match(
+    /export function renderTextStyleSelector\(config, items, sel, active\) \{([\s\S]*?)\n\}/,
+  )[1];
+  const renderTextStyleSelector = new Function(
+    "escapeHtml",
+    "resolveSelectorShape",
+    `return function(config, items, sel, active) {${body}}`,
+  )(escapeHtml, () => "rounded");
   const style = {
     name: '\"><img src=x onerror=alert(1)>',
     presetId: "hostile",
@@ -516,6 +531,7 @@ test("hostile saved names remain escaped in all text selectors", () => {
     _shownStyles: () => [style],
     _selectorTextScale: () => 1,
     ...cardMethods(["_renderTextSelector"], {
+      renderTextStyleSelector,
       escapeHtml,
       clockPresetKey,
       resolveSelectorShape: () => "rounded",

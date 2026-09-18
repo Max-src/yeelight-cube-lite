@@ -29,6 +29,7 @@ from homeassistant.util import dt as dt_util  # type: ignore
 from . import async_save_data
 from .color_utils import hex_to_rgb, rgb_to_hex
 from .const import (
+    ALL_NATIVE_EFFECTS,
     CLOCK_COLOR_MODES,
     DOMAIN,
     EXPERIMENTAL_CLOCK_STYLE_IDS,
@@ -65,7 +66,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
     # integration (without a full HA restart) re-registers everything and picks
     # up newly added services. Re-registering existing services just overwrites
     # their handlers, which is harmless.
-    if hass.services.has_service(DOMAIN, "set_default"):
+    if hass.services.has_service(DOMAIN, "set_native_effect"):
         _LOGGER.debug("[SERVICES] Light services already registered")
         return True
     
@@ -1634,16 +1635,11 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
     async def handle_set_device_orientation(service_call):
         orientation = service_call.data.get("orientation")
 
-        target_entity = _resolve_entity(service_call, "SET_DEVICE_ORIENTATION")
-        if not target_entity:
-            return
-
-        # Check auto-turn-on setting
-        if not target_entity._is_on and not target_entity._should_auto_turn_on():
-            _LOGGER.debug("[AUTO-TURN-ON] set_device_orientation ignored - lamp is off and auto-turn-on is disabled")
-            return
-
-        await target_entity.set_device_orientation(orientation)
+        targets = _resolve_entities(service_call, "SET_DEVICE_ORIENTATION")
+        for target in targets:
+            if not target._is_on and not target._should_auto_turn_on():
+                raise HomeAssistantError("Lamp is off and auto-turn-on is disabled.")
+        await asyncio.gather(*(target.set_device_orientation(orientation) for target in targets))
 
     hass.services.async_register(
         DOMAIN,
@@ -2590,6 +2586,52 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         schema=vol.Schema({
             vol.Required("entity_id"): _entity_id_or_list,
         })
+    )
+
+    async def handle_set_native_effect(service_call):
+        targets = _resolve_entities(service_call, "SET_NATIVE_EFFECT")
+        if not targets:
+            raise HomeAssistantError("No matching Yeelight Cube lamps")
+        effect = service_call.data.get("effect")
+        speed = service_call.data.get("speed")
+        activate = service_call.data.get("activate", True)
+        for target in targets:
+            name = effect if effect is not None else target._native_effect
+            spec = ALL_NATIVE_EFFECTS.get(name)
+            if spec is None:
+                raise HomeAssistantError(f"Unknown native effect: {name}")
+            if spec.get("extended") and not target._extended_effects_enabled:
+                raise HomeAssistantError("Enable Experimental Features before applying this effect")
+            if speed is not None and not spec.get("speed"):
+                raise HomeAssistantError(f"{name} does not support animation speed")
+            if not target._is_on and not target._should_auto_turn_on():
+                raise HomeAssistantError("Lamp is off and auto-turn-on is disabled")
+
+        async def apply_one(target):
+            if effect is not None:
+                target._native_effect = effect
+            if speed is not None:
+                target._native_effect_speed = speed
+            if activate:
+                target._mode = "Native Effect"
+                target._custom_draw_active = False
+            if target._mode == "Native Effect":
+                await target.async_apply_display_mode(update_type="color_change")
+            target._refresh_linked_entities()
+            if target._native_effect_speed_entity:
+                target._native_effect_speed_entity.async_write_ha_state()
+            target.async_write_ha_state()
+
+        await asyncio.gather(*(apply_one(target) for target in targets))
+
+    hass.services.async_register(
+        DOMAIN, "set_native_effect", handle_set_native_effect,
+        schema=vol.Schema({
+            vol.Required("entity_id"): _entity_id_or_list,
+            vol.Optional("effect"): cv.string,
+            vol.Optional("speed"): vol.All(vol.Coerce(int), vol.Range(min=1, max=255)),
+            vol.Optional("activate", default=True): cv.boolean,
+        }),
     )
 
     async def handle_set_clock_style(service_call):

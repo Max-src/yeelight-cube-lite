@@ -6,7 +6,7 @@ import {
   createButtonGroup,
   createButtonGroupChangeHandler,
 } from "./button-group-utils.js";
-import { createToggleRow } from "./form-row-utils.js";
+import { createToggleRow, createSliderRow } from "./form-row-utils.js";
 import { normalizeButtonShape } from "./carousel-utils.js";
 
 /**
@@ -20,6 +20,77 @@ export const SHAPE_OPTIONS = [
   { value: "rounded", label: "Rounded" },
   { value: "round", label: "Round" },
 ];
+
+export const PIXEL_STYLE_CHOICES = [
+  { value: "rounded", label: "Rounded" },
+  { value: "circle", label: "Circle" },
+  { value: "square", label: "Square" },
+];
+export const BG_COLOR_CHOICES = [
+  { value: "transparent", label: "Transparent" },
+  { value: "white", label: "White" },
+  { value: "black", label: "Black" },
+];
+export const SPACING_CHOICES = [
+  { value: "none", label: "None" },
+  { value: "subtle", label: "Subtle" },
+  { value: "normal", label: "Normal" },
+];
+
+export function renderMatrixAppearanceSettings(
+  config,
+  onChange,
+  { prefix = "lamp", defaultSize = 55 } = {},
+) {
+  const key = (name) => `${prefix}_${name}`;
+  const choices = (label, name, items, fallback) =>
+    html` <div class="form-row">
+      <label>${label}</label>
+      ${createButtonGroup(items, config[key(name)] || fallback, (event) =>
+        onChange(key(name), event.currentTarget.dataset.value),
+      )}
+    </div>`;
+  return html`
+    ${createSliderRow(
+      "Matrix Size",
+      config[key("preview_size")] ?? defaultSize,
+      { min: 30, max: 100, step: 5 },
+      (event) => onChange(key("preview_size"), Number(event.target.value)),
+      "%",
+    )}
+    ${choices(
+      "Matrix Background Color",
+      "matrix_background",
+      BG_COLOR_CHOICES,
+      "black",
+    )}
+    ${(config[key("matrix_background")] || "black") !== "black"
+      ? renderModeSettingsSection(
+          "Background Settings",
+          createToggleRow(
+            "Ignore Black Pixels",
+            key("ignore_black_pixels"),
+            config[key("ignore_black_pixels")] === true,
+            (event) =>
+              onChange(key("ignore_black_pixels"), event.target.checked),
+          ),
+        )
+      : ""}
+    ${choices(
+      "Matrix Pixel Style",
+      "pixel_style",
+      PIXEL_STYLE_CHOICES,
+      "rounded",
+    )}
+    ${choices("Pixel Spacing", "spacing_mode", SPACING_CHOICES, "normal")}
+    ${createToggleRow(
+      "Matrix Box Shadow",
+      key("matrix_box_shadow"),
+      config[key("matrix_box_shadow")] === true,
+      (event) => onChange(key("matrix_box_shadow"), event.target.checked),
+    )}
+  `;
+}
 
 /**
  * Shared selector appearance rows (gradient + clock card editors):
@@ -72,6 +143,41 @@ export function fireEvent(node, type, detail, options) {
     detail,
   });
   node.dispatchEvent(event);
+}
+
+export function renderEditorSection(id, title, open, onToggle, content) {
+  return html`
+    <div
+      class="editor-card${open ? "" : " editor-card-collapsed"}"
+      data-section=${id}
+    >
+      <div
+        class="editor-card-header"
+        role="button"
+        tabindex="0"
+        aria-expanded=${String(open)}
+        aria-controls=${`section-${id}`}
+        @click=${onToggle}
+        @keydown=${(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            onToggle();
+          }
+        }}
+      >
+        ${title}
+        <ha-icon
+          icon="mdi:chevron-up"
+          style="transition:transform .3s;transform:rotate(${open
+            ? 0
+            : 180}deg);"
+        ></ha-icon>
+      </div>
+      <div class="editor-card-content" id=${`section-${id}`} ?inert=${!open}>
+        ${content}
+      </div>
+    </div>
+  `;
 }
 
 /**

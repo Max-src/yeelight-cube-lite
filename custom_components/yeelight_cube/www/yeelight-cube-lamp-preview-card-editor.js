@@ -1,17 +1,6 @@
 import { renderActionButtonSettings } from "./action-button-ui.js";
-import {
-  actionButtonStyleChoices,
-  actionButtonContentChoices,
-} from "./action-button-utils.js";
-import {
-  renderOrderableList,
-  orderableListStyles,
-} from "./orderable-list-utils.js";
-import {
-  ORIENTATION_CHOICES,
-  ORIENTATION_ORDER,
-  orientationOptions,
-} from "./orientation-control-utils.js";
+import { orderableListStyles } from "./orderable-list-utils.js";
+import { renderOrientationSettings } from "./orientation-control-ui.js";
 import { LitElement, html, css } from "./lib/lit-all.js";
 import {
   createButtonGroup,
@@ -165,47 +154,9 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
   }
 
   _renderOrientationSettings() {
-    const options = orientationOptions(this._config);
-    const choices = (label, key, items, value) =>
-      html` <div class="form-row">
-        <label>${label}</label>
-        ${createButtonGroup(items, value, (event) =>
-          this._orientationChanged(key, event.currentTarget.dataset.value),
-        )}
-      </div>`;
-    return html`
-      ${choices(
-        "Button Style",
-        "orientation_button_style",
-        [{ value: "original", label: "Original" }, ...actionButtonStyleChoices],
-        options.style,
-      )}
-      ${!["original", "icon"].includes(options.style)
-        ? choices(
-            "Content",
-            "orientation_content_mode",
-            actionButtonContentChoices,
-            options.contentMode,
-          )
-        : ""}
-      <div class="form-row"><label>Available Directions</label></div>
-      ${renderOrderableList({
-        items: options.buttons,
-        available: ORIENTATION_CHOICES.map(({ value }) => value).filter(
-          (value) => !options.buttons.includes(value),
-        ),
-        labelFor: (value) =>
-          ORIENTATION_CHOICES.find((choice) => choice.value === value)?.label ||
-          value,
-        onUpdate: (buttons) =>
-          this._orientationChanged("orientation_buttons", buttons),
-        onReset: () =>
-          this._orientationChanged("orientation_buttons", [
-            ...ORIENTATION_ORDER,
-          ]),
-        addPlaceholder: "Add button",
-      })}
-    `;
+    return renderOrientationSettings(this._config, (key, value) =>
+      this._orientationChanged(key, value),
+    );
   }
 
   render() {

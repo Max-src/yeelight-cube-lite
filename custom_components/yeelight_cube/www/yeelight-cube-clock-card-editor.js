@@ -1,3 +1,4 @@
+import { renderStyleSelectorSettings } from "./style-selector-ui.js";
 import { LitElement, html } from "./lib/lit-all.js";
 import "./clock-preset-manager.js";
 import { renderActionButtonSettings } from "./action-button-ui.js";
@@ -13,14 +14,15 @@ import {
 
 import {
   sharedEditorStyles,
+  renderEditorSection,
   renderModeSettingsSection,
-  renderSelectorShapeRows,
+  renderMatrixAppearanceSettings,
 } from "./editor_ui_utils.js";
 import { createButtonGroup, buttonGroupStyles } from "./button-group-utils.js";
-import { createToggleRow, createSliderRow } from "./form-row-utils.js";
+import { createToggleRow } from "./form-row-utils.js";
 import { createYeelightCubeEntityPicker } from "./entity-selector-utils.js";
 import { getClockStyles, CLOCK_COLOR_MODES } from "./clock-preview-utils.js";
-import { renderSliderSettings, sliderKeys } from "./slider-control-utils.js";
+import { renderLightSliderSettings } from "./slider-control-utils.js";
 import {
   renderOrderableList,
   orderableListStyles,
@@ -29,62 +31,6 @@ import {
   COLOR_PRESET_STYLE_CHOICES,
   COLOR_PRESET_SHAPE_CHOICES,
 } from "./yeelight-cube-clock-card.js";
-
-const TEXT_STYLE_CHOICES = [
-  { value: "filled", label: "Filled" },
-  { value: "dropdown", label: "Dropdown" },
-  {
-    value: "chips",
-    label: "Chips",
-    title: "Chips with a colour swatch per clock style",
-  },
-];
-
-const PREVIEW_STYLE_CHOICES = [
-  {
-    value: "preview-list",
-    label: "List",
-    title: "Responsive list of live clock previews",
-  },
-  {
-    value: "preview-grid",
-    label: "Grid",
-    title: "Fixed two-column grid of live clock previews",
-  },
-  {
-    value: "preview-strip",
-    label: "Strip",
-    title: "Horizontal scrollable strip of mini previews",
-  },
-  {
-    value: "preview-carousel",
-    label: "Carousel",
-    title: "One preview at a time with arrows, dots and swipe navigation",
-  },
-  {
-    value: "preview-wheel",
-    label: "Wheel",
-    title: "iOS-style rotating picker with live previews",
-  },
-];
-
-const PIXEL_STYLE_CHOICES = [
-  { value: "rounded", label: "Rounded" },
-  { value: "circle", label: "Circle" },
-  { value: "square", label: "Square" },
-];
-
-const BG_COLOR_CHOICES = [
-  { value: "transparent", label: "Transparent" },
-  { value: "white", label: "White" },
-  { value: "black", label: "Black" },
-];
-
-const SPACING_CHOICES = [
-  { value: "none", label: "None" },
-  { value: "subtle", label: "Subtle" },
-  { value: "normal", label: "Normal" },
-];
 
 class YeelightCubeClockCardEditor extends LitElement {
   static get properties() {
@@ -142,83 +88,14 @@ class YeelightCubeClockCardEditor extends LitElement {
     this._open = { ...this._open, [id]: !this._open[id] };
   }
 
-  // ── Unified selector helpers (same UX as the gradient editor) ─────────────
-  _selectorStyle(config) {
-    const v = config.style_selector_style;
-    const all = [
-      "filled",
-      "dropdown",
-      "chips",
-      "preview-list",
-      "preview-grid",
-      "preview-strip",
-      "preview-carousel",
-      "preview-wheel",
-    ];
-    return all.includes(v) ? v : "preview-grid";
-  }
-
-  _selectorFamily(config) {
-    return this._selectorStyle(config).startsWith("preview-")
-      ? "preview"
-      : "text";
-  }
-
-  _onSelectorFamily(e) {
-    const value = e?.target?.dataset?.value;
-    if (!value) return;
-    const current = this._selectorStyle(this.config);
-    const isPreview = current.startsWith("preview-");
-    // Only switch when crossing families; remember the last style per family.
-    if (value === "preview" && !isPreview) {
-      this._lastTextStyle = current;
-      this.config = {
-        ...this.config,
-        style_selector_style: this._lastPreviewStyle || "preview-grid",
-      };
-    } else if (value === "text" && isPreview) {
-      this._lastPreviewStyle = current;
-      this.config = {
-        ...this.config,
-        style_selector_style: this._lastTextStyle || "filled",
-      };
-    } else {
-      return;
-    }
-    this.requestUpdate();
-    this._fire();
-  }
-
-  _onSelectorStyle(e) {
-    const value = e?.target?.dataset?.value;
-    if (!value) return;
-    if (value.startsWith("preview-")) this._lastPreviewStyle = value;
-    else this._lastTextStyle = value;
-    this.config = { ...this.config, style_selector_style: value };
-    this.requestUpdate();
-    this._fire();
-  }
-
-  _chevron(open) {
-    return html`<ha-icon
-      icon="mdi:chevron-up"
-      style="transition:transform .3s;transform:rotate(${open ? 0 : 180}deg);"
-    ></ha-icon>`;
-  }
-
   _section(id, title, content) {
-    const open = !!this._open[id];
-    return html`
-      <div class="editor-card${open ? "" : " editor-card-collapsed"}">
-        <div
-          class="editor-card-header"
-          @click="${() => this._toggleSection(id)}"
-        >
-          ${title} ${this._chevron(open)}
-        </div>
-        <div class="editor-card-content">${content}</div>
-      </div>
-    `;
+    return renderEditorSection(
+      id,
+      title,
+      !!this._open[id],
+      () => this._toggleSection(id),
+      content,
+    );
   }
 
   render() {
@@ -289,51 +166,16 @@ class YeelightCubeClockCardEditor extends LitElement {
               config.show_current_preview !== false,
               (e) => this._onToggle(e, "show_current_preview"),
             )}
-            ${createSliderRow(
-              "Matrix Size",
-              config.lamp_preview_size ?? 55,
-              { min: 30, max: 100, step: 5 },
-              (e) => this._onSlider("lamp_preview_size", e),
-              "%",
-            )}
-            <div class="form-row">
-              <label>Matrix Background Color</label>
-              ${createButtonGroup(
-                BG_COLOR_CHOICES,
-                config.lamp_matrix_background || "black",
-                (e) => this._onButtonGroup("lamp_matrix_background", e),
-              )}
-            </div>
-            ${(config.lamp_matrix_background || "black") !== "black"
-              ? createToggleRow(
-                  "Ignore Black Pixels",
-                  "lamp_ignore_black_pixels",
-                  config.lamp_ignore_black_pixels === true,
-                  (e) => this._onToggle(e, "lamp_ignore_black_pixels"),
+            ${config.show_current_preview !== false
+              ? renderModeSettingsSection(
+                  "Preview Settings",
+                  renderMatrixAppearanceSettings(config, (key, value) => {
+                    this.config = { ...this.config, [key]: value };
+                    this.requestUpdate();
+                    this._fire();
+                  }),
                 )
               : ""}
-            <div class="form-row">
-              <label>Matrix Pixel Style</label>
-              ${createButtonGroup(
-                PIXEL_STYLE_CHOICES,
-                config.lamp_pixel_style || "rounded",
-                (e) => this._onButtonGroup("lamp_pixel_style", e),
-              )}
-            </div>
-            <div class="form-row">
-              <label>Pixel Spacing</label>
-              ${createButtonGroup(
-                SPACING_CHOICES,
-                config.lamp_spacing_mode || "normal",
-                (e) => this._onButtonGroup("lamp_spacing_mode", e),
-              )}
-            </div>
-            ${createToggleRow(
-              "Matrix Box Shadow",
-              "lamp_matrix_box_shadow",
-              config.lamp_matrix_box_shadow === true,
-              (e) => this._onToggle(e, "lamp_matrix_box_shadow"),
-            )}
           `,
         )}
         ${this._section(
@@ -352,21 +194,11 @@ class YeelightCubeClockCardEditor extends LitElement {
               config.show_animation_speed !== false,
               (e) => this._onToggle(e, "show_animation_speed"),
             )}
-            ${renderSliderSettings(
-              config,
-              sliderKeys("slider"),
-              (key, value) => {
-                this.config = { ...this.config, [key]: value };
-                this.requestUpdate();
-                this._fire();
-              },
-              {
-                icons: {
-                  leftLabel: "Show lower icon (🐢 / 🌙)",
-                  rightLabel: "Show upper icon (⚡ / ☀️)",
-                },
-              },
-            )}
+            ${renderLightSliderSettings(config, (key, value) => {
+              this.config = { ...this.config, [key]: value };
+              this.requestUpdate();
+              this._fire();
+            })}
           `,
         )}
         ${this._section(
@@ -566,194 +398,11 @@ class YeelightCubeClockCardEditor extends LitElement {
                 )
               : ""}
             ${this._renderStyleBrowserSettings()}
-            <!-- Same two-level selector UI as the gradient card: family
-                 first, then that family's style picker + settings. -->
-            <div class="form-row">
-              <label>Selector Type</label>
-              ${createButtonGroup(
-                [
-                  {
-                    value: "text",
-                    label: "Text",
-                    title: "Lightweight buttons — no preview animation",
-                  },
-                  {
-                    value: "preview",
-                    label: "Live Preview",
-                    title: "Animated clock preview of every style",
-                  },
-                ],
-                this._selectorFamily(config),
-                (e) => this._onSelectorFamily(e),
-              )}
-            </div>
-            ${this._selectorFamily(config) === "text"
-              ? html`
-                  <div class="form-row">
-                    <label>Text Style</label>
-                    ${createButtonGroup(
-                      TEXT_STYLE_CHOICES,
-                      this._selectorStyle(config),
-                      (e) => this._onSelectorStyle(e),
-                    )}
-                  </div>
-                `
-              : html`
-                  <div class="form-row">
-                    <label>Preview Style</label>
-                    ${createButtonGroup(
-                      PREVIEW_STYLE_CHOICES,
-                      this._selectorStyle(config),
-                      (e) => this._onSelectorStyle(e),
-                    )}
-                  </div>
-                  ${this._selectorStyle(config) === "preview-wheel"
-                    ? renderModeSettingsSection(
-                        "Wheel Mode Settings",
-                        html`
-                          <div class="form-row">
-                            <label>Wheel Navigation Position</label>
-                            ${createButtonGroup(
-                              [
-                                { value: "none", label: "None" },
-                                { value: "bottom", label: "Bottom" },
-                                { value: "sides", label: "Sides" },
-                              ],
-                              config.wheel_nav_position || "bottom",
-                              (e) =>
-                                this._onButtonGroup("wheel_nav_position", e),
-                            )}
-                          </div>
-                          ${createSliderRow(
-                            "Wheel Height",
-                            config.wheel_height ?? 300,
-                            { min: 65, max: 400, step: 10 },
-                            (e) => this._onSlider("wheel_height", e),
-                            "px",
-                          )}
-                          ${createToggleRow(
-                            "Highlight Active Style",
-                            "highlight_active_mode",
-                            config.highlight_active_mode !== false,
-                            (e) => this._onToggle(e, "highlight_active_mode"),
-                          )}
-                        `,
-                      )
-                    : ""}
-                  ${this._selectorStyle(config) === "preview-carousel"
-                    ? renderModeSettingsSection(
-                        "Carousel Mode Settings",
-                        createToggleRow(
-                          "Wrap Navigation (Infinite Loop)",
-                          "gallery_wrap_navigation",
-                          config.gallery_wrap_navigation === true,
-                          (e) => this._onToggle(e, "gallery_wrap_navigation"),
-                        ),
-                      )
-                    : ""}
-                  ${this._selectorStyle(config) === "preview-strip"
-                    ? renderModeSettingsSection(
-                        "Strip Mode Settings",
-                        createToggleRow(
-                          "Highlight Active Style",
-                          "highlight_active_mode",
-                          config.highlight_active_mode !== false,
-                          (e) => this._onToggle(e, "highlight_active_mode"),
-                        ),
-                      )
-                    : ""}
-                  ${this._selectorStyle(config) === "preview-list" ||
-                  this._selectorStyle(config) === "preview-grid"
-                    ? renderModeSettingsSection(
-                        this._selectorStyle(config) === "preview-grid"
-                          ? "Grid Mode Settings"
-                          : "List Mode Settings",
-                        html`
-                          ${createToggleRow(
-                            "Highlight Active Style",
-                            "highlight_active_mode",
-                            config.highlight_active_mode !== false,
-                            (e) => this._onToggle(e, "highlight_active_mode"),
-                          )}
-                          ${createSliderRow(
-                            "Items Per Page (0 = no pagination)",
-                            config.items_per_page || 0,
-                            { min: 0, max: 16, step: 1 },
-                            (e) => this._onSlider("items_per_page", e),
-                          )}
-                        `,
-                      )
-                    : ""}
-                  ${createToggleRow(
-                    "Show Style Titles",
-                    "preview_show_titles",
-                    config.preview_show_titles !== false,
-                    (e) => this._onToggle(e, "preview_show_titles"),
-                  )}
-                  ${createSliderRow(
-                    "Size",
-                    config.preview_size ?? 55,
-                    { min: 30, max: 100, step: 5 },
-                    (e) => this._onSlider("preview_size", e),
-                    "%",
-                  )}
-                  <div class="form-row">
-                    <label>Preview Background Color</label>
-                    ${createButtonGroup(
-                      BG_COLOR_CHOICES,
-                      config.gallery_background_color || "black",
-                      (e) => this._onButtonGroup("gallery_background_color", e),
-                    )}
-                  </div>
-                  ${(config.gallery_background_color || "black") !== "black"
-                    ? createToggleRow(
-                        "Ignore Black Pixels",
-                        "gallery_ignore_black_pixels",
-                        config.gallery_ignore_black_pixels === true,
-                        (e) => this._onToggle(e, "gallery_ignore_black_pixels"),
-                      )
-                    : ""}
-                  <div class="form-row">
-                    <label>Preview Pixel Style</label>
-                    ${createButtonGroup(
-                      [
-                        { value: "square", label: "Square" },
-                        { value: "rounded", label: "Rounded" },
-                        { value: "circle", label: "Circle" },
-                      ],
-                      config.gallery_pixel_style || "square",
-                      (e) => this._onButtonGroup("gallery_pixel_style", e),
-                    )}
-                  </div>
-                  <div class="form-row">
-                    <label>Pixel Spacing</label>
-                    ${createButtonGroup(
-                      SPACING_CHOICES,
-                      config.gallery_spacing_mode || "normal",
-                      (e) => this._onButtonGroup("gallery_spacing_mode", e),
-                    )}
-                  </div>
-                  ${createToggleRow(
-                    "Matrix Box Shadow",
-                    "gallery_matrix_box_shadow",
-                    config.gallery_matrix_box_shadow === true,
-                    (e) => this._onToggle(e, "gallery_matrix_box_shadow"),
-                  )}
-                `}
-            <!-- Shared appearance axes: apply to EVERY selector style -->
-            ${renderSelectorShapeRows(
-              config,
-              (key, value) => {
-                this.config = { ...this.config, [key]: value };
-                this.requestUpdate();
-                this._fire();
-              },
-              {
-                showButtonShape:
-                  this._selectorStyle(config) === "preview-carousel" ||
-                  this._selectorStyle(config) === "preview-wheel",
-              },
-            )}
+            ${renderStyleSelectorSettings(config, (key, value) => {
+              this.config = { ...this.config, [key]: value };
+              this.requestUpdate();
+              this._fire();
+            })}
           `,
         )}
       </div>

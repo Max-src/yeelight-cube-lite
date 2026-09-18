@@ -95,6 +95,14 @@ export const orderableListStyles = css`
   }
   .orderable-add-row select {
     flex: 1;
+    min-width: 0;
+    max-width: 100%;
+    padding: 8px;
+    border: 1px solid var(--divider-color, #d0d7de);
+    border-radius: 6px;
+    background: var(--card-background-color, #fff);
+    color: var(--primary-text-color, #333);
+    font: inherit;
   }
   .orderable-reset-btn {
     background: none;

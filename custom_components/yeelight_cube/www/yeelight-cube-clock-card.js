@@ -1,3 +1,8 @@
+import {
+  renderTextStyleSelector,
+  renderPreviewStyleSelector,
+  bindStyleSelectorEvents,
+} from "./style-selector-utils.js";
 // ============================================================================
 //  Yeelight Cube Lite — Clock Card
 // ============================================================================
@@ -32,30 +37,25 @@ import {
 } from "./color-picker-utils.js";
 import { callServiceOnTargetEntities } from "./service-call-utils.js";
 import {
-  renderGalleryDisplay,
   renderMatrixPreview,
   galleryDisplayStyles,
 } from "./gallery-display-utils.js";
-import { renderCarouselString, carouselStyles } from "./carousel-utils.js";
+import { carouselStyles } from "./carousel-utils.js";
 import { initializeWheelNavigation } from "./wheel-navigation-utils.js";
 import {
   renderSliderGroup,
+  lightSliderConfig,
   createSliderHandlers,
   sliderControlStyles,
   sliderKeys,
-  sliderConfigToGc,
 } from "./slider-control-utils.js";
 import {
   TEXT_SELECTOR_STYLES,
   PREVIEW_SELECTOR_STYLES,
-  resolveSelectorShape,
-  resolveSelectorButtonShape,
-  selectorShapeToCarouselButtonShape,
   selectorSharedStyles,
 } from "./selector-shared-styles.js";
 import {
   paginationStyles,
-  renderPagination,
   attachPaginationListeners,
 } from "./pagination-utils.js";
 import {
@@ -245,21 +245,11 @@ class YeelightCubeClockCard extends HTMLElement {
   // Both sliders share the appearance config (slider_*); only colour + icons
   // differ per slider.
   _speedGc() {
-    return sliderConfigToGc(this.config, this._sliderKeys, {
-      color: "#5aa9ff",
-      unit: "%",
-      iconLeft: this.config.slider_show_icon_left !== false ? "🐢" : null,
-      iconRight: this.config.slider_show_icon_right !== false ? "⚡" : null,
-    });
+    return lightSliderConfig(this.config, "speed", this._sliderKeys);
   }
 
   _brightnessGc() {
-    return sliderConfigToGc(this.config, this._sliderKeys, {
-      color: "#ffb74d",
-      unit: "%",
-      iconLeft: this.config.slider_show_icon_left !== false ? "🌙" : null,
-      iconRight: this.config.slider_show_icon_right !== false ? "☀️" : null,
-    });
+    return lightSliderConfig(this.config, "brightness", this._sliderKeys);
   }
 
   setConfig(config) {
@@ -1284,58 +1274,16 @@ class YeelightCubeClockCard extends HTMLElement {
 
   // Text selector family — markup + classes identical to the gradient card.
   _renderTextSelector(sel, current) {
-    const styles = this._shownStyles();
-    const shape = resolveSelectorShape(this.config);
-    const scale = this._selectorTextScale();
-    const selAttrs = `data-shape="${shape}" style="--gc-sel-scale:${scale}; display: flex; flex-wrap: wrap; gap: 6px;"`;
-    const active = clockPresetKey(current);
-
-    if (sel === "dropdown") {
-      return `
-        <div class="gc-selector" data-shape="${shape}" style="--gc-sel-scale:${scale};">
-          <select class="mode-select" data-mode-select="true">
-            ${styles.some((style) => clockPresetKey(style) === active) ? "" : '<option value="" disabled selected>Current style outside this list</option>'}
-            ${styles
-              .map(
-                (s) =>
-                  `<option value="${escapeHtml(clockPresetKey(s))}" ${
-                    active === clockPresetKey(s) ? "selected" : ""
-                  }>${escapeHtml(s.name)}</option>`,
-              )
-              .join("")}
-          </select>
-        </div>`;
-    }
-
-    if (sel === "chips") {
-      return `
-        <div class="gc-selector" ${selAttrs}>
-          ${styles
-            .map(
-              (s) => `
-                <button class="mode-chip ${active === clockPresetKey(s) ? "active" : ""}"
-                  data-mode="${escapeHtml(clockPresetKey(s))}" title="${escapeHtml(s.name)}">
-              <span class="mode-chip-swatch" style="background:${styleSwatchBackground(s)}"></span>
-              <span class="mode-chip-label">${escapeHtml(s.name)}</span>
-            </button>`,
-            )
-            .join("")}
-        </div>`;
-    }
-
-    // "filled" (default text style)
-    return `
-      <div class="gc-selector" ${selAttrs}>
-        ${styles
-          .map(
-            (s) => `
-            <button class="mode-btn-filled ${active === clockPresetKey(s) ? "active" : ""}"
-              data-mode="${escapeHtml(clockPresetKey(s))}" title="${escapeHtml(s.name)}">
-            ${escapeHtml(s.name)}
-          </button>`,
-          )
-          .join("")}
-      </div>`;
+    return renderTextStyleSelector(
+      this.config,
+      this._shownStyles().map((style) => ({
+        name: style.name,
+        dataMode: clockPresetKey(style),
+        swatch: styleSwatchBackground(style),
+      })),
+      sel,
+      clockPresetKey(current),
+    );
   }
 
   // Build the shared-renderer item list: one animated clock frame per style.
@@ -1357,123 +1305,17 @@ class YeelightCubeClockCard extends HTMLElement {
   // the gradient card (gallery-display-utils / carousel-utils) so the look is
   // identical across cards.
   _renderPreviewSelector(sel, current) {
-    const items = this._previewItems();
-    if (!items.length) return "";
-
-    const shape = resolveSelectorShape(this.config);
-    const shellAttrs = `data-shape="${shape}"${
-      sel === "preview-grid" ? ' data-columns="2"' : ""
-    }`;
-    const previewSize = this._previewSizePx();
-    const effectivePreviewSize =
-      sel === "preview-grid"
-        ? Math.round(previewSize * 0.5)
-        : sel === "preview-strip"
-          ? Math.round(previewSize * 0.4)
-          : previewSize;
-    const pixelStyle = this.config.gallery_pixel_style || "square";
-    const bgName = this.config.gallery_background_color || "black";
-    // The shared renderers colour titles white only when the bg is exactly
-    // "#000000"; pass that (not "black") so titles stay readable on a black bg.
-    const rendererBg = bgName === "black" ? "#000000" : bgName;
-    const showTitles = this.config.preview_show_titles !== false;
-    const spacing = this.config.gallery_spacing_mode || "normal";
-    const pixelGap = this._spacingGap(spacing, previewSize);
-    const pixelBoxShadow = this._spacingShadow(spacing);
-    const matrixBoxShadow = this.config.gallery_matrix_box_shadow === true;
-    const ignoreBlackPixels = this._galleryIgnoreBlack();
-    const displayMode = this._displayMode();
-
-    if (displayMode === "carousel") {
-      if (this._carouselIndex == null) {
-        const idx = items.findIndex(
-          (it) => it.dataMode === clockPresetKey(current),
-        );
-        this._carouselIndex = idx >= 0 ? idx : 0;
-      }
-      this._carouselIndex = Math.max(
-        0,
-        Math.min(this._carouselIndex, items.length - 1),
-      );
-      return `
-        <div class="gc-preview-shell" ${shellAttrs} style="margin-top:12px;border-radius:8px;">
-          ${renderCarouselString({
-            items,
-            currentIndex: this._carouselIndex,
-            buttonShape: selectorShapeToCarouselButtonShape(
-              resolveSelectorButtonShape(this.config),
-            ),
-            showAsCard: true,
-            carouselId: "cc-clock-carousel",
-            wrapNavigation: this.config.gallery_wrap_navigation === true,
-            renderItemString: (it) => `
-              <div class="gallery-item cc-carousel-item" data-mode="${escapeHtml(it.dataMode)}"
-                   data-action="select-mode"
-                   style="cursor:pointer;display:flex;flex-direction:column;align-items:center;
-                          gap:6px;padding:10px;border-radius:8px;background:${bgName === "transparent" ? "transparent" : rendererBg};
-                          max-width:100%;box-sizing:border-box;transition:all 0.2s ease;">
-                <div style="width:100%;max-width:${previewSize}px;">
-                  ${renderMatrixPreview(it.colorData, {
-                    rows: 5,
-                    cols: 20,
-                    bgColor: rendererBg,
-                    pixelStyle,
-                    pixelGap,
-                    previewSize,
-                    ignoreBlackPixels,
-                    matrixBoxShadow,
-                    pixelBoxShadow,
-                    forceAspectRatio: true,
-                  })}
-                </div>
-                ${showTitles ? `<div style="font-size:13px;font-weight:500;${bgName === "black" ? "color:#fff;" : "color:var(--primary-text-color);"}">${escapeHtml(it.title)}</div>` : ""}
-              </div>`,
-          })}
-        </div>`;
-    }
-
-    // List / grid modes: optional pagination via the shared utility (same
-    // config key + controls as the palette and draw cards).
-    let pagedItems = items;
-    let paginationHtml = "";
-    const itemsPerPage = parseInt(this.config.items_per_page) || 0;
-    if (displayMode === "list" && itemsPerPage > 0) {
-      const result = renderPagination({
-        items,
-        currentPage: this._selectorPage || 0,
-        itemsPerPage,
-      });
-      pagedItems = result.items;
-      paginationHtml = result.html;
-      this._selectorPage = result.currentPage;
-    }
-
-    const galleryHtml = renderGalleryDisplay(pagedItems, displayMode, {
-      rows: 5,
-      cols: 20,
-      bgColor: rendererBg,
-      pixelStyle,
-      pixelGap,
-      previewSize: effectivePreviewSize,
-      ignoreBlackPixels,
-      showCards: displayMode === "wheel" || displayMode === "strip",
-      showTitles,
-      onClickEnabled: true,
-      matrixBoxShadow,
-      pixelBoxShadow,
-      wheelNavPosition: this.config.wheel_nav_position || "bottom",
-      wheelHeight: this.config.wheel_height || 300,
-      wheelDisplayStyle: showTitles ? "default" : "compact",
-      navButtonShape: resolveSelectorButtonShape(this.config),
-      currentMode: null, // highlight applied afterwards as DOM attributes
-      highlightActive: this.config.highlight_active_mode !== false,
-    });
-
-    return `
-      <div class="gc-preview-shell" ${shellAttrs} style="margin-top: 12px; border-radius: 8px;">
-        ${galleryHtml}
-        ${paginationHtml}
-      </div>`;
+    const state = { index: this._carouselIndex, page: this._selectorPage };
+    const markup = renderPreviewStyleSelector(
+      this.config,
+      this._previewItems(),
+      sel,
+      clockPresetKey(current),
+      state,
+    );
+    this._carouselIndex = state.index;
+    this._selectorPage = state.page;
+    return markup;
   }
 
   _controlGroup(options) {
@@ -1836,18 +1678,12 @@ class YeelightCubeClockCard extends HTMLElement {
       presetSlot.append(this._presetManager);
     }
 
-    // Text selectors: filled buttons + chips share the data-mode contract
-    root
-      .querySelectorAll(".mode-btn-filled[data-mode], .mode-chip[data-mode]")
-      .forEach((btn) => {
-        btn.addEventListener("click", () => this._applyStyle(btn.dataset.mode));
-      });
-    const dropdown = root.querySelector(".mode-select:not(.colormode-select)");
-    if (dropdown) {
-      dropdown.addEventListener("change", (e) =>
-        this._applyStyle(e.target.value),
-      );
-    }
+    bindStyleSelectorEvents(root, {
+      select: (name) => this._applyStyle(name),
+      navigate: (direction) => this._carouselNavigate(direction),
+      setIndex: (index) => this._carouselSetIndex(index),
+      style: this._selectorStyle(),
+    });
     const colorModeDropdown = root.querySelector(".colormode-select");
     if (colorModeDropdown) {
       colorModeDropdown.addEventListener("change", (e) =>
@@ -1858,49 +1694,7 @@ class YeelightCubeClockCard extends HTMLElement {
     // Preview selectors
     if (this._isPreviewSelector()) {
       const displayMode = this._displayMode();
-      if (displayMode === "carousel") {
-        root.querySelectorAll('[data-action="navigate"]').forEach((btn) => {
-          btn.addEventListener("click", (e) => {
-            e.stopPropagation();
-            this._carouselNavigate(parseInt(btn.dataset.direction, 10) || 1);
-          });
-        });
-        root.querySelectorAll('[data-action="set-index"]').forEach((dot) => {
-          dot.addEventListener("click", (e) => {
-            e.stopPropagation();
-            this._carouselSetIndex(parseInt(dot.dataset.index, 10) || 0);
-          });
-        });
-        // Swipe gesture on the shell
-        const shell = root.querySelector(".gc-preview-shell");
-        if (shell) {
-          let tx = 0;
-          shell.addEventListener(
-            "touchstart",
-            (e) => {
-              tx = e.touches[0].clientX;
-            },
-            { passive: true },
-          );
-          shell.addEventListener(
-            "touchend",
-            (e) => {
-              const dx = e.changedTouches[0].clientX - tx;
-              if (Math.abs(dx) > 40) this._carouselNavigate(dx < 0 ? 1 : -1);
-            },
-            { passive: true },
-          );
-        }
-      } else if (displayMode !== "wheel") {
-        // list / grid: click a preview item to apply (wheel wires its own
-        // selection through the shared controller)
-        root
-          .querySelectorAll(".gc-preview-shell .gallery-item[data-mode]")
-          .forEach((item) => {
-            item.addEventListener("click", () =>
-              this._applyStyle(item.dataset.mode),
-            );
-          });
+      if (displayMode !== "carousel" && displayMode !== "wheel") {
         // Pagination controls (shadowRoot is rebuilt each render, so this
         // never double-binds).
         const shell = root.querySelector(".gc-preview-shell");
