@@ -295,6 +295,7 @@ class _YeelightCubeMatrixCameraBase(Camera):
             phase,
             direction,
             color_mode=getattr(le, "_native_effect_color_mode", "normal"),
+            color_override=getattr(le, "_native_effect_color", None),
         )
         # Bottom-origin frame (row 0 = physical bottom), like _get_clock_preview:
         # return it as-is and let _render_matrix's _RECTS_NORMAL apply the single

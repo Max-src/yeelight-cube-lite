@@ -1,6 +1,26 @@
 const activePickers = new WeakMap();
 const pickerTriggers = new WeakMap();
 
+export function openRgbColorPicker(owner, anchor, rgb, onColor) {
+  const view = owner.ownerDocument.defaultView;
+  const bounds = anchor.getBoundingClientRect();
+  const apply = (hex) => {
+    if (/^#[0-9a-f]{6}$/i.test(hex))
+      onColor(
+        [1, 3, 5].map((offset) => parseInt(hex.slice(offset, offset + 2), 16)),
+      );
+  };
+  return openColorPicker(owner, {
+    value: rgb
+      ? `#${rgb.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`
+      : "#ffee00",
+    pageX: bounds.left + view.scrollX,
+    pageY: bounds.bottom + view.scrollY,
+    onInput: apply,
+    onChange: apply,
+  });
+}
+
 export const colorPickerStyleChoices = [
   { value: "swatch", label: "Swatch" },
   { value: "chip", label: "Hex chip" },

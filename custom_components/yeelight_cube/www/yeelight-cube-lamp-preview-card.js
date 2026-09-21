@@ -1990,7 +1990,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     // it straight to _updateMatrixColors, whose layout indexFn provides the one
     // display flip. (A prior extra flip here double-flipped native effects, so
     // they showed upside-down vs the calibration card / lamp.)
-    const raw = renderNativeEffectOriented(effect, phase, dir, null, st.attributes.native_effect_color_mode || "normal");
+    const raw = renderNativeEffectOriented(effect, phase, dir, st.attributes.native_effect_color || null, st.attributes.native_effect_color_mode || "normal");
     const grid = this._matrixColorsToGridColors(raw, st);
     this._updateMatrixColors(grid, st);
   }

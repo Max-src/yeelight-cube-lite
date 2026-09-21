@@ -103,6 +103,27 @@ export function getActionRowClass(options = {}) {
   return `action-row${resolveActionButtonOptions(options).contentMode === "icon" ? " icon-mode" : ""}${options.slotted ? " action-row-slotted" : ""}`;
 }
 
+export function modeActionOptions(config = {}) {
+  return resolveActionButtonOptions({
+    buttonStyle:
+      config.actions_buttons_style || config.buttons_style || "classic",
+    contentMode:
+      config.actions_buttons_content_mode ||
+      config.buttons_content_mode ||
+      "icon",
+  });
+}
+
+export function independentActionConfig(config = {}, defaults = {}) {
+  const options = modeActionOptions({ ...defaults, ...config });
+  return {
+    ...config,
+    actions_buttons_style: config.actions_buttons_style || options.buttonStyle,
+    actions_buttons_content_mode:
+      config.actions_buttons_content_mode || options.contentMode,
+  };
+}
+
 export function actionButtonModel({
   action = "save",
   buttonStyle,

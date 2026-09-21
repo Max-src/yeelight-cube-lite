@@ -60,7 +60,7 @@ export function nativeEffectFrame(effect, attrs = {}, elapsed = 0) {
       effect.name,
       elapsed * (0.25 + speed / 55),
       nativeEffectDirection(effect, attrs),
-      null,
+      attrs.native_effect_color || null,
       attrs.native_effect_color_mode || "normal",
     ),
   );

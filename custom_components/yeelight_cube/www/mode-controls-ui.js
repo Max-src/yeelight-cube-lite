@@ -4,7 +4,10 @@ import {
   renderActionRow,
   renderActionButtonSettings,
 } from "./action-button-ui.js";
-import { actionButtonStyles } from "./action-button-utils.js";
+import {
+  actionButtonStyles,
+  modeActionOptions,
+} from "./action-button-utils.js";
 import {
   renderOrientationControls,
   orientationControlStyles,
@@ -41,18 +44,43 @@ export function renderColorModeSettings(config, change) {
       )}
     </div>`;
   return html`${choices(
-    "Presentation",
-    "color_mode_selector",
-    ["buttons", "dropdown"],
-    "buttons",
-  )}${config.color_mode_selector === "dropdown"
-    ? choices(
-        "Item Shape",
-        "color_mode_shape",
-        ["square", "rounded", "round"],
-        "rounded",
-      )
-    : ""}`;
+      "Presentation",
+      "color_mode_selector",
+      ["buttons", "dropdown"],
+      "buttons",
+    )}${config.color_mode_selector === "dropdown"
+      ? choices(
+          "Item Shape",
+          "color_mode_shape",
+          ["square", "rounded", "round"],
+          "rounded",
+        )
+      : ""}
+    <div class="form-row">
+      <label>Custom colour modes style</label>
+      ${createButtonGroup(
+        [
+          { value: "label", label: "Swatch + name" },
+          { value: "filled", label: "Filled" },
+          { value: "name", label: "Name only" },
+        ],
+        config.color_preset_style === "swatch"
+          ? "filled"
+          : ["label", "filled", "name"].includes(config.color_preset_style)
+            ? config.color_preset_style
+            : "label",
+        (event) =>
+          change("color_preset_style", event.currentTarget.dataset.value),
+      )}
+    </div>
+    ${["filled", "swatch", "name"].includes(config.color_preset_style)
+      ? ""
+      : choices(
+          "Swatch shape",
+          "color_preset_shape",
+          ["square", "rounded", "circle"],
+          "rounded",
+        )}`;
 }
 
 export function renderModeControlSettings(
@@ -74,8 +102,10 @@ export function renderModeControlSettings(
       ? renderModeSettingsSection(
           "Button Settings",
           renderActionButtonSettings(config, change, {
-            defaultStyle: "classic",
-            defaultContentMode: "icon",
+            styleKey: "actions_buttons_style",
+            contentKey: "actions_buttons_content_mode",
+            defaultStyle: modeActionOptions(config).buttonStyle,
+            defaultContentMode: modeActionOptions(config).contentMode,
           }),
         )
       : ""}`;
@@ -242,6 +272,7 @@ class YeelightModeControls extends LitElement {
       action: "tool",
       buttonStyle: model.config.buttons_style || "classic",
       contentMode: model.config.buttons_content_mode || "icon",
+      ...(this.area === "actions" ? modeActionOptions(model.config) : {}),
       disabled: model.busy || model.adapter.disabled(),
       ...options,
     });
@@ -325,7 +356,9 @@ class YeelightModeControls extends LitElement {
                         items.length
                     ]?.key,
                   ),
-                { disabled: model.busy || adapter.disabled() || !items.length },
+                {
+                  disabled: model.busy || adapter.disabled() || !items.length,
+                },
               )}
               ${this._button("Apply", "mdi:play", () => model.select(current), {
                 busy: model.busy,
@@ -341,7 +374,9 @@ class YeelightModeControls extends LitElement {
                       current,
                     ),
                   ),
-                { disabled: model.busy || adapter.disabled() || !items.length },
+                {
+                  disabled: model.busy || adapter.disabled() || !items.length,
+                },
               )}
               ${this._button(
                 model.paused ? "Resume previews" : "Pause previews",
@@ -366,7 +401,7 @@ class YeelightModeControls extends LitElement {
                   ),
               )}
             `,
-            { contentMode: config.buttons_content_mode || "icon" },
+            modeActionOptions(config),
           )
         : ""}
       ${model.error
@@ -479,6 +514,11 @@ class YeelightModeControls extends LitElement {
                       },
                     ),
                   )}`,
+                  {
+                    buttonStyle: config.collection_buttons_style || "classic",
+                    contentMode:
+                      config.collection_buttons_content_mode || "icon_text",
+                  },
                 )}
         </section>`
       : ""}
@@ -515,7 +555,10 @@ class YeelightModeControls extends LitElement {
                 `Skip ${noun}`,
                 "mdi:skip-next",
                 () => model.skip(),
-                { contentMode: "icon", disabled: !model.active || model.busy },
+                {
+                  contentMode: "icon",
+                  disabled: !model.active || model.busy,
+                },
               )}
             </div>
           </div>
@@ -533,6 +576,7 @@ class YeelightModeControls extends LitElement {
     css`
       :host {
         display: block;
+        --action-row-icon-align: center;
         min-width: 0;
       }
       section {

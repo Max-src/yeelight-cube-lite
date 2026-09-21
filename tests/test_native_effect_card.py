@@ -45,6 +45,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
             {"asyncio": asyncio, "ALL_NATIVE_EFFECTS": CONSTANTS["ALL_NATIVE_EFFECTS"],
              "CLOCK_COLOR_MODES": CONSTANTS["CLOCK_COLOR_MODES"],
              "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
+             "effect_supports_color_override": NATIVE_PREVIEW["effect_supports_color_override"],
              "HomeAssistantError": ValueError, "_resolve_entities": lambda *args: self.targets},
         )["handle_set_native_effect"]
 
@@ -77,6 +78,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
             **CONSTANTS,
             "asyncio": SimpleNamespace(sleep=AsyncMock()),
             "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
+            "effect_supports_color_override": NATIVE_PREVIEW["effect_supports_color_override"],
             "_DEVICE_ORIENTATION_TO_EFFECT_DIR": {"right": "Right"},
         })["_activate_native_effect"]
         target = SimpleNamespace(
@@ -101,6 +103,34 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("color", payload[3])
             elif spec.get("color") is not None:
                 self.assertEqual(payload[3]["color"], [spec["color"]])
+        target._native_effect = "Rainbow"
+        target._native_effect_color = [12, 34, 56]
+        target._native_effect_color_mode = "normal"
+        await activate(target)
+        self.assertEqual(target._cube_matrix.send_raw_command.call_args.args[1][3]["color"], [0x010C2238])
+        target._native_effect_color_mode = "bw"
+        await activate(target)
+        self.assertNotIn("color", target._cube_matrix.send_raw_command.call_args.args[1][3])
+
+    async def test_custom_colour_validation_preflight_and_clear(self):
+        self.target._native_clock_color = 123
+        await self.handle(SimpleNamespace(data={"effect": "Rainbow", "color": [12, 34, 56]}))
+        self.assertEqual(self.target._native_effect_color, [12, 34, 56])
+        self.assertEqual(self.target._native_effect_color_mode, "normal")
+        self.assertEqual(self.target._native_clock_color, 123)
+        for color in ([0, 1], [-1, 0, 1], [0, 0, 256], "red", [True, 2, 3]):
+            with self.assertRaisesRegex(ValueError, "color must"):
+                await self.handle(SimpleNamespace(data={"color": color}))
+        unsupported = next(name for name, spec in CONSTANTS["ALL_NATIVE_EFFECTS"].items()
+                           if not spec.get("extended") and not NATIVE_PREVIEW["effect_supports_color_override"](name))
+        second = SimpleNamespace(_native_effect=unsupported, _extended_effects_enabled=False, _is_on=True)
+        self.targets.append(second)
+        with self.assertRaisesRegex(ValueError, "custom colours"):
+            await self.handle(SimpleNamespace(data={"color": [1, 2, 3]}))
+        self.assertEqual(self.target._native_effect_color, [12, 34, 56])
+        self.targets.pop()
+        await self.handle(SimpleNamespace(data={"color": "clear"}))
+        self.assertIsNone(self.target._native_effect_color)
 
     async def test_rejects_unknown_experimental_and_off_without_mutating(self):
         for effect in ("missing", "Prism"):

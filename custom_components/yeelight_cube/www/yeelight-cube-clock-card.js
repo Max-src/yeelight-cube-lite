@@ -17,8 +17,12 @@ import {
 // action.
 
 import { escapeHtml } from "./html-escape-utils.js";
+import { independentActionConfig } from "./action-button-utils.js";
 import { ModeControlsController } from "./mode-controls-controller.js";
-import { renderColorModeSelector } from "./color-mode-selector-utils.js";
+import {
+  renderColorModeSelector,
+  colorModeSelectorStyles,
+} from "./color-mode-selector-utils.js";
 import "./mode-controls-ui.js";
 import "./clock-preset-manager.js";
 import {
@@ -35,7 +39,7 @@ import {
 } from "./clock-preset-utils.js";
 import {
   closeColorPicker,
-  openColorPicker,
+  openRgbColorPicker,
   colorPickerStyles,
 } from "./color-picker-utils.js";
 import {
@@ -249,7 +253,11 @@ class YeelightCubeClockCard extends HTMLElement {
   }
 
   setConfig(config) {
-    const cfg = { ...config };
+    const cfg = independentActionConfig(config, {
+      buttons_style: "modern",
+      buttons_content_mode: "icon_text",
+    });
+    if (cfg.show_search === false) this._searchQuery = "";
     // Migrate legacy per-speed slider appearance keys to the shared slider_*
     // keys now driving both the brightness and speed sliders.
     const K = sliderKeys("slider");
@@ -631,7 +639,13 @@ class YeelightCubeClockCard extends HTMLElement {
   }
 
   _shownStyles() {
-    const styles = this._styleList();
+    const query =
+      this.config.show_search === false
+        ? ""
+        : (this._searchQuery || "").trim().toLowerCase();
+    const styles = this._styleList().filter((style) =>
+      style.name.toLowerCase().includes(query),
+    );
     if (this.config.show_only_responding_styles === false) return styles;
     const a = this._attrs();
     const mode = this._currentColorMode(a);
@@ -1251,7 +1265,6 @@ class YeelightCubeClockCard extends HTMLElement {
     ) {
       sections.push(this._renderSliders(a));
     }
-    sections.push('<div data-mode-controls="orientation"></div>');
     // 12/24-hour and colon only affect the time, so hide them for date-only.
     const content =
       a.clock_content || (a.clock_show_date ? "time_date" : "time");
@@ -1270,7 +1283,15 @@ class YeelightCubeClockCard extends HTMLElement {
     if (this.config.show_color_modes) {
       sections.push(this._renderColorMode(a));
     }
-    sections.push(this._renderStyleSelector(sel, current));
+    if (this.config.show_search !== false)
+      sections.push(
+        `<input class="clock-search" type="search" aria-label="Search clock modes" placeholder="Search clock modes" value="${escapeHtml(this._searchQuery || "")}" style="box-sizing:border-box;width:100%;min-width:0;padding:10px;margin:8px 0;border:1px solid var(--divider-color,#ddd);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color);font:inherit;">`,
+      );
+    sections.push(
+      this._shownStyles().length
+        ? this._renderStyleSelector(sel, current)
+        : '<div role="status">No matching clock modes.</div>',
+    );
     sections.push('<div data-mode-controls="collections"></div>');
 
     const showCard = this.config.show_card_background !== false;
@@ -1284,6 +1305,7 @@ class YeelightCubeClockCard extends HTMLElement {
 
     const inner = `${title}${activeLabel}${sections.join("")}`;
     const focusedButton = this.shadowRoot.activeElement;
+    const searchFocused = focusedButton?.classList.contains("clock-search");
     const focusedControl = focusedButton?.closest("[data-clock-control]")
       ?.dataset.clockControl;
     const focusedValue = focusedButton?.dataset.value;
@@ -1309,6 +1331,15 @@ class YeelightCubeClockCard extends HTMLElement {
     });
     this._controls?.update();
     this._attachHandlers();
+    const search = this.shadowRoot.querySelector(".clock-search");
+    if (search) {
+      search.oninput = (event) => {
+        this._searchQuery = event.target.value;
+        this._selectorPage = 0;
+        this.render();
+      };
+      if (searchFocused) search.focus({ preventScroll: true });
+    }
     if (focusedControl && focusedValue) {
       const group = this.shadowRoot.querySelector(
         `[data-clock-control="${focusedControl}"] .shared-button-group`,
@@ -1504,46 +1535,13 @@ class YeelightCubeClockCard extends HTMLElement {
       matches[0];
     const cur = mode === "custom" ? saved?.value : mode;
     const draft = this._customMode && this._customDraft;
-    const picker = renderActionButtonHTML({
-      buttonStyle: this.config.buttons_style || "modern",
-      action: "tool",
-      value: "__pick__",
-      icon: "mdi:plus",
-      label: draft ? "Change" : "Add",
-      title: draft ? "Change unsaved colour" : "Add a colour",
-      contentMode: "icon_text",
-      selected: !!draft,
-      swatch: draft ? rgbToHex(draft) : undefined,
-      swatchShape: this._colorPresetShape(),
+    const inner = renderColorModeSelector(this.config, options, cur, {
+      placeholder: draft ? "Unsaved colour" : "Current mode hidden",
+      draft,
     });
-    const inner = renderColorModeSelector(
-      this.config,
-      options.map((option) =>
-        option.color && this.config.color_mode_selector !== "dropdown"
-          ? this._colorChoiceProps(
-              this._colorPresetStyle(),
-              this._colorPresetShape(),
-              {
-                value: option.value,
-                label: option.label,
-                title: option.label,
-                color: rgbToHex(option.color),
-              },
-            )
-          : option,
-      ),
-      cur,
-      {
-        placeholder: draft ? "Unsaved colour" : "Current mode hidden",
-        renderItem: (option) =>
-          option.value === "__pick__"
-            ? `<span class="color-add">${picker}</span>`
-            : renderActionButtonHTML(option),
-      },
-    );
     return `
       <div class="section" style="--ctl-accent: color-mix(in srgb, var(--primary-color, #1976d2) 58%, #7c5cbf);">
-        <div class="section-title">Colour mode</div>
+        <div class="color-mode-heading">Colour mode</div>
         <div data-clock-control="colormode" class="colormode-buttons unified-color-modes">${inner}</div>
         ${draft ? this._renderCustomColorControls(a) : ""}
       </div>`;
@@ -1813,20 +1811,9 @@ class YeelightCubeClockCard extends HTMLElement {
 
   // The trailing "+" choice opens the native picker; changes apply live.
   _openCustomPicker(anchor) {
-    const rgb = this._customDraft;
-    const view = this.ownerDocument.defaultView;
-    const bounds = anchor.getBoundingClientRect();
-    const apply = (hex) => {
-      const value = hexToRgb(hex);
-      if (value) this._applyColor(value);
-    };
-    openColorPicker(this, {
-      value: rgb ? rgbToHex(rgb) : "#ffee00",
-      pageX: bounds.left + view.scrollX,
-      pageY: bounds.bottom + view.scrollY,
-      onInput: apply,
-      onChange: apply,
-    });
+    openRgbColorPicker(this, anchor, this._customDraft, (rgb) =>
+      this._applyColor(rgb),
+    );
   }
 
   _styles() {
@@ -1851,13 +1838,6 @@ class YeelightCubeClockCard extends HTMLElement {
       .section-sliders { margin-top: 8px; }
       .section-sliders .brightness-control-group { gap: 6px; }
       .section-sliders + .section { margin-top: 8px; }
-      .unified-color-modes { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
-      [data-clock-control="colormode"].unified-color-modes > .shared-button-group.action-row { display:contents; }
-      .unified-color-modes button { flex:0 0 auto; max-width:100%; min-height:36px; }
-      .unified-color-modes .btn-text { white-space:normal; overflow-wrap:anywhere; }
-      .unified-color-modes .color-add { display:inline-flex; }
-      .unified-color-modes .color-add button:not(.btn-style-modern):not(.btn-style-gradient) { border:1px dashed var(--primary-color,#1976d2); }
-      .unified-color-modes > .gc-selector { flex:1 1 180px; min-width:0; }
       /* Two titled sections (Content + Format) sit side by side when the card is
          wide enough, and wrap to their own rows otherwise. */
       .section-row { display: flex; flex-wrap: wrap; column-gap: 18px; }
@@ -1894,13 +1874,6 @@ class YeelightCubeClockCard extends HTMLElement {
       }
       /* Saving is a distinct action, so the save buttons take a different hue
          and sit together on their own row. */
-      .clock-color-save {
-        flex: 0 1 auto; min-width: 0;
-        --primary-color: var(--clock-save-accent, #2e8b57);
-        --primary-color-dark: color-mix(in srgb, var(--clock-save-accent, #2e8b57) 72%, #000);
-      }
-      .clock-color-save:empty { display: none; }
-      .clock-color-save yeelight-clock-preset-manager { display: block; min-width: 0; }
       /* While the save form is open, hide the choice row and give the form the
          full width so its fields are comfortable. */
       .clock-color-control:has(yeelight-clock-preset-manager[editing]) .clock-color-presets { display: none; }
@@ -1916,53 +1889,7 @@ class YeelightCubeClockCard extends HTMLElement {
       /* Shared multi-style value slider (same control as brightness) */
       ${sliderControlStyles}
 
-      [data-clock-control="colormode"] .shared-button-group.action-row {
-        flex-wrap: wrap;
-      }
-      [data-clock-control="colormode"].unified-color-modes .shared-action-button {
-        flex:0 0 auto;
-        width:auto;
-        max-width:100%;
-      }
-      [data-clock-control="colormode"].unified-color-modes .shared-action-button.btn-style-icon {
-        width:44px; height:44px; min-height:44px; padding:0;
-      }
-      [data-clock-control="colormode"].unified-color-modes .shared-action-button.btn-style-pill {
-        min-height:44px;
-      }
-      [data-clock-control="colormode"].unified-color-modes .shared-button-group .shared-action-button.btn-fill {
-        min-width:44px;
-        min-height:44px;
-      }
-      [data-clock-control="colormode"]
-        .shared-action-button:not(.btn-style-icon):not(.btn-style-pill) {
-        flex-direction: row;
-        gap: 6px;
-        padding: 8px 10px;
-        line-height: 1.15;
-        min-width: 36px;
-        width: auto;
-        min-height: 36px;
-      }
-      .unified-color-modes .color-add .shared-action-button { min-height:36px; }
-      [data-clock-control="colormode"] .shared-button-group .btn-text {
-        white-space: normal;
-        overflow-wrap: break-word;
-        word-break: normal;
-        text-align: center;
-      }
-      /* Pill: size to content and wrap like tags (single-line label per pill). */
-      [data-clock-control="colormode"]
-        .shared-button-group
-        .shared-action-button.btn-style-pill {
-        flex: 0 0 auto;
-        width: auto;
-      }
-      [data-clock-control="colormode"]
-        .shared-action-button.btn-style-pill
-        .btn-text {
-        white-space: nowrap;
-      }
+      ${colorModeSelectorStyles}
 
       /* ── Carousel: match the gradient card exactly ──────────────────
          Transparent wrapper (each item paints its own background), keep the

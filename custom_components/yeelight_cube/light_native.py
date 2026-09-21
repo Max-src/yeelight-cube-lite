@@ -10,7 +10,7 @@ import base64
 import json
 import logging
 import time
-from .native_effect_preview import effect_supports_color_mode
+from .native_effect_preview import effect_supports_color_mode, effect_supports_color_override
 
 from homeassistant.exceptions import HomeAssistantError  # type: ignore
 from homeassistant.util import dt as dt_util  # type: ignore
@@ -298,6 +298,10 @@ class NativeModesMixin:
             palette_id = None
         if spec.get("color") is not None and palette_id is None:
             effect_config["color"] = [int(spec["color"])]
+        color = getattr(self, "_native_effect_color", None)
+        if color is not None and color_mode == "normal" and effect_supports_color_override(self._native_effect):
+            red, green, blue = color
+            effect_config["color"] = [0x01000000 | (red << 16) | (green << 8) | blue]
 
         params = [
             spec["effect_id"] if palette_id is None else palette_id,

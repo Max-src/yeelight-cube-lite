@@ -18,7 +18,7 @@ import logging
 import math
 import random
 import time
-from .native_effect_preview import effect_supports_color_mode
+from .native_effect_preview import effect_supports_color_mode, effect_supports_color_override
 
 import voluptuous as vol  # type: ignore
 from homeassistant.components import websocket_api  # type: ignore
@@ -2596,6 +2596,14 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         effect = service_call.data.get("effect")
         speed = service_call.data.get("speed")
         color_mode = service_call.data.get("color_mode")
+        has_color = "color" in service_call.data
+        color = service_call.data.get("color")
+        clear_color = color is None or color == "clear"
+        if has_color and not clear_color and (
+            not isinstance(color, (list, tuple)) or len(color) != 3
+            or any(type(channel) is not int or not 0 <= channel <= 255 for channel in color)
+        ):
+            raise HomeAssistantError("color must be [r, g, b] or 'clear'")
         activate = service_call.data.get("activate", True)
         for target in targets:
             name = effect if effect is not None else target._native_effect
@@ -2606,6 +2614,8 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                 raise HomeAssistantError("Enable Experimental Features before applying this effect")
             if speed is not None and not spec.get("speed"):
                 raise HomeAssistantError(f"{name} does not support animation speed")
+            if has_color and not clear_color and not effect_supports_color_override(name):
+                raise HomeAssistantError(f"{name} does not support custom colours")
             if color_mode is not None and (
                 color_mode not in CLOCK_COLOR_MODES
                 or (color_mode != "normal" and not effect_supports_color_mode(name, color_mode))
@@ -2621,6 +2631,10 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                 target._native_effect_speed = speed
             if color_mode is not None:
                 target._native_effect_color_mode = color_mode
+            if has_color:
+                target._native_effect_color = None if clear_color else list(color)
+                if color_mode is None:
+                    target._native_effect_color_mode = "normal"
             if activate:
                 target._mode = "Native Effect"
                 target._custom_draw_active = False
@@ -2640,6 +2654,10 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             vol.Optional("effect"): cv.string,
             vol.Optional("speed"): vol.All(vol.Coerce(int), vol.Range(min=1, max=255)),
             vol.Optional("color_mode"): vol.In(list(CLOCK_COLOR_MODES)),
+            vol.Optional("color"): vol.Any(None, "clear", vol.All(
+                [vol.All(vol.Coerce(int), vol.Range(min=0, max=255))],
+                vol.Length(min=3, max=3),
+            )),
             vol.Optional("activate", default=True): cv.boolean,
         }),
     )

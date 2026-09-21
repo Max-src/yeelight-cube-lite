@@ -10,6 +10,8 @@ import {
   actionButtonGroupModel,
   renderActionButtonGroupHTML,
   handleActionButtonGroupEvent,
+  modeActionOptions,
+  independentActionConfig,
 } from "../custom_components/yeelight_cube/www/action-button-utils.js";
 import {
   exportImportButtonStyles,
@@ -30,6 +32,24 @@ test("all styles and content modes share normalized rendering", () => {
       assert.ok(markup.includes(`btn-style-${buttonStyle}`));
     }
   }
+});
+
+test("actions normalize icon alignment and preserve independent migrated settings", () => {
+  const legacy = { buttons_style: "icon", buttons_content_mode: "icon_text" };
+  assert.match(getActionRowClass(modeActionOptions(legacy)), /icon-mode/);
+  const config = independentActionConfig(legacy);
+  config.buttons_style = "outline";
+  config.buttons_content_mode = "text";
+  assert.deepEqual(modeActionOptions(config), {
+    buttonStyle: "icon",
+    contentMode: "icon",
+  });
+  config.actions_buttons_style = "classic";
+  config.actions_buttons_content_mode = "text";
+  assert.doesNotMatch(
+    getActionRowClass(modeActionOptions(config)),
+    /icon-mode/,
+  );
 });
 
 test("colour swatches replace the icon across styles and content modes", () => {

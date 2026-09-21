@@ -17,10 +17,19 @@ import {
   orderableListStyles,
 } from "./orderable-list-utils.js";
 import { renderActionButtonSettings } from "./action-button-ui.js";
+import { independentActionConfig } from "./action-button-utils.js";
+import "./clock-preset-manager.js";
+import { CLOCK_COLOR_MODES } from "./clock-preview-utils.js";
+import {
+  clockPresetLibrary,
+  clockColorModeOptions,
+  clockColorModeVisibilityConfig,
+} from "./clock-preset-utils.js";
 import { getTargetEntities } from "./service-call-utils.js";
 import {
   nativeEffectItems,
   nativeEffectPreviewConfig,
+  nativeEffectFrame,
 } from "./native-effect-card-utils.js";
 import { renderLightSliderSettings } from "./slider-control-utils.js";
 import { renderStyleSelectorSettings } from "./style-selector-ui.js";
@@ -40,7 +49,7 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
     this._open = { general: true };
   }
   setConfig(config) {
-    this._config = { ...config };
+    this._config = independentActionConfig(config);
   }
   _change(key, value) {
     this._config = { ...this._config, [key]: value };
@@ -76,6 +85,37 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
       )}
     </div>`;
   }
+  _renderVisibleColorModeList() {
+    const presets = clockPresetLibrary(this.hass);
+    const all = clockColorModeOptions(CLOCK_COLOR_MODES, presets);
+    const visible = clockColorModeOptions(
+      CLOCK_COLOR_MODES,
+      presets,
+      this._config,
+    ).map((mode) => mode.value);
+    const labels = new Map(all.map((mode) => [mode.value, mode.label]));
+    return renderOrderableList({
+      labelFor: (key) => labels.get(key) || key,
+      items: visible,
+      available: all
+        .map((mode) => mode.value)
+        .filter((key) => !visible.includes(key)),
+      onUpdate: (items) => {
+        this._config = clockColorModeVisibilityConfig(this._config, all, items);
+        fireEvent(this, "config-changed", { config: this._config });
+      },
+      onReset: () => {
+        const config = { ...this._config };
+        delete config.visible_color_modes;
+        delete config.hidden_color_modes;
+        this._config = config;
+        fireEvent(this, "config-changed", { config: this._config });
+      },
+      addPlaceholder: "Show a colour mode...",
+      resetLabel: "Reset to all colour modes",
+    });
+  }
+
   render() {
     if (!this._config) return "";
     const config = this._config;
@@ -172,9 +212,48 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
         ${config.show_color_modes
           ? renderModeSettingsSection(
               "Colour Mode Style",
-              renderColorModeSettings(config, change),
+              html`${renderColorModeSettings(config, change)}
+              ${this._toggle(
+                "Show 'save colour mode' button",
+                "show_save_color_mode_button",
+              )}
+              ${renderModeSettingsSection(
+                "Visible colour modes",
+                this._renderVisibleColorModeList(),
+              )}`,
+            )
+          : ""}
+        ${config.show_color_modes
+          ? renderModeSettingsSection(
+              "Control buttons",
+              renderActionButtonSettings(config, change),
             )
           : ""}`,
+      )}
+      ${this._section(
+        "presets",
+        "Custom colours",
+        html`<yeelight-clock-preset-manager
+          .hass=${this.hass}
+          .showLibrary=${true}
+          .libraryKinds=${["color_mode"]}
+          .libraryKind=${"color_mode"}
+          .saveKinds=${["color_mode"]}
+          .buttonStyle=${config.buttons_style || "modern"}
+          .contentMode=${config.buttons_content_mode || "icon_text"}
+          .frameRenderer=${(color) => {
+            const effect =
+              effects.find((item) => item.name === attrs.native_effect) ||
+              effects[0];
+            return effect
+              ? nativeEffectFrame(effect, {
+                  ...attrs,
+                  native_effect_color: color,
+                  native_effect_color_mode: "normal",
+                })
+              : [];
+          }}
+        ></yeelight-clock-preset-manager>`,
       )}
       ${this._section(
         "effects",

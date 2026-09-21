@@ -1,8 +1,25 @@
 import { LitElement, html, css, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
 import { ModeControlsController } from "./mode-controls-controller.js";
-import { renderColorModeSelector } from "./color-mode-selector-utils.js";
+import {
+  renderColorModeSelector,
+  colorModeSelectorStyles,
+} from "./color-mode-selector-utils.js";
 import { CLOCK_COLOR_MODES } from "./clock-preview-utils.js";
-import { effectSupportsColorMode } from "./native-effect-preview.js";
+import {
+  effectSupportsColorMode,
+  effectSupportsColorOverride,
+} from "./native-effect-preview.js";
+import {
+  openRgbColorPicker,
+  closeColorPicker,
+  colorPickerStyles,
+} from "./color-picker-utils.js";
+import {
+  clockPresetLibrary,
+  clockColorModeOptions,
+  clockPresetsByKind,
+} from "./clock-preset-utils.js";
+import "./clock-preset-manager.js";
 import { bindActionButtonGroup } from "./action-button-utils.js";
 import "./mode-controls-ui.js";
 import {
@@ -55,6 +72,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     _paused: { state: true },
     _busy: { state: true },
     _error: { state: true },
+    _customColorDraft: { state: true },
   };
 
   constructor() {
@@ -165,6 +183,8 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   }
 
   setConfig(config) {
+    closeColorPicker(this);
+    this._customColorDraft = null;
     if (!getTargetEntities(config).length)
       throw new Error("Select at least one Yeelight Cube light entity.");
     this._context++;
@@ -202,7 +222,8 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   set hass(hass) {
     this._hass = hass;
     this._controls.update();
-    if (this.config.show_rotation) this.requestUpdate();
+    if (this.config.show_rotation || this.config.show_color_modes)
+      this.requestUpdate();
     const state = hass.states[getTargetEntities(this.config)[0]];
     if (state !== this._state) {
       if (
@@ -229,6 +250,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    closeColorPicker(this);
     this._controls.disconnect();
     this._stopRotation();
     document.removeEventListener("visibilitychange", this._onVisibilityChange);
@@ -250,7 +272,35 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     return this._state?.attributes || {};
   }
   _items() {
-    return nativeEffectItems(this._attrs(), this.config);
+    const attrs = this._attrs();
+    const mode = this._customColorDraft
+      ? "normal"
+      : attrs.native_effect_color_mode || "normal";
+    const color = this._customColorDraft || attrs.native_effect_color;
+    return nativeEffectItems(attrs, this.config).filter((item) =>
+      this._respondsToColor(item.name, mode, color),
+    );
+  }
+
+  _respondsToColor(name, mode, color) {
+    return mode !== "normal"
+      ? effectSupportsColorMode(name, mode)
+      : !color || effectSupportsColorOverride(name);
+  }
+
+  _effectForColor(mode, color) {
+    const current = this._effect();
+    if (
+      current &&
+      this._respondsToColor(current.name, mode, color) &&
+      this._effectAvailable(current.name)
+    )
+      return current.name;
+    return nativeEffectItems(this._attrs(), this.config).find(
+      (item) =>
+        this._respondsToColor(item.name, mode, color) &&
+        this._effectAvailable(item.name),
+    )?.name;
   }
   _effect() {
     const catalogue = nativeEffectItems(this._attrs(), {
@@ -495,6 +545,133 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     this.requestUpdate();
   }
 
+  _supportsCustomColor() {
+    return getTargetEntities(this.config).every((entity) =>
+      Object.hasOwn(
+        this._hass?.states[entity]?.attributes || {},
+        "native_effect_color",
+      ),
+    );
+  }
+
+  _colorOptions() {
+    const custom = this._supportsCustomColor();
+    const options = clockColorModeOptions(
+      CLOCK_COLOR_MODES,
+      custom ? clockPresetLibrary(this._hass) : [],
+      this.config,
+    );
+    return options.filter((option) => custom || option.value !== "__pick__");
+  }
+
+  _currentColorSelection() {
+    const attrs = this._attrs();
+    if (this._customColorDraft && this._supportsCustomColor())
+      return "__draft__";
+    if (
+      attrs.native_effect_color_mode &&
+      attrs.native_effect_color_mode !== "normal"
+    )
+      return attrs.native_effect_color_mode;
+    if (
+      attrs.native_effect_color_mode === "normal" &&
+      attrs.native_effect_color &&
+      this._supportsCustomColor()
+    ) {
+      const matches = clockPresetsByKind(
+        clockPresetLibrary(this._hass),
+        "color_mode",
+      ).filter((preset) =>
+        preset.color.every(
+          (channel, index) => channel === attrs.native_effect_color[index],
+        ),
+      );
+      const preset =
+        matches.find((preset) => preset.id === this._selectedColorPresetId) ||
+        matches[0];
+      return preset ? `custom:${preset.id}` : "__draft__";
+    }
+    return "normal";
+  }
+
+  async _applyCustomColor(color) {
+    if (!this._supportsCustomColor()) return false;
+    const effect = this._effectForColor("normal", color);
+    if (!effect) {
+      this._error =
+        "No configured effect supports this colour on all selected lamps.";
+      return false;
+    }
+    const context = this._context;
+    const success = await this._command("set_native_effect", {
+      effect,
+      color_mode: "normal",
+      color,
+    });
+    if (success && context === this._context) {
+      this._customColorDraft = [...color];
+      this._selectedColorPresetId = null;
+      this._selected = effect;
+      this._page = 0;
+    }
+    return success;
+  }
+
+  async _applyColorMode(value) {
+    if (value === "__pick__") {
+      if (!this._supportsCustomColor()) return;
+      const anchor = this.shadowRoot.querySelector(
+        '.color-modes button[data-value="__pick__"], .colormode-select',
+      );
+      if (anchor?.tagName === "SELECT") {
+        anchor.value =
+          [...anchor.options].find((option) => option.defaultSelected)?.value ||
+          "";
+      }
+      if (anchor)
+        openRgbColorPicker(
+          this,
+          anchor,
+          this._customColorDraft || this._attrs().native_effect_color,
+          (rgb) => this._applyCustomColor(rgb),
+        );
+      return;
+    }
+    const preset = value.startsWith("custom:")
+      ? clockPresetsByKind(clockPresetLibrary(this._hass), "color_mode").find(
+          (preset) => `custom:${preset.id}` === value,
+        )
+      : null;
+    if (
+      value.startsWith("custom:") &&
+      (!preset || !this._supportsCustomColor())
+    )
+      return;
+    const mode = preset ? "normal" : value;
+    const effect = this._effectForColor(mode, preset?.color);
+    if (!effect) {
+      this._error =
+        "No configured effect supports this colour on all selected lamps.";
+      return;
+    }
+    const context = this._context;
+    const success = await this._command("set_native_effect", {
+      effect,
+      color_mode: mode,
+      ...(preset
+        ? { color: [...preset.color] }
+        : Object.hasOwn(this._attrs(), "native_effect_color")
+          ? { color: "clear" }
+          : {}),
+    });
+    if (success && context === this._context) {
+      this._customColorDraft = null;
+      this._selectedColorPresetId = preset?.id;
+      this._selected = effect;
+      this._page = 0;
+    }
+  }
+
   render() {
     if (!this._state)
       return html`<ha-card
@@ -568,28 +745,42 @@ class YeelightCubeNativeEffectsCard extends LitElement {
         ${this.config.show_color_modes &&
         Object.hasOwn(attrs, "native_effect_color_mode")
           ? html`<section class="color-modes">
-              <h3>Colour mode</h3>
-              ${unsafeHTML(
-                renderColorModeSelector(
-                  this.config,
-                  CLOCK_COLOR_MODES.filter(
-                    (mode) =>
-                      mode.value === "normal" ||
-                      effectSupportsColorMode(effect?.name, mode.value),
+              <div class="color-mode-heading">Colour mode</div>
+              <div class="unified-color-modes">
+                ${unsafeHTML(
+                  renderColorModeSelector(
+                    this.config,
+                    this._colorOptions(),
+                    this._currentColorSelection(),
+                    {
+                      disabled:
+                        this._busy || this._controls.busy || this._disabled(),
+                      placeholder: this._customColorDraft
+                        ? "Unsaved colour"
+                        : "Current mode hidden",
+                      draft: this._customColorDraft,
+                    },
                   ),
-                  effectSupportsColorMode(
-                    effect?.name,
-                    attrs.native_effect_color_mode,
-                  )
-                    ? attrs.native_effect_color_mode
-                    : "normal",
-                  {
-                    disabled:
-                      this._busy || this._controls.busy || this._disabled(),
-                    placeholder: "Normal",
-                  },
-                ),
-              )}
+                )}
+              </div>
+              ${this._customColorDraft &&
+              this._supportsCustomColor() &&
+              this.config.show_save_color_mode_button !== false
+                ? html` <div class="clock-color-save" style="margin-top:10px;">
+                    <yeelight-clock-preset-manager
+                      .hass=${this._hass}
+                      .compact=${true}
+                      .saveKinds=${["color_mode"]}
+                      .initialColor=${`#${this._customColorDraft.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`}
+                      .buttonStyle=${this.config.buttons_style || "modern"}
+                      .contentMode=${this.config.buttons_content_mode ||
+                      "icon_text"}
+                      @clock-preset-saved=${() => {
+                        this._customColorDraft = null;
+                      }}
+                    ></yeelight-clock-preset-manager>
+                  </div>`
+                : ""}
             </section>`
           : ""}
         ${this.config.show_gallery
@@ -711,11 +902,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     this._controls.update();
     const colorModes = this.shadowRoot.querySelector(".color-modes");
     if (colorModes) {
-      const apply = (color_mode) =>
-        this._command("set_native_effect", {
-          effect: this._effect()?.name,
-          color_mode,
-        });
+      const apply = (value) => this._applyColorMode(value);
       bindActionButtonGroup(
         colorModes.querySelector(".shared-button-group"),
         apply,
@@ -850,10 +1037,12 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   }
 
   static styles = [
+    unsafeCSS(colorPickerStyles),
     unsafeCSS(actionButtonStyles),
     unsafeCSS(sliderControlStyles),
     unsafeCSS(styleSelectorStyles),
     unsafeCSS(paginationStyles),
+    unsafeCSS(colorModeSelectorStyles),
     css`
       :host {
         display: block;

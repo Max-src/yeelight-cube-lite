@@ -6,6 +6,7 @@ import {
 import { LitElement, html } from "./lib/lit-all.js";
 import "./clock-preset-manager.js";
 import { renderActionButtonSettings } from "./action-button-ui.js";
+import { independentActionConfig } from "./action-button-utils.js";
 import {
   clockPresetLibrary,
   clockPresetKey,
@@ -34,10 +35,6 @@ import {
   renderOrderableList,
   orderableListStyles,
 } from "./orderable-list-utils.js";
-import {
-  COLOR_PRESET_STYLE_CHOICES,
-  COLOR_PRESET_SHAPE_CHOICES,
-} from "./yeelight-cube-clock-card.js";
 
 class YeelightCubeClockCardEditor extends LitElement {
   static get properties() {
@@ -61,7 +58,10 @@ class YeelightCubeClockCardEditor extends LitElement {
   }
 
   setConfig(config) {
-    const cfg = { ...config };
+    const cfg = independentActionConfig(config, {
+      buttons_style: "modern",
+      buttons_content_mode: "icon_text",
+    });
     if (cfg.show_color_override) cfg.show_color_modes = true;
     delete cfg.show_color_override;
     // Mirror the card's legacy speed_* → shared slider_* migration so existing
@@ -122,11 +122,6 @@ class YeelightCubeClockCardEditor extends LitElement {
       config.target_entities || (config.entity ? [config.entity] : []);
     const change = (key, value) => {
       this.config = { ...this.config, [key]: value };
-      if (key === "orientation_buttons") {
-        delete this.config.orientation_layout;
-        delete this.config.orientation_half_turn;
-        delete this.config.orientation_directions;
-      }
       this.requestUpdate();
       this._fire();
     };
@@ -232,11 +227,6 @@ class YeelightCubeClockCardEditor extends LitElement {
           `,
         )}
         ${this._section(
-          "orientation",
-          "Device Orientation",
-          renderModeControlSettings("orientation", config, change),
-        )}
-        ${this._section(
           "display",
           "Content & Controls",
           html`
@@ -263,54 +253,6 @@ class YeelightCubeClockCardEditor extends LitElement {
                   "Colour mode style",
                   html`
                     ${renderColorModeSettings(config, change)}
-                    <div class="form-row">
-                      <label>Custom colour modes style</label>
-                      ${createButtonGroup(
-                        COLOR_PRESET_STYLE_CHOICES,
-                        config.color_preset_style === "swatch"
-                          ? "filled"
-                          : ["label", "filled", "name"].includes(
-                                config.color_preset_style,
-                              )
-                            ? config.color_preset_style
-                            : "label",
-                        (event) => {
-                          const value = event.currentTarget.dataset.value;
-                          this.config = {
-                            ...this.config,
-                            color_preset_style: value,
-                          };
-                          this.requestUpdate();
-                          this._fire();
-                        },
-                      )}
-                    </div>
-                    ${["filled", "swatch", "name"].includes(
-                      config.color_preset_style,
-                    )
-                      ? ""
-                      : html`
-                          <div class="form-row">
-                            <label>Swatch shape</label>
-                            ${createButtonGroup(
-                              COLOR_PRESET_SHAPE_CHOICES,
-                              ["square", "rounded", "circle"].includes(
-                                config.color_preset_shape,
-                              )
-                                ? config.color_preset_shape
-                                : "rounded",
-                              (event) => {
-                                const value = event.currentTarget.dataset.value;
-                                this.config = {
-                                  ...this.config,
-                                  color_preset_shape: value,
-                                };
-                                this.requestUpdate();
-                                this._fire();
-                              },
-                            )}
-                          </div>
-                        `}
                     ${createToggleRow(
                       "Show 'save colour mode' button",
                       "show_save_color_mode_button",
@@ -356,6 +298,12 @@ class YeelightCubeClockCardEditor extends LitElement {
           "style",
           "Clock style",
           html`
+            ${createToggleRow(
+              "Text Search",
+              "show_search",
+              config.show_search !== false,
+              (event) => this._onToggle(event, "show_search"),
+            )}
             ${createToggleRow(
               "Customize visible styles",
               "custom_visible_styles",

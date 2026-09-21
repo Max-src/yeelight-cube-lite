@@ -178,6 +178,7 @@ test("inline preset saves only request a name and do not generate a preview", ()
     hass: { services: { yeelight_cube: { save_clock_preset: {} } } },
     editing: true,
     showLibrary: false,
+    libraryKinds: ["style", "color_mode"],
     name: "Mega Yellow",
     color: "#ffee00",
     _rgb: () => [255, 238, 0],
@@ -220,6 +221,11 @@ test("inline preset saves only request a name and do not generate a preview", ()
   assert.match(markup, /type="color"/);
   assert.match(markup, /class="preview"/);
   assert.equal(frames, 1);
+  manager.libraryKinds = ["color_mode"];
+  manager.libraryKind = "color_mode";
+  const colourOnly = invoke.call(manager);
+  assert.doesNotMatch(colourOnly, /Clock styles/);
+  assert.match(colourOnly, /Colour modes/);
 });
 
 test("all colour modes share ordering and hiding without deleting defaults or losing new saves", () => {

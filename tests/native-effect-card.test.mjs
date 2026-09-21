@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { modeActionOptions } from "../custom_components/yeelight_cube/www/action-button-utils.js";
 import { ModeControlsController } from "../custom_components/yeelight_cube/www/mode-controls-controller.js";
 import { readFileSync } from "node:fs";
 import {
@@ -14,7 +15,17 @@ import {
   nextRotationEffect,
   rotationIntervalMs,
 } from "../custom_components/yeelight_cube/www/native-effect-card-utils.js";
-import { renderNativeEffectOriented } from "../custom_components/yeelight_cube/www/native-effect-preview.js";
+import {
+  renderNativeEffectOriented,
+  effectSupportsColorMode,
+  effectSupportsColorOverride,
+} from "../custom_components/yeelight_cube/www/native-effect-preview.js";
+import { CLOCK_COLOR_MODES } from "../custom_components/yeelight_cube/www/clock-preview-utils.js";
+import {
+  clockPresetLibrary,
+  clockColorModeOptions,
+  clockPresetsByKind,
+} from "../custom_components/yeelight_cube/www/clock-preset-utils.js";
 import { flipMatrixVertical } from "../custom_components/yeelight_cube/www/clock-preview-utils.js";
 import {
   getTargetEntities,
@@ -38,6 +49,78 @@ const sourceFor = (file) =>
   );
 const template = (strings, ...values) => ({ strings, values });
 
+test("native colour choices retain configured order while effects respond to the colour", async () => {
+  const attrs = {
+    native_effect_color_mode: "normal",
+    native_effect_catalog: ["Starry sky", "Tide", "Rainbow"].map((name) => ({
+      name,
+    })),
+  };
+  const card = {
+    config: {
+      visible_color_modes: ["white_orange", "normal", "__pick__"],
+      hidden_color_modes: ["bw", "red_blue", "blue_yellow", "purple_orange"],
+    },
+    _attrs: () => attrs,
+    _effect: () => ({ name: "Starry sky" }),
+    _supportsCustomColor: () => true,
+    _effectAvailable: () => true,
+    _command: async (service, data) => {
+      card.command = { service, data };
+      return true;
+    },
+    _context: 1,
+    _page: 5,
+  };
+  card._respondsToColor = cardMethod("_respondsToColor", {
+    effectSupportsColorMode,
+    effectSupportsColorOverride,
+  });
+  card._effectForColor = cardMethod("_effectForColor", { nativeEffectItems });
+  card._items = cardMethod("_items", { nativeEffectItems });
+  const options = cardMethod("_colorOptions", {
+    CLOCK_COLOR_MODES,
+    clockColorModeOptions,
+    clockPresetLibrary,
+  });
+  const selected = cardMethod("_currentColorSelection", {
+    clockPresetsByKind,
+    clockPresetLibrary,
+  });
+  const apply = cardMethod("_applyColorMode", {
+    clockPresetsByKind,
+    clockPresetLibrary,
+  });
+  assert.deepEqual(
+    options.call(card).map((mode) => mode.value),
+    ["white_orange", "normal", "__pick__"],
+  );
+  await apply.call(card, "white_orange");
+  assert.equal(card.command.data.effect, "Tide");
+  assert.equal(card._page, 0);
+  attrs.native_effect_color_mode = "white_orange";
+  assert.deepEqual(
+    card._items().map((item) => item.name),
+    ["Tide", "Rainbow"],
+  );
+  assert.equal(selected.call(card), "white_orange");
+  assert.deepEqual(
+    options.call(card).map((mode) => mode.value),
+    ["white_orange", "normal", "__pick__"],
+  );
+  attrs.native_effect_color_mode = "normal";
+  assert.equal(card._items().length, 3);
+  attrs.native_effect_color = [0, 0, 0];
+  assert.ok(
+    card._items().every((item) => effectSupportsColorOverride(item.name)),
+  );
+  card._effectAvailable = () => false;
+  card.command = null;
+  await apply.call(card, "white_orange");
+  assert.equal(card.command, null);
+  assert.match(card._error, /No configured effect/);
+});
+
 function cardMethod(name, dependencies = {}) {
   const source = sourceFor("yeelight-cube-native-effects-card.js");
   const match = source.match(
@@ -49,6 +132,41 @@ function cardMethod(name, dependencies = {}) {
     `return ${match[1] || ""}function(${match[2]}) {${match[3]}}`,
   )(...Object.values(dependencies));
 }
+
+test("native unsaved colour survives stale state echoes and unrelated updates", () => {
+  const source = sourceFor("yeelight-cube-native-effects-card.js");
+  const body = source.match(/  set hass\(hass\) \{([\s\S]*?)\n  \}/)[1];
+  const update = new Function(
+    "getTargetEntities",
+    `return function(hass) {${body}}`,
+  )(getTargetEntities);
+  const draft = [18, 52, 86];
+  const card = {
+    config: { entity: "light.a", show_color_modes: true },
+    _customColorDraft: draft,
+    _controls: { update() {} },
+    requestUpdate() {},
+    _state: {
+      attributes: {
+        native_effect_color: draft,
+        native_effect_color_mode: "normal",
+      },
+    },
+  };
+  for (const color of [null, [1, 2, 3], draft]) {
+    update.call(card, {
+      states: {
+        "light.a": {
+          attributes: {
+            native_effect_color: color,
+            native_effect_color_mode: "normal",
+          },
+        },
+      },
+    });
+    assert.equal(card._customColorDraft, draft);
+  }
+});
 
 test("light slider settings share icon toggles and non-capsule value visibility", () => {
   const body = sourceFor("slider-control-utils.js").match(
@@ -397,6 +515,7 @@ test("native editor sections follow the card and use shared conditional controls
   const body = source.match(/  render\(\) \{([\s\S]*?)\n  \}/)[1];
   const records = {};
   const dependencies = {
+    modeActionOptions,
     html: template,
     createToggleRow: () => "",
     createButtonGroup: () => "",
@@ -471,6 +590,7 @@ test("native editor sections follow the card and use shared conditional controls
     "sliders",
     "orientation",
     "colors",
+    "presets",
     "effects",
     "favourites",
     "rotation",
@@ -569,6 +689,7 @@ test("multi-target configuration reads the first light and accepts legacy entity
     "readEffectCollections",
     "nativeEffectPreviewConfig",
     "window",
+    "closeColorPicker",
     `return function(config) {${body}}`,
   )(
     getTargetEntities,
@@ -578,6 +699,7 @@ test("multi-target configuration reads the first light and accepts legacy entity
     {
       localStorage: { getItem: () => null },
     },
+    () => {},
   );
   const first = { attributes: { native_effect: "Rainbow" } };
   const second = { attributes: { native_effect: "Ocean Waves" } };

@@ -10,7 +10,7 @@ import { renderClockFrame, flipMatrixVertical } from "./clock-preview-utils.js";
 
 // Trigger buttons for each save destination (shown under Custom on the card).
 const SAVE_TRIGGERS = {
-  color_mode: { icon: "mdi:palette", label: "Save colour mode" },
+  color_mode: { icon: "mdi:content-save-outline", label: "Save colour mode" },
   style: { icon: "mdi:clock-outline", label: "Save clock style" },
 };
 
@@ -19,6 +19,8 @@ class ClockPresetManager extends LitElement {
     hass: { attribute: false },
     initialColor: { attribute: false },
     saveKinds: { attribute: false },
+    libraryKinds: { attribute: false },
+    frameRenderer: { attribute: false },
     previewAttrs: { attribute: false },
     kind: { state: true },
     libraryKind: { state: true },
@@ -45,6 +47,7 @@ class ClockPresetManager extends LitElement {
     this.kind = "style";
     this.libraryKind = "style";
     this.saveKinds = ["color_mode", "style"];
+    this.libraryKinds = ["style", "color_mode"];
   }
 
   static styles = css`
@@ -57,10 +60,26 @@ class ClockPresetManager extends LitElement {
        the height of the neighbouring control buttons. */
     :host([compact]) .action-row {
       margin-top: 0;
+      justify-content: flex-start;
+      gap: 8px;
     }
     :host([compact]) .action-row .shared-action-button {
       min-height: 44px;
       padding: 8px 12px;
+      flex: 0 0 auto;
+      width: auto;
+    }
+    :host([compact]) .action-row .shared-action-button.btn-style-icon {
+      width: 44px;
+      height: 44px;
+      padding: 0;
+    }
+    :host([compact]) .btn-text {
+      white-space: normal;
+      overflow-wrap: break-word;
+    }
+    :host([compact]) ha-icon {
+      flex: 0 0 24px;
     }
     /* Inline save triggers share one row and may wrap on very narrow cards. */
     :host([compact]:not([editing])) .action-row {
@@ -205,6 +224,11 @@ class ClockPresetManager extends LitElement {
   `;
 
   _open(preset, kind) {
+    if (
+      this.showLibrary &&
+      !this.libraryKinds.includes(preset?.kind || kind || this.libraryKind)
+    )
+      return;
     this.editing = preset?.id || true;
     this.name = preset?.name || "";
     this.color = preset
@@ -233,6 +257,12 @@ class ClockPresetManager extends LitElement {
   async _save(event) {
     event.preventDefault();
     if (this.busy) return;
+    if (
+      !(this.showLibrary ? this.libraryKinds : this.saveKinds).includes(
+        this.kind,
+      )
+    )
+      return;
     this.busy = true;
     this.error = "";
     const isNew = typeof this.editing !== "string";
@@ -306,22 +336,24 @@ class ClockPresetManager extends LitElement {
     const presets = clockPresetsByKind(library, this.libraryKind);
     const frame =
       this.editing && this.showLibrary
-        ? flipMatrixVertical(
-            renderClockFrame(
-              {
-                ...(this.kind === "color_mode" ? this.previewAttrs : {}),
-                clock_style_id:
-                  this.kind === "color_mode"
-                    ? (this.previewAttrs?.clock_style_id ?? 4)
-                    : 4,
-                clock_color_mode: "normal",
-                clock_color_rgb: this._rgb(),
-                clock_content: "time",
-              },
-              null,
-              null,
-            ),
-          )
+        ? this.frameRenderer
+          ? this.frameRenderer(this._rgb())
+          : flipMatrixVertical(
+              renderClockFrame(
+                {
+                  ...(this.kind === "color_mode" ? this.previewAttrs : {}),
+                  clock_style_id:
+                    this.kind === "color_mode"
+                      ? (this.previewAttrs?.clock_style_id ?? 4)
+                      : 4,
+                  clock_color_mode: "normal",
+                  clock_color_rgb: this._rgb(),
+                  clock_content: "time",
+                },
+                null,
+                null,
+              ),
+            )
         : [];
     return html`
       ${this.showLibrary
@@ -387,7 +419,9 @@ class ClockPresetManager extends LitElement {
                   <div
                     class="preview"
                     role="img"
-                    aria-label="Clock colour preview"
+                    aria-label=${this.frameRenderer
+                      ? "Effect colour preview"
+                      : "Clock colour preview"}
                   >
                     ${frame.map(
                       (pixel) =>
@@ -424,25 +458,27 @@ class ClockPresetManager extends LitElement {
                 ${[
                   ["style", "Clock styles"],
                   ["color_mode", "Colour modes"],
-                ].map(
-                  ([value, label]) => html`
-                    <label
-                      ><input
-                        type="radio"
-                        name="library-kind"
-                        value=${value}
-                        .checked=${this.libraryKind === value}
-                        @change=${() => {
-                          this.libraryKind = value;
-                          this.editing = false;
-                          this.error = "";
-                          this.deleting = null;
-                        }}
-                      />${label}
-                      (${clockPresetsByKind(library, value).length})</label
-                    >
-                  `,
-                )}
+                ]
+                  .filter(([value]) => this.libraryKinds.includes(value))
+                  .map(
+                    ([value, label]) => html`
+                      <label
+                        ><input
+                          type="radio"
+                          name="library-kind"
+                          value=${value}
+                          .checked=${this.libraryKind === value}
+                          @change=${() => {
+                            this.libraryKind = value;
+                            this.editing = false;
+                            this.error = "";
+                            this.deleting = null;
+                          }}
+                        />${label}
+                        (${clockPresetsByKind(library, value).length})</label
+                      >
+                    `,
+                  )}
               </div>
             </fieldset>
             <div class="library">
