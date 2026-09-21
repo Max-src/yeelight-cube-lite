@@ -2,7 +2,7 @@ import asyncio
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
-from tests.test_native_features import ROOT, CONSTANTS, _load_standalone_functions
+from tests.test_native_features import ROOT, CONSTANTS, NATIVE_PREVIEW, _load_standalone_functions
 
 
 class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
@@ -43,6 +43,8 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
             (ROOT / "light_services.py").read_text(encoding="utf-8"),
             {"handle_set_native_effect"},
             {"asyncio": asyncio, "ALL_NATIVE_EFFECTS": CONSTANTS["ALL_NATIVE_EFFECTS"],
+             "CLOCK_COLOR_MODES": CONSTANTS["CLOCK_COLOR_MODES"],
+             "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
              "HomeAssistantError": ValueError, "_resolve_entities": lambda *args: self.targets},
         )["handle_set_native_effect"]
 
@@ -54,6 +56,51 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(self.target._custom_draw_active)
         self.target.async_apply_display_mode.assert_awaited_once_with(update_type="color_change")
         self.target._refresh_linked_entities.assert_called_once()
+
+    async def test_native_palettes_are_validated_and_independent_of_clock(self):
+        self.target._native_clock_color_mode = "bw"
+        await self.handle(SimpleNamespace(data={"effect": "Rainbow", "color_mode": "red_blue"}))
+        self.assertEqual(self.target._native_effect_color_mode, "red_blue")
+        self.assertEqual(self.target._native_clock_color_mode, "bw")
+        for color_mode in ("missing", "purple_orange"):
+            with self.assertRaisesRegex(ValueError, "colour mode"):
+                await self.handle(SimpleNamespace(data={"effect": "Ocean Waves", "color_mode": color_mode}))
+        self.assertEqual(self.target._native_effect, "Rainbow")
+        await self.handle(SimpleNamespace(data={"effect": "Rainbow", "color_mode": "normal"}))
+        self.assertEqual(self.target._native_effect_color_mode, "normal")
+
+    async def test_native_palette_payload_preserves_effect_and_omits_default_colour(self):
+        source = (ROOT / "light_native.py").read_text(encoding="utf-8").replace(
+            "        from .light import _DEVICE_ORIENTATION_TO_EFFECT_DIR\n", ""
+        )
+        activate = _load_standalone_functions(source, {"_activate_native_effect"}, {
+            **CONSTANTS,
+            "asyncio": SimpleNamespace(sleep=AsyncMock()),
+            "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
+            "_DEVICE_ORIENTATION_TO_EFFECT_DIR": {"right": "Right"},
+        })["_activate_native_effect"]
+        target = SimpleNamespace(
+            _native_effect="Starry sky", _native_effect_speed=50,
+            _native_effect_direction="Right", _device_orientation="right",
+            _native_effect_direction_select_entity=None,
+            _native_effect_color_mode="bw", hass=None,
+            _cube_matrix=SimpleNamespace(_close_fast_socket=Mock(), send_raw_command=AsyncMock()),
+            _set_native_mode_brightness=AsyncMock(), _notify_camera_preview=Mock(),
+        )
+        for effect, mode in (("Starry sky", "bw"), ("Rainbow", "red_blue"), ("Ocean Waves", "red_blue"), ("Starry sky", "normal")):
+            target._native_effect = effect
+            target._native_effect_color_mode = mode
+            await activate(target)
+            command, payload = target._cube_matrix.send_raw_command.call_args.args
+            spec = CONSTANTS["ALL_NATIVE_EFFECTS"][effect]
+            supported = NATIVE_PREVIEW["effect_supports_color_mode"](effect, mode)
+            self.assertEqual(command, "set_fx_effect")
+            self.assertEqual(payload[0], CONSTANTS["CLOCK_COLOR_MODES"][mode] if supported else spec["effect_id"])
+            self.assertEqual(payload[3]["mode"], spec["mode"])
+            if supported:
+                self.assertNotIn("color", payload[3])
+            elif spec.get("color") is not None:
+                self.assertEqual(payload[3]["color"], [spec["color"]])
 
     async def test_rejects_unknown_experimental_and_off_without_mutating(self):
         for effect in ("missing", "Prism"):

@@ -1,14 +1,15 @@
 import { LitElement, html, css, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
+import { ModeControlsController } from "./mode-controls-controller.js";
+import { renderColorModeSelector } from "./color-mode-selector-utils.js";
+import { CLOCK_COLOR_MODES } from "./clock-preview-utils.js";
+import { effectSupportsColorMode } from "./native-effect-preview.js";
+import { bindActionButtonGroup } from "./action-button-utils.js";
+import "./mode-controls-ui.js";
 import {
   nativeEffectItems,
   nativeEffectFrame,
   nativeEffectAction,
   nativeEffectPreviewConfig,
-  nextRotationEffect,
-  rotationIntervalMs,
-  effectCollectionKey,
-  readEffectCollections,
-  sanitizeEffectCollections,
 } from "./native-effect-card-utils.js";
 import { renderMatrixPreview } from "./gallery-display-utils.js";
 import {
@@ -19,23 +20,15 @@ import {
 } from "./style-selector-utils.js";
 import { initializeWheelNavigation } from "./wheel-navigation-utils.js";
 import { BLACK_THRESHOLD } from "./draw_card_const.js";
-import { renderActionButton, renderActionRow } from "./action-button-ui.js";
+import { renderActionButton } from "./action-button-ui.js";
 import { actionButtonStyles } from "./action-button-utils.js";
-import {
-  renderOrderableList,
-  orderableListStyles,
-} from "./orderable-list-utils.js";
-import {
-  renderOrientationControls,
-  orientationControlStyles,
-  orientationOptions,
-  nextOrientation,
-} from "./orientation-control-utils.js";
 import {
   renderSliderGroup,
   createSliderHandlers,
   sliderControlStyles,
   lightSliderConfig,
+  sliderPctToRaw,
+  sliderRawToPct,
 } from "./slider-control-utils.js";
 import {
   renderPagination,
@@ -62,10 +55,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     _paused: { state: true },
     _busy: { state: true },
     _error: { state: true },
-    _pendingOrientation: { state: true },
-    _collections: { state: true },
-    _manageFavourites: { state: true },
-    _rotationActive: { state: true },
   };
 
   constructor() {
@@ -77,6 +66,41 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     this._queue = Promise.resolve();
     this._context = 0;
     this._frames = [];
+    this._controls = new ModeControlsController({
+      kind: "native",
+      items: () =>
+        nativeEffectItems(this._attrs(), {
+          show_experimental: this.config.show_experimental,
+        }).map((item) => ({ key: item.name, title: item.name })),
+      navigationItems: () =>
+        this._items().map((item) => ({ key: item.name, title: item.name })),
+      current: () => this._effect()?.name,
+      available: (name) => this._effectAvailable(name),
+      ready: () => this._rotationTargetsReady(),
+      disabled: () => this._disabled() || this._busy,
+      on: () => this._state?.state === "on",
+      orientation: () => this._attrs().device_orientation || "right",
+      apply: (name) => this._apply(name, true),
+      select: (name) => {
+        this._selected = name;
+        return this.config.auto_apply !== false
+          ? this._apply(name, true)
+          : true;
+      },
+      command: (service, data, domain) =>
+        this._command(service, data, domain, true),
+      pause: (paused) => {
+        this._paused = paused;
+      },
+      frame: (name, elapsed) => {
+        const item = this._attrs().native_effect_catalog?.find(
+          (item) => item.name === name,
+        );
+        return item && item.preview !== false
+          ? nativeEffectFrame(item, this._attrs(), elapsed)
+          : null;
+      },
+    });
     this._loop = createRafLoop(
       (now) => {
         const delta = this._lastFrame
@@ -145,8 +169,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       throw new Error("Select at least one Yeelight Cube light entity.");
     this._context++;
     this._stopRotation();
-    this._manageFavourites = false;
-    clearTimeout(this._orientationTimer);
     this._busy = false;
     this._pendingCommands = 0;
     this._error = null;
@@ -168,27 +190,20 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       this._query = "";
     }
     this._selected = null;
-    this._pendingOrientation = null;
     this._page = 0;
     this._state = this._hass?.states[getTargetEntities(config)[0]];
     this._selectorIndex = undefined;
-    this._collectionKey = effectCollectionKey(getTargetEntities(config));
-    this._collections = readEffectCollections(undefined, this._collectionKey);
+    this._controls.configure(
+      nativeEffectPreviewConfig(this.config),
+      getTargetEntities(this.config),
+    );
   }
 
   set hass(hass) {
     this._hass = hass;
+    this._controls.update();
     if (this.config.show_rotation) this.requestUpdate();
-    if (this._rotationActive && !this._rotationTargetsReady())
-      this._stopRotation();
     const state = hass.states[getTargetEntities(this.config)[0]];
-    if (
-      this._orientationSettled &&
-      this._pendingOrientation === state?.attributes.device_orientation
-    ) {
-      this._pendingOrientation = null;
-      clearTimeout(this._orientationTimer);
-    }
     if (state !== this._state) {
       if (
         state?.attributes.native_effect !==
@@ -214,13 +229,12 @@ class YeelightCubeNativeEffectsCard extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    this._controls.disconnect();
     this._stopRotation();
     document.removeEventListener("visibilitychange", this._onVisibilityChange);
     this._context++;
-    clearTimeout(this._orientationTimer);
     this._busy = false;
     this._pendingCommands = 0;
-    this._pendingOrientation = null;
     this._loop.stop();
     this._visibility?.disconnect();
     this._observer?.disconnect();
@@ -254,15 +268,15 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     );
   }
   _speedRaw(value) {
-    return Math.round(1 + ((value - 1) * 254) / 99);
+    return sliderPctToRaw(value, 1, 255);
   }
   _sliderConfig(ns) {
     return lightSliderConfig(this.config, ns);
   }
 
-  async _command(service, data, domain = "yeelight_cube") {
+  async _command(service, data, domain = "yeelight_cube", managed = false) {
     if (this._disabled()) return false;
-    if (!this._rotationApplying) this._stopRotation();
+    if (!managed) this._stopRotation();
     const context = this._context;
     const hass = this._hass;
     const config = this.config;
@@ -291,7 +305,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     }
   }
 
-  async _apply(name = this._effect()?.name) {
+  async _apply(name = this._effect()?.name, managed = false) {
     if (!name || /^\d+$/.test(name.trim())) return;
     const context = this._context;
     this._selected = name;
@@ -299,7 +313,12 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     if (this._speedDraft != null && this._effect()?.speed)
       action.speed = this._speedRaw(this._speedDraft);
     if (
-      (await this._command("set_native_effect", action)) &&
+      (await this._command(
+        "set_native_effect",
+        action,
+        "yeelight_cube",
+        managed,
+      )) &&
       context === this._context
     ) {
       this._speedDraft = null;
@@ -312,53 +331,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     this._stopRotation();
     this._selected = name;
     if (this.config.auto_apply !== false) this._apply(name);
-  }
-
-  _stepEffect(delta) {
-    const items = this._items();
-    if (!items.length) return;
-    const index = items.findIndex((item) => item.name === this._effect()?.name);
-    this._select(
-      items[(Math.max(0, index) + delta + items.length) % items.length].name,
-    );
-  }
-
-  async handleOrientationControl(event) {
-    const button = event.target.closest("button[data-value]");
-    if (!button || button.disabled) return;
-    const current =
-      this._pendingOrientation || this._attrs().device_orientation || "right";
-    const step = { clockwise: 1, counterclockwise: -1, "half-turn": 2 }[
-      button.dataset.value
-    ];
-    const target = step
-      ? nextOrientation(
-          current,
-          step,
-          orientationOptions(this.config).directions,
-        )
-      : button.dataset.value;
-    if (!target || target === current) return;
-    this._stopRotation();
-    const context = this._context;
-    const sequence = (this._orientationSequence =
-      (this._orientationSequence || 0) + 1);
-    clearTimeout(this._orientationTimer);
-    this._orientationSettled = false;
-    this._pendingOrientation = target;
-    const success = await this._command("set_device_orientation", {
-      orientation: target,
-    });
-    if (context !== this._context || sequence !== this._orientationSequence)
-      return;
-    this._orientationSettled = true;
-    if (!success || this._attrs().device_orientation === target)
-      this._pendingOrientation = null;
-    else
-      this._orientationTimer = setTimeout(() => {
-        this._pendingOrientation = null;
-        this._error = "Orientation was not confirmed. Try again.";
-      }, 8000);
   }
 
   _button(label, icon, onClick, extra = {}) {
@@ -431,19 +403,22 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       controls.push({
         label: "Brightness",
         ns: "brightness",
-        gc: this._sliderConfig("brightness"),
+        gc: { ...this._sliderConfig("brightness"), rawValue: attrs.brightness },
         value:
           this._brightnessDraft ??
-          Math.max(1, Math.round(((attrs.brightness || 3) * 100) / 255)),
+          sliderRawToPct(attrs.brightness || 3, 3, 255),
       });
     if (this.config.show_animation_speed && effect?.speed)
       controls.push({
         label: "Animation speed",
         ns: "speed",
-        gc: this._sliderConfig("speed"),
+        gc: {
+          ...this._sliderConfig("speed"),
+          rawValue: attrs.native_effect_speed,
+        },
         value:
           this._speedDraft ??
-          Math.round(1 + (((attrs.native_effect_speed || 50) - 1) * 99) / 254),
+          sliderRawToPct(attrs.native_effect_speed || 50, 1, 255),
       });
     if (!controls.length) return "";
     return html`<div class="sliders" ?inert=${this._disabled() || this._busy}>
@@ -456,126 +431,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       this.config.style_selector_style ||
       (this.config.effect_view ? "original" : "preview-grid")
     );
-  }
-
-  _saveCollections(collections) {
-    this._collections = sanitizeEffectCollections(collections);
-    try {
-      globalThis.localStorage.setItem(
-        this._collectionKey,
-        JSON.stringify(this._collections),
-      );
-    } catch {
-      this._error =
-        "Browser storage is unavailable; this collection will last for this session only.";
-    }
-  }
-
-  _toggleFavourite(name = this._effect()?.name) {
-    if (!name || /^\d+$/.test(name)) return;
-    const favourites = this._collections.favourites.includes(name)
-      ? this._collections.favourites.filter((value) => value !== name)
-      : [...this._collections.favourites, name];
-    this._saveCollections({ ...this._collections, favourites });
-  }
-
-  _favouritesSection() {
-    const names = this._collections.favourites;
-    const available = nativeEffectItems(this._attrs(), {
-      show_experimental: this.config.show_experimental,
-    });
-    const playable = names.filter((name) =>
-      available.some((item) => item.name === name),
-    );
-    return html`<section class="effect-collection">
-      <div class="current-heading">
-        <h3>Favourites <span class="state-label">${names.length}</span></h3>
-        <div class="section-tools">
-          ${this._button(
-            "Shuffle favourite",
-            "mdi:shuffle-variant",
-            () => {
-              this._select(
-                nextRotationEffect(playable, this._effect()?.name, true),
-              );
-            },
-            {
-              contentMode: "icon",
-              disabled: this._disabled() || this._busy || playable.length < 2,
-            },
-          )}
-          ${this._button(
-            this._manageFavourites ? "Done" : "Manage favourites",
-            "mdi:playlist-edit",
-            () => {
-              this._manageFavourites = !this._manageFavourites;
-            },
-            {
-              contentMode: "icon",
-              selected: this._manageFavourites,
-              disabled: false,
-            },
-          )}
-          ${this._button(
-            this._collections.favourites.includes(this._effect()?.name)
-              ? "Remove favourite"
-              : "Add favourite",
-            this._collections.favourites.includes(this._effect()?.name)
-              ? "mdi:star"
-              : "mdi:star-outline",
-            () => this._toggleFavourite(),
-            { contentMode: "icon", disabled: !this._effect() },
-          )}
-        </div>
-      </div>
-      ${this._manageFavourites
-        ? renderOrderableList({
-            items: names,
-            available: available
-              .map((item) => item.name)
-              .filter((name) => !names.includes(name)),
-            onUpdate: (favourites) =>
-              this._saveCollections({ ...this._collections, favourites }),
-            addPlaceholder: "Add favourite",
-          })
-        : ""}
-      ${names.length
-        ? this.config.favourites_show_previews !== false
-          ? html`<div class="effects favourite-effects">
-              ${names.map((name) => {
-                const effect = available.find((item) => item.name === name);
-                return html`<button
-                  class="effect"
-                  type="button"
-                  aria-label=${name}
-                  aria-pressed=${String(name === this._effect()?.name)}
-                  ?disabled=${!effect || this._disabled() || this._busy}
-                  @click=${() => this._select(name)}
-                >
-                  ${effect ? this._matrix(effect) : ""}<span class="effect-name"
-                    >${name}</span
-                  >
-                  ${!effect
-                    ? html`<span class="state-label">Unavailable</span>`
-                    : ""}
-                </button>`;
-              })}
-            </div>`
-          : renderActionRow(
-              html`${names.map((name) =>
-                this._button(name, "mdi:creation", () => this._select(name), {
-                  buttonStyle:
-                    this.config.collection_buttons_style || "classic",
-                  contentMode:
-                    this.config.collection_buttons_content_mode || "icon_text",
-                  selected: name === this._effect()?.name,
-                  disabled:
-                    this._disabled() || this._busy || !playable.includes(name),
-                }),
-              )}`,
-            )
-        : html`<div class="state-label">No favourites yet.</div>`}
-    </section>`;
   }
 
   _effectAvailable(effect) {
@@ -591,16 +446,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     });
   }
 
-  _rotationNames() {
-    const names =
-      this.config.rotation_source === "custom"
-        ? this.config.rotation_effects || []
-        : this._collections.favourites;
-    return [...new Set(names)].filter((effect) =>
-      this._effectAvailable(effect),
-    );
-  }
-
   _rotationTargetsReady() {
     return getTargetEntities(this.config).every(
       (entity) => this._hass?.states[entity]?.state === "on",
@@ -608,104 +453,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   }
 
   _stopRotation() {
-    clearTimeout(this._rotationTimer);
-    this._rotationActive = false;
-    this._rotationToken = (this._rotationToken || 0) + 1;
-  }
-
-  _startRotation() {
-    if (
-      this._busy ||
-      !this._rotationTargetsReady() ||
-      this._rotationNames().length < 2 ||
-      document.hidden
-    )
-      return;
-    this._stopRotation();
-    this._rotationActive = true;
-    this._rotateNext(this._rotationToken);
-  }
-
-  async _rotateNext(token) {
-    if (!this._rotationActive || token !== this._rotationToken) return;
-    const names = this._rotationNames();
-    if (!this._rotationTargetsReady() || names.length < 2 || document.hidden) {
-      this._stopRotation();
-      return;
-    }
-    this._rotationApplying = true;
-    let success;
-    try {
-      success = await this._apply(
-        nextRotationEffect(
-          names,
-          this._effect()?.name,
-          this.config.rotation_shuffle === true,
-        ),
-      );
-    } finally {
-      this._rotationApplying = false;
-    }
-    if (!this._rotationActive || token !== this._rotationToken) return;
-    if (!success) {
-      this._stopRotation();
-      return;
-    }
-    this._rotationTimer = setTimeout(
-      () => this._rotateNext(token),
-      rotationIntervalMs(this.config),
-    );
-  }
-
-  _rotationSection() {
-    const names = this._rotationNames();
-    return html`<section class="effect-rotation">
-      <div class="current-heading">
-        <h3>Effect Rotation</h3>
-        <span class="state-label" role="status"
-          >${this._rotationActive ? "Running" : "Stopped"}</span
-        >
-      </div>
-      <div class="rotation-summary">
-        <span
-          >${names.length} effects · ${rotationIntervalMs(this.config) / 1000}s
-          · ${this.config.rotation_shuffle ? "Shuffle" : "In order"}</span
-        >
-        <div class="section-tools">
-          ${this._button(
-            this._rotationActive ? "Stop rotation" : "Start rotation",
-            this._rotationActive ? "mdi:stop" : "mdi:play",
-            () => {
-              if (this._rotationActive) this._stopRotation();
-              else this._startRotation();
-            },
-            {
-              contentMode: "icon",
-              disabled:
-                !this._rotationActive &&
-                (this._busy ||
-                  names.length < 2 ||
-                  !this._rotationTargetsReady()),
-            },
-          )}
-          ${this._button(
-            "Skip effect",
-            "mdi:skip-next",
-            () => {
-              clearTimeout(this._rotationTimer);
-              this._rotateNext(this._rotationToken);
-            },
-            {
-              contentMode: "icon",
-              disabled: !this._rotationActive || this._busy,
-            },
-          )}
-        </div>
-      </div>
-      <div class="state-label">
-        ${names.join(" · ") || "No effects selected."}
-      </div>
-    </section>`;
+    this._controls?.stop();
   }
 
   _referenceSelector(items) {
@@ -808,56 +556,42 @@ class YeelightCubeNativeEffectsCard extends LitElement {
               ${this._matrix(effect, true)}
             </section>`
           : ""}
-        ${this.config.show_actions
-          ? renderActionRow(
-              html`
-                ${this._button(
-                  "Previous effect",
-                  "mdi:chevron-left",
-                  () => this._stepEffect(-1),
-                  { disabled: this._busy || !all.length },
-                )}
-                ${this._button("Apply", "mdi:play", () => this._apply(), {
-                  busy: this._busy,
-                  disabled: !effect || this._disabled(),
-                })}
-                ${this._button(
-                  "Next effect",
-                  "mdi:chevron-right",
-                  () => this._stepEffect(1),
-                  { disabled: this._busy || !all.length },
-                )}
-                ${this._button(
-                  this._paused ? "Resume previews" : "Pause previews",
-                  this._paused ? "mdi:motion-play-outline" : "mdi:pause",
-                  () => {
-                    this._paused = !this._paused;
-                  },
-                  { disabled: false },
-                )}
-                ${this._button(
-                  this._state.state === "on" ? "Turn off" : "Turn on",
-                  "mdi:power",
-                  () =>
-                    this._command(
-                      this._state.state === "on" ? "turn_off" : "turn_on",
-                      {},
-                      "light",
-                    ),
-                  { disabled: this._disabled() || this._busy },
-                )}
-              `,
-              { contentMode: this.config.buttons_content_mode || "icon" },
-            )
-          : ""}
+        <yeelight-mode-controls
+          area="actions"
+          .model=${this._controls}
+        ></yeelight-mode-controls>
         ${this._sliders(effect)}
-        ${unsafeHTML(
-          renderOrientationControls(
-            this.config,
-            this._pendingOrientation || attrs.device_orientation || "right",
-            this._disabled(),
-          ),
-        )}
+        <yeelight-mode-controls
+          area="orientation"
+          .model=${this._controls}
+        ></yeelight-mode-controls>
+        ${this.config.show_color_modes &&
+        Object.hasOwn(attrs, "native_effect_color_mode")
+          ? html`<section class="color-modes">
+              <h3>Colour mode</h3>
+              ${unsafeHTML(
+                renderColorModeSelector(
+                  this.config,
+                  CLOCK_COLOR_MODES.filter(
+                    (mode) =>
+                      mode.value === "normal" ||
+                      effectSupportsColorMode(effect?.name, mode.value),
+                  ),
+                  effectSupportsColorMode(
+                    effect?.name,
+                    attrs.native_effect_color_mode,
+                  )
+                    ? attrs.native_effect_color_mode
+                    : "normal",
+                  {
+                    disabled:
+                      this._busy || this._controls.busy || this._disabled(),
+                    placeholder: "Normal",
+                  },
+                ),
+              )}
+            </section>`
+          : ""}
         ${this.config.show_gallery
           ? html`<section class="browser">
               ${this.config.show_search
@@ -943,10 +677,11 @@ class YeelightCubeNativeEffectsCard extends LitElement {
                         ${unsafeHTML(pagination.html)}`}
             </section>`
           : ""}
-        ${this.config.show_favourites ? this._favouritesSection() : ""}
-        ${this.config.show_rotation ? this._rotationSection() : ""}
-      </div></ha-card
-    >`;
+        <yeelight-mode-controls
+          area="collections"
+          .model=${this._controls}
+        ></yeelight-mode-controls></div
+    ></ha-card>`;
   }
 
   firstUpdated() {
@@ -973,6 +708,21 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   }
 
   updated() {
+    this._controls.update();
+    const colorModes = this.shadowRoot.querySelector(".color-modes");
+    if (colorModes) {
+      const apply = (color_mode) =>
+        this._command("set_native_effect", {
+          effect: this._effect()?.name,
+          color_mode,
+        });
+      bindActionButtonGroup(
+        colorModes.querySelector(".shared-button-group"),
+        apply,
+      );
+      const dropdown = colorModes.querySelector(".colormode-select");
+      if (dropdown) dropdown.onchange = (event) => apply(event.target.value);
+    }
     const effectSelect = this.shadowRoot.querySelector(
       'select[aria-label="Native effect"]',
     );
@@ -1059,7 +809,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     const attrs = {
       ...this._attrs(),
       device_orientation:
-        this._pendingOrientation || this._attrs().device_orientation,
+        this._controls.pendingOrientation || this._attrs().device_orientation,
       native_effect_speed:
         this._speedDraft == null
           ? this._attrs().native_effect_speed
@@ -1100,9 +850,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   }
 
   static styles = [
-    orderableListStyles,
     unsafeCSS(actionButtonStyles),
-    unsafeCSS(orientationControlStyles),
     unsafeCSS(sliderControlStyles),
     unsafeCSS(styleSelectorStyles),
     unsafeCSS(paginationStyles),

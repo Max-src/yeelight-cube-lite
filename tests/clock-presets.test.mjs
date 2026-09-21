@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { renderColorModeSelector } from "../custom_components/yeelight_cube/www/color-mode-selector-utils.js";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { escapeHtml } from "../custom_components/yeelight_cube/www/html-escape-utils.js";
@@ -301,6 +302,7 @@ test("unified colour row has saved colours and Add without a Custom tab", () => 
         renderActionButtonHTML,
         renderActionButtonGroupHTML,
         actionButtonGroupModel,
+        renderColorModeSelector,
         rgbToHex: () => "#ff64b4",
       },
     ),
@@ -563,6 +565,7 @@ test("Custom stays selectable and built-in selections respect the active colour 
     _hass: { states: { library: { attributes: { clock_presets: presets } } } },
     _attrs: () => attrs,
     _styleList: () => styles,
+    _controlStyles: () => styles,
     _callSetClock: (data) => calls.push(data),
     render: () => renders++,
     ...cardMethods(
@@ -985,6 +988,8 @@ test("a just-saved style reads as Normal before the library echoes it back", () 
     _hass: { states: { library: { attributes: { clock_presets: presets } } } },
     _attrs: () => attrs,
     _styleList: () => clockStylesWithPresets(getClockStyles(false), presets),
+    _controlStyles: () =>
+      clockStylesWithPresets(getClockStyles(false), presets),
     _callSetClock: (data) => calls.push(data),
     render() {},
     ...cardMethods(

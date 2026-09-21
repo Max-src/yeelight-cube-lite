@@ -1,4 +1,8 @@
 import { renderStyleSelectorSettings } from "./style-selector-ui.js";
+import {
+  renderModeControlSettings,
+  renderColorModeSettings,
+} from "./mode-controls-ui.js";
 import { LitElement, html } from "./lib/lit-all.js";
 import "./clock-preset-manager.js";
 import { renderActionButtonSettings } from "./action-button-ui.js";
@@ -22,7 +26,10 @@ import { createButtonGroup, buttonGroupStyles } from "./button-group-utils.js";
 import { createToggleRow } from "./form-row-utils.js";
 import { createYeelightCubeEntityPicker } from "./entity-selector-utils.js";
 import { getClockStyles, CLOCK_COLOR_MODES } from "./clock-preview-utils.js";
-import { renderLightSliderSettings } from "./slider-control-utils.js";
+import {
+  renderLightSliderSettings,
+  sliderKeys,
+} from "./slider-control-utils.js";
 import {
   renderOrderableList,
   orderableListStyles,
@@ -106,9 +113,27 @@ class YeelightCubeClockCardEditor extends LitElement {
         Loading…
       </div>`;
     }
-    const config = this.config || {};
+    const config = {
+      buttons_style: "modern",
+      buttons_content_mode: "icon_text",
+      ...this.config,
+    };
     const selectedEntities =
       config.target_entities || (config.entity ? [config.entity] : []);
+    const change = (key, value) => {
+      this.config = { ...this.config, [key]: value };
+      if (key === "orientation_buttons") {
+        delete this.config.orientation_layout;
+        delete this.config.orientation_half_turn;
+        delete this.config.orientation_directions;
+      }
+      this.requestUpdate();
+      this._fire();
+    };
+    const modes = clockStylesWithPresets(
+      getClockStyles(true),
+      clockPresetLibrary(this._hass),
+    ).map((style) => ({ key: clockPresetKey(style), title: style.name }));
 
     // Editor sections follow the card's visual order.
     return html`
@@ -179,6 +204,11 @@ class YeelightCubeClockCardEditor extends LitElement {
           `,
         )}
         ${this._section(
+          "actions",
+          "Actions",
+          renderModeControlSettings("actions", config, change),
+        )}
+        ${this._section(
           "speed",
           "Sliders",
           html`
@@ -200,6 +230,11 @@ class YeelightCubeClockCardEditor extends LitElement {
               this._fire();
             })}
           `,
+        )}
+        ${this._section(
+          "orientation",
+          "Device Orientation",
+          renderModeControlSettings("orientation", config, change),
         )}
         ${this._section(
           "display",
@@ -227,63 +262,7 @@ class YeelightCubeClockCardEditor extends LitElement {
               ? renderModeSettingsSection(
                   "Colour mode style",
                   html`
-                    <div class="form-row">
-                      <label>Presentation</label>
-                      ${createButtonGroup(
-                        [
-                          {
-                            value: "buttons",
-                            label: "Buttons",
-                            title: "Icon + label buttons in a row",
-                          },
-                          {
-                            value: "dropdown",
-                            label: "Dropdown",
-                            title: "Compact dropdown list",
-                          },
-                        ],
-                        config.color_mode_selector === "dropdown"
-                          ? "dropdown"
-                          : "buttons",
-                        (event) => {
-                          const value = event.currentTarget.dataset.value;
-                          this.config = {
-                            ...this.config,
-                            color_mode_selector: value,
-                          };
-                          this.requestUpdate();
-                          this._fire();
-                        },
-                      )}
-                    </div>
-                    ${config.color_mode_selector === "dropdown"
-                      ? html`
-                          <div class="form-row">
-                            <label>Item Shape</label>
-                            ${createButtonGroup(
-                              [
-                                { value: "square", label: "Square" },
-                                { value: "rounded", label: "Rounded" },
-                                { value: "round", label: "Round" },
-                              ],
-                              ["square", "round"].includes(
-                                config.color_mode_shape,
-                              )
-                                ? config.color_mode_shape
-                                : "rounded",
-                              (event) => {
-                                const value = event.currentTarget.dataset.value;
-                                this.config = {
-                                  ...this.config,
-                                  color_mode_shape: value,
-                                };
-                                this.requestUpdate();
-                                this._fire();
-                              },
-                            )}
-                          </div>
-                        `
-                      : ""}
+                    ${renderColorModeSettings(config, change)}
                     <div class="form-row">
                       <label>Custom colour modes style</label>
                       ${createButtonGroup(
@@ -404,6 +383,28 @@ class YeelightCubeClockCardEditor extends LitElement {
               this._fire();
             })}
           `,
+        )}
+        ${this._section(
+          "favourites",
+          "Favourites",
+          renderModeControlSettings(
+            "favourites",
+            config,
+            change,
+            modes,
+            "clock mode",
+          ),
+        )}
+        ${this._section(
+          "rotation",
+          "Clock Mode Rotation",
+          renderModeControlSettings(
+            "rotation",
+            config,
+            change,
+            modes,
+            "clock mode",
+          ),
         )}
       </div>
     `;

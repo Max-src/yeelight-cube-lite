@@ -10,14 +10,13 @@ import {
   createYeelightCubeEntityPicker,
   entitySelectorStyles,
 } from "./entity-selector-utils.js";
-import { createToggleRow, createSliderRow } from "./form-row-utils.js";
+import { createToggleRow } from "./form-row-utils.js";
 import { createButtonGroup, buttonGroupStyles } from "./button-group-utils.js";
 import {
   renderOrderableList,
   orderableListStyles,
 } from "./orderable-list-utils.js";
 import { renderActionButtonSettings } from "./action-button-ui.js";
-import { renderOrientationSettings } from "./orientation-control-ui.js";
 import { getTargetEntities } from "./service-call-utils.js";
 import {
   nativeEffectItems,
@@ -25,6 +24,10 @@ import {
 } from "./native-effect-card-utils.js";
 import { renderLightSliderSettings } from "./slider-control-utils.js";
 import { renderStyleSelectorSettings } from "./style-selector-ui.js";
+import {
+  renderModeControlSettings,
+  renderColorModeSettings,
+} from "./mode-controls-ui.js";
 
 class YeelightCubeNativeEffectsCardEditor extends LitElement {
   static properties = {
@@ -143,18 +146,7 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
       ${this._section(
         "actions",
         "Actions",
-        html`
-          ${this._toggle("Show Actions", "show_actions")}
-          ${config.show_actions !== false
-            ? renderModeSettingsSection(
-                "Button Settings",
-                renderActionButtonSettings(config, change, {
-                  defaultStyle: "classic",
-                  defaultContentMode: "icon",
-                }),
-              )
-            : ""}
-        `,
+        renderModeControlSettings("actions", config, change),
       )}
       ${this._section(
         "sliders",
@@ -171,15 +163,18 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
       ${this._section(
         "orientation",
         "Device Orientation",
-        html`
-          ${this._toggle("Show Device Orientation", "show_device_orientation")}
-          ${config.show_device_orientation !== false
-            ? renderModeSettingsSection(
-                "Orientation Settings",
-                renderOrientationSettings(config, change),
-              )
-            : ""}
-        `,
+        renderModeControlSettings("orientation", config, change),
+      )}
+      ${this._section(
+        "colors",
+        "Colour Modes & Controls",
+        html`${this._toggle("Show Colour Modes", "show_color_modes", false)}
+        ${config.show_color_modes
+          ? renderModeSettingsSection(
+              "Colour Mode Style",
+              renderColorModeSettings(config, change),
+            )
+          : ""}`,
       )}
       ${this._section(
         "effects",
@@ -287,77 +282,21 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
       ${this._section(
         "favourites",
         "Favourites",
-        html`
-          ${this._toggle("Show Favourites", "show_favourites", false)}
-          ${config.show_favourites
-            ? renderModeSettingsSection(
-                "Favourite Controls",
-                html`${this._toggle(
-                  "Animated Previews",
-                  "favourites_show_previews",
-                )}
-                ${config.favourites_show_previews === false
-                  ? renderActionButtonSettings(config, change, {
-                      styleKey: "collection_buttons_style",
-                      contentKey: "collection_buttons_content_mode",
-                      defaultStyle: "classic",
-                      defaultContentMode: "icon_text",
-                    })
-                  : renderMatrixAppearanceSettings(
-                      nativeEffectPreviewConfig(config),
-                      change,
-                      { prefix: "effect", defaultSize: 100 },
-                    )}`,
-              )
-            : ""}
-        `,
+        renderModeControlSettings(
+          "favourites",
+          nativeEffectPreviewConfig(config),
+          change,
+        ),
       )}
       ${this._section(
         "rotation",
         "Effect Rotation",
-        html`${this._toggle("Show Effect Rotation", "show_rotation", false)}
-        ${config.show_rotation
-          ? renderModeSettingsSection(
-              "Rotation Settings",
-              html`
-                ${this._choices(
-                  "Effects",
-                  "rotation_source",
-                  [
-                    { value: "favourites", label: "Favourites" },
-                    { value: "custom", label: "Custom List" },
-                  ],
-                  "favourites",
-                )}
-                ${config.rotation_source === "custom"
-                  ? renderOrderableList({
-                      items: (config.rotation_effects || []).filter((name) =>
-                        names.includes(name),
-                      ),
-                      available: names.filter(
-                        (name) =>
-                          !(config.rotation_effects || []).includes(name),
-                      ),
-                      onUpdate: (items) => change("rotation_effects", items),
-                      addPlaceholder: "Add effect to rotation",
-                    })
-                  : ""}
-                ${createSliderRow(
-                  "Interval",
-                  config.rotation_interval ?? 60,
-                  { min: 10, max: 3600, step: 10 },
-                  (event) =>
-                    change("rotation_interval", Number(event.target.value)),
-                  "s",
-                )}
-                ${this._toggle(
-                  "Shuffle (No Immediate Repeats)",
-                  "rotation_shuffle",
-                  false,
-                )}
-              `,
-            )
-          : ""}`,
+        renderModeControlSettings(
+          "rotation",
+          config,
+          change,
+          effects.map((item) => ({ key: item.name, title: item.name })),
+        ),
       )}
     </div>`;
   }

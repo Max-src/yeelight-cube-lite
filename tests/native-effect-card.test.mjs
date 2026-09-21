@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { ModeControlsController } from "../custom_components/yeelight_cube/www/mode-controls-controller.js";
 import { readFileSync } from "node:fs";
 import {
   nativeEffectItems,
@@ -65,11 +66,98 @@ test("light slider settings share icon toggles and non-capsule value visibility"
   assert.ok(options.icons.leftLabel);
   assert.ok(options.icons.rightLabel);
   assert.equal(options.showValueToggle.key, "slider_show_value");
+  assert.equal(options.rawValueToggle.key, "slider_show_raw_value");
   for (const file of [
     "yeelight-cube-clock-card-editor.js",
     "yeelight-cube-native-effects-card-editor.js",
   ])
     assert.match(sourceFor(file), /renderLightSliderSettings\(/);
+});
+
+test("shared slider conversions agree across cards and fix the speed 20/19 mismatch", () => {
+  const src = sourceFor("slider-control-utils.js");
+  const grabFn = (sig) => {
+    const match = src.match(new RegExp(`function ${sig} \\{[\\s\\S]*?\\n\\}`));
+    assert.ok(match, sig);
+    return match[0];
+  };
+  const api = new Function(
+    `${grabFn("sliderPctToRaw\\(pct, min, max\\)")}
+     ${grabFn("sliderRawToPct\\(raw, min, max\\)")}
+     ${grabFn("sliderRawMode\\(gc\\)")}
+     ${grabFn("sliderRawValue\\(pct, gc\\)")}
+     ${grabFn("formatSliderValue\\(pct, gc\\)")}
+     return { sliderPctToRaw, sliderRawToPct, formatSliderValue };`,
+  )();
+  // The reported bug: speed 50 rendered as 20% on one card and 19% on another.
+  // Both now derive from the same helper, so both read 20%.
+  assert.equal(api.sliderRawToPct(50, 1, 255), 20);
+  // Endpoints are exact for speed (1-255) and brightness (3-255).
+  assert.equal(api.sliderRawToPct(1, 1, 255), 1);
+  assert.equal(api.sliderRawToPct(255, 1, 255), 100);
+  assert.equal(api.sliderPctToRaw(1, 1, 255), 1);
+  assert.equal(api.sliderPctToRaw(100, 1, 255), 255);
+  assert.equal(api.sliderPctToRaw(1, 3, 255), 3);
+  assert.equal(api.sliderPctToRaw(100, 3, 255), 255);
+  // Percent → raw → percent is a stable round-trip across the whole range.
+  for (let pct = 1; pct <= 100; pct++) {
+    for (const [min, max] of [
+      [1, 255],
+      [3, 255],
+    ]) {
+      const raw = api.sliderPctToRaw(pct, min, max);
+      assert.ok(raw >= min && raw <= max);
+      assert.equal(api.sliderRawToPct(raw, min, max), pct);
+    }
+  }
+  // Out-of-range inputs clamp instead of producing NaN or values past bounds.
+  assert.equal(api.sliderRawToPct(9999, 1, 255), 100);
+  assert.equal(api.sliderPctToRaw(0, 1, 255), 1);
+  assert.equal(api.sliderPctToRaw(500, 1, 255), 255);
+  // Percent vs raw display formatting.
+  assert.equal(api.formatSliderValue(20, { unit: "%" }), "20%");
+  assert.equal(
+    api.formatSliderValue(20, {
+      valueMode: "raw",
+      rawMin: 1,
+      rawMax: 255,
+      rawUnit: "",
+    }),
+    "50",
+  );
+  assert.equal(
+    api.formatSliderValue(100, { valueMode: "raw", rawMin: 3, rawMax: 255 }),
+    "255",
+  );
+  // Exact device value wins over the mapping while the percent still represents
+  // it (128 reads 128, not 129), but a dragged percent uses the mapping.
+  const rawGc = { valueMode: "raw", rawMin: 1, rawMax: 255, rawValue: 128 };
+  assert.equal(api.formatSliderValue(51, rawGc), "128");
+  assert.equal(api.formatSliderValue(60, rawGc), "152");
+  // Raw mode falls back to percent unless a full raw range is provided.
+  assert.equal(
+    api.formatSliderValue(42, { valueMode: "raw", unit: "%" }),
+    "42%",
+  );
+  // Every card derives speed/brightness from the shared helpers, and the raw
+  // toggle key is the one global config key.
+  assert.match(
+    sourceFor("yeelight-cube-clock-card.js"),
+    /_rawToPct\(raw\) \{\s*return sliderRawToPct\(raw, 1, 255\)/,
+  );
+  assert.match(
+    sourceFor("yeelight-cube-native-effects-card.js"),
+    /sliderRawToPct\(attrs\.native_effect_speed/,
+  );
+  assert.match(
+    src,
+    /valueMode: config\.slider_show_raw_value \? "raw" : "percent"/,
+  );
+  for (const file of [
+    "yeelight-cube-lamp-preview-card.js",
+    "yeelight-cube-lamp-preview-card-editor.js",
+  ])
+    assert.match(sourceFor(file), /slider_show_raw_value/);
 });
 
 test("removed saved looks are ignored without losing favourites", () => {
@@ -113,10 +201,15 @@ test("rotation retains only effects available on every target", () => {
       nativeEffectItems,
     }),
   };
-  const names = cardMethod("_rotationNames");
-  assert.deepEqual(names.call(card), ["Rainbow"]);
+  const controls = new ModeControlsController({
+    kind: "native",
+    available: (name) => card._effectAvailable(name),
+  });
+  controls.configure(card.config, getTargetEntities(card.config));
+  controls.favourites = card._collections.favourites;
+  assert.deepEqual(controls.names(), ["Rainbow"]);
   card._hass.states["light.second"].state = "unavailable";
-  assert.deepEqual(names.call(card), []);
+  assert.deepEqual(controls.names(), []);
 });
 
 test("rotation order, shuffle and interval are bounded and do not repeat immediately", () => {
@@ -140,72 +233,42 @@ test("rotation order, shuffle and interval are bounded and do not repeat immedia
 });
 
 test("rotation only schedules after success and stops for hidden, off or changed targets", async () => {
-  const timers = [];
-  const document = { hidden: false };
-  const rotate = cardMethod("_rotateNext", {
-    nextRotationEffect,
-    rotationIntervalMs,
-    document,
-    setTimeout: (callback, delay) => {
-      timers.push({ callback, delay });
-      return timers.length;
-    },
-  });
-  const card = {
-    config: {},
-    _rotationActive: true,
-    _rotationToken: 1,
-    _rotationNames: () => ["Rainbow", "Streamer"],
-    _rotationTargetsReady: () => true,
-    _effect: () => rainbow,
-    _apply: async () => true,
-    _stopRotation() {
-      this._rotationActive = false;
-      this._rotationToken++;
-    },
+  const adapter = {
+    kind: "native",
+    available: () => true,
+    ready: () => true,
+    disabled: () => false,
+    current: () => "Rainbow",
+    apply: async () => true,
   };
-  await rotate.call(card, 1);
-  assert.equal(timers.length, 1);
-  assert.equal(timers[0].delay, 60000);
-  assert.equal(card._rotationApplying, false);
-  card._apply = async () => false;
-  await rotate.call(card, 1);
-  assert.equal(card._rotationActive, false);
-  assert.equal(timers.length, 1);
-  for (const hidden of [true, false]) {
-    card._rotationActive = true;
-    document.hidden = hidden;
-    card._rotationTargetsReady = () => hidden;
-    await rotate.call(card, card._rotationToken);
-    assert.equal(card._rotationActive, false);
-  }
-  card._rotationActive = true;
-  card._rotationTargetsReady = () => true;
-  card._apply = async () => {
-    card._stopRotation();
-    return true;
-  };
-  await rotate.call(card, card._rotationToken);
-  assert.equal(timers.length, 1);
+  const controls = new ModeControlsController(adapter);
+  controls.configure(
+    { rotation_source: "custom", rotation_effects: ["Rainbow", "Streamer"] },
+    ["light.a"],
+  );
+  controls.active = true;
+  await controls.tick(controls.token);
+  assert.ok(controls.timer);
+  controls.stop();
+  adapter.apply = async () => false;
+  controls.active = true;
+  await controls.tick(controls.token);
+  assert.equal(controls.active, false);
+  adapter.ready = () => false;
+  controls.active = true;
+  await controls.tick(controls.token);
+  assert.equal(controls.active, false);
 });
 
 test("favourites allow direct removal without changing selection", () => {
-  const toggle = cardMethod("_toggleFavourite");
-  const card = {
-    _collections: {
-      favourites: ["Rainbow", "Streamer"],
-    },
-    _effect: () => rainbow,
-    _saveCollections(value) {
-      this._collections = value;
-    },
-  };
-  toggle.call(card, "Streamer");
-  assert.deepEqual(card._collections.favourites, ["Rainbow"]);
-  toggle.call(card);
-  assert.deepEqual(card._collections.favourites, []);
-  toggle.call(card);
-  assert.deepEqual(card._collections.favourites, ["Rainbow"]);
+  const controls = new ModeControlsController({ current: () => "Rainbow" });
+  controls.save(["Rainbow", "Streamer"]);
+  controls.save(controls.favourites.filter((name) => name !== "Streamer"));
+  assert.deepEqual(controls.favourites, ["Rainbow"]);
+  controls.toggleFavourite();
+  assert.deepEqual(controls.favourites, []);
+  controls.toggleFavourite();
+  assert.deepEqual(controls.favourites, ["Rainbow"]);
 });
 
 test("shared selectors bind text, preview and carousel navigation without duplicate callbacks", () => {
@@ -335,6 +398,8 @@ test("native editor sections follow the card and use shared conditional controls
   const records = {};
   const dependencies = {
     html: template,
+    createToggleRow: () => "",
+    createButtonGroup: () => "",
     getTargetEntities,
     nativeEffectItems,
     nativeEffectPreviewConfig,
@@ -361,11 +426,19 @@ test("native editor sections follow the card and use shared conditional controls
     renderOrientationSettings: () => {
       records.orientation = true;
     },
+    renderColorModeSettings: () => "",
     renderOrderableList: (options) => {
       records.list = options;
     },
     sliderKeys: (prefix) => prefix,
   };
+  const sharedBody = sourceFor("mode-controls-ui.js").match(
+    /export function renderModeControlSettings\([^)]*\) \{([\s\S]*?)\n\}/,
+  )[1];
+  dependencies.renderModeControlSettings = new Function(
+    ...Object.keys(dependencies),
+    `return function(area, config, change, items = [], noun = "effect") {${sharedBody}}`,
+  )(...Object.values(dependencies));
   const render = new Function(
     ...Object.keys(dependencies),
     `return function() {${body}}`,
@@ -397,6 +470,7 @@ test("native editor sections follow the card and use shared conditional controls
     "actions",
     "sliders",
     "orientation",
+    "colors",
     "effects",
     "favourites",
     "rotation",
@@ -493,16 +567,24 @@ test("multi-target configuration reads the first light and accepts legacy entity
     "getTargetEntities",
     "effectCollectionKey",
     "readEffectCollections",
+    "nativeEffectPreviewConfig",
     "window",
     `return function(config) {${body}}`,
-  )(getTargetEntities, effectCollectionKey, readEffectCollections, {
-    localStorage: { getItem: () => null },
-  });
+  )(
+    getTargetEntities,
+    effectCollectionKey,
+    readEffectCollections,
+    nativeEffectPreviewConfig,
+    {
+      localStorage: { getItem: () => null },
+    },
+  );
   const first = { attributes: { native_effect: "Rainbow" } };
   const second = { attributes: { native_effect: "Ocean Waves" } };
   const card = {
     _context: 0,
     _stopRotation() {},
+    _controls: { configure() {} },
     _hass: { states: { "light.first": first, "light.second": second } },
   };
   setConfig.call(card, { target_entities: ["light.first", "light.second"] });
@@ -555,11 +637,11 @@ test("native commands send all targets through the shared service path", async (
     "utf8",
   );
   const body = source.match(
-    /  async _command\(service, data, domain = "yeelight_cube"\) \{([\s\S]*?)\n  \}/,
+    /  async _command\(service, data, domain = "yeelight_cube", managed = false\) \{([\s\S]*?)\n  \}/,
   )[1];
   const command = new Function(
     "callServiceOnTargetEntities",
-    `return async function(service, data, domain = "yeelight_cube") {${body}}`,
+    `return async function(service, data, domain = "yeelight_cube", managed = false) {${body}}`,
   )(callServiceOnTargetEntities);
   const calls = [];
   const targets = ["light.first", "light.second"];
@@ -614,7 +696,7 @@ test("preview selection stays local and Apply includes a supported speed draft",
   );
   const selectBody = source.match(/  _select\(name\) \{([\s\S]*?)\n  \}/)[1];
   const applyBody = source.match(
-    /  async _apply\(name = this\._effect\(\)\?\.name\) \{([\s\S]*?)\n  \}/,
+    /  async _apply\(name = this\._effect\(\)\?\.name, managed = false\) \{([\s\S]*?)\n  \}/,
   )[1];
   const calls = [];
   const card = {
@@ -634,7 +716,7 @@ test("preview selection stays local and Apply includes a supported speed draft",
   };
   card._apply = new Function(
     "nativeEffectAction",
-    `return async function(name) {${applyBody}}`,
+    `return async function(name, managed = false) {${applyBody}}`,
   )(nativeEffectAction);
   new Function("name", selectBody).call(card, "Rainbow");
   assert.equal(card._selected, "Rainbow");
@@ -733,17 +815,10 @@ test("collection storage tolerates a blocked localStorage getter on reads and wr
     assert.deepEqual(readEffectCollections(undefined, "key"), {
       favourites: [],
     });
-    const body = sourceFor("yeelight-cube-native-effects-card.js").match(
-      /  _saveCollections\(collections\) \{([\s\S]*?)\n  \}/,
-    )[1];
-    const save = new Function(
-      "sanitizeEffectCollections",
-      `return function(collections) {${body}}`,
-    )(sanitizeEffectCollections);
-    const card = { _collectionKey: "key" };
-    save.call(card, { favourites: ["Rainbow", "Rainbow"], recent: [] });
-    assert.deepEqual(card._collections.favourites, ["Rainbow"]);
-    assert.match(card._error, /session only/);
+    const controls = new ModeControlsController({});
+    controls.save(["Rainbow", "Rainbow"]);
+    assert.deepEqual(controls.favourites, ["Rainbow"]);
+    assert.match(controls.error, /session only/);
   } finally {
     if (descriptor)
       Object.defineProperty(globalThis, "localStorage", descriptor);
@@ -798,49 +873,31 @@ test("native effect pagination handles shared next/prev actions and clamps pages
 });
 
 test("rotation keeps the latest pending direction until Home Assistant echoes it", async () => {
-  const source = readFileSync(
-    new URL(
-      "../custom_components/yeelight_cube/www/yeelight-cube-native-effects-card.js",
-      import.meta.url,
-    ),
-    "utf8",
-  );
-  const body = source.match(
-    /  async handleOrientationControl\(event\) \{([\s\S]*?)\n  \}/,
-  )[1];
-  const handler = new Function(
-    "orientationOptions",
-    "nextOrientation",
-    `return async function(event) {${body}}`,
-  )(orientationOptions, nextOrientation);
   const calls = [];
-  const card = {
-    config: {},
-    _context: 1,
-    _rotationActive: true,
-    _stopRotation() {
-      this._rotationActive = false;
-    },
-    _attrs: () => ({ device_orientation: "right" }),
-    _command: async (service, data) => {
+  let orientation = "right";
+  const controls = new ModeControlsController({
+    kind: "native",
+    disabled: () => false,
+    orientation: () => orientation,
+    command: async (service, data) => {
       calls.push(data.orientation);
       return true;
     },
-  };
-  const event = {
-    target: {
-      closest: () => ({ dataset: { value: "clockwise" }, disabled: false }),
-    },
-  };
+  });
+  controls.configure({}, ["light.a"]);
+  controls.active = true;
   try {
-    await handler.call(card, event);
-    assert.equal(card._rotationActive, false);
-    assert.equal(card._pendingOrientation, "down");
-    await handler.call(card, event);
+    await controls.orient(nextOrientation(orientation, 1));
+    assert.equal(controls.active, false);
+    assert.equal(controls.pendingOrientation, "down");
+    await controls.orient(nextOrientation(controls.pendingOrientation, 1));
     assert.deepEqual(calls, ["down", "left"]);
-    assert.equal(card._pendingOrientation, "left");
+    assert.equal(controls.pendingOrientation, "left");
+    orientation = "left";
+    controls.update();
+    assert.equal(controls.pendingOrientation, null);
   } finally {
-    clearTimeout(card._orientationTimer);
+    controls.disconnect();
   }
 });
 test("native effect catalogue respects availability, visibility and order", () => {

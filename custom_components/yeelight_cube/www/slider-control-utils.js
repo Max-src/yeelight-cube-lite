@@ -40,6 +40,55 @@ function resolveWheelStyle(style) {
   return style === "bars" || style === "mesh" ? "mesh" : "ticks";
 }
 
+// ── Device value ↔ 1-100 percent ────────────────────────────────────────────
+// One linear, endpoint-exact and mutually-inverse mapping so every card turns
+// the SAME device value into the SAME percentage (e.g. speed 50 → 20% on every
+// card, not 20% on one and 19% on another). The sliders always operate in the
+// 1-100 space; these convert to/from the device's raw range (speed 1-255,
+// brightness 3-255) only for the command payload and the optional raw display.
+export function sliderPctToRaw(pct, min, max) {
+  const p = Math.max(1, Math.min(100, Number(pct) || 1));
+  return Math.max(
+    min,
+    Math.min(max, Math.round(min + ((p - 1) * (max - min)) / 99)),
+  );
+}
+
+export function sliderRawToPct(raw, min, max) {
+  const r = Math.max(min, Math.min(max, Number(raw)));
+  return Math.max(
+    1,
+    Math.min(100, Math.round(1 + ((r - min) * 99) / (max - min))),
+  );
+}
+
+// True when a gc should display the device's raw value instead of a percent.
+function sliderRawMode(gc) {
+  return (
+    gc.valueMode === "raw" &&
+    Number.isFinite(gc.rawMin) &&
+    Number.isFinite(gc.rawMax)
+  );
+}
+
+// The exact device value for a 1-100 value: prefer the real device value when
+// the shown percent still represents it (so 128 reads 128, not 129, despite the
+// 100-step slider); while dragging (pct differs) fall back to the linear map.
+export function sliderRawValue(pct, gc) {
+  const derived = sliderPctToRaw(pct, gc.rawMin, gc.rawMax);
+  return Number.isFinite(gc.rawValue) &&
+    sliderRawToPct(gc.rawValue, gc.rawMin, gc.rawMax) === pct
+    ? Math.round(Math.max(gc.rawMin, Math.min(gc.rawMax, gc.rawValue)))
+    : derived;
+}
+
+// The text shown for a 1-100 value, honouring the percent/raw display toggle.
+export function formatSliderValue(pct, gc) {
+  return sliderRawMode(gc)
+    ? `${sliderRawValue(pct, gc)}${gc.rawUnit ?? ""}`
+    : `${pct}${gc.unit ?? "%"}`;
+}
+
 /**
  * Render the slider control for a generic config `gc` and current `value`
  * (1-100). Returns an HTML string.
@@ -62,7 +111,6 @@ export function renderSliderControl(gc, value, ns = "") {
   // (e.g. the removed "filled") collapses to the card look.
   const theme = gc.theme === "flat" ? "flat" : "subtle";
   const color = gc.color || "#ff9800";
-  const unit = gc.unit ?? "%";
   const showValue = gc.showValue !== false;
   const v = value;
   // Capsule exposes its non-track pill content so the step-button row can
@@ -98,7 +146,7 @@ export function renderSliderControl(gc, value, ns = "") {
             ontouchend="${SL}EndDrag(); this.closest('.brightness-bar-track')?.classList.add('bar-stripes-idle');"
             oninput="${SL}Change(event)" />
         </div>
-        ${showValue ? `<div class="brightness-value-right">${v}${unit}</div>` : ""}
+        ${showValue ? `<div class="brightness-value-right">${formatSliderValue(v, gc)}</div>` : ""}
       </div>`;
   } else if (style === "wheel") {
     const step = Math.max(1, Math.min(50, parseInt(gc.wheelStep) || 10));
@@ -128,7 +176,7 @@ export function renderSliderControl(gc, value, ns = "") {
       .join("");
     html += `
       <div class="brightness-wheel-wrapper">
-        <div class="brightness-wheel-value">${showValue ? `${v}${unit}` : ""}</div>
+        <div class="brightness-wheel-value">${showValue ? formatSliderValue(v, gc) : ""}</div>
         <div class="brightness-wheel-viewport wheel-style-${wheelStyle}"
           style="height:${thickness * 5 + 20}px;"
           onwheel="${SL}WheelStep(event)"
@@ -172,7 +220,7 @@ export function renderSliderControl(gc, value, ns = "") {
              ontouchstart="${SL}MatrixDown(event)">
           ${cells}
         </div>
-        ${showValue ? `<div class="brightness-matrix-value">${v}${unit}</div>` : ""}
+        ${showValue ? `<div class="brightness-matrix-value">${formatSliderValue(v, gc)}</div>` : ""}
         <input type="range" min="1" max="100" value="${v}"
           class="brightness-slider brightness-slider-matrix" style="display:none;"
           oninput="${SL}Change(event)" />
@@ -214,7 +262,7 @@ export function renderSliderControl(gc, value, ns = "") {
           </svg>
           ${rotaryStyle === "thick" ? `<div class="rotary-knob-arm" style="--knob-angle:${knobAngle}deg;"><div class="rotary-knob"></div></div>` : ""}
           <div class="rotary-center-content">
-            ${showValue ? `<div class="rotary-value">${v}${unit}</div>` : ""}
+            ${showValue ? `<div class="rotary-value">${formatSliderValue(v, gc)}</div>` : ""}
           </div>
           <input type="range" min="1" max="100" value="${v}" class="brightness-slider brightness-slider-rotary" style="display: none;" />
         </div>
@@ -222,6 +270,12 @@ export function renderSliderControl(gc, value, ns = "") {
   } else if (style === "capsule") {
     const bvd = gc.valueDisplay || (showValue ? "text" : "none");
     const bvs = gc.valueSide || "under";
+    // The editable capsule input operates in the displayed units (raw when the
+    // raw toggle is on) and converts back to 1-100 in the value handlers.
+    const capRaw = sliderRawMode(gc);
+    const capMin = capRaw ? gc.rawMin : 1;
+    const capMax = capRaw ? gc.rawMax : 100;
+    const capVal = capRaw ? sliderRawValue(v, gc) : v;
     let bLeftSlot = null;
     let bRightSlot = null;
     let bIconLeft = gc.iconLeft || null;
@@ -230,7 +284,7 @@ export function renderSliderControl(gc, value, ns = "") {
     let bValueText = "";
     let bUnderHtml = null;
 
-    const inputBase = `class="brightness-capsule-input" type="number" min="1" max="100" step="1" value="${v}" onfocus="${SL}Typing=true" onblur="${SL}ValueBlur(event)" onkeydown="if(event.key==='Enter')this.blur()" oninput="${SL}ValueInput(event)" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"`;
+    const inputBase = `class="brightness-capsule-input" type="number" min="${capMin}" max="${capMax}" step="1" value="${capVal}" onfocus="${SL}Typing=true" onblur="${SL}ValueBlur(event)" onkeydown="if(event.key==='Enter')this.blur()" oninput="${SL}ValueInput(event)" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"`;
 
     if (bvd !== "none") {
       const isInput = bvd === "input";
@@ -239,12 +293,12 @@ export function renderSliderControl(gc, value, ns = "") {
           bUnderHtml = `<div class="brightness-capsule-slot capsule-value-under"><input id="${idOf("sl-value-input")}" ${inputBase} /></div>`;
         } else {
           bShowValue = true;
-          bValueText = `${v}${unit}`;
+          bValueText = formatSliderValue(v, gc);
         }
       } else {
         const inputHtml = isInput
           ? `<input id="${idOf("sl-value-input")}" ${inputBase} />`
-          : `<input id="${idOf("sl-value-text")}" class="brightness-capsule-input" type="text" value="${v}${unit}" readonly tabindex="-1" />`;
+          : `<input id="${idOf("sl-value-text")}" class="brightness-capsule-input" type="text" value="${formatSliderValue(v, gc)}" readonly tabindex="-1" />`;
         if (bvs === "left") {
           const iconHtml = bIconLeft
             ? `<div class="capsule-icon capsule-icon-left">${bIconLeft}</div>`
@@ -305,7 +359,7 @@ export function renderSliderControl(gc, value, ns = "") {
           onmousedown="${SL}StartDrag()" ontouchstart="${SL}StartDrag()"
           onmouseup="${SL}EndDrag()" ontouchend="${SL}EndDrag()"
           oninput="${SL}Change(event)" />
-        ${showValue ? `<span class="brightness-value-slider">${v}${unit}</span>` : ""}
+        ${showValue ? `<span class="brightness-value-slider">${formatSliderValue(v, gc)}</span>` : ""}
       </div>`;
   }
 
@@ -329,11 +383,11 @@ export function renderSliderControl(gc, value, ns = "") {
         mRight = capsuleRightContent;
       } else if (showValue && style === "bar") {
         mGap = 8;
-        mRight = `<div class="brightness-value-right">${v}${unit}</div>`;
+        mRight = `<div class="brightness-value-right">${formatSliderValue(v, gc)}</div>`;
       } else if (showValue && style === "matrix") {
-        mRight = `<div class="brightness-matrix-value">${v}${unit}</div>`;
+        mRight = `<div class="brightness-matrix-value">${formatSliderValue(v, gc)}</div>`;
       } else if (showValue && style === "slider") {
-        mRight = `<span class="brightness-value-slider">${v}${unit}</span>`;
+        mRight = `<span class="brightness-value-slider">${formatSliderValue(v, gc)}</span>`;
       }
       const spacer = (inner) =>
         inner
@@ -463,7 +517,7 @@ export function createSliderHandlers({
     const val = scoped()?.querySelector(".brightness-wheel-value");
     if (val)
       val.textContent =
-        gc.showValue !== false ? `${value}${gc.unit ?? "%"}` : "";
+        gc.showValue !== false ? formatSliderValue(value, gc) : "";
   };
 
   const updateMatrixVisual = (value) => {
@@ -478,7 +532,7 @@ export function createSliderHandlers({
     });
     if (gc.showValue !== false) {
       const val = scoped()?.querySelector(".brightness-matrix-value");
-      if (val) val.textContent = `${value}${gc.unit ?? "%"}`;
+      if (val) val.textContent = formatSliderValue(value, gc);
     }
   };
 
@@ -488,13 +542,13 @@ export function createSliderHandlers({
     const input = r.getElementById(idOf("sl-value-input"));
     const text = r.getElementById(idOf("sl-value-text"));
     const gc = getConfig();
-    const suffix = gc.unit ?? "%";
+    const inputValue = sliderRawMode(gc) ? sliderRawValue(value, gc) : value;
     const valueText = scoped()?.querySelector(
       ".brightness-capsule-host .capsule-value-text",
     );
-    if (input && !host[typingProp]) input.value = value;
-    if (text) text.value = `${value}${suffix}`;
-    if (valueText) valueText.textContent = `${value}${suffix}`;
+    if (input && !host[typingProp]) input.value = inputValue;
+    if (text) text.value = formatSliderValue(value, gc);
+    if (valueText) valueText.textContent = formatSliderValue(value, gc);
   };
 
   // Per-style DOM update for a value (1-100). Shared by live drag and external
@@ -503,13 +557,12 @@ export function createSliderHandlers({
     const gc = getConfig();
     const style = gc.style || "slider";
     const showValue = gc.showValue !== false;
-    const suffix = gc.unit ?? "%";
     if (style === "bar") {
       const barFill = scoped()?.querySelector(".brightness-bar-fill");
       if (barFill) barFill.style.width = `${value}%`;
       if (showValue) {
         const vr = scoped()?.querySelector(".brightness-value-right");
-        if (vr) vr.textContent = `${value}${suffix}`;
+        if (vr) vr.textContent = formatSliderValue(value, gc);
       }
     } else if (style === "wheel") {
       updateWheelVisual(value);
@@ -536,7 +589,7 @@ export function createSliderHandlers({
       }
       if (showValue) {
         const rv = scoped()?.querySelector(".rotary-value");
-        if (rv) rv.textContent = `${value}${suffix}`;
+        if (rv) rv.textContent = formatSliderValue(value, gc);
       }
     } else if (style === "capsule") {
       const bvd = gc.valueDisplay || (showValue ? "text" : "none");
@@ -545,7 +598,7 @@ export function createSliderHandlers({
         scoped(),
         value,
         bvd !== "none" && bvs === "under" && bvd !== "input"
-          ? `${value}${suffix}`
+          ? formatSliderValue(value, gc)
           : null,
         ".brightness-capsule-host",
       );
@@ -553,7 +606,7 @@ export function createSliderHandlers({
     } else {
       if (showValue) {
         const vs = scoped()?.querySelector(".brightness-value-slider");
-        if (vs) vs.textContent = `${value}${suffix}`;
+        if (vs) vs.textContent = formatSliderValue(value, gc);
       }
       const thickSlider = scoped()?.querySelector(".slider-variant-thick");
       if (thickSlider)
@@ -798,18 +851,25 @@ export function createSliderHandlers({
     },
 
     ValueInput(event) {
+      const gc = getConfig();
       let val = parseInt(event.target.value);
       if (isNaN(val)) return;
+      if (sliderRawMode(gc)) val = sliderRawToPct(val, gc.rawMin, gc.rawMax);
       val = clamp(val);
       updateCapsuleVisuals(scoped(), val, null, ".brightness-capsule-host");
     },
 
     ValueBlur(event) {
       host[typingProp] = false;
+      const gc = getConfig();
       let val = parseInt(event.target.value);
-      if (isNaN(val)) val = 1;
+      if (isNaN(val)) val = sliderRawMode(gc) ? gc.rawMin : 1;
+      else if (sliderRawMode(gc))
+        val = sliderRawToPct(val, gc.rawMin, gc.rawMax);
       val = clamp(val);
-      event.target.value = val;
+      event.target.value = sliderRawMode(gc)
+        ? sliderPctToRaw(val, gc.rawMin, gc.rawMax)
+        : val;
       applyValue(val);
     },
 
@@ -1728,6 +1788,12 @@ export function lightSliderConfig(config, kind, keys = sliderKeys("slider")) {
       config[keys.iconLeftShow] !== false ? (speed ? "🐢" : "🌙") : null,
     iconRight:
       config[keys.iconRightShow] !== false ? (speed ? "⚡" : "☀️") : null,
+    // Global "Show Raw Value" toggle: display the device value (speed 1-255,
+    // brightness 3-255) instead of a percentage.
+    valueMode: config.slider_show_raw_value ? "raw" : "percent",
+    rawMin: speed ? 1 : 3,
+    rawMax: 255,
+    rawUnit: "",
   });
 }
 
@@ -1792,6 +1858,10 @@ export function renderLightSliderSettings(config, onChange) {
   return renderSliderSettings(config, keys, onChange, {
     icons: { leftLabel: "Show Left Icon", rightLabel: "Show Right Icon" },
     showValueToggle: { label: "Show Value", key: keys.showValue },
+    rawValueToggle: {
+      label: "Show Raw Value (device units)",
+      key: "slider_show_raw_value",
+    },
   });
 }
 
@@ -2008,6 +2078,14 @@ export function renderSliderSettings(config, K, onChange, opts = {}) {
           opts.showValueToggle.key,
           g(opts.showValueToggle.key, true) !== false,
           (e) => onChange(opts.showValueToggle.key, e.target.checked),
+        )
+      : ""}
+    ${opts.rawValueToggle
+      ? createToggleRow(
+          opts.rawValueToggle.label,
+          opts.rawValueToggle.key,
+          g(opts.rawValueToggle.key, false) === true,
+          (e) => onChange(opts.rawValueToggle.key, e.target.checked),
         )
       : ""}
     ${bg(K.style, STYLE_CHOICES, style, html`<span>Slider Style</span>`)}

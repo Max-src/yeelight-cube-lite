@@ -386,6 +386,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         self._native_clock_color_mode = "normal"  # palette preset (CLOCK_COLOR_MODES key)
         self._native_effect = DEFAULT_NATIVE_EFFECT
         self._native_effect_speed = 50
+        self._native_effect_color_mode = "normal"
         self._native_effect_direction = "Up"
         # Reveal firmware effects that the official app never exposed.
         self._extended_effects_enabled = False
@@ -1311,6 +1312,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             "clock_color_mode": self._native_clock_color_mode,
             "native_effect": self._native_effect,
             "native_effect_speed": self._native_effect_speed,
+            "native_effect_color_mode": self._native_effect_color_mode,
             "native_effect_direction": self._native_effect_direction,
             "native_effect_catalog": [
                 {"name": name, "speed": bool(spec.get("speed")),
@@ -1566,6 +1568,9 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             if clock_color_mode in CLOCK_COLOR_MODES:
                 self._native_clock_color_mode = clock_color_mode
             native_effect = old_state.attributes.get("native_effect")
+            native_color_mode = old_state.attributes.get("native_effect_color_mode")
+            if native_color_mode in CLOCK_COLOR_MODES:
+                self._native_effect_color_mode = native_color_mode
             # Migrate legacy names (e.g. "Ribbon") to current app names.
             native_effect = NATIVE_EFFECT_RENAMES.get(native_effect, native_effect)
             if native_effect in ALL_NATIVE_EFFECTS:
@@ -3308,7 +3313,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         "_custom_text", "_text_colors", "_mode", "_matrix_mode", "_native_clock_style",
         "_native_clock_show_date", "_native_clock_content", "_native_clock_12_hour",
         "_native_clock_colon_blink", "_native_clock_color", "_full_panel",
-        "_native_effect", "_native_effect_speed", "_native_effect_direction",
+        "_native_effect", "_native_effect_speed", "_native_effect_direction", "_native_effect_color_mode",
         "_music_flow_effect",
         "_angle",
         "_background_color", "_alignment", "_font", "_orientation",

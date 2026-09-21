@@ -559,7 +559,7 @@ set_default:
 
 set_native_effect:
   name: Set Native Effect
-  description: Select and apply a firmware animation, optionally setting its speed. Respects auto-turn-on and Experimental Features settings.
+  description: Select and apply a firmware animation, optionally setting its speed and compatible colour palette. Respects auto-turn-on and Experimental Features settings.
   fields:
     entity_id:
       required: true
@@ -579,6 +579,23 @@ set_native_effect:
           min: 1
           max: 255
           mode: slider
+    color_mode:
+      description: Palette for compatible effects. Normal restores the effect's own colours. Independent of clock palettes.
+      selector:
+        select:
+          options:
+            - label: Normal
+              value: normal
+            - label: Black & White
+              value: bw
+            - label: Vivid
+              value: red_blue
+            - label: Retro Orange
+              value: white_orange
+            - label: Tropical
+              value: blue_yellow
+            - label: Violet & Gold
+              value: purple_orange
     activate:
       description: Switch to Native Effect mode and apply the selected animation.
       default: true

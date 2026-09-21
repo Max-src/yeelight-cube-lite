@@ -407,6 +407,10 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
                   label: "Show Brightness Percentage",
                   key: "show_brightness_percentage",
                 },
+                rawValueToggle: {
+                  label: "Show Raw Value (device units)",
+                  key: "slider_show_raw_value",
+                },
                 matrixColorKey: "brightness_matrix_color",
                 icons: {
                   leftLabel: "Show Moon Icon (🌙)",

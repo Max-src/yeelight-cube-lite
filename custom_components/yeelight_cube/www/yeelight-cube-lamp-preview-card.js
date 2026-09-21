@@ -1,6 +1,11 @@
 import { renderDotMatrix, rgbToCss } from "./yeelight-cube-dotmatrix.js";
 import { escapeHtml } from "./html-escape-utils.js";
-import { orientationOptions, nextOrientation, renderOrientationControls, orientationControlStyles } from "./orientation-control-utils.js";
+import {
+  orientationOptions,
+  nextOrientation,
+  renderOrientationControls,
+  orientationControlStyles,
+} from "./orientation-control-utils.js";
 import { getInitialMatrix } from "./draw_card_state.js";
 import { renderNativeEffectOriented } from "./native-effect-preview.js";
 import {
@@ -375,6 +380,13 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       ),
       color: this.config.brightness_matrix_color || "#ff9800",
       unit: "%",
+      // Global "Show Raw Value" toggle: display HA brightness 3-255 instead of %.
+      valueMode: this.config.slider_show_raw_value ? "raw" : "percent",
+      rawMin: 3,
+      rawMax: 255,
+      rawUnit: "",
+      rawValue:
+        this._hass?.states?.[this.config?.entity]?.attributes?.brightness,
       // Capsule moon/sun icons (shown unless explicitly disabled).
       iconLeft: this.config.show_capsule_moon_icon !== false ? "🌙" : null,
       iconRight: this.config.show_capsule_sun_icon !== false ? "☀️" : null,
@@ -436,7 +448,11 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   set hass(hass) {
     const _t0 = performance.now();
     this._hass = hass;
-    if (this._orientationSettled && this._orientationPending === hass.states[this.config?.entity]?.attributes?.device_orientation) {
+    if (
+      this._orientationSettled &&
+      this._orientationPending ===
+        hass.states[this.config?.entity]?.attributes?.device_orientation
+    ) {
       this._orientationPending = null;
       clearTimeout(this._orientationTimer);
     }
@@ -1974,7 +1990,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     // it straight to _updateMatrixColors, whose layout indexFn provides the one
     // display flip. (A prior extra flip here double-flipped native effects, so
     // they showed upside-down vs the calibration card / lamp.)
-    const raw = renderNativeEffectOriented(effect, phase, dir);
+    const raw = renderNativeEffectOriented(effect, phase, dir, null, st.attributes.native_effect_color_mode || "normal");
     const grid = this._matrixColorsToGridColors(raw, st);
     this._updateMatrixColors(grid, st);
   }
@@ -2260,24 +2276,40 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
 
   // Build the 4-way device orientation control (right / down / left / up).
   _generateDeviceOrientationHtml(stateObj) {
-    const current = this._orientationPending || stateObj?.attributes?.device_orientation || "right";
-    const unavailable = !stateObj || ["unavailable", "unknown"].includes(stateObj.state);
+    const current =
+      this._orientationPending ||
+      stateObj?.attributes?.device_orientation ||
+      "right";
+    const unavailable =
+      !stateObj || ["unavailable", "unknown"].includes(stateObj.state);
     return `<div class="orientation-controls">${renderOrientationControls(this.config, current, unavailable)}${this._orientationError ? `<div class="orientation-error" role="alert">${escapeHtml(this._orientationError)}</div>` : ""}</div>`;
   }
 
   _refreshOrientationControls() {
     const container = this.shadowRoot?.querySelector(".orientation-controls");
     if (!container) return;
-    const markup = this._generateDeviceOrientationHtml(this._hass?.states[this.config?.entity]);
-    if (container === this._orientationControlsNode && markup === this._orientationControlsMarkup) return;
+    const markup = this._generateDeviceOrientationHtml(
+      this._hass?.states[this.config?.entity],
+    );
+    if (
+      container === this._orientationControlsNode &&
+      markup === this._orientationControlsMarkup
+    )
+      return;
     const focused = container.contains(this.shadowRoot.activeElement)
-      ? this.shadowRoot.activeElement?.dataset.value : null;
+      ? this.shadowRoot.activeElement?.dataset.value
+      : null;
     container.outerHTML = markup;
     this._orientationControlsMarkup = markup;
-    this._orientationControlsNode = this.shadowRoot.querySelector(".orientation-controls");
+    this._orientationControlsNode = this.shadowRoot.querySelector(
+      ".orientation-controls",
+    );
     if (focused) {
-      Array.from(this.shadowRoot.querySelectorAll(".orientation-controls button"))
-        .find((button) => button.dataset.value === focused)?.focus({ preventScroll: true });
+      Array.from(
+        this.shadowRoot.querySelectorAll(".orientation-controls button"),
+      )
+        .find((button) => button.dataset.value === focused)
+        ?.focus({ preventScroll: true });
     }
   }
 
@@ -2286,9 +2318,14 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     if (!button || button.disabled) return;
     const value = button.dataset.value;
     const options = orientationOptions(this.config);
-    const current = this._orientationPending || this._hass?.states[this.config?.entity]?.attributes?.device_orientation || "right";
+    const current =
+      this._orientationPending ||
+      this._hass?.states[this.config?.entity]?.attributes?.device_orientation ||
+      "right";
     const step = { clockwise: 1, counterclockwise: -1, "half-turn": 2 }[value];
-    const target = step ? nextOrientation(current, step, options.directions) : value;
+    const target = step
+      ? nextOrientation(current, step, options.directions)
+      : value;
     if (target && target !== current) this.handleOrientationSelect(target);
   }
 
@@ -2296,9 +2333,15 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     const hass = this._hass;
     const entity = this.config?.entity;
     const state = hass?.states[entity];
-    if (!state || ["unavailable", "unknown"].includes(state.state) || !orientationOptions(this.config).directions.includes(orientation)) return;
+    if (
+      !state ||
+      ["unavailable", "unknown"].includes(state.state) ||
+      !orientationOptions(this.config).directions.includes(orientation)
+    )
+      return;
     const context = this._orientationContext;
-    const sequence = this._orientationSequence = (this._orientationSequence || 0) + 1;
+    const sequence = (this._orientationSequence =
+      (this._orientationSequence || 0) + 1);
     clearTimeout(this._orientationTimer);
     this._orientationPending = orientation;
     this._orientationSettled = false;
@@ -2306,14 +2349,24 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     this._refreshOrientationControls();
     const request = (this._orientationQueue || Promise.resolve()).then(() => {
       if (context !== this._orientationContext) return;
-      return hass.callService("yeelight_cube", "set_device_orientation", { entity_id: entity, orientation });
+      return hass.callService("yeelight_cube", "set_device_orientation", {
+        entity_id: entity,
+        orientation,
+      });
     });
     this._orientationQueue = request.catch(() => {});
     try {
       await request;
-      if (context !== this._orientationContext || sequence !== this._orientationSequence) return;
+      if (
+        context !== this._orientationContext ||
+        sequence !== this._orientationSequence
+      )
+        return;
       this._orientationSettled = true;
-      if (this._hass?.states[entity]?.attributes?.device_orientation === orientation) {
+      if (
+        this._hass?.states[entity]?.attributes?.device_orientation ===
+        orientation
+      ) {
         this._orientationPending = null;
       } else {
         this._orientationTimer = setTimeout(() => {
@@ -2323,7 +2376,11 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         }, 8000);
       }
     } catch (error) {
-      if (context !== this._orientationContext || sequence !== this._orientationSequence) return;
+      if (
+        context !== this._orientationContext ||
+        sequence !== this._orientationSequence
+      )
+        return;
       this._orientationPending = null;
       this._orientationError = "Could not change orientation. Try again.";
       console.error("[device-orientation] service call failed:", error);

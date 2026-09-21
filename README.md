@@ -783,6 +783,33 @@ With `auto_apply: false`, effect and speed selections stay local until **Apply**
 brightness and orientation still apply immediately. Rotation is an explicit
 apply action and does not use the preview-only setting.
 
+The **Clock Card** now uses the same Actions, Device Orientation, Favourites and
+Rotation components and editor settings. Actions and orientation are enabled by
+default; `show_actions` and `show_device_orientation` can hide them. Enable
+`show_favourites` and `show_rotation` for either card. Clock rotation is labelled
+**Clock Mode Rotation** and uses `rotation_modes` for a custom list. Clock
+favourites retain saved style IDs across renames and are stored separately from
+native-effect favourites. Both rotations have the same browser-only lifecycle.
+
+Enable `show_color_modes` on the Native Effects Card for **Colour Modes &
+Controls**. Its button/dropdown presentation and settings are shared with the
+Clock Card. Only hardware-confirmed palettes for the selected effect are offered:
+Normal, Black & White, Vivid, Retro Orange, Tropical, and Violet & Gold where
+supported. The `set_native_effect` service accepts `color_mode`; this setting is
+independent of clock colours and persists with the lamp state. An incompatible
+effect uses its original colours. Reload the updated integration before using
+this feature; an older backend does not expose the palette controls.
+
+Time/date content, clock format, custom RGB colours and the saved clock-style
+library remain clock-only. No custom native-effect preset library is introduced.
+Native previews and camera previews use the existing shared palette renderers.
+
+The brightness and animation-speed sliders on the Native Effects, Clock and Lamp
+Preview cards share one conversion, so a given device value reads the same
+percentage on every card. Enable **Show Raw Value (device units)**
+(`slider_show_raw_value`) to display the device value (speed 1–255, brightness
+3–255) instead of a percentage; the current device value is shown exactly.
+
 While Clock or Native Effect mode is active, the integration intentionally
 pauses periodic `get_prop` polling because this firmware query can stop the
 native renderer and switch the display to another mode. Home Assistant therefore

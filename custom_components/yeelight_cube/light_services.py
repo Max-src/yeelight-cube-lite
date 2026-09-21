@@ -18,6 +18,7 @@ import logging
 import math
 import random
 import time
+from .native_effect_preview import effect_supports_color_mode
 
 import voluptuous as vol  # type: ignore
 from homeassistant.components import websocket_api  # type: ignore
@@ -2594,6 +2595,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             raise HomeAssistantError("No matching Yeelight Cube lamps")
         effect = service_call.data.get("effect")
         speed = service_call.data.get("speed")
+        color_mode = service_call.data.get("color_mode")
         activate = service_call.data.get("activate", True)
         for target in targets:
             name = effect if effect is not None else target._native_effect
@@ -2604,6 +2606,11 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                 raise HomeAssistantError("Enable Experimental Features before applying this effect")
             if speed is not None and not spec.get("speed"):
                 raise HomeAssistantError(f"{name} does not support animation speed")
+            if color_mode is not None and (
+                color_mode not in CLOCK_COLOR_MODES
+                or (color_mode != "normal" and not effect_supports_color_mode(name, color_mode))
+            ):
+                raise HomeAssistantError(f"{name} does not support colour mode {color_mode}")
             if not target._is_on and not target._should_auto_turn_on():
                 raise HomeAssistantError("Lamp is off and auto-turn-on is disabled")
 
@@ -2612,6 +2619,8 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                 target._native_effect = effect
             if speed is not None:
                 target._native_effect_speed = speed
+            if color_mode is not None:
+                target._native_effect_color_mode = color_mode
             if activate:
                 target._mode = "Native Effect"
                 target._custom_draw_active = False
@@ -2630,6 +2639,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             vol.Required("entity_id"): _entity_id_or_list,
             vol.Optional("effect"): cv.string,
             vol.Optional("speed"): vol.All(vol.Coerce(int), vol.Range(min=1, max=255)),
+            vol.Optional("color_mode"): vol.In(list(CLOCK_COLOR_MODES)),
             vol.Optional("activate", default=True): cv.boolean,
         }),
     )

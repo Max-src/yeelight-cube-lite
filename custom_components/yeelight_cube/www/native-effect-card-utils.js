@@ -1,5 +1,13 @@
 import { renderNativeEffectOriented } from "./native-effect-preview.js";
 import { flipMatrixVertical } from "./clock-preview-utils.js";
+import {
+  modeCollectionKey,
+  sanitizeModeNames,
+} from "./mode-controls-controller.js";
+export {
+  nextRotationMode as nextRotationEffect,
+  rotationIntervalMs,
+} from "./mode-controls-controller.js";
 
 export function nativeEffectPreviewConfig(config = {}) {
   return {
@@ -52,6 +60,8 @@ export function nativeEffectFrame(effect, attrs = {}, elapsed = 0) {
       effect.name,
       elapsed * (0.25 + speed / 55),
       nativeEffectDirection(effect, attrs),
+      null,
+      attrs.native_effect_color_mode || "normal",
     ),
   );
 }
@@ -63,52 +73,13 @@ export function nativeEffectAction(name) {
 }
 
 export function effectCollectionKey(targets) {
-  return `yeelight-native-collections:${[...new Set(targets)].sort().join(",")}`;
-}
-
-function cleanEffectNames(values, limit) {
-  return Array.isArray(values)
-    ? [
-        ...new Set(
-          values
-            .filter((value) => typeof value === "string")
-            .map((value) => value.trim())
-            .filter((value) => value && !/^\d+$/.test(value)),
-        ),
-      ].slice(0, limit)
-    : [];
+  return modeCollectionKey("native", targets);
 }
 
 export function sanitizeEffectCollections(saved) {
   return {
-    favourites: cleanEffectNames(saved?.favourites, 100),
+    favourites: sanitizeModeNames(saved?.favourites),
   };
-}
-
-export function nextRotationEffect(
-  names,
-  current,
-  shuffle = false,
-  random = Math.random(),
-) {
-  const unique = cleanEffectNames(names, 100);
-  if (!unique.length) return undefined;
-  if (!shuffle) return unique[(unique.indexOf(current) + 1) % unique.length];
-  const candidates = unique.filter((name) => name !== current);
-  return (
-    candidates[
-      Math.min(
-        candidates.length - 1,
-        Math.max(0, Math.floor(random * candidates.length)),
-      )
-    ] || unique[0]
-  );
-}
-
-export function rotationIntervalMs(config) {
-  return (
-    Math.max(10, Math.min(3600, Number(config.rotation_interval) || 60)) * 1000
-  );
 }
 
 export function readEffectCollections(storage, key) {

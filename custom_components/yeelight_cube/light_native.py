@@ -10,6 +10,7 @@ import base64
 import json
 import logging
 import time
+from .native_effect_preview import effect_supports_color_mode
 
 from homeassistant.exceptions import HomeAssistantError  # type: ignore
 from homeassistant.util import dt as dt_util  # type: ignore
@@ -291,12 +292,15 @@ class NativeModesMixin:
             ]
         elif spec.get("direction_fixed") is not None:
             effect_config["direction"] = spec["direction_fixed"]
-        # Apply the spec's default color if one is defined.
-        if spec.get("color") is not None:
+        color_mode = getattr(self, "_native_effect_color_mode", "normal")
+        palette_id = CLOCK_COLOR_MODES.get(color_mode)
+        if not effect_supports_color_mode(self._native_effect, color_mode):
+            palette_id = None
+        if spec.get("color") is not None and palette_id is None:
             effect_config["color"] = [int(spec["color"])]
 
         params = [
-            spec["effect_id"],
+            spec["effect_id"] if palette_id is None else palette_id,
             0,
             NATIVE_EFFECT_APPLY,
             effect_config,
