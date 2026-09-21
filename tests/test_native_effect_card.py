@@ -158,3 +158,114 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(ValueError, "Experimental"):
             await self.handle(SimpleNamespace(data={"effect": "Prism"}))
         self.target.async_apply_display_mode.assert_not_awaited()
+
+    async def test_freeze_display_sends_mode_64_to_every_target(self):
+        def make_target(mode="Native Effect"):
+            async def _exec(op, _name):
+                await op()
+            return SimpleNamespace(
+                _mode=mode,
+                _display_frozen=False,
+                _notify_camera_preview=Mock(),
+                async_write_ha_state=Mock(),
+                _native_clock_style=12,
+                _native_clock_data_bytes=lambda: bytes([1, 8, 0, 0]),
+                _cube_matrix=SimpleNamespace(
+                    _close_fast_socket=Mock(), send_raw_command=AsyncMock()
+                ),
+                _execute_hardware_op=_exec,
+            )
+
+        native, clock = make_target("Native Effect"), make_target("Clock")
+        scheduled = []
+        handler = _load_standalone_functions(
+            (ROOT / "light_services.py").read_text(encoding="utf-8"),
+            {"handle_freeze_display"},
+            {"asyncio": asyncio, "base64": __import__("base64"),
+             "time": __import__("time"),
+             "NATIVE_CLOCK_EFFECT_ID": 40, "NATIVE_CLOCK_APPLY": 2,
+             "_resolve_entities": lambda call, _name: (
+                 [native, clock] if call.data.get("entity_id") else []
+             ),
+             "_fire_and_forget": lambda *coros: scheduled.extend(coros)},
+        )["handle_freeze_display"]
+
+        await handler(SimpleNamespace(data={"entity_id": ["light.a", "light.b"]}))
+        await asyncio.gather(*scheduled)
+        # Native effects use the renderer freeze-frame command and flag the
+        # frozen state so the camera preview holds the background frame.
+        native._cube_matrix._close_fast_socket.assert_called_once()
+        native._cube_matrix.send_raw_command.assert_awaited_once_with(
+            "set_fx_effect", [64, 0, 4, {"mode": 64}]
+        )
+        for target in (native, clock):
+            self.assertTrue(target._display_frozen)
+            target._notify_camera_preview.assert_called_once()
+        # The clock re-sends its current command with the freeze mixer (64).
+        clock._cube_matrix.send_raw_command.assert_awaited_once_with(
+            "set_fx_effect",
+            [40, 12, 2, {"mode": 40, "mixer": 64, "data": "AQgAAA=="}],
+        )
+
+        # No resolved targets -> nothing scheduled.
+        scheduled.clear()
+        await handler(SimpleNamespace(data={"entity_id": []}))
+        self.assertEqual(scheduled, [])
+
+    def test_camera_holds_frozen_frame_and_resumes_seamlessly(self):
+        """The fake camera holds the background phase while _display_frozen."""
+        clock_ticks = [1000.0]
+
+        class FakeTime:
+            @staticmethod
+            def monotonic():
+                return clock_ticks[0]
+
+        preview = _load_standalone_functions(
+            (ROOT / "camera.py").read_text(encoding="utf-8"),
+            {"_get_native_effect_preview"},
+            {"_time": FakeTime,
+             "render_native_effect_oriented": NATIVE_PREVIEW["render_native_effect_oriented"]},
+        )["_get_native_effect_preview"]
+        camera = SimpleNamespace(
+            _light_entity=SimpleNamespace(
+                _native_effect="Rainbow", _native_effect_speed=50,
+                _native_effect_direction="Up", _native_effect_color_mode="normal",
+                _native_effect_color=None, _display_frozen=False,
+            ),
+            _native_preview_key=None, _native_preview_started_at=None,
+            _frozen_background_phase=None,
+        )
+        phases = []
+        original = NATIVE_PREVIEW["render_native_effect_oriented"]
+
+        def capture(effect, phase, *args, **kwargs):
+            phases.append(phase)
+            return original(effect, phase, *args, **kwargs)
+
+        preview.__globals__["render_native_effect_oriented"] = capture
+        preview(camera)
+        clock_ticks[0] += 5.0
+        preview(camera)
+        animating = phases[-1] > phases[0]
+        # Freeze: the phase must stop advancing across renders.
+        camera._light_entity._display_frozen = True
+        clock_ticks[0] += 5.0
+        preview(camera)
+        held = phases[-1]
+        clock_ticks[0] += 5.0
+        preview(camera)
+        held_stable = phases[-1] == held
+        # Unfreeze: resumes from the held phase, not from zero or a jump.
+        camera._light_entity._display_frozen = False
+        clock_ticks[0] += 5.0
+        preview(camera)
+        resumes_at_held = phases[-1] == held
+        clock_ticks[0] += 5.0
+        preview(camera)
+        resumed_advancing = held < phases[-1] <= held + 10.0
+
+        self.assertTrue(animating, "preview animates when not frozen")
+        self.assertTrue(held_stable, "frozen preview holds one frame")
+        self.assertTrue(resumes_at_held, "unfreeze continues from the held frame")
+        self.assertTrue(resumed_advancing, "unfrozen preview advances again")

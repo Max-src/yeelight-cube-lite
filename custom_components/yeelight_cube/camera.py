@@ -143,6 +143,11 @@ class _YeelightCubeMatrixCameraBase(Camera):
         self._cached_image: bytes | None = None
         self._native_preview_key: tuple[str, str] | None = None
         self._native_preview_started_at: float | None = None
+        # Background animation phase held while the panel is frozen. Cleared on
+        # resume so the animation continues seamlessly from the frozen frame.
+        self._frozen_background_phase: float | None = None
+        # Seamless-resume offset for the clock's absolute-phase background.
+        self._clock_phase_offset: float = 0.0
 
     # ── Device grouping ────────────────────────────────────────────────
     @property
@@ -289,7 +294,18 @@ class _YeelightCubeMatrixCameraBase(Camera):
         if animation_key != self._native_preview_key:
             self._native_preview_key = animation_key
             self._native_preview_started_at = now
-        phase = (now - self._native_preview_started_at) * (0.25 + speed / 55.0)
+            self._frozen_background_phase = None
+        rate = 0.25 + speed / 55.0
+        # While frozen, hold the frame the lamp is holding; resume seamlessly.
+        if getattr(le, "_display_frozen", False):
+            if self._frozen_background_phase is None:
+                self._frozen_background_phase = (now - self._native_preview_started_at) * rate
+            phase = self._frozen_background_phase
+        else:
+            if self._frozen_background_phase is not None:
+                self._native_preview_started_at = now - self._frozen_background_phase / rate
+                self._frozen_background_phase = None
+            phase = (now - self._native_preview_started_at) * rate
         frame = render_native_effect_oriented(
             effect,
             phase,
@@ -393,7 +409,30 @@ class _YeelightCubeMatrixCameraBase(Camera):
         # flat override colour in the mask loop below.
         effect_frame = None
         if effect_name is not None:
-            phase = _time.monotonic() * (0.25 + CLOCK_MIXER_EFFECT_SPEED / 55.0)
+            # While frozen, hold the background effect on the frame the lamp is
+            # holding; the clock digits/colon (rendered from real time below)
+            # still advance. Anchor the held phase to the freeze instant so the
+            # frozen frame is exact; resume seamlessly from the held phase.
+            rate = 0.25 + CLOCK_MIXER_EFFECT_SPEED / 55.0
+            if getattr(le, "_display_frozen", False):
+                if self._frozen_background_phase is None:
+                    frozen_at = getattr(le, "_display_frozen_at", None)
+                    reference = (
+                        _time.time() - frozen_at
+                        if isinstance(frozen_at, (int, float))
+                        else 0.0
+                    )
+                    self._frozen_background_phase = (
+                        (_time.monotonic() - reference) * rate
+                    )
+                phase = self._frozen_background_phase
+            else:
+                if self._frozen_background_phase is not None:
+                    self._clock_phase_offset = (
+                        self._frozen_background_phase - _time.monotonic() * rate
+                    )
+                    self._frozen_background_phase = None
+                phase = _time.monotonic() * rate + self._clock_phase_offset
             direction = clock_effect_direction(effect_name)
             effect_frame = render_native_effect_oriented(
                 effect_name,

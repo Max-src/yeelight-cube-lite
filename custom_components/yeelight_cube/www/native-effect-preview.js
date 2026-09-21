@@ -2154,6 +2154,35 @@ export function effectSupportsColorOverride(effect) {
   return COLOR_OVERRIDE_EFFECTS.has(effect);
 }
 
+// Effects (and clock-style backgrounds of the same name) whose firmware
+// renderer honours the freeze-frame command (mode 64 for native effects, the
+// clock's mixer 64). Others ignore it, so the Freeze action is disabled.
+export const FREEZE_COMPATIBLE_EFFECTS = new Set([
+  "Ocean Waves",
+  "Rainbow",
+  "Waterfall",
+  "Bonfire",
+  "Pinball",
+  "Shooting Star",
+  "Tide",
+  "Building Block",
+  "Hacking",
+  "Flower Sea",
+  "Magic",
+  "Wonderland",
+  "Palette",
+  "Color Trails",
+  "Sunset",
+  "Carousel",
+  "Blue Yellow",
+  "Ice Blue",
+  "Blue White",
+]);
+
+export function effectSupportsFreeze(name) {
+  return FREEZE_COMPATIBLE_EFFECTS.has(name);
+}
+
 // Effects that the firmware B&W palette mode (command id 15) converts to
 // grayscale. Verified on hardware; Starry sky / Waterfall / Aurora only convert
 // once we stop injecting their default colour (see light_native).

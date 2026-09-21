@@ -80,6 +80,7 @@ import {
   renderClockFrame,
   flipMatrixVertical,
 } from "./clock-preview-utils.js";
+import { effectSupportsFreeze } from "./native-effect-preview.js";
 import { previewBrightnessScale } from "./draw_card_const.js";
 import {
   createRafLoop,
@@ -372,6 +373,15 @@ class YeelightCubeClockCard extends HTMLElement {
         callServiceOnTargetEntities(this._hass, this.config, service, data, {
           domain,
         }),
+      freeze: () =>
+        callServiceOnTargetEntities(
+          this._hass,
+          this.config,
+          "freeze_display",
+          {},
+          { domain: "yeelight_cube" },
+        ),
+      freezable: () => effectSupportsFreeze(this._currentStyle()?.name),
       pause: (paused) => {
         this._previewsPaused = paused;
       },
@@ -1076,7 +1086,11 @@ class YeelightCubeClockCard extends HTMLElement {
 
   _paintVisible() {
     if (!this._hass || this._previewsPaused) return;
-    this._advancePhase();
+    // Freezing holds the background animation on its current frame, but the
+    // clock digits/colon keep evolving -- so skip advancing the phase yet keep
+    // repainting, exactly like the frozen lamp.
+    if (!this._controls?.frozen) this._advancePhase();
+    else this._lastPhaseTs = Date.now();
     const phase = this._phase();
     this._visible.forEach((el) => this._paintPreview(el, phase));
   }

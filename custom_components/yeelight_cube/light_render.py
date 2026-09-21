@@ -79,6 +79,9 @@ class MatrixRenderMixin:
 
     async def _apply_display_mode_internal(self, skip_post_delay: bool = False):
         """Internal method that actually applies the display mode - called by queue processor"""
+        # Re-applying anything resumes the display after a freeze_display.
+        self._display_frozen = False
+        self._display_frozen_at = None
         try:
             if self._mode == "Clock":
                 self._is_scrolling = False

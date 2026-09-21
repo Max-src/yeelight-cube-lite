@@ -100,6 +100,7 @@ LIGHT_SERVICE_NAMES = (
     "test_display",
     "set_preview_adjustments",
     "force_refresh",
+    "freeze_display",
     "set_color_accuracy",
     "set_color_calibration",
     "set_calibration_lock",
@@ -422,7 +423,14 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         # must use a longer settle + graceful FIN to avoid the lamp resetting to
         # the ribbon (default loading state) during the mode transition.
         self._in_native_fw_mode = False
-        
+        # True while the panel is frozen on its current frame (freeze_display).
+        # Cleared by the next display re-apply. The camera preview reads this to
+        # hold the background animation on the frozen frame.
+        self._display_frozen = False
+        # Wall-clock instant the freeze began; the camera freezes the clock's
+        # background phase at exactly this moment, not at the next render.
+        self._display_frozen_at = None
+
         # Apply timing (for queue processor stats, not cooldown-gating)
         self._last_apply_time = 0
         
@@ -1298,6 +1306,10 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             "content_mode": self.content_mode,
             "matrix_mode": self._matrix_mode,
             "custom_draw_active": self._custom_draw_active,
+            # True while the panel is frozen (freeze_display); JS previews hold
+            # the background animation on the frozen frame while the clock
+            # digits keep updating.
+            "display_frozen": bool(getattr(self, "_display_frozen", False)),
             "text_colors": self._text_colors,
             "custom_text": self._custom_text,
             "clock_style": NATIVE_CLOCK_STYLES.get(

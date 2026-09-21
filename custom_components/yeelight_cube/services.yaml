@@ -1146,6 +1146,24 @@ force_refresh:
         entity:
           domain: light
 
+freeze_display:
+  name: Freeze Display
+  description: >
+    Freeze the animated effect on its current frame. On a native effect the
+    whole panel holds; on the clock the background animation holds while the
+    digits and colon keep updating with the time. To resume, re-apply the
+    current effect or clock mode (the cards' "Resume effect" action re-sends
+    the last command).
+  fields:
+    entity_id:
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
+      example: "light.yeelight_cube_192_168_1_100"
+      required: true
+      selector:
+        entity:
+          domain: light
+          multiple: true
+
 save_state:
   name: Save State
   description: >

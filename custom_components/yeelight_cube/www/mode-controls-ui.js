@@ -29,6 +29,9 @@ import {
 import {
   nextRotationMode,
   rotationIntervalMs,
+  actionButtonOrder,
+  ACTION_BUTTON_KEYS,
+  ACTION_BUTTON_LABELS,
 } from "./mode-controls-controller.js";
 
 export function renderColorModeSettings(config, change) {
@@ -99,7 +102,7 @@ export function renderModeControlSettings(
       "Show Actions",
       "show_actions",
     )}${config.show_actions !== false
-      ? renderModeSettingsSection(
+      ? html`${renderModeSettingsSection(
           "Button Settings",
           renderActionButtonSettings(config, change, {
             styleKey: "actions_buttons_style",
@@ -107,7 +110,20 @@ export function renderModeControlSettings(
             defaultStyle: modeActionOptions(config).buttonStyle,
             defaultContentMode: modeActionOptions(config).contentMode,
           }),
-        )
+        )}${renderModeSettingsSection(
+          "Actions & Order",
+          renderOrderableList({
+            items: actionButtonOrder(config),
+            available: ACTION_BUTTON_KEYS.filter(
+              (key) => !actionButtonOrder(config).includes(key),
+            ),
+            labelFor: (key) => ACTION_BUTTON_LABELS[key] || key,
+            onUpdate: (keys) => change("action_buttons", keys),
+            onReset: () => change("action_buttons", undefined),
+            addPlaceholder: "Add action",
+            resetLabel: "Reset to all actions",
+          }),
+        )}`
       : ""}`;
   if (area === "orientation")
     return html`${toggle(
@@ -337,76 +353,93 @@ class YeelightModeControls extends LitElement {
     const current = adapter.current();
     const title = (key) => items.find((item) => item.key === key)?.title || key;
     const noun = adapter.kind === "clock" ? "clock mode" : "effect";
-    if (this.area === "actions")
+    if (this.area === "actions") {
+      const buttons = {
+        previous: () =>
+          this._button(
+            `Previous ${noun}`,
+            "mdi:chevron-left",
+            () =>
+              model.choose(
+                items[
+                  (Math.max(
+                    0,
+                    items.findIndex((item) => item.key === current),
+                  ) -
+                    1 +
+                    items.length) %
+                    items.length
+                ]?.key,
+              ),
+            {
+              disabled: model.busy || adapter.disabled() || !items.length,
+            },
+          ),
+        apply: () =>
+          this._button("Apply", "mdi:play", () => model.select(current), {
+            busy: model.busy,
+            disabled: model.busy || adapter.disabled() || !current,
+          }),
+        next: () =>
+          this._button(
+            `Next ${noun}`,
+            "mdi:chevron-right",
+            () =>
+              model.choose(
+                nextRotationMode(
+                  items.map((item) => item.key),
+                  current,
+                ),
+              ),
+            {
+              disabled: model.busy || adapter.disabled() || !items.length,
+            },
+          ),
+        pause_previews: () =>
+          this._button(
+            model.paused ? "Resume previews" : "Pause previews",
+            model.paused ? "mdi:motion-play-outline" : "mdi:pause",
+            () => {
+              model.paused = !model.paused;
+              adapter.pause(model.paused);
+              model.notify();
+            },
+            { disabled: false },
+          ),
+        freeze: () =>
+          this._button(
+            model.frozen ? "Resume effect" : "Freeze effect",
+            model.frozen ? "mdi:play-circle-outline" : "mdi:snowflake",
+            () => model.freeze(),
+            {
+              selected: model.frozen,
+              disabled:
+                model.busy ||
+                adapter.disabled() ||
+                (!model.frozen && !model.freezable()),
+            },
+          ),
+        power: () =>
+          this._button(adapter.on() ? "Turn off" : "Turn on", "mdi:power", () =>
+            model.command(() =>
+              adapter.command(
+                adapter.on() ? "turn_off" : "turn_on",
+                {},
+                "light",
+              ),
+            ),
+          ),
+      };
       return html` ${config.show_actions !== false
         ? renderActionRow(
-            html`
-              ${this._button(
-                `Previous ${noun}`,
-                "mdi:chevron-left",
-                () =>
-                  model.choose(
-                    items[
-                      (Math.max(
-                        0,
-                        items.findIndex((item) => item.key === current),
-                      ) -
-                        1 +
-                        items.length) %
-                        items.length
-                    ]?.key,
-                  ),
-                {
-                  disabled: model.busy || adapter.disabled() || !items.length,
-                },
-              )}
-              ${this._button("Apply", "mdi:play", () => model.select(current), {
-                busy: model.busy,
-                disabled: model.busy || adapter.disabled() || !current,
-              })}
-              ${this._button(
-                `Next ${noun}`,
-                "mdi:chevron-right",
-                () =>
-                  model.choose(
-                    nextRotationMode(
-                      items.map((item) => item.key),
-                      current,
-                    ),
-                  ),
-                {
-                  disabled: model.busy || adapter.disabled() || !items.length,
-                },
-              )}
-              ${this._button(
-                model.paused ? "Resume previews" : "Pause previews",
-                model.paused ? "mdi:motion-play-outline" : "mdi:pause",
-                () => {
-                  model.paused = !model.paused;
-                  adapter.pause(model.paused);
-                  model.notify();
-                },
-                { disabled: false },
-              )}
-              ${this._button(
-                adapter.on() ? "Turn off" : "Turn on",
-                "mdi:power",
-                () =>
-                  model.command(() =>
-                    adapter.command(
-                      adapter.on() ? "turn_off" : "turn_on",
-                      {},
-                      "light",
-                    ),
-                  ),
-              )}
-            `,
+            html`${actionButtonOrder(config).map((key) => buttons[key]?.())}`,
             modeActionOptions(config),
           )
         : ""}
       ${model.error
         ? html`<div class="error" role="alert">${model.error}</div>`
         : ""}`;
+    }
     if (this.area === "orientation")
       return unsafeHTML(
         renderOrientationControls(

@@ -2397,6 +2397,70 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         })
     )
 
+    async def handle_freeze_display(service_call):
+        """Freeze the panel on its current frame so it holds what is shown.
+
+        Native effects freeze via the renderer's freeze-frame command
+        ([64, 0, 4, {mode: 64}]). The firmware clock instead re-sends its
+        current command with the freeze mixer (64) -- sending mode 64 to the
+        clock shows a full-panel effect, not the frozen clock face. Resume is
+        client-driven: the cards re-apply the current effect / clock mode (i.e.
+        resend the last command). Supports multi-entity parallel dispatch.
+        """
+        targets = _resolve_entities(service_call, "FREEZE_DISPLAY")
+        if not targets:
+            return
+
+        def _freeze_params(target):
+            if getattr(target, "_mode", None) == "Clock":
+                data = base64.b64encode(
+                    target._native_clock_data_bytes()
+                ).decode("ascii")
+                return [
+                    NATIVE_CLOCK_EFFECT_ID,
+                    target._native_clock_style,
+                    NATIVE_CLOCK_APPLY,
+                    {"mode": NATIVE_CLOCK_EFFECT_ID, "mixer": 64, "data": data},
+                ]
+            return [64, 0, 4, {"mode": 64}]
+
+        async def _freeze_one(target):
+            params = _freeze_params(target)
+            is_clock = getattr(target, "_mode", None) == "Clock"
+            # Capture the background phase at freeze time so the preview holds
+            # that exact frame; sampling later would freeze on a stale frame.
+            target._display_frozen_at = time.time()
+
+            async def _do_send():
+                target._cube_matrix._close_fast_socket()
+                # The clock activation is socket-timing sensitive; give the
+                # fresh socket the same brief settle it uses in _activate_native_clock.
+                if is_clock:
+                    await asyncio.sleep(0.1)
+                await target._cube_matrix.send_raw_command(
+                    "set_fx_effect", params
+                )
+
+            await target._execute_hardware_op(_do_send, "freeze_display")
+            # Track the freeze so the fake camera holds the background frame
+            # (clock digits keep rendering live). Cleared by the next re-apply.
+            target._display_frozen = True
+            target.async_write_ha_state()
+            notify = getattr(target, "_notify_camera_preview", None)
+            if notify:
+                notify()
+
+        _fire_and_forget(*[_freeze_one(t) for t in targets])
+
+    hass.services.async_register(
+        DOMAIN,
+        "freeze_display",
+        handle_freeze_display,
+        schema=vol.Schema({
+            vol.Required("entity_id"): _entity_id_or_list,
+        })
+    )
+
     async def handle_set_color_accuracy(service_call):
         """Toggle hardware colour accuracy correction (per-channel gain).
         Supports multi-entity parallel dispatch."""

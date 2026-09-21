@@ -8,6 +8,10 @@ export {
   nextRotationMode as nextRotationEffect,
   rotationIntervalMs,
 } from "./mode-controls-controller.js";
+export {
+  FREEZE_COMPATIBLE_EFFECTS,
+  effectSupportsFreeze,
+} from "./native-effect-preview.js";
 
 export function nativeEffectPreviewConfig(config = {}) {
   return {

@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { modeActionOptions } from "../custom_components/yeelight_cube/www/action-button-utils.js";
-import { ModeControlsController } from "../custom_components/yeelight_cube/www/mode-controls-controller.js";
+import {
+  ModeControlsController,
+  actionButtonOrder,
+  ACTION_BUTTON_KEYS,
+  ACTION_BUTTON_LABELS,
+} from "../custom_components/yeelight_cube/www/mode-controls-controller.js";
 import { readFileSync } from "node:fs";
 import {
   nativeEffectItems,
@@ -516,6 +521,9 @@ test("native editor sections follow the card and use shared conditional controls
   const records = {};
   const dependencies = {
     modeActionOptions,
+    actionButtonOrder,
+    ACTION_BUTTON_KEYS,
+    ACTION_BUTTON_LABELS,
     html: template,
     createToggleRow: () => "",
     createButtonGroup: () => "",

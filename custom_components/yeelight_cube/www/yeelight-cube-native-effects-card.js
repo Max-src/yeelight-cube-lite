@@ -27,6 +27,7 @@ import {
   nativeEffectFrame,
   nativeEffectAction,
   nativeEffectPreviewConfig,
+  effectSupportsFreeze,
 } from "./native-effect-card-utils.js";
 import { renderMatrixPreview } from "./gallery-display-utils.js";
 import {
@@ -107,6 +108,8 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       },
       command: (service, data, domain) =>
         this._command(service, data, domain, true),
+      freeze: () => this._command("freeze_display", {}, "yeelight_cube", true),
+      freezable: () => effectSupportsFreeze(this._effect()?.name),
       pause: (paused) => {
         this._paused = paused;
       },
@@ -125,7 +128,12 @@ class YeelightCubeNativeEffectsCard extends LitElement {
           ? Math.min(200, now - this._lastFrame)
           : 0;
         this._lastFrame = now;
-        if (!this._paused && this._visibility?.onScreen) {
+        // A frozen display holds its current frame, mirroring the lamp.
+        if (
+          !this._paused &&
+          !this._controls.frozen &&
+          this._visibility?.onScreen
+        ) {
           this._elapsed += delta / 1000;
           this._paint();
         }

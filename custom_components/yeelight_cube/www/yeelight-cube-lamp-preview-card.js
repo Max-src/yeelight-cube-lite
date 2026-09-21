@@ -1883,6 +1883,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     if (this._nativeLoop) this._nativeLoop.stop();
     this._nativeAnimKey = null;
     this._nativeAnimStartedAt = null;
+    this._nativeFrozenPhase = null;
   }
 
   // Begin the client-side clock animation. Solid/gradient styles only need a
@@ -1910,6 +1911,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   _stopClockAnimation() {
     if (this._clockLoop) this._clockLoop.stop();
     this._clockAnimStartedAt = null;
+    this._frozenBackgroundPhase = null;
   }
 
   _clockAnimFrame() {
@@ -1924,9 +1926,23 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
 
     const now = performance.now();
     if (this._clockAnimStartedAt == null) this._clockAnimStartedAt = now;
+    const rate = 0.25 + CLOCK_MIXER_EFFECT_SPEED / 55.0;
+    // While frozen, hold the background effect on the frame the lamp holds;
+    // the digits/colon (rendered from real time in renderClockFrame) still
+    // advance. Resume seamlessly from the held phase.
+    const frozen = st.attributes.display_frozen === true;
+    if (frozen) {
+      if (this._frozenBackgroundPhase == null)
+        this._frozenBackgroundPhase =
+          ((now - this._clockAnimStartedAt) / 1000) * rate;
+    } else if (this._frozenBackgroundPhase != null) {
+      this._clockAnimStartedAt =
+        now - (this._frozenBackgroundPhase / rate) * 1000;
+      this._frozenBackgroundPhase = null;
+    }
     const phase =
-      ((now - this._clockAnimStartedAt) / 1000) *
-      (0.25 + CLOCK_MIXER_EFFECT_SPEED / 55.0);
+      this._frozenBackgroundPhase ??
+      ((now - this._clockAnimStartedAt) / 1000) * rate;
     const { fontMap, metrics } = this._getNativeClockFont();
     const pix = renderClockFrame(st.attributes, fontMap, metrics, phase);
     const grid = this._matrixColorsToGridColors(pix, st);
@@ -1982,15 +1998,34 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     if (animationKey !== this._nativeAnimKey) {
       this._nativeAnimKey = animationKey;
       this._nativeAnimStartedAt = now;
+      this._nativeFrozenPhase = null;
     }
     // Match the camera's phase mapping (native_effect_preview usage).
+    const rate = 0.25 + speed / 55.0;
+    // While frozen, hold the frame the lamp is holding; resume seamlessly.
+    const frozen = st.attributes.display_frozen === true;
+    if (frozen) {
+      if (this._nativeFrozenPhase == null)
+        this._nativeFrozenPhase =
+          ((now - this._nativeAnimStartedAt) / 1000) * rate;
+    } else if (this._nativeFrozenPhase != null) {
+      this._nativeAnimStartedAt = now - (this._nativeFrozenPhase / rate) * 1000;
+      this._nativeFrozenPhase = null;
+    }
     const phase =
-      ((now - this._nativeAnimStartedAt) / 1000) * (0.25 + speed / 55.0);
+      this._nativeFrozenPhase ??
+      ((now - this._nativeAnimStartedAt) / 1000) * rate;
     // Bottom-origin frame (row 0 = physical bottom), like the clock path: hand
     // it straight to _updateMatrixColors, whose layout indexFn provides the one
     // display flip. (A prior extra flip here double-flipped native effects, so
     // they showed upside-down vs the calibration card / lamp.)
-    const raw = renderNativeEffectOriented(effect, phase, dir, st.attributes.native_effect_color || null, st.attributes.native_effect_color_mode || "normal");
+    const raw = renderNativeEffectOriented(
+      effect,
+      phase,
+      dir,
+      st.attributes.native_effect_color || null,
+      st.attributes.native_effect_color_mode || "normal",
+    );
     const grid = this._matrixColorsToGridColors(raw, st);
     this._updateMatrixColors(grid, st);
   }

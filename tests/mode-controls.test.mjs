@@ -5,6 +5,8 @@ import {
   modeCollectionKey,
   nextRotationMode,
   rotationIntervalMs,
+  actionButtonOrder,
+  ACTION_BUTTON_KEYS,
 } from "../custom_components/yeelight_cube/www/mode-controls-controller.js";
 
 function fixture(overrides = {}) {
@@ -103,4 +105,86 @@ test("reconfiguration invalidates in-flight commands and timers", async () => {
   assert.equal(await command, false);
   assert.equal(controller.active, false);
   assert.equal(controller.busy, false);
+});
+
+test("action button order defaults to all keys, sanitizes and de-duplicates", () => {
+  assert.deepEqual(actionButtonOrder({}), ACTION_BUTTON_KEYS);
+  assert.deepEqual(
+    actionButtonOrder({ action_buttons: ["power", "apply", "power", "bogus"] }),
+    ["power", "apply"],
+  );
+  // An explicit empty list hides every action.
+  assert.deepEqual(actionButtonOrder({ action_buttons: [] }), []);
+});
+
+test("freeze sends the freeze command, resumes by re-applying, and clears on any command", async () => {
+  const calls = [];
+  const { controller } = fixture({
+    apply: async (name) => {
+      calls.push(["apply", name]);
+    },
+    freeze: async () => {
+      calls.push(["freeze"]);
+    },
+  });
+  assert.equal(controller.frozen, false);
+  await controller.freeze();
+  assert.equal(controller.frozen, true);
+  assert.deepEqual(calls, [["freeze"]]);
+  // Toggling again resumes by re-applying the current mode (resending it).
+  await controller.freeze();
+  assert.equal(controller.frozen, false);
+  assert.deepEqual(calls.at(-1), ["apply", "A"]);
+  // A freeze followed by any other command clears the frozen mirror.
+  await controller.freeze();
+  assert.equal(controller.frozen, true);
+  await controller.select("B");
+  assert.equal(controller.frozen, false);
+});
+
+test("freeze failures leave the display unfrozen and surface the error", async () => {
+  const { controller } = fixture({
+    freeze: async () => {
+      throw new Error("offline");
+    },
+  });
+  await controller.freeze();
+  assert.equal(controller.frozen, false);
+  assert.equal(controller.error, "offline");
+});
+
+test("freeze is blocked for modes the adapter marks unfreezable", async () => {
+  let compatible = false;
+  const calls = [];
+  const { controller } = fixture({
+    freezable: () => compatible,
+    freeze: async () => {
+      calls.push("freeze");
+    },
+  });
+  assert.equal(controller.freezable(), false);
+  await controller.freeze();
+  assert.equal(controller.frozen, false);
+  assert.deepEqual(calls, []);
+  compatible = true;
+  await controller.freeze();
+  assert.equal(controller.frozen, true);
+  assert.deepEqual(calls, ["freeze"]);
+});
+
+test("frozen resets to idle when the displayed mode changes", async () => {
+  let current = "A";
+  const { controller } = fixture({
+    current: () => current,
+    freeze: async () => {},
+  });
+  await controller.freeze();
+  assert.equal(controller.frozen, true);
+  // A re-render with the same mode keeps it frozen.
+  controller.update();
+  assert.equal(controller.frozen, true);
+  // Switching modes (e.g. selecting another effect from the grid) resumes.
+  current = "B";
+  controller.update();
+  assert.equal(controller.frozen, false);
 });

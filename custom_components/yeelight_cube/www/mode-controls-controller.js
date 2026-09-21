@@ -8,6 +8,40 @@ export function rotationIntervalMs(config) {
   );
 }
 
+// Actions shown in the shared Actions row, in their default order. Users can
+// reorder and hide them per card via the `action_buttons` config array.
+export const ACTION_BUTTON_KEYS = [
+  "previous",
+  "apply",
+  "next",
+  "pause_previews",
+  "freeze",
+  "power",
+];
+
+export const ACTION_BUTTON_LABELS = {
+  previous: "Previous",
+  apply: "Apply",
+  next: "Next",
+  pause_previews: "Pause previews",
+  freeze: "Freeze display",
+  power: "Power",
+};
+
+// The ordered, de-duplicated list of visible action keys. No `action_buttons`
+// override means "show all in the default order".
+export function actionButtonOrder(config = {}) {
+  const configured = config.action_buttons;
+  if (!Array.isArray(configured)) return [...ACTION_BUTTON_KEYS];
+  const seen = new Set();
+  return configured.filter(
+    (key) =>
+      ACTION_BUTTON_KEYS.includes(key) &&
+      !seen.has(key) &&
+      (seen.add(key), true),
+  );
+}
+
 export function sanitizeModeNames(names, limit = 100) {
   return [
     ...new Set(
@@ -49,6 +83,7 @@ export class ModeControlsController {
     this.active = false;
     this.busy = false;
     this.paused = false;
+    this.frozen = false;
     this.error = "";
     this.token = 0;
     this.context = 0;
@@ -61,6 +96,7 @@ export class ModeControlsController {
     this.busy = false;
     this.pendingOrientation = null;
     this.error = "";
+    this.frozen = false;
     this.config = config;
     this.targets = targets;
     this.key = modeCollectionKey(this.adapter.kind, targets);
@@ -88,6 +124,10 @@ export class ModeControlsController {
       this.pendingOrientation = null;
       clearTimeout(this.orientationTimer);
     }
+    // Switching to a different mode resumes playback, so the freeze indicator
+    // returns to its idle state.
+    if (this.frozen && this.adapter.current() !== this._frozenKey)
+      this.frozen = false;
     if (this.active && (!this.ready() || this.names().length < 2)) this.stop();
     this.notify();
   }
@@ -134,6 +174,9 @@ export class ModeControlsController {
     const context = this.context;
     this.busy = true;
     this.error = "";
+    // Any command other than the freeze toggle itself resumes the display, so
+    // the frozen indicator mirrors the lamp.
+    if (!this._freezing) this.frozen = false;
     this.notify();
     try {
       return (await callback()) !== false && context === this.context;
@@ -147,6 +190,35 @@ export class ModeControlsController {
         this.notify();
       }
     }
+  }
+
+  // Freeze the panel on its current frame (renderer mode 64) or, when already
+  // frozen, resume by re-applying the current mode (resending the last command).
+  async freeze() {
+    this._freezing = true;
+    try {
+      return await this.command(async () => {
+        if (this.frozen) {
+          const ok = await this.adapter.apply(this.adapter.current());
+          if (ok !== false) this.frozen = false;
+          return ok;
+        }
+        if (!this.adapter.freeze || !this.freezable()) return false;
+        const ok = await this.adapter.freeze();
+        if (ok !== false) {
+          this.frozen = true;
+          this._frozenKey = this.adapter.current();
+        }
+        return ok;
+      });
+    } finally {
+      this._freezing = false;
+    }
+  }
+
+  // Whether the current mode can be frozen (some native effects cannot).
+  freezable() {
+    return !this.adapter.freezable || this.adapter.freezable();
   }
 
   select(name, rotating = false) {
