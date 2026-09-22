@@ -46,6 +46,8 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - Sliders accept both vertical and horizontal mouse-wheel input.
 
 ### Fixed
+- Fixed the shared Original selector settings so the Clock and Native Effects
+  editors load their foldable sections instead of showing a configuration error.
 - Native effect previews now follow the calibrated direction, speed, and colour
   state, including brightness-only updates and frozen playback.
 - Clock colour overrides now recolour compatible native effects and persist

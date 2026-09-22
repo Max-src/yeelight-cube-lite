@@ -316,11 +316,11 @@ function renderOriginalSelectorSettings(config, onChange) {
           (event) => onChange("show_badges", event.target.checked),
         )}
         ${renderMatrixAppearanceSettings(config, onChange, {
-          prefix: "effect",
-          defaultSize: 100,
-        })}gallery",
+          prefix: "gallery",
           defaultSize: 55,
-          pixelFallback: "square"
+          pixelFallback: "square",
+        })}
+      `,
     )}
   `;
 }
