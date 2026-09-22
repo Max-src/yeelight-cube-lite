@@ -29,7 +29,10 @@ import {
   nativeEffectPreviewConfig,
   effectSupportsFreeze,
 } from "./native-effect-card-utils.js";
-import { renderMatrixPreview } from "./gallery-display-utils.js";
+import {
+  renderMatrixPreview,
+  markFavouriteModes,
+} from "./gallery-display-utils.js";
 import {
   renderTextStyleSelector,
   renderPreviewStyleSelector,
@@ -110,6 +113,41 @@ class YeelightCubeNativeEffectsCard extends LitElement {
         this._command(service, data, domain, true),
       freeze: () => this._command("freeze_display", {}, "yeelight_cube", true),
       freezable: () => effectSupportsFreeze(this._effect()?.name),
+      startRotation: (names, intervalSeconds) =>
+        this._command(
+          "start_effect_rotation",
+          { items: names, interval: intervalSeconds, kind: "native" },
+          "yeelight_cube",
+          true,
+        ),
+      stopRotation: () =>
+        this._command("stop_effect_rotation", {}, "yeelight_cube", true),
+      skipRotation: () =>
+        this._command("skip_effect_rotation", {}, "yeelight_cube", true),
+      rotationActive: () =>
+        getTargetEntities(this.config).every(
+          (entity) =>
+            this._hass?.states[entity]?.attributes?.effect_rotation?.active ===
+              true &&
+            this._hass?.states[entity]?.attributes?.effect_rotation?.kind ===
+              "native",
+        ),
+      rotationError: () =>
+        getTargetEntities(this.config)
+          .map((entity) => {
+            const rotation =
+              this._hass?.states[entity]?.attributes?.effect_rotation;
+            return rotation?.kind === "native" ? rotation.error : null;
+          })
+          .find(Boolean) || this._error,
+      // The `effect_rotation` attribute only exists in the backend version that
+      // ships the rotation services; its presence is our capability probe.
+      rotationSupported: () =>
+        getTargetEntities(this.config).every(
+          (entity) =>
+            this._hass?.states[entity]?.attributes?.effect_rotation !==
+            undefined,
+        ),
       pause: (paused) => {
         this._paused = paused;
       },
@@ -122,6 +160,9 @@ class YeelightCubeNativeEffectsCard extends LitElement {
           : null;
       },
     });
+    this._onFavouritesChanged = () =>
+      markFavouriteModes(this.shadowRoot, this._controls.favourites);
+    this._controls.listeners.add(this._onFavouritesChanged);
     this._loop = createRafLoop(
       (now) => {
         const delta = this._lastFrame
@@ -196,7 +237,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     if (!getTargetEntities(config).length)
       throw new Error("Select at least one Yeelight Cube light entity.");
     this._context++;
-    this._stopRotation();
     this._busy = false;
     this._pendingCommands = 0;
     this._error = null;
@@ -246,10 +286,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    this._onVisibilityChange ||= () => {
-      if (document.hidden) this._stopRotation();
-    };
-    document.addEventListener("visibilitychange", this._onVisibilityChange);
     this._visibility = createVisibilityTracker(this);
     this._visibility.connect();
     this._loop.start();
@@ -259,9 +295,8 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   disconnectedCallback() {
     super.disconnectedCallback();
     closeColorPicker(this);
+    this._controls.listeners.delete(this._onFavouritesChanged);
     this._controls.disconnect();
-    this._stopRotation();
-    document.removeEventListener("visibilitychange", this._onVisibilityChange);
     this._context++;
     this._busy = false;
     this._pendingCommands = 0;
@@ -968,6 +1003,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
         if (node.hasAttribute("data-active-mode"))
           node.setAttribute("data-active-mode", "true");
       });
+    markFavouriteModes(this.shadowRoot, this._controls.favourites);
     this._observer?.disconnect();
     this._frames = [
       ...this.shadowRoot.querySelectorAll(

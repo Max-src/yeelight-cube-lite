@@ -143,7 +143,7 @@ class YeelightCubeExtendedEffectsSwitch(SwitchEntity):
         await self._set_enabled(False)
 
     async def _set_enabled(self, value: bool) -> None:
-        self._light_entity._extended_effects_enabled = value
+        self._light_entity.set_extended_effects_enabled(value)
         # Refresh the effect dropdown so the extended options appear/disappear.
         select = getattr(self._light_entity, "_native_effect_select_entity", None)
         if select is not None and getattr(select, "hass", None) is not None:

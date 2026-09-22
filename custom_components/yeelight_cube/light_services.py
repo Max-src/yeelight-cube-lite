@@ -59,18 +59,14 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def async_setup_light_services(hass: HomeAssistant) -> bool:
-    """Register entity-facing actions once at component setup."""
+    """Register the currently imported entity-facing actions.
 
-    # Services should only be registered ONCE (not per device)
-    # Skip ALL service registration if already registered to avoid duplicate handlers.
-    # The sentinel MUST be the most recently ADDED service so that reloading the
-    # integration (without a full HA restart) re-registers everything and picks
-    # up newly added services. Re-registering existing services just overwrites
-    # their handlers, which is harmless.
-    if hass.services.has_service(DOMAIN, "set_native_effect"):
-        _LOGGER.debug("[SERVICES] Light services already registered")
-        return True
-    
+    Setup and entry setup both call this function. Re-registration replaces
+    existing handlers; one existing service is not proof that all are present.
+    This does not reimport modified Python modules: restart Home Assistant to
+    reliably load backend code changes. Registration was not established as
+    the cause of the reported rotation failure.
+    """
     _LOGGER.debug("[SERVICES] Registering Yeelight Cube Lite light services")
     
     # Deduplication tracker for palette/pixel art deletions
@@ -2653,6 +2649,66 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         })
     )
 
+    async def handle_start_effect_rotation(service_call):
+        """Start a server-side effect/clock rotation on the target lamps.
+
+        The mode list comes from the card's favourites. Once started, the light
+        entity advances through it on its own timer, so the rotation keeps
+        running even if the dashboard tab is closed or refreshed.
+        """
+        targets = _resolve_entities(service_call, "START_EFFECT_ROTATION")
+        if not targets:
+            raise HomeAssistantError("No matching Yeelight Cube lamps")
+        items = service_call.data.get("items") or []
+        interval = service_call.data.get("interval", 60)
+        kind = service_call.data.get("kind", "native")
+        if not isinstance(items, (list, tuple)) or len(items) < 2:
+            raise HomeAssistantError("Provide at least two modes in 'items'")
+
+        results = await asyncio.gather(
+            *(target.start_effect_rotation(items, interval, kind) for target in targets),
+            return_exceptions=True,
+        )
+        failures = [
+            f"{target.entity_id}: {result}"
+            for target, result in zip(targets, results)
+            if isinstance(result, Exception)
+        ]
+        if failures:
+            for target in targets:
+                target.stop_effect_rotation()
+            raise HomeAssistantError("; ".join(failures))
+
+    async def handle_stop_effect_rotation(service_call):
+        """Stop the server-side rotation on the target lamps."""
+        for target in _resolve_entities(service_call, "STOP_EFFECT_ROTATION"):
+            target.stop_effect_rotation()
+
+    async def handle_skip_effect_rotation(service_call):
+        """Advance the running rotation to its next mode immediately."""
+        for target in _resolve_entities(service_call, "SKIP_EFFECT_ROTATION"):
+            target.skip_effect_rotation()
+
+    hass.services.async_register(
+        DOMAIN, "start_effect_rotation", handle_start_effect_rotation,
+        schema=vol.Schema({
+            vol.Required("entity_id"): _entity_id_or_list,
+            vol.Required("items"): [cv.string],
+            vol.Optional("interval", default=60): vol.All(
+                vol.Coerce(int), vol.Range(min=10, max=604800)
+            ),
+            vol.Optional("kind", default="native"): vol.In(["native", "clock"]),
+        }),
+    )
+    hass.services.async_register(
+        DOMAIN, "stop_effect_rotation", handle_stop_effect_rotation,
+        schema=vol.Schema({vol.Required("entity_id"): _entity_id_or_list}),
+    )
+    hass.services.async_register(
+        DOMAIN, "skip_effect_rotation", handle_skip_effect_rotation,
+        schema=vol.Schema({vol.Required("entity_id"): _entity_id_or_list}),
+    )
+
     async def handle_set_native_effect(service_call):
         targets = _resolve_entities(service_call, "SET_NATIVE_EFFECT")
         if not targets:
@@ -2796,7 +2852,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                     style_id in EXPERIMENTAL_CLOCK_STYLE_IDS
                     and not target._extended_effects_enabled
                 ):
-                    target._extended_effects_enabled = True
+                    target.set_extended_effects_enabled(True)
                 target._native_clock_style = style_id
             if has_color:
                 target._native_clock_color = None if clear_color else clock_color

@@ -816,6 +816,332 @@ const server = http.createServer(async (request, response) => {
     console.log(
       "PASS lamp-preview loops hold the frozen background and resume seamlessly",
     );
+    for (const width of [1100, 390]) {
+      await page.setViewportSize({ width, height: 1100 });
+      await page.evaluate(async () => {
+        const main = document.querySelector("main");
+        main.replaceChildren();
+        main.style.display = "block";
+        window.editors = [];
+        const editorHass = {
+          ...window.hass,
+          states: {
+            ...window.hass.states,
+            "light.a": {
+              state: "on",
+              attributes: {
+                ...window.hass.states["light.a"].attributes,
+                friendly_name: "CubeLite Top",
+                extended_effects_enabled: true,
+              },
+            },
+            "light.b": {
+              state: "on",
+              attributes: {
+                friendly_name: "CubeLite Bottom",
+                extended_effects_enabled: false,
+              },
+            },
+          },
+        };
+        for (const tag of [
+          "yeelight-cube-clock-card-editor",
+          "yeelight-cube-native-effects-card-editor",
+        ]) {
+          const editor = document.createElement(tag);
+          editor.style.cssText =
+            "display:block;max-width:650px;margin:0 auto 16px;";
+          editor.setConfig({
+            target_entities: ["light.a", "light.b"],
+            visible_effects: ["Twinkle", "Rainbow"],
+            show_experimental: false,
+          });
+          editor.hass = editorHass;
+          main.append(editor);
+          await editor.updateComplete;
+          window.editors.push(editor);
+        }
+      });
+      const notices = page.locator(".experimental-availability");
+      assert.equal(await notices.count(), 2);
+      for (const notice of await notices.all()) {
+        assert.match(await notice.innerText(), /Off: CubeLite Bottom/);
+        assert.doesNotMatch(await notice.innerText(), /Off: CubeLite Top/);
+        assert.ok(
+          await notice.evaluate(
+            (element) => element.scrollWidth <= element.clientWidth,
+          ),
+        );
+      }
+      assert.match(
+        await notices.nth(1).innerText(),
+        /Experimental Effects filter is Off/,
+      );
+      await page.screenshot({
+        path: path.join(
+          os.tmpdir(),
+          `yeelight-experimental-editors-${width}.png`,
+        ),
+        fullPage: true,
+      });
+      const restored = await page.evaluate(async () => {
+        const editor = window.editors[1];
+        editor._open = { effects: true };
+        editor.requestUpdate();
+        await editor.updateComplete;
+        const unavailable = editor.shadowRoot.textContent.includes(
+          "Twinkle (currently unavailable)",
+        );
+        editor._change("show_experimental", true);
+        editor.hass = {
+          ...editor.hass,
+          states: {
+            ...editor.hass.states,
+            "light.b": {
+              state: "on",
+              attributes: {
+                friendly_name: "CubeLite Bottom",
+                extended_effects_enabled: true,
+              },
+            },
+          },
+        };
+        await editor.updateComplete;
+        return {
+          unavailable,
+          config: editor._config.visible_effects,
+          notice: editor.shadowRoot.querySelector(".experimental-availability")
+            .textContent,
+        };
+      });
+      assert.equal(restored.unavailable, true);
+      assert.deepEqual(restored.config, ["Twinkle", "Rainbow"]);
+      assert.match(restored.notice, /On for all selected lamps/);
+      assert.doesNotMatch(restored.notice, /filter is Off/);
+    }
+    assert.deepEqual(errors, []);
+    console.log(
+      "PASS experimental editor notices on desktop/mobile, live updates and retained hidden selections",
+    );
+
+    // Favourites previews: repeated Lit re-renders (as triggered by every
+    // controller.notify() on Home Assistant state updates) must regenerate
+    // the preview markup at the animation loop's current time — never phase 0,
+    // which visibly flashed the animation's first frame.
+    const previewPhases = await page.evaluate(async () => {
+      const view = document.createElement("yeelight-mode-controls");
+      view.area = "collections";
+      const phases = [];
+      view.model = {
+        config: { show_favourites: true },
+        favourites: ["Rainbow"],
+        names: () => ["Rainbow"],
+        paused: false,
+        busy: false,
+        error: "",
+        listeners: new Set(),
+        adapter: {
+          kind: "clock",
+          items: () => [{ key: "Rainbow", title: "Rainbow" }],
+          current: () => "Rainbow",
+          available: () => true,
+          disabled: () => false,
+          frame: (key, phase) => {
+            phases.push(phase);
+            return new Array(100).fill([0, 0, 0]);
+          },
+        },
+      };
+      document.body.append(view);
+      await view.updateComplete;
+      view.requestUpdate();
+      await view.updateComplete;
+      view.requestUpdate();
+      await view.updateComplete;
+      view.remove();
+      return phases;
+    });
+    assert.ok(
+      previewPhases.length >= 3,
+      "favourites previews render on every re-render",
+    );
+    assert.ok(
+      previewPhases.every((phase) => phase > 1),
+      `favourites previews never regenerate a phase-0 frame: ${previewPhases}`,
+    );
+    assert.deepEqual(errors, []);
+    console.log("PASS favourites previews re-render at current animation time");
+
+    // Favourites/rotation UX: star badges on grid items, no section
+    // separators, and the value+unit rotation interval editor control.
+    const ux = await page.evaluate(async () => {
+      const results = {};
+      // No separator between Favourites and Rotation sections.
+      const view = document.createElement("yeelight-mode-controls");
+      view.area = "collections";
+      view.model = {
+        config: {
+          show_favourites: true,
+          show_rotation: true,
+          rotation_interval: 3600,
+        },
+        favourites: ["Rainbow"],
+        names: () => ["Rainbow"],
+        ready: () => true,
+        active: false,
+        frozen: false,
+        freezable: () => true,
+        paused: false,
+        busy: false,
+        error: "",
+        listeners: new Set(),
+        adapter: {
+          kind: "clock",
+          items: () => [{ key: "Rainbow", title: "Rainbow" }],
+          current: () => "Rainbow",
+          available: () => true,
+          disabled: () => false,
+          frame: () => new Array(100).fill([0, 0, 0]),
+        },
+      };
+      document.body.append(view);
+      await view.updateComplete;
+      const section = view.shadowRoot.querySelector("section");
+      results.noSeparator = getComputedStyle(section).borderTopWidth === "0px";
+      results.rotationSummary = /1 clock mode · every\s+1h/.test(
+        view.shadowRoot.textContent,
+      );
+      view.remove();
+
+      // Star badge on grid items whose mode is in the favourites list.
+      const clock = document.createElement("yeelight-cube-clock-card");
+      clock.setConfig({
+        ...window.baseConfig,
+        style_selector_style: "preview-grid",
+      });
+      clock.hass = window.hass;
+      document.body.append(clock);
+      const clockKey = clock._controls.adapter.items()[0].key;
+      clock._controls.save([clockKey]);
+      clock.render();
+      results.clockStar = !!clock.shadowRoot.querySelector(
+        `[data-mode="${CSS.escape(clockKey)}"][data-favourite="true"]`,
+      );
+      clock._controls.save([]);
+      clock.render();
+      results.clockUnstar = !clock.shadowRoot.querySelector(
+        '[data-favourite="true"]',
+      );
+      clock.remove();
+
+      const native = document.createElement(
+        "yeelight-cube-native-effects-card",
+      );
+      native.setConfig({ ...window.baseConfig, show_gallery: true });
+      native.hass = window.hass;
+      document.body.append(native);
+      await native.updateComplete;
+      native._controls.save(["Rainbow"]);
+      await native.updateComplete;
+      results.nativeStar = !!native.shadowRoot.querySelector(
+        '[data-mode="Rainbow"][data-favourite="true"]',
+      );
+      native._controls.save([]);
+      await native.updateComplete;
+      results.nativeUnstar = !native.shadowRoot.querySelector(
+        '[data-favourite="true"]',
+      );
+      native.remove();
+
+      // Rotation interval editor: value + unit, no custom list / shuffle.
+      const editor = document.createElement("yeelight-cube-clock-card-editor");
+      editor.setConfig({
+        ...window.baseConfig,
+        show_rotation: true,
+        rotation_interval: 7200,
+      });
+      editor.hass = window.hass;
+      document.body.append(editor);
+      await editor.updateComplete;
+      const input = editor.shadowRoot.querySelector(
+        'input[aria-label="Rotation interval value"]',
+      );
+      const unit = editor.shadowRoot.querySelector(
+        'select[aria-label="Rotation interval unit"]',
+      );
+      const text = editor.shadowRoot.textContent;
+      results.editorControl =
+        text.includes("Rotate every") &&
+        !text.includes("Custom List") &&
+        !text.includes("No Immediate Repeats") &&
+        input?.value === "2" &&
+        unit?.value === "hours";
+      unit.value = "days";
+      unit.dispatchEvent(new Event("change"));
+      results.editorSaves = editor.config.rotation_interval === 172800;
+      editor.remove();
+      return results;
+    });
+    assert.deepEqual(ux, {
+      noSeparator: true,
+      rotationSummary: true,
+      clockStar: true,
+      clockUnstar: true,
+      nativeStar: true,
+      nativeUnstar: true,
+      editorControl: true,
+      editorSaves: true,
+    });
+    assert.deepEqual(errors, []);
+    console.log(
+      "PASS favourite star badges, seamless sections, rotation summary and interval editor",
+    );
+    const rotation = await page.evaluate(async () => {
+      calls.length = 0;
+      for (const card of [clock, native]) {
+        card.setConfig({ ...baseConfig, show_rotation: true });
+        card._controls.favourites = [];
+      }
+      for (const kind of ["clock", "native"]) {
+        const state = {
+          ...hass,
+          states: {
+            ...hass.states,
+            "light.a": {
+              ...hass.states["light.a"],
+              attributes: {
+                ...hass.states["light.a"].attributes,
+                effect_rotation: {
+                  active: true,
+                  kind,
+                  items: ["Rainbow", "White"],
+                },
+              },
+            },
+          },
+        };
+        for (const card of [clock, native]) {
+          card.hass = state;
+          if (card.updateComplete) await card.updateComplete;
+          card._controls.update();
+        }
+        if (clock._controls.active !== (kind === "clock"))
+          return "clock kind mismatch";
+        if (native._controls.active !== (kind === "native"))
+          return "native kind mismatch";
+      }
+      await native._queue;
+      return calls.filter((call) => call.service === "stop_effect_rotation");
+    });
+    assert.deepEqual(
+      rotation,
+      [],
+      "observing cards must not cancel server rotation",
+    );
+    assert.deepEqual(errors, []);
+    console.log(
+      "PASS real Clock/Native cards observe backend rotation without unsolicited Stop calls",
+    );
   } finally {
     await browser.close();
   }

@@ -109,6 +109,9 @@ LIGHT_SERVICE_NAMES = (
     "set_button_effects",
     "set_clock_style",
     "set_native_effect",
+    "start_effect_rotation",
+    "stop_effect_rotation",
+    "skip_effect_rotation",
     # Registered further below alongside the diagnostic/native-effect handlers;
     # listed here so async_remove_light_services() tears them down on unload too.
     "send_fx_effect",
@@ -391,7 +394,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         self._native_effect_color = None
         self._native_effect_direction = "Up"
         # Reveal firmware effects that the official app never exposed.
-        self._extended_effects_enabled = False
+        self._extended_effects_enabled = bool(config_entry.options.get("extended_effects_enabled", False))
         self._music_flow_enabled = False
         self._music_flow_effect = DEFAULT_MUSIC_FLOW_EFFECT
         self._music_flow_restore_power = None
@@ -430,6 +433,21 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         # Wall-clock instant the freeze began; the camera freezes the clock's
         # background phase at exactly this moment, not at the next render.
         self._display_frozen_at = None
+
+        # -- Effect / clock mode rotation -----------------------------------
+        # A server-side timed loop that advances the lamp through a list of
+        # native effect or clock style names on its own timer, independently of
+        # any dashboard client (so it survives a page refresh). Started and
+        # stopped via the start/stop/skip_effect_rotation services.
+        self._rotation_active = False
+        self._rotation_kind = "native"       # "native" | "clock"
+        self._rotation_items: list = []
+        self._rotation_interval = 60          # whole seconds between steps
+        self._rotation_index = -1
+        self._rotation_task = None
+        self._rotation_wake = None
+        self._rotation_started = None
+        self._rotation_error = None
 
         # Apply timing (for queue processor stats, not cooldown-gating)
         self._last_apply_time = 0
@@ -1310,6 +1328,15 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             # the background animation on the frozen frame while the clock
             # digits keep updating.
             "display_frozen": bool(getattr(self, "_display_frozen", False)),
+            # Server-side effect/clock rotation status (start/stop_effect_rotation).
+            "effect_rotation": {
+                "active": bool(getattr(self, "_rotation_active", False)),
+                "kind": getattr(self, "_rotation_kind", "native"),
+                "interval": getattr(self, "_rotation_interval", 60),
+                "items": list(getattr(self, "_rotation_items", [])),
+                "index": getattr(self, "_rotation_index", -1),
+                "error": getattr(self, "_rotation_error", None),
+            },
             "text_colors": self._text_colors,
             "custom_text": self._custom_text,
             "clock_style": NATIVE_CLOCK_STYLES.get(
@@ -1423,6 +1450,23 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             attrs["matrix_colors"] = []
         return attrs
 
+    def set_extended_effects_enabled(self, enabled: bool) -> None:
+        self._extended_effects_enabled = enabled
+        if self._config_entry.options.get("extended_effects_enabled") is not enabled:
+            self.hass.config_entries.async_update_entry(
+                self._config_entry,
+                options={**self._config_entry.options, "extended_effects_enabled": enabled},
+            )
+
+    def _restore_extended_effects(self, old_state) -> None:
+        saved = self._config_entry.options.get("extended_effects_enabled")
+        if isinstance(saved, bool):
+            self._extended_effects_enabled = saved
+        elif old_state is not None:
+            legacy = old_state.attributes.get("extended_effects_enabled")
+            if isinstance(legacy, bool):
+                self.set_extended_effects_enabled(legacy)
+
     async def async_added_to_hass(self):
         _LOGGER.debug(f"[INIT] async_added_to_hass called for {self._attr_name}")
         await super().async_added_to_hass()
@@ -1448,6 +1492,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         
         _LOGGER.debug(f"[INIT] Initial state - custom_text: '{self._custom_text}', mode: '{self._mode}', is_on: {self._is_on}, brightness: {self._brightness}")
         old_state = await self.async_get_last_state()
+        self._restore_extended_effects(old_state)
         _LOGGER.debug(f"[RESTORE] old_state exists: {old_state is not None}")
         if old_state:
             _LOGGER.debug(f"[RESTORE] old_state.state: {old_state.state}")
@@ -1595,10 +1640,6 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             native_effect = NATIVE_EFFECT_RENAMES.get(native_effect, native_effect)
             if native_effect in ALL_NATIVE_EFFECTS:
                 self._native_effect = native_effect
-            if old_state.attributes.get("extended_effects_enabled") is not None:
-                self._extended_effects_enabled = bool(
-                    old_state.attributes["extended_effects_enabled"]
-                )
             if old_state.attributes.get("native_effect_speed") is not None:
                 self._native_effect_speed = max(
                     1, min(255, int(old_state.attributes["native_effect_speed"]))
@@ -1713,6 +1754,9 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
     async def async_will_remove_from_hass(self):
         """Clean up when entity is removed"""
         self.stop_scroll_timer()
+
+        # Stop any server-side rotation loop owned by this entity.
+        self.stop_effect_rotation()
         
         # Cancel display retry task
         if self._retry_display_task and not self._retry_display_task.done():
@@ -2639,7 +2683,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             op_timeout = self._transition_duration + APPLY_HARD_TIMEOUT
         
         # Execute the display update under the global lock with error handling
-        await self._execute_hardware_op(
+        return await self._execute_hardware_op(
             lambda: self._apply_display_mode_internal(),
             f"display:{update_type}",
             timeout_override=op_timeout
@@ -3415,6 +3459,206 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         for entity in self._preview_number_entities.values():
             if getattr(entity, "hass", None) is not None:
                 entity.async_update_from_light()
+
+    # ------------------------------------------------------------------ #
+    #  Effect / clock mode rotation (server-side, survives client reload) #
+    # ------------------------------------------------------------------ #
+
+    def _rotation_current_name(self) -> str | None:
+        """Return the key of the mode the lamp is currently showing.
+
+        For native effects this is the effect name.  For the clock it is the
+        built-in style name, or ``custom:<id>`` when a saved solid-colour
+        preset is active (mirrors the card's ``clockPresetKey`` mapping).
+        """
+        if self._rotation_kind != "clock":
+            return self._native_effect
+        color = getattr(self, "_native_clock_color", None)
+        if color is not None:
+            r, g, b = (color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF
+            for preset in self.hass.data.get(DOMAIN, {}).get("clock_presets", []):
+                if preset.get("kind", "style") == "style" and list(
+                    preset.get("color", ())
+                ) == [r, g, b]:
+                    return f"custom:{preset['id']}"
+        style = NATIVE_CLOCK_STYLES.get(self._native_clock_style)
+        return style["name"] if style else None
+
+    async def start_effect_rotation(self, items, interval, kind="native") -> None:
+        """Start an entity-owned loop, acknowledging only its first display result.
+
+        Returning before that result hides hardware failures from the calling
+        service. Subsequent steps belong to the entity, not the service/client.
+        """
+        items = [item.strip() for item in items if isinstance(item, str) and item.strip()]
+        if len(set(items)) < 2:
+            raise HomeAssistantError("Provide at least two different rotation modes")
+        self.stop_effect_rotation()
+        self._rotation_error = None
+        self._rotation_kind = kind if kind in ("native", "clock") else "native"
+        self._rotation_items = items
+        self._rotation_interval = max(10, min(604800, int(interval)))
+        current = self._rotation_current_name()
+        self._rotation_index = items.index(current) if current in items else -1
+        self._rotation_active = True
+        self._rotation_wake = asyncio.Event()
+        started = asyncio.get_running_loop().create_future()
+        self._rotation_started = started
+        self._rotation_task = self._create_tracked_task(
+            self._rotation_loop(), name=f"yeelight_cube_rotation_{self._ip}"
+        )
+        if not await asyncio.shield(started):
+            raise HomeAssistantError(
+                self._rotation_error or "Rotation stopped before its first display update"
+            )
+
+    def stop_effect_rotation(self) -> None:
+        """Stop the server-side rotation loop."""
+        self._rotation_active = False
+        if self._rotation_task and not self._rotation_task.done():
+            self._rotation_task.cancel()
+        self._rotation_task = None
+        self._rotation_wake = None
+        if self._rotation_started is not None and not self._rotation_started.done():
+            self._rotation_started.set_result(False)
+        if self.hass is not None:
+            self.async_write_ha_state()
+
+    def skip_effect_rotation(self) -> None:
+        """Advance to the next mode immediately instead of waiting."""
+        wake = self._rotation_wake
+        if self._rotation_active and wake is not None:
+            wake.set()
+
+    async def _rotation_loop(self) -> None:
+        """Advance through the rotation list, applying each mode to the lamp."""
+        task = asyncio.current_task()
+        started = self._rotation_started
+        try:
+            while self._rotation_active:
+                self._rotation_index = (self._rotation_index + 1) % len(
+                    self._rotation_items
+                )
+                name = self._rotation_items[self._rotation_index]
+                try:
+                    ok = await self._apply_rotation_item(name)
+                except Exception as exc:  # noqa: BLE001 — keep rotation isolated
+                    _LOGGER.warning(
+                        "[ROTATION] [%s] Failed to apply %s: %s",
+                        self._ip, name, exc,
+                    )
+                    self._rotation_error = str(exc)
+                    ok = False
+                if not ok or not self._rotation_active:
+                    self._rotation_error = self._rotation_error or (
+                        "Lamp is off" if not self._is_on else
+                        "Calibration lock is active" if getattr(self, "_calibration_lock", False) else
+                        getattr(self, "_last_connection_error", None) or
+                        f"Display update failed for {name}"
+                    )
+                    _LOGGER.warning("[ROTATION] [%s] Stopped: %s", self._ip, self._rotation_error)
+                    break
+                if not started.done():
+                    started.set_result(True)
+                if self.hass is not None:
+                    self.async_write_ha_state()
+                try:
+                    await asyncio.wait_for(
+                        self._rotation_wake.wait(), timeout=self._rotation_interval
+                    )
+                except asyncio.TimeoutError:
+                    pass
+                if self._rotation_wake is not None:
+                    self._rotation_wake.clear()
+        except asyncio.CancelledError:
+            raise
+        finally:
+            if not started.done():
+                started.set_result(False)
+            # A replaced loop must not clear the new loop's state.
+            if self._rotation_task is task:
+                self._rotation_active = False
+                self._rotation_task = None
+                if self.hass is not None:
+                    self.async_write_ha_state()
+
+    async def _apply_rotation_item(self, name: str) -> bool:
+        """Apply one rotation item; return False to stop the loop."""
+        if not self._is_on:
+            _LOGGER.debug("[ROTATION] [%s] Lamp off -- stopping rotation", self._ip)
+            return False
+        if self._rotation_kind == "clock":
+            return await self._apply_rotation_clock(name)
+        return await self._apply_rotation_native(name)
+
+    async def _apply_rotation_native(self, name: str) -> bool:
+        spec = ALL_NATIVE_EFFECTS.get(name)
+        if spec is None:
+            _LOGGER.debug("[ROTATION] [%s] Unknown native effect %s -- skipped", self._ip, name)
+            return True
+        if spec.get("extended") and not self._extended_effects_enabled:
+            _LOGGER.debug(
+                "[ROTATION] [%s] Experimental effect %s skipped (Experimental Features off)",
+                self._ip, name,
+            )
+            return True
+        self._native_effect = name
+        self._mode = "Native Effect"
+        self._custom_draw_active = False
+        if not await self.async_apply_display_mode(update_type="color_change"):
+            return False
+        self._refresh_linked_entities()
+        if self.hass is not None:
+            self.async_write_ha_state()
+        return True
+
+    async def _apply_rotation_clock(self, name: str) -> bool:
+        if name.startswith("custom:"):
+            preset_id = name[len("custom:"):]
+            preset = next(
+                (
+                    item for item in self.hass.data.get(DOMAIN, {}).get("clock_presets", [])
+                    if item.get("id") == preset_id and item.get("kind", "style") == "style"
+                ),
+                None,
+            )
+            if preset is None:
+                _LOGGER.debug("[ROTATION] [%s] Unknown clock preset %s -- skipped", self._ip, name)
+                return True
+            red, green, blue = (int(channel) for channel in preset["color"])
+            self._native_clock_style = next(
+                (
+                    sid for sid, style in NATIVE_CLOCK_STYLES.items()
+                    if style["name"] == "White"
+                ),
+                4,
+            )
+            self._native_clock_color = (
+                0x01000000 | ((red & 0xFF) << 16) | ((green & 0xFF) << 8) | (blue & 0xFF)
+            )
+            self._native_clock_color_mode = "normal"
+        else:
+            style_id = next(
+                (
+                    sid for sid, style in NATIVE_CLOCK_STYLES.items()
+                    if style["name"] == name
+                ),
+                None,
+            )
+            if style_id is None:
+                _LOGGER.debug("[ROTATION] [%s] Unknown clock style %s -- skipped", self._ip, name)
+                return True
+            self._native_clock_style = style_id
+            self._native_clock_color = None
+            self._native_clock_color_mode = "normal"
+        self._mode = "Clock"
+        self._custom_draw_active = False
+        if not await self.async_apply_display_mode(update_type="color_change"):
+            return False
+        self._refresh_linked_entities()
+        if self.hass is not None:
+            self.async_write_ha_state()
+        return True
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> bool:
     # Create and register the light entity FIRST (this happens for EVERY device)

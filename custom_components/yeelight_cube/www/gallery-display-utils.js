@@ -984,6 +984,21 @@ function renderWheelNavButtons(options) {
 }
 
 /**
+ * Toggle the `data-favourite` star badge on every `[data-mode]` item in root.
+ * Shared by the Clock and Native Effects cards: called after each render and
+ * whenever the favourites list changes (controller notification).
+ */
+export function markFavouriteModes(root, favourites) {
+  if (!root) return;
+  const marked = new Set(favourites || []);
+  root.querySelectorAll("[data-mode]").forEach((node) => {
+    if (marked.has(node.dataset.mode))
+      node.setAttribute("data-favourite", "true");
+    else node.removeAttribute("data-favourite");
+  });
+}
+
+/**
  * Main render function - dispatches to appropriate mode renderer
  * @param {Array} items - Array of item objects
  * @param {string} displayMode - "list", "gallery" (legacy alias for list), "grid", "compact", "inline" (legacy alias for grid), or "wheel"
@@ -1050,6 +1065,23 @@ export const galleryDisplayStyles = `
 
   .gallery-matrix-preview {
     user-select: none;
+    pointer-events: none;
+  }
+
+  /* Favourite marker: gold star badge on gallery items whose mode is in the
+     favourites list (set via markFavouriteModes). */
+  .gallery-item[data-favourite="true"] {
+    position: relative;
+  }
+  .gallery-item[data-favourite="true"]::after {
+    content: "★";
+    position: absolute;
+    top: 2px;
+    right: 6px;
+    color: var(--warning-color, #ffa726);
+    text-shadow: 0 0 4px rgba(0, 0, 0, 0.75);
+    font-size: 15px;
+    line-height: 1;
     pointer-events: none;
   }
 

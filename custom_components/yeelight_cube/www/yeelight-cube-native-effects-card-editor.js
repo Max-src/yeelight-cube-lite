@@ -4,6 +4,7 @@ import {
   renderEditorSection,
   renderModeSettingsSection,
   renderMatrixAppearanceSettings,
+  renderExperimentalAvailability,
   fireEvent,
 } from "./editor_ui_utils.js";
 import {
@@ -127,12 +128,16 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
     });
     const names = effects.map((item) => item.name);
     const visible = Array.isArray(config.visible_effects)
-      ? [...new Set(config.visible_effects)].filter((name) =>
-          names.includes(name),
+      ? [...new Set(config.visible_effects)].filter(
+          (name) =>
+            typeof name === "string" &&
+            name.trim() &&
+            !/^\d+$/.test(name.trim()),
         )
       : names;
     const change = (key, value) => this._change(key, value);
     return html`<div class="editor-root">
+      ${renderExperimentalAvailability(this.hass, targets, config, true)}
       ${this._section(
         "general",
         "Global Settings",
@@ -348,6 +353,10 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
                     : ""}
                   ${renderOrderableList({
                     items: visible,
+                    labelFor: (name) =>
+                      names.includes(name)
+                        ? name
+                        : `${name} (currently unavailable)`,
                     available: names.filter((name) => !visible.includes(name)),
                     onUpdate: (items) => this._change("visible_effects", items),
                     onReset: () => this._change("visible_effects", undefined),

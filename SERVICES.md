@@ -12,7 +12,7 @@ Full documentation for all custom actions (services) registered under the `yeeli
 
 ## Table of Contents
 
-**[`Text Services`](#-text-services)** · **[`Drawing Services`](#-drawing-services)** · **[`Gradient Services`](#-gradient-services)** · **[`Palette Services`](#-palette-services)** · **[`Configuration Services`](#-configuration-services)** · **[`Device Management`](#-device-management)** · **[`Multi-Entity Operations`](#-multi-entity-operations)** · **[`Node-RED Integration`](#-node-red-integration)** · **[`Service Response Data`](#-service-response-data)** · **[`Quick Reference`](#-quick-reference)**
+**[`Text Services`](#-text-services)** · **[`Drawing Services`](#-drawing-services)** · **[`Gradient Services`](#-gradient-services)** · **[`Palette Services`](#-palette-services)** · **[`Clock, Native Effects and Rotation`](#-clock-native-effects-and-rotation)** · **[`Configuration Services`](#-configuration-services)** · **[`Device Management`](#-device-management)** · **[`Multi-Entity Operations`](#-multi-entity-operations)** · **[`Node-RED Integration`](#-node-red-integration)** · **[`Service Response Data`](#-service-response-data)** · **[`Quick Reference`](#-quick-reference)**
 
 ---
 
@@ -660,6 +660,255 @@ data:
 
 ---
 
+## 🎬 Clock, Native Effects and Rotation
+
+Firmware-native display features: the clock, built-in animations, saved solid
+colours, display freeze, physical orientation, and the server-side effect
+rotation that keeps cycling even after the dashboard is closed.
+
+### `set_native_effect`
+
+Apply one of the lamp's firmware-native animations (the "Native Effect" content
+mode).
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `effect` | No | Effect name (e.g. `Rainbow`, `Ocean Waves`). Omit to keep the current effect. |
+| `speed` | No | Animation speed 1–255 (only for effects that support it) |
+| `color_mode` | No | Palette (`normal`, `bw`, `red_blue`, `white_orange`, `blue_yellow`, `purple_orange`) when the effect supports it |
+| `color` | No | Custom `[r, g, b]` (0–255) or `"clear"`/`null` to drop a custom colour |
+| `activate` | No | Switch to Native Effect mode immediately (default `true`) |
+| `entity_id` | Yes | Target lamp entity (list supported) |
+
+```yaml
+action: yeelight_cube.set_native_effect
+data:
+  effect: Rainbow
+  speed: 120
+  color_mode: red_blue
+  entity_id: light.cubelite_a904
+```
+
+Experimental effects require **Experimental Features** to be enabled on the lamp.
+
+---
+
+### `set_clock_style`
+
+Configure the firmware clock (the "Clock" content mode). Any subset of fields may
+be provided.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `style` | No | Clock style name or numeric id (e.g. `Rainbow`, `Ocean Waves`) |
+| `color` | No | Custom `[r, g, b]` (0–255), or `"clear"`/`null` to use the style's own colour |
+| `content` | No | `time`, `time_date` (alternating) or `date` |
+| `twelve_hour` | No | `true` for 12-hour, `false` for 24-hour |
+| `colon_blink` | No | `true` to blink the colon, `false` to keep it steady |
+| `speed` | No | Animation speed 1–255 |
+| `color_mode` | No | Palette preset (see `set_native_effect`) |
+| `activate` | No | Switch to Clock mode immediately (default `true`) |
+| `entity_id` | Yes | Target lamp entity (list supported) |
+
+```yaml
+action: yeelight_cube.set_clock_style
+data:
+  style: Rainbow
+  content: time_date
+  twelve_hour: false
+  entity_id: light.cubelite_a904
+```
+
+---
+
+### `save_clock_preset` / `delete_clock_preset`
+
+Manage the shared solid-colour clock library (reused by the Clock and Native
+Effects cards). Saved styles appear as clock styles with `custom:<id>` keys.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `name` | Yes | Display name (1–40 characters) |
+| `color` | Yes | RGB colour as three integers 0–255 |
+| `preset_id` | No | Existing id when editing; omit to create |
+| `kind` | No | `style` (solid clock style) or `color_mode` (reusable colour) — default `style` for new presets |
+
+```yaml
+action: yeelight_cube.save_clock_preset
+data:
+  name: "Sunset"
+  color: [255, 110, 0]
+```
+
+```yaml
+action: yeelight_cube.delete_clock_preset
+data:
+  preset_id: "abc123"
+```
+
+---
+
+### `freeze_display`
+
+Freeze the animated effect on its current frame. On a native effect the whole
+panel holds; on the clock the background holds while the digits keep updating.
+Re-applying the current effect/clock mode resumes it.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `entity_id` | Yes | Target lamp entity (list supported) |
+
+```yaml
+action: yeelight_cube.freeze_display
+data:
+  entity_id: light.cubelite_a904
+```
+
+---
+
+### `set_device_orientation`
+
+Set the physical mount orientation, which determines the direction native
+effects and text flow.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `orientation` | Yes | One of `right`, `down`, `left`, `up` |
+| `entity_id` | Yes | Target lamp entity (list supported) |
+
+```yaml
+action: yeelight_cube.set_device_orientation
+data:
+  orientation: down
+  entity_id: light.cubelite_a904
+```
+
+---
+
+### `start_effect_rotation`
+
+Start a **server-side** rotation that advances the lamp through the given mode
+list on its own timer. The loop runs inside Home Assistant (not the browser), so
+it keeps rotating after the dashboard tab is closed or refreshed.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `items` | Yes | Ordered mode names: native effect names, or clock style names / `custom:<id>` saved presets |
+| `interval` | No | Seconds between changes, 10–604800 (default `60`) |
+| `kind` | No | `native` (default) or `clock` |
+| `entity_id` | Yes | Target lamp entity (list supported) |
+
+```yaml
+action: yeelight_cube.start_effect_rotation
+data:
+  kind: native
+  items:
+    - Rainbow
+    - Ocean Waves
+    - Streamer
+  interval: 30
+  entity_id: light.cubelite_a904
+```
+
+Start requires at least two distinct, non-empty item strings and waits for the
+first rotation step instead of merely acknowledging a queued task. For a known,
+enabled item, that step awaits the display operation. Unknown names, missing
+clock presets, and experimental native effects with Experimental Features off
+are skipped without sending a display command. A skipped first item can therefore
+acknowledge Start; a list containing only skipped items can remain active without
+changing the lamp. The card filters available favourites, but service callers
+must supply valid, enabled items.
+
+A failed display operation raises a service error and records the reason in
+`effect_rotation.error`; later failures stop the loop and update that attribute.
+If one target fails to start, rotation is stopped on the other requested targets.
+Sending a command successfully does not independently verify the physical image.
+
+Rotation stops via `stop_effect_rotation`, manual commands from the cards, or
+when its next step finds the lamp off or fails to apply the display. It is held
+in memory and does **not** auto-resume after a Home Assistant restart or an
+integration reload. Commands from other automations do not universally stop it.
+
+**Rotation ownership:** state updates must only observe backend rotation. The
+old card controller sent Stop when its browser-local favourites contained fewer
+than two available items, including from another card observing the same lamp.
+That cancellation is now restricted to the legacy browser timer. Clock and
+Native cards also check the backend rotation kind. The former eight-second UI
+grace delay hid stopped state and has been removed. Tests cover these paths and
+protocol-command dispatch with a simulated transport, not physical lamp output.
+
+After installing changed Python code, restart Home Assistant and refresh the
+dashboard. Re-registering services on entry reload does not reimport Python code.
+
+#### Rotation Diagnostics and Regression Checks
+
+The observer cancellation and discarded hardware result were reproduced in
+local tests. They are **not proof of the cause on a particular installation**.
+Earlier service-registration and stale-state explanations were hypotheses, not
+verified causes of the reported physical-lamp failure.
+
+When investigating a repeat report:
+
+1. Record the target entities, rotation kind, submitted items and interval,
+  service response, and `effect_rotation` attributes before and after Start.
+  Check item availability and Experimental Features, including skipped items.
+2. Trace the same request through the card adapter, service handler, entity loop,
+  display dispatcher, hardware wrapper and `set_fx_effect` transport. Look for
+  unsolicited Stop calls from other cards and correlate `[ROTATION]`, `[DISPLAY]`,
+  `[OP ...]` and `[RAW]` logs for that target. These are log prefixes, not a
+  shared request ID; some require debug logging.
+3. Write and run a regression that fails at the implicated boundary before
+  changing behaviour. Do not hide failed state with an optimistic timeout or
+  treat selected preview/attribute changes as evidence of physical output.
+4. Report separately what was reproduced, what changed, which checks ran, whether
+  anything was deployed, and whether the user confirmed physical lamp output.
+  If the user still reports failure, the hardware issue remains open. Do not
+  re-label an unverified explanation as the root cause or blame caching without
+  evidence. Reuse existing evidence and request only the missing runtime facts.
+
+Existing regression checks (run from the repository root):
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest tests.test_effect_rotation
+node --test tests/mode-controls.test.mjs
+node tests/card-ui-parity.cjs
+```
+
+The browser check needs Playwright and its configured browser (Edge by default);
+`PLAYWRIGHT_MODULE` can point to an installed Playwright module. Python tests
+execute selected production methods outside Home Assistant with a simulated
+transport. Browser tests use real card classes with simulated Home Assistant
+state and services. They cover failure propagation, loop replacement, protocol
+dispatch, and passive observers, but **not a live Home Assistant lifecycle or
+physical firmware output**. The raw send path does not read a device reply, so
+even a successful socket send is not a firmware acknowledgement.
+
+---
+
+### `stop_effect_rotation`
+
+Stop the server-side rotation on the target lamps.
+
+```yaml
+action: yeelight_cube.stop_effect_rotation
+data:
+  entity_id: light.cubelite_a904
+```
+
+---
+
+### `skip_effect_rotation`
+
+Advance a running rotation to its next mode immediately (the card's Skip button).
+
+```yaml
+action: yeelight_cube.skip_effect_rotation
+data:
+  entity_id: light.cubelite_a904
+```
+
+---
+
 ## ⚙️ Configuration Services
 
 Adjust brightness and real-time color effects.
@@ -1142,6 +1391,9 @@ Some services return data that can be used in automations.
 | **Color Effects** | `set_preview_adjustments`, `set_color_accuracy` | Real-time color adjustments |
 | **State** | `save_state`, `restore_state` | Snapshot & restore what's displayed |
 | **Native presets** | `set_button_effects` | Configure physical-button effect slots |
+| **Clock / Native** | `set_native_effect`, `set_clock_style`, `freeze_display`, `set_device_orientation` | Firmware clock & animations |
+| **Clock presets** | `save_clock_preset`, `delete_clock_preset` | Shared solid-colour library |
+| **Rotation** | `start_effect_rotation`, `stop_effect_rotation`, `skip_effect_rotation` | Server-side effect cycling |
 | **Recovery** | `force_refresh` | Reconnect & re-send display state |
 | **Management** | `create_cube_discovery`, `test_display`, `force_rediscovery` | Device setup & diagnostics |
 

@@ -773,23 +773,34 @@ control values. Optional `show_favourites` and `show_rotation` sections provide
 animated, reorderable favourites and timed effect rotation. Favourites are stored
 in this browser per target set, not synced between browsers.
 
-Rotation uses favourites or an ordered `rotation_effects` list when
-`rotation_source: custom`, with a 10-3600 second `rotation_interval` and optional
-`rotation_shuffle`. It only uses effects available on every target, starts only
-on explicit Play, and stops on manual commands, service errors, an off/unavailable
-target, a hidden browser tab, or removal of the card. It runs in this browser, not
-as a Home Assistant automation, and does not automatically resume or wake lamps.
+Rotation always follows the favourites list, advanced in order every
+`rotation_interval` seconds (edited as a value + unit, from 10 seconds up to 7
+days; the Shuffle button in the Favourites toolbar randomly reorders the list
+itself). Rotation is driven **server-side** by the light entity via the
+`start_effect_rotation` / `stop_effect_rotation` / `skip_effect_rotation`
+services, so it keeps rotating after the dashboard tab is closed or refreshed —
+the lamp(s) hold the loop, not the browser. It only uses effects available on
+every target and starts only on explicit Play. Stop and manual card commands
+stop rotation; the backend also stops when its next step finds the lamp off or
+fails to apply the display. Rotation is in-memory only: it does not auto-resume
+after a Home Assistant restart or integration reload, and it does not wake lamps.
+Start waits for the first rotation step; a supported item awaits its display
+operation, with failures reported in `effect_rotation.error`. Unknown or gated
+items are skipped, so a successful Start is not proof of a display command or
+physical output. See [rotation diagnostics](SERVICES.md#rotation-diagnostics-and-regression-checks).
+Other cards observing the same lamp cannot stop the
+loop merely because their local favourites are empty or different.
 With `auto_apply: false`, effect and speed selections stay local until **Apply**;
 brightness and orientation still apply immediately. Rotation is an explicit
 apply action and does not use the preview-only setting.
 
-The **Clock Card** now uses the same Actions, Device Orientation, Favourites and
-Rotation components and editor settings. Actions and orientation are enabled by
-default; `show_actions` and `show_device_orientation` can hide them. Enable
+The **Clock Card** uses the same Actions, Favourites and Rotation components and
+editor settings. Actions are enabled by default; `show_actions` can hide them.
+Device Orientation is native-effect-only; the firmware clock cannot rotate. Enable
 `show_favourites` and `show_rotation` for either card. Clock rotation is labelled
-**Clock Mode Rotation** and uses `rotation_modes` for a custom list. Clock
+**Clock Mode Rotation**. Clock
 favourites retain saved style IDs across renames and are stored separately from
-native-effect favourites. Both rotations have the same browser-only lifecycle.
+native-effect favourites. Both rotations share the same server-side lifecycle.
 
 Enable `show_color_modes` on the Native Effects Card for **Colour Modes &
 Controls**. Its button/dropdown presentation and settings are shared with the
@@ -797,7 +808,7 @@ Clock Card. Only hardware-confirmed palettes for the selected effect are offered
 Normal, Black & White, Vivid, Retro Orange, Tropical, and Violet & Gold where
 supported. The `set_native_effect` service accepts `color_mode`; this setting is
 independent of clock colours and persists with the lamp state. An incompatible
-effect uses its original colours. Reload the updated integration before using
+effect uses its original colours. Restart Home Assistant after updating before using
 this feature; an older backend does not expose the palette controls.
 
 Time/date content, clock format, custom RGB colours and the saved clock-style

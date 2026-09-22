@@ -6,6 +6,8 @@ import {
   actionButtonOrder,
   ACTION_BUTTON_KEYS,
   ACTION_BUTTON_LABELS,
+  rotationIntervalParts,
+  ROTATION_INTERVAL_UNITS,
 } from "../custom_components/yeelight_cube/www/mode-controls-controller.js";
 import { readFileSync } from "node:fs";
 import {
@@ -53,6 +55,62 @@ const sourceFor = (file) =>
     "utf8",
   );
 const template = (strings, ...values) => ({ strings, values });
+
+test("experimental editor status distinguishes device gates, missing states and card filter", () => {
+  const source = sourceFor("editor_ui_utils.js");
+  const match = source.match(
+    /export function renderExperimentalAvailability\(([\s\S]*?)\) \{([\s\S]*?)\n\}/,
+  );
+  const flatten = (value) =>
+    Array.isArray(value) ? value.map(flatten).join("") : String(value ?? "");
+  const html = (strings, ...values) =>
+    strings.reduce(
+      (text, part, index) => text + part + flatten(values[index]),
+      "",
+    );
+  const render = new Function(
+    "html",
+    `return function(${match[1]}) {${match[2]}}`,
+  )(html);
+  const hass = {
+    states: {
+      "light.top": {
+        state: "on",
+        attributes: { friendly_name: "Top", extended_effects_enabled: true },
+      },
+      "light.bottom": {
+        state: "off",
+        attributes: {
+          friendly_name: "Bottom",
+          extended_effects_enabled: false,
+        },
+      },
+    },
+  };
+  const mixed = render(
+    hass,
+    ["light.top", "light.bottom", "light.missing"],
+    {},
+    true,
+  );
+  assert.match(mixed, /Off: Bottom/);
+  assert.match(mixed, /Status unavailable: light.missing/);
+  assert.match(mixed, /Experimental Effects filter is Off/);
+  assert.doesNotMatch(mixed, /On for all/);
+  const enabled = render(
+    hass,
+    ["light.top"],
+    { show_experimental: true },
+    true,
+  );
+  assert.match(enabled, /On for all selected lamps/);
+  assert.doesNotMatch(enabled, /filter is Off/);
+  assert.doesNotMatch(
+    render(hass, ["light.bottom"], {}, false),
+    /filter is Off/,
+  );
+  assert.equal(render(hass, [], {}, false), "");
+});
 
 test("native colour choices retain configured order while effects respond to the colour", async () => {
   const attrs = {
@@ -335,7 +393,7 @@ test("rotation retains only effects available on every target", () => {
   assert.deepEqual(controls.names(), []);
 });
 
-test("rotation order, shuffle and interval are bounded and do not repeat immediately", () => {
+test("rotation order and interval are bounded", () => {
   assert.equal(
     nextRotationEffect(["Rainbow", "Streamer", "63", "Rainbow"], "Rainbow"),
     "Streamer",
@@ -344,14 +402,9 @@ test("rotation order, shuffle and interval are bounded and do not repeat immedia
     nextRotationEffect(["Rainbow", "Streamer"], "Streamer"),
     "Rainbow",
   );
-  for (const random of [0, 0.5, 0.99, 1])
-    assert.equal(
-      nextRotationEffect(["Rainbow", "Streamer"], "Rainbow", true, random),
-      "Streamer",
-    );
   assert.equal(nextRotationEffect([], "Rainbow"), undefined);
   assert.equal(rotationIntervalMs({ rotation_interval: 1 }), 10000);
-  assert.equal(rotationIntervalMs({ rotation_interval: 9999 }), 3600000);
+  assert.equal(rotationIntervalMs({ rotation_interval: 9999999 }), 604800000);
   assert.equal(rotationIntervalMs({}), 60000);
 });
 
@@ -365,10 +418,8 @@ test("rotation only schedules after success and stops for hidden, off or changed
     apply: async () => true,
   };
   const controls = new ModeControlsController(adapter);
-  controls.configure(
-    { rotation_source: "custom", rotation_effects: ["Rainbow", "Streamer"] },
-    ["light.a"],
-  );
+  controls.configure({}, ["light.a"]);
+  controls.favourites = ["Rainbow", "Streamer"];
   controls.active = true;
   await controls.tick(controls.token);
   assert.ok(controls.timer);
@@ -536,7 +587,10 @@ test("native editor sections follow the card and use shared conditional controls
     renderMatrixAppearanceSettings: (...args) => {
       (records.matrices ||= []).push(args);
     },
-    renderModeSettingsSection: (title, content) => ({ title, content }),
+    renderModeSettingsSection: (title, content) => {
+      (records.settings ||= []).push(title);
+      return { title, content };
+    },
     createSliderRow: (...args) => {
       records.interval = args;
     },
@@ -553,10 +607,13 @@ test("native editor sections follow the card and use shared conditional controls
     renderOrientationSettings: () => {
       records.orientation = true;
     },
+    renderExperimentalAvailability: () => "",
     renderColorModeSettings: () => "",
     renderOrderableList: (options) => {
       records.list = options;
     },
+    rotationIntervalParts,
+    ROTATION_INTERVAL_UNITS,
     sliderKeys: (prefix) => prefix,
   };
   const sharedBody = sourceFor("mode-controls-ui.js").match(
@@ -640,13 +697,15 @@ test("native editor sections follow the card and use shared conditional controls
     target_entities: ["light.first"],
     show_favourites: true,
     show_rotation: true,
-    rotation_source: "custom",
-    rotation_effects: ["Rainbow"],
   };
   render.call(editor);
   assert.equal(records.matrices.length, 1);
-  assert.equal(records.interval[0], "Interval");
-  assert.deepEqual(records.list.items, ["Rainbow"]);
+  // Favourites/rotation are simplified: no custom list, no shuffle toggle,
+  // no interval slider — just the value+unit interval control.
+  assert.ok(records.settings.includes("Favourite Controls"));
+  assert.ok(records.settings.includes("Rotation Settings"));
+  assert.equal(records.interval, undefined);
+  assert.equal(records.list, undefined);
   Object.keys(records).forEach((key) => delete records[key]);
   editor._config.favourites_show_previews = false;
   editor._config.show_rotation = false;

@@ -20,7 +20,7 @@ import {
   orderableListStyles,
 } from "./orderable-list-utils.js";
 import { renderMatrixPreview } from "./gallery-display-utils.js";
-import { createToggleRow, createSliderRow } from "./form-row-utils.js";
+import { createToggleRow } from "./form-row-utils.js";
 import { createButtonGroup } from "./button-group-utils.js";
 import {
   renderModeSettingsSection,
@@ -28,7 +28,10 @@ import {
 } from "./editor_ui_utils.js";
 import {
   nextRotationMode,
-  rotationIntervalMs,
+  rotationIntervalSeconds,
+  rotationIntervalParts,
+  formatRotationInterval,
+  ROTATION_INTERVAL_UNITS,
   actionButtonOrder,
   ACTION_BUTTON_KEYS,
   ACTION_BUTTON_LABELS,
@@ -159,8 +162,18 @@ export function renderModeControlSettings(
           `,
         )
       : ""}`;
-  const key = noun === "effect" ? "rotation_effects" : "rotation_modes";
-  const selected = Array.isArray(config[key]) ? config[key] : [];
+  // Rotation always follows the favourites list: no custom source, no
+  // shuffle toggle. The only setting is how often to advance, edited as a
+  // value + unit (seconds → days) and stored as whole seconds.
+  const parts = rotationIntervalParts(config.rotation_interval ?? 60);
+  const applyInterval = (value, unit) => {
+    const size =
+      ROTATION_INTERVAL_UNITS.find((item) => item.unit === unit)?.seconds || 1;
+    change(
+      "rotation_interval",
+      Math.max(1, Math.round(Number(value) || 1)) * size,
+    );
+  };
   return html`${toggle(
     `Show ${noun === "effect" ? "Effect" : "Clock Mode"} Rotation`,
     "show_rotation",
@@ -170,36 +183,36 @@ export function renderModeControlSettings(
         "Rotation Settings",
         html`
           <div class="form-row">
-            <label>Source</label>${createButtonGroup(
-              [
-                { value: "favourites", label: "Favourites" },
-                { value: "custom", label: "Custom List" },
-              ],
-              config.rotation_source || "favourites",
-              (event) =>
-                change("rotation_source", event.currentTarget.dataset.value),
-            )}
+            <label>Rotate every</label>
+            <div style="display:flex;gap:8px;align-items:center;min-width:0;">
+              <input
+                type="number"
+                aria-label="Rotation interval value"
+                min="1"
+                max="999"
+                style="width:80px;min-width:0;padding:8px;border:1px solid var(--divider-color,#d0d7de);border-radius:6px;background:var(--card-background-color,#fff);color:var(--primary-text-color,#333);font:inherit;box-sizing:border-box;"
+                .value=${String(parts.value)}
+                @change=${(event) =>
+                  applyInterval(event.target.value, parts.unit)}
+              />
+              <select
+                aria-label="Rotation interval unit"
+                style="flex:1;min-width:0;padding:8px;border:1px solid var(--divider-color,#d0d7de);border-radius:6px;background:var(--card-background-color,#fff);color:var(--primary-text-color,#333);font:inherit;"
+                @change=${(event) =>
+                  applyInterval(parts.value, event.target.value)}
+              >
+                ${ROTATION_INTERVAL_UNITS.map(
+                  (item) =>
+                    html`<option
+                      value=${item.unit}
+                      ?selected=${item.unit === parts.unit}
+                    >
+                      ${item.label}
+                    </option>`,
+                )}
+              </select>
+            </div>
           </div>
-          ${config.rotation_source === "custom"
-            ? renderOrderableList({
-                items: selected,
-                available: items
-                  .map((item) => item.key)
-                  .filter((name) => !selected.includes(name)),
-                labelFor: (name) =>
-                  items.find((item) => item.key === name)?.title || name,
-                onUpdate: (names) => change(key, names),
-                addPlaceholder: `Add ${noun} to rotation`,
-              })
-            : ""}
-          ${createSliderRow(
-            "Interval",
-            config.rotation_interval ?? 60,
-            { min: 10, max: 3600, step: 10 },
-            (event) => change("rotation_interval", Number(event.target.value)),
-            "s",
-          )}
-          ${toggle("Shuffle (No Immediate Repeats)", "rotation_shuffle", false)}
         `,
       )
     : ""}`;
@@ -215,10 +228,6 @@ class YeelightModeControls extends LitElement {
   connectedCallback() {
     super.connectedCallback();
     this._refresh ||= () => this.requestUpdate();
-    this._visibility ||= () => {
-      if (document.hidden) this.model?.stop();
-    };
-    document.addEventListener("visibilitychange", this._visibility);
     this._subscribe();
     this._animate();
   }
@@ -227,7 +236,6 @@ class YeelightModeControls extends LitElement {
     super.disconnectedCallback();
     this._subscribed?.listeners.delete(this._refresh);
     this._subscribed = null;
-    document.removeEventListener("visibilitychange", this._visibility);
     cancelAnimationFrame(this._frame);
   }
 
@@ -264,12 +272,17 @@ class YeelightModeControls extends LitElement {
               .forEach((cell, index) => {
                 const rgb = pixels?.[index] || [0, 0, 0];
                 const off = !rgb.some(Boolean);
-                cell.style.background =
+                const color =
                   off &&
                   this.model.config.effect_ignore_black_pixels &&
                   this.model.config.effect_matrix_background !== "black"
                     ? "transparent"
                     : `rgb(${rgb.join(",")})`;
+                // Lit re-renders replace these cells with markup generated by
+                // _preview(); skip redundant writes so a re-render is visually
+                // seamless instead of a repaint burst.
+                if (cell.style.background !== color)
+                  cell.style.background = color;
               });
           });
         }
@@ -313,7 +326,10 @@ class YeelightModeControls extends LitElement {
 
   _preview(item) {
     const config = this.model.config;
-    const pixels = this.model.adapter.frame(item.key, 0);
+    // Render at the animation loop's CURRENT time, not phase 0: every Lit
+    // re-render regenerates this markup, and a phase-0 frame flashes the
+    // start of the animation until the next RAF tick repaints the cells.
+    const pixels = this.model.adapter.frame(item.key, performance.now() / 1000);
     if (!pixels) return html`<span class="muted">Preview unavailable</span>`;
     const background = config.effect_matrix_background || "black";
     return html`<div
@@ -456,13 +472,12 @@ class YeelightModeControls extends LitElement {
             <h3>Favourites <small>${model.favourites.length}</small></h3>
             <div class="tools">
               ${this._button(
-                "Shuffle favourite",
+                "Shuffle favourites",
                 "mdi:shuffle-variant",
-                () => model.choose(nextRotationMode(playable, current, true)),
+                () => model.shuffleFavourites(),
                 {
                   contentMode: "icon",
-                  disabled:
-                    model.busy || adapter.disabled() || playable.length < 2,
+                  disabled: model.favourites.length < 2,
                 },
               )}
               ${this._button(
@@ -569,8 +584,8 @@ class YeelightModeControls extends LitElement {
           </header>
           <div class="summary">
             <span
-              >${names.length} ${noun}s / ${rotationIntervalMs(config) / 1000}s
-              / ${config.rotation_shuffle ? "Shuffle" : "In order"}</span
+              >${names.length} ${noun}${names.length === 1 ? "" : "s"} · every
+              ${formatRotationInterval(rotationIntervalSeconds(config))}</span
             >
             <div class="tools">
               ${this._button(
@@ -599,6 +614,9 @@ class YeelightModeControls extends LitElement {
             ${names.map(title).join(" / ") || `No ${noun}s selected.`}
           </div>
         </section>`
+      : ""}
+    ${model.error
+      ? html`<div class="error" role="alert">${model.error}</div>`
       : ""}`;
   }
 
@@ -613,8 +631,7 @@ class YeelightModeControls extends LitElement {
         min-width: 0;
       }
       section {
-        padding: 12px 0;
-        border-top: 1px solid var(--divider-color, #ddd);
+        padding: 8px 0;
       }
       header,
       .summary {

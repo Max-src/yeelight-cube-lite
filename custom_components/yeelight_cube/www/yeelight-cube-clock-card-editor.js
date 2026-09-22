@@ -22,6 +22,7 @@ import {
   renderEditorSection,
   renderModeSettingsSection,
   renderMatrixAppearanceSettings,
+  renderExperimentalAvailability,
 } from "./editor_ui_utils.js";
 import { createButtonGroup, buttonGroupStyles } from "./button-group-utils.js";
 import { createToggleRow } from "./form-row-utils.js";
@@ -133,6 +134,7 @@ class YeelightCubeClockCardEditor extends LitElement {
     // Editor sections follow the card's visual order.
     return html`
       <div class="editor-root">
+        ${renderExperimentalAvailability(this._hass, selectedEntities, config)}
         ${this._section(
           "general",
           "Global Settings",

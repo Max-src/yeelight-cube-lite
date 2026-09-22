@@ -49,6 +49,7 @@ import {
 import {
   renderMatrixPreview,
   galleryDisplayStyles,
+  markFavouriteModes,
 } from "./gallery-display-utils.js";
 import { carouselStyles } from "./carousel-utils.js";
 import { initializeWheelNavigation } from "./wheel-navigation-utils.js";
@@ -382,6 +383,54 @@ class YeelightCubeClockCard extends HTMLElement {
           { domain: "yeelight_cube" },
         ),
       freezable: () => effectSupportsFreeze(this._currentStyle()?.name),
+      startRotation: (names, intervalSeconds) =>
+        callServiceOnTargetEntities(
+          this._hass,
+          this.config,
+          "start_effect_rotation",
+          { items: names, interval: intervalSeconds, kind: "clock" },
+          { domain: "yeelight_cube" },
+        ),
+      stopRotation: () =>
+        callServiceOnTargetEntities(
+          this._hass,
+          this.config,
+          "stop_effect_rotation",
+          {},
+          { domain: "yeelight_cube" },
+        ),
+      skipRotation: () =>
+        callServiceOnTargetEntities(
+          this._hass,
+          this.config,
+          "skip_effect_rotation",
+          {},
+          { domain: "yeelight_cube" },
+        ),
+      rotationActive: () =>
+        getTargetEntities(this.config).every(
+          (entity) =>
+            this._hass?.states[entity]?.attributes?.effect_rotation?.active ===
+              true &&
+            this._hass?.states[entity]?.attributes?.effect_rotation?.kind ===
+              "clock",
+        ),
+      rotationError: () =>
+        getTargetEntities(this.config)
+          .map((entity) => {
+            const rotation =
+              this._hass?.states[entity]?.attributes?.effect_rotation;
+            return rotation?.kind === "clock" ? rotation.error : null;
+          })
+          .find(Boolean),
+      // The `effect_rotation` attribute only exists in the backend version that
+      // ships the rotation services; its presence is our capability probe.
+      rotationSupported: () =>
+        getTargetEntities(this.config).every(
+          (entity) =>
+            this._hass?.states[entity]?.attributes?.effect_rotation !==
+            undefined,
+        ),
       pause: (paused) => {
         this._previewsPaused = paused;
       },
@@ -397,6 +446,11 @@ class YeelightCubeClockCard extends HTMLElement {
       },
     });
     this._controls.configure(this.config, getTargetEntities(this.config));
+    // Keep the grid/list star badges in sync whenever favourites change
+    // (controller.notify fires on every state update — marking is cheap).
+    this._markFavouritesListener ||= () =>
+      markFavouriteModes(this.shadowRoot, this._controls.favourites);
+    this._controls.listeners.add(this._markFavouritesListener);
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     this._stateSignature = null;
     this._carouselIndex = null;
@@ -464,6 +518,7 @@ class YeelightCubeClockCard extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this._controls?.listeners.delete(this._markFavouritesListener);
     this._controls?.disconnect();
     closeColorPicker(this);
     this._stopAnimation();
@@ -1371,6 +1426,7 @@ class YeelightCubeClockCard extends HTMLElement {
       }
     }
     this._markActive();
+    markFavouriteModes(this.shadowRoot, this._controls?.favourites);
     if (this._isPreviewSelector() && this._displayMode() === "wheel") {
       this._setupWheelNavigation();
     }

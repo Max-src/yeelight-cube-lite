@@ -1164,6 +1164,76 @@ freeze_display:
           domain: light
           multiple: true
 
+start_effect_rotation:
+  name: Start Effect Rotation
+  description: >
+    Start a server-side rotation that advances the lamp through the given
+    effect or clock style names on its own timer. Because the loop runs inside
+    Home Assistant (not the dashboard), it keeps rotating after the browser tab
+    is closed or refreshed. Stop it with stop_effect_rotation; a lamp that is
+    turned off stops its own rotation.
+  fields:
+    entity_id:
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
+      example: "light.yeelight_cube_192_168_1_100"
+      required: true
+      selector:
+        entity:
+          domain: light
+          multiple: true
+    items:
+      description: Ordered mode names to cycle through (native effect names, or clock style names / "custom:<id>" saved presets).
+      required: true
+      example: '["Rainbow", "Ocean Waves", "Streamer"]'
+      selector:
+        object:
+    interval:
+      description: Seconds to wait between changes (10 to 604800).
+      required: false
+      default: 60
+      selector:
+        number:
+          min: 10
+          max: 604800
+          mode: box
+    kind:
+      description: Whether the items are native effects or clock styles.
+      required: false
+      default: native
+      selector:
+        select:
+          options:
+            - label: Native effects
+              value: native
+            - label: Clock styles
+              value: clock
+
+stop_effect_rotation:
+  name: Stop Effect Rotation
+  description: Stop the server-side effect rotation on the target lamps.
+  fields:
+    entity_id:
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
+      example: "light.yeelight_cube_192_168_1_100"
+      required: true
+      selector:
+        entity:
+          domain: light
+          multiple: true
+
+skip_effect_rotation:
+  name: Skip Effect Rotation
+  description: Advance a running server-side effect rotation to its next mode immediately.
+  fields:
+    entity_id:
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
+      example: "light.yeelight_cube_192_168_1_100"
+      required: true
+      selector:
+        entity:
+          domain: light
+          multiple: true
+
 save_state:
   name: Save State
   description: >

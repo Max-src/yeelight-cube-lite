@@ -132,6 +132,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     hass.data.setdefault(DOMAIN, {})
     get_conflict_prevention(hass)
+    _schedule_dismiss_yeelight_discoveries(hass)
     async_setup_services(hass)
     # Entity-facing actions resolve their target from the runtime registry, so
     # they can be registered before any individual config entry is loaded.
@@ -401,6 +402,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # before either finishes the async storage load.
     if DOMAIN not in hass.data:
         hass.data[DOMAIN] = {}
+
+    # Refresh currently imported handlers on entry setup. This registration
+    # does not reimport changed Python code; backend updates require a restart.
+    from .light import async_setup_light_services
+
+    async_setup_light_services(hass)
     
     # Initialize storage on the first config entry. Other entries must wait for
     # shared data before their entities restore runtime state.
@@ -797,7 +804,7 @@ async def _async_try_rediscover(
     When device_id is stored in the config entry, we match by device_id
     (hardware serial) so that with multiple lamps on the network, each
     entry reconnects to the correct physical device.  Without a stored
-    device_id, falls back to the first unmapped CubeLite (legacy).
+    device_id, no automatic reassignment is attempted.
 
     Returns the new IP if a matching device was found and the config
     entry was updated, otherwise ``None``.
@@ -812,15 +819,7 @@ async def _async_try_rediscover(
 
         stored_device_id = entry.data.get(CONF_DEVICE_ID, "")
 
-        # Collect all IPs already configured in our integration
-        configured_ips: set[str] = set()
-        for e in hass.config_entries.async_entries(DOMAIN):
-            ip = e.data.get(CONF_IP)
-            if ip:
-                configured_ips.add(ip)
-
         # --- Pass 1: match by device_id (precise, handles multiple lamps) ---
-        cubelites = []
         for bulb in bulbs:
             capabilities = bulb.get("capabilities", {})
             model = (capabilities.get("model") or "").lower()
@@ -834,8 +833,6 @@ async def _async_try_rediscover(
 
             if not _is_cubelite_model(model):
                 continue
-
-            cubelites.append((bulb_ip, device_id, model))
 
             if (
                 stored_device_id
@@ -851,38 +848,12 @@ async def _async_try_rediscover(
                 new_data = {**entry.data, CONF_IP: bulb_ip, CONF_DEVICE_ID: device_id}
                 hass.config_entries.async_update_entry(
                     entry, data=new_data,
-                    title=f"Yeelight Cube ({bulb_ip})",
-                    unique_id=device_id,
+                    unique_id=normalize_device_id(device_id),
                 )
                 _async_dismiss_own_discovery_flows(hass, device_id, bulb_ip)
                 return bulb_ip
 
-        # --- Pass 2 (legacy fallback): first unmapped CubeLite ---
-        # Only when this entry has NO stored device_id: with an id stored, a
-        # loose match could remap the entry to a DIFFERENT physical lamp.
-        if not stored_device_id:
-            for bulb_ip, device_id, model in cubelites:
-                if bulb_ip in configured_ips:
-                    continue  # Already assigned to another entry
-
-                _LOGGER.info(
-                    "[REDISCOVER] CubeLite found at %s (was %s, no device_id match). "
-                    "Updating entry %s (device_id=%s, model=%s)",
-                    bulb_ip, old_ip, entry.entry_id, device_id, model,
-                )
-                new_data = {**entry.data, CONF_IP: bulb_ip}
-                if device_id:
-                    new_data[CONF_DEVICE_ID] = device_id
-                hass.config_entries.async_update_entry(
-                    entry, data=new_data,
-                    title=f"Yeelight Cube ({bulb_ip})",
-                    unique_id=device_id or entry.unique_id,
-                )
-                if device_id:
-                    _async_dismiss_own_discovery_flows(hass, device_id, bulb_ip)
-                return bulb_ip
-
-        _LOGGER.info("[REDISCOVER] No unmapped CubeLite devices found on the network")
+        _LOGGER.info("[REDISCOVER] No matching hardware identity found for %s", old_ip)
         return None
 
     except Exception as exc:
@@ -916,7 +887,9 @@ async def _async_entry_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a config entry."""
-    ip_address = entry.data[CONF_IP]
+    ip_address = hass.data.get(DOMAIN, {}).get(entry.entry_id, {}).get(
+        "active_ip", entry.data[CONF_IP]
+    )
 
     # Clean up module-level state in light.py (entity registry + device locks)
     # so stale references don't persist across integration reloads.
@@ -1047,11 +1020,15 @@ def _schedule_dismiss_yeelight_discoveries(hass: HomeAssistant) -> None:
     @ha_callback
     def _run_dismiss(_now=None):
         hass.async_create_task(_async_dismiss_yeelight_discoveries(hass))
-        hass.async_create_task(_async_dismiss_yeelight_cubelite_discoveries(hass))
 
     # Run at 10s, 30s, 60s, and 120s after setup to catch flows that arrive later
     for delay in (10, 30, 60, 120):
         cancel_handles.append(async_call_later(hass, delay, _run_dismiss))
+
+    from datetime import timedelta
+    from homeassistant.helpers.event import async_track_time_interval
+
+    cancel_handles.append(async_track_time_interval(hass, _run_dismiss, timedelta(minutes=1)))
 
     @ha_callback
     def _cancel_all():
@@ -1063,8 +1040,14 @@ def _schedule_dismiss_yeelight_discoveries(hass: HomeAssistant) -> None:
 
 async def _async_dismiss_yeelight_discoveries(hass: HomeAssistant) -> None:
     """Dismiss pending built-in Yeelight discovery flows for devices we manage."""
+    from .discovery import normalize_device_id
+
     managed_ips = _get_managed_ips(hass)
-    if not managed_ips:
+    managed_ids = {
+        normalize_device_id(entry.data.get(CONF_DEVICE_ID) or entry.unique_id)
+        for entry in hass.config_entries.async_entries(DOMAIN)
+    } - {""}
+    if not managed_ips and not managed_ids:
         return
 
     try:
@@ -1074,10 +1057,13 @@ async def _async_dismiss_yeelight_discoveries(hass: HomeAssistant) -> None:
 
     for flow in flows:
         context = flow.get("context", {})
+        if context.get("source") not in ("discovery", "ssdp", "dhcp", "zeroconf", "homekit"):
+            continue
         placeholders = context.get("title_placeholders", {})
         flow_host = placeholders.get("host", "")
+        flow_id = normalize_device_id(context.get("unique_id") or placeholders.get("id"))
 
-        if flow_host in managed_ips:
+        if flow_id in managed_ids or (not flow_id and flow_host in managed_ips):
             try:
                 hass.config_entries.flow.async_abort(flow["flow_id"])
                 _LOGGER.debug(
@@ -1089,30 +1075,5 @@ async def _async_dismiss_yeelight_discoveries(hass: HomeAssistant) -> None:
 
 
 async def _async_dismiss_yeelight_cubelite_discoveries(hass: HomeAssistant) -> None:
-    """Dismiss built-in Yeelight discovery flows for ANY CubeLite device.
-
-    Unlike _async_dismiss_yeelight_discoveries (which only dismisses for
-    configured IPs), this dismisses flows whose name contains 'cubelite'
-    or 'clt' — i.e. any CubeLite on the network, whether or not it's
-    already configured in our integration.
-    """
-    try:
-        flows = hass.config_entries.flow.async_progress_by_handler("yeelight")
-    except Exception:
-        return
-
-    for flow in flows:
-        context = flow.get("context", {})
-        placeholders = context.get("title_placeholders", {})
-        flow_name = (placeholders.get("name", "") or "").lower()
-        flow_host = placeholders.get("host", "")
-
-        if "cubelite" in flow_name or "clt" in flow_name or "cube_lite" in flow_name:
-            try:
-                hass.config_entries.flow.async_abort(flow["flow_id"])
-                _LOGGER.warning(
-                    "[DISMISS] Dismissed built-in Yeelight discovery for CubeLite at %s",
-                    flow_host,
-                )
-            except Exception as exc:
-                _LOGGER.debug("Could not abort Yeelight discovery flow: %s", exc)
+    """Dismiss duplicates without hiding discovery of unconfigured devices."""
+    await _async_dismiss_yeelight_discoveries(hass)

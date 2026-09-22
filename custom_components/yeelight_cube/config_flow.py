@@ -24,6 +24,7 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         
         if user_input is not None:
             ip_address = user_input[CONF_IP]
+            self._async_abort_entries_match({CONF_IP: ip_address})
             
             # For manual setup, use IP as unique_id (no device_id available yet).
             # When the device is later discovered via zeroconf, the unique_id will
@@ -58,7 +59,7 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """
         ip = discovery_data.get("ip", "")
         model = discovery_data.get("model", "")
-        device_id = discovery_data.get("device_id", "")
+        device_id = normalize_device_id(discovery_data.get("device_id", ""))
         device_name = discovery_data.get("name", model or "Yeelight Cube Lite")
 
         _LOGGER.debug(
@@ -73,7 +74,7 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Use device_id as unique_id if available, else IP
         unique_id = device_id if device_id else ip
         await self.async_set_unique_id(unique_id)
-        self._abort_if_unique_id_configured(updates={CONF_IP: ip})
+        self._abort_if_unique_id_configured(updates={CONF_IP: ip}, reload_on_update=False)
 
         # Match by stored hardware device_id: entries added manually have a
         # legacy IP-based unique_id, so the check above misses them.  Without
@@ -81,7 +82,7 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # device instead of remapping the existing entry.
         if device_id:
             for entry in self._async_current_entries():
-                stored = entry.data.get(CONF_DEVICE_ID, "")
+                stored = entry.data.get(CONF_DEVICE_ID) or entry.unique_id
                 if not stored or normalize_device_id(stored) != normalize_device_id(device_id):
                     continue
                 if entry.data.get(CONF_IP) != ip or entry.unique_id != unique_id:
@@ -93,14 +94,16 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     self.hass.config_entries.async_update_entry(
                         entry,
                         unique_id=unique_id,
-                        title=f"Yeelight Cube ({ip})",
-                        data={**entry.data, CONF_IP: ip},
+                        data={**entry.data, CONF_IP: ip, CONF_DEVICE_ID: device_id},
                     )
                 return self.async_abort(reason="already_configured")
 
         # Check if this IP is already configured under any entry
         for entry in self._async_current_entries():
             if entry.data.get(CONF_IP) == ip:
+                stored = entry.data.get(CONF_DEVICE_ID)
+                if device_id and stored and normalize_device_id(stored) != device_id:
+                    continue
                 if device_id and not entry.data.get(CONF_DEVICE_ID):
                     # Same IP, entry predates device_id storage — adopt it.
                     self.hass.config_entries.async_update_entry(
@@ -108,32 +111,6 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         unique_id=unique_id,
                         data={**entry.data, CONF_DEVICE_ID: device_id},
                     )
-                return self.async_abort(reason="already_configured")
-
-        # Legacy fallback: adopt an entry without a stored device_id whose
-        # lamp is unreachable — it is almost certainly this device after an
-        # IP change (mirrors the zeroconf migration path).
-        if device_id:
-            for entry in self._async_current_entries():
-                if entry.data.get(CONF_DEVICE_ID):
-                    continue
-                if entry.state not in (
-                    config_entries.ConfigEntryState.SETUP_ERROR,
-                    config_entries.ConfigEntryState.SETUP_RETRY,
-                ):
-                    continue
-                old_ip = entry.data.get(CONF_IP, "?")
-                _LOGGER.info(
-                    "Migrating orphaned Yeelight Cube entry %s "
-                    "(old IP %s -> new IP %s, device_id=%s)",
-                    entry.entry_id, old_ip, ip, device_id,
-                )
-                self.hass.config_entries.async_update_entry(
-                    entry,
-                    unique_id=unique_id,
-                    title=f"Yeelight Cube ({ip})",
-                    data={**entry.data, CONF_IP: ip, CONF_DEVICE_ID: device_id},
-                )
                 return self.async_abort(reason="already_configured")
 
         # Format title like the built-in Yeelight: "CubeLite 0xABCD (192.168.4.144)"
@@ -149,170 +126,21 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_zeroconf(self, discovery_info: ZeroconfServiceInfo):
         """Handle zeroconf discovery of Yeelight devices."""
-        _LOGGER.debug(
-            "[ZEROCONF] Discovery received: name=%s host=%s properties=%s",
-            discovery_info.name, discovery_info.host, discovery_info.properties,
-        )
-
-        # Extract device info from zeroconf properties
         name = discovery_info.name or ""
         properties = discovery_info.properties or {}
-
-        # Try multiple property key variants (miio uses different keys)
-        model = (
-            properties.get("md", "")
-            or properties.get("model", "")
-        )
-        device_name = (
-            properties.get("fn", "")
-            or properties.get("name", "")
-        )
-        device_id = (
-            properties.get("id", "")
-            or properties.get("did", "")
-            or properties.get("mac", "")
-        )
-
-        # Parse the service name as fallback (format: yeelink-light-<model>-<id>._miio._udp.local.)
         parsed = parse_service_name(name)
-        if parsed:
-            if not model:
-                model = parsed.get("model", "")
-            if not device_id:
-                device_id = parsed.get("devid", "")
-            _LOGGER.debug(
-                "[ZEROCONF] Parsed service name: %s", parsed,
-            )
-
-        # Use the full service name for matching too
-        name_lower = name.lower()
-
-        # Build a combined name for matching: prefer fn, then model, then service name
-        match_name = device_name or model or name_lower
-
-        _LOGGER.debug(
-            "[ZEROCONF] Extracted: model=%s device_name=%s device_id=%s match_name=%s",
-            model, device_name, device_id, match_name,
-        )
-
-        # Filter: only handle CubeLite devices, abort for all other Yeelight devices
-        if not is_cube_device(model, match_name, device_id):
-            _LOGGER.debug(
-                "[ZEROCONF] NOT a cube device, aborting: model=%s match_name=%s id=%s",
-                model, match_name, device_id,
-            )
+        model = properties.get("md") or properties.get("model") or parsed.get("model", "")
+        device_name = properties.get("fn") or properties.get("name", "")
+        device_id = (properties.get("id") or properties.get("did")
+                     or properties.get("mac") or parsed.get("devid", ""))
+        if not is_cube_device(model, device_name or model or name.lower(), device_id):
             return self.async_abort(reason="not_cube_device")
-
-        self._discovered_ip = discovery_info.host
-        self._discovered_name = device_name or model or "Yeelight Cube Lite"
-        self._discovered_device_id = device_id
-
-        _LOGGER.debug(
-            "[ZEROCONF] Cube device confirmed: name=%s ip=%s device_id=%s",
-            self._discovered_name, self._discovered_ip, device_id,
-        )
-
-        # Log existing entries for debugging
-        for entry in self._async_current_entries():
-            _LOGGER.debug(
-                "[ZEROCONF]   Existing entry: unique_id=%s ip=%s device_id=%s state=%s",
-                entry.unique_id, entry.data.get(CONF_IP),
-                entry.data.get(CONF_DEVICE_ID), entry.state,
-            )
-
-        # Use hardware device_id as unique_id (stable across IP changes).
-        # If no device_id available, fall back to IP.
-        unique_id = device_id if device_id else self._discovered_ip
-        await self.async_set_unique_id(unique_id)
-
-        # If this device_id is already configured, update the stored IP
-        # (handles DHCP lease changes) and abort the discovery flow.
-        self._abort_if_unique_id_configured(
-            updates={CONF_IP: self._discovered_ip}
-        )
-
-        # Also check if this IP is already configured under an old IP-based unique_id.
-        # This handles migration: if a device was added manually (unique_id=IP) and is
-        # now discovered via zeroconf (unique_id=device_id), migrate the existing entry.
-        for entry in self._async_current_entries():
-            if entry.data.get(CONF_IP) == self._discovered_ip:
-                if entry.unique_id != unique_id and device_id:
-                    # Migrate: update the existing entry's unique_id to device_id
-                    # and store the device_id in entry data
-                    _LOGGER.info(
-                        "Migrating Yeelight Cube entry %s from IP-based unique_id '%s' "
-                        "to device_id '%s'",
-                        entry.entry_id, entry.unique_id, device_id,
-                    )
-                    self.hass.config_entries.async_update_entry(
-                        entry,
-                        unique_id=unique_id,
-                        data={**entry.data, CONF_DEVICE_ID: device_id},
-                    )
-                return self.async_abort(reason="already_configured")
-
-        # --- IP-change migration for legacy entries ---
-        # If we reach here, no entry matched by device_id OR by current IP.
-        # Look for legacy entries (no device_id stored) that are failing setup —
-        # these are likely devices whose IP changed via DHCP.
-        if device_id:
-            for entry in self._async_current_entries():
-                if entry.data.get(CONF_DEVICE_ID):
-                    continue  # Already has a device_id, skip
-                if entry.state not in (
-                    config_entries.ConfigEntryState.SETUP_ERROR,
-                    config_entries.ConfigEntryState.SETUP_RETRY,
-                ):
-                    continue  # Entry is working fine, don't touch it
-                old_ip = entry.data.get(CONF_IP, "?")
-                _LOGGER.info(
-                    "Migrating orphaned Yeelight Cube entry %s "
-                    "(old IP %s -> new IP %s, device_id=%s)",
-                    entry.entry_id, old_ip, self._discovered_ip, device_id,
-                )
-                self.hass.config_entries.async_update_entry(
-                    entry,
-                    unique_id=unique_id,
-                    data={
-                        **entry.data,
-                        CONF_IP: self._discovered_ip,
-                        CONF_DEVICE_ID: device_id,
-                    },
-                )
-                return self.async_abort(reason="already_configured")
-
-        # --- Fallback: legacy entries without device_id, any state ---
-        # Catches entries that haven't been set up yet (e.g. during startup)
-        # whose stored IP differs from the discovered one.
-        if device_id:
-            for entry in self._async_current_entries():
-                if entry.data.get(CONF_DEVICE_ID):
-                    continue
-                if entry.data.get(CONF_IP) == self._discovered_ip:
-                    continue  # Same IP — already handled above
-                old_ip = entry.data.get(CONF_IP, "?")
-                _LOGGER.info(
-                    "Migrating legacy Yeelight Cube entry %s "
-                    "(old IP %s -> new IP %s, device_id=%s)",
-                    entry.entry_id, old_ip, self._discovered_ip, device_id,
-                )
-                self.hass.config_entries.async_update_entry(
-                    entry,
-                    unique_id=unique_id,
-                    data={
-                        **entry.data,
-                        CONF_IP: self._discovered_ip,
-                        CONF_DEVICE_ID: device_id,
-                    },
-                )
-                return self.async_abort(reason="already_configured")
-
-        self.context["title_placeholders"] = {
-            "name": self._discovered_name,
-            "host": self._discovered_ip,
-        }
-
-        return await self.async_step_discovery_confirm()
+        return await self.async_step_discovery({
+            "ip": discovery_info.host,
+            "model": model,
+            "name": device_name or model or "Yeelight Cube Lite",
+            "device_id": device_id,
+        })
 
     async def async_step_discovery_confirm(self, user_input=None):
         """Handle the discovery confirmation step."""
@@ -353,7 +181,7 @@ class YeelightCubeOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         """Manage the options."""
         if user_input is not None:
-            return self.async_create_entry(title="", data=user_input)
+            return self.async_create_entry(title="", data={**self.config_entry.options, **user_input})
 
         return self.async_show_form(
             step_id="init",
