@@ -3,6 +3,63 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.2] - 2026-09-22
+
+### Added
+- **Native Effects Lovelace card** for controlling one or more lamps, with the
+  same selector, action, slider, colour, orientation, favourites, and rotation
+  controls as the Clock card.
+- **Shared Clock and Native Effects controls**, including configurable Actions
+  order, shared brightness and animation-speed sliders, and shared colour-mode
+  controls.
+- **Freeze display action** for compatible modes. It sends a freeze frame and
+  resumes by reapplying the current mode; previews hold their background while
+  frozen.
+- **Server-side favourites and rotation** for clock modes and native effects.
+  Rotation follows the favourites list, survives a dashboard refresh, and can
+  be started, stopped, or skipped. Starting rotation on several lamps no longer
+  waits for one lamp before starting the next.
+- **Saved custom colour-mode presets**, including native custom RGB, with a
+  unified colour row and inline save flow.
+- **Shared Original effect browser** for both cards, with Grid and List display,
+  capability badges, live matrix previews, and favourite stars.
+- **Configurable device orientation controls**, including direction order,
+  visibility, rotation, and flip.
+- **Strip preview mode** and a shared slider Control Width setting.
+- **Clock-style filtering** based on whether a style responds to the active
+  colour mode.
+
+### Changed
+- Clock and Native Effects cards now share one selector configuration. The same
+  setting uses the same control, range, and default in both editors.
+- Original and Live Preview now share gallery appearance settings and one
+  Items Per Page control. Paging applies to Original and Live Preview List;
+  `0` disables it.
+- Text selectors are now Filled or Dropdown. Chips, Buttons, and the old
+  Original dropdown were removed.
+- Experimental effects and styles follow each lamp's Experimental Features
+  switch instead of a separate card toggle.
+- Clock previews now use the calibrated clock-background direction rather than
+  the native-effect direction.
+- Favourite stars are shown inline beside item names, with a larger star in
+  live-preview modes and an editor toggle to hide them.
+- Sliders accept both vertical and horizontal mouse-wheel input.
+
+### Fixed
+- Native effect previews now follow the calibrated direction, speed, and colour
+  state, including brightness-only updates and frozen playback.
+- Clock colour overrides now recolour compatible native effects and persist
+  correctly, including solid black-and-white fallbacks and measured palette
+  previews.
+- Fixed colour-picker opening and anchoring, clock preview ghost pixels, and
+  the shared slider speed-value mismatch.
+- Cards render a placeholder instead of a permanent Configuration error when no
+  entity is available yet.
+- Fixed duplicate editor section IDs and retained visibility settings when
+  experimental items are unavailable.
+- Rotation now reports hardware and start failures, avoids stopping an active
+  rotation merely because a card is observing it, and surfaces an error state.
+
 ## [1.3.1] - 2026-09-10
 
 ### Added
