@@ -124,6 +124,7 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
     const attrs = this.hass?.states[targets[0]]?.attributes || {};
     const effects = nativeEffectItems(attrs, {
       ...config,
+      show_experimental: !!attrs.extended_effects_enabled,
       visible_effects: undefined,
     });
     const names = effects.map((item) => item.name);
@@ -261,8 +262,8 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
         ></yeelight-clock-preset-manager>`,
       )}
       ${this._section(
-        "effects",
-        "Effects",
+        "previews",
+        "Previews",
         html`
           ${this._toggle("Show Effect Browser", "show_gallery")}
           ${config.show_gallery !== false
@@ -270,15 +271,9 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
                 "Browser Settings",
                 html`
                   ${this._toggle("Text Search", "show_search")}
-                  ${this._toggle(
-                    "Experimental Effects",
-                    "show_experimental",
-                    false,
-                  )}
                   ${renderStyleSelectorSettings(
                     {
                       ...config,
-                      items_per_page: config.items_per_page ?? 8,
                       style_selector_style:
                         config.style_selector_style ||
                         (config.effect_view ? "original" : "preview-grid"),
@@ -286,71 +281,6 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
                     change,
                     { allowOriginal: true },
                   )}
-                  ${(config.style_selector_style ||
-                    (config.effect_view ? "original" : "preview-grid")) ===
-                  "original"
-                    ? html`${this._choices(
-                        "Display",
-                        "effect_view",
-                        ["grid", "list", "buttons", "dropdown"].map(
-                          (value) => ({
-                            value,
-                            label: value[0].toUpperCase() + value.slice(1),
-                          }),
-                        ),
-                        "grid",
-                      )}
-                      ${["grid", "list"].includes(config.effect_view || "grid")
-                        ? renderModeSettingsSection(
-                            "Gallery Appearance",
-                            html`
-                              ${this._toggle(
-                                "Capability Labels",
-                                "show_badges",
-                              )}
-                              ${renderMatrixAppearanceSettings(
-                                nativeEffectPreviewConfig(config),
-                                change,
-                                { prefix: "effect", defaultSize: 100 },
-                              )}
-                            `,
-                          )
-                        : ""}
-                      ${config.effect_view !== "dropdown"
-                        ? html` <div class="form-row">
-                            <label>Effects per Page</label>
-                            <input
-                              type="number"
-                              aria-label="Effects per page"
-                              min="0"
-                              max="100"
-                              .value=${String(config.items_per_page ?? 8)}
-                              @change=${(event) =>
-                                this._change(
-                                  "items_per_page",
-                                  Math.max(
-                                    0,
-                                    Math.min(
-                                      100,
-                                      Number(event.target.value) || 0,
-                                    ),
-                                  ),
-                                )}
-                            />
-                          </div>`
-                        : ""}
-                      ${config.effect_view === "buttons"
-                        ? renderModeSettingsSection(
-                            "Button Settings",
-                            renderActionButtonSettings(config, change, {
-                              styleKey: "effect_buttons_style",
-                              contentKey: "effect_buttons_content_mode",
-                              defaultStyle: config.buttons_style || "classic",
-                              defaultContentMode: "icon_text",
-                            }),
-                          )
-                        : ""}`
-                    : ""}
                   ${renderOrderableList({
                     items: visible,
                     labelFor: (name) =>

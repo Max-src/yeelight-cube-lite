@@ -668,8 +668,14 @@ export function createSliderHandlers({
         container.querySelector(".capsule-input");
       if (slider) {
         const cur = parseInt(slider.value);
-        const delta = event.deltaY < 0 ? 5 : -5;
-        const nv = clamp(cur + delta);
+        // Support both vertical and horizontal wheel/tilt input: use whichever
+        // axis moved most, so a horizontal wheel can raise/lower the value
+        // exactly like the vertical wheel (right/up = increase).
+        const goUp =
+          Math.abs(event.deltaY) >= Math.abs(event.deltaX)
+            ? event.deltaY < 0
+            : event.deltaX > 0;
+        const nv = clamp(cur + (goUp ? 5 : -5));
         slider.value = nv;
         applyValue(nv);
       }

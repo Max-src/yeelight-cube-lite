@@ -14,12 +14,21 @@ export {
 } from "./native-effect-preview.js";
 
 export function nativeEffectPreviewConfig(config = {}) {
+  const legacySpacing = config.pixel_gap === 0 ? "none" : "normal";
   return {
     lamp_pixel_style: config.pixel_style || "square",
     effect_pixel_style: config.pixel_style || "square",
-    lamp_spacing_mode: config.pixel_gap === 0 ? "none" : "normal",
-    effect_spacing_mode: config.pixel_gap === 0 ? "none" : "normal",
+    lamp_spacing_mode: legacySpacing,
+    effect_spacing_mode: legacySpacing,
     ...config,
+    // An explicit Original/Lamp spacing choice wins over the legacy pixel_gap
+    // fallback. The spread above would otherwise put that fallback back.
+    ...(config.effect_spacing_mode
+      ? { effect_spacing_mode: config.effect_spacing_mode }
+      : {}),
+    ...(config.lamp_spacing_mode
+      ? { lamp_spacing_mode: config.lamp_spacing_mode }
+      : {}),
   };
 }
 

@@ -40,6 +40,7 @@ export function renderActionButton(options = {}) {
       ? String(model.selected)
       : nothing}
     data-value=${model.value ?? nothing}
+    data-mode=${options.dataMode ?? nothing}
     tabindex=${model.tabIndex ?? nothing}
     ?disabled=${model.disabled}
     @click=${options.onClick}

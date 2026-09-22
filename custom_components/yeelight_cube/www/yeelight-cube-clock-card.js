@@ -2,6 +2,7 @@ import {
   renderTextStyleSelector,
   renderPreviewStyleSelector,
   bindStyleSelectorEvents,
+  selectorItemsPerPage,
 } from "./style-selector-utils.js";
 // ============================================================================
 //  Yeelight Cube Lite — Clock Card
@@ -50,6 +51,8 @@ import {
   renderMatrixPreview,
   galleryDisplayStyles,
   markFavouriteModes,
+  renderOriginalGallery,
+  bindOriginalGallery,
 } from "./gallery-display-utils.js";
 import { carouselStyles } from "./carousel-utils.js";
 import { initializeWheelNavigation } from "./wheel-navigation-utils.js";
@@ -70,6 +73,7 @@ import {
 import {
   paginationStyles,
   attachPaginationListeners,
+  renderPagination,
 } from "./pagination-utils.js";
 import {
   CLOCK_MIXER_EFFECT_SPEED,
@@ -145,40 +149,6 @@ function rgbToHex(rgb) {
 function clockColorToRgb(intColor) {
   if (typeof intColor !== "number") return null;
   return [(intColor >> 16) & 0xff, (intColor >> 8) & 0xff, intColor & 0xff];
-}
-
-// Chips-selector swatch backgrounds, sampled once per style from a rendered
-// frame's lit pixels (styles are static, so a module-level cache is safe).
-const _swatchCache = new Map();
-function styleSwatchBackground(style) {
-  if (style.presetId) return `rgb(${style.color.join(",")})`;
-  if (_swatchCache.has(style.name)) return _swatchCache.get(style.name);
-  const frame = renderClockFrame(
-    {
-      clock_style_id: style.id,
-      clock_style: style.name,
-      clock_content: "time",
-    },
-    null,
-    null,
-    0.6,
-  );
-  const lit = frame.filter((p) => p[0] | p[1] | p[2]);
-  let bg = "#444";
-  if (lit.length) {
-    const picks = [0, 0.33, 0.66, 0.99].map(
-      (f) => lit[Math.floor(f * (lit.length - 1))],
-    );
-    const colors = [
-      ...new Set(picks.map((c) => `rgb(${c[0]},${c[1]},${c[2]})`)),
-    ];
-    bg =
-      colors.length === 1
-        ? colors[0]
-        : `linear-gradient(90deg, ${colors.join(", ")})`;
-  }
-  _swatchCache.set(style.name, bg);
-  return bg;
 }
 
 class YeelightCubeClockCard extends HTMLElement {
@@ -275,14 +245,16 @@ class YeelightCubeClockCard extends HTMLElement {
       buttons_style: "modern",
       buttons_content_mode: "icon_text",
       // Unified selector (same families as the gradient card):
-      //   Text:    filled | dropdown | chips
+      //   Text:    filled | dropdown
       //   Preview: preview-list | preview-grid | preview-carousel | preview-wheel
+      //   Original: grid | list badge gallery (shared with the native card)
       style_selector_style: "preview-grid",
+      show_gallery: true,
       selector_shape: "rounded", // square | rounded | round
       preview_size: 55, // % -> px (same size axis as the gradient card)
       preview_show_titles: true,
-      show_only_responding_styles: true,
       highlight_active_mode: true,
+      favourites_show_stars: true,
       wheel_nav_position: "bottom", // none | bottom | sides
       wheel_height: 300,
       gallery_wrap_navigation: false,
@@ -533,6 +505,7 @@ class YeelightCubeClockCard extends HTMLElement {
   // ── Selector helpers (shared design language with the gradient card) ──────
   _selectorStyle() {
     const v = this.config.style_selector_style;
+    if (v === "original") return "original";
     if (TEXT_SELECTOR_STYLES.includes(v) || PREVIEW_SELECTOR_STYLES.includes(v))
       return v;
     return "preview-grid";
@@ -711,7 +684,6 @@ class YeelightCubeClockCard extends HTMLElement {
     const styles = this._styleList().filter((style) =>
       style.name.toLowerCase().includes(query),
     );
-    if (this.config.show_only_responding_styles === false) return styles;
     const a = this._attrs();
     const mode = this._currentColorMode(a);
     if (mode === "normal") return styles;
@@ -1118,6 +1090,9 @@ class YeelightCubeClockCard extends HTMLElement {
       ? [
           ...this.shadowRoot.querySelectorAll("[data-clock-preview]"),
           ...this.shadowRoot.querySelectorAll(".gc-preview-shell [data-mode]"),
+          ...this.shadowRoot.querySelectorAll(
+            ".original-gallery .original-item",
+          ),
         ]
       : [];
     if (typeof IntersectionObserver === "undefined") {
@@ -1199,8 +1174,25 @@ class YeelightCubeClockCard extends HTMLElement {
       styleName = el.dataset.styleName;
       isCurrent = el.dataset.current === "1";
       cells = this._ensureGrid(el);
+    } else if (el.classList.contains("original-item")) {
+      // Original uses the same gallery_* appearance as Live Preview. The key
+      // is read from the escaped data-mode attribute, never from raw HTML.
+      styleName = el.dataset.mode;
+      cells = el._cells;
+      if (!cells) {
+        const matrix = el.querySelector(".gallery-matrix-preview");
+        if (!matrix || matrix.children.length !== 100) return;
+        cells = Array.from(matrix.children);
+        el._cells = cells;
+        el._ignoreBlack = this._galleryIgnoreBlack();
+        el._pixelShadow = this._spacingShadow(
+          this.config.gallery_spacing_mode || "normal",
+        )
+          ? "0 0 2px #0008"
+          : "";
+      }
     } else {
-      // Shared-renderer item: repaint the renderMatrixPreview cells in place.
+      // Preview selector item: repaint using the gallery_* appearance.
       styleName = el.dataset.mode;
       cells = el._cells;
       if (!cells) {
@@ -1303,7 +1295,7 @@ class YeelightCubeClockCard extends HTMLElement {
             if (perPage > 0) this._selectorPage = Math.floor(idx / perPage);
           }
         }
-        this._revealSavedStyle = null;
+        this._revealSavedStyselectorItemsPerPage(this.config);
       }
     }
 
@@ -1352,15 +1344,17 @@ class YeelightCubeClockCard extends HTMLElement {
     if (this.config.show_color_modes) {
       sections.push(this._renderColorMode(a));
     }
-    if (this.config.show_search !== false)
+    if (this.config.show_gallery !== false) {
+      if (this.config.show_search !== false)
+        sections.push(
+          `<input class="clock-search" type="search" aria-label="Search clock modes" placeholder="Search clock modes" value="${escapeHtml(this._searchQuery || "")}" style="box-sizing:border-box;width:100%;min-width:0;padding:10px;margin:8px 0;border:1px solid var(--divider-color,#ddd);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color);font:inherit;">`,
+        );
       sections.push(
-        `<input class="clock-search" type="search" aria-label="Search clock modes" placeholder="Search clock modes" value="${escapeHtml(this._searchQuery || "")}" style="box-sizing:border-box;width:100%;min-width:0;padding:10px;margin:8px 0;border:1px solid var(--divider-color,#ddd);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color);font:inherit;">`,
+        this._shownStyles().length
+          ? this._renderStyleSelector(sel, current)
+          : '<div role="status">No matching clock modes.</div>',
       );
-    sections.push(
-      this._shownStyles().length
-        ? this._renderStyleSelector(sel, current)
-        : '<div role="status">No matching clock modes.</div>',
-    );
+    }
     sections.push('<div data-mode-controls="collections"></div>');
 
     const showCard = this.config.show_card_background !== false;
@@ -1426,6 +1420,7 @@ class YeelightCubeClockCard extends HTMLElement {
       }
     }
     this._markActive();
+    this.dataset.favStars = String(this.config.favourites_show_stars !== false);
     markFavouriteModes(this.shadowRoot, this._controls?.favourites);
     if (this._isPreviewSelector() && this._displayMode() === "wheel") {
       this._setupWheelNavigation();
@@ -1460,7 +1455,9 @@ class YeelightCubeClockCard extends HTMLElement {
         : '<div class="item-browser-empty">No visible styles configured.</div>'
       : TEXT_SELECTOR_STYLES.includes(sel)
         ? this._renderTextSelector(sel, current)
-        : this._renderPreviewSelector(sel, current);
+        : sel === "original"
+          ? this._renderOriginalSelector(current)
+          : this._renderPreviewSelector(sel, current);
     return `
       <div class="section">
         <div class="section-title">Clock style</div>
@@ -1472,11 +1469,14 @@ class YeelightCubeClockCard extends HTMLElement {
   _renderTextSelector(sel, current) {
     return renderTextStyleSelector(
       this.config,
-      this._shownStyles().map((style) => ({
-        name: style.name,
-        dataMode: clockPresetKey(style),
-        swatch: styleSwatchBackground(style),
-      })),
+      this._shownStyles().map((style) => {
+        const key = clockPresetKey(style);
+        return {
+          name: style.name,
+          dataMode: key,
+          favourite: this._controls?.favourites.includes(key),
+        };
+      }),
       sel,
       clockPresetKey(current),
     );
@@ -1512,6 +1512,94 @@ class YeelightCubeClockCard extends HTMLElement {
     this._carouselIndex = state.index;
     this._selectorPage = state.page;
     return markup;
+  }
+
+  _clockStyleBadge(style) {
+    if (style.presetId) return "Custom";
+    return style.experimental ? "Experimental" : "Official";
+  }
+
+  // "Original" selector family — the shared badge gallery. It uses the same
+  // gallery_* appearance keys as Live Preview.
+  _renderOriginalSelector(current) {
+    const styles = this._shownStyles();
+    const view = this.config.effect_view === "list" ? "list" : "grid";
+    const phase = this._phase();
+    const { fontMap, metrics } = this._getNativeClockFont();
+    const background = this.config.gallery_background_color || "black";
+    const spacing = this.config.gallery_spacing_mode || "normal";
+    const width = Math.max(
+      30,
+      Math.min(100, Number(this.config.preview_size) || 55),
+    );
+    const appearance = {
+      bgColor:
+        background === "white"
+          ? "#fff"
+          : background === "transparent"
+            ? "transparent"
+            : "#000",
+      pixelStyle: ["circle", "rounded"].includes(
+        this.config.gallery_pixel_style,
+      )
+        ? this.config.gallery_pixel_style
+        : "square",
+      pixelGap: spacing === "normal" ? 3 : 0,
+      pixelBoxShadow: ["subtle", "normal"].includes(spacing),
+      matrixBoxShadow: this.config.gallery_matrix_box_shadow === true,
+      ignoreBlackPixels:
+        background !== "black" &&
+        this.config.gallery_ignore_black_pixels === true,
+    };
+
+    const items = styles.map((style) => {
+      const key = clockPresetKey(style);
+      return {
+        dataMode: key,
+        title: style.name,
+        badge: this._clockStyleBadge(style),
+        previewHtml: `<div class="original-item-preview" data-preview="${escapeHtml(key)}" style="width:${width}%;margin-inline:auto;">
+          ${renderMatrixPreview(
+            flipMatrixVertical(
+              renderClockFrame(
+                this._previewAttrs(style),
+                fontMap,
+                metrics,
+                phase,
+              ),
+            ),
+            {
+              rows: 5,
+              cols: 20,
+              ...appearance,
+              forceAspectRatio: true,
+            },
+          )}
+        </div>`,
+      };
+    });
+
+    // Pagination shares the same config key and controls as the preview modes.
+    let pagedItems = items;
+    let paginationHtml = selectorItemsPerPage(this.config);
+    const itemsPerPage = parseInt(this.config.items_per_page) || 0;
+    if (itemsPerPage > 0 && items.length > itemsPerPage) {
+      const result = renderPagination({
+        items,
+        currentPage: this._selectorPage || 0,
+        itemsPerPage,
+      });
+      pagedItems = result.items;
+      paginationHtml = result.html;
+      this._selectorPage = result.currentPage;
+    }
+
+    return `<div class="original-browser">${renderOriginalGallery(pagedItems, {
+      view,
+      showBadges: this.config.show_badges !== false,
+      highlight: this.config.highlight_active_mode !== false,
+      current: clockPresetKey(current),
+    })}${paginationHtml}</div>`;
   }
 
   _controlGroup(options) {
@@ -1827,6 +1915,9 @@ class YeelightCubeClockCard extends HTMLElement {
       setIndex: (index) => this._carouselSetIndex(index),
       style: this._selectorStyle(),
     });
+    bindOriginalGallery(root, {
+      select: (name) => this._applyStyle(name),
+    });
     const colorModeDropdown = root.querySelector(".colormode-select");
     if (colorModeDropdown) {
       colorModeDropdown.addEventListener("change", (e) =>
@@ -1854,6 +1945,21 @@ class YeelightCubeClockCard extends HTMLElement {
           });
         }
       }
+    }
+
+    // Original browser pagination (shared badge gallery).
+    const originalShell = root.querySelector(".original-browser");
+    if (originalShell) {
+      attachPaginationListeners(originalShell, (pageOrAction) => {
+        const cur = this._selectorPage || 0;
+        this._selectorPage =
+          pageOrAction === "prev"
+            ? Math.max(0, cur - 1)
+            : pageOrAction === "next"
+              ? cur + 1
+              : pageOrAction;
+        this.render();
+      });
     }
 
     bindActionButtonGroup(

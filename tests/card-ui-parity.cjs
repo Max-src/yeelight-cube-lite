@@ -1096,6 +1096,114 @@ const server = http.createServer(async (request, response) => {
     console.log(
       "PASS favourite star badges, seamless sections, rotation summary and interval editor",
     );
+    const stars = await page.evaluate(async () => {
+      const results = {};
+      const clockWith = (style) => {
+        const clock = document.createElement("yeelight-cube-clock-card");
+        clock.setConfig({ ...window.baseConfig, style_selector_style: style });
+        clock.hass = window.hass;
+        document.body.append(clock);
+        const key = clock._controls.adapter.items()[0].key;
+        clock._controls.save([key]);
+        clock.render();
+        return { clock, key };
+      };
+      const inlineStar = (node) =>
+        node && getComputedStyle(node, "::before").content.includes("★");
+      // Text (filled) selector shows the star inline in the button.
+      {
+        const { clock, key } = clockWith("filled");
+        const item = clock.shadowRoot.querySelector(
+          `[data-mode="${CSS.escape(key)}"][data-favourite="true"]`,
+        );
+        results.textStar = !!item;
+        results.textBadge = inlineStar(item);
+        clock.remove();
+      }
+      // Wheel selector shows the star inline in the item title.
+      {
+        const { clock, key } = clockWith("preview-wheel");
+        const item = clock.shadowRoot.querySelector(
+          `[data-mode="${CSS.escape(key)}"][data-favourite="true"]`,
+        );
+        results.wheelStar =
+          !!item &&
+          inlineStar(
+            item.querySelector(".wheel-item-title, .wheel-item-title-hover"),
+          );
+        clock.remove();
+      }
+      // Native "Original" effects browser shows the star in the item name.
+      {
+        const native = document.createElement(
+          "yeelight-cube-native-effects-card",
+        );
+        native.setConfig({
+          ...window.baseConfig,
+          show_gallery: true,
+          effect_view: "grid",
+        });
+        native.hass = window.hass;
+        document.body.append(native);
+        await native.updateComplete;
+        native._controls.save(["Rainbow"]);
+        await native.updateComplete;
+        const item = native.shadowRoot.querySelector(
+          '.original-item[data-mode="Rainbow"][data-favourite="true"]',
+        );
+        results.originalStar =
+          !!item && inlineStar(item.querySelector(".original-item-name"));
+        native.remove();
+      }
+      // The editor toggle disables the badge (host gate).
+      {
+        const clock = document.createElement("yeelight-cube-clock-card");
+        clock.setConfig({
+          ...window.baseConfig,
+          style_selector_style: "filled",
+          favourites_show_stars: false,
+        });
+        clock.hass = window.hass;
+        document.body.append(clock);
+        const key = clock._controls.adapter.items()[0].key;
+        clock._controls.save([key]);
+        clock.render();
+        const item = clock.shadowRoot.querySelector(
+          `[data-mode="${CSS.escape(key)}"][data-favourite="true"]`,
+        );
+        results.hostAttr = clock.getAttribute("data-fav-stars") === "false";
+        results.hidden = !inlineStar(item);
+        clock.remove();
+      }
+      // The Favourites editor area exposes the toggle.
+      {
+        const editor = document.createElement(
+          "yeelight-cube-clock-card-editor",
+        );
+        editor.setConfig({ ...window.baseConfig, show_favourites: true });
+        editor.hass = window.hass;
+        document.body.append(editor);
+        await editor.updateComplete;
+        results.editorToggle = editor.shadowRoot.textContent.includes(
+          "Show favourite stars",
+        );
+        editor.remove();
+      }
+      return results;
+    });
+    assert.deepEqual(stars, {
+      textStar: true,
+      textBadge: true,
+      wheelStar: true,
+      originalStar: true,
+      hostAttr: true,
+      hidden: true,
+      editorToggle: true,
+    });
+    assert.deepEqual(errors, []);
+    console.log(
+      "PASS favourite stars across text/wheel/original selectors with editor toggle",
+    );
     const rotation = await page.evaluate(async () => {
       calls.length = 0;
       for (const card of [clock, native]) {
@@ -1141,6 +1249,255 @@ const server = http.createServer(async (request, response) => {
     assert.deepEqual(errors, []);
     console.log(
       "PASS real Clock/Native cards observe backend rotation without unsolicited Stop calls",
+    );
+    const sliderWheel = await page.evaluate(async () => {
+      const clock = document.createElement("yeelight-cube-clock-card");
+      clock.setConfig({
+        ...window.baseConfig,
+        show_animation_speed: true,
+        slider_style: "slider",
+      });
+      clock.hass = window.hass;
+      document.body.append(clock);
+      const container = clock.shadowRoot.querySelector(
+        ".brightness-slider-container",
+      );
+      const input = container.querySelector(".brightness-slider");
+      const before = parseInt(input.value);
+      const wheel = (deltaX, deltaY) =>
+        container.dispatchEvent(
+          new WheelEvent("wheel", {
+            deltaX,
+            deltaY,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+      wheel(0, -120); // vertical up → increase
+      const afterUp = parseInt(input.value);
+      wheel(0, 120); // vertical down → decrease
+      const afterDown = parseInt(input.value);
+      wheel(120, 0); // horizontal right → increase
+      const afterRight = parseInt(input.value);
+      wheel(-120, 0); // horizontal left → decrease
+      const afterLeft = parseInt(input.value);
+      clock.remove();
+      return { before, afterUp, afterDown, afterRight, afterLeft };
+    });
+    assert.ok(
+      sliderWheel.afterUp > sliderWheel.before &&
+        sliderWheel.afterDown < sliderWheel.afterUp &&
+        sliderWheel.afterRight > sliderWheel.afterDown &&
+        sliderWheel.afterLeft < sliderWheel.afterRight,
+      `slider wheel should move up/down with vertical AND horizontal input: ${JSON.stringify(sliderWheel)}`,
+    );
+    assert.deepEqual(errors, []);
+    console.log(
+      "PASS slider wheel supports vertical and horizontal input in both directions",
+    );
+    const emptyConfig = await page.evaluate(() => {
+      const results = {};
+      const attempt = (label, factory) => {
+        try {
+          const card = factory();
+          card.setConfig({});
+          document.body.append(card);
+          if (card.updateComplete) card.requestUpdate();
+          results[label] = "ok";
+          card.remove();
+        } catch (error) {
+          results[label] = error.message;
+        }
+      };
+      attempt("native", () =>
+        document.createElement("yeelight-cube-native-effects-card"),
+      );
+      attempt("clock", () =>
+        document.createElement("yeelight-cube-clock-card"),
+      );
+      return results;
+    });
+    assert.deepEqual(
+      emptyConfig,
+      { native: "ok", clock: "ok" },
+      "setConfig must not throw when no entity is configured yet (cache wipe + SPA navigation)",
+    );
+    assert.deepEqual(errors, []);
+    console.log(
+      "PASS cards render a graceful placeholder instead of Configuration error without an entity",
+    );
+    const modeCleanup = await page.evaluate(async () => {
+      const results = {};
+      // Clock editor: Text Style only offers Filled + Dropdown (no Chips).
+      const clockEditor = document.createElement(
+        "yeelight-cube-clock-card-editor",
+      );
+      clockEditor.setConfig({
+        ...window.baseConfig,
+        style_selector_style: "filled",
+      });
+      clockEditor.hass = window.hass;
+      document.body.append(clockEditor);
+      await clockEditor.updateComplete;
+      results.clockNoChips = !clockEditor.shadowRoot.querySelector(
+        '[data-value="chips"]',
+      );
+      results.clockHasOriginal = !!clockEditor.shadowRoot.querySelector(
+        '[data-value="original"]',
+      );
+      clockEditor.remove();
+
+      // Native editor: Original Display only offers Grid + List.
+      const nativeEditor = document.createElement(
+        "yeelight-cube-native-effects-card-editor",
+      );
+      nativeEditor.setConfig({
+        ...window.baseConfig,
+        show_gallery: true,
+        effect_view: "grid",
+      });
+      nativeEditor.hass = window.hass;
+      document.body.append(nativeEditor);
+      await nativeEditor.updateComplete;
+      const displayGroup = nativeEditor.shadowRoot
+        .querySelector('[data-value="grid"]')
+        ?.closest(".button-group");
+      results.nativeDisplay =
+        !!displayGroup &&
+        !displayGroup.querySelector('[data-value="buttons"]') &&
+        !displayGroup.querySelector('[data-value="dropdown"]');
+      nativeEditor.remove();
+      return results;
+    });
+    assert.deepEqual(modeCleanup, {
+      clockNoChips: true,
+      clockHasOriginal: true,
+      nativeDisplay: true,
+    });
+    assert.deepEqual(errors, []);
+    console.log(
+      "PASS mode cleanup: Text = Filled/Dropdown, Original = Grid/List (shared, no Chips/Buttons/Dropdown)",
+    );
+
+    const originalGallery = await page.evaluate(async () => {
+      const results = {};
+
+      // Clock card renders the shared Original gallery with badges + active
+      // state (grid by default, list via effect_view).
+      const clock = document.createElement("yeelight-cube-clock-card");
+      clock.setConfig({
+        ...window.baseConfig,
+        show_gallery: true,
+        style_selector_style: "original",
+      });
+      clock.hass = window.hass;
+      document.body.append(clock);
+      clock.render();
+      const gallery = clock.shadowRoot.querySelector(".original-gallery");
+      const items = [...clock.shadowRoot.querySelectorAll(".original-item")];
+      results.clockGallery =
+        !!gallery && gallery.classList.contains("grid") && items.length > 0;
+      results.clockBadges = items.every(
+        (item) =>
+          item.querySelector(".original-item-name") &&
+          item.querySelector(".original-item-badge"),
+      );
+      results.clockActive =
+        items.filter((item) => item.getAttribute("aria-pressed") === "true")
+          .length === 1;
+      clock.remove();
+
+      const clockList = document.createElement("yeelight-cube-clock-card");
+      clockList.setConfig({
+        ...window.baseConfig,
+        show_gallery: true,
+        style_selector_style: "original",
+        effect_view: "list",
+      });
+      clockList.hass = window.hass;
+      document.body.append(clockList);
+      clockList.render();
+      results.clockListView = !!clockList.shadowRoot.querySelector(
+        ".original-gallery.list",
+      );
+      clockList.remove();
+
+      // Native card uses the same shared classes.
+      const native = document.createElement(
+        "yeelight-cube-native-effects-card",
+      );
+      native.setConfig({
+        ...window.baseConfig,
+        show_gallery: true,
+        effect_view: "grid",
+      });
+      native.hass = window.hass;
+      document.body.append(native);
+      await native.updateComplete;
+      results.nativeGallery = !!native.shadowRoot.querySelector(
+        ".original-gallery .original-item .original-item-badge",
+      );
+      native.remove();
+
+      // Clock editor: Show Effect Browser + Original sub-settings, no
+      // Experimental Effects toggle.
+      const editor = document.createElement("yeelight-cube-clock-card-editor");
+      editor.setConfig({
+        ...window.baseConfig,
+        show_gallery: true,
+        style_selector_style: "original",
+      });
+      editor.hass = window.hass;
+      document.body.append(editor);
+      await editor.updateComplete;
+      const text = editor.shadowRoot.textContent;
+      results.editorShowBrowser = text.includes("Show Effect Browser");
+      results.editorDisplay =
+        !!editor.shadowRoot.querySelector('[data-value="grid"]') &&
+        !!editor.shadowRoot.querySelector('[data-value="list"]');
+      results.editorAppearance = text.includes("Gallery Appearance");
+      results.editorBadges = text.includes("Capability Labels");
+      results.editorHighlight = text.includes("Highlight Active Style");
+      results.editorPerPage = text.includes("Items Per Page");
+      results.editorNoExperimental = !text.includes("Experimental Effects");
+      editor.remove();
+
+      // Native editor: same structure, no Experimental Effects toggle.
+      const nativeEditor = document.createElement(
+        "yeelight-cube-native-effects-card-editor",
+      );
+      nativeEditor.setConfig({
+        ...window.baseConfig,
+        show_gallery: true,
+        effect_view: "grid",
+      });
+      nativeEditor.hass = window.hass;
+      document.body.append(nativeEditor);
+      await nativeEditor.updateComplete;
+      results.nativeNoExperimental =
+        !nativeEditor.shadowRoot.textContent.includes("Experimental Effects");
+      nativeEditor.remove();
+
+      return results;
+    });
+    assert.deepEqual(originalGallery, {
+      clockGallery: true,
+      clockBadges: true,
+      clockActive: true,
+      clockListView: true,
+      nativeGallery: true,
+      editorShowBrowser: true,
+      editorDisplay: true,
+      editorAppearance: true,
+      editorBadges: true,
+      editorHighlight: true,
+      editorPerPage: true,
+      editorNoExperimental: true,
+      nativeNoExperimental: true,
+    });
+    assert.deepEqual(errors, []);
+    console.log(
+      "PASS shared Original gallery (clock + native) with badges, active state and aligned editor settings",
     );
   } finally {
     await browser.close();

@@ -27,7 +27,7 @@ const styles = clockStylesWithPresets(getClockStyles(true), [
 ]);
 const style = (name) => styles.find((item) => item.name === name);
 
-test("clock responding-only switch defaults on and preserves saved order", () => {
+test("clock responding-only filtering is always on", () => {
   const source = readFileSync(
     new URL(
       "../custom_components/yeelight_cube/www/yeelight-cube-clock-card.js",
@@ -71,9 +71,12 @@ test("clock responding-only switch defaults on and preserves saved order", () =>
     shownStyles.call(card).map((item) => item.name),
     ["Spectrum", "Rainbow"],
   );
+  // Always filters: a legacy show_only_responding_styles=false config is ignored.
   card.config.show_only_responding_styles = false;
-  assert.deepEqual(shownStyles.call(card), items);
-  card.config.show_only_responding_styles = true;
+  assert.deepEqual(
+    shownStyles.call(card).map((item) => item.name),
+    ["Spectrum", "Rainbow"],
+  );
   card._attrs = () => ({ clock_color_mode: "normal" });
   assert.deepEqual(shownStyles.call(card), items);
   // Custom colour behaves like a mode: only colour-reacting styles remain.
@@ -114,9 +117,10 @@ test("clock pagination supports 16 items per page and zero disables pagination",
       ),
       "utf8",
     ),
-    /config\.items_per_page \|\| 0,\s*\{ min: 0, max: 16, step: 1 \}/,
+    /\{ min: 0, max: 16, step: 1 \}/,
   );
-  assert.match(source, /this\.config\.show_only_responding_styles !== false/);
+  assert.doesNotMatch(source, /show_only_responding_styles/);
+  assert.match(source, /allowOriginal: true/);
   assert.doesNotMatch(
     source,
     /Compatibility indicators|Show filter and sort controls|Inspect colour mode|style_sort|style_filter/,

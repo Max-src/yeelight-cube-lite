@@ -780,16 +780,22 @@ itself). Rotation is driven **server-side** by the light entity via the
 `start_effect_rotation` / `stop_effect_rotation` / `skip_effect_rotation`
 services, so it keeps rotating after the dashboard tab is closed or refreshed —
 the lamp(s) hold the loop, not the browser. It only uses effects available on
-every target and starts only on explicit Play. Stop and manual card commands
-stop rotation; the backend also stops when its next step finds the lamp off or
-fails to apply the display. Rotation is in-memory only: it does not auto-resume
-after a Home Assistant restart or integration reload, and it does not wake lamps.
-Start waits for the first rotation step; a supported item awaits its display
-operation, with failures reported in `effect_rotation.error`. Unknown or gated
-items are skipped, so a successful Start is not proof of a display command or
-physical output. See [rotation diagnostics](SERVICES.md#rotation-diagnostics-and-regression-checks).
-Other cards observing the same lamp cannot stop the
-loop merely because their local favourites are empty or different.
+every target and starts only on explicit Play. Start is fire-and-forget: every
+lamp's loop is scheduled concurrently, so several lamps advance in parallel.
+Stop and manual card commands stop rotation; the backend also stops when its
+next step finds the lamp off or fails to apply the display. Rotation is
+in-memory only: it does not auto-resume after a Home Assistant restart or
+integration reload, and it does not wake lamps. Per-lamp failures are reported
+in `effect_rotation.error`. Unknown or gated items are skipped, so a successful
+Start is not proof of a display command or physical output. See
+[rotation diagnostics](SERVICES.md#rotation-diagnostics-and-regression-checks).
+Other cards observing the same lamp cannot stop the loop merely because their
+local favourites are empty or different.
+
+Favourites are indicated by a gold star badge next to every item in the style
+browser (text, preview and original selectors, including the wheel). Set
+`favourites_show_stars: false` (the Favourites editor's "Show favourite stars"
+toggle) to hide the badges.
 With `auto_apply: false`, effect and speed selections stay local until **Apply**;
 brightness and orientation still apply immediately. Rotation is an explicit
 apply action and does not use the preview-only setting.

@@ -179,7 +179,7 @@ class YeelightCubeClockCardEditor extends LitElement {
           `,
         )}
         ${this._section(
-          "previews",
+          "lamp_preview",
           "Lamp Preview",
           html`
             ${createToggleRow(
@@ -297,41 +297,51 @@ class YeelightCubeClockCardEditor extends LitElement {
           `,
         )}
         ${this._section(
-          "style",
-          "Clock style",
+          "previews",
+          "Previews",
           html`
             ${createToggleRow(
-              "Text Search",
-              "show_search",
-              config.show_search !== false,
-              (event) => this._onToggle(event, "show_search"),
+              "Show Effect Browser",
+              "show_gallery",
+              config.show_gallery !== false,
+              (event) => this._onToggle(event, "show_gallery"),
             )}
-            ${createToggleRow(
-              "Customize visible styles",
-              "custom_visible_styles",
-              config.custom_visible_styles === true,
-              (e) => this._onToggle(e, "custom_visible_styles"),
-            )}
-            ${config.custom_visible_styles === true
+            ${config.show_gallery !== false
               ? renderModeSettingsSection(
-                  "Visible Styles",
+                  "Browser Settings",
                   html`
-                    <div
-                      class="hint"
-                      style="font-size:0.9em;color:var(--secondary-text-color,#666);margin-bottom:4px;"
-                    >
-                      Styles shown in the selector, in this order.
-                    </div>
-                    ${this._renderVisibleStyleList()}
+                    ${createToggleRow(
+                      "Text Search",
+                      "show_search",
+                      config.show_search !== false,
+                      (event) => this._onToggle(event, "show_search"),
+                    )}
+                    ${createToggleRow(
+                      "Customize visible styles",
+                      "custom_visible_styles",
+                      config.custom_visible_styles === true,
+                      (e) => this._onToggle(e, "custom_visible_styles"),
+                    )}
+                    ${config.custom_visible_styles === true
+                      ? renderModeSettingsSection(
+                          "Visible Styles",
+                          html`
+                            <div
+                              class="hint"
+                              style="font-size:0.9em;color:var(--secondary-text-color,#666);margin-bottom:4px;"
+                            >
+                              Styles shown in the selector, in this order.
+                            </div>
+                            ${this._renderVisibleStyleList()}
+                          `,
+                        )
+                      : ""}
+                    ${renderStyleSelectorSettings(config, change, {
+                      allowOriginal: true,
+                    })}
                   `,
                 )
               : ""}
-            ${this._renderStyleBrowserSettings()}
-            ${renderStyleSelectorSettings(config, (key, value) => {
-              this.config = { ...this.config, [key]: value };
-              this.requestUpdate();
-              this._fire();
-            })}
           `,
         )}
         ${this._section(
@@ -401,18 +411,6 @@ class YeelightCubeClockCardEditor extends LitElement {
       addPlaceholder: "Add a style…",
       resetLabel: "Reset to all styles",
     });
-  }
-
-  _renderStyleBrowserSettings() {
-    return renderModeSettingsSection(
-      "Default style view",
-      createToggleRow(
-        "Show only responding styles",
-        "show_only_responding_styles",
-        this.config.show_only_responding_styles !== false,
-        (event) => this._onToggle(event, "show_only_responding_styles"),
-      ),
-    );
   }
 
   _renderVisibleColorModeList() {

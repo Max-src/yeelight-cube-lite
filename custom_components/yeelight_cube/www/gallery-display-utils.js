@@ -1028,6 +1028,50 @@ export function renderGalleryDisplay(
 }
 
 /**
+ * Render the shared "Original" browser gallery: a grid or list of preview
+ * tiles, each with a name and an optional capability badge.  Used by both the
+ * Native Effects and Clock cards so their Original browsers look and behave
+ * identically.  Each card supplies its own `previewHtml` (animated matrix
+ * markup) plus `title` and `badge`.
+ *
+ * @param {Array} items - [{ dataMode, title, badge, previewHtml }]
+ * @param {Object} options - { view: "grid"|"list", showBadges, current }
+ * @returns {string} HTML string
+ */
+export function renderOriginalGallery(items, options = {}) {
+  const view = options.view === "list" ? "list" : "grid";
+  const showBadges = options.showBadges !== false;
+  return `<div class="original-gallery ${view}">
+    ${(items || [])
+      .map((item) => {
+        const selected =
+          options.current != null && item.dataMode === options.current;
+        const highlighted = options.highlight !== false && selected;
+        return `<button
+          class="original-item"
+          type="button"
+          data-mode="${escapeHtml(item.dataMode)}"
+          aria-label="${escapeHtml(item.title)}"
+          aria-pressed="${selected ? "true" : "false"}"
+          ${highlighted ? 'data-active-mode="true"' : ""}
+          title="${escapeHtml(item.title)}">
+          ${item.previewHtml || ""}
+          <span class="original-item-name">${escapeHtml(item.title)}</span>
+          ${showBadges && item.badge ? `<span class="original-item-badge">${escapeHtml(item.badge)}</span>` : ""}
+        </button>`;
+      })
+      .join("")}
+  </div>`;
+}
+
+/** Bind click handlers for the shared Original browser gallery. */
+export function bindOriginalGallery(root, { select }) {
+  root.querySelectorAll(".original-item[data-mode]").forEach((node) => {
+    node.onclick = () => select(node.dataset.mode);
+  });
+}
+
+/**
  * CSS styles for gallery display (to be imported into card styles)
  */
 export const galleryDisplayStyles = `
@@ -1068,21 +1112,79 @@ export const galleryDisplayStyles = `
     pointer-events: none;
   }
 
-  /* Favourite marker: gold star badge on gallery items whose mode is in the
-     favourites list (set via markFavouriteModes). */
-  .gallery-item[data-favourite="true"] {
-    position: relative;
+  /* Favourite marker: a gold star inline with the item's title/label (the same
+     presentation the text dropdowns use). Live-preview modes (list/grid/strip/
+     carousel/wheel) render the star larger; Text and Original keep it at label
+     size. markFavouriteModes sets data-favourite on each [data-mode] item.
+     Hidden when the card host has data-fav-stars="false" (the editor's
+     "Show favourite stars" toggle). */
+  :host([data-fav-stars="false"])
+    [data-mode][data-favourite="true"]
+    :is(.gallery-item-title, .wheel-item-title, .wheel-item-title-hover, .original-item-name)::before {
+    content: none !important;
   }
-  .gallery-item[data-favourite="true"]::after {
+  :host([data-fav-stars="false"]) .mode-btn-filled[data-favourite="true"]::before {
+    content: none !important;
+  }
+
+  /* Live-preview titles: a larger, clearly visible star. */
+  [data-mode][data-favourite="true"]
+    :is(.gallery-item-title, .wheel-item-title, .wheel-item-title-hover)::before {
     content: "★";
-    position: absolute;
-    top: 2px;
-    right: 6px;
-    color: var(--warning-color, #ffa726);
-    text-shadow: 0 0 4px rgba(0, 0, 0, 0.75);
-    font-size: 15px;
+    margin-right: 6px;
+    color: var(--warning-color, #f0a202);
+    font-size: 1.45em;
     line-height: 1;
-    pointer-events: none;
+  }
+
+  /* Text selector + Original display: star at label size. */
+  [data-mode][data-favourite="true"] .original-item-name::before,
+  .mode-btn-filled[data-favourite="true"]::before {
+    content: "★";
+    margin-right: 5px;
+    color: var(--warning-color, #f0a202);
+    font-weight: 400;
+  }
+
+  /* Shared "Original" browser gallery (Native Effects + Clock cards). */
+  .original-gallery {
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
+  }
+  .original-gallery.list {
+    grid-template-columns: 1fr;
+  }
+  .original-item {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid var(--divider-color, #ddd);
+    border-radius: 8px;
+    background: var(--card-background-color, #fff);
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+  }
+  .original-item-preview {
+    width: 100%;
+    min-width: 0;
+  }
+  .original-item[data-active-mode="true"] {
+    border-color: var(--primary-color, #00897b);
+    box-shadow: inset 0 0 0 1px var(--primary-color, #00897b);
+  }
+  .original-item-name {
+    font-size: 14px;
+    overflow-wrap: anywhere;
+  }
+  .original-item-badge {
+    font-size: 12px;
+    color: var(--secondary-text-color, #666);
   }
 
   /* ========================================

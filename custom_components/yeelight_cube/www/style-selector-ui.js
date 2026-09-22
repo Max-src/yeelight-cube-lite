@@ -4,17 +4,14 @@ import { createToggleRow, createSliderRow } from "./form-row-utils.js";
 import {
   renderModeSettingsSection,
   renderSelectorShapeRows,
+  renderMatrixAppearanceSettings,
   BG_COLOR_CHOICES,
   SPACING_CHOICES,
 } from "./editor_ui_utils.js";
+import { selectorItemsPerPage } from "./style-selector-utils.js";
 const TEXT_STYLE_CHOICES = [
   { value: "filled", label: "Filled" },
   { value: "dropdown", label: "Dropdown" },
-  {
-    value: "chips",
-    label: "Chips",
-    title: "Chips with a colour swatch per style",
-  },
 ];
 
 const PREVIEW_STYLE_CHOICES = [
@@ -84,7 +81,7 @@ export function renderStyleSelectorSettings(
       )}
     </div>
     ${family === "original"
-      ? ""
+      ? renderOriginalSelectorSettings(config, onChange)
       : family === "text"
         ? html`
             <div class="form-row">
@@ -184,7 +181,7 @@ export function renderStyleSelectorSettings(
                     )}
                     ${createSliderRow(
                       "Items Per Page (0 = no pagination)",
-                      config.items_per_page || 0,
+                      selectorItemsPerPage(config),
                       { min: 0, max: 16, step: 1 },
                       (event) =>
                         onChange("items_per_page", Number(event.target.value)),
@@ -274,4 +271,56 @@ export function renderStyleSelectorSettings(
             style === "preview-carousel" || style === "preview-wheel",
         })
       : ""}`;
+}
+
+// Original uses the same controls as Live Preview for every shared config key.
+// Display is its only extra choice. Do not recreate these rows in a card editor.
+function renderOriginalSelectorSettings(config, onChange) {
+  const view = config.effect_view === "list" ? "list" : "grid";
+  return html`
+    <div class="form-row">
+      <label>Display</label>
+      ${createButtonGroup(
+        [
+          { value: "grid", label: "Grid" },
+          { value: "list", label: "List" },
+        ],
+        view,
+        (event) => onChange("effect_view", event.currentTarget.dataset.value),
+      )}
+    </div>
+    ${renderModeSettingsSection(
+      view === "list" ? "List Mode Settings" : "Grid Mode Settings",
+      html`
+        ${createToggleRow(
+          "Highlight Active Style",
+          "highlight_active_mode",
+          config.highlight_active_mode !== false,
+          (event) => onChange("highlight_active_mode", event.target.checked),
+        )}
+        ${createSliderRow(
+          "Items Per Page (0 = no pagination)",
+          selectorItemsPerPage(config),
+          { min: 0, max: 16, step: 1 },
+          (event) => onChange("items_per_page", Number(event.target.value)),
+        )}
+      `,
+    )}
+    ${renderModeSettingsSection(
+      "Gallery Appearance",
+      html`
+        ${createToggleRow(
+          "Capability Labels",
+          "show_badges",
+          config.show_badges !== false,
+          (event) => onChange("show_badges", event.target.checked),
+        )}
+        ${renderMatrixAppearanceSettings(config, onChange, {
+          prefix: "effect",
+          defaultSize: 100,
+        })}gallery",
+          defaultSize: 55,
+          pixelFallback: "square"
+    )}
+  `;
 }

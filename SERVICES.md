@@ -810,19 +810,23 @@ data:
   entity_id: light.cubelite_a904
 ```
 
-Start requires at least two distinct, non-empty item strings and waits for the
-first rotation step instead of merely acknowledging a queued task. For a known,
-enabled item, that step awaits the display operation. Unknown names, missing
-clock presets, and experimental native effects with Experimental Features off
-are skipped without sending a display command. A skipped first item can therefore
-acknowledge Start; a list containing only skipped items can remain active without
-changing the lamp. The card filters available favourites, but service callers
-must supply valid, enabled items.
+Start requires at least two distinct, non-empty item strings. It is
+**fire-and-forget**: every lamp's loop is scheduled concurrently and the service
+returns immediately, so several lamps advance in parallel rather than one
+waiting for the next. Only the validation above is raised synchronously.
 
-A failed display operation raises a service error and records the reason in
-`effect_rotation.error`; later failures stop the loop and update that attribute.
-If one target fails to start, rotation is stopped on the other requested targets.
-Sending a command successfully does not independently verify the physical image.
+Each lamp's entity loop still waits for its own first display operation before
+marking itself active. For a known, enabled item, that step awaits the display
+operation. Unknown names, missing clock presets, and experimental native effects
+with Experimental Features off are skipped without sending a display command, so
+an all-skipped list can remain active without changing the lamp. The card filters
+available favourites, but service callers must supply valid, enabled items.
+
+A failed display operation is logged and records the reason in
+`effect_rotation.error`, and that lamp's loop stops; later failures also stop
+the loop and update that attribute. A per-lamp start failure stops only that
+lamp. Sending a command successfully does not independently verify the physical
+image.
 
 Rotation stops via `stop_effect_rotation`, manual commands from the cards, or
 when its next step finds the lamp off or fails to apply the display. It is held

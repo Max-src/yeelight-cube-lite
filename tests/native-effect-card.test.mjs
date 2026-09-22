@@ -95,20 +95,11 @@ test("experimental editor status distinguishes device gates, missing states and 
   );
   assert.match(mixed, /Off: Bottom/);
   assert.match(mixed, /Status unavailable: light.missing/);
-  assert.match(mixed, /Experimental Effects filter is Off/);
   assert.doesNotMatch(mixed, /On for all/);
-  const enabled = render(
-    hass,
-    ["light.top"],
-    { show_experimental: true },
-    true,
-  );
+  const enabled = render(hass, ["light.top"], {}, true);
   assert.match(enabled, /On for all selected lamps/);
-  assert.doesNotMatch(enabled, /filter is Off/);
-  assert.doesNotMatch(
-    render(hass, ["light.bottom"], {}, false),
-    /filter is Off/,
-  );
+  assert.doesNotMatch(enabled, /Off: /);
+  assert.match(render(hass, ["light.bottom"], {}, false), /Off: Bottom/);
   assert.equal(render(hass, [], {}, false), "");
 });
 
@@ -602,7 +593,7 @@ test("native editor sections follow the card and use shared conditional controls
     },
     renderStyleSelectorSettings: (config) => {
       records.selector = true;
-      records.selectorPageSize = config.items_per_page;
+      records.selectorConfig = config;
     },
     renderOrientationSettings: () => {
       records.orientation = true;
@@ -656,7 +647,7 @@ test("native editor sections follow the card and use shared conditional controls
     "orientation",
     "colors",
     "presets",
-    "effects",
+    "previews",
     "favourites",
     "rotation",
   ]);
@@ -666,7 +657,8 @@ test("native editor sections follow the card and use shared conditional controls
   assert.equal(records.sliders, 1);
   assert.equal(records.matrices.length, 1);
   assert.equal(records.selector, true);
-  assert.equal(records.selectorPageSize, 8);
+  assert.equal(records.selectorConfig.style_selector_style, "preview-grid");
+  assert.equal(records.selectorConfig.items_per_page, undefined);
   assert.equal(records.orientation, true);
   records.picker[2]({ target: { value: ["light.second"] } });
   assert.deepEqual(editor._config.target_entities, ["light.second"]);
@@ -780,10 +772,11 @@ test("multi-target configuration reads the first light and accepts legacy entity
   assert.equal(card._state, first);
   setConfig.call(card, { entity: "light.second" });
   assert.equal(card._state, second);
-  assert.throws(
-    () => setConfig.call(card, { target_entities: [] }),
-    /at least one/,
-  );
+  // No entity configured must NOT throw — it renders a placeholder and
+  // self-heals once `hass` arrives (HA turns a throw into a permanent
+  // "Configuration error" card that only clears on a full reload).
+  setConfig.call(card, { target_entities: [] });
+  assert.equal(card._state, undefined);
 });
 
 test("preview and gallery appearance are independent with legacy pixel fallbacks", () => {
@@ -801,8 +794,9 @@ test("preview and gallery appearance are independent with legacy pixel fallbacks
       lamp_matrix_background: "white",
       lamp_ignore_black_pixels: true,
       lamp_preview_size: 60,
-      effect_pixel_style: "rounded",
-      effect_spacing_mode: "subtle",
+      gallery_pixel_style: "rounded",
+      gallery_spacing_mode: "subtle",
+      preview_size: 70,
     },
   };
   const current = appearance.call(card, true);
@@ -811,9 +805,12 @@ test("preview and gallery appearance are independent with legacy pixel fallbacks
   assert.equal(current.pixelStyle, "circle");
   assert.equal(current.pixelGap, 0);
   assert.equal(current.ignoreBlackPixels, true);
+  assert.equal(gallery.width, 70);
   assert.equal(gallery.pixelStyle, "rounded");
   assert.equal(gallery.pixelBoxShadow, true);
   assert.equal(gallery.ignoreBlackPixels, false);
+  card.config.gallery_spacing_mode = "none";
+  assert.equal(appearance.call(card, false).pixelGap, 0);
   card.config.lamp_matrix_background = "black";
   assert.equal(appearance.call(card, true).ignoreBlackPixels, false);
 });

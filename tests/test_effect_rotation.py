@@ -226,18 +226,39 @@ class EffectRotationServiceTests(unittest.IsolatedAsyncioTestCase):
                 SimpleNamespace(data={"items": ["A"]})
             )
 
-    async def test_start_surfaces_failure_and_stops_all_targets(self):
-        targets = [
-            SimpleNamespace(entity_id="light.a", start_effect_rotation=AsyncMock(), stop_effect_rotation=Mock()),
-            SimpleNamespace(entity_id="light.b", start_effect_rotation=AsyncMock(side_effect=ValueError("Device timeout")), stop_effect_rotation=Mock()),
-        ]
-        handlers = self._handlers(lambda *args: targets, Mock())
-        with self.assertRaisesRegex(ValueError, "light.b: Device timeout"):
-            await handlers["handle_start_effect_rotation"](
-                SimpleNamespace(data={"items": ["A", "B"]})
-            )
-        for target in targets:
-            target.stop_effect_rotation.assert_called_once()
+    async def test_start_is_fire_and_forget(self):
+        target = SimpleNamespace(start_effect_rotation=AsyncMock())
+        scheduled = []
+        handlers = self._handlers(
+            lambda *args: [target],
+            lambda *coros: scheduled.extend(coros),
+        )
+        await handlers["handle_start_effect_rotation"](
+            SimpleNamespace(data={"items": ["A", "B"]})
+        )
+        # The handler must schedule the start and return without awaiting it.
+        self.assertEqual(len(scheduled), 1)
+        target.start_effect_rotation.assert_not_awaited()
+        await scheduled[0]
+        target.start_effect_rotation.assert_awaited_once_with(["A", "B"], 60, "native")
+
+    async def test_start_failure_stops_only_the_failing_target(self):
+        ok = SimpleNamespace(entity_id="light.a", start_effect_rotation=AsyncMock(), stop_effect_rotation=Mock())
+        failing = SimpleNamespace(entity_id="light.b", start_effect_rotation=AsyncMock(side_effect=ValueError("Device timeout")), stop_effect_rotation=Mock())
+        queued = []
+        handlers = self._handlers(
+            lambda *args: [ok, failing],
+            lambda *coros: queued.extend(coros),
+        )
+        # Fire-and-forget: the handler does not raise synchronously.
+        await handlers["handle_start_effect_rotation"](
+            SimpleNamespace(data={"items": ["A", "B"]})
+        )
+        self.assertEqual(len(queued), 2)
+        for coro in queued:
+            await coro
+        failing.stop_effect_rotation.assert_called_once()
+        ok.stop_effect_rotation.assert_not_called()
 
     async def test_stop_and_skip_dispatch(self):
         target = SimpleNamespace(stop_effect_rotation=Mock(), skip_effect_rotation=Mock())

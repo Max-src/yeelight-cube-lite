@@ -14,13 +14,19 @@ import {
 } from "./selector-shared-styles.js";
 export const styleSelectorStyles =
   selectorSharedStyles + galleryDisplayStyles + carouselStyles;
+
+/** One page-size value for every selector. 0 and missing both mean no paging. */
+export function selectorItemsPerPage(config) {
+  const value = parseInt(config?.items_per_page, 10);
+  return value > 0 ? value : 0;
+}
 export function bindStyleSelectorEvents(
   root,
   { select, navigate, setIndex, style },
 ) {
   root
     .querySelectorAll(
-      ".mode-btn-filled[data-mode], .mode-chip[data-mode], .gc-preview-shell .gallery-item[data-mode]",
+      ".mode-btn-filled[data-mode], .gc-preview-shell .gallery-item[data-mode]",
     )
     .forEach((node) => {
       if (style !== "preview-wheel")
@@ -81,26 +87,10 @@ export function renderTextStyleSelector(config, items, sel, active) {
                 (s) =>
                   `<option value="${escapeHtml(s.dataMode)}" ${
                     active === s.dataMode ? "selected" : ""
-                  }>${escapeHtml(s.name)}</option>`,
+                  }>${s.favourite ? "★ " : ""}${escapeHtml(s.name)}</option>`,
               )
               .join("")}
           </select>
-        </div>`;
-  }
-
-  if (sel === "chips") {
-    return `
-        <div class="gc-selector" ${selAttrs}>
-          ${styles
-            .map(
-              (s) => `
-                <button class="mode-chip ${active === s.dataMode ? "active" : ""}"
-                  data-mode="${escapeHtml(s.dataMode)}" title="${escapeHtml(s.name)}">
-              <span class="mode-chip-swatch" style="background:${s.swatch || "var(--primary-color)"}"></span>
-              <span class="mode-chip-label">${escapeHtml(s.name)}</span>
-            </button>`,
-            )
-            .join("")}
         </div>`;
   }
 
@@ -184,7 +174,7 @@ export function renderPreviewStyleSelector(config, items, sel, active, state) {
                     forceAspectRatio: true,
                   })}
                 </div>
-                ${showTitles ? `<div style="font-size:13px;font-weight:500;${bgName === "black" ? "color:#fff;" : "color:var(--primary-text-color);"}">${escapeHtml(it.title)}</div>` : ""}
+                ${showTitles ? `<div class="gallery-item-title" style="font-size:13px;font-weight:500;${bgName === "black" ? "color:#fff;" : "color:var(--primary-text-color);"}">${escapeHtml(it.title)}</div>` : ""}
               </div>`,
           })}
         </div>`;
@@ -194,7 +184,7 @@ export function renderPreviewStyleSelector(config, items, sel, active, state) {
   // config key + controls as the palette and draw cards).
   let pagedItems = items;
   let paginationHtml = "";
-  const itemsPerPage = parseInt(config.items_per_page) || 0;
+  const itemsPerPage = selectorItemsPerPage(config);
   if (displayMode === "list" && itemsPerPage > 0) {
     const result = renderPagination({
       items,

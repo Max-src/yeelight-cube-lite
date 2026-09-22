@@ -12,7 +12,7 @@
 // and the shape/columns overrides for the preview shell; the preview styles
 // themselves render through gallery-display-utils / carousel-utils.
 
-export const TEXT_SELECTOR_STYLES = ["filled", "dropdown", "chips"];
+export const TEXT_SELECTOR_STYLES = ["filled", "dropdown"];
 export const PREVIEW_SELECTOR_STYLES = [
   "preview-list",
   "preview-grid",
@@ -90,49 +90,6 @@ export const selectorSharedStyles = `
     outline: none;
     border-color: var(--primary-color, #0969da);
     box-shadow: 0 0 0 3px rgba(9, 105, 218, 0.1);
-  }
-
-  /* ── Chips selector style ────────────────────────────── */
-  .mode-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    padding: 5px 12px 5px 6px;
-    border: 1px solid var(--divider-color, #d0d7de);
-    border-radius: 16px;
-    background: var(--secondary-background-color, #f6f8fa);
-    color: var(--primary-text-color, #24292f);
-    font-size: 0.85em;
-    font-weight: 500;
-    cursor: pointer;
-    transition:
-      border-color 0.2s ease,
-      box-shadow 0.2s ease,
-      transform 0.15s ease;
-  }
-  .mode-chip:hover {
-    transform: translateY(-1px);
-    border-color: var(--primary-color, #0969da);
-  }
-  .mode-chip.active {
-    border-color: var(--primary-color, #0969da);
-    box-shadow: inset 0 0 0 1px var(--primary-color, #0969da);
-  }
-  .mode-chip-swatch {
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    flex: 0 0 auto;
-    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
-  }
-  .mode-chip-label {
-    white-space: nowrap;
-  }
-  .gc-selector[data-shape="rounded"] .mode-chip {
-    border-radius: 6px;
-  }
-  .gc-selector[data-shape="rounded"] .mode-chip-swatch {
-    border-radius: 4px;
   }
 
   /* ── Selection-pending pulse (in-flight feedback mechanic) ───── */

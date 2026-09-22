@@ -139,10 +139,9 @@ export function renderModeControlSettings(
         )
       : ""}`;
   if (area === "favourites")
-    return html`${toggle(
-      "Show Favourites",
-      "show_favourites",
-      false,
+    return html`${toggle("Show Favourites", "show_favourites", false)}${toggle(
+      "Show favourite stars",
+      "favourites_show_stars",
     )}${config.show_favourites
       ? renderModeSettingsSection(
           "Favourite Controls",

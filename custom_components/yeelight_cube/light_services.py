@@ -2655,6 +2655,11 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         The mode list comes from the card's favourites. Once started, the light
         entity advances through it on its own timer, so the rotation keeps
         running even if the dashboard tab is closed or refreshed.
+
+        Start is FIRE-AND-FORGET: every lamp's loop is scheduled concurrently
+        and the service returns immediately. Blocking on the first display
+        operation here would hold the service response and stagger the lamps;
+        each lamp advances on its own timer instead.
         """
         targets = _resolve_entities(service_call, "START_EFFECT_ROTATION")
         if not targets:
@@ -2665,19 +2670,18 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         if not isinstance(items, (list, tuple)) or len(items) < 2:
             raise HomeAssistantError("Provide at least two modes in 'items'")
 
-        results = await asyncio.gather(
-            *(target.start_effect_rotation(items, interval, kind) for target in targets),
-            return_exceptions=True,
-        )
-        failures = [
-            f"{target.entity_id}: {result}"
-            for target, result in zip(targets, results)
-            if isinstance(result, Exception)
-        ]
-        if failures:
-            for target in targets:
+        async def _start_one(target):
+            try:
+                await target.start_effect_rotation(items, interval, kind)
+            except Exception as exc:  # noqa: BLE001 — isolate per-lamp failures
                 target.stop_effect_rotation()
-            raise HomeAssistantError("; ".join(failures))
+                _LOGGER.warning(
+                    "[START_EFFECT_ROTATION] Failed to start %s: %s",
+                    getattr(target, "entity_id", target),
+                    exc,
+                )
+
+        _fire_and_forget(*[_start_one(target) for target in targets])
 
     async def handle_stop_effect_rotation(service_call):
         """Stop the server-side rotation on the target lamps."""

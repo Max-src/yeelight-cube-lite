@@ -487,7 +487,11 @@ test("gallery reload disconnects its observer and paints only current previews b
   const card = {
     shadowRoot: {
       querySelectorAll: (selector) =>
-        selector === "[data-clock-preview]" ? [current] : gallery,
+        selector === "[data-clock-preview]"
+          ? [current]
+          : selector === ".original-gallery .original-item"
+            ? []
+            : gallery,
     },
     _io: { disconnect: () => disconnects++ },
     ...cardMethods(["_setupObserver"], {
@@ -543,10 +547,9 @@ test("hostile saved names remain escaped in all text selectors", () => {
       escapeHtml,
       clockPresetKey,
       resolveSelectorShape: () => "rounded",
-      styleSwatchBackground: () => "#ff99bb",
     }),
   };
-  for (const selector of ["dropdown", "chips", "filled"]) {
+  for (const selector of ["dropdown", "filled"]) {
     const markup = card._renderTextSelector(selector, style);
     assert.doesNotMatch(markup, /<img|<script/);
     assert.ok(markup.includes(escapeHtml(style.name)));

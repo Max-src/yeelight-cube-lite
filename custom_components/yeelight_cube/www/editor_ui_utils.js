@@ -78,13 +78,6 @@ export function renderExperimentalAvailability(
     ${!disabled.length && !unknown.length
       ? html`<p>On for all selected lamps.</p>`
       : ""}
-    ${native && config.show_experimental !== true
-      ? html`<p>
-          This card's Experimental Effects filter is Off. Enable it under
-          Effects to show experimental effects, in addition to the active
-          effect.
-        </p>`
-      : ""}
     <p>
       Saved visibility and order are retained when experimental items are
       unavailable.
@@ -95,7 +88,7 @@ export function renderExperimentalAvailability(
 export function renderMatrixAppearanceSettings(
   config,
   onChange,
-  { prefix = "lamp", defaultSize = 55 } = {},
+  { prefix = "lamp", defaultSize = 55, pixelFallback = "rounded" } = {},
 ) {
   const key = (name) => `${prefix}_${name}`;
   const choices = (label, name, items, fallback) =>
@@ -135,7 +128,7 @@ export function renderMatrixAppearanceSettings(
       "Matrix Pixel Style",
       "pixel_style",
       PIXEL_STYLE_CHOICES,
-      "rounded",
+      pixelFallback,
     )}
     ${choices("Pixel Spacing", "spacing_mode", SPACING_CHOICES, "normal")}
     ${createToggleRow(

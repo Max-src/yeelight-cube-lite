@@ -32,16 +32,19 @@ import {
 import {
   renderMatrixPreview,
   markFavouriteModes,
+  renderOriginalGallery,
+  bindOriginalGallery,
 } from "./gallery-display-utils.js";
 import {
   renderTextStyleSelector,
   renderPreviewStyleSelector,
   bindStyleSelectorEvents,
+  selectorItemsPerPage,
   styleSelectorStyles,
 } from "./style-selector-utils.js";
 import { initializeWheelNavigation } from "./wheel-navigation-utils.js";
 import { BLACK_THRESHOLD } from "./draw_card_const.js";
-import { renderActionButton } from "./action-button-ui.js";
+import { escapeHtml } from "./html-escape-utils.js";
 import { actionButtonStyles } from "./action-button-utils.js";
 import {
   renderSliderGroup,
@@ -92,7 +95,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       kind: "native",
       items: () =>
         nativeEffectItems(this._attrs(), {
-          show_experimental: this.config.show_experimental,
+          show_experimental: !!this._attrs().extended_effects_enabled,
         }).map((item) => ({ key: item.name, title: item.name })),
       navigationItems: () =>
         this._items().map((item) => ({ key: item.name, title: item.name })),
@@ -234,8 +237,12 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   setConfig(config) {
     closeColorPicker(this);
     this._customColorDraft = null;
-    if (!getTargetEntities(config).length)
-      throw new Error("Select at least one Yeelight Cube light entity.");
+    // Never throw from setConfig: Home Assistant turns any thrown error into a
+    // permanent "Configuration error" card that only clears on a full page
+    // reload. When no entity is configured yet (e.g. right after the browser
+    // cache is cleared and the dashboard re-renders), render the friendly
+    // "Select an available Yeelight Cube lamp." placeholder instead and let it
+    // self-heal once `hass` arrives.
     this._context++;
     this._busy = false;
     this._pendingCommands = 0;
@@ -251,7 +258,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       show_search: true,
       auto_apply: true,
       show_device_orientation: true,
-      items_per_page: 8,
+      favourites_show_stars: true,
       ...config,
     };
     if (this.config.show_search === false) {
@@ -259,7 +266,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     }
     this._selected = null;
     this._page = 0;
-    this._state = this._hass?.states[getTargetEntities(config)[0]];
+    this._state = this._hass?.states?.[getTargetEntities(config || {})[0]];
     this._selectorIndex = undefined;
     this._controls.configure(
       nativeEffectPreviewConfig(this.config),
@@ -270,9 +277,9 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   set hass(hass) {
     this._hass = hass;
     this._controls.update();
-    if (this.config.show_rotation || this.config.show_color_modes)
+    if (this.config?.show_rotation || this.config?.show_color_modes)
       this.requestUpdate();
-    const state = hass.states[getTargetEntities(this.config)[0]];
+    const state = hass?.states?.[getTargetEntities(this.config || {})[0]];
     if (state !== this._state) {
       if (
         state?.attributes.native_effect !==
@@ -320,9 +327,10 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       ? "normal"
       : attrs.native_effect_color_mode || "normal";
     const color = this._customColorDraft || attrs.native_effect_color;
-    return nativeEffectItems(attrs, this.config).filter((item) =>
-      this._respondsToColor(item.name, mode, color),
-    );
+    return nativeEffectItems(attrs, {
+      ...this.config,
+      show_experimental: !!attrs.extended_effects_enabled,
+    }).filter((item) => this._respondsToColor(item.name, mode, color));
   }
 
   _respondsToColor(name, mode, color) {
@@ -339,7 +347,10 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       this._effectAvailable(current.name)
     )
       return current.name;
-    return nativeEffectItems(this._attrs(), this.config).find(
+    return nativeEffectItems(this._attrs(), {
+      ...this.config,
+      show_experimental: !!this._attrs().extended_effects_enabled,
+    }).find(
       (item) =>
         this._respondsToColor(item.name, mode, color) &&
         this._effectAvailable(item.name),
@@ -426,17 +437,20 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     if (this.config.auto_apply !== false) this._apply(name);
   }
 
-  _button(label, icon, onClick, extra = {}) {
-    return renderActionButton({
-      label,
-      icon,
-      onClick,
-      action: "tool",
-      buttonStyle: this.config.buttons_style || "classic",
-      contentMode: this.config.buttons_content_mode || "icon",
-      disabled: this._disabled(),
-      ...extra,
-    });
+  _effectBadge(item) {
+    const kind = item.extended ? "Experimental" : "Official";
+    return item.directions?.length ? `${kind} · Directional` : kind;
+  }
+
+  _originalPreview(item) {
+    if (!item) return "";
+    if (item.preview === false)
+      return '<div class="unmodelled">Preview unavailable</div>';
+    const appearance = this._matrixAppearance(false);
+    const pixels = Array.from({ length: 100 }, () => [0, 0, 0]);
+    return `<div class="original-item-preview" data-preview="${escapeHtml(item.name)}" style="width:${appearance.width}%;margin-inline:auto;">
+      ${renderMatrixPreview(pixels, { ...appearance, forceAspectRatio: true })}
+    </div>`;
   }
 
   _matrix(effect, current = false) {
@@ -460,14 +474,19 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   }
 
   _matrixAppearance(current) {
-    const config = nativeEffectPreviewConfig(this.config);
-    const prefix = current ? "lamp" : "effect";
+    const config = current
+      ? nativeEffectPreviewConfig(this.config)
+      : this.config;
+    // Current preview keeps its lamp_* settings. Every browser preview uses
+    // the same gallery_*/preview_size settings as Live Preview.
+    const prefix = current ? "lamp" : "gallery";
+    const sizeKey = current ? "lamp_preview_size" : "preview_size";
     const background = config[`${prefix}_matrix_background`] || "black";
     const spacing = config[`${prefix}_spacing_mode`];
     return {
       width: Math.max(
         30,
-        Math.min(100, Number(config[`${prefix}_preview_size`]) || 100),
+        Math.min(100, Number(config[sizeKey]) || (current ? 100 : 55)),
       ),
       pixelStyle: ["circle", "rounded"].includes(
         config[`${prefix}_pixel_style`],
@@ -533,7 +552,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
         state &&
         !["unknown", "unavailable"].includes(state.state) &&
         nativeEffectItems(state.attributes, {
-          show_experimental: this.config.show_experimental,
+          show_experimental: !!state.attributes.extended_effects_enabled,
         }).some((item) => item.name === effect)
       );
     });
@@ -558,7 +577,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       title: item.name,
       dataMode: item.name,
       colorData: nativeEffectFrame(item, this._attrs(), 0),
-      swatch: `rgb(${nativeEffectFrame(item, this._attrs(), 0)[50].join(",")})`,
+      favourite: this._controls.favourites.includes(item.name),
     }));
     if (!style.startsWith("preview-"))
       return renderTextStyleSelector(this.config, previews, style, active);
@@ -728,18 +747,18 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     const searched = all.filter((item) =>
       item.name.toLowerCase().includes(this._query.toLowerCase().trim()),
     );
-    const items = searched;
+    // Only Original pages here. Live Preview list pages itself; its other
+    // modes intentionally ignore items_per_page.
+    const paginateOriginal = this._selectorStyle() === "original";
     const pagination = renderPagination({
-      items,
+      items: searched,
       currentPage: this._page,
-      itemsPerPage: Math.max(0, Number(this.config.items_per_page) || 0),
+      itemsPerPage: paginateOriginal ? selectorItemsPerPage(this.config) : 0,
     });
     this._totalPages = pagination.totalPages;
-    const view = ["list", "buttons", "dropdown"].includes(
-      this.config.effect_view,
-    )
-      ? this.config.effect_view
-      : "grid";
+    // "Original" display only offers Grid and List now; legacy "buttons" and
+    // "dropdown" configs fall back to Grid.
+    const view = this.config.effect_view === "list" ? "list" : "grid";
     return html`<ha-card
       class=${this.config.show_card_background === false ? "transparent" : ""}
     >
@@ -841,74 +860,33 @@ class YeelightCubeNativeEffectsCard extends LitElement {
                     }}
                   />`
                 : ""}
-              ${!items.length
+              ${!searched.length
                 ? html`<div class="empty" role="status">No effects match.</div>`
                 : this._selectorStyle() !== "original"
                   ? html`<div
                       class="reference-selector"
                       ?inert=${this._disabled() || this._busy}
                     >
-                      ${unsafeHTML(this._referenceSelector(items))}
+                      ${unsafeHTML(this._referenceSelector(searched))}
                     </div>`
-                  : view === "dropdown"
-                    ? html` <select
-                        class="search"
-                        aria-label="Native effect"
-                        @change=${(event) => this._select(event.target.value)}
-                        ?disabled=${this._busy || this._disabled()}
-                      >
-                        ${items.map(
-                          (item) =>
-                            html`<option value=${item.name}>
-                              ${item.name}
-                            </option>`,
-                        )}
-                      </select>`
-                    : html`<div class="effects ${view}">
-                          ${pagination.items.map((item) =>
-                            view === "buttons"
-                              ? this._button(
-                                  item.name,
-                                  "mdi:creation",
-                                  () => this._select(item.name),
-                                  {
-                                    selected: item.name === effect?.name,
-                                    buttonStyle:
-                                      this.config.effect_buttons_style ||
-                                      this.config.buttons_style ||
-                                      "classic",
-                                    contentMode:
-                                      this.config.effect_buttons_content_mode ||
-                                      "icon_text",
-                                    disabled: this._busy || this._disabled(),
-                                  },
-                                )
-                              : html` <button
-                                  class="effect"
-                                  type="button"
-                                  aria-label=${item.name}
-                                  aria-pressed=${String(
-                                    item.name === effect?.name,
-                                  )}
-                                  ?disabled=${this._busy || this._disabled()}
-                                  @click=${() => this._select(item.name)}
-                                >
-                                  ${this._matrix(item)}<span class="effect-name"
-                                    >${item.name}</span
-                                  >
-                                  ${this.config.show_badges !== false
-                                    ? html`<span class="capabilities"
-                                        >${item.extended
-                                          ? "Experimental"
-                                          : "Official"}${item.directions?.length
-                                          ? " · Directional"
-                                          : ""}</span
-                                      >`
-                                    : ""}
-                                </button>`,
-                          )}
-                        </div>
-                        ${unsafeHTML(pagination.html)}`}
+                  : html`${unsafeHTML(
+                      renderOriginalGallery(
+                        pagination.items.map((item) => ({
+                          dataMode: item.name,
+                          title: item.name,
+                          badge: this._effectBadge(item),
+                          previewHtml: this._originalPreview(item),
+                        })),
+                        {
+                          view,
+                          showBadges: this.config.show_badges !== false,
+                          highlight:
+                            this.config.highlight_active_mode !== false,
+                          current: effect?.name,
+                        },
+                      ),
+                    )}
+                    ${unsafeHTML(pagination.html)}`}
             </section>`
           : ""}
         <yeelight-mode-controls
@@ -965,6 +943,11 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       setIndex: (index) => this._selectorNavigate(0, index),
       style: this._selectorStyle(),
     });
+    bindOriginalGallery(this.shadowRoot, {
+      select: (name) => {
+        if (!this._busy && !this._disabled()) this._select(name);
+      },
+    });
     const wheelNode = this.shadowRoot.querySelector(
       '[data-wheel-scroll="true"]',
     );
@@ -992,6 +975,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     this.dataset.highlightActive = String(
       this.config.highlight_active_mode !== false,
     );
+    this.dataset.favStars = String(this.config.favourites_show_stars !== false);
     this.shadowRoot
       .querySelectorAll(".reference-selector [data-mode]")
       .forEach((node) => {
@@ -1007,20 +991,14 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     this._observer?.disconnect();
     this._frames = [
       ...this.shadowRoot.querySelectorAll(
-        ".effect-matrix, .reference-selector [data-mode]",
+        ".effect-matrix, .original-item-preview, .reference-selector [data-mode]",
       ),
     ].map((node) => ({
       node,
-      name: node.dataset.effect || node.dataset.mode,
-      appearance: node.dataset.mode
-        ? {
-            ignoreBlackPixels:
-              (this.config.gallery_background_color || "black") !== "black" &&
-              this.config.gallery_ignore_black_pixels === true,
-            pixelBoxShadow:
-              (this.config.gallery_spacing_mode || "normal") !== "none",
-          }
-        : this._matrixAppearance(node.classList.contains("current-matrix")),
+      name: node.dataset.effect || node.dataset.preview || node.dataset.mode,
+      appearance: node.classList.contains("current-matrix")
+        ? this._matrixAppearance(true)
+        : this._matrixAppearance(false),
       visible: true,
       cells: [...node.querySelectorAll(".gallery-matrix-preview > div")],
     }));
@@ -1127,8 +1105,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
         font-weight: 500;
         overflow-wrap: anywhere;
       }
-      .state-label,
-      .capabilities {
+      .state-label {
         font-size: 12px;
         color: var(--secondary-text-color, #666);
       }
@@ -1153,48 +1130,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
         font: inherit;
         color: inherit;
         background: var(--card-background-color, #fff);
-      }
-      .effects {
-        display: grid;
-        gap: 10px;
-        grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr));
-      }
-      .effects.list {
-        grid-template-columns: 1fr;
-      }
-      .effects.buttons {
-        display: flex;
-        flex-wrap: wrap;
-        justify-content: center;
-      }
-      .effect {
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-        min-width: 0;
-        padding: 10px;
-        border: 1px solid var(--divider-color, #ddd);
-        border-radius: 8px;
-        background: var(--card-background-color, #fff);
-        color: inherit;
-        font: inherit;
-        cursor: pointer;
-        text-align: left;
-      }
-      .effect .effect-matrix {
-        width: 100%;
-      }
-      .effect[aria-pressed="true"] {
-        border-color: var(--primary-color, #00897b);
-        box-shadow: inset 0 0 0 1px var(--primary-color, #00897b);
-      }
-      .effect-name {
-        font-size: 14px;
-        overflow-wrap: anywhere;
-      }
-      .effect:disabled {
-        opacity: 0.6;
-        cursor: default;
       }
       .error {
         color: var(--error-color, #db4437);
