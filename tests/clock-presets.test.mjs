@@ -532,8 +532,9 @@ test("hostile saved names remain escaped in all text selectors", () => {
   const renderTextStyleSelector = new Function(
     "escapeHtml",
     "resolveSelectorShape",
+    "renderActionButtonHTML",
     `return function(config, items, sel, active) {${body}}`,
-  )(escapeHtml, () => "rounded");
+  )(escapeHtml, () => "rounded", renderActionButtonHTML);
   const style = {
     name: '\"><img src=x onerror=alert(1)>',
     presetId: "hostile",

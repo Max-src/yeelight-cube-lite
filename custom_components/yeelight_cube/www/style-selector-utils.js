@@ -6,6 +6,7 @@ import {
 } from "./gallery-display-utils.js";
 import { renderCarouselString, carouselStyles } from "./carousel-utils.js";
 import { renderPagination } from "./pagination-utils.js";
+import { renderActionButtonHTML } from "./action-button-utils.js";
 import {
   resolveSelectorShape,
   resolveSelectorButtonShape,
@@ -26,7 +27,7 @@ export function bindStyleSelectorEvents(
 ) {
   root
     .querySelectorAll(
-      ".mode-btn-filled[data-mode], .gc-preview-shell .gallery-item[data-mode]",
+      ".gc-selector .shared-action-button[data-mode], .gc-preview-shell .gallery-item[data-mode]",
     )
     .forEach((node) => {
       if (style !== "preview-wheel")
@@ -75,7 +76,7 @@ export function renderTextStyleSelector(config, items, sel, active) {
     0.8,
     Math.min(1.4, (Number(config.preview_size) || 55) / 50),
   );
-  const selAttrs = `data-shape="${shape}" style="--gc-sel-scale:${scale}; display: flex; flex-wrap: wrap; gap: 6px;"`;
+  const selAttrs = `data-shape="${shape}" style="display: flex; flex-wrap: wrap; gap: 6px;"`;
 
   if (sel === "dropdown") {
     return `
@@ -94,16 +95,24 @@ export function renderTextStyleSelector(config, items, sel, active) {
         </div>`;
   }
 
-  // "filled" (default text style)
+  // "filled" (default text style) — rendered through the shared action-button
+  // system (text-only, no icons) so these buttons match the colour-mode buttons
+  // on every card.
   return `
       <div class="gc-selector" ${selAttrs}>
         ${styles
-          .map(
-            (s) => `
-            <button class="mode-btn-filled ${active === s.dataMode ? "active" : ""}"
-              data-mode="${escapeHtml(s.dataMode)}" title="${escapeHtml(s.name)}">
-            ${escapeHtml(s.name)}
-          </button>`,
+          .map((s) =>
+            renderActionButtonHTML({
+              action: "tool",
+              buttonStyle: config.buttons_style || "modern",
+              contentMode: "text",
+              label: s.name,
+              title: s.name,
+              selected: active === s.dataMode,
+              role: "radio",
+              value: s.dataMode,
+              dataMode: s.dataMode,
+            }),
           )
           .join("")}
       </div>`;

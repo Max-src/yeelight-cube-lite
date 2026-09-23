@@ -4,7 +4,6 @@ import { createToggleRow, createSliderRow } from "./form-row-utils.js";
 import {
   renderModeSettingsSection,
   renderSelectorShapeRows,
-  renderMatrixAppearanceSettings,
   BG_COLOR_CHOICES,
   SPACING_CHOICES,
 } from "./editor_ui_utils.js";
@@ -195,75 +194,7 @@ export function renderStyleSelectorSettings(
               config.preview_show_titles !== false,
               (event) => onChange("preview_show_titles", event.target.checked),
             )}
-            ${createSliderRow(
-              "Size",
-              config.preview_size ?? 55,
-              { min: 30, max: 100, step: 5 },
-              (event) => onChange("preview_size", Number(event.target.value)),
-              "%",
-            )}
-            <div class="form-row">
-              <label>Preview Background Color</label>
-              ${createButtonGroup(
-                BG_COLOR_CHOICES,
-                config.gallery_background_color || "black",
-                (event) =>
-                  onChange(
-                    "gallery_background_color",
-                    event.currentTarget.dataset.value,
-                  ),
-              )}
-            </div>
-            ${(config.gallery_background_color || "black") !== "black"
-              ? renderModeSettingsSection(
-                  "Background Settings",
-                  createToggleRow(
-                    "Ignore Black Pixels",
-                    "gallery_ignore_black_pixels",
-                    config.gallery_ignore_black_pixels === true,
-                    (event) =>
-                      onChange(
-                        "gallery_ignore_black_pixels",
-                        event.target.checked,
-                      ),
-                  ),
-                )
-              : ""}
-            <div class="form-row">
-              <label>Preview Pixel Style</label>
-              ${createButtonGroup(
-                [
-                  { value: "square", label: "Square" },
-                  { value: "rounded", label: "Rounded" },
-                  { value: "circle", label: "Circle" },
-                ],
-                config.gallery_pixel_style || "square",
-                (event) =>
-                  onChange(
-                    "gallery_pixel_style",
-                    event.currentTarget.dataset.value,
-                  ),
-              )}
-            </div>
-            <div class="form-row">
-              <label>Pixel Spacing</label>
-              ${createButtonGroup(
-                SPACING_CHOICES,
-                config.gallery_spacing_mode || "normal",
-                (event) =>
-                  onChange(
-                    "gallery_spacing_mode",
-                    event.currentTarget.dataset.value,
-                  ),
-              )}
-            </div>
-            ${createToggleRow(
-              "Matrix Box Shadow",
-              "gallery_matrix_box_shadow",
-              config.gallery_matrix_box_shadow === true,
-              (event) =>
-                onChange("gallery_matrix_box_shadow", event.target.checked),
-            )}
+            ${renderGalleryMatrixSettings(config, onChange)}
           `}
     ${!["original", "preview-list", "preview-grid"].includes(style)
       ? renderSelectorShapeRows(config, onChange, {
@@ -271,6 +202,73 @@ export function renderStyleSelectorSettings(
             style === "preview-carousel" || style === "preview-wheel",
         })
       : ""}`;
+}
+
+// Shared gallery matrix appearance controls. Live Preview and Original use the
+// same keys, labels, ranges and defaults so one setting is configured and read
+// the same way everywhere.
+function renderGalleryMatrixSettings(config, onChange) {
+  return html`
+    ${createSliderRow(
+      "Size",
+      config.preview_size ?? 55,
+      { min: 30, max: 100, step: 5 },
+      (event) => onChange("preview_size", Number(event.target.value)),
+      "%",
+    )}
+    <div class="form-row">
+      <label>Preview Background Color</label>
+      ${createButtonGroup(
+        BG_COLOR_CHOICES,
+        config.gallery_background_color || "black",
+        (event) =>
+          onChange(
+            "gallery_background_color",
+            event.currentTarget.dataset.value,
+          ),
+      )}
+    </div>
+    ${(config.gallery_background_color || "black") !== "black"
+      ? renderModeSettingsSection(
+          "Background Settings",
+          createToggleRow(
+            "Ignore Black Pixels",
+            "gallery_ignore_black_pixels",
+            config.gallery_ignore_black_pixels === true,
+            (event) =>
+              onChange("gallery_ignore_black_pixels", event.target.checked),
+          ),
+        )
+      : ""}
+    <div class="form-row">
+      <label>Preview Pixel Style</label>
+      ${createButtonGroup(
+        [
+          { value: "square", label: "Square" },
+          { value: "rounded", label: "Rounded" },
+          { value: "circle", label: "Circle" },
+        ],
+        config.gallery_pixel_style || "square",
+        (event) =>
+          onChange("gallery_pixel_style", event.currentTarget.dataset.value),
+      )}
+    </div>
+    <div class="form-row">
+      <label>Pixel Spacing</label>
+      ${createButtonGroup(
+        SPACING_CHOICES,
+        config.gallery_spacing_mode || "normal",
+        (event) =>
+          onChange("gallery_spacing_mode", event.currentTarget.dataset.value),
+      )}
+    </div>
+    ${createToggleRow(
+      "Matrix Box Shadow",
+      "gallery_matrix_box_shadow",
+      config.gallery_matrix_box_shadow === true,
+      (event) => onChange("gallery_matrix_box_shadow", event.target.checked),
+    )}
+  `;
 }
 
 // Original uses the same controls as Live Preview for every shared config key.
@@ -315,11 +313,7 @@ function renderOriginalSelectorSettings(config, onChange) {
           config.show_badges !== false,
           (event) => onChange("show_badges", event.target.checked),
         )}
-        ${renderMatrixAppearanceSettings(config, onChange, {
-          prefix: "gallery",
-          defaultSize: 55,
-          pixelFallback: "square",
-        })}
+        ${renderGalleryMatrixSettings(config, onChange)}
       `,
     )}
   `;

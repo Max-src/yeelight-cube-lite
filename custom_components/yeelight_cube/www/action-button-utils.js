@@ -144,6 +144,7 @@ export function actionButtonModel({
   swatch,
   swatchShape,
   fill,
+  dataMode,
 } = {}) {
   const options = resolveActionButtonOptions({ buttonStyle, contentMode });
   const stateful = typeof selected === "boolean";
@@ -178,6 +179,7 @@ export function actionButtonModel({
     // A whole-button fill colour with matching contrast ink.
     fill: busy ? null : fill,
     ink: fill ? contrastInk(fill) : undefined,
+    dataMode,
     type: ["button", "submit", "reset"].includes(type) ? type : "button",
   };
 }
@@ -191,7 +193,7 @@ export function renderActionButtonHTML(options = {}) {
   const fill = model.fill
     ? ` style="--btn-fill:${escapeHtml(model.fill)};--btn-ink:${model.ink}"`
     : "";
-  return `<button type="${model.type}" class="${model.className}" title="${escapeHtml(model.title)}" aria-label="${escapeHtml(model.title)}" aria-busy="${model.busy}"${state}${fill}${model.role ? ' role="radio"' : ""}${model.value !== undefined ? ` data-value="${escapeHtml(String(model.value))}"` : ""}${model.tabIndex !== undefined ? ` tabindex="${model.tabIndex === -1 ? -1 : 0}"` : ""} ${model.disabled ? "disabled" : ""}>${renderButtonContent(model.icon, model.label, model.contentMode, false, null, model.swatch, model.swatchShape)}</button>`;
+  return `<button type="${model.type}" class="${model.className}" title="${escapeHtml(model.title)}" aria-label="${escapeHtml(model.title)}" aria-busy="${model.busy}"${state}${fill}${model.role ? ' role="radio"' : ""}${model.value !== undefined ? ` data-value="${escapeHtml(String(model.value))}"` : ""}${model.dataMode !== undefined ? ` data-mode="${escapeHtml(String(model.dataMode))}"` : ""}${model.tabIndex !== undefined ? ` tabindex="${model.tabIndex === -1 ? -1 : 0}"` : ""} ${model.disabled ? "disabled" : ""}>${renderButtonContent(model.icon, model.label, model.contentMode, false, null, model.swatch, model.swatchShape)}</button>`;
 }
 
 export function actionButtonGroupModel({

@@ -51,8 +51,13 @@ export function selectorShapeToCarouselButtonShape(shape) {
 }
 
 export const selectorSharedStyles = `
-  /* Filled style — soft pill background, no border; solid primary
-     highlight when active. */
+  /* Clock/Native text selector buttons render through the shared
+     action-button system (action-button-utils.js) so they match the
+     colour-mode buttons. The gradient card still uses the legacy filled
+     buttons below. */
+
+  /* Legacy filled style — still used by the gradient card's colour-mode
+     selector. Soft pill background, no border; solid primary when active. */
   .mode-btn-filled {
     padding: 6px 14px;
     border: none;
@@ -135,15 +140,25 @@ export const selectorSharedStyles = `
   .gc-selector {
     font-size: calc(1em * var(--gc-sel-scale, 1));
   }
+  .gc-selector[data-shape="square"] .shared-action-button,
   .gc-selector[data-shape="square"] .mode-btn-filled,
   .gc-selector[data-shape="square"] .mode-select,
   .gc-selector[data-shape="square"] .mode-chip,
   .gc-selector[data-shape="square"] .mode-chip-swatch {
     border-radius: 0 !important;
   }
+  .gc-selector[data-shape="round"] .shared-action-button,
   .gc-selector[data-shape="round"] .mode-btn-filled,
   .gc-selector[data-shape="round"] .mode-select {
     border-radius: 999px !important;
+  }
+
+  /* Text selector buttons reuse the shared action-button look. Match the
+     colour-mode radio group: neutralise the tool-active ring/scale so only the
+     fill changes when selected. */
+  .gc-selector .shared-action-button.tool-active {
+    transform: none;
+    box-shadow: none;
   }
   .gc-preview-shell[data-shape="square"] .gallery-item,
   .gc-preview-shell[data-shape="square"] .gallery-item:hover,

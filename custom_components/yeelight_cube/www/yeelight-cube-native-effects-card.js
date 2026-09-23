@@ -481,7 +481,9 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     // the same gallery_*/preview_size settings as Live Preview.
     const prefix = current ? "lamp" : "gallery";
     const sizeKey = current ? "lamp_preview_size" : "preview_size";
-    const background = config[`${prefix}_matrix_background`] || "black";
+    const background = current
+      ? config.lamp_matrix_background
+      : config.gallery_background_color || "black";
     const spacing = config[`${prefix}_spacing_mode`];
     return {
       width: Math.max(

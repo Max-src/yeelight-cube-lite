@@ -1123,7 +1123,7 @@ export const galleryDisplayStyles = `
     :is(.gallery-item-title, .wheel-item-title, .wheel-item-title-hover, .original-item-name)::before {
     content: none !important;
   }
-  :host([data-fav-stars="false"]) .mode-btn-filled[data-favourite="true"]::before {
+  :host([data-fav-stars="false"]) .shared-action-button[data-favourite="true"]::before {
     content: none !important;
   }
 
@@ -1138,12 +1138,15 @@ export const galleryDisplayStyles = `
   }
 
   /* Text selector + Original display: star at label size. */
-  [data-mode][data-favourite="true"] .original-item-name::before,
-  .mode-btn-filled[data-favourite="true"]::before {
+  [data-mode][data-favourite="true"] .original-item-name::before {
     content: "★";
     margin-right: 5px;
     color: var(--warning-color, #f0a202);
     font-weight: 400;
+  }
+  .shared-action-button[data-favourite="true"]::before {
+    content: "★";
+    color: var(--warning-color, #f0a202);
   }
 
   /* Shared "Original" browser gallery (Native Effects + Clock cards). */
