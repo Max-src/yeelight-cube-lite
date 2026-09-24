@@ -1,5 +1,6 @@
 import { BLACK_THRESHOLD } from "./draw_card_const.js";
 import { escapeHtml } from "./html-escape-utils.js";
+import { favouriteId, normalizeFavourite } from "./mode-controls-controller.js";
 import {
   renderItemIndicators,
   itemBrowserStyles,
@@ -988,14 +989,37 @@ function renderWheelNavButtons(options) {
  * Shared by the Clock and Native Effects cards: called after each render and
  * whenever the favourites list changes (controller notification).
  */
-export function markFavouriteModes(root, favourites) {
+export function markFavouriteModes(
+  root,
+  favourites,
+  colorMode = "normal",
+  color,
+) {
   if (!root) return;
-  const marked = new Set(favourites || []);
+  const marked = new Set();
+  for (const item of favourites || []) {
+    const favourite = normalizeFavourite(item);
+    if (
+      favourite &&
+      favouriteId(favourite) ===
+        favouriteId({ key: favourite.key, colorMode, color })
+    )
+      marked.add(favourite.key);
+  }
   root.querySelectorAll("[data-mode]").forEach((node) => {
     if (marked.has(node.dataset.mode))
       node.setAttribute("data-favourite", "true");
     else node.removeAttribute("data-favourite");
   });
+  root
+    .querySelectorAll("[data-mode-select] option[value]")
+    .forEach((option) => {
+      option.dataset.favouriteLabel ??= option.textContent.replace(
+        /^\u2605 /,
+        "",
+      );
+      option.textContent = `${marked.has(option.value) ? "\u2605 " : ""}${option.dataset.favouriteLabel}`;
+    });
 }
 
 /**

@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   ModeControlsController,
+  favouriteId,
+  sanitizeFavourites,
   modeCollectionKey,
   nextRotationMode,
   rotationIntervalMs,
@@ -20,7 +22,7 @@ test("favourites preview frames render at current time, not phase 0", () => {
     ),
     "utf8",
   );
-  const match = source.match(/  _preview\(item\) \{([\s\S]*?)\n  \}/);
+  const match = source.match(/  _preview\(favourite\) \{([\s\S]*?)\n  \}/);
   assert.ok(match, "_preview method not found");
   const phases = [];
   const preview = new Function(
@@ -28,7 +30,7 @@ test("favourites preview frames render at current time, not phase 0", () => {
     "unsafeHTML",
     "renderMatrixPreview",
     "performance",
-    `return function(item) {${match[1]}}`,
+    `return function(favourite) {${match[1]}}`,
   )(
     (strings, ...values) => ({ strings, values }),
     (value) => value,
@@ -39,18 +41,23 @@ test("favourites preview frames render at current time, not phase 0", () => {
     model: {
       config: {},
       adapter: {
-        frame: (key, phase) => {
-          phases.push(phase);
+        frame: (key, phase, colorMode, color) => {
+          phases.push([phase, colorMode, color]);
           return [[1, 2, 3]];
         },
       },
     },
   };
-  preview.call(view, { key: "Rainbow" });
+  preview.call(view, {
+    key: "Rainbow",
+    colorMode: "red_blue",
+    color: [1, 2, 3],
+  });
   // A phase of 0 here flashes the animation's first frame on every Lit
   // re-render (the favourites blink); the frame must match the RAF loop's
-  // timebase (now / 1000) so re-renders are seamless.
-  assert.deepEqual(phases, [12.345]);
+  // timebase (now / 1000) so re-renders are seamless. The recorded colour
+  // mode/colour must ride along so a favourite keeps its own look.
+  assert.deepEqual(phases, [[12.345, "red_blue", [1, 2, 3]]]);
 });
 
 function fixture(overrides = {}) {
@@ -68,7 +75,10 @@ function fixture(overrides = {}) {
   });
   controller.configure({}, ["light.a"]);
   // Rotation always follows the favourites list.
-  controller.favourites = ["A", "B"];
+  controller.favourites = [
+    { key: "A", colorMode: "normal" },
+    { key: "B", colorMode: "normal" },
+  ];
   return { controller, calls };
 }
 
@@ -97,15 +107,155 @@ test("rotation uses available unique modes and bounds intervals", () => {
 });
 test("shuffle reorders and persists the favourites list itself", () => {
   const { controller } = fixture();
-  controller.favourites = ["A", "B", "C"];
+  controller.favourites = [
+    { key: "A", colorMode: "normal" },
+    { key: "B", colorMode: "normal" },
+    { key: "C", colorMode: "normal" },
+  ];
   let notified = 0;
   controller.listeners.add(() => notified++);
   controller.shuffleFavourites(() => 0);
-  assert.deepEqual(controller.favourites, ["B", "C", "A"]);
+  assert.deepEqual(controller.favourites, [
+    { key: "B", colorMode: "normal" },
+    { key: "C", colorMode: "normal" },
+    { key: "A", colorMode: "normal" },
+  ]);
   assert.ok(notified > 0);
   // A random source pinned at its maximum is the identity permutation.
   controller.shuffleFavourites(() => 0.999);
-  assert.deepEqual(controller.favourites, ["B", "C", "A"]);
+  assert.deepEqual(controller.favourites, [
+    { key: "B", colorMode: "normal" },
+    { key: "C", colorMode: "normal" },
+    { key: "A", colorMode: "normal" },
+  ]);
+});
+
+test("legacy string favourites migrate to normal colour mode", () => {
+  const { controller } = fixture();
+  controller.favourites = ["A", "B"];
+  assert.deepEqual(controller.names(), ["A", "B"]);
+  assert.deepEqual(controller.rotationItems(), [
+    { name: "A", color_mode: "normal" },
+    { name: "B", color_mode: "normal" },
+  ]);
+  assert.equal(controller.hasFavourite("A"), true);
+});
+
+test("favourites record their active colour mode", () => {
+  const { controller } = fixture({
+    current: () => "B",
+    currentColorMode: () => "red_blue",
+  });
+  controller.favourites = [{ key: "A", colorMode: "normal" }];
+  controller.toggleFavourite();
+  assert.deepEqual(controller.favourites, [
+    { key: "A", colorMode: "normal" },
+    { key: "B", colorMode: "red_blue" },
+  ]);
+  assert.deepEqual(controller.rotationItems(), [
+    { name: "A", color_mode: "normal" },
+    { name: "B", color_mode: "red_blue" },
+  ]);
+  // Toggling again removes only the matching colour-mode entry.
+  controller.toggleFavourite();
+  assert.deepEqual(controller.favourites, [{ key: "A", colorMode: "normal" }]);
+});
+
+test("the same style can be favourited under multiple colour modes", () => {
+  let mode = "normal";
+  const { controller } = fixture({
+    current: () => "A",
+    currentColorMode: () => mode,
+  });
+  controller.favourites = [];
+  controller.toggleFavourite();
+  assert.deepEqual(controller.favourites, [{ key: "A", colorMode: "normal" }]);
+  // Switching mode and toggling ADDS a second entry instead of removing the
+  // existing Normal favourite.
+  mode = "red_blue";
+  controller.toggleFavourite();
+  assert.deepEqual(controller.favourites, [
+    { key: "A", colorMode: "normal" },
+    { key: "A", colorMode: "red_blue" },
+  ]);
+  assert.equal(controller.hasFavourite("A", "normal"), true);
+  assert.equal(controller.hasFavourite("A", "red_blue"), true);
+  assert.equal(controller.hasFavourite("A", "bw"), false);
+  // Rotation keeps both entries.
+  assert.deepEqual(controller.rotationItems(), [
+    { name: "A", color_mode: "normal" },
+    { name: "A", color_mode: "red_blue" },
+  ]);
+  // Toggling in red_blue removes only the red_blue entry.
+  controller.toggleFavourite();
+  assert.deepEqual(controller.favourites, [{ key: "A", colorMode: "normal" }]);
+});
+
+test("selecting a saved favourite then removing it ignores stale live colour mode", async () => {
+  let mode = "red_blue";
+  const applied = [];
+  const { controller } = fixture({
+    currentColorMode: () => mode,
+    applyFavourite: async (item) => applied.push(item),
+  });
+  const saved = { key: "A", colorMode: "bw" };
+  controller.save([saved, { key: "A", colorMode: mode }]);
+  assert.equal(await controller.chooseFavourite(saved), true);
+  controller.update();
+  assert.deepEqual(controller.currentFavourite(), saved);
+  controller.toggleFavourite();
+  assert.deepEqual(controller.favourites, [
+    { key: "A", colorMode: "red_blue" },
+  ]);
+  assert.deepEqual(applied, [saved]);
+  mode = "bw";
+  controller.update();
+  assert.equal(controller.selectedFavourite, null);
+  mode = "red_blue";
+  controller.update();
+  assert.equal(controller.currentFavourite().colorMode, mode);
+});
+
+test("failed or obsolete favourite commands cannot change selected identity", async () => {
+  const { controller } = fixture({ applyFavourite: async () => false });
+  assert.equal(
+    await controller.chooseFavourite({ key: "A", colorMode: "bw" }),
+    false,
+  );
+  assert.equal(controller.currentFavourite().colorMode, "normal");
+  let finish;
+  controller.adapter.applyFavourite = () =>
+    new Promise((resolve) => {
+      finish = resolve;
+    });
+  const pending = controller.chooseFavourite({ key: "A", colorMode: "bw" });
+  controller.toggleFavourite();
+  assert.equal(controller.favourites.length, 2);
+  controller.configure({}, ["light.other"]);
+  finish(true);
+  assert.equal(await pending, false);
+  assert.equal(controller.selectedFavourite, null);
+});
+
+test("custom favourite identities preserve RGB snapshots through save, reload and reorder", () => {
+  let rgb = [12, 34, 56];
+  const { controller } = fixture({
+    currentColorMode: () => "custom",
+    currentColor: () => rgb,
+  });
+  controller.save([]);
+  controller.toggleFavourite();
+  rgb[0] = 99;
+  controller.toggleFavourite();
+  const saved = JSON.parse(JSON.stringify(controller.favourites));
+  assert.equal(saved.length, 2);
+  assert.deepEqual(saved[0].color, [12, 34, 56]);
+  assert.notEqual(favouriteId(saved[0]), favouriteId(saved[1]));
+  assert.deepEqual(sanitizeFavourites([...saved, saved[0]]), saved);
+  controller.save([...saved].reverse());
+  assert.deepEqual(controller.rotationItems()[0].color, [99, 34, 56]);
+  controller.toggleFavourite();
+  assert.deepEqual(controller.favourites, [saved[0]]);
 });
 
 test("backend rotation delegates start/stop/skip and survives disconnect", async () => {
@@ -128,7 +278,16 @@ test("backend rotation delegates start/stop/skip and survives disconnect", async
   controller.configure({ rotation_interval: 120 }, ["light.a"]);
   controller.favourites = ["A", "B"];
   await controller.start();
-  assert.deepEqual(calls, [["start", ["A", "B"], 120]]);
+  assert.deepEqual(calls, [
+    [
+      "start",
+      [
+        { name: "A", color_mode: "normal" },
+        { name: "B", color_mode: "normal" },
+      ],
+      120,
+    ],
+  ]);
   assert.equal(controller.active, true);
   controller.stop();
   assert.deepEqual(calls.at(-1), ["stop"]);

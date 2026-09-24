@@ -3484,14 +3484,59 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         style = NATIVE_CLOCK_STYLES.get(self._native_clock_style)
         return style["name"] if style else None
 
+    def _normalize_rotation_items(self, items) -> list:
+        """Normalize rotation entries to ``{"name", "color_mode", "color"}`` dicts.
+
+        Accepts legacy plain strings (colour mode defaults to "normal") and
+        dicts of the form ``{"name": ..., "color_mode": ..., "color": [r,g,b]}``
+        produced by the cards' favourites system.
+        """
+        result = []
+        seen = set()
+        for entry in items or []:
+            if isinstance(entry, str):
+                name, color_mode, color = entry.strip(), "normal", None
+            elif isinstance(entry, dict):
+                name = str(entry.get("name", "")).strip()
+                color_mode = entry.get("color_mode") or "normal"
+                color = entry.get("color")
+            else:
+                continue
+            if not name:
+                continue
+            if color_mode not in CLOCK_COLOR_MODES and color_mode != "custom":
+                color_mode = "normal"
+            if color_mode == "custom":
+                if (
+                    isinstance(color, (list, tuple))
+                    and len(color) == 3
+                    and all(isinstance(c, int) and 0 <= c <= 255 for c in color)
+                ):
+                    color = list(color)
+                else:
+                    # A custom mode without a valid colour falls back to normal.
+                    color_mode, color = "normal", None
+            else:
+                color = None
+            # Uniqueness is per (name, colour mode): the same style may appear
+            # twice when favourited under two different colour modes.
+            colour_key = (name, color_mode, tuple(color) if color else None)
+            if colour_key in seen:
+                continue
+            seen.add(colour_key)
+            result.append(
+                {"name": name, "color_mode": color_mode, "color": color}
+            )
+        return result
+
     async def start_effect_rotation(self, items, interval, kind="native") -> None:
         """Start an entity-owned loop, acknowledging only its first display result.
 
         Returning before that result hides hardware failures from the calling
         service. Subsequent steps belong to the entity, not the service/client.
         """
-        items = [item.strip() for item in items if isinstance(item, str) and item.strip()]
-        if len(set(items)) < 2:
+        items = self._normalize_rotation_items(items)
+        if len(items) < 2:
             raise HomeAssistantError("Provide at least two different rotation modes")
         self.stop_effect_rotation()
         self._rotation_error = None
@@ -3499,7 +3544,8 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         self._rotation_items = items
         self._rotation_interval = max(10, min(604800, int(interval)))
         current = self._rotation_current_name()
-        self._rotation_index = items.index(current) if current in items else -1
+        names = [item["name"] for item in items]
+        self._rotation_index = names.index(current) if current in names else -1
         self._rotation_active = True
         self._rotation_wake = asyncio.Event()
         started = asyncio.get_running_loop().create_future()
@@ -3531,17 +3577,28 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             wake.set()
 
     async def _rotation_loop(self) -> None:
-        """Advance through the rotation list, applying each mode to the lamp."""
+        """Advance through the rotation list on a shared time grid.
+
+        Each step is applied, then the loop sleeps until the next interval
+        boundary on the event loop's monotonic clock.  Every lamp in this Home
+        Assistant process shares that clock, so they advance at the same
+        absolute instants even though each apply takes a different amount of
+        time.  A slow apply that overruns a boundary realigns to the following
+        one instead of accumulating drift.
+        """
         task = asyncio.current_task()
         started = self._rotation_started
+        loop = asyncio.get_running_loop()
         try:
             while self._rotation_active:
+                interval = self._rotation_interval
                 self._rotation_index = (self._rotation_index + 1) % len(
                     self._rotation_items
                 )
-                name = self._rotation_items[self._rotation_index]
+                item = self._rotation_items[self._rotation_index]
+                name = item["name"]
                 try:
-                    ok = await self._apply_rotation_item(name)
+                    ok = await self._apply_rotation_item(item)
                 except Exception as exc:  # noqa: BLE001 — keep rotation isolated
                     _LOGGER.warning(
                         "[ROTATION] [%s] Failed to apply %s: %s",
@@ -3562,14 +3619,24 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                     started.set_result(True)
                 if self.hass is not None:
                     self.async_write_ha_state()
-                try:
-                    await asyncio.wait_for(
-                        self._rotation_wake.wait(), timeout=self._rotation_interval
-                    )
-                except asyncio.TimeoutError:
-                    pass
-                if self._rotation_wake is not None:
-                    self._rotation_wake.clear()
+                # Sleep until the next boundary on the shared monotonic clock
+                # (or a manual skip).
+                next_tick = (int(loop.time() // interval) + 1) * interval
+                while self._rotation_wake is not None:
+                    delay = next_tick - loop.time()
+                    if delay <= 0:
+                        # A slow apply overran the boundary — realign to the next.
+                        next_tick = (int(loop.time() // interval) + 1) * interval
+                        continue
+                    try:
+                        await asyncio.wait_for(
+                            self._rotation_wake.wait(), timeout=delay
+                        )
+                    except asyncio.TimeoutError:
+                        pass
+                    if self._rotation_wake is not None:
+                        self._rotation_wake.clear()
+                    break
         except asyncio.CancelledError:
             raise
         finally:
@@ -3582,16 +3649,41 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 if self.hass is not None:
                     self.async_write_ha_state()
 
-    async def _apply_rotation_item(self, name: str) -> bool:
+    async def _apply_rotation_item(self, item) -> bool:
         """Apply one rotation item; return False to stop the loop."""
         if not self._is_on:
             _LOGGER.debug("[ROTATION] [%s] Lamp off -- stopping rotation", self._ip)
             return False
         if self._rotation_kind == "clock":
-            return await self._apply_rotation_clock(name)
-        return await self._apply_rotation_native(name)
+            return await self._apply_rotation_clock(item)
+        return await self._apply_rotation_native(item)
 
-    async def _apply_rotation_native(self, name: str) -> bool:
+    async def _start_rotation_apply(self) -> bool:
+        """Run the guards + reset the full display pipeline performs before a
+        firmware mode switch, without its retry bookkeeping or queue overhead.
+
+        Returns False when the lamp cannot take a rotation step right now.
+        """
+        if getattr(self, "_calibration_lock", False):
+            _LOGGER.debug(
+                "[ROTATION] [%s] Calibration lock active -- stopping rotation",
+                self._ip,
+            )
+            return False
+        if self._music_flow_enabled:
+            await self.async_set_music_flow(False, restore_display=False)
+        # Applying a new clock/effect clears any frozen frame, exactly like the
+        # full _apply_display_mode_internal path does.
+        self._display_frozen = False
+        self._display_frozen_at = None
+        self._is_scrolling = False
+        self.stop_scroll_timer()
+        return True
+
+    async def _apply_rotation_native(self, item) -> bool:
+        name = item["name"]
+        color_mode = item.get("color_mode", "normal")
+        color = item.get("color")
         spec = ALL_NATIVE_EFFECTS.get(name)
         if spec is None:
             _LOGGER.debug("[ROTATION] [%s] Unknown native effect %s -- skipped", self._ip, name)
@@ -3605,14 +3697,29 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         self._native_effect = name
         self._mode = "Native Effect"
         self._custom_draw_active = False
-        if not await self.async_apply_display_mode(update_type="color_change"):
+        # Reapply the colour mode recorded with the favourite. The firmware
+        # represents a free custom colour as mode "normal" plus an RGB override.
+        self._native_effect_color_mode = (
+            "normal" if color_mode == "custom" else color_mode
+        )
+        self._native_effect_color = (
+            list(color) if color_mode == "custom" and color else None
+        )
+        if not await self._start_rotation_apply():
+            return False
+        if not await self._execute_hardware_op(
+            lambda: self._activate_native_effect(), "rotation:native"
+        ):
             return False
         self._refresh_linked_entities()
         if self.hass is not None:
             self.async_write_ha_state()
         return True
 
-    async def _apply_rotation_clock(self, name: str) -> bool:
+    async def _apply_rotation_clock(self, item) -> bool:
+        name = item["name"]
+        color_mode = item.get("color_mode", "normal")
+        color = item.get("color")
         if name.startswith("custom:"):
             preset_id = name[len("custom:"):]
             preset = next(
@@ -3625,7 +3732,6 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             if preset is None:
                 _LOGGER.debug("[ROTATION] [%s] Unknown clock preset %s -- skipped", self._ip, name)
                 return True
-            red, green, blue = (int(channel) for channel in preset["color"])
             self._native_clock_style = next(
                 (
                     sid for sid, style in NATIVE_CLOCK_STYLES.items()
@@ -3633,10 +3739,30 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 ),
                 4,
             )
-            self._native_clock_color = (
-                0x01000000 | ((red & 0xFF) << 16) | ((green & 0xFF) << 8) | (blue & 0xFF)
-            )
-            self._native_clock_color_mode = "normal"
+            # A recorded colour mode overrides the preset's own solid colour
+            # exactly like the card's preview: custom keeps the recorded colour,
+            # a palette remaps it, normal uses the preset colour.
+            if color_mode == "custom" and color:
+                red, green, blue = color
+                self._native_clock_color = (
+                    0x01000000
+                    | ((red & 0xFF) << 16)
+                    | ((green & 0xFF) << 8)
+                    | (blue & 0xFF)
+                )
+                self._native_clock_color_mode = "normal"
+            elif color_mode in CLOCK_COLOR_MODES and color_mode != "normal":
+                self._native_clock_color = None
+                self._native_clock_color_mode = color_mode
+            else:
+                red, green, blue = (int(channel) for channel in preset["color"])
+                self._native_clock_color = (
+                    0x01000000
+                    | ((red & 0xFF) << 16)
+                    | ((green & 0xFF) << 8)
+                    | (blue & 0xFF)
+                )
+                self._native_clock_color_mode = "normal"
         else:
             style_id = next(
                 (
@@ -3649,11 +3775,27 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 _LOGGER.debug("[ROTATION] [%s] Unknown clock style %s -- skipped", self._ip, name)
                 return True
             self._native_clock_style = style_id
-            self._native_clock_color = None
-            self._native_clock_color_mode = "normal"
+            if color_mode == "custom" and color:
+                red, green, blue = color
+                self._native_clock_color = (
+                    0x01000000
+                    | ((red & 0xFF) << 16)
+                    | ((green & 0xFF) << 8)
+                    | (blue & 0xFF)
+                )
+                self._native_clock_color_mode = "normal"
+            else:
+                self._native_clock_color = None
+                self._native_clock_color_mode = (
+                    color_mode if color_mode in CLOCK_COLOR_MODES else "normal"
+                )
         self._mode = "Clock"
         self._custom_draw_active = False
-        if not await self.async_apply_display_mode(update_type="color_change"):
+        if not await self._start_rotation_apply():
+            return False
+        if not await self._execute_hardware_op(
+            lambda: self._activate_native_clock(), "rotation:clock"
+        ):
             return False
         self._refresh_linked_entities()
         if self.hass is not None:

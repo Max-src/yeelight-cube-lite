@@ -1182,7 +1182,11 @@ start_effect_rotation:
           domain: light
           multiple: true
     items:
-      description: Ordered mode names to cycle through (native effect names, or clock style names / "custom:<id>" saved presets).
+      description: >-
+        Ordered modes to cycle through. Each item is either a plain name
+        (native effect name, or clock style name / "custom:<id>" saved preset)
+        or an object {"name": ..., "color_mode": ..., "color": [r, g, b]} that
+        reapplies the colour mode recorded with the favourite.
       required: true
       example: '["Rainbow", "Ocean Waves", "Streamer"]'
       selector:

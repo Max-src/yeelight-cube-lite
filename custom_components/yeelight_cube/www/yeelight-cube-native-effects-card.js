@@ -106,6 +106,9 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       on: () => this._state?.state === "on",
       orientation: () => this._attrs().device_orientation || "right",
       apply: (name) => this._apply(name, true),
+      applyFavourite: (favourite) => this._applyFavourite(favourite),
+      currentColorMode: () => this._colorModeKey(),
+      currentColor: () => this._currentCustomColor(),
       select: (name) => {
         this._selected = name;
         return this.config.auto_apply !== false
@@ -116,10 +119,10 @@ class YeelightCubeNativeEffectsCard extends LitElement {
         this._command(service, data, domain, true),
       freeze: () => this._command("freeze_display", {}, "yeelight_cube", true),
       freezable: () => effectSupportsFreeze(this._effect()?.name),
-      startRotation: (names, intervalSeconds) =>
+      startRotation: (items, intervalSeconds) =>
         this._command(
           "start_effect_rotation",
-          { items: names, interval: intervalSeconds, kind: "native" },
+          { items, interval: intervalSeconds, kind: "native" },
           "yeelight_cube",
           true,
         ),
@@ -154,17 +157,31 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       pause: (paused) => {
         this._paused = paused;
       },
-      frame: (name, elapsed) => {
+      frame: (name, elapsed, colorMode, color) => {
         const item = this._attrs().native_effect_catalog?.find(
           (item) => item.name === name,
         );
-        return item && item.preview !== false
-          ? nativeEffectFrame(item, this._attrs(), elapsed)
-          : null;
+        if (!item || item.preview === false) return null;
+        if (colorMode == null)
+          return nativeEffectFrame(item, this._attrs(), elapsed);
+        const attrs = {
+          ...this._attrs(),
+          native_effect_color_mode:
+            colorMode === "custom" ? "normal" : colorMode || "normal",
+          native_effect_color: null,
+        };
+        if (colorMode === "custom" && Array.isArray(color))
+          attrs.native_effect_color = color;
+        return nativeEffectFrame(item, attrs, elapsed);
       },
     });
     this._onFavouritesChanged = () =>
-      markFavouriteModes(this.shadowRoot, this._controls.favourites);
+      markFavouriteModes(
+        this.shadowRoot,
+        this._controls.favourites,
+        this._colorModeKey(),
+        this._currentCustomColor(),
+      );
     this._controls.listeners.add(this._onFavouritesChanged);
     this._loop = createRafLoop(
       (now) => {
@@ -409,6 +426,28 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     }
   }
 
+  async _applyFavourite(favourite) {
+    const context = this._context;
+    const success = await this._command(
+      "set_native_effect",
+      {
+        ...nativeEffectAction(favourite.key),
+        color_mode:
+          favourite.colorMode === "custom" ? "normal" : favourite.colorMode,
+        color: favourite.colorMode === "custom" ? favourite.color : "clear",
+      },
+      "yeelight_cube",
+      true,
+    );
+    if (!success || context !== this._context) return false;
+    this._selected = favourite.key;
+    this._customColorDraft =
+      favourite.colorMode === "custom" ? [...favourite.color] : null;
+    this._selectedColorPresetId = null;
+    this.requestUpdate();
+    return true;
+  }
+
   async _apply(name = this._effect()?.name, managed = false) {
     if (!name || /^\d+$/.test(name.trim())) return;
     const context = this._context;
@@ -579,7 +618,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       title: item.name,
       dataMode: item.name,
       colorData: nativeEffectFrame(item, this._attrs(), 0),
-      favourite: this._controls.favourites.includes(item.name),
+      favourite: this._controls.hasFavourite(item.name, this._colorModeKey()),
     }));
     if (!style.startsWith("preview-"))
       return renderTextStyleSelector(this.config, previews, style, active);
@@ -656,6 +695,32 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       return preset ? `custom:${preset.id}` : "__draft__";
     }
     return "normal";
+  }
+
+  // Normalized colour-mode key for favourites: "normal", a palette mode, or
+  // "custom" (covers both a draft and a saved custom colour preset).
+  _colorModeKey() {
+    const selection = this._currentColorSelection();
+    if (selection === "normal") return "normal";
+    if (selection === "__draft__" || selection.startsWith("custom:"))
+      return "custom";
+    return selection;
+  }
+
+  // RGB tuple recorded alongside a "custom" favourite.
+  _currentCustomColor() {
+    const attrs = this._attrs();
+    const selection = this._currentColorSelection();
+    if (selection === "__draft__")
+      return this._customColorDraft || attrs.native_effect_color || null;
+    if (selection.startsWith("custom:")) {
+      const preset = clockPresetsByKind(
+        clockPresetLibrary(this._hass),
+        "color_mode",
+      ).find((preset) => `custom:${preset.id}` === selection);
+      return preset?.color || attrs.native_effect_color || null;
+    }
+    return null;
   }
 
   async _applyCustomColor(color) {
@@ -856,6 +921,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
                     aria-label="Search native effects"
                     placeholder="Search effects"
                     .value=${this._query}
+                    @keydown=${(event) => event.stopPropagation()}
                     @input=${(event) => {
                       this._query = event.target.value;
                       this._page = 0;
@@ -989,7 +1055,12 @@ class YeelightCubeNativeEffectsCard extends LitElement {
         if (node.hasAttribute("data-active-mode"))
           node.setAttribute("data-active-mode", "true");
       });
-    markFavouriteModes(this.shadowRoot, this._controls.favourites);
+    markFavouriteModes(
+      this.shadowRoot,
+      this._controls.favourites,
+      this._colorModeKey(),
+      this._currentCustomColor(),
+    );
     this._observer?.disconnect();
     this._frames = [
       ...this.shadowRoot.querySelectorAll(

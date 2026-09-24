@@ -2697,7 +2697,21 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         DOMAIN, "start_effect_rotation", handle_start_effect_rotation,
         schema=vol.Schema({
             vol.Required("entity_id"): _entity_id_or_list,
-            vol.Required("items"): [cv.string],
+            vol.Required("items"): [
+                vol.Any(
+                    cv.string,
+                    vol.Schema(
+                        {
+                            vol.Required("name"): cv.string,
+                            vol.Optional(
+                                "color_mode", default="normal"
+                            ): cv.string,
+                            vol.Optional("color"): [cv.byte],
+                        },
+                        extra=vol.PREVENT_EXTRA,
+                    ),
+                )
+            ],
             vol.Optional("interval", default=60): vol.All(
                 vol.Coerce(int), vol.Range(min=10, max=604800)
             ),

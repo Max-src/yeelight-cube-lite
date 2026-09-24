@@ -55,6 +55,20 @@ const server = http.createServer(async (request, response) => {
           }
         },
       );
+      // Real Home Assistant <ha-card> is a LitElement whose <slot> only exists
+      // after its first async update. Light-DOM children of a freshly created
+      // <ha-card> are therefore NOT rendered (and not focusable) synchronously.
+      // Mirror that here so focus/typing regressions match production.
+      const { LitElement, html } =
+        await import("/custom_components/yeelight_cube/www/lib/lit-all.js");
+      customElements.define(
+        "ha-card",
+        class extends LitElement {
+          render() {
+            return html`<slot></slot>`;
+          }
+        },
+      );
       const base = "/custom_components/yeelight_cube/www/";
       for (const file of [
         "yeelight-cube-clock-card",
@@ -101,6 +115,12 @@ const server = http.createServer(async (request, response) => {
                   name: "Dark Red",
                   kind: "color_mode",
                   color: [160, 40, 40],
+                },
+                {
+                  id: "mysolid",
+                  name: "My Solid",
+                  kind: "style",
+                  color: [12, 34, 56],
                 },
               ],
             },
@@ -224,6 +244,308 @@ const server = http.createServer(async (request, response) => {
           ].map(describe),
         };
       };
+    });
+    // A brand-new card: its <ha-card> shell has never rendered a <slot>. The
+    // FIRST keystroke must not blur (this is exactly what the user hit).
+    const freshCard = await page.evaluate(async () => {
+      const card = document.createElement("yeelight-cube-clock-card");
+      card.setConfig({ ...baseConfig, show_gallery: true, show_search: true });
+      card.hass = hass;
+      document.body.append(card);
+      window.freshClock = card;
+      const leaked = [];
+      const listener = (event) => leaked.push(event.key);
+      document.addEventListener("keydown", listener);
+      window.freshCleanup = () =>
+        document.removeEventListener("keydown", listener);
+      window.freshLeaked = leaked;
+      // Focus immediately, before ha-card's async first update resolves.
+      const input = card.shadowRoot.querySelector(".clock-search");
+      input.focus();
+      return { focusedBeforeSlot: card.shadowRoot.activeElement === input };
+    });
+    const fresh = page.locator(
+      "yeelight-cube-clock-card:last-of-type input.clock-search",
+    );
+    await fresh.click();
+    await fresh.pressSequentially("tide", { delay: 25 });
+    assert.deepEqual(
+      await page.evaluate(() => {
+        const input = freshClock.shadowRoot.querySelector(".clock-search");
+        const result = {
+          value: input.value,
+          focused: freshClock.shadowRoot.activeElement === input,
+          leaked: freshLeaked,
+          shellReused:
+            freshClock._shellNodes.wrapper ===
+            freshClock.shadowRoot.querySelector("ha-card"),
+        };
+        freshCleanup();
+        freshClock.remove();
+        return result;
+      }),
+      { value: "tide", focused: true, leaked: [], shellReused: true },
+      "first keystrokes on a freshly created card keep focus",
+    );
+    // Toggling the card background swaps the wrapper element type; that is
+    // the ONLY case the shell may be recreated, and it must not throw.
+    await page.evaluate(() => {
+      clock.setConfig({ ...baseConfig, show_card_background: false });
+      clock.hass = hass;
+      if (clock.shadowRoot.querySelector("ha-card"))
+        throw Error("no-bg shell still has ha-card");
+      clock.setConfig({ ...baseConfig, show_card_background: true });
+      clock.hass = hass;
+      if (!clock.shadowRoot.querySelector("ha-card.clock-card"))
+        throw Error("ha-card shell not restored");
+    });
+    for (const width of [390, 1400]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.evaluate(() => {
+        native.style.display = "none";
+        clock.style.width = "100%";
+        clock.setConfig({
+          ...baseConfig,
+          show_gallery: true,
+          show_search: true,
+        });
+        clock.hass = hass;
+        window.searchNode = clock.shadowRoot.querySelector(".clock-search");
+        window.escapedSearchKeys = [];
+        window.searchListener = (event) => escapedSearchKeys.push(event.key);
+        document.addEventListener("keydown", searchListener);
+      });
+      const search = page.locator(
+        "yeelight-cube-clock-card input.clock-search",
+      );
+      await search.click();
+      await search.fill("");
+      await search.pressSequentially("Rainbow", { delay: 25 });
+      assert.deepEqual(
+        await page.evaluate(() => ({
+          value: searchNode.value,
+          same: searchNode === clock.shadowRoot.querySelector(".clock-search"),
+          focused: clock.shadowRoot.activeElement === searchNode,
+          names: clock._shownStyles().map((style) => style.name),
+          escaped: escapedSearchKeys,
+        })),
+        {
+          value: "Rainbow",
+          same: true,
+          focused: true,
+          names: ["Rainbow"],
+          escaped: [],
+        },
+      );
+      await search.press("Home");
+      await page.evaluate(() => {
+        clock.hass = {
+          ...hass,
+          states: {
+            ...hass.states,
+            "light.a": {
+              ...hass.states["light.a"],
+              attributes: {
+                ...hass.states["light.a"].attributes,
+                clock_colon_blink: true,
+              },
+            },
+          },
+        };
+      });
+      await search.pressSequentially("e");
+      assert.equal(await search.inputValue(), "eRainbow");
+      await search.press("Backspace");
+      await page.evaluate(() => {
+        if (clock.shadowRoot.activeElement !== searchNode)
+          throw Error("Search lost focus");
+        if (escapedSearchKeys.length)
+          throw Error("Search leaked keyboard events");
+        document.removeEventListener("keydown", searchListener);
+      });
+      // User's exact setup: the Original selector with 10 items per page.
+      // Typing must not render a stray "10" and a saved-preset reveal during
+      // typing (the reveal branch runs inside render) must not throw and blur.
+      const originalState = await page.evaluate(async () => {
+        clock.setConfig({
+          ...baseConfig,
+          show_gallery: true,
+          show_search: true,
+          style_selector_style: "original",
+          items_per_page: 10,
+        });
+        clock.hass = hass;
+        const input = clock.shadowRoot.querySelector(".clock-search");
+        input.focus();
+        input.value = "rain";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        clock._revealSavedStyle = "Rainbow";
+        clock.render();
+        // The reveal branch that previously crashed render (mangled
+        // `_revealSavedStyle = null`) only runs for a SAVED style preset.
+        input.value = "my sol";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        clock._revealSavedStyle = "My Solid";
+        clock.render();
+        const browser = clock.shadowRoot.querySelector(".original-browser");
+        return {
+          focused: clock.shadowRoot.activeElement === input,
+          value: input.value,
+          browserText: browser?.textContent.replace(/\s+/g, " ").trim(),
+          names: clock._shownStyles().map((style) => style.name),
+          revealCleared: clock._revealSavedStyle === null,
+        };
+      });
+      assert.equal(
+        originalState.focused,
+        true,
+        "Original selector: search kept focus",
+      );
+      assert.equal(originalState.value, "my sol");
+      assert.deepEqual(originalState.names, ["My Solid"]);
+      assert.equal(
+        originalState.revealCleared,
+        true,
+        "reveal flag reset after render",
+      );
+      assert.doesNotMatch(
+        originalState.browserText,
+        /(^|\s)10(\s|$)/,
+        `stray page-size number rendered: ${originalState.browserText}`,
+      );
+      await page.screenshot({
+        path: path.join(os.tmpdir(), `yeelight-clock-search-${width}.png`),
+      });
+    }
+    console.log(
+      "PASS clock typing, caret and focus survive rerenders without global shortcuts (desktop/mobile)",
+    );
+    const favouriteResults = await page.evaluate(async () => {
+      native.style.display = "";
+      clock.style.width = "";
+      const results = [];
+      for (const card of [clock, native]) {
+        for (const previews of [true, false]) {
+          card.setConfig({
+            ...baseConfig,
+            show_favourites: true,
+            favourites_show_previews: previews,
+          });
+          card.hass = hass;
+          if (card.updateComplete) await card.updateComplete;
+          const model = card._controls;
+          const saved = [
+            { key: "Rainbow", colorMode: "bw" },
+            { key: "Rainbow", colorMode: "red_blue" },
+            { key: "Rainbow", colorMode: "custom", color: [12, 34, 56] },
+          ];
+          model.save(saved);
+          const view = [
+            ...card.shadowRoot.querySelectorAll("yeelight-mode-controls"),
+          ].find((item) => item.area === "collections");
+          await view.updateComplete;
+          calls.length = 0;
+          const first = [...view.shadowRoot.querySelectorAll("button")].find(
+            (button) => button.getAttribute("aria-label") === "Rainbow (B&W)",
+          );
+          if (!first) throw Error("Favourite button missing");
+          first.click();
+          await Promise.resolve();
+          await card._queue;
+          while (model.busy) await new Promise(requestAnimationFrame);
+          await view.updateComplete;
+          const remove = [...view.shadowRoot.querySelectorAll("button")].find(
+            (button) =>
+              button.getAttribute("aria-label") === "Remove favourite",
+          );
+          if (!remove)
+            throw Error(
+              "Selected saved favourite is not removable before state echo",
+            );
+          remove.click();
+          results.push({
+            kind: model.adapter.kind,
+            previews,
+            remaining: model.favourites,
+            commands: [...calls],
+          });
+          await model.chooseFavourite(saved[2]);
+          const customCommand = calls.at(-1);
+          if (JSON.stringify(customCommand.data.color) !== "[12,34,56]")
+            throw Error("Custom RGB lost");
+          model.save([saved[2]]);
+          if (card === clock) card._customDraft = [90, 80, 70];
+          else card._customColorDraft = [90, 80, 70];
+          model.update();
+          view._manage = true;
+          view.requestUpdate();
+          await view.updateComplete;
+          const add = view.shadowRoot.querySelector(
+            ".orderable-add-row select",
+          );
+          const variant = [...add.options].find((option) =>
+            option.textContent.includes("Rainbow"),
+          );
+          if (!variant) throw Error("Manage cannot add another RGB variant");
+          add.value = variant.value;
+          add.dispatchEvent(new Event("change"));
+          await view.updateComplete;
+          if (JSON.stringify(model.favourites[1].color) !== "[90,80,70]")
+            throw Error("Manage lost RGB");
+          model.shuffleFavourites(() => 0);
+          await view.updateComplete;
+          view.shadowRoot.querySelector(".orderable-list-row .remove").click();
+          if (JSON.stringify(model.favourites) !== JSON.stringify([saved[2]]))
+            throw Error("Manage removed wrong RGB variant");
+          view._manage = false;
+          const before = JSON.stringify(
+            model.adapter.frame("Rainbow", 2, "normal"),
+          );
+          card.hass = {
+            ...hass,
+            states: {
+              ...hass.states,
+              "light.a": {
+                ...hass.states["light.a"],
+                attributes: {
+                  ...hass.states["light.a"].attributes,
+                  native_effect_color: [255, 0, 0],
+                  clock_color: 0x01ff0000,
+                },
+              },
+            },
+          };
+          const after = JSON.stringify(
+            model.adapter.frame("Rainbow", 2, "normal"),
+          );
+          if (before !== after)
+            throw Error("Normal favourite inherited live RGB");
+          model.save([]);
+        }
+      }
+      return results;
+    });
+    for (const result of favouriteResults) {
+      assert.deepEqual(result.remaining, [
+        { key: "Rainbow", colorMode: "red_blue" },
+        { key: "Rainbow", colorMode: "custom", color: [12, 34, 56] },
+      ]);
+      assert.equal(result.commands.length, 1);
+      assert.equal(result.commands[0].data.color_mode, "bw");
+      assert.equal(result.commands[0].data.color, "clear");
+    }
+    assert.deepEqual(errors, []);
+    console.log(
+      "PASS real favourite clicks restore colours and Remove targets the saved variant before state echo",
+    );
+    if (process.env.FOCUSED_CONTROLS) return;
+    await page.mouse.move(0, 0);
+    await page.setViewportSize({ width: 1400, height: 1000 });
+    await page.evaluate(() => {
+      for (const card of [clock, native]) {
+        card.setConfig(baseConfig);
+        card.hass = hass;
+      }
     });
     let comparisons = 0;
     for (const width of [288, 358, 560]) {
@@ -934,8 +1256,11 @@ const server = http.createServer(async (request, response) => {
       const phases = [];
       view.model = {
         config: { show_favourites: true },
-        favourites: ["Rainbow"],
+        favourites: [{ key: "Rainbow", colorMode: "normal" }],
         names: () => ["Rainbow"],
+        hasFavourite: (key) => key === "Rainbow",
+        currentFavourite: () => ({ key: "Rainbow", colorMode: "normal" }),
+        captureFavourite: (key) => ({ key, colorMode: "normal" }),
         paused: false,
         busy: false,
         error: "",
@@ -985,8 +1310,11 @@ const server = http.createServer(async (request, response) => {
           show_rotation: true,
           rotation_interval: 3600,
         },
-        favourites: ["Rainbow"],
+        favourites: [{ key: "Rainbow", colorMode: "normal" }],
         names: () => ["Rainbow"],
+        hasFavourite: (key) => key === "Rainbow",
+        currentFavourite: () => ({ key: "Rainbow", colorMode: "normal" }),
+        captureFavourite: (key) => ({ key, colorMode: "normal" }),
         ready: () => true,
         active: false,
         frozen: false,

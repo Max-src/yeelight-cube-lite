@@ -428,12 +428,16 @@ test("rotation only schedules after success and stops for hidden, off or changed
 test("favourites allow direct removal without changing selection", () => {
   const controls = new ModeControlsController({ current: () => "Rainbow" });
   controls.save(["Rainbow", "Streamer"]);
-  controls.save(controls.favourites.filter((name) => name !== "Streamer"));
-  assert.deepEqual(controls.favourites, ["Rainbow"]);
+  controls.save(controls.favourites.filter((f) => f.key !== "Streamer"));
+  assert.deepEqual(controls.favourites, [
+    { key: "Rainbow", colorMode: "normal" },
+  ]);
   controls.toggleFavourite();
   assert.deepEqual(controls.favourites, []);
   controls.toggleFavourite();
-  assert.deepEqual(controls.favourites, ["Rainbow"]);
+  assert.deepEqual(controls.favourites, [
+    { key: "Rainbow", colorMode: "normal" },
+  ]);
 });
 
 test("shared selectors bind text, preview and carousel navigation without duplicate callbacks", () => {
@@ -1003,7 +1007,9 @@ test("collection storage tolerates a blocked localStorage getter on reads and wr
     });
     const controls = new ModeControlsController({});
     controls.save(["Rainbow", "Rainbow"]);
-    assert.deepEqual(controls.favourites, ["Rainbow"]);
+    assert.deepEqual(controls.favourites, [
+      { key: "Rainbow", colorMode: "normal" },
+    ]);
     assert.match(controls.error, /session only/);
   } finally {
     if (descriptor)

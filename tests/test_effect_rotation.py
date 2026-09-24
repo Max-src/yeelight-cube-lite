@@ -21,8 +21,10 @@ def _rotation_helpers():
             "start_effect_rotation",
             "stop_effect_rotation",
             "skip_effect_rotation",
+            "_normalize_rotation_items",
             "_rotation_loop",
             "_apply_rotation_item",
+            "_start_rotation_apply",
             "_apply_rotation_native",
             "_apply_rotation_clock",
             "_rotation_current_name",
@@ -33,6 +35,7 @@ def _rotation_helpers():
             "DOMAIN": DOMAIN,
             "NATIVE_CLOCK_STYLES": NATIVE_CLOCK_STYLES,
             "ALL_NATIVE_EFFECTS": ALL_NATIVE_EFFECTS,
+            "CLOCK_COLOR_MODES": CONSTANTS["CLOCK_COLOR_MODES"],
             "_LOGGER": Mock(),
             "APPLY_HARD_TIMEOUT": 8,
             "HomeAssistantError": ValueError,
@@ -68,14 +71,21 @@ def make_light(helpers, kind="native", is_on=True, extended=False):
         _rotation_wake=None,
         _rotation_started=None,
         _rotation_error=None,
+        _calibration_lock=False,
+        _music_flow_enabled=False,
+        stop_scroll_timer=Mock(),
+        _execute_hardware_op=AsyncMock(return_value=True),
+        _activate_native_clock=AsyncMock(),
+        _activate_native_effect=AsyncMock(),
         async_apply_display_mode=AsyncMock(return_value=True),
         _refresh_linked_entities=Mock(),
         async_write_ha_state=Mock(),
         _create_tracked_task=Mock(side_effect=lambda coro, name=None: asyncio.create_task(coro)),
     )
     _bind(light, helpers, "start_effect_rotation", "stop_effect_rotation",
-          "skip_effect_rotation", "_rotation_loop", "_apply_rotation_item",
-          "_apply_rotation_native", "_apply_rotation_clock", "_rotation_current_name")
+          "skip_effect_rotation", "_normalize_rotation_items", "_rotation_loop",
+          "_apply_rotation_item", "_start_rotation_apply", "_apply_rotation_native",
+          "_apply_rotation_clock", "_rotation_current_name")
     return light
 
 
@@ -100,58 +110,137 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_rotation_does_not_report_failed_display_as_success(self):
         light = make_light(self.helpers)
-        light.async_apply_display_mode.return_value = False
-        self.assertFalse(await light._apply_rotation_native("Rainbow"))
-        self.assertFalse(await light._apply_rotation_clock("Rainbow"))
+        light._execute_hardware_op.return_value = False
+        self.assertFalse(await light._apply_rotation_native({"name": "Rainbow", "color_mode": "normal", "color": None}))
+        self.assertFalse(await light._apply_rotation_clock({"name": "Rainbow", "color_mode": "normal", "color": None}))
 
     async def test_native_apply_sets_mode_and_applies(self):
         light = make_light(self.helpers, kind="native")
-        self.assertTrue(await light._apply_rotation_native("Rainbow"))
+        self.assertTrue(
+            await light._apply_rotation_native(
+                {"name": "Rainbow", "color_mode": "normal", "color": None}
+            )
+        )
         self.assertEqual(light._native_effect, "Rainbow")
         self.assertEqual(light._mode, "Native Effect")
-        light.async_apply_display_mode.assert_awaited_once_with(update_type="color_change")
+        light._execute_hardware_op.assert_awaited_once()
         light._refresh_linked_entities.assert_called_once()
+
+    async def test_native_apply_reapplies_recorded_color(self):
+        light = make_light(self.helpers, kind="native")
+        await light._apply_rotation_native(
+            {"name": "Rainbow", "color_mode": "custom", "color": [12, 34, 56]}
+        )
+        self.assertEqual(light._native_effect_color_mode, "normal")
+        self.assertEqual(light._native_effect_color, [12, 34, 56])
+        await light._apply_rotation_native(
+            {"name": "Rainbow", "color_mode": "red_blue", "color": None}
+        )
+        self.assertEqual(light._native_effect_color_mode, "red_blue")
+        self.assertIsNone(light._native_effect_color)
 
     async def test_native_unknown_and_experimental_are_skipped(self):
         light = make_light(self.helpers, kind="native", extended=False)
-        self.assertTrue(await light._apply_rotation_native("No Such Effect"))
-        light.async_apply_display_mode.assert_not_awaited()
+        self.assertTrue(
+            await light._apply_rotation_native(
+                {"name": "No Such Effect", "color_mode": "normal", "color": None}
+            )
+        )
+        light._execute_hardware_op.assert_not_awaited()
         experimental = next(
             name for name, spec in ALL_NATIVE_EFFECTS.items() if spec.get("extended")
         )
-        self.assertTrue(await light._apply_rotation_native(experimental))
-        light.async_apply_display_mode.assert_not_awaited()
+        self.assertTrue(
+            await light._apply_rotation_native(
+                {"name": experimental, "color_mode": "normal", "color": None}
+            )
+        )
+        light._execute_hardware_op.assert_not_awaited()
 
     async def test_off_lamp_stops_rotation(self):
         light = make_light(self.helpers, kind="native", is_on=False)
-        self.assertFalse(await light._apply_rotation_item("Rainbow"))
+        self.assertFalse(
+            await light._apply_rotation_item(
+                {"name": "Rainbow", "color_mode": "normal", "color": None}
+            )
+        )
 
     async def test_clock_builtin_and_preset_apply(self):
         light = make_light(self.helpers, kind="clock")
         rainbow_id = next(
             sid for sid, style in NATIVE_CLOCK_STYLES.items() if style["name"] == "Rainbow"
         )
-        self.assertTrue(await light._apply_rotation_clock("Rainbow"))
+        self.assertTrue(
+            await light._apply_rotation_clock(
+                {"name": "Rainbow", "color_mode": "normal", "color": None}
+            )
+        )
         self.assertEqual(light._native_clock_style, rainbow_id)
         self.assertIsNone(light._native_clock_color)
         self.assertEqual(light._mode, "Clock")
         # Saved preset -> White base + packed 0x01RRGGBB colour.
-        self.assertTrue(await light._apply_rotation_clock("custom:abc123"))
+        self.assertTrue(
+            await light._apply_rotation_clock(
+                {"name": "custom:abc123", "color_mode": "normal", "color": None}
+            )
+        )
         white_id = next(
             sid for sid, style in NATIVE_CLOCK_STYLES.items() if style["name"] == "White"
         )
         self.assertEqual(light._native_clock_style, white_id)
         self.assertEqual(light._native_clock_color, 0x010C2238)
         # Unknown names are skipped without applying.
-        light.async_apply_display_mode.reset_mock()
-        self.assertTrue(await light._apply_rotation_clock("No Such Style"))
-        light.async_apply_display_mode.assert_not_awaited()
+        light._execute_hardware_op.reset_mock()
+        self.assertTrue(
+            await light._apply_rotation_clock(
+                {"name": "No Such Style", "color_mode": "normal", "color": None}
+            )
+        )
+        light._execute_hardware_op.assert_not_awaited()
+
+    async def test_clock_apply_reapplies_recorded_color(self):
+        light = make_light(self.helpers, kind="clock")
+        # Custom colour on a built-in style: packed 0x01RRGGBB, mode normal.
+        await light._apply_rotation_clock(
+            {"name": "Rainbow", "color_mode": "custom", "color": [9, 8, 7]}
+        )
+        self.assertEqual(light._native_clock_color, 0x01090807)
+        self.assertEqual(light._native_clock_color_mode, "normal")
+        # Palette mode clears the colour and sets the palette.
+        await light._apply_rotation_clock(
+            {"name": "Rainbow", "color_mode": "red_blue", "color": None}
+        )
+        self.assertIsNone(light._native_clock_color)
+        self.assertEqual(light._native_clock_color_mode, "red_blue")
+        # A recorded custom colour overrides a preset's own colour.
+        await light._apply_rotation_clock(
+            {"name": "custom:abc123", "color_mode": "custom", "color": [1, 2, 3]}
+        )
+        self.assertEqual(light._native_clock_color, 0x01010203)
+        # A palette on a preset drops its colour and remaps.
+        await light._apply_rotation_clock(
+            {"name": "custom:abc123", "color_mode": "bw", "color": None}
+        )
+        self.assertIsNone(light._native_clock_color)
+        self.assertEqual(light._native_clock_color_mode, "bw")
 
     async def test_start_schedules_loop_and_stop_cancels(self):
         light = make_light(self.helpers, kind="native")
-        await light.start_effect_rotation(["Rainbow", "Streamer"], 30)
+        await light.start_effect_rotation(
+            [
+                {"name": "Rainbow", "color_mode": "normal", "color": None},
+                "Streamer",
+            ],
+            30,
+        )
         self.assertTrue(light._rotation_active)
-        self.assertEqual(light._rotation_items, ["Rainbow", "Streamer"])
+        self.assertEqual(
+            light._rotation_items,
+            [
+                {"name": "Rainbow", "color_mode": "normal", "color": None},
+                {"name": "Streamer", "color_mode": "normal", "color": None},
+            ],
+        )
         self.assertEqual(light._rotation_interval, 30)
         self.assertEqual(light._rotation_index, 1)
         self.assertIsNotNone(light._rotation_task)
@@ -159,9 +248,37 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(light._rotation_active)
         self.assertIsNone(light._rotation_task)
 
+    async def test_normalize_rotation_items(self):
+        light = make_light(self.helpers)
+        normalized = light._normalize_rotation_items(
+            [
+                "Rainbow",
+                {"name": " Streamer ", "color_mode": "custom", "color": [1, 2, 3]},
+                {"name": "White", "color_mode": "bw"},
+                {"name": "White", "color_mode": "red_blue"},  # same name, new mode
+                {"name": "Rainbow", "color_mode": "normal"},  # duplicate
+                {"name": "Bad", "color_mode": "custom", "color": [1, 2]},  # invalid
+                {"name": "Odd", "color_mode": "nonsense"},
+                {"name": ""},
+                {"name": " 12 ", "color_mode": "normal"},
+            ]
+        )
+        self.assertEqual(
+            normalized,
+            [
+                {"name": "Rainbow", "color_mode": "normal", "color": None},
+                {"name": "Streamer", "color_mode": "custom", "color": [1, 2, 3]},
+                {"name": "White", "color_mode": "bw", "color": None},
+                {"name": "White", "color_mode": "red_blue", "color": None},
+                {"name": "Bad", "color_mode": "normal", "color": None},
+                {"name": "Odd", "color_mode": "normal", "color": None},
+                {"name": "12", "color_mode": "normal", "color": None},
+            ],
+        )
+
     async def test_start_waits_for_first_apply_and_propagates_failure(self):
         light = make_light(self.helpers)
-        light.async_apply_display_mode.return_value = False
+        light._execute_hardware_op.return_value = False
         light._last_connection_error = "Device timeout"
         with self.assertRaisesRegex(ValueError, "Device timeout"):
             await light.start_effect_rotation(["Rainbow", "Streamer"], 10)

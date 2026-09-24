@@ -27,6 +27,7 @@ import {
   renderMatrixAppearanceSettings,
 } from "./editor_ui_utils.js";
 import {
+  favouriteId,
   nextRotationMode,
   rotationIntervalSeconds,
   rotationIntervalParts,
@@ -36,6 +37,28 @@ import {
   ACTION_BUTTON_KEYS,
   ACTION_BUTTON_LABELS,
 } from "./mode-controls-controller.js";
+
+// A favourite is uniquely identified by its key AND colour mode: the same style
+// can be saved once per mode. The manage list works on these synthetic ids so
+// duplicate keys never collapse into a single row.
+const FAVOURITE_MODE_LABELS = {
+  normal: "Normal",
+  bw: "B&W",
+  red_blue: "Vivid",
+  white_orange: "Retro Orange",
+  blue_yellow: "Tropical",
+  purple_orange: "Violet & Gold",
+  custom: "Custom",
+};
+
+function favouriteLabel(favourite, title = (key) => key) {
+  const mode =
+    FAVOURITE_MODE_LABELS[favourite.colorMode] || favourite.colorMode;
+  const color = favourite.color
+    ?.map((channel) => channel.toString(16).padStart(2, "0"))
+    .join("");
+  return `${title(favourite.key)} (${color ? `#${color}` : mode})`;
+}
 
 export function renderColorModeSettings(config, change) {
   const choices = (label, key, values, fallback) =>
@@ -265,6 +288,8 @@ class YeelightModeControls extends LitElement {
             const pixels = this.model.adapter.frame(
               node.dataset.preview,
               now / 1000,
+              node.dataset.colorMode || undefined,
+              node.dataset.color ? JSON.parse(node.dataset.color) : undefined,
             );
             node
               .querySelectorAll(".gallery-matrix-preview > div")
@@ -323,16 +348,23 @@ class YeelightModeControls extends LitElement {
     model.orient(target);
   }
 
-  _preview(item) {
+  _preview(favourite) {
     const config = this.model.config;
     // Render at the animation loop's CURRENT time, not phase 0: every Lit
     // re-render regenerates this markup, and a phase-0 frame flashes the
     // start of the animation until the next RAF tick repaints the cells.
-    const pixels = this.model.adapter.frame(item.key, performance.now() / 1000);
+    const pixels = this.model.adapter.frame(
+      favourite.key,
+      performance.now() / 1000,
+      favourite.colorMode,
+      favourite.color,
+    );
     if (!pixels) return html`<span class="muted">Preview unavailable</span>`;
     const background = config.effect_matrix_background || "black";
     return html`<div
-      data-preview=${item.key}
+      data-preview=${favourite.key}
+      data-color-mode=${favourite.colorMode || "normal"}
+      data-color=${favourite.color ? JSON.stringify(favourite.color) : ""}
       style=${`width:${Math.max(30, Math.min(100, Number(config.effect_preview_size) || 100))}%;margin:auto;`}
     >
       ${unsafeHTML(
@@ -463,8 +495,21 @@ class YeelightModeControls extends LitElement {
           model.busy || adapter.disabled(),
         ),
       );
-    const playable = model.favourites.filter((name) => adapter.available(name));
+    const playable = model.favourites.filter((f) => adapter.available(f.key));
     const names = model.names();
+    const selectedFavourite = model.currentFavourite();
+    const isSelected = (favourite) =>
+      favouriteId(favourite) === favouriteId(selectedFavourite);
+    const savedCurrent = model.favourites.some(isSelected);
+    const candidates = items
+      .map((item) => model.captureFavourite(item.key))
+      .filter(Boolean);
+    const byId = new Map(
+      [...candidates, ...model.favourites].map((item) => [
+        favouriteId(item),
+        item,
+      ]),
+    );
     return html` ${config.show_favourites
       ? html`<section>
           <header>
@@ -492,25 +537,30 @@ class YeelightModeControls extends LitElement {
                 },
               )}
               ${this._button(
-                model.favourites.includes(current)
-                  ? "Remove favourite"
-                  : "Add favourite",
-                model.favourites.includes(current)
-                  ? "mdi:star"
-                  : "mdi:star-outline",
+                savedCurrent ? "Remove favourite" : "Add favourite",
+                savedCurrent ? "mdi:star" : "mdi:star-outline",
                 () => model.toggleFavourite(),
-                { contentMode: "icon", disabled: !current },
+                {
+                  contentMode: "icon",
+                  disabled: !selectedFavourite || model.busy,
+                },
               )}
             </div>
           </header>
           ${this._manage
             ? renderOrderableList({
-                items: model.favourites,
-                available: items
-                  .map((item) => item.key)
-                  .filter((key) => !model.favourites.includes(key)),
-                labelFor: title,
-                onUpdate: (names) => model.save(names),
+                items: model.favourites.map(favouriteId),
+                available: candidates
+                  .filter(
+                    (candidate) =>
+                      !model.favourites.some(
+                        (saved) =>
+                          favouriteId(saved) === favouriteId(candidate),
+                      ),
+                  )
+                  .map(favouriteId),
+                labelFor: (id) => favouriteLabel(byId.get(id), title),
+                onUpdate: (ids) => model.save(ids.map((id) => byId.get(id))),
                 addPlaceholder: "Add favourite",
               })
             : ""}
@@ -519,45 +569,46 @@ class YeelightModeControls extends LitElement {
             : config.favourites_show_previews !== false
               ? html`<div class="favourites">
                   ${model.favourites.map(
-                    (key) =>
+                    (favourite) =>
                       html` <button
                         type="button"
                         class="mode"
-                        aria-label=${title(key)}
-                        aria-pressed=${String(key === current)}
+                        aria-label=${favouriteLabel(favourite, title)}
+                        aria-pressed=${String(isSelected(favourite))}
                         ?disabled=${model.busy ||
                         adapter.disabled() ||
-                        !playable.includes(key)}
-                        @click=${() => model.choose(key)}
+                        !playable.includes(favourite)}
+                        @click=${() => model.chooseFavourite(favourite)}
                       >
-                        ${items.some((item) => item.key === key)
-                          ? this._preview({ key })
-                          : ""}<span>${title(key)}</span>${!playable.includes(
-                          key,
-                        )
+                        ${items.some((item) => item.key === favourite.key)
+                          ? this._preview(favourite)
+                          : ""}<span>${favouriteLabel(
+                          favourite,
+                          title,
+                        )}</span>${!playable.includes(favourite)
                           ? html`<small>Unavailable</small>`
                           : ""}
                       </button>`,
                   )}
                 </div>`
               : renderActionRow(
-                  html`${model.favourites.map((key) =>
+                  html`${model.favourites.map((favourite) =>
                     this._button(
-                      title(key),
+                      favouriteLabel(favourite, title),
                       adapter.kind === "clock"
                         ? "mdi:clock-outline"
                         : "mdi:creation",
-                      () => model.choose(key),
+                      () => model.chooseFavourite(favourite),
                       {
                         buttonStyle:
                           config.collection_buttons_style || "classic",
                         contentMode:
                           config.collection_buttons_content_mode || "icon_text",
-                        selected: key === current,
+                        selected: isSelected(favourite),
                         disabled:
                           model.busy ||
                           adapter.disabled() ||
-                          !playable.includes(key),
+                          !playable.includes(favourite),
                       },
                     ),
                   )}`,

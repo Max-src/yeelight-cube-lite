@@ -2,7 +2,6 @@ import {
   renderTextStyleSelector,
   renderPreviewStyleSelector,
   bindStyleSelectorEvents,
-  selectorItemsPerPage,
 } from "./style-selector-utils.js";
 // ============================================================================
 //  Yeelight Cube Lite — Clock Card
@@ -342,6 +341,17 @@ class YeelightCubeClockCard extends HTMLElement {
       on: () => this._stateObj()?.state === "on",
       orientation: () => this._attrs().device_orientation || "right",
       apply: (name) => this._applyStyle(name, true),
+      applyFavourite: (favourite) => this._applyFavourite(favourite),
+      currentColorMode: () => this._currentColorMode(this._attrs()),
+      currentColor: () => {
+        const a = this._attrs();
+        if (this._currentColorMode(a) !== "custom") return null;
+        return (
+          this._customDraft ||
+          this._customPresetColor ||
+          clockColorToRgb(a.clock_color)
+        );
+      },
       command: (service, data, domain = "yeelight_cube") =>
         callServiceOnTargetEntities(this._hass, this.config, service, data, {
           domain,
@@ -355,12 +365,12 @@ class YeelightCubeClockCard extends HTMLElement {
           { domain: "yeelight_cube" },
         ),
       freezable: () => effectSupportsFreeze(this._currentStyle()?.name),
-      startRotation: (names, intervalSeconds) =>
+      startRotation: (items, intervalSeconds) =>
         callServiceOnTargetEntities(
           this._hass,
           this.config,
           "start_effect_rotation",
-          { items: names, interval: intervalSeconds, kind: "clock" },
+          { items, interval: intervalSeconds, kind: "clock" },
           { domain: "yeelight_cube" },
         ),
       stopRotation: () =>
@@ -406,14 +416,18 @@ class YeelightCubeClockCard extends HTMLElement {
       pause: (paused) => {
         this._previewsPaused = paused;
       },
-      frame: (name, phase) => {
+      frame: (name, phase, colorMode, color) => {
         const style = this._controlStyles().find(
           (style) => clockPresetKey(style) === name,
         );
         if (!style) return null;
         const { fontMap, metrics } = this._getNativeClockFont();
+        const attrs =
+          colorMode != null
+            ? this._previewAttrsFor(style, colorMode, color)
+            : this._previewAttrs(style);
         return flipMatrixVertical(
-          renderClockFrame(this._previewAttrs(style), fontMap, metrics, phase),
+          renderClockFrame(attrs, fontMap, metrics, phase),
         );
       },
     });
@@ -421,7 +435,12 @@ class YeelightCubeClockCard extends HTMLElement {
     // Keep the grid/list star badges in sync whenever favourites change
     // (controller.notify fires on every state update — marking is cheap).
     this._markFavouritesListener ||= () =>
-      markFavouriteModes(this.shadowRoot, this._controls.favourites);
+      markFavouriteModes(
+        this.shadowRoot,
+        this._controls.favourites,
+        this._currentColorMode(this._attrs()),
+        this._controls.adapter.currentColor(),
+      );
     this._controls.listeners.add(this._markFavouritesListener);
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     this._stateSignature = null;
@@ -773,6 +792,32 @@ class YeelightCubeClockCard extends HTMLElement {
     return attrs;
   }
 
+  // Like _previewAttrs, but renders a favourite under its recorded colour mode
+  // (and custom colour) instead of the card's currently selected mode.
+  _previewAttrsFor(style, colorMode, color) {
+    const a = this._attrs();
+    const attrs = {
+      clock_style_id: style.id,
+      clock_style: style.name,
+      clock_content: a.clock_content,
+      clock_show_date: a.clock_show_date,
+      clock_12_hour: a.clock_12_hour,
+      clock_colon_blink: a.clock_colon_blink,
+      clock_color_mode:
+        colorMode === "custom" ? "normal" : colorMode || "normal",
+      native_effect_direction: a.native_effect_direction,
+    };
+    if (style.presetId) {
+      attrs.clock_style = "White";
+      attrs.clock_color_rgb =
+        colorMode === "custom" && color ? color : style.color;
+      return attrs;
+    }
+    if (colorMode === "custom" && Array.isArray(color))
+      attrs.clock_color_rgb = color;
+    return attrs;
+  }
+
   _currentStyle() {
     const a = this._attrs();
     const preset = !this._customMode && this._activeStylePreset(a);
@@ -831,6 +876,35 @@ class YeelightCubeClockCard extends HTMLElement {
     const result = this._callSetClock(action, managed);
     this.render();
     return result;
+  }
+
+  async _applyFavourite(favourite) {
+    const style = this._controlStyles().find(
+      (item) => clockPresetKey(item) === favourite.key,
+    );
+    if (!style) return false;
+    const action = clockStyleAction(style);
+    action.color_mode =
+      favourite.colorMode === "custom" ? "normal" : favourite.colorMode;
+    action.color =
+      favourite.colorMode === "custom"
+        ? favourite.color
+        : action.color || "clear";
+    const context = this._controls.context;
+    if (
+      !(await this._callSetClock(action, true)) ||
+      context !== this._controls.context
+    )
+      return false;
+    this._customMode = favourite.colorMode === "custom";
+    this._customDraft = this._customMode ? [...favourite.color] : null;
+    this._customPresetColor = null;
+    this._selectedStylePresetId = style.presetId || null;
+    this._revealSavedStyle = null;
+    this._pendingStyleColor = null;
+    this._lastSelfSelect = Date.now();
+    this.render();
+    return true;
   }
 
   _applyContent(content) {
@@ -1246,19 +1320,31 @@ class YeelightCubeClockCard extends HTMLElement {
   }
 
   // ── Rendering ─────────────────────────────────────────────────────────────
+  //
+  // RENDER SHELL RULE (read before touching render()):
+  // This card is a plain HTMLElement that rebuilds its markup as a string.
+  // It must NEVER recreate the outer <style> + <ha-card>/<div> shell per
+  // render. In Home Assistant <ha-card> is a LitElement whose <slot> only
+  // exists after an ASYNC update, so light-DOM children of a brand-new
+  // <ha-card> are not rendered — and not focusable — synchronously. Recreating
+  // the shell on every keystroke therefore blurred the search input and let
+  // typing leak to HA's global "e" Search shortcut. The shell is built once in
+  // _shell() and only its inner content is replaced; interactive nodes that
+  // must survive a rebuild (the search input) are persistent, see _mountSearch.
   render() {
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     if (!this._hass) {
-      this.shadowRoot.innerHTML = `<div class="loading">Loading…</div>`;
+      this._shellContent(`<div class="loading">Loading…</div>`, false);
       return;
     }
     const entity = this._primaryEntity();
     if (!entity || !this._hass.states?.[entity]) {
-      this.shadowRoot.innerHTML = `
-        ${this._styles()}
-        <ha-card class="clock-card"><div class="empty">
+      this._shellContent(
+        `<div class="empty">
           Configure a Yeelight Cube Lite light entity in the card editor.
-        </div></ha-card>`;
+        </div>`,
+        true,
+      );
       return;
     }
 
@@ -1295,7 +1381,7 @@ class YeelightCubeClockCard extends HTMLElement {
             if (perPage > 0) this._selectorPage = Math.floor(idx / perPage);
           }
         }
-        this._revealSavedStyselectorItemsPerPage(this.config);
+        this._revealSavedStyle = null;
       }
     }
 
@@ -1345,10 +1431,11 @@ class YeelightCubeClockCard extends HTMLElement {
       sections.push(this._renderColorMode(a));
     }
     if (this.config.show_gallery !== false) {
+      // The search input is a PERSISTENT node (see _mountSearch): emit only a
+      // placeholder slot here so the innerHTML rebuild never destroys the
+      // focused input mid-typing.
       if (this.config.show_search !== false)
-        sections.push(
-          `<input class="clock-search" type="search" aria-label="Search clock modes" placeholder="Search clock modes" value="${escapeHtml(this._searchQuery || "")}" style="box-sizing:border-box;width:100%;min-width:0;padding:10px;margin:8px 0;border:1px solid var(--divider-color,#ddd);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color);font:inherit;">`,
-        );
+        sections.push('<div class="clock-search-slot"></div>');
       sections.push(
         this._shownStyles().length
           ? this._renderStyleSelector(sel, current)
@@ -1368,17 +1455,17 @@ class YeelightCubeClockCard extends HTMLElement {
 
     const inner = `${title}${activeLabel}${sections.join("")}`;
     const focusedButton = this.shadowRoot.activeElement;
-    const searchFocused = focusedButton?.classList.contains("clock-search");
+    // Capture search focus + caret before the rebuild blurs the input, so
+    // _mountSearch can restore them on the reused node.
+    const searchWasFocused =
+      !!this._searchInput && focusedButton === this._searchInput;
+    this._searchSelection = searchWasFocused
+      ? [this._searchInput.selectionStart, this._searchInput.selectionEnd]
+      : null;
     const focusedControl = focusedButton?.closest("[data-clock-control]")
       ?.dataset.clockControl;
     const focusedValue = focusedButton?.dataset.value;
-    this.shadowRoot.innerHTML = `
-      ${this._styles()}
-      ${
-        showCard
-          ? `<ha-card class="clock-card">${inner}</ha-card>`
-          : `<div class="clock-card no-bg">${inner}</div>`
-      }`;
+    this._shellContent(inner, showCard);
 
     this._controlViews ||= new Map();
     this.shadowRoot.querySelectorAll("[data-mode-controls]").forEach((slot) => {
@@ -1394,15 +1481,7 @@ class YeelightCubeClockCard extends HTMLElement {
     });
     this._controls?.update();
     this._attachHandlers();
-    const search = this.shadowRoot.querySelector(".clock-search");
-    if (search) {
-      search.oninput = (event) => {
-        this._searchQuery = event.target.value;
-        this._selectorPage = 0;
-        this.render();
-      };
-      if (searchFocused) search.focus({ preventScroll: true });
-    }
+    this._mountSearch();
     if (focusedControl && focusedValue) {
       const group = this.shadowRoot.querySelector(
         `[data-clock-control="${focusedControl}"] .shared-button-group`,
@@ -1421,12 +1500,97 @@ class YeelightCubeClockCard extends HTMLElement {
     }
     this._markActive();
     this.dataset.favStars = String(this.config.favourites_show_stars !== false);
-    markFavouriteModes(this.shadowRoot, this._controls?.favourites);
+    markFavouriteModes(
+      this.shadowRoot,
+      this._controls?.favourites,
+      this._currentColorMode(this._attrs()),
+      this._controls?.adapter.currentColor(),
+    );
     if (this._isPreviewSelector() && this._displayMode() === "wheel") {
       this._setupWheelNavigation();
     }
     this._setupObserver();
     this._paintVisible();
+  }
+
+  // Persistent shell: one <style> plus one <ha-card>/<div class="no-bg">
+  // wrapper, created once and reused. Only the wrapper's inner content is
+  // replaced per render (see RENDER SHELL RULE above). The wrapper is
+  // recreated only when the background toggle changes its element type.
+  _shellContent(inner, showCard) {
+    const root = this.shadowRoot;
+    const wantTag = showCard ? "HA-CARD" : "DIV";
+    let { styleEl, wrapper } = this._shellNodes || {};
+    if (!styleEl || !styleEl.isConnected) {
+      styleEl = document.createElement("style");
+      root.replaceChildren(styleEl);
+      wrapper = null;
+    }
+    const css = this._styles().replace(/^\s*<style>|<\/style>\s*$/g, "");
+    if (styleEl.textContent !== css) styleEl.textContent = css;
+    if (!wrapper || !wrapper.isConnected || wrapper.tagName !== wantTag) {
+      wrapper?.remove();
+      wrapper = document.createElement(showCard ? "ha-card" : "div");
+      wrapper.className = showCard ? "clock-card" : "clock-card no-bg";
+      root.append(wrapper);
+    }
+    wrapper.innerHTML = inner;
+    this._shellNodes = { styleEl, wrapper };
+  }
+
+  // The search field is a single persistent <input> reused across every
+  // innerHTML rebuild. Recreating it per keystroke blurred it mid-typing (so
+  // keystrokes leaked to Home Assistant's global shortcuts and opened its
+  // Search dialog); keeping one node preserves focus, caret and value.
+  _mountSearch() {
+    const slot = this.shadowRoot.querySelector(".clock-search-slot");
+    if (!slot) return;
+    if (!this._searchInput) {
+      const input = document.createElement("input");
+      input.className = "clock-search";
+      input.type = "search";
+      input.setAttribute("aria-label", "Search clock modes");
+      input.placeholder = "Search clock modes";
+      input.style.cssText =
+        "box-sizing:border-box;width:100%;min-width:0;padding:10px;margin:8px 0;border:1px solid var(--divider-color,#ddd);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color);font:inherit;";
+      // Stop keydown/keyup here so typing never reaches HA's document-level
+      // shortcut handlers (e.g. "e" opening the Search Home Assistant bar).
+      const stop = (event) => event.stopPropagation();
+      input.addEventListener("keydown", stop);
+      input.addEventListener("keyup", stop);
+      input.addEventListener("input", (event) => {
+        this._searchQuery = event.target.value;
+        this._selectorPage = 0;
+        this.render();
+      });
+      this._searchInput = input;
+    }
+    const input = this._searchInput;
+    // Only sync the value when the user isn't actively editing, so re-renders
+    // triggered by unrelated Home Assistant updates don't disturb the caret.
+    if (!this._searchSelection) input.value = this._searchQuery || "";
+    slot.replaceWith(input);
+    if (this._searchSelection) {
+      const selection = this._searchSelection;
+      this._searchSelection = null;
+      const restore = () => {
+        input.focus({ preventScroll: true });
+        try {
+          input.setSelectionRange(selection[0], selection[1]);
+        } catch {
+          /* type=search may reject setSelectionRange on some engines */
+        }
+      };
+      restore();
+      // Safety net: if the wrapper is a not-yet-slotted <ha-card> (first
+      // paint), the input isn't focusable yet — retry once it has rendered.
+      if (this.shadowRoot.activeElement !== input) {
+        const card = this._shellNodes?.wrapper;
+        (card?.updateComplete || Promise.resolve()).then(() => {
+          if (input.isConnected) restore();
+        });
+      }
+    }
   }
 
   _previewTile(style, { current = false, size } = {}) {
@@ -1471,10 +1635,12 @@ class YeelightCubeClockCard extends HTMLElement {
       this.config,
       this._shownStyles().map((style) => {
         const key = clockPresetKey(style);
+        const colorMode =
+          this._currentColorMode?.(this._attrs?.() || {}) || "normal";
         return {
           name: style.name,
           dataMode: key,
-          favourite: this._controls?.favourites.includes(key),
+          favourite: this._controls?.hasFavourite(key, colorMode),
         };
       }),
       sel,
@@ -1581,7 +1747,7 @@ class YeelightCubeClockCard extends HTMLElement {
 
     // Pagination shares the same config key and controls as the preview modes.
     let pagedItems = items;
-    let paginationHtml = selectorItemsPerPage(this.config);
+    let paginationHtml = "";
     const itemsPerPage = parseInt(this.config.items_per_page) || 0;
     if (itemsPerPage > 0 && items.length > itemsPerPage) {
       const result = renderPagination({
