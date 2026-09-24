@@ -5,6 +5,18 @@ import {
   getActionRowClass,
 } from "./action-button-utils.js";
 
+export const COLOR_PRESET_STYLE_CHOICES = [
+  { value: "label", label: "Swatch + name" },
+  { value: "filled", label: "Filled" },
+  { value: "name", label: "Name only" },
+];
+
+export const COLOR_PRESET_SHAPE_CHOICES = [
+  { value: "square", label: "Square" },
+  { value: "rounded", label: "Rounded" },
+  { value: "circle", label: "Circle" },
+];
+
 export const colorModeSelectorStyles = `
   .color-mode-heading { font-size: 0.78em; font-weight: normal; text-transform: uppercase; letter-spacing: 0; color: var(--secondary-text-color, #9aa); margin: 0 0 6px; }
   .unified-color-modes { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
@@ -34,6 +46,17 @@ export const colorModeSelectorStyles = `
   .clock-color-save:empty { display:none; }
   .clock-color-save yeelight-clock-preset-manager { display:block; min-width:0; }
 `;
+
+export function matchingColorOption(options, color, selectedId, selectedName) {
+  const matches = options.filter((option) =>
+    option.color?.every((channel, index) => channel === color?.[index]),
+  );
+  return (
+    matches.find((option) => option.value === `custom:${selectedId}`) ||
+    matches.find((option) => option.label === selectedName) ||
+    matches[0]
+  );
+}
 
 export function renderColorModeSelector(
   config,

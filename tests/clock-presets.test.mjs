@@ -1,3 +1,5 @@
+import { matchingColorOption } from "../custom_components/yeelight_cube/www/color-mode-selector-utils.js";
+
 import assert from "node:assert/strict";
 import { renderColorModeSelector } from "../custom_components/yeelight_cube/www/color-mode-selector-utils.js";
 import test from "node:test";
@@ -285,70 +287,39 @@ test("unified colour row has saved colours and Add without a Custom tab", () => 
       kind: "color_mode",
     },
   ];
-  const card = {
-    config: {},
-    _hass: { states: { library: { attributes: { clock_presets: presets } } } },
-    _currentColorMode: () => "normal",
-    ...cardMethods(
-      [
-        "_renderColorMode",
-        "_colorModeOptions",
-        "_colorChoiceProps",
-        "_colorPresetStyle",
-        "_colorPresetShape",
-        "_controlGroup",
-        "_renderCustomColorControls",
-        "_saveKinds",
-      ],
-      {
-        clockColorModeOptions,
-        CLOCK_COLOR_MODES,
-        clockPresetLibrary,
-        escapeHtml,
-        renderActionButtonHTML,
-        renderActionButtonGroupHTML,
-        actionButtonGroupModel,
-        renderColorModeSelector,
-        rgbToHex: () => "#ff64b4",
-      },
-    ),
-  };
-  let markup = card._renderColorMode({});
+  let config = {};
+  const options = () =>
+    clockColorModeOptions(CLOCK_COLOR_MODES, presets, config);
+  let markup = renderColorModeSelector(config, options(), "normal");
   assert.ok(markup.includes('data-value="custom:pink"'));
   assert.ok(markup.includes('data-value="__pick__"'));
   assert.doesNotMatch(markup, /data-value="custom"|data-preset-save|<img/);
   presets.push({ ...presets[0], id: "duplicate", name: "Other Pink" });
-  card._currentColorMode = () => "custom";
-  card._customPresetColor = presets[0].color;
-  card._selectedColorPresetId = "duplicate";
-  markup = card._renderColorMode({});
+  const selected = matchingColorOption(
+    options(),
+    presets[0].color,
+    "duplicate",
+  );
+  markup = renderColorModeSelector(config, options(), selected.value);
   assert.match(markup, /aria-checked="true"[^>]*data-value="custom:duplicate"/);
-  card._selectedColorPresetId = null;
-  card._selectedColorPresetName = "Other Pink";
-  assert.match(
-    card._renderColorMode({}),
-    /aria-checked="true"[^>]*data-value="custom:duplicate"/,
+  assert.equal(
+    matchingColorOption(options(), presets[0].color, null, "Other Pink").value,
+    "custom:duplicate",
   );
-  card._customMode = true;
-  card._customDraft = [255, 100, 180];
-  markup = card._renderColorMode({});
-  assert.match(markup, /data-preset-save/);
+  markup = renderColorModeSelector(config, options(), null, {
+    draft: [255, 100, 180],
+  });
   assert.match(markup, /Change unsaved colour/);
-  card.config = clockColorModeVisibilityConfig(
-    {},
-    card._colorModeOptions(),
-    [],
-  );
-  card._customDraft = null;
-  markup = card._renderColorMode({});
+  config = clockColorModeVisibilityConfig({}, options(), []);
+  markup = renderColorModeSelector(config, options(), null);
   assert.ok(!markup.includes('data-value="__pick__"'));
   assert.doesNotMatch(markup, /role="radio"/);
-  card.config = clockColorModeVisibilityConfig(
+  config = clockColorModeVisibilityConfig(
     {},
     clockColorModeOptions(CLOCK_COLOR_MODES, presets),
     ["__pick__", "normal"],
   );
-  markup = card._renderColorMode({});
+  markup = renderColorModeSelector(config, options(), null);
   assert.ok(
     markup.indexOf('data-value="__pick__"') <
       markup.indexOf('data-value="normal"'),
@@ -356,22 +327,28 @@ test("unified colour row has saved colours and Add without a Custom tab", () => 
 });
 
 test("custom mode styles support name-only and migrate legacy swatches to Filled", () => {
-  const card = {
-    config: {},
-    ...cardMethods(["_colorPresetStyle", "_colorChoiceProps"], {}),
-  };
-  const props = card._colorChoiceProps("name", "rounded", {
-    label: "Pink",
-    color: "#ff99bb",
-  });
-  assert.equal(props.label, "Pink");
-  assert.equal(props.contentMode, "text");
-  assert.equal(props.fill, undefined);
-  assert.equal(props.swatch, undefined);
-  card.config.color_preset_style = "swatch";
-  assert.equal(card._colorPresetStyle(), "filled");
-  card.config.color_preset_style = "name";
-  assert.equal(card._colorPresetStyle(), "name");
+  const options = [
+    { value: "custom:pink", label: "Pink", color: [255, 153, 187] },
+  ];
+  const name = renderColorModeSelector(
+    { color_preset_style: "name" },
+    options,
+    "normal",
+  );
+  assert.match(name, /Pink/);
+  assert.doesNotMatch(name, /btn-swatch|btn-fill/);
+  assert.equal(
+    renderColorModeSelector(
+      { color_preset_style: "swatch" },
+      options,
+      "normal",
+    ),
+    renderColorModeSelector(
+      { color_preset_style: "filled" },
+      options,
+      "normal",
+    ),
+  );
 });
 
 test("Add opens the picker without sending a colour-mode command", () => {
@@ -539,19 +516,18 @@ test("hostile saved names remain escaped in all text selectors", () => {
     name: '\"><img src=x onerror=alert(1)>',
     presetId: "hostile",
   };
-  const card = {
-    config: {},
-    _shownStyles: () => [style],
-    _selectorTextScale: () => 1,
-    ...cardMethods(["_renderTextSelector"], {
-      renderTextStyleSelector,
-      escapeHtml,
-      clockPresetKey,
-      resolveSelectorShape: () => "rounded",
-    }),
-  };
   for (const selector of ["dropdown", "filled"]) {
-    const markup = card._renderTextSelector(selector, style);
+    const markup = renderTextStyleSelector(
+      {},
+      [
+        {
+          name: style.name,
+          dataMode: clockPresetKey(style),
+        },
+      ],
+      selector,
+      clockPresetKey(style),
+    );
     assert.doesNotMatch(markup, /<img|<script/);
     assert.ok(markup.includes(escapeHtml(style.name)));
   }
@@ -647,40 +623,16 @@ test("Custom stays selectable and built-in selections respect the active colour 
   assert.equal(card._currentStyle().presetId, "second");
 });
 
-test("save controls require a draft, including when its RGB already exists", () => {
-  const presets = [
-    { id: "style", name: "Amber clock", color: [255, 120, 0] },
-    {
-      id: "mode",
-      name: "Amber mode",
-      color: [255, 120, 0],
-      kind: "color_mode",
-    },
-  ];
+test("Clock save capabilities independently include colour modes and styles", () => {
   const card = {
     config: {},
-    _hass: { states: { library: { attributes: { clock_presets: presets } } } },
-    _renderColorChoices: () => "",
-    ...cardMethods(["_renderCustomColorControls", "_saveKinds"], {
-      clockPresetLibrary,
-      clockPresetsByKind,
-      matchingClockColorPreset,
-    }),
+    ...cardMethods(["_saveKinds"], {}),
   };
-  const attrs = { clock_style_id: 4, clock_color: 0x01ff7800 };
-  assert.doesNotMatch(
-    card._renderCustomColorControls(attrs),
-    /data-preset-save/,
-  );
-  card._customDraft = [255, 120, 0];
-  assert.match(card._renderCustomColorControls(attrs), /data-preset-save/);
+  assert.deepEqual(card._saveKinds(), ["color_mode", "style"]);
   card.config.show_save_color_mode_button = false;
-  assert.match(card._renderCustomColorControls(attrs), /data-preset-save/);
+  assert.deepEqual(card._saveKinds(), ["style"]);
   card.config.show_save_clock_style_button = false;
-  assert.doesNotMatch(
-    card._renderCustomColorControls(attrs),
-    /data-preset-save/,
-  );
+  assert.deepEqual(card._saveKinds(), []);
 });
 
 test("custom clocks preserve builtins and have stable identity after rename", () => {

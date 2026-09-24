@@ -37,7 +37,7 @@ import { renderStyleSelectorSettings } from "./style-selector-ui.js";
 import {
   renderModeControlSettings,
   renderColorModeSettings,
-} from "./mode-controls-ui.js";
+} from "./mode-controls-settings.js";
 
 class YeelightCubeNativeEffectsCardEditor extends LitElement {
   static properties = {

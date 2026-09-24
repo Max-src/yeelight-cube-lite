@@ -252,7 +252,9 @@ const server = http.createServer(async (request, response) => {
       card.setConfig({ ...baseConfig, show_gallery: true, show_search: true });
       card.hass = hass;
       document.body.append(card);
+      await card.updateComplete;
       window.freshClock = card;
+      window.freshShell = card.shadowRoot.querySelector("ha-card");
       const leaked = [];
       const listener = (event) => leaked.push(event.key);
       document.addEventListener("keydown", listener);
@@ -277,8 +279,7 @@ const server = http.createServer(async (request, response) => {
           focused: freshClock.shadowRoot.activeElement === input,
           leaked: freshLeaked,
           shellReused:
-            freshClock._shellNodes.wrapper ===
-            freshClock.shadowRoot.querySelector("ha-card"),
+            freshShell === freshClock.shadowRoot.querySelector("ha-card"),
         };
         freshCleanup();
         freshClock.remove();
@@ -292,8 +293,8 @@ const server = http.createServer(async (request, response) => {
     await page.evaluate(() => {
       clock.setConfig({ ...baseConfig, show_card_background: false });
       clock.hass = hass;
-      if (clock.shadowRoot.querySelector("ha-card"))
-        throw Error("no-bg shell still has ha-card");
+      if (!clock.shadowRoot.querySelector("ha-card.no-bg"))
+        throw Error("no-bg shell appearance not applied");
       clock.setConfig({ ...baseConfig, show_card_background: true });
       clock.hass = hass;
       if (!clock.shadowRoot.querySelector("ha-card.clock-card"))
@@ -301,7 +302,7 @@ const server = http.createServer(async (request, response) => {
     });
     for (const width of [390, 1400]) {
       await page.setViewportSize({ width, height: 1000 });
-      await page.evaluate(() => {
+      await page.evaluate(async () => {
         native.style.display = "none";
         clock.style.width = "100%";
         clock.setConfig({
@@ -310,6 +311,7 @@ const server = http.createServer(async (request, response) => {
           show_search: true,
         });
         clock.hass = hass;
+        await clock.updateComplete;
         window.searchNode = clock.shadowRoot.querySelector(".clock-search");
         window.escapedSearchKeys = [];
         window.searchListener = (event) => escapedSearchKeys.push(event.key);
@@ -375,6 +377,7 @@ const server = http.createServer(async (request, response) => {
           items_per_page: 10,
         });
         clock.hass = hass;
+        await clock.updateComplete;
         const input = clock.shadowRoot.querySelector(".clock-search");
         input.focus();
         input.value = "rain";
@@ -387,6 +390,7 @@ const server = http.createServer(async (request, response) => {
         input.dispatchEvent(new Event("input", { bubbles: true }));
         clock._revealSavedStyle = "My Solid";
         clock.render();
+        await clock.updateComplete;
         const browser = clock.shadowRoot.querySelector(".original-browser");
         return {
           focused: clock.shadowRoot.activeElement === input,
@@ -538,6 +542,136 @@ const server = http.createServer(async (request, response) => {
     console.log(
       "PASS real favourite clicks restore colours and Remove targets the saved variant before state echo",
     );
+    const paginationResults = await page.evaluate(async () => {
+      const results = [];
+      for (const tag of [clock.localName, native.localName]) {
+        const card = document.createElement(tag);
+        card.setConfig({
+          ...baseConfig,
+          show_gallery: true,
+          style_selector_style: "preview-list",
+          items_per_page: 1,
+        });
+        card.hass = hass;
+        document.querySelector("main").append(card);
+        await card.updateComplete;
+        const before = card.shadowRoot.querySelector(
+          ".gc-preview-shell [data-mode]",
+        )?.dataset.mode;
+        card.shadowRoot
+          .querySelector('[data-pagination-action="next"]')
+          .click();
+        await card.updateComplete;
+        results.push({
+          tag: card.localName,
+          before,
+          after: card.shadowRoot.querySelector(".gc-preview-shell [data-mode]")
+            ?.dataset.mode,
+        });
+        card.remove();
+      }
+      return results;
+    });
+    for (const result of paginationResults) {
+      assert.ok(result.before);
+      assert.ok(result.after);
+      assert.notEqual(
+        result.after,
+        result.before,
+        `${result.tag}: Next must advance`,
+      );
+    }
+    console.log("PASS both cards advance Live Preview pagination");
+    const ownershipResults = await page.evaluate(async () => {
+      const results = [];
+      for (const tag of [clock.localName, native.localName]) {
+        const card = document.createElement(tag);
+        const config = {
+          ...baseConfig,
+          show_gallery: true,
+          show_search: true,
+          show_color_modes: true,
+          style_selector_style: "preview-grid",
+          items_per_page: 1,
+        };
+        card.setConfig(config);
+        card.hass = hass;
+        document.querySelector("main").append(card);
+        await card.updateComplete;
+        const browser = card.shadowRoot.querySelector("yeelight-style-browser");
+        browser.querySelector('[data-pagination-action="next"]').click();
+        await browser.updateComplete;
+        const advanced = browser.page === 1;
+        const input = browser.querySelector('input[type="search"]');
+        input.value = "rainbow";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        await browser.updateComplete;
+        const reset =
+          browser.page === 0 &&
+          browser.visibleItems.every((item) =>
+            item.name.toLowerCase().includes("rainbow"),
+          );
+        card.remove();
+        document.querySelector("main").append(card);
+        await card.updateComplete;
+        await browser.updateComplete;
+        card._controls.save([{ key: "Rainbow", colorMode: "normal" }]);
+        await browser.updateComplete;
+        const reconnected = !!browser.querySelector(
+          '[data-mode="Rainbow"][data-favourite="true"]',
+        );
+        card.setConfig({ ...config, show_search: false });
+        card.hass = hass;
+        await card.updateComplete;
+        const cleared =
+          browser.query === "" &&
+          !browser.querySelector('input[type="search"]');
+        const before = calls.length;
+        card.shadowRoot
+          .querySelector('yeelight-color-mode [data-value="bw"]')
+          .click();
+        await card._commands.queue;
+        await card.updateComplete;
+        const sent = calls
+          .slice(before)
+          .filter((call) =>
+            ["set_clock_style", "set_native_effect"].includes(call.service),
+          );
+        results.push({
+          tag,
+          advanced,
+          reset,
+          reconnected,
+          cleared,
+          commands: sent.length,
+        });
+        card._controls.save([]);
+        card.remove();
+      }
+      return results;
+    });
+    for (const result of ownershipResults) {
+      assert.equal(result.advanced, true, `${result.tag}: paging`);
+      assert.equal(result.reset, true, `${result.tag}: search resets page`);
+      assert.equal(
+        result.reconnected,
+        true,
+        `${result.tag}: reconnect subscription`,
+      );
+      assert.equal(
+        result.cleared,
+        true,
+        `${result.tag}: hiding search clears query`,
+      );
+      assert.equal(
+        result.commands,
+        1,
+        `${result.tag}: one colour selection, one command`,
+      );
+    }
+    console.log(
+      "PASS shared browser reset/reconnect and single colour-command ownership on both cards",
+    );
     if (process.env.FOCUSED_CONTROLS) return;
     await page.mouse.move(0, 0);
     await page.setViewportSize({ width: 1400, height: 1000 });
@@ -646,6 +780,7 @@ const server = http.createServer(async (request, response) => {
             );
             clock._customPresetColor = color;
             clock.render();
+            await clock.updateComplete;
             return { clock: snapshot(clock), native: snapshot(native) };
           },
           { mode, shape },
@@ -1195,9 +1330,9 @@ const server = http.createServer(async (request, response) => {
           ),
         );
       }
-      assert.match(
+      assert.doesNotMatch(
         await notices.nth(1).innerText(),
-        /Experimental Effects filter is Off/,
+        /Experimental Effects filter/,
       );
       await page.screenshot({
         path: path.join(
@@ -1301,6 +1436,22 @@ const server = http.createServer(async (request, response) => {
     // separators, and the value+unit rotation interval editor control.
     const ux = await page.evaluate(async () => {
       const results = {};
+      const normalHass = {
+        ...window.hass,
+        states: {
+          ...window.hass.states,
+          "light.a": {
+            ...window.hass.states["light.a"],
+            attributes: {
+              ...window.hass.states["light.a"].attributes,
+              clock_color_mode: "normal",
+              clock_color: null,
+              native_effect_color_mode: "normal",
+              native_effect_color: null,
+            },
+          },
+        },
+      };
       // No separator between Favourites and Rotation sections.
       const view = document.createElement("yeelight-mode-controls");
       view.area = "collections";
@@ -1345,18 +1496,21 @@ const server = http.createServer(async (request, response) => {
       const clock = document.createElement("yeelight-cube-clock-card");
       clock.setConfig({
         ...window.baseConfig,
+        show_gallery: true,
         style_selector_style: "preview-grid",
       });
-      clock.hass = window.hass;
+      clock.hass = normalHass;
       document.body.append(clock);
       const clockKey = clock._controls.adapter.items()[0].key;
       clock._controls.save([clockKey]);
       clock.render();
+      await clock.updateComplete;
       results.clockStar = !!clock.shadowRoot.querySelector(
         `[data-mode="${CSS.escape(clockKey)}"][data-favourite="true"]`,
       );
       clock._controls.save([]);
       clock.render();
+      await clock.updateComplete;
       results.clockUnstar = !clock.shadowRoot.querySelector(
         '[data-favourite="true"]',
       );
@@ -1366,7 +1520,7 @@ const server = http.createServer(async (request, response) => {
         "yeelight-cube-native-effects-card",
       );
       native.setConfig({ ...window.baseConfig, show_gallery: true });
-      native.hass = window.hass;
+      native.hass = normalHass;
       document.body.append(native);
       await native.updateComplete;
       native._controls.save(["Rainbow"]);
@@ -1426,21 +1580,34 @@ const server = http.createServer(async (request, response) => {
     );
     const stars = await page.evaluate(async () => {
       const results = {};
-      const clockWith = (style) => {
+      const starHass = structuredClone({ states: window.hass.states });
+      starHass.callService = window.hass.callService;
+      Object.assign(starHass.states["light.a"].attributes, {
+        clock_color_mode: "normal",
+        clock_color: null,
+        native_effect_color_mode: "normal",
+        native_effect_color: null,
+      });
+      const clockWith = async (style) => {
         const clock = document.createElement("yeelight-cube-clock-card");
-        clock.setConfig({ ...window.baseConfig, style_selector_style: style });
-        clock.hass = window.hass;
+        clock.setConfig({
+          ...window.baseConfig,
+          show_gallery: true,
+          style_selector_style: style,
+        });
+        clock.hass = starHass;
         document.body.append(clock);
         const key = clock._controls.adapter.items()[0].key;
         clock._controls.save([key]);
         clock.render();
+        await clock.updateComplete;
         return { clock, key };
       };
       const inlineStar = (node) =>
         node && getComputedStyle(node, "::before").content.includes("★");
       // Text (filled) selector shows the star inline in the button.
       {
-        const { clock, key } = clockWith("filled");
+        const { clock, key } = await clockWith("filled");
         const item = clock.shadowRoot.querySelector(
           `[data-mode="${CSS.escape(key)}"][data-favourite="true"]`,
         );
@@ -1450,7 +1617,7 @@ const server = http.createServer(async (request, response) => {
       }
       // Wheel selector shows the star inline in the item title.
       {
-        const { clock, key } = clockWith("preview-wheel");
+        const { clock, key } = await clockWith("preview-wheel");
         const item = clock.shadowRoot.querySelector(
           `[data-mode="${CSS.escape(key)}"][data-favourite="true"]`,
         );
@@ -1470,8 +1637,9 @@ const server = http.createServer(async (request, response) => {
           ...window.baseConfig,
           show_gallery: true,
           effect_view: "grid",
+          style_selector_style: "original",
         });
-        native.hass = window.hass;
+        native.hass = starHass;
         document.body.append(native);
         await native.updateComplete;
         native._controls.save(["Rainbow"]);
@@ -1489,13 +1657,15 @@ const server = http.createServer(async (request, response) => {
         clock.setConfig({
           ...window.baseConfig,
           style_selector_style: "filled",
+          show_gallery: true,
           favourites_show_stars: false,
         });
-        clock.hass = window.hass;
+        clock.hass = starHass;
         document.body.append(clock);
         const key = clock._controls.adapter.items()[0].key;
         clock._controls.save([key]);
         clock.render();
+        await clock.updateComplete;
         const item = clock.shadowRoot.querySelector(
           `[data-mode="${CSS.escape(key)}"][data-favourite="true"]`,
         );
@@ -1662,6 +1832,7 @@ const server = http.createServer(async (request, response) => {
       );
       clockEditor.setConfig({
         ...window.baseConfig,
+        show_gallery: true,
         style_selector_style: "filled",
       });
       clockEditor.hass = window.hass;
@@ -1721,6 +1892,7 @@ const server = http.createServer(async (request, response) => {
       clock.hass = window.hass;
       document.body.append(clock);
       clock.render();
+      await clock.updateComplete;
       const gallery = clock.shadowRoot.querySelector(".original-gallery");
       const items = [...clock.shadowRoot.querySelectorAll(".original-item")];
       results.clockGallery =
@@ -1745,6 +1917,7 @@ const server = http.createServer(async (request, response) => {
       clockList.hass = window.hass;
       document.body.append(clockList);
       clockList.render();
+      await clockList.updateComplete;
       results.clockListView = !!clockList.shadowRoot.querySelector(
         ".original-gallery.list",
       );
@@ -1758,6 +1931,7 @@ const server = http.createServer(async (request, response) => {
         ...window.baseConfig,
         show_gallery: true,
         effect_view: "grid",
+        style_selector_style: "original",
       });
       native.hass = window.hass;
       document.body.append(native);

@@ -1,6 +1,66 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { CardCommandController } from "../custom_components/yeelight_cube/www/card-command-controller.js";
+
+test("card commands serialize snapshots and discard obsolete queued work", async () => {
+  const calls = [];
+  let finish;
+  const commands = new CardCommandController(
+    () => {},
+    async (hass, config, service, data) => {
+      calls.push({ config, service, data });
+      if (service === "first")
+        await new Promise((resolve) => {
+          finish = resolve;
+        });
+    },
+  );
+  const config = { target_entities: ["light.a"] };
+  const data = { color: [1, 2, 3] };
+  const first = commands.execute({}, config, "first", data);
+  const obsolete = commands.execute({}, config, "obsolete");
+  config.target_entities[0] = "light.b";
+  data.color[0] = 255;
+  await Promise.resolve();
+  assert.equal(commands.busy, true);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].config.target_entities, ["light.a"]);
+  assert.deepEqual(calls[0].data.color, [1, 2, 3]);
+  commands.reset();
+  const current = commands.execute({}, config, "current");
+  finish();
+  assert.equal(await first, false);
+  assert.equal(await obsolete, false);
+  assert.equal(await current, true);
+  assert.deepEqual(
+    calls.map((call) => call.service),
+    ["first", "current"],
+  );
+  assert.equal(commands.busy, false);
+});
+
+test("card command failures recover and missing targets never report success", async () => {
+  const commands = new CardCommandController(
+    () => {},
+    async () => {
+      throw Error("offline");
+    },
+  );
+  assert.equal(
+    await commands.execute({}, { entity: "light.a" }, "apply"),
+    false,
+  );
+  assert.equal(commands.error, "offline");
+  assert.equal(commands.busy, false);
+  commands.send = async () => {};
+  assert.equal(
+    await commands.execute({}, { entity: "light.a" }, "apply"),
+    true,
+  );
+  assert.equal(commands.error, "");
+  assert.equal(await commands.execute({}, {}, "apply"), false);
+});
 import {
   ModeControlsController,
   favouriteId,
@@ -91,6 +151,44 @@ test("collection keys isolate domains and normalize targets", () => {
     modeCollectionKey("native", ["a"]),
     modeCollectionKey("clock", ["a"]),
   );
+});
+
+test("ordinary selection uses the same pending snapshot until confirmation or external change", async () => {
+  let current = "A";
+  const { controller } = fixture({ current: () => current });
+  assert.equal(await controller.choose("B"), true);
+  controller.update();
+  assert.equal(controller.currentFavourite().key, "B");
+  current = "B";
+  controller.update();
+  assert.equal(controller.selectedFavourite, null);
+  await controller.choose("A");
+  current = "C";
+  controller.update();
+  assert.equal(controller.currentFavourite().key, "C");
+  controller.configure({}, ["light.other"]);
+  assert.equal(controller.selectedFavourite, null);
+});
+
+test("manual selection queues after stopping rotation without rejecting its own stop as busy", async () => {
+  const sent = [];
+  const commands = new CardCommandController(
+    () => {},
+    async (hass, config, service) => {
+      sent.push(service);
+    },
+  );
+  const execute = (service) =>
+    commands.execute({}, { entity: "light.a" }, service);
+  const { controller } = fixture({
+    disabled: () => commands.busy,
+    stopRotation: () => execute("stop_effect_rotation"),
+    apply: () => execute("apply"),
+  });
+  controller.active = true;
+  assert.equal(await controller.choose("B"), true);
+  assert.deepEqual(sent, ["stop_effect_rotation", "apply"]);
+  assert.equal(controller.currentFavourite().key, "B");
 });
 test("rotation uses available unique modes and bounds intervals", () => {
   const { controller } = fixture({ available: (name) => name === "B" });

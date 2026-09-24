@@ -153,6 +153,20 @@ export function renderPagination({
   return { items: paginatedItems, html, totalPages, currentPage: safePage };
 }
 
+export function requestedPage(value, currentPage, totalPages) {
+  const current = Math.max(0, Math.min(currentPage || 0, totalPages - 1));
+  const requested =
+    value === "next"
+      ? current + 1
+      : value === "prev"
+        ? current - 1
+        : Number(value);
+  return Math.max(
+    0,
+    Math.min(Number.isFinite(requested) ? requested : 0, totalPages - 1),
+  );
+}
+
 // ─── Event wiring ───────────────────────────────────────────────────────────
 
 /**

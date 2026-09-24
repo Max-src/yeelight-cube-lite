@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { CardCommandController } from "../custom_components/yeelight_cube/www/card-command-controller.js";
+import { requestedPage } from "../custom_components/yeelight_cube/www/pagination-utils.js";
 import { modeActionOptions } from "../custom_components/yeelight_cube/www/action-button-utils.js";
 import {
   ModeControlsController,
@@ -151,7 +153,6 @@ test("native colour choices retain configured order while effects respond to the
   );
   await apply.call(card, "white_orange");
   assert.equal(card.command.data.effect, "Tide");
-  assert.equal(card._page, 0);
   attrs.native_effect_color_mode = "white_orange";
   assert.deepEqual(
     card._items().map((item) => item.name),
@@ -338,7 +339,7 @@ test("removed saved looks are ignored without losing favourites", () => {
       favourites: ["Rainbow"],
       looks: [{ name: "Evening" }],
     }),
-    { favourites: ["Rainbow"] },
+    { favourites: [{ key: "Rainbow", colorMode: "normal" }] },
   );
   for (const file of [
     "yeelight-cube-native-effects-card.js",
@@ -488,25 +489,7 @@ test("shared selectors bind text, preview and carousel navigation without duplic
     "yeelight-cube-clock-card.js",
     "yeelight-cube-native-effects-card.js",
   ])
-    assert.match(sourceFor(file), /bindStyleSelectorEvents\(/);
-});
-
-test("native wheel selection fulfills the shared controller's promise contract", async () => {
-  const callback = sourceFor("yeelight-cube-native-effects-card.js").match(
-    /onModeSelect: (async \(name\) => \{[\s\S]*?\n\s*\})/,
-  )[1];
-  const selected = [];
-  const card = {
-    _disabled: () => false,
-    _select: (name) => selected.push(name),
-  };
-  const onSelect = new Function(`return (${callback})`).call(card);
-  const pending = onSelect("Rainbow");
-  assert.equal(typeof pending.catch, "function");
-  await pending;
-  card._busy = true;
-  await onSelect("Streamer");
-  assert.deepEqual(selected, ["Rainbow"]);
+    assert.match(sourceFor(file), /style-browser-ui.js/);
 });
 
 test("named effects exclude raw experimental mode numbers even when explicitly visible", () => {
@@ -611,7 +594,7 @@ test("native editor sections follow the card and use shared conditional controls
     ROTATION_INTERVAL_UNITS,
     sliderKeys: (prefix) => prefix,
   };
-  const sharedBody = sourceFor("mode-controls-ui.js").match(
+  const sharedBody = sourceFor("mode-controls-settings.js").match(
     /export function renderModeControlSettings\([^)]*\) \{([\s\S]*?)\n\}/,
   )[1];
   dependencies.renderModeControlSettings = new Function(
@@ -768,6 +751,7 @@ test("multi-target configuration reads the first light and accepts legacy entity
   const second = { attributes: { native_effect: "Ocean Waves" } };
   const card = {
     _context: 0,
+    _commands: new CardCommandController(),
     _stopRotation() {},
     _controls: { configure() {} },
     _hass: { states: { "light.first": first, "light.second": second } },
@@ -819,20 +803,10 @@ test("preview and gallery appearance are independent with legacy pixel fallbacks
   assert.equal(appearance.call(card, true).ignoreBlackPixels, false);
 });
 test("native commands send all targets through the shared service path", async () => {
-  const source = readFileSync(
-    new URL(
-      "../custom_components/yeelight_cube/www/yeelight-cube-native-effects-card.js",
-      import.meta.url,
-    ),
-    "utf8",
-  );
-  const body = source.match(
-    /  async _command\(service, data, domain = "yeelight_cube", managed = false\) \{([\s\S]*?)\n  \}/,
-  )[1];
-  const command = new Function(
-    "callServiceOnTargetEntities",
-    `return async function(service, data, domain = "yeelight_cube", managed = false) {${body}}`,
-  )(callServiceOnTargetEntities);
+  const commands = new CardCommandController();
+  const command = function (service, data, domain) {
+    return commands.execute(this._hass, this.config, service, data, domain);
+  };
   const calls = [];
   const targets = ["light.first", "light.second"];
   const card = {
@@ -863,7 +837,7 @@ test("native commands send all targets through the shared service path", async (
       data: { ...data, entity_id: targets },
     });
   }
-  assert.equal(card._busy, false);
+  assert.equal(commands.busy, false);
   assert.deepEqual(getTargetEntities({ entity: "light.legacy" }), [
     "light.legacy",
   ]);
@@ -952,7 +926,10 @@ test("collections sanitize favourites, discard legacy history and isolate target
   assert.deepEqual(
     sanitizeEffectCollections({ favourites: names, recent: names }),
     {
-      favourites: ["Rainbow", "Streamer"],
+      favourites: [
+        { key: "Rainbow", colorMode: "normal" },
+        { key: "Streamer", colorMode: "normal" },
+      ],
     },
   );
   const many = Array.from({ length: 120 }, (_, index) => `Effect ${index}`);
@@ -977,7 +954,10 @@ test("collections sanitize favourites, discard legacy history and isolate target
   assert.deepEqual(
     readEffectCollections(storage, effectCollectionKey(["light.first"]))
       .favourites,
-    ["Rainbow", "Streamer"],
+    [
+      { key: "Rainbow", colorMode: "normal" },
+      { key: "Streamer", colorMode: "normal" },
+    ],
   );
   assert.deepEqual(
     readEffectCollections(storage, effectCollectionKey(["light.second"]))
@@ -1039,15 +1019,6 @@ test("numeric active effects cannot become the current named effect", () => {
 });
 
 test("native effect pagination handles shared next/prev actions and clamps pages", () => {
-  const source = readFileSync(
-    new URL(
-      "../custom_components/yeelight_cube/www/yeelight-cube-native-effects-card.js",
-      import.meta.url,
-    ),
-    "utf8",
-  );
-  const match = source.match(/  _changePage\(page\) \{([\s\S]*?)\n  \}/);
-  const change = new Function("page", match[1]);
   const card = { _page: 0, _totalPages: 3 };
   for (const [action, expected] of [
     ["next", 1],
@@ -1057,11 +1028,9 @@ test("native effect pagination handles shared next/prev actions and clamps pages
     [0, 0],
     ["prev", 0],
   ]) {
-    change.call(card, action);
+    card._page = requestedPage(action, card._page, card._totalPages);
     assert.equal(card._page, expected);
   }
-  assert.equal((source.match(/attachPaginationListeners\(/g) || []).length, 1);
-  assert.match(source, /firstUpdated\(\) \{\s*attachPaginationListeners/);
 });
 
 test("rotation keeps the latest pending direction until Home Assistant echoes it", async () => {

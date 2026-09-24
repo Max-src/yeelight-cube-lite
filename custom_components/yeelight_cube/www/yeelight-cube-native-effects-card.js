@@ -1,9 +1,10 @@
+import { createNativeCardAdapter } from "./native-card-adapter.js";
 import { LitElement, html, css, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
 import { ModeControlsController } from "./mode-controls-controller.js";
-import {
-  renderColorModeSelector,
-  colorModeSelectorStyles,
-} from "./color-mode-selector-utils.js";
+import { CardCommandController } from "./card-command-controller.js";
+import "./style-browser-ui.js";
+import "./color-mode-ui.js";
+import { colorModeSelectorStyles } from "./color-mode-selector-utils.js";
 import { CLOCK_COLOR_MODES } from "./clock-preview-utils.js";
 import {
   effectSupportsColorMode,
@@ -20,31 +21,19 @@ import {
   clockPresetsByKind,
 } from "./clock-preset-utils.js";
 import "./clock-preset-manager.js";
-import { bindActionButtonGroup } from "./action-button-utils.js";
 import "./mode-controls-ui.js";
 import {
   nativeEffectItems,
   nativeEffectFrame,
   nativeEffectAction,
   nativeEffectPreviewConfig,
-  effectSupportsFreeze,
 } from "./native-effect-card-utils.js";
 import {
   renderMatrixPreview,
   markFavouriteModes,
-  renderOriginalGallery,
-  bindOriginalGallery,
 } from "./gallery-display-utils.js";
-import {
-  renderTextStyleSelector,
-  renderPreviewStyleSelector,
-  bindStyleSelectorEvents,
-  selectorItemsPerPage,
-  styleSelectorStyles,
-} from "./style-selector-utils.js";
-import { initializeWheelNavigation } from "./wheel-navigation-utils.js";
+import { styleSelectorStyles } from "./style-selector-utils.js";
 import { BLACK_THRESHOLD } from "./draw_card_const.js";
-import { escapeHtml } from "./html-escape-utils.js";
 import { actionButtonStyles } from "./action-button-utils.js";
 import {
   renderSliderGroup,
@@ -54,28 +43,23 @@ import {
   sliderPctToRaw,
   sliderRawToPct,
 } from "./slider-control-utils.js";
-import {
-  renderPagination,
-  attachPaginationListeners,
-  paginationStyles,
-} from "./pagination-utils.js";
+import { paginationStyles } from "./pagination-utils.js";
 import {
   createRafLoop,
   createVisibilityTracker,
   paintCellBackground,
 } from "./matrix-animator.js";
-import {
-  callServiceOnTargetEntities,
-  getTargetEntities,
-} from "./service-call-utils.js";
+import { getTargetEntities } from "./service-call-utils.js";
 
+/** Native host: catalogue/colour policy and frame painting. Adapter mapping is
+ * in native-card-adapter; shared controllers own commands and selection, and
+ * style-browser-ui/color-mode-ui own their DOM, subscriptions and bindings.
+ */
 class YeelightCubeNativeEffectsCard extends LitElement {
   static properties = {
     config: { state: true },
     _state: { state: true },
     _selected: { state: true },
-    _query: { state: true },
-    _page: { state: true },
     _paused: { state: true },
     _busy: { state: true },
     _error: { state: true },
@@ -85,96 +69,14 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   constructor() {
     super();
     this.config = {};
-    this._query = "";
-    this._page = 0;
     this._elapsed = 0;
-    this._queue = Promise.resolve();
-    this._context = 0;
-    this._frames = [];
-    this._controls = new ModeControlsController({
-      kind: "native",
-      items: () =>
-        nativeEffectItems(this._attrs(), {
-          show_experimental: !!this._attrs().extended_effects_enabled,
-        }).map((item) => ({ key: item.name, title: item.name })),
-      navigationItems: () =>
-        this._items().map((item) => ({ key: item.name, title: item.name })),
-      current: () => this._effect()?.name,
-      available: (name) => this._effectAvailable(name),
-      ready: () => this._rotationTargetsReady(),
-      disabled: () => this._disabled() || this._busy,
-      on: () => this._state?.state === "on",
-      orientation: () => this._attrs().device_orientation || "right",
-      apply: (name) => this._apply(name, true),
-      applyFavourite: (favourite) => this._applyFavourite(favourite),
-      currentColorMode: () => this._colorModeKey(),
-      currentColor: () => this._currentCustomColor(),
-      select: (name) => {
-        this._selected = name;
-        return this.config.auto_apply !== false
-          ? this._apply(name, true)
-          : true;
-      },
-      command: (service, data, domain) =>
-        this._command(service, data, domain, true),
-      freeze: () => this._command("freeze_display", {}, "yeelight_cube", true),
-      freezable: () => effectSupportsFreeze(this._effect()?.name),
-      startRotation: (items, intervalSeconds) =>
-        this._command(
-          "start_effect_rotation",
-          { items, interval: intervalSeconds, kind: "native" },
-          "yeelight_cube",
-          true,
-        ),
-      stopRotation: () =>
-        this._command("stop_effect_rotation", {}, "yeelight_cube", true),
-      skipRotation: () =>
-        this._command("skip_effect_rotation", {}, "yeelight_cube", true),
-      rotationActive: () =>
-        getTargetEntities(this.config).every(
-          (entity) =>
-            this._hass?.states[entity]?.attributes?.effect_rotation?.active ===
-              true &&
-            this._hass?.states[entity]?.attributes?.effect_rotation?.kind ===
-              "native",
-        ),
-      rotationError: () =>
-        getTargetEntities(this.config)
-          .map((entity) => {
-            const rotation =
-              this._hass?.states[entity]?.attributes?.effect_rotation;
-            return rotation?.kind === "native" ? rotation.error : null;
-          })
-          .find(Boolean) || this._error,
-      // The `effect_rotation` attribute only exists in the backend version that
-      // ships the rotation services; its presence is our capability probe.
-      rotationSupported: () =>
-        getTargetEntities(this.config).every(
-          (entity) =>
-            this._hass?.states[entity]?.attributes?.effect_rotation !==
-            undefined,
-        ),
-      pause: (paused) => {
-        this._paused = paused;
-      },
-      frame: (name, elapsed, colorMode, color) => {
-        const item = this._attrs().native_effect_catalog?.find(
-          (item) => item.name === name,
-        );
-        if (!item || item.preview === false) return null;
-        if (colorMode == null)
-          return nativeEffectFrame(item, this._attrs(), elapsed);
-        const attrs = {
-          ...this._attrs(),
-          native_effect_color_mode:
-            colorMode === "custom" ? "normal" : colorMode || "normal",
-          native_effect_color: null,
-        };
-        if (colorMode === "custom" && Array.isArray(color))
-          attrs.native_effect_color = color;
-        return nativeEffectFrame(item, attrs, elapsed);
-      },
+    this._commands = new CardCommandController(() => {
+      this._busy = this._commands.busy;
+      this._error = this._commands.error;
+      this._controls?.notify();
     });
+    this._frames = [];
+    this._controls = new ModeControlsController(createNativeCardAdapter(this));
     this._onFavouritesChanged = () =>
       markFavouriteModes(
         this.shadowRoot,
@@ -260,10 +162,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     // cache is cleared and the dashboard re-renders), render the friendly
     // "Select an available Yeelight Cube lamp." placeholder instead and let it
     // self-heal once `hass` arrives.
-    this._context++;
-    this._busy = false;
-    this._pendingCommands = 0;
-    this._error = null;
+    this._commands.reset();
     this._speedDraft = null;
     this._brightnessDraft = null;
     this.config = {
@@ -278,13 +177,8 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       favourites_show_stars: true,
       ...config,
     };
-    if (this.config.show_search === false) {
-      this._query = "";
-    }
     this._selected = null;
-    this._page = 0;
     this._state = this._hass?.states?.[getTargetEntities(config || {})[0]];
-    this._selectorIndex = undefined;
     this._controls.configure(
       nativeEffectPreviewConfig(this.config),
       getTargetEntities(this.config),
@@ -310,6 +204,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    this._controls.listeners.add(this._onFavouritesChanged);
     this._visibility = createVisibilityTracker(this);
     this._visibility.connect();
     this._loop.start();
@@ -321,19 +216,22 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     closeColorPicker(this);
     this._controls.listeners.delete(this._onFavouritesChanged);
     this._controls.disconnect();
-    this._context++;
-    this._busy = false;
-    this._pendingCommands = 0;
+    this._commands.reset();
     this._loop.stop();
     this._visibility?.disconnect();
     this._observer?.disconnect();
-    this._wheelController?.destroy();
-    this._wheelNode = null;
     this._frames = [];
   }
 
   getCardSize() {
     return 7;
+  }
+  async getUpdateComplete() {
+    const complete = await super.getUpdateComplete();
+    await this.shadowRoot.querySelector("yeelight-style-browser")
+      ?.updateComplete;
+    await this.shadowRoot.querySelector("yeelight-color-mode")?.updateComplete;
+    return complete;
   }
   _attrs() {
     return this._state?.attributes || {};
@@ -398,32 +296,17 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   async _command(service, data, domain = "yeelight_cube", managed = false) {
     if (this._disabled()) return false;
     if (!managed) this._stopRotation();
-    const context = this._context;
-    const hass = this._hass;
-    const config = this.config;
-    this._error = null;
-    this._pendingCommands = (this._pendingCommands || 0) + 1;
-    this._busy = true;
-    const job = this._queue.then(async () => {
-      if (context !== this._context) return false;
-      await callServiceOnTargetEntities(hass, config, service, data, {
-        domain,
-      });
-      return true;
-    });
-    this._queue = job.catch(() => {});
-    try {
-      return await job;
-    } catch (error) {
-      if (context === this._context)
-        this._error = error.message || "The lamp could not be updated.";
-      return false;
-    } finally {
-      if (context === this._context) {
-        this._pendingCommands--;
-        this._busy = this._pendingCommands > 0;
-      }
-    }
+    return this._commands.execute(
+      this._hass,
+      this.config,
+      service,
+      data,
+      domain,
+    );
+  }
+
+  get _context() {
+    return this._commands.context;
   }
 
   async _applyFavourite(favourite) {
@@ -479,17 +362,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   _effectBadge(item) {
     const kind = item.extended ? "Experimental" : "Official";
     return item.directions?.length ? `${kind} · Directional` : kind;
-  }
-
-  _originalPreview(item) {
-    if (!item) return "";
-    if (item.preview === false)
-      return '<div class="unmodelled">Preview unavailable</div>';
-    const appearance = this._matrixAppearance(false);
-    const pixels = Array.from({ length: 100 }, () => [0, 0, 0]);
-    return `<div class="original-item-preview" data-preview="${escapeHtml(item.name)}" style="width:${appearance.width}%;margin-inline:auto;">
-      ${renderMatrixPreview(pixels, { ...appearance, forceAspectRatio: true })}
-    </div>`;
   }
 
   _matrix(effect, current = false) {
@@ -609,45 +481,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     this._controls?.stop();
   }
 
-  _referenceSelector(items) {
-    const style = this._selectorStyle();
-    this._selectorItems = items;
-    const active = this._effect()?.name;
-    const previews = items.map((item) => ({
-      name: item.name,
-      title: item.name,
-      dataMode: item.name,
-      colorData: nativeEffectFrame(item, this._attrs(), 0),
-      favourite: this._controls.hasFavourite(item.name, this._colorModeKey()),
-    }));
-    if (!style.startsWith("preview-"))
-      return renderTextStyleSelector(this.config, previews, style, active);
-    const state = { index: this._selectorIndex, page: this._page };
-    const markup = renderPreviewStyleSelector(
-      this.config,
-      previews,
-      style,
-      active,
-      state,
-    );
-    this._selectorIndex = state.index;
-    return markup;
-  }
-
-  _selectorNavigate(delta, index) {
-    if (this._disabled() || this._busy) return;
-    const items = this._selectorItems || [];
-    if (!items.length) return;
-    const requested = index ?? (this._selectorIndex || 0) + delta;
-    const next =
-      this.config.gallery_wrap_navigation === true
-        ? ((requested % items.length) + items.length) % items.length
-        : Math.max(0, Math.min(requested, items.length - 1));
-    this._selectorIndex = next;
-    this._select(items[next].name);
-    this.requestUpdate();
-  }
-
   _supportsCustomColor() {
     return getTargetEntities(this.config).every((entity) =>
       Object.hasOwn(
@@ -741,7 +574,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       this._customColorDraft = [...color];
       this._selectedColorPresetId = null;
       this._selected = effect;
-      this._page = 0;
     }
     return success;
   }
@@ -797,7 +629,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       this._customColorDraft = null;
       this._selectedColorPresetId = preset?.id;
       this._selected = effect;
-      this._page = 0;
     }
   }
 
@@ -811,21 +642,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     const attrs = this._attrs();
     const effect = this._effect();
     const all = this._items();
-    const searched = all.filter((item) =>
-      item.name.toLowerCase().includes(this._query.toLowerCase().trim()),
-    );
-    // Only Original pages here. Live Preview list pages itself; its other
-    // modes intentionally ignore items_per_page.
-    const paginateOriginal = this._selectorStyle() === "original";
-    const pagination = renderPagination({
-      items: searched,
-      currentPage: this._page,
-      itemsPerPage: paginateOriginal ? selectorItemsPerPage(this.config) : 0,
-    });
-    this._totalPages = pagination.totalPages;
-    // "Original" display only offers Grid and List now; legacy "buttons" and
-    // "dropdown" configs fall back to Grid.
-    const view = this.config.effect_view === "list" ? "list" : "grid";
     return html`<ha-card
       class=${this.config.show_card_background === false ? "transparent" : ""}
     >
@@ -875,86 +691,49 @@ class YeelightCubeNativeEffectsCard extends LitElement {
         Object.hasOwn(attrs, "native_effect_color_mode")
           ? html`<section class="color-modes">
               <div class="color-mode-heading">Colour mode</div>
-              <div class="unified-color-modes">
-                ${unsafeHTML(
-                  renderColorModeSelector(
-                    this.config,
-                    this._colorOptions(),
-                    this._currentColorSelection(),
-                    {
-                      disabled:
-                        this._busy || this._controls.busy || this._disabled(),
-                      placeholder: this._customColorDraft
-                        ? "Unsaved colour"
-                        : "Current mode hidden",
-                      draft: this._customColorDraft,
-                    },
-                  ),
-                )}
-              </div>
-              ${this._customColorDraft &&
-              this._supportsCustomColor() &&
-              this.config.show_save_color_mode_button !== false
-                ? html` <div class="clock-color-save" style="margin-top:10px;">
-                    <yeelight-clock-preset-manager
-                      .hass=${this._hass}
-                      .compact=${true}
-                      .saveKinds=${["color_mode"]}
-                      .initialColor=${`#${this._customColorDraft.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`}
-                      .buttonStyle=${this.config.buttons_style || "modern"}
-                      .contentMode=${this.config.buttons_content_mode ||
-                      "icon_text"}
-                      @clock-preset-saved=${() => {
-                        this._customColorDraft = null;
-                      }}
-                    ></yeelight-clock-preset-manager>
-                  </div>`
-                : ""}
+              <yeelight-color-mode
+                .config=${this.config}
+                .options=${this._colorOptions()}
+                .selected=${this._currentColorSelection()}
+                .draft=${this._customColorDraft}
+                .hass=${this._hass}
+                .disabled=${this._busy ||
+                this._controls.busy ||
+                this._disabled()}
+                .saveKinds=${this._supportsCustomColor() &&
+                this.config.show_save_color_mode_button !== false
+                  ? ["color_mode"]
+                  : []}
+                .onSelect=${(value) => this._applyColorMode(value)}
+                .onSaved=${() => {
+                  this._customColorDraft = null;
+                }}
+              ></yeelight-color-mode>
             </section>`
           : ""}
         ${this.config.show_gallery
           ? html`<section class="browser">
-              ${this.config.show_search
-                ? html`<input
-                    class="search"
-                    type="search"
-                    aria-label="Search native effects"
-                    placeholder="Search effects"
-                    .value=${this._query}
-                    @keydown=${(event) => event.stopPropagation()}
-                    @input=${(event) => {
-                      this._query = event.target.value;
-                      this._page = 0;
-                    }}
-                  />`
-                : ""}
-              ${!searched.length
-                ? html`<div class="empty" role="status">No effects match.</div>`
-                : this._selectorStyle() !== "original"
-                  ? html`<div
-                      class="reference-selector"
-                      ?inert=${this._disabled() || this._busy}
-                    >
-                      ${unsafeHTML(this._referenceSelector(searched))}
-                    </div>`
-                  : html`${unsafeHTML(
-                      renderOriginalGallery(
-                        pagination.items.map((item) => ({
-                          dataMode: item.name,
-                          title: item.name,
-                          badge: this._effectBadge(item),
-                          previewHtml: this._originalPreview(item),
-                        })),
-                        {
-                          view,
-                          showBadges: this.config.show_badges !== false,
-                          highlight:
-                            this.config.highlight_active_mode !== false,
-                          current: effect?.name,
-                        },
-                      ),
-                    )}
-                    ${unsafeHTML(pagination.html)}`}
+              <yeelight-style-browser
+                .config=${this.config}
+                .active=${effect?.name}
+                .model=${this._controls}
+                .disabled=${this._disabled() || this._busy}
+                .items=${all.map((item) => ({
+                  ...item,
+                  dataMode: item.name,
+                  title: item.name,
+                  badge: this._effectBadge(item),
+                  colorData: nativeEffectFrame(item, this._attrs(), 0),
+                  favourite: this._controls.hasFavourite(
+                    item.name,
+                    this._colorModeKey(),
+                  ),
+                }))}
+                searchLabel="Search native effects"
+                searchClass="search"
+                .onSelect=${(name) => this._controls.choose(name)}
+                @browser-updated=${() => this._refreshPreviews()}
+              ></yeelight-style-browser>
             </section>`
           : ""}
         <yeelight-mode-controls
@@ -964,103 +743,16 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     ></ha-card>`;
   }
 
-  firstUpdated() {
-    attachPaginationListeners(this.shadowRoot, (page) =>
-      this._changePage(page),
-    );
-  }
-
-  _changePage(page) {
-    const current = Math.min(this._page, (this._totalPages || 1) - 1);
-    const requested =
-      page === "next"
-        ? current + 1
-        : page === "prev"
-          ? current - 1
-          : Number(page);
-    this._page = Math.max(
-      0,
-      Math.min(
-        Number.isFinite(requested) ? requested : 0,
-        (this._totalPages || 1) - 1,
-      ),
-    );
-  }
-
   updated() {
     this._controls.update();
-    const colorModes = this.shadowRoot.querySelector(".color-modes");
-    if (colorModes) {
-      const apply = (value) => this._applyColorMode(value);
-      bindActionButtonGroup(
-        colorModes.querySelector(".shared-button-group"),
-        apply,
-      );
-      const dropdown = colorModes.querySelector(".colormode-select");
-      if (dropdown) dropdown.onchange = (event) => apply(event.target.value);
-    }
-    const effectSelect = this.shadowRoot.querySelector(
-      'select[aria-label="Native effect"]',
-    );
-    if (effectSelect) effectSelect.value = this._effect()?.name || "";
-    bindStyleSelectorEvents(this.shadowRoot, {
-      select: (name) => {
-        if (!this._busy && !this._disabled()) this._select(name);
-      },
-      navigate: (delta) => this._selectorNavigate(delta),
-      setIndex: (index) => this._selectorNavigate(0, index),
-      style: this._selectorStyle(),
-    });
-    bindOriginalGallery(this.shadowRoot, {
-      select: (name) => {
-        if (!this._busy && !this._disabled()) this._select(name);
-      },
-    });
-    const wheelNode = this.shadowRoot.querySelector(
-      '[data-wheel-scroll="true"]',
-    );
-    if (wheelNode !== this._wheelNode) {
-      this._wheelController?.destroy();
-      this._wheelController = null;
-      this._wheelNode = wheelNode;
-    }
-    if (wheelNode && !this._wheelController)
-      this._wheelController = initializeWheelNavigation({
-        shadowRoot: this.shadowRoot,
-        displayMode: "wheel",
-        immediate: true,
-        config: {
-          ...this.config,
-          wheel_display_style:
-            this.config.preview_show_titles === false ? "compact" : "default",
-        },
-        getCurrentMode: () => this._effect()?.name,
-        onModeSelect: async (name) => {
-          if (!this._busy && !this._disabled()) this._select(name);
-        },
-      });
-    else this._wheelController?.sync();
     this.dataset.highlightActive = String(
       this.config.highlight_active_mode !== false,
     );
     this.dataset.favStars = String(this.config.favourites_show_stars !== false);
-    this.shadowRoot
-      .querySelectorAll(".reference-selector [data-mode]")
-      .forEach((node) => {
-        node.toggleAttribute(
-          "data-active-mode",
-          this.config.highlight_active_mode !== false &&
-            node.dataset.mode === this._effect()?.name,
-        );
-        if (node.hasAttribute("data-active-mode"))
-          node.setAttribute("data-active-mode", "true");
-      });
-    markFavouriteModes(
-      this.shadowRoot,
-      this._controls.favourites,
-      this._colorModeKey(),
-      this._currentCustomColor(),
-    );
+    this._refreshPreviews();
+  }
+
+  _refreshPreviews() {
     this._observer?.disconnect();
     this._frames = [
       ...this.shadowRoot.querySelectorAll(

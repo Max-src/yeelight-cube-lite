@@ -35,7 +35,7 @@ test("clock responding-only filtering is always on", () => {
     ),
     "utf8",
   );
-  const method = source.match(/  _shownStyles\(\) \{([\s\S]*?)\n  \}/)[1];
+  const method = source.match(/  _availableStyles\(\) \{([\s\S]*?)\n  \}/)[1];
   const shownStyles = new Function(
     "clockStyleColorModeState",
     "clockStyleRespondsToCustomColor",

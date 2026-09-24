@@ -1,8 +1,7 @@
-import { LitElement, html, css, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
+import { LitElement,html,css,unsafeCSS,unsafeHTML } from "./lib/lit-all.js";
 import {
   renderActionButton,
-  renderActionRow,
-  renderActionButtonSettings,
+  renderActionRow
 } from "./action-button-ui.js";
 import {
   actionButtonStyles,
@@ -14,28 +13,15 @@ import {
   orientationOptions,
   nextOrientation,
 } from "./orientation-control-utils.js";
-import { renderOrientationSettings } from "./orientation-control-ui.js";
 import {
   renderOrderableList,
   orderableListStyles,
 } from "./orderable-list-utils.js";
 import { renderMatrixPreview } from "./gallery-display-utils.js";
-import { createToggleRow } from "./form-row-utils.js";
-import { createButtonGroup } from "./button-group-utils.js";
-import {
-  renderModeSettingsSection,
-  renderMatrixAppearanceSettings,
-} from "./editor_ui_utils.js";
 import {
   favouriteId,
   nextRotationMode,
-  rotationIntervalSeconds,
-  rotationIntervalParts,
-  formatRotationInterval,
-  ROTATION_INTERVAL_UNITS,
-  actionButtonOrder,
-  ACTION_BUTTON_KEYS,
-  ACTION_BUTTON_LABELS,
+  rotationIntervalSeconds,formatRotationInterval,actionButtonOrder
 } from "./mode-controls-controller.js";
 
 // A favourite is uniquely identified by its key AND colour mode: the same style
@@ -58,186 +44,6 @@ function favouriteLabel(favourite, title = (key) => key) {
     ?.map((channel) => channel.toString(16).padStart(2, "0"))
     .join("");
   return `${title(favourite.key)} (${color ? `#${color}` : mode})`;
-}
-
-export function renderColorModeSettings(config, change) {
-  const choices = (label, key, values, fallback) =>
-    html`<div class="form-row">
-      <label>${label}</label>${createButtonGroup(
-        values.map((value) => ({
-          value,
-          label: value[0].toUpperCase() + value.slice(1),
-        })),
-        config[key] || fallback,
-        (event) => change(key, event.currentTarget.dataset.value),
-      )}
-    </div>`;
-  return html`${choices(
-      "Presentation",
-      "color_mode_selector",
-      ["buttons", "dropdown"],
-      "buttons",
-    )}${config.color_mode_selector === "dropdown"
-      ? choices(
-          "Item Shape",
-          "color_mode_shape",
-          ["square", "rounded", "round"],
-          "rounded",
-        )
-      : ""}
-    <div class="form-row">
-      <label>Custom colour modes style</label>
-      ${createButtonGroup(
-        [
-          { value: "label", label: "Swatch + name" },
-          { value: "filled", label: "Filled" },
-          { value: "name", label: "Name only" },
-        ],
-        config.color_preset_style === "swatch"
-          ? "filled"
-          : ["label", "filled", "name"].includes(config.color_preset_style)
-            ? config.color_preset_style
-            : "label",
-        (event) =>
-          change("color_preset_style", event.currentTarget.dataset.value),
-      )}
-    </div>
-    ${["filled", "swatch", "name"].includes(config.color_preset_style)
-      ? ""
-      : choices(
-          "Swatch shape",
-          "color_preset_shape",
-          ["square", "rounded", "circle"],
-          "rounded",
-        )}`;
-}
-
-export function renderModeControlSettings(
-  area,
-  config,
-  change,
-  items = [],
-  noun = "effect",
-) {
-  const toggle = (label, key, fallback = true) =>
-    createToggleRow(label, key, config[key] ?? fallback, (event) =>
-      change(key, event.target.checked),
-    );
-  if (area === "actions")
-    return html`${toggle(
-      "Show Actions",
-      "show_actions",
-    )}${config.show_actions !== false
-      ? html`${renderModeSettingsSection(
-          "Button Settings",
-          renderActionButtonSettings(config, change, {
-            styleKey: "actions_buttons_style",
-            contentKey: "actions_buttons_content_mode",
-            defaultStyle: modeActionOptions(config).buttonStyle,
-            defaultContentMode: modeActionOptions(config).contentMode,
-          }),
-        )}${renderModeSettingsSection(
-          "Actions & Order",
-          renderOrderableList({
-            items: actionButtonOrder(config),
-            available: ACTION_BUTTON_KEYS.filter(
-              (key) => !actionButtonOrder(config).includes(key),
-            ),
-            labelFor: (key) => ACTION_BUTTON_LABELS[key] || key,
-            onUpdate: (keys) => change("action_buttons", keys),
-            onReset: () => change("action_buttons", undefined),
-            addPlaceholder: "Add action",
-            resetLabel: "Reset to all actions",
-          }),
-        )}`
-      : ""}`;
-  if (area === "orientation")
-    return html`${toggle(
-      "Show Device Orientation",
-      "show_device_orientation",
-    )}${config.show_device_orientation !== false
-      ? renderModeSettingsSection(
-          "Orientation Settings",
-          renderOrientationSettings(config, change),
-        )
-      : ""}`;
-  if (area === "favourites")
-    return html`${toggle("Show Favourites", "show_favourites", false)}${toggle(
-      "Show favourite stars",
-      "favourites_show_stars",
-    )}${config.show_favourites
-      ? renderModeSettingsSection(
-          "Favourite Controls",
-          html`
-            ${toggle("Animated Previews", "favourites_show_previews")}
-            ${config.favourites_show_previews === false
-              ? renderActionButtonSettings(config, change, {
-                  styleKey: "collection_buttons_style",
-                  contentKey: "collection_buttons_content_mode",
-                  defaultStyle: "classic",
-                  defaultContentMode: "icon_text",
-                })
-              : renderMatrixAppearanceSettings(config, change, {
-                  prefix: "effect",
-                  defaultSize: 100,
-                })}
-          `,
-        )
-      : ""}`;
-  // Rotation always follows the favourites list: no custom source, no
-  // shuffle toggle. The only setting is how often to advance, edited as a
-  // value + unit (seconds → days) and stored as whole seconds.
-  const parts = rotationIntervalParts(config.rotation_interval ?? 60);
-  const applyInterval = (value, unit) => {
-    const size =
-      ROTATION_INTERVAL_UNITS.find((item) => item.unit === unit)?.seconds || 1;
-    change(
-      "rotation_interval",
-      Math.max(1, Math.round(Number(value) || 1)) * size,
-    );
-  };
-  return html`${toggle(
-    `Show ${noun === "effect" ? "Effect" : "Clock Mode"} Rotation`,
-    "show_rotation",
-    false,
-  )}${config.show_rotation
-    ? renderModeSettingsSection(
-        "Rotation Settings",
-        html`
-          <div class="form-row">
-            <label>Rotate every</label>
-            <div style="display:flex;gap:8px;align-items:center;min-width:0;">
-              <input
-                type="number"
-                aria-label="Rotation interval value"
-                min="1"
-                max="999"
-                style="width:80px;min-width:0;padding:8px;border:1px solid var(--divider-color,#d0d7de);border-radius:6px;background:var(--card-background-color,#fff);color:var(--primary-text-color,#333);font:inherit;box-sizing:border-box;"
-                .value=${String(parts.value)}
-                @change=${(event) =>
-                  applyInterval(event.target.value, parts.unit)}
-              />
-              <select
-                aria-label="Rotation interval unit"
-                style="flex:1;min-width:0;padding:8px;border:1px solid var(--divider-color,#d0d7de);border-radius:6px;background:var(--card-background-color,#fff);color:var(--primary-text-color,#333);font:inherit;"
-                @change=${(event) =>
-                  applyInterval(parts.value, event.target.value)}
-              >
-                ${ROTATION_INTERVAL_UNITS.map(
-                  (item) =>
-                    html`<option
-                      value=${item.unit}
-                      ?selected=${item.unit === parts.unit}
-                    >
-                      ${item.label}
-                    </option>`,
-                )}
-              </select>
-            </div>
-          </div>
-        `,
-      )
-    : ""}`;
 }
 
 class YeelightModeControls extends LitElement {

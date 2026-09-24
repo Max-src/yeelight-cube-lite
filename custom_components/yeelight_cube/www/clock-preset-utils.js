@@ -1,3 +1,8 @@
+export function clockColorToRgb(intColor) {
+  if (typeof intColor !== "number") return null;
+  return [(intColor >> 16) & 0xff, (intColor >> 8) & 0xff, intColor & 0xff];
+}
+
 export function clockPresetLibrary(hass) {
   return (
     Object.values(hass?.states || {}).find((state) =>

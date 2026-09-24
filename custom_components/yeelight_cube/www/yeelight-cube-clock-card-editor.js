@@ -2,7 +2,7 @@ import { renderStyleSelectorSettings } from "./style-selector-ui.js";
 import {
   renderModeControlSettings,
   renderColorModeSettings,
-} from "./mode-controls-ui.js";
+} from "./mode-controls-settings.js";
 import { LitElement, html } from "./lib/lit-all.js";
 import "./clock-preset-manager.js";
 import { renderActionButtonSettings } from "./action-button-ui.js";

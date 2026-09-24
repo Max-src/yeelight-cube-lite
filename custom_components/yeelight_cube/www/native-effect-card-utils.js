@@ -1,9 +1,7 @@
 import { renderNativeEffectOriented } from "./native-effect-preview.js";
 import { flipMatrixVertical } from "./clock-preview-utils.js";
-import {
-  modeCollectionKey,
-  sanitizeModeNames,
-} from "./mode-controls-controller.js";
+import { modeCollectionKey } from "./mode-controls-controller.js";
+import { sanitizeFavourites } from "./mode-selection.js";
 export {
   nextRotationMode as nextRotationEffect,
   rotationIntervalMs,
@@ -91,7 +89,7 @@ export function effectCollectionKey(targets) {
 
 export function sanitizeEffectCollections(saved) {
   return {
-    favourites: sanitizeModeNames(saved?.favourites),
+    favourites: sanitizeFavourites(saved?.favourites),
   };
 }
 

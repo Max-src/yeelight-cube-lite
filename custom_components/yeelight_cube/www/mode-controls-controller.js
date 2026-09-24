@@ -1,3 +1,15 @@
+import {
+  normalizeFavourite,
+  favouriteId,
+  sanitizeFavourites,
+  ModeSelectionState,
+} from "./mode-selection.js";
+export {
+  normalizeFavourite,
+  favouriteId,
+  sanitizeFavourites,
+} from "./mode-selection.js";
+
 export function modeCollectionKey(kind, targets) {
   return `yeelight-${kind}-collections:${[...new Set(targets)].sort().join(",")}`;
 }
@@ -82,65 +94,6 @@ export function sanitizeModeNames(names, limit = 100) {
   ].slice(0, limit);
 }
 
-// Favourites carry the colour mode that was active when they were saved, so
-// the star only shows under that mode and rotation reapplies it exactly.
-// Legacy string favourites (no recorded mode) default to "normal".
-export function normalizeFavourite(item) {
-  if (typeof item === "string") {
-    const key = item.trim();
-    if (!key || /^\d+$/.test(key)) return null;
-    return { key, colorMode: "normal" };
-  }
-  if (!item || typeof item !== "object" || typeof item.key !== "string")
-    return null;
-  const key = item.key.trim();
-  if (!key || /^\d+$/.test(key)) return null;
-  const colorMode =
-    typeof item.colorMode === "string" && item.colorMode
-      ? item.colorMode
-      : "normal";
-  const favourite = { key, colorMode };
-  if (
-    colorMode === "custom" &&
-    Array.isArray(item.color) &&
-    item.color.length === 3 &&
-    item.color.every(
-      (channel) => Number.isInteger(channel) && channel >= 0 && channel <= 255,
-    )
-  )
-    favourite.color = [...item.color];
-  if (colorMode === "custom" && !favourite.color)
-    favourite.colorMode = "normal";
-  return favourite;
-}
-
-export function favouriteId(item) {
-  const favourite = normalizeFavourite(item);
-  return favourite
-    ? JSON.stringify([
-        favourite.key,
-        favourite.colorMode,
-        favourite.color || null,
-      ])
-    : "";
-}
-
-export function sanitizeFavourites(items, limit = 100) {
-  const seen = new Set();
-  const out = [];
-  for (const item of Array.isArray(items) ? items : []) {
-    const favourite = normalizeFavourite(item);
-    if (!favourite) continue;
-    // A favourite is unique per key AND colour mode, so the same style can be
-    // saved once for Normal and once for Vivid, etc.
-    const id = favouriteId(favourite);
-    if (seen.has(id)) continue;
-    seen.add(id);
-    out.push(favourite);
-  }
-  return out.slice(0, limit);
-}
-
 // Advance to the next mode in list order (wrapping). Rotation is always
 // in-order; randomness is a one-shot favourites-list shuffle instead.
 export function nextRotationMode(names, current) {
@@ -150,8 +103,15 @@ export function nextRotationMode(names, current) {
 }
 
 export class ModeControlsController {
+  /** Adapter contract: items/current/available describe the domain; apply and
+   * applyFavourite return false on failure; frame returns top-origin RGB pixels.
+   * Cards resolve colour drafts, mode-selection owns identity/pending echoes,
+   * card-command-controller owns service transport, and UI modules own DOM.
+   * Backend rotation remains entity-owned and is never stopped by observation.
+   */
   constructor(adapter) {
     this.adapter = adapter;
+    this.selection = new ModeSelectionState();
     this.listeners = new Set();
     this.favourites = [];
     this.active = false;
@@ -202,7 +162,7 @@ export class ModeControlsController {
     );
   }
 
-  captureFavourite(key = this.adapter.current()) {
+  captureFavourite(key = this.adapter.current?.()) {
     return normalizeFavourite({
       key,
       colorMode: this.adapter.currentColorMode?.() || "normal",
@@ -212,6 +172,14 @@ export class ModeControlsController {
 
   currentFavourite() {
     return this.selectedFavourite || this.captureFavourite();
+  }
+
+  get selectedFavourite() {
+    return this.selection.pending;
+  }
+
+  set selectedFavourite(value) {
+    this.selection.pending = normalizeFavourite(value);
   }
 
   hasFavourite(key, colorMode, color = this.adapter.currentColor?.()) {
@@ -228,14 +196,7 @@ export class ModeControlsController {
   }
 
   update() {
-    if (this.selectedFavourite) {
-      const live = favouriteId(this.captureFavourite());
-      if (
-        live === favouriteId(this.selectedFavourite) ||
-        live !== this._favouriteBaseline
-      )
-        this.selectedFavourite = null;
-    }
+    this.selection.observe(this.captureFavourite());
     if (this.pendingOrientation === this.adapter.orientation?.()) {
       this.pendingOrientation = null;
       clearTimeout(this.orientationTimer);
@@ -336,8 +297,8 @@ export class ModeControlsController {
   }
 
   async command(callback, rotating = false) {
-    if (!rotating) this.stop();
     if (this.busy || this.adapter.disabled()) return false;
+    if (!rotating) this.stop();
     const context = this.context;
     this.busy = true;
     this.error = "";
@@ -395,11 +356,18 @@ export class ModeControlsController {
 
   choose(name) {
     if (!name || !this.adapter.available(name)) return Promise.resolve(false);
-    return this.command(() =>
-      this.adapter.select
+    const context = this.context;
+    return this.command(async () => {
+      const success = await (this.adapter.select
         ? this.adapter.select(name)
-        : this.adapter.apply(name),
-    );
+        : this.adapter.apply(name));
+      if (success === false || context !== this.context) return false;
+      this.selection.record(
+        this.captureFavourite(name),
+        this.captureFavourite(),
+      );
+      return true;
+    });
   }
 
   chooseFavourite(item) {
@@ -414,8 +382,7 @@ export class ModeControlsController {
     return this.command(async () => {
       const success = await this.adapter.applyFavourite(favourite);
       if (success === false || context !== this.context) return false;
-      this._favouriteBaseline = favouriteId(this.captureFavourite());
-      this.selectedFavourite = favourite;
+      this.selection.record(favourite, this.captureFavourite());
       return true;
     });
   }
