@@ -73,6 +73,7 @@ import {
   EVT_ACTION_VISIBILITY_RESET,
 } from "./draw_card_const.js";
 import { StorageUtils } from "./draw_card_storage.js";
+import { CollectionState } from "./collection-state.js";
 import { callServiceOnTargetEntities as callServiceSequentially } from "./service-call-utils.js";
 
 /**
@@ -1139,52 +1140,27 @@ class YeelightCubeDrawCard extends LitElement {
 
     // Check if we have an optimistically updated state that websocket might overwrite
     const incomingStateObj = hass.states[pixelartSensor];
-    const currentStateObj = oldHass?.states?.[pixelartSensor];
     const incomingPixelArts = incomingStateObj?.attributes?.pixel_arts || [];
-    const currentPixelArts = currentStateObj?.attributes?.pixel_arts || [];
 
-    // If we have pending operations, check if incoming data would overwrite our optimistic state
-    // PENDING-CACHE EXPIRY: the optimistic reorder state only exists to bridge
-    // the gap until the backend echoes our update_pixel_arts call back.  If it
-    // is older than the expected echo window, drop it and accept backend state
-    // — otherwise one mismatched echo (e.g. an external rename/add during the
-    // reorder) would make this card reject ALL hass updates forever.
-    if (
-      this._pendingReorderedPixelArts &&
-      this._pendingReorderTs &&
-      Date.now() - this._pendingReorderTs > 5000
-    ) {
-      this._pendingReorderedPixelArts = null;
-      this._pendingReorderTs = null;
-    }
-    if (this._pendingReorderedPixelArts) {
-      const pendingCount = this._pendingReorderedPixelArts.length;
-
-      // Check if incoming websocket matches our pending state
-      if (incomingPixelArts.length === pendingCount) {
-        const namesMatch = this._pendingReorderedPixelArts.every(
-          (art, idx) => incomingPixelArts[idx]?.name === art.name,
-        );
-
-        if (namesMatch) {
-          this._pendingReorderedPixelArts = null;
-          this._pendingReorderTs = null;
-          this._hass = hass; // Accept the websocket update
-        } else {
-          return; // Reject the stale websocket update
-        }
-      } else if (incomingPixelArts.length > pendingCount) {
-        // Incoming has MORE items than our optimistic state - websocket is stale (pre-delete)
-        return; // Reject the stale websocket update
-      } else {
-        // Incoming has FEWER items - might be a newer delete
-        this._pendingReorderedPixelArts = null;
-        this._pendingReorderTs = null;
-        this._hass = hass;
-      }
-    } else {
-      // No pending operations - accept websocket update normally
-      this._hass = hass;
+    this._pixelArtCollection?.observe(
+      incomingPixelArts,
+      incomingStateObj?.attributes?.count,
+    );
+    this._hass = hass;
+    if (this._pendingReorderedPixelArts && incomingStateObj) {
+      this._hass = {
+        ...hass,
+        states: {
+          ...hass.states,
+          [pixelartSensor]: {
+            ...incomingStateObj,
+            attributes: {
+              ...incomingStateObj.attributes,
+              pixel_arts: this._pendingReorderedPixelArts,
+            },
+          },
+        },
+      };
     }
 
     // Check if pixel art sensor changed using COUNT or content_hash
@@ -1202,6 +1178,7 @@ class YeelightCubeDrawCard extends LitElement {
     // data on any unrelated state change. If we've already fetched the array for
     // this exact content_hash, re-inject it to keep the fresh names.
     if (
+      !this._pendingReorderedPixelArts &&
       this._freshPixelArts &&
       this._freshPixelArtsHash != null &&
       currHash === this._freshPixelArtsHash &&
@@ -1268,6 +1245,9 @@ class YeelightCubeDrawCard extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    this._collectionContext = (this._collectionContext || 0) + 1;
+    this._pixelArtCollection?.reset();
+    this._fetchingPixelArts = false;
     window.removeEventListener("config-changed", this._onConfigChanged);
     window.removeEventListener(
       "yeelight-tools-reordered",
@@ -1384,6 +1364,9 @@ class YeelightCubeDrawCard extends LitElement {
   }
 
   setConfig(config) {
+    this._collectionContext = (this._collectionContext || 0) + 1;
+    this._fetchingPixelArts = false;
+    this._pixelArtCollection?.reset();
     // Create a mutable copy of the config to allow adding new properties
     this.config = { ...config };
 
@@ -3436,6 +3419,25 @@ class YeelightCubeDrawCard extends LitElement {
     );
   }
 
+  get _pendingReorderedPixelArts() {
+    return this._pixelArtCollection?.pending?.items ?? null;
+  }
+
+  set _pendingReorderedPixelArts(items) {
+    const collection = (this._pixelArtCollection ||= new CollectionState());
+    if (items) collection.record(items);
+    else collection.reset();
+  }
+
+  get _pendingReorderTs() {
+    return this._pixelArtCollection?.pending?.timestamp;
+  }
+
+  set _pendingReorderTs(timestamp) {
+    if (this._pixelArtCollection?.pending)
+      this._pixelArtCollection.pending.timestamp = timestamp;
+  }
+
   _saveReorderedPixelArts(pixelArts) {
     const cfg = this.config || {};
     const pixelartSensor = cfg.pixelart_sensor;
@@ -3444,19 +3446,22 @@ class YeelightCubeDrawCard extends LitElement {
 
     // Use update_pixel_arts service to save the reordered list
     // replace: true because we are sending the full reordered collection
-    this.hass
-      .callService("yeelight_cube", "update_pixel_arts", {
+    const collection = (this._pixelArtCollection ||= new CollectionState());
+    const operation = collection.pending;
+    return collection
+      .execute(this.hass, "update_pixel_arts", {
         pixel_arts: pixelArts,
         replace: true,
       })
-      .then(() => {
+      .then((success) => {
+        if (!success)
+          throw new Error("The pixel-art collection changed. Please retry.");
         this._isDragging = false;
       })
       .catch((error) => {
         console.error("[PixelArt] Failed to save reordered pixel arts:", error);
         this._isDragging = false;
-        this._pendingReorderedPixelArts = null; // Clear on error
-        this._pendingReorderTs = null;
+        if (collection.rollback(operation)) this.requestUpdate();
       });
   }
 
@@ -3619,26 +3624,8 @@ class YeelightCubeDrawCard extends LitElement {
     }
   }
 
-  // Overlay locally-renamed titles onto the pixel-art list so a rename shows
-  // immediately and survives websocket ticks that re-inject the pre-rename
-  // array. Each override is dropped once the backend echoes the new name (or
-  // after a safety timeout) to avoid getting stuck.
   _applyPendingRenames(pixelArts) {
-    if (!this._pendingRenames || this._pendingRenames.size === 0)
-      return pixelArts;
-    const now = Date.now();
-    let changed = false;
-    const result = pixelArts.map((art, i) => {
-      const pending = this._pendingRenames.get(i);
-      if (!pending) return art;
-      if (art.name === pending.name || now - pending.ts > 15000) {
-        this._pendingRenames.delete(i);
-        return art;
-      }
-      changed = true;
-      return { ...art, name: pending.name };
-    });
-    return changed ? result : pixelArts;
+    return this._pendingReorderedPixelArts ?? pixelArts;
   }
 
   async _handleRenameClick(e, idx) {
@@ -3659,7 +3646,8 @@ class YeelightCubeDrawCard extends LitElement {
     }
 
     // Get current pixel arts from sensor
-    const pixelArts = stateObj.attributes.pixel_arts || [];
+    const pixelArts =
+      this._pendingReorderedPixelArts ?? stateObj.attributes.pixel_arts ?? [];
 
     if (idx < 0 || idx >= pixelArts.length) {
       console.error(
@@ -3682,22 +3670,25 @@ class YeelightCubeDrawCard extends LitElement {
       return;
     }
 
-    // Overlay the new name locally so it shows immediately and keeps showing
-    // through websocket ticks that re-inject the pre-rename array. Do NOT patch
-    // hass here: the overlay clears itself only once the raw server array
-    // echoes the new name, so patching hass would make it clear prematurely and
-    // the next tick would revert to the old name.
-    if (!this._pendingRenames) this._pendingRenames = new Map();
-    this._pendingRenames.set(idx, { name: newName.trim(), ts: Date.now() });
+    const renamed = { ...currentArt, name: newName.trim() };
+    this._pendingReorderedPixelArts = pixelArts.map((art, index) =>
+      index === idx ? renamed : art,
+    );
+    const collection = this._pixelArtCollection;
+    const operation = collection.pending;
+    const context = this._collectionContext;
     this.pixelArtVersion = (this.pixelArtVersion || 0) + 1;
     this.requestUpdate();
 
     // Call service to rename (pixel arts are global, use callGlobalService)
     try {
-      await this.callGlobalService("rename_pixel_art", {
+      const success = await collection.execute(this.hass, "rename_pixel_art", {
         idx: idx,
         name: newName.trim(),
       });
+      if (!success)
+        throw new Error("The pixel-art collection changed. Please retry.");
+      if (context !== this._collectionContext) return;
 
       // Trigger sensor update
       await this.hass.callService("homeassistant", "update_entity", {
@@ -3708,16 +3699,18 @@ class YeelightCubeDrawCard extends LitElement {
       // cache the pre-rename array, leaving _hass stale until a full reload.
       // Force a fresh fetch (retrying until the server echoes the new name) so
       // the overlay can retire cleanly and pagination re-renders show the truth.
-      await this._forceRefreshPixelArts(sensorEntityId, idx, newName.trim());
+      if (context !== this._collectionContext) return;
+      await this._forceRefreshPixelArts(sensorEntityId, renamed);
+      if (context !== this._collectionContext) return;
 
       // Trigger UI update
       window.dispatchEvent(new Event("pixelart-saved"));
     } catch (error) {
+      if (!collection.rollback(operation)) return;
       console.error("[Rename] Failed to rename pixel art:", error);
       alert("Failed to rename pixel art. Please try again.");
 
       // Drop the overlay so the UI falls back to the real (unchanged) name.
-      this._pendingRenames.delete(idx);
       this.pixelArtVersion = (this.pixelArtVersion || 0) + 1;
       this.requestUpdate();
     }
@@ -3834,6 +3827,7 @@ class YeelightCubeDrawCard extends LitElement {
     // Debounce: avoid parallel fetches
     if (this._fetchingPixelArts) return;
     this._fetchingPixelArts = true;
+    const context = this._collectionContext;
     try {
       // The scalar content_hash arrives via websocket first; the REST endpoint can
       // still return a pre-update snapshot for a tick. Retry until the fetched
@@ -3845,6 +3839,7 @@ class YeelightCubeDrawCard extends LitElement {
           "GET",
           `states/${sensorEntityId}`,
         );
+        if (context !== this._collectionContext) return;
         if (!freshState?.attributes?.pixel_arts) break;
         const freshHash = freshState.attributes?.content_hash;
         if (expectedHash != null && freshHash !== expectedHash && attempt < 4) {
@@ -3860,7 +3855,11 @@ class YeelightCubeDrawCard extends LitElement {
               ...this._hass.states[sensorEntityId],
               attributes: {
                 ...this._hass.states[sensorEntityId].attributes,
-                pixel_arts: freshState.attributes.pixel_arts,
+                pixel_arts:
+                  this._pixelArtCollection?.observe(
+                    freshState.attributes.pixel_arts,
+                    freshState.attributes.count,
+                  ) ?? freshState.attributes.pixel_arts,
               },
             },
           },
@@ -3876,23 +3875,26 @@ class YeelightCubeDrawCard extends LitElement {
     } catch (err) {
       console.warn("[PixelArt] Failed to fetch fresh pixel arts:", err);
     } finally {
-      this._fetchingPixelArts = false;
+      if (context === this._collectionContext) this._fetchingPixelArts = false;
     }
   }
 
-  // Fetch fresh pixel_arts (bypassing the debounce) and only commit once the
-  // server actually echoes `expectedName` at `idx`. Applying intermediate reads
-  // could cache a pre-rename snapshot, so stale attempts are skipped, not stored.
-  async _forceRefreshPixelArts(sensorEntityId, idx, expectedName) {
+  async _forceRefreshPixelArts(sensorEntityId, expectedArt) {
     if (!this._hass || !sensorEntityId) return;
+    const context = this._collectionContext;
     for (let attempt = 0; attempt < 6; attempt++) {
       try {
         const freshState = await this._hass.callApi(
           "GET",
           `states/${sensorEntityId}`,
         );
+        if (context !== this._collectionContext) return;
         const arts = freshState?.attributes?.pixel_arts;
-        if (arts && arts[idx]?.name === expectedName) {
+        if (
+          arts?.some(
+            (art) => JSON.stringify(art) === JSON.stringify(expectedArt),
+          )
+        ) {
           this._hass = {
             ...this._hass,
             states: {
@@ -3901,7 +3903,11 @@ class YeelightCubeDrawCard extends LitElement {
                 ...this._hass.states[sensorEntityId],
                 attributes: {
                   ...this._hass.states[sensorEntityId].attributes,
-                  pixel_arts: arts,
+                  pixel_arts:
+                    this._pixelArtCollection?.observe(
+                      arts,
+                      freshState.attributes.count,
+                    ) ?? arts,
                 },
               },
             },
@@ -3937,7 +3943,6 @@ class YeelightCubeDrawCard extends LitElement {
     // Otherwise use the sensor's pixel arts
     const pixelArts =
       this._pendingReorderedPixelArts || stateObj.attributes.pixel_arts || [];
-    const usingPendingReorder = !!this._pendingReorderedPixelArts;
 
     if (pixelArts[idx]) {
       // pixel art exists, proceed
@@ -3950,11 +3955,9 @@ class YeelightCubeDrawCard extends LitElement {
     const updatedPixelArts = [...pixelArts];
     updatedPixelArts.splice(idx, 1);
 
-    // Update pending reordered array if we're using it
-    if (usingPendingReorder) {
-      this._pendingReorderedPixelArts = updatedPixelArts;
-      this._pendingReorderTs = Date.now(); // refresh echo window
-    }
+    this._pendingReorderedPixelArts = updatedPixelArts;
+    const collection = this._pixelArtCollection;
+    const operation = collection.pending;
 
     // Create a modified hass object with updated pixel arts
     const updatedState = {
@@ -3967,7 +3970,7 @@ class YeelightCubeDrawCard extends LitElement {
     };
 
     // Update hass with the optimistic state
-    this.hass = {
+    this._hass = {
       ...this.hass,
       states: {
         ...this.hass.states,
@@ -3980,10 +3983,19 @@ class YeelightCubeDrawCard extends LitElement {
 
     // Then call backend (websocket update will eventually sync, but UI is already updated)
     try {
-      await this.callGlobalService("remove_pixel_art", { idx });
+      if (!(await collection.execute(this.hass, "remove_pixel_art", { idx }))) {
+        throw new Error("The pixel-art collection changed. Please retry.");
+      }
     } catch (err) {
       console.error("[PIXELART-DELETE] Error calling backend:", err);
-      // On error, websocket will restore the correct state
+      if (collection.rollback(operation)) {
+        this._hass = {
+          ...this._hass,
+          states: { ...this._hass.states, [pixelartSensor]: stateObj },
+        };
+        this.requestUpdate();
+        this._fetchFreshPixelArts(pixelartSensor);
+      }
     }
   }
 
@@ -4049,9 +4061,13 @@ class YeelightCubeDrawCard extends LitElement {
       }
 
       // Send to backend — replace: false (default) so the backend appends to the existing collection
-      await this.callGlobalService("update_pixel_arts", {
-        pixel_arts: imported,
-      });
+      const collection = (this._pixelArtCollection ||= new CollectionState());
+      if (
+        !(await collection.execute(this.hass, "update_pixel_arts", {
+          pixel_arts: imported,
+        }))
+      )
+        throw new Error("The pixel-art collection changed. Please retry.");
 
       await this.hass.callService("homeassistant", "update_entity", {
         entity_id: pixelartSensor,

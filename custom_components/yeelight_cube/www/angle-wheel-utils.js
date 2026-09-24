@@ -5,7 +5,74 @@
  */
 
 // Debounce time for angle updates (ms)
+import {
+  callServiceOnTargetEntities,
+  getTargetEntities,
+} from "./service-call-utils.js";
+
 export const ANGLE_UPDATE_DEBOUNCE_MS = 150;
+
+export class AngleCommandController {
+  constructor(onApplied = () => {}, onError = () => {}) {
+    this.onApplied = onApplied;
+    this.onError = onError;
+    this.context = 0;
+    this.timer = null;
+    this.pending = null;
+    this.sending = false;
+  }
+
+  schedule(hass, config, value, immediate = false) {
+    const angle = Number.parseFloat(value);
+    const targets = getTargetEntities(config);
+    if (!hass || !targets.length || !Number.isFinite(angle)) return false;
+    this.pending = {
+      hass,
+      config: { target_entities: [...targets] },
+      angle: ((angle % 360) + 360) % 360,
+      context: this.context,
+    };
+    clearTimeout(this.timer);
+    this.timer = null;
+    if (immediate) this.flush();
+    else this.timer = setTimeout(() => this.flush(), ANGLE_UPDATE_DEBOUNCE_MS);
+    return true;
+  }
+
+  async flush() {
+    clearTimeout(this.timer);
+    this.timer = null;
+    if (this.sending) return;
+    this.sending = true;
+    try {
+      while (this.pending && this.timer === null) {
+        const command = this.pending;
+        this.pending = null;
+        if (command.context !== this.context) continue;
+        try {
+          await callServiceOnTargetEntities(
+            command.hass,
+            command.config,
+            "set_angle",
+            { angle: command.angle },
+          );
+          if (command.context === this.context) this.onApplied(command.angle);
+        } catch (error) {
+          if (command.context === this.context) this.onError(error);
+        }
+      }
+    } finally {
+      this.sending = false;
+    }
+  }
+
+  reset() {
+    this.context++;
+    clearTimeout(this.timer);
+    this.timer = null;
+    this.pending = null;
+  }
+}
 
 /**
  * Convert an RGB array [r, g, b] to a hex color string "#rrggbb"

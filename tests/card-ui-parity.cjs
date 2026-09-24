@@ -672,6 +672,247 @@ const server = http.createServer(async (request, response) => {
     console.log(
       "PASS shared browser reset/reconnect and single colour-command ownership on both cards",
     );
+    await page.evaluate(async () => {
+      const base = "/custom_components/yeelight_cube/www/";
+      for (const name of [
+        "gradient",
+        "color-list-editor",
+        "palette",
+        "draw",
+        "lamp-preview",
+      ])
+        await import(`${base}yeelight-cube-${name}-card.js`);
+      const section = document.createElement("section");
+      section.id = "other-card-regressions";
+      section.style.cssText =
+        "display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:16px;align-items:start";
+      document.body.append(section);
+      const frames = async () => {
+        await new Promise(requestAnimationFrame);
+        await new Promise(requestAnimationFrame);
+      };
+      const check = (condition, message) => {
+        if (!condition) throw Error(message);
+      };
+      const matrix = Array.from({ length: 100 }, () => [255, 0, 0]);
+      const listeners = new Set();
+      const serviceCalls = [];
+      let failColors = false,
+        finishRename;
+      const preview = (colors) => ({
+        entity_id: "light.a",
+        rows: 5,
+        cols: 20,
+        angle: 0,
+        previews: { "Solid Color": colors },
+      });
+      const state = {
+        states: {
+          "light.a": {
+            state: "on",
+            attributes: {
+              ...hass.states["light.a"].attributes,
+              content_mode: "Solid Color",
+              matrix_colors: matrix,
+              text_colors: [[255, 0, 0]],
+              angle: 0,
+              text: "Test",
+            },
+          },
+          "light.b": {
+            state: "on",
+            attributes: { matrix_colors: matrix, text_colors: [[0, 255, 0]] },
+          },
+          "sensor.palette": {
+            attributes: {
+              count: 2,
+              content_hash: "palettes",
+              palettes_v2: [
+                { name: "A", colors: [[255, 0, 0]] },
+                { name: "B", colors: [[0, 255, 0]] },
+              ],
+            },
+          },
+          "sensor.art": {
+            attributes: {
+              count: 2,
+              content_hash: "arts",
+              pixel_arts: [
+                { name: "A", pixels: [] },
+                { name: "B", pixels: [] },
+              ],
+            },
+          },
+        },
+        connection: {
+          subscribeEvents(callback) {
+            listeners.add(callback);
+            return Promise.resolve(() => listeners.delete(callback));
+          },
+        },
+        callApi: async (method, path) =>
+          state.states[path.slice("states/".length)],
+        callService: async (domain, service, data) => {
+          serviceCalls.push({ domain, service, data });
+          if (service === "preview_gradient_modes")
+            listeners.forEach((callback) =>
+              callback({ data: preview(matrix) }),
+            );
+          if (service === "set_text_colors" && failColors)
+            throw Error("Test offline");
+          if (service === "rename_palette")
+            await new Promise((resolve) => {
+              finishRename = resolve;
+            });
+        },
+      };
+      const config = {
+        entity: "light.a",
+        target_entities: ["light.a"],
+        palette_sensor: "sensor.palette",
+        pixelart_sensor: "sensor.art",
+      };
+      const cards = [];
+      const create = async (name, extra = {}) => {
+        const card = document.createElement(`yeelight-cube-${name}-card`);
+        card.style.cssText = "display:block;min-width:0;max-width:100%";
+        card.setConfig({ ...config, ...extra });
+        card.hass = state;
+        section.append(card);
+        cards.push(card);
+        await card.updateComplete;
+        await frames();
+        return card;
+      };
+      const gradients = [
+        await create("gradient", {
+          mode_selector_style: "preview-grid",
+          show_mode_selector: true,
+        }),
+        await create("gradient", {
+          mode_selector_style: "preview-grid",
+          show_mode_selector: true,
+        }),
+      ];
+      gradients.forEach((card) => card._setupPreviewEventListener());
+      await Promise.all(gradients.map((card) => card._loadPreviews()));
+      check(
+        listeners.size === 1,
+        "Gradient must share its backend event subscription",
+      );
+      const updates = [0, 0];
+      gradients.forEach((card, index) => {
+        const update = card._updatePreviewSection.bind(card);
+        card._updatePreviewSection = () => {
+          updates[index]++;
+          update();
+        };
+      });
+      const green = Array.from({ length: 100 }, () => [0, 255, 0]);
+      listeners.forEach((callback) => callback({ data: preview(green) }));
+      check(
+        updates.every((count) => count === 1),
+        "Every Gradient view must refresh",
+      );
+      check(
+        gradients.every(
+          (card) =>
+            card._previewCache().data.previews["Solid Color"][0][1] === 255,
+        ),
+        "Gradient cache must contain updated colours",
+      );
+      const colors = await create("color-list-editor", { list_layout: "rows" });
+      const notices = [];
+      colors.addEventListener("hass-notification", (event) =>
+        notices.push(event.detail.message),
+      );
+      failColors = true;
+      check(
+        (await colors.saveColors([[0, 0, 255]])) === false,
+        "Colour save must report failure",
+      );
+      check(
+        notices.includes("Test offline"),
+        "Colour save failure must be visible",
+      );
+      check(
+        JSON.stringify(colors._getCurrentColors()) ===
+          JSON.stringify([[255, 0, 0]]),
+        "Colour save must roll back",
+      );
+      const palette = await create("palette", {
+        display_mode: "list",
+        allow_title_edit: true,
+      });
+      const savedPrompt = window.prompt;
+      window.prompt = () => "Renamed A";
+      const rename = palette._renamePalette(0, "A", null);
+      window.prompt = savedPrompt;
+      await Promise.resolve();
+      const original = state.states["sensor.palette"].attributes.palettes_v2;
+      state.states["sensor.palette"].attributes.palettes_v2 =
+        original.toReversed();
+      finishRename();
+      await rename;
+      check(
+        state.states["sensor.palette"].attributes.palettes_v2[0].name === "B",
+        "Rename must not mutate a new index occupant",
+      );
+      const draw = await create("draw");
+      draw._pendingReorderedPixelArts =
+        state.states["sensor.art"].attributes.pixel_arts.toReversed();
+      draw.hass = {
+        ...state,
+        states: {
+          ...state.states,
+          "light.a": { ...state.states["light.a"], state: "off" },
+        },
+      };
+      check(
+        draw.hass.states["light.a"].state === "off",
+        "Draw must accept unrelated HA state",
+      );
+      check(
+        draw.hass.states["sensor.art"].attributes.pixel_arts[0].name === "B",
+        "Draw must retain its pending order",
+      );
+      const lamp = await create("lamp-preview");
+      await lamp.handleEffectChange("contrast", { target: { value: "75" } });
+      lamp.setConfig({ entity: "light.b" });
+      await new Promise((resolve) => setTimeout(resolve, 350));
+      check(
+        !serviceCalls.some(
+          (call) => call.service === "set_preview_adjustments",
+        ),
+        "Lamp adjustment must not cross reconfiguration",
+      );
+      gradients[0].remove();
+      section.append(gradients[0]);
+      await frames();
+      check(
+        listeners.size === 1,
+        "Gradient reconnect must retain one subscription",
+      );
+      window.otherRegressionCards = cards;
+      window.otherRegressionListeners = listeners;
+    });
+    for (const width of [1400, 390]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.locator("#other-card-regressions").screenshot({
+        path: path.join(os.tmpdir(), `yeelight-other-cards-${width}.png`),
+      });
+    }
+    await page.evaluate(async () => {
+      otherRegressionCards.forEach((card) => card.remove());
+      document.querySelector("#other-card-regressions").remove();
+      await Promise.resolve();
+      if (otherRegressionListeners.size)
+        throw Error("Gradient subscription leaked after removal");
+    });
+    assert.deepEqual(errors, []);
+    console.log(
+      "PASS other-card state, shared preview, failure recovery and reconnect regressions (desktop/mobile screenshots)",
+    );
     if (process.env.FOCUSED_CONTROLS) return;
     await page.mouse.move(0, 0);
     await page.setViewportSize({ width: 1400, height: 1000 });

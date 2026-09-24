@@ -19,8 +19,9 @@ import {
 import { compactModeStyles } from "./compact-mode-styles.js";
 import { compactLayoutStyles } from "./compact-layout-utils.js";
 import { callServiceOnTargetEntities as callServiceSequentially } from "./service-call-utils.js";
+import { CardCommandController } from "./card-command-controller.js";
 import {
-  ANGLE_UPDATE_DEBOUNCE_MS,
+  AngleCommandController,
   rgbToHex as _sharedRgbToHex,
   createColorWheelSegments as _sharedCreateColorWheelSegments,
   createWheelGradientStops as _sharedCreateWheelGradientStops,
@@ -41,7 +42,21 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
   constructor() {
     super();
     this._pendingAngle = null;
-    this._angleDebounceTimer = null;
+    this._angleCommands = new AngleCommandController(
+      (angle) => {
+        this._lastAngleSent = angle;
+      },
+      (error) =>
+        this.dispatchEvent(
+          new CustomEvent("hass-notification", {
+            bubbles: true,
+            composed: true,
+            detail: {
+              message: error.message || "The angle could not be updated.",
+            },
+          }),
+        ),
+    );
     this._lastAngleSent = null;
     this._draggingRotary = false;
     this._processingModeChange = false;
@@ -57,6 +72,11 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
   }
 
   setConfig(config) {
+    this._angleCommands.reset();
+    this._pendingAngle = null;
+    this._draggingRotary = false;
+    this._colorCommands?.reset();
+    this._pendingServiceCalls = [];
     this.config = config;
 
     // Auto-resolve palette_sensor if not explicitly configured
@@ -133,7 +153,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     // If this is the first time hass is set, flush any pending service calls
     if (!oldHass && hass && this._pendingServiceCalls.length > 0) {
       this._pendingServiceCalls.forEach((call) => {
-        this.callServiceOnTargetEntities(call.service, call.serviceData);
+        this._commitColors(call.entityId, call.entry, call.config);
       });
       this._pendingServiceCalls = [];
     }
@@ -4173,34 +4193,11 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
   _debouncedApplyAngle(angle) {
     this._pendingAngle = angle;
-    if (this._angleDebounceTimer) {
-      clearTimeout(this._angleDebounceTimer);
-    }
-    this._angleDebounceTimer = setTimeout(() => {
-      if (this._pendingAngle !== null) {
-        this._applyAngle(this._pendingAngle);
-        this._lastAngleSent = this._pendingAngle;
-        this._pendingAngle = null;
-      }
-    }, ANGLE_UPDATE_DEBOUNCE_MS);
+    this._angleCommands.schedule(this._hass, this.config, angle);
   }
 
   _applyAngle(angle) {
-    if (!this._hass) return;
-
-    // Ensure angle is a valid number and convert to float
-    const validAngle = parseFloat(angle);
-    if (isNaN(validAngle)) {
-      console.warn("Invalid angle value:", angle);
-      return;
-    }
-
-    // Normalize angle to 0-359 range
-    const normalizedAngle = ((validAngle % 360) + 360) % 360;
-
-    this.callServiceOnTargetEntities("set_angle", {
-      angle: normalizedAngle,
-    });
+    this._angleCommands.schedule(this._hass, this.config, angle, true);
   }
 
   _rgbToHex(rgb) {
@@ -4527,10 +4524,11 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     // Store pending colors in global store (shared across all card instances).
     // Timestamped so `set hass` can expire the entry if the backend echo
     // never matches (see PENDING_COLORS_GRACE_MS).
-    PENDING_COLORS_STORE[entityId] = {
-      colors: textColors.slice(),
+    const entry = {
+      colors: structuredClone(textColors),
       ts: Date.now(),
     };
+    PENDING_COLORS_STORE[entityId] = entry;
 
     // Render SYNCHRONOUSLY if length changed to prevent stale DOM issues
     // (e.g., rapid clicks on remove button need immediate DOM updates)
@@ -4550,19 +4548,42 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     // If hass not ready yet, queue the service call for later
     if (!this._hass) {
       this._pendingServiceCalls.push({
-        service: "set_text_colors",
-        serviceData: { text_colors: textColors },
+        entityId,
+        entry,
+        config: structuredClone(this.config),
       });
       return;
     }
 
     // Use multi-entity service call - updates ALL target entities with the same colors
-    this.callServiceOnTargetEntities("set_text_colors", {
-      text_colors: textColors,
-    });
+    return this._commitColors(entityId, entry, this.config);
+  }
 
-    // Note: Pending colors will be cleared automatically in render()
-    // when the sensor value matches, providing seamless sync
+  async _commitColors(entityId, entry, config) {
+    const commands = (this._colorCommands ||= new CardCommandController());
+    const context = commands.context;
+    const success = await commands.execute(
+      this._hass,
+      config,
+      "set_text_colors",
+      {
+        text_colors: entry.colors,
+      },
+    );
+    if (context !== commands.context || success) return success;
+    if (PENDING_COLORS_STORE[entityId] !== entry) return false;
+    delete PENDING_COLORS_STORE[entityId];
+    this.render();
+    this.dispatchEvent(
+      new CustomEvent("hass-notification", {
+        bubbles: true,
+        composed: true,
+        detail: {
+          message: commands.error || "The colours could not be saved.",
+        },
+      }),
+    );
+    return false;
   }
   _getCardBorderRadius() {
     const v = this.config.rounded_cards;
@@ -6076,9 +6097,9 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
   }
 
   disconnectedCallback() {
-    // Clear angle debounce timer
-    clearTimeout(this._angleDebounceTimer);
-    this._angleDebounceTimer = null;
+    this._angleCommands.reset();
+    this._colorCommands?.reset();
+    this._pendingServiceCalls = [];
 
     // Clean up document-level drag listeners if disconnected mid-drag
     if (this._dragCleanup) {

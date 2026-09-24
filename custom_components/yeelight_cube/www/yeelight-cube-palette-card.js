@@ -27,6 +27,7 @@ import {
 import { gridModeStyles, renderGridMode } from "./grid-mode-utils.js";
 import { galleryModeStyles, renderGalleryMode } from "./gallery-mode-utils.js";
 import { callServiceOnTargetEntities as callServiceSequentially } from "./service-call-utils.js";
+import { CollectionState } from "./collection-state.js";
 import {
   paginationStyles,
   renderPagination,
@@ -95,6 +96,7 @@ class YeelightCubePaletteCard extends HTMLElement {
   }
 
   setConfig(config) {
+    this._collection?.reset();
     this.config = {
       palette_sensor: config.palette_sensor,
       target_entities: config.target_entities || [], // Array of entity IDs to control
@@ -155,17 +157,15 @@ class YeelightCubePaletteCard extends HTMLElement {
    *
    * DELETION FLOW:
    * 1. User clicks delete → _deletePalette() filters array client-side → renders immediately
-   * 2. _localPalettes cache stores filtered array, _localPalettesTimestamp tracks age
+   * 2. CollectionState stores the optimistic array and its timestamp
    * 3. Backend service deletes item → fires event → sensor updates count/hash
    * 4. Websocket sends: {count: 16, hash: <new>} but palettes_v2: <stale 17-item array>
-   * 5. This setter sees count match → clears cache → waits for full data
-   * 6. render() checks count vs array length → trims stale array to match count
+   * 5. This setter confirms the full array before retiring the overlay
    *
    * CACHE MANAGEMENT:
-   * - Cache cleared when sensor count matches local count (deletion complete)
+   * - Cache cleared when the full sensor array matches the optimistic snapshot
    * - Cache expires after 5 seconds (navigated away and back)
-   * - Cache cleared if count diff > 5 (very stale, multiple changes happened)
-   * - While cache active, ignore all sensor updates (prevent stale renders)
+   * - HA state remains available while the collection overlay is active
    */
   set hass(hass) {
     this._hass = hass;
@@ -200,19 +200,14 @@ class YeelightCubePaletteCard extends HTMLElement {
 
     // While an optimistic local cache is active (just after a delete), keep
     // showing the correctly-filtered local list until the sensor has fully
-    // caught up. "Caught up" means the authoritative array is itself fresh
-    // (its length matches the reported count) AND that count equals the size
-    // we optimistically rendered. The websocket can deliver an updated `count`
+    // caught up. Confirmation requires the full authoritative array to match.
+    // The websocket can deliver an updated `count`
     // a beat before the full `palettes_v2` array converges, so checking both
     // avoids briefly re-rendering the stale (pre-delete) array -- which would
     // make the just-deleted item flash back into the list.
     if (this._localPalettes !== undefined) {
-      const cacheAge = Date.now() - (this._localPalettesTimestamp || 0);
-      const sensorArrayFresh = sensorArr.length === sensorCount;
-      const convergedToOptimistic = sensorCount === this._localPalettes.length;
-      if ((sensorArrayFresh && convergedToOptimistic) || cacheAge > 5000) {
-        delete this._localPalettes;
-        delete this._localPalettesTimestamp;
+      this._collection.observe(sensorArr, sensorCount);
+      if (this._localPalettes === undefined) {
         this._lastPaletteHash = currHash;
         if (!this._deletionInProgress) {
           this.render();
@@ -1166,14 +1161,13 @@ class YeelightCubePaletteCard extends HTMLElement {
                   }
                   this._importStatus = { active: true, success: true };
                   this.render();
-                  // Clear local cache to ensure updates aren't blocked
-                  delete this._localPalettes;
-                  delete this._localPalettesTimestamp;
-                  this._hass
-                    .callService("yeelight_cube", "set_palettes", {
-                      palettes,
-                    })
-                    .then(async () => {
+                  this._mutatePalettes(palettes, "set_palettes", { palettes })
+                    .then(async (success) => {
+                      if (!success) {
+                        this._importStatus = { active: true, success: false };
+                        this.render();
+                        return;
+                      }
                       // Force sensor update to get fresh data immediately
                       const paletteSensor = this.config?.palette_sensor;
                       if (paletteSensor) {
@@ -1276,10 +1270,10 @@ class YeelightCubePaletteCard extends HTMLElement {
    *
    * CLIENT-SIDE DELETION ARCHITECTURE:
    * 1. Filter palette array immediately (optimistic update)
-   * 2. Store filtered array in _localPalettes cache with timestamp
+   * 2. Store filtered array in CollectionState with timestamp
    * 3. Render immediately with cached data (instant UI feedback)
    * 4. Call backend service to persist deletion
-   * 5. Wait for sensor to catch up (count matches cache)
+   * 5. Wait for the full sensor array to match
    * 6. Clear cache and let sensor data take over
    *
    * ERROR HANDLING:
@@ -1287,6 +1281,48 @@ class YeelightCubePaletteCard extends HTMLElement {
    * - If cache expires (5s) without sensor catching up, clear and re-render
    * - Prevents UI from being stuck in incorrect state
    */
+  get _localPalettes() {
+    return this._collection?.pending?.items;
+  }
+
+  _paletteItems() {
+    const attributes =
+      this._hass?.states?.[this.config.palette_sensor]?.attributes;
+    return (
+      this._localPalettes ??
+      attributes?.palettes_v2 ??
+      attributes?.palettes ??
+      []
+    );
+  }
+
+  async _mutatePalettes(items, service, data, render = true) {
+    const collection = (this._collection ||= new CollectionState());
+    const operation = collection.record(items);
+    if (render) this.render();
+    try {
+      if (!(await collection.execute(this._hass, service, data))) {
+        throw new Error("The palette collection changed. Please retry.");
+      }
+      return true;
+    } catch (error) {
+      if (collection.rollback(operation)) {
+        this._deletionInProgress = false;
+        this.render();
+        this.dispatchEvent(
+          new CustomEvent("hass-notification", {
+            bubbles: true,
+            composed: true,
+            detail: {
+              message: error.message || "The palette could not be updated.",
+            },
+          }),
+        );
+      }
+      return false;
+    }
+  }
+
   _deletePalette(idx) {
     const root = this.shadowRoot;
     const albumContainer = root?.getElementById("album-container");
@@ -1294,42 +1330,10 @@ class YeelightCubePaletteCard extends HTMLElement {
     // Album mode uses its own handler in setupAlbumNavigation - skip this
     if (albumContainer) return;
 
-    // For list/grid/compact modes: immediate client-side removal
-    const entityId = this.config.palette_sensor;
-    const stateObj = this._hass?.states[entityId];
-
-    // Use local state if it exists (for rapid successive deletes), otherwise sensor state
-    const palettes =
-      this._localPalettes !== undefined
-        ? this._localPalettes
-        : stateObj?.attributes?.palettes_v2 || [];
-
-    // Remove from local state immediately
+    const palettes = this._paletteItems();
+    if (!palettes[idx]) return;
     const updatedPalettes = palettes.filter((_, i) => i !== idx);
-
-    // Store the updated palettes temporarily (ONLY during the deletion operation).
-    // The hass setter keeps showing this correctly-filtered list until the
-    // sensor's authoritative array converges (see set hass()).
-    this._localPalettes = updatedPalettes;
-    this._localPalettesTimestamp = Date.now(); // Track when cache was created
-
-    // Force immediate re-render with the updated list
-    this.render();
-
-    // Call backend service (will update sensor, but we already updated UI)
-    this._hass
-      .callService("yeelight_cube", "remove_palette", { idx })
-      .then(() => {
-        // Don't clear cache yet! Sensor hasn't updated yet
-        // Cache will be cleared when sensor count matches in set hass()
-      })
-      .catch((err) => {
-        console.error(`[PALETTE-DELETE] Backend error for idx=${idx}:`, err);
-        // On error, restore the original palette list
-        delete this._localPalettes;
-        delete this._localPalettesTimestamp;
-        this.render();
-      });
+    return this._mutatePalettes(updatedPalettes, "remove_palette", { idx });
   }
 
   // Wrapper methods for gallery mode event handlers
@@ -1364,26 +1368,16 @@ class YeelightCubePaletteCard extends HTMLElement {
   _renamePalette(idx, currentName, titleEl) {
     const newName = prompt("Enter new palette name:", currentName);
     if (newName === null || newName.trim() === "") return;
-    this._hass
-      .callService("yeelight_cube", "rename_palette", {
-        idx: idx,
-        name: newName.trim(),
-      })
-      .then(() => {
-        if (titleEl) titleEl.textContent = newName.trim();
-        const stateObj = this._hass.states[this.config.palette_sensor];
-        if (stateObj && stateObj.attributes) {
-          if (Array.isArray(stateObj.attributes.palettes_v2)) {
-            stateObj.attributes.palettes_v2[idx].name = newName.trim();
-          } else if (Array.isArray(stateObj.attributes.palettes)) {
-            stateObj.attributes.palettes[idx].name = newName.trim();
-          }
-        }
-      })
-      .catch((error) => {
-        console.error("Failed to rename palette:", error);
-        alert("Failed to rename palette. Please try again.");
-      });
+    const palettes = this._paletteItems();
+    if (!palettes[idx]) return;
+    const name = newName.trim();
+    return this._mutatePalettes(
+      palettes.map((palette, index) =>
+        index === idx ? { ...palette, name } : palette,
+      ),
+      "rename_palette",
+      { idx, name },
+    );
   }
 
   addEventListeners(palettes, allowTitleEdit, showCard) {
@@ -1529,27 +1523,23 @@ class YeelightCubePaletteCard extends HTMLElement {
                 currentPalettes.length === 0
                   ? imported.slice()
                   : currentPalettes.concat(imported);
-              // Clear local cache to ensure updates aren't blocked
-              delete this._localPalettes;
-              delete this._localPalettesTimestamp;
-              this._hass
-                .callService("yeelight_cube", "set_palettes", {
-                  palettes: newPalettes,
-                })
-                .then(async () => {
-                  // Force sensor update to get fresh data immediately
-                  const paletteSensor = this.config?.palette_sensor;
-                  if (paletteSensor) {
-                    await this._hass.callService(
-                      "homeassistant",
-                      "update_entity",
-                      {
-                        entity_id: paletteSensor,
-                      },
-                    );
-                  }
-                  this.render();
-                });
+              this._mutatePalettes(newPalettes, "set_palettes", {
+                palettes: newPalettes,
+              }).then(async (success) => {
+                if (!success) return;
+                // Force sensor update to get fresh data immediately
+                const paletteSensor = this.config?.palette_sensor;
+                if (paletteSensor) {
+                  await this._hass.callService(
+                    "homeassistant",
+                    "update_entity",
+                    {
+                      entity_id: paletteSensor,
+                    },
+                  );
+                }
+                this.render();
+              });
             } catch (err) {
               alert("Invalid palette file");
             }
@@ -1606,36 +1596,21 @@ class YeelightCubePaletteCard extends HTMLElement {
         },
         // On item remove - call backend with logging
         (idx) => {
-          // Set deletion flag to block re-renders
           this._deletionInProgress = true;
-          // Get palette name for logging and update local cache
-          const paletteSensor = this.config.palette_sensor;
-          if (paletteSensor && this._hass.states[paletteSensor]) {
-            const palettes =
-              this._hass.states[paletteSensor].attributes.palettes_v2 || [];
-            const palette = palettes[idx];
-
-            // Update local cache so other modes see correct state
-            const updatedPalettes = palettes.filter((_, i) => i !== idx);
-            this._localPalettes = updatedPalettes;
-            this._localPalettesTimestamp = Date.now();
-          }
-
-          this._hass
-            .callService("yeelight_cube", "remove_palette", { idx })
-            .then(() => {
-              // Wait 1.5s for album re-setup, then clear deletion flag
-              // Don't clear local cache yet - let sensor update trigger that
-              setTimeout(() => {
-                this._deletionInProgress = false;
-              }, 1500);
-            })
-            .catch((err) => {
-              // Clear flag and cache on error
+          const palettes = this._paletteItems();
+          this._mutatePalettes(
+            palettes.filter((_, index) => index !== idx),
+            "remove_palette",
+            { idx },
+            false,
+          ).then((success) => {
+            if (!success) return;
+            clearTimeout(this._albumDeletionTimer);
+            this._albumDeletionTimer = setTimeout(() => {
               this._deletionInProgress = false;
-              delete this._localPalettes;
-              delete this._localPalettesTimestamp;
-            });
+              this.render();
+            }, 1500);
+          });
         },
         // Context object to store state
         this,
@@ -2164,6 +2139,7 @@ class YeelightCubePaletteCard extends HTMLElement {
   }
 
   disconnectedCallback() {
+    clearTimeout(this._albumDeletionTimer);
     // Clear palette cache timer
     clearTimeout(this._localPalettesClearTimer);
     this._localPalettesClearTimer = null;
@@ -2178,8 +2154,7 @@ class YeelightCubePaletteCard extends HTMLElement {
     this._paletteShellKey = null;
 
     // Clear local palette cache
-    delete this._localPalettes;
-    delete this._localPalettesTimestamp;
+    this._collection?.reset();
   }
 }
 if (!customElements.get("yeelight-cube-palette-card")) {

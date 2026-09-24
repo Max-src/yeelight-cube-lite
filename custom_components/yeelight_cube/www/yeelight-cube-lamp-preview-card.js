@@ -394,6 +394,11 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   }
 
   setConfig(config) {
+    this._effectContext = (this._effectContext || 0) + 1;
+    clearTimeout(this._effectDebounceTimer);
+    this._effectDebounceTimer = null;
+    this._localEffects = {};
+    this._isDragging = false;
     this._orientationContext = (this._orientationContext || 0) + 1;
     this._orientationPending = null;
     this._orientationError = null;
@@ -690,13 +695,18 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       clearTimeout(this._effectDebounceTimer);
     }
 
+    const context = this._effectContext;
+    const entityId = this.config.entity;
+    const hass = this._hass;
     this._effectDebounceTimer = setTimeout(async () => {
+      if (context !== this._effectContext) return;
+      this._effectDebounceTimer = null;
       // User stopped dragging
       this._isDragging = false;
 
       try {
         // Get all current effect values
-        const stateObj = this._hass?.states?.[this.config.entity];
+        const stateObj = hass.states?.[entityId];
         if (!stateObj) return;
         const _tSvc = performance.now();
         const effects = {};
@@ -710,19 +720,16 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         // Track when we make the service call
         this._lastServiceCallTime = Date.now();
 
-        await this._hass.callService(
-          "yeelight_cube",
-          "set_preview_adjustments",
-          {
-            entity_id: this.config.entity,
-            ...effects,
-          },
-        );
+        await hass.callService("yeelight_cube", "set_preview_adjustments", {
+          entity_id: entityId,
+          ...effects,
+        });
 
         // Don't clear local state on a timer - let the entity state update handle it
         // The set hass() method will trigger a render when entity updates
         // At that point, if entity state matches local state, we can safely clear it
       } catch (error) {
+        if (context !== this._effectContext) return;
         // Revert to entity state on error
         delete this._localEffects[effectName];
         this.render();
@@ -4564,6 +4571,9 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this._effectContext = (this._effectContext || 0) + 1;
+    this._localEffects = {};
+    this._isDragging = false;
     this._orientationContext = (this._orientationContext || 0) + 1;
     this._orientationPending = null;
     clearTimeout(this._orientationTimer);

@@ -7,8 +7,9 @@ import {
 } from "./gallery-display-utils.js";
 import { initializeWheelNavigation } from "./wheel-navigation-utils.js";
 import { callServiceOnTargetEntities as callServiceSequentially } from "./service-call-utils.js";
+import { gradientPreviewStore } from "./gradient-preview-store.js";
 import {
-  ANGLE_UPDATE_DEBOUNCE_MS,
+  AngleCommandController,
   rgbToHex as _sharedRgbToHex,
   createColorWheelSegments as _sharedCreateColorWheelSegments,
   createWheelGradientStops as _sharedCreateWheelGradientStops,
@@ -84,25 +85,6 @@ const FILL_PANEL_CHAR_TO_COLS = Object.fromEntries(
 // Mode visibility is config-based: `custom_visible_modes` (boolean) +
 // `visible_modes` (ordered array) set from the editor's drag-drop list.
 // The old localStorage + eye-overlay edit mode has been removed.
-
-// Global preview caches that survive card recreation.
-// Keyed by entity_id so multiple gradient cards for DIFFERENT lamps on the
-// same dashboard don't clobber each other's previews (a single shared slot
-// previously made each card render the other lamp's data).
-if (!window._yeelightPreviewCaches) {
-  window._yeelightPreviewCaches = {};
-}
-function getPreviewCache(entityId) {
-  const key = entityId || "_default";
-  if (!window._yeelightPreviewCaches[key]) {
-    window._yeelightPreviewCaches[key] = {
-      data: null,
-      timestamp: 0,
-      responseHash: null,
-    };
-  }
-  return window._yeelightPreviewCaches[key];
-}
 
 /** All gradient mode names, in display/iteration order. Exported so the
  * editor's visible-modes drag-drop list offers the same canonical set. */
@@ -194,7 +176,22 @@ class YeelightCubeGradientCard extends HTMLElement {
     super();
     // --- UI/interaction state ---
     this._pendingAngle = null;
-    this._angleDebounceTimer = null;
+    this._angleCommands = new AngleCommandController(
+      (angle) => {
+        this._lastAngleSent = angle;
+        this._onAngleApplied();
+      },
+      (error) =>
+        this.dispatchEvent(
+          new CustomEvent("hass-notification", {
+            bubbles: true,
+            composed: true,
+            detail: {
+              message: error.message || "The angle could not be updated.",
+            },
+          }),
+        ),
+    );
     this._lastAngleSent = null;
     this._isDragging = false;
     this._draggingRotary = false;
@@ -281,18 +278,13 @@ class YeelightCubeGradientCard extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this._angleCommands.reset();
+    this._previewContext = (this._previewContext || 0) + 1;
     // Clean up wheel navigation controller
     if (this._wheelNavigationController) {
       this._wheelNavigationController.destroy();
       this._wheelNavigationController = null;
     }
-    // NOTE: Do NOT clear window._yeelightPreviewCaches here.
-    // The global cache is designed to survive card recreation (see top of file).
-    // HA's card-mod and editor destroy/recreate the entire element on every
-    // config change — clearing the cache here causes the new instance to render
-    // an empty wheel (no preview data), leading to the wheel-disappearing bug.
-    // The cache is lightweight and will be naturally refreshed by _loadPreviews().
-
     // Unsubscribe from preview events
     if (this._unsubscribePreviewEvents) {
       this._unsubscribePreviewEvents();
@@ -305,10 +297,6 @@ class YeelightCubeGradientCard extends HTMLElement {
       clearTimeout(this._previewReloadTimer);
       this._previewReloadTimer = null;
     }
-    if (this._angleDebounceTimer) {
-      clearTimeout(this._angleDebounceTimer);
-      this._angleDebounceTimer = null;
-    }
     if (this._panelModeTimeout) {
       clearTimeout(this._panelModeTimeout);
       this._panelModeTimeout = null;
@@ -320,10 +308,6 @@ class YeelightCubeGradientCard extends HTMLElement {
     if (this._anglePreviewReloadTimer) {
       clearTimeout(this._anglePreviewReloadTimer);
       this._anglePreviewReloadTimer = null;
-    }
-    if (this._previewSafetyTimer) {
-      clearTimeout(this._previewSafetyTimer);
-      this._previewSafetyTimer = null;
     }
     if (this._previewRetryTimer) {
       clearTimeout(this._previewRetryTimer);
@@ -347,6 +331,16 @@ class YeelightCubeGradientCard extends HTMLElement {
   }
 
   setConfig(config) {
+    this._angleCommands.reset();
+    this._pendingAngle = null;
+    this._draggingRotary = false;
+    clearTimeout(this._anglePreviewReloadTimer);
+    clearTimeout(this._previewRetryTimer);
+    clearTimeout(this._previewReloadTimer);
+    this._unsubscribePreviewEvents?.();
+    this._unsubscribePreviewEvents = null;
+    this._previewEventListenerRegistered = false;
+    this._previewContext = (this._previewContext || 0) + 1;
     // Check if wheel-affecting settings changed
     // Skip change detection on first init — this.config is undefined so every
     // comparison fires as "changed", causing a wasteful teardown/rebuild cycle
@@ -393,6 +387,7 @@ class YeelightCubeGradientCard extends HTMLElement {
     }
 
     this.config = config;
+    this._setupPreviewEventListener();
 
     if (!this.shadowRoot) {
       this.attachShadow({ mode: "open" });
@@ -453,6 +448,12 @@ class YeelightCubeGradientCard extends HTMLElement {
   }
 
   set hass(hass) {
+    if (this._hass?.connection !== hass?.connection) {
+      this._unsubscribePreviewEvents?.();
+      this._unsubscribePreviewEvents = null;
+      this._previewEventListenerRegistered = false;
+      this._previewContext = (this._previewContext || 0) + 1;
+    }
     this._hass = hass;
 
     // Re-establish preview event subscription if lost (connectedCallback may
@@ -3660,6 +3661,7 @@ class YeelightCubeGradientCard extends HTMLElement {
   }
 
   async _loadPreviews() {
+    if (!this.isConnected) return;
     // Preview data is only needed when the mode selector uses a preview style.
     // Text-style selectors skip the backend preview service entirely.
     if (!this._isPreviewSelectorActive()) return;
@@ -3671,46 +3673,19 @@ class YeelightCubeGradientCard extends HTMLElement {
 
     const entityId = this._getPrimaryEntity();
     if (!this._hass || !entityId) return;
+    const context = this._previewContext;
 
     try {
-      // Track request time in global cache
-      this._previewCache().timestamp = Date.now();
-
-      // Call the preview service
-      await this._hass.callService("yeelight_cube", "preview_gradient_modes", {
-        entity_id: entityId,
-      });
-
-      // The response comes via event bus, handled by _setupPreviewEventListener.
-      // The backend fires the event BEFORE responding to the service call, so
-      // the cache should already be updated by the event handler.  However, on
-      // some HA versions the WebSocket event delivery can be slightly delayed.
-      // Schedule a deferred safety refresh to cover that edge case.
-      // Tracked + isConnected-guarded so a removed card can't keep rendering.
-      if (this._previewSafetyTimer) clearTimeout(this._previewSafetyTimer);
-      this._previewSafetyTimer = setTimeout(() => {
-        this._previewSafetyTimer = null;
-        if (!this.isConnected) return;
-        this._updatePreviewSection();
-
-        // Also refresh the matrix text preview.  When the HA editor is open
-        // there are TWO card instances and the event handler may fire on the
-        // instance whose config does NOT include matrix_rotary_text_preview,
-        // causing the render trigger to be skipped.  This safety timeout runs
-        // on the instance that called _loadPreviews (the correct one) so the
-        // config check works reliably here.
-        if (
-          this.config?.matrix_rotary_text_preview === true &&
-          !this._draggingRotary
-        ) {
-          this._renderScheduled = false;
-          this.render();
-        }
-      }, 300);
+      await gradientPreviewStore(this._hass.connection).request(
+        this._hass,
+        entityId,
+      );
+      if (context !== this._previewContext || !this.isConnected) return;
 
       // Reset retry counter on success
       this._previewRetryCount = 0;
     } catch (error) {
+      if (context !== this._previewContext || !this.isConnected) return;
       // During HA startup, the light platform services may not be registered yet.
       // Also handle transient connection-lost errors.
       const errorCode = error?.code || error?.error?.code;
@@ -3742,59 +3717,35 @@ class YeelightCubeGradientCard extends HTMLElement {
     }
   }
 
-  /**
-   * Per-entity preview cache slot for THIS card's primary entity.
-   * See getPreviewCache() at the top of the file.
-   */
   _previewCache() {
-    return getPreviewCache(this._getPrimaryEntity());
+    if (!this._hass?.connection) {
+      return (this._emptyPreviewCache ||= {
+        data: null,
+        timestamp: 0,
+        responseHash: null,
+      });
+    }
+    return gradientPreviewStore(this._hass.connection).cache(
+      this._getPrimaryEntity(),
+    );
   }
 
   _setupPreviewEventListener() {
-    if (this._previewEventListenerRegistered || !this._hass) return;
+    if (
+      this._previewEventListenerRegistered ||
+      !this._hass?.connection ||
+      !this.isConnected
+    )
+      return;
     // No subscription needed when the selector doesn't render previews
     if (!this._isPreviewSelectorActive()) return;
 
     this._previewEventListenerRegistered = true;
 
-    const unsub = this._hass.connection.subscribeEvents((event) => {
-      // Guard: ignore events if card has been disconnected
+    this._unsubscribePreviewEvents = gradientPreviewStore(
+      this._hass.connection,
+    ).subscribe(this._getPrimaryEntity(), () => {
       if (!this.isConnected) return;
-      // Guard: only handle events for THIS card's entity.  Preview responses
-      // for another lamp must neither overwrite our cache slot nor trigger a
-      // re-render of this card.
-      const eventEntityId = event.data.entity_id;
-      if (eventEntityId && eventEntityId !== this._getPrimaryEntity()) return;
-      // Generate hash of response to deduplicate.
-      // IMPORTANT: include the actual `previews` payload (the per-mode colour
-      // matrices) in the key.  The previews are what the section renders, so
-      // hashing them is the only key that reliably detects a change.  A hash
-      // built from metadata alone (entity/text/angle/brightness/full_panel)
-      // MISSES colour-only changes: loading a new palette keeps the same text,
-      // angle, brightness and panel mode, so the metadata hash is identical and
-      // the fresh (correctly-recoloured) previews were discarded as a
-      // "duplicate" -- leaving the preview stale until an angle change altered
-      // the metadata.  Hashing the previews content fixes that uniformly.
-      const responseHash = JSON.stringify({
-        entity: event.data.entity_id,
-        text: event.data.text,
-        angle: Math.round(event.data.angle * 10) / 10,
-        brightness: event.data.brightness,
-        full_panel: event.data.full_panel,
-        previews: event.data.previews,
-      });
-
-      const cache = getPreviewCache(eventEntityId || this._getPrimaryEntity());
-
-      // Ignore duplicate responses
-      if (responseHash === cache.responseHash) {
-        return;
-      }
-
-      // Store in global cache
-      cache.data = event.data;
-      cache.responseHash = responseHash;
-      cache.timestamp = Date.now();
 
       // Update only the preview section instead of re-rendering entire card
       this._updatePreviewSection();
@@ -3812,28 +3763,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         this._renderScheduled = false; // clear any pending guard
         this.render(); // full DOM rebuild from fresh cache
       }
-    }, "yeelight_cube_gradient_preview_response");
-
-    // Store unsubscribe function for cleanup in disconnectedCallback.
-    // RACE GUARD: subscribeEvents resolves asynchronously — if the card was
-    // disconnected (or the registration flag cleared) before it resolves,
-    // unsubscribe immediately instead of storing the fn on a dead instance,
-    // which leaked one subscription per editor open/close cycle.
-    if (unsub && typeof unsub.then === "function") {
-      unsub.then((fn) => {
-        if (!this.isConnected || !this._previewEventListenerRegistered) {
-          try {
-            fn();
-          } catch (e) {
-            /* connection may already be closed */
-          }
-          return;
-        }
-        this._unsubscribePreviewEvents = fn;
-      });
-    } else if (typeof unsub === "function") {
-      this._unsubscribePreviewEvents = unsub;
-    }
+    });
   }
 
   _getRotaryStyleInfo() {
@@ -4064,10 +3994,6 @@ class YeelightCubeGradientCard extends HTMLElement {
         e.preventDefault(); // Prevent text selection
 
         // Cancel pending debounce and apply the final angle immediately
-        if (this._angleDebounceTimer) {
-          clearTimeout(this._angleDebounceTimer);
-          this._angleDebounceTimer = null;
-        }
         if (this._pendingAngle !== null && this._pendingAngle !== undefined) {
           this._applyAngle(this._pendingAngle);
           this._lastAngleSent = this._pendingAngle;
@@ -4096,10 +4022,6 @@ class YeelightCubeGradientCard extends HTMLElement {
         e.preventDefault(); // Prevent text selection
 
         // Cancel pending debounce and apply the final angle immediately
-        if (this._angleDebounceTimer) {
-          clearTimeout(this._angleDebounceTimer);
-          this._angleDebounceTimer = null;
-        }
         if (this._pendingAngle !== null && this._pendingAngle !== undefined) {
           this._applyAngle(this._pendingAngle);
           this._lastAngleSent = this._pendingAngle;
@@ -4266,38 +4188,14 @@ class YeelightCubeGradientCard extends HTMLElement {
 
   _debouncedApplyAngle(angle) {
     this._pendingAngle = angle;
-    if (this._angleDebounceTimer) {
-      clearTimeout(this._angleDebounceTimer);
-    }
-    this._angleDebounceTimer = setTimeout(() => {
-      if (this._pendingAngle != null) {
-        this._applyAngle(this._pendingAngle);
-        this._lastAngleSent = this._pendingAngle;
-        this._pendingAngle = null;
-      }
-    }, ANGLE_UPDATE_DEBOUNCE_MS);
+    this._angleCommands.schedule(this._hass, this.config, angle);
   }
 
   _applyAngle(angle) {
-    const targetEntities = this.config.target_entities || [];
-    const fallbackEntity = this.config.entity;
+    this._angleCommands.schedule(this._hass, this.config, angle, true);
+  }
 
-    if ((targetEntities.length === 0 && !fallbackEntity) || !this._hass) return;
-
-    // Ensure angle is a valid number and convert to float
-    const validAngle = parseFloat(angle);
-    if (isNaN(validAngle)) {
-      console.warn("Invalid angle value:", angle);
-      return;
-    }
-
-    // Normalize angle to 0-359 range
-    const normalizedAngle = ((validAngle % 360) + 360) % 360;
-
-    this.callServiceOnTargetEntities("set_angle", {
-      angle: normalizedAngle,
-    });
-
+  _onAngleApplied() {
     // Invalidate the response deduplication hash so the next preview_gradient_modes
     // response is always accepted, even if the backend briefly returns data for the
     // same angle (e.g., during rapid adjustments).
@@ -5657,10 +5555,6 @@ ${(() => {
   _endCapsuleDrag() {
     // Cancel pending debounce and apply the final angle immediately
     // (mirrors handleMouseUp for rotary drag to guarantee _applyAngle fires)
-    if (this._angleDebounceTimer) {
-      clearTimeout(this._angleDebounceTimer);
-      this._angleDebounceTimer = null;
-    }
     if (this._pendingAngle !== null && this._pendingAngle !== undefined) {
       this._applyAngle(this._pendingAngle);
       this._lastAngleSent = this._pendingAngle;
