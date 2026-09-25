@@ -1,4 +1,6 @@
 import { LitElement, html } from "./lib/lit-all.js";
+import "./preview-appearance-editor.js";
+import { normalizePreviewAppearance } from "./preview-appearance.js";
 import {
   sharedEditorStyles,
   renderEditorSection,
@@ -11,7 +13,7 @@ import {
   createYeelightCubeEntityPicker,
   entitySelectorStyles,
 } from "./entity-selector-utils.js";
-import { createToggleRow } from "./form-row-utils.js";
+import { createToggleRow, createSliderRow } from "./form-row-utils.js";
 import { createButtonGroup, buttonGroupStyles } from "./button-group-utils.js";
 import {
   renderOrderableList,
@@ -50,7 +52,10 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
     this._open = { general: true };
   }
   setConfig(config) {
-    this._config = independentActionConfig(config);
+    this._config = normalizePreviewAppearance(
+      independentActionConfig(config),
+      "native",
+    );
   }
   _change(key, value) {
     this._config = { ...this._config, [key]: value };
@@ -76,6 +81,18 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
     return createToggleRow(label, key, this._config[key] ?? fallback, (event) =>
       this._change(key, event.target.checked),
     );
+  }
+  _renderAppearance(section) {
+    return html`<yeelight-preview-appearance-editor
+      profile="native"
+      section=${section}
+      .owner=${this}
+      .config=${this._config}
+      @appearance-changed=${(event) => {
+        this._config = event.detail.config;
+        fireEvent(this, "config-changed", { config: this._config });
+      }}
+    ></yeelight-preview-appearance-editor>`;
   }
   _choices(label, key, choices, fallback) {
     return html`<div class="form-row">
@@ -166,6 +183,11 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
         `,
       )}
       ${this._section(
+        "preview_appearance",
+        "Preview Appearance",
+        this._renderAppearance("shared"),
+      )}
+      ${this._section(
         "preview",
         "Lamp Preview",
         html`
@@ -174,11 +196,15 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
             ? renderModeSettingsSection(
                 "Preview Settings",
                 html`
-                  ${renderMatrixAppearanceSettings(
-                    nativeEffectPreviewConfig(config),
-                    change,
-                    { defaultSize: 100 },
+                  ${createSliderRow(
+                    "Size",
+                    config.lamp_preview_size ?? 100,
+                    { min: 30, max: 100, step: 5 },
+                    (event) =>
+                      change("lamp_preview_size", Number(event.target.value)),
+                    "%",
                   )}
+                  ${this._renderAppearance("lamp")}
                   ${this._toggle(
                     "Match Lamp Brightness",
                     "preview_brightness",
@@ -279,7 +305,18 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
                         (config.effect_view ? "original" : "preview-grid"),
                     },
                     change,
-                    { allowOriginal: true },
+                    {
+                      allowOriginal: true,
+                      renderAppearance: () =>
+                        html`${createSliderRow(
+                          "Size",
+                          config.preview_size ?? 55,
+                          { min: 30, max: 100, step: 5 },
+                          (event) =>
+                            change("preview_size", Number(event.target.value)),
+                          "%",
+                        )}${this._renderAppearance("gallery")}`,
+                    },
                   )}
                   ${renderOrderableList({
                     items: visible,
@@ -304,6 +341,17 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
           "favourites",
           nativeEffectPreviewConfig(config),
           change,
+          [],
+          "effect",
+          () =>
+            html`${createSliderRow(
+              "Size",
+              config.effect_preview_size ?? 100,
+              { min: 30, max: 100, step: 5 },
+              (event) =>
+                change("effect_preview_size", Number(event.target.value)),
+              "%",
+            )}${this._renderAppearance("favourites")}`,
         ),
       )}
       ${this._section(

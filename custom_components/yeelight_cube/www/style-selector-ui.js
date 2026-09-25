@@ -44,7 +44,10 @@ const PREVIEW_STYLE_CHOICES = [
 export function renderStyleSelectorSettings(
   config,
   onChange,
-  { allowOriginal = false } = {},
+  {
+    allowOriginal = false,
+    renderAppearance = renderGalleryMatrixSettings,
+  } = {},
 ) {
   const style = config.style_selector_style || "preview-grid";
   const family =
@@ -80,7 +83,7 @@ export function renderStyleSelectorSettings(
       )}
     </div>
     ${family === "original"
-      ? renderOriginalSelectorSettings(config, onChange)
+      ? renderOriginalSelectorSettings(config, onChange, renderAppearance)
       : family === "text"
         ? html`
             <div class="form-row">
@@ -194,7 +197,7 @@ export function renderStyleSelectorSettings(
               config.preview_show_titles !== false,
               (event) => onChange("preview_show_titles", event.target.checked),
             )}
-            ${renderGalleryMatrixSettings(config, onChange)}
+            ${renderAppearance(config, onChange)}
           `}
     ${!["original", "preview-list", "preview-grid"].includes(style)
       ? renderSelectorShapeRows(config, onChange, {
@@ -273,7 +276,11 @@ function renderGalleryMatrixSettings(config, onChange) {
 
 // Original uses the same controls as Live Preview for every shared config key.
 // Display is its only extra choice. Do not recreate these rows in a card editor.
-function renderOriginalSelectorSettings(config, onChange) {
+function renderOriginalSelectorSettings(
+  config,
+  onChange,
+  renderAppearance = renderGalleryMatrixSettings,
+) {
   const view = config.effect_view === "list" ? "list" : "grid";
   return html`
     <div class="form-row">
@@ -313,7 +320,7 @@ function renderOriginalSelectorSettings(config, onChange) {
           config.show_badges !== false,
           (event) => onChange("show_badges", event.target.checked),
         )}
-        ${renderGalleryMatrixSettings(config, onChange)}
+        ${renderAppearance(config, onChange)}
       `,
     )}
   `;

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { resolvePreviewAppearance } from "../custom_components/yeelight_cube/www/preview-appearance.js";
 import { CardCommandController } from "../custom_components/yeelight_cube/www/card-command-controller.js";
 import { requestedPage } from "../custom_components/yeelight_cube/www/pagination-utils.js";
 import { modeActionOptions } from "../custom_components/yeelight_cube/www/action-button-utils.js";
@@ -599,7 +600,7 @@ test("native editor sections follow the card and use shared conditional controls
   )[1];
   dependencies.renderModeControlSettings = new Function(
     ...Object.keys(dependencies),
-    `return function(area, config, change, items = [], noun = "effect") {${sharedBody}}`,
+    `return function(area, config, change, items = [], noun = "effect", renderAppearance = null) {${sharedBody}}`,
   )(...Object.values(dependencies));
   const render = new Function(
     ...Object.keys(dependencies),
@@ -620,6 +621,7 @@ test("native editor sections follow the card and use shared conditional controls
       (records.sections ||= []).push(id);
     },
     _toggle() {},
+    _renderAppearance() {},
     _choices() {},
     _change(key, value) {
       this._config = { ...this._config, [key]: value };
@@ -628,6 +630,7 @@ test("native editor sections follow the card and use shared conditional controls
   render.call(editor);
   assert.deepEqual(records.sections, [
     "general",
+    "preview_appearance",
     "preview",
     "actions",
     "sliders",
@@ -642,7 +645,8 @@ test("native editor sections follow the card and use shared conditional controls
   assert.deepEqual(records.picker[1], ["light.first", "light.second"]);
   assert.deepEqual(records.list.items, ["Rainbow"]);
   assert.equal(records.sliders, 1);
-  assert.equal(records.matrices.length, 1);
+  assert.equal(records.matrices, undefined);
+  assert.match(source, /yeelight-preview-appearance-editor\s+profile="native"/);
   assert.equal(records.selector, true);
   assert.equal(records.selectorConfig.style_selector_style, "preview-grid");
   assert.equal(records.selectorConfig.items_per_page, undefined);
@@ -678,12 +682,12 @@ test("native editor sections follow the card and use shared conditional controls
     show_rotation: true,
   };
   render.call(editor);
-  assert.equal(records.matrices.length, 1);
+  assert.equal(records.matrices, undefined);
   // Favourites/rotation are simplified: no custom list, no shuffle toggle,
   // no interval slider — just the value+unit interval control.
   assert.ok(records.settings.includes("Favourite Controls"));
   assert.ok(records.settings.includes("Rotation Settings"));
-  assert.equal(records.interval, undefined);
+  assert.equal(records.interval[0], "Size");
   assert.equal(records.list, undefined);
   Object.keys(records).forEach((key) => delete records[key]);
   editor._config.favourites_show_previews = false;
@@ -736,6 +740,7 @@ test("multi-target configuration reads the first light and accepts legacy entity
     "nativeEffectPreviewConfig",
     "window",
     "closeColorPicker",
+    "resolvePreviewAppearance",
     `return function(config) {${body}}`,
   )(
     getTargetEntities,
@@ -746,6 +751,7 @@ test("multi-target configuration reads the first light and accepts legacy entity
       localStorage: { getItem: () => null },
     },
     () => {},
+    resolvePreviewAppearance,
   );
   const first = { attributes: { native_effect: "Rainbow" } };
   const second = { attributes: { native_effect: "Ocean Waves" } };

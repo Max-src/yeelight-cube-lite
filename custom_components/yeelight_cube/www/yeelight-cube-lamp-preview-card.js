@@ -1,3 +1,7 @@
+import {
+  resolvePreviewAppearance,
+  previewLength,
+} from "./preview-appearance.js";
 import { renderDotMatrix, rgbToCss } from "./yeelight-cube-dotmatrix.js";
 import { escapeHtml } from "./html-escape-utils.js";
 import {
@@ -428,7 +432,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       hide_black_dots: false, // NEW: Ignore black pixels on preview (default: false = OFF)
       show_lamp_preview: true, // NEW: Show lamp matrix preview by default
       show_adjustment_controls: false, // Deprecated: Use light brightness control instead
-      ...config,
+      ...resolvePreviewAppearance(config, "lamp"),
     };
     // Support legacy config migrations
     if (config.reconnect_button_style && !config.buttons_style) {
@@ -2300,18 +2304,16 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       .join("");
 
     return `
-      <div class="lamp-preview-css ${alignClass}" 
-           style="${
-             layout.tall
-               ? `height:340px; width:auto; aspect-ratio:${totalCols} / ${totalRows};`
-               : `width:${this.config.size_pct || 100}%; aspect-ratio:${totalCols} / ${totalRows};`
-           }
+      <div class="${alignClass}" style="container-type:inline-size;max-width:100%;width:${layout.tall ? `${(85 * (this.config.size_pct || 100)) / 100}px` : `${this.config.size_pct || 100}%`};margin-inline:${this.config.align === "left" ? "0 auto" : this.config.align === "right" ? "auto 0" : "auto"};">
+      <div class="lamp-preview-css"
+           style="width:100%;aspect-ratio:auto;padding:${previewLength(8)};border-radius:${previewLength(12)};
                   background: ${matrixBackground}; 
-                  gap: ${pixelGap}px; 
-                  box-shadow: ${matrixBoxShadow ? "0 2px 8px #0008" : "none"};
+                  gap: ${previewLength(pixelGap)};
+                  box-shadow: ${matrixBoxShadow ? `0 ${previewLength(2)} ${previewLength(8)} #0008` : "none"};
                   grid-template-columns: repeat(${totalCols}, 1fr);
                   grid-template-rows: repeat(${totalRows}, 1fr);">
         ${pixels}
+      </div>
       </div>
     `;
   }
@@ -3212,7 +3214,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           height: 100%;
           border-radius: ${pixelStyle === "circle" ? "50%" : pixelStyle === "rounded" ? "20%" : "0px"};
           margin: auto;
-          box-shadow: ${lampDotShadow ? "0 0 2px #0008" : "none"};
+          box-shadow: ${lampDotShadow ? `0 0 ${previewLength(2)} #0008` : "none"};
           transition: background 0.2s, border 0.2s;
           aspect-ratio: 1 / 1;
           border: none;

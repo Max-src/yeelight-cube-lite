@@ -26,6 +26,7 @@ STORAGE_KEY = f"{DOMAIN}.storage"
 
 # Frontend card JS files to auto-register as Lovelace resources
 FRONTEND_CARD_FILES = [
+    "frontend-diagnostics.js",
     "yeelight-cube-lamp-preview-card.js",
     "yeelight-cube-gradient-card.js",
     "yeelight-cube-draw-card.js",

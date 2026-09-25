@@ -1,3 +1,4 @@
+import "./preview-appearance-editor.js";
 import { LitElement, html, css } from "./lib/lit-all.js";
 import {
   createButtonGroup,
@@ -13,6 +14,7 @@ import {
 import {
   fireEvent,
   sharedEditorStyles,
+  renderEditorSection,
   renderModeSettingsSection,
   renderSelectorShapeRows,
 } from "./editor_ui_utils.js";
@@ -32,6 +34,7 @@ class YeelightCubeGradientCardEditor extends LitElement {
     return {
       _config: { type: Object },
       _globalOpen: { type: Boolean },
+      _appearanceOpen: { state: true },
       _labelOpen: { type: Boolean },
       _modeOpen: { type: Boolean },
       _panelOpen: { type: Boolean },
@@ -369,6 +372,19 @@ class YeelightCubeGradientCardEditor extends LitElement {
     ];
   }
 
+  _renderAppearance(section) {
+    return html`<yeelight-preview-appearance-editor
+      profile="gradient"
+      section=${section}
+      .owner=${this}
+      .config=${this._config}
+      @appearance-changed=${(event) => {
+        this._config = event.detail.config;
+        this._fireConfigChanged();
+      }}
+    ></yeelight-preview-appearance-editor>`;
+  }
+
   render() {
     const cfg = this._config || {};
 
@@ -383,6 +399,15 @@ class YeelightCubeGradientCardEditor extends LitElement {
 
     return html`
       <div class="editor-root">
+        ${renderEditorSection(
+          "preview_appearance",
+          "Preview Appearance",
+          !!this._appearanceOpen,
+          () => {
+            this._appearanceOpen = !this._appearanceOpen;
+          },
+          this._renderAppearance("shared"),
+        )}
         <div
           class="editor-card${!this._globalOpen
             ? " editor-card-collapsed"
@@ -798,120 +823,9 @@ class YeelightCubeGradientCardEditor extends LitElement {
               },
               "%",
             )}
+            ${this._renderAppearance("gallery")}
             ${(cfg.mode_selector_style || "preview-list").startsWith("preview-")
               ? html`
-                  <div class="form-row">
-                    <label>Preview Background Color</label>
-                    <div style="display: flex; flex-direction: column;">
-                      <div>
-                        ${createButtonGroup(
-                          [
-                            {
-                              value: "transparent",
-                              label: "Transparent",
-                              title: "Transparent Background",
-                            },
-                            {
-                              value: "white",
-                              label: "White",
-                              title: "White Background",
-                            },
-                            {
-                              value: "black",
-                              label: "Black",
-                              title: "Black Background",
-                            },
-                          ],
-                          cfg.gallery_background_color || "black",
-                          createButtonGroupChangeHandler(
-                            "gallery_background_color",
-                            (value) => {
-                              this._config = {
-                                ...this._config,
-                                gallery_background_color: value,
-                              };
-                              this._fireConfigChanged();
-                            },
-                          ),
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  ${(cfg.gallery_background_color || "black") !== "black"
-                    ? createToggleRow(
-                        "Ignore Black Pixels",
-                        "gallery_ignore_black_pixels",
-                        cfg.gallery_ignore_black_pixels === true,
-                        (e) => this._valueChanged(e),
-                      )
-                    : ""}
-
-                  <div class="form-row">
-                    <label>Preview Pixel Style</label>
-                    <div style="display: flex; flex-direction: column;">
-                      <div>
-                        ${createButtonGroup(
-                          [
-                            {
-                              value: "square",
-                              label: "Square",
-                              title: "Square Pixels",
-                            },
-                            {
-                              value: "rounded",
-                              label: "Rounded",
-                              title: "Rounded Pixels",
-                            },
-                            {
-                              value: "circle",
-                              label: "Circle",
-                              title: "Circular Pixels",
-                            },
-                          ],
-                          cfg.gallery_pixel_style || "square",
-                          createButtonGroupChangeHandler(
-                            "gallery_pixel_style",
-                            (value) => {
-                              this._config = {
-                                ...this._config,
-                                gallery_pixel_style: value,
-                              };
-                              this._fireConfigChanged();
-                            },
-                          ),
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div class="form-row">
-                    <label>Pixel Spacing</label>
-                    ${createButtonGroup(
-                      [
-                        { value: "none", label: "None" },
-                        { value: "subtle", label: "Subtle" },
-                        { value: "normal", label: "Normal" },
-                      ],
-                      cfg.gallery_spacing_mode || "normal",
-                      createButtonGroupChangeHandler(
-                        "gallery_spacing_mode",
-                        (value) => {
-                          this._config = {
-                            ...this._config,
-                            gallery_spacing_mode: value,
-                          };
-                          this._fireConfigChanged();
-                        },
-                      ),
-                    )}
-                  </div>
-                  ${createToggleRow(
-                    "Matrix Box Shadow",
-                    "gallery_matrix_box_shadow",
-                    cfg.gallery_matrix_box_shadow === true,
-                    (e) => this._valueChanged(e),
-                  )}
                   ${createToggleRow(
                     "Show Titles",
                     "preview_show_titles",
@@ -1419,107 +1333,11 @@ class YeelightCubeGradientCardEditor extends LitElement {
                       },
                       "%",
                     )}
+                    ${this._renderAppearance("rotary")}
                     ${createToggleRow(
                       "Show Text Preview",
                       "matrix_rotary_text_preview",
                       cfg.matrix_rotary_text_preview === true,
-                      (e) => this._valueChanged(e),
-                    )}
-                    <div class="form-row">
-                      <label>Background Color</label>
-                      <div style="display:flex;flex-direction:column;">
-                        ${createButtonGroup(
-                          [
-                            {
-                              value: "transparent",
-                              label: "Transparent",
-                              title: "Transparent",
-                            },
-                            { value: "white", label: "White", title: "White" },
-                            { value: "black", label: "Black", title: "Black" },
-                          ],
-                          cfg.matrix_rotary_bg_color || "black",
-                          createButtonGroupChangeHandler(
-                            "matrix_rotary_bg_color",
-                            (value) => {
-                              this._config = {
-                                ...this._config,
-                                matrix_rotary_bg_color: value,
-                              };
-                              this._fireConfigChanged();
-                            },
-                          ),
-                        )}
-                      </div>
-                    </div>
-                    ${(cfg.matrix_rotary_bg_color || "black") !== "black"
-                      ? createToggleRow(
-                          "Ignore Black Pixels",
-                          "matrix_rotary_ignore_black",
-                          cfg.matrix_rotary_ignore_black === true,
-                          (e) => this._valueChanged(e),
-                        )
-                      : ""}
-                    <div class="form-row">
-                      <label>Pixel Style</label>
-                      <div style="display:flex;flex-direction:column;">
-                        ${createButtonGroup(
-                          [
-                            {
-                              value: "square",
-                              label: "Square",
-                              title: "Square Pixels",
-                            },
-                            {
-                              value: "rounded",
-                              label: "Rounded",
-                              title: "Rounded Pixels",
-                            },
-                            {
-                              value: "circle",
-                              label: "Circle",
-                              title: "Circular Pixels",
-                            },
-                          ],
-                          cfg.matrix_rotary_pixel_style || "square",
-                          createButtonGroupChangeHandler(
-                            "matrix_rotary_pixel_style",
-                            (value) => {
-                              this._config = {
-                                ...this._config,
-                                matrix_rotary_pixel_style: value,
-                              };
-                              this._fireConfigChanged();
-                            },
-                          ),
-                        )}
-                      </div>
-                    </div>
-                    <div class="form-row">
-                      <label>Pixel Spacing</label>
-                      ${createButtonGroup(
-                        [
-                          { value: "none", label: "None" },
-                          { value: "subtle", label: "Subtle" },
-                          { value: "normal", label: "Normal" },
-                        ],
-                        cfg.matrix_rotary_spacing_mode || "normal",
-                        createButtonGroupChangeHandler(
-                          "matrix_rotary_spacing_mode",
-                          (value) => {
-                            this._config = {
-                              ...this._config,
-                              matrix_rotary_spacing_mode: value,
-                            };
-                            this._fireConfigChanged();
-                          },
-                        ),
-                      )}
-                    </div>
-                    ${createToggleRow(
-                      "Matrix Box Shadow",
-                      "matrix_rotary_box_shadow",
-                      cfg.matrix_rotary_box_shadow === true,
                       (e) => this._valueChanged(e),
                     )}
                   `,

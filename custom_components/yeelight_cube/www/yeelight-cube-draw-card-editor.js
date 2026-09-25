@@ -1,7 +1,9 @@
+import "./preview-appearance-editor.js";
 import { renderActionButtonSettings } from "./action-button-ui.js";
 import { LitElement, html, css } from "./lib/lit-all.js";
 import {
   sharedEditorStyles,
+  renderEditorSection,
   renderModeSettingsSection,
   renderModeInfoMessage,
   roundedCardsToSliderValue,
@@ -117,6 +119,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
     this.hass = null;
     this._folded = {
       global: true,
+      appearance: true,
       layout: true,
       tools: true,
       actions: true,
@@ -931,6 +934,13 @@ class YeelightCubeDrawCardEditor extends LitElement {
         </div>
 
         <!-- Drawing Matrix Section -->
+        ${renderEditorSection(
+          "preview_appearance",
+          "Preview Appearance",
+          !this._folded.appearance,
+          () => this._toggleFold("appearance"),
+          this._renderAppearance("shared"),
+        )}
         <div
           class="editor-card${this._folded.matrix
             ? " editor-card-collapsed"
@@ -954,71 +964,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
               this._onMatrixSizeSliderChange.bind(this),
               "%",
             )}
-            <div class="form-row">
-              <label>Matrix Background Color</label>
-              ${createButtonGroup(
-                [
-                  { value: "transparent", label: "Transparent" },
-                  { value: "white", label: "White" },
-                  { value: "black", label: "Black" },
-                ],
-                this.config.matrix_bg || "black",
-                createButtonGroupChangeHandler("matrix_bg", (value) => {
-                  this.config.matrix_bg = value;
-                  this._fireConfigChanged();
-                }),
-              )}
-            </div>
-            ${(this.config.matrix_bg || "black") !== "black"
-              ? createToggleRow(
-                  "Ignore Black Pixels",
-                  "matrix_ignore_black_pixels",
-                  this.config.matrix_ignore_black_pixels === true,
-                  (e) => this._onSwitchChange(e, "matrix_ignore_black_pixels"),
-                )
-              : ""}
-            <div class="form-row">
-              <label>Matrix Pixel Style</label>
-              ${createButtonGroup(
-                [
-                  { value: "square", label: "Square" },
-                  { value: "rounded", label: "Rounded" },
-                  { value: "circle", label: "Circle" },
-                ],
-                this.config.matrix_pixel_style || "square",
-                createButtonGroupChangeHandler(
-                  "matrix_pixel_style",
-                  (value) => {
-                    this.config.matrix_pixel_style = value;
-                    this._fireConfigChanged();
-                  },
-                ),
-              )}
-            </div>
-            <div class="form-row">
-              <label>Pixel Spacing</label>
-              ${createButtonGroup(
-                [
-                  { value: "none", label: "None" },
-                  { value: "subtle", label: "Subtle" },
-                  { value: "normal", label: "Normal" },
-                ],
-                this.config.pixel_spacing_mode || "normal",
-                createButtonGroupChangeHandler(
-                  "pixel_spacing_mode",
-                  (value) => {
-                    this.config.pixel_spacing_mode = value;
-                    this._fireConfigChanged();
-                  },
-                ),
-              )}
-            </div>
-            ${createToggleRow(
-              "Matrix Box Shadow",
-              "matrix_box_shadow",
-              this.config.matrix_box_shadow !== false,
-              (e) => this._onSwitchChange(e, "matrix_box_shadow"),
-            )}
+            ${this._renderAppearance("canvas")}
           </div>
         </div>
 
@@ -1223,69 +1169,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
               this._onPixelArtPreviewSizeChange.bind(this),
               "%",
             )}
-            <div class="form-row">
-              <label>Gallery Background Color</label>
-              ${createButtonGroup(
-                [
-                  { value: "transparent", label: "Transparent" },
-                  { value: "white", label: "White" },
-                  { value: "black", label: "Black" },
-                ],
-                this.config.pixel_art_background_color || "transparent",
-                createButtonGroupChangeHandler(
-                  "pixel_art_background_color",
-                  (value) => {
-                    this.config.pixel_art_background_color = value;
-                    this._fireConfigChanged();
-                  },
-                ),
-              )}
-            </div>
-            ${(this.config.pixel_art_background_color || "transparent") !==
-            "black"
-              ? createToggleRow(
-                  "Ignore Black Pixels",
-                  "gallery_ignore_black_pixels",
-                  this.config.gallery_ignore_black_pixels === true,
-                  (e) => this._onSwitchChange(e, "gallery_ignore_black_pixels"),
-                )
-              : ""}
-            <div class="form-row">
-              <label>Pixel Art Style</label>
-              ${createButtonGroup(
-                [
-                  { value: "square", label: "Square" },
-                  { value: "rounded", label: "Rounded" },
-                  { value: "circle", label: "Circle" },
-                ],
-                this.config.pixel_art_pixel_style || "square",
-                createButtonGroupChangeHandler(
-                  "pixel_art_pixel_style",
-                  (value) => {
-                    this.config.pixel_art_pixel_style = value;
-                    this._fireConfigChanged();
-                  },
-                ),
-              )}
-            </div>
-            <div class="form-row">
-              <label>Pixel Spacing</label>
-              ${createButtonGroup(
-                [
-                  { value: "none", label: "None" },
-                  { value: "subtle", label: "Subtle" },
-                  { value: "normal", label: "Normal" },
-                ],
-                this.config.pixel_art_spacing_mode || "normal",
-                createButtonGroupChangeHandler(
-                  "pixel_art_spacing_mode",
-                  (value) => {
-                    this.config.pixel_art_spacing_mode = value;
-                    this._fireConfigChanged();
-                  },
-                ),
-              )}
-            </div>
+            ${this._renderAppearance("art")}
 
             <!-- 7. Content & Labels -->
             ${createToggleRow(
@@ -1364,6 +1248,19 @@ class YeelightCubeDrawCardEditor extends LitElement {
   }
 
   // New centralized slider handlers
+
+  _renderAppearance(section) {
+    return html`<yeelight-preview-appearance-editor
+      profile="draw"
+      section=${section}
+      .owner=${this}
+      .config=${this.config}
+      @appearance-changed=${(event) => {
+        this.config = event.detail.config;
+        this._fireConfigChanged();
+      }}
+    ></yeelight-preview-appearance-editor>`;
+  }
 
   _onMatrixSizeChange(e) {
     this.config.matrix_size = e.target.value;

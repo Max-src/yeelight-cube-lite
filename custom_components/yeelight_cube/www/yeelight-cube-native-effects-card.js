@@ -1,3 +1,4 @@
+import { resolvePreviewAppearance } from "./preview-appearance.js";
 import { createNativeCardAdapter } from "./native-card-adapter.js";
 import { LitElement, html, css, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
 import { ModeControlsController } from "./mode-controls-controller.js";
@@ -175,7 +176,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       auto_apply: true,
       show_device_orientation: true,
       favourites_show_stars: true,
-      ...config,
+      ...resolvePreviewAppearance(config, "native"),
     };
     this._selected = null;
     this._state = this._hass?.states?.[getTargetEntities(config || {})[0]];
@@ -407,6 +408,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
         ? config[`${prefix}_pixel_style`]
         : "square",
       pixelGap: spacing === "normal" ? 3 : 0,
+      proportionalSpacing: true,
       pixelBoxShadow: ["subtle", "normal"].includes(spacing),
       matrixBoxShadow: config[`${prefix}_matrix_box_shadow`] === true,
       bgColor:

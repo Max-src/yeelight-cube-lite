@@ -16,6 +16,78 @@ Full documentation for all custom actions (services) registered under the `yeeli
 
 ---
 
+## Shared Preview Appearance
+
+Clock, Native Effects, Lamp Preview, Gradient and Draw use the same appearance
+model and preset controls for their matrix surfaces. Colour List and Palette
+keep their colour-swatch controls; matrix appearance settings do not apply to
+those swatches.
+
+| Preset | Background | Pixels | Spacing | Shadow | Hide Black Pixels |
+| :-- | :-- | :-- | :-- | :-- | :-- |
+| Classic | Black | Circle | Normal | Off | Off |
+| Light | White | Rounded | Subtle | On | On |
+| Square | Transparent | Square | None | Off | On |
+
+Use **Preview Appearance** to choose a preset or fine-tune the shared values.
+Size, orientation and layout remain local to each surface. Sections can follow
+the card default or override individual properties. Shared controls identify
+custom sections; **Use for all previews** removes only that property's overrides.
+Changing a shared preset does not silently discard section customisations.
+
+**Manage presets** saves the current shared appearance as a new preset or updates
+an existing one. Presets can be renamed; added presets can be deleted, and
+built-ins can be restored. Saved presets belong to the card configuration, not
+a device or a dashboard-wide library. They do not send commands to the lamp.
+
+The common configuration keys are `preview_appearance` (background, pixels,
+spacing, shadow, ignoreBlack), `preview_overrides` (per-section values), and
+`appearance_presets` (entries containing id, name and appearance). Existing
+Clock-prefixed keys remain supported. Existing legacy appearance settings are
+preserved as section overrides when necessary; opening an editor does not
+replace a saved look with a preset.
+
+Matrix gaps, padding and shadows use a shared width-relative scale, including
+browser thumbnails, favourites, Draw's matrix and Gradient's rotary preview.
+Shrinking a preview preserves its pixel-to-gap proportions. This requires a
+modern browser with CSS container-query unit support, as used by current Home
+Assistant browsers.
+
+## Frontend Startup Diagnostics
+
+Several cards showing "Configuration error" together can indicate a failed shared JavaScript dependency, but can also result from initialization errors. A working camera image does not test the custom-card module path. Reload recovery alone does not identify the cause.
+
+The integration registers `frontend-diagnostics.js` as a standalone Lovelace module. After installing this change, restart Home Assistant and reload the dashboard once so the new resource is registered. This is instrumentation, not an automatic repair or reload mechanism.
+
+When the problem occurs, open the browser developer tools (F12), select Console, and run this **before reloading**:
+
+```js
+copy(JSON.stringify(window.yeelightCubeDiagnostics.report(), null, 2))
+```
+
+`copy()` is a Chromium/Edge developer-console helper. In other browsers, evaluate `JSON.stringify(window.yeelightCubeDiagnostics.report(), null, 2)` and copy the returned text. The report includes the current load and the immediately preceding load in the same tab, so it can still be useful after a reload.
+
+- `cards`: whether each main custom element registered. Missing elements indicate loading/evaluation did not finish, not invalid lamp settings.
+- `events`: bounded JavaScript errors, unhandled rejections, connectivity events, registration times, and HA error-card messages collected when requesting a report. Some errors caught internally by HA will not reach global error listeners.
+- `resources`: recent integration module paths, timings, transfer sizes and HTTP statuses where the browser exposes them. A null status or zero transfer size is **not** proof of a failed request.
+
+Also enable **Preserve log** in Console and Network before reproducing. Leave **Disable cache** off for the first capture. Record the first relevant exception and failed `.js` request: path, status, response Content-Type, and time. Check HA and reverse-proxy logs at that time for 404/5xx responses. If all elements registered, the HA error-card message/exception is especially important. If a module reports a missing export, record both its importer and dependency URLs; stale or mixed deployment files are one possible cause.
+
+The recorder has no shared imports, sends no telemetry or lamp commands, and stores only a bounded snapshot in same-tab `sessionStorage`. It omits URL query strings/fragments and does not collect HA configuration, entity state, cookies or request headers. Error text may still contain identifying information: inspect reports before sharing. Do not share access tokens or an unredacted HAR.
+
+Limitations: this resource can itself fail to load; Lovelace does not guarantee it starts before every other resource. It cannot reconstruct events from before installation. If `window.yeelightCubeDiagnostics` is undefined, use the browser Console/Network capture. `Cache-Control: stale-if-error` is not a guaranteed browser recovery mechanism. Failed ES-module imports can remain failed for the life of the document even after the network recovers.
+
+To stop recording and remove the stored report for this tab:
+
+```js
+window.yeelightCubeDiagnostics.stop();
+window.yeelightCubeDiagnostics.clear();
+```
+
+Regression check: set `STARTUP_ONLY=1` when running `node tests/card-ui-parity.cjs` with the usual Playwright environment. It injects a shared-module 503, verifies all seven main cards fail while the standalone Font Editor loads, then verifies reload recovery and diagnostic retention. This reproduces a possible failure mechanism, not proof of any particular production outage.
+
+---
+
 ## 📝 Text Services
 
 Control what text is displayed on the lamp and how it looks.
@@ -823,13 +895,26 @@ an all-skipped list can remain active without changing the lamp. The card filter
 available favourites, but service callers must supply valid, enabled items.
 
 A failed display operation is logged and records the reason in
-`effect_rotation.error`, and that lamp's loop stops; later failures also stop
-the loop and update that attribute. A per-lamp start failure stops only that
-lamp. Sending a command successfully does not independently verify the physical
-image.
+`effect_rotation.error`. Transient connection failures retry the same item up
+to twice, after 5 and 15 seconds. If the per-device circuit breaker is active,
+backoff is extended past its 30-second timeout window. The healthy lamps keep
+their own loops; recovery rejoins the shared time grid without resetting them.
+Non-transient failures or exhausted retries stop only the affected lamp.
+Explicit Stop cancels backoff; lamp-off and calibration lock prevent another
+attempt (checked at most one second apart during backoff). The hardware safety
+timeout is unchanged. Sending a command successfully does not independently
+verify the physical image.
+
+During recovery, `effect_rotation.retry_attempt` is 1 or 2 and `retry_at` is the
+next attempt's Unix timestamp. Success clears the error and retry state. Clock
+and Native cards show per-lamp status, errors and a **Retry failed lamps** button
+only when a target reports an error. Retry uses each stopped, on lamp's backend
+list and interval; it does not restart healthy or already-retrying lamps. Normal
+error-free rotation controls and labels remain unchanged. Timeout logs identify
+the clock activation or brightness phase; retry logs include IP, item and attempt.
 
 Rotation stops via `stop_effect_rotation`, manual commands from the cards, or
-when its next step finds the lamp off or fails to apply the display. It is held
+when its next step finds the lamp off or exhausts recovery. It is held
 in memory and does **not** auto-resume after a Home Assistant restart or an
 integration reload. Commands from other automations do not universally stop it.
 

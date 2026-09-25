@@ -2,6 +2,7 @@ import { clockColorToRgb } from "./clock-preset-utils.js";
 
 import { clockPresetKey } from "./clock-preset-utils.js";
 import { getTargetEntities } from "./service-call-utils.js";
+import { rotationTargets, retryFailedRotations } from "./rotation-status.js";
 import { renderClockFrame, flipMatrixVertical } from "./clock-preview-utils.js";
 import { effectSupportsFreeze } from "./native-effect-preview.js";
 
@@ -82,6 +83,8 @@ export function createClockCardAdapter(card) {
           card._hass?.states[entity]?.attributes?.effect_rotation?.kind ===
             "clock",
       ),
+    rotationTargets: () => rotationTargets(card._hass, card.config, "clock"),
+    retryRotation: () => retryFailedRotations(card, "clock"),
     rotationError: () =>
       getTargetEntities(card.config)
         .map((entity) => {

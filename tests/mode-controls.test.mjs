@@ -2,6 +2,75 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { CardCommandController } from "../custom_components/yeelight_cube/www/card-command-controller.js";
+import {
+  rotationTargets,
+  retryFailedRotations,
+} from "../custom_components/yeelight_cube/www/rotation-status.js";
+
+test("rotation retry targets only failed, stopped, on lamps with their backend lists", async () => {
+  const items = [{ name: "Rainbow", color_mode: "bw" }, { name: "White" }];
+  const rotation = { kind: "clock", items, interval: 45 };
+  const calls = [];
+  const card = {
+    config: {
+      target_entities: [
+        "light.good",
+        "light.failed",
+        "light.retrying",
+        "light.off",
+      ],
+    },
+    _hass: {
+      states: {
+        "light.good": {
+          state: "on",
+          attributes: { effect_rotation: { ...rotation, active: true } },
+        },
+        "light.failed": {
+          state: "on",
+          attributes: {
+            friendly_name: "Top",
+            effect_rotation: { ...rotation, active: false, error: "timeout" },
+          },
+        },
+        "light.retrying": {
+          state: "on",
+          attributes: {
+            effect_rotation: {
+              ...rotation,
+              active: true,
+              error: "timeout",
+              retry_attempt: 1,
+            },
+          },
+        },
+        "light.off": {
+          state: "off",
+          attributes: {
+            effect_rotation: { ...rotation, active: false, error: "timeout" },
+          },
+        },
+      },
+    },
+    _commands: new CardCommandController(
+      () => {},
+      async (hass, config, service, data) =>
+        calls.push({ config, service, data }),
+    ),
+  };
+  const targets = rotationTargets(card._hass, card.config, "clock");
+  assert.equal(targets[1].name, "Top");
+  assert.equal(targets[2].retryAttempt, 1);
+  assert.equal(await retryFailedRotations(card, "clock"), true);
+  assert.deepEqual(calls, [
+    {
+      config: { target_entities: ["light.failed"] },
+      service: "start_effect_rotation",
+      data: { kind: "clock", items, interval: 45 },
+    },
+  ]);
+  assert.equal(await retryFailedRotations(card, "native"), false);
+});
 
 test("card commands serialize snapshots and discard obsolete queued work", async () => {
   const calls = [];

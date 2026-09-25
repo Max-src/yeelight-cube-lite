@@ -4,6 +4,7 @@ import {
   effectSupportsFreeze,
 } from "./native-effect-card-utils.js";
 import { getTargetEntities } from "./service-call-utils.js";
+import { rotationTargets, retryFailedRotations } from "./rotation-status.js";
 
 /** Native-effect domain bridge, including manual Apply and capability gates.
  * Shared controllers own commands/selection; this module maps catalogues,
@@ -63,6 +64,8 @@ export function createNativeCardAdapter(card) {
           return rotation?.kind === "native" ? rotation.error : null;
         })
         .find(Boolean) || card._error,
+    rotationTargets: () => rotationTargets(card._hass, card.config, "native"),
+    retryRotation: () => retryFailedRotations(card, "native"),
     // The `effect_rotation` attribute only exists in the backend version that
     // ships the rotation services; its presence is our capability probe.
     rotationSupported: () =>

@@ -77,6 +77,7 @@ export function renderModeControlSettings(
   change,
   items = [],
   noun = "effect",
+  renderAppearance = null,
 ) {
   const toggle = (label, key, fallback = true) =>
     createToggleRow(label, key, config[key] ?? fallback, (event) =>
@@ -136,10 +137,12 @@ export function renderModeControlSettings(
                   defaultStyle: "classic",
                   defaultContentMode: "icon_text",
                 })
-              : renderMatrixAppearanceSettings(config, change, {
-                  prefix: "effect",
-                  defaultSize: 100,
-                })}
+              : renderAppearance
+                ? renderAppearance(config, change)
+                : renderMatrixAppearanceSettings(config, change, {
+                    prefix: "effect",
+                    defaultSize: 100,
+                  })}
           `,
         )
       : ""}`;

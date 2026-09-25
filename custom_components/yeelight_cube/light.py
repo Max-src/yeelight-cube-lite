@@ -689,6 +689,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         """
         op_id = int(time.time() * 1000) % 100000
         effective_timeout = timeout_override or APPLY_HARD_TIMEOUT
+        self._hardware_failure_retryable = False
         
         # CIRCUIT BREAKER: If 2+ hard timeouts occurred in the last N seconds,
         # reject immediately instead of queueing behind the lock for 8s each.
@@ -697,6 +698,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         now = time.time()
         self._hard_timeout_times = [t for t in self._hard_timeout_times if now - t < CIRCUIT_BREAKER_WINDOW]
         if len(self._hard_timeout_times) >= 2:
+            self._hardware_failure_retryable = True
             _LOGGER.warning(
                 f"[OP #{op_id}] [{self._ip}] [!] CIRCUIT BREAKER -- rejecting {op_name} "
                 f"({len(self._hard_timeout_times)} timeouts in last {CIRCUIT_BREAKER_WINDOW:.0f}s). "
@@ -717,6 +719,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         try:
             lock_wait_start = time.time()
             async with _get_device_lock(self._ip):
+                self._hardware_operation_phase = op_name
                 lock_wait_ms = (time.time() - lock_wait_start) * 1000
                 if lock_wait_ms > 5:
                     _LOGGER.warning(
@@ -725,9 +728,11 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 try:
                     await asyncio.wait_for(func(), timeout=effective_timeout)
                 except asyncio.TimeoutError:
+                    self._hardware_failure_retryable = True
                     _LOGGER.error(
                         f"[OP #{op_id}] [{self._ip}] [!] HARD TIMEOUT -- "
-                        f"{op_name} exceeded {effective_timeout:.0f}s, releasing lock"
+                        f"{op_name} exceeded {effective_timeout:.0f}s, releasing lock "
+                        f"(phase={self._hardware_operation_phase})"
                     )
                     self._fx_mode_is_direct = False
                     self._cube_matrix._close_fast_socket()
@@ -753,6 +758,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             return True
         except AttributeError as e:
             if "'NoneType'" in str(e):
+                self._hardware_failure_retryable = True
                 _LOGGER.debug(
                     f"[OP #{op_id}] [{self._ip}] Socket gone -- resetting FX mode"
                 )
@@ -769,6 +775,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             self._connection_error = True
             self._last_connection_error = f"BulbException: {error_message}"
             if any(kw in error_message.lower() for kw in ['socket', 'closed', 'connection']):
+                self._hardware_failure_retryable = True
                 _LOGGER.warning(
                     f"[OP #{op_id}] [{self._ip}] Connection error: {error_message}"
                 )
@@ -779,6 +786,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                     f"[OP #{op_id}] [{self._ip}] BulbException: {error_message}"
                 )
         except TimeoutError:
+            self._hardware_failure_retryable = True
             _LOGGER.debug(
                 f"[OP #{op_id}] [{self._ip}] Timeout -- device unreachable"
             )
@@ -790,6 +798,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         except Exception as e:
             error_msg = str(e).lower()
             if any(kw in error_msg for kw in ['socket', 'connection', 'cooldown', 'closed', 'timeout', 'unreachable']):
+                self._hardware_failure_retryable = True
                 self._connection_error = True
                 self._last_connection_error = str(e)
                 _LOGGER.warning(
@@ -1336,6 +1345,8 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 "items": list(getattr(self, "_rotation_items", [])),
                 "index": getattr(self, "_rotation_index", -1),
                 "error": getattr(self, "_rotation_error", None),
+                "retry_attempt": getattr(self, "_rotation_retry_attempt", 0),
+                "retry_at": getattr(self, "_rotation_retry_at", None),
             },
             "text_colors": self._text_colors,
             "custom_text": self._custom_text,
@@ -3540,6 +3551,8 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             raise HomeAssistantError("Provide at least two different rotation modes")
         self.stop_effect_rotation()
         self._rotation_error = None
+        self._rotation_retry_attempt = 0
+        self._rotation_retry_at = None
         self._rotation_kind = kind if kind in ("native", "clock") else "native"
         self._rotation_items = items
         self._rotation_interval = max(10, min(604800, int(interval)))
@@ -3561,6 +3574,8 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
     def stop_effect_rotation(self) -> None:
         """Stop the server-side rotation loop."""
         self._rotation_active = False
+        self._rotation_retry_attempt = 0
+        self._rotation_retry_at = None
         if self._rotation_task and not self._rotation_task.done():
             self._rotation_task.cancel()
         self._rotation_task = None
@@ -3598,7 +3613,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 item = self._rotation_items[self._rotation_index]
                 name = item["name"]
                 try:
-                    ok = await self._apply_rotation_item(item)
+                    ok = await self._apply_rotation_step(item)
                 except Exception as exc:  # noqa: BLE001 — keep rotation isolated
                     _LOGGER.warning(
                         "[ROTATION] [%s] Failed to apply %s: %s",
@@ -3646,8 +3661,67 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             if self._rotation_task is task:
                 self._rotation_active = False
                 self._rotation_task = None
+                self._rotation_retry_at = None
                 if self.hass is not None:
                     self.async_write_ha_state()
+
+    async def _wait_rotation_retry(self, delay: float) -> bool:
+        deadline = asyncio.get_running_loop().time() + delay
+        while self._rotation_active and self._is_on and not getattr(self, "_calibration_lock", False):
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                return True
+            await asyncio.sleep(min(remaining, 1.0))
+        return False
+
+    async def _apply_rotation_step(self, item) -> bool:
+        self._rotation_retry_attempt = 0
+        self._rotation_retry_at = None
+        for attempt in range(3):
+            if not self._rotation_active or not self._is_on or getattr(self, "_calibration_lock", False):
+                if not self._is_on:
+                    self._rotation_error = "Lamp is off"
+                elif getattr(self, "_calibration_lock", False):
+                    self._rotation_error = "Calibration lock is active"
+                return False
+            self._hardware_failure_retryable = False
+            try:
+                success = await self._apply_rotation_item(item)
+            except (OSError, asyncio.TimeoutError) as error:
+                self._last_connection_error = str(error) or "Device timeout"
+                self._hardware_failure_retryable = True
+                success = False
+            if success:
+                if attempt:
+                    _LOGGER.info("[ROTATION] [%s] Recovered %s after %s retries", self._ip, item["name"], attempt)
+                self._rotation_error = None
+                self._rotation_retry_attempt = 0
+                self._rotation_retry_at = None
+                return True
+            self._rotation_error = getattr(self, "_last_connection_error", None) or f"Display update failed for {item['name']}"
+            if not self._hardware_failure_retryable or attempt == 2:
+                return False
+            delay = (5.0, 15.0)[attempt]
+            recent = [stamp for stamp in getattr(self, "_hard_timeout_times", []) if time.time() - stamp < CIRCUIT_BREAKER_WINDOW]
+            if len(recent) >= 2:
+                delay = max(delay, max(recent) + CIRCUIT_BREAKER_WINDOW - time.time() + 0.1)
+            self._rotation_retry_attempt = attempt + 1
+            self._rotation_retry_at = time.time() + delay
+            _LOGGER.warning(
+                "[ROTATION] [%s] %s step=%s retry=%s/2 in %.1fs: %s",
+                self._ip, self._rotation_kind, item["name"], attempt + 1, delay, self._rotation_error,
+            )
+            if self.hass is not None:
+                self.async_write_ha_state()
+            if not await self._wait_rotation_retry(delay):
+                self._rotation_retry_at = None
+                if not self._is_on:
+                    self._rotation_error = "Lamp is off"
+                elif getattr(self, "_calibration_lock", False):
+                    self._rotation_error = "Calibration lock is active"
+                return False
+            self._rotation_retry_at = None
+        return False
 
     async def _apply_rotation_item(self, item) -> bool:
         """Apply one rotation item; return False to stop the loop."""

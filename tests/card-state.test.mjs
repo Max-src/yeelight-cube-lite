@@ -1,3 +1,4 @@
+import { resolvePreviewAppearance } from "../custom_components/yeelight_cube/www/preview-appearance.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
@@ -282,6 +283,7 @@ test("lamp adjustment timers and stale failures cannot cross configuration conte
   const timers = new Map();
   let serial = 0;
   const scope = {
+    resolvePreviewAppearance,
     setTimeout(callback) {
       timers.set(++serial, callback);
       return serial;

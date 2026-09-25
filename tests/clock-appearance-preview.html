@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clock Appearance</title>
+<style>
+  :root { font-family: "Segoe UI", sans-serif; color: #25282b; background: #f4f5f6; --primary-color: #087f8c; --primary-text-color: #25282b; --secondary-text-color: #656b70; --card-background-color: #fff; --secondary-background-color: #f4f5f6; --divider-color: #d9dddf; --error-color: #b3261e; }
+  * { box-sizing: border-box; }
+  body { margin: 0; }
+  header { padding: 20px 24px; border-bottom: 1px solid var(--divider-color); background: white; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0; }
+  main { display: grid; grid-template-columns: minmax(0, 460px) minmax(0, 540px); align-items: start; gap: 28px; max-width: 1080px; margin: auto; padding: 24px; }
+  yeelight-cube-clock-card-editor { background: white; min-width: 0; }
+  yeelight-cube-clock-card { display: block; min-width: 0; position: sticky; top: 24px; }
+  @media (max-width: 720px) { main { grid-template-columns: minmax(0, 1fr); padding: 12px; gap: 20px; } header { padding: 16px; } yeelight-cube-clock-card { position: static; } }
+</style>
+<header><h1>Clock Appearance</h1></header>
+<main></main>
+<script type="module">
+  import { LitElement, html } from "../custom_components/yeelight_cube/www/lib/lit-all.js";
+  import "../custom_components/yeelight_cube/www/yeelight-cube-clock-card.js";
+  import "../custom_components/yeelight_cube/www/yeelight-cube-clock-card-editor.js";
+  customElements.define("ha-card", class extends LitElement { render() { return html`<slot></slot>`; } });
+  customElements.define("ha-icon", class extends HTMLElement {
+    static observedAttributes = ["icon"];
+    constructor() { super(); this.attachShadow({ mode: "open" }); }
+    connectedCallback() { this.attributeChangedCallback(); }
+    attributeChangedCallback() {
+      const name = (this.getAttribute("icon") || "mdi:circle").replace(/^mdi:/, "");
+      if (!/^[a-z0-9-]+$/.test(name)) return;
+      this.shadowRoot.innerHTML = `<style>:host{display:inline-flex;width:var(--mdc-icon-size,24px);height:var(--mdc-icon-size,24px)}img{width:100%;height:100%}</style><img alt="" src="https://cdn.jsdelivr.net/npm/@mdi/svg@7.4.47/svg/${name}.svg">`;
+    }
+  });
+  const hass = {
+    services: {},
+    states: { "light.preview": { state: "on", attributes: {
+      friendly_name: "Desk Clock", brightness: 255, device_orientation: "right",
+      content_mode: "Clock", clock_style: "Rainbow", clock_style_id: 1,
+      clock_color_mode: "normal", clock_content: "time", extended_effects_enabled: false,
+      effect_rotation: { kind: "clock", active: false, error: null },
+    } } },
+    callService: async () => {},
+  };
+  const card = document.createElement("yeelight-cube-clock-card");
+  const editor = document.createElement("yeelight-cube-clock-card-editor");
+  const config = { ...card.constructor.getStubConfig(hass), entity: "light.preview", target_entities: ["light.preview"], title: "Desk Clock", show_actions: false, show_animation_speed: false, show_color_modes: false, show_favourites: true, show_rotation: false, show_search: false, show_content_toggle: false, show_format_toggles: false, visible_styles: ["Rainbow", "White", "Tide", "Streamer"], items_per_page: 4 };
+  const updateCard = async value => {
+    card.setConfig(value); card.hass = hass;
+    card._controls.favourites = [{ key: "Rainbow", colorMode: "normal" }, { key: "White", colorMode: "normal" }];
+    card._controls.notify();
+    await card.updateComplete;
+  };
+  editor.setConfig(config); editor.hass = hass;
+  editor._open = { preview_appearance: true, lamp_preview: true };
+  editor.addEventListener("config-changed", event => { window.lastAppearanceConfig = event.detail.config; updateCard(event.detail.config); });
+  document.querySelector("main").append(editor, card);
+  await updateCard(config);
+  await editor.updateComplete;
+  window.appearancePreview = { editor, card, hass, config, updateCard };
+</script>
+</html>

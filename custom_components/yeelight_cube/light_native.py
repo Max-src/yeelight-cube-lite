@@ -229,12 +229,14 @@ class NativeModesMixin:
         # Keep this as the first fresh-socket command. Cube Lite can drop the
         # clock activation when set_bright opens and resets a socket just before
         # set_fx_effect; brightness remains adjustable after activation.
+        self._hardware_operation_phase = "clock:set_fx_effect"
         await asyncio.sleep(0.1)
         await self._cube_matrix.send_raw_command(
             "set_fx_effect", params, abortive_close=False
         )
         # Applying brightness before set_fx_effect can cancel clock activation,
         # but the firmware accepts it once the native renderer is running.
+        self._hardware_operation_phase = "clock:brightness"
         await asyncio.sleep(0.1)
         await self._set_native_mode_brightness()
         self._is_on = True

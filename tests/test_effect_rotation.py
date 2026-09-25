@@ -23,6 +23,8 @@ def _rotation_helpers():
             "skip_effect_rotation",
             "_normalize_rotation_items",
             "_rotation_loop",
+            "_apply_rotation_step",
+            "_wait_rotation_retry",
             "_apply_rotation_item",
             "_start_rotation_apply",
             "_apply_rotation_native",
@@ -32,6 +34,8 @@ def _rotation_helpers():
         },
         {
             "asyncio": asyncio,
+            "time": time,
+            "CIRCUIT_BREAKER_WINDOW": 30.0,
             "DOMAIN": DOMAIN,
             "NATIVE_CLOCK_STYLES": NATIVE_CLOCK_STYLES,
             "ALL_NATIVE_EFFECTS": ALL_NATIVE_EFFECTS,
@@ -84,6 +88,7 @@ def make_light(helpers, kind="native", is_on=True, extended=False):
     )
     _bind(light, helpers, "start_effect_rotation", "stop_effect_rotation",
           "skip_effect_rotation", "_normalize_rotation_items", "_rotation_loop",
+          "_apply_rotation_step", "_wait_rotation_retry",
           "_apply_rotation_item", "_start_rotation_apply", "_apply_rotation_native",
           "_apply_rotation_clock", "_rotation_current_name")
     return light
@@ -92,6 +97,75 @@ def make_light(helpers, kind="native", is_on=True, extended=False):
 class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.helpers = _rotation_helpers()
+
+    async def test_transient_step_retries_same_item_and_recovers(self):
+        light = make_light(self.helpers, kind="clock")
+        light._rotation_active = True
+        item = {"name": "Rainbow", "color_mode": "bw"}
+        async def apply(entry):
+            if light._apply_rotation_item.await_count == 1:
+                light._hardware_failure_retryable = True
+                light._last_connection_error = "Hard timeout: rotation:clock"
+                return False
+            return True
+        light._apply_rotation_item = AsyncMock(side_effect=apply)
+        light._wait_rotation_retry = AsyncMock(return_value=True)
+        self.assertTrue(await light._apply_rotation_step(item))
+        self.assertEqual(light._apply_rotation_item.await_count, 2)
+        self.assertTrue(all(call.args[0] is item for call in light._apply_rotation_item.await_args_list))
+        light._wait_rotation_retry.assert_awaited_once_with(5.0)
+        self.assertIsNone(light._rotation_error)
+        self.assertEqual(light._rotation_retry_attempt, 0)
+
+    async def test_retries_exhaust_and_respect_circuit_breaker(self):
+        light = make_light(self.helpers)
+        light._rotation_active = True
+        async def fail(item):
+            light._hardware_failure_retryable = True
+            light._last_connection_error = "Device timeout"
+            light._hard_timeout_times = [time.time(), time.time()]
+            return False
+        light._apply_rotation_item = AsyncMock(side_effect=fail)
+        light._wait_rotation_retry = AsyncMock(return_value=True)
+        self.assertFalse(await light._apply_rotation_step({"name": "Rainbow"}))
+        self.assertEqual(light._apply_rotation_item.await_count, 3)
+        self.assertEqual(light._wait_rotation_retry.await_count, 2)
+        self.assertTrue(all(call.args[0] >= 30 for call in light._wait_rotation_retry.await_args_list))
+        self.assertEqual(light._rotation_error, "Device timeout")
+
+    async def test_stop_during_backoff_does_not_touch_healthy_rotation(self):
+        failed = make_light(self.helpers, kind="clock")
+        healthy = make_light(self.helpers)
+        await healthy.start_effect_rotation(["Rainbow", "Streamer"], 60)
+        entered = asyncio.Event()
+        async def fail(item):
+            raise TimeoutError("connection timeout")
+        async def wait(delay):
+            entered.set()
+            await asyncio.Event().wait()
+        failed._apply_rotation_item = AsyncMock(side_effect=fail)
+        failed._wait_rotation_retry = wait
+        starting = asyncio.create_task(failed.start_effect_rotation(["Rainbow", "White"], 10, "clock"))
+        await entered.wait()
+        task = failed._rotation_task
+        failed.stop_effect_rotation()
+        with self.assertRaises(ValueError):
+            await starting
+        with self.assertRaises(asyncio.CancelledError):
+            await task
+        self.assertTrue(healthy._rotation_active)
+        self.assertEqual(failed._apply_rotation_item.await_count, 1)
+        healthy.stop_effect_rotation()
+
+    async def test_off_lock_and_nontransient_failures_never_retry(self):
+        for off, locked in [(True, False), (False, True), (False, False)]:
+            light = make_light(self.helpers, is_on=not off)
+            light._rotation_active = True
+            light._calibration_lock = locked
+            light._apply_rotation_item = AsyncMock(return_value=False)
+            light._wait_rotation_retry = AsyncMock()
+            self.assertFalse(await light._apply_rotation_step({"name": "Rainbow"}))
+            light._wait_rotation_retry.assert_not_awaited()
 
     async def test_display_dispatch_preserves_hardware_failure(self):
         light = make_light(self.helpers)
@@ -468,11 +542,38 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_transport_failure_reaches_start_caller(self):
         light = self.make_transport_light()
+        light._wait_rotation_retry = AsyncMock(return_value=True)
         light._cube_matrix.send_raw_command.side_effect = OSError("connection refused")
         with self.assertRaisesRegex(ValueError, "connection refused"):
             await light.start_effect_rotation(["Rainbow", "White"], 10, "clock")
         self.assertFalse(light._rotation_active)
         self.assertEqual(light._rotation_error, "connection refused")
+        self.assertEqual(light._wait_rotation_retry.await_count, 2)
+
+    async def test_actual_clock_transport_recovers_without_advancing_failed_step(self):
+        light = self.make_transport_light()
+        light._wait_rotation_retry = AsyncMock(return_value=True)
+        sent = []
+        async def send(command, params, **kwargs):
+            if command == "set_fx_effect":
+                sent.append(params)
+                if len(sent) == 1:
+                    raise OSError("connection refused")
+        light._cube_matrix.send_raw_command.side_effect = send
+        await light.start_effect_rotation(["Rainbow", "White"], 60, "clock")
+        self.assertEqual(len(sent), 2)
+        self.assertEqual(sent[0], sent[1])
+        self.assertTrue(light._rotation_active)
+        self.assertIsNone(light._rotation_error)
+
+    async def test_backoff_stops_when_lamp_turns_off_or_locks(self):
+        for attribute in ("_is_on", "_calibration_lock"):
+            light = self.make_transport_light()
+            light._rotation_active = True
+            async def changed(_delay):
+                setattr(light, attribute, attribute == "_calibration_lock")
+            with patch.object(asyncio, "sleep", side_effect=changed):
+                self.assertFalse(await light._wait_rotation_retry(5))
 
     async def test_native_start_reaches_protocol_transport(self):
         light = self.make_transport_light()
@@ -481,6 +582,24 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([call.args[0] for call in commands], ["set_bright", "set_fx_effect"])
         self.assertEqual(commands[-1].args[1][0], ALL_NATIVE_EFFECTS["Streamer"]["effect_id"])
         self.assertTrue(light._rotation_active)
+
+    async def test_hard_timeout_marks_retryable_and_success_clears_classification(self):
+        light = self.make_transport_light()
+        async def stalled():
+            light._hardware_operation_phase = "clock:brightness"
+            await asyncio.Event().wait()
+        self.assertFalse(await light._execute_hardware_op(stalled, "rotation:clock", timeout_override=0.001))
+        self.assertTrue(light._hardware_failure_retryable)
+        self.assertEqual(light._last_connection_error, "Hard timeout: rotation:clock")
+        self.assertEqual(light._hardware_operation_phase, "clock:brightness")
+        light._maybe_schedule_retry.assert_not_called()
+        self.assertTrue(await light._execute_hardware_op(AsyncMock(), "rotation:clock"))
+        self.assertFalse(light._hardware_failure_retryable)
+
+    async def test_programming_failure_is_not_retryable(self):
+        light = self.make_transport_light()
+        self.assertFalse(await light._execute_hardware_op(AsyncMock(side_effect=ValueError("invalid mode")), "rotation:clock"))
+        self.assertFalse(light._hardware_failure_retryable)
 
 
 if __name__ == "__main__":

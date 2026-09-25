@@ -1,4 +1,5 @@
 import { BLACK_THRESHOLD } from "./draw_card_const.js";
+import { previewLength } from "./preview-appearance.js";
 import { escapeHtml } from "./html-escape-utils.js";
 import { favouriteId, normalizeFavourite } from "./mode-controls-controller.js";
 import {
@@ -156,13 +157,19 @@ export function renderMatrixPreview(colorData, options = {}) {
     ignoreBlackPixels = false,
     matrixBoxShadow = false,
     pixelBoxShadow = false,
+    proportionalSpacing = true,
   } = options;
 
+  const length = (value) =>
+    proportionalSpacing ? previewLength(value) : `${value}px`;
+
   const matrixShadowStyle = matrixBoxShadow
-    ? "box-shadow: 0 2px 8px rgba(0,0,0,0.5);"
+    ? `box-shadow: 0 ${length(2)} ${length(8)} rgba(0,0,0,0.5);`
     : "";
 
-  const pixelShadowStyle = pixelBoxShadow ? "box-shadow: 0 0 2px #0008;" : "";
+  const pixelShadowStyle = pixelBoxShadow
+    ? `box-shadow: 0 0 ${length(2)} #0008;`
+    : "";
 
   const borderRadius =
     pixelStyle === "circle" ? "50%" : pixelStyle === "rounded" ? "20%" : "0";
@@ -175,16 +182,17 @@ export function renderMatrixPreview(colorData, options = {}) {
     : `width: ${previewSize}px;`;
 
   return `
+    ${proportionalSpacing ? `<div style="container-type:inline-size;max-width:100%;${sizeStyle}">` : ""}
     <div class="gallery-matrix-preview" style="
       display: grid;
       grid-template-columns: repeat(${cols}, 1fr);
-      gap: ${pixelGap}px;
+      gap: ${length(pixelGap)};
       background: ${bgColor};
-      padding: ${pixelGap * 2}px;
-      border-radius: 4px;
+      padding: ${length(pixelGap * 2)};
+      border-radius: ${length(4)};
       max-width: 100%;
       box-sizing: border-box;
-      ${sizeStyle}
+      ${proportionalSpacing ? "width:100%;" : sizeStyle}
       ${matrixShadowStyle}
     ">${colorData
       .map((color) => {
@@ -223,6 +231,7 @@ export function renderMatrixPreview(colorData, options = {}) {
       })
       .join("")}
     </div>
+    ${proportionalSpacing ? "</div>" : ""}
   `;
 }
 

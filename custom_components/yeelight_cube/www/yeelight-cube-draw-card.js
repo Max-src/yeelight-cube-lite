@@ -1,3 +1,8 @@
+import {
+  resolvePreviewAppearance,
+  previewLength,
+} from "./preview-appearance.js";
+import { renderMatrixPreview } from "./gallery-display-utils.js";
 import { getActionRowClass } from "./action-button-utils.js";
 import { LitElement, html, repeat, unsafeHTML } from "./lib/lit-all.js";
 import { escapeHtml } from "./html-escape-utils.js";
@@ -1364,6 +1369,7 @@ class YeelightCubeDrawCard extends LitElement {
   }
 
   setConfig(config) {
+    config = resolvePreviewAppearance(config, "draw");
     this._collectionContext = (this._collectionContext || 0) + 1;
     this._fetchingPixelArts = false;
     this._pixelArtCollection?.reset();
@@ -1553,6 +1559,22 @@ class YeelightCubeDrawCard extends LitElement {
     // Delegated to ToolManager
   }
 
+  _pixelArtMatrix(pixelMatrix) {
+    const cfg = this.config;
+    const spacing = cfg.pixel_art_spacing_mode || "normal";
+    return renderMatrixPreview(pixelMatrix, {
+      rows: GRID_ROWS,
+      cols: GRID_COLS,
+      forceAspectRatio: true,
+      bgColor: cfg.pixel_art_background_color || "transparent",
+      pixelStyle: cfg.pixel_art_pixel_style || "square",
+      pixelGap: spacing === "normal" ? 3 : 0,
+      pixelBoxShadow: spacing !== "none",
+      matrixBoxShadow: cfg.pixel_art_matrix_box_shadow === true,
+      ignoreBlackPixels: cfg.gallery_ignore_black_pixels === true,
+    });
+  }
+
   _renderMatrixSection(
     cfg,
     pixelGap,
@@ -1569,44 +1591,57 @@ class YeelightCubeDrawCard extends LitElement {
 
     return html`
       <div
-        class="matrix"
-        style="display:grid;grid-template-columns:repeat(${GRID_COLS},1fr);gap:${pixelGap}px;background:${matrixBg};padding:8px;border-radius:6px;${matrixShadowStyle}width:${matrixWidth};margin:0 auto;"
-        @mousedown=${(e) => startDraw(this, e)}
-        @mouseup=${(e) => endDraw(this, e)}
-        @mouseleave=${() => onMatrixMouseLeave(this)}
-        @mousemove=${(e) => drawMove(this, e)}
-        @touchstart=${(e) => startDraw(this, e)}
-        @touchend=${(e) => endDraw(this, e)}
-        @touchcancel=${(e) => endDraw(this, e)}
-        @touchmove=${(e) => drawMove(this, e)}
+        style="container-type:inline-size;width:${matrixWidth};max-width:100%;margin:0 auto;"
       >
-        ${this.matrix.map((color, idx) => {
-          let previewStyle = "";
-          const shadowParts = [];
-          if (pixelBoxShadow) shadowParts.push("0 0 2px #0008");
-          if (this.areaFillMode && this.previewFillArea.has(idx)) {
-            shadowParts.push(`0 0 0 3px ${this.selectedColor}`);
-            previewStyle += ` border: 2px solid ${this.selectedColor};`;
-          }
-          if (shadowParts.length) {
-            previewStyle =
-              `box-shadow: ${shadowParts.join(", ")};` + previewStyle;
-          }
-          return renderMatrixPixel(
-            idx,
-            color,
-            matrixPixelStyle,
-            previewStyle,
-            {
-              onMouseDown: (e) => drawPixel(this, e, idx),
-              onContextMenu: (e) => erasePixel(this, e, idx),
-              onClick: () => onMatrixClick(this, idx),
-              onMouseOver: () => onMatrixMouseOver(this, idx),
-              onMouseLeave: () => onMatrixMouseLeave(this),
-            },
-            cfg.matrix_ignore_black_pixels,
-          );
-        })}
+        <div
+          class="matrix"
+          style="display:grid;grid-template-columns:repeat(${GRID_COLS},1fr);gap:${previewLength(
+            pixelGap,
+          )};background:${matrixBg};padding:${previewLength(
+            8,
+          )};border-radius:${previewLength(
+            6,
+          )};box-shadow:${cfg.matrix_box_shadow !== false
+            ? `0 ${previewLength(2)} ${previewLength(8)} #0008`
+            : "none"};width:100%;margin:0 auto;"
+          @mousedown=${(e) => startDraw(this, e)}
+          @mouseup=${(e) => endDraw(this, e)}
+          @mouseleave=${() => onMatrixMouseLeave(this)}
+          @mousemove=${(e) => drawMove(this, e)}
+          @touchstart=${(e) => startDraw(this, e)}
+          @touchend=${(e) => endDraw(this, e)}
+          @touchcancel=${(e) => endDraw(this, e)}
+          @touchmove=${(e) => drawMove(this, e)}
+        >
+          ${this.matrix.map((color, idx) => {
+            let previewStyle = "";
+            const shadowParts = [];
+            if (pixelBoxShadow)
+              shadowParts.push(`0 0 ${previewLength(2)} #0008`);
+            if (this.areaFillMode && this.previewFillArea.has(idx)) {
+              shadowParts.push(`0 0 0 3px ${this.selectedColor}`);
+              previewStyle += ` border: 2px solid ${this.selectedColor};`;
+            }
+            if (shadowParts.length) {
+              previewStyle =
+                `box-shadow: ${shadowParts.join(", ")};` + previewStyle;
+            }
+            return renderMatrixPixel(
+              idx,
+              color,
+              matrixPixelStyle,
+              previewStyle,
+              {
+                onMouseDown: (e) => drawPixel(this, e, idx),
+                onContextMenu: (e) => erasePixel(this, e, idx),
+                onClick: () => onMatrixClick(this, idx),
+                onMouseOver: () => onMatrixMouseOver(this, idx),
+                onMouseLeave: () => onMatrixMouseLeave(this),
+              },
+              cfg.matrix_ignore_black_pixels,
+            );
+          })}
+        </div>
       </div>
     `;
   }
@@ -2418,45 +2453,8 @@ class YeelightCubeDrawCard extends LitElement {
                     display: flex;
                     align-items: center;
                     justify-content: center;
-                    padding: ${scaledPadding}px;">
-            <div class="pixelart-matrix ${pixelStyle}"
-                 style="display: grid;
-                        grid-template-columns: repeat(${GRID_COLS}, 1fr);
-                        grid-template-rows: repeat(${GRID_ROWS}, 1fr);
-                        gap: ${pixelGap}px;
-                        width: 100%;
-                        max-width: 100%;
-                        background: ${resolveBgColor(bgColor)};">
-              ${pixelMatrix
-                .map((color) => {
-                  // Check if pixel is black and should be ignored
-                  const shouldIgnore =
-                    cfg.gallery_ignore_black_pixels && isBlackPixel(color);
-                  const pixelShadowStyle = pixelArtPixelBoxShadow
-                    ? "box-shadow: 0 0 2px #0008;"
-                    : "";
-                  return `<div class="pixelart-pixel ${pixelStyle} ${
-                    shouldIgnore ? "pixelart-pixel-empty" : ""
-                  }" 
-                               style="width: 100%; 
-                                      height: 100%; 
-                                      background: ${
-                                        shouldIgnore
-                                          ? "transparent"
-                                          : color || "#000000"
-                                      }; 
-                                      ${pixelShadowStyle}
-                                      ${
-                                        pixelStyle === "circle"
-                                          ? "border-radius: 50%;"
-                                          : pixelStyle === "rounded"
-                                            ? "border-radius: 15%;"
-                                            : ""
-                                      }">
-                          </div>`;
-                })
-                .join("")}
-            </div>
+                    padding:0;">
+            ${this._pixelArtMatrix(pixelMatrix)}
         </div>
       `;
     };
@@ -2540,31 +2538,9 @@ class YeelightCubeDrawCard extends LitElement {
               : ""
           }
           <div class="album-preview pixelart-preview-album"
-               style="padding: ${proportionalPadding}px;
-                      --pixelart-bg-color: ${resolveBgColor(bgColor, "#ffffff")};
-                      --pixelart-gap: ${proportionalGap}px;"
+               style="padding:0;background:transparent;"
                data-index="${idx}">
-            <div class="pixelart-matrix ${pixelStyle}">
-              ${pixelMatrix
-                .map((color, pixelIdx) => {
-                  const pixelShadowStyle = pixelArtPixelBoxShadow
-                    ? "box-shadow: 0 0 2px #0008;"
-                    : "";
-                  // Check if pixel is black and should be ignored
-                  const shouldIgnore =
-                    cfg.gallery_ignore_black_pixels && isBlackPixel(color);
-                  return `
-                  <div class="pixelart-pixel ${pixelStyle} ${
-                    color !== "#000000" ? "active" : ""
-                  } ${shouldIgnore ? "pixelart-pixel-empty" : ""}"
-                       style="background-color: ${
-                         shouldIgnore ? "transparent" : color
-                       }; ${pixelShadowStyle}">
-                  </div>
-                `;
-                })
-                .join("")}
-            </div>
+            ${this._pixelArtMatrix(pixelMatrix)}
           </div>
         </div>
       `;
@@ -2895,37 +2871,12 @@ class YeelightCubeDrawCard extends LitElement {
                   >
                     <div
                       class="pixelart-preview"
-                      style="width: fit-content;
-                             --pixelart-bg-color: ${resolveBgColor(bgColor)};
-                             --pixelart-gap: ${pixelGap}px;"
+                      style="width:250px;max-width:100%;padding:0;background:transparent;"
                       title="Click to apply to drawing matrix${autoApplyToLamp
                         ? " and lamp"
                         : ""}"
                     >
-                      <div class="pixelart-matrix ${pixelStyle}">
-                        ${pixelMatrix.map((color) => {
-                          const pixelShadowStyle = pixelArtPixelBoxShadow
-                            ? "box-shadow: 0 0 2px #0008;"
-                            : "";
-                          // Check if pixel is black and should be ignored
-                          const shouldIgnore =
-                            cfg.gallery_ignore_black_pixels &&
-                            isBlackPixel(color);
-                          return html`
-                            <div
-                              class="pixelart-pixel ${pixelStyle} ${color !==
-                              "#000000"
-                                ? "active"
-                                : ""} ${shouldIgnore
-                                ? "pixelart-pixel-empty"
-                                : ""}"
-                              style="background: ${shouldIgnore
-                                ? "transparent"
-                                : color || "#000000"}; ${pixelShadowStyle}"
-                            ></div>
-                          `;
-                        })}
-                      </div>
+                      ${unsafeHTML(this._pixelArtMatrix(pixelMatrix))}
                     </div>
                   </div>
                   ${showTitles
@@ -3192,7 +3143,7 @@ class YeelightCubeDrawCard extends LitElement {
         ${displayMode === "list"
           ? html`<div
                 class="pixelart-preview"
-                style="padding: ${proportionalPadding}px;
+                style="padding:0;background:transparent;
                 --pixelart-size-percent: ${previewSizePercent}%;
                 --pixelart-bg-color: ${resolveBgColor(bgColor, "#ffffff")};
                 --pixelart-gap: ${proportionalGap}px;
@@ -3203,25 +3154,7 @@ class YeelightCubeDrawCard extends LitElement {
                   ? " and lamp"
                   : ""}"
               >
-                <div class="pixelart-matrix ${pixelStyle}">
-                  ${pixelMatrix.map((color, pixelIdx) => {
-                    // Individual pixel shadow style (like in drawing matrix)
-                    const pixelShadowStyle = pixelArtPixelBoxShadow
-                      ? "box-shadow: 0 0 2px #0008;"
-                      : "";
-
-                    return html`
-                      <div
-                        class="pixelart-pixel ${pixelStyle} ${color !==
-                        "#000000"
-                          ? "active"
-                          : ""}"
-                        style="background: ${color ||
-                        "#000000"}; ${pixelShadowStyle}"
-                      ></div>
-                    `;
-                  })}
-                </div>
+                ${unsafeHTML(this._pixelArtMatrix(pixelMatrix))}
               </div>
               ${showTitles
                 ? html`<div
@@ -3234,7 +3167,7 @@ class YeelightCubeDrawCard extends LitElement {
                 : ""}`
           : html`<div
               class="pixelart-preview"
-              style="padding: ${proportionalPadding}px;
+              style="padding:0;background:transparent;
                 --pixelart-size-percent: ${previewSizePercent}%;
                 --pixelart-bg-color: ${resolveBgColor(bgColor, "#ffffff")};
                 --pixelart-gap: ${proportionalGap}px;
@@ -3260,28 +3193,7 @@ class YeelightCubeDrawCard extends LitElement {
                     &#10006;
                   </button>`
                 : ""}
-              <div class="pixelart-matrix ${pixelStyle}">
-                ${pixelMatrix.map((color, pixelIdx) => {
-                  // Individual pixel shadow style (like in drawing matrix)
-                  const pixelShadowStyle = pixelArtPixelBoxShadow
-                    ? "box-shadow: 0 0 2px #0008;"
-                    : "";
-                  // Check if pixel is black and should be ignored
-                  const shouldIgnore =
-                    cfg.gallery_ignore_black_pixels && isBlackPixel(color);
-
-                  return html`
-                    <div
-                      class="pixelart-pixel ${pixelStyle} ${color !== "#000000"
-                        ? "active"
-                        : ""} ${shouldIgnore ? "pixelart-pixel-empty" : ""}"
-                      style="background: ${shouldIgnore
-                        ? "transparent"
-                        : color || "#000000"}; ${pixelShadowStyle}"
-                    ></div>
-                  `;
-                })}
-              </div>
+              ${unsafeHTML(this._pixelArtMatrix(pixelMatrix))}
             </div>`}
         ${!titleOnTop && displayMode !== "list" && showTitles
           ? html`<div

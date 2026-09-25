@@ -1,4 +1,9 @@
+import { previewLength } from "./preview-appearance.js";
 import { createClockCardAdapter } from "./clock-card-adapter.js";
+import {
+  resolveClockAppearance,
+  APPEARANCE_PRESETS,
+} from "./clock-preview-appearance.js";
 // ============================================================================
 //  Yeelight Cube Lite — Clock Card
 // ============================================================================
@@ -275,7 +280,7 @@ class YeelightCubeClockCard extends HTMLElement {
       slider_show_icon_left: true, // 🐢 / 🌙 lower icon on the capsule
       slider_show_icon_right: true, // ⚡ / ☀️ upper icon on the capsule
       show_active_label: true,
-      ...cfg,
+      ...resolveClockAppearance(cfg),
     };
     // Custom colour moved from its own section into the colour-mode selector;
     // surface it for configs that only enabled the old override control.
@@ -323,6 +328,7 @@ class YeelightCubeClockCard extends HTMLElement {
       target_entities: allEntities,
       title: "Clock",
       style_selector_style: "preview-grid",
+      clock_preview_appearance: { ...APPEARANCE_PRESETS.classic },
     };
   }
 
@@ -961,7 +967,16 @@ class YeelightCubeClockCard extends HTMLElement {
   // Card-owned tiles (current preview) use the Lamp Preview
   // appearance settings.
   _ensureGrid(el) {
-    if (el._cells) return el._cells;
+    const appearanceSignature = JSON.stringify([
+      this.config.lamp_pixel_style,
+      this.config.lamp_matrix_background,
+      this.config.lamp_spacing_mode,
+      this.config.lamp_matrix_box_shadow,
+      this.config.lamp_ignore_black_pixels,
+    ]);
+    if (el._cells && el._appearanceSignature === appearanceSignature)
+      return el._cells;
+    el._appearanceSignature = appearanceSignature;
     const cols = 20;
     const rows = 5;
     const pixelStyle = this.config.lamp_pixel_style || "rounded";
@@ -973,15 +988,18 @@ class YeelightCubeClockCard extends HTMLElement {
     const pad = Math.max(2, gap * 2);
     // Shadow is state-dependent (ignored-black pixels get none) — stored on the
     // element so _paintPreview keeps it in sync as pixels turn on/off.
-    el._pixelShadow = this._spacingShadow(spacing) ? "0 0 2px #0008" : "";
+    el._pixelShadow = this._spacingShadow(spacing)
+      ? `0 0 ${previewLength(2)} #0008`
+      : "";
     const matrixShadow =
       this.config.lamp_matrix_box_shadow === true
-        ? "box-shadow:0 2px 8px rgba(0,0,0,0.5);"
+        ? `box-shadow:0 ${previewLength(2)} ${previewLength(8)} rgba(0,0,0,0.5);`
         : "";
     el._ignoreBlack = this._lampIgnoreBlack();
+    el.style.containerType = "inline-size";
     el.innerHTML = "";
     const grid = document.createElement("div");
-    grid.style.cssText = `display:grid;grid-template-columns:repeat(${cols},1fr);gap:${gap}px;background:${bg};padding:${pad}px;border-radius:4px;width:100%;box-sizing:border-box;${matrixShadow}`;
+    grid.style.cssText = `display:grid;grid-template-columns:repeat(${cols},1fr);gap:${previewLength(gap)};background:${bg};padding:${previewLength(pad)};border-radius:${previewLength(4)};width:100%;box-sizing:border-box;${matrixShadow}`;
     const emptyBg = el._ignoreBlack ? "transparent" : "#000";
     // Empty cells: no shadow when ignore-black hides them (matches the shared
     // renderMatrixPreview rule), shadow otherwise (visible black pixel).
@@ -1020,7 +1038,7 @@ class YeelightCubeClockCard extends HTMLElement {
         el._pixelShadow = this._spacingShadow(
           this.config.gallery_spacing_mode || "normal",
         )
-          ? "0 0 2px #0008"
+          ? `0 0 ${previewLength(2)} #0008`
           : "";
       }
     } else {
@@ -1036,7 +1054,7 @@ class YeelightCubeClockCard extends HTMLElement {
         el._pixelShadow = this._spacingShadow(
           this.config.gallery_spacing_mode || "normal",
         )
-          ? "0 0 2px #0008"
+          ? `0 0 ${previewLength(2)} #0008`
           : "";
       }
     }

@@ -286,6 +286,7 @@ export function browserPreviewAppearance(config) {
       ? config.gallery_pixel_style
       : "square",
     pixelGap: spacing === "normal" ? 3 : 0,
+    proportionalSpacing: true,
     pixelBoxShadow: ["subtle", "normal"].includes(spacing),
     matrixBoxShadow: config.gallery_matrix_box_shadow === true,
     bgColor:

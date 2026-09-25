@@ -1,4 +1,10 @@
 import { renderStyleSelectorSettings } from "./style-selector-ui.js";
+import { normalizeClockAppearance } from "./clock-preview-appearance.js";
+import {
+  renderClockSharedAppearance,
+  renderClockSectionAppearance,
+  clockAppearanceEditorStyles,
+} from "./clock-appearance-editor.js";
 import {
   renderModeControlSettings,
   renderColorModeSettings,
@@ -21,7 +27,6 @@ import {
   sharedEditorStyles,
   renderEditorSection,
   renderModeSettingsSection,
-  renderMatrixAppearanceSettings,
   renderExperimentalAvailability,
 } from "./editor_ui_utils.js";
 import { createButtonGroup, buttonGroupStyles } from "./button-group-utils.js";
@@ -55,7 +60,12 @@ class YeelightCubeClockCardEditor extends LitElement {
   }
 
   static get styles() {
-    return [sharedEditorStyles, buttonGroupStyles, orderableListStyles];
+    return [
+      sharedEditorStyles,
+      buttonGroupStyles,
+      orderableListStyles,
+      clockAppearanceEditorStyles,
+    ];
   }
 
   setConfig(config) {
@@ -74,7 +84,7 @@ class YeelightCubeClockCardEditor extends LitElement {
         cfg[K[f]] = cfg[oldK[f]];
       }
     }
-    this.config = cfg;
+    this.config = normalizeClockAppearance(cfg);
     this.localTitle = config.title || "";
     this.requestUpdate();
   }
@@ -114,15 +124,15 @@ class YeelightCubeClockCardEditor extends LitElement {
         Loading…
       </div>`;
     }
-    const config = {
+    const config = normalizeClockAppearance({
       buttons_style: "modern",
       buttons_content_mode: "icon_text",
       ...this.config,
-    };
+    });
     const selectedEntities =
       config.target_entities || (config.entity ? [config.entity] : []);
     const change = (key, value) => {
-      this.config = { ...this.config, [key]: value };
+      this.config = { ...config, [key]: value };
       this.requestUpdate();
       this._fire();
     };
@@ -179,6 +189,11 @@ class YeelightCubeClockCardEditor extends LitElement {
           `,
         )}
         ${this._section(
+          "preview_appearance",
+          "Preview Appearance",
+          renderClockSharedAppearance(config, change, this),
+        )}
+        ${this._section(
           "lamp_preview",
           "Lamp Preview",
           html`
@@ -191,11 +206,7 @@ class YeelightCubeClockCardEditor extends LitElement {
             ${config.show_current_preview !== false
               ? renderModeSettingsSection(
                   "Preview Settings",
-                  renderMatrixAppearanceSettings(config, (key, value) => {
-                    this.config = { ...this.config, [key]: value };
-                    this.requestUpdate();
-                    this._fire();
-                  }),
+                  renderClockSectionAppearance(config, change, "lamp", this),
                 )
               : ""}
           `,
@@ -338,6 +349,13 @@ class YeelightCubeClockCardEditor extends LitElement {
                       : ""}
                     ${renderStyleSelectorSettings(config, change, {
                       allowOriginal: true,
+                      renderAppearance: () =>
+                        renderClockSectionAppearance(
+                          config,
+                          change,
+                          "gallery",
+                          this,
+                        ),
                     })}
                   `,
                 )
@@ -353,6 +371,8 @@ class YeelightCubeClockCardEditor extends LitElement {
             change,
             modes,
             "clock mode",
+            () =>
+              renderClockSectionAppearance(config, change, "favourites", this),
           ),
         )}
         ${this._section(

@@ -1,4 +1,8 @@
-﻿import { BLACK_THRESHOLD } from "./draw_card_const.js";
+﻿import {
+  resolvePreviewAppearance,
+  previewLength,
+} from "./preview-appearance.js";
+import { BLACK_THRESHOLD } from "./draw_card_const.js";
 import { escapeHtml } from "./html-escape-utils.js";
 import {
   renderGalleryDisplay,
@@ -331,6 +335,7 @@ class YeelightCubeGradientCard extends HTMLElement {
   }
 
   setConfig(config) {
+    config = resolvePreviewAppearance(config, "gradient");
     this._angleCommands.reset();
     this._pendingAngle = null;
     this._draggingRotary = false;
@@ -2058,6 +2063,7 @@ class YeelightCubeGradientCard extends HTMLElement {
                   this.config.gallery_pixel_spacing,
                 previewSize: this.config.gallery_preview_size,
                 ignoreBlack: this.config.gallery_ignore_black_pixels,
+                matrixShadow: this.config.gallery_matrix_box_shadow,
                 displayMode: this._getModeSelectorStyle(),
                 showTitles: this.config.preview_show_titles,
                 visibleModes: JSON.stringify(
@@ -2774,10 +2780,7 @@ class YeelightCubeGradientCard extends HTMLElement {
     const gallerySpacingMode =
       this.config.gallery_spacing_mode ||
       (this.config.gallery_pixel_spacing !== false ? "normal" : "none");
-    const galleryPixelGap =
-      gallerySpacingMode === "normal"
-        ? Math.max(0, (galleryPreviewSize / 350) * 3)
-        : 0;
+    const galleryPixelGap = gallerySpacingMode === "normal" ? 3 : 0;
     const galleryPixelBoxShadow =
       gallerySpacingMode === "subtle" || gallerySpacingMode === "normal";
     const ignoreBlackPixels = this.config.gallery_ignore_black_pixels === true;
@@ -2850,7 +2853,7 @@ class YeelightCubeGradientCard extends HTMLElement {
       (this.config.gallery_spacing_mode ||
         (this.config.gallery_pixel_spacing !== false ? "normal" : "none")) ===
       "normal"
-        ? Math.max(0, (galleryPreviewSize / 350) * 3)
+        ? 3
         : 0;
     const gallerySpacingModeResolved =
       this.config.gallery_spacing_mode ||
@@ -3435,6 +3438,7 @@ class YeelightCubeGradientCard extends HTMLElement {
             this.config.gallery_pixel_spacing,
           previewSize: this.config.gallery_preview_size,
           ignoreBlack: this.config.gallery_ignore_black_pixels,
+          matrixShadow: this.config.gallery_matrix_box_shadow,
           displayMode: this._getModeSelectorStyle(),
           showTitles: this.config.preview_show_titles,
           visibleModes: JSON.stringify(
@@ -3483,7 +3487,7 @@ class YeelightCubeGradientCard extends HTMLElement {
       (this.config.gallery_spacing_mode ||
         (this.config.gallery_pixel_spacing !== false ? "normal" : "none")) ===
       "normal"
-        ? Math.max(0, (galleryPreviewSize / 350) * 3)
+        ? 3
         : 0;
     const ignoreBlackPixels = this.config.gallery_ignore_black_pixels === true;
     const displayMode = this._getDisplayMode();
@@ -4761,10 +4765,10 @@ ${(() => {
               ? "20%"
               : "0";
         const mpPixelShadowStyle = mpPixelBoxShadow
-          ? "box-shadow: 0 0 2px #0008;"
+          ? `box-shadow: 0 0 ${previewLength(2)} #0008;`
           : "";
         const mpMatrixShadowStyle = mpMatrixBoxShadow
-          ? "box-shadow: 0 2px 8px rgba(0,0,0,0.5);"
+          ? `box-shadow: 0 ${previewLength(2)} ${previewLength(8)} rgba(0,0,0,0.5);`
           : "";
 
         // Text preview mode: use cached preview data from the backend
@@ -4843,22 +4847,20 @@ ${(() => {
 
         return `
           <div class="matrix-preview-container" id="angle-preview" style="width:100%;display:flex;flex-direction:column;align-items:center;cursor:pointer;position:relative;">
+            <div style="container-type:inline-size;max-width:100%;width:${isHeaderMode ? `${mpHeaderWidth}px` : `${baseMpSz}%`};">
             <div class="matrix-preview-grid" style="
               display:grid;
               grid-template-columns:repeat(${mpCols}, 1fr);
-              gap:${mpPixelGap}px;
+              gap:${previewLength(mpPixelGap)};
               background:${mpBgColor};
-              padding:${mpPixelGap * 2}px;
-              border-radius:6px;
+              padding:${previewLength(mpPixelGap * 2)};
+              border-radius:${previewLength(6)};
               ${mpMatrixShadowStyle}
-              ${
-                isHeaderMode
-                  ? `width:${mpHeaderWidth}px;`
-                  : `width:${baseMpSz}%;`
-              }
+              width:100%;
               margin:0 auto;
               box-sizing:border-box;
             ">${mpPixelDivs}</div>
+            </div>
 ${(() => {
   const avd =
     this.config.angle_value_display ||

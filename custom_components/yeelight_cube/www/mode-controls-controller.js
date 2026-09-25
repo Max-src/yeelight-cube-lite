@@ -214,7 +214,14 @@ export class ModeControlsController {
         this.notify();
       }
       const error = this.adapter.rotationError?.();
+      if (
+        !error &&
+        this._observedRotationError &&
+        this.error === this._observedRotationError
+      )
+        this.error = "";
       if (error) this.error = error;
+      this._observedRotationError = error || "";
     }
     // Observers must not stop a backend-owned loop based on browser-local
     // favourites or transient state: another card may own a different list.
@@ -414,12 +421,36 @@ export class ModeControlsController {
     this.selectedFavourite = null;
     clearTimeout(this.timer);
     this.token++;
-    const wasActive = this.active;
+    const wasActive =
+      this.active ||
+      this.adapter.rotationTargets?.().some((target) => target.active);
     this.active = false;
     // Only notify the backend when a rotation was actually running; avoids
     // spamming stop_effect_rotation on every state update.
     if (wasActive && this.adapter.stopRotation) this.adapter.stopRotation();
     this.notify();
+  }
+
+  async retryRotation() {
+    if (this.busy || !this.adapter.retryRotation) return;
+    const context = this.context;
+    this.busy = true;
+    this.notify();
+    try {
+      if (
+        (await this.adapter.retryRotation()) === false &&
+        context === this.context
+      )
+        this.error = "Failed lamps could not be restarted.";
+    } catch (error) {
+      if (context === this.context)
+        this.error = error.message || "Retry failed.";
+    } finally {
+      if (context === this.context) {
+        this.busy = false;
+        this.notify();
+      }
+    }
   }
 
   async start() {

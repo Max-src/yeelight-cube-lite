@@ -1,3 +1,4 @@
+import "./preview-appearance-editor.js";
 import { renderActionButtonSettings } from "./action-button-ui.js";
 import { orderableListStyles } from "./orderable-list-utils.js";
 import { renderOrientationSettings } from "./orientation-control-ui.js";
@@ -14,6 +15,7 @@ import {
 import {
   sharedEditorStyles,
   fireEvent,
+  renderEditorSection,
   renderModeSettingsSection,
 } from "./editor_ui_utils.js";
 import {
@@ -30,6 +32,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
     return {
       _config: { type: Object },
       _globalOpen: { type: Boolean },
+      _appearanceOpen: { state: true },
       _lampPreviewOpen: { type: Boolean },
       _lampControlOpen: { type: Boolean },
       _deviceOrientationOpen: { type: Boolean },
@@ -159,6 +162,19 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
     );
   }
 
+  _renderAppearance(section) {
+    return html`<yeelight-preview-appearance-editor
+      profile="lamp"
+      section=${section}
+      .owner=${this}
+      .config=${this._config}
+      @appearance-changed=${(event) => {
+        this._config = event.detail.config;
+        this._fireConfigChanged();
+      }}
+    ></yeelight-preview-appearance-editor>`;
+  }
+
   render() {
     const cfg = this._config || {};
 
@@ -215,6 +231,15 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
         </div>
 
         <!-- Lamp Preview -->
+        ${renderEditorSection(
+          "preview_appearance",
+          "Preview Appearance",
+          !!this._appearanceOpen,
+          () => {
+            this._appearanceOpen = !this._appearanceOpen;
+          },
+          this._renderAppearance("shared"),
+        )}
         <div
           class="editor-card${!this._lampPreviewOpen
             ? " editor-card-collapsed"
@@ -240,77 +265,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
               (e) => this._onSliderChange("size_pct", e),
               "%",
             )}
-            <div class="form-row">
-              <label>Matrix Background Color</label>
-              ${createButtonGroup(
-                [
-                  { value: "transparent", label: "Transparent" },
-                  { value: "white", label: "White" },
-                  { value: "black", label: "Black" },
-                ],
-                cfg.matrix_background || "black",
-                createButtonGroupChangeHandler("matrix_background", (value) => {
-                  this._config = { ...this._config, matrix_background: value };
-                  this._fireConfigChanged();
-                }),
-              )}
-            </div>
-            ${(cfg.matrix_background || "black") !== "black"
-              ? createToggleRow(
-                  "Ignore Black Pixels",
-                  "hide_black_dots",
-                  cfg.hide_black_dots === true,
-                  (e) => this._onToggleChange(e),
-                )
-              : ""}
-            <div class="form-row">
-              <label>Matrix Pixel Style</label>
-              ${createButtonGroup(
-                [
-                  { value: "square", label: "Square" },
-                  { value: "rounded", label: "Rounded" },
-                  { value: "circle", label: "Circle" },
-                ],
-                cfg.matrix_pixel_style || "square",
-                createButtonGroupChangeHandler(
-                  "matrix_pixel_style",
-                  (value) => {
-                    this._config = {
-                      ...this._config,
-                      matrix_pixel_style: value,
-                    };
-                    this._fireConfigChanged();
-                  },
-                ),
-              )}
-            </div>
-            <div class="form-row">
-              <label>Pixel Spacing</label>
-              ${createButtonGroup(
-                [
-                  { value: "none", label: "None" },
-                  { value: "subtle", label: "Subtle" },
-                  { value: "normal", label: "Normal" },
-                ],
-                cfg.matrix_spacing_mode || "normal",
-                createButtonGroupChangeHandler(
-                  "matrix_spacing_mode",
-                  (value) => {
-                    this._config = {
-                      ...this._config,
-                      matrix_spacing_mode: value,
-                    };
-                    this._fireConfigChanged();
-                  },
-                ),
-              )}
-            </div>
-            ${createToggleRow(
-              "Matrix Box Shadow",
-              "matrix_box_shadow",
-              cfg.matrix_box_shadow !== false,
-              (e) => this._onToggleChange(e),
-            )}
+            ${this._renderAppearance("lamp")}
           </div>
         </div>
 

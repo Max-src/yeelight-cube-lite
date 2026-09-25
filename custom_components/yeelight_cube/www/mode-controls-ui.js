@@ -1,8 +1,5 @@
-import { LitElement,html,css,unsafeCSS,unsafeHTML } from "./lib/lit-all.js";
-import {
-  renderActionButton,
-  renderActionRow
-} from "./action-button-ui.js";
+import { LitElement, html, css, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
+import { renderActionButton, renderActionRow } from "./action-button-ui.js";
 import {
   actionButtonStyles,
   modeActionOptions,
@@ -21,7 +18,9 @@ import { renderMatrixPreview } from "./gallery-display-utils.js";
 import {
   favouriteId,
   nextRotationMode,
-  rotationIntervalSeconds,formatRotationInterval,actionButtonOrder
+  rotationIntervalSeconds,
+  formatRotationInterval,
+  actionButtonOrder,
 } from "./mode-controls-controller.js";
 
 // A favourite is uniquely identified by its key AND colour mode: the same style
@@ -176,6 +175,7 @@ class YeelightModeControls extends LitElement {
       ${unsafeHTML(
         renderMatrixPreview(pixels, {
           forceAspectRatio: true,
+          proportionalSpacing: true,
           pixelStyle: config.effect_pixel_style || "square",
           pixelGap:
             (config.effect_spacing_mode || "normal") === "normal" ? 3 : 0,
@@ -303,6 +303,15 @@ class YeelightModeControls extends LitElement {
       );
     const playable = model.favourites.filter((f) => adapter.available(f.key));
     const names = model.names();
+    const rotationTargets = adapter.rotationTargets?.() || [];
+    const rotationErrors = rotationTargets.filter((target) => target.error);
+    const rotationRunning = rotationTargets.filter(
+      (target) => target.active && !target.error,
+    ).length;
+    const rotationRetrying = rotationErrors.filter(
+      (target) => target.active,
+    ).length;
+    const rotationHasActive = rotationTargets.some((target) => target.active);
     const selectedFavourite = model.currentFavourite();
     const isSelected = (favourite) =>
       favouriteId(favourite) === favouriteId(selectedFavourite);
@@ -435,7 +444,11 @@ class YeelightModeControls extends LitElement {
                 : "Effect Rotation"}
             </h3>
             <span class="muted" role="status"
-              >${model.active ? "Running" : "Stopped"}</span
+              >${rotationErrors.length
+                ? `Running: ${rotationRunning}/${rotationTargets.length}${rotationRetrying ? ` · Retrying: ${rotationRetrying}` : ""}`
+                : model.active
+                  ? "Running"
+                  : "Stopped"}</span
             >
           </header>
           <div class="summary">
@@ -445,13 +458,24 @@ class YeelightModeControls extends LitElement {
             >
             <div class="tools">
               ${this._button(
-                model.active ? "Stop rotation" : "Start rotation",
-                model.active ? "mdi:stop" : "mdi:play",
-                () => (model.active ? model.stop() : model.start()),
+                (rotationErrors.length ? rotationHasActive : model.active)
+                  ? "Stop rotation"
+                  : "Start rotation",
+                (rotationErrors.length ? rotationHasActive : model.active)
+                  ? "mdi:stop"
+                  : "mdi:play",
+                () => {
+                  if (rotationErrors.length && rotationHasActive) {
+                    model.stop();
+                  } else if (model.active) model.stop();
+                  else model.start();
+                },
                 {
                   contentMode: "icon",
                   disabled:
-                    !model.active &&
+                    !(rotationErrors.length
+                      ? rotationHasActive
+                      : model.active) &&
                     (model.busy || !model.ready() || names.length < 2),
                 },
               )}
@@ -469,9 +493,37 @@ class YeelightModeControls extends LitElement {
           <div class="muted">
             ${names.map(title).join(" / ") || `No ${noun}s selected.`}
           </div>
+          ${rotationErrors.length
+            ? html`
+                <div class="error" role="alert">
+                  ${rotationErrors.map(
+                    (target) =>
+                      html`<div>
+                        ${target.name}:
+                        ${target.active
+                          ? `Retrying (${target.retryAttempt}/2)`
+                          : "Stopped"}
+                        · ${target.error}
+                      </div>`,
+                  )}
+                </div>
+                ${rotationErrors.some((target) => target.canRetry)
+                  ? this._button(
+                      "Retry failed lamps",
+                      "mdi:refresh",
+                      () => model.retryRotation(),
+                      { contentMode: "icon_text", disabled: model.busy },
+                    )
+                  : ""}
+              `
+            : ""}
         </section>`
       : ""}
-    ${model.error
+    ${model.error &&
+    !(
+      config.show_rotation &&
+      rotationErrors.some((target) => target.error === model.error)
+    )
       ? html`<div class="error" role="alert">${model.error}</div>`
       : ""}`;
   }

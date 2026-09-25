@@ -147,8 +147,7 @@ export function renderPreviewStyleSelector(config, items, sel, active, state) {
   const rendererBg = bgName === "black" ? "#000000" : bgName;
   const showTitles = config.preview_show_titles !== false;
   const spacing = config.gallery_spacing_mode || "normal";
-  const pixelGap =
-    spacing === "normal" ? Math.max(0, (previewSize / 350) * 3) : 0;
+  const pixelGap = spacing === "normal" ? 3 : 0;
   const pixelBoxShadow = ["subtle", "normal"].includes(spacing);
   const matrixBoxShadow = config.gallery_matrix_box_shadow === true;
   const ignoreBlackPixels =
@@ -185,6 +184,7 @@ export function renderPreviewStyleSelector(config, items, sel, active, state) {
                     bgColor: rendererBg,
                     pixelStyle,
                     pixelGap,
+                    proportionalSpacing: true,
                     previewSize,
                     ignoreBlackPixels,
                     matrixBoxShadow,
@@ -223,6 +223,7 @@ export function renderPreviewStyleSelector(config, items, sel, active, state) {
     onClickEnabled: true,
     matrixBoxShadow,
     pixelBoxShadow,
+    proportionalSpacing: true,
     wheelNavPosition: config.wheel_nav_position || "bottom",
     wheelHeight: config.wheel_height || 300,
     wheelDisplayStyle: showTitles ? "default" : "compact",
