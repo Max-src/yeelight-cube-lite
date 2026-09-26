@@ -1523,6 +1523,15 @@ const server = http.createServer(async (request, response) => {
                   );
                 }
               }
+              if (buttonStyle === "icon") {
+                const widths = actual.map(
+                  (button) => button.getBoundingClientRect().width,
+                );
+                check(
+                  widths.every((width) => Math.abs(width - widths[0]) < 0.5),
+                  `${kind}/${theme}/${contentMode}: Icon style buttons are a uniform size (got ${widths.join(",")})`,
+                );
+              }
               reference.remove();
             }
           }

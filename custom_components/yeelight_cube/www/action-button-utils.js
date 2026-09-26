@@ -396,6 +396,18 @@ export const actionButtonStyles = `
     justify-content: center;
   }
 
+  /* The Icon style is round buttons of one uniform size. Per-type classes
+     (tool-btn, randomize-btn, force-refresh-btn, power-btn...) only override
+     colour, but .tool-btn.btn-style-icon elsewhere overrides size to 44px
+     (compact toolbars) - reassert 48px here so every action button matches,
+     the same size already used for .shared-button-group icon buttons. */
+  .action-row .shared-action-button.btn-style-icon {
+    width: 48px;
+    height: 48px;
+    min-height: 48px;
+    flex: 0 0 48px;
+  }
+
   .action-row-slotted {
     margin-top: 0;
     align-items: stretch;
