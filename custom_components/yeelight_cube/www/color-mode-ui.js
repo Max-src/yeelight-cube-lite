@@ -33,7 +33,7 @@ class YeelightColorMode extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    this.style.display = "contents";
+    this.classList.add("yc-stack", "yc-controls");
   }
 
   render() {
@@ -50,7 +50,7 @@ class YeelightColorMode extends LitElement {
         )}
       </div>
       ${this.draft && this.saveKinds.length
-        ? html`<div class="clock-color-control" style="margin-top:10px;">
+        ? html`<div class="clock-color-control">
             <div class="clock-color-save">
               <yeelight-clock-preset-manager
                 .hass=${this.hass}

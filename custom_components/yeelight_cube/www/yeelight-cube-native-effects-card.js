@@ -6,6 +6,7 @@ import { CardCommandController } from "./card-command-controller.js";
 import "./style-browser-ui.js";
 import "./color-mode-ui.js";
 import { colorModeSelectorStyles } from "./color-mode-selector-utils.js";
+import { cardLayoutStyles } from "./card-layout-utils.js";
 import { CLOCK_COLOR_MODES } from "./clock-preview-utils.js";
 import {
   effectSupportsColorMode,
@@ -636,7 +637,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     return html`<ha-card
       class=${this.config.show_card_background === false ? "transparent" : ""}
     >
-      <div class="body">
+      <div class="body yc-stack">
         <header>
           <h2>${this.config.title || "Native Effects"}</h2>
           <span class="state-label"
@@ -655,7 +656,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
           ? html`<div class="error" role="alert">${this._error}</div>`
           : ""}
         ${this.config.show_preview && effect
-          ? html`<section class="current">
+          ? html`<section class="current yc-stack yc-controls">
               <div class="current-heading">
                 <h3>${effect.name}</h3>
                 <span class="state-label"
@@ -823,6 +824,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   }
 
   static styles = [
+    unsafeCSS(cardLayoutStyles),
     unsafeCSS(colorPickerStyles),
     unsafeCSS(actionButtonStyles),
     unsafeCSS(sliderControlStyles),
@@ -846,9 +848,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       }
       .body {
         padding: 16px;
-        display: flex;
-        flex-direction: column;
-        gap: 14px;
       }
       header,
       .current-heading {
@@ -872,9 +871,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       .state-label {
         font-size: 12px;
         color: var(--secondary-text-color, #666);
-      }
-      .current-heading {
-        margin-bottom: 10px;
       }
       .current-matrix {
         width: 100%;
@@ -912,9 +908,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       button:focus-visible {
         outline: 2px solid var(--primary-color, #00897b);
         outline-offset: 2px;
-      }
-      .brightness-control-group {
-        gap: 6px;
       }
       .rotation-summary,
       .section-tools {

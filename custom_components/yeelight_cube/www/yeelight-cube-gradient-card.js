@@ -1,4 +1,5 @@
-﻿import {
+﻿import { cardLayoutStyles } from "./card-layout-utils.js";
+import {
   resolvePreviewAppearance,
   previewLength,
 } from "./preview-appearance.js";
@@ -829,12 +830,12 @@ class YeelightCubeGradientCard extends HTMLElement {
     const rotaryInHeader = this.config.rotary_in_header === true;
 
     const cardContent = `
-      <div style="padding:16px;">
-        ${!showCard && cardTitle ? `<div style="font-weight:600;font-size:1.1em;margin-bottom:8px;">${escapeHtml(cardTitle)}</div>` : ""}
+      <div class="yc-stack" style="padding:16px;">
+        ${!showCard && cardTitle ? `<div style="font-weight:600;font-size:1.1em;">${escapeHtml(cardTitle)}</div>` : ""}
         ${
           rotaryInHeader && showAngleSection
             ? `
-          <div class="card-header" style="display: flex; justify-content: flex-end; align-items: center; margin-bottom: 16px;">
+          <div class="card-header" style="display: flex; justify-content: flex-end; align-items: center;">
             <div class="header-rotary">${this._renderAngleRotary(
               currentAngle,
               true,
@@ -848,11 +849,11 @@ class YeelightCubeGradientCard extends HTMLElement {
           showModeSelector || showPanelToggle
             ? `
         <!-- Runtime Controls: unified mode selector -->
-        <div class="runtime-controls" style="margin-bottom: 8px;">
-          <div class="control-section">
+        <div class="runtime-controls" ${this.config.show_active_mode_label === true || (showModeSelector && !isPreviewSelector) ? "" : "hidden"}>
+          <div class="control-section yc-stack yc-controls">
             ${
               this.config.show_active_mode_label === true
-                ? `<div style="display:flex;justify-content:${_alignToJustify(labelAlign)};width:100%;margin:4px 0 8px;">
+                ? `<div style="display:flex;justify-content:${_alignToJustify(labelAlign)};width:100%;">
                      <div class="gc-active-mode-label" id="gc-active-mode-label" title="Currently active mode" style="margin:0;">
                        <span class="gc-aml-dot"></span>
                        <span class="gc-aml-text">${colorMode}</span>
@@ -878,7 +879,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         ${
           showPanelToggle
             ? `
-        <div class="panel-section-wrapper" style="margin-bottom: 16px;${panelToggleStyle !== "card" && panelToggleStyle !== "tabs" ? `display:flex;justify-content:${_alignToJustify(panelToggleAlign)};` : ""}">
+        <div class="panel-section-wrapper yc-row" style="${panelToggleStyle !== "card" && panelToggleStyle !== "tabs" ? `justify-content:${_alignToJustify(panelToggleAlign)};` : ""}">
           ${this._renderPanelToggle(applyToWholePanel, panelToggleStyle, panelToggleShape)}
           <div class="panel-toggle default" style="margin-top: 4px; display: none; align-items: center; gap: 8px;">
             <label for="fill-panel-cols" style="white-space: nowrap;">Fill Panel Test:</label>
@@ -902,9 +903,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         ${
           showAngleSection
             ? `
-        <div class="angle-section ${
-          showModeSelector || showPanelToggle ? "" : "no-color-selector"
-        }">
+        <div class="angle-section">
           <div class="angle-row">
             ${(() => {
               // Angle value is now shown in-place on all rotary styles, skip external display
@@ -948,6 +947,7 @@ class YeelightCubeGradientCard extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
       <style>
+        ${cardLayoutStyles}
         .card-title {
           font-size: 1.3em;
           font-weight: bold;
@@ -1199,15 +1199,6 @@ class YeelightCubeGradientCard extends HTMLElement {
         .save-btn:hover { background: color-mix(in srgb, var(--primary-color) 25%, var(--card-background-color, #fff)); }
         
         /* Angle section styles */
-        .angle-section {
-          margin-top: 16px;
-          /* padding-top: 16px; */
-        }
-
-        .angle-section.no-color-selector {
-          margin-top: 0;
-        }
-
         .angle-title {
           font-size: 1.1em;
           font-weight: 600;
@@ -1490,16 +1481,6 @@ class YeelightCubeGradientCard extends HTMLElement {
           r: 5;
         }
 
-        /* Runtime Controls */
-        .runtime-controls {
-          margin-bottom: 16px;
-        }
-
-        /* Panel Toggle Styles */
-        .panel-toggle {
-          margin-top: 12px;
-        }
-        
         /* Default style - simple checkbox */
         .panel-toggle.default {
           display: flex;
@@ -1962,8 +1943,7 @@ class YeelightCubeGradientCard extends HTMLElement {
       // { displayMode: this.config?.preview_display_mode }
       // );
       this._previewElement = document.createElement("div");
-      this._previewElement.style.cssText =
-        "padding: 16px; padding-top: 0; margin-top: 20px;";
+      this._previewElement.className = "yc-stack yc-controls";
 
       const initialHTML = this._renderPreviewSection();
       // htmlLength: initialHTML.length,
@@ -2628,7 +2608,7 @@ class YeelightCubeGradientCard extends HTMLElement {
 
     // Just return the HTML template, initialization is handled elsewhere now
     return `
-      <div class="preview-section" style="margin-top: 12px;">
+      <div class="preview-section yc-stack yc-controls">
         <div class="preview-grid-container" style="max-width: 100%; overflow: visible;">
           ${this._getCachedPreviewGrid()}
         </div>
@@ -3585,7 +3565,7 @@ class YeelightCubeGradientCard extends HTMLElement {
       if (!item) return ``;
 
       return `
-        <div class="gc-preview-shell" ${shellAttrs} style="margin-top:12px;border-radius:8px;">
+        <div class="gc-preview-shell" ${shellAttrs} style="border-radius:8px;">
           ${renderCarouselString({
             items,
             currentIndex: ci,
@@ -3657,7 +3637,7 @@ class YeelightCubeGradientCard extends HTMLElement {
     });
 
     return `
-      <div class="gc-preview-shell" ${shellAttrs} style="margin-top: 12px; border-radius: 8px;">
+      <div class="gc-preview-shell" ${shellAttrs} style="border-radius: 8px;">
         ${galleryHtml}
         ${paginationHtml}
       </div>
@@ -6336,7 +6316,7 @@ ${(() => {
       case "chips":
         // Chip style: HA-chip-like pills with a live gradient swatch per mode
         return `
-          <div class="gc-selector color-mode-chips" ${selAttrs} style="--gc-sel-scale:${selScale}; display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;">
+          <div class="gc-selector color-mode-chips yc-row" ${selAttrs} style="--gc-sel-scale:${selScale};">
             ${modes
               .map((mode) => {
                 let swatchBg;
@@ -6375,7 +6355,7 @@ ${(() => {
 
       case "dropdown":
         return `
-          <div class="gc-selector color-mode-dropdown" ${selAttrs} style="--gc-sel-scale:${selScale}; margin-bottom: 12px;">
+          <div class="gc-selector color-mode-dropdown" ${selAttrs} style="--gc-sel-scale:${selScale};">
             <select class="mode-select" data-mode-select="true">
               ${modes
                 .map(
@@ -6398,7 +6378,7 @@ ${(() => {
       default:
         // Unified "Filled" text style (legacy buttons/pills/compact fall here).
         return `
-          <div class="gc-selector color-mode-filled" ${selAttrs} style="--gc-sel-scale:${selScale}; display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;">
+          <div class="gc-selector color-mode-filled yc-row" ${selAttrs} style="--gc-sel-scale:${selScale};">
             ${modes
               .map(
                 (mode) => `

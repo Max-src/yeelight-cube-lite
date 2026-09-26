@@ -34,6 +34,8 @@
  * @param {string} style - Button style: 'modern', 'classic', 'outline', 'gradient', 'icon', 'pill'
  * @returns {string} CSS class string
  */
+import { cardSpacing } from "./card-layout-utils.js";
+
 export function getActionButtonClass(type, style = "modern") {
   const TYPE_TO_CLASS = {
     export: "export-btn",
@@ -385,8 +387,7 @@ export const actionButtonStyles = `
   /* Action Row Container */
   .action-row {
     display: flex;
-    gap: 16px;
-    margin-top: 16px;
+    gap: ${cardSpacing.control};
     justify-content: stretch;
     width: 100%;
     flex-wrap: wrap;
@@ -409,7 +410,6 @@ export const actionButtonStyles = `
   }
 
   .action-row-slotted {
-    margin-top: 0;
     align-items: stretch;
   }
   .action-row-slotted .action-item {
@@ -973,8 +973,6 @@ export const actionButtonStyles = `
     width: auto;
   }
   .shared-button-group.action-row {
-    margin-top: 0;
-    gap: 8px;
     align-items: stretch;
     justify-content: flex-start;
   }

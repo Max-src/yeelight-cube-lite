@@ -711,7 +711,8 @@ class YeelightCubeDrawCard extends LitElement {
         ${cards.map(
           (card) => html`
             <div
-              class="palette-group-card${isZoomMode && zoomedKey === card.key
+              class="palette-group-card yc-stack yc-controls${isZoomMode &&
+              zoomedKey === card.key
                 ? " zoomed"
                 : ""}"
               @click="${() => handleZoomClick(card.key)}"
@@ -781,7 +782,7 @@ class YeelightCubeDrawCard extends LitElement {
       const activeCard = cards.find((c) => c.key === activeTab);
       const activeIdx = cards.findIndex((c) => c.key === activeTab);
       return html`
-        <div class="palette-tabs${colorsBorderClass}">
+        <div class="palette-tabs yc-stack yc-controls${colorsBorderClass}">
           <div
             class="palette-tab-bar"
             style="--tab-count:${cards.length};--tab-active-index:${activeIdx}"
@@ -819,7 +820,9 @@ class YeelightCubeDrawCard extends LitElement {
       const activeDrop = this._activePaletteDropdown || cards[0]?.key;
       const activeCard = cards.find((c) => c.key === activeDrop);
       return html`
-        <div class="palette-dropdown-wrapper${colorsBorderClass}">
+        <div
+          class="palette-dropdown-wrapper yc-stack yc-controls${colorsBorderClass}"
+        >
           <select
             class="palette-dropdown-select"
             @change="${(e) => {
@@ -1025,7 +1028,7 @@ class YeelightCubeDrawCard extends LitElement {
     >
       ${cards.map(
         (card) => html`
-          <div class="palette-group-card">
+          <div class="palette-group-card yc-stack yc-controls">
             <div class="palette-group-title">${card.title}</div>
             ${cardContent(card)}
           </div>
@@ -1647,7 +1650,7 @@ class YeelightCubeDrawCard extends LitElement {
   }
 
   _renderActionsSection() {
-    return html` <div class="actions">${this._renderActions()}</div> `;
+    return this._renderActions();
   }
 
   _renderPixelArtSection(showPixelArtGallery) {
@@ -1794,15 +1797,13 @@ class YeelightCubeDrawCard extends LitElement {
     const showPixelArtSection = cfg.show_pixelart_section !== false;
 
     const content = html`
-      <div style="padding:18px 12px;margin:0 auto;">
+      <div class="yc-stack" style="padding:18px 12px;margin:0 auto;">
         ${!showCard && cardTitle
-          ? html`<div
-              style="font-weight:600;font-size:1.1em;margin-bottom:8px;"
-            >
+          ? html`<div style="font-weight:600;font-size:1.1em;">
               ${cardTitle}
             </div>`
           : ""}
-        <div class="draw-container">
+        <div class="draw-container yc-stack">
           ${showColors
             ? this._renderColorsSection(
                 cfg,
@@ -2151,7 +2152,7 @@ class YeelightCubeDrawCard extends LitElement {
     if (!this._galleryCarouselIndex) this._galleryCarouselIndex = 0;
 
     return html`
-      <div class="pixelart-gallery">
+      <div class="pixelart-gallery yc-stack yc-controls">
         <div
           class="pixelart-gallery-content ${currentMode} pixelart-gallery-plain${showItemBorder
             ? " item-card-border"

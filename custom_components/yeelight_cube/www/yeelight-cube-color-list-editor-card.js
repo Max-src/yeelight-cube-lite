@@ -1,6 +1,7 @@
 ﻿import { getActionRowClass } from "./action-button-utils.js";
 import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
 import { escapeHtml } from "./html-escape-utils.js";
+import { cardLayoutStyles } from "./card-layout-utils.js";
 import {
   openColorPicker,
   closeColorPicker,
@@ -643,8 +644,8 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
     // Full render for initial load
     const cardContent = `
-      <div style="padding:16px; box-sizing: border-box; max-width: 100%;">
-        ${!showCard && cardTitle ? `<div style="font-weight:600;font-size:1.1em;margin-bottom:8px;">${escapeHtml(cardTitle)}</div>` : ""}
+      <div class="yc-stack" style="padding:16px; box-sizing: border-box; max-width: 100%;">
+        ${!showCard && cardTitle ? `<div style="font-weight:600;font-size:1.1em;">${escapeHtml(cardTitle)}</div>` : ""}
         
         ${
           showColorSection
@@ -670,7 +671,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
             buttonLeft,
           })}
         </div>
-        <div class="${getActionRowClass({ buttonStyle: this.config.buttons_style, contentMode: this.config.buttons_content_mode })}">
+        <div class="${getActionRowClass({ buttonStyle: this.config.buttons_style, contentMode: this.config.buttons_content_mode })}" ${showAddColorButton || showRandomizeButton || showSavePalette ? "" : "hidden"}>
             ${(() => {
               const contentMode =
                 this.config.buttons_style === "icon"
@@ -709,6 +710,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
       <style>
+        ${cardLayoutStyles}
         :host {
           display: block;
           max-width: 100%;

@@ -2,6 +2,7 @@ import {
   resolvePreviewAppearance,
   previewLength,
 } from "./preview-appearance.js";
+import { cardLayoutStyles } from "./card-layout-utils.js";
 import { renderDotMatrix, rgbToCss } from "./yeelight-cube-dotmatrix.js";
 import { escapeHtml } from "./html-escape-utils.js";
 import "./mode-controls-ui.js";
@@ -1739,7 +1740,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
                   : ""
               }>
                <div style="display: flex; width: 100%;">
-                 <div class="yeelight-cube-lamp-preview-container">
+                 <div class="yeelight-cube-lamp-preview-container yc-stack">
                    ${matrixHtml}
                    ${lampControlsHtml}
                    ${adjustmentControlsHtml}
@@ -1747,10 +1748,10 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
                </div>
              </ha-card>`
             : `<div style="display: flex; width: 100%;">
-               <div class="yeelight-cube-lamp-preview-container">
+               <div class="yeelight-cube-lamp-preview-container yc-stack">
                  ${
                    cardTitle
-                     ? `<div style="font-weight:600;font-size:1.1em;margin-bottom:8px;">${escapeHtml(cardTitle)}</div>`
+                     ? `<div style="font-weight:600;font-size:1.1em;">${escapeHtml(cardTitle)}</div>`
                      : ""
                  }
                  ${matrixHtml}
@@ -2485,7 +2486,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       this.config.grouped_section_style ||
       "subtle";
 
-    let html = `<div class="effects-tabbed-container style-${sectionStyle}">`;
+    let html = `<div class="effects-tabbed-container yc-stack yc-controls style-${sectionStyle}">`;
 
     // Tab headers
     html += '<div class="tab-headers">';
@@ -2589,7 +2590,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       this.config.section_style ||
       this.config.grouped_section_style ||
       "subtle";
-    let html = '<div class="effects-grouped-container">';
+    let html = '<div class="effects-grouped-container yc-stack yc-controls">';
 
     sections.forEach((section, index) => {
       const isExpanded = this._expandedSections[section.id] === true;
@@ -3013,13 +3014,13 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       <style>
         /* Inject centralized button styles */
         ${exportImportButtonStyles}
+        ${cardLayoutStyles}
 
         .yeelight-cube-lamp-preview-container {
           width: 100%;
           max-width: 100%;
           overflow: hidden;
           min-height: 0;
-          display: block;
           padding: 12px;
         }
         .lamp-preview-css {
@@ -3437,7 +3438,6 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           display: flex;
           gap: 4px;
           border-bottom: 2px solid var(--divider-color, rgba(255, 255, 255, 0.12));
-          margin-bottom: 16px;
           justify-content: space-around;
         }
         .tab-header {
@@ -3590,11 +3590,6 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
 
         /* === GROUPED LAYOUT (Modern Default) === */
         .effects-grouped-container {
-          /* width: 100%; */
-          /* padding: 12px; */
-          display: flex;
-          flex-direction: column;
-          /* gap: 10px; */
           position: relative;
         }
         .grouped-section {
@@ -3610,7 +3605,6 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           position: relative;
           max-height: 1000px;
           opacity: 1;
-          margin-bottom: 10px;
         }
         /* Subtle: gentle tinted background */
         .grouped-section.style-subtle {
@@ -3628,9 +3622,9 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
           box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
         .grouped-section.hidden {
+          display: none;
           max-height: 0;
           opacity: 0;
-          margin-bottom: 0;
           padding: 0;
           border: none;
           pointer-events: none;

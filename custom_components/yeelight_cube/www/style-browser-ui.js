@@ -55,7 +55,7 @@ class YeelightStyleBrowser extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    this.style.display = "contents";
+    this.classList.add("yc-stack", "yc-controls");
     this.requestUpdate();
   }
 
@@ -191,7 +191,7 @@ class YeelightStyleBrowser extends LitElement {
             type="search"
             aria-label=${this.searchLabel || "Search styles"}
             placeholder=${this.searchLabel || "Search styles"}
-            style="box-sizing:border-box;width:100%;min-width:0;padding:10px;margin:8px 0;border:1px solid var(--divider-color,#ddd);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color);font:inherit;"
+            style="box-sizing:border-box;width:100%;min-width:0;padding:10px;border:1px solid var(--divider-color,#ddd);border-radius:6px;background:var(--card-background-color);color:var(--primary-text-color);font:inherit;"
             .value=${this.query}
             @keydown=${(event) => event.stopPropagation()}
             @keyup=${(event) => event.stopPropagation()}
@@ -203,14 +203,14 @@ class YeelightStyleBrowser extends LitElement {
             }}
           />`
         : ""}
-      <div class=${this.heading ? "section" : ""}>
+      <div class="yc-stack yc-controls">
         ${this.heading
           ? html`<div class="section-title">${this.heading}</div>`
           : ""}
         <div
           class=${style === "original"
-            ? "original-browser"
-            : "reference-selector"}
+            ? "original-browser yc-stack yc-controls"
+            : "reference-selector yc-stack yc-controls"}
           ?inert=${this.disabled}
         >
           ${items.length

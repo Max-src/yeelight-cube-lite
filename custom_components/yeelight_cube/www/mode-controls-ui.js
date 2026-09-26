@@ -1,4 +1,5 @@
 import { LitElement, html, css, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
+import { cardLayoutStyles, cardSpacing } from "./card-layout-utils.js";
 import { renderActionButton, renderActionRow } from "./action-button-ui.js";
 import {
   actionButtonStyles,
@@ -55,6 +56,7 @@ class YeelightModeControls extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    this.classList.add("yc-stack");
     this._refresh ||= () => this.requestUpdate();
     this._subscribe();
     this._animate();
@@ -76,6 +78,9 @@ class YeelightModeControls extends LitElement {
 
   updated() {
     this._subscribe();
+    this.hidden = ![...this.shadowRoot.children].some(
+      (child) => child.tagName !== "STYLE",
+    );
   }
 
   _animate() {
@@ -322,7 +327,8 @@ class YeelightModeControls extends LitElement {
             },
           ),
       };
-      return html` ${config.show_actions !== false
+      return html` ${config.show_actions !== false &&
+      actionButtonOrder(config, adapter.actionKeys).length
         ? html`<div class="actions">
             ${renderActionRow(
               html`${actionButtonOrder(config, adapter.actionKeys).map((key) =>
@@ -369,7 +375,7 @@ class YeelightModeControls extends LitElement {
       ]),
     );
     return html` ${config.show_favourites
-      ? html`<section>
+      ? html`<section class="yc-stack yc-controls">
           <header>
             <h3>Favourites <small>${model.favourites.length}</small></h3>
             <div class="tools">
@@ -479,7 +485,7 @@ class YeelightModeControls extends LitElement {
         </section>`
       : ""}
     ${config.show_rotation
-      ? html`<section>
+      ? html`<section class="yc-stack yc-controls">
           <header>
             <h3>
               ${adapter.kind === "clock"
@@ -572,32 +578,25 @@ class YeelightModeControls extends LitElement {
   }
 
   static styles = [
+    unsafeCSS(cardLayoutStyles),
     unsafeCSS(actionButtonStyles),
     unsafeCSS(orientationControlStyles),
     orderableListStyles,
     css`
       :host {
-        display: block;
         --action-row-icon-align: center;
         min-width: 0;
       }
-      /* Actions are always centred and keep a gap to the next section,
-         regardless of button style or content mode. */
       .actions .action-row {
         justify-content: center;
-        margin-bottom: 16px;
-      }
-      section {
-        padding: 8px 0;
       }
       header,
       .summary {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 8px;
+        gap: ${unsafeCSS(cardSpacing.control)};
         flex-wrap: wrap;
-        margin-bottom: 8px;
       }
       h3 {
         margin: 0;
@@ -606,19 +605,19 @@ class YeelightModeControls extends LitElement {
       }
       .tools {
         display: flex;
-        gap: 4px;
+        gap: ${unsafeCSS(cardSpacing.control)};
         flex-wrap: wrap;
       }
       .favourites {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 8px;
+        gap: ${unsafeCSS(cardSpacing.control)};
       }
       .mode {
         min-width: 0;
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: ${unsafeCSS(cardSpacing.control)};
         padding: 10px;
         border: 1px solid var(--divider-color, #ddd);
         border-radius: 8px;

@@ -1,4 +1,5 @@
 import { previewLength } from "./preview-appearance.js";
+import { cardLayoutStyles } from "./card-layout-utils.js";
 import { createClockCardAdapter } from "./clock-card-adapter.js";
 import {
   resolveClockAppearance,
@@ -129,7 +130,10 @@ class ClockCardShell extends LitElement {
   render() {
     return html`<style>
         ${this.stylesText}</style
-      ><ha-card class=${this.background ? "clock-card" : "clock-card no-bg"}
+      ><ha-card
+        class=${this.background
+          ? "clock-card yc-stack"
+          : "clock-card no-bg yc-stack"}
         >${this.content}</ha-card
       >`;
   }
@@ -1166,7 +1170,7 @@ class YeelightCubeClockCard extends HTMLElement {
       sections.push(
         unsafeHTML(
           inlineToggles.length > 1
-            ? `<div class="section-row">${inlineToggles.join("")}</div>`
+            ? `<div class="section-row yc-row">${inlineToggles.join("")}</div>`
             : inlineToggles[0],
         ),
       );
@@ -1532,6 +1536,7 @@ class YeelightCubeClockCard extends HTMLElement {
 
   _styles() {
     return `<style>
+      ${cardLayoutStyles}
       :host { display: block; --action-row-icon-align: flex-start; }
       .loading, .empty { padding: 16px; color: var(--secondary-text-color, #888); }
       /* ha-card supplies the native background, border and radius when
@@ -1543,21 +1548,13 @@ class YeelightCubeClockCard extends HTMLElement {
         border: none;
         padding: 8px 0;
       }
-      .card-title { font-size: 1.15em; font-weight: 600; margin-bottom: 2px; }
-      .active-label { font-size: 0.9em; color: var(--secondary-text-color, #9aa); margin-bottom: 10px; }
-      .section { margin-top: 14px; }
-      /* Tighter than the default section spacing: no title, and the two
-         stacked sliders (brightness/speed) don't need a full section's worth
-         of breathing room around them. */
-      .section-sliders { margin-top: 8px; }
-      .section-sliders .brightness-control-group { gap: 6px; }
-      .section-sliders + .section { margin-top: 8px; }
+      .card-title { font-size: 1.15em; font-weight: 600; }
+      .active-label { font-size: 0.9em; color: var(--secondary-text-color, #9aa); }
       /* The Content and Format sections sit side by side when the card is
          wide enough, and wrap to their own rows otherwise. */
-      .section-row { display: flex; flex-wrap: wrap; column-gap: 18px; }
       .section-row > .section { flex: 1 1 auto; min-width: 0; }
 
-      .current-preview { display: flex; justify-content: center; padding: 6px 0 2px; }
+      .current-preview { display: flex; justify-content: center; }
       .current-preview-inner { width: 100%; }
       .clock-preview { width: 100%; }
 

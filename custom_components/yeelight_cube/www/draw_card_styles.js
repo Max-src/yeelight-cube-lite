@@ -2,6 +2,7 @@
 // CSS styles for Yeelight Cube Lite Draw Card
 import { css, unsafeCSS } from "./lib/lit-all.js";
 import { compactModeStyles } from "./compact-mode-styles.js";
+import { cardLayoutStyles, cardSpacing } from "./card-layout-utils.js";
 import { compactLayoutStyles } from "./compact-layout-utils.js";
 import {
   deleteButtonStyles,
@@ -11,6 +12,7 @@ import { exportImportButtonStyles } from "./action-button-utils.js";
 import { carouselStyles } from "./carousel-utils.js";
 
 export const drawCardStyles = css`
+  ${unsafeCSS(cardLayoutStyles)}
   /* Allow outside delete buttons to overflow ha-card */
   :host {
     overflow: visible !important;
@@ -414,10 +416,8 @@ export const drawCardStyles = css`
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12) !important;
   }
   .draw-container {
-    display: flex;
-    flex-direction: column;
+    width: 100%;
     align-items: center;
-    gap: 16px;
     margin: 0 auto;
   }
   .matrix {
@@ -708,7 +708,7 @@ export const drawCardStyles = css`
   .actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 12px;
+    gap: ${unsafeCSS(cardSpacing.control)};
     justify-content: center;
     width: 100%;
     box-sizing: border-box;
@@ -805,7 +805,6 @@ export const drawCardStyles = css`
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 8px;
     width: 100%;
     gap: 12px;
   }
@@ -872,7 +871,6 @@ export const drawCardStyles = css`
   }
   .color-section {
     width: 100%;
-    margin-bottom: 16px;
   }
   .color-section-title {
     font-size: 1.1em;
@@ -902,12 +900,8 @@ export const drawCardStyles = css`
   }
   /* Palette card container modes */
   .palette-stack {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
     align-items: center;
     width: 100%;
-    margin-bottom: 8px;
   }
   .palette-tab-bar {
     display: flex;
@@ -921,7 +915,6 @@ export const drawCardStyles = css`
     );
     border-radius: 10px;
     padding: 3px;
-    margin-bottom: 10px;
     position: relative;
   }
   .palette-tab-indicator {
@@ -982,9 +975,6 @@ export const drawCardStyles = css`
     color: var(--primary-color, #0077cc);
   }
   .palette-dropdown-wrapper {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
     width: 100%;
   }
   .palette-dropdown-select {

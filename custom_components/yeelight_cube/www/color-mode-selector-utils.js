@@ -1,4 +1,5 @@
 import { escapeHtml } from "./html-escape-utils.js";
+import { cardSpacing } from "./card-layout-utils.js";
 import {
   actionButtonGroupModel,
   renderActionButtonHTML,
@@ -18,7 +19,7 @@ export const COLOR_PRESET_SHAPE_CHOICES = [
 ];
 
 export const colorModeSelectorStyles = `
-  .unified-color-modes { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
+  .unified-color-modes { display:flex; flex-wrap:wrap; align-items:center; gap:${cardSpacing.control}; }
   .unified-color-modes > .shared-button-group.action-row { display:contents; }
   .unified-color-modes button { flex:0 0 auto; max-width:100%; min-height:36px; }
   .unified-color-modes .btn-text { white-space:normal; overflow-wrap:anywhere; }

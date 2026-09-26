@@ -251,6 +251,11 @@ export class ToolManager {
     // Get tools order and filter based on visibility
     let toolsOrder = this.getToolsOrder(config);
     toolsOrder = this.filterTools(toolsOrder, config);
+    const editMode =
+      config.edit_drawing_tools ?? config.allow_visual_tool_reordering ?? false;
+    if (!editMode)
+      toolsOrder = toolsOrder.filter((tool) => this.isToolVisible(tool));
+    if (!toolsOrder.length) return "";
 
     return html`
       <div class="toolbar-container">
@@ -708,6 +713,7 @@ export class ActionManager {
         return this.renderAction(action, index, config, paintShape);
       })
       .filter((action) => action !== null);
+    if (!renderedActions.length) return "";
 
     return renderActionRow(renderedActions, {
       buttonStyle: actionsStyle,

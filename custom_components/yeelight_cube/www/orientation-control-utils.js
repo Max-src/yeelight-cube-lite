@@ -3,15 +3,17 @@ import {
   actionButtonStyleChoices,
 } from "./action-button-utils.js";
 
+import { cardSpacing } from "./card-layout-utils.js";
+
 export const ORIENTATION_ORDER = ["right", "down", "left", "up"];
 export const orientationControlStyles = `
   .device-orientation-row {
     display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
-    gap: 8px; padding: 4px 10px 10px; margin: 0 0 4px;
+    gap: ${cardSpacing.control};
   }
   .orientation-buttons {
     display: flex; flex-wrap: wrap; justify-content: center; align-items: center;
-    gap: 8px; min-width: 0; max-width: 100%;
+    gap: ${cardSpacing.control}; min-width: 0; max-width: 100%;
   }
   .orientation-buttons .shared-action-button {
     min-height: 40px; max-width: 100%; white-space: normal;

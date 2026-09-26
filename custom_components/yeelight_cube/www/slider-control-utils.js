@@ -20,6 +20,7 @@
 // `createSliderHandlers()` and assigned onto the host element (the render emits
 // inline `this.getRootNode().host._sl*` handlers).
 
+import { cardSpacing } from "./card-layout-utils.js";
 import {
   getCapsuleCSS,
   renderCapsuleHTML,
@@ -905,10 +906,10 @@ const sliderLayoutStyles = `
     flex-wrap: wrap;
     align-items: flex-start;
     justify-content: center;
-    gap: 16px;
+    gap: ${cardSpacing.control};
   }
   .brightness-control-item {
-    flex: 0 1 calc(var(--brightness-control-width, 100%) - 8px);
+    flex: 0 1 calc(var(--brightness-control-width, 100%) - ${cardSpacing.control} / 2);
     min-width: 0;
   }
   .brightness-control-label {

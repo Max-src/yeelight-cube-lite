@@ -1156,6 +1156,22 @@ const server = http.createServer(async (request, response) => {
         "Rename must not mutate a new index occupant",
       );
       const draw = await create("draw");
+      const hoverDraw = await create("draw", {
+        palette_card_mode: "preview-hover",
+        show_lamp_palette: true,
+        show_lamp_colors: true,
+        palette_display_mode: "row",
+      });
+      hoverDraw.id = "draw-hover-regression";
+      for (let frame = 0; frame < 10; frame++) await frames();
+      const hoverPreview = hoverDraw.shadowRoot.querySelector(
+        ".palette-preview-hover",
+      );
+      check(
+        hoverPreview.getBoundingClientRect().width <=
+          hoverDraw.getBoundingClientRect().width,
+        `Draw hover preview exceeds card width: ${hoverPreview.getBoundingClientRect().width} > ${hoverDraw.getBoundingClientRect().width}`,
+      );
       draw._pendingReorderedPixelArts =
         state.states["sensor.art"].attributes.pixel_arts.toReversed();
       draw.hass = {
@@ -1192,14 +1208,160 @@ const server = http.createServer(async (request, response) => {
       );
       window.otherRegressionCards = cards;
       window.otherRegressionListeners = listeners;
+      window.checkCardSpacing = (card) => {
+        let checked = 0;
+        const visit = (root) => {
+          for (const stack of root.querySelectorAll(".yc-stack")) {
+            if (!stack.getClientRects().length) continue;
+            const children = [...(stack.shadowRoot || stack).children].filter(
+              (child) =>
+                child.getClientRects().length &&
+                getComputedStyle(child).position !== "absolute" &&
+                getComputedStyle(child).position !== "fixed",
+            );
+            const expected = parseFloat(getComputedStyle(stack).rowGap);
+            for (const [index, child] of children.entries()) {
+              const bounds = child.getBoundingClientRect();
+              const css = getComputedStyle(child);
+              check(
+                parseFloat(css.marginTop) === 0 &&
+                  parseFloat(css.marginBottom) === 0,
+                `${card.localName}: ${child.className} has external margins`,
+              );
+              if (index) {
+                const previous = children[index - 1].getBoundingClientRect();
+                const gap = bounds.top - previous.bottom;
+                check(
+                  Math.abs(gap - expected) < 1,
+                  `${card.localName}: ${stack.className} -> ${child.className}: expected ${expected}px, got ${gap}px`,
+                );
+              }
+              checked++;
+            }
+          }
+          for (const child of root.querySelectorAll("*")) {
+            if (child.shadowRoot) visit(child.shadowRoot);
+          }
+        };
+        visit(card.shadowRoot);
+        check(
+          checked > 0,
+          `${card.localName}: no visible stack children tested`,
+        );
+      };
     });
     for (const width of [1400, 390]) {
       await page.setViewportSize({ width, height: 1000 });
+      await page.mouse.move(0, 0);
+      await page.evaluate(async () => {
+        for (const card of otherRegressionCards) {
+          for (const gap of [16, 24]) {
+            card.style.setProperty("--yc-section-gap", `${gap}px`);
+            await new Promise(requestAnimationFrame);
+            checkCardSpacing(card);
+          }
+          card.style.removeProperty("--yc-section-gap");
+        }
+      });
       await page.locator("#other-card-regressions").screenshot({
         path: path.join(os.tmpdir(), `yeelight-other-cards-${width}.png`),
       });
+      const hoverCard = page.locator("#draw-hover-regression");
+      for (const expanded of [true, false, true, false]) {
+        if (expanded) {
+          await hoverCard
+            .locator(".palette-preview-card:not(.empty)")
+            .first()
+            .hover();
+        } else {
+          await page.mouse.move(0, 0);
+        }
+        await page.waitForFunction((expanded) => {
+          const root = document.querySelector(
+            "#draw-hover-regression",
+          ).shadowRoot;
+          const preview = root.querySelector(".palette-preview-hover");
+          const body = preview.querySelector(
+            ".palette-preview-card:not(.empty) .palette-preview-body",
+          );
+          const scale = new DOMMatrixReadOnly(getComputedStyle(body).transform)
+            .a;
+          const expected = expanded ? 1 : 1 / preview.children.length;
+          return (
+            preview.classList.contains("expanded-mode") === expanded &&
+            Math.abs(scale - expected) < 0.001 &&
+            preview
+              .getAnimations({ subtree: true })
+              .every((animation) => animation.playState !== "running")
+          );
+        }, expanded);
+        const geometry = await hoverCard.evaluate((card) => {
+          const preview = card.shadowRoot.querySelector(
+            ".palette-preview-hover",
+          );
+          return {
+            width: preview.getBoundingClientRect().width,
+            height: preview.getBoundingClientRect().height,
+            available: card.getBoundingClientRect().width,
+          };
+        });
+        assert.ok(
+          geometry.width <= geometry.available && geometry.height < 300,
+          `Draw hover ${expanded ? "expanded" : "collapsed"} at ${width}px: ${JSON.stringify(geometry)}`,
+        );
+        await hoverCard.screenshot({
+          path: path.join(
+            os.tmpdir(),
+            `yeelight-draw-hover-${width}-${expanded ? "expanded" : "collapsed"}.png`,
+          ),
+        });
+      }
     }
     await page.evaluate(async () => {
+      const gradient = otherRegressionCards.find(
+        (card) => card.localName === "yeelight-cube-gradient-card",
+      );
+      for (const selector of ["filled", "dropdown", "preview-grid"]) {
+        gradient.setConfig({
+          ...gradient.config,
+          mode_selector_style: selector,
+          show_active_mode_label: true,
+        });
+        await new Promise(requestAnimationFrame);
+        await new Promise(requestAnimationFrame);
+        checkCardSpacing(gradient);
+      }
+      const draw = otherRegressionCards.find(
+        (card) => card.localName === "yeelight-cube-draw-card",
+      );
+      draw.setConfig({
+        ...draw.config,
+        edit_action_buttons: false,
+        edit_drawing_tools: false,
+      });
+      draw.actionManager.actionVisibility = Object.fromEntries(
+        draw.actionManager
+          .getActionsOrder(draw.config)
+          .map((action) => [action, false]),
+      );
+      draw.toolManager.toolVisibility = Object.fromEntries(
+        draw.toolManager
+          .getToolsOrder(draw.config)
+          .map((tool) => [tool, false]),
+      );
+      draw.requestUpdate();
+      await draw.updateComplete;
+      if (
+        draw.shadowRoot.querySelector(".action-row-slotted, .toolbar-container")
+      ) {
+        throw Error("Draw empty actions/tools still reserve a section");
+      }
+      const palette = otherRegressionCards.find(
+        (card) => card.localName === "yeelight-cube-palette-card",
+      );
+      if (palette._renderPaletteExportImportButtons(false, false) !== "") {
+        throw Error("Palette empty import/export still reserves a section");
+      }
       otherRegressionCards.forEach((card) => card.remove());
       document.querySelector("#other-card-regressions").remove();
       await Promise.resolve();
@@ -1484,9 +1646,11 @@ const server = http.createServer(async (request, response) => {
               const row = controls.shadowRoot.querySelector(".action-row");
               check(
                 getComputedStyle(row).justifyContent === "center" &&
-                  parseFloat(getComputedStyle(row).marginBottom) >= 16,
-                `${kind}/${buttonStyle}/${contentMode}: centered with spacing`,
+                  parseFloat(getComputedStyle(row).marginBottom) === 0 &&
+                  parseFloat(getComputedStyle(row).marginTop) === 0,
+                `${kind}/${buttonStyle}/${contentMode}: centered without external margins`,
               );
+              checkCardSpacing(card);
               const actual = [...row.querySelectorAll("button")];
               const actions =
                 kind === "lamp-preview"
@@ -1540,6 +1704,76 @@ const server = http.createServer(async (request, response) => {
         card.style.removeProperty("--primary-text-color");
         card.style.removeProperty("--primary-color");
       }
+      {
+        const gapCard = document.createElement(
+          "yeelight-cube-lamp-preview-card",
+        );
+        gapCard.setConfig({
+          entity: "light.a",
+          show_lamp_preview: false,
+          show_actions: false,
+          show_device_orientation: false,
+          show_brightness_slider: true,
+          show_adjustment_controls: true,
+        });
+        gapCard.hass = hass;
+        section.append(gapCard);
+        await settle();
+        const gapBetween = () => {
+          const container = gapCard.shadowRoot.querySelector(
+            ".brightness-control-group",
+          );
+          const adjustments = gapCard.shadowRoot.querySelector(
+            ".effects-grouped-container",
+          );
+          return (
+            adjustments.getBoundingClientRect().top -
+            container.getBoundingClientRect().bottom
+          );
+        };
+        for (const style of [
+          "slider",
+          "bar",
+          "wheel",
+          "matrix",
+          "rotary",
+          "capsule",
+        ]) {
+          for (const theme of ["subtle", "flat"]) {
+            gapCard.setConfig({
+              ...gapCard.config,
+              brightness_slider_style: style,
+              brightness_theme: theme,
+            });
+            await settle();
+            const gap = gapBetween();
+            check(
+              Math.abs(gap - 16) < 0.5,
+              `Lamp ${style}/${theme}: parent-owned section gap, got ${gap}px`,
+            );
+            checkCardSpacing(gapCard);
+          }
+        }
+        gapCard.setConfig({
+          ...gapCard.config,
+          show_actions: true,
+          action_buttons: [],
+          show_device_orientation: true,
+          orientation_buttons: [],
+        });
+        await settle();
+        check(
+          gapCard.shadowRoot.querySelector(
+            'yeelight-mode-controls[area="actions"]',
+          ).hidden,
+          "Empty Actions must not leave a stack slot",
+        );
+        check(
+          Math.abs(gapBetween() - 16) < 0.5,
+          "Hidden Actions and Orientation must not change the section gap",
+        );
+        gapCard.remove();
+      }
       const editor = document.createElement(
         "yeelight-cube-lamp-preview-card-editor",
       );
@@ -1577,11 +1811,47 @@ const server = http.createServer(async (request, response) => {
     });
     for (const width of [1400, 390]) {
       await page.setViewportSize({ width, height: 1000 });
+      await page.evaluate(async () => {
+        for (const card of sharedActionCards.filter(
+          (card) => !card.localName.endsWith("editor"),
+        )) {
+          for (const gap of [16, 24]) {
+            card.style.setProperty("--yc-section-gap", `${gap}px`);
+            card.style.setProperty("--yc-control-gap", `${gap / 2}px`);
+            await new Promise(requestAnimationFrame);
+            checkCardSpacing(card);
+          }
+          card.style.removeProperty("--yc-section-gap");
+          card.style.removeProperty("--yc-control-gap");
+        }
+      });
       await page.locator("#shared-action-regressions").screenshot({
         path: path.join(os.tmpdir(), `yeelight-shared-actions-${width}.png`),
       });
     }
-    await page.evaluate(() => {
+    await page.evaluate(async () => {
+      for (const card of sharedActionCards.filter(
+        (card) => !card.localName.endsWith("editor"),
+      )) {
+        card.setConfig({
+          ...card.config,
+          show_actions: false,
+          show_device_orientation: false,
+          show_favourites: false,
+          show_rotation: false,
+        });
+        await card.updateComplete;
+        await new Promise(requestAnimationFrame);
+        for (const controls of card.shadowRoot.querySelectorAll(
+          "yeelight-mode-controls",
+        )) {
+          await controls.updateComplete;
+          if (!controls.hidden)
+            throw Error(
+              `${card.localName}: disabled ${controls.area} still reserves space`,
+            );
+        }
+      }
       sharedActionCards.forEach((card) => card.remove());
       document.querySelector("#shared-action-regressions").remove();
     });

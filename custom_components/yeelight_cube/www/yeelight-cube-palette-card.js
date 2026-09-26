@@ -2,6 +2,7 @@ import { getActionRowClass } from "./action-button-utils.js";
 import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
 import { escapeHtml } from "./html-escape-utils.js";
 import { compactModeStyles } from "./compact-mode-styles.js";
+import { cardLayoutStyles } from "./card-layout-utils.js";
 import {
   deleteButtonStyles,
   deleteButtonPositionStyles,
@@ -369,7 +370,7 @@ class YeelightCubePaletteCard extends HTMLElement {
     ) {
       const fresh = document.createElement("div");
       fresh.className =
-        "card-content" + (showItemBorder ? " item-card-border" : "");
+        "card-content yc-stack" + (showItemBorder ? " item-card-border" : "");
       fresh.innerHTML = contentHtml;
       existingContent.replaceWith(fresh);
       this.addEventListeners(palettes, allowTitleEdit, showCard);
@@ -378,6 +379,7 @@ class YeelightCubePaletteCard extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
       <style>
+        ${cardLayoutStyles}
         /* Shared Compact Mode Styles */
         ${compactModeStyles}
 
@@ -415,7 +417,7 @@ class YeelightCubePaletteCard extends HTMLElement {
           display: flex;
           flex-direction: column;
           align-items: flex-start;
-          margin: 0 auto 10px auto;
+          margin-inline: auto;
           background: var(--secondary-background-color, #fafbfc);
           border: 1.5px solid var(--divider-color, #d0d7de);
           border-radius: var(--rounded-cards-radius, 16px);
@@ -1093,8 +1095,8 @@ class YeelightCubePaletteCard extends HTMLElement {
       </style>
       ${
         showCard
-          ? `<ha-card${cardTitle ? ` header="${escapeHtml(cardTitle)}"` : ""}><div class="card-content${showItemBorder ? " item-card-border" : ""}">${contentHtml}</div></ha-card>`
-          : `${cardTitle ? `<div id="card-title" style="font-weight:600;font-size:1.1em;margin-bottom:8px;padding:16px 16px 0;">${escapeHtml(cardTitle)}</div>` : ""}<div class="card-content${showItemBorder ? " item-card-border" : ""}">${contentHtml}</div>`
+          ? `<ha-card${cardTitle ? ` header="${escapeHtml(cardTitle)}"` : ""}><div class="card-content yc-stack${showItemBorder ? " item-card-border" : ""}">${contentHtml}</div></ha-card>`
+          : `<div class="yc-stack">${cardTitle ? `<div id="card-title" style="font-weight:600;font-size:1.1em;padding:16px 16px 0;">${escapeHtml(cardTitle)}</div>` : ""}<div class="card-content yc-stack${showItemBorder ? " item-card-border" : ""}">${contentHtml}</div></div>`
       }
     `;
     // Remember the shell we just built so a subsequent data-only change can take
@@ -2093,6 +2095,7 @@ class YeelightCubePaletteCard extends HTMLElement {
   }
 
   _renderPaletteExportImportButtons(showExport, showImport) {
+    if (!showExport && !showImport) return "";
     const buttonStyle = this.config.buttons_style || "modern";
     const isImportStatus = this._importStatus.active;
     const statusType = this._importStatus.success ? "success" : "error";
