@@ -1089,7 +1089,11 @@ data:
 ```
 
 > [!TIP]
-> For a one-off recovery from the UI, use the **Force Refresh** button entity instead. Use this service when you need to trigger recovery from an automation or script.
+> For a one-off recovery from the UI, use **Refresh** in the shared **Actions** section of the Clock, Native Effects or Lamp Preview card, or the **Force Refresh** button entity. Use this service to trigger recovery from an automation or script.
+
+Refresh re-applies the lamp's current content, not the style selected in a card. Native Clock and Native Effect reconnect through their native renderer; Music Flow re-applies its current configuration; direct-pixel content is regenerated through the display pipeline. Off lamps are left off. Refresh resumes a frozen display but does not stop effect rotation. The card's spinner tracks the service request, not completion of the hardware operation.
+
+All three cards share Actions visibility, button styling and the **Actions & Order** list. Lamp Preview offers Refresh and Power only; Clock and Native Effects also offer Previous, Next, Random and Freeze. Existing Lamp Preview Power/Refresh visibility and appearance settings migrate automatically. Existing explicit action lists on Clock/Native are preserved; add Refresh in **Actions & Order** to include it. Power uses explicit turn-on/turn-off commands on all three cards.
 
 ---
 

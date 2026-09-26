@@ -217,6 +217,8 @@ test("Gradient releases subscriptions that resolve after the last view disconnec
   assert.equal(released, 1);
 });
 
+import { lampActionConfig } from "../custom_components/yeelight_cube/www/mode-controls-controller.js";
+
 function cardMethod(file, name, scope = {}, setter = false) {
   const source = readFileSync(
     new URL(
@@ -284,6 +286,7 @@ test("lamp adjustment timers and stale failures cannot cross configuration conte
   let serial = 0;
   const scope = {
     resolvePreviewAppearance,
+    lampActionConfig,
     setTimeout(callback) {
       timers.set(++serial, callback);
       return serial;
@@ -310,6 +313,8 @@ test("lamp adjustment timers and stale failures cannot cross configuration conte
   let reject;
   const card = {
     shadowRoot: {},
+    _actionCommands: { reset() {} },
+    _actions: { configure() {} },
     _hass: {
       states: { "light.a": { attributes: {} }, "light.b": { attributes: {} } },
       callService(...args) {

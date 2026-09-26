@@ -50,6 +50,7 @@ class YeelightModeControls extends LitElement {
     model: { attribute: false },
     area: { reflect: true },
     _manage: { state: true },
+    _pending: { state: true },
   };
 
   connectedCallback() {
@@ -83,7 +84,6 @@ class YeelightModeControls extends LitElement {
       if (
         this.area === "collections" &&
         !document.hidden &&
-        !this.model?.paused &&
         now - (this._lastPaint || 0) > 100
       ) {
         const bounds = this.getBoundingClientRect();
@@ -134,6 +134,16 @@ class YeelightModeControls extends LitElement {
       disabled: model.busy || model.adapter.disabled(),
       ...options,
     });
+  }
+
+  async _runAction(key, action) {
+    if (this._pending) return;
+    this._pending = key;
+    try {
+      await action();
+    } finally {
+      this._pending = null;
+    }
   }
 
   handleOrientationControl(event) {
@@ -207,6 +217,7 @@ class YeelightModeControls extends LitElement {
     const title = (key) => items.find((item) => item.key === key)?.title || key;
     const noun = adapter.kind === "clock" ? "clock mode" : "effect";
     if (this.area === "actions") {
+      const off = adapter.on ? !adapter.on() : false;
       const buttons = {
         previous: () =>
           this._button(
@@ -225,14 +236,10 @@ class YeelightModeControls extends LitElement {
                 ]?.key,
               ),
             {
-              disabled: model.busy || adapter.disabled() || !items.length,
+              disabled:
+                model.busy || adapter.disabled() || off || !items.length,
             },
           ),
-        apply: () =>
-          this._button("Apply", "mdi:play", () => model.select(current), {
-            busy: model.busy,
-            disabled: model.busy || adapter.disabled() || !current,
-          }),
         next: () =>
           this._button(
             `Next ${noun}`,
@@ -245,27 +252,36 @@ class YeelightModeControls extends LitElement {
                 ),
               ),
             {
-              disabled: model.busy || adapter.disabled() || !items.length,
+              disabled:
+                model.busy || adapter.disabled() || off || !items.length,
             },
           ),
-        pause_previews: () =>
+        random: () =>
           this._button(
-            model.paused ? "Resume previews" : "Pause previews",
-            model.paused ? "mdi:motion-play-outline" : "mdi:pause",
+            "Random",
+            "mdi:shuffle-variant",
             () => {
-              model.paused = !model.paused;
-              adapter.pause(model.paused);
-              model.notify();
+              const choices = items
+                .map((item) => item.key)
+                .filter((key) => key && key !== current);
+              if (!choices.length) return;
+              model.choose(choices[Math.floor(Math.random() * choices.length)]);
             },
-            { disabled: false },
+            {
+              action: "randomize",
+              compact: true,
+              disabled:
+                model.busy || adapter.disabled() || off || !items.length,
+            },
           ),
         freeze: () =>
           this._button(
             model.frozen ? "Resume effect" : "Freeze effect",
             model.frozen ? "mdi:play-circle-outline" : "mdi:snowflake",
-            () => model.freeze(),
+            () => this._runAction("freeze", () => model.freeze()),
             {
               selected: model.frozen,
+              busy: this._pending === "freeze",
               disabled:
                 model.busy ||
                 adapter.disabled() ||
@@ -273,21 +289,48 @@ class YeelightModeControls extends LitElement {
             },
           ),
         power: () =>
-          this._button(adapter.on() ? "Turn off" : "Turn on", "mdi:power", () =>
-            model.command(() =>
-              adapter.command(
-                adapter.on() ? "turn_off" : "turn_on",
-                {},
-                "light",
+          this._button(
+            adapter.on() ? "Turn off" : "Turn on",
+            "mdi:power",
+            () =>
+              this._runAction("power", () =>
+                model.command(() =>
+                  adapter.command(
+                    adapter.on() ? "turn_off" : "turn_on",
+                    {},
+                    "light",
+                  ),
+                ),
               ),
-            ),
+            {
+              action: "power",
+              compact: true,
+              busy: this._pending === "power",
+            },
+          ),
+        refresh: () =>
+          this._button(
+            "Refresh",
+            "mdi:refresh",
+            () => this._runAction("refresh", () => model.refresh()),
+            {
+              action: "force-refresh",
+              compact: true,
+              busy: this._pending === "refresh",
+              busyLabel: "Refreshing...",
+              disabled: model.busy || adapter.disabled() || off,
+            },
           ),
       };
       return html` ${config.show_actions !== false
-        ? renderActionRow(
-            html`${actionButtonOrder(config).map((key) => buttons[key]?.())}`,
-            modeActionOptions(config),
-          )
+        ? html`<div class="actions">
+            ${renderActionRow(
+              html`${actionButtonOrder(config, adapter.actionKeys).map((key) =>
+                buttons[key]?.(),
+              )}`,
+              modeActionOptions(config),
+            )}
+          </div>`
         : ""}
       ${model.error
         ? html`<div class="error" role="alert">${model.error}</div>`
@@ -537,6 +580,12 @@ class YeelightModeControls extends LitElement {
         display: block;
         --action-row-icon-align: center;
         min-width: 0;
+      }
+      /* Actions are always centred and keep a gap to the next section,
+         regardless of button style or content mode. */
+      .actions .action-row {
+        justify-content: center;
+        margin-bottom: 16px;
       }
       section {
         padding: 8px 0;

@@ -333,6 +333,7 @@ const server = http.createServer(async (request, response) => {
           "boxShadow",
         ];
         const describe = (node) => {
+          if (!node) return null;
           const rect = node.getBoundingClientRect();
           const style = getComputedStyle(node);
           return {
@@ -1208,6 +1209,376 @@ const server = http.createServer(async (request, response) => {
     assert.deepEqual(errors, []);
     console.log(
       "PASS other-card state, shared preview, failure recovery and reconnect regressions (desktop/mobile screenshots)",
+    );
+    await page.evaluate(async () => {
+      await import("/custom_components/yeelight_cube/www/yeelight-cube-lamp-preview-card-editor.js");
+      const { renderActionButtonHTML } =
+        await import("/custom_components/yeelight_cube/www/action-button-utils.js");
+      const check = (condition, message) => {
+        if (!condition) throw Error(message);
+      };
+      const settle = async () => {
+        await new Promise(requestAnimationFrame);
+        await new Promise(requestAnimationFrame);
+      };
+      const section = document.createElement("section");
+      section.id = "shared-action-regressions";
+      section.style.cssText = "display:grid;gap:16px;max-width:420px";
+      document.body.append(section);
+      for (const kind of ["lamp-preview", "clock", "native-effects"]) {
+        const serviceCalls = [];
+        let finish;
+        let fail;
+        const state = {
+          ...hass,
+          states: {
+            ...hass.states,
+            "light.a": {
+              state: "on",
+              attributes: {
+                ...hass.states["light.a"].attributes,
+                content_mode: kind === "clock" ? "Clock" : "Native Effect",
+                matrix_colors: Array.from({ length: 100 }, () => [20, 80, 160]),
+              },
+            },
+          },
+          callService: (domain, service, data) => {
+            serviceCalls.push({ domain, service, data });
+            return new Promise((resolve, reject) => {
+              finish = resolve;
+              fail = reject;
+            });
+          },
+        };
+        const card = document.createElement(`yeelight-cube-${kind}-card`);
+        const config = {
+          ...baseConfig,
+          show_actions: true,
+          show_lamp_preview: false,
+          show_brightness_slider: false,
+          action_buttons: ["refresh", "power"],
+          actions_buttons_style: "outline",
+          actions_buttons_content_mode: "icon_text",
+        };
+        card.setConfig(config);
+        card.hass = state;
+        section.append(card);
+        await settle();
+        const view = card.shadowRoot.querySelector(
+          'yeelight-mode-controls[area="actions"]',
+        );
+        check(view, `${kind}: shared Actions missing`);
+        await view.updateComplete;
+        const buttons = () => [...view.shadowRoot.querySelectorAll("button")];
+        check(
+          buttons()
+            .map((button) => button.title)
+            .join() === "Refresh,Turn off",
+          `${kind}: action labels/order`,
+        );
+        buttons()[0].click();
+        await settle();
+        check(
+          serviceCalls.length === 1 &&
+            serviceCalls[0].service === "force_refresh",
+          `${kind}: refresh service only`,
+        );
+        check(
+          serviceCalls[0].domain === "yeelight_cube" &&
+            [serviceCalls[0].data.entity_id].flat().includes("light.a"),
+          `${kind}: refresh target`,
+        );
+        check(
+          buttons()[0].getAttribute("aria-busy") === "true" &&
+            buttons().every((button) => button.disabled),
+          `${kind}: pending refresh`,
+        );
+        card.hass = { ...state };
+        await settle();
+        check(
+          buttons()[0].getAttribute("aria-busy") === "true",
+          `${kind}: pending survives state update`,
+        );
+        fail(Error("Test offline"));
+        await settle();
+        check(
+          view.shadowRoot.querySelector('[role="alert"]'),
+          `${kind}: refresh error visible`,
+        );
+        buttons()[0].click();
+        await settle();
+        finish();
+        await settle();
+        check(
+          !view.shadowRoot.querySelector('[role="alert"]'),
+          `${kind}: successful retry clears error`,
+        );
+        buttons()[1].click();
+        await settle();
+        check(
+          serviceCalls.at(-1).service === "turn_off" &&
+            serviceCalls.at(-1).domain === "light",
+          `${kind}: explicit power off`,
+        );
+        check(
+          buttons()[1].getAttribute("aria-busy") === "true",
+          `${kind}: power spinner`,
+        );
+        finish();
+        await settle();
+        const off = {
+          ...state,
+          states: {
+            ...state.states,
+            "light.a": { ...state.states["light.a"], state: "off" },
+          },
+        };
+        card.hass = off;
+        await settle();
+        check(
+          buttons()[0].disabled && !buttons()[1].disabled,
+          `${kind}: off state actions`,
+        );
+        buttons()[1].click();
+        await settle();
+        check(
+          serviceCalls.at(-1).service === "turn_on",
+          `${kind}: explicit power on`,
+        );
+        finish();
+        await settle();
+        card.hass = state;
+        await settle();
+        if (kind === "lamp-preview") {
+          for (const content_mode of [
+            "Clock",
+            "Native Effect",
+            "Text",
+            "Solid Color",
+          ]) {
+            card.hass = {
+              ...state,
+              states: {
+                ...state.states,
+                "light.a": {
+                  ...state.states["light.a"],
+                  attributes: {
+                    ...state.states["light.a"].attributes,
+                    content_mode,
+                  },
+                },
+              },
+            };
+            await settle();
+            check(
+              buttons().length === 2 &&
+                buttons().every((button) => !button.disabled),
+              `Lamp ${content_mode}: relevant actions`,
+            );
+          }
+          card.setConfig({
+            ...config,
+            action_buttons: ["power", "freeze", "random", "refresh"],
+          });
+          await settle();
+          const remounted = card.shadowRoot.querySelector(
+            'yeelight-mode-controls[area="actions"]',
+          );
+          await remounted.updateComplete;
+          check(
+            [...remounted.shadowRoot.querySelectorAll("button")]
+              .map((button) => button.title)
+              .join() === "Turn off,Refresh",
+            "Lamp filters unsupported actions",
+          );
+          card.setConfig({
+            ...config,
+            actions_buttons_style: "gradient",
+            action_buttons: ["refresh", "power"],
+          });
+          await settle();
+          const gradient = card.shadowRoot.querySelector(
+            'yeelight-mode-controls[area="actions"]',
+          );
+          await gradient.updateComplete;
+          const row = gradient.shadowRoot.querySelector(".action-row");
+          check(
+            getComputedStyle(row).justifyContent === "center",
+            "Lamp actions row is centred",
+          );
+          const [refreshBtn, powerBtn] = [
+            ...gradient.shadowRoot.querySelectorAll("button"),
+          ];
+          check(
+            refreshBtn.classList.contains("force-refresh-btn") &&
+              powerBtn.classList.contains("power-btn"),
+            "Actions reuse existing semantic button styles",
+          );
+          const accentOf = (button) => getComputedStyle(button).backgroundImage;
+          check(
+            accentOf(refreshBtn) !== accentOf(powerBtn) &&
+              accentOf(refreshBtn).includes("gradient"),
+            "Refresh and Power use distinct accent colours",
+          );
+          card.setConfig({
+            ...config,
+            actions_buttons_style: "outline",
+            action_buttons: ["refresh", "power"],
+          });
+          await settle();
+          const outline = card.shadowRoot.querySelector(
+            'yeelight-mode-controls[area="actions"]',
+          );
+          await outline.updateComplete;
+          check(
+            [...outline.shadowRoot.querySelectorAll("button")].every(
+              (button) =>
+                !getComputedStyle(button).backgroundImage.includes("gradient"),
+            ),
+            "Outline style keeps its neutral look",
+          );
+        }
+        for (const theme of ["light", "dark"]) {
+          card.style.setProperty(
+            "--card-background-color",
+            theme === "light" ? "#ffffff" : "#202020",
+          );
+          card.style.setProperty(
+            "--primary-text-color",
+            theme === "light" ? "#333333" : "#eeeeee",
+          );
+          card.style.setProperty(
+            "--primary-color",
+            theme === "light" ? "#2984ae" : "#78bce0",
+          );
+          for (const buttonStyle of [
+            "modern",
+            "classic",
+            "outline",
+            "gradient",
+            "icon",
+            "pill",
+          ]) {
+            for (const contentMode of ["icon", "text", "icon_text"]) {
+              card.setConfig({
+                ...config,
+                action_buttons:
+                  kind === "lamp-preview"
+                    ? ["refresh", "power"]
+                    : [
+                        "previous",
+                        "next",
+                        "random",
+                        "freeze",
+                        "refresh",
+                        "power",
+                      ],
+                actions_buttons_style: buttonStyle,
+                actions_buttons_content_mode: contentMode,
+              });
+              await settle();
+              const controls = card.shadowRoot.querySelector(
+                'yeelight-mode-controls[area="actions"]',
+              );
+              await controls.updateComplete;
+              const row = controls.shadowRoot.querySelector(".action-row");
+              check(
+                getComputedStyle(row).justifyContent === "center" &&
+                  parseFloat(getComputedStyle(row).marginBottom) >= 16,
+                `${kind}/${buttonStyle}/${contentMode}: centered with spacing`,
+              );
+              const actual = [...row.querySelectorAll("button")];
+              const actions =
+                kind === "lamp-preview"
+                  ? ["force-refresh", "power"]
+                  : [
+                      "tool",
+                      "tool",
+                      "randomize",
+                      "tool",
+                      "force-refresh",
+                      "power",
+                    ];
+              const reference = document.createElement("div");
+              reference.style.cssText =
+                "position:absolute;visibility:hidden;pointer-events:none";
+              reference.innerHTML = actions
+                .map((action) =>
+                  renderActionButtonHTML({ action, buttonStyle, contentMode }),
+                )
+                .join("");
+              controls.shadowRoot.append(reference);
+              for (const [index, button] of actual.entries()) {
+                button.style.transition = "none";
+                const expected = getComputedStyle(reference.children[index]);
+                const current = getComputedStyle(button);
+                for (const property of [
+                  "backgroundColor",
+                  "backgroundImage",
+                  "color",
+                ]) {
+                  check(
+                    current[property] === expected[property],
+                    `${kind}/${theme}/${buttonStyle}/${contentMode}/${actions[index]}: shared ${property}`,
+                  );
+                }
+              }
+              reference.remove();
+            }
+          }
+        }
+        card.style.removeProperty("--card-background-color");
+        card.style.removeProperty("--primary-text-color");
+        card.style.removeProperty("--primary-color");
+      }
+      const editor = document.createElement(
+        "yeelight-cube-lamp-preview-card-editor",
+      );
+      editor.setConfig({
+        entity: "light.a",
+        show_power_toggle: false,
+        buttons_content_mode: "text",
+      });
+      editor.hass = hass;
+      section.append(editor);
+      editor._lampControlOpen = true;
+      await editor.updateComplete;
+      check(
+        editor.getConfig().action_buttons.join() === "refresh",
+        "Lamp editor migrates visibility",
+      );
+      const actionSection = [
+        ...editor.shadowRoot.querySelectorAll(".editor-card"),
+      ].find(
+        (node) =>
+          node.querySelector(".editor-card-header")?.textContent.trim() ===
+          "Actions",
+      );
+      check(
+        actionSection?.textContent.includes("Actions & Order") &&
+          actionSection.textContent.includes("Button Settings"),
+        "Lamp shared action settings",
+      );
+      check(
+        !actionSection.textContent.includes("Freeze display") &&
+          !actionSection.textContent.includes("Previous"),
+        "Lamp editor excludes catalogue actions",
+      );
+      window.sharedActionCards = [...section.children];
+    });
+    for (const width of [1400, 390]) {
+      await page.setViewportSize({ width, height: 1000 });
+      await page.locator("#shared-action-regressions").screenshot({
+        path: path.join(os.tmpdir(), `yeelight-shared-actions-${width}.png`),
+      });
+    }
+    await page.evaluate(() => {
+      sharedActionCards.forEach((card) => card.remove());
+      document.querySelector("#shared-action-regressions").remove();
+    });
+    assert.deepEqual(errors, []);
+    console.log(
+      "PASS shared Refresh/Power dispatch, pending/error/off states and Lamp configuration across all three cards (desktop/mobile)",
     );
     const appearancePage = await browser.newPage();
     const appearanceErrors = [];
@@ -2262,7 +2633,7 @@ const server = http.createServer(async (request, response) => {
               result.push(
                 [...view.shadowRoot.querySelectorAll("button")]
                   .filter((button) =>
-                    ["Apply", "Refresh", "Pause previews", "Turn off"].includes(
+                    ["Random", "Freeze effect", "Turn off"].includes(
                       button.title,
                     ),
                   )
@@ -2273,7 +2644,7 @@ const server = http.createServer(async (request, response) => {
           },
           { width, style },
         );
-        assert.ok(controls[0].length >= 3);
+        assert.ok(controls[0].length >= 2);
         assert.deepEqual(controls[1], controls[0], `Actions ${width}/${style}`);
         commonComparisons++;
       }
@@ -2361,7 +2732,7 @@ const server = http.createServer(async (request, response) => {
       // Custom order/visibility drives the rendered row.
       const custom = await page.evaluate(async (card) => {
         await configure(
-          { show_actions: true, action_buttons: ["power", "freeze", "apply"] },
+          { show_actions: true, action_buttons: ["power", "freeze", "random"] },
           358,
           null,
         );
@@ -2373,7 +2744,7 @@ const server = http.createServer(async (request, response) => {
           (button) => button.title,
         );
       }, card);
-      assert.deepEqual(custom, ["Turn off", "Freeze effect", "Apply"]);
+      assert.deepEqual(custom, ["Turn off", "Freeze effect", "Random"]);
       commonComparisons++;
     }
     // Native Freeze is greyed out for effects the firmware can't freeze, and

@@ -63,6 +63,8 @@ export function createClockCardAdapter(card) {
     command: (service, data, domain = "yeelight_cube") =>
       card._command(service, data, domain, true),
     freeze: () => card._command("freeze_display", {}, "yeelight_cube", true),
+    refresh: () =>
+      card._commands.execute(card._hass, card.config, "force_refresh"),
     freezable: () => effectSupportsFreeze(card._currentStyle()?.name),
     startRotation: (items, intervalSeconds) =>
       card._command(
@@ -100,9 +102,6 @@ export function createClockCardAdapter(card) {
         (entity) =>
           card._hass?.states[entity]?.attributes?.effect_rotation !== undefined,
       ),
-    pause: (paused) => {
-      card._previewsPaused = paused;
-    },
     frame: (name, phase, colorMode, color) => {
       const style = card
         ._controlStyles()

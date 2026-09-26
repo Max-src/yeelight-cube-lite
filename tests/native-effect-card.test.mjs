@@ -856,7 +856,7 @@ test("native commands send all targets through the shared service path", async (
   assert.equal(calls.at(-1).data.entity_id, "light.legacy");
 });
 
-test("preview selection stays local and Apply includes a supported speed draft", async () => {
+test("preview selection applies immediately and includes a supported speed draft", async () => {
   const source = readFileSync(
     new URL(
       "../custom_components/yeelight_cube/www/yeelight-cube-native-effects-card.js",
@@ -870,7 +870,7 @@ test("preview selection stays local and Apply includes a supported speed draft",
   )[1];
   const calls = [];
   const card = {
-    config: { auto_apply: false },
+    config: {},
     _stopRotation() {},
     _speedDraft: 70,
     _collections: { favourites: [] },
@@ -890,8 +890,7 @@ test("preview selection stays local and Apply includes a supported speed draft",
   )(nativeEffectAction);
   new Function("name", selectBody).call(card, "Rainbow");
   assert.equal(card._selected, "Rainbow");
-  assert.equal(calls.length, 0);
-  await card._apply("Rainbow");
+  await new Promise((resolve) => setTimeout(resolve));
   assert.deepEqual(calls, [
     {
       service: "set_native_effect",

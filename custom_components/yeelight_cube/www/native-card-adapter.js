@@ -31,11 +31,13 @@ export function createNativeCardAdapter(card) {
     currentColor: () => card._currentCustomColor(),
     select: (name) => {
       card._selected = name;
-      return card.config.auto_apply !== false ? card._apply(name, true) : true;
+      return card._apply(name, true);
     },
     command: (service, data, domain) =>
       card._command(service, data, domain, true),
     freeze: () => card._command("freeze_display", {}, "yeelight_cube", true),
+    refresh: () =>
+      card._commands.execute(card._hass, card.config, "force_refresh"),
     freezable: () => effectSupportsFreeze(card._effect()?.name),
     startRotation: (items, intervalSeconds) =>
       card._command(
@@ -73,9 +75,6 @@ export function createNativeCardAdapter(card) {
         (entity) =>
           card._hass?.states[entity]?.attributes?.effect_rotation !== undefined,
       ),
-    pause: (paused) => {
-      card._paused = paused;
-    },
     frame: (name, elapsed, colorMode, color) => {
       const item = card
         ._attrs()

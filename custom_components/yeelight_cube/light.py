@@ -1875,8 +1875,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
     async def _force_refresh_impl(self):
         """Force refresh implementation - runs inside _execute_hardware_op lock.
         
-        Closes persistent socket, re-activates FX mode via raw TCP,
-        and re-renders the display through the full pipeline.
+        Reconnects the active renderer and re-renders its current display.
         
         IMPORTANT: We must NOT read raw pixel data from self._layout and
         send it directly, because _apply_impl() applies software brightness
@@ -1891,21 +1890,29 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         Since ensure_fx_ready() already set _fx_mode_is_direct=True,
         _apply_impl() will skip redundant FX activation.
         """
-        # Steps 1-3: Close persistent socket, activate FX via raw TCP, set brightness
-        await self.ensure_fx_ready()
-        _LOGGER.info(f"[FORCE REFRESH] [{self._ip}] ensure_fx_ready complete")
+        if not self._is_on or self._music_flow_enabled:
+            return
+        if self._mode in ("Clock", "Native Effect"):
+            self._cube_matrix._close_fast_socket()
+        else:
+            await self.ensure_fx_ready()
         
         # Step 4: Re-render through the full display pipeline so brightness
         # darkening is applied once (not double-applied on stale pixel data).
         await self._apply_display_mode_internal(skip_post_delay=True)
         _LOGGER.info(
             f"[FORCE REFRESH] [{self._ip}] Complete - "
-            f"FX mode active, brightness={self._last_hardware_brightness}%, "
+            f"mode={self._mode}, brightness={self._last_hardware_brightness}%, "
             f"display re-rendered"
         )
 
     async def async_force_refresh(self):
         """Force refresh via _execute_hardware_op (properly serialized with device lock)."""
+        if not self._is_on:
+            return
+        if self._music_flow_enabled:
+            await self.async_set_music_flow(True)
+            return
         _LOGGER.info(
             f"[FORCE REFRESH] [{self._ip}] Starting -- "
             f"closing persistent socket and using raw TCP"

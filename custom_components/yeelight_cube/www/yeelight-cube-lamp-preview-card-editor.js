@@ -1,5 +1,6 @@
 import "./preview-appearance-editor.js";
-import { renderActionButtonSettings } from "./action-button-ui.js";
+import { renderModeControlSettings } from "./mode-controls-settings.js";
+import { lampActionConfig } from "./mode-controls-controller.js";
 import { orderableListStyles } from "./orderable-list-utils.js";
 import { renderOrientationSettings } from "./orientation-control-ui.js";
 import { LitElement, html, css } from "./lib/lit-all.js";
@@ -63,7 +64,6 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
       matrix_background: "black", // Black background by default
       matrix_box_shadow: true, // Keep matrix box shadow enabled
       matrix_pixel_style: "square", // Default pixel style
-      show_force_refresh_button: true, // Default force refresh button to enabled
       buttons_style: "classic", // New: default style for all buttons
       show_brightness_slider: true, // Show brightness slider by default
       brightness_slider_style: "slider", // Default brightness slider style
@@ -71,7 +71,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
       brightness_slider_thickness: 6, // Track thickness in px (2-20, replaces appearance)
       brightness_theme: "subtle", // Default brightness theme (matches section_style naming)
       show_brightness_label: true, // Show "Brightness" label above slider
-      ...config,
+      ...lampActionConfig(config),
     };
   }
 
@@ -269,7 +269,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
           </div>
         </div>
 
-        <!-- Power / Refresh Actions -->
+        <!-- Actions -->
         <div
           class="editor-card${!this._lampControlOpen
             ? " editor-card-collapsed"
@@ -279,28 +279,18 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
             class="editor-card-header"
             @click="${() => this._toggleSection("lampControl")}"
           >
-            Power / Refresh Actions ${chevronIcon(!this._lampControlOpen)}
+            Actions ${chevronIcon(!this._lampControlOpen)}
           </div>
           <div class="editor-card-content">
-            ${createToggleRow(
-              "Show Power Button",
-              "show_power_toggle",
-              cfg.show_power_toggle !== false,
-              (e) => this._onToggleChange(e),
-            )}
-            ${createToggleRow(
-              "Show Force Refresh Button",
-              "show_force_refresh_button",
-              cfg.show_force_refresh_button !== false,
-              (e) => this._onToggleChange(e),
-            )}
-            ${renderActionButtonSettings(
+            ${renderModeControlSettings(
+              "actions",
               cfg,
               (key, value) => {
                 this._config = { ...this._config, [key]: value };
                 this._fireConfigChanged();
               },
-              { defaultStyle: "classic" },
+              [],
+              "lamp",
             )}
           </div>
         </div>

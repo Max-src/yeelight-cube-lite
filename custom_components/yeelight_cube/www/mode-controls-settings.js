@@ -83,6 +83,8 @@ export function renderModeControlSettings(
     createToggleRow(label, key, config[key] ?? fallback, (event) =>
       change(key, event.target.checked),
     );
+  const actionKeys =
+    noun === "lamp" ? ["refresh", "power"] : ACTION_BUTTON_KEYS;
   if (area === "actions")
     return html`${toggle(
       "Show Actions",
@@ -99,9 +101,9 @@ export function renderModeControlSettings(
         )}${renderModeSettingsSection(
           "Actions & Order",
           renderOrderableList({
-            items: actionButtonOrder(config),
-            available: ACTION_BUTTON_KEYS.filter(
-              (key) => !actionButtonOrder(config).includes(key),
+            items: actionButtonOrder(config, actionKeys),
+            available: actionKeys.filter(
+              (key) => !actionButtonOrder(config, actionKeys).includes(key),
             ),
             labelFor: (key) => ACTION_BUTTON_LABELS[key] || key,
             onUpdate: (keys) => change("action_buttons", keys),

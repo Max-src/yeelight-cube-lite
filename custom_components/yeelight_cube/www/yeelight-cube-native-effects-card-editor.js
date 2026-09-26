@@ -179,7 +179,6 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
             )}
           </div>
           ${this._toggle("Card Background", "show_card_background")}
-          ${this._toggle("Apply on Selection", "auto_apply")}
         `,
       )}
       ${this._section(

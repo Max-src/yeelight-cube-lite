@@ -953,7 +953,7 @@ class YeelightCubeClockCard extends HTMLElement {
   }
 
   _paintVisible() {
-    if (!this._hass || this._previewsPaused) return;
+    if (!this._hass) return;
     // Freezing holds the background animation on its current frame, but the
     // clock digits/colon keep evolving -- so skip advancing the phase yet keep
     // repainting, exactly like the frozen lamp.
@@ -1062,6 +1062,14 @@ class YeelightCubeClockCard extends HTMLElement {
       this._styleList().find((item) => clockPresetKey(item) === styleName) ||
       this._currentStyle();
     if (!style) return;
+    // A powered-off lamp shows a blank screen: black out the current preview.
+    if (isCurrent && this._stateObj()?.state === "off") {
+      for (let i = 0; i < cells.length; i++) {
+        paintCellBackground(cells[i], "#000");
+        paintCellBoxShadow(cells[i], "");
+      }
+      return;
+    }
     const emptyBg = el._ignoreBlack ? "transparent" : "#000";
     const attrs = this._previewAttrs(style);
     const { fontMap, metrics } = this._getNativeClockFont();
@@ -1337,7 +1345,6 @@ class YeelightCubeClockCard extends HTMLElement {
     const cur = a.clock_content || (a.clock_show_date ? "time_date" : "time");
     return `
       <div class="section">
-        <div class="section-title">Content</div>
         <div data-clock-control="content">${this._controlGroup({ label: "Content", items: CONTENT_OPTIONS, value: cur })}</div>
       </div>`;
   }
@@ -1347,7 +1354,6 @@ class YeelightCubeClockCard extends HTMLElement {
     const blink = !!a.clock_colon_blink;
     return `
       <div class="section" style="--ctl-accent: color-mix(in srgb, var(--primary-color, #1976d2) 58%, #12a594);">
-        <div class="section-title">Format</div>
         <div data-clock-control="format" style="--primary-color: var(--ctl-accent); --primary-color-dark: color-mix(in srgb, var(--ctl-accent) 74%, #000);">${this._controlGroup(
           {
             label: "Format",
@@ -1413,7 +1419,6 @@ class YeelightCubeClockCard extends HTMLElement {
       class="section"
       style="--ctl-accent: color-mix(in srgb, var(--primary-color, #1976d2) 58%, #7c5cbf);"
     >
-      <div class="color-mode-heading">Colour mode</div>
       <yeelight-color-mode
         .config=${this.config}
         .options=${options}
@@ -1547,11 +1552,10 @@ class YeelightCubeClockCard extends HTMLElement {
       .section-sliders { margin-top: 8px; }
       .section-sliders .brightness-control-group { gap: 6px; }
       .section-sliders + .section { margin-top: 8px; }
-      /* Two titled sections (Content + Format) sit side by side when the card is
+      /* The Content and Format sections sit side by side when the card is
          wide enough, and wrap to their own rows otherwise. */
       .section-row { display: flex; flex-wrap: wrap; column-gap: 18px; }
       .section-row > .section { flex: 1 1 auto; min-width: 0; }
-      .section-title { font-size: 0.78em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--secondary-text-color, #9aa); margin-bottom: 6px; }
 
       .current-preview { display: flex; justify-content: center; padding: 6px 0 2px; }
       .current-preview-inner { width: 100%; }

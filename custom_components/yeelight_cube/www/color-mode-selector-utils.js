@@ -18,7 +18,6 @@ export const COLOR_PRESET_SHAPE_CHOICES = [
 ];
 
 export const colorModeSelectorStyles = `
-  .color-mode-heading { font-size: 0.78em; font-weight: normal; text-transform: uppercase; letter-spacing: 0; color: var(--secondary-text-color, #9aa); margin: 0 0 6px; }
   .unified-color-modes { display:flex; flex-wrap:wrap; align-items:center; gap:8px; }
   .unified-color-modes > .shared-button-group.action-row { display:contents; }
   .unified-color-modes button { flex:0 0 auto; max-width:100%; min-height:36px; }

@@ -151,6 +151,7 @@ import {
   rotationIntervalParts,
   formatRotationInterval,
   actionButtonOrder,
+  lampActionConfig,
   ACTION_BUTTON_KEYS,
 } from "../custom_components/yeelight_cube/www/mode-controls-controller.js";
 
@@ -664,11 +665,91 @@ test("reconfiguration invalidates in-flight commands and timers", async () => {
 test("action button order defaults to all keys, sanitizes and de-duplicates", () => {
   assert.deepEqual(actionButtonOrder({}), ACTION_BUTTON_KEYS);
   assert.deepEqual(
-    actionButtonOrder({ action_buttons: ["power", "apply", "power", "bogus"] }),
-    ["power", "apply"],
+    actionButtonOrder({
+      action_buttons: ["power", "random", "power", "bogus"],
+    }),
+    ["power", "random"],
   );
   // An explicit empty list hides every action.
   assert.deepEqual(actionButtonOrder({ action_buttons: [] }), []);
+});
+
+test("lamp actions migrate visibility and appearance while restricting supported keys", () => {
+  const keys = ["refresh", "power"];
+  for (const show_force_refresh_button of [false, true]) {
+    for (const show_power_toggle of [false, true]) {
+      const config = lampActionConfig({
+        show_force_refresh_button,
+        show_power_toggle,
+      });
+      assert.deepEqual(
+        actionButtonOrder(config, keys),
+        keys.filter((key) =>
+          key === "refresh" ? show_force_refresh_button : show_power_toggle,
+        ),
+      );
+      assert.equal("show_power_toggle" in config, false);
+      assert.equal("show_force_refresh_button" in config, false);
+      assert.deepEqual(lampActionConfig(config), config);
+    }
+  }
+  assert.equal(lampActionConfig({}).actions_buttons_content_mode, "icon_text");
+  assert.equal(
+    lampActionConfig({ reconnect_button_style: "outline" })
+      .actions_buttons_style,
+    "outline",
+  );
+  assert.equal(
+    lampActionConfig({ buttons_content_mode: "text" })
+      .actions_buttons_content_mode,
+    "text",
+  );
+  assert.deepEqual(
+    actionButtonOrder(lampActionConfig({ action_buttons: [] }), keys),
+    [],
+  );
+  assert.deepEqual(
+    actionButtonOrder(
+      lampActionConfig({ action_buttons: ["power", "freeze", "refresh"] }),
+      keys,
+    ),
+    ["power", "refresh"],
+  );
+});
+
+test("refresh tracks pending and failures without stopping rotation and resumes frozen display", async () => {
+  let finish;
+  const { controller } = fixture({
+    refresh: () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    stopRotation: () => assert.fail("Refresh must not stop rotation"),
+  });
+  controller.active = true;
+  controller.frozen = true;
+  const pending = controller.refresh();
+  assert.equal(controller.busy, true);
+  assert.equal(await controller.refresh(), false);
+  finish(false);
+  assert.equal(await pending, false);
+  assert.equal(controller.frozen, true);
+  assert.match(controller.error, /refreshed/);
+  const retry = controller.refresh();
+  finish(true);
+  assert.equal(await retry, true);
+  assert.equal(controller.active, true);
+  assert.equal(controller.frozen, false);
+  assert.equal(controller.error, "");
+  const obsolete = controller.refresh();
+  controller.configure({}, ["light.other"]);
+  controller.frozen = true;
+  finish(true);
+  assert.equal(await obsolete, false);
+  assert.equal(controller.frozen, true);
+  assert.equal(controller.busy, false);
+  controller.adapter.on = () => false;
+  assert.equal(await controller.refresh(), false);
 });
 
 test("freeze sends the freeze command, resumes by re-applying, and clears on any command", async () => {

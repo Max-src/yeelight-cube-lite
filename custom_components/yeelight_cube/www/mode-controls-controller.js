@@ -53,34 +53,55 @@ export function formatRotationInterval(seconds) {
 // reorder and hide them per card via the `action_buttons` config array.
 export const ACTION_BUTTON_KEYS = [
   "previous",
-  "apply",
   "next",
-  "pause_previews",
+  "random",
   "freeze",
+  "refresh",
   "power",
 ];
 
 export const ACTION_BUTTON_LABELS = {
   previous: "Previous",
-  apply: "Apply",
   next: "Next",
-  pause_previews: "Pause previews",
+  random: "Random",
   freeze: "Freeze display",
+  refresh: "Refresh",
   power: "Power",
 };
 
 // The ordered, de-duplicated list of visible action keys. No `action_buttons`
 // override means "show all in the default order".
-export function actionButtonOrder(config = {}) {
+export function actionButtonOrder(config = {}, keys = ACTION_BUTTON_KEYS) {
   const configured = config.action_buttons;
-  if (!Array.isArray(configured)) return [...ACTION_BUTTON_KEYS];
+  if (!Array.isArray(configured)) return [...keys];
   const seen = new Set();
   return configured.filter(
-    (key) =>
-      ACTION_BUTTON_KEYS.includes(key) &&
-      !seen.has(key) &&
-      (seen.add(key), true),
+    (key) => keys.includes(key) && !seen.has(key) && (seen.add(key), true),
   );
+}
+
+export function lampActionConfig(config = {}) {
+  const result = {
+    ...config,
+    actions_buttons_style:
+      config.actions_buttons_style ||
+      config.buttons_style ||
+      config.reconnect_button_style ||
+      "classic",
+    actions_buttons_content_mode:
+      config.actions_buttons_content_mode ||
+      config.buttons_content_mode ||
+      "icon_text",
+  };
+  if (!Array.isArray(result.action_buttons)) {
+    result.action_buttons = [
+      ...(config.show_force_refresh_button !== false ? ["refresh"] : []),
+      ...(config.show_power_toggle !== false ? ["power"] : []),
+    ];
+  }
+  delete result.show_force_refresh_button;
+  delete result.show_power_toggle;
+  return result;
 }
 
 export function sanitizeModeNames(names, limit = 100) {
@@ -116,7 +137,6 @@ export class ModeControlsController {
     this.favourites = [];
     this.active = false;
     this.busy = false;
-    this.paused = false;
     this.frozen = false;
     this.error = "";
     this.token = 0;
@@ -429,6 +449,36 @@ export class ModeControlsController {
     // spamming stop_effect_rotation on every state update.
     if (wasActive && this.adapter.stopRotation) this.adapter.stopRotation();
     this.notify();
+  }
+
+  async refresh() {
+    if (
+      this.busy ||
+      this.adapter.disabled() ||
+      !this.adapter.refresh ||
+      (this.adapter.on && !this.adapter.on())
+    )
+      return false;
+    const context = this.context;
+    this.busy = true;
+    this.error = "";
+    this.notify();
+    try {
+      const success = await this.adapter.refresh();
+      if (context !== this.context) return false;
+      if (success === false) this.error = "The lamp could not be refreshed.";
+      else this.frozen = false;
+      return success !== false;
+    } catch (error) {
+      if (context === this.context)
+        this.error = error.message || "Refresh failed.";
+      return false;
+    } finally {
+      if (context === this.context) {
+        this.busy = false;
+        this.notify();
+      }
+    }
   }
 
   async retryRotation() {

@@ -61,7 +61,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     config: { state: true },
     _state: { state: true },
     _selected: { state: true },
-    _paused: { state: true },
     _busy: { state: true },
     _error: { state: true },
     _customColorDraft: { state: true },
@@ -93,11 +92,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
           : 0;
         this._lastFrame = now;
         // A frozen display holds its current frame, mirroring the lamp.
-        if (
-          !this._paused &&
-          !this._controls.frozen &&
-          this._visibility?.onScreen
-        ) {
+        if (!this._controls.frozen && this._visibility?.onScreen) {
           this._elapsed += delta / 1000;
           this._paint();
         }
@@ -117,11 +112,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
           },
           onCommit: (value) => {
             this._stopRotation();
-            if (ns === "speed" && this.config.auto_apply === false) {
-              this._speedDraft = value;
-              this.requestUpdate();
-              return;
-            }
             this[`_${ns}Draft`] = null;
             if (ns === "speed")
               this._command("set_native_effect", {
@@ -173,7 +163,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       show_animation_speed: true,
       show_actions: true,
       show_search: true,
-      auto_apply: true,
       show_device_orientation: true,
       favourites_show_stars: true,
       ...resolvePreviewAppearance(config, "native"),
@@ -357,7 +346,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   _select(name) {
     this._stopRotation();
     this._selected = name;
-    if (this.config.auto_apply !== false) this._apply(name);
+    this._apply(name);
   }
 
   _effectBadge(item) {
@@ -692,7 +681,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
         ${this.config.show_color_modes &&
         Object.hasOwn(attrs, "native_effect_color_mode")
           ? html`<section class="color-modes">
-              <div class="color-mode-heading">Colour mode</div>
               <yeelight-color-mode
                 .config=${this.config}
                 .options=${this._colorOptions()}
@@ -797,8 +785,17 @@ class YeelightCubeNativeEffectsCard extends LitElement {
         ? (this._brightnessDraft ?? ((attrs.brightness || 255) * 100) / 255) /
           100
         : 1;
+    const off = this._state?.state === "off";
     for (const frame of this._frames) {
       if (!frame.visible) continue;
+      // A powered-off lamp shows a blank screen: black out the current preview.
+      if (off && frame.node.classList.contains("current-matrix")) {
+        frame.cells.forEach((cell) => {
+          paintCellBackground(cell, "#000");
+          if (cell.style.boxShadow !== "") cell.style.boxShadow = "";
+        });
+        continue;
+      }
       const effect = attrs.native_effect_catalog?.find(
         (item) => item.name === frame.name,
       );

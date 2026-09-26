@@ -4,6 +4,12 @@ import {
 } from "./preview-appearance.js";
 import { renderDotMatrix, rgbToCss } from "./yeelight-cube-dotmatrix.js";
 import { escapeHtml } from "./html-escape-utils.js";
+import "./mode-controls-ui.js";
+import {
+  ModeControlsController,
+  lampActionConfig,
+} from "./mode-controls-controller.js";
+import { CardCommandController } from "./card-command-controller.js";
 import {
   orientationOptions,
   nextOrientation,
@@ -20,11 +26,7 @@ import {
 } from "./clock-preview-utils.js";
 import { BLACK_THRESHOLD, previewBrightnessScale } from "./draw_card_const.js";
 import { createRafLoop, createVisibilityTracker } from "./matrix-animator.js";
-import {
-  exportImportButtonStyles,
-  getExportImportButtonClass,
-  renderButtonContent,
-} from "./action-button-utils.js";
+import { exportImportButtonStyles } from "./action-button-utils.js";
 import {
   resolveCapsuleTheme,
   resolveCapsuleThickness,
@@ -260,6 +262,33 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     super();
     this.config = {};
     this._hass = null;
+    this._actionCommands = new CardCommandController(() => {
+      if (!this._actions) return;
+      this._actions.error = this._actionCommands.error;
+      this._actions.notify();
+    });
+    const command = (service, data = {}, domain = "yeelight_cube") =>
+      this._actionCommands.execute(
+        this._hass,
+        this.config,
+        service,
+        data,
+        domain,
+      );
+    this._actions = new ModeControlsController({
+      kind: "lamp",
+      actionKeys: ["refresh", "power"],
+      items: () => [],
+      current: () => null,
+      on: () => this._hass?.states?.[this.config.entity]?.state === "on",
+      disabled: () =>
+        this._actionCommands.busy ||
+        !["on", "off"].includes(
+          this._hass?.states?.[this.config.entity]?.state,
+        ),
+      command,
+      refresh: () => command("force_refresh"),
+    });
     this._brightnessDebounceTimer = null;
     this._realBrightnessDebounceTimer = null;
     this._effectDebounceTimer = null;
@@ -425,15 +454,18 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       brightness_slider_thickness: 6, // Track thickness in px (2-20, replaces appearance)
       brightness_label_mode: "text", // NEW: Brightness label mode (none, text, icon, icon_text)
       brightness_max: 500, // NEW: Maximum brightness value (default 500 to test beyond 255)
-      show_power_toggle: true, // NEW: Show on/off toggle button by default
-      show_force_refresh_button: true, // Show force refresh button (raw TCP bypass)
       show_device_orientation: true, // Show the 4-way device orientation control
 
       hide_black_dots: false, // NEW: Ignore black pixels on preview (default: false = OFF)
       show_lamp_preview: true, // NEW: Show lamp matrix preview by default
       show_adjustment_controls: false, // Deprecated: Use light brightness control instead
-      ...resolvePreviewAppearance(config, "lamp"),
+      ...resolvePreviewAppearance(lampActionConfig(config), "lamp"),
     };
+    this._actionCommands.reset();
+    this._actions.configure(
+      this.config,
+      this.config.entity ? [this.config.entity] : [],
+    );
     // Support legacy config migrations
     if (config.reconnect_button_style && !config.buttons_style) {
       this.config.buttons_style = config.reconnect_button_style;
@@ -561,73 +593,6 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         this._lastMatrixColors = currentMatrixColors;
       }
       this.render();
-    }
-  }
-
-  async forceRefreshLamp() {
-    if (!this._hass || !this.config || !this.config.entity) {
-      return;
-    }
-
-    this._forceRefreshLoading = true;
-    this.render();
-
-    try {
-      await this._hass.callService("yeelight_cube", "force_refresh", {
-        entity_id: this.config.entity,
-      });
-      // Brief delay so the user sees visual feedback
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    } catch (error) {
-      console.error("[FORCE REFRESH] Service call failed:", error);
-    } finally {
-      this._forceRefreshLoading = false;
-      this.render();
-    }
-  }
-
-  async handlePowerToggle() {
-    if (!this._hass || !this.config || !this.config.entity) {
-      return;
-    }
-
-    const stateObj = this._hass.states[this.config.entity];
-    if (!stateObj) return;
-
-    const currentState = stateObj.state === "on";
-    const expectedState = !currentState; // We're toggling
-
-    // Show loading state immediately and track expected state
-    this._powerToggling = true;
-    this._expectedPowerState = expectedState;
-    this._updatePowerButtonLoadingState(true);
-
-    try {
-      // Toggle the light (same as clicking toggle in HA light card)
-      await this._hass.callService("light", "toggle", {
-        entity_id: this.config.entity,
-      });
-
-      // Safety timeout: clear loading after 5 seconds if state doesn't update.
-      // Tracked + isConnected-guarded so a removed card can't touch the DOM.
-      if (this._powerToggleSafetyTimer) {
-        clearTimeout(this._powerToggleSafetyTimer);
-      }
-      this._powerToggleSafetyTimer = setTimeout(() => {
-        this._powerToggleSafetyTimer = null;
-        if (!this.isConnected) return;
-        if (this._powerToggling) {
-          console.warn("[POWER BUTTON] Timeout - clearing loading state");
-          this._powerToggling = false;
-          this._expectedPowerState = null;
-          this._updatePowerButtonLoadingState(false);
-        }
-      }, 5000);
-    } catch (error) {
-      console.error("Error toggling light:", error);
-      this._powerToggling = false;
-      this._expectedPowerState = null;
-      this._updatePowerButtonLoadingState(false);
     }
   }
 
@@ -1819,13 +1784,20 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       if (!isNativeAnimating && !isClockAnimating)
         this._updateMatrixColors(gridColors, stateObj);
       this._updateSliderValues(displayBrightness, effects); // Use cached value to prevent jumping
-      this._updatePowerButton(stateObj);
 
       // Update change indicators on smart updates too, but defer to next frame
       // to avoid querying DOM while it's being updated
       requestAnimationFrame(() => {
         this._updateChangeIndicators();
       });
+    }
+
+    const actions = this.shadowRoot.querySelector(
+      'yeelight-mode-controls[area="actions"]',
+    );
+    if (actions) {
+      actions.model = this._actions;
+      this._actions.notify();
     }
 
     // Start/stop the client-side animations to match current mode.
@@ -2138,76 +2110,6 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     });
   }
 
-  _updatePowerButton(stateObj) {
-    const powerButton = this.shadowRoot.querySelector(
-      ".power-toggle-container button",
-    );
-    if (!powerButton) {
-      return;
-    }
-
-    const style = this.config.buttons_style || "classic";
-    const isOn = stateObj.state === "on";
-    const stateClass = isOn ? "on" : "off";
-    const label = isOn ? "Turn Off" : "Turn On";
-    const contentMode =
-      style === "icon"
-        ? "icon"
-        : this.config.buttons_content_mode || "icon_text";
-
-    // Update button state class (add/remove "on" or "off")
-    powerButton.classList.remove("on", "off");
-    powerButton.classList.add(stateClass);
-
-    // Clear loading state only when we reach the expected state
-    if (this._powerToggling && this._expectedPowerState !== null) {
-      if (isOn === this._expectedPowerState) {
-        this._powerToggling = false;
-        this._expectedPowerState = null;
-        powerButton.disabled = false;
-      } else {
-        // Keep loading state - we haven't reached expected state yet
-        return;
-      }
-    }
-
-    // Update button content
-    powerButton.innerHTML = renderButtonContent(
-      "mdi:power",
-      label,
-      contentMode,
-    );
-    powerButton.title = label;
-  }
-
-  _updatePowerButtonLoadingState(isLoading) {
-    const powerButton = this.shadowRoot.querySelector(
-      ".power-toggle-container button",
-    );
-    if (!powerButton) return;
-
-    const style = this.config.buttons_style || "classic";
-    const contentMode =
-      style === "icon"
-        ? "icon"
-        : this.config.buttons_content_mode || "icon_text";
-
-    powerButton.disabled = isLoading;
-
-    if (isLoading) {
-      // Show loading spinner
-      powerButton.innerHTML = renderButtonContent(
-        "mdi:loading",
-        "Loading...",
-        contentMode,
-      );
-      powerButton.title = "Loading...";
-      // Add spinning class to the icon
-      const icon = powerButton.querySelector("ha-icon");
-      if (icon) icon.classList.add("spinning");
-    }
-  }
-
   // Map the physical device orientation to a preview grid geometry + a
   // function returning the gridColors index for each display cell (r,c).
   //   right / left : 20x5 landscape (identical preview; left only flips the lamp)
@@ -2433,25 +2335,8 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   }
 
   _generateLampControlsHtml(stateObj, brightness) {
-    let html = "";
-    // Power toggle and force refresh buttons on same line
-    const showPowerToggle = this.config.show_power_toggle === true;
-    const showForceRefresh = this.config.show_force_refresh_button !== false;
-
-    if (showPowerToggle || showForceRefresh) {
-      const buttonCount = [showPowerToggle, showForceRefresh].filter(
-        Boolean,
-      ).length;
-      const multiClass = buttonCount >= 2 ? " two-buttons" : "";
-      html += `<div class="button-row${multiClass}">`;
-      if (showForceRefresh) {
-        html += this._generateForceRefreshButtonHtml();
-      }
-      if (showPowerToggle) {
-        html += this._generatePowerToggleHtml(stateObj);
-      }
-      html += "</div>";
-    }
+    let html =
+      '<yeelight-mode-controls area="actions"></yeelight-mode-controls>';
 
     // Device orientation control (between power/refresh actions and brightness).
     if (this.config.show_device_orientation !== false) {
@@ -2512,58 +2397,6 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     }
 
     return html;
-  }
-
-  _generatePowerToggleHtml(stateObj) {
-    const style = this.config.buttons_style || "classic";
-    const isOn = stateObj.state === "on";
-    const stateClass = isOn ? "on" : "off";
-    const label = isOn ? "Turn Off" : "Turn On";
-    const contentMode =
-      style === "icon"
-        ? "icon"
-        : this.config.buttons_content_mode || "icon_text";
-
-    // Use centralized utility for button class
-    const buttonClass = getExportImportButtonClass("power", style);
-
-    return `
-      <div class="power-toggle-container">
-        <button 
-          class="${buttonClass} ${stateClass}"
-          onclick="this.getRootNode().host.handlePowerToggle()"
-          title="${label}"
-        >
-          ${renderButtonContent("mdi:power", label, contentMode)}
-        </button>
-      </div>
-    `;
-  }
-
-  _generateForceRefreshButtonHtml() {
-    const style = this.config.buttons_style || "classic";
-    const isLoading = this._forceRefreshLoading;
-    const icon = isLoading ? "mdi:loading" : "mdi:flash";
-    const label = isLoading ? "Refreshing..." : "Force Refresh";
-    const contentMode =
-      style === "icon"
-        ? "icon"
-        : this.config.buttons_content_mode || "icon_text";
-    const buttonClass = getExportImportButtonClass("force-refresh", style);
-    const disabledAttr = isLoading ? " disabled" : "";
-
-    return `
-      <div class="force-refresh-container">
-        <button 
-          class="${buttonClass}${isLoading ? " loading" : ""}" 
-          onclick="this.getRootNode().host.forceRefreshLamp()"
-          title="Force Refresh"
-          ${disabledAttr}
-        >
-          ${renderButtonContent(icon, label, contentMode)}
-        </button>
-      </div>
-    `;
   }
 
   // Compact Layout: All controls in a single clean panel with minimal spacing
@@ -4573,6 +4406,11 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   }
 
   disconnectedCallback() {
+    this._actionCommands.reset();
+    this._actions.configure(
+      this.config,
+      this.config.entity ? [this.config.entity] : [],
+    );
     this._effectContext = (this._effectContext || 0) + 1;
     this._localEffects = {};
     this._isDragging = false;
@@ -4586,7 +4424,6 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     clearTimeout(this._renderDebounceTimer);
     clearTimeout(this._oscillationResetTimeout);
     clearTimeout(this._userBrightnessTimeout);
-    clearTimeout(this._powerToggleSafetyTimer);
 
     // Stop the client-side animation loops if running.
     this._stopNativeAnimation();
@@ -4604,7 +4441,6 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     this._renderDebounceTimer = null;
     this._oscillationResetTimeout = null;
     this._userBrightnessTimeout = null;
-    this._powerToggleSafetyTimer = null;
 
     // Clean up document-level drag listeners if disconnected mid-drag
     if (this._dragCleanup) {
@@ -4623,7 +4459,6 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     this._isDragging = false;
     this._anySliderDragging = false;
     this._rotaryDragging = false;
-    this._powerToggling = false;
   }
 
   getCardSize() {

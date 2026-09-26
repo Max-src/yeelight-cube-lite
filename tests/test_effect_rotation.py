@@ -31,6 +31,8 @@ def _rotation_helpers():
             "_apply_rotation_clock",
             "_rotation_current_name",
             "async_apply_display_mode",
+            "_force_refresh_impl",
+            "async_force_refresh",
         },
         {
             "asyncio": asyncio,
@@ -97,6 +99,32 @@ def make_light(helpers, kind="native", is_on=True, extended=False):
 class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.helpers = _rotation_helpers()
+
+    async def test_refresh_routes_to_active_renderer_without_stopping_rotation(self):
+        for mode in ("Clock", "Native Effect", "Text"):
+            with self.subTest(mode=mode):
+                light = make_light(self.helpers)
+                light._mode = mode
+                light._rotation_active = True
+                light._last_hardware_brightness = 50
+                light.ensure_fx_ready = AsyncMock()
+                light._cube_matrix = SimpleNamespace(_close_fast_socket=Mock())
+                light._apply_display_mode_internal = AsyncMock()
+                await self.helpers["_force_refresh_impl"](light)
+                self.assertEqual(light.ensure_fx_ready.await_count, int(mode == "Text"))
+                light._apply_display_mode_internal.assert_awaited_once_with(skip_post_delay=True)
+                self.assertTrue(light._rotation_active)
+
+    async def test_refresh_keeps_off_lamp_off_and_reapplies_music_flow(self):
+        light = make_light(self.helpers, is_on=False)
+        await self.helpers["async_force_refresh"](light)
+        light._execute_hardware_op.assert_not_awaited()
+        light._is_on = True
+        light._music_flow_enabled = True
+        light.async_set_music_flow = AsyncMock()
+        await self.helpers["async_force_refresh"](light)
+        light.async_set_music_flow.assert_awaited_once_with(True)
+        light._execute_hardware_op.assert_not_awaited()
 
     async def test_transient_step_retries_same_item_and_recovers(self):
         light = make_light(self.helpers, kind="clock")
