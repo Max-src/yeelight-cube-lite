@@ -8,7 +8,11 @@ import {
 } from "../custom_components/yeelight_cube/www/rotation-status.js";
 
 test("rotation retry targets only failed, stopped, on lamps with their backend lists", async () => {
-  const items = [{ name: "Rainbow", color_mode: "bw" }, { name: "White" }];
+  // The backend exposes a null colour for non-custom modes and a list for custom.
+  const items = [
+    { name: "Rainbow", color_mode: "bw", color: null },
+    { name: "White", color_mode: "custom", color: [1, 2, 3] },
+  ];
   const rotation = { kind: "clock", items, interval: 45 };
   const calls = [];
   const card = {
@@ -66,7 +70,14 @@ test("rotation retry targets only failed, stopped, on lamps with their backend l
     {
       config: { target_entities: ["light.failed"] },
       service: "start_effect_rotation",
-      data: { kind: "clock", items, interval: 45 },
+      data: {
+        kind: "clock",
+        items: [
+          { name: "Rainbow", color_mode: "bw" },
+          { name: "White", color_mode: "custom", color: [1, 2, 3] },
+        ],
+        interval: 45,
+      },
     },
   ]);
   assert.equal(await retryFailedRotations(card, "native"), false);

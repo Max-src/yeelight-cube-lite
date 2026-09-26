@@ -35,9 +35,17 @@ export async function retryFailedRotations(card, kind) {
         card._hass,
         { entity: target.entity },
         "start_effect_rotation",
-        { kind, items: target.items, interval: target.interval },
+        { kind, items: rotationItems(target.items), interval: target.interval },
       ),
     ),
   );
   return results.every(Boolean);
+}
+
+function rotationItems(items) {
+  // The exposed rotation attribute stores a null colour for non-custom modes;
+  // the service schema rejects a null colour, so omit the key when empty.
+  return items.map(({ color, ...rest }) =>
+    Array.isArray(color) && color.length ? { ...rest, color } : rest,
+  );
 }
