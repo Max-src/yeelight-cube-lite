@@ -582,6 +582,8 @@ data:
 
 Switch display modes, set gradient angles, and control how colors fill the lamp.
 
+<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Gradient-Card-Variation-1.png" alt="Gradient card" width="360">
+
 ### `set_mode`
 
 Change the active native clock or Matrix display mode.
@@ -699,6 +701,8 @@ data:
 ## 🎨 Palette Services
 
 Save, load, and manage color palettes shared across all cards and lamps.
+
+<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Palettes-Card-Variation-1.png" alt="Palettes card" width="360">
 
 ### `save_palette`
 
@@ -821,7 +825,28 @@ data:
   entity_id: light.cubelite_a904
 ```
 
+<details>
+<summary><strong>Valid effect names</strong></summary>
+
+**Official (18, always available):**
+`Streamer`, `Starry sky`, `Spectrum`, `Ocean Waves`, `Rainbow`, `Waterfall`,
+`Aurora`, `Bonfire`, `Pinball`, `Shooting Star`, `Tide`, `Building block`,
+`Hacking`, `Flower Sea`, `Magic`, `Wonderland`, `Kaleidoscope`, `Palette`
+
+**Experimental (19, require the Experimental Features switch):**
+`Rainbow Flow`, `Spectrum Chase`, `Pastel Pulse`, `Fireworks`,
+`Monochrome Waves`, `Pulse`, `Solar Flare`, `Prism`, `Ember`, `Color Trails`,
+`Sunset`, `Carousel`, `Blue Yellow`, `Ice Blue`, `Blue White`,
+`Spectrum Crumble`, `Drift`, `Spectrum Bands`, `Twinkle`
+
+Names are matched exactly. Additional unnamed firmware modes exist but are hidden
+because they have no stable name.
+
+</details>
+
 Experimental effects require **Experimental Features** to be enabled on the lamp.
+
+<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/generated/native-effects-overview.png" alt="Native Effects card" width="360">
 
 ---
 
@@ -850,6 +875,28 @@ data:
   twelve_hour: false
   entity_id: light.cubelite_a904
 ```
+
+<details>
+<summary><strong>Valid clock style names</strong></summary>
+
+**Standard (10, always available):**
+`Rainbow`, `Ocean Waves`, `Spectrum`, `White`, `Mint`, `Yellow`, `Pink`, `Red`,
+`Cyan`, `Purple`
+
+**Experimental (29, require the Experimental Features switch):**
+`Sunset`, `Blue Yellow`, `Blue White`, `Ice Blue`, `Carousel`, `Streamer`,
+`Rainbow Flow`, `Starry sky`, `Spectrum Chase`, `Pastel Pulse`, `Fireworks`,
+`Monochrome Waves`, `Aurora`, `Pulse`, `Solar Flare`, `Prism`, `Ember`,
+`Waterfall`, `Bonfire`, `Color Trails`, `Pinball`, `Tide`, `Flower Sea`,
+`Drift`, `Spectrum Bands`, `Magic`, `Wonderland`, `Twinkle`, `Kaleidoscope`
+
+A numeric firmware mode id (`1`–`99`) may also be passed as `style` to reach an
+unnamed mode. Solid-colour styles (`White`, `Mint`, `Yellow`, …) ignore
+`color_mode`; animated styles honour it.
+
+</details>
+
+<img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/generated/clock-overview.png" alt="Clock card" width="360">
 
 ---
 

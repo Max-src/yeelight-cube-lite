@@ -31,6 +31,9 @@ desktop.ini
 # Home Assistant
 *.log
 
+# Disposable HA instance used only for local screenshot generation
+.ha-docs-config/
+
 # Development / deployment scripts
 deploy_to_homeassistant.ps1
 debug_text_width.py
