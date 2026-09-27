@@ -38,13 +38,13 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a
 
 | Card | Description |
 | :-- | :-- |
-| **Preview Card** | Live lamp preview with brightness and color adjustments |
-| **[Clock Card](#clock-card)** | Time/date styles, colour modes, live previews, favourites, and server-side rotation |
-| **[Native Effects Card](#native-effects-card)** | Firmware animation previews, colour modes, favourites, rotation, and lamp controls |
-| **Colors Card** | Edit colors used to display text and apply gradients |
-| **Palettes Card** | Manage lists of colors (palettes) |
-| **Gradient Card** | Configure and preview gradient & color modes |
-| **Draw Card** | Pixel art editor with personal gallery |
+| **[Preview Card](#-preview-card-customyeelight-cube-lamp-preview-card)** | Live lamp preview with brightness and colour adjustments |
+| **[Clock Card](#clock-card-customyeelight-cube-clock-card)** | Time/date styles, colour modes, live previews, favourites, and server-side rotation |
+| **[Native Effects Card](#native-effects-card-customyeelight-cube-native-effects-card)** | Firmware animation previews, colour modes, favourites, rotation, and lamp controls |
+| **[Colors Card](#-colors-card-customyeelight-cube-color-list-editor-card)** | Edit the colours used to display text and apply gradients |
+| **[Palettes Card](#-palettes-card-customyeelight-cube-palette-card)** | Manage reusable lists of colours (palettes) |
+| **[Gradient Card](#-gradient-card-customyeelight-cube-gradient-card)** | Configure and preview gradient & colour modes |
+| **[Draw Card](#-draw-card-customyeelight-cube-draw-card)** | Pixel art editor with a personal gallery |
 
 > [!NOTE]
 > All cards support **light and dark themes** and adapt automatically to your Home Assistant theme.
