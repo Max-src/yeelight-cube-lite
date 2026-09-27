@@ -1,0 +1,155 @@
+{
+    "clock": {
+        "title": "Clock",
+        "variations": {
+            "overview": {
+                "title": "Square pixels and capsule sliders",
+                "config": {
+                    "slider_style": "capsule"
+                }
+            },
+            "dark": {
+                "title": "Dark theme, round pixels and list gallery",
+                "dark": true,
+                "config": {
+                    "slider_style": "bar",
+                    "effect_view": "list",
+                    "items_per_page": 2,
+                    "preview_appearance": {
+                        "background": "black",
+                        "pixels": "circle",
+                        "spacing": "normal",
+                        "shadow": false,
+                        "ignoreBlack": false
+                    }
+                }
+            },
+            "soft": {
+                "title": "Rounded pixels and compact text styles",
+                "config": {
+                    "slider_style": "slider",
+                    "style_selector_style": "text",
+                    "text_selector_style": "filled",
+                    "buttons_style": "outline",
+                    "preview_appearance": {
+                        "background": "white",
+                        "pixels": "rounded",
+                        "spacing": "subtle",
+                        "shadow": true,
+                        "ignoreBlack": true
+                    }
+                }
+            },
+            "mobile": {
+                "title": "Narrow dashboard column",
+                "width": 320,
+                "config": {
+                    "slider_style": "capsule"
+                }
+            },
+            "offline": {
+                "title": "Local previews while the lamp is unavailable",
+                "offline": true
+            }
+        },
+        "editors": {
+            "general": "Global Settings",
+            "preview_appearance": "Preview Appearance",
+            "speed": "Sliders",
+            "previews": "Previews",
+            "rotation": "Rotation"
+        }
+    },
+    "native-effects": {
+        "title": "Native Effects",
+        "variations": {
+            "overview": {
+                "title": "Square pixels and capsule sliders",
+                "config": {
+                    "slider_style": "capsule"
+                }
+            },
+            "dark": {
+                "title": "Dark theme, round pixels and list gallery",
+                "dark": true,
+                "config": {
+                    "slider_style": "bar",
+                    "effect_view": "list",
+                    "items_per_page": 2,
+                    "preview_appearance": {
+                        "background": "black",
+                        "pixels": "circle",
+                        "spacing": "normal",
+                        "shadow": false,
+                        "ignoreBlack": false
+                    }
+                }
+            },
+            "soft": {
+                "title": "Rounded pixels and compact text effects",
+                "config": {
+                    "slider_style": "slider",
+                    "style_selector_style": "text",
+                    "text_selector_style": "filled",
+                    "buttons_style": "outline",
+                    "preview_appearance": {
+                        "background": "white",
+                        "pixels": "rounded",
+                        "spacing": "subtle",
+                        "shadow": true,
+                        "ignoreBlack": true
+                    }
+                }
+            },
+            "mobile": {
+                "title": "Narrow dashboard column",
+                "width": 320,
+                "config": {
+                    "slider_style": "capsule"
+                }
+            },
+            "offline": {
+                "title": "Local previews while the lamp is unavailable",
+                "offline": true
+            }
+        },
+        "editors": {
+            "general": "Global Settings",
+            "preview_appearance": "Preview Appearance",
+            "sliders": "Sliders",
+            "previews": "Previews",
+            "rotation": "Rotation"
+        }
+    },
+    "lamp-preview": {
+        "title": "Preview",
+        "variations": {
+            "overview": {
+                "title": "Light theme with brightness and colour adjustments",
+                "config": {
+                    "brightness_slider_style": "capsule"
+                }
+            },
+            "dark": {
+                "title": "Dark theme with round pixels",
+                "dark": true,
+                "config": {
+                    "brightness_slider_style": "bar",
+                    "preview_appearance": {
+                        "background": "black",
+                        "pixels": "circle",
+                        "spacing": "normal",
+                        "shadow": false,
+                        "ignoreBlack": false
+                    }
+                }
+            }
+        },
+        "editors": {
+            "global": "Global Settings",
+            "preview_appearance": "Preview Appearance",
+            "brightnessSettings": "Brightness Settings",
+            "colorAdjustments": "Color Adjustments"
+        }
+    }
+}

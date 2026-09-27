@@ -5,6 +5,7 @@ const { randomBytes } = require("node:crypto");
 const { spawnSync } = require("node:child_process");
 const { chromium } = require("playwright");
 const { PNG } = require("pngjs");
+const catalogue = require("./card-docs-catalogue.json");
 
 const root = path.resolve(__dirname, "..");
 const output = path.join(root, "images", "Cards", "generated");
@@ -106,8 +107,22 @@ print(json.dumps({'font_maps': data['FONT_MAPS'], 'font_metrics': data['FONT_MET
   const first = new Map();
   const verified = new Map();
   let onboardState;
-  for (const kind of ["clock", "native-effects"]) {
-    for (const scenario of ["overview", "mobile", "offline"]) {
+  for (const [kind, definition] of Object.entries(catalogue)) {
+    const scenarios = {
+      ...definition.variations,
+      ...Object.fromEntries(
+        Object.entries(definition.editors).map(([section, title]) => [
+          `editor-${section}`,
+          { section, title },
+        ]),
+      ),
+    };
+    for (const [scenario, options] of Object.entries(scenarios)) {
+      if (
+        process.env.DOCS_FILTER &&
+        !`${kind}-${scenario}`.includes(process.env.DOCS_FILTER)
+      )
+        continue;
       for (let pass = 0; pass < 2; pass++) {
         const browser = await chromium.launch({
           headless: true,
@@ -124,7 +139,7 @@ print(json.dumps({'font_maps': data['FONT_MAPS'], 'font_metrics': data['FONT_MET
             deviceScaleFactor: 1,
             locale: "en-GB",
             timezoneId: "UTC",
-            colorScheme: "light",
+            colorScheme: options.dark ? "dark" : "light",
             reducedMotion: "reduce",
           });
           if (process.env.DOCS_HA_ONBOARD === "1" && !onboardState)
@@ -176,16 +191,20 @@ print(json.dumps({'font_maps': data['FONT_MAPS'], 'font_metrics': data['FONT_MET
               "* { transition: none !important; animation: none !important; caret-color: transparent !important; }",
           };
           await page.evaluate(
-            ({ kind, scenario }) => window.cardDocs.render(kind, scenario),
-            { kind, scenario },
+            ({ kind, scenario, options }) =>
+              window.cardDocs.render(kind, scenario, options),
+            { kind, scenario, options },
           );
           await page.clock.runFor(1200);
           await page.evaluate(() => window.cardDocs.settle());
           const file = `${kind}-${scenario}.png`;
-          let clip = await page.locator("#card-docs").boundingBox();
+          const selector = await page.evaluate(
+            () => window.cardDocs.captureSelector,
+          );
+          let clip = await page.locator(selector).boundingBox();
           await page.screenshot({ clip, ...screenshotOptions });
           await page.evaluate(() => window.cardDocs.settle());
-          clip = await page.locator("#card-docs").boundingBox();
+          clip = await page.locator(selector).boundingBox();
           assert.ok(
             clip && clip.width > 0 && clip.height > 0,
             "Capture container is empty",
@@ -202,7 +221,7 @@ print(json.dumps({'font_maps': data['FONT_MAPS'], 'font_metrics': data['FONT_MET
           const actual = PNG.sync.read(image);
           assert.equal(
             actual.width,
-            scenario === "mobile" ? 320 : 448,
+            options.section ? Math.floor(clip.width) : options.width || 448,
             `Unexpected pixel scale: ${file}`,
           );
           assert.ok(
@@ -210,10 +229,22 @@ print(json.dumps({'font_maps': data['FONT_MAPS'], 'font_metrics': data['FONT_MET
             `Incomplete capture: ${file}`,
           );
           let bottomContent = 0;
-          for (let row = actual.height - 100; row < actual.height - 10; row++) {
+          const background = actual.data.subarray(0, 3);
+          for (
+            let row = Math.max(0, actual.height - 100);
+            row < actual.height - 10;
+            row++
+          ) {
             for (let column = 20; column < actual.width - 20; column++) {
               const offset = (row * actual.width + column) * 4;
-              if (Math.min(...actual.data.subarray(offset, offset + 3)) < 180)
+              if (
+                actual.data
+                  .subarray(offset, offset + 3)
+                  .some(
+                    (channel, index) =>
+                      Math.abs(channel - background[index]) > 40,
+                  )
+              )
                 bottomContent++;
             }
           }

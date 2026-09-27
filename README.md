@@ -208,20 +208,77 @@ Every card comes with a **visual configuration editor** - click the pencil icon 
   </tr>
 </table>
 
-### Clock Card
+<a id="clock-card"></a>
 
-`custom:yeelight-cube-clock-card`
+### Clock Card (`custom:yeelight-cube-clock-card`)
 
 Browse firmware clock styles with live time/date previews, choose a colour mode
 or custom RGB, and save your favourite style-and-colour combinations. The card
 also provides content/format controls, brightness, animation speed, and a
 server-side favourites rotation that continues after you close the dashboard.
 
+<details>
+<summary>View card variations</summary>
+
+<!-- card-docs:clock:variations:start -->
+<table>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/clock-overview.png" alt="Clock - Square pixels and capsule sliders" width="280"><br>Square pixels and capsule sliders</td>
+    <td valign="top"><img src="images/Cards/generated/clock-dark.png" alt="Clock - Dark theme, round pixels and list gallery" width="280"><br>Dark theme, round pixels and list gallery</td>
+    <td valign="top"><img src="images/Cards/generated/clock-soft.png" alt="Clock - Rounded pixels and compact text styles" width="280"><br>Rounded pixels and compact text styles</td>
+  </tr>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/clock-mobile.png" alt="Clock - Narrow dashboard column" width="280"><br>Narrow dashboard column</td>
+    <td valign="top"><img src="images/Cards/generated/clock-offline.png" alt="Clock - Local previews while the lamp is unavailable" width="280"><br>Local previews while the lamp is unavailable</td>
+  </tr>
+</table>
+<!-- card-docs:clock:variations:end -->
+
+</details>
+
+**Features:**
+
+| Feature | Description |
+| :-- | :-- |
+| **Clock preview** | Live time/date preview using the lamp's native font, with configurable pixels, spacing, background, shadow and size |
+| **Style browser** | Search clock styles using text, grid, list, strip, carousel or wheel layouts, with pagination and favourite markers |
+| **Colour modes** | Choose supported palettes or custom RGB; save reusable colour modes and clock presets |
+| **Sliders** | Brightness and animation speed with selectable slider styles, labels and values |
+| **Content & format** | Switch time/date, 12/24-hour format and colon blinking |
+| **Actions** | Previous, next, random, freeze, refresh and power controls |
+| **Favourites & rotation** | Save style-and-colour combinations in this browser; rotate at a configurable interval, even after closing the dashboard |
+| **Multiple lamps & offline editing** | Target several lamps; previews and local favourite edits remain available while lamps are unavailable |
+
+<details>
+<summary>View editor sections</summary>
+
+<!-- card-docs:clock:editors:start -->
+<table>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/clock-editor-general.png" alt="Clock - Global Settings" width="220"><br>Global Settings</td>
+    <td valign="top"><img src="images/Cards/generated/clock-editor-preview_appearance.png" alt="Clock - Preview Appearance" width="220"><br>Preview Appearance</td>
+    <td valign="top"><img src="images/Cards/generated/clock-editor-speed.png" alt="Clock - Sliders" width="220"><br>Sliders</td>
+  </tr>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/clock-editor-previews.png" alt="Clock - Previews" width="220"><br>Previews</td>
+    <td valign="top"><img src="images/Cards/generated/clock-editor-rotation.png" alt="Clock - Rotation" width="220"><br>Rotation</td>
+  </tr>
+</table>
+<!-- card-docs:clock:editors:end -->
+
+</details>
+
+<details>
+<summary>YAML example</summary>
+
 ```yaml
 type: custom:yeelight-cube-clock-card
 entity: light.cubelite_a904
 title: Clock
 show_current_preview: true
+show_brightness: true
+show_animation_speed: true
+slider_style: capsule
 show_color_modes: true
 show_gallery: true
 style_selector_style: original
@@ -232,9 +289,16 @@ show_rotation: true
 rotation_interval: 30
 ```
 
-### Native Effects Card
+</details>
 
-`custom:yeelight-cube-native-effects-card`
+Use `target_entities` with a list of light entity IDs to control multiple lamps.
+See [configuration and storage details](SERVICES.md#clock-and-native-effects-cards).
+
+---
+
+<a id="native-effects-card"></a>
+
+### Native Effects Card (`custom:yeelight-cube-native-effects-card`)
 
 Browse the lamp's firmware animations with local animated previews. Choose
 supported palette modes or custom RGB, manage favourites, and rotate through
@@ -242,11 +306,67 @@ them. Brightness, speed, orientation, Freeze, Refresh, and power controls are
 available where supported. Experimental effects require the lamp's
 **Experimental Features** setting for playback.
 
+<details>
+<summary>View card variations</summary>
+
+<!-- card-docs:native-effects:variations:start -->
+<table>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/native-effects-overview.png" alt="Native Effects - Square pixels and capsule sliders" width="280"><br>Square pixels and capsule sliders</td>
+    <td valign="top"><img src="images/Cards/generated/native-effects-dark.png" alt="Native Effects - Dark theme, round pixels and list gallery" width="280"><br>Dark theme, round pixels and list gallery</td>
+    <td valign="top"><img src="images/Cards/generated/native-effects-soft.png" alt="Native Effects - Rounded pixels and compact text effects" width="280"><br>Rounded pixels and compact text effects</td>
+  </tr>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/native-effects-mobile.png" alt="Native Effects - Narrow dashboard column" width="280"><br>Narrow dashboard column</td>
+    <td valign="top"><img src="images/Cards/generated/native-effects-offline.png" alt="Native Effects - Local previews while the lamp is unavailable" width="280"><br>Local previews while the lamp is unavailable</td>
+  </tr>
+</table>
+<!-- card-docs:native-effects:variations:end -->
+
+</details>
+
+**Features:**
+
+| Feature | Description |
+| :-- | :-- |
+| **Live previews** | Preview firmware animations with configurable pixels, spacing, background, shadow and size |
+| **Effect browser** | Search effects using text, grid, list, strip, carousel or wheel layouts, with pagination and availability badges |
+| **Colour modes** | Apply supported palette modes or custom RGB; favourites remember the chosen colours |
+| **Sliders** | Brightness and effect speed with selectable slider styles; speed is shown for effects that support it |
+| **Orientation & actions** | Device orientation, previous, next, random, freeze, refresh and power controls |
+| **Favourites & rotation** | Order saved effect-and-colour combinations and rotate them on the lamp at a configurable interval |
+| **Multiple lamps & offline editing** | Control several targets; browse previews and edit browser-local favourites even while lamps are unavailable |
+
+<details>
+<summary>View editor sections</summary>
+
+<!-- card-docs:native-effects:editors:start -->
+<table>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/native-effects-editor-general.png" alt="Native Effects - Global Settings" width="220"><br>Global Settings</td>
+    <td valign="top"><img src="images/Cards/generated/native-effects-editor-preview_appearance.png" alt="Native Effects - Preview Appearance" width="220"><br>Preview Appearance</td>
+    <td valign="top"><img src="images/Cards/generated/native-effects-editor-sliders.png" alt="Native Effects - Sliders" width="220"><br>Sliders</td>
+  </tr>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/native-effects-editor-previews.png" alt="Native Effects - Previews" width="220"><br>Previews</td>
+    <td valign="top"><img src="images/Cards/generated/native-effects-editor-rotation.png" alt="Native Effects - Rotation" width="220"><br>Rotation</td>
+  </tr>
+</table>
+<!-- card-docs:native-effects:editors:end -->
+
+</details>
+
+<details>
+<summary>YAML example</summary>
+
 ```yaml
 type: custom:yeelight-cube-native-effects-card
 entity: light.cubelite_a904
 title: Native Effects
 show_preview: true
+show_brightness: true
+show_animation_speed: true
+slider_style: capsule
 show_color_modes: true
 show_gallery: true
 style_selector_style: original
@@ -257,18 +377,7 @@ show_rotation: true
 rotation_interval: 30
 ```
 
-<table>
-  <tr><th>Clock</th><th>Native Effects</th></tr>
-  <tr>
-    <td><img src="images/Cards/generated/clock-overview.png" alt="Clock card with Rainbow preview, colour modes, style gallery, favourites and rotation" width="448"></td>
-    <td><img src="images/Cards/generated/native-effects-overview.png" alt="Native Effects card with animation preview, colour modes, gallery, favourites and rotation" width="448"></td>
-  </tr>
-</table>
-
-These screenshots are generated inside the real Home Assistant frontend with
-the shipped card JavaScript, native clock font maps, synthetic lamp data and a
-fixed clock. They illustrate enabled sections; your theme,
-configuration and supported lamp features determine the actual presentation.
+</details>
 
 **Shared behaviour:** favourites store the style/effect together with its colour
 mode and custom RGB, separately for Clock and Native Effects. They belong to the
@@ -281,91 +390,10 @@ editing remain usable, even if the entity temporarily disappears. Hardware
 controls are gated. Reconnection discards local preview drafts without sending
 them to the lamps. Unknown rotation status is not treated as an active rotation.
 
-<details>
-<summary>Mobile and offline examples</summary>
-
-<table>
-  <tr><th>Clock, mobile</th><th>Native Effects, mobile</th></tr>
-  <tr>
-    <td><img src="images/Cards/generated/clock-mobile.png" alt="Clock card at a 320 pixel card width" width="320"></td>
-    <td><img src="images/Cards/generated/native-effects-mobile.png" alt="Native Effects card at a 320 pixel card width" width="320"></td>
-  </tr>
-  <tr><th>Clock, lamp unavailable</th><th>Native Effects, lamp unavailable</th></tr>
-  <tr>
-    <td><img src="images/Cards/generated/clock-offline.png" alt="Offline Clock card with previews and favourites still available" width="448"></td>
-    <td><img src="images/Cards/generated/native-effects-offline.png" alt="Offline Native Effects card with previews and favourites still available" width="448"></td>
-  </tr>
-</table>
-
-</details>
-
 See [configuration and storage details](SERVICES.md#clock-and-native-effects-cards),
-[service calls](SERVICES.md#-clock-native-effects-and-rotation), and
-[screenshot maintenance](#documentation-screenshots).
+[service calls](SERVICES.md#-clock-native-effects-and-rotation).
 
-### Documentation Screenshots
-
-The Clock and Native Effects images above are generated by
-[tests/card-docs.cjs](tests/card-docs.cjs) and
-[tests/card-docs-browser.js](tests/card-docs-browser.js) **inside a real Home
-Assistant frontend**. HA supplies its own fonts, theme, icons and `ha-card`;
-these are not mocked. The capture uses current workspace card modules and loads
-the integration's native font maps from
-[layout.py](custom_components/yeelight_cube/layout.py), just as the font sensor
-does. Only lamp state and favourites are synthetic. The cards cannot send
-service calls, and the fixture does not save dashboard or favourite changes.
-
-The generator checks galleries, colour controls, nonblank favourite frames and
-horizontal overflow, plus screenshot dimensions and visible content near the
-bottom of each card. It freezes time and preview phases and captures each
-scenario in two fresh Chromium processes. Every decoded pixel must match before
-any image is written. Capture rendering uses software rasterization, greyscale
-text smoothing and sRGB; CSS transitions are disabled. Use the same HA theme,
-Chromium and operating-system versions when comparing images across machines.
-
-With Node.js 22, Python 3 and a **fresh disposable Home Assistant** running on
-localhost:8123, run from the repository root (POSIX shell):
-
-```sh
-npm ci
-npx playwright install chromium
-DOCS_HA_ONBOARD=1 npm run docs:screenshots
-```
-
-`DOCS_HA_ONBOARD=1` creates an ephemeral account only on localhost and requires
-an unconfigured disposable instance. Never use it on your own installation.
-CI supplies a fresh Home Assistant 2026.9.3 container automatically; no HA
-credentials or lamps are needed. On Linux, install browser system dependencies
-with `npx playwright install --with-deps chromium`. The output goes to
-[images/Cards/generated](images/Cards/generated). Review and include changed
-images with your documentation/code changes.
-
-For local capture against an existing HA instance, log in yourself using
-`npx playwright codegen --save-storage=.ha-docs-auth.json http://YOUR_HA:8123`,
-then close that browser. Set `DOCS_HA_URL` to the same origin and
-`DOCS_HA_STORAGE_STATE=.ha-docs-auth.json` before running
-`npm run docs:screenshots`. That ignored file contains credentials: never commit,
-upload or share it, and delete it when finished. Do not set `DOCS_HA_ONBOARD`
-for this mode. The runner intercepts only the card JS requests to use workspace
-files; it does not deploy anything to Home Assistant.
-
-On Windows PowerShell, use `npm.cmd` and `npx.cmd`, and set environment variables
-with `$env:DOCS_HA_URL = 'http://YOUR_HA:8123'` and
-`$env:DOCS_HA_STORAGE_STATE = '.ha-docs-auth.json'`. Set `PYTHON` to a Python
-executable path if Python is not available on `PATH`.
-
-The **Documentation Screenshots** GitHub Actions workflow runs on relevant pull
-requests, pushes to `main`, and manual dispatch. It regenerates all six images
-and uploads a `card-documentation-screenshots` artifact for review only after
-repeatability checks pass. It has read-only
-repository permissions: it does **not** automatically commit or publish changes.
-Download the artifact to update checked-in images, or use the command above.
-
-Existing captures automatically reflect changes to the rendered components and
-catalogues. When adding a card or a state worth documenting, extend the `kind`
-and `scenario` cases in the generator and add its image to the relevant section.
-Prose and examples still need review; this is not automatic API documentation.
-The older cards' manually captured screenshots are not regenerated by this job.
+---
 
 ### 🖥️ Preview Card (`custom:yeelight-cube-lamp-preview-card`)
 
@@ -373,6 +401,20 @@ A live dashboard card that mirrors the lamp's current state with real-time matri
 
 <details>
 <summary>View card variations</summary>
+
+<!-- card-docs:lamp-preview:variations:start -->
+<table>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/lamp-preview-overview.png" alt="Preview - Light theme with brightness and colour adjustments" width="280"><br>Light theme with brightness and colour adjustments</td>
+    <td valign="top"><img src="images/Cards/generated/lamp-preview-dark.png" alt="Preview - Dark theme with round pixels" width="280"><br>Dark theme with round pixels</td>
+  </tr>
+</table>
+<!-- card-docs:lamp-preview:variations:end -->
+
+</details>
+
+<details>
+<summary>More layout examples</summary>
 
 <table>
   <tr>
@@ -399,15 +441,18 @@ A live dashboard card that mirrors the lamp's current state with real-time matri
 <details>
 <summary>View editor sections</summary>
 
+<!-- card-docs:lamp-preview:editors:start -->
 <table>
   <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Preview-Card-Editor-1.png" alt="Preview card editor - Global Settings"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Preview-Card-Editor-2.png" alt="Preview card editor - Lamp Preview"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Preview-Card-Editor-3.png" alt="Preview card editor - Power / Refresh Actions"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Preview-Card-Editor-4.png" alt="Preview card editor - Brightness Settings"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Preview-Card-Editor-5.png" alt="Preview card editor - Color Adjustments"></td>
+    <td valign="top"><img src="images/Cards/generated/lamp-preview-editor-global.png" alt="Preview - Global Settings" width="220"><br>Global Settings</td>
+    <td valign="top"><img src="images/Cards/generated/lamp-preview-editor-preview_appearance.png" alt="Preview - Preview Appearance" width="220"><br>Preview Appearance</td>
+    <td valign="top"><img src="images/Cards/generated/lamp-preview-editor-brightnessSettings.png" alt="Preview - Brightness Settings" width="220"><br>Brightness Settings</td>
+  </tr>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/lamp-preview-editor-colorAdjustments.png" alt="Preview - Color Adjustments" width="220"><br>Color Adjustments</td>
   </tr>
 </table>
+<!-- card-docs:lamp-preview:editors:end -->
 
 </details>
 
@@ -914,9 +959,9 @@ cameras render animated local approximations while a native effect is active
 because the firmware does not provide live frame readback.
 
 The **Native Effects Card** shares its capsule sliders and Text / Live Preview
-selectors with the Clock Card. It supports filled buttons, dropdowns, chips,
-lists, grids, strips, carousels, and wheels. Existing `effect_view` grid, list,
-buttons, and dropdown configurations remain available under **Original**.
+selectors with the Clock Card. Text offers filled buttons or dropdowns; Live
+Preview offers lists, grids, strips, carousels and wheels. **Original** offers
+grid and list layouts with capability badges.
 Browsing offers text search without filter or sort controls; raw numeric
 experimental modes are hidden.
 
@@ -935,8 +980,10 @@ services, so it keeps rotating after the dashboard tab is closed or refreshed �
 the lamp(s) hold the loop, not the browser. It only uses effects available on
 every target and starts only on explicit Play. Start is fire-and-forget: every
 lamp's loop is scheduled concurrently, so several lamps advance in parallel.
-Stop and manual card commands stop rotation; the backend also stops when its
-next step finds the lamp off or fails to apply the display. Rotation is
+Stop and manual card commands stop rotation. Retryable failures use bounded
+per-lamp recovery; an unreachable lamp can retain rotation intent and rejoin
+the group's current scheduled item after reconnecting. Turning a lamp off
+or enabling Music Flow cancels pending rotation intent. Rotation is
 in-memory only: it does not auto-resume after a Home Assistant restart or
 integration reload, and it does not wake lamps. Per-lamp failures are reported
 in `effect_rotation.error`. Unknown or gated items are skipped, so a successful
@@ -970,8 +1017,9 @@ independent of clock colours and persists with the lamp state. An incompatible
 effect uses its original colours. Restart Home Assistant after updating before using
 this feature; an older backend does not expose the palette controls.
 
-Time/date content, clock format, custom RGB colours and the saved clock-style
+Time/date content, clock format and the saved clock-style
 library remain clock-only. No custom native-effect preset library is introduced.
+Both cards support custom RGB where the selected style or effect permits it.
 Native previews and camera previews use the existing shared palette renderers.
 
 The brightness and animation-speed sliders on the Native Effects, Clock and Lamp
