@@ -16,6 +16,66 @@ Full documentation for all custom actions (services) registered under the `yeeli
 
 ---
 
+## Clock and Native Effects Cards
+
+See the [Clock](README.md#clock-card) and [Native Effects](README.md#native-effects-card)
+README sections for screenshots and copyable YAML. These are Lovelace card
+configurations, not service payloads: cards use `entity` / `target_entities`,
+while direct service calls use `entity_id`.
+
+| Configuration | Applies To | Purpose |
+| :-- | :-- | :-- |
+| `entity` | Both | Primary light entity for a single-lamp card |
+| `target_entities` | Both | List of target light entities for multi-lamp commands |
+| `show_current_preview` | Clock | Show the current clock preview |
+| `show_preview` | Native Effects | Show the current animation preview |
+| `show_color_modes` | Both | Show palette/custom-colour selection |
+| `show_gallery` | Both | Show the style/effect browser |
+| `style_selector_style` | Both | `filled`, `dropdown`, `preview-list`, `preview-grid`, `preview-strip`, `preview-carousel`, `preview-wheel`, or `original` |
+| `effect_view` | Both | `grid` or `list` for the Original browser |
+| `items_per_page` | Both | Pagination for grid/list browsers; editor range 0-16, with 0 meaning no pagination |
+| `visible_styles` / `visible_effects` | Clock / Native Effects | Ordered browser selection of style keys / effect names |
+| `show_favourites` | Both | Show saved style/effect and colour combinations |
+| `show_rotation` | Both | Show backend rotation status and commands |
+| `rotation_interval` | Both | Seconds between rotation steps, 10-604800 |
+| `show_brightness`, `show_animation_speed` | Both | Show applicable lamp sliders |
+| `show_content_toggle`, `show_format_toggles` | Clock | Time/date content and time-format controls |
+| `preview_appearance`, `preview_overrides` | Both | Shared and per-surface appearance, described below |
+
+Use the visual editor for section visibility, button styles, orientation,
+appearance presets and browser layouts. Colour-responsive filtering is automatic;
+`show_only_responding_styles` is obsolete. Experimental playback is controlled
+by the lamp's **Experimental Features** setting, not a card-only toggle.
+
+### Favourites, Presets and Offline Use
+
+- **Favourites** are browser-local, separated by card kind and target entity set.
+  Each entry stores a style/effect key, colour mode and optional RGB. Reordering
+  or shuffling favourites changes the list used by the next rotation Start.
+  Browser storage clearing or a different browser does not preserve this list.
+- **Saved clock styles / reusable colours** use `save_clock_preset` and live in
+  Home Assistant. These are distinct from favourites and require a working HA
+  connection, though the lamp itself need not be reachable to save a preset.
+- **Appearance presets** live in card YAML. They change previews, not lamp output.
+- If any configured lamp entity is missing, unknown or unavailable, style and
+  colour selections become local preview edits. Built-in catalogues and
+  favourite previews remain available. Hardware actions stay gated; returning
+  live state discards preview drafts without automatically applying them.
+- Missing rotation attributes show **Status unavailable**, not a fabricated
+  running/stopped result. A previously observed matching active/waiting rotation
+  can retain Stop; an unrelated card or a cold card with no known rotation does
+  not invent one. Fresh backend state takes precedence.
+
+Rotation uses the favourites submitted at Start and runs in Home Assistant,
+independently of browser storage or an open dashboard. Clock and Native Effects
+share the lamp's single rotation slot; starting one replaces the other on those
+targets. A single multi-target Start aligns item selection across the group.
+Independent Start calls are separate rotations, and animation frames are not
+guaranteed to be physically phase-synchronised.
+
+Screenshots and their automatic regeneration workflow are documented under
+[Documentation Screenshots](README.md#documentation-screenshots).
+
 ## Shared Preview Appearance
 
 Clock, Native Effects, Lamp Preview, Gradient and Draw use the same appearance
@@ -865,7 +925,7 @@ it keeps rotating after the dashboard tab is closed or refreshed.
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
-| `items` | Yes | Ordered mode names: native effect names, or clock style names / `custom:<id>` saved presets |
+| `items` | Yes | Ordered names or objects with `name`, optional `color_mode`, and optional RGB `color`; clock presets use `custom:<id>` |
 | `interval` | No | Seconds between changes, 10–604800 (default `60`) |
 | `kind` | No | `native` (default) or `clock` |
 | `entity_id` | Yes | Target lamp entity (list supported) |
@@ -882,7 +942,11 @@ data:
   entity_id: light.cubelite_a904
 ```
 
-Start requires at least two distinct, non-empty item strings. It is
+To preserve a favourite's colour, use an object item such as
+`{name: Rainbow, color_mode: white_orange}` or
+`{name: Rainbow, color_mode: custom, color: [255, 80, 20]}`.
+
+Start requires at least two distinct normalised items. It is
 **fire-and-forget**: every lamp's loop is scheduled concurrently and the service
 returns immediately, so several lamps advance in parallel rather than one
 waiting for the next. Only the validation above is raised synchronously.
@@ -898,8 +962,12 @@ A failed display operation is logged and records the reason in
 `effect_rotation.error`. Transient connection failures retry the same item up
 to twice, after 5 and 15 seconds. If the per-device circuit breaker is active,
 backoff is extended past its 30-second timeout window. The healthy lamps keep
-their own loops; recovery rejoins the shared time grid without resetting them.
-Non-transient failures or exhausted retries stop only the affected lamp.
+their own loops; recovery selects the current scheduled item on the shared
+timeline without resetting healthy targets, for both Clock and Native Effects.
+Non-transient failures stop only the affected lamp. Exhausted retryable failures
+retain recovery intent; after a confirmed outage, `waiting_for_reconnect` marks
+the suspended rotation until a successful health probe restarts it. Healthy
+probes alone do not repeatedly retry a reachable lamp's failed display command.
 Explicit Stop cancels backoff; lamp-off and calibration lock prevent another
 attempt (checked at most one second apart during backoff). The hardware safety
 timeout is unchanged. Sending a command successfully does not independently
@@ -908,13 +976,14 @@ verify the physical image.
 During recovery, `effect_rotation.retry_attempt` is 1 or 2 and `retry_at` is the
 next attempt's Unix timestamp. Success clears the error and retry state. Clock
 and Native cards show per-lamp status, errors and a **Retry failed lamps** button
-only when a target reports an error. Retry uses each stopped, on lamp's backend
+for errors; confirmed outages instead show a neutral waiting state. Retry uses each stopped, on lamp's backend
 list and interval; it does not restart healthy or already-retrying lamps. Normal
 error-free rotation controls and labels remain unchanged. Timeout logs identify
 the clock activation or brightness phase; retry logs include IP, item and attempt.
 
-Rotation stops via `stop_effect_rotation`, manual commands from the cards, or
-when its next step finds the lamp off or exhausts recovery. It is held
+Explicit Stop, turning the lamp off, relevant content changes, calibration lock
+or enabling Music Flow cancel pending recovery. Offline preview edits do not
+cancel rotation. Rotation is held
 in memory and does **not** auto-resume after a Home Assistant restart or an
 integration reload. Commands from other automations do not universally stop it.
 

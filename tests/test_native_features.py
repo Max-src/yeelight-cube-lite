@@ -87,6 +87,31 @@ def _load_standalone_functions(source: str, names: set, extra_namespace=None) ->
 
 
 class NativeFeatureTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("node"), "Node is required for catalogue parity")
+    def test_offline_native_catalogue_matches_backend(self):
+        module_uri = (ROOT / "www" / "native-effect-card-utils.js").as_uri()
+        script = (
+            f"import {{nativePreviewCatalogue}} from {json.dumps(module_uri)};"
+            "process.stdout.write(JSON.stringify(nativePreviewCatalogue));"
+        )
+        result = subprocess.run(
+            [shutil.which("node"), "--input-type=module", "-e", script],
+            text=True, capture_output=True, check=True,
+        )
+        actual = {item["name"]: item for item in json.loads(result.stdout)}
+        expected = {
+            name: {
+                "name": name,
+                "speed": bool(spec.get("speed")),
+                "directions": list(spec.get("directions", ())),
+                "extended": bool(spec.get("extended")),
+                "preview": True,
+            }
+            for name, spec in CONSTANTS["ALL_NATIVE_EFFECTS"].items()
+            if not name.isdigit()
+        }
+        self.assertEqual(expected, actual)
+
     def test_clock_palette_supported_styles(self):
         supported = {
             "Rainbow", "Spectrum", "Streamer", "Rainbow Flow",

@@ -1,3 +1,8 @@
+import {
+  previewOnly,
+  previewAttributes,
+  setPreviewAttributes,
+} from "./offline-preview-state.js";
 import { previewLength } from "./preview-appearance.js";
 import { cardLayoutStyles } from "./card-layout-utils.js";
 import { createClockCardAdapter } from "./clock-card-adapter.js";
@@ -217,6 +222,7 @@ class YeelightCubeClockCard extends HTMLElement {
   }
 
   setConfig(config) {
+    this._offlinePreviewDraft = null;
     this._commands.reset();
     const cfg = independentActionConfig(config, {
       buttons_style: "modern",
@@ -345,7 +351,16 @@ class YeelightCubeClockCard extends HTMLElement {
   }
 
   set hass(hass) {
+    this._attrs();
+    const wasPreviewOnly = previewOnly(this);
     this._hass = hass;
+    if (wasPreviewOnly && !previewOnly(this)) {
+      this._offlinePreviewDraft = null;
+      this._customMode = undefined;
+      this._customDraft = null;
+      this._customPresetColor = null;
+      this._selectedStylePresetId = null;
+    }
     this._controls?.update();
     this._restoreCustomColor();
     if (!this.shadowRoot) this.attachShadow({ mode: "open" });
@@ -451,7 +466,10 @@ class YeelightCubeClockCard extends HTMLElement {
   }
 
   _attrs() {
-    return this._stateObj()?.attributes || {};
+    const attrs = previewAttributes(this);
+    return previewOnly(this)
+      ? { ...attrs, extended_effects_enabled: true }
+      : attrs;
   }
 
   _restoreCustomColor() {
@@ -692,6 +710,28 @@ class YeelightCubeClockCard extends HTMLElement {
 
   // ── Actions ───────────────────────────────────────────────────────────────
   async _callSetClock(data, managed = false) {
+    if (previewOnly(this)) {
+      const style = this._controlStyles().find(
+        (item) => item.id === data.style || item.name === data.style,
+      );
+      setPreviewAttributes(this, {
+        ...(style ? { clock_style: style.name, clock_style_id: style.id } : {}),
+        ...(data.color_mode ? { clock_color_mode: data.color_mode } : {}),
+        ...("color" in data
+          ? {
+              clock_color: Array.isArray(data.color)
+                ? 0x01000000 +
+                  data.color[0] * 65536 +
+                  data.color[1] * 256 +
+                  data.color[2]
+                : null,
+            }
+          : {}),
+        ...(data.content ? { clock_content: data.content } : {}),
+      });
+      this.render();
+      return true;
+    }
     return this._command("set_clock_style", data, "yeelight_cube", managed);
   }
 
@@ -1119,7 +1159,7 @@ class YeelightCubeClockCard extends HTMLElement {
       return;
     }
     const entity = this._primaryEntity();
-    if (!entity || !this._hass.states?.[entity]) {
+    if (!entity) {
       this._shellContent(
         html`<div class="empty">
           Configure a Yeelight Cube Lite light entity in the card editor.
@@ -1147,13 +1187,20 @@ class YeelightCubeClockCard extends HTMLElement {
     const current = this._currentStyle();
 
     const sections = [];
+    const offline = previewOnly(this);
+    if (offline) {
+      sections.push(
+        html`<div class="muted" role="status">Lamp unavailable</div>`,
+      );
+    }
     if (this.config.show_current_preview !== false) {
       sections.push(unsafeHTML(this._renderCurrentPreview(current)));
     }
     sections.push(this._controlView("actions"));
     if (
-      this.config.show_brightness === true ||
-      this.config.show_animation_speed !== false
+      !offline &&
+      (this.config.show_brightness === true ||
+        this.config.show_animation_speed !== false)
     ) {
       sections.push(unsafeHTML(this._renderSliders(a)));
     }
@@ -1162,9 +1209,13 @@ class YeelightCubeClockCard extends HTMLElement {
       a.clock_content || (a.clock_show_date ? "time_date" : "time");
     // Content + Format share a row so they sit side by side when there's room.
     const inlineToggles = [];
-    if (this.config.show_content_toggle !== false)
+    if (!offline && this.config.show_content_toggle !== false)
       inlineToggles.push(this._renderContentToggle(a));
-    if (this.config.show_format_toggles !== false && content !== "date")
+    if (
+      !offline &&
+      this.config.show_format_toggles !== false &&
+      content !== "date"
+    )
       inlineToggles.push(this._renderFormatToggles(a));
     if (inlineToggles.length)
       sections.push(
@@ -1181,8 +1232,9 @@ class YeelightCubeClockCard extends HTMLElement {
       this._browser ||= document.createElement("yeelight-style-browser");
       this._browser.config = this.config;
       this._browser.items = this._previewItems();
-      this._browser.active = clockPresetKey(current);
+      this._browser.active = offline ? null : clockPresetKey(current);
       this._browser.model = this._controls;
+      this._browser.disabled = this._commands.busy;
       this._browser.searchLabel = "Search clock modes";
       this._browser.searchClass = "clock-search";
       this._browser.heading = "Clock style";
@@ -1201,7 +1253,7 @@ class YeelightCubeClockCard extends HTMLElement {
       ? `<div class="card-title">${escapeHtml(this.config.title)}</div>`
       : "";
     const activeLabel =
-      this.config.show_active_label !== false
+      !offline && this.config.show_active_label !== false
         ? `<div class="active-label">${escapeHtml(current?.name || "")}</div>`
         : "";
 

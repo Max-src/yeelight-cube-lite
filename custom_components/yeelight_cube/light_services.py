@@ -2670,11 +2670,14 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         if not isinstance(items, (list, tuple)) or len(items) < 2:
             raise HomeAssistantError("Provide at least two modes in 'items'")
 
+        timeline = {}
+
         async def _start_one(target):
             try:
-                await target.start_effect_rotation(items, interval, kind)
+                await target.start_effect_rotation(items, interval, kind, timeline=timeline)
             except Exception as exc:  # noqa: BLE001 — isolate per-lamp failures
-                target.stop_effect_rotation()
+                if getattr(target, "_rotation_active", False):
+                    target.stop_effect_rotation()
                 _LOGGER.warning(
                     "[START_EFFECT_ROTATION] Failed to start %s: %s",
                     getattr(target, "entity_id", target),

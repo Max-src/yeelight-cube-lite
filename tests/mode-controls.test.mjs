@@ -7,6 +7,62 @@ import {
   retryFailedRotations,
 } from "../custom_components/yeelight_cube/www/rotation-status.js";
 
+test("missing rotation status preserves the observed kind without inventing activity", () => {
+  const config = { target_entities: ["light.a", "light.b"] };
+  const snapshots = new Map();
+  const hass = {
+    states: Object.fromEntries(
+      config.target_entities.map((entity) => [
+        entity,
+        {
+          state: "on",
+          attributes: { effect_rotation: { kind: "clock", active: true } },
+        },
+      ]),
+    ),
+  };
+  rotationTargets(hass, config, "clock", snapshots);
+  hass.states = Object.fromEntries(
+    config.target_entities.map((entity) => [
+      entity,
+      {
+        state: "unavailable",
+        attributes: {},
+      },
+    ]),
+  );
+  assert.ok(
+    rotationTargets(hass, config, "clock", snapshots).every(
+      (target) => target.active && target.statusUnavailable,
+    ),
+  );
+  assert.ok(
+    rotationTargets(hass, config, "native", snapshots).every(
+      (target) => !target.active && target.statusUnavailable,
+    ),
+  );
+  assert.ok(
+    rotationTargets(hass, config, "clock", new Map()).every(
+      (target) => !target.active,
+    ),
+  );
+  hass.states["light.a"] = {
+    state: "on",
+    attributes: { effect_rotation: { kind: "native", active: true } },
+  };
+  assert.equal(
+    rotationTargets(hass, config, "clock", snapshots)[0].active,
+    false,
+  );
+  assert.equal(
+    rotationTargets(hass, config, "native", snapshots)[0].active,
+    true,
+  );
+  hass.states["light.a"] = { state: "on", attributes: {} };
+  rotationTargets(hass, config, "native", snapshots);
+  assert.equal(snapshots.has("light.a"), false);
+});
+
 test("rotation retry targets only failed, stopped, on lamps with their backend lists", async () => {
   // The backend exposes a null colour for non-custom modes and a list for custom.
   const items = [
@@ -22,6 +78,7 @@ test("rotation retry targets only failed, stopped, on lamps with their backend l
         "light.failed",
         "light.retrying",
         "light.off",
+        "light.waiting",
       ],
     },
     _hass: {
@@ -54,6 +111,17 @@ test("rotation retry targets only failed, stopped, on lamps with their backend l
             effect_rotation: { ...rotation, active: false, error: "timeout" },
           },
         },
+        "light.waiting": {
+          state: "on",
+          attributes: {
+            effect_rotation: {
+              ...rotation,
+              active: false,
+              waiting_for_reconnect: true,
+              error: "timeout",
+            },
+          },
+        },
       },
     },
     _commands: new CardCommandController(
@@ -65,6 +133,8 @@ test("rotation retry targets only failed, stopped, on lamps with their backend l
   const targets = rotationTargets(card._hass, card.config, "clock");
   assert.equal(targets[1].name, "Top");
   assert.equal(targets[2].retryAttempt, 1);
+  assert.equal(targets[4].waitingForReconnect, true);
+  assert.equal(targets[4].canRetry, false);
   assert.equal(await retryFailedRotations(card, "clock"), true);
   assert.deepEqual(calls, [
     {

@@ -1,0 +1,11 @@
+{
+    "name": "yeelight-cube-docs",
+    "private": true,
+    "scripts": {
+        "docs:screenshots": "node tests/card-docs.cjs"
+    },
+    "devDependencies": {
+        "playwright": "1.58.2",
+        "pngjs": "7.0.0"
+    }
+}

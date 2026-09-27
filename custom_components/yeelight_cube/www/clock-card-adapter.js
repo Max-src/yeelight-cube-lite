@@ -1,4 +1,5 @@
 import { clockColorToRgb } from "./clock-preset-utils.js";
+import { previewOnly } from "./offline-preview-state.js";
 
 import { clockPresetKey } from "./clock-preset-utils.js";
 import { getTargetEntities } from "./service-call-utils.js";
@@ -11,8 +12,10 @@ import { effectSupportsFreeze } from "./native-effect-preview.js";
  * operations and the shared command transport.
  */
 export function createClockCardAdapter(card) {
+  const rotationSnapshots = new Map();
   return {
     kind: "clock",
+    previewOnly: () => previewOnly(card),
     items: () =>
       card._controlStyles().map((style) => ({
         key: clockPresetKey(style),
@@ -25,16 +28,18 @@ export function createClockCardAdapter(card) {
       })),
     current: () => clockPresetKey(card._currentStyle()),
     available: (name) =>
-      getTargetEntities(card.config).every((entity) => {
-        const state = card._hass?.states[entity];
-        return (
-          state &&
-          !["unknown", "unavailable"].includes(state.state) &&
-          card
-            ._controlStyles(state.attributes)
-            .some((style) => clockPresetKey(style) === name)
-        );
-      }),
+      previewOnly(card)
+        ? card._controlStyles().some((style) => clockPresetKey(style) === name)
+        : getTargetEntities(card.config).every((entity) => {
+            const state = card._hass?.states[entity];
+            return (
+              state &&
+              !["unknown", "unavailable"].includes(state.state) &&
+              card
+                ._controlStyles(state.attributes)
+                .some((style) => clockPresetKey(style) === name)
+            );
+          }),
     ready: () =>
       getTargetEntities(card.config).every(
         (entity) => card._hass?.states[entity]?.state === "on",
@@ -85,7 +90,8 @@ export function createClockCardAdapter(card) {
           card._hass?.states[entity]?.attributes?.effect_rotation?.kind ===
             "clock",
       ),
-    rotationTargets: () => rotationTargets(card._hass, card.config, "clock"),
+    rotationTargets: () =>
+      rotationTargets(card._hass, card.config, "clock", rotationSnapshots),
     retryRotation: () => retryFailedRotations(card, "clock"),
     rotationError: () =>
       getTargetEntities(card.config)

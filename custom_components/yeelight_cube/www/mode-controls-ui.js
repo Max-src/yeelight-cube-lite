@@ -353,14 +353,25 @@ class YeelightModeControls extends LitElement {
     const playable = model.favourites.filter((f) => adapter.available(f.key));
     const names = model.names();
     const rotationTargets = adapter.rotationTargets?.() || [];
-    const rotationErrors = rotationTargets.filter((target) => target.error);
+    const rotationStatusUnavailable = rotationTargets.some(
+      (target) => target.statusUnavailable,
+    );
+    const rotationErrors = rotationTargets.filter(
+      (target) => target.error || target.waitingForReconnect,
+    );
     const rotationRunning = rotationTargets.filter(
       (target) => target.active && !target.error,
     ).length;
     const rotationRetrying = rotationErrors.filter(
-      (target) => target.active,
+      (target) => target.active && !target.waitingForReconnect,
     ).length;
-    const rotationHasActive = rotationTargets.some((target) => target.active);
+    const rotationWaiting = rotationTargets.filter(
+      (target) => target.waitingForReconnect,
+    ).length;
+    const rotationHasActive = rotationTargets.some(
+      (target) => target.active || target.waitingForReconnect,
+    );
+    const rotationCanStop = rotationHasActive || model.active;
     const selectedFavourite = model.currentFavourite();
     const isSelected = (favourite) =>
       favouriteId(favourite) === favouriteId(selectedFavourite);
@@ -440,7 +451,7 @@ class YeelightModeControls extends LitElement {
                         aria-label=${favouriteLabel(favourite, title)}
                         aria-pressed=${String(isSelected(favourite))}
                         ?disabled=${model.busy ||
-                        adapter.disabled() ||
+                        (adapter.disabled() && !adapter.previewOnly?.()) ||
                         !playable.includes(favourite)}
                         @click=${() => model.chooseFavourite(favourite)}
                       >
@@ -471,7 +482,7 @@ class YeelightModeControls extends LitElement {
                         selected: isSelected(favourite),
                         disabled:
                           model.busy ||
-                          adapter.disabled() ||
+                          (adapter.disabled() && !adapter.previewOnly?.()) ||
                           !playable.includes(favourite),
                       },
                     ),
@@ -493,38 +504,33 @@ class YeelightModeControls extends LitElement {
                 : "Effect Rotation"}
             </h3>
             <span class="muted" role="status"
-              >${rotationErrors.length
-                ? `Running: ${rotationRunning}/${rotationTargets.length}${rotationRetrying ? ` · Retrying: ${rotationRetrying}` : ""}`
-                : model.active
-                  ? "Running"
-                  : "Stopped"}</span
+              >${rotationStatusUnavailable
+                ? "Status unavailable"
+                : rotationErrors.length
+                  ? `Running: ${rotationRunning}/${rotationTargets.length}${rotationWaiting ? ` · Waiting: ${rotationWaiting}` : ""}${rotationRetrying ? ` · Retrying: ${rotationRetrying}` : ""}`
+                  : model.active
+                    ? "Running"
+                    : "Stopped"}</span
             >
           </header>
           <div class="summary">
             <span
-              >${names.length} ${noun}${names.length === 1 ? "" : "s"} · every
-              ${formatRotationInterval(rotationIntervalSeconds(config))}</span
+              >${rotationStatusUnavailable
+                ? `${model.favourites.length} saved favourites`
+                : `${names.length} ${noun}${names.length === 1 ? "" : "s"} · every ${formatRotationInterval(rotationIntervalSeconds(config))}`}</span
             >
             <div class="tools">
               ${this._button(
-                (rotationErrors.length ? rotationHasActive : model.active)
-                  ? "Stop rotation"
-                  : "Start rotation",
-                (rotationErrors.length ? rotationHasActive : model.active)
-                  ? "mdi:stop"
-                  : "mdi:play",
+                rotationCanStop ? "Stop rotation" : "Start rotation",
+                rotationCanStop ? "mdi:stop" : "mdi:play",
                 () => {
-                  if (rotationErrors.length && rotationHasActive) {
-                    model.stop();
-                  } else if (model.active) model.stop();
+                  if (rotationCanStop) model.stop();
                   else model.start();
                 },
                 {
                   contentMode: "icon",
                   disabled:
-                    !(rotationErrors.length
-                      ? rotationHasActive
-                      : model.active) &&
+                    !rotationCanStop &&
                     (model.busy || !model.ready() || names.length < 2),
                 },
               )}
@@ -534,25 +540,30 @@ class YeelightModeControls extends LitElement {
                 () => model.skip(),
                 {
                   contentMode: "icon",
-                  disabled: !model.active || model.busy,
+                  disabled:
+                    rotationStatusUnavailable || !model.active || model.busy,
                 },
               )}
             </div>
           </div>
           <div class="muted">
-            ${names.map(title).join(" / ") || `No ${noun}s selected.`}
+            ${rotationStatusUnavailable
+              ? "Rotation details unavailable"
+              : names.map(title).join(" / ") || `No ${noun}s selected.`}
           </div>
           ${rotationErrors.length
             ? html`
-                <div class="error" role="alert">
+                <div>
                   ${rotationErrors.map(
                     (target) =>
-                      html`<div>
+                      html`<div
+                        class=${target.waitingForReconnect ? "muted" : "error"}
+                        role=${target.waitingForReconnect ? "status" : "alert"}
+                      >
                         ${target.name}:
-                        ${target.active
-                          ? `Retrying (${target.retryAttempt}/2)`
-                          : "Stopped"}
-                        · ${target.error}
+                        ${target.waitingForReconnect
+                          ? "Waiting for lamp to reconnect"
+                          : `${target.active ? `Retrying (${target.retryAttempt}/2)` : "Stopped"} · ${target.error}`}
                       </div>`,
                   )}
                 </div>

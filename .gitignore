@@ -1,4 +1,7 @@
 # Python
+node_modules/
+.ha-docs-auth*.json
+
 __pycache__/
 *.py[cod]
 *$py.class

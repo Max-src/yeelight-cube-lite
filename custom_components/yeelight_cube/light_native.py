@@ -329,6 +329,11 @@ class NativeModesMixin:
         restore_display: bool = True,
     ) -> None:
         """Start or stop device-microphone music flow through private LAN control."""
+        if enabled and (
+            getattr(self, "_rotation_active", False)
+            or getattr(self, "_rotation_resume_pending", False)
+        ):
+            self.stop_effect_rotation()
 
         async def _write_music_flow() -> None:
             was_music_flow_enabled = self._music_flow_enabled

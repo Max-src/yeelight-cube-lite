@@ -448,6 +448,8 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         self._rotation_wake = None
         self._rotation_started = None
         self._rotation_error = None
+        self._rotation_resume_pending = False
+        self._rotation_waiting_for_reconnect = False
 
         # Apply timing (for queue processor stats, not cooldown-gating)
         self._last_apply_time = 0
@@ -831,6 +833,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             self._calibration_lock_unsub = None
         self._calibration_lock = bool(enabled)
         if enabled:
+            self.stop_effect_rotation()
             self._calibration_lock_unsub = self.hass.loop.call_later(
                 self.CALIBRATION_LOCK_TIMEOUT, self._auto_release_calibration_lock
             )
@@ -1030,6 +1033,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 # - display retries in progress (parallel recovery path)
                 is_stuck = (
                     self._cube_matrix._device_unreachable or
+                    getattr(self, "_rotation_waiting_for_reconnect", False) or
                     self._display_retry_count >= self.MAX_DISPLAY_RETRIES or
                     self._cube_matrix._consecutive_failures > 0 or
                     self._display_retry_count > 0
@@ -1070,6 +1074,10 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                     # lets a mains power cut, detected proactively in a silent
                     # mode, recover on return.
                     self._cube_matrix._device_unreachable = True
+                    if getattr(self, "_rotation_resume_pending", False):
+                        self._rotation_waiting_for_reconnect = True
+                        if self.hass is not None:
+                            self.async_write_ha_state()
                     # Log at WARNING so the user can see probes are happening
                     _LOGGER.warning(
                         f"[HEALTH] [{self._ip}] Probe failed -- still unreachable "
@@ -1110,6 +1118,11 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 self._connection_error = False
                 self._hard_timeout_times.clear()  # Clear circuit breaker
                 
+                if self._resume_rotation_after_reconnect():
+                    continue
+                if getattr(self, "_rotation_active", False):
+                    continue
+
                 if self._music_flow_enabled:
                     _LOGGER.debug(
                         "[MUSIC FLOW] [%s] HEALTH RECOVERY -- restarting "
@@ -1345,6 +1358,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 "items": list(getattr(self, "_rotation_items", [])),
                 "index": getattr(self, "_rotation_index", -1),
                 "error": getattr(self, "_rotation_error", None),
+                "waiting_for_reconnect": getattr(self, "_rotation_waiting_for_reconnect", False),
                 "retry_attempt": getattr(self, "_rotation_retry_attempt", 0),
                 "retry_at": getattr(self, "_rotation_retry_at", None),
             },
@@ -1939,6 +1953,12 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         # the animation from frame zero), it should only push the new brightness.
         was_on = self._is_on
 
+        if any(key in kwargs for key in ("rgb_color", "text_colors")) and (
+            getattr(self, "_rotation_active", False)
+            or getattr(self, "_rotation_resume_pending", False)
+        ):
+            self.stop_effect_rotation()
+
         # Brightness remains adjustable while Music Flow owns the display.
         # Explicit color content must first release the firmware renderer so
         # the requested RGB/text colors are not silently ignored.
@@ -2069,6 +2089,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         
         # Update HA state IMMEDIATELY for responsive UI
         self._is_on = False
+        self.stop_effect_rotation()
         if self.hass is not None:
             self.async_schedule_update_ha_state()
         
@@ -2588,6 +2609,14 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
 
     async def async_apply_display_mode(self, update_type: str = 'display_update', bypass_lock: bool = False):
         """Queue a display mode update to be processed sequentially"""
+        if update_type in {"color_change", "pixel_art", "text_change"} and (
+            getattr(self, "_rotation_resume_pending", False)
+            or (
+                getattr(self, "_rotation_active", False)
+                and self._mode != ("Clock" if self._rotation_kind == "clock" else "Native Effect")
+            )
+        ):
+            self.stop_effect_rotation()
         # Calibration lock: while the wizard owns the lamp, drop every display
         # update that doesn't explicitly bypass the lock (i.e. anything not coming
         # from the wizard). This freezes the panel on the wizard's test pattern so
@@ -3547,7 +3576,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             )
         return result
 
-    async def start_effect_rotation(self, items, interval, kind="native") -> None:
+    async def start_effect_rotation(self, items, interval, kind="native", *, timeline=None) -> None:
         """Start an entity-owned loop, acknowledging only its first display result.
 
         Returning before that result hides hardware failures from the calling
@@ -3566,6 +3595,11 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         current = self._rotation_current_name()
         names = [item["name"] for item in items]
         self._rotation_index = names.index(current) if current in names else -1
+        if timeline is None:
+            timeline = {}
+        timeline.setdefault("tick", int(asyncio.get_running_loop().time() // self._rotation_interval))
+        timeline.setdefault("index", self._rotation_index + 1)
+        self._rotation_timeline = dict(timeline)
         self._rotation_active = True
         self._rotation_wake = asyncio.Event()
         started = asyncio.get_running_loop().create_future()
@@ -3581,6 +3615,9 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
     def stop_effect_rotation(self) -> None:
         """Stop the server-side rotation loop."""
         self._rotation_active = False
+        self._rotation_resume_pending = False
+        self._rotation_waiting_for_reconnect = False
+        self._rotation_error = None
         self._rotation_retry_attempt = 0
         self._rotation_retry_at = None
         if self._rotation_task and not self._rotation_task.done():
@@ -3592,9 +3629,46 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         if self.hass is not None:
             self.async_write_ha_state()
 
+    def _resume_rotation_after_reconnect(self) -> bool:
+        if not getattr(self, "_rotation_waiting_for_reconnect", False):
+            return False
+        expected_mode = "Clock" if self._rotation_kind == "clock" else "Native Effect"
+        if (
+            not self._is_on or self._calibration_lock or self._music_flow_enabled
+            or self._mode != expected_mode or len(self._rotation_items) < 2
+        ):
+            self.stop_effect_rotation()
+            return False
+        if self._rotation_active:
+            return True
+        self._rotation_resume_pending = False
+        self._rotation_waiting_for_reconnect = False
+        self._rotation_retry_attempt = 0
+        self._rotation_retry_at = None
+        self._rotation_index -= 1
+        self._rotation_active = True
+        self._rotation_wake = asyncio.Event()
+        self._rotation_started = asyncio.get_running_loop().create_future()
+        self._rotation_task = self._create_tracked_task(
+            self._rotation_loop(), name=f"yeelight_cube_rotation_{self._ip}"
+        )
+        if self.hass is not None:
+            self.async_write_ha_state()
+        return True
+
+    def _rotation_scheduled_index(self) -> int:
+        timeline = getattr(self, "_rotation_timeline", None)
+        if timeline is None:
+            return (self._rotation_index + 1) % len(self._rotation_items)
+        tick = int(asyncio.get_running_loop().time() // self._rotation_interval)
+        return (timeline["index"] + tick - timeline["tick"]) % len(self._rotation_items)
+
     def skip_effect_rotation(self) -> None:
         """Advance to the next mode immediately instead of waiting."""
         wake = self._rotation_wake
+        if self._rotation_active or getattr(self, "_rotation_resume_pending", False):
+            if getattr(self, "_rotation_timeline", None) is not None:
+                self._rotation_timeline["index"] += 1
         if self._rotation_active and wake is not None:
             wake.set()
 
@@ -3614,9 +3688,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         try:
             while self._rotation_active:
                 interval = self._rotation_interval
-                self._rotation_index = (self._rotation_index + 1) % len(
-                    self._rotation_items
-                )
+                self._rotation_index = self._rotation_scheduled_index()
                 item = self._rotation_items[self._rotation_index]
                 name = item["name"]
                 try:
@@ -3641,6 +3713,11 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                     started.set_result(True)
                 if self.hass is not None:
                     self.async_write_ha_state()
+                if (
+                    getattr(self, "_rotation_timeline", None) is not None
+                    and self._rotation_index != self._rotation_scheduled_index()
+                ):
+                    continue
                 # Sleep until the next boundary on the shared monotonic clock
                 # (or a manual skip).
                 next_tick = (int(loop.time() // interval) + 1) * interval
@@ -3702,11 +3779,21 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 if attempt:
                     _LOGGER.info("[ROTATION] [%s] Recovered %s after %s retries", self._ip, item["name"], attempt)
                 self._rotation_error = None
+                self._rotation_resume_pending = False
+                self._rotation_waiting_for_reconnect = False
                 self._rotation_retry_attempt = 0
                 self._rotation_retry_at = None
                 return True
             self._rotation_error = getattr(self, "_last_connection_error", None) or f"Display update failed for {item['name']}"
             if not self._hardware_failure_retryable or attempt == 2:
+                self._rotation_resume_pending = bool(
+                    self._hardware_failure_retryable and self._rotation_active
+                    and self._is_on and not self._calibration_lock
+                )
+                self._rotation_waiting_for_reconnect = bool(
+                    self._rotation_resume_pending
+                    and getattr(getattr(self, "_cube_matrix", None), "_device_unreachable", False)
+                )
                 return False
             delay = (5.0, 15.0)[attempt]
             recent = [stamp for stamp in getattr(self, "_hard_timeout_times", []) if time.time() - stamp < CIRCUIT_BREAKER_WINDOW]

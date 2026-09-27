@@ -1,0 +1,211 @@
+window.cardDocs = {
+  async prepare(fonts) {
+    const host = document.querySelector("home-assistant");
+    if (
+      !host?.hass ||
+      !customElements.get("ha-card") ||
+      !customElements.get("ha-icon")
+    )
+      throw Error("A real, loaded Home Assistant frontend is required");
+    this.hass = host.hass;
+    this.fonts =
+      fonts ||
+      Object.values(host.hass.states).find(
+        (state) => state.attributes?.font_maps?.native,
+      )?.attributes;
+    if (!this.fonts?.font_maps?.native)
+      throw Error("Production native clock font sensor is required");
+    const base = "/yeelight_cube/";
+    await Promise.all(
+      ["clock", "native-effects"].map(
+        (kind) => import(`${base}yeelight-cube-${kind}-card.js`),
+      ),
+    );
+    this.catalogue = (
+      await import(`${base}native-effect-card-utils.js`)
+    ).nativePreviewCatalogue;
+    this.container = document.createElement("div");
+    this.container.id = "card-docs";
+    this.container.style.cssText =
+      "position:fixed;z-index:10000;top:0;left:0;width:448px;background:var(--primary-background-color);";
+    host.shadowRoot.append(this.container);
+    this.originalDate = Date;
+    this.originalRandom = Math.random;
+  },
+
+  async render(kind, scenario) {
+    this.container.replaceChildren();
+    this.container.style.width = scenario === "mobile" ? "320px" : "448px";
+    const OriginalDate = this.originalDate;
+    window.Date = class extends OriginalDate {
+      constructor(...args) {
+        super(...(args.length ? args : ["2026-01-15T10:08:00Z"]));
+      }
+      static now() {
+        return 1768471680000;
+      }
+    };
+    let seed = 12345;
+    Math.random = () => {
+      seed = (seed * 16807) % 2147483647;
+      return (seed - 1) / 2147483646;
+    };
+    const clock = kind === "clock";
+    const card = document.createElement(`yeelight-cube-${kind}-card`);
+    card.setConfig({
+      entity: "light.documentation_only",
+      target_entities: ["light.documentation_only"],
+      title: clock ? "Clock" : "Native Effects",
+      show_current_preview: true,
+      show_preview: true,
+      show_color_modes: true,
+      show_gallery: true,
+      show_favourites: true,
+      show_rotation: true,
+      show_actions: true,
+      show_device_orientation: false,
+      show_content_toggle: false,
+      show_format_toggles: false,
+      show_brightness: false,
+      show_animation_speed: false,
+      style_selector_style: "original",
+      effect_view: "grid",
+      items_per_page: 4,
+      actions_buttons_style: "icon",
+      actions_buttons_content_mode: "icon",
+      buttons_style: "pill",
+      buttons_content_mode: "icon",
+      preview_appearance: {
+        background: "transparent",
+        pixels: "square",
+        spacing: "none",
+        shadow: false,
+        ignoreBlack: true,
+      },
+      lamp_preview_size: 95,
+      effect_preview_size: 100,
+      rotation_interval: 30,
+    });
+    const favourites = [
+      { key: "Rainbow", colorMode: "normal" },
+      { key: "Kaleidoscope", colorMode: "white_orange" },
+    ];
+    const deny = async () => {
+      throw Error("Documentation cannot call Home Assistant services or APIs");
+    };
+    card.hass = {
+      ...this.hass,
+      callService: deny,
+      callApi: deny,
+      callWS: deny,
+      connection: undefined,
+      states: {
+        "sensor.documentation_font": { state: "ready", attributes: this.fonts },
+        "light.documentation_only": {
+          state: scenario === "offline" ? "unavailable" : "on",
+          attributes:
+            scenario === "offline"
+              ? {}
+              : {
+                  friendly_name: "Demo lamp",
+                  content_mode: clock ? "Clock" : "Native Effect",
+                  brightness: 255,
+                  device_orientation: "right",
+                  native_effect: "Rainbow",
+                  native_effect_color_mode: "normal",
+                  native_effect_color: null,
+                  native_effect_speed: 50,
+                  native_effect_catalog: this.catalogue,
+                  extended_effects_enabled: true,
+                  clock_style: "Rainbow",
+                  clock_style_id: 1,
+                  clock_color_mode: "normal",
+                  clock_content: "time",
+                  effect_rotation: {
+                    kind: clock ? "clock" : "native",
+                    active: true,
+                    interval: 30,
+                    items: favourites.map((item) => ({
+                      name: item.key,
+                      color_mode: item.colorMode,
+                    })),
+                    index: 0,
+                    error: null,
+                  },
+                },
+        },
+      },
+    };
+    card._controls.favourites = favourites;
+    this.container.append(card);
+    card._controls.notify();
+    await card.updateComplete;
+    this.card = card;
+  },
+
+  async settle() {
+    const card = this.card;
+    card._animLoop?.stop();
+    card._loop?.stop();
+    if (card._paintPreview) {
+      card._phaseAccum = 1.2;
+      card._lastPhaseTs = Date.now();
+      for (const tile of card.shadowRoot.querySelectorAll(
+        "[data-clock-preview], .original-gallery .original-item",
+      ))
+        card._paintPreview(tile, 1.2);
+    } else {
+      card._elapsed = 1.2;
+      card._frames.forEach((frame) => {
+        frame.visible = true;
+      });
+      card._paint();
+    }
+    const frame = card._controls.adapter.frame;
+    card._controls.adapter.frame = (name, phase, mode, color) =>
+      frame(name, 1.2, mode, color);
+    for (const view of card.shadowRoot.querySelectorAll(
+      "yeelight-mode-controls",
+    )) {
+      cancelAnimationFrame(view._frame);
+      view.requestUpdate();
+      await view.updateComplete;
+    }
+    const roots = [card.shadowRoot];
+    for (const current of roots)
+      for (const element of current.querySelectorAll("*")) {
+        if (element.updateComplete) await element.updateComplete;
+        if (element.shadowRoot) roots.push(element.shadowRoot);
+      }
+    await document.fonts.ready;
+    if (
+      !card.shadowRoot
+        .querySelector("yeelight-color-mode")
+        ?.getBoundingClientRect().height
+    )
+      throw Error("Missing colours");
+    if (
+      !card.shadowRoot
+        .querySelector(".original-gallery")
+        ?.getBoundingClientRect().height
+    )
+      throw Error("Missing gallery");
+    for (const item of card._controls.favourites) {
+      const pixels = card._controls.adapter.frame(
+        item.key,
+        1.2,
+        item.colorMode,
+      );
+      if (!pixels?.some((pixel) => pixel.some((channel) => channel > 0)))
+        throw Error(`Blank preview: ${item.key}`);
+    }
+    if (this.container.scrollWidth > this.container.clientWidth)
+      throw Error("Horizontal overflow");
+  },
+
+  cleanup() {
+    this.container?.remove();
+    if (this.originalDate) window.Date = this.originalDate;
+    if (this.originalRandom) Math.random = this.originalRandom;
+  },
+};

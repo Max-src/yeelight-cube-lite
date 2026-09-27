@@ -1,14 +1,22 @@
 import { getTargetEntities } from "./service-call-utils.js";
 
-export function rotationTargets(hass, config, kind) {
+export function rotationTargets(hass, config, kind, snapshots) {
   return [...new Set(getTargetEntities(config))].map((entity) => {
     const state = hass?.states?.[entity];
-    const rotation = state?.attributes?.effect_rotation;
+    const observed = state?.attributes?.effect_rotation;
+    const statusUnavailable =
+      !observed && (!state || ["unavailable", "unknown"].includes(state.state));
+    if (observed) snapshots?.set(entity, { ...observed });
+    else if (!statusUnavailable) snapshots?.delete(entity);
+    const rotation =
+      observed || (statusUnavailable ? snapshots?.get(entity) : null);
     const matches = rotation?.kind === kind;
     return {
       entity,
       name: state?.attributes?.friendly_name || entity,
       active: matches && rotation.active === true,
+      statusUnavailable,
+      waitingForReconnect: matches && rotation.waiting_for_reconnect === true,
       error: matches ? rotation.error || "" : "",
       retryAttempt: matches ? rotation.retry_attempt || 0 : 0,
       retryAt: matches ? rotation.retry_at : null,
@@ -16,6 +24,7 @@ export function rotationTargets(hass, config, kind) {
         matches &&
         !!rotation.error &&
         !rotation.active &&
+        !rotation.waiting_for_reconnect &&
         state?.state === "on" &&
         rotation.items?.length >= 2,
       items: matches ? rotation.items || [] : [],

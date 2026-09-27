@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {
+  previewOnly,
+  previewAttributes,
+} from "../custom_components/yeelight_cube/www/offline-preview-state.js";
 import { resolvePreviewAppearance } from "../custom_components/yeelight_cube/www/preview-appearance.js";
 import { CardCommandController } from "../custom_components/yeelight_cube/www/card-command-controller.js";
 import { requestedPage } from "../custom_components/yeelight_cube/www/pagination-utils.js";
@@ -15,6 +19,7 @@ import {
 import { readFileSync } from "node:fs";
 import {
   nativeEffectItems,
+  nativePreviewCatalogue,
   nativeEffectDirection,
   nativeEffectFrame,
   nativeEffectAction,
@@ -194,11 +199,16 @@ test("native unsaved colour survives stale state echoes and unrelated updates", 
   const body = source.match(/  set hass\(hass\) \{([\s\S]*?)\n  \}/)[1];
   const update = new Function(
     "getTargetEntities",
+    "previewOnly",
     `return function(hass) {${body}}`,
-  )(getTargetEntities);
+  )(getTargetEntities, previewOnly);
   const draft = [18, 52, 86];
   const card = {
     config: { entity: "light.a", show_color_modes: true },
+    _hass: { states: { "light.a": { state: "on", attributes: {} } } },
+    _attrs() {
+      return previewAttributes(this);
+    },
     _customColorDraft: draft,
     _controls: { update() {} },
     requestUpdate() {},
@@ -373,7 +383,12 @@ test("rotation retains only effects available on every target", () => {
     _effectAvailable: cardMethod("_effectAvailable", {
       getTargetEntities,
       nativeEffectItems,
+      nativePreviewCatalogue,
+      previewOnly,
     }),
+    _attrs() {
+      return { native_effect_catalog: nativePreviewCatalogue };
+    },
   };
   const controls = new ModeControlsController({
     kind: "native",
@@ -383,7 +398,7 @@ test("rotation retains only effects available on every target", () => {
   controls.favourites = card._collections.favourites;
   assert.deepEqual(controls.names(), ["Rainbow"]);
   card._hass.states["light.second"].state = "unavailable";
-  assert.deepEqual(controls.names(), []);
+  assert.deepEqual(controls.names(), ["Rainbow", "Streamer"]);
 });
 
 test("rotation order and interval are bounded", () => {

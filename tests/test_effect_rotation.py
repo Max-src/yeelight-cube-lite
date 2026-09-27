@@ -23,6 +23,10 @@ def _rotation_helpers():
             "skip_effect_rotation",
             "_normalize_rotation_items",
             "_rotation_loop",
+            "_rotation_scheduled_index",
+            "_resume_rotation_after_reconnect",
+            "_periodic_health_check",
+            "async_turn_off",
             "_apply_rotation_step",
             "_wait_rotation_retry",
             "_apply_rotation_item",
@@ -38,6 +42,8 @@ def _rotation_helpers():
             "asyncio": asyncio,
             "time": time,
             "CIRCUIT_BREAKER_WINDOW": 30.0,
+            "RECOVERY_CONNECT_TIMEOUT": 3.0,
+            "RECONNECT_COOLDOWN_INITIAL": 1.0,
             "DOMAIN": DOMAIN,
             "NATIVE_CLOCK_STYLES": NATIVE_CLOCK_STYLES,
             "ALL_NATIVE_EFFECTS": ALL_NATIVE_EFFECTS,
@@ -77,6 +83,8 @@ def make_light(helpers, kind="native", is_on=True, extended=False):
         _rotation_wake=None,
         _rotation_started=None,
         _rotation_error=None,
+        _rotation_resume_pending=False,
+        _rotation_waiting_for_reconnect=False,
         _calibration_lock=False,
         _music_flow_enabled=False,
         stop_scroll_timer=Mock(),
@@ -90,7 +98,7 @@ def make_light(helpers, kind="native", is_on=True, extended=False):
     )
     _bind(light, helpers, "start_effect_rotation", "stop_effect_rotation",
           "skip_effect_rotation", "_normalize_rotation_items", "_rotation_loop",
-          "_apply_rotation_step", "_wait_rotation_retry",
+          "_apply_rotation_step", "_wait_rotation_retry", "_resume_rotation_after_reconnect", "_rotation_scheduled_index",
           "_apply_rotation_item", "_start_rotation_apply", "_apply_rotation_native",
           "_apply_rotation_clock", "_rotation_current_name")
     return light
@@ -160,6 +168,146 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(light._wait_rotation_retry.await_count, 2)
         self.assertTrue(all(call.args[0] >= 30 for call in light._wait_rotation_retry.await_args_list))
         self.assertEqual(light._rotation_error, "Device timeout")
+
+    async def test_offline_exhaustion_preserves_rotation_for_reconnect(self):
+        light = make_light(self.helpers, kind="clock")
+        light._cube_matrix = SimpleNamespace(_device_unreachable=True)
+        light._apply_rotation_item = AsyncMock(side_effect=TimeoutError("Device timeout"))
+        light._wait_rotation_retry = AsyncMock(return_value=True)
+        with self.assertRaises(ValueError):
+            await light.start_effect_rotation(["Rainbow", "White"], 10, "clock")
+        self.assertFalse(light._rotation_active)
+        self.assertTrue(light._rotation_waiting_for_reconnect)
+        self.assertEqual(light._apply_rotation_item.await_count, 3)
+        light.stop_effect_rotation()
+        self.assertFalse(light._rotation_waiting_for_reconnect)
+        self.assertIsNone(light._rotation_error)
+
+    async def health_cycle(self, light, reachable=True):
+        light._brightness = 255
+        light._last_hardware_brightness = 100
+        light._preview_darken = 0
+        light._last_applied_darken = 0
+        light._fx_mode_is_direct = False
+        light._display_retry_count = 0
+        light.MAX_DISPLAY_RETRIES = 3
+        light._hard_timeout_times = []
+        light._async_maybe_rediscover = AsyncMock()
+        light._cube_matrix = SimpleNamespace(
+            _device_unreachable=light._rotation_waiting_for_reconnect,
+            _consecutive_failures=0,
+            _last_success_time=time.time(),
+            _port=55443,
+            _reconnect_cooldown=30,
+            _close_fast_socket=Mock(),
+        )
+        with (
+            patch("asyncio.sleep", new=AsyncMock(side_effect=[None, asyncio.CancelledError()])),
+            patch("socket.socket", return_value=Mock()),
+            patch("asyncio.to_thread", new=AsyncMock(side_effect=None if reachable else OSError("Offline"))),
+        ):
+            await self.helpers["_periodic_health_check"](light)
+
+    async def test_health_reconnect_resumes_exact_item_and_keeps_other_lamp_running(self):
+        healthy = make_light(self.helpers)
+        await healthy.start_effect_rotation(["Rainbow", "Streamer"], 60)
+        healthy_task = healthy._rotation_task
+        for kind, mode in (("clock", "Clock"), ("native", "Native Effect")):
+            light = make_light(self.helpers, kind=kind)
+            light._mode = mode
+            light._rotation_items = [
+                {"name": "Rainbow", "color_mode": "normal"},
+                {"name": "Rainbow", "color_mode": "custom", "color": [12, 34, 56]},
+            ]
+            light._rotation_index = 1
+            light._rotation_interval = 27
+            light._rotation_resume_pending = True
+            light._rotation_waiting_for_reconnect = True
+            light._rotation_error = "Hard timeout"
+            light._apply_rotation_item = AsyncMock(return_value=True)
+            await self.health_cycle(light)
+            self.assertTrue(light._rotation_active)
+            self.assertEqual(light._rotation_error, "Hard timeout")
+            self.assertTrue(await light._rotation_started)
+            light._apply_rotation_item.assert_awaited_once_with(light._rotation_items[1])
+            self.assertEqual(light._rotation_index, 1)
+            self.assertEqual(light._rotation_interval, 27)
+            self.assertIsNone(light._rotation_error)
+            self.assertFalse(light._rotation_waiting_for_reconnect)
+            light.async_apply_display_mode.assert_not_awaited()
+            light.stop_effect_rotation()
+        self.assertIs(healthy_task, healthy._rotation_task)
+        self.assertTrue(healthy._rotation_active)
+        healthy.stop_effect_rotation()
+
+    async def test_late_failed_probe_enables_recovery_but_healthy_probe_does_not(self):
+        light = make_light(self.helpers)
+        light._rotation_resume_pending = True
+        light._rotation_error = "Device timeout"
+        light._rotation_items = [{"name": "Rainbow"}, {"name": "Streamer"}]
+        light._rotation_index = 0
+        await self.health_cycle(light)
+        self.assertFalse(light._rotation_active)
+        self.assertFalse(light._rotation_waiting_for_reconnect)
+        await self.health_cycle(light, reachable=False)
+        self.assertTrue(light._rotation_waiting_for_reconnect)
+        self.assertFalse(light._rotation_active)
+        await self.health_cycle(light)
+        self.assertTrue(await light._rotation_started)
+        light.stop_effect_rotation()
+
+    async def test_reconnect_cannot_override_stop_off_lock_or_new_mode(self):
+        for action in ("stop", "off", "lock", "mode", "music"):
+            light = make_light(self.helpers)
+            light._rotation_resume_pending = True
+            light._rotation_waiting_for_reconnect = True
+            light._rotation_items = [{"name": "Rainbow"}, {"name": "Streamer"}]
+            if action == "stop":
+                light.stop_effect_rotation()
+            elif action == "off":
+                light.async_schedule_update_ha_state = Mock()
+                await self.helpers["async_turn_off"](light)
+                self.assertFalse(light._rotation_resume_pending)
+                light._is_on = True
+            elif action == "lock":
+                light._calibration_lock = True
+            elif action == "mode":
+                light._mode = "Text"
+            else:
+                light._music_flow_enabled = True
+            self.assertFalse(light._resume_rotation_after_reconnect())
+            self.assertFalse(light._rotation_waiting_for_reconnect)
+            light._create_tracked_task.assert_not_called()
+
+    async def test_failed_reconnect_apply_keeps_error_without_restarting_forever(self):
+        light = make_light(self.helpers)
+        light._rotation_items = [{"name": "Rainbow"}, {"name": "Streamer"}]
+        light._rotation_index = 0
+        light._rotation_resume_pending = True
+        light._rotation_waiting_for_reconnect = True
+        light._apply_rotation_item = AsyncMock(side_effect=TimeoutError("Still failing"))
+        light._wait_rotation_retry = AsyncMock(return_value=True)
+        await self.health_cycle(light)
+        self.assertFalse(await light._rotation_started)
+        self.assertEqual(light._apply_rotation_item.await_count, 3)
+        self.assertEqual(light._rotation_error, "Still failing")
+        self.assertFalse(light._rotation_waiting_for_reconnect)
+        await self.health_cycle(light)
+        self.assertEqual(light._apply_rotation_item.await_count, 3)
+        self.assertFalse(light._rotation_active)
+
+    async def test_content_change_cancels_pending_reconnect(self):
+        light = make_light(self.helpers)
+        light._rotation_resume_pending = True
+        light._rotation_waiting_for_reconnect = True
+        light._in_native_fw_mode = True
+        light._display_retry_count = 0
+        light.MAX_DISPLAY_RETRIES = 3
+        light._custom_text = ""
+        light._transition_type = "none"
+        await self.helpers["async_apply_display_mode"](light, update_type="color_change")
+        self.assertFalse(light._rotation_resume_pending)
+        self.assertFalse(light._resume_rotation_after_reconnect())
 
     async def test_stop_during_backoff_does_not_touch_healthy_rotation(self):
         failed = make_light(self.helpers, kind="clock")
@@ -326,6 +474,36 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(light._native_clock_color)
         self.assertEqual(light._native_clock_color_mode, "bw")
 
+    async def test_shared_timeline_rejoins_current_item_after_missed_intervals(self):
+        for kind, mode in (("native", "Native Effect"), ("clock", "Clock")):
+            timeline = {}
+            first = make_light(self.helpers, kind=kind)
+            second = make_light(self.helpers, kind=kind)
+            second._native_effect = "Streamer"
+            items = ["Rainbow", "Streamer", "Tide"]
+            await first.start_effect_rotation(items, 60, kind, timeline=timeline)
+            await second.start_effect_rotation(items, 60, kind, timeline=timeline)
+            self.assertEqual(first._rotation_index, second._rotation_index)
+            second._rotation_task.cancel()
+            with self.assertRaises(asyncio.CancelledError):
+                await second._rotation_task
+            first._rotation_timeline["tick"] -= 5
+            second._rotation_timeline["tick"] -= 5
+            second._rotation_resume_pending = True
+            second._rotation_waiting_for_reconnect = True
+            second._mode = mode
+            first.skip_effect_rotation()
+            second.skip_effect_rotation()
+            expected = first._rotation_scheduled_index()
+            self.assertTrue(second._resume_rotation_after_reconnect())
+            self.assertTrue(await second._rotation_started)
+            self.assertEqual(expected, second._rotation_index)
+            first.skip_effect_rotation()
+            second.skip_effect_rotation()
+            self.assertEqual(first._rotation_scheduled_index(), second._rotation_scheduled_index())
+            first.stop_effect_rotation()
+            second.stop_effect_rotation()
+
     async def test_start_schedules_loop_and_stop_cancels(self):
         light = make_light(self.helpers, kind="native")
         await light.start_effect_rotation(
@@ -436,7 +614,7 @@ class EffectRotationServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         for coro in queued:
             await coro
-        target.start_effect_rotation.assert_awaited_once_with(["A", "B"], 45, "clock")
+        target.start_effect_rotation.assert_awaited_once_with(["A", "B"], 45, "clock", timeline={})
 
     async def test_start_requires_two_items(self):
         handlers = self._handlers(lambda *args: [SimpleNamespace()], lambda *c: None)
@@ -459,11 +637,12 @@ class EffectRotationServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(scheduled), 1)
         target.start_effect_rotation.assert_not_awaited()
         await scheduled[0]
-        target.start_effect_rotation.assert_awaited_once_with(["A", "B"], 60, "native")
+        target.start_effect_rotation.assert_awaited_once_with(["A", "B"], 60, "native", timeline={})
 
     async def test_start_failure_stops_only_the_failing_target(self):
         ok = SimpleNamespace(entity_id="light.a", start_effect_rotation=AsyncMock(), stop_effect_rotation=Mock())
         failing = SimpleNamespace(entity_id="light.b", start_effect_rotation=AsyncMock(side_effect=ValueError("Device timeout")), stop_effect_rotation=Mock())
+        failing._rotation_active = True
         queued = []
         handlers = self._handlers(
             lambda *args: [ok, failing],
@@ -478,6 +657,22 @@ class EffectRotationServiceTests(unittest.IsolatedAsyncioTestCase):
             await coro
         failing.stop_effect_rotation.assert_called_once()
         ok.stop_effect_rotation.assert_not_called()
+
+    async def test_failed_start_service_preserves_offline_recovery_intent(self):
+        light = make_light(_rotation_helpers(), kind="clock")
+        light._cube_matrix = SimpleNamespace(_device_unreachable=True)
+        light._apply_rotation_item = AsyncMock(side_effect=TimeoutError("Offline"))
+        light._wait_rotation_retry = AsyncMock(return_value=True)
+        queued = []
+        handlers = self._handlers(lambda *args: [light], lambda *coros: queued.extend(coros))
+        await handlers["handle_start_effect_rotation"](
+            SimpleNamespace(data={"items": ["Rainbow", "White"], "kind": "clock"})
+        )
+        await queued[0]
+        self.assertFalse(light._rotation_active)
+        self.assertTrue(light._rotation_waiting_for_reconnect)
+        self.assertTrue(light._rotation_resume_pending)
+        self.assertEqual(light._rotation_error, "Offline")
 
     async def test_stop_and_skip_dispatch(self):
         target = SimpleNamespace(stop_effect_rotation=Mock(), skip_effect_rotation=Mock())
@@ -561,9 +756,13 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(first[1], light._native_clock_style)
         self.assertEqual(options, {"abortive_close": False})
         self.assertTrue(light._rotation_active)
-        light._rotation_interval = 0.01
         light.skip_effect_rotation()
         second, _ = await asyncio.wait_for(commands.get(), 2)
+        light._rotation_interval = 0.1
+        light._rotation_timeline = {
+            "tick": int(asyncio.get_running_loop().time() // 0.1),
+            "index": light._rotation_index,
+        }
         third, _ = await asyncio.wait_for(commands.get(), 2)
         self.assertNotEqual(first[1], second[1])
         self.assertEqual(first[1], third[1])

@@ -1,0 +1,64 @@
+name: Documentation Screenshots
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "custom_components/yeelight_cube/www/**"
+      - "tests/card-docs*"
+      - "custom_components/yeelight_cube/layout.py"
+      - "package*.json"
+      - "README.md"
+      - "SERVICES.md"
+      - "images/Cards/generated/**"
+      - ".github/workflows/documentation-screenshots.yaml"
+  pull_request:
+    paths:
+      - "custom_components/yeelight_cube/www/**"
+      - "tests/card-docs*"
+      - "custom_components/yeelight_cube/layout.py"
+      - "package*.json"
+      - "README.md"
+      - "SERVICES.md"
+      - "images/Cards/generated/**"
+      - ".github/workflows/documentation-screenshots.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      homeassistant:
+        image: ghcr.io/home-assistant/home-assistant:2026.9.3
+        ports:
+          - 8123:8123
+        options: >-
+          --health-cmd "curl --fail http://localhost:8123/api/onboarding || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run docs:screenshots
+        env:
+          DOCS_HA_URL: http://127.0.0.1:8123
+          DOCS_HA_ONBOARD: "1"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: card-documentation-screenshots
+          path: images/Cards/generated/*.png
+          if-no-files-found: error
+          retention-days: 14

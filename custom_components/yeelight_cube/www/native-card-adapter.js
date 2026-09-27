@@ -4,6 +4,7 @@ import {
   effectSupportsFreeze,
 } from "./native-effect-card-utils.js";
 import { getTargetEntities } from "./service-call-utils.js";
+import { previewOnly } from "./offline-preview-state.js";
 import { rotationTargets, retryFailedRotations } from "./rotation-status.js";
 
 /** Native-effect domain bridge, including manual Apply and capability gates.
@@ -11,8 +12,10 @@ import { rotationTargets, retryFailedRotations } from "./rotation-status.js";
  * colours and preview frames without owning interactive DOM.
  */
 export function createNativeCardAdapter(card) {
+  const rotationSnapshots = new Map();
   return {
     kind: "native",
+    previewOnly: () => previewOnly(card),
     items: () =>
       nativeEffectItems(card._attrs(), {
         show_experimental: !!card._attrs().extended_effects_enabled,
@@ -47,7 +50,7 @@ export function createNativeCardAdapter(card) {
         true,
       ),
     stopRotation: () =>
-      card._command("stop_effect_rotation", {}, "yeelight_cube", true),
+      card._commands.execute(card._hass, card.config, "stop_effect_rotation"),
     skipRotation: () =>
       card._command("skip_effect_rotation", {}, "yeelight_cube", true),
     rotationActive: () =>
@@ -66,7 +69,8 @@ export function createNativeCardAdapter(card) {
           return rotation?.kind === "native" ? rotation.error : null;
         })
         .find(Boolean) || card._error,
-    rotationTargets: () => rotationTargets(card._hass, card.config, "native"),
+    rotationTargets: () =>
+      rotationTargets(card._hass, card.config, "native", rotationSnapshots),
     retryRotation: () => retryFailedRotations(card, "native"),
     // The `effect_rotation` attribute only exists in the backend version that
     // ships the rotation services; its presence is our capability probe.

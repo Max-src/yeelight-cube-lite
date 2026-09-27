@@ -50,6 +50,75 @@ export function nativeEffectItems(attrs = {}, config = {}) {
     .filter(Boolean);
 }
 
+const previewDirections = ["Up", "Down", "Left", "Right"];
+export const nativePreviewCatalogue = [
+  ...[
+    "Streamer",
+    "Starry sky",
+    "Spectrum",
+    "Ocean Waves",
+    "Rainbow",
+    "Waterfall",
+    "Aurora",
+    "Bonfire",
+    "Pinball",
+    "Shooting Star",
+    "Tide",
+    "Building block",
+    "Hacking",
+    "Flower Sea",
+    "Magic",
+    "Wonderland",
+    "Kaleidoscope",
+    "Palette",
+  ].map((name) => ({
+    name,
+    speed: true,
+    extended: false,
+    preview: true,
+    directions:
+      name === "Hacking"
+        ? ["Up", "Down"]
+        : [
+              "Streamer",
+              "Starry sky",
+              "Pinball",
+              "Tide",
+              "Magic",
+              "Wonderland",
+            ].includes(name)
+          ? []
+          : previewDirections,
+  })),
+  ...[
+    "Rainbow Flow",
+    "Spectrum Chase",
+    "Pastel Pulse",
+    "Fireworks",
+    "Monochrome Waves",
+    "Pulse",
+    "Solar Flare",
+    "Prism",
+    "Ember",
+    "Color Trails",
+    "Sunset",
+    "Carousel",
+    "Blue Yellow",
+    "Ice Blue",
+    "Blue White",
+    "Spectrum Crumble",
+    "Drift",
+    "Spectrum Bands",
+    "Twinkle",
+  ].map((name) => ({
+    name,
+    speed: name !== "Spectrum Bands",
+    extended: true,
+    preview: true,
+    directions: previewDirections,
+  })),
+];
+
 export function nativeEffectDirection(effect, attrs = {}) {
   const directions = effect?.directions || [];
   const mount = attrs.device_orientation || "right";

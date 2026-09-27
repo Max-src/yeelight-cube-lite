@@ -39,8 +39,8 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a
 | Card | Description |
 | :-- | :-- |
 | **Preview Card** | Live lamp preview with brightness and color adjustments |
-| **Clock Card** | Clock styles, colour modes, live previews, and automatic responding-style filtering |
-| **Native Effects Card** | Calibrated animation previews, effect browsing, brightness/speed controls, and configurable orientation buttons |
+| **[Clock Card](#clock-card)** | Time/date styles, colour modes, live previews, favourites, and server-side rotation |
+| **[Native Effects Card](#native-effects-card)** | Firmware animation previews, colour modes, favourites, rotation, and lamp controls |
 | **Colors Card** | Edit colors used to display text and apply gradients |
 | **Palettes Card** | Manage lists of colors (palettes) |
 | **Gradient Card** | Configure and preview gradient & color modes |
@@ -51,20 +51,14 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a
 
 #### Clock Style Browsing
 
-In the Clock card editor's **Clock style > Default style view** section,
-**Show only responding styles** is enabled by default. Disable it to show all
-configured styles. Normal colour mode always shows the full configured list.
+Both cards offer **Text**, **Live Preview**, and **Original** browsers in the
+visual editor's **Previews** section. Styles follow your configured order and
+automatically filter to those that respond to the selected colour mode or RGB
+override. This does not delete favourites. The former
+`show_only_responding_styles` toggle is no longer used.
 
-| Setting | Values | Default |
-| :-- | :-- | :-- |
-| `show_only_responding_styles` | `true`, `false` | `true` |
-| `items_per_page` | `0` (no pagination) through `16` in the editor | `0` |
-
-Styles always follow your saved order. Filtering follows the lamp's selected
-colour mode without changing the lamp or removing saved entries. The visible-style
-editor keeps the full editable list. There are no compatibility indicators or
-filter/sort controls on the card. Previous `style_indicators`, `show_style_browser`,
-`style_filter`, and `style_sort` settings are no longer used.
+See [card configuration and behaviour](SERVICES.md#clock-and-native-effects-cards)
+for layout options, offline editing, and multi-lamp rotation.
 
 ---
 
@@ -213,6 +207,165 @@ Every card comes with a **visual configuration editor** - click the pencil icon 
     <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Dashboard-draw-card-preview.png" alt="Draw card"></td>
   </tr>
 </table>
+
+### Clock Card
+
+`custom:yeelight-cube-clock-card`
+
+Browse firmware clock styles with live time/date previews, choose a colour mode
+or custom RGB, and save your favourite style-and-colour combinations. The card
+also provides content/format controls, brightness, animation speed, and a
+server-side favourites rotation that continues after you close the dashboard.
+
+```yaml
+type: custom:yeelight-cube-clock-card
+entity: light.cubelite_a904
+title: Clock
+show_current_preview: true
+show_color_modes: true
+show_gallery: true
+style_selector_style: original
+effect_view: grid
+items_per_page: 4
+show_favourites: true
+show_rotation: true
+rotation_interval: 30
+```
+
+### Native Effects Card
+
+`custom:yeelight-cube-native-effects-card`
+
+Browse the lamp's firmware animations with local animated previews. Choose
+supported palette modes or custom RGB, manage favourites, and rotate through
+them. Brightness, speed, orientation, Freeze, Refresh, and power controls are
+available where supported. Experimental effects require the lamp's
+**Experimental Features** setting for playback.
+
+```yaml
+type: custom:yeelight-cube-native-effects-card
+entity: light.cubelite_a904
+title: Native Effects
+show_preview: true
+show_color_modes: true
+show_gallery: true
+style_selector_style: original
+effect_view: grid
+items_per_page: 4
+show_favourites: true
+show_rotation: true
+rotation_interval: 30
+```
+
+<table>
+  <tr><th>Clock</th><th>Native Effects</th></tr>
+  <tr>
+    <td><img src="images/Cards/generated/clock-overview.png" alt="Clock card with Rainbow preview, colour modes, style gallery, favourites and rotation" width="448"></td>
+    <td><img src="images/Cards/generated/native-effects-overview.png" alt="Native Effects card with animation preview, colour modes, gallery, favourites and rotation" width="448"></td>
+  </tr>
+</table>
+
+These screenshots are generated inside the real Home Assistant frontend with
+the shipped card JavaScript, native clock font maps, synthetic lamp data and a
+fixed clock. They illustrate enabled sections; your theme,
+configuration and supported lamp features determine the actual presentation.
+
+**Shared behaviour:** favourites store the style/effect together with its colour
+mode and custom RGB, separately for Clock and Native Effects. They belong to the
+browser and configured target set, not the lamp. Add at least two available
+favourites to start rotation. For multiple lamps, use `target_entities` with a
+list of light entity IDs on either card.
+
+**When a lamp is unavailable:** previews, colour choices, and local favourite
+editing remain usable, even if the entity temporarily disappears. Hardware
+controls are gated. Reconnection discards local preview drafts without sending
+them to the lamps. Unknown rotation status is not treated as an active rotation.
+
+<details>
+<summary>Mobile and offline examples</summary>
+
+<table>
+  <tr><th>Clock, mobile</th><th>Native Effects, mobile</th></tr>
+  <tr>
+    <td><img src="images/Cards/generated/clock-mobile.png" alt="Clock card at a 320 pixel card width" width="320"></td>
+    <td><img src="images/Cards/generated/native-effects-mobile.png" alt="Native Effects card at a 320 pixel card width" width="320"></td>
+  </tr>
+  <tr><th>Clock, lamp unavailable</th><th>Native Effects, lamp unavailable</th></tr>
+  <tr>
+    <td><img src="images/Cards/generated/clock-offline.png" alt="Offline Clock card with previews and favourites still available" width="448"></td>
+    <td><img src="images/Cards/generated/native-effects-offline.png" alt="Offline Native Effects card with previews and favourites still available" width="448"></td>
+  </tr>
+</table>
+
+</details>
+
+See [configuration and storage details](SERVICES.md#clock-and-native-effects-cards),
+[service calls](SERVICES.md#-clock-native-effects-and-rotation), and
+[screenshot maintenance](#documentation-screenshots).
+
+### Documentation Screenshots
+
+The Clock and Native Effects images above are generated by
+[tests/card-docs.cjs](tests/card-docs.cjs) and
+[tests/card-docs-browser.js](tests/card-docs-browser.js) **inside a real Home
+Assistant frontend**. HA supplies its own fonts, theme, icons and `ha-card`;
+these are not mocked. The capture uses current workspace card modules and loads
+the integration's native font maps from
+[layout.py](custom_components/yeelight_cube/layout.py), just as the font sensor
+does. Only lamp state and favourites are synthetic. The cards cannot send
+service calls, and the fixture does not save dashboard or favourite changes.
+
+The generator checks galleries, colour controls, nonblank favourite frames and
+horizontal overflow, plus screenshot dimensions and visible content near the
+bottom of each card. It freezes time and preview phases and captures each
+scenario in two fresh Chromium processes. Every decoded pixel must match before
+any image is written. Capture rendering uses software rasterization, greyscale
+text smoothing and sRGB; CSS transitions are disabled. Use the same HA theme,
+Chromium and operating-system versions when comparing images across machines.
+
+With Node.js 22, Python 3 and a **fresh disposable Home Assistant** running on
+localhost:8123, run from the repository root (POSIX shell):
+
+```sh
+npm ci
+npx playwright install chromium
+DOCS_HA_ONBOARD=1 npm run docs:screenshots
+```
+
+`DOCS_HA_ONBOARD=1` creates an ephemeral account only on localhost and requires
+an unconfigured disposable instance. Never use it on your own installation.
+CI supplies a fresh Home Assistant 2026.9.3 container automatically; no HA
+credentials or lamps are needed. On Linux, install browser system dependencies
+with `npx playwright install --with-deps chromium`. The output goes to
+[images/Cards/generated](images/Cards/generated). Review and include changed
+images with your documentation/code changes.
+
+For local capture against an existing HA instance, log in yourself using
+`npx playwright codegen --save-storage=.ha-docs-auth.json http://YOUR_HA:8123`,
+then close that browser. Set `DOCS_HA_URL` to the same origin and
+`DOCS_HA_STORAGE_STATE=.ha-docs-auth.json` before running
+`npm run docs:screenshots`. That ignored file contains credentials: never commit,
+upload or share it, and delete it when finished. Do not set `DOCS_HA_ONBOARD`
+for this mode. The runner intercepts only the card JS requests to use workspace
+files; it does not deploy anything to Home Assistant.
+
+On Windows PowerShell, use `npm.cmd` and `npx.cmd`, and set environment variables
+with `$env:DOCS_HA_URL = 'http://YOUR_HA:8123'` and
+`$env:DOCS_HA_STORAGE_STATE = '.ha-docs-auth.json'`. Set `PYTHON` to a Python
+executable path if Python is not available on `PATH`.
+
+The **Documentation Screenshots** GitHub Actions workflow runs on relevant pull
+requests, pushes to `main`, and manual dispatch. It regenerates all six images
+and uploads a `card-documentation-screenshots` artifact for review only after
+repeatability checks pass. It has read-only
+repository permissions: it does **not** automatically commit or publish changes.
+Download the artifact to update checked-in images, or use the command above.
+
+Existing captures automatically reflect changes to the rendered components and
+catalogues. When adding a card or a state worth documenting, extend the `kind`
+and `scenario` cases in the generator and add its image to the relevant section.
+Prose and examples still need review; this is not automatic API documentation.
+The older cards' manually captured screenshots are not regenerated by this job.
 
 ### 🖥️ Preview Card (`custom:yeelight-cube-lamp-preview-card`)
 

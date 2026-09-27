@@ -383,6 +383,12 @@ export class ModeControlsController {
 
   choose(name) {
     if (!name || !this.adapter.available(name)) return Promise.resolve(false);
+    if (this.adapter.previewOnly?.())
+      return this.previewSelection(() =>
+        this.adapter.select
+          ? this.adapter.select(name)
+          : this.adapter.apply(name),
+      );
     const context = this.context;
     return this.command(async () => {
       const success = await (this.adapter.select
@@ -405,6 +411,11 @@ export class ModeControlsController {
       !this.adapter.applyFavourite
     )
       return Promise.resolve(false);
+    if (this.adapter.previewOnly?.())
+      return this.previewSelection(
+        () => this.adapter.applyFavourite(favourite),
+        favourite,
+      );
     const context = this.context;
     return this.command(async () => {
       const success = await this.adapter.applyFavourite(favourite);
@@ -412,6 +423,17 @@ export class ModeControlsController {
       this.selection.record(favourite, this.captureFavourite());
       return true;
     });
+  }
+
+  async previewSelection(select, favourite) {
+    const context = this.context;
+    if ((await select()) === false || context !== this.context) return false;
+    this.selection.record(
+      favourite || this.captureFavourite(),
+      this.captureFavourite(),
+    );
+    this.notify();
+    return true;
   }
 
   async orient(target) {
@@ -443,10 +465,15 @@ export class ModeControlsController {
     this.token++;
     const wasActive =
       this.active ||
-      this.adapter.rotationTargets?.().some((target) => target.active);
+      this.adapter
+        .rotationTargets?.()
+        .some(
+          (target) =>
+            target.active ||
+            target.waitingForReconnect ||
+            target.statusUnavailable,
+        );
     this.active = false;
-    // Only notify the backend when a rotation was actually running; avoids
-    // spamming stop_effect_rotation on every state update.
     if (wasActive && this.adapter.stopRotation) this.adapter.stopRotation();
     this.notify();
   }

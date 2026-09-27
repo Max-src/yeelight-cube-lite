@@ -1,3 +1,9 @@
+import {
+  previewOnly,
+  previewAttributes,
+  setPreviewAttributes,
+} from "./offline-preview-state.js";
+import { nativePreviewCatalogue } from "./native-effect-card-utils.js";
 import { resolvePreviewAppearance } from "./preview-appearance.js";
 import { createNativeCardAdapter } from "./native-card-adapter.js";
 import { LitElement, html, css, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
@@ -146,6 +152,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   }
 
   setConfig(config) {
+    this._offlinePreviewDraft = null;
     closeColorPicker(this);
     this._customColorDraft = null;
     // Never throw from setConfig: Home Assistant turns any thrown error into a
@@ -177,7 +184,14 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   }
 
   set hass(hass) {
+    this._attrs();
+    const wasPreviewOnly = previewOnly(this);
     this._hass = hass;
+    if (wasPreviewOnly && !previewOnly(this)) {
+      this._offlinePreviewDraft = null;
+      this._customColorDraft = null;
+      this._selected = null;
+    }
     this._controls.update();
     if (this.config?.show_rotation || this.config?.show_color_modes)
       this.requestUpdate();
@@ -225,7 +239,17 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     return complete;
   }
   _attrs() {
-    return this._state?.attributes || {};
+    const attrs = previewAttributes(this, {
+      native_effect_color_mode: "normal",
+      native_effect_color: null,
+    });
+    return previewOnly(this)
+      ? {
+          ...attrs,
+          native_effect_catalog: nativePreviewCatalogue,
+          extended_effects_enabled: true,
+        }
+      : attrs;
   }
   _items() {
     const attrs = this._attrs();
@@ -285,6 +309,19 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   }
 
   async _command(service, data, domain = "yeelight_cube", managed = false) {
+    if (previewOnly(this) && service === "set_native_effect") {
+      setPreviewAttributes(this, {
+        ...(data.effect ? { native_effect: data.effect } : {}),
+        ...(data.color_mode
+          ? { native_effect_color_mode: data.color_mode }
+          : {}),
+        ...("color" in data
+          ? { native_effect_color: data.color === "clear" ? null : data.color }
+          : {}),
+      });
+      this.requestUpdate();
+      return true;
+    }
     if (this._disabled()) return false;
     if (!managed) this._stopRotation();
     return this._commands.execute(
@@ -451,6 +488,8 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   }
 
   _effectAvailable(effect) {
+    if (previewOnly(this))
+      return nativePreviewCatalogue.some((item) => item.name === effect);
     return getTargetEntities(this.config).every((entity) => {
       const state = this._hass?.states[entity];
       return (
@@ -474,6 +513,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   }
 
   _supportsCustomColor() {
+    if (previewOnly(this)) return true;
     return getTargetEntities(this.config).every((entity) =>
       Object.hasOwn(
         this._hass?.states[entity]?.attributes || {},
@@ -625,7 +665,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   }
 
   render() {
-    if (!this._state)
+    if (!getTargetEntities(this.config || {}).length)
       return html`<ha-card
         ><div class="body" role="status">
           Select an available Yeelight Cube lamp.
@@ -634,6 +674,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     const attrs = this._attrs();
     const effect = this._effect();
     const all = this._items();
+    const offline = previewOnly(this);
     return html`<ha-card
       class=${this.config.show_card_background === false ? "transparent" : ""}
     >
@@ -641,17 +682,19 @@ class YeelightCubeNativeEffectsCard extends LitElement {
         <header>
           <h2>${this.config.title || "Native Effects"}</h2>
           <span class="state-label"
-            >${this._state.state === "on"
+            >${this._state?.state === "on"
               ? attrs.content_mode
-              : this._state.state}</span
+              : this._state?.state || "unavailable"}</span
           >
         </header>
-        ${!Array.isArray(attrs.native_effect_catalog)
-          ? html`<div role="alert" class="error">
-              Native-effect catalogue unavailable. Reload the updated
-              integration.
-            </div>`
-          : ""}
+        ${offline
+          ? html`<div role="status" class="muted">Lamp unavailable</div>`
+          : !Array.isArray(attrs.native_effect_catalog)
+            ? html`<div role="alert" class="error">
+                Native-effect catalogue unavailable. Reload the updated
+                integration.
+              </div>`
+            : ""}
         ${this._error
           ? html`<div class="error" role="alert">${this._error}</div>`
           : ""}
@@ -662,7 +705,8 @@ class YeelightCubeNativeEffectsCard extends LitElement {
                 <span class="state-label"
                   >${attrs.content_mode === "Native Effect" &&
                   attrs.native_effect === effect.name &&
-                  this._state.state === "on"
+                  !offline &&
+                  this._state?.state === "on"
                     ? "Active"
                     : "Preview"}</span
                 >
@@ -674,7 +718,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
           area="actions"
           .model=${this._controls}
         ></yeelight-mode-controls>
-        ${this._sliders(effect)}
+        ${offline ? "" : this._sliders(effect)}
         <yeelight-mode-controls
           area="orientation"
           .model=${this._controls}
@@ -688,9 +732,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
                 .selected=${this._currentColorSelection()}
                 .draft=${this._customColorDraft}
                 .hass=${this._hass}
-                .disabled=${this._busy ||
-                this._controls.busy ||
-                this._disabled()}
+                .disabled=${this._busy || this._controls.busy}
                 .saveKinds=${this._supportsCustomColor() &&
                 this.config.show_save_color_mode_button !== false
                   ? ["color_mode"]
@@ -702,13 +744,13 @@ class YeelightCubeNativeEffectsCard extends LitElement {
               ></yeelight-color-mode>
             </section>`
           : ""}
-        ${this.config.show_gallery
+        ${this.config.show_gallery && Array.isArray(attrs.native_effect_catalog)
           ? html`<section class="browser">
               <yeelight-style-browser
                 .config=${this.config}
                 .active=${effect?.name}
                 .model=${this._controls}
-                .disabled=${this._disabled() || this._busy}
+                .disabled=${this._busy}
                 .items=${all.map((item) => ({
                   ...item,
                   dataMode: item.name,
