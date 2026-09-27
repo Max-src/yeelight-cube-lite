@@ -22,7 +22,7 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a
 | :-- | :-- |
 | **Full matrix control** | 20×5 RGB, individual pixel-level color |
 | **Brightness** | Full brightness control |
-| **Native clock** | 14 firmware clock styles with time / date / alternating content, 12/24-hour, and colon blink options |
+| **Native clock** | 10 firmware clock styles (more via Experimental Features) with time / date / alternating content, 12/24-hour, and colon blink options |
 | **Native animations** | 18 LAN-compatible firmware effects with speed and direction controls where supported |
 | **Music Flow** | 6 device-microphone reactive effects with display and power-state restoration |
 | **Official pixel art** | 68 locally bundled, read-only drawings from the Yeelight Station app; personal drawings stay separate |
@@ -38,13 +38,13 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a
 
 | Card | Description |
 | :-- | :-- |
-| **[Preview Card](#-preview-card-customyeelight-cube-lamp-preview-card)** | Live lamp preview with brightness and colour adjustments |
-| **[Clock Card](#clock-card-customyeelight-cube-clock-card)** | Time/date styles, colour modes, live previews, favourites, and server-side rotation |
-| **[Native Effects Card](#native-effects-card-customyeelight-cube-native-effects-card)** | Firmware animation previews, colour modes, favourites, rotation, and lamp controls |
-| **[Colors Card](#-colors-card-customyeelight-cube-color-list-editor-card)** | Edit the colours used to display text and apply gradients |
-| **[Palettes Card](#-palettes-card-customyeelight-cube-palette-card)** | Manage reusable lists of colours (palettes) |
-| **[Gradient Card](#-gradient-card-customyeelight-cube-gradient-card)** | Configure and preview gradient & colour modes |
-| **[Draw Card](#-draw-card-customyeelight-cube-draw-card)** | Pixel art editor with a personal gallery |
+| **[Preview Card](#preview-card)** | Live lamp preview with brightness and colour adjustments |
+| **[Clock Card](#clock-card)** | Time/date styles, colour modes, live previews, favourites, and server-side rotation |
+| **[Native Effects Card](#native-effects-card)** | Firmware animation previews, colour modes, favourites, rotation, and lamp controls |
+| **[Colors Card](#colors-card)** | Edit the colours used to display text and apply gradients |
+| **[Palettes Card](#palettes-card)** | Manage reusable lists of colours (palettes) |
+| **[Gradient Card](#gradient-card)** | Configure and preview gradient & colour modes |
+| **[Draw Card](#draw-card)** | Pixel art editor with a personal gallery |
 
 > [!NOTE]
 > All cards support **light and dark themes** and adapt automatically to your Home Assistant theme.
@@ -395,6 +395,8 @@ See [configuration and storage details](SERVICES.md#clock-and-native-effects-car
 
 ---
 
+<a id="preview-card"></a>
+
 ### 🖥️ Preview Card (`custom:yeelight-cube-lamp-preview-card`)
 
 A live dashboard card that mirrors the lamp's current state with real-time matrix preview, brightness slider, power & refresh actions, and color adjustments panel.
@@ -458,6 +460,8 @@ A live dashboard card that mirrors the lamp's current state with real-time matri
 
 ---
 
+<a id="colors-card"></a>
+
 ### 🎨 Colors Card (`custom:yeelight-cube-color-list-editor-card`)
 
 Edit the ordered list of colors used by text display on the lamp. Add, delete, drag to reorder, shuffle, and save as a reusable palette.
@@ -501,6 +505,8 @@ Edit the ordered list of colors used by text display on the lamp. Add, delete, d
 
 ---
 
+<a id="palettes-card"></a>
+
 ### 🎭 Palettes Card (`custom:yeelight-cube-palette-card`)
 
 Manage color palettes. Apply a palette to lamps with one click. Multiple display modes supported.
@@ -543,6 +549,8 @@ Manage color palettes. Apply a palette to lamps with one click. Multiple display
 </details>
 
 ---
+
+<a id="gradient-card"></a>
 
 ### 🌈 Gradient Card (`custom:yeelight-cube-gradient-card`)
 
@@ -592,6 +600,8 @@ Select and configure gradient/color modes. Adjust gradient direction with an ang
 </details>
 
 ---
+
+<a id="draw-card"></a>
 
 ### ✏️ Draw Card (`custom:yeelight-cube-draw-card`)
 
@@ -671,7 +681,7 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Yeelight Cube Lite** | Light | Main light entity (on/off and brightness; RGB color in Matrix mode) |
 | **Content Mode** | Select | Switch between Matrix, firmware-native Clock, Native Effect, and Music Flow |
 | **Display Mode** | Select | Choose the Matrix render mode (see [Display Modes](#display-modes)) |
-| **Clock Style** | Select | Choose one of the 14 native clock styles |
+| **Clock Style** | Select | Choose one of the 10 native clock styles (more with Experimental Features) |
 | **Native Effect** | Select | Choose one of the 18 LAN-compatible firmware-native animations |
 | **Music Flow Effect** | Select | Choose Gather, Breathing, Blossom, Spectrum, Music Note, or Impact |
 | **Display Text** | Text | Text input for custom text display on the matrix |
@@ -690,7 +700,7 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Matrix Preview (Square)** | Camera | Local matrix preview with square pixels; Music Flow uses a static effect illustration |
 
 > [!TIP]
-> Use these camera entities with a "Picture Entity" card for quick previews. For more responsive previews, use the custom [Preview Card](#-preview-card-customyeelight-cube-lamp-preview-card).
+> Use these camera entities with a "Picture Entity" card for quick previews. For more responsive previews, use the custom [Preview Card](#preview-card).
 
 #### Configuration
 
@@ -935,9 +945,10 @@ removed independently.
 
 ### Native Clock
 
-Clock mode provides 14 firmware styles and separate options for date display,
-12/24-hour time, and colon blinking. Brightness and orientation previews remain
-available while Clock mode is active.
+Clock mode provides 10 firmware styles (with additional experimental styles
+unlocked by the Experimental Features switch) and separate options for date
+display, 12/24-hour time, and colon blinking. Brightness and orientation
+previews remain available while Clock mode is active.
 
 The clock command uses the Cube Lite's private LAN protocol. The firmware does
 not report the active clock configuration back to Home Assistant, so entity
