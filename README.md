@@ -257,11 +257,20 @@ server-side favourites rotation that continues after you close the dashboard.
   <tr>
     <td valign="top"><img src="images/Cards/generated/clock-editor-general.png" alt="Clock - Global Settings" width="220"><br>Global Settings</td>
     <td valign="top"><img src="images/Cards/generated/clock-editor-preview_appearance.png" alt="Clock - Preview Appearance" width="220"><br>Preview Appearance</td>
-    <td valign="top"><img src="images/Cards/generated/clock-editor-speed.png" alt="Clock - Sliders" width="220"><br>Sliders</td>
+    <td valign="top"><img src="images/Cards/generated/clock-editor-lamp_preview.png" alt="Clock - Lamp Preview" width="220"><br>Lamp Preview</td>
   </tr>
   <tr>
+    <td valign="top"><img src="images/Cards/generated/clock-editor-actions.png" alt="Clock - Actions" width="220"><br>Actions</td>
+    <td valign="top"><img src="images/Cards/generated/clock-editor-speed.png" alt="Clock - Sliders" width="220"><br>Sliders</td>
+    <td valign="top"><img src="images/Cards/generated/clock-editor-display.png" alt="Clock - Content &amp; Controls" width="220"><br>Content &amp; Controls</td>
+  </tr>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/clock-editor-presets.png" alt="Clock - Custom clock styles and colours" width="220"><br>Custom clock styles and colours</td>
     <td valign="top"><img src="images/Cards/generated/clock-editor-previews.png" alt="Clock - Previews" width="220"><br>Previews</td>
-    <td valign="top"><img src="images/Cards/generated/clock-editor-rotation.png" alt="Clock - Rotation" width="220"><br>Rotation</td>
+    <td valign="top"><img src="images/Cards/generated/clock-editor-favourites.png" alt="Clock - Favourites" width="220"><br>Favourites</td>
+  </tr>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/clock-editor-rotation.png" alt="Clock - Clock Mode Rotation" width="220"><br>Clock Mode Rotation</td>
   </tr>
 </table>
 <!-- card-docs:clock:editors:end -->
@@ -345,11 +354,21 @@ available where supported. Experimental effects require the lamp's
   <tr>
     <td valign="top"><img src="images/Cards/generated/native-effects-editor-general.png" alt="Native Effects - Global Settings" width="220"><br>Global Settings</td>
     <td valign="top"><img src="images/Cards/generated/native-effects-editor-preview_appearance.png" alt="Native Effects - Preview Appearance" width="220"><br>Preview Appearance</td>
-    <td valign="top"><img src="images/Cards/generated/native-effects-editor-sliders.png" alt="Native Effects - Sliders" width="220"><br>Sliders</td>
+    <td valign="top"><img src="images/Cards/generated/native-effects-editor-preview.png" alt="Native Effects - Lamp Preview" width="220"><br>Lamp Preview</td>
   </tr>
   <tr>
+    <td valign="top"><img src="images/Cards/generated/native-effects-editor-actions.png" alt="Native Effects - Actions" width="220"><br>Actions</td>
+    <td valign="top"><img src="images/Cards/generated/native-effects-editor-sliders.png" alt="Native Effects - Sliders" width="220"><br>Sliders</td>
+    <td valign="top"><img src="images/Cards/generated/native-effects-editor-orientation.png" alt="Native Effects - Device Orientation" width="220"><br>Device Orientation</td>
+  </tr>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/native-effects-editor-colors.png" alt="Native Effects - Colour Modes &amp; Controls" width="220"><br>Colour Modes &amp; Controls</td>
+    <td valign="top"><img src="images/Cards/generated/native-effects-editor-presets.png" alt="Native Effects - Custom colours" width="220"><br>Custom colours</td>
     <td valign="top"><img src="images/Cards/generated/native-effects-editor-previews.png" alt="Native Effects - Previews" width="220"><br>Previews</td>
-    <td valign="top"><img src="images/Cards/generated/native-effects-editor-rotation.png" alt="Native Effects - Rotation" width="220"><br>Rotation</td>
+  </tr>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/native-effects-editor-favourites.png" alt="Native Effects - Favourites" width="220"><br>Favourites</td>
+    <td valign="top"><img src="images/Cards/generated/native-effects-editor-rotation.png" alt="Native Effects - Effect Rotation" width="220"><br>Effect Rotation</td>
   </tr>
 </table>
 <!-- card-docs:native-effects:editors:end -->
@@ -449,6 +468,11 @@ A live dashboard card that mirrors the lamp's current state with real-time matri
   <tr>
     <td valign="top"><img src="images/Cards/generated/lamp-preview-editor-global.png" alt="Preview - Global Settings" width="220"><br>Global Settings</td>
     <td valign="top"><img src="images/Cards/generated/lamp-preview-editor-preview_appearance.png" alt="Preview - Preview Appearance" width="220"><br>Preview Appearance</td>
+    <td valign="top"><img src="images/Cards/generated/lamp-preview-editor-lampPreview.png" alt="Preview - Lamp Preview" width="220"><br>Lamp Preview</td>
+  </tr>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/lamp-preview-editor-lampControl.png" alt="Preview - Actions" width="220"><br>Actions</td>
+    <td valign="top"><img src="images/Cards/generated/lamp-preview-editor-deviceOrientation.png" alt="Preview - Device Orientation" width="220"><br>Device Orientation</td>
     <td valign="top"><img src="images/Cards/generated/lamp-preview-editor-brightnessSettings.png" alt="Preview - Brightness Settings" width="220"><br>Brightness Settings</td>
   </tr>
   <tr>
