@@ -210,13 +210,6 @@ export function resolvePreviewAppearance(config, profile) {
   return result;
 }
 
-export function appearancePresets(config) {
-  return clockAppearancePresets({
-    clock_appearance_presets:
-      config.appearance_presets ?? config.clock_appearance_presets,
-  });
-}
-
 export function clockAppearancePresets(config) {
   const presets = Object.entries(APPEARANCE_PRESETS).map(
     ([id, appearance]) => ({

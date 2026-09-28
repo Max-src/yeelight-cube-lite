@@ -525,31 +525,6 @@ export const carouselStyles = `
 `;
 
 /**
- * Helper function to navigate carousel
- * Updates index with bounds checking
- *
- * @param {number} currentIndex - Current carousel index
- * @param {number} direction - Direction to navigate (-1 for prev, 1 for next)
- * @param {number} maxLength - Total number of items
- * @returns {number} New clamped index
- */
-export function navigateCarousel(currentIndex, direction, maxLength) {
-  const newIndex = currentIndex + direction;
-  return Math.max(0, Math.min(newIndex, maxLength - 1));
-}
-
-/**
- * Helper function to set carousel index directly
- *
- * @param {number} index - Target index to set
- * @param {number} maxLength - Total number of items
- * @returns {number} Clamped index
- */
-export function setCarouselIndex(index, maxLength) {
-  return Math.max(0, Math.min(index, maxLength - 1));
-}
-
-/**
  * Renders a carousel as a string (for vanilla JS/innerHTML use cases)
  * This is an alternative to renderCarousel() for components that don't use LitElement
  *

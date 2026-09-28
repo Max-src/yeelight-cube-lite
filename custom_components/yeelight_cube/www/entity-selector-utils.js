@@ -45,60 +45,6 @@ export function createEntitySelector(
 }
 
 /**
- * Creates a searchable entity selector with filter input
- * @param {Object} hass - Home Assistant object
- * @param {string} domain - Entity domain to filter
- * @param {string} currentValue - Currently selected entity ID
- * @param {string} placeholder - Placeholder text
- * @param {Function} onChange - Change handler function
- * @param {string} id - Element ID
- * @returns {TemplateResult} Lit HTML template
- */
-export function createSearchableEntitySelector(
-  hass,
-  domain,
-  currentValue,
-  placeholder,
-  onChange,
-  id,
-) {
-  const entities = getEntitiesByDomain(hass, domain);
-  const searchId = `${id}-search`;
-
-  return html`
-    <div class="searchable-entity-selector">
-      <input
-        type="text"
-        id="${searchId}"
-        placeholder="Search entities..."
-        @input="${(e) => filterEntityOptions(e, id)}"
-        class="entity-search"
-      />
-      <select
-        id="${id}"
-        @change="${onChange}"
-        class="entity-dropdown searchable"
-        size="8"
-      >
-        <option value="">${placeholder}</option>
-        ${entities.map(
-          (entityId) => html`
-            <option
-              value="${entityId}"
-              ?selected="${currentValue === entityId}"
-              data-friendly="${getFriendlyName(hass, entityId).toLowerCase()}"
-              data-entity="${entityId.toLowerCase()}"
-            >
-              ${getFriendlyName(hass, entityId)} (${entityId})
-            </option>
-          `,
-        )}
-      </select>
-    </div>
-  `;
-}
-
-/**
  * Get entities by domain from Home Assistant
  * @param {Object} hass - Home Assistant object
  * @param {string} domain - Entity domain
@@ -164,15 +110,6 @@ function filterEntityOptions(e, selectId) {
  */
 export function getLightEntities(hass) {
   return getEntitiesByDomain(hass, "light");
-}
-
-/**
- * Get all sensor entities
- * @param {Object} hass - Home Assistant object
- * @returns {Array} Array of sensor entity IDs
- */
-export function getSensorEntities(hass) {
-  return getEntitiesByDomain(hass, "sensor");
 }
 
 /**

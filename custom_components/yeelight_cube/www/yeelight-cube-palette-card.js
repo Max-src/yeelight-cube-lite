@@ -29,6 +29,7 @@ import { gridModeStyles, renderGridMode } from "./grid-mode-utils.js";
 import { galleryModeStyles, renderGalleryMode } from "./gallery-mode-utils.js";
 import { callServiceOnTargetEntities as callServiceSequentially } from "./service-call-utils.js";
 import { CollectionState } from "./collection-state.js";
+import { notify, notifyUnreported } from "./notify-utils.js";
 import {
   normalizeImportedPalettes,
   MAX_PALETTE_IMPORT_BYTES,
@@ -1196,7 +1197,7 @@ class YeelightCubePaletteCard extends HTMLElement {
                     this._importStatus = { active: false, success: false };
                     this.render();
                   }, 3000);
-                  alert("Invalid palette file");
+                  this._notify("Invalid palette file");
                 }
               };
               reader.readAsText(file);
@@ -1294,13 +1295,13 @@ class YeelightCubePaletteCard extends HTMLElement {
   }
 
   _notify(message) {
-    this.dispatchEvent(
-      new CustomEvent("hass-notification", {
-        bubbles: true,
-        composed: true,
-        detail: { message },
-      }),
-    );
+    notify(this, message);
+  }
+
+  // Toast only failures HA did not already report: hass.callService shows its
+  // own toast for service errors, so those must not be notified twice.
+  _notifyUnreported(error, message) {
+    notifyUnreported(this, error, message);
   }
 
   _notifySkipped(skipped) {
@@ -1312,11 +1313,14 @@ class YeelightCubePaletteCard extends HTMLElement {
 
   // Apply a palette by index, sending the name seen at that index so the
   // backend refuses the call if another client changed the list meanwhile.
+  // Never rejects: failures are logged by the service helper and reported once.
   _applyPalette(idx) {
     return this.callServiceOnTargetEntities("load_palette", {
       idx,
       expected_name: this._paletteItems()[idx]?.name,
-    });
+    }).catch((error) =>
+      this._notifyUnreported(error, "Failed to load the palette."),
+    );
   }
 
   async _mutatePalettes(items, service, data, render = true) {
@@ -1332,15 +1336,9 @@ class YeelightCubePaletteCard extends HTMLElement {
       if (collection.rollback(operation)) {
         this._deletionInProgress = false;
         this.render();
-        this.dispatchEvent(
-          new CustomEvent("hass-notification", {
-            bubbles: true,
-            composed: true,
-            detail: {
-              message: error.message || "The palette could not be updated.",
-            },
-          }),
-        );
+        // Service failures were already toasted by HA; only the locally
+        // detected "collection changed" conflict (or other local errors) is.
+        this._notifyUnreported(error);
       }
       return false;
     }
@@ -1554,9 +1552,9 @@ class YeelightCubePaletteCard extends HTMLElement {
                   );
                 }
                 this.render();
-              });
+              }).catch((error) => this._notifyUnreported(error));
             } catch (err) {
-              alert("Invalid palette file");
+              this._notify("Invalid palette file");
             }
           };
           reader.readAsText(file);

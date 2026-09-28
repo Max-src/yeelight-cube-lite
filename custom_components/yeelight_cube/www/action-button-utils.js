@@ -68,6 +68,21 @@ export function contrastInk(color) {
   return (r * 299 + g * 587 + b * 114) / 1000 > 150 ? "#111" : "#fff";
 }
 
+// Defaults for a card whose config leaves the key unset. They must match what
+// the card editors display for that unset key.
+// General control buttons (`buttons_style` / `buttons_content_mode`).
+export const DEFAULT_BUTTON_STYLE = "modern";
+export const DEFAULT_BUTTON_CONTENT_MODE = "icon_text";
+// Mode-controls Actions row (`actions_buttons_*`, falling back to
+// `buttons_*`). Intentionally Classic + Icon: the Native editor shows this for
+// an unset key, and the Clock card/editor pass their own Modern defaults via
+// independentActionConfig.
+export const DEFAULT_ACTION_BUTTON_STYLE = "classic";
+export const DEFAULT_ACTION_BUTTON_CONTENT_MODE = "icon";
+// Favourites shown as buttons (`collection_buttons_*`).
+export const DEFAULT_COLLECTION_BUTTON_STYLE = "classic";
+export const DEFAULT_COLLECTION_BUTTON_CONTENT_MODE = "icon_text";
+
 export const actionButtonStyleChoices = [
   { value: "modern", label: "Modern" },
   { value: "classic", label: "Classic" },
@@ -84,15 +99,15 @@ export const actionButtonContentChoices = [
 ];
 
 export function resolveActionButtonOptions({
-  buttonStyle = "modern",
-  contentMode = "icon_text",
+  buttonStyle = DEFAULT_BUTTON_STYLE,
+  contentMode = DEFAULT_BUTTON_CONTENT_MODE,
 } = {}) {
   if (!actionButtonStyleChoices.some((choice) => choice.value === buttonStyle))
-    buttonStyle = "modern";
+    buttonStyle = DEFAULT_BUTTON_STYLE;
   if (
     !actionButtonContentChoices.some((choice) => choice.value === contentMode)
   )
-    contentMode = "icon_text";
+    contentMode = DEFAULT_BUTTON_CONTENT_MODE;
   return {
     buttonStyle,
     contentMode: buttonStyle === "icon" ? "icon" : contentMode,
@@ -108,11 +123,13 @@ export function getActionRowClass(options = {}) {
 export function modeActionOptions(config = {}) {
   return resolveActionButtonOptions({
     buttonStyle:
-      config.actions_buttons_style || config.buttons_style || "classic",
+      config.actions_buttons_style ||
+      config.buttons_style ||
+      DEFAULT_ACTION_BUTTON_STYLE,
     contentMode:
       config.actions_buttons_content_mode ||
       config.buttons_content_mode ||
-      "icon",
+      DEFAULT_ACTION_BUTTON_CONTENT_MODE,
   });
 }
 

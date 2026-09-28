@@ -3,12 +3,36 @@ export function clockColorToRgb(intColor) {
   return [(intColor >> 16) & 0xff, (intColor >> 8) & 0xff, intColor & 0xff];
 }
 
+// Home Assistant replaces `hass.states` with a new object on every state
+// change, so its identity is a cheap cache key. The preset sensor's entity id
+// is remembered once found, so later lookups read it directly and only fall
+// back to a full scan when that entity disappears or stops carrying presets.
+const EMPTY_PRESETS = Object.freeze([]);
+const presetLibraryCache = new WeakMap();
+let presetEntityId = null;
+
 export function clockPresetLibrary(hass) {
-  return (
-    Object.values(hass?.states || {}).find((state) =>
-      Array.isArray(state.attributes?.clock_presets),
-    )?.attributes.clock_presets || []
-  );
+  const states = hass?.states;
+  if (!states || typeof states !== "object") return EMPTY_PRESETS;
+  const cached = presetLibraryCache.get(states);
+  if (cached) return cached;
+  let presets = presetEntityId
+    ? states[presetEntityId]?.attributes?.clock_presets
+    : undefined;
+  if (!Array.isArray(presets)) {
+    presets = EMPTY_PRESETS;
+    presetEntityId = null;
+    for (const id in states) {
+      const candidate = states[id]?.attributes?.clock_presets;
+      if (Array.isArray(candidate)) {
+        presetEntityId = id;
+        presets = candidate;
+        break;
+      }
+    }
+  }
+  presetLibraryCache.set(states, presets);
+  return presets;
 }
 
 export function clockPresetKey(style) {

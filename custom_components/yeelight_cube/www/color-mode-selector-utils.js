@@ -4,6 +4,8 @@ import {
   actionButtonGroupModel,
   renderActionButtonHTML,
   getActionRowClass,
+  DEFAULT_BUTTON_STYLE,
+  DEFAULT_BUTTON_CONTENT_MODE,
 } from "./action-button-utils.js";
 
 export const COLOR_PRESET_STYLE_CHOICES = [
@@ -106,10 +108,10 @@ export function renderColorModeSelector(
       ${options.some((option) => option.value === current) ? "" : `<option value="" disabled selected>${escapeHtml(placeholder)}</option>`}
       ${options.map((option) => `<option value="${escapeHtml(option.value)}"${current === option.value ? " selected" : ""}${option.disabled ? " disabled" : ""}>${escapeHtml(option.label)}</option>`).join("")}
     </select></div>`;
-  return `<div class="color-mode-choices shared-button-group ${getActionRowClass({ buttonStyle: config.buttons_style || "modern", contentMode: config.buttons_content_mode || "icon_text" })}" role="radiogroup" aria-label="Colour mode">${actionButtonGroupModel(
+  return `<div class="color-mode-choices shared-button-group ${getActionRowClass({ buttonStyle: config.buttons_style || DEFAULT_BUTTON_STYLE, contentMode: config.buttons_content_mode || DEFAULT_BUTTON_CONTENT_MODE })}" role="radiogroup" aria-label="Colour mode">${actionButtonGroupModel(
     {
-      buttonStyle: config.buttons_style || "modern",
-      contentMode: config.buttons_content_mode || "icon_text",
+      buttonStyle: config.buttons_style || DEFAULT_BUTTON_STYLE,
+      contentMode: config.buttons_content_mode || DEFAULT_BUTTON_CONTENT_MODE,
       items: options.map((option) => ({
         ...option,
         ...(option.color

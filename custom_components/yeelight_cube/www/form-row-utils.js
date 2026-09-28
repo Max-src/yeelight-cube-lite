@@ -72,25 +72,6 @@ export function createToggleRow(label, id, checked, changeHandler) {
   `;
 }
 
-// Helper function to create a config row with select
-export function createConfigRow(label, id, options, value, changeHandler) {
-  const optionsHtml = options.map(
-    (opt) =>
-      html`<option value="${opt.value}" ?selected="${opt.value === value}">
-        ${opt.label}
-      </option>`,
-  );
-
-  return html`
-    <div class="config-row">
-      <label class="config-label">${label}</label>
-      <select id="${id}" @change="${changeHandler}">
-        ${optionsHtml}
-      </select>
-    </div>
-  `;
-}
-
 /**
  * Creates a slider row with column layout matching the unified editor style
  * @param {string} label - The slider label text

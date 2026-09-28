@@ -486,25 +486,71 @@ class YeelightCubeGradientCard extends HTMLElement {
       this._setupPreviewEventListener();
     }
 
+    // Fast path: HA calls this setter for every state change anywhere in the
+    // instance, but only replaces the state object of the entity that changed.
+    // If our primary entity's state object is the same reference we fully
+    // processed last time (same config, no optimistic flag waiting for a
+    // backend echo, wheel already synced to this mode), everything below would
+    // be a no-op, so skip it.
+    if (this.config && this._seenConfig === this.config) {
+      const seenId = this._getPrimaryEntity();
+      const seenState = seenId ? hass?.states?.[seenId] : undefined;
+      if (
+        seenState &&
+        seenId === this._seenEntityId &&
+        seenState === this._seenStateObj &&
+        this._optimisticMode == null &&
+        this._optimisticPanelMode === undefined &&
+        this._optimisticFillCols === undefined &&
+        (this._getDisplayMode() !== "wheel" ||
+          this._lastWheelMode === seenState.attributes?.mode)
+      ) {
+        return;
+      }
+    }
+
     // Track entity state changes to auto-reload gallery previews (debounced)
     // Only relevant when a preview-style selector is shown — text selectors
     // never call the preview service.
     const entityId = this._getPrimaryEntity();
-    if (hass && entityId && this._isPreviewSelectorActive()) {
+    if (
+      hass &&
+      entityId &&
+      this._isPreviewSelectorActive() &&
+      // Same state object as the last check => all derived values are equal.
+      (!hass.states[entityId] ||
+        hass.states[entityId] !== this._lastPreviewStateObj)
+    ) {
       const stateObj = hass.states[entityId];
+      this._lastPreviewStateObj = stateObj;
       const currentText = stateObj?.attributes?.custom_text;
       const currentAngle = stateObj?.attributes?.angle;
       const currentColors = stateObj?.attributes?.text_colors;
       const currentPanelMode = stateObj?.attributes?.full_panel || false;
-      const colorsHash = currentColors ? JSON.stringify(currentColors) : null;
+      // Only re-stringify when the array reference changed.
+      let colorsHash = this._lastPreviewColors;
+      if (
+        currentColors === undefined ||
+        currentColors !== this._lastPreviewColorsRef
+      ) {
+        colorsHash = currentColors ? JSON.stringify(currentColors) : null;
+        this._lastPreviewColorsRef = currentColors;
+      }
       // Also watch matrix_colors: in "Panel Color Sequence" mode the palette
       // paints the panel directly, so the rendered output (matrix_colors) can
       // change without text_colors differing.  Watching it here keeps the
       // preview in sync with the actual lamp output in every mode.
       const currentMatrixColors = stateObj?.attributes?.matrix_colors;
-      const matrixColorsHash = currentMatrixColors
-        ? JSON.stringify(currentMatrixColors)
-        : null;
+      let matrixColorsHash = this._lastPreviewMatrixColors;
+      if (
+        currentMatrixColors === undefined ||
+        currentMatrixColors !== this._lastPreviewMatrixColorsRef
+      ) {
+        matrixColorsHash = currentMatrixColors
+          ? JSON.stringify(currentMatrixColors)
+          : null;
+        this._lastPreviewMatrixColorsRef = currentMatrixColors;
+      }
       if (
         this._lastPreviewText !== currentText ||
         this._lastPreviewAngle !== currentAngle ||
@@ -556,16 +602,18 @@ class YeelightCubeGradientCard extends HTMLElement {
       : null;
 
     // Only render if attributes that actually affect the card UI changed.
-    // HA creates new state objects on ANY attribute update (brightness, etc.),
-    // so object-reference equality (`entity !== oldEntity`) triggers spurious
-    // full-DOM rebuilds that destroy & recreate the capsule slider, causing the
-    // visible "blink" (thumb jumps to 0 then animates back).  Compare only the
-    // attributes the card actually reads during render().
-    // NOTE: HA deserialises attributes from JSON on every update, so arrays
-    // like text_colors/matrix_colors are always new references even when the
-    // values haven't changed — use JSON comparison for those.
+    // HA keeps the same state object for entities that did not change, but
+    // replaces THIS entity's state object on ANY of its attribute updates
+    // (brightness, etc.), so `entity !== oldEntity` alone would trigger
+    // spurious full-DOM rebuilds that destroy & recreate the capsule slider,
+    // causing the visible "blink" (thumb jumps to 0 then animates back).
+    // Compare only the attributes the card actually reads during render().
+    // NOTE: when this entity's state object is replaced, its attribute arrays
+    // (text_colors/matrix_colors) are new references even if the values are
+    // unchanged, so fall back to a JSON comparison when the reference differs.
     const entityChanged =
       !oldEntity ||
+      (entity !== oldEntity &&
       (() => {
         if (entity.state !== oldEntity.state) return true;
         const a = entity.attributes;
@@ -577,13 +625,19 @@ class YeelightCubeGradientCard extends HTMLElement {
           a.custom_text !== b.custom_text
         )
           return true;
-        // Deep-compare arrays (new references each hass update even if values identical)
-        if (JSON.stringify(a.text_colors) !== JSON.stringify(b.text_colors))
+        // Deep-compare arrays only when the reference changed
+        if (
+          a.text_colors !== b.text_colors &&
+          JSON.stringify(a.text_colors) !== JSON.stringify(b.text_colors)
+        )
           return true;
-        if (JSON.stringify(a.matrix_colors) !== JSON.stringify(b.matrix_colors))
+        if (
+          a.matrix_colors !== b.matrix_colors &&
+          JSON.stringify(a.matrix_colors) !== JSON.stringify(b.matrix_colors)
+        )
           return true;
         return false;
-      })();
+      })());
 
     // --- Optimistic Panel Mode: clear only when backend matches ---
     if (this._optimisticPanelMode !== undefined && entity) {
@@ -617,6 +671,10 @@ class YeelightCubeGradientCard extends HTMLElement {
 
     // Store current hass for next comparison
     this._previousHass = this._hass;
+    // Remember what was fully processed (used by the fast path above)
+    this._seenConfig = this.config;
+    this._seenEntityId = _primaryEntityId;
+    this._seenStateObj = entity;
 
     // Re-initialize wheel center ONLY if mode attribute actually changed
     if (this._getDisplayMode() === "wheel" && entity) {

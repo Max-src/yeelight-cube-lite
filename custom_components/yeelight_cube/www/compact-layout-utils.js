@@ -238,47 +238,6 @@ export function renderCompactItem(html, config) {
 }
 
 /**
- * Renders a compact layout item (Plain HTML string version for non-Lit contexts)
- *
- * @param {Object} config - Configuration object
- * @param {number} config.index - Item index
- * @param {string} config.previewHTML - Preview HTML content
- * @param {string} config.infoHTML - Info HTML content
- * @param {boolean} config.allowDelete - Whether to show delete button
- * @param {string} config.deleteBtnClass - CSS classes for delete button
- * @param {boolean} config.allowDragDrop - Whether item is draggable
- * @param {string} config.additionalClasses - Additional CSS classes for item
- * @returns {string} HTML string
- */
-export function renderCompactItemHTML(config) {
-  const {
-    index,
-    previewHTML = "",
-    infoHTML = "",
-    allowDelete = false,
-    deleteBtnClass = "",
-    allowDragDrop = false,
-    additionalClasses = "",
-  } = config;
-
-  return `
-    <div 
-      class="compact-item ${additionalClasses}"
-      data-idx="${index}"
-      ${allowDragDrop ? 'draggable="true"' : ""}
-    >
-      ${previewHTML}
-      ${infoHTML}
-      ${
-        allowDelete && deleteBtnClass
-          ? `<button class="${deleteBtnClass}" data-action="remove" data-idx="${index}" title="Remove">×</button>`
-          : ""
-      }
-    </div>
-  `;
-}
-
-/**
  * Sets up drag-and-drop functionality for compact layout items
  *
  * @param {HTMLElement} root - Root element containing the compact items

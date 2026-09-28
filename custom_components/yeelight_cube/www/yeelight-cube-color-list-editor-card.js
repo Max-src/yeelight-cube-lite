@@ -189,13 +189,17 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         const oldState = oldHass.states[entityId];
         const newState = hass.states[entityId];
 
-        // Skip render if state hasn't changed
+        // Skip render if state hasn't changed. HA only replaces the state
+        // object of the entity that changed, so the common case (another
+        // entity changed) is a cheap reference hit; deep-compare only when
+        // our entity's state object was actually replaced.
         if (
           oldState &&
           newState &&
-          JSON.stringify(oldState.attributes) ===
-            JSON.stringify(newState.attributes) &&
-          oldState.state === newState.state
+          (oldState === newState ||
+            (oldState.state === newState.state &&
+              JSON.stringify(oldState.attributes) ===
+                JSON.stringify(newState.attributes)))
         ) {
           return;
         }

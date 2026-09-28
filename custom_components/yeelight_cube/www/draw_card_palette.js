@@ -1,17 +1,27 @@
 // Palette management helpers for Yeelight Cube Lite Draw Card
 import { hexToRgb, rgbToHex } from "./draw_utils.js";
 
-export function savePalette(hass, paletteSensor, colors, entityId = null) {
+/**
+ * Save `colors` as a named palette. Returns the service-call promise so the
+ * caller can handle failures (it rejects if either call fails).
+ */
+export async function savePalette(
+  hass,
+  paletteSensor,
+  colors,
+  entityId = null,
+  name = null,
+) {
   if (!hass || !paletteSensor) return;
   const rgbColors = colors.map((c) => hexToRgb(c));
   const serviceData = { palette: rgbColors };
+  if (name) serviceData.name = name;
   if (entityId) {
     serviceData.entity_id = entityId;
   }
-  hass.callService("yeelight_cube", "save_palette", serviceData).then(() => {
-    hass.callService("homeassistant", "update_entity", {
-      entity_id: paletteSensor,
-    });
+  await hass.callService("yeelight_cube", "save_palette", serviceData);
+  await hass.callService("homeassistant", "update_entity", {
+    entity_id: paletteSensor,
   });
 }
 

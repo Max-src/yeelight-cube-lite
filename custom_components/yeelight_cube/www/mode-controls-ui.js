@@ -4,6 +4,10 @@ import { renderActionButton, renderActionRow } from "./action-button-ui.js";
 import {
   actionButtonStyles,
   modeActionOptions,
+  DEFAULT_BUTTON_STYLE,
+  DEFAULT_BUTTON_CONTENT_MODE,
+  DEFAULT_COLLECTION_BUTTON_STYLE,
+  DEFAULT_COLLECTION_BUTTON_CONTENT_MODE,
 } from "./action-button-utils.js";
 import {
   renderOrientationControls,
@@ -134,8 +138,9 @@ class YeelightModeControls extends LitElement {
       icon,
       onClick,
       action: "tool",
-      buttonStyle: model.config.buttons_style || "classic",
-      contentMode: model.config.buttons_content_mode || "icon",
+      buttonStyle: model.config.buttons_style || DEFAULT_BUTTON_STYLE,
+      contentMode:
+        model.config.buttons_content_mode || DEFAULT_BUTTON_CONTENT_MODE,
       ...(this.area === "actions" ? modeActionOptions(model.config) : {}),
       disabled: model.busy || model.adapter.disabled(),
       ...options,
@@ -477,9 +482,11 @@ class YeelightModeControls extends LitElement {
                       () => model.chooseFavourite(favourite),
                       {
                         buttonStyle:
-                          config.collection_buttons_style || "classic",
+                          config.collection_buttons_style ||
+                          DEFAULT_COLLECTION_BUTTON_STYLE,
                         contentMode:
-                          config.collection_buttons_content_mode || "icon_text",
+                          config.collection_buttons_content_mode ||
+                          DEFAULT_COLLECTION_BUTTON_CONTENT_MODE,
                         selected: isSelected(favourite),
                         disabled:
                           model.busy ||
@@ -489,9 +496,12 @@ class YeelightModeControls extends LitElement {
                     ),
                   )}`,
                   {
-                    buttonStyle: config.collection_buttons_style || "classic",
+                    buttonStyle:
+                      config.collection_buttons_style ||
+                      DEFAULT_COLLECTION_BUTTON_STYLE,
                     contentMode:
-                      config.collection_buttons_content_mode || "icon_text",
+                      config.collection_buttons_content_mode ||
+                      DEFAULT_COLLECTION_BUTTON_CONTENT_MODE,
                   },
                 )}
         </section>`

@@ -60,7 +60,7 @@ import {
   resolveClockAppearance,
   APPEARANCE_PRESETS,
   clockAppearancePresets,
-} from "../custom_components/yeelight_cube/www/clock-preview-appearance.js";
+} from "../custom_components/yeelight_cube/www/preview-appearance.js";
 
 test("legacy clock appearance preserves defaults and explicit values without mutating input", () => {
   const config = {

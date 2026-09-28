@@ -113,7 +113,8 @@ export function renderTextStyleSelector(config, items, sel, active) {
           .map((s) =>
             renderActionButtonHTML({
               action: "tool",
-              buttonStyle: config.buttons_style || "modern",
+              // Unset falls back to DEFAULT_BUTTON_STYLE in the shared model.
+              buttonStyle: config.buttons_style,
               contentMode: "text",
               label: s.name,
               title: s.name,

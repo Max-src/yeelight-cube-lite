@@ -74,11 +74,13 @@ import {
   GRID_ROWS,
   MATRIX_SIZE,
   OFF_COLOR,
+  EVT_TOOL_VISIBILITY_RESET,
   EVT_ACTION_ORDER_RESET,
   EVT_ACTION_VISIBILITY_RESET,
 } from "./draw_card_const.js";
 import { StorageUtils } from "./draw_card_storage.js";
 import { CollectionState } from "./collection-state.js";
+import { notifyUnreported } from "./notify-utils.js";
 import { callServiceOnTargetEntities as callServiceSequentially } from "./service-call-utils.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 
@@ -1072,8 +1074,7 @@ class YeelightCubeDrawCard extends LitElement {
 
   constructor() {
     super();
-    this._onConfigChanged = this._onConfigChanged.bind(this);
-    this._onToolsReordered = this._onToolsReordered.bind(this);
+    this._onToolVisibilityReset = this._onToolVisibilityReset.bind(this);
     this._onActionOrderReset = this._onActionOrderReset.bind(this);
     this._onActionVisibilityReset = this._onActionVisibilityReset.bind(this);
     this.matrix = StorageUtils.loadMatrix();
@@ -1123,10 +1124,17 @@ class YeelightCubeDrawCard extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    window.addEventListener("config-changed", this._onConfigChanged);
-    window.addEventListener("yeelight-tools-reordered", this._onToolsReordered);
-
-    // Add action reset event listeners
+    // No window "config-changed" listener: HA delivers editor changes through
+    // setConfig() on the edited card only; a window bus leaked one card's
+    // config (entity, sensors, tools) into every draw card on the dashboard.
+    //
+    // The reset events below carry no config: they announce that the editor
+    // cleared the *global* localStorage keys shared by every draw card, so
+    // every instance reloads from storage.
+    window.addEventListener(
+      EVT_TOOL_VISIBILITY_RESET,
+      this._onToolVisibilityReset,
+    );
     window.addEventListener(EVT_ACTION_ORDER_RESET, this._onActionOrderReset);
     window.addEventListener(
       EVT_ACTION_VISIBILITY_RESET,
@@ -1279,13 +1287,10 @@ class YeelightCubeDrawCard extends LitElement {
     this._collectionContext = (this._collectionContext || 0) + 1;
     this._pixelArtCollection?.reset();
     this._fetchingPixelArts = false;
-    window.removeEventListener("config-changed", this._onConfigChanged);
     window.removeEventListener(
-      "yeelight-tools-reordered",
-      this._onToolsReordered,
+      EVT_TOOL_VISIBILITY_RESET,
+      this._onToolVisibilityReset,
     );
-
-    // Remove action reset event listeners
     window.removeEventListener(
       EVT_ACTION_ORDER_RESET,
       this._onActionOrderReset,
@@ -1321,22 +1326,9 @@ class YeelightCubeDrawCard extends LitElement {
     }
   }
 
-  _onConfigChanged(e) {
-    if (!e.detail || !e.detail.config) return;
-    // Only accept config-changed events meant for this card type
-    const cfg = e.detail.config;
-    if (cfg.type && cfg.type !== "custom:yeelight-cube-draw-card") return;
-    this.setConfig(cfg);
-    this.requestUpdate();
-  }
-
-  _onToolsReordered(e) {
-    if (!e.detail || !e.detail.config) return;
-    this.setConfig(e.detail.config);
-    this.requestUpdate();
-
-    // Force a complete re-render to ensure tools are reordered
-    this.matrix = this.matrix || this.getBlankMatrix();
+  _onToolVisibilityReset() {
+    if (this.toolManager)
+      this.toolManager.toolVisibility = this.toolManager.loadToolVisibility();
     this.requestUpdate();
   }
 
@@ -1350,36 +1342,12 @@ class YeelightCubeDrawCard extends LitElement {
     this.requestUpdate();
   }
 
-  _fireConfigChanged() {
-    // Fire event to update the config in the editor
-    window.dispatchEvent(
-      new CustomEvent("config-changed", {
-        detail: { config: this.config },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
-
+  // Card-internal config change (e.g. tools reordered by drag): update this
+  // card's own config only. Nothing is broadcast, so other draw cards on the
+  // dashboard are never affected.
   _updateConfig(updates) {
-    try {
-      // Create a mutable copy of the config
-      const newConfig = { ...this.config };
-
-      // Apply updates
-      Object.assign(newConfig, updates);
-
-      // Update the config
-      this.config = newConfig;
-
-      // Fire config changed event
-      this._fireConfigChanged(newConfig);
-
-      // Request update to re-render
-      this.requestUpdate();
-    } catch (error) {
-      console.warn("Failed to update config:", error);
-    }
+    this.config = { ...this.config, ...updates };
+    this.requestUpdate();
   }
 
   _matrixColorCount() {
@@ -1440,27 +1408,21 @@ class YeelightCubeDrawCard extends LitElement {
     const toolsArray = [...this.config.tools_order];
     const hasColorPicker = toolsArray.includes("colorPicker");
     const hasEyedropper = toolsArray.includes("eyedropper");
-    let configChanged = false;
 
     if (hasColorPicker && !hasEyedropper) {
       // If colorPicker exists but eyedropper doesn't, add eyedropper after colorPicker
       const colorPickerIndex = toolsArray.indexOf("colorPicker");
       toolsArray.splice(colorPickerIndex + 1, 0, "eyedropper");
       this.config.tools_order = toolsArray;
-      configChanged = true;
     } else if (hasEyedropper && !hasColorPicker) {
       // If eyedropper exists but colorPicker doesn't, add colorPicker before eyedropper
       const eyedropperIndex = toolsArray.indexOf("eyedropper");
       toolsArray.splice(eyedropperIndex, 0, "colorPicker");
       this.config.tools_order = toolsArray;
-      configChanged = true;
     }
 
-    // If we made changes to the config, fire the config-changed event to save to YAML
-    if (configChanged) {
-      // Use the _updateConfig method to properly save configuration changes
-      this._updateConfig({ tools_order: this.config.tools_order });
-    }
+    // The pairing fix-up above only touches this card's own fresh config copy;
+    // it is intentionally not broadcast (it used to leak into other cards).
 
     // Ensure actions_order exists with default value (check multiple possible locations)
     const actionsConfig =
@@ -1968,7 +1930,20 @@ class YeelightCubeDrawCard extends LitElement {
   }
 
   _savePalette(colors, name = "Custom Palette") {
-    savePalette(this.hass, this.paletteSensor, colors, this.entity);
+    return savePalette(
+      this.hass,
+      this.paletteSensor,
+      colors,
+      this.entity,
+      name,
+    ).catch((err) => this._reportFailure(err, "Failed to save the palette."));
+  }
+
+  // Log a failed action and show one toast, unless HA's callService already
+  // showed one for this error (service errors are reported by HA itself).
+  _reportFailure(err, message) {
+    console.error(`[draw-card] ${message}`, err);
+    notifyUnreported(this, err, message);
   }
 
   _saveRecentPalette() {
@@ -3510,12 +3485,16 @@ class YeelightCubeDrawCard extends LitElement {
   }
 
   async _handlePixelArtCanvasClick(idx, autoApplyToLamp) {
-    // Always apply to matrix
-    await this._applyPixelArtToMatrix(idx);
+    try {
+      // Always apply to matrix
+      await this._applyPixelArtToMatrix(idx);
 
-    // If auto-apply is enabled, also send current matrix to lamp
-    if (autoApplyToLamp) {
-      await this._sendToLamp();
+      // If auto-apply is enabled, also send current matrix to lamp
+      if (autoApplyToLamp) {
+        await this._sendToLamp();
+      }
+    } catch (err) {
+      this._reportFailure(err, "Failed to apply the pixel art to the lamp.");
     }
   }
 
@@ -3682,7 +3661,9 @@ class YeelightCubeDrawCard extends LitElement {
     } catch (error) {
       if (!collection.rollback(operation)) return;
       console.error("[Rename] Failed to rename pixel art:", error);
-      alert("Failed to rename pixel art. Please try again.");
+      // HA already toasted service failures; only report local ones
+      // (e.g. the collection-changed conflict thrown above).
+      notifyUnreported(this, error);
 
       // Drop the overlay so the UI falls back to the real (unchanged) name.
       this.pixelArtVersion = (this.pixelArtVersion || 0) + 1;
@@ -3721,7 +3702,7 @@ class YeelightCubeDrawCard extends LitElement {
         });
         window.dispatchEvent(new Event("pixelart-saved"));
       } catch (err) {
-        console.error("[draw-card] Error applying pixel art:", err);
+        this._reportFailure(err, "Failed to apply the pixel art.");
       }
     }, 300);
   }
@@ -3975,6 +3956,7 @@ class YeelightCubeDrawCard extends LitElement {
     } catch (err) {
       console.error("[PIXELART-DELETE] Error calling backend:", err);
       if (collection.rollback(operation)) {
+        notifyUnreported(this, err);
         this._hass = {
           ...this._hass,
           states: { ...this._hass.states, [pixelartSensor]: stateObj },
@@ -4064,6 +4046,12 @@ class YeelightCubeDrawCard extends LitElement {
     } catch (err) {
       console.error("[draw-card] Import failed:", err);
       this._showImportStatus("error");
+      // Invalid files and collection conflicts are not reported by HA.
+      notifyUnreported(
+        this,
+        err,
+        err instanceof SyntaxError ? "Invalid pixel art file." : undefined,
+      );
     }
 
     // Clear the file input safely

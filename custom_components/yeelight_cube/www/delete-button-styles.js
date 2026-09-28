@@ -125,14 +125,6 @@ export function getButtonPositionStyles(inside = false, left = false) {
   return `top: -8px; ${hSide}: -8px;`;
 }
 
-/**
- * @deprecated Use getButtonPositionStyles(inside) instead.
- * Kept for backward compatibility.
- */
-export function getCardButtonPositionStyles(position = "outside") {
-  return getButtonPositionStyles(position === "inside");
-}
-
 /* ─────────────────────────────────────────────────────────────────────────────
  * CSS — every variant draws the × cross via ::before / ::after only.
  * Text content inside the <button> is forced invisible so inline style

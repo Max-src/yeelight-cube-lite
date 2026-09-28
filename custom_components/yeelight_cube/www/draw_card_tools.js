@@ -11,8 +11,6 @@ import {
   TOOL_CONFIG,
   DEFAULT_TOOL_ORDER,
   DEFAULT_ACTION_ORDER,
-  EVT_TOOL_VISIBILITY_RESET,
-  EVT_ACTION_VISIBILITY_RESET,
 } from "./draw_card_const.js";
 import { StorageUtils } from "./draw_card_storage.js";
 
@@ -22,12 +20,8 @@ export class ToolManager {
     this.dragState = null;
     // Load tool visibility state from localStorage
     this.toolVisibility = this.loadToolVisibility();
-
-    // Listen for tool visibility reset events from the editor
-    window.addEventListener(EVT_TOOL_VISIBILITY_RESET, () => {
-      this.toolVisibility = {};
-      this.card.requestUpdate();
-    });
+    // Editor resets (EVT_TOOL_VISIBILITY_RESET) are handled by the card, which
+    // adds/removes its window listener with its own connect/disconnect.
   }
 
   // Load tool visibility state from localStorage
@@ -398,42 +392,8 @@ export class ToolManager {
     // Find new index of the dragged tool
     const newIndex = newOrder.indexOf(tool);
 
-    // Update config using the main card's update method
-    if (this.card._updateConfig) {
-      this.card._updateConfig({ tools_order: newOrder });
-    } else {
-      // Fallback: Update config directly and fire events manually
-      this.card.config.tools_order = [...newOrder];
-
-      // Fire config changed event for Home Assistant through the main card
-      if (this.card._fireConfigChanged) {
-        this.card._fireConfigChanged(this.card.config);
-      } else {
-        // Fallback to direct event dispatch
-        this.card.dispatchEvent(
-          new CustomEvent("config-changed", {
-            detail: { config: this.card.config },
-            bubbles: true,
-            composed: true,
-          }),
-        );
-      }
-
-      // Fire special event for immediate updates
-      window.dispatchEvent(
-        new CustomEvent("yeelight-tools-reordered", {
-          detail: {
-            config: this.card.config,
-            tools_order: this.card.config.tools_order,
-          },
-          bubbles: true,
-          composed: true,
-        }),
-      );
-
-      // Force re-render
-      this.card.requestUpdate();
-    }
+    // Update this card's own config (local only; never broadcast to other cards)
+    this.card._updateConfig({ tools_order: newOrder });
 
     // Clean up placeholder
     if (placeholder && placeholder.parentNode) {
@@ -460,13 +420,8 @@ export class ActionManager {
     this.card = card;
     // Load action visibility state from localStorage
     this.actionVisibility = this.loadActionVisibility();
-
-    // Listen for action visibility reset events from the editor
-    window.addEventListener(EVT_ACTION_VISIBILITY_RESET, () => {
-      this.actionVisibility = {};
-
-      this.card.requestUpdate();
-    });
+    // Editor resets (EVT_ACTION_VISIBILITY_RESET) are handled by the card, which
+    // adds/removes its window listener with its own connect/disconnect.
   }
 
   // Load action visibility state from localStorage
@@ -662,7 +617,12 @@ export class ActionManager {
             icon: "mdi:content-save",
             label: "Save",
             title: "Save as Pixel Art",
-            onClick: () => this.card._savePixelArt(),
+            onClick: () =>
+              this.card
+                ._savePixelArt()
+                .catch((err) =>
+                  this.card._reportFailure(err, "Failed to save pixel art."),
+                ),
           }),
         };
 
@@ -674,7 +634,15 @@ export class ActionManager {
             contentMode,
             icon: "mdi:send",
             label: "Apply",
-            onClick: () => this.card._sendToLamp(),
+            onClick: () =>
+              this.card
+                ._sendToLamp()
+                .catch((err) =>
+                  this.card._reportFailure(
+                    err,
+                    "Failed to send the drawing to the lamp.",
+                  ),
+                ),
           }),
         };
 

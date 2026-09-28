@@ -103,35 +103,6 @@ export function hexToRgb(hex) {
   return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
 }
 
-// Flood fill algorithm for area fill
-export function floodFill(
-  matrix,
-  idx,
-  targetColor,
-  fillColor,
-  cols = 20,
-  rows = 5,
-) {
-  const normTarget = normalizeHex(targetColor);
-  const normFill = normalizeHex(fillColor);
-  if (normTarget === normFill) return new Set();
-  const stack = [idx];
-  const visited = new Set();
-  while (stack.length) {
-    const i = stack.pop();
-    const cellColor = normalizeHex(matrix[i]);
-    if (visited.has(i) || cellColor !== normTarget) continue;
-    visited.add(i);
-    const x = i % cols,
-      y = Math.floor(i / cols);
-    if (x > 0) stack.push(i - 1);
-    if (x < cols - 1) stack.push(i + 1);
-    if (y > 0) stack.push(i - cols);
-    if (y < rows - 1) stack.push(i + cols);
-  }
-  return visited;
-}
-
 /**
  * RGB to HSV conversion (shared helper).
  */

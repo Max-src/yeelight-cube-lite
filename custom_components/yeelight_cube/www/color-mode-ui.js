@@ -1,6 +1,10 @@
 import { LitElement, html, unsafeHTML } from "./lib/lit-all.js";
 import { renderColorModeSelector } from "./color-mode-selector-utils.js";
-import { bindActionButtonGroup } from "./action-button-utils.js";
+import {
+  bindActionButtonGroup,
+  DEFAULT_BUTTON_STYLE,
+  DEFAULT_BUTTON_CONTENT_MODE,
+} from "./action-button-utils.js";
 import "./clock-preset-manager.js";
 import { defineOnce } from "./card-registration.js";
 
@@ -59,8 +63,8 @@ class YeelightColorMode extends LitElement {
                 .saveKinds=${this.saveKinds}
                 .previewAttrs=${this.previewAttrs}
                 .initialColor=${`#${this.draft.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`}
-                .buttonStyle=${this.config.buttons_style || "modern"}
-                .contentMode=${this.config.buttons_content_mode || "icon_text"}
+                .buttonStyle=${this.config.buttons_style || DEFAULT_BUTTON_STYLE}
+                .contentMode=${this.config.buttons_content_mode || DEFAULT_BUTTON_CONTENT_MODE}
                 @clock-preset-saved=${(event) =>
                   this.onSaved?.(event.detail || {})}
               ></yeelight-clock-preset-manager>

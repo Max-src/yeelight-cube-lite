@@ -13,6 +13,7 @@ light.py at that point).
 """
 import asyncio
 import base64
+import functools
 import json
 import logging
 import math
@@ -23,7 +24,11 @@ from .native_effect_preview import effect_supports_color_mode, effect_supports_c
 import voluptuous as vol  # type: ignore
 from homeassistant.components import websocket_api  # type: ignore
 from homeassistant.core import HomeAssistant, SupportsResponse  # type: ignore
-from homeassistant.exceptions import HomeAssistantError  # type: ignore
+from homeassistant.exceptions import (  # type: ignore
+    HomeAssistantError,
+    Unauthorized,
+    UnknownUser,
+)
 from homeassistant.helpers import config_validation as cv  # type: ignore
 from homeassistant.util import dt as dt_util  # type: ignore
 
@@ -136,6 +141,28 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             else:
                 _LOGGER.warning(f"[{service_name}] Entity {eid} not found in registry")
         return results
+
+    def _admin_only(handler):
+        """Restrict a raw/diagnostic service to Home Assistant administrators.
+
+        These services send arbitrary firmware commands or take exclusive
+        control of a lamp, so a non-admin user must not be able to call them.
+        Calls without a user (automations, scripts, the system) are allowed,
+        matching Home Assistant's own admin services.
+        """
+
+        @functools.wraps(handler)
+        async def wrapper(service_call):
+            user_id = service_call.context.user_id
+            if user_id:
+                user = await hass.auth.async_get_user(user_id)
+                if user is None:
+                    raise UnknownUser(context=service_call.context)
+                if not user.is_admin:
+                    raise Unauthorized(context=service_call.context)
+            return await handler(service_call)
+
+        return wrapper
 
     def _locate_item(items, idx, expected_name, label):
         """Return ``items[idx]``, refusing an index that no longer matches.
@@ -1528,7 +1555,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
     hass.services.async_register(
         DOMAIN,
         "send_fx_effect",
-        handle_send_fx_effect,
+        _admin_only(handle_send_fx_effect),
         schema=vol.Schema({
             vol.Required("entity_id"): _entity_id_or_list,
             vol.Optional("method"): cv.string,
@@ -1551,7 +1578,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
     hass.services.async_register(
         DOMAIN,
         "query_raw",
-        handle_query_raw,
+        _admin_only(handle_query_raw),
         schema=vol.Schema({
             vol.Required("entity_id"): _entity_id_or_list,
             vol.Optional("method"): cv.string,
@@ -1564,7 +1591,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
     hass.services.async_register(
         DOMAIN,
         "get_capabilities",
-        handle_get_capabilities,
+        _admin_only(handle_get_capabilities),
         schema=vol.Schema({
             vol.Required("entity_id"): _entity_id_or_list,
         }, extra=vol.ALLOW_EXTRA),
@@ -1575,7 +1602,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
     hass.services.async_register(
         DOMAIN,
         "bulb_call",
-        handle_bulb_call,
+        _admin_only(handle_bulb_call),
         schema=vol.Schema({
             vol.Required("entity_id"): _entity_id_or_list,
             vol.Required("member"): cv.string,
@@ -1589,7 +1616,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
     hass.services.async_register(
         DOMAIN,
         "set_default",
-        handle_set_default,
+        _admin_only(handle_set_default),
         schema=vol.Schema({
             vol.Required("entity_id"): _entity_id_or_list,
         }, extra=vol.ALLOW_EXTRA),
@@ -2638,7 +2665,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
     hass.services.async_register(
         DOMAIN,
         "set_color_calibration",
-        handle_set_color_calibration,
+        _admin_only(handle_set_color_calibration),
         schema=vol.Schema({
             vol.Optional("gamma_r"): vol.Coerce(float),
             vol.Optional("gamma_g"): vol.Coerce(float),
@@ -2679,7 +2706,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
     hass.services.async_register(
         DOMAIN,
         "set_calibration_lock",
-        handle_set_calibration_lock,
+        _admin_only(handle_set_calibration_lock),
         schema=vol.Schema({
             vol.Required("enabled"): vol.Coerce(bool),
             vol.Required("entity_id"): _entity_id_or_list,

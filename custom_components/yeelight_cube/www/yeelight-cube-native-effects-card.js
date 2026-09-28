@@ -194,7 +194,10 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       this._selected = null;
     }
     this._controls.update();
-    if (this.config?.show_rotation || this.config?.show_color_modes)
+    if (
+      (this.config?.show_rotation || this.config?.show_color_modes) &&
+      this._hassInputsChanged?.(hass) !== false
+    )
       this.requestUpdate();
     const state = hass?.states?.[getTargetEntities(this.config || {})[0]];
     if (state !== this._state) {
@@ -206,6 +209,29 @@ class YeelightCubeNativeEffectsCard extends LitElement {
         this._selected = null;
       this._state = state;
     }
+  }
+
+  // Rotation status and colour modes read every target lamp (not just the
+  // primary `_state`), the shared colour-preset library and the service
+  // registry. Home Assistant hands out a new hass on every state push anywhere,
+  // so re-render only when one of those inputs was replaced.
+  _hassInputsChanged(hass) {
+    const inputs = [
+      this.config,
+      ...getTargetEntities(this.config || {}).map(
+        (entity) => hass?.states?.[entity],
+      ),
+      ...(this.config?.show_color_modes
+        ? [clockPresetLibrary(hass), hass?.services]
+        : []),
+    ];
+    const last = this._lastHassInputs;
+    this._lastHassInputs = inputs;
+    return (
+      !last ||
+      last.length !== inputs.length ||
+      inputs.some((value, index) => value !== last[index])
+    );
   }
 
   connectedCallback() {

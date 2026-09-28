@@ -4,6 +4,10 @@ import {
   sanitizeFavourites,
   ModeSelectionState,
 } from "./mode-selection.js";
+import {
+  DEFAULT_ACTION_BUTTON_STYLE,
+  DEFAULT_BUTTON_CONTENT_MODE,
+} from "./action-button-utils.js";
 export {
   normalizeFavourite,
   favouriteId,
@@ -87,11 +91,11 @@ export function lampActionConfig(config = {}) {
       config.actions_buttons_style ||
       config.buttons_style ||
       config.reconnect_button_style ||
-      "classic",
+      DEFAULT_ACTION_BUTTON_STYLE,
     actions_buttons_content_mode:
       config.actions_buttons_content_mode ||
       config.buttons_content_mode ||
-      "icon_text",
+      DEFAULT_BUTTON_CONTENT_MODE,
   };
   if (!Array.isArray(result.action_buttons)) {
     result.action_buttons = [
@@ -212,7 +216,79 @@ export class ModeControlsController {
   }
 
   notify() {
+    this._lastSnapshot = this.snapshot();
     this.listeners.forEach((listener) => listener());
+  }
+
+  // Flat list of everything the listeners (mode-controls-ui, style-browser-ui
+  // and the cards' favourite-star markers) render from. `update()` runs on
+  // every Home Assistant state push, so it compares this cheap snapshot and
+  // only notifies when something visible actually changed. Returns null when
+  // the adapter cannot answer yet, which always counts as a change.
+  snapshot() {
+    const adapter = this.adapter;
+    try {
+      const values = [
+        this.config,
+        this.busy,
+        this.active,
+        this.frozen,
+        this.error,
+        this.pendingOrientation,
+        this._rotationPending,
+        this.favourites,
+        this.favourites.length,
+        this.selectedFavourite ? favouriteId(this.selectedFavourite) : "",
+        adapter.current?.(),
+        adapter.currentColorMode?.(),
+        String(adapter.currentColor?.() ?? ""),
+        adapter.disabled?.(),
+        adapter.on?.(),
+        adapter.orientation?.(),
+        this.ready(),
+        adapter.previewOnly?.(),
+        adapter.freezable?.(),
+        this.favourites
+          .map((favourite) => (adapter.available(favourite.key) ? 1 : 0))
+          .join(""),
+      ];
+      const itemsKey = (items) =>
+        (items || [])
+          .map((item) => `${item.key}\u0000${item.title}`)
+          .join("\u0001");
+      values.push(itemsKey(adapter.items?.()));
+      if (adapter.navigationItems)
+        values.push(itemsKey(adapter.navigationItems()));
+      for (const target of adapter.rotationTargets?.() || [])
+        values.push(
+          target.entity,
+          target.name,
+          target.active,
+          target.statusUnavailable,
+          target.waitingForReconnect,
+          target.error,
+          target.retryAttempt,
+          target.canRetry,
+        );
+      return values;
+    } catch {
+      return null;
+    }
+  }
+
+  // Notify only when the rendered snapshot differs from the last notification.
+  notifyIfChanged() {
+    const next = this.snapshot();
+    const last = this._lastSnapshot;
+    if (
+      next &&
+      last &&
+      next.length === last.length &&
+      next.every((value, index) => Object.is(value, last[index]))
+    )
+      return false;
+    this.notify();
+    return true;
   }
 
   update() {
@@ -229,10 +305,8 @@ export class ModeControlsController {
     // that started/stops rotation) is mirrored in the UI.
     if (this.adapter.rotationActive) {
       const remote = !!this.adapter.rotationActive();
-      if (!this._rotationPending && remote !== this.active) {
+      if (!this._rotationPending && remote !== this.active)
         this.active = remote;
-        this.notify();
-      }
       const error = this.adapter.rotationError?.();
       if (
         !error &&
@@ -251,7 +325,7 @@ export class ModeControlsController {
       (!this.ready() || this.names().length < 2)
     )
       this.stop();
-    this.notify();
+    this.notifyIfChanged();
   }
 
   save(names) {

@@ -1,10 +1,10 @@
 import { renderStyleSelectorSettings } from "./style-selector-ui.js";
-import { normalizeClockAppearance } from "./clock-preview-appearance.js";
+import { normalizeClockAppearance } from "./preview-appearance.js";
 import {
   renderClockSharedAppearance,
   renderClockSectionAppearance,
   clockAppearanceEditorStyles,
-} from "./clock-appearance-editor.js";
+} from "./preview-appearance-editor.js";
 import {
   renderModeControlSettings,
   renderColorModeSettings,

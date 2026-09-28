@@ -1556,7 +1556,9 @@ data:
 ### Internal and debug services
 
 These services are registered (so they appear in Developer Tools) but are
-**not a stable API**. They exist for the internal calibration and
+**not a stable API**. They can only be called by Home Assistant
+**administrators** (and by automations or scripts); calls from other users are
+rejected. `set_color_calibration` is admin-only for the same reason. They exist for the internal calibration and
 reverse-engineering cards, which are not shipped in the public repository.
 
 | Service | Purpose |

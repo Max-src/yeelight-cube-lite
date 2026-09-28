@@ -390,6 +390,9 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
             clearTimeout(this._userBrightnessTimeout);
           this._userBrightnessTimeout = setTimeout(() => {
             this._userSetBrightness = null;
+            // Let the next hass update re-sync the slider to the entity value
+            // even if the entity state object has not changed since.
+            this._renderIncomplete = true;
           }, 3000);
         },
       }),
@@ -489,8 +492,25 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   }
 
   set hass(hass) {
-    const _t0 = performance.now();
+    const prevHass = this._hass;
     this._hass = hass;
+    // HA calls this setter for every state change anywhere in the instance,
+    // but only recreates the state object of the entity that changed. If our
+    // entity's state object is the very same reference as last time (and the
+    // config is unchanged, the card has rendered, and no render was deferred
+    // by a slider drag / oscillation guard), there is nothing to do.
+    const entityStateObj = hass?.states?.[this.config?.entity];
+    if (
+      prevHass &&
+      this._isInitialRenderComplete &&
+      !this._renderIncomplete &&
+      this._seenConfig === this.config &&
+      this._seenStateObj === entityStateObj
+    ) {
+      return;
+    }
+    this._seenConfig = this.config;
+    this._seenStateObj = entityStateObj;
     if (
       this._orientationSettled &&
       this._orientationPending ===
@@ -501,23 +521,9 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     }
     this._refreshOrientationControls();
 
-    // Clean up local effects that match the entity state
-    // This prevents flickering when entity state updates after a service call
-    // Reduced to 50ms since Python now returns state updates immediately
-    const timeSinceLastServiceCall = Date.now() - this._lastServiceCallTime;
-    const canClearLocalEffects = timeSinceLastServiceCall > 50;
-
-    if (
-      canClearLocalEffects &&
-      this.config &&
-      this.config.entity &&
-      hass.states[this.config.entity]
-    ) {
-      // Don't clear _localEffects when entity state matches!
-      // We need to keep tracking values that differ from defaults
-      // for the change indicator system to work properly.
-      // _localEffects should only be cleared by explicit reset actions.
-    }
+    // Note: _localEffects are NOT cleared when the entity state matches; they
+    // keep tracking values that differ from defaults for the change indicator
+    // system. _localEffects should only be cleared by explicit reset actions.
 
     // Check if the lamp on/off state has changed
     const oldState = this._lastKnownState;
@@ -544,9 +550,11 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     const currentMatrixColors = this.config?.entity
       ? hass.states[this.config.entity]?.attributes?.matrix_colors
       : null;
+    // Reference check first; only deep-compare when the array was replaced.
     const matrixColorsChanged =
+      currentMatrixColors !== this._lastMatrixColors &&
       JSON.stringify(currentMatrixColors) !==
-      JSON.stringify(this._lastMatrixColors);
+        JSON.stringify(this._lastMatrixColors);
 
     // Detect content-mode transitions (Matrix <-> Clock <-> Native Effect).
     // Each mode is driven by a different client-side loop (clock animation,
@@ -559,15 +567,6 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       : null;
     const contentModeChanged = currentContentMode !== this._lastContentMode;
     if (currentContentMode != null) this._lastContentMode = currentContentMode;
-
-    if (matrixColorsChanged) {
-      const updateEpoch = this.config?.entity
-        ? hass.states[this.config.entity]?.attributes?._update_epoch
-        : null;
-      const latencyStr = updateEpoch
-        ? ` latency=${(Date.now() / 1000 - updateEpoch).toFixed(2)}s`
-        : "";
-    }
 
     if (brightnessChanged && currentBrightness !== null) {
       this._lastBrightness = currentBrightness;
@@ -1530,7 +1529,10 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   }
 
   render() {
-    const _tRender = performance.now();
+    // Cleared at the end of _renderCard; stays set if this render bails out
+    // (slider drag, typing, brightness oscillation guard) so the next hass
+    // update re-renders even when the entity state object is unchanged.
+    this._renderIncomplete = true;
     // Skip re-rendering if user is dragging a slider or typing in brightness input
     if (this._anySliderDragging || this._typingBrightness || this._slTyping) {
       return;
@@ -1656,12 +1658,6 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       return rgbToCss(finalColor);
     });
 
-    // Generate matrix HTML (pass stateObj for orientation info)
-    const matrixHtml =
-      this.config.show_lamp_preview !== false
-        ? this._generateMatrixHtml(gridColors, stateObj)
-        : "";
-
     // Use user-set brightness if available (prevents jumping during render storms)
     const displayBrightness =
       this._userSetBrightness !== null
@@ -1692,27 +1688,17 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
 
     this._lastRenderedBrightness = displayBrightness;
 
-    // Generate lamp controls HTML (buttons and brightness slider)
-    const lampControlsHtml =
-      this.config.show_lamp_control !== false
-        ? this._generateLampControlsHtml(stateObj, displayBrightness)
-        : "";
-
-    // Generate adjustment controls HTML (color effects)
-    const adjustmentControlsHtml =
-      this.config.show_adjustment_controls === true
-        ? this._generateAdjustmentControlsHtml(effects)
-        : "";
-
-    // Generate final template
-    const showCard = this.config.show_card_background !== false;
-    const cardTitle = this.config.title || this.config.card_title || "";
-    const usingFallbackMatrix = !stateObj.attributes.matrix_colors;
-
     // Smart update: Only rebuild DOM if not initialized or if dragging just ended
     const needsFullRender =
       !this._isInitialRenderComplete ||
-      !this.shadowRoot.querySelector(".lamp-preview-css");
+      // The matrix (.lamp-preview-css) is absent when show_lamp_preview is
+      // false, so check the always-rendered container instead; otherwise a
+      // hidden preview forced a full DOM rebuild on every update.
+      !this.shadowRoot.querySelector(
+        this.config.show_lamp_preview !== false
+          ? ".lamp-preview-css"
+          : ".yeelight-cube-lamp-preview-container",
+      );
 
     // Firmware Native Effect and Clock modes run animations the plugin can't
     // read back, so the static matrix_colors attribute is meaningless there.
@@ -1728,7 +1714,30 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       stateObj.state === "on";
 
     if (needsFullRender) {
-      // Full render on first load or structural changes
+      // Full render on first load or structural changes. The HTML strings are
+      // only built here; smart updates patch the existing DOM instead.
+      // Generate matrix HTML (pass stateObj for orientation info)
+      const matrixHtml =
+        this.config.show_lamp_preview !== false
+          ? this._generateMatrixHtml(gridColors, stateObj)
+          : "";
+
+      // Generate lamp controls HTML (buttons and brightness slider)
+      const lampControlsHtml =
+        this.config.show_lamp_control !== false
+          ? this._generateLampControlsHtml(stateObj, displayBrightness)
+          : "";
+
+      // Generate adjustment controls HTML (color effects)
+      const adjustmentControlsHtml =
+        this.config.show_adjustment_controls === true
+          ? this._generateAdjustmentControlsHtml(effects)
+          : "";
+
+      const showCard = this.config.show_card_background !== false;
+      const cardTitle = this.config.title || this.config.card_title || "";
+      const usingFallbackMatrix = !stateObj.attributes.matrix_colors;
+
       this.shadowRoot.innerHTML = `
         ${this._getStyles()}
         ${
@@ -1780,10 +1789,15 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       });
     } else {
       // Smart update: Only update matrix colors and slider values
-      const _tSmart = performance.now();
       // When a native animation or clock animation owns the matrix, don't
-      // clobber it with the static (stale) matrix_colors attribute.
-      if (!isNativeAnimating && !isClockAnimating)
+      // clobber it with the static (stale) matrix_colors attribute. With the
+      // preview hidden there are no dots; calling _updateMatrixColors would
+      // see a dot-count mismatch and rebuild the whole card on every update.
+      if (
+        !isNativeAnimating &&
+        !isClockAnimating &&
+        this.config.show_lamp_preview !== false
+      )
         this._updateMatrixColors(gridColors, stateObj);
       this._updateSliderValues(displayBrightness, effects); // Use cached value to prevent jumping
 
@@ -1807,6 +1821,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     else this._stopNativeAnimation();
     if (isClockAnimating) this._startClockAnimation();
     else this._stopClockAnimation();
+    this._renderIncomplete = false;
   }
 
   // Convert a 100-entry matrix_colors array (RGB tuples) to CSS colors using

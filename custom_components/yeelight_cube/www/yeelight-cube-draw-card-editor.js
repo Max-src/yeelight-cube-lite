@@ -121,23 +121,9 @@ class YeelightCubeDrawCardEditor extends LitElement {
     this.hass = null;
     this._open = {};
 
-    // Bind event handler
-    this._handleMainCardConfigUpdate =
-      this._handleMainCardConfigUpdate.bind(this);
-
     // Throttle state for slider updates
     this._previewSizeUpdateScheduled = false;
     this._pendingPreviewSize = null;
-  }
-
-  connectedCallback() {
-    super.connectedCallback();
-
-    // Listen for config updates from the main card
-    window.addEventListener(
-      "yeelight-config-updated",
-      this._handleMainCardConfigUpdate,
-    );
   }
 
   disconnectedCallback() {
@@ -145,7 +131,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
 
     // Auto-disable "Tool Visibility Mode" when editor is closed
     if (this.config && this.config.edit_drawing_tools) {
-      this.config.edit_drawing_tools = false;
+      this.config = { ...this.config, edit_drawing_tools: false };
 
       // Fire a final config update to save the disabled state
       this.dispatchEvent(
@@ -155,27 +141,6 @@ class YeelightCubeDrawCardEditor extends LitElement {
           composed: true,
         }),
       );
-    }
-
-    // Remove event listener
-    window.removeEventListener(
-      "yeelight-config-updated",
-      this._handleMainCardConfigUpdate,
-    );
-  }
-
-  _handleMainCardConfigUpdate(event) {
-    const { type, config, tools_order } = event.detail;
-
-    if (type === "tools_order" && tools_order) {
-      // Update our config
-      this.config = { ...this.config, tools_order };
-
-      // Fire config changed event to save it
-      this._fireConfigChanged();
-
-      // Re-render to show the new order
-      this.requestUpdate();
     }
   }
 
@@ -285,7 +250,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
   }
 
   _resetToolOrder() {
-    this.config.tools_order = [...DEFAULT_TOOL_ORDER];
+    this.config = { ...this.config, tools_order: [...DEFAULT_TOOL_ORDER] };
     this._fireConfigChanged();
   }
 
@@ -369,7 +334,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
   }
 
   _onSectionVisibilityChange(sectionId, visible) {
-    this.config[`show_${sectionId}_section`] = visible;
+    this.config = { ...this.config, [`show_${sectionId}_section`]: visible };
     this._fireConfigChanged();
   }
 
@@ -523,7 +488,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 ],
                 this.config.palette_card_mode || "side",
                 createButtonGroupChangeHandler("palette_card_mode", (value) => {
-                  this.config.palette_card_mode = value;
+                  this.config = { ...this.config, palette_card_mode: value };
                   this._fireConfigChanged();
                 }),
               ),
@@ -535,7 +500,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                     shapeKey: "palette_carousel_button_shape",
                     shapeDefault: "rect",
                     onShapeChange: (value) => {
-                      this.config.palette_carousel_button_shape = value;
+                      this.config = { ...this.config, palette_carousel_button_shape: value };
                       this._fireConfigChanged();
                     },
                     wrapKey: "palette_carousel_wrap_navigation",
@@ -549,7 +514,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                       roundedCardsToSliderValue(this.config.rounded_cards),
                       { min: 0, max: 28, step: 1 },
                       (e) => {
-                        this.config.rounded_cards = parseInt(e.target.value);
+                        this.config = { ...this.config, rounded_cards: parseInt(e.target.value) };
                         this._fireConfigChanged();
                       },
                       "px",
@@ -578,7 +543,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                           createButtonGroupChangeHandler(
                             "side_click_zoom",
                             (value) => {
-                              this.config.side_click_zoom = value;
+                              this.config = { ...this.config, side_click_zoom: value };
                               this._fireConfigChanged();
                             },
                           ),
@@ -589,7 +554,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                         roundedCardsToSliderValue(this.config.rounded_cards),
                         { min: 0, max: 28, step: 1 },
                         (e) => {
-                          this.config.rounded_cards = parseInt(e.target.value);
+                          this.config = { ...this.config, rounded_cards: parseInt(e.target.value) };
                           this._fireConfigChanged();
                         },
                         "px",
@@ -628,11 +593,12 @@ class YeelightCubeDrawCardEditor extends LitElement {
                       (value) => {
                         if (value === "swatches") {
                           // Keep current sub-mode if already a swatch, else default to row
-                          this.config.palette_display_mode = isSwatches
-                            ? dm
-                            : "row";
+                          this.config = {
+                            ...this.config,
+                            palette_display_mode: isSwatches ? dm : "row",
+                          };
                         } else {
-                          this.config.palette_display_mode = value;
+                          this.config = { ...this.config, palette_display_mode: value };
                         }
                         this._fireConfigChanged();
                       },
@@ -659,7 +625,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                             createButtonGroupChangeHandler(
                               "palette_display_mode",
                               (value) => {
-                                this.config.palette_display_mode = value;
+                                this.config = { ...this.config, palette_display_mode: value };
                                 this._fireConfigChanged();
                               },
                             ),
@@ -677,7 +643,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                             createButtonGroupChangeHandler(
                               "swatch_shape",
                               (value) => {
-                                this.config.swatch_shape = value;
+                                this.config = { ...this.config, swatch_shape: value };
                                 this._fireConfigChanged();
                               },
                             ),
@@ -696,7 +662,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                                 createButtonGroupChangeHandler(
                                   "expand_btn_style",
                                   (value) => {
-                                    this.config.expand_btn_style = value;
+                                    this.config = { ...this.config, expand_btn_style: value };
                                     this._fireConfigChanged();
                                   },
                                 ),
@@ -720,7 +686,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                             createButtonGroupChangeHandler(
                               "swatch_shape",
                               (value) => {
-                                this.config.swatch_shape = value;
+                                this.config = { ...this.config, swatch_shape: value };
                                 this._fireConfigChanged();
                               },
                             ),
@@ -755,7 +721,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                               createButtonGroupChangeHandler(
                                 "blinds_direction",
                                 (value) => {
-                                  this.config.blinds_direction = value;
+                                  this.config = { ...this.config, blinds_direction: value };
                                   this._fireConfigChanged();
                                 },
                               ),
@@ -777,7 +743,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 createButtonGroupChangeHandler(
                   "color_info_display",
                   (value) => {
-                    this.config.color_info_display = value;
+                    this.config = { ...this.config, color_info_display: value };
                     this._fireConfigChanged();
                   },
                 ),
@@ -795,7 +761,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 createButtonGroupChangeHandler(
                   "colors_card_border",
                   (value) => {
-                    this.config.colors_card_border = value;
+                    this.config = { ...this.config, colors_card_border: value };
                     this._fireConfigChanged();
                   },
                 ),
@@ -858,7 +824,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                   ],
                   this.config.button_shape || "rect",
                   createButtonGroupChangeHandler("button_shape", (value) => {
-                    this.config.button_shape = value;
+                    this.config = { ...this.config, button_shape: value };
                     this._fireConfigChanged();
                   }),
                 )}
@@ -866,7 +832,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
               ${renderActionButtonSettings(
                 this.config,
                 (key, value) => {
-                  this.config[key] = value;
+                  this.config = { ...this.config, [key]: value };
                   this._fireConfigChanged();
                 },
                 {
@@ -944,7 +910,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
               ${renderActionButtonSettings(
                 this.config,
                 (key, value) => {
-                  this.config[key] = value;
+                  this.config = { ...this.config, [key]: value };
                   this._fireConfigChanged();
                 },
                 {
@@ -979,7 +945,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 createButtonGroupChangeHandler(
                   "pixel_art_gallery_mode",
                   (value) => {
-                    this.config.pixel_art_gallery_mode = value;
+                    this.config = { ...this.config, pixel_art_gallery_mode: value };
                     this._fireConfigChanged();
                     this.requestUpdate();
                   },
@@ -1007,7 +973,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                       shapeKey: "carousel_button_shape",
                       shapeDefault: "rect",
                       onShapeChange: (value) => {
-                        this.config.carousel_button_shape = value;
+                        this.config = { ...this.config, carousel_button_shape: value };
                         this._fireConfigChanged();
                       },
                       wrapKey: "carousel_wrap_navigation",
@@ -1048,7 +1014,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
               roundedCardsToSliderValue(this.config.rounded_cards),
               { min: 0, max: 28, step: 1 },
               (e) => {
-                this.config.rounded_cards = parseInt(e.target.value);
+                this.config = { ...this.config, rounded_cards: parseInt(e.target.value) };
                 this._fireConfigChanged();
               },
               "px",
@@ -1063,7 +1029,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 ],
                 this.config.item_card_border || "auto",
                 createButtonGroupChangeHandler("item_card_border", (value) => {
-                  this.config.item_card_border = value;
+                  this.config = { ...this.config, item_card_border: value };
                   this._fireConfigChanged();
                 }),
               )}
@@ -1099,7 +1065,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
             ${renderDeleteButtonSettings(this.config, {
               styleKey: "pixel_art_remove_button_style",
               commit: (key, value) => {
-                this.config[key] = value;
+                this.config = { ...this.config, [key]: value };
                 this._fireConfigChanged();
                 this.requestUpdate();
               },
@@ -1123,7 +1089,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
             ${renderActionButtonSettings(
               this.config,
               (key, value) => {
-                this.config[key] = value;
+                this.config = { ...this.config, [key]: value };
                 this._fireConfigChanged();
               },
               {
@@ -1138,7 +1104,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
 
   _onTitleInput(e) {
     this.localTitle = e.target.value;
-    this.config.title = this.localTitle || undefined;
+    this.config = { ...this.config, title: this.localTitle || undefined };
     this._fireConfigChanged();
   }
 
@@ -1158,12 +1124,12 @@ class YeelightCubeDrawCardEditor extends LitElement {
   }
 
   _onMatrixSizeChange(e) {
-    this.config.matrix_size = e.target.value;
+    this.config = { ...this.config, matrix_size: e.target.value };
     this._fireConfigChanged();
   }
 
   _onItemsPerPageChange(e) {
-    this.config.pixel_art_items_per_page = parseInt(e.target.value, 10);
+    this.config = { ...this.config, pixel_art_items_per_page: parseInt(e.target.value, 10) };
     this._fireConfigChanged();
   }
 
@@ -1172,7 +1138,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
     this._pendingPreviewSize = newSize;
 
     // Update config immediately for slider position
-    this.config.pixel_art_preview_size = newSize;
+    this.config = { ...this.config, pixel_art_preview_size: newSize };
 
     // Throttle the expensive config-changed event using requestAnimationFrame
     if (!this._previewSizeUpdateScheduled) {
@@ -1181,7 +1147,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
         this._previewSizeUpdateScheduled = false;
         // Use the most recent value
         if (this._pendingPreviewSize !== null) {
-          this.config.pixel_art_preview_size = this._pendingPreviewSize;
+          this.config = { ...this.config, pixel_art_preview_size: this._pendingPreviewSize };
           this._pendingPreviewSize = null;
           this._fireConfigChanged();
         }
@@ -1190,7 +1156,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
   }
 
   _onSwitchChange(e, key) {
-    this.config[key] = e.target.checked;
+    this.config = { ...this.config, [key]: e.target.checked };
     this._fireConfigChanged();
 
     // Trigger re-render for settings that affect other setting visibility
@@ -1200,31 +1166,13 @@ class YeelightCubeDrawCardEditor extends LitElement {
   }
 
   _fireConfigChanged() {
-    // Dispatch on this element for Home Assistant
+    // Standard HA editor contract: bubble a composed config-changed from this
+    // element; HA then calls setConfig() on the edited card's preview only.
+    // (No window broadcast: that pushed this card's config into every draw
+    // card on the dashboard.)
     this.dispatchEvent(
       new CustomEvent("config-changed", {
         detail: { config: this.config },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-
-    // Also dispatch on window for main card listening
-    window.dispatchEvent(
-      new CustomEvent("config-changed", {
-        detail: { config: this.config },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-
-    // Special event for tool order changes
-    window.dispatchEvent(
-      new CustomEvent("yeelight-tools-reordered", {
-        detail: {
-          config: this.config,
-          tools_order: this.config.tools_order,
-        },
         bubbles: true,
         composed: true,
       }),
@@ -1233,13 +1181,13 @@ class YeelightCubeDrawCardEditor extends LitElement {
 
   _onMatrixSizeSliderChange(e) {
     const val = Number(e.target.value);
-    this.config.matrix_size = val;
+    this.config = { ...this.config, matrix_size: val };
     this._fireConfigChanged();
   }
 
   _onSideCardWidthChange(e) {
     const val = Number(e.target.value);
-    this.config.side_card_width = val;
+    this.config = { ...this.config, side_card_width: val };
     this._fireConfigChanged();
   }
 
@@ -1247,9 +1195,12 @@ class YeelightCubeDrawCardEditor extends LitElement {
     const newEntities = Array.isArray(e.target.value)
       ? e.target.value
       : [e.target.value];
-    this.config.target_entities = newEntities;
-    // Keep the first entity as the main entity for backward compatibility
-    this.config.entity = newEntities.length > 0 ? newEntities[0] : "";
+    this.config = {
+      ...this.config,
+      target_entities: newEntities,
+      // Keep the first entity as the main entity for backward compatibility
+      entity: newEntities.length > 0 ? newEntities[0] : "",
+    };
     this._fireConfigChanged();
   }
 }

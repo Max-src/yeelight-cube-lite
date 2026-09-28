@@ -12,11 +12,9 @@ import {
   handleActionButtonGroupEvent,
   modeActionOptions,
   independentActionConfig,
-} from "../custom_components/yeelight_cube/www/action-button-utils.js";
-import {
   exportImportButtonStyles,
   getExportImportButtonClass,
-} from "../custom_components/yeelight_cube/www/export-import-button-utils.js";
+} from "../custom_components/yeelight_cube/www/action-button-utils.js";
 
 test("all styles and content modes share normalized rendering", () => {
   for (const { value: buttonStyle } of actionButtonStyleChoices) {

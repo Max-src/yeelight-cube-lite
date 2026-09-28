@@ -9,7 +9,7 @@ import { createClockCardAdapter } from "./clock-card-adapter.js";
 import {
   resolveClockAppearance,
   APPEARANCE_PRESETS,
-} from "./clock-preview-appearance.js";
+} from "./preview-appearance.js";
 // ============================================================================
 //  Yeelight Cube Lite — Clock Card
 // ============================================================================
@@ -24,7 +24,11 @@ import {
 // Clock format/preset policy and frame painting. The Lit shell is persistent.
 
 import { escapeHtml } from "./html-escape-utils.js";
-import { independentActionConfig } from "./action-button-utils.js";
+import {
+  independentActionConfig,
+  DEFAULT_BUTTON_STYLE,
+  DEFAULT_BUTTON_CONTENT_MODE,
+} from "./action-button-utils.js";
 import { ModeControlsController } from "./mode-controls-controller.js";
 import { CardCommandController } from "./card-command-controller.js";
 import { LitElement, html, unsafeHTML } from "./lib/lit-all.js";
@@ -226,8 +230,8 @@ class YeelightCubeClockCard extends HTMLElement {
     this._offlinePreviewDraft = null;
     this._commands.reset();
     const cfg = independentActionConfig(config, {
-      buttons_style: "modern",
-      buttons_content_mode: "icon_text",
+      buttons_style: DEFAULT_BUTTON_STYLE,
+      buttons_content_mode: DEFAULT_BUTTON_CONTENT_MODE,
     });
     if (cfg.show_search === false) this._searchQuery = "";
     // Migrate legacy per-speed slider appearance keys to the shared slider_*
@@ -242,8 +246,8 @@ class YeelightCubeClockCard extends HTMLElement {
     this.config = {
       title: "Clock",
       show_card_background: true,
-      buttons_style: "modern",
-      buttons_content_mode: "icon_text",
+      buttons_style: DEFAULT_BUTTON_STYLE,
+      buttons_content_mode: DEFAULT_BUTTON_CONTENT_MODE,
       // Unified selector (same families as the gradient card):
       //   Text:    filled | dropdown
       //   Preview: preview-list | preview-grid | preview-carousel | preview-wheel
@@ -488,6 +492,14 @@ class YeelightCubeClockCard extends HTMLElement {
 
   _computeStateSignature() {
     const a = this._attrs();
+    // The preset library array is replaced whenever its sensor's state
+    // changes, so its identity (tracked as a version) plus its length stand in
+    // for serialising the whole library on every hass update.
+    const presets = clockPresetLibrary(this._hass);
+    if (presets !== this._signaturePresets) {
+      this._signaturePresets = presets;
+      this._signaturePresetVersion = (this._signaturePresetVersion || 0) + 1;
+    }
     return [
       this._primaryEntity(),
       a.clock_style_id,
@@ -504,7 +516,8 @@ class YeelightCubeClockCard extends HTMLElement {
       a.content_mode,
       a.brightness,
       this._stateObj()?.state,
-      JSON.stringify(clockPresetLibrary(this._hass)),
+      this._signaturePresetVersion,
+      presets.length,
     ].join("|");
   }
 
@@ -1392,8 +1405,9 @@ class YeelightCubeClockCard extends HTMLElement {
 
   _controlGroup(options) {
     return renderActionButtonGroupHTML({
-      buttonStyle: this.config.buttons_style || "modern",
-      contentMode: this.config.buttons_content_mode || "icon_text",
+      buttonStyle: this.config.buttons_style || DEFAULT_BUTTON_STYLE,
+      contentMode:
+        this.config.buttons_content_mode || DEFAULT_BUTTON_CONTENT_MODE,
       ...options,
     });
   }

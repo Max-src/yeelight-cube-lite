@@ -174,8 +174,10 @@ class YeelightCubePaletteCardEditor extends LitElement {
                     shapeKey: "palette_carousel_button_shape",
                     shapeDefault: "square",
                     onShapeChange: (value) => {
-                      this.config.palette_carousel_button_shape = value;
-                      this.config = { ...this.config };
+                      this.config = {
+                        ...this.config,
+                        palette_carousel_button_shape: value,
+                      };
                       this.requestUpdate();
                       this._fireConfigChanged();
                     },
@@ -286,8 +288,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
             ${renderDeleteButtonSettings(config, {
               styleKey: "remove_button_style",
               commit: (key, value) => {
-                this.config[key] = value;
-                this.config = { ...this.config };
+                this.config = { ...this.config, [key]: value };
                 this.requestUpdate();
                 this._fireConfigChanged();
               },
@@ -318,7 +319,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
 
   _onTitleInput(e) {
     this.localTitle = e.target.value;
-    this.config.title = this.localTitle || undefined;
+    this.config = { ...this.config, title: this.localTitle || undefined };
     this._fireConfigChanged();
   }
 
@@ -326,39 +327,32 @@ class YeelightCubePaletteCardEditor extends LitElement {
     const newEntities = Array.isArray(e.target.value)
       ? e.target.value
       : [e.target.value];
-    this.config.target_entities = newEntities;
-    this.config = { ...this.config };
+    this.config = { ...this.config, target_entities: newEntities };
     this.requestUpdate();
     this._fireConfigChanged();
   }
 
   _onButtonGroupChange(key, value) {
     // Convert boolean-backed button groups from string to boolean
-    if (key === "delete_button_left") {
-      this.config[key] = value === "left";
-    } else if (key === "delete_button_inside") {
-      this.config[key] = value === "inside";
-    } else {
-      this.config[key] = value;
-    }
-    // Force re-render to update conditional sections (like album settings)
-    this.config = { ...this.config };
+    if (key === "delete_button_left") value = value === "left";
+    else if (key === "delete_button_inside") value = value === "inside";
+    // New object: never mutate a config already dispatched to HA; also
+    // forces re-render of conditional sections (like album settings).
+    this.config = { ...this.config, [key]: value };
     this.requestUpdate();
     this._fireConfigChanged();
   }
 
   _onSwitchChange(e, key) {
-    this.config[key] = e.target.checked;
     // Immediately update the UI before firing config change
-    this.config = { ...this.config };
+    this.config = { ...this.config, [key]: e.target.checked };
     this.requestUpdate();
     this._fireConfigChanged();
   }
 
   _onSliderChange(key, e) {
     const value = parseInt(e.target.value);
-    this.config[key] = value;
-    this.config = { ...this.config };
+    this.config = { ...this.config, [key]: value };
     this.requestUpdate();
     this._fireConfigChanged();
   }

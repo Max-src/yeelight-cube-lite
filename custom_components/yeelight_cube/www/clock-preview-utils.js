@@ -121,20 +121,6 @@ export const CLOCK_MIXER_EFFECTS = {
 export const CLOCK_MIXER_EFFECT_DIRECTION = "Down";
 export const CLOCK_MIXER_EFFECT_SPEED = 50;
 
-// Clock-mixer effects whose firmware clock always renders the background in a
-// fixed orientation, ignoring the selected native-effect direction.
-export const CLOCK_MIXER_FIXED_DIRECTION = {
-  "Spectrum Chase": "Up",
-  "Pastel Pulse": "Up",
-  "Monochrome Waves": "Left",
-  "Solar Flare": "Up",
-  Prism: "Right",
-  Pulse: "Up",
-  "Color Trails": "Right",
-  "Spectrum Bands": "Right",
-  Drift: "Right",
-};
-
 // Built-in clock style id -> firmware mixer (mirrors NATIVE_CLOCK_STYLES 1-15).
 export const CLOCK_STYLE_MIXER = {
   1: 39,
@@ -264,10 +250,6 @@ export const CLOCK_STYLES = _buildClockStyles();
 
 const _CLOCK_STYLE_BY_ID = new Map(CLOCK_STYLES.map((s) => [s.id, s]));
 const _CLOCK_STYLE_BY_NAME = new Map(CLOCK_STYLES.map((s) => [s.name, s]));
-
-export function clockStyleById(id) {
-  return _CLOCK_STYLE_BY_ID.get(id) || null;
-}
 
 export function clockStyleByName(name) {
   return _CLOCK_STYLE_BY_NAME.get(name) || null;
