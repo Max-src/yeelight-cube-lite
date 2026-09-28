@@ -30,10 +30,15 @@ import { galleryModeStyles, renderGalleryMode } from "./gallery-mode-utils.js";
 import { callServiceOnTargetEntities as callServiceSequentially } from "./service-call-utils.js";
 import { CollectionState } from "./collection-state.js";
 import {
+  normalizeImportedPalettes,
+  MAX_PALETTE_IMPORT_BYTES,
+} from "./palette-data-utils.js";
+import {
   paginationStyles,
   renderPagination,
   attachPaginationListeners,
 } from "./pagination-utils.js";
+import { defineOnce, registerCustomCard } from "./card-registration.js";
 
 class YeelightCubePaletteCard extends HTMLElement {
   constructor() {
@@ -1138,32 +1143,22 @@ class YeelightCubePaletteCard extends HTMLElement {
             input.addEventListener("change", (e) => {
               const file = e.target.files[0];
               if (!file) return;
+              if (file.size > MAX_PALETTE_IMPORT_BYTES) {
+                this._notify("This palette file is too large to import.");
+                return;
+              }
               const reader = new FileReader();
               reader.onload = (ev) => {
                 try {
-                  let palettes = JSON.parse(ev.target.result);
-                  // Ensure palettes is a list of objects with name and colors
-                  if (Array.isArray(palettes)) {
-                    palettes = palettes
-                      .map((p, i) => {
-                        if (
-                          typeof p === "object" &&
-                          p.name &&
-                          Array.isArray(p.colors)
-                        ) {
-                          return { name: p.name, colors: p.colors };
-                        } else if (Array.isArray(p)) {
-                          return { name: `Palette ${i + 1}`, colors: p };
-                        }
-                        return null;
-                      })
-                      .filter(Boolean);
-                  } else {
-                    palettes = [];
-                  }
+                  const { palettes, skipped } = normalizeImportedPalettes(
+                    JSON.parse(ev.target.result),
+                  );
+                  if (!palettes.length) throw new Error("No valid palettes");
+                  this._notifySkipped(skipped);
                   this._importStatus = { active: true, success: true };
                   this.render();
-                  this._mutatePalettes(palettes, "set_palettes", { palettes })
+                  // Append, so palettes another client added meanwhile are kept.
+                  this._mutatePalettes(palettes, "add_palettes", { palettes })
                     .then(async (success) => {
                       if (!success) {
                         this._importStatus = { active: true, success: false };
@@ -1298,6 +1293,32 @@ class YeelightCubePaletteCard extends HTMLElement {
     );
   }
 
+  _notify(message) {
+    this.dispatchEvent(
+      new CustomEvent("hass-notification", {
+        bubbles: true,
+        composed: true,
+        detail: { message },
+      }),
+    );
+  }
+
+  _notifySkipped(skipped) {
+    if (skipped)
+      this._notify(
+        `${skipped} palette${skipped === 1 ? " was" : "s were"} skipped: colours must be [R, G, B] values from 0 to 255 or #hex.`,
+      );
+  }
+
+  // Apply a palette by index, sending the name seen at that index so the
+  // backend refuses the call if another client changed the list meanwhile.
+  _applyPalette(idx) {
+    return this.callServiceOnTargetEntities("load_palette", {
+      idx,
+      expected_name: this._paletteItems()[idx]?.name,
+    });
+  }
+
   async _mutatePalettes(items, service, data, render = true) {
     const collection = (this._collection ||= new CollectionState());
     const operation = collection.record(items);
@@ -1335,7 +1356,10 @@ class YeelightCubePaletteCard extends HTMLElement {
     const palettes = this._paletteItems();
     if (!palettes[idx]) return;
     const updatedPalettes = palettes.filter((_, i) => i !== idx);
-    return this._mutatePalettes(updatedPalettes, "remove_palette", { idx });
+    return this._mutatePalettes(updatedPalettes, "remove_palette", {
+      idx,
+      expected_name: palettes[idx].name,
+    });
   }
 
   // Wrapper methods for gallery mode event handlers
@@ -1346,7 +1370,7 @@ class YeelightCubePaletteCard extends HTMLElement {
 
   async handleGalleryItemClick(event, idx) {
     // Apply palette to lamp — delegates to shared sequential utility.
-    await this.callServiceOnTargetEntities("load_palette", { idx });
+    await this._applyPalette(idx);
   }
 
   // Call a service on every configured target entity (in parallel).
@@ -1378,7 +1402,7 @@ class YeelightCubePaletteCard extends HTMLElement {
         index === idx ? { ...palette, name } : palette,
       ),
       "rename_palette",
-      { idx, name },
+      { idx, name, expected_name: palettes[idx].name },
     );
   }
 
@@ -1454,7 +1478,7 @@ class YeelightCubePaletteCard extends HTMLElement {
         const idx = parseInt(paletteItem.dataset.idx);
         // Apply palette — delegates to shared sequential utility.
         (async () => {
-          await this.callServiceOnTargetEntities("load_palette", { idx });
+          await this._applyPalette(idx);
         })();
       });
     }
@@ -1489,28 +1513,18 @@ class YeelightCubePaletteCard extends HTMLElement {
         input.addEventListener("change", (e) => {
           const file = e.target.files[0];
           if (!file) return;
+          if (file.size > MAX_PALETTE_IMPORT_BYTES) {
+            this._notify("This palette file is too large to import.");
+            return;
+          }
           const reader = new FileReader();
           reader.onload = (ev) => {
             try {
-              let imported = JSON.parse(ev.target.result);
-              if (Array.isArray(imported)) {
-                imported = imported
-                  .map((p, i) => {
-                    if (
-                      typeof p === "object" &&
-                      p.name &&
-                      Array.isArray(p.colors)
-                    ) {
-                      return { name: p.name, colors: p.colors };
-                    } else if (Array.isArray(p)) {
-                      return { name: `Palette ${i + 1}`, colors: p };
-                    }
-                    return null;
-                  })
-                  .filter(Boolean);
-              } else {
-                imported = [];
-              }
+              const { palettes: imported, skipped } = normalizeImportedPalettes(
+                JSON.parse(ev.target.result),
+              );
+              if (!imported.length) throw new Error("No valid palettes");
+              this._notifySkipped(skipped);
               // Fetch current palettes from sensor (avoid stale closure)
               const currentPalettes = (() => {
                 const sensor = this.config?.palette_sensor;
@@ -1521,12 +1535,11 @@ class YeelightCubePaletteCard extends HTMLElement {
                 }
                 return palettes;
               })();
-              let newPalettes =
-                currentPalettes.length === 0
-                  ? imported.slice()
-                  : currentPalettes.concat(imported);
-              this._mutatePalettes(newPalettes, "set_palettes", {
-                palettes: newPalettes,
+              // Append on the server so palettes other clients added since
+              // this card last refreshed are kept.
+              const newPalettes = currentPalettes.concat(imported);
+              this._mutatePalettes(newPalettes, "add_palettes", {
+                palettes: imported,
               }).then(async (success) => {
                 if (!success) return;
                 // Force sensor update to get fresh data immediately
@@ -1594,16 +1607,17 @@ class YeelightCubePaletteCard extends HTMLElement {
         "palettes",
         // On item click - apply palette to lamps (via shared sequential utility)
         async (idx) => {
-          await this.callServiceOnTargetEntities("load_palette", { idx });
+          await this._applyPalette(idx);
         },
         // On item remove - call backend with logging
         (idx) => {
           this._deletionInProgress = true;
           const palettes = this._paletteItems();
+          if (!palettes[idx]) return;
           this._mutatePalettes(
             palettes.filter((_, index) => index !== idx),
             "remove_palette",
-            { idx },
+            { idx, expected_name: palettes[idx].name },
             false,
           ).then((success) => {
             if (!success) return;
@@ -2160,20 +2174,13 @@ class YeelightCubePaletteCard extends HTMLElement {
     this._collection?.reset();
   }
 }
-if (!customElements.get("yeelight-cube-palette-card")) {
-  customElements.define("yeelight-cube-palette-card", YeelightCubePaletteCard);
-}
+defineOnce("yeelight-cube-palette-card", YeelightCubePaletteCard);
 
 if (typeof window !== "undefined") {
-  window.customCards = window.customCards || [];
-  if (
-    !window.customCards.some((c) => c.type === "yeelight-cube-palette-card")
-  ) {
-    window.customCards.push({
+  registerCustomCard({
       type: "yeelight-cube-palette-card",
       name: "Yeelight Palettes Card",
       description: "View and manage palettes for the Yeelight Cube Lite.",
       preview: true,
     });
-  }
 }

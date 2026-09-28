@@ -40,6 +40,7 @@ import {
   renderModeControlSettings,
   renderColorModeSettings,
 } from "./mode-controls-settings.js";
+import { defineOnce } from "./card-registration.js";
 
 class YeelightCubeNativeEffectsCardEditor extends LitElement {
   static properties = {
@@ -372,7 +373,4 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
     orderableListStyles,
   ];
 }
-customElements.define(
-  "yeelight-cube-native-effects-card-editor",
-  YeelightCubeNativeEffectsCardEditor,
-);
+defineOnce("yeelight-cube-native-effects-card-editor", YeelightCubeNativeEffectsCardEditor);

@@ -137,6 +137,32 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                 _LOGGER.warning(f"[{service_name}] Entity {eid} not found in registry")
         return results
 
+    def _locate_item(items, idx, expected_name, label):
+        """Return ``items[idx]``, refusing an index that no longer matches.
+
+        Collections are shared by every browser, so an index sent by a card may
+        point at a different item once another client deleted or reordered
+        entries. When the caller passes ``expected_name`` (the name it saw at
+        that index), a mismatch is rejected instead of acting on the wrong item.
+        """
+        if not (isinstance(idx, int) and 0 <= idx < len(items)):
+            raise HomeAssistantError(
+                f"{label} {idx} no longer exists. Refresh and try again."
+            )
+        item = items[idx]
+        # Compare as stored: names are normalised on save (e.g. "<"/">" are
+        # stripped), while a card may still hold the raw name it just sent.
+        if expected_name is not None and (
+            not isinstance(item, dict)
+            or normalize_display_name(item.get("name"), "")
+            != normalize_display_name(expected_name, "")
+        ):
+            raise HomeAssistantError(
+                f"The {label.lower()} list changed: '{expected_name}' is no "
+                f"longer at position {idx}. Refresh and try again."
+            )
+        return item
+
     def _fire_and_forget(*coros):
         """Schedule coroutines to run concurrently in the background.
 
@@ -173,13 +199,10 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             return
         
         palettes = hass.data[DOMAIN]["palettes_v2"]
-        
-        if not (isinstance(idx, int) and 0 <= idx < len(palettes)):
-            _LOGGER.error(f"[LOAD_PALETTE] Invalid idx {idx} (valid range: 0-{len(palettes)-1})")
-            return
-            
-        palette = palettes[idx]
-        
+        palette = _locate_item(
+            palettes, idx, service_call.data.get("expected_name"), "Palette"
+        )
+
         if not (isinstance(palette, dict) and "colors" in palette and isinstance(palette["colors"], list)):
             _LOGGER.error(f"[LOAD_PALETTE] No valid colors for idx {idx}")
             return
@@ -532,6 +555,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         handle_load_palette,
         schema=vol.Schema({
             vol.Required("idx"): cv.positive_int,
+            vol.Optional("expected_name"): vol.Any(None, cv.string),
             vol.Required("entity_id"): _entity_id_or_list
         })
     )
@@ -719,24 +743,41 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         
         pixel_arts = hass.data[DOMAIN]["pixel_arts"]
         _LOGGER.debug(f"[PIXELART-DELETE] Current pixel art count={len(pixel_arts)}")
+        _locate_item(
+            pixel_arts, idx, service_call.data.get("expected_name"), "Pixel art"
+        )
+        removed = pixel_arts.pop(idx)
+        _LOGGER.debug(f"[PIXELART-DELETE] Deleted pixel art at idx {idx}: {removed.get('name', 'Unnamed')}")
         
-        if isinstance(idx, int) and 0 <= idx < len(pixel_arts):
-            removed = pixel_arts.pop(idx)
-            _LOGGER.debug(f"[PIXELART-DELETE] Deleted pixel art at idx {idx}: {removed.get('name', 'Unnamed')}")
-            
-            # Pixel arts are global (not per-light), only need to:
-            # 1. Fire event for sensor to pick up
-            # 2. Save to persistent storage
-            # No need to update light entities - pixel arts are independent
-            
-            hass.bus.async_fire(f"{DOMAIN}_pixel_arts_updated", {"count": len(pixel_arts)})
-            _LOGGER.debug(f"[PIXELART-DELETE] Fired event, new count: {len(pixel_arts)}")
-            
-            # Save to persistent storage
-            await async_save_data(hass)
-            _LOGGER.debug(f"[PIXELART-DELETE] Saved to storage. New pixel art count: {len(pixel_arts)}")
-        else:
-            _LOGGER.error(f"[PIXELART-DELETE] Invalid idx {idx} (pixel art count: {len(pixel_arts)})")
+        # Pixel arts are global (not per-light), only need to:
+        # 1. Fire event for sensor to pick up
+        # 2. Save to persistent storage
+        # No need to update light entities - pixel arts are independent
+        
+        hass.bus.async_fire(f"{DOMAIN}_pixel_arts_updated", {"count": len(pixel_arts)})
+        _LOGGER.debug(f"[PIXELART-DELETE] Fired event, new count: {len(pixel_arts)}")
+        
+        # Save to persistent storage
+        await async_save_data(hass)
+        _LOGGER.debug(f"[PIXELART-DELETE] Saved to storage. New pixel art count: {len(pixel_arts)}")
+
+    async def handle_move_pixel_art(service_call):
+        """Move one saved pixel art, keeping items other clients added meanwhile."""
+        pixel_arts = hass.data.get(DOMAIN, {}).get("pixel_arts", [])
+        from_idx = service_call.data["from_idx"]
+        to_idx = service_call.data["to_idx"]
+        _locate_item(
+            pixel_arts, from_idx, service_call.data.get("expected_name"), "Pixel art"
+        )
+        if not 0 <= to_idx < len(pixel_arts):
+            raise HomeAssistantError(
+                f"Pixel art position {to_idx} is out of range. Refresh and try again."
+            )
+        if from_idx == to_idx:
+            return
+        pixel_arts.insert(to_idx, pixel_arts.pop(from_idx))
+        hass.bus.async_fire(f"{DOMAIN}_pixel_arts_updated", {"count": len(pixel_arts)})
+        await async_save_data(hass)
 
     async def handle_rename_pixel_art(service_call):
         idx = service_call.data.get("idx")
@@ -748,11 +789,10 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             return
         
         pixel_arts = hass.data[DOMAIN]["pixel_arts"]
-        if (
-            isinstance(idx, int)
-            and 0 <= idx < len(pixel_arts)
-            and isinstance(new_name, str)
-        ):
+        _locate_item(
+            pixel_arts, idx, service_call.data.get("expected_name"), "Pixel art"
+        )
+        if isinstance(new_name, str):
             new_name = normalize_display_name(new_name, f"Pixel Art {idx + 1}")
             pixel_arts[idx]["name"] = new_name
             
@@ -773,6 +813,12 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         targets = _resolve_entities(service_call, "APPLY_PIXEL_ART")
         if not targets:
             return
+        _locate_item(
+            hass.data.get(DOMAIN, {}).get("pixel_arts", []),
+            idx,
+            service_call.data.get("expected_name"),
+            "Pixel art",
+        )
 
         async def _apply_one(target_entity):
             if not (isinstance(idx, int) and 0 <= idx < len(target_entity._pixel_arts)):
@@ -1442,7 +1488,10 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         DOMAIN,
         "remove_pixel_art",
         handle_remove_pixel_art,
-        schema=vol.Schema({vol.Required("idx"): vol.All(int, vol.Range(min=0))}, extra=vol.ALLOW_EXTRA)
+        schema=vol.Schema({
+            vol.Required("idx"): vol.All(int, vol.Range(min=0)),
+            vol.Optional("expected_name"): vol.Any(None, cv.string),
+        }, extra=vol.ALLOW_EXTRA)
     )
     hass.services.async_register(
         DOMAIN,
@@ -1451,6 +1500,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         schema=vol.Schema({
             vol.Required("idx"): vol.All(int, vol.Range(min=0)),
             vol.Required("name"): cv.string,
+            vol.Optional("expected_name"): vol.Any(None, cv.string),
         }, extra=vol.ALLOW_EXTRA)
     )
     hass.services.async_register(
@@ -1459,6 +1509,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         handle_apply_pixel_art,
         schema=vol.Schema({
             vol.Required("idx"): vol.All(int, vol.Range(min=0)),
+            vol.Optional("expected_name"): vol.Any(None, cv.string),
             vol.Required("entity_id"): _entity_id_or_list,
         }, extra=vol.ALLOW_EXTRA)
     )
@@ -1545,6 +1596,16 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         supports_response=SupportsResponse.OPTIONAL,
     )
 
+    hass.services.async_register(
+        DOMAIN,
+        "move_pixel_art",
+        handle_move_pixel_art,
+        schema=vol.Schema({
+            vol.Required("from_idx"): vol.All(int, vol.Range(min=0)),
+            vol.Required("to_idx"): vol.All(int, vol.Range(min=0)),
+            vol.Optional("expected_name"): vol.Any(None, cv.string),
+        }),
+    )
     hass.services.async_register(
         DOMAIN,
         "update_pixel_arts",
@@ -1710,26 +1771,45 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
     # Note: handle_remove_palette is defined later in the file (after handle_set_full_panel)
     # to avoid duplicate service registration
     
+    def _clean_palettes(palettes, offset=0):
+        """Keep well-formed palettes, normalising names (``Palette N`` fallback)."""
+        valid_palettes = []
+        for pal in palettes:
+            if (
+                isinstance(pal, dict)
+                and "name" in pal
+                and "colors" in pal
+                and isinstance(pal["colors"], list)
+                and all(isinstance(c, (list, tuple)) and len(c) == 3 for c in pal["colors"])
+            ):
+                valid_palettes.append({
+                    "name": normalize_display_name(
+                        pal["name"], f"Palette {offset + len(valid_palettes) + 1}"
+                    ),
+                    "colors": [tuple(c) for c in pal["colors"]],
+                })
+        return valid_palettes
+
+    async def handle_add_palettes(service_call):
+        """Append palettes without resending (and so overwriting) the whole list."""
+        if DOMAIN not in hass.data:
+            hass.data[DOMAIN] = {}
+        palettes = hass.data[DOMAIN].setdefault("palettes_v2", [])
+        added = _clean_palettes(service_call.data["palettes"], len(palettes))
+        if not added:
+            return
+        palettes.extend(added)
+        for entity_obj in _ENTITY_REGISTRY.values():
+            if getattr(entity_obj, "hass", None) is not None:
+                entity_obj.async_schedule_update_ha_state()
+        hass.bus.async_fire(f"{DOMAIN}_palettes_updated", {"count": len(palettes)})
+        await async_save_data(hass)
+
     async def handle_set_palettes(service_call):
         palettes = service_call.data.get("palettes_v2") or service_call.data.get("palettes")
         if palettes and isinstance(palettes, list):
-            # Validate palettes: list of dicts with name and colors
-            valid_palettes = []
-            for pal in palettes:
-                if (
-                    isinstance(pal, dict)
-                    and "name" in pal
-                    and "colors" in pal
-                    and isinstance(pal["colors"], list)
-                    and all(isinstance(c, (list, tuple)) and len(c) == 3 for c in pal["colors"])
-                ):
-                    valid_palettes.append({
-                        "name": normalize_display_name(
-                            pal["name"], f"Palette {len(valid_palettes) + 1}"
-                        ),
-                        "colors": [tuple(c) for c in pal["colors"]],
-                    })
-            # Store palettes globally
+            valid_palettes = _clean_palettes(palettes)
+# Store palettes globally
             if DOMAIN not in hass.data:
                 hass.data[DOMAIN] = {}
             hass.data[DOMAIN]["palettes_v2"] = valid_palettes
@@ -1740,14 +1820,23 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             # Save to persistent storage
             await async_save_data(hass)
 
+    palette_list_schema = [
+        {"name": cv.string, "colors": [vol.All(vol.ExactSequence((cv.byte, cv.byte, cv.byte)), vol.Coerce(tuple))]}
+    ]
     hass.services.async_register(
         DOMAIN,
         "set_palettes",
         handle_set_palettes,
         schema=vol.Schema({
-            vol.Required("palettes"): [
-                {"name": cv.string, "colors": [vol.All(vol.ExactSequence((cv.byte, cv.byte, cv.byte)), vol.Coerce(tuple))]}
-            ],
+            vol.Required("palettes"): palette_list_schema,
+        })
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "add_palettes",
+        handle_add_palettes,
+        schema=vol.Schema({
+            vol.Required("palettes"): palette_list_schema,
         })
     )
     async def handle_save_palette(service_call):
@@ -1826,11 +1915,10 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         new_name = service_call.data.get("name")
         # Access global palette storage directly
         palettes = hass.data.get(DOMAIN, {}).get("palettes_v2", [])
-        if (
-            isinstance(idx, int)
-            and 0 <= idx < len(palettes)
-            and isinstance(new_name, str)
-        ):
+        _locate_item(
+            palettes, idx, service_call.data.get("expected_name"), "Palette"
+        )
+        if isinstance(new_name, str):
             new_name = normalize_display_name(new_name, f"Palette {idx + 1}")
             palettes[idx]["name"] = new_name
             # Update ALL entities' HA state (palettes are exposed as state attributes)
@@ -1856,6 +1944,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         schema=vol.Schema({
             vol.Required("idx"): cv.positive_int,
             vol.Required("name"): cv.string,
+            vol.Optional("expected_name"): vol.Any(None, cv.string),
         })
     )
     async def handle_set_custom_text(service_call):
@@ -2238,29 +2327,32 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         # No duplicate detection - rapid successive deletions are valid
         # (indices shift after each deletion, so same idx can refer to different palettes)
         
-        if isinstance(idx, int) and 0 <= idx < len(palettes):
-            removed = palettes.pop(idx)
-            _LOGGER.debug(f"[PALETTE-DELETE] Removed palette at idx {idx}: '{removed.get('name', 'Unnamed')}'")
-            
-            # Trigger state update for all entities that are ready
-            for entity_id, entity in _ENTITY_REGISTRY.items():
-                if entity.hass is not None:
-                    entity.async_write_ha_state()
-            
-            # Fire event for sensor updates
-            hass.bus.async_fire(f"{DOMAIN}_palettes_updated", {"count": len(palettes)})
-            
-            # Save to persistent storage
-            await async_save_data(hass)
-            _LOGGER.debug(f"[PALETTE-DELETE] Palette '{removed.get('name', 'Unnamed')}' deleted. Remaining: {len(palettes)}")
-        else:
-            _LOGGER.error(f"[PALETTE-DELETE] Invalid idx {idx} (palette count: {len(palettes)}, valid range: 0-{len(palettes)-1})")
+        _locate_item(
+            palettes, idx, service_call.data.get("expected_name"), "Palette"
+        )
+        removed = palettes.pop(idx)
+        _LOGGER.debug(f"[PALETTE-DELETE] Removed palette at idx {idx}: '{removed.get('name', 'Unnamed')}'")
+        
+        # Trigger state update for all entities that are ready
+        for entity_id, entity in _ENTITY_REGISTRY.items():
+            if entity.hass is not None:
+                entity.async_write_ha_state()
+        
+        # Fire event for sensor updates
+        hass.bus.async_fire(f"{DOMAIN}_palettes_updated", {"count": len(palettes)})
+        
+        # Save to persistent storage
+        await async_save_data(hass)
+        _LOGGER.debug(f"[PALETTE-DELETE] Palette '{removed.get('name', 'Unnamed')}' deleted. Remaining: {len(palettes)}")
 
     hass.services.async_register(
         DOMAIN,
         "remove_palette",
         handle_remove_palette,
-        schema=vol.Schema({vol.Required("idx"): cv.positive_int})
+        schema=vol.Schema({
+            vol.Required("idx"): cv.positive_int,
+            vol.Optional("expected_name"): vol.Any(None, cv.string),
+        })
     )
     
     async def handle_test_display(service_call):

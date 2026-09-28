@@ -9,6 +9,7 @@ import {
   APPEARANCE_PROFILES,
   normalizePreviewAppearance,
 } from "./preview-appearance.js";
+import { defineOnce } from "./card-registration.js";
 
 const labels = {
   background: "Background",
@@ -754,7 +755,4 @@ export class PreviewAppearanceEditor extends LitElement {
   }
 }
 
-customElements.define(
-  "yeelight-preview-appearance-editor",
-  PreviewAppearanceEditor,
-);
+defineOnce("yeelight-preview-appearance-editor", PreviewAppearanceEditor);

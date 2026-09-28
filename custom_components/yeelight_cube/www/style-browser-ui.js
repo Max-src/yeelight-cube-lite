@@ -17,6 +17,7 @@ import {
 } from "./pagination-utils.js";
 import { initializeWheelNavigation } from "./wheel-navigation-utils.js";
 import { escapeHtml } from "./html-escape-utils.js";
+import { defineOnce } from "./card-registration.js";
 
 /** Interactive selector owner for both cards. Light DOM intentionally inherits
  * the card's existing styles and lets its domain painter update preview cells.
@@ -300,4 +301,4 @@ export function browserPreviewAppearance(config) {
   };
 }
 
-customElements.define("yeelight-style-browser", YeelightStyleBrowser);
+defineOnce("yeelight-style-browser", YeelightStyleBrowser);

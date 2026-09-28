@@ -7,6 +7,7 @@ import {
   clockPresetsByKind,
 } from "./clock-preset-utils.js";
 import { renderClockFrame, flipMatrixVertical } from "./clock-preview-utils.js";
+import { defineOnce } from "./card-registration.js";
 
 // Trigger buttons for each save destination (shown under Custom on the card).
 const SAVE_TRIGGERS = {
@@ -539,6 +540,4 @@ class ClockPresetManager extends LitElement {
   }
 }
 
-if (!customElements.get("yeelight-clock-preset-manager")) {
-  customElements.define("yeelight-clock-preset-manager", ClockPresetManager);
-}
+defineOnce("yeelight-clock-preset-manager", ClockPresetManager);

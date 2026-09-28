@@ -29,6 +29,7 @@ import {
   createShapeGradientStops as _sharedCreateShapeGradientStops,
   generateShapeMask as _sharedGenerateShapeMask,
 } from "./angle-wheel-utils.js";
+import { defineOnce, registerCustomCard } from "./card-registration.js";
 
 // Global storage for pending (optimistic) colors per entity (shared across all
 // card instances).  Entries are { colors, ts }.  The cache only exists to
@@ -2952,8 +2953,15 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
               });
             }
           };
-          // Store references so disconnectedCallback can clean up mid-drag
-          self._dragCleanup = { handleMouseMove, handleMouseUp };
+          // Drop any listeners left by a previous (unfinished) drag, then
+          // store references so disconnectedCallback can clean up mid-drag
+          self._removeDragDocListeners();
+          self._dragCleanup = {
+            listeners: [
+              ["mousemove", handleMouseMove],
+              ["mouseup", handleMouseUp],
+            ],
+          };
 
           document.addEventListener("mousemove", handleMouseMove);
           document.addEventListener("mouseup", handleMouseUp);
@@ -3004,6 +3012,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
               document.removeEventListener("touchmove", handleTouchMove);
               document.removeEventListener("touchend", handleTouchEnd);
               document.removeEventListener("touchcancel", handleTouchEnd);
+              self._dragCleanup = null;
               self._isDragging = false;
               self._flushPendingRender();
               if (!draggingElem) return;
@@ -3034,6 +3043,17 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
                   self.render();
                 });
               }
+            };
+
+            // Record touch listeners too, so disconnectedCallback can remove
+            // them if the card is detached mid-drag.
+            self._removeDragDocListeners();
+            self._dragCleanup = {
+              listeners: [
+                ["touchmove", handleTouchMove],
+                ["touchend", handleTouchEnd],
+                ["touchcancel", handleTouchEnd],
+              ],
             };
 
             document.addEventListener("touchmove", handleTouchMove, {
@@ -6098,20 +6118,27 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     return 4;
   }
 
+  /**
+   * Remove document-level listeners recorded in this._dragCleanup for an
+   * in-progress color-row drag (mouse or touch).
+   */
+  _removeDragDocListeners() {
+    const cleanup = this._dragCleanup;
+    this._dragCleanup = null;
+    if (!cleanup || !Array.isArray(cleanup.listeners)) return;
+    cleanup.listeners.forEach(([type, fn]) =>
+      document.removeEventListener(type, fn),
+    );
+  }
+
   disconnectedCallback() {
     this._angleCommands.reset();
     this._colorCommands?.reset();
     this._pendingServiceCalls = [];
 
-    // Clean up document-level drag listeners if disconnected mid-drag
-    if (this._dragCleanup) {
-      document.removeEventListener(
-        "mousemove",
-        this._dragCleanup.handleMouseMove,
-      );
-      document.removeEventListener("mouseup", this._dragCleanup.handleMouseUp);
-      this._dragCleanup = null;
-    }
+    // Clean up document-level drag listeners (mouse or touch) if
+    // disconnected mid-drag
+    this._removeDragDocListeners();
 
     this._cleanupColorPicker(true);
 
@@ -6132,25 +6159,11 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
   }
 }
 
-if (!customElements.get("yeelight-cube-color-list-editor-card")) {
-  customElements.define(
-    "yeelight-cube-color-list-editor-card",
-    YeelightCubeColorListEditorCard,
-  );
-}
+defineOnce("yeelight-cube-color-list-editor-card", YeelightCubeColorListEditorCard);
 
-if (typeof window !== "undefined") {
-  window.customCards = window.customCards || [];
-  if (
-    !window.customCards.some(
-      (c) => c.type === "yeelight-cube-color-list-editor-card",
-    )
-  ) {
-    window.customCards.push({
-      type: "yeelight-cube-color-list-editor-card",
-      name: "Yeelight Colors Card",
-      description: "Edit the list of text colors for the Yeelight Cube Lite.",
-      preview: true,
-    });
-  }
-}
+registerCustomCard({
+  type: "yeelight-cube-color-list-editor-card",
+  name: "Yeelight Colors Card",
+  description: "Edit the list of text colors for the Yeelight Cube Lite.",
+  preview: true,
+});

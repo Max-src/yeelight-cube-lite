@@ -23,6 +23,7 @@ import {
   formatRotationInterval,
   actionButtonOrder,
 } from "./mode-controls-controller.js";
+import { defineOnce } from "./card-registration.js";
 
 // A favourite is uniquely identified by its key AND colour mode: the same style
 // can be saved once per mode. The manage list works on these synthetic ids so
@@ -661,4 +662,4 @@ class YeelightModeControls extends LitElement {
   ];
 }
 
-customElements.define("yeelight-mode-controls", YeelightModeControls);
+defineOnce("yeelight-mode-controls", YeelightModeControls);

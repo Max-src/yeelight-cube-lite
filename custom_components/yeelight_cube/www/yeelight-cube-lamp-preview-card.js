@@ -38,6 +38,7 @@ import {
   sliderControlStyles,
   sliderConfigToGc,
 } from "./slider-control-utils.js";
+import { defineOnce, registerCustomCard } from "./card-registration.js";
 
 // Clock-face preview (mixer tables, glyph font and renderClockFrame) now lives
 // in the shared ./clock-preview-utils.js module, imported above.
@@ -4460,22 +4461,12 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   }
 }
 
-if (!customElements.get("yeelight-cube-lamp-preview-card")) {
-  customElements.define(
-    "yeelight-cube-lamp-preview-card",
-    YeelightCubeLampPreviewCard,
-  );
-}
+defineOnce("yeelight-cube-lamp-preview-card", YeelightCubeLampPreviewCard);
 
 // Register for Lovelace "Add Card" UI
-window.customCards = window.customCards || [];
-if (
-  !window.customCards.some((c) => c.type === "yeelight-cube-lamp-preview-card")
-) {
-  window.customCards.push({
+registerCustomCard({
     type: "yeelight-cube-lamp-preview-card",
     name: "Yeelight Preview Card",
     description: "Preview the Yeelight Cube Lite lamp matrix and settings.",
     preview: true,
   });
-}

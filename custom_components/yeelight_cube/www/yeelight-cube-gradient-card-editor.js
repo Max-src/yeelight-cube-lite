@@ -28,28 +28,20 @@ import {
   orderableListStyles,
 } from "./orderable-list-utils.js";
 import { GRADIENT_MODES } from "./yeelight-cube-gradient-card.js";
+import { defineOnce } from "./card-registration.js";
 
 class YeelightCubeGradientCardEditor extends LitElement {
   static get properties() {
     return {
       _config: { type: Object },
-      _globalOpen: { type: Boolean },
-      _appearanceOpen: { state: true },
-      _labelOpen: { type: Boolean },
-      _modeOpen: { type: Boolean },
-      _panelOpen: { type: Boolean },
-      _angleOpen: { type: Boolean },
+      _open: { state: true },
     };
   }
 
   constructor() {
     super();
     this._config = {};
-    this._globalOpen = false;
-    this._labelOpen = false;
-    this._modeOpen = false;
-    this._panelOpen = false;
-    this._angleOpen = false;
+    this._open = {};
     // Remember the last style chosen within each family so toggling the
     // Selector Type back and forth restores the user's previous pick.
     this._lastTextStyle = "filled";
@@ -301,18 +293,18 @@ class YeelightCubeGradientCardEditor extends LitElement {
     return "compass"; // default fallback
   }
 
-  _toggleSection(section) {
-    if (section === "global") {
-      this._globalOpen = !this._globalOpen;
-    } else if (section === "label") {
-      this._labelOpen = !this._labelOpen;
-    } else if (section === "mode") {
-      this._modeOpen = !this._modeOpen;
-    } else if (section === "panel") {
-      this._panelOpen = !this._panelOpen;
-    } else if (section === "angle") {
-      this._angleOpen = !this._angleOpen;
-    }
+  _toggleSection(id) {
+    this._open = { ...this._open, [id]: !this._open[id] };
+  }
+
+  _section(id, title, content) {
+    return renderEditorSection(
+      id,
+      title,
+      !!this._open[id],
+      () => this._toggleSection(id),
+      content,
+    );
   }
 
   static get styles() {
@@ -388,38 +380,14 @@ class YeelightCubeGradientCardEditor extends LitElement {
   render() {
     const cfg = this._config || {};
 
-    const chevronIcon = (folded) => html`
-      <ha-icon
-        icon="mdi:chevron-up"
-        style="transition:transform 0.4s;transform:rotate(${folded
-          ? 180
-          : 0}deg);"
-      ></ha-icon>
-    `;
-
     return html`
       <div class="editor-root">
-        ${renderEditorSection(
+        ${this._section(
           "preview_appearance",
           "Preview Appearance",
-          !!this._appearanceOpen,
-          () => {
-            this._appearanceOpen = !this._appearanceOpen;
-          },
           this._renderAppearance("shared"),
         )}
-        <div
-          class="editor-card${!this._globalOpen
-            ? " editor-card-collapsed"
-            : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleSection("global")}"
-          >
-            Global Settings ${chevronIcon(!this._globalOpen)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("global", "Global Settings", html`
             <div class="form-row">
               <label>Card Title (optional)</label>
               <input
@@ -446,19 +414,9 @@ class YeelightCubeGradientCardEditor extends LitElement {
                 <span class="toggle-slider"></span>
               </label>
             </div>
-          </div>
-        </div>
+        `)}
 
-        <div
-          class="editor-card${!this._labelOpen ? " editor-card-collapsed" : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleSection("label")}"
-          >
-            Active Mode Label ${chevronIcon(!this._labelOpen)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("label", "Active Mode Label", html`
             <div class="toggle-row">
               <label class="toggle-label">Show Active Mode Label</label>
               <label class="toggle-switch">
@@ -496,19 +454,9 @@ class YeelightCubeGradientCardEditor extends LitElement {
                   </div>
                 `
               : ""}
-          </div>
-        </div>
+        `)}
 
-        <div
-          class="editor-card${!this._modeOpen ? " editor-card-collapsed" : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleSection("mode")}"
-          >
-            Mode Selector ${chevronIcon(!this._modeOpen)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("mode", "Mode Selector", html`
             <div class="toggle-row">
               <label class="toggle-label">Show Mode Selector</label>
               <label class="toggle-switch">
@@ -834,19 +782,9 @@ class YeelightCubeGradientCardEditor extends LitElement {
                   )}
                 `
               : ""}
-          </div>
-        </div>
+        `)}
 
-        <div
-          class="editor-card${!this._panelOpen ? " editor-card-collapsed" : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleSection("panel")}"
-          >
-            Apply to Whole Panel ${chevronIcon(!this._panelOpen)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("panel", "Apply to Whole Panel", html`
             <div class="toggle-row">
               <label class="toggle-label">Show "Apply to Whole Panel"</label>
               <label class="toggle-switch">
@@ -936,19 +874,9 @@ class YeelightCubeGradientCardEditor extends LitElement {
                   </div>
                 `
               : ""}
-          </div>
-        </div>
+        `)}
 
-        <div
-          class="editor-card${!this._angleOpen ? " editor-card-collapsed" : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleSection("angle")}"
-          >
-            Angle Selector ${chevronIcon(!this._angleOpen)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("angle", "Angle Selector", html`
             <div class="toggle-row">
               <label class="toggle-label">Show Angle Selector</label>
               <label class="toggle-switch">
@@ -1442,16 +1370,10 @@ class YeelightCubeGradientCardEditor extends LitElement {
                   `,
                 )
               : ""}
-          </div>
-        </div>
+        `)}
       </div>
     `;
   }
 }
 
-if (!customElements.get("yeelight-cube-gradient-card-editor")) {
-  customElements.define(
-    "yeelight-cube-gradient-card-editor",
-    YeelightCubeGradientCardEditor,
-  );
-}
+defineOnce("yeelight-cube-gradient-card-editor", YeelightCubeGradientCardEditor);

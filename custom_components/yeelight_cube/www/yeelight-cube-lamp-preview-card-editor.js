@@ -26,31 +26,21 @@ import {
 } from "./form-row-utils.js";
 import { renderSliderSettings } from "./slider-control-utils.js";
 import { BRIGHTNESS_SLIDER_KEYS } from "./yeelight-cube-lamp-preview-card.js";
+import { defineOnce } from "./card-registration.js";
 
 // Editor class for the Yeelight Cube Lite Lamp Preview Card
 class YeelightCubeLampPreviewCardEditor extends LitElement {
   static get properties() {
     return {
       _config: { type: Object },
-      _globalOpen: { type: Boolean },
-      _appearanceOpen: { state: true },
-      _lampPreviewOpen: { type: Boolean },
-      _lampControlOpen: { type: Boolean },
-      _deviceOrientationOpen: { type: Boolean },
-      _brightnessSettingsOpen: { type: Boolean },
-      _colorAdjustmentsOpen: { type: Boolean },
+      _open: { state: true },
     };
   }
 
   constructor() {
     super();
     this._config = {};
-    this._globalOpen = false;
-    this._lampPreviewOpen = false;
-    this._lampControlOpen = false;
-    this._deviceOrientationOpen = false;
-    this._brightnessSettingsOpen = false;
-    this._colorAdjustmentsOpen = false;
+    this._open = {};
   }
 
   setConfig(config) {
@@ -122,20 +112,28 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
     );
   }
 
-  _toggleSection(section) {
-    if (section === "global") {
-      this._globalOpen = !this._globalOpen;
-    } else if (section === "lampPreview") {
-      this._lampPreviewOpen = !this._lampPreviewOpen;
-    } else if (section === "lampControl") {
-      this._lampControlOpen = !this._lampControlOpen;
-    } else if (section === "deviceOrientation") {
-      this._deviceOrientationOpen = !this._deviceOrientationOpen;
-    } else if (section === "brightnessSettings") {
-      this._brightnessSettingsOpen = !this._brightnessSettingsOpen;
-    } else if (section === "colorAdjustments") {
-      this._colorAdjustmentsOpen = !this._colorAdjustmentsOpen;
-    }
+  _toggleSection(id) {
+    this._open = { ...this._open, [id]: !this._open[id] };
+  }
+
+  _section(id, title, content) {
+    return renderEditorSection(
+      id,
+      title,
+      !!this._open[id],
+      () => this._toggleSection(id),
+      content,
+    );
+  }
+
+  // Alias kept for callers (e.g. docs fixtures) that open the shared
+  // appearance section directly.
+  get _appearanceOpen() {
+    return !!this._open?.preview_appearance;
+  }
+
+  set _appearanceOpen(value) {
+    this._open = { ...this._open, preview_appearance: !!value };
   }
 
   static styles = [
@@ -178,30 +176,10 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
   render() {
     const cfg = this._config || {};
 
-    const chevronIcon = (folded) => html`
-      <ha-icon
-        icon="mdi:chevron-up"
-        style="transition:transform 0.4s;transform:rotate(${folded
-          ? 180
-          : 0}deg);"
-      ></ha-icon>
-    `;
-
     return html`
       <div class="editor-root">
         <!-- Global Settings -->
-        <div
-          class="editor-card${!this._globalOpen
-            ? " editor-card-collapsed"
-            : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleSection("global")}"
-          >
-            Global Settings ${chevronIcon(!this._globalOpen)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("global", "Global Settings", html`
             <div class="form-row">
               <label>Card Title (optional)</label>
               <input
@@ -227,31 +205,15 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
               cfg.show_card_background !== false,
               (e) => this._onToggleChange(e),
             )}
-          </div>
-        </div>
+        `)}
 
         <!-- Lamp Preview -->
-        ${renderEditorSection(
+        ${this._section(
           "preview_appearance",
           "Preview Appearance",
-          !!this._appearanceOpen,
-          () => {
-            this._appearanceOpen = !this._appearanceOpen;
-          },
           this._renderAppearance("shared"),
         )}
-        <div
-          class="editor-card${!this._lampPreviewOpen
-            ? " editor-card-collapsed"
-            : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleSection("lampPreview")}"
-          >
-            Lamp Preview ${chevronIcon(!this._lampPreviewOpen)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("lampPreview", "Lamp Preview", html`
             ${createToggleRow(
               "Show Lamp Preview",
               "show_lamp_preview",
@@ -266,22 +228,10 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
               "%",
             )}
             ${this._renderAppearance("lamp")}
-          </div>
-        </div>
+        `)}
 
         <!-- Actions -->
-        <div
-          class="editor-card${!this._lampControlOpen
-            ? " editor-card-collapsed"
-            : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleSection("lampControl")}"
-          >
-            Actions ${chevronIcon(!this._lampControlOpen)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("lampControl", "Actions", html`
             ${renderModeControlSettings(
               "actions",
               cfg,
@@ -292,22 +242,10 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
               [],
               "lamp",
             )}
-          </div>
-        </div>
+        `)}
 
         <!-- Device Orientation -->
-        <div
-          class="editor-card${!this._deviceOrientationOpen
-            ? " editor-card-collapsed"
-            : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleSection("deviceOrientation")}"
-          >
-            Device Orientation ${chevronIcon(!this._deviceOrientationOpen)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("deviceOrientation", "Device Orientation", html`
             ${createToggleRow(
               "Show Device Orientation Control",
               "show_device_orientation",
@@ -317,22 +255,10 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
             ${cfg.show_device_orientation !== false
               ? this._renderOrientationSettings()
               : ""}
-          </div>
-        </div>
+        `)}
 
         <!-- Brightness Settings -->
-        <div
-          class="editor-card${!this._brightnessSettingsOpen
-            ? " editor-card-collapsed"
-            : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleSection("brightnessSettings")}"
-          >
-            Brightness Settings ${chevronIcon(!this._brightnessSettingsOpen)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("brightnessSettings", "Brightness Settings", html`
             ${createToggleRow(
               "Show Brightness Slider",
               "show_brightness_slider",
@@ -367,22 +293,10 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
                     6),
               },
             )}
-          </div>
-        </div>
+        `)}
 
         <!-- Color Adjustments -->
-        <div
-          class="editor-card${!this._colorAdjustmentsOpen
-            ? " editor-card-collapsed"
-            : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleSection("colorAdjustments")}"
-          >
-            Color Adjustments ${chevronIcon(!this._colorAdjustmentsOpen)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("colorAdjustments", "Color Adjustments", html`
             ${createToggleRow(
               "Show Adjustment Controls",
               "show_adjustment_controls",
@@ -477,8 +391,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
                   `,
                 )
               : ""}
-          </div>
-        </div>
+        `)}
       </div>
     `;
   }
@@ -496,9 +409,4 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
   }
 }
 
-if (!customElements.get("yeelight-cube-lamp-preview-card-editor")) {
-  customElements.define(
-    "yeelight-cube-lamp-preview-card-editor",
-    YeelightCubeLampPreviewCardEditor,
-  );
-}
+defineOnce("yeelight-cube-lamp-preview-card-editor", YeelightCubeLampPreviewCardEditor);

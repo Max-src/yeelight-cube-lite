@@ -8,8 +8,12 @@ export function applyBrightness(rgb, brightness) {
   ];
 }
 
+// Coerce each channel to an integer 0-255 so values read from imported files,
+// sensor attributes or config can never break out of a style/HTML attribute.
+const channel = (value) => Math.max(0, Math.min(255, Math.round(Number(value)) || 0));
+
 export function rgbToCss(rgb) {
-  return `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+  return `rgb(${channel(rgb?.[0])},${channel(rgb?.[1])},${channel(rgb?.[2])})`;
 }
 
 export function renderDotMatrix({

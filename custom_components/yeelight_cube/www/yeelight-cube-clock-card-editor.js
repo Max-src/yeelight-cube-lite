@@ -41,6 +41,7 @@ import {
   renderOrderableList,
   orderableListStyles,
 } from "./orderable-list-utils.js";
+import { defineOnce } from "./card-registration.js";
 
 class YeelightCubeClockCardEditor extends LitElement {
   static get properties() {
@@ -513,9 +514,4 @@ class YeelightCubeClockCardEditor extends LitElement {
   }
 }
 
-if (!customElements.get("yeelight-cube-clock-card-editor")) {
-  customElements.define(
-    "yeelight-cube-clock-card-editor",
-    YeelightCubeClockCardEditor,
-  );
-}
+defineOnce("yeelight-cube-clock-card-editor", YeelightCubeClockCardEditor);

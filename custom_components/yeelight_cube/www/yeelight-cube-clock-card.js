@@ -96,6 +96,7 @@ import {
   renderActionButtonGroupHTML,
   bindActionButtonGroup,
 } from "./action-button-utils.js";
+import { defineOnce, registerCustomCard } from "./card-registration.js";
 
 const CONTENT_OPTIONS = [
   { value: "time", label: "Time", icon: "mdi:clock-outline" },
@@ -143,7 +144,7 @@ class ClockCardShell extends LitElement {
       >`;
   }
 }
-customElements.define("yeelight-clock-shell", ClockCardShell);
+defineOnce("yeelight-clock-shell", ClockCardShell);
 
 class YeelightCubeClockCard extends HTMLElement {
   constructor() {
@@ -1681,10 +1682,9 @@ class YeelightCubeClockCard extends HTMLElement {
   }
 }
 
-customElements.define("yeelight-cube-clock-card", YeelightCubeClockCard);
+defineOnce("yeelight-cube-clock-card", YeelightCubeClockCard);
 
-window.customCards = window.customCards || [];
-window.customCards.push({
+registerCustomCard({
   type: "yeelight-cube-clock-card",
   name: "Yeelight Cube Clock Card",
   description:

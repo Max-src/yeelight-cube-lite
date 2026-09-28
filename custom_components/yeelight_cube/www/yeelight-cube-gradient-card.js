@@ -46,6 +46,7 @@ import {
   renderPagination,
   attachPaginationListeners,
 } from "./pagination-utils.js";
+import { defineOnce, registerCustomCard } from "./card-registration.js";
 
 /**
  * Convert gallery_preview_size config value (%) to pixels.
@@ -333,12 +334,29 @@ class YeelightCubeGradientCard extends HTMLElement {
       clearInterval(this._interactionSafetyTimer);
       this._interactionSafetyTimer = null;
     }
+
+    // Detach any document-level rotary drag listeners left from an
+    // in-progress drag.
+    this._removeRotaryDocListeners();
+    this._draggingRotary = false;
+  }
+
+  /**
+   * Remove the document-level mouse/touch listeners attached for an active
+   * rotary drag (recorded in this._rotaryDocListeners by _bindAngleEvents).
+   */
+  _removeRotaryDocListeners() {
+    const listeners = this._rotaryDocListeners;
+    this._rotaryDocListeners = null;
+    if (!listeners) return;
+    listeners.forEach(([type, fn]) => document.removeEventListener(type, fn));
   }
 
   setConfig(config) {
     config = resolvePreviewAppearance(config, "gradient");
     this._angleCommands.reset();
     this._pendingAngle = null;
+    this._removeRotaryDocListeners();
     this._draggingRotary = false;
     clearTimeout(this._anglePreviewReloadTimer);
     clearTimeout(this._previewRetryTimer);
@@ -3974,6 +3992,9 @@ class YeelightCubeGradientCard extends HTMLElement {
     };
 
     const handleMouseUp = (e) => {
+      // Always detach the document listeners, even if _draggingRotary was
+      // reset elsewhere (e.g. setConfig mid-drag) — otherwise they leak.
+      this._removeRotaryDocListeners();
       if (this._draggingRotary) {
         e.preventDefault(); // Prevent text selection
 
@@ -3987,10 +4008,6 @@ class YeelightCubeGradientCard extends HTMLElement {
         this._isDragging = false;
         this._pendingAngle = null;
         this._flushPendingRender();
-
-        // Clean up document listeners
-        document.removeEventListener("mousemove", handleMouseMove);
-        document.removeEventListener("mouseup", handleMouseUp);
       }
     };
 
@@ -4002,6 +4019,8 @@ class YeelightCubeGradientCard extends HTMLElement {
     };
 
     const handleTouchEnd = (e) => {
+      // Always detach the document listeners (see handleMouseUp).
+      this._removeRotaryDocListeners();
       if (this._draggingRotary) {
         e.preventDefault(); // Prevent text selection
 
@@ -4015,12 +4034,32 @@ class YeelightCubeGradientCard extends HTMLElement {
         this._isDragging = false;
         this._pendingAngle = null;
         this._flushPendingRender();
-
-        // Clean up document listeners
-        document.removeEventListener("touchmove", handleTouchMove);
-        document.removeEventListener("touchend", handleTouchEnd);
-        document.removeEventListener("touchcancel", handleTouchEnd);
       }
+    };
+
+    // Attach document-level drag listeners, recording them on the instance so
+    // they can be removed from anywhere (drag end, setConfig, disconnect).
+    // Any previously attached set is removed first so listeners never stack.
+    const startMouseDrag = () => {
+      this._removeRotaryDocListeners();
+      this._rotaryDocListeners = [
+        ["mousemove", handleMouseMove],
+        ["mouseup", handleMouseUp],
+      ];
+      this._rotaryDocListeners.forEach(([type, fn]) =>
+        document.addEventListener(type, fn),
+      );
+    };
+    const startTouchDrag = () => {
+      this._removeRotaryDocListeners();
+      this._rotaryDocListeners = [
+        ["touchmove", handleTouchMove],
+        ["touchend", handleTouchEnd],
+        ["touchcancel", handleTouchEnd],
+      ];
+      this._rotaryDocListeners.forEach(([type, fn]) =>
+        document.addEventListener(type, fn),
+      );
     };
 
     // Rotary slider (SVG): click or drag to set angle
@@ -4030,9 +4069,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         this._draggingRotary = true;
         this._handleRotaryDrag(e);
 
-        // Add document listeners for mouse move and up
-        document.addEventListener("mousemove", handleMouseMove);
-        document.addEventListener("mouseup", handleMouseUp);
+        startMouseDrag();
       });
 
       rotary.addEventListener("touchstart", (e) => {
@@ -4040,10 +4077,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         this._draggingRotary = true;
         this._handleRotaryDrag(e.touches[0]);
 
-        // Add document listeners for touch move and end
-        document.addEventListener("touchmove", handleTouchMove);
-        document.addEventListener("touchend", handleTouchEnd);
-        document.addEventListener("touchcancel", handleTouchEnd);
+        startTouchDrag();
       });
 
       rotary.addEventListener("click", (e) => {
@@ -4065,8 +4099,7 @@ class YeelightCubeGradientCard extends HTMLElement {
           e.stopPropagation(); // Prevent event from bubbling to parent
           this._draggingRotary = true;
           this._handleRotaryDrag(e);
-          document.addEventListener("mousemove", handleMouseMove);
-          document.addEventListener("mouseup", handleMouseUp);
+          startMouseDrag();
         });
 
         wheelSelector.addEventListener("touchstart", (e) => {
@@ -4074,9 +4107,7 @@ class YeelightCubeGradientCard extends HTMLElement {
           e.stopPropagation();
           this._draggingRotary = true;
           this._handleRotaryDrag(e.touches[0]);
-          document.addEventListener("touchmove", handleTouchMove);
-          document.addEventListener("touchend", handleTouchEnd);
-          document.addEventListener("touchcancel", handleTouchEnd);
+          startTouchDrag();
         });
 
         wheelSelector.addEventListener("click", (e) => {
@@ -4092,8 +4123,7 @@ class YeelightCubeGradientCard extends HTMLElement {
           e.stopPropagation();
           this._draggingRotary = true;
           this._handleRotaryDrag(e);
-          document.addEventListener("mousemove", handleMouseMove);
-          document.addEventListener("mouseup", handleMouseUp);
+          startMouseDrag();
         });
 
         rectSelector.addEventListener("touchstart", (e) => {
@@ -4101,9 +4131,7 @@ class YeelightCubeGradientCard extends HTMLElement {
           e.stopPropagation();
           this._draggingRotary = true;
           this._handleRotaryDrag(e.touches[0]);
-          document.addEventListener("touchmove", handleTouchMove);
-          document.addEventListener("touchend", handleTouchEnd);
-          document.addEventListener("touchcancel", handleTouchEnd);
+          startTouchDrag();
         });
 
         rectSelector.addEventListener("click", (e) => {
@@ -4119,8 +4147,7 @@ class YeelightCubeGradientCard extends HTMLElement {
           e.stopPropagation();
           this._draggingRotary = true;
           this._handleRotaryDrag(e);
-          document.addEventListener("mousemove", handleMouseMove);
-          document.addEventListener("mouseup", handleMouseUp);
+          startMouseDrag();
         });
 
         squareSelector.addEventListener("touchstart", (e) => {
@@ -4128,9 +4155,7 @@ class YeelightCubeGradientCard extends HTMLElement {
           e.stopPropagation();
           this._draggingRotary = true;
           this._handleRotaryDrag(e.touches[0]);
-          document.addEventListener("touchmove", handleTouchMove);
-          document.addEventListener("touchend", handleTouchEnd);
-          document.addEventListener("touchcancel", handleTouchEnd);
+          startTouchDrag();
         });
 
         squareSelector.addEventListener("click", (e) => {
@@ -6406,24 +6431,14 @@ ${(() => {
   }
 }
 
-if (!customElements.get("yeelight-cube-gradient-card")) {
-  customElements.define(
-    "yeelight-cube-gradient-card",
-    YeelightCubeGradientCard,
-  );
-}
+defineOnce("yeelight-cube-gradient-card", YeelightCubeGradientCard);
 
 if (typeof window !== "undefined") {
-  window.customCards = window.customCards || [];
-  if (
-    !window.customCards.some((c) => c.type === "yeelight-cube-gradient-card")
-  ) {
-    window.customCards.push({
+  registerCustomCard({
       type: "yeelight-cube-gradient-card",
       name: "Yeelight Gradient Card",
       description:
         "Control gradient settings for Yeelight Cube Lite matrix display",
       preview: true,
     });
-  }
 }

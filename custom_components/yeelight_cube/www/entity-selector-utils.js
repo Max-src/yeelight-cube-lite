@@ -201,6 +201,55 @@ export function getYeelightCubeEntities(hass) {
 }
 
 /**
+ * Renders a row for a configured entity that is not in the discovered cube
+ * entity list (e.g. temporarily unavailable / reloading, or removed). Such
+ * entities are never dropped automatically; the user removes them explicitly.
+ * @param {Object} hass - Home Assistant object
+ * @param {string} entityId - The configured entity ID
+ * @param {Function} onRemove - Called when the user clicks "Remove"
+ * @returns {TemplateResult} Lit HTML template
+ */
+function renderUnlistedSelectedEntity(hass, entityId, onRemove) {
+  const state = hass.states[entityId];
+  const friendlyName = state?.attributes?.friendly_name || entityId;
+  const status =
+    !state || state.state === "unavailable" ? "unavailable" : "not detected";
+  return html`
+    <div
+      style="display: flex; align-items: center; gap: 8px; padding: 8px 12px; margin: 4px 0; border-radius: 6px; background: color-mix(in srgb, var(--warning-color, #ff9800) 12%, var(--card-background-color, #fff)); border: 1px solid var(--warning-color, #ff9800);"
+      title="This entity is configured but is currently not available in Home Assistant. It is kept in the configuration until you remove it."
+    >
+      <div style="flex: 1; min-width: 0;">
+        <div
+          style="font-weight: 500; color: var(--primary-text-color, #333); margin-bottom: 2px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;"
+        >
+          <span>${friendlyName}</span>
+          <span
+            style="font-size: 0.75em; font-weight: 600; text-transform: uppercase; padding: 1px 6px; border-radius: 10px; color: var(--text-primary-color, #fff); background: var(--warning-color, #ff9800);"
+            >${status}</span
+          >
+        </div>
+        <div
+          style="font-size: 0.85em; color: var(--secondary-text-color, #666); font-family: monospace; overflow-wrap: anywhere;"
+        >
+          ${entityId}
+        </div>
+      </div>
+      <button
+        type="button"
+        style="flex: none; cursor: pointer; padding: 4px 10px; border-radius: 4px; border: 1px solid var(--warning-color, #ff9800); background: transparent; color: var(--primary-text-color, #333); font-size: 0.85em;"
+        @click="${(e) => {
+          e.stopPropagation();
+          onRemove();
+        }}"
+      >
+        Remove
+      </button>
+    </div>
+  `;
+}
+
+/**
  * Creates a multi-select entity picker for Yeelight Cube Lite entities
  * @param {Object} hass - Home Assistant object
  * @param {Array} selectedEntities - Currently selected entity IDs
@@ -224,7 +273,22 @@ export function createYeelightCubeEntityPicker(
 
   const entities = getYeelightCubeEntities(hass);
 
-  if (entities.length === 0) {
+  // Normalise the configured selection. Entities that are not currently in
+  // hass.states (e.g. lamp unavailable or integration reloading while the
+  // editor is open) are intentionally KEPT: they are rendered with an
+  // "unavailable" marker and only removed when the user explicitly asks.
+  const selectedList = Array.isArray(selectedEntities)
+    ? selectedEntities.filter((id) => typeof id === "string" && id)
+    : typeof selectedEntities === "string" && selectedEntities
+      ? [selectedEntities]
+      : [];
+  const relevantSelected =
+    mode === "single" ? selectedList.slice(0, 1) : selectedList;
+  const unlistedSelected = relevantSelected.filter(
+    (id) => !entities.includes(id),
+  );
+
+  if (entities.length === 0 && unlistedSelected.length === 0) {
     return html`<div
       style="border: 1px solid var(--divider-color, #e0e0e0); border-radius: 8px; background: var(--secondary-background-color, #fafafa);"
     >
@@ -253,7 +317,6 @@ export function createYeelightCubeEntityPicker(
     // Single selection with radio button style UI (same visual as multiple but limited to one)
     const toggleEntity = (entityId) => {
       // For single mode, always replace the selection with the clicked entity
-      const newSelected = [entityId];
       onChange({ target: { value: entityId } }); // Send single value for single mode
     };
 
@@ -270,9 +333,7 @@ export function createYeelightCubeEntityPicker(
         <div style="max-height: 200px; overflow-y: auto; padding: 8px;">
           ${entities.map((entityId) => {
             const isSelected =
-              Array.isArray(selectedEntities) &&
-              selectedEntities.length > 0 &&
-              selectedEntities[0] === entityId;
+              relevantSelected.length > 0 && relevantSelected[0] === entityId;
             const state = hass.states[entityId];
             const friendlyName = state?.attributes?.friendly_name || entityId;
 
@@ -310,13 +371,20 @@ export function createYeelightCubeEntityPicker(
               </div>
             `;
           })}
+          ${unlistedSelected.map((entityId) =>
+            renderUnlistedSelectedEntity(hass, entityId, () =>
+              onChange({ target: { value: "" } }),
+            ),
+          )}
         </div>
 
-        ${selectedEntities.length > 0
+        ${relevantSelected.length > 0
           ? html`<div
               style="padding: 8px 16px; font-size: 0.9em; color: var(--secondary-text-color, #666); border-top: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f9f9f9); border-radius: 0 0 8px 8px;"
             >
-              1 entity selected
+              1 entity selected${unlistedSelected.length > 0
+                ? " (unavailable)"
+                : ""}
             </div>`
           : html`<div
               style="padding: 8px 16px; font-size: 0.9em; color: var(--secondary-text-color, #999); border-top: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f9f9f9); border-radius: 0 0 8px 8px; font-style: italic;"
@@ -329,20 +397,17 @@ export function createYeelightCubeEntityPicker(
 
   // Multiple selection with checkboxes
 
-  // Clean stale entity IDs: remove any selected entities that no longer exist
-  // in HA (e.g. after entity renames, IP changes, or device removal).
-  const validSelected = Array.isArray(selectedEntities)
-    ? selectedEntities.filter((id) => hass.states[id])
-    : [];
-
-  // If stale entries were removed, notify the parent so the config is cleaned up
-  if (validSelected.length !== (selectedEntities?.length || 0)) {
-    // Schedule a clean-up callback after this render cycle
-    setTimeout(() => onChange({ target: { value: validSelected } }), 0);
-  }
+  // NOTE: selected entities missing from hass.states are never removed
+  // automatically (doing so from render would permanently drop a lamp that is
+  // only temporarily unavailable). They are listed below with a Remove button.
+  const removeEntity = (entityId) => {
+    onChange({
+      target: { value: selectedList.filter((id) => id !== entityId) },
+    });
+  };
 
   const toggleEntity = (entityId) => {
-    const currentSelected = [...validSelected];
+    const currentSelected = [...selectedList];
     const isSelected = currentSelected.includes(entityId);
 
     let newSelected;
@@ -367,7 +432,7 @@ export function createYeelightCubeEntityPicker(
 
       <div style="max-height: 200px; overflow-y: auto; padding: 8px;">
         ${entities.map((entityId) => {
-          const isSelected = validSelected.includes(entityId);
+          const isSelected = selectedList.includes(entityId);
           const state = hass.states[entityId];
           const friendlyName = state?.attributes?.friendly_name || entityId;
 
@@ -404,14 +469,25 @@ export function createYeelightCubeEntityPicker(
             </div>
           `;
         })}
+        ${unlistedSelected.map((entityId) =>
+          renderUnlistedSelectedEntity(hass, entityId, () =>
+            removeEntity(entityId),
+          ),
+        )}
       </div>
 
-      ${validSelected.length > 0
+      ${selectedList.length > 0
         ? html`<div
             style="padding: 8px 16px; font-size: 0.9em; color: var(--secondary-text-color, #666); border-top: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f9f9f9); border-radius: 0 0 8px 8px;"
           >
-            ${validSelected.length}
-            ${validSelected.length === 1 ? "entity" : "entities"} selected
+            ${selectedList.length}
+            ${selectedList.length === 1 ? "entity" : "entities"}
+            selected${unlistedSelected.length > 0
+              ? html`,
+                  <span style="color: var(--warning-color, #ff9800);"
+                    >${unlistedSelected.length} unavailable</span
+                  >`
+              : ""}
           </div>`
         : html`<div
             style="padding: 8px 16px; font-size: 0.9em; color: var(--secondary-text-color, #999); border-top: 1px solid var(--divider-color, #e8e8e8); background: var(--secondary-background-color, #f9f9f9); border-radius: 0 0 8px 8px; font-style: italic;"

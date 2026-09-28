@@ -32,6 +32,7 @@ import {
   EVT_ACTION_ORDER_RESET,
   EVT_ACTION_VISIBILITY_RESET,
 } from "./draw_card_const.js";
+import { defineOnce } from "./card-registration.js";
 
 class YeelightCubeDrawCardEditor extends LitElement {
   static get properties() {
@@ -39,6 +40,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
       hass: { type: Object },
       config: { type: Object },
       localTitle: { type: String },
+      _open: { state: true },
     };
   }
 
@@ -117,17 +119,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
     this.config = {};
     this.localTitle = "";
     this.hass = null;
-    this._folded = {
-      global: true,
-      appearance: true,
-      layout: true,
-      tools: true,
-      actions: true,
-      colors: true,
-      matrix: true,
-      pixelart: true,
-      importExport: true,
-    };
+    this._open = {};
 
     // Bind event handler
     this._handleMainCardConfigUpdate =
@@ -187,9 +179,18 @@ class YeelightCubeDrawCardEditor extends LitElement {
     }
   }
 
-  _toggleFold(section) {
-    this._folded[section] = !this._folded[section];
-    this.requestUpdate();
+  _toggleSection(id) {
+    this._open = { ...this._open, [id]: !this._open[id] };
+  }
+
+  _section(id, title, content) {
+    return renderEditorSection(
+      id,
+      title,
+      !!this._open[id],
+      () => this._toggleSection(id),
+      content,
+    );
   }
 
   // Layout management methods
@@ -451,28 +452,9 @@ class YeelightCubeDrawCardEditor extends LitElement {
   }
 
   render() {
-    const chevronIcon = (folded) => html`
-      <ha-icon
-        icon="mdi:chevron-up"
-        style="transition:transform 0.4s;transform:rotate(${folded
-          ? 180
-          : 0}deg);width:22px;height:22px;color:var(--secondary-text-color, #666);"
-      ></ha-icon>
-    `;
     return html`
       <div class="editor-root">
-        <div
-          class="editor-card${this._folded.global
-            ? " editor-card-collapsed"
-            : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleFold("global")}"
-          >
-            Global Settings ${chevronIcon(this._folded.global)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("global", "Global Settings", html`
             <div class="form-row">
               <label>Card Title (optional)</label>
               <input
@@ -498,37 +480,13 @@ class YeelightCubeDrawCardEditor extends LitElement {
               this.config.show_card_background !== false,
               (e) => this._onSwitchChange(e, "show_card_background"),
             )}
-          </div>
-        </div>
+        `)}
 
         <!-- Layout Section -->
-        <div
-          class="editor-card${this._folded.layout
-            ? " editor-card-collapsed"
-            : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleFold("layout")}"
-          >
-            Layout ${chevronIcon(this._folded.layout)}
-          </div>
-          <div class="editor-card-content">${this._renderLayoutSection()}</div>
-        </div>
+        ${this._section("layout", "Layout", this._renderLayoutSection())}
 
         <!-- Colors Section -->
-        <div
-          class="editor-card${this._folded.colors
-            ? " editor-card-collapsed"
-            : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleFold("colors")}"
-          >
-            Colors Section ${chevronIcon(this._folded.colors)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("colors", "Colors Section", html`
             ${createToggleRow(
               "Show Recent Colors",
               "show_recent_colors",
@@ -843,23 +801,11 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 ),
               ),
             )}
-          </div>
-        </div>
+        `)}
 
         <!-- Tool Order Section -->
         <!-- Tool Settings Section -->
-        <div
-          class="editor-card${this._folded.tools
-            ? " editor-card-collapsed"
-            : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleFold("tools")}"
-          >
-            Drawing Tools ${chevronIcon(this._folded.tools)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("tools", "Drawing Tools", html`
             <!-- Tool visibility mode toggle with Reset Visibility -->
             <div class="toggle-row">
               <label class="toggle-label">Tool Visibility Mode</label>
@@ -930,29 +876,15 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 },
               )}
             </div>
-          </div>
-        </div>
+        `)}
 
         <!-- Drawing Matrix Section -->
-        ${renderEditorSection(
+        ${this._section(
           "preview_appearance",
           "Preview Appearance",
-          !this._folded.appearance,
-          () => this._toggleFold("appearance"),
           this._renderAppearance("shared"),
         )}
-        <div
-          class="editor-card${this._folded.matrix
-            ? " editor-card-collapsed"
-            : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleFold("matrix")}"
-          >
-            Drawing Matrix Section ${chevronIcon(this._folded.matrix)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("matrix", "Drawing Matrix Section", html`
             ${createSliderRow(
               "Matrix Size",
               this.config.matrix_size || 100,
@@ -965,22 +897,10 @@ class YeelightCubeDrawCardEditor extends LitElement {
               "%",
             )}
             ${this._renderAppearance("canvas")}
-          </div>
-        </div>
+        `)}
 
         <!-- Action Buttons Section -->
-        <div
-          class="editor-card${this._folded.actions
-            ? " editor-card-collapsed"
-            : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleFold("actions")}"
-          >
-            Action Buttons ${chevronIcon(this._folded.actions)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("actions", "Action Buttons", html`
             <!-- Action visibility mode toggle with Reset Visibility -->
             <div class="toggle-row">
               <label class="toggle-label">Action Visibility Mode</label>
@@ -1034,21 +954,9 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 },
               )}
             </div>
-          </div>
-        </div>
+        `)}
 
-        <div
-          class="editor-card${this._folded.pixelart
-            ? " editor-card-collapsed"
-            : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleFold("pixelart")}"
-          >
-            Pixel Art Section ${chevronIcon(this._folded.pixelart)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("pixelart", "Pixel Art Section", html`
             <!-- 1. Core Behavior -->
             ${createToggleRow(
               "Apply to lamp automatically",
@@ -1196,22 +1104,10 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 this.requestUpdate();
               },
             })}
-          </div>
-        </div>
+        `)}
 
         <!-- Import/Export Actions Section -->
-        <div
-          class="editor-card${this._folded.importExport
-            ? " editor-card-collapsed"
-            : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleFold("importExport")}"
-          >
-            Import/Export Actions ${chevronIcon(this._folded.importExport)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("importExport", "Import/Export Actions", html`
             ${createToggleRow(
               "Show Export Button",
               "show_pixelart_export_button",
@@ -1235,8 +1131,7 @@ class YeelightCubeDrawCardEditor extends LitElement {
                 contentKey: "pixelart_content_mode",
               },
             )}
-          </div>
-        </div>
+        `)}
       </div>
     `;
   }
@@ -1359,9 +1254,4 @@ class YeelightCubeDrawCardEditor extends LitElement {
   }
 }
 
-if (!customElements.get("yeelight-cube-draw-card-editor")) {
-  customElements.define(
-    "yeelight-cube-draw-card-editor",
-    YeelightCubeDrawCardEditor,
-  );
-}
+defineOnce("yeelight-cube-draw-card-editor", YeelightCubeDrawCardEditor);

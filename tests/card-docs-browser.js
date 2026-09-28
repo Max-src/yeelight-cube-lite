@@ -174,12 +174,8 @@ window.cardDocs = {
       );
       editor.setConfig(config);
       editor.hass = card.hass;
+      // Every editor keeps its foldable sections in one `_open` map.
       editor._open = { [options.section]: true };
-      if (kind === "lamp-preview") {
-        if (options.section === "preview_appearance")
-          editor._appearanceOpen = true;
-        else editor._toggleSection(options.section);
-      }
       this.container.append(editor);
       await editor.updateComplete;
       const panel =

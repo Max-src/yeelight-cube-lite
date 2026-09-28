@@ -58,6 +58,7 @@ import {
   paintCellBackground,
 } from "./matrix-animator.js";
 import { getTargetEntities } from "./service-call-utils.js";
+import { defineOnce, registerCustomCard } from "./card-registration.js";
 
 /** Native host: catalogue/colour policy and frame painting. Adapter mapping is
  * in native-card-adapter; shared controllers own commands and selection, and
@@ -979,12 +980,8 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   ];
 }
 
-customElements.define(
-  "yeelight-cube-native-effects-card",
-  YeelightCubeNativeEffectsCard,
-);
-window.customCards = window.customCards || [];
-window.customCards.push({
+defineOnce("yeelight-cube-native-effects-card", YeelightCubeNativeEffectsCard);
+registerCustomCard({
   type: "yeelight-cube-native-effects-card",
   name: "Yeelight Cube Native Effects",
   description: "Browse, preview and apply native effects.",

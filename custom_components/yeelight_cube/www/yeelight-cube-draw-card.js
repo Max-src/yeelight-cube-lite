@@ -80,6 +80,7 @@ import {
 import { StorageUtils } from "./draw_card_storage.js";
 import { CollectionState } from "./collection-state.js";
 import { callServiceOnTargetEntities as callServiceSequentially } from "./service-call-utils.js";
+import { defineOnce, registerCustomCard } from "./card-registration.js";
 
 /**
  * Expand a pixel art's pixels array to flat [{position, color}] format.
@@ -117,6 +118,28 @@ function expandPixelArt(art) {
 }
 
 const MAX_IMAGE_PALETTE_COLORS = 15;
+
+
+/**
+ * When `newOrder` (new position -> old index) is the identity with one item
+ * moved, return that move as a `move_pixel_art` payload; otherwise null.
+ */
+function singleMove(newOrder, items) {
+  let start = 0;
+  let end = newOrder.length - 1;
+  while (start <= end && newOrder[start] === start) start++;
+  while (end >= start && newOrder[end] === end) end--;
+  if (start >= end) return null;
+  let from;
+  let to;
+  if (newOrder[start] === end) [from, to] = [end, start];
+  else if (newOrder[end] === start) [from, to] = [start, end];
+  else return null;
+  const moved = items.slice();
+  moved.splice(to, 0, moved.splice(from, 1)[0]);
+  if (moved.some((item, index) => item !== items[newOrder[index]])) return null;
+  return { from_idx: from, to_idx: to, expected_name: items[from]?.name };
+}
 
 class YeelightCubeDrawCard extends LitElement {
   static getStubConfig(hass) {
@@ -3231,6 +3254,19 @@ class YeelightCubeDrawCard extends LitElement {
 
     if (pixelArts.length === 0) return;
 
+    // The album DOM comes from unsafeHTML, which keeps the same nodes while the
+    // generated HTML is unchanged. updated() calls us on every hass change, so
+    // without a guard the item/delete/swipe/rename listeners would stack on
+    // those persisting nodes (e.g. one delete click deleting several arts).
+    // Only (re)bind when the container is new or the config object changed.
+    const albumContainer = this.shadowRoot.getElementById(
+      "pixelarts-album-container",
+    );
+    if (albumContainer && albumContainer._yeelightAlbumBoundCfg === cfg) {
+      return;
+    }
+    if (albumContainer) albumContainer._yeelightAlbumBoundCfg = cfg;
+
     // Setup navigation using shared utility (album-view-utils handles _currentAlbumIndex initialization)
     setupAlbumNavigation(
       this.shadowRoot,
@@ -3256,6 +3292,9 @@ class YeelightCubeDrawCard extends LitElement {
         ".album-title .title-text.editable",
       );
       titleElements.forEach((titleEl) => {
+        // Bind once per element: these nodes persist across updates.
+        if (titleEl.dataset.renameBound === "1") return;
+        titleEl.dataset.renameBound = "1";
         titleEl.addEventListener("click", (e) => {
           e.stopPropagation();
           const idx = parseInt(titleEl.dataset.index, 10);
@@ -3279,6 +3318,22 @@ class YeelightCubeDrawCard extends LitElement {
     if (!container) {
       return;
     }
+
+    // setupCompactDragDrop adds per-item listeners with no removal API and
+    // updated() calls us on every hass change; skip when every item already
+    // has listeners so they don't stack on nodes that persisted.
+    const compactItems = Array.from(
+      container.querySelectorAll(".compact-item"),
+    );
+    if (
+      compactItems.length > 0 &&
+      compactItems.every((item) => item.dataset.compactDragBound === "1")
+    ) {
+      return;
+    }
+    compactItems.forEach((item) => {
+      item.dataset.compactDragBound = "1";
+    });
 
     // Setup drag-and-drop using shared utility
     setupCompactDragDrop(
@@ -3312,7 +3367,10 @@ class YeelightCubeDrawCard extends LitElement {
           this._pendingReorderedPixelArts = reorderedPixelArts;
           this._pendingReorderTs = Date.now();
 
-          this._saveReorderedPixelArts(reorderedPixelArts);
+          this._saveReorderedPixelArts(
+            reorderedPixelArts,
+            singleMove(newOrder, pixelArts),
+          );
         } else {
           console.error(
             `[PixelArt] Length mismatch! Original: ${pixelArts.length}, Reordered: ${reorderedPixelArts.length}`,
@@ -3351,21 +3409,23 @@ class YeelightCubeDrawCard extends LitElement {
       this._pixelArtCollection.pending.timestamp = timestamp;
   }
 
-  _saveReorderedPixelArts(pixelArts) {
+  _saveReorderedPixelArts(pixelArts, move = null) {
     const cfg = this.config || {};
     const pixelartSensor = cfg.pixelart_sensor;
 
     if (!this.hass || !pixelartSensor) return;
 
-    // Use update_pixel_arts service to save the reordered list
-    // replace: true because we are sending the full reordered collection
+    // A drag moves one item: ask the server to move just that item so pixel
+    // arts added by other clients in the meantime are kept. Only fall back to
+    // replacing the whole collection when the order changed in another way.
     const collection = (this._pixelArtCollection ||= new CollectionState());
     const operation = collection.pending;
     return collection
-      .execute(this.hass, "update_pixel_arts", {
-        pixel_arts: pixelArts,
-        replace: true,
-      })
+      .execute(
+        this.hass,
+        move ? "move_pixel_art" : "update_pixel_arts",
+        move || { pixel_arts: pixelArts, replace: true },
+      )
       .then((success) => {
         if (!success)
           throw new Error("The pixel-art collection changed. Please retry.");
@@ -3598,6 +3658,7 @@ class YeelightCubeDrawCard extends LitElement {
       const success = await collection.execute(this.hass, "rename_pixel_art", {
         idx: idx,
         name: newName.trim(),
+        expected_name: currentArt.name,
       });
       if (!success)
         throw new Error("The pixel-art collection changed. Please retry.");
@@ -3647,7 +3708,14 @@ class YeelightCubeDrawCard extends LitElement {
     this._applyPixelArtTimer = setTimeout(async () => {
       this._applyPixelArtTimer = null;
       try {
-        await this.callServiceOnTargetEntities("apply_pixel_art", { idx });
+        const shown =
+          this._pendingReorderedPixelArts ??
+          this.hass.states[pixelartSensor]?.attributes?.pixel_arts ??
+          [];
+        await this.callServiceOnTargetEntities("apply_pixel_art", {
+          idx,
+          expected_name: shown[idx]?.name,
+        });
         await this.hass.callService("homeassistant", "update_entity", {
           entity_id: pixelartSensor,
         });
@@ -3896,7 +3964,12 @@ class YeelightCubeDrawCard extends LitElement {
 
     // Then call backend (websocket update will eventually sync, but UI is already updated)
     try {
-      if (!(await collection.execute(this.hass, "remove_pixel_art", { idx }))) {
+      if (
+        !(await collection.execute(this.hass, "remove_pixel_art", {
+          idx,
+          expected_name: pixelArts[idx].name,
+        }))
+      ) {
         throw new Error("The pixel-art collection changed. Please retry.");
       }
     } catch (err) {
@@ -4026,18 +4099,13 @@ class YeelightCubeDrawCard extends LitElement {
   }
 }
 
-if (!customElements.get("yeelight-cube-draw-card")) {
-  customElements.define("yeelight-cube-draw-card", YeelightCubeDrawCard);
-}
+defineOnce("yeelight-cube-draw-card", YeelightCubeDrawCard);
 
 // Register with Home Assistant's card picker
-window.customCards = window.customCards || [];
-if (!window.customCards.some((c) => c.type === "yeelight-cube-draw-card")) {
-  window.customCards.push({
+registerCustomCard({
     type: "yeelight-cube-draw-card",
     name: "Yeelight Draw Card",
     description:
       "Draw pixel art and control your Yeelight Cube Lite matrix display.",
     preview: true,
   });
-}

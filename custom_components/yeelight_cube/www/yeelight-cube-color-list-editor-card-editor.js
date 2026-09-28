@@ -18,27 +18,25 @@ import {
 } from "./form-row-utils.js";
 import {
   fireEvent,
+  renderEditorSection,
   renderModeSettingsSection,
   roundedCardsToSliderValue,
   renderDeleteButtonSettings,
 } from "./editor_ui_utils.js";
+import { defineOnce } from "./card-registration.js";
 
 class YeelightCubeColorListEditorCardEditor extends LitElement {
   static get properties() {
     return {
       _config: { type: Object },
-      _globalOpen: { type: Boolean },
-      _colorListOpen: { type: Boolean },
-      _actionsOpen: { type: Boolean },
+      _open: { state: true },
     };
   }
 
   constructor() {
     super();
     this._config = {};
-    this._globalOpen = false;
-    this._colorListOpen = false;
-    this._actionsOpen = false;
+    this._open = {};
   }
 
   setConfig(config) {
@@ -98,15 +96,18 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
     fireEvent(this, "config-changed", { config });
   }
 
-  _toggleSection(section) {
-    if (section === "global") {
-      this._globalOpen = !this._globalOpen;
-    } else if (section === "colorlist") {
-      this._colorListOpen = !this._colorListOpen;
-    } else if (section === "actions") {
-      this._actionsOpen = !this._actionsOpen;
-    }
-    this.requestUpdate();
+  _toggleSection(id) {
+    this._open = { ...this._open, [id]: !this._open[id] };
+  }
+
+  _section(id, title, content) {
+    return renderEditorSection(
+      id,
+      title,
+      !!this._open[id],
+      () => this._toggleSection(id),
+      content,
+    );
   }
 
   static get styles() {
@@ -174,29 +175,9 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
   render() {
     const cfg = this._config || {};
 
-    const chevronIcon = (folded) => html`
-      <ha-icon
-        icon="mdi:chevron-up"
-        style="transition:transform 0.4s;transform:rotate(${folded
-          ? 180
-          : 0}deg);"
-      ></ha-icon>
-    `;
-
     return html`
       <div class="editor-root">
-        <div
-          class="editor-card${!this._globalOpen
-            ? " editor-card-collapsed"
-            : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleSection("global")}"
-          >
-            Global Settings ${chevronIcon(!this._globalOpen)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("global", "Global Settings", html`
             <div class="form-row">
               <label>Card Title (optional)</label>
               <input
@@ -229,21 +210,9 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                 this._fireConfigChanged();
               },
             )}
-          </div>
-        </div>
+        `)}
 
-        <div
-          class="editor-card${!this._colorListOpen
-            ? " editor-card-collapsed"
-            : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleSection("colorlist")}"
-          >
-            Color List Settings ${chevronIcon(!this._colorListOpen)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("colorlist", "Color List Settings", html`
             ${createToggleRow(
               "Show Color Section",
               "show_color_section",
@@ -468,22 +437,10 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
                 this._fireConfigChanged();
               },
             })}
-          </div>
-        </div>
+        `)}
 
         <!-- Add/Shuffle/Save Actions Section -->
-        <div
-          class="editor-card${!this._actionsOpen
-            ? " editor-card-collapsed"
-            : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleSection("actions")}"
-          >
-            Add/Shuffle/Save Actions ${chevronIcon(!this._actionsOpen)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("actions", "Add/Shuffle/Save Actions", html`
             ${createToggleRow(
               "Show Add Color Button",
               "show_add_color_button",
@@ -524,16 +481,10 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
               this._config = { ...this._config, [key]: value };
               this._fireConfigChanged();
             })}
-          </div>
-        </div>
+        `)}
       </div>
     `;
   }
 }
 
-if (!customElements.get("yeelight-cube-color-list-editor-card-editor")) {
-  customElements.define(
-    "yeelight-cube-color-list-editor-card-editor",
-    YeelightCubeColorListEditorCardEditor,
-  );
-}
+defineOnce("yeelight-cube-color-list-editor-card-editor", YeelightCubeColorListEditorCardEditor);

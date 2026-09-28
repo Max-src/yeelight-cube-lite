@@ -1,5 +1,6 @@
 // Generic palette rendering for Yeelight Cube Lite Draw Card
 import { html } from "./lib/lit-all.js";
+import { defineOnce } from "./card-registration.js";
 
 // Helper: parse a CSS color string to [r, g, b] (0-255)
 function _parseColor(c) {
@@ -658,8 +659,7 @@ class PaletteExpandable extends PaletteBase {
     return this._getProp("colorInfoDisplay", "none");
   }
 }
-if (!customElements.get("palette-expandable"))
-  customElements.define("palette-expandable", PaletteExpandable);
+defineOnce("palette-expandable", PaletteExpandable);
 
 // -----------------------------------------------------------------------
 // Scroll mode — horizontal draggable ribbon with carousel-style nav arrows
@@ -781,8 +781,7 @@ class PaletteScroll extends PaletteBase {
     return this._getProp("colorInfoDisplay", "none");
   }
 }
-if (!customElements.get("palette-scroll"))
-  customElements.define("palette-scroll", PaletteScroll);
+defineOnce("palette-scroll", PaletteScroll);
 
 // -----------------------------------------------------------------------
 // Gradient bar — smooth gradient with click-to-pick + tick marks
@@ -919,8 +918,7 @@ class PaletteGradientBar extends PaletteBase {
     return this._getProp("gradientFreePick", false);
   }
 }
-if (!customElements.get("palette-gradient-bar"))
-  customElements.define("palette-gradient-bar", PaletteGradientBar);
+defineOnce("palette-gradient-bar", PaletteGradientBar);
 
 // -----------------------------------------------------------------------
 // Fan mode — semi-circular arc of color swatches
@@ -1018,8 +1016,7 @@ class PaletteFan extends PaletteBase {
     return this._getProp("colorInfoDisplay", "none");
   }
 }
-if (!customElements.get("palette-fan"))
-  customElements.define("palette-fan", PaletteFan);
+defineOnce("palette-fan", PaletteFan);
 
 // -----------------------------------------------------------------------
 // Wave mode — sinusoidal wave of colors
@@ -1105,8 +1102,7 @@ class PaletteWave extends PaletteBase {
     return this._getProp("colorInfoDisplay", "none");
   }
 }
-if (!customElements.get("palette-wave"))
-  customElements.define("palette-wave", PaletteWave);
+defineOnce("palette-wave", PaletteWave);
 
 // -----------------------------------------------------------------------
 // Spiral mode — logarithmic spiral outward from center
@@ -1213,8 +1209,7 @@ class PaletteSpiral extends PaletteBase {
     return this._getProp("colorInfoDisplay", "none");
   }
 }
-if (!customElements.get("palette-spiral"))
-  customElements.define("palette-spiral", PaletteSpiral);
+defineOnce("palette-spiral", PaletteSpiral);
 
 // -----------------------------------------------------------------------
 // Honeycomb mode — hexagonal tiling grid like a beehive
@@ -1297,8 +1292,7 @@ class PaletteHoneycomb extends PaletteBase {
     return this._getProp("colorInfoDisplay", "none");
   }
 }
-if (!customElements.get("palette-honeycomb"))
-  customElements.define("palette-honeycomb", PaletteHoneycomb);
+defineOnce("palette-honeycomb", PaletteHoneycomb);
 
 // -----------------------------------------------------------------------
 // Blinds — venetian blind strips: hover to peek/expand a color
@@ -1493,8 +1487,7 @@ class PaletteBlinds extends PaletteBase {
     return this._getProp("colorInfoDisplay", "none");
   }
 }
-if (!customElements.get("palette-blinds"))
-  customElements.define("palette-blinds", PaletteBlinds);
+defineOnce("palette-blinds", PaletteBlinds);
 
 // -----------------------------------------------------------------------
 // Treemap — squarified treemap: colors as proportional rectangles
@@ -1664,5 +1657,4 @@ class PaletteTreemap extends PaletteBase {
     return this._getProp("colorInfoDisplay", "none");
   }
 }
-if (!customElements.get("palette-treemap"))
-  customElements.define("palette-treemap", PaletteTreemap);
+defineOnce("palette-treemap", PaletteTreemap);

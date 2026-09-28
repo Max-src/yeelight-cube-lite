@@ -2,6 +2,7 @@ import { LitElement, html, unsafeHTML } from "./lib/lit-all.js";
 import { renderColorModeSelector } from "./color-mode-selector-utils.js";
 import { bindActionButtonGroup } from "./action-button-utils.js";
 import "./clock-preset-manager.js";
+import { defineOnce } from "./card-registration.js";
 
 /** Shared colour interaction view. Domain adapters provide selector values,
  * RGB drafts and save kinds; the view owns bindings and stable save-form DOM.
@@ -84,4 +85,4 @@ class YeelightColorMode extends LitElement {
   }
 }
 
-customElements.define("yeelight-color-mode", YeelightColorMode);
+defineOnce("yeelight-color-mode", YeelightColorMode);

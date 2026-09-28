@@ -400,6 +400,7 @@ Load a saved pixel art by index and display it on the lamp.
 | Field | Required | Description |
 | :-- | :-- | :-- |
 | `idx` | Yes | 0-based index of the pixel art |
+| `expected_name` | No | Name of the pixel art you expect at `idx`. If the list changed (another browser deleted or reordered items), the call fails instead of acting on the wrong pixel art |
 | `entity_id` | Yes | Target lamp entity (single or list) |
 
 > [!TIP]
@@ -426,6 +427,7 @@ Delete a saved pixel art.
 | Field | Required | Description |
 | :-- | :-- | :-- |
 | `idx` | Yes | 0-based index of the pixel art to delete |
+| `expected_name` | No | Name of the pixel art you expect at `idx`. If the list changed (another browser deleted or reordered items), the call fails instead of acting on the wrong pixel art |
 
 ```yaml
 action: yeelight_cube.remove_pixel_art
@@ -443,6 +445,7 @@ Rename a saved pixel art.
 | :-- | :-- | :-- |
 | `idx` | Yes | 0-based index of the pixel art |
 | `name` | Yes | New name |
+| `expected_name` | No | Name of the pixel art you expect at `idx`. If the list changed (another browser deleted or reordered items), the call fails instead of acting on the wrong pixel art |
 
 ```yaml
 action: yeelight_cube.rename_pixel_art
@@ -556,6 +559,28 @@ data:
 ```
 
 </details>
+
+---
+
+### `move_pixel_art`
+
+Move one saved pixel art to a new position. The Draw Card uses this for
+drag-and-drop reordering, so pixel arts other clients added in the meantime are
+kept (unlike `update_pixel_arts` with `replace: true`).
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `from_idx` | Yes | Current 0-based index of the pixel art |
+| `to_idx` | Yes | New 0-based index |
+| `expected_name` | No | Name expected at `from_idx`; the move fails if the list changed |
+
+```yaml
+action: yeelight_cube.move_pixel_art
+data:
+  from_idx: 3
+  to_idx: 0
+  expected_name: "Magic Lamp"
+```
 
 ---
 
@@ -732,6 +757,7 @@ Load a saved palette by index.
 | Field | Required | Description |
 | :-- | :-- | :-- |
 | `idx` | Yes | 0-based index of the palette |
+| `expected_name` | No | Name of the palette you expect at `idx`. If the list changed (another browser deleted or reordered items), the call fails instead of acting on the wrong palette |
 | `entity_id` | Yes | Target lamp entity |
 
 ```yaml
@@ -750,6 +776,7 @@ Delete a saved palette.
 | Field | Required | Description |
 | :-- | :-- | :-- |
 | `idx` | Yes | 0-based index of the palette to delete |
+| `expected_name` | No | Name of the palette you expect at `idx`. If the list changed (another browser deleted or reordered items), the call fails instead of acting on the wrong palette |
 
 ```yaml
 action: yeelight_cube.remove_palette
@@ -767,12 +794,33 @@ Rename a saved palette.
 | :-- | :-- | :-- |
 | `idx` | Yes | 0-based index of the palette |
 | `name` | Yes | New name |
+| `expected_name` | No | Name of the palette you expect at `idx`. If the list changed (another browser deleted or reordered items), the call fails instead of acting on the wrong palette |
 
 ```yaml
 action: yeelight_cube.rename_palette
 data:
   idx: 0
   name: "Updated Palette"
+```
+
+---
+
+### `add_palettes`
+
+Append palettes to the saved collection without resending the whole list. The
+Palettes Card import uses this, so palettes other clients added in the
+meantime are kept.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `palettes` | Yes | Array of `{ name, colors }` objects; colours are `[R, G, B]` arrays (0-255) |
+
+```yaml
+action: yeelight_cube.add_palettes
+data:
+  palettes:
+    - name: "Sunset"
+      colors: [[255, 94, 77], [255, 195, 0]]
 ```
 
 ---
@@ -1628,9 +1676,9 @@ result through an event on the HA event bus.
 | Category | Primary Services | Purpose |
 | :-- | :-- | :-- |
 | **Text** | `set_custom_text`, `set_text_colors` | Display text with colors |
-| **Drawing** | `apply_custom_pixels`, `save_pixel_art`, `apply_pixel_art` | Create and manage pixel art |
+| **Drawing** | `apply_custom_pixels`, `save_pixel_art`, `apply_pixel_art`, `move_pixel_art` | Create and manage pixel art |
 | **Gradients** | `set_mode`, `set_solid_color`, `set_angle`, `set_full_panel` | Control display modes |
-| **Palettes** | `save_palette`, `load_palette`, `set_palettes` | Manage color collections |
+| **Palettes** | `save_palette`, `load_palette`, `add_palettes`, `set_palettes` | Manage color collections |
 | **Text Settings** | `set_font`, `set_alignment`, `set_orientation` | Text formatting |
 | **Color Effects** | `set_preview_adjustments`, `set_color_accuracy` | Real-time color adjustments |
 | **State** | `save_state`, `restore_state` | Snapshot & restore what's displayed |

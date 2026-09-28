@@ -112,6 +112,15 @@ load_palette:
   name: Load Palette
   description: Load a saved palette by index and apply its colors to the target lamp(s)
   fields:
+    expected_name:
+      description: >-
+        Name of the palette you expect at this index. When set, the call is
+        rejected if the list changed (e.g. another browser deleted or
+        reordered items) instead of acting on the wrong palette.
+      example: "Sunset"
+      required: false
+      selector:
+        text:
     idx:
       description: Index of the palette to load (0-based)
       example: 0
@@ -755,6 +764,15 @@ apply_pixel_art:
   name: Apply Pixel Art
   description: Apply a saved pixel art by index to the cube.
   fields:
+    expected_name:
+      description: >-
+        Name of the pixel art you expect at this index. When set, the call is
+        rejected if the list changed (e.g. another browser deleted or
+        reordered items) instead of acting on the wrong pixel art.
+      example: "Sunset"
+      required: false
+      selector:
+        text:
     idx:
       description: Index of the saved pixel art to apply (0-based)
       example: 0
@@ -774,6 +792,15 @@ remove_pixel_art:
   name: Remove Pixel Art
   description: Remove a saved pixel art by index.
   fields:
+    expected_name:
+      description: >-
+        Name of the pixel art you expect at this index. When set, the call is
+        rejected if the list changed (e.g. another browser deleted or
+        reordered items) instead of acting on the wrong pixel art.
+      example: "Sunset"
+      required: false
+      selector:
+        text:
     idx:
       description: Index of the pixel art to remove (0-based)
       example: 0
@@ -787,6 +814,15 @@ rename_pixel_art:
   name: Rename Pixel Art
   description: Rename a saved pixel art.
   fields:
+    expected_name:
+      description: >-
+        Name of the pixel art you expect at this index. When set, the call is
+        rejected if the list changed (e.g. another browser deleted or
+        reordered items) instead of acting on the wrong pixel art.
+      example: "Sunset"
+      required: false
+      selector:
+        text:
     idx:
       description: Index of the pixel art to rename (0-based)
       example: 0
@@ -822,6 +858,33 @@ get_pixel_art:
       default: false
       selector:
         boolean:
+
+move_pixel_art:
+  name: Move Pixel Art
+  description: Move one saved pixel art to another position (used by the Draw card gallery reorder).
+  fields:
+    from_idx:
+      description: Current index of the pixel art (0-based)
+      example: 3
+      required: true
+      selector:
+        number:
+          min: 0
+          mode: box
+    to_idx:
+      description: New index for the pixel art (0-based)
+      example: 0
+      required: true
+      selector:
+        number:
+          min: 0
+          mode: box
+    expected_name:
+      description: Name of the pixel art expected at from_idx; the move is rejected if the list changed.
+      example: "Magic Lamp"
+      required: false
+      selector:
+        text:
 
 update_pixel_arts:
   name: Update Pixel Arts
@@ -871,6 +934,15 @@ remove_palette:
   name: Remove Palette
   description: Remove a saved palette by index.
   fields:
+    expected_name:
+      description: >-
+        Name of the palette you expect at this index. When set, the call is
+        rejected if the list changed (e.g. another browser deleted or
+        reordered items) instead of acting on the wrong palette.
+      example: "Sunset"
+      required: false
+      selector:
+        text:
     idx:
       description: Index of the palette to remove (0-based)
       example: 0
@@ -884,6 +956,15 @@ rename_palette:
   name: Rename Palette
   description: Rename a saved palette.
   fields:
+    expected_name:
+      description: >-
+        Name of the palette you expect at this index. When set, the call is
+        rejected if the list changed (e.g. another browser deleted or
+        reordered items) instead of acting on the wrong palette.
+      example: "Sunset"
+      required: false
+      selector:
+        text:
     idx:
       description: Index of the palette to rename (0-based)
       example: 0
@@ -898,6 +979,17 @@ rename_palette:
       required: true
       selector:
         text:
+
+add_palettes:
+  name: Add Palettes
+  description: Append palettes to the saved collection without replacing it (used by the Palettes card import).
+  fields:
+    palettes:
+      description: Array of palette objects with name and colors
+      example: '[{"name": "Sunset", "colors": [[255, 94, 77], [255, 195, 0]]}]'
+      required: true
+      selector:
+        object:
 
 set_palettes:
   name: Set Palettes

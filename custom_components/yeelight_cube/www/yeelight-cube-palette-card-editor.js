@@ -4,6 +4,7 @@ import { LitElement, html, css } from "./lib/lit-all.js";
 import {
   sharedEditorStyles,
   fireEvent,
+  renderEditorSection,
   renderModeSettingsSection,
   roundedCardsToSliderValue,
   renderDeleteButtonSettings,
@@ -19,14 +20,13 @@ import {
 import { createToggleRow, createSliderRow } from "./form-row-utils.js";
 
 import { createYeelightCubeEntityPicker } from "./entity-selector-utils.js";
+import { defineOnce } from "./card-registration.js";
 
 class YeelightCubePaletteCardEditor extends LitElement {
   static get properties() {
     return {
       localTitle: { type: String },
-      _globalOpen: { type: Boolean },
-      _palettesListOpen: { type: Boolean },
-      _importExportOpen: { type: Boolean },
+      _open: { state: true },
     };
   }
 
@@ -35,19 +35,21 @@ class YeelightCubePaletteCardEditor extends LitElement {
     this.config = {};
     this.localTitle = "";
     this._hass = null;
-    this._globalOpen = false;
-    this._palettesListOpen = false;
-    this._importExportOpen = false;
+    this._open = {};
   }
 
-  _toggleSection(section) {
-    if (section === "global") {
-      this._globalOpen = !this._globalOpen;
-    } else if (section === "palettes") {
-      this._palettesListOpen = !this._palettesListOpen;
-    } else if (section === "importExport") {
-      this._importExportOpen = !this._importExportOpen;
-    }
+  _toggleSection(id) {
+    this._open = { ...this._open, [id]: !this._open[id] };
+  }
+
+  _section(id, title, content) {
+    return renderEditorSection(
+      id,
+      title,
+      !!this._open[id],
+      () => this._toggleSection(id),
+      content,
+    );
   }
 
   static get styles() {
@@ -110,30 +112,9 @@ class YeelightCubePaletteCardEditor extends LitElement {
       eid.startsWith("sensor."),
     );
 
-    const chevronIcon = (folded) => {
-      const rotation = folded ? 180 : 0;
-      return html`
-        <ha-icon
-          icon="mdi:chevron-up"
-          style="transition:transform 0.4s;transform:rotate(${rotation}deg);"
-        ></ha-icon>
-      `;
-    };
-
     return html`
       <div class="editor-root">
-        <div
-          class="editor-card${!this._globalOpen
-            ? " editor-card-collapsed"
-            : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleSection("global")}"
-          >
-            Global Settings ${chevronIcon(!this._globalOpen)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("global", "Global Settings", html`
             <div class="form-row">
               <label>Card Title (optional)</label>
               <input
@@ -165,21 +146,9 @@ class YeelightCubePaletteCardEditor extends LitElement {
               config.show_card_background !== false,
               (e) => this._onSwitchChange(e, "show_card_background"),
             )}
-          </div>
-        </div>
+        `)}
 
-        <div
-          class="editor-card${!this._palettesListOpen
-            ? " editor-card-collapsed"
-            : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleSection("palettes")}"
-          >
-            Palettes List ${chevronIcon(!this._palettesListOpen)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("palettes", "Palettes List", html`
             <!-- 1. Display Mode (container layout choice) -->
             <div class="form-row">
               <label>Display Mode</label>
@@ -323,22 +292,10 @@ class YeelightCubePaletteCardEditor extends LitElement {
                 this._fireConfigChanged();
               },
             })}
-          </div>
-        </div>
+        `)}
 
         <!-- Import/Export Actions Section -->
-        <div
-          class="editor-card${!this._importExportOpen
-            ? " editor-card-collapsed"
-            : ""}"
-        >
-          <div
-            class="editor-card-header"
-            @click="${() => this._toggleSection("importExport")}"
-          >
-            Import/Export Actions ${chevronIcon(!this._importExportOpen)}
-          </div>
-          <div class="editor-card-content">
+        ${this._section("importExport", "Import/Export Actions", html`
             ${createToggleRow(
               "Show Export Button",
               "show_export_button",
@@ -354,8 +311,7 @@ class YeelightCubePaletteCardEditor extends LitElement {
             ${renderActionButtonSettings(config, (key, value) => {
               this._onButtonGroupChange(key, value);
             })}
-          </div>
-        </div>
+        `)}
       </div>
     `;
   }
@@ -418,9 +374,4 @@ class YeelightCubePaletteCardEditor extends LitElement {
   }
 }
 
-if (!customElements.get("yeelight-cube-palette-card-editor")) {
-  customElements.define(
-    "yeelight-cube-palette-card-editor",
-    YeelightCubePaletteCardEditor,
-  );
-}
+defineOnce("yeelight-cube-palette-card-editor", YeelightCubePaletteCardEditor);
