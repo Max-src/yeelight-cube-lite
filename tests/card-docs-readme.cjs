@@ -41,7 +41,7 @@ function updateGalleries(
       const cells = entries.map(([name, options]) => {
         const file = `images/Cards/generated/${kind}-${group === "editors" ? "editor-" : ""}${name}.png`;
         assert.ok(exists(file), `Missing screenshot: ${file}`);
-        const title = group === "editors" ? options : options.title;
+        const title = typeof options === "string" ? options : options.title;
         return `    <td valign="top"><img src="${file}" alt="${escape(definition.title)} - ${escape(title)}" width="${group === "editors" ? 220 : 280}"><br>${escape(title)}</td>`;
       });
       const rows = [];

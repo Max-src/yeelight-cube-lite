@@ -29,7 +29,7 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a
 | **Device settings** | Power-on behavior, text scrolling, and physical-button preset list |
 | **Colors & gradients** | Gradient support across multiple modes |
 | **Color effects** | Hue shift, saturation, vibrance, tint, glow, contrast, invert, grayscale |
-| **Transitions** | 14+ animated transition effects |
+| **Transitions** | 23 animated transition effects |
 | **Multi-lamp** | Control multiple lamps independently |
 | **Auto-discovery** | Zeroconf (mDNS) auto-detection on your network |
 | **Local-only** | All communication stays on your LAN, no cloud dependency |
@@ -437,6 +437,7 @@ A live dashboard card that mirrors the lamp's current state with real-time matri
 | :-- | :-- |
 | **Lamp preview** | Reflects what's displayed on the lamp. Configurable pixel style, spacing, background, shadow, and size |
 | **Refresh & power** | Quick buttons to force-refresh or toggle power |
+| **Device orientation** | Right / Down / Left / Up control with configurable button layout; the preview rotates to match the physical mount |
 | **Brightness slider** | Configurable slider styles |
 | **Color adjustments** | Effect sliders with multiple layout modes, change indicators, and reset buttons |
 
@@ -597,6 +598,10 @@ Select and configure gradient/color modes. Adjust gradient direction with an ang
   </tr>
 </table>
 
+The editor also has **Preview Appearance** (the shared matrix look, see
+[Shared Preview Appearance](SERVICES.md#shared-preview-appearance)),
+**Active Mode Label** and **Apply to Whole Panel** sections.
+
 </details>
 
 ---
@@ -649,13 +654,23 @@ The pixel art editor. Paint on a 20×5 interactive matrix, save designs to a per
   </tr>
 </table>
 
+A **Preview Appearance** section (the shared matrix look, see
+[Shared Preview Appearance](SERVICES.md#shared-preview-appearance)) sits
+between Drawing Tools and Drawing Matrix Section.
+
 </details>
 
 ---
 
 ## Entities Created
 
-Each lamp creates its own set of per-device entities, plus the integration creates **global entities** (palettes, drawings, fonts) shared across all lamps.
+Each lamp creates its own set of per-device entities, plus the integration creates **global entities** (palettes, drawings, fonts, clock colour presets) shared across all lamps.
+
+> [!NOTE]
+> The names below are the entity names shown on the device page. Matrix-only
+> controls carry a `Matrix:` prefix and clock options a `Clock:` prefix so they
+> group together. Entity IDs are derived from the lamp name, e.g.
+> `select.cubelite_a904_matrix_display_mode`.
 
 ### Per-device Entities
 
@@ -677,20 +692,22 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 
 | Entity | Type | Description |
 | :-- | :-- | :-- |
-| **Auto Turn On** | Switch | Automatically turn on the lamp when a new mode or drawing is applied |
+| **Auto Turn On** | Switch | Automatically turn on the lamp when a mode, drawing or colour change is applied while it is off |
 | **Yeelight Cube Lite** | Light | Main light entity (on/off and brightness; RGB color in Matrix mode) |
-| **Content Mode** | Select | Switch between Matrix, firmware-native Clock, Native Effect, and Music Flow |
-| **Display Mode** | Select | Choose the Matrix render mode (see [Display Modes](#display-modes)) |
-| **Clock Style** | Select | Choose one of the 10 native clock styles (more with Experimental Features) |
-| **Native Effect** | Select | Choose one of the 18 LAN-compatible firmware-native animations |
-| **Music Flow Effect** | Select | Choose Gather, Breathing, Blossom, Spectrum, Music Note, or Impact |
-| **Display Text** | Text | Text input for custom text display on the matrix |
+| **Content mode** | Select | Switch between Matrix, firmware-native Clock, Native Effect, and Music Flow |
+| **Matrix: Display Mode** | Select | Choose the Matrix render mode (see [Display Modes](#display-modes)) |
+| **Matrix: Display Text** | Text | Text shown by the Matrix text modes |
+| **Matrix: Font** | Select | Basic, Fat, Italic, or Native (Basic with the firmware clock's digit shapes) |
+| **Matrix: Text Alignment** | Select | Text alignment: left, center, right |
+| **Matrix: Gradient Angle** | Number | Angle for angle-based gradient modes (0°–360°) |
+| **Matrix: Palette** | Select | Apply one of the saved color palettes |
+| **Matrix: Pixel Art** | Select | Personal drawings followed by the 68 locally bundled, read-only official presets |
+| **Clock: Style** | Select | One of the 10 native clock styles (more with Experimental Features) |
+| **Native effect** | Select | One of the 18 LAN-compatible firmware-native animations (more with Experimental Features) |
+| **Animation speed** | Number | Speed for the native clock and for effects that support it (1–255 device units; unavailable when the selected effect has no speed control) |
+| **Music Flow effect** | Select | Gather, Breathing, Blossom, Spectrum, Music Note, or Impact |
 | **Device Orientation** | Select | Physical mount orientation: Right / Down / Left / Up (applies to all modes) |
-| **Font** | Select | Choose text font: basic, fat, italic |
-| **Gradient Angle** | Number | Angle for angle-based gradient modes (0°–360°) |
-| **Palette** | Select | Select from saved color palettes |
-| **Pixel Art** | Select | Select personal drawings or 68 locally bundled, read-only official presets |
-| **Text Alignment** | Select | Text alignment: left, center, right |
+| **Experimental Features** | Switch | Reveal firmware animation modes and clock styles the Yeelight app never exposed. Off by default |
 
 #### Sensors
 
@@ -706,15 +723,14 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 
 | Entity | Type | Description |
 | :-- | :-- | :-- |
-| **Clock Content** | Select | What the clock shows: Time, Time & Date (alternating), or Date only |
-| **Clock Show Date** | Switch | Shortcut for Time & Date (alternate time with the date); syncs with Clock Content |
-| **Clock 12-Hour Format** | Switch | Use 12-hour time instead of 24-hour time |
-| **Clock Colon Blink** | Switch | Blink the time separator in Clock mode |
-| **Native Effect Direction** | Select | Direction for effects that support movement |
-| **Native Effect Speed** | Number | Animation rate (1–100%) |
-| **Power-on Behavior** | Select | Choose Off, On, or Toggle after mains power is restored |
-| **Text Scroll** | Switch | Enable scrolling for text wider than the matrix |
-| **Text Scroll Interval** | Number | Delay between scroll steps (0.05–2 seconds) |
+| **Clock: Content** | Select | What the clock shows: Time, Time & Date (alternating), or Date only |
+| **Clock: Show date** | Switch | Shortcut for Time & Date (alternate time with the date); stays in sync with Clock: Content |
+| **Clock: 12-hour format** | Switch | Use 12-hour time instead of 24-hour time |
+| **Clock: Blink colon** | Switch | Blink the time separator in Clock mode |
+| **Native effect: Direction** | Select | Direction for effects that support movement (Up / Down / Left / Right; Hacking offers Up / Down only) |
+| **Power-on behavior** | Select | Choose Off, On, or Toggle after mains power is restored |
+| **Text scroll** | Switch | Enable scrolling for text wider than the matrix |
+| **Text scroll: Interval** | Number | Delay between scroll steps (0.05–2 seconds) |
 | **Color: Hue Shift** | Number | Shift colors around the wheel (−180° to +180°) |
 | **Color: Temperature** | Number | Warm/cool adjustment (−100 to +100) |
 | **Effects: Grayscale** | Number | Grayscale intensity (0–100%) |
@@ -725,9 +741,9 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Intensity: Vibrance** | Number | Adaptive saturation (0–200%) |
 | **Tone: Contrast** | Number | Contrast level (0–200%) |
 | **Tone: Glow** | Number | Bloom / glow effect (0–100%) |
-| **Transition Duration** | Number | Transition time (0.2–10s) |
-| **Transition Effect** | Select | Choose from 14+ transition animations |
+| **Matrix: Transition Effect** | Select | None or one of the 23 [transition animations](#transition-effects) |
 | **Transition Steps** | Number | Animation steps (1–10) |
+| **Transition Duration** | Number | Transition time (0.2–10 s) |
 
 #### Diagnostic
 
@@ -740,6 +756,16 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 
 These sensor entities are created **once per integration install** and shared across all lamps.
 
+> [!NOTE]
+> Entity IDs are generated from the entity name the first time it is created,
+> so they differ between installations: a fresh install gets
+> `sensor.saved_drawings`, `sensor.color_palettes`, `sensor.font_characters`
+> and `sensor.clock_colour_presets`, while older installations may still use
+> `sensor.yeelight_cube_saved_pixel_arts`, `sensor.yeelight_cube_color_palettes`
+> and `sensor.yeelight_cube_font_letter_map`. Check **Settings → Devices &
+> services → Entities** and adjust the examples below. The cards find these
+> sensors by their attributes, not by ID.
+
 <details>
 <summary>View global entities details</summary>
 
@@ -749,7 +775,7 @@ These sensor entities are created **once per integration install** and shared ac
   </tr>
 </table>
 
-#### `sensor.yeelight_cube_saved_pixel_arts` - Saved Drawings
+#### Saved Drawings (`sensor.saved_drawings`)
 
 Stores all pixel art designs created with the Draw Card.
 
@@ -765,7 +791,7 @@ Stores all pixel art designs created with the Draw Card.
 
 ```yaml
 # In Developer Tools → Template
-{{ state_attr('sensor.yeelight_cube_saved_pixel_arts', 'pixel_arts')
+{{ state_attr('sensor.saved_drawings', 'pixel_arts')
    | map(attribute='name') | list }}
 # → ['Magic Lamp', 'Bat', 'Whale']
 # 'Magic Lamp' = index 0, 'Bat' = index 1, 'Whale' = index 2
@@ -773,7 +799,7 @@ Stores all pixel art designs created with the Draw Card.
 
 ---
 
-#### `sensor.yeelight_cube_color_palettes` - Color Palettes
+#### Color Palettes (`sensor.color_palettes`)
 
 Stores all saved color palettes.
 
@@ -787,15 +813,30 @@ Stores all saved color palettes.
 
 ---
 
-#### `sensor.yeelight_cube_font_letter_map` - Font Characters
+#### Font Characters (`sensor.font_characters`)
 
 Read-only bitmap font maps used for text rendering.
 
 | Attribute | Type | Description |
 | :-- | :-- | :-- |
-| `font_maps` | object | Dictionary with keys `"basic"`, `"fat"`, `"italic"` mapping characters to pixel bitmaps |
+| `font_maps` | object | Dictionary with keys `"basic"`, `"fat"`, `"italic"` and `"native"` mapping characters to pixel bitmaps |
+| `font_metrics` | object | Per-font spacing metrics (currently `"native"`: monospace advance and narrow-glyph overrides) used by the clock previews |
 
 **State:** always `"ready"` - content is static and never changes at runtime.
+
+---
+
+#### Clock Colour Presets (`sensor.clock_colour_presets`)
+
+Stores the shared library of saved clock styles and reusable colour modes
+managed by the Clock and Native Effects cards (see
+[`save_clock_preset`](SERVICES.md#save_clock_preset--delete_clock_preset)).
+
+| Attribute | Type | Description |
+| :-- | :-- | :-- |
+| `clock_presets` | list | Saved presets (each has `id`, `name`, `color` and `kind` = `style` or `color_mode`); at most 100 |
+
+**State:** numeric count (e.g. `2`)
 
 </details>
 
@@ -1007,9 +1048,6 @@ Favourites are indicated by a gold star badge next to every item in the style
 browser (text, preview and original selectors, including the wheel). Set
 `favourites_show_stars: false` (the Favourites editor's "Show favourite stars"
 toggle) to hide the badges.
-With `auto_apply: false`, effect and speed selections stay local until **Apply**;
-brightness and orientation still apply immediately. Rotation is an explicit
-apply action and does not use the preview-only setting.
 
 The **Clock Card** uses the same Actions, Favourites and Rotation components and
 editor settings. Actions are enabled by default; `show_actions` can hide them.
@@ -1118,17 +1156,23 @@ sequence:
       entity_id: select.my_cube_music_flow_effect
     data:
       option: Spectrum
-  - action: switch.turn_on
+  - action: select.select_option
     target:
-      entity_id: switch.my_cube_music_flow
+      entity_id: select.my_cube_content_mode
+    data:
+      option: Music Flow
   - delay: "00:00:30"
-  - action: switch.turn_off
+  # Selecting another content mode stops Music Flow
+  - action: select.select_option
     target:
-      entity_id: switch.my_cube_music_flow
+      entity_id: select.my_cube_content_mode
+    data:
+      option: Clock
 ```
 
-Replace the example entity IDs with the Music Flow entities created for your
-Cube Lite.
+Replace the example entity IDs with the **Music Flow effect** and **Content
+mode** entities created for your Cube Lite. There is no separate Music Flow
+switch: Music Flow starts and stops through Content mode.
 
 ---
 
@@ -1171,7 +1215,7 @@ Configure via the **Transition Effect**, **Transition Steps**, and **Transition 
 | **Changing content stops Music Flow** | This is expected. Selecting Matrix, Clock, Native Effect, text, or pixel art exits Music Flow and applies the requested content |
 | **Music Flow turns off but the old display does not return** | The stop command has already been recorded. Press **Force Refresh** or reselect Matrix, Clock, or Native Effect to retry the display render |
 | **Music Flow preview is not animated** | This is expected. The camera shows a locally generated static identifier because the lamp does not expose live microphone-animation frames |
-| **Lamp changed IP** | Auto-rediscovery handles this. You can also update the IP from the Configure page |
+| **Lamp changed IP** | Auto-rediscovery updates the stored IP automatically; the **IP Address** diagnostic sensor shows the current value. If the lamp stays unreachable, remove the device and add it again with the new IP |
 
 ---
 

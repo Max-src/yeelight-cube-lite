@@ -27,20 +27,25 @@ while direct service calls use `entity_id`.
 | :-- | :-- | :-- |
 | `entity` | Both | Primary light entity for a single-lamp card |
 | `target_entities` | Both | List of target light entities for multi-lamp commands |
+| `title`, `show_card_background` | Both | Card title and `ha-card` background |
 | `show_current_preview` | Clock | Show the current clock preview |
-| `show_preview` | Native Effects | Show the current animation preview |
-| `show_color_modes` | Both | Show palette/custom-colour selection |
-| `show_gallery` | Both | Show the style/effect browser |
+| `show_preview`, `lamp_preview_size`, `preview_brightness` | Native Effects | Show the current animation preview, its size (30–100 %) and whether it follows lamp brightness |
+| `show_actions`, `action_buttons`, `actions_buttons_style`, `actions_buttons_content_mode` | Both | Actions row (Previous, Next, Random, Freeze display, Refresh, Power), its order and button styling |
+| `show_brightness`, `show_animation_speed`, `slider_style`, `slider_show_raw_value` | Both | Lamp sliders, slider style, and raw device units (speed 1–255, brightness 3–255) instead of percentages |
+| `show_content_toggle`, `show_format_toggles` | Clock | Time/date content and time-format controls |
+| `show_color_modes`, `color_mode_selector`, `visible_color_modes`, `show_save_color_mode_button` | Both | Palette/custom-colour selection as `buttons` or `dropdown`, which modes are offered, and the inline save button |
+| `show_save_clock_style_button` | Clock | Inline "save clock style" button next to the colour row |
+| `show_device_orientation` | Native Effects | Device orientation control (the firmware clock cannot rotate, so the Clock card has none) |
+| `show_gallery`, `show_search` | Both | Show the style/effect browser and its text search |
 | `style_selector_style` | Both | `filled`, `dropdown`, `preview-list`, `preview-grid`, `preview-strip`, `preview-carousel`, `preview-wheel`, or `original` |
 | `effect_view` | Both | `grid` or `list` for the Original browser |
-| `items_per_page` | Both | Pagination for grid/list browsers; editor range 0-16, with 0 meaning no pagination |
-| `visible_styles` / `visible_effects` | Clock / Native Effects | Ordered browser selection of style keys / effect names |
-| `show_favourites` | Both | Show saved style/effect and colour combinations |
+| `items_per_page` | Both | Pagination for Original and Live Preview list/grid browsers; editor range 0-16, with 0 meaning no pagination |
+| `show_badges` | Both | Capability labels in the Original browser |
+| `visible_styles` / `visible_effects` | Clock / Native Effects | Ordered browser selection of style keys / effect names (Clock also needs `custom_visible_styles: true`) |
+| `show_favourites`, `favourites_show_stars`, `favourites_show_previews` | Both | Show saved style/effect and colour combinations, the gold star badges, and animated favourite previews |
 | `show_rotation` | Both | Show backend rotation status and commands |
 | `rotation_interval` | Both | Seconds between rotation steps, 10-604800 |
-| `show_brightness`, `show_animation_speed` | Both | Show applicable lamp sliders |
-| `show_content_toggle`, `show_format_toggles` | Clock | Time/date content and time-format controls |
-| `preview_appearance`, `preview_overrides` | Both | Shared and per-surface appearance, described below |
+| `preview_appearance`, `preview_overrides`, `appearance_presets` | Both | Shared and per-surface appearance, described below |
 
 Use the visual editor for section visibility, button styles, orientation,
 appearance presets and browser layouts. Colour-responsive filtering is automatic;
@@ -73,8 +78,8 @@ targets. A single multi-target Start aligns item selection across the group.
 Independent Start calls are separate rotations, and animation frames are not
 guaranteed to be physically phase-synchronised.
 
-Screenshots and their automatic regeneration workflow are documented under
-[Documentation Screenshots](README.md#documentation-screenshots).
+Screenshots and their automatic regeneration workflow are documented in
+[docs/DOCUMENTATION_SCREENSHOTS.md](docs/DOCUMENTATION_SCREENSHOTS.md).
 
 ## Shared Preview Appearance
 
@@ -144,7 +149,7 @@ window.yeelightCubeDiagnostics.stop();
 window.yeelightCubeDiagnostics.clear();
 ```
 
-Regression check: set `STARTUP_ONLY=1` when running `node tests/card-ui-parity.cjs` with the usual Playwright environment. It injects a shared-module 503, verifies all seven main cards fail while the standalone Font Editor loads, then verifies reload recovery and diagnostic retention. This reproduces a possible failure mechanism, not proof of any particular production outage.
+Regression check: set `STARTUP_ONLY=1` when running `node tests/card-ui-parity.cjs` with the usual Playwright environment. It injects a shared-module 503, verifies all seven main cards fail while a standalone card with no shared imports still loads, then verifies reload recovery and diagnostic retention. The standalone control it uses is the internal Font Editor card, which is not shipped in the public repository, so this check only runs from a development checkout. It reproduces a possible failure mechanism, not proof of any particular production outage.
 
 ---
 
@@ -207,7 +212,7 @@ Change the text font.
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
-| `font` | Yes | Font name: `basic`, `fat`, or `italic` |
+| `font` | Yes | Font name: `basic`, `fat`, `italic`, or `native` (Basic with the firmware clock's digit shapes) |
 | `entity_id` | Yes | Target lamp entity |
 
 ```yaml
@@ -316,12 +321,6 @@ data:
     - { "position": 77, "color": [0, 255, 255] }
 ```
 
-<table>
-  <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Actions/Action-Apply-Custom-Pixels-Sparse.png" alt="Action - apply_custom_pixels (sparse)"></td>
-  </tr>
-</table>
-
 **Grouped positions** - assign the same color to multiple pixels in one entry:
 
 ```yaml
@@ -371,8 +370,8 @@ Save a drawing to the pixel art collection.
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
-| `name` | Yes | Name for the saved pixel art |
-| `pixels` | Yes | Array of `{ position, color }` entries (single or grouped positions) |
+| `name` | No | Name for the saved pixel art; defaults to `Pixel Art N` |
+| `pixels` | Yes | Array of `{ position, color }` entries (single or grouped positions); black pixels are dropped |
 
 > [!TIP]
 > The response from `get_pixel_art` (with `group_by_color: true`) uses the same format, so you can paste it directly into `save_pixel_art` without editing.
@@ -586,17 +585,18 @@ Switch display modes, set gradient angles, and control how colors fill the lamp.
 
 ### `set_mode`
 
-Change the active native clock or Matrix display mode.
+Switch to the native Clock or Native Effect content, or change the Matrix display mode.
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
 | `mode` | Yes | Display mode (see table below) |
 | `full_panel` | No | Fill the entire 20×5 pixel grid (`true`) or restrict the gradient to text pixels only (`false`). Setting this alongside `mode` avoids a redundant second call. |
-| `entity_id` | Yes | Target lamp entity |
+| `entity_id` | Yes | Target lamp entity (list supported) |
 
 | Mode | Description |
 | :-- | :-- |
 | **Clock** | Firmware-native clock using the configured clock style and options |
+| **Native Effect** | Firmware-native animation using the selected Native effect, speed and direction |
 | **Solid Color** | Single color fill |
 | **Letter Gradient** | Gradient per letter |
 | **Column Gradient** | Vertical gradient across 20 columns |
@@ -617,9 +617,10 @@ data:
 ```
 
 `Clock` uses the Cube Lite private LAN command and has no device state readback.
-The Clock Style, Clock Content (Time / Time & Date / Date only), Clock Show Date,
-Clock 12-Hour Format, and Clock Colon Blink entities configure the values sent
-when Clock mode is activated.
+The Clock: Style, Clock: Content (Time / Time & Date / Date only), Clock: Show
+date, Clock: 12-hour format, and Clock: Blink colon entities configure the values
+sent when Clock mode is activated. Music Flow is not a `set_mode` value; select
+it through the **Content mode** entity.
 
 ---
 
@@ -629,8 +630,8 @@ Set a single solid RGB color on the lamp (shortcut for Solid Color mode).
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
-| `rgb_color` | Yes | `[R, G, B]` array (0-255) |
-| `entity_id` | Yes | Target lamp entity |
+| `rgb_color` | Yes | `[R, G, B]` array (0-255) or a hex string such as `"#FF8000"` |
+| `entity_id` | Yes | Target lamp entity (list supported) |
 
 ```yaml
 action: yeelight_cube.set_solid_color
@@ -679,7 +680,7 @@ data:
 
 ### `preview_gradient_modes`
 
-Generate preview matrix data for all gradient modes using the entity's current text, colors, and angle. This service does **not** change what is displayed on the lamp — instead it fires a `yeelight_cube_gradient_preview_response` event containing rendered 20×5 pixel matrices for every mode, which the Gradient Card reads to display live mode previews without touching the lamp.
+Generate preview matrix data for the nine text/gradient modes (every Matrix mode except Panel Color Sequence and Custom Draw) using the entity's current text, colors, and angle. This service does **not** change what is displayed on the lamp — instead it fires a `yeelight_cube_gradient_preview_response` event containing rendered 20×5 pixel matrices for every mode, which the Gradient Card reads to display live mode previews without touching the lamp.
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
@@ -694,7 +695,7 @@ data:
 ```
 
 > [!NOTE]
-> Results are delivered via the **`yeelight_cube_gradient_preview_response`** event on the HA event bus, not as a direct return value. The event payload includes `previews` (a dict of mode name → 100-pixel color list), `text`, `angle`, `brightness`, `full_panel`, and other current display state values.
+> Results are delivered via the **`yeelight_cube_gradient_preview_response`** event on the HA event bus, not as a direct return value. The event payload includes `entity_id`, `previews` (a dict of mode name → 100-pixel color list), `rows`, `cols`, `text`, `angle`, `brightness`, `darken_percent`, `apply_brightness` and `full_panel`.
 
 ---
 
@@ -890,9 +891,12 @@ data:
 `Waterfall`, `Bonfire`, `Color Trails`, `Pinball`, `Tide`, `Flower Sea`,
 `Drift`, `Spectrum Bands`, `Magic`, `Wonderland`, `Twinkle`, `Kaleidoscope`
 
-A numeric firmware mode id (`1`–`99`) may also be passed as `style` to reach an
-unnamed mode. Solid-colour styles (`White`, `Mint`, `Yellow`, …) ignore
-`color_mode`; animated styles honour it.
+`style` also accepts the numeric clock style id (1–10 for the standard styles,
+11 and up for experimental ones, as exposed by the light's `clock_style_id`
+attribute). Unnamed experimental styles, whose name is just their firmware mode
+number, can only be selected by id. Selecting an experimental style switches
+the lamp's Experimental Features on. Solid-colour styles (`White`, `Mint`,
+`Yellow`, …) ignore `color_mode`; animated styles honour it.
 
 </details>
 
@@ -903,14 +907,17 @@ unnamed mode. Solid-colour styles (`White`, `Mint`, `Yellow`, …) ignore
 ### `save_clock_preset` / `delete_clock_preset`
 
 Manage the shared solid-colour clock library (reused by the Clock and Native
-Effects cards). Saved styles appear as clock styles with `custom:<id>` keys.
+Effects cards and exposed by the **Clock Colour Presets** sensor). Saved styles
+appear as clock styles with `custom:<id>` keys. The library holds at most 100
+presets; `style` names must not clash with a built-in clock style, and names
+are unique per kind. Neither service sends anything to the lamp.
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
 | `name` | Yes | Display name (1–40 characters) |
 | `color` | Yes | RGB colour as three integers 0–255 |
 | `preset_id` | No | Existing id when editing; omit to create |
-| `kind` | No | `style` (solid clock style) or `color_mode` (reusable colour) — default `style` for new presets |
+| `kind` | No | `style` (solid clock style) or `color_mode` (reusable colour) — default `style` for new presets, preserved when editing |
 
 ```yaml
 action: yeelight_cube.save_clock_preset
@@ -1345,7 +1352,8 @@ data:
 
 ### `is_device_managed`
 
-Check if a device is managed.
+Check if a device is managed. The result is fired as a
+`yeelight_cube_device_check_result` event (`ip_address`, `is_managed`).
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
@@ -1361,7 +1369,8 @@ data:
 
 ### `list_managed_devices`
 
-List all managed devices. No parameters required.
+List all managed devices. No parameters required. The list is fired as a
+`yeelight_cube_managed_devices_list` event (`devices`).
 
 ```yaml
 action: yeelight_cube.list_managed_devices
@@ -1371,13 +1380,14 @@ action: yeelight_cube.list_managed_devices
 
 ### `test_device_detection`
 
-Test device detection logic.
+Test device detection logic. The result is fired as a
+`yeelight_cube_detection_test_result` event (`would_be_detected: true/false`).
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
-| `device_model` | Yes | Device model identifier |
-| `device_name` | Yes | Device name |
-| `device_id` | Yes | Device ID |
+| `device_model` | No | Device model identifier (mDNS `md` property); default empty |
+| `device_name` | No | Device name (`fn` property); default empty |
+| `device_id` | No | Device ID (`id` property); default empty |
 
 ```yaml
 action: yeelight_cube.test_device_detection
@@ -1444,9 +1454,9 @@ Manually trigger discovery for a device.
 | Field | Required | Description |
 | :-- | :-- | :-- |
 | `ip_address` | Yes | Device IP address |
-| `device_name` | Yes | Device name |
-| `device_model` | Yes | Device model identifier |
-| `device_id` | Yes | Device ID |
+| `device_name` | No | Device name; defaults to `Test Device <ip>` |
+| `device_model` | No | Device model identifier; defaults to `cubelite` |
+| `device_id` | No | Device ID; defaults to `0x12345678` |
 
 ```yaml
 action: yeelight_cube.trigger_manual_discovery
@@ -1466,7 +1476,7 @@ Create a discovery flow for a cube.
 | Field | Required | Description |
 | :-- | :-- | :-- |
 | `ip_address` | Yes | Device IP address |
-| `device_name` | Yes | Device name |
+| `device_name` | No | Device name; defaults to `Yeelight Cube Lite <ip>` |
 
 ```yaml
 action: yeelight_cube.create_cube_discovery
@@ -1479,7 +1489,9 @@ data:
 
 ### `test_display`
 
-Test cube connectivity and display.
+Test cube connectivity and display: forces the lamp on, re-establishes the FX
+handshake and re-applies the current display, logging the entity state and
+connection status at debug level.
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
@@ -1490,6 +1502,26 @@ action: yeelight_cube.test_display
 data:
   entity_id: light.cubelite_192_168_4_102
 ```
+
+---
+
+### Internal and debug services
+
+These services are registered (so they appear in Developer Tools) but are
+**not a stable API**. They exist for the internal calibration and
+reverse-engineering cards, which are not shipped in the public repository.
+
+| Service | Purpose |
+| :-- | :-- |
+| `set_calibration_lock` | Take/release exclusive control of a lamp for the calibration wizard (`enabled`, `entity_id`); the lock auto-releases after 15 minutes |
+| `send_fx_effect` | Send a raw private LAN command (default `set_fx_effect`) with structured or verbatim parameters |
+| `query_raw` | Send a raw command and return the lamp's reply (response data) |
+| `get_capabilities` | Run the yeelight library's SSDP capability probe and return the headers |
+| `bulb_call` | Read an allow-listed `yeelight.Bulb` member or call an allow-listed write method |
+| `set_default` | Send the documented `set_default` command so the lamp restores its current state after a power cut |
+
+Raw commands bypass the integration's state tracking and can leave the lamp in
+a mode Home Assistant does not know about; use **Force Refresh** afterwards.
 
 ---
 
@@ -1576,15 +1608,18 @@ All services are fully compatible with Node-RED with parameter descriptions, ent
 
 ## 📋 Service Response Data
 
-Some services return data that can be used in automations.
+Some services return data (use `response_variable` in scripts) or report their
+result through an event on the HA event bus.
 
 | Service | Returns |
 | :-- | :-- |
-| `list_managed_devices` | List of managed IP addresses |
-| `get_pixel_art` | `{ name, pixels }` in flat or grouped format (see [get_pixel_art](#get_pixel_art)) |
-| `preview_gradient_modes` | Fires `yeelight_cube_gradient_preview_response` event with 20×5 pixel matrices per mode |
-| `test_device_detection` | Boolean indicating if device would be detected |
-| `is_device_managed` | Boolean indicating if device is managed |
+| `get_pixel_art` | Response data: `{ name, pixels }` in flat or grouped format (see [get_pixel_art](#get_pixel_art)) |
+| `preview_gradient_modes` | Event `yeelight_cube_gradient_preview_response` with 20×5 pixel matrices per mode |
+| `list_managed_devices` | Event `yeelight_cube_managed_devices_list` with `devices` (list of IP addresses) |
+| `is_device_managed` | Event `yeelight_cube_device_check_result` with `ip_address` and `is_managed` |
+| `test_device_detection` | Event `yeelight_cube_detection_test_result` with `would_be_detected` |
+| `force_rediscovery`, `trigger_manual_discovery`, `create_cube_discovery`, `ignore_yeelight_discovery`, `ignore_specific_yeelight` | Events `yeelight_cube_rediscovery_forced`, `yeelight_cube_manual_discovery_triggered`, `yeelight_cube_cube_discovery_created`, `yeelight_cube_yeelight_discovery_ignored`, `yeelight_cube_yeelight_device_ignored` |
+| `query_raw`, `get_capabilities`, `bulb_call`, `send_fx_effect` | Optional response data (debug services) |
 
 ---
 

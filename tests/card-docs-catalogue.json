@@ -28,8 +28,7 @@
                 "title": "Rounded pixels and compact text styles",
                 "config": {
                     "slider_style": "slider",
-                    "style_selector_style": "text",
-                    "text_selector_style": "filled",
+                    "style_selector_style": "filled",
                     "buttons_style": "outline",
                     "preview_appearance": {
                         "background": "white",
@@ -55,9 +54,14 @@
         "editors": {
             "general": "Global Settings",
             "preview_appearance": "Preview Appearance",
+            "lamp_preview": "Lamp Preview",
+            "actions": "Actions",
             "speed": "Sliders",
+            "display": "Content & Controls",
+            "presets": "Custom clock styles and colours",
             "previews": "Previews",
-            "rotation": "Rotation"
+            "favourites": "Favourites",
+            "rotation": "Clock Mode Rotation"
         }
     },
     "native-effects": {
@@ -89,8 +93,7 @@
                 "title": "Rounded pixels and compact text effects",
                 "config": {
                     "slider_style": "slider",
-                    "style_selector_style": "text",
-                    "text_selector_style": "filled",
+                    "style_selector_style": "filled",
                     "buttons_style": "outline",
                     "preview_appearance": {
                         "background": "white",
@@ -116,9 +119,20 @@
         "editors": {
             "general": "Global Settings",
             "preview_appearance": "Preview Appearance",
+            "preview": "Lamp Preview",
+            "actions": "Actions",
             "sliders": "Sliders",
+            "orientation": {
+                "title": "Device Orientation",
+                "config": {
+                    "show_device_orientation": true
+                }
+            },
+            "colors": "Colour Modes & Controls",
+            "presets": "Custom colours",
             "previews": "Previews",
-            "rotation": "Rotation"
+            "favourites": "Favourites",
+            "rotation": "Effect Rotation"
         }
     },
     "lamp-preview": {
@@ -148,6 +162,14 @@
         "editors": {
             "global": "Global Settings",
             "preview_appearance": "Preview Appearance",
+            "lampPreview": "Lamp Preview",
+            "lampControl": "Actions",
+            "deviceOrientation": {
+                "title": "Device Orientation",
+                "config": {
+                    "show_device_orientation": true
+                }
+            },
             "brightnessSettings": "Brightness Settings",
             "colorAdjustments": "Color Adjustments"
         }

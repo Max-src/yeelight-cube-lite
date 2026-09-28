@@ -13,6 +13,33 @@ const catalogue = {
 const start = "<!-- card-docs:clock:variations:start -->";
 const end = "<!-- card-docs:clock:variations:end -->";
 
+test("editor entries accept a caption string or a { title, config } object", () => {
+  const editors = {
+    clock: {
+      title: "Clock",
+      variations: {},
+      editors: {
+        general: "Global Settings",
+        orientation: {
+          title: "Device Orientation",
+          config: { show_device_orientation: true },
+        },
+      },
+    },
+  };
+  const after = updateGalleries(
+    "<!-- card-docs:clock:editors:start -->\n<!-- card-docs:clock:editors:end -->",
+    editors,
+    () => true,
+  );
+  assert.match(after, /clock-editor-general\.png" alt="Clock - Global Settings"/);
+  assert.match(
+    after,
+    /clock-editor-orientation\.png" alt="Clock - Device Orientation"/,
+  );
+  assert.ok(!after.includes("[object Object]"));
+});
+
 test("gallery generation preserves manual prose, YAML and line endings", () => {
   const before = `My edited feature table\r\n${start}\r\nold images\r\n${end}\r\n\`\`\`yaml\r\ntitle: Mine\r\n\`\`\`\r\n`;
   const after = updateGalleries(before, catalogue, () => true);

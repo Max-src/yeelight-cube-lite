@@ -108,12 +108,16 @@ print(json.dumps({'font_maps': data['FONT_MAPS'], 'font_metrics': data['FONT_MET
   const verified = new Map();
   let onboardState;
   for (const [kind, definition] of Object.entries(catalogue)) {
+    // Editor entries are either a caption string or { title, config } when the
+    // panel needs settings beyond the fixture defaults (e.g. a hidden section).
     const scenarios = {
       ...definition.variations,
       ...Object.fromEntries(
-        Object.entries(definition.editors).map(([section, title]) => [
+        Object.entries(definition.editors).map(([section, entry]) => [
           `editor-${section}`,
-          { section, title },
+          typeof entry === "string"
+            ? { section, title: entry }
+            : { section, ...entry },
         ]),
       ),
     };

@@ -13,6 +13,10 @@ It supplies image names, captions, theme, width and actual card settings.
 The README galleries are derived from the same catalogue. Add scenarios there
 without manually adding image links. Editor IDs must match the real editor;
 missing panels fail capture rather than silently producing a placeholder.
+An editor entry is either its caption (`"general": "Global Settings"`) or
+`{ "title": ..., "config": {...} }` when the panel only renders its settings
+with a non-default option, such as `show_device_orientation: true`. Every
+foldable editor section of the three cards is registered.
 
 The other cards' historical images and Preview's extra layout examples are
 still manual. To migrate another card, register its scenarios, load its actual

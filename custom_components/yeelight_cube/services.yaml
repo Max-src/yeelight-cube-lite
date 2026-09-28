@@ -110,7 +110,7 @@ ignore_specific_yeelight:
 
 load_palette:
   name: Load Palette
-  description: Load a palette by index and apply it to the specified entity or all entities
+  description: Load a saved palette by index and apply its colors to the target lamp(s)
   fields:
     idx:
       description: Index of the palette to load (0-based)
@@ -264,7 +264,7 @@ set_clock_style:
 
 preview_gradient_modes:
   name: Preview Gradient Modes
-  description: Generate full 5x20 preview matrices for all gradient modes using the entity's current text, colors, and angle. Returns previews via event bus.
+  description: Generate full 20x5 preview matrices for the text/gradient display modes using the entity's current text, colors, and angle. Does not change the lamp; results are fired as a yeelight_cube_gradient_preview_response event.
   fields:
     entity_id:
       description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
@@ -273,6 +273,13 @@ preview_gradient_modes:
       selector:
         entity:
           domain: light
+    apply_brightness:
+      description: Include the current lamp brightness in the preview matrices.
+      example: false
+      required: false
+      default: false
+      selector:
+        boolean:
 
 set_custom_text:
   name: Set Custom Text
@@ -319,11 +326,11 @@ set_text_colors:
 
 apply_custom_pixels:
   name: Apply Custom Pixels
-  description: Apply pixel art to the cube by setting individual pixel colors on the 10x10 matrix.
+  description: Display a pixel art frame on the 20x5 matrix. Positions run 0-99 left-to-right then bottom-to-top; missing positions stay black.
   fields:
     pixels:
-      description: Array of 100 RGB color arrays representing the 10x10 matrix pixels, e.g. [[255,0,0], [0,255,0], ...]
-      example: "[[255,0,0], [0,255,0], [0,0,255], ...]"
+      description: Array of {position, color} entries. position is a single index (0-99) or a list of indexes; color is [R, G, B].
+      example: '[{"position": 49, "color": [255, 255, 0]}, {"position": [0, 1, 2], "color": [0, 128, 255]}]'
       required: true
       selector:
         object:
@@ -579,6 +586,13 @@ set_native_effect:
           min: 1
           max: 255
           mode: slider
+    color:
+      description: >-
+        Custom RGB colour [r, g, b] for effects that support a colour override,
+        or "clear" to return to the effect's own colours.
+      example: "[255, 80, 20]"
+      selector:
+        object:
     color_mode:
       description: Palette for compatible effects. Normal restores the effect's own colours. Independent of clock palettes.
       selector:
@@ -722,16 +736,16 @@ set_brightness:
 
 save_pixel_art:
   name: Save Pixel Art
-  description: Save current drawing as a named pixel art for later reuse.
+  description: Save a drawing as a named pixel art in the shared collection for later reuse.
   fields:
     pixels:
-      description: Array of pixel objects with position and color
-      example: '[{"position": 0, "color": [255, 0, 0]}, {"position": 1, "color": [0, 255, 0]}]'
+      description: Array of {position, color} entries; position is an index (0-99) or a list of indexes, color is [R, G, B]
+      example: '[{"position": 0, "color": [255, 0, 0]}, {"position": [5, 6, 7], "color": [0, 255, 0]}]'
       required: true
       selector:
         object:
     name:
-      description: Name for the saved pixel art
+      description: Name for the saved pixel art (defaults to "Pixel Art N")
       example: "My Drawing"
       required: false
       selector:
@@ -814,8 +828,8 @@ update_pixel_arts:
   description: Append or replace the pixel art collection. Default is non-destructive (appends to existing).
   fields:
     pixel_arts:
-      description: Array of pixel art objects with name and pixels
-      example: '[{"name": "Art1", "pixels": [[255,0,0], [0,255,0], ...]}, {"name": "Art2", "pixels": [...]}]'
+      description: Array of pixel art objects with name and pixels ({position, color} entries, as accepted by save_pixel_art)
+      example: '[{"name": "Art1", "pixels": [{"position": 0, "color": [255, 0, 0]}, {"position": [1, 2], "color": [0, 255, 0]}]}]'
       required: true
       selector:
         object:
@@ -957,8 +971,9 @@ set_font:
         select:
           options:
             - "basic"
-            - "koubit"
-            - "josefin"
+            - "fat"
+            - "italic"
+            - "native"
     entity_id:
       description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
       required: true
@@ -1011,8 +1026,15 @@ display_image:
 
 test_display:
   name: Test Display
-  description: Test service to manually trigger display mode application for debugging.
-  fields: {}
+  description: Test service to manually trigger display mode application for debugging. Forces the lamp on, re-establishes the FX handshake and re-applies the current display.
+  fields:
+    entity_id:
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
+      example: "light.cubelite_192_168_4_139"
+      required: true
+      selector:
+        entity:
+          domain: light
 
 set_preview_adjustments:
   name: Set Color Effects

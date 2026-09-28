@@ -1467,7 +1467,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         "apply_custom_pixels",
         handle_apply_custom_pixels,
         schema=vol.Schema({
-            vol.Required("pixels", description="Array of 100 RGB color arrays representing the 10x10 matrix pixels, e.g. [[255,0,0], [0,255,0], ...]"): list,
+            vol.Required("pixels", description="Array of {position, color} entries for the 20x5 matrix (position 0-99 or a list of positions, color [R, G, B]); missing positions stay black"): list,
             vol.Required("entity_id", description="Target lamp entity (e.g. light.cubelite_192_168_4_102)"): _entity_id_or_list,
         }, extra=vol.ALLOW_EXTRA)
     )
