@@ -206,6 +206,22 @@ window.cardDocs = {
     this.kind = kind;
   },
 
+  // ha-icon fetches its SVG path asynchronously, after its own update has
+  // completed, so updateComplete does not cover it. Report whether every icon
+  // in the card (including nested shadow roots) has drawn its path.
+  iconsReady() {
+    const roots = [this.container];
+    const icons = [];
+    for (const root of roots)
+      for (const element of root.querySelectorAll("*")) {
+        if (element.localName === "ha-icon" && element.icon) icons.push(element);
+        if (element.shadowRoot) roots.push(element.shadowRoot);
+      }
+    return icons.every(
+      (icon) => icon.shadowRoot?.querySelector("ha-svg-icon")?.path,
+    );
+  },
+
   async settle() {
     const card = this.card;
     card._animLoop?.stop();

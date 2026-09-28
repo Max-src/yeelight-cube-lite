@@ -70,6 +70,16 @@ async function onboard(context) {
   );
 }
 
+// Wait until every ha-icon has drawn. Polls from Node in real time because the
+// page's own timers are frozen by page.clock during capture.
+async function waitForIcons(page, file) {
+  const deadline = Date.now() + 10000;
+  while (!(await page.evaluate(() => window.cardDocs.iconsReady()))) {
+    assert.ok(Date.now() < deadline, `Icons did not load: ${file}`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 async function main() {
   assert.ok(
     process.env.DOCS_HA_STORAGE_STATE || process.env.DOCS_HA_ONBOARD === "1",
@@ -202,12 +212,14 @@ print(json.dumps({'font_maps': data['FONT_MAPS'], 'font_metrics': data['FONT_MET
           await page.clock.runFor(1200);
           await page.evaluate(() => window.cardDocs.settle());
           const file = `${kind}-${scenario}.png`;
+          await waitForIcons(page, file);
           const selector = await page.evaluate(
             () => window.cardDocs.captureSelector,
           );
           let clip = await page.locator(selector).boundingBox();
           await page.screenshot({ clip, ...screenshotOptions });
           await page.evaluate(() => window.cardDocs.settle());
+          await waitForIcons(page, file);
           clip = await page.locator(selector).boundingBox();
           assert.ok(
             clip && clip.width > 0 && clip.height > 0,
