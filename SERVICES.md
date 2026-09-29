@@ -285,6 +285,13 @@ data:
 
 Push pixel art to the lamp, and manage the saved pixel art collection.
 
+> [!NOTE]
+> Colours are always `[R, G, B]` arrays of integers 0-255. Collections are
+> capped: 500 palettes, 500 pixel arts, 100 colours per palette or colour list,
+> 1000 pixel entries per pixel art, and names of up to 100 characters. Calls
+> that exceed these limits or contain malformed data are rejected with an error
+> instead of being stored.
+
 ### `apply_custom_pixels`
 
 Display a pixel art frame on the lamp. The lamp has 100 pixels arranged in a 20×5 grid (20 columns, 5 rows). Positions are numbered 0-99, left-to-right then bottom-to-top (position 0 = bottom-left, position 99 = top-right).
@@ -728,6 +735,13 @@ data:
 
 Save, load, and manage color palettes shared across all cards and lamps.
 
+> [!NOTE]
+> Colours are always `[R, G, B]` arrays of integers 0-255. Collections are
+> capped: 500 palettes, 500 pixel arts, 100 colours per palette or colour list,
+> 1000 pixel entries per pixel art, and names of up to 100 characters. Calls
+> that exceed these limits or contain malformed data are rejected with an error
+> instead of being stored.
+
 <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Palettes-Card-Variation-1.png" alt="Palettes card" width="360">
 
 ### `save_palette`
@@ -894,6 +908,14 @@ because they have no stable name.
 </details>
 
 Experimental effects require **Experimental Features** to be enabled on the lamp.
+
+The call validates its fields (unknown effect, unsupported speed or colour,
+experimental effect while Experimental Features is off, lamp off with
+auto-turn-on disabled) and fails immediately on any of them. It then publishes
+the new settings and returns without waiting for the lamp, exactly like
+`set_clock_style`. The lamp is updated in the background, and a failure there
+(e.g. the lamp is unreachable) is written to the Home Assistant log instead of
+being returned to the caller.
 
 <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/generated/native-effects-overview.png" alt="Native Effects card" width="360">
 

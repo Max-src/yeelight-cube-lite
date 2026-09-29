@@ -41,7 +41,7 @@ import {
   markFavouriteModes,
 } from "./gallery-display-utils.js";
 import { styleSelectorStyles } from "./style-selector-utils.js";
-import { BLACK_THRESHOLD } from "./draw_card_const.js";
+import { BLACK_THRESHOLD } from "./matrix-const.js";
 import { actionButtonStyles } from "./action-button-utils.js";
 import {
   renderSliderGroup,
@@ -72,6 +72,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     _busy: { state: true },
     _error: { state: true },
     _customColorDraft: { state: true },
+    _pendingColorSelection: { state: true },
   };
 
   constructor() {
@@ -560,6 +561,9 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   }
 
   _currentColorSelection() {
+    // A clicked colour mode is shown straight away while its request is in
+    // flight (it may be queued behind an effect change); it reverts on failure.
+    if (this._pendingColorSelection) return this._pendingColorSelection;
     const attrs = this._attrs();
     if (this._customColorDraft && this._supportsCustomColor())
       return "__draft__";
@@ -675,15 +679,23 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       return;
     }
     const context = this._context;
-    const success = await this._command("set_native_effect", {
-      effect,
-      color_mode: mode,
-      ...(preset
-        ? { color: [...preset.color] }
-        : Object.hasOwn(this._attrs(), "native_effect_color")
-          ? { color: "clear" }
-          : {}),
-    });
+    this._pendingColorSelection = value;
+    let success = false;
+    try {
+      success = await this._command("set_native_effect", {
+        effect,
+        color_mode: mode,
+        ...(preset
+          ? { color: [...preset.color] }
+          : Object.hasOwn(this._attrs(), "native_effect_color")
+            ? { color: "clear" }
+            : {}),
+      });
+    } finally {
+      // Only the latest click owns the pending highlight.
+      if (this._pendingColorSelection === value)
+        this._pendingColorSelection = null;
+    }
     if (success && context === this._context) {
       this._customColorDraft = null;
       this._selectedColorPresetId = preset?.id;
@@ -759,7 +771,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
                 .selected=${this._currentColorSelection()}
                 .draft=${this._customColorDraft}
                 .hass=${this._hass}
-                .disabled=${this._busy || this._controls.busy}
                 .saveKinds=${this._supportsCustomColor() &&
                 this.config.show_save_color_mode_button !== false
                   ? ["color_mode"]

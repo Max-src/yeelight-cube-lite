@@ -62,6 +62,68 @@ from .light import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Limits for user-supplied collections. Every client (cards, automations,
+# imported files) goes through these schemas, so bad or oversized data is
+# rejected up front instead of being stored and breaking a later render.
+MAX_COLORS = 100
+MAX_PALETTES = 500
+MAX_PIXEL_ARTS = 500
+MAX_PIXEL_ENTRIES = 1000
+MAX_NAME_LENGTH = 100
+
+RGB_SCHEMA = vol.All(
+    vol.ExactSequence((cv.byte, cv.byte, cv.byte)), vol.Coerce(tuple)
+)
+COLOR_LIST_SCHEMA = vol.All([RGB_SCHEMA], vol.Length(min=1, max=MAX_COLORS))
+NAME_SCHEMA = vol.All(cv.string, vol.Length(max=MAX_NAME_LENGTH))
+# Stored/exported names may be missing or null; they fall back to "Palette N"
+# / "Pixel Art N".
+OPTIONAL_NAME_SCHEMA = vol.Any(None, NAME_SCHEMA)
+_POSITION_LIST = vol.All([cv.positive_int], vol.Length(max=MAX_PIXEL_ENTRIES))
+PIXEL_ENTRY_SCHEMA = vol.Any(
+    vol.Schema(
+        {
+            vol.Required("position"): vol.Any(cv.positive_int, _POSITION_LIST),
+            vol.Required("color"): RGB_SCHEMA,
+        },
+        extra=vol.REMOVE_EXTRA,
+    ),
+    # Legacy stored/exported format used "positions" (plural).
+    vol.Schema(
+        {
+            vol.Required("positions"): _POSITION_LIST,
+            vol.Required("color"): RGB_SCHEMA,
+        },
+        extra=vol.REMOVE_EXTRA,
+    ),
+)
+PIXEL_LIST_SCHEMA = vol.All([PIXEL_ENTRY_SCHEMA], vol.Length(max=MAX_PIXEL_ENTRIES))
+PALETTE_SCHEMA = vol.Schema(
+    {
+        vol.Optional("name"): OPTIONAL_NAME_SCHEMA,
+        vol.Required("colors"): COLOR_LIST_SCHEMA,
+    },
+    extra=vol.REMOVE_EXTRA,
+)
+PALETTE_LIST_SCHEMA = vol.All([PALETTE_SCHEMA], vol.Length(max=MAX_PALETTES))
+PIXEL_ART_SCHEMA = vol.Schema(
+    {
+        vol.Optional("name"): OPTIONAL_NAME_SCHEMA,
+        vol.Required("pixels"): PIXEL_LIST_SCHEMA,
+    },
+    extra=vol.REMOVE_EXTRA,
+)
+PIXEL_ART_LIST_SCHEMA = vol.All([PIXEL_ART_SCHEMA], vol.Length(max=MAX_PIXEL_ARTS))
+
+
+def _check_collection_size(current, added, limit, label):
+    """Refuse an append that would grow a shared collection past ``limit``."""
+    if current + added > limit:
+        raise HomeAssistantError(
+            f"The {label} collection is limited to {limit} items "
+            f"({current} saved, {added} to add)."
+        )
+
 
 def async_setup_light_services(hass: HomeAssistant) -> bool:
     """Register the currently imported entity-facing actions.
@@ -656,22 +718,23 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             _LOGGER.error("update_pixel_arts expects a list of pixel art dicts")
             return
         
-        # Validate structure: each item should be a dict with 'name' and 'pixels' (list)
-        valid_pixel_arts = []
-        for art in pixel_arts:
-            if (
-                isinstance(art, dict)
-                and "name" in art
-                and "pixels" in art
-                and isinstance(art["pixels"], list)
-            ):
-                valid_pixel_arts.append({
-                    "name": normalize_display_name(
-                        art["name"], f"Pixel Art {len(valid_pixel_arts) + 1}"
-                    ),
-                    "pixels": _normalize_pixels(art["pixels"]),
-                })
-        
+        # The schema has already validated every art, pixel and colour.
+        existing_count = len(hass.data.get(DOMAIN, {}).get("pixel_arts", []))
+        if not replace:
+            _check_collection_size(
+                existing_count, len(pixel_arts), MAX_PIXEL_ARTS, "pixel art"
+            )
+        offset = 0 if replace else existing_count
+        valid_pixel_arts = [
+            {
+                "name": normalize_display_name(
+                    art.get("name") or "", f"Pixel Art {offset + index + 1}"
+                ),
+                "pixels": _normalize_pixels(art["pixels"]),
+            }
+            for index, art in enumerate(pixel_arts)
+        ]
+
         # Update global storage
         if DOMAIN not in hass.data:
             hass.data[DOMAIN] = {}
@@ -741,6 +804,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             hass.data[DOMAIN]["pixel_arts"] = []
         
         pixel_arts = hass.data[DOMAIN]["pixel_arts"]
+        _check_collection_size(len(pixel_arts), 1, MAX_PIXEL_ARTS, "pixel art")
         if not name:
             name = f"Pixel Art {len(pixel_arts) + 1}"
         name = normalize_display_name(name, f"Pixel Art {len(pixel_arts) + 1}")
@@ -1499,16 +1563,8 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         "save_pixel_art",
         handle_save_pixel_art,
         schema=vol.Schema({
-            vol.Required("pixels"): [
-                {
-                    vol.Required("position"): vol.Any(
-                        cv.positive_int,
-                        [cv.positive_int],
-                    ),
-                    vol.Required("color"): vol.All(vol.ExactSequence((cv.byte, cv.byte, cv.byte)), vol.Coerce(tuple)),
-                }
-            ],
-            vol.Optional("name"): cv.string,
+            vol.Required("pixels"): PIXEL_LIST_SCHEMA,
+            vol.Optional("name"): NAME_SCHEMA,
         }, extra=vol.ALLOW_EXTRA)
     )
     hass.services.async_register(
@@ -1526,7 +1582,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         handle_rename_pixel_art,
         schema=vol.Schema({
             vol.Required("idx"): vol.All(int, vol.Range(min=0)),
-            vol.Required("name"): cv.string,
+            vol.Required("name"): NAME_SCHEMA,
             vol.Optional("expected_name"): vol.Any(None, cv.string),
         }, extra=vol.ALLOW_EXTRA)
     )
@@ -1545,7 +1601,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         "apply_custom_pixels",
         handle_apply_custom_pixels,
         schema=vol.Schema({
-            vol.Required("pixels", description="Array of {position, color} entries for the 20x5 matrix (position 0-99 or a list of positions, color [R, G, B]); missing positions stay black"): list,
+            vol.Required("pixels", description="Array of {position, color} entries for the 20x5 matrix (position 0-99 or a list of positions, color [R, G, B]); missing positions stay black"): PIXEL_LIST_SCHEMA,
             vol.Required("entity_id", description="Target lamp entity (e.g. light.cubelite_192_168_4_102)"): _entity_id_or_list,
         }, extra=vol.ALLOW_EXTRA)
     )
@@ -1638,7 +1694,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         "update_pixel_arts",
         handle_update_pixel_arts,
         schema=vol.Schema({
-            vol.Required("pixel_arts"): list,
+            vol.Required("pixel_arts"): PIXEL_ART_LIST_SCHEMA,
             vol.Optional("replace", default=False): bool,
         }, extra=vol.ALLOW_EXTRA)
     )
@@ -1804,14 +1860,14 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         for pal in palettes:
             if (
                 isinstance(pal, dict)
-                and "name" in pal
                 and "colors" in pal
                 and isinstance(pal["colors"], list)
                 and all(isinstance(c, (list, tuple)) and len(c) == 3 for c in pal["colors"])
             ):
                 valid_palettes.append({
                     "name": normalize_display_name(
-                        pal["name"], f"Palette {offset + len(valid_palettes) + 1}"
+                        pal.get("name") or "",
+                        f"Palette {offset + len(valid_palettes) + 1}",
                     ),
                     "colors": [tuple(c) for c in pal["colors"]],
                 })
@@ -1822,6 +1878,9 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         if DOMAIN not in hass.data:
             hass.data[DOMAIN] = {}
         palettes = hass.data[DOMAIN].setdefault("palettes_v2", [])
+        _check_collection_size(
+            len(palettes), len(service_call.data["palettes"]), MAX_PALETTES, "palette"
+        )
         added = _clean_palettes(service_call.data["palettes"], len(palettes))
         if not added:
             return
@@ -1847,15 +1906,12 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             # Save to persistent storage
             await async_save_data(hass)
 
-    palette_list_schema = [
-        {"name": cv.string, "colors": [vol.All(vol.ExactSequence((cv.byte, cv.byte, cv.byte)), vol.Coerce(tuple))]}
-    ]
     hass.services.async_register(
         DOMAIN,
         "set_palettes",
         handle_set_palettes,
         schema=vol.Schema({
-            vol.Required("palettes"): palette_list_schema,
+            vol.Required("palettes"): PALETTE_LIST_SCHEMA,
         })
     )
     hass.services.async_register(
@@ -1863,7 +1919,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         "add_palettes",
         handle_add_palettes,
         schema=vol.Schema({
-            vol.Required("palettes"): palette_list_schema,
+            vol.Required("palettes"): PALETTE_LIST_SCHEMA,
         })
     )
     async def handle_save_palette(service_call):
@@ -1878,7 +1934,8 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         if "palettes_v2" not in hass.data[DOMAIN]:
             hass.data[DOMAIN]["palettes_v2"] = []
         palettes = hass.data[DOMAIN]["palettes_v2"]
-        
+        _check_collection_size(len(palettes), 1, MAX_PALETTES, "palette")
+
         # Generate default name if not provided
         if not name:
             name = f"Palette {len(palettes)+1}"
@@ -1930,10 +1987,8 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         "save_palette",
         handle_save_palette,
         schema=vol.Schema({
-            vol.Required("palette"): vol.All(
-                [vol.All(vol.ExactSequence((cv.byte, cv.byte, cv.byte)), vol.Coerce(tuple))]
-            ),
-            vol.Optional("name"): cv.string,
+            vol.Required("palette"): COLOR_LIST_SCHEMA,
+            vol.Optional("name"): NAME_SCHEMA,
             vol.Required("entity_id"): _entity_id_or_list,
         })
     )
@@ -1970,7 +2025,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         handle_rename_palette,
         schema=vol.Schema({
             vol.Required("idx"): cv.positive_int,
-            vol.Required("name"): cv.string,
+            vol.Required("name"): NAME_SCHEMA,
             vol.Optional("expected_name"): vol.Any(None, cv.string),
         })
     )
@@ -2105,7 +2160,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         "set_text_colors",
         handle_set_text_colors,
         schema=vol.Schema({
-            vol.Required("text_colors", description="Array of RGB color arrays, e.g. [[255,0,0], [0,255,0]] for red to green gradient"): vol.All(list, [vol.All(list, [cv.positive_int])]),
+            vol.Required("text_colors", description="Array of RGB color arrays, e.g. [[255,0,0], [0,255,0]] for red to green gradient"): COLOR_LIST_SCHEMA,
             vol.Required("entity_id", description="Target lamp entity (e.g. light.cubelite_192_168_4_102)"): _entity_id_or_list,
             vol.Optional("save_as_palette", default=False, description="Save these colors as a palette for later use"): bool,
         })
@@ -2884,7 +2939,8 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             if not target._is_on and not target._should_auto_turn_on():
                 raise HomeAssistantError("Lamp is off and auto-turn-on is disabled")
 
-        async def apply_one(target):
+        def update_one(target):
+            """Record the requested settings and publish them immediately."""
             if effect is not None:
                 target._native_effect = effect
             if speed is not None:
@@ -2898,14 +2954,32 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             if activate:
                 target._mode = "Native Effect"
                 target._custom_draw_active = False
-            if target._mode == "Native Effect":
-                await target.async_apply_display_mode(update_type="color_change")
             target._refresh_linked_entities()
             if target._native_effect_speed_entity:
                 target._native_effect_speed_entity.async_write_ha_state()
             target.async_write_ha_state()
 
-        await asyncio.gather(*(apply_one(target) for target in targets))
+        async def apply_one(target):
+            """Send the effect to the lamp (runs after the service returned)."""
+            if target._mode != "Native Effect":
+                return
+            try:
+                await target.async_apply_display_mode(update_type="color_change")
+            except Exception:  # noqa: BLE001 -- background task, nobody awaits it
+                _LOGGER.exception(
+                    "[SET_NATIVE_EFFECT] Failed to apply %s on %s",
+                    target._native_effect,
+                    getattr(target, "entity_id", target),
+                )
+            target.async_write_ha_state()
+
+        # Like set_clock_style: validation errors are raised above, then the
+        # new settings are published at once and the lamp is updated in the
+        # background, so cards are not held up by the hardware round trip.
+        # Hardware failures are logged rather than returned to the caller.
+        for target in targets:
+            update_one(target)
+        _fire_and_forget(*(apply_one(target) for target in targets))
 
     hass.services.async_register(
         DOMAIN, "set_native_effect", handle_set_native_effect,

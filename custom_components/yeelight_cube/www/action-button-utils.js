@@ -340,63 +340,6 @@ export function renderButtonContent(
 }
 
 /**
- * Render export/import buttons (HTML string version for shadow DOM)
- * @param {Object} options - Configuration options
- * @returns {string} HTML string
- */
-export function renderExportImportButtonsHTML(options) {
-  const {
-    showExport = true,
-    showImport = true,
-    buttonStyle = "modern",
-    contentMode = "icon_text",
-    importStatus = { showing: false, type: null },
-    exportButtonId = "export-btn",
-    importButtonId = "import-btn",
-  } = options;
-
-  const exportBtnClass = getExportImportButtonClass("export", buttonStyle);
-  const importBtnClass = getExportImportButtonClass("import", buttonStyle);
-  const isImportStatus = importStatus?.showing === true;
-  const statusType = importStatus?.type;
-
-  const rowClass = getActionRowClass({ buttonStyle, contentMode });
-
-  return `
-    <div class="${rowClass}">
-      ${
-        showExport
-          ? `
-        <button id="${exportButtonId}" class="${exportBtnClass}" title="Export to JSON file">
-          ${renderButtonContent("mdi:download", "Export", contentMode)}
-        </button>
-      `
-          : ""
-      }
-      ${
-        showImport
-          ? `
-        <button id="${importButtonId}" class="${importBtnClass}" title="Import from JSON file">
-          ${
-            isImportStatus
-              ? renderButtonContent(
-                  "mdi:upload",
-                  "Import",
-                  contentMode,
-                  true,
-                  statusType,
-                )
-              : renderButtonContent("mdi:upload", "Import", contentMode)
-          }
-        </button>
-      `
-          : ""
-      }
-    </div>
-  `;
-}
-
-/**
  * CSS styles for export/import buttons
  * Includes all button style variants and responsive behavior
  */

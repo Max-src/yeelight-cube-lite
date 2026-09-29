@@ -25,7 +25,7 @@ import {
   clockStyleMixer,
   renderClockFrame,
 } from "./clock-preview-utils.js";
-import { BLACK_THRESHOLD, previewBrightnessScale } from "./draw_card_const.js";
+import { BLACK_THRESHOLD, previewBrightnessScale } from "./matrix-const.js";
 import { createRafLoop, createVisibilityTracker } from "./matrix-animator.js";
 import { exportImportButtonStyles } from "./action-button-utils.js";
 import {
@@ -39,6 +39,13 @@ import {
   sliderConfigToGc,
 } from "./slider-control-utils.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
+import { LitElement, html, repeat, unsafeHTML } from "./lib/lit-all.js";
+
+// The bundled ./lib/lit-all.js exports neither `nothing` nor `svg`. Both are
+// stable parts of Lit's template protocol: `nothing` is the registered
+// "lit-nothing" sentinel and an SVG template result is `_$litType$: 2`.
+const nothing = Symbol.for("lit-nothing");
+const svg = (strings, ...values) => ({ _$litType$: 2, strings, values });
 
 // Clock-face preview (mixer tables, glyph font and renderClockFrame) now lives
 // in the shared ./clock-preview-utils.js module, imported above.
@@ -217,7 +224,17 @@ export const BRIGHTNESS_SLIDER_KEYS = {
 
 // ================================================
 
-class YeelightCubeLampPreviewCard extends HTMLElement {
+// Rendering model (LitElement):
+// - render() is a pure Lit template over the card's state; every control binds
+//   its events declaratively (no inline handler strings).
+// - _refresh() keeps the historical "render" decision logic (drag / typing /
+//   oscillation guards, full vs smart update). A full update re-captures the
+//   brightness slider markup and requests a Lit update; a smart update patches
+//   the matrix dots and slider visuals in place.
+// - The 20x5 .lamp-dot nodes carry no reactive bindings: their colours are only
+//   ever painted directly (change-only) by _paintDots, from the static preview
+//   and the native-effect / clock animation loops.
+class YeelightCubeLampPreviewCard extends LitElement {
   static async getConfigElement() {
     if (!customElements.get("yeelight-cube-lamp-preview-card-editor")) {
       await import("./yeelight-cube-lamp-preview-card-editor.js");
@@ -352,6 +369,18 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     this._activeRadialCategory = null;
     this._selectedRadialEffect = null;
 
+    // Lit render inputs captured by _refresh(): the brightness slider markup
+    // (shared string renderer, only rebuilt on full updates so drags and typed
+    // values are never replaced mid-interaction), a generation counter that
+    // recreates the matrix dots on full updates, and the post-render work of
+    // the pending full update (static paint + animation loop start/stop).
+    this._sliderMarkup = "";
+    this._dotGeneration = 0;
+    this._pendingFull = null;
+    // Effects just reset to their default: the default is shown locally until
+    // the entity reports it, then the local override is dropped.
+    this._resetPending = new Set();
+
     // Wire the shared multi-style slider (render + CSS + interactions) for the
     // brightness control. The handlers are assigned onto this element as
     // _slChange/_slWheel/... and the render emits inline `_sl*` handlers.
@@ -371,7 +400,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
               brightness: safeBrightness,
             })
             .catch((error) => {
-              this.render();
+              this._refresh();
               const errorMsg = error?.message || String(error);
               if (errorMsg.includes("NoneType") || errorMsg.includes("close")) {
                 console.warn("Lamp connection temporarily unavailable");
@@ -436,6 +465,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     clearTimeout(this._effectDebounceTimer);
     this._effectDebounceTimer = null;
     this._localEffects = {};
+    this._resetPending = new Set();
     this._isDragging = false;
     this._orientationContext = (this._orientationContext || 0) + 1;
     this._orientationPending = null;
@@ -479,14 +509,11 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     // Force full re-render when config changes
     this._isInitialRenderComplete = false;
 
-    if (!this.shadowRoot) {
-      this.attachShadow({ mode: "open" });
-    }
     if (!this._renderScheduled) {
       this._renderScheduled = true;
       requestAnimationFrame(() => {
         this._renderScheduled = false;
-        this.render();
+        this._refresh();
       });
     }
   }
@@ -579,7 +606,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       this._renderDebounceTimer = setTimeout(() => {
         this._renderDebounceTimer = null;
         // Always render to update matrix colors, even if dragging
-        this.render();
+        this._refresh();
       }, 250); // Increased from 150ms to 250ms for better performance
     } else if (
       !hasPendingLocalEffects ||
@@ -593,7 +620,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       if (matrixColorsChanged && currentMatrixColors !== null) {
         this._lastMatrixColors = currentMatrixColors;
       }
-      this.render();
+      this._refresh();
     }
   }
 
@@ -627,6 +654,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
 
     // Optimistic update: store locally and update label only
     this._localEffects[effectName] = newValue;
+    this._resetPending?.delete(effectName);
     this._updateEffectLabel(effectName, newValue);
 
     // Auto-enable tint: changing Tint Hue without Tint Strength does nothing
@@ -641,13 +669,10 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         0;
       if (currentStrength === 0) {
         const autoStrength = 50;
+        // The tint_strength slider and label follow _localEffects on render.
         this._localEffects.tint_strength = autoStrength;
+        this._resetPending?.delete("tint_strength");
         this._updateEffectLabel("tint_strength", autoStrength);
-        // Update the tint_strength slider element position
-        const strengthSliders = this.shadowRoot.querySelectorAll(
-          'input[data-effect="tint_strength"]',
-        );
-        strengthSliders.forEach((s) => (s.value = autoStrength));
       }
     }
 
@@ -702,92 +727,22 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         if (context !== this._effectContext) return;
         // Revert to entity state on error
         delete this._localEffects[effectName];
-        this.render();
+        this._refresh();
         console.error("Error setting effect:", error);
       }
     }, 300); // Faster response for effects
   }
 
+  // Layout interactions only change view state; the Lit template derives the
+  // expanded / active / hidden classes from it on the next update.
   toggleSection(sectionId) {
     this._expandedSections[sectionId] = !this._expandedSections[sectionId];
-    const isExpanded = this._expandedSections[sectionId];
-
-    // Get all grouped sections
-    const allGroupedSections =
-      this.shadowRoot.querySelectorAll(".grouped-section");
-
-    // Check if any section is expanded
-    const anyExpanded = Object.values(this._expandedSections).some(
-      (val) => val === true,
-    );
-
-    allGroupedSections.forEach((groupedSection) => {
-      const sectionContent = groupedSection.querySelector(".grouped-content");
-      const thisSectionId = sectionContent?.getAttribute("data-section");
-      const isThisExpanded = this._expandedSections[thisSectionId] === true;
-
-      if (isThisExpanded) {
-        // This section is expanded
-        groupedSection.classList.add("expanded");
-        groupedSection.classList.remove("collapsed", "hidden");
-      } else {
-        // This section is collapsed
-        groupedSection.classList.remove("expanded");
-        groupedSection.classList.add("collapsed");
-
-        // Hide with transition if any section is expanded, otherwise show
-        if (anyExpanded) {
-          groupedSection.classList.add("hidden");
-        } else {
-          groupedSection.classList.remove("hidden");
-        }
-      }
-    });
-
-    // Update the UI for old effect section layout (legacy support)
-    const section = this.shadowRoot.querySelector(
-      `.effect-section-content[data-section="${sectionId}"]`,
-    );
-
-    if (section) {
-      // Update the icon for the old effect section header (legacy support)
-      const header = section.previousElementSibling;
-      if (header && header.classList.contains("effect-section-header")) {
-        const iconElement = header.querySelector(".expand-icon");
-        if (iconElement) {
-          iconElement.textContent = isExpanded ? "?" : "?";
-        }
-      }
-    }
-
-    // Don't call render() - we already updated the DOM directly
+    this.requestUpdate();
   }
 
   switchTab(tabId) {
     this._activeTab = tabId;
-
-    // Update UI
-    const allTabs = this.shadowRoot.querySelectorAll(".tab-content");
-    const allHeaders = this.shadowRoot.querySelectorAll(".tab-header");
-
-    allTabs.forEach((tab) => {
-      if (tab.dataset.tab === tabId) {
-        tab.classList.add("active");
-      } else {
-        tab.classList.remove("active");
-      }
-    });
-
-    allHeaders.forEach((header) => {
-      const onclick = header.getAttribute("onclick");
-      if (onclick && onclick.includes(tabId)) {
-        header.classList.add("active");
-      } else {
-        header.classList.remove("active");
-      }
-    });
-
-    // Don't call render() - we already updated the DOM directly
+    this.requestUpdate();
   }
 
   selectRadialCategory(categoryId) {
@@ -799,168 +754,46 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     if (section && section.effects.length > 0) {
       this._selectedRadialEffect = section.effects[0].name;
     }
-
-    // Force a re-render to update the wheel and slider panel
-    this._isInitialRenderComplete = false;
-    this.render();
-
-    // Update change indicators after render
-    requestAnimationFrame(() => {
-      this._updateChangeIndicators();
-    });
+    this.requestUpdate();
   }
+
   selectCircularCategory(categoryId) {
     this._activeRadialSection = categoryId;
 
     const layoutMode = this.config.adjustments_layout || "grouped";
 
     if (layoutMode === "categories") {
-      // For categories layout, update only the slider panel and active states
-      // This prevents rebuilding the icon column and causing indicator blink
       this._updateCategoriesPanel(categoryId);
     } else if (layoutMode === "radial") {
-      // For radial layout, we need full re-render
-      this._isInitialRenderComplete = false;
-      this.render();
-
-      // Update change indicators immediately after render completes
-      requestAnimationFrame(() => {
-        this._updateChangeIndicators();
-      });
+      this.requestUpdate();
     }
   }
 
   _updateCategoriesPanel(categoryId) {
-    // Update categories layout without full re-render to prevent indicator blinking
-    if (!this.shadowRoot) return;
-
-    const entityId = this.config.entity;
-    const hass = this._hass;
-    if (!hass || !entityId) return;
-
-    const stateObj = hass.states[entityId];
-    if (!stateObj) return;
-
-    // Derive sections from registry
-    const sections = SECTIONS_REGISTRY.map((section) => ({
-      id: section.id,
-      title: section.title,
-      icon: section.icon,
-      effects: section.effects.map((name) => {
-        const def = EFFECTS_REGISTRY[name];
-        return {
-          name,
-          label: def.label,
-          min: def.min,
-          max: def.max,
-          value: stateObj.attributes[EFFECT_ATTR_MAP[name]] || def.default,
-          unit: def.unit,
-          default: def.default,
-        };
-      }),
-    }));
-
-    const activeSection =
-      sections.find((s) => s.id === categoryId) || sections[0];
-
-    // Update active class on icon buttons
-    const iconButtons = this.shadowRoot.querySelectorAll(
-      ".categories-icon-button",
-    );
-    iconButtons.forEach((button) => {
-      const sectionId = button.getAttribute("onclick").match(/'([^']+)'/)?.[1];
-      if (sectionId === categoryId) {
-        button.classList.add("active");
-      } else {
-        button.classList.remove("active");
-      }
-    });
-
-    // Update slider panel content
-    const sliderPanel = this.shadowRoot.querySelector(
-      ".categories-slider-panel",
-    );
-    if (!sliderPanel) return;
-
-    sliderPanel.setAttribute("data-section-id", activeSection.id);
-
-    // Determine button visibility based on mode
-    const resetButtonMode = this.config.reset_button_mode || "always";
-    let resetButtonVisible = "none";
-    if (resetButtonMode === "always") {
-      resetButtonVisible = "block";
-    } else if (resetButtonMode === "changed") {
-      const hasChanges = this._checkSectionChanges(activeSection.id);
-      resetButtonVisible = hasChanges ? "block" : "none";
-    }
-    // resetButtonMode === "never" ? stays "none"
-
-    let panelHtml = `
-      <div class="categories-category-header">
-        <div class="categories-category-title">${activeSection.title}</div>
-        <button 
-          class="categories-reset-button" 
-          data-section-id="${activeSection.id}"
-          title="Reset ${activeSection.title}"
-          onclick="this.getRootNode().host.resetSection('${activeSection.id}')"
-          style="display: ${resetButtonVisible};"
-        >
-          🔄 Reset
-        </button>
-      </div>
-    `;
-
-    activeSection.effects.forEach((effect) => {
-      const displayValue =
-        effect.value !== undefined ? effect.value : effect.default;
-      panelHtml += `
-        <div class="categories-effect-row">
-          <div class="categories-effect-row-header">
-            <span class="categories-effect-row-label">${effect.label}</span>
-            <span class="categories-effect-row-value" data-effect="${
-              effect.name
-            }">${displayValue}${effect.unit}</span>
-          </div>
-          <input
-            type="range"
-            class="categories-effect-slider"
-            min="${effect.min}"
-            max="${effect.max}"
-            step="${effect.step || 1}"
-            value="${displayValue}"
-            data-effect="${effect.name}"
-            data-default="${effect.default}"
-            onmousedown="this.getRootNode().host._startDrag()"
-            ontouchstart="this.getRootNode().host._startDrag()"
-            onmouseup="this.getRootNode().host._endDrag()"
-            ontouchend="this.getRootNode().host._endDrag()"
-            oninput="this.getRootNode().host.handleEffectChange('${
-              effect.name
-            }', event)"
-          />
-        </div>
-      `;
-    });
-
-    sliderPanel.innerHTML = panelHtml;
+    // The icon column and slider panel both derive from _activeRadialSection;
+    // Lit only patches what changed, so indicators never blink.
+    this._activeRadialSection = categoryId;
+    this.requestUpdate();
   }
 
   selectRadialEffect(effectName) {
     this._selectedRadialEffect = effectName;
+    this.requestUpdate();
+  }
 
-    // Update UI - highlight the selected effect row only
-    const allEffectRows =
-      this.shadowRoot.querySelectorAll(".radial-effect-row");
-
-    allEffectRows.forEach((row) => {
-      if (row.dataset.effect === effectName) {
-        row.classList.add("selected");
-      } else {
-        row.classList.remove("selected");
+  // Drop the local override of effects that were reset to their default once
+  // the entity reports that value (or reports nothing, which reads as default).
+  _pruneResetEffects(stateObj) {
+    if (!this._resetPending?.size) return;
+    for (const name of [...this._resetPending]) {
+      const local = this._localEffects[name];
+      const shown =
+        stateObj?.attributes?.[EFFECT_ATTR_MAP[name]] ?? EFFECT_DEFAULTS[name];
+      if (local === undefined || shown === local) {
+        if (local !== undefined) delete this._localEffects[name];
+        this._resetPending.delete(name);
       }
-    });
-
-    // Don't call render() - we already updated the DOM directly
+    }
   }
 
   async resetSection(sectionId) {
@@ -1001,6 +834,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       // Also update local state so sliders move immediately
       this._localEffects[effectName] = defaultValues[effectName];
     });
+    this.requestUpdate();
 
     // Send everything to the lamp (only this section's values changed)
     await this._hass.callService("yeelight_cube", "set_preview_adjustments", {
@@ -1008,44 +842,16 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       ...allEffects,
     });
 
-    // Update sliders in DOM immediately (for categories layout)
-    Object.keys(defaultValues).forEach((effectName) => {
-      const slider = this.shadowRoot.querySelector(
-        `.categories-effect-slider[data-effect="${effectName}"]`,
-      );
-      if (slider) {
-        slider.value = defaultValues[effectName];
-      }
+    // Sliders and labels keep showing the defaults until the entity echoes
+    // them; the local overrides are then dropped (see _pruneResetEffects).
+    Object.keys(defaultValues).forEach((effectName) =>
+      this._resetPending.add(effectName),
+    );
+    this._pruneResetEffects(this._hass?.states?.[this.config.entity]);
 
-      // Update the value display
-      const valueDisplay = this.shadowRoot.querySelector(
-        `.categories-effect-row-value[data-effect="${effectName}"]`,
-      );
-      if (valueDisplay) {
-        const effectData = this._getEffectsData()
-          .flatMap((s) => s.effects)
-          .find((e) => e.name === effectName);
-        const unit = effectData?.unit || "";
-        valueDisplay.textContent = `${defaultValues[effectName]}${unit}`;
-      }
-    });
-
-    // Clear local effects for this section immediately
-    Object.keys(defaultValues).forEach((effectName) => {
-      delete this._localEffects[effectName];
-    });
-
-    // Update change indicators immediately
+    // Update change indicators and section reset button visibility
     this._updateChangeIndicators();
-
-    // Update section reset button visibility
     this._updateSectionResetButtons();
-
-    // Also update after a brief delay to ensure DOM is ready
-    setTimeout(() => {
-      this._updateChangeIndicators();
-      this._updateSectionResetButtons();
-    }, 50);
   }
 
   async resetEffect(effectName) {
@@ -1069,6 +875,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     // Update only this effect to default
     allEffects[effectName] = defaultValue;
     this._localEffects[effectName] = defaultValue;
+    this.requestUpdate();
 
     // Send to the lamp
     await this._hass.callService("yeelight_cube", "set_preview_adjustments", {
@@ -1076,35 +883,13 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       ...allEffects,
     });
 
-    // Update slider in DOM
-    const slider = this.shadowRoot.querySelector(
-      `input.effect-slider[data-effect="${effectName}"]`,
-    );
-    if (slider) {
-      slider.value = defaultValue;
-    }
-
-    // Update value display
-    const valueDisplay = this.shadowRoot.querySelector(
-      `.compact-value[data-effect="${effectName}"]`,
-    );
-    if (valueDisplay) {
-      const effectData = this._getEffectsData()
-        .flatMap((s) => s.effects)
-        .find((e) => e.name === effectName);
-      const unit = effectData?.unit || "";
-      valueDisplay.textContent = `${defaultValue}${unit}`;
-    }
-
-    // Clear from local effects
-    delete this._localEffects[effectName];
+    // Keep showing the default until the entity echoes it.
+    this._resetPending.add(effectName);
+    this._pruneResetEffects(this._hass?.states?.[this.config.entity]);
 
     // Update change indicators and reset button visibility
-    // Use setTimeout to ensure DOM has updated
-    setTimeout(() => {
-      this._updateChangeIndicators();
-      this._updateCompactResetButtons();
-    }, 10);
+    this._updateChangeIndicators();
+    this._updateCompactResetButtons();
   }
 
   _sectionHasChanges(section) {
@@ -1139,128 +924,19 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     return hasChanges;
   }
 
+  // Change indicators (orange dots) and "changed"-mode reset buttons are
+  // derived from _checkSectionChanges / _checkEffectChanged inside the Lit
+  // template, so refreshing them is just a (batched) re-render.
   _updateChangeIndicators() {
-    // Update visual change indicators (orange dots) for all sections
-    if (!this.shadowRoot) return;
-
-    // Check if change indicators are enabled in config
-    const showIndicators = this.config.show_change_indicators ?? true;
-
-    // CLEANUP: When indicators are disabled, remove any lingering has-changes classes
-    // This handles the case where the setting was just toggled OFF but HTML still has old classes
-    if (!showIndicators) {
-      const radialSegments = this.shadowRoot.querySelectorAll(
-        ".radial-segment.has-changes",
-      );
-      radialSegments.forEach((segment) => {
-        segment.classList.remove("has-changes");
-      });
-      return;
-    }
-
-    // Find all indicators in the DOM and update them based on actual rendered content
-    const allIndicators = this.shadowRoot.querySelectorAll(
-      ".change-indicator[data-section-id]",
-    );
-
-    // If no section indicators found, skip section updates (likely in compact mode)
-    if (allIndicators.length > 0) {
-      // Get all sections that actually exist in the current layout
-      const allSections = this.shadowRoot.querySelectorAll("[data-section-id]");
-      const sectionIds = new Set();
-      allSections.forEach((el) => {
-        const id = el.getAttribute("data-section-id");
-        if (id) sectionIds.add(id);
-      });
-
-      sectionIds.forEach((sectionId) => {
-        // Check if this section has any non-default values
-        const hasChanges = this._checkSectionChanges(sectionId);
-
-        // Find all indicators for this section
-        const indicators = this.shadowRoot.querySelectorAll(
-          `.change-indicator[data-section-id="${sectionId}"]`,
-        );
-
-        indicators.forEach((indicator) => {
-          if (hasChanges) {
-            indicator.classList.add("visible");
-          } else {
-            indicator.classList.remove("visible");
-          }
-        });
-      });
-    }
-
-    // Also update compact layout indicators (effect-level, not section-level)
-    const compactIndicators = this.shadowRoot.querySelectorAll(
-      ".compact-indicator[data-effect]",
-    );
-    compactIndicators.forEach((indicator) => {
-      const effectName = indicator.getAttribute("data-effect");
-      const hasChanged = this._checkEffectChanged(effectName);
-      if (hasChanged) {
-        indicator.classList.add("visible");
-      } else {
-        indicator.classList.remove("visible");
-      }
-    });
+    this.requestUpdate();
   }
 
   _updateCompactResetButtons() {
-    // Update visibility of reset buttons in compact layout based on changed state
-    // Only needed when reset_button_mode is "changed"
-    const mode = this.config.reset_button_mode || "always";
-    if (mode !== "changed") return; // Skip if not in "changed" mode
-
-    if (!this.shadowRoot) return;
-
-    // Find all compact reset buttons
-    const resetButtons = this.shadowRoot.querySelectorAll(
-      ".compact-reset-button[data-effect]",
-    );
-    resetButtons.forEach((button) => {
-      const effectName = button.getAttribute("data-effect");
-      const hasChanged = this._checkEffectChanged(effectName);
-
-      // Show/hide button based on changed state
-      if (hasChanged) {
-        button.style.display = "flex";
-      } else {
-        button.style.display = "none";
-      }
-    });
+    this.requestUpdate();
   }
 
   _updateSectionResetButtons() {
-    // Update visibility of section-level reset buttons (for Tabbed, Grouped, Radial, Categories layouts)
-    // Only needed when reset_button_mode is "changed"
-    const mode = this.config.reset_button_mode || "always";
-
-    if (!this.shadowRoot) return;
-
-    // Only update if mode is "changed" - otherwise buttons are always visible/hidden via initial render
-    if (mode !== "changed") return;
-
-    // Find all section-level reset buttons (multiple classes for different layouts)
-    const resetButtons = this.shadowRoot.querySelectorAll(
-      "[data-section-id].tabbed-reset-button, [data-section-id].grouped-reset, [data-section-id].radial-reset-button, [data-section-id].categories-reset-button",
-    );
-    resetButtons.forEach((button) => {
-      const sectionId = button.getAttribute("data-section-id");
-      const hasChanges = this._checkSectionChanges(sectionId);
-
-      // Show/hide button based on changed state
-      // Tabbed buttons use "flex", others use "block"
-      const visibleDisplay = button.classList.contains("tabbed-reset-button")
-        ? "flex"
-        : "block";
-      if (hasChanges) {
-        button.style.display = visibleDisplay;
-      } else {
-        button.style.display = "none";
-      }
-    });
+    this.requestUpdate();
   }
 
   _checkSectionChanges(sectionId) {
@@ -1464,71 +1140,27 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   }
 
   _updateEffectLabel(effectName, value) {
-    // Look up unit and label from the registry
-    const def = EFFECTS_REGISTRY[effectName];
-    const unit = def?.unit || "";
-    const labelText = def?.label || effectName;
-
-    // Update labels for all layout modes using direct data-effect selectors
-
-    // Compact layout - update the value span directly
-    const compactValue = this.shadowRoot.querySelector(
-      `.compact-value[data-effect="${effectName}"]`,
-    );
-    if (compactValue) {
-      compactValue.textContent = `${value}${unit}`;
-    }
-
-    // Tabbed layout - update the label with the full text directly
-    const tabbedLabel = this.shadowRoot.querySelector(
-      `.tabbed-label[data-effect="${effectName}"]`,
-    );
-    if (tabbedLabel) {
-      tabbedLabel.innerHTML = `${labelText}: <strong>${value}${unit}</strong>`;
-    }
-
-    // Grouped layout - update the value span directly
-    const groupedValue = this.shadowRoot.querySelector(
-      `.grouped-value[data-effect="${effectName}"]`,
-    );
-    if (groupedValue) {
-      groupedValue.textContent = `${value}${unit}`;
-    }
-
-    // Radial layout - update the effect row value
-    const radialRowValue = this.shadowRoot.querySelector(
-      `.radial-effect-row-value[data-effect="${effectName}"]`,
-    );
-    if (radialRowValue) {
-      radialRowValue.textContent = `${value}${unit}`;
-    }
-
-    // Also update if it's in an effect row (for the main display)
-    const radialEffectRow = this.shadowRoot.querySelector(
-      `.radial-effect-row[data-effect="${effectName}"] .radial-effect-row-value`,
-    );
-    if (radialEffectRow) {
-      radialEffectRow.textContent = `${value}${unit}`;
-    }
-
-    // Categories layout - update the value span directly
-    const categoriesValue = this.shadowRoot.querySelector(
-      `.categories-effect-row-value[data-effect="${effectName}"]`,
-    );
-    if (categoriesValue) {
-      categoriesValue.textContent = `${value}${unit}`;
-    }
-
-    // Legacy support (old effect-section layout)
-    const legacyLabel = this.shadowRoot.querySelector(
-      `label[data-effect="${effectName}"]`,
-    );
-    if (legacyLabel) {
-      legacyLabel.textContent = `${labelText}: ${value}${unit}`;
-    }
+    // Every layout's value label reads _localEffects / the entity on render.
+    this.requestUpdate();
   }
 
-  render() {
+  // Current value of every effect: local (optimistic) value, then entity
+  // attribute, then the registry default.
+  _currentEffects(stateObj) {
+    const effects = {};
+    for (const name of EFFECT_NAMES) {
+      effects[name] =
+        this._localEffects[name] ??
+        stateObj?.attributes?.[EFFECT_ATTR_MAP[name]] ??
+        EFFECT_DEFAULTS[name];
+    }
+    return effects;
+  }
+
+  // Historical render entry point: decides between a full update (Lit
+  // re-render + fresh matrix dots + fresh brightness slider markup) and a smart
+  // update (dots and slider visuals patched in place).
+  _refresh() {
     // Cleared at the end of _renderCard; stays set if this render bails out
     // (slider drag, typing, brightness oscillation guard) so the next hass
     // update re-renders even when the entity state object is unchanged.
@@ -1546,21 +1178,20 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     const stateObj = hass.states[entityId];
 
     if (!stateObj) {
-      this.shadowRoot.innerHTML = `<ha-card>
-        <div style="padding: 16px;">
-          <h3>Entity not found: ${escapeHtml(entityId)}</h3>
-          <p>Please check your configuration and ensure the entity exists.</p>
-        </div>
-      </ha-card>`;
+      // Rendered by render(); the next update with the entity is a full one
+      // because the preview container is gone.
+      this._missingEntity = entityId;
+      this._lampDots = null;
+      this.requestUpdate();
       return;
     }
-    let usingFallbackMatrix = false;
+    this._missingEntity = null;
+    this._pruneResetEffects(stateObj);
     let matrixColors = stateObj.attributes.matrix_colors;
 
     if (!matrixColors) {
       // Use a blank matrix as fallback instead of showing an error
       matrixColors = getInitialMatrix(5, 20); // 5 rows x 20 cols
-      usingFallbackMatrix = true;
     }
 
     // Use entity state for brightness (no optimistic updates to prevent flash)
@@ -1579,13 +1210,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     }
 
     // Get all effect values (local or entity state)
-    const effects = {};
-    for (const name of EFFECT_NAMES) {
-      effects[name] =
-        this._localEffects[name] ??
-        stateObj?.attributes?.[EFFECT_ATTR_MAP[name]] ??
-        EFFECT_DEFAULTS[name];
-    }
+    const effects = this._currentEffects(stateObj);
 
     // Render the card (pass entity brightness for color calculations, slider brightness for slider display)
     this._renderCard(
@@ -1604,25 +1229,8 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     sliderBrightness,
     effects,
   ) {
-    // Helper to apply ALL color adjustments (matching backend logic)
-    const applyColorAdjustments = (rgbArray, originalRgb, brightness) => {
-      let [r, g, b] = rgbArray;
-
-      // If the original pixel was black, keep it black (don't apply effects to background)
-      const isOriginalBlack =
-        originalRgb[0] === 0 && originalRgb[1] === 0 && originalRgb[2] === 0;
-
-      if (isOriginalBlack) {
-        return [0, 0, 0];
-      }
-
-      // Note: Darken/brighten effects removed - use light brightness control instead
-      // The preview now only shows actual color effects, not brightness adjustments
-
-      return [r, g, b];
-    };
-
-    // Apply brightness and color adjustments to all pixels
+    // Apply brightness to all pixels (black pixels stay black: effects are
+    // never applied to the background).
     //
     // Perceptual boost: LCD screens look dimmer than LEDs at the same RGB.
     // We compute a target "effective" brightness from the lamp brightness
@@ -1633,30 +1241,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     //
     // This is guaranteed monotonic (power + constant floor), never flat,
     // and controlled by just GAMMA (curve shape) and BOOST (floor height).
-    const darkenPercent = stateObj.attributes.preview_darken ?? 0;
-    const previewBoost = previewBrightnessScale(
-      entityBrightness,
-      darkenPercent,
-    );
-
-    const gridColors = matrixColors.map((rgb) => {
-      if (!Array.isArray(rgb) || rgb.length !== 3) rgb = [0, 0, 0];
-
-      const originalRgb = [...rgb]; // Keep original for black check
-
-      const brightAdjusted = rgb.map((v) =>
-        Math.min(255, Math.round(v * previewBoost)),
-      );
-
-      // Then apply color effects (pass original RGB for black check)
-      const finalColor = applyColorAdjustments(
-        brightAdjusted,
-        originalRgb,
-        entityBrightness,
-      );
-
-      return rgbToCss(finalColor);
-    });
+    const gridColors = this._matrixColorsToGridColors(matrixColors, stateObj);
 
     // Use user-set brightness if available (prevents jumping during render storms)
     const displayBrightness =
@@ -1691,10 +1276,13 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     // Smart update: Only rebuild DOM if not initialized or if dragging just ended
     const needsFullRender =
       !this._isInitialRenderComplete ||
+      // A full update is still waiting for Lit: fold this one into it so its
+      // post-render paint uses the newest colours.
+      this._pendingFull !== null ||
       // The matrix (.lamp-preview-css) is absent when show_lamp_preview is
       // false, so check the always-rendered container instead; otherwise a
       // hidden preview forced a full DOM rebuild on every update.
-      !this.shadowRoot.querySelector(
+      !this.shadowRoot?.querySelector(
         this.config.show_lamp_preview !== false
           ? ".lamp-preview-css"
           : ".yeelight-cube-lamp-preview-container",
@@ -1714,114 +1302,104 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       stateObj.state === "on";
 
     if (needsFullRender) {
-      // Full render on first load or structural changes. The HTML strings are
-      // only built here; smart updates patch the existing DOM instead.
-      // Generate matrix HTML (pass stateObj for orientation info)
-      const matrixHtml =
-        this.config.show_lamp_preview !== false
-          ? this._generateMatrixHtml(gridColors, stateObj)
+      // Full update on first load or structural changes. The brightness
+      // slider markup is only rebuilt here; smart updates patch it in place.
+      this._sliderMarkup =
+        this.config.show_lamp_control !== false &&
+        this.config.show_brightness_slider === true
+          ? renderSliderGroup([
+              { gc: this._brightnessGc(), value: displayBrightness },
+            ])
           : "";
-
-      // Generate lamp controls HTML (buttons and brightness slider)
-      const lampControlsHtml =
-        this.config.show_lamp_control !== false
-          ? this._generateLampControlsHtml(stateObj, displayBrightness)
-          : "";
-
-      // Generate adjustment controls HTML (color effects)
-      const adjustmentControlsHtml =
-        this.config.show_adjustment_controls === true
-          ? this._generateAdjustmentControlsHtml(effects)
-          : "";
-
-      const showCard = this.config.show_card_background !== false;
-      const cardTitle = this.config.title || this.config.card_title || "";
-      const usingFallbackMatrix = !stateObj.attributes.matrix_colors;
-
-      this.shadowRoot.innerHTML = `
-        ${this._getStyles()}
-        ${
-          showCard
-            ? `<ha-card${
-                cardTitle
-                  ? ` header="${escapeHtml(cardTitle)}${
-                      usingFallbackMatrix ? " (No Matrix Data)" : ""
-                    }"`
-                  : ""
-              }>
-               <div style="display: flex; width: 100%;">
-                 <div class="yeelight-cube-lamp-preview-container yc-stack">
-                   ${matrixHtml}
-                   ${lampControlsHtml}
-                   ${adjustmentControlsHtml}
-                 </div>
-               </div>
-             </ha-card>`
-            : `<div style="display: flex; width: 100%;">
-               <div class="yeelight-cube-lamp-preview-container yc-stack">
-                 ${
-                   cardTitle
-                     ? `<div style="font-weight:600;font-size:1.1em;">${escapeHtml(cardTitle)}</div>`
-                     : ""
-                 }
-                 ${matrixHtml}
-                 ${lampControlsHtml}
-                 ${adjustmentControlsHtml}
-               </div>
-             </div>`
-        }
-      `;
+      // Fresh .lamp-dot nodes (keyed by generation), painted in updated().
+      this._dotGeneration++;
+      this._pendingFull = {
+        gridColors,
+        orientation: stateObj?.attributes?.device_orientation || "right",
+        isNativeAnimating,
+        isClockAnimating,
+      };
       this._isInitialRenderComplete = true;
-      // The DOM (and its .lamp-dot nodes) was rebuilt; drop the cached NodeList.
+      // The matrix DOM (and its .lamp-dot nodes) is rebuilt; drop the cache.
       this._lampDots = null;
       // Remember which orientation this DOM was built for (smart updates compare).
-      this._lastPreviewOrientation =
-        stateObj?.attributes?.device_orientation || "right";
-
-      // Update change indicators after initial render
-      requestAnimationFrame(() => {
-        this._updateChangeIndicators();
-
-        // Double-check indicators after a short delay to ensure everything is ready
-        setTimeout(() => {
-          this._updateChangeIndicators();
-        }, 100);
-      });
-    } else {
-      // Smart update: Only update matrix colors and slider values
-      // When a native animation or clock animation owns the matrix, don't
-      // clobber it with the static (stale) matrix_colors attribute. With the
-      // preview hidden there are no dots; calling _updateMatrixColors would
-      // see a dot-count mismatch and rebuild the whole card on every update.
-      if (
-        !isNativeAnimating &&
-        !isClockAnimating &&
-        this.config.show_lamp_preview !== false
-      )
-        this._updateMatrixColors(gridColors, stateObj);
-      this._updateSliderValues(displayBrightness, effects); // Use cached value to prevent jumping
-
-      // Update change indicators on smart updates too, but defer to next frame
-      // to avoid querying DOM while it's being updated
-      requestAnimationFrame(() => {
-        this._updateChangeIndicators();
-      });
+      this._lastPreviewOrientation = this._pendingFull.orientation;
+      this.requestUpdate();
+      this._renderIncomplete = false;
+      return;
     }
 
-    const actions = this.shadowRoot.querySelector(
+    // Smart update: Only update matrix colors and slider values
+    // When a native animation or clock animation owns the matrix, don't
+    // clobber it with the static (stale) matrix_colors attribute. With the
+    // preview hidden there are no dots; calling _updateMatrixColors would
+    // see a dot-count mismatch and rebuild the whole card on every update.
+    if (
+      !isNativeAnimating &&
+      !isClockAnimating &&
+      this.config.show_lamp_preview !== false
+    )
+      this._updateMatrixColors(gridColors, stateObj);
+    this._updateSliderValues(displayBrightness, effects); // Use cached value to prevent jumping
+    // Effect sliders, value labels and change indicators follow the state.
+    this.requestUpdate();
+
+    this._syncActions();
+    // Start/stop the client-side animations to match current mode.
+    this._syncAnimations(isNativeAnimating, isClockAnimating, false);
+    this._renderIncomplete = false;
+  }
+
+  // Hand the shared Actions view its model and let it re-evaluate.
+  _syncActions() {
+    const actions = this.shadowRoot?.querySelector(
       'yeelight-mode-controls[area="actions"]',
     );
     if (actions) {
       actions.model = this._actions;
       this._actions.notify();
     }
+  }
 
-    // Start/stop the client-side animations to match current mode.
-    if (isNativeAnimating) this._startNativeAnimation();
-    else this._stopNativeAnimation();
-    if (isClockAnimating) this._startClockAnimation();
-    else this._stopClockAnimation();
-    this._renderIncomplete = false;
+  // Start/stop the client-side animations to match the current mode. After a
+  // full update the dots are new: a loop that was already running paints them
+  // right away instead of waiting for its next tick.
+  _syncAnimations(isNativeAnimating, isClockAnimating, repaint) {
+    if (isNativeAnimating) {
+      const running = this._nativeLoop?.running;
+      this._startNativeAnimation();
+      if (running && repaint) this._nativeAnimFrame();
+    } else this._stopNativeAnimation();
+    if (isClockAnimating) {
+      const running = this._clockLoop?.running;
+      this._startClockAnimation();
+      if (running && repaint) this._clockAnimFrame();
+    } else this._stopClockAnimation();
+  }
+
+  // Post-render work of a full update: paint the fresh dots, wire the Actions
+  // view and (re)start the animation loop owning the matrix.
+  updated(changedProperties) {
+    super.updated?.(changedProperties);
+    const pending = this._pendingFull;
+    if (!pending) return;
+    this._pendingFull = null;
+    this._lampDots = null;
+    if (
+      this.config.show_lamp_preview !== false &&
+      !pending.isNativeAnimating &&
+      !pending.isClockAnimating
+    ) {
+      const dots = this._getLampDots();
+      if (dots.length === pending.gridColors.length)
+        this._paintDots(pending.gridColors, pending.orientation, dots);
+    }
+    this._syncActions();
+    this._syncAnimations(
+      pending.isNativeAnimating,
+      pending.isClockAnimating,
+      true,
+    );
   }
 
   // Convert a 100-entry matrix_colors array (RGB tuples) to CSS colors using
@@ -1845,9 +1423,14 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
   }
 
   // Lazily cache the .lamp-dot NodeList so animation frames don't re-query the
-  // DOM every tick. Invalidated (set null) whenever the matrix DOM is rebuilt.
+  // DOM every tick. Invalidated (set null) whenever the matrix DOM is rebuilt;
+  // a cache whose nodes Lit has since removed is re-queried as well.
   _getLampDots() {
-    if (!this._lampDots || this._lampDots.length === 0) {
+    if (
+      !this._lampDots ||
+      this._lampDots.length === 0 ||
+      (this.isConnected && !this._lampDots[0].isConnected)
+    ) {
       this._lampDots = this.shadowRoot?.querySelectorAll(".lamp-dot") || [];
     }
     return this._lampDots;
@@ -2036,7 +1619,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     if (dots.length !== gridColors.length) {
       // Mismatch - need full render
       this._isInitialRenderComplete = false;
-      this.render();
+      this._refresh();
       return;
     }
 
@@ -2046,10 +1629,16 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     if (this._lastPreviewOrientation !== orientation) {
       this._lastPreviewOrientation = orientation;
       this._isInitialRenderComplete = false;
-      this.render();
+      this._refresh();
       return;
     }
 
+    this._paintDots(gridColors, orientation, dots);
+  }
+
+  // Paint the .lamp-dot nodes directly. The dots have no reactive bindings, so
+  // Lit never rewrites what the static preview or the animation loops paint.
+  _paintDots(gridColors, orientation, dots = this._getLampDots()) {
     const layout = this._orientedLayout(orientation);
     const totalCols = layout.cols;
 
@@ -2065,31 +1654,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       if (dot._rawColor === color) return;
       dot._rawColor = color;
 
-      // Check if pixel is black using RGB values (same logic as _generateMatrixHtml)
-      let isBlack = false;
-      if (color.startsWith("#")) {
-        const hex = color.replace(/^#/, "");
-        const r = parseInt(hex.substring(0, 2), 16);
-        const g = parseInt(hex.substring(2, 4), 16);
-        const b = parseInt(hex.substring(4, 6), 16);
-        isBlack =
-          r <= BLACK_THRESHOLD && g <= BLACK_THRESHOLD && b <= BLACK_THRESHOLD;
-      } else if (color.startsWith("rgb")) {
-        const match = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
-        if (match) {
-          const r = parseInt(match[1]);
-          const g = parseInt(match[2]);
-          const b = parseInt(match[3]);
-          isBlack =
-            r <= BLACK_THRESHOLD &&
-            g <= BLACK_THRESHOLD &&
-            b <= BLACK_THRESHOLD;
-        }
-      }
-
-      const isEmpty = this.config.hide_black_dots ? isBlack : false;
-      const displayColor =
-        this.config.hide_black_dots && isBlack ? "transparent" : color;
+      const { isEmpty, displayColor } = this._dotAppearance(color);
 
       // Update background and class
       dot.style.background = displayColor;
@@ -2101,30 +1666,50 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     });
   }
 
-  // Update only slider values without rebuilding DOM
+  // Black detection (shared BLACK_THRESHOLD from matrix-const.js) and the
+  // hide_black_dots display rule for one CSS colour.
+  _dotAppearance(color) {
+    let isBlack = false;
+    if (color.startsWith("#")) {
+      // Hex color format
+      const hex = color.replace(/^#/, "");
+      const r = parseInt(hex.substring(0, 2), 16);
+      const g = parseInt(hex.substring(2, 4), 16);
+      const b = parseInt(hex.substring(4, 6), 16);
+      isBlack =
+        r <= BLACK_THRESHOLD && g <= BLACK_THRESHOLD && b <= BLACK_THRESHOLD;
+    } else if (color.startsWith("rgb")) {
+      // RGB color format
+      const match = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+      if (match) {
+        const r = parseInt(match[1]);
+        const g = parseInt(match[2]);
+        const b = parseInt(match[3]);
+        isBlack =
+          r <= BLACK_THRESHOLD &&
+          g <= BLACK_THRESHOLD &&
+          b <= BLACK_THRESHOLD;
+      }
+    }
+    const isEmpty = this.config.hide_black_dots ? isBlack : false;
+    const displayColor =
+      this.config.hide_black_dots && isBlack ? "transparent" : color;
+    return { isEmpty, displayColor };
+  }
+
+  // Update only the brightness slider without rebuilding DOM. Effect sliders
+  // and their labels are Lit bindings over _localEffects / the entity state.
   _updateSliderValues(brightness, effects) {
     // Update brightness slider and visual indicators via the shared control.
     const brightnessSlider =
-      this.shadowRoot.querySelector(".brightness-slider") ||
-      this.shadowRoot.querySelector(".capsule-input");
+      this.shadowRoot?.querySelector(".brightness-slider") ||
+      this.shadowRoot?.querySelector(".capsule-input");
     if (brightnessSlider && !this._anySliderDragging) {
       brightnessSlider.value = brightness;
       // Per-style visuals (bar/wheel/matrix/rotary/capsule/slider) are handled
       // by the shared slider-control module.
       this._slUpdateVisuals?.(brightness);
     }
-
-    // Update effect sliders
-    Object.entries(effects).forEach(([effectName, value]) => {
-      const slider = this.shadowRoot.querySelector(
-        `.effect-slider[data-effect="${effectName}"]`,
-      );
-      if (slider && !this._anySliderDragging) {
-        slider.value = value;
-        // Update the displayed value text
-        this._updateEffectLabel(effectName, value);
-      }
-    });
   }
 
   // Map the physical device orientation to a preview grid geometry + a
@@ -2154,10 +1739,11 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     };
   }
 
-  _generateMatrixHtml(gridColors, stateObj) {
+  // Container geometry of the matrix preview (shared by the Lit template and
+  // the string renderer below).
+  _matrixGeometry(stateObj) {
     const matrixBackground = this.config.matrix_background || "black";
     const matrixBoxShadow = this.config.matrix_box_shadow !== false;
-    const pixelStyle = this.config.matrix_pixel_style || "square";
     // Resolve pixel spacing mode (new tri-state) with backward compat for old booleans
     const spacingMode =
       this.config.matrix_spacing_mode ||
@@ -2173,106 +1759,109 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     // Preview geometry follows the physical device orientation.
     const orientation = stateObj?.attributes?.device_orientation || "right";
     const layout = this._orientedLayout(orientation);
-    const totalRows = layout.rows;
-    const totalCols = layout.cols;
-
-    const pixels = Array.from({ length: totalRows * totalCols })
-      .map((_, idx) => {
-        const row = Math.floor(idx / totalCols);
-        const col = idx % totalCols;
-        const colorIndex = layout.indexFn(row, col);
-
-        const color = gridColors[colorIndex] || "#000000";
-
-        // Check if pixel is black using RGB values (more robust than string matching)
-        // Uses shared BLACK_THRESHOLD from draw_card_const.js
-        let isBlack = false;
-        if (color.startsWith("#")) {
-          // Hex color format
-          const hex = color.replace(/^#/, "");
-          const r = parseInt(hex.substring(0, 2), 16);
-          const g = parseInt(hex.substring(2, 4), 16);
-          const b = parseInt(hex.substring(4, 6), 16);
-          isBlack =
-            r <= BLACK_THRESHOLD &&
-            g <= BLACK_THRESHOLD &&
-            b <= BLACK_THRESHOLD;
-        } else if (color.startsWith("rgb")) {
-          // RGB color format
-          const match = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
-          if (match) {
-            const r = parseInt(match[1]);
-            const g = parseInt(match[2]);
-            const b = parseInt(match[3]);
-            isBlack =
-              r <= BLACK_THRESHOLD &&
-              g <= BLACK_THRESHOLD &&
-              b <= BLACK_THRESHOLD;
-          }
-        }
-
-        const isEmpty = this.config.hide_black_dots ? isBlack : false;
-        const displayColor =
-          this.config.hide_black_dots && isBlack ? "transparent" : color;
-
-        // For empty dots, use inline style background: transparent
-        return `<div class="lamp-dot${
-          isEmpty ? " lamp-dot-empty" : ""
-        }" style="background: ${displayColor};"></div>`;
-      })
-      .join("");
-
-    return `
-      <div class="${alignClass}" style="container-type:inline-size;max-width:100%;width:${layout.tall ? `${(85 * (this.config.size_pct || 100)) / 100}px` : `${this.config.size_pct || 100}%`};margin-inline:${this.config.align === "left" ? "0 auto" : this.config.align === "right" ? "auto 0" : "auto"};">
-      <div class="lamp-preview-css"
-           style="width:100%;aspect-ratio:auto;padding:${previewLength(8)};border-radius:${previewLength(12)};
-                  background: ${matrixBackground}; 
-                  gap: ${previewLength(pixelGap)};
-                  box-shadow: ${matrixBoxShadow ? `0 ${previewLength(2)} ${previewLength(8)} #0008` : "none"};
-                  grid-template-columns: repeat(${totalCols}, 1fr);
-                  grid-template-rows: repeat(${totalRows}, 1fr);">
-        ${pixels}
-      </div>
-      </div>
-    `;
+    const sizePct = this.config.size_pct || 100;
+    return {
+      layout,
+      alignClass,
+      outerStyle: `container-type:inline-size;max-width:100%;width:${layout.tall ? `${(85 * sizePct) / 100}px` : `${sizePct}%`};margin-inline:${this.config.align === "left" ? "0 auto" : this.config.align === "right" ? "auto 0" : "auto"};`,
+      gridStyle:
+        `width:100%;aspect-ratio:auto;padding:${previewLength(8)};border-radius:${previewLength(12)};` +
+        `background: ${matrixBackground}; ` +
+        `gap: ${previewLength(pixelGap)}; ` +
+        `box-shadow: ${matrixBoxShadow ? `0 ${previewLength(2)} ${previewLength(8)} #0008` : "none"}; ` +
+        `grid-template-columns: repeat(${layout.cols}, 1fr); ` +
+        `grid-template-rows: repeat(${layout.rows}, 1fr);`,
+    };
   }
 
-  // Build the 4-way device orientation control (right / down / left / up).
-  _generateDeviceOrientationHtml(stateObj) {
+  // Lit matrix preview. The dots are keyed by the full-update generation (so
+  // every full update gets fresh nodes, like the former rebuild) and carry no
+  // bindings: _paintDots and the animation loops own their colours.
+  _matrixTemplate(stateObj) {
+    const { layout, alignClass, outerStyle, gridStyle } =
+      this._matrixGeometry(stateObj);
+    const generation = this._dotGeneration;
+    const indices = Array.from(
+      { length: layout.rows * layout.cols },
+      (_, index) => index,
+    );
+    return html`<div class=${alignClass} style=${outerStyle}>
+      <div class="lamp-preview-css" style=${gridStyle}>
+        ${repeat(
+          indices,
+          (index) => `${generation}:${index}`,
+          () => html`<div class="lamp-dot"></div>`,
+        )}
+      </div>
+    </div>`;
+  }
+
+  // HTML-string rendering of the same preview with its colours inline, for
+  // callers that embed a static snapshot (e.g. the appearance regression tests).
+  _generateMatrixHtml(gridColors, stateObj) {
+    const { layout, alignClass, outerStyle, gridStyle } =
+      this._matrixGeometry(stateObj);
+    const pixels = Array.from({ length: layout.rows * layout.cols })
+      .map((_, idx) => {
+        const row = Math.floor(idx / layout.cols);
+        const col = idx % layout.cols;
+        const color = gridColors[layout.indexFn(row, col)] || "#000000";
+        const { isEmpty, displayColor } = this._dotAppearance(color);
+        return `<div class="lamp-dot${
+          isEmpty ? " lamp-dot-empty" : ""
+        }" style="background: ${escapeHtml(displayColor)};"></div>`;
+      })
+      .join("");
+    return `<div class="${alignClass}" style="${escapeHtml(outerStyle)}"><div class="lamp-preview-css" style="${escapeHtml(gridStyle)}">${pixels}</div></div>`;
+  }
+
+  // Markup of the shared 4-way device orientation control (right / down /
+  // left / up). The shared renderer returns an HTML string whose row carries
+  // its own delegated click handler (handleOrientationControl).
+  _orientationMarkup(stateObj) {
     const current =
       this._orientationPending ||
       stateObj?.attributes?.device_orientation ||
       "right";
     const unavailable =
       !stateObj || ["unavailable", "unknown"].includes(stateObj.state);
-    return `<div class="orientation-controls">${renderOrientationControls(this.config, current, unavailable)}${this._orientationError ? `<div class="orientation-error" role="alert">${escapeHtml(this._orientationError)}</div>` : ""}</div>`;
+    return renderOrientationControls(this.config, current, unavailable);
   }
 
+  _orientationTemplate(stateObj) {
+    const markup = this._orientationMarkup(stateObj);
+    this._renderedOrientationKey = `${markup}\u0000${this._orientationError || ""}`;
+    const error = this._orientationError
+      ? html`<div class="orientation-error" role="alert">${this._orientationError}</div>`
+      : nothing;
+    return html`<div class="orientation-controls">${unsafeHTML(markup)}${error}</div>`;
+  }
+
+  // Re-render the orientation control when its markup or error changed, and
+  // keep keyboard focus on the same button across the markup swap.
   _refreshOrientationControls() {
     const container = this.shadowRoot?.querySelector(".orientation-controls");
     if (!container) return;
-    const markup = this._generateDeviceOrientationHtml(
+    const markup = this._orientationMarkup(
       this._hass?.states[this.config?.entity],
     );
     if (
-      container === this._orientationControlsNode &&
-      markup === this._orientationControlsMarkup
+      `${markup}\u0000${this._orientationError || ""}` ===
+      this._renderedOrientationKey
     )
       return;
     const focused = container.contains(this.shadowRoot.activeElement)
       ? this.shadowRoot.activeElement?.dataset.value
       : null;
-    container.outerHTML = markup;
-    this._orientationControlsMarkup = markup;
-    this._orientationControlsNode = this.shadowRoot.querySelector(
-      ".orientation-controls",
-    );
+    this.requestUpdate();
     if (focused) {
-      Array.from(
-        this.shadowRoot.querySelectorAll(".orientation-controls button"),
-      )
-        .find((button) => button.dataset.value === focused)
-        ?.focus({ preventScroll: true });
+      this.updateComplete.then(() =>
+        Array.from(
+          this.shadowRoot.querySelectorAll(".orientation-controls button"),
+        )
+          .find((button) => button.dataset.value === focused)
+          ?.focus({ preventScroll: true }),
+      );
     }
   }
 
@@ -2351,34 +1940,24 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     this._refreshOrientationControls();
   }
 
-  _generateLampControlsHtml(stateObj, brightness) {
-    let html =
-      '<yeelight-mode-controls area="actions"></yeelight-mode-controls>';
-
-    // Device orientation control (between power/refresh actions and brightness).
-    if (this.config.show_device_orientation !== false) {
-      html += this._generateDeviceOrientationHtml(stateObj);
-    }
-
-    // Brightness slider (brightness parameter is already in 1-100 display space).
-    // The full multi-style control (render + interactions + CSS) lives in the
-    // shared ./slider-control-utils.js module — same control the clock card uses.
-    if (this.config.show_brightness_slider === true) {
-      html += renderSliderGroup([
-        { gc: this._brightnessGc(), value: brightness },
-      ]);
-    }
-
-    return html;
+  // Actions, device orientation and the brightness slider. The slider is the
+  // shared multi-style control (./slider-control-utils.js, same as the clock
+  // card), rendered from markup captured on the last full update.
+  _lampControlsTemplate(stateObj) {
+    return html`<yeelight-mode-controls
+        area="actions"
+        .model=${this._actions}
+      ></yeelight-mode-controls
+      >${this.config.show_device_orientation !== false
+        ? this._orientationTemplate(stateObj)
+        : nothing}${this._sliderMarkup
+        ? unsafeHTML(this._sliderMarkup)
+        : nothing}`;
   }
 
-  _generateAdjustmentControlsHtml(effects) {
-    let html = "";
-
-    const layoutMode = this.config.adjustments_layout || "grouped";
-
-    // Derive effectsData from SECTIONS_REGISTRY + EFFECTS_REGISTRY
-    const effectsData = SECTIONS_REGISTRY.map((section) => ({
+  // Section / effect view data derived from SECTIONS_REGISTRY + EFFECTS_REGISTRY.
+  _adjustmentSections(effects) {
+    return SECTIONS_REGISTRY.map((section) => ({
       id: section.id,
       title: section.title,
       icon: section.icon,
@@ -2398,312 +1977,273 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
         };
       }),
     }));
+  }
 
-    // Generate HTML based on layout mode
-    if (layoutMode === "compact") {
-      html += this._generateCompactLayout(effectsData);
-    } else if (layoutMode === "tabbed") {
-      html += this._generateTabbedLayout(effectsData);
-    } else if (layoutMode === "radial") {
-      html += this._generateRadialLayout(effectsData);
-    } else if (layoutMode === "categories") {
-      html += this._generateCategoriesLayout(effectsData);
-    } else {
-      // Default to "grouped" layout
-      html += this._generateGroupedLayout(effectsData);
-    }
+  _adjustmentControlsTemplate(effects) {
+    const layoutMode = this.config.adjustments_layout || "grouped";
+    const sections = this._adjustmentSections(effects);
+    if (layoutMode === "compact") return this._compactLayout(sections);
+    if (layoutMode === "tabbed") return this._tabbedLayout(sections);
+    if (layoutMode === "radial") return this._radialLayout(sections);
+    if (layoutMode === "categories") return this._categoriesLayout(sections);
+    // Default to "grouped" layout
+    return this._groupedLayout(sections);
+  }
 
-    return html;
+  _sectionStyle() {
+    return (
+      this.config.section_style ||
+      this.config.grouped_section_style ||
+      "subtle"
+    );
+  }
+
+  // Section reset button display for "always" / "changed" / "never".
+  _sectionResetDisplay(sectionId, visible = "block") {
+    const mode = this.config.reset_button_mode || "always";
+    if (mode === "always") return visible;
+    if (mode === "changed")
+      return this._checkSectionChanges(sectionId) ? visible : "none";
+    return "none";
+  }
+
+  _sectionIndicatorClass(sectionId) {
+    const showIndicators = this.config?.show_change_indicators ?? true;
+    return showIndicators && this._checkSectionChanges(sectionId)
+      ? "change-indicator visible"
+      : "change-indicator";
+  }
+
+  _effectDisplayValue(effect) {
+    return effect.value !== undefined ? effect.value : effect.default;
+  }
+
+  // "value + unit" as one text node (e.g. "30°").
+  _effectValueText(effect) {
+    return `${this._effectDisplayValue(effect)}${effect.unit}`;
+  }
+
+  // One effect range input (all layouts share the drag guard and handler).
+  _effectSlider(effect, className, step) {
+    return html`<input
+      type="range"
+      min=${effect.min}
+      max=${effect.max}
+      step=${step ?? nothing}
+      .value=${String(this._effectDisplayValue(effect))}
+      class=${className}
+      data-effect=${effect.name}
+      data-default=${effect.default}
+      @mousedown=${this._startDrag}
+      @touchstart=${this._startDrag}
+      @mouseup=${this._endDrag}
+      @touchend=${this._endDrag}
+      @input=${this._onEffectInput}
+      @click=${className.includes("radial-effect-slider")
+        ? this._stopPropagation
+        : nothing}
+    />`;
+  }
+
+  _onEffectInput(event) {
+    this.handleEffectChange(event.currentTarget.dataset.effect, event);
+  }
+
+  _stopPropagation(event) {
+    event.stopPropagation();
+  }
+
+  _onResetSection(event) {
+    event.stopPropagation();
+    this.resetSection(event.currentTarget.dataset.sectionId);
+  }
+
+  _onResetEffect(event) {
+    this.resetEffect(event.currentTarget.dataset.effect);
   }
 
   // Compact Layout: All controls in a single clean panel with minimal spacing
-  _generateCompactLayout(sections) {
+  _compactLayout(sections) {
     const showIndicators = this.config?.show_change_indicators ?? true;
     const resetButtonMode = this.config.reset_button_mode || "always";
-    const sectionStyle =
-      this.config.section_style ||
-      this.config.grouped_section_style ||
-      "subtle";
-
-    // Add class to container based on reset button mode and section style for CSS styling
-    let html = `<div class="effects-compact-container reset-mode-${resetButtonMode} style-${sectionStyle}">`;
-
-    // Render all effects in a compact grid
-    sections.forEach((section) => {
-      section.effects.forEach((effect) => {
-        const displayValue =
-          effect.value !== undefined ? effect.value : effect.default;
+    const rows = sections.flatMap((section) =>
+      section.effects.map((effect) => {
+        const displayValue = this._effectDisplayValue(effect);
         const hasChanged = this._checkEffectChanged(effect.name);
-
-        // Determine if reset button should be visible
-        let resetButtonVisible = false;
-        if (resetButtonMode === "always") {
-          resetButtonVisible = true;
-        } else if (resetButtonMode === "changed") {
-          resetButtonVisible = hasChanged;
-        }
-        // resetButtonMode === "never" ? resetButtonVisible stays false
-
-        html += `
-          <div class="compact-slider-row">
-            <span class="compact-icon">${effect.icon || section.icon}</span>
-            <span class="compact-label">
-              ${effect.label}
-              ${
-                showIndicators
-                  ? `<span class="change-indicator compact-indicator ${
-                      hasChanged ? "visible" : ""
-                    }" data-effect="${effect.name}"></span>`
-                  : ""
-              }
-            </span>
-            <input 
-              type="range" 
-              min="${effect.min}" 
-              max="${effect.max}" 
-              value="${displayValue}" 
-              class="compact-slider effect-slider"
-              data-effect="${effect.name}"
-              data-default="${effect.default}"
-              onmousedown="this.getRootNode().host._startDrag()"
-              ontouchstart="this.getRootNode().host._startDrag()"
-              onmouseup="this.getRootNode().host._endDrag()"
-              ontouchend="this.getRootNode().host._endDrag()"
-              oninput="this.getRootNode().host.handleEffectChange('${
-                effect.name
-              }', event)"
-            />
-            <span class="compact-value" data-effect="${
-              effect.name
-            }">${displayValue}${effect.unit}</span>
-            <button 
-              class="compact-reset-button" 
-              data-effect="${effect.name}"
-              onclick="this.getRootNode().host.resetEffect('${effect.name}')"
-              title="Reset ${effect.label}"
-              style="display: ${resetButtonVisible ? "flex" : "none"};"
-            >
-              🔄
-            </button>
-          </div>
-        `;
-      });
-    });
-
-    html += "</div>";
-    return html;
+        const resetButtonVisible =
+          resetButtonMode === "always" ||
+          (resetButtonMode === "changed" && hasChanged);
+        return html`<div class="compact-slider-row">
+          <span class="compact-icon">${effect.icon || section.icon}</span>
+          <span class="compact-label">
+            ${effect.label}
+            ${showIndicators
+              ? html`<span
+                  class="change-indicator compact-indicator ${hasChanged
+                    ? "visible"
+                    : ""}"
+                  data-effect=${effect.name}
+                ></span>`
+              : nothing}
+          </span>
+          ${this._effectSlider(effect, "compact-slider effect-slider")}
+          <span class="compact-value" data-effect=${effect.name}
+            >${this._effectValueText(effect)}</span
+          >
+          <button
+            class="compact-reset-button"
+            data-effect=${effect.name}
+            @click=${this._onResetEffect}
+            title="Reset ${effect.label}"
+            style="display: ${resetButtonVisible ? "flex" : "none"};"
+          >
+            🔄
+          </button>
+        </div>`;
+      }),
+    );
+    return html`<div
+      class="effects-compact-container reset-mode-${resetButtonMode} style-${this._sectionStyle()}"
+    >
+      ${rows}
+    </div>`;
   }
 
   // Tabbed Layout: Effects organized in tabs with smooth transitions
-  _generateTabbedLayout(sections) {
+  _tabbedLayout(sections) {
     const activeTab = this._activeTab || sections[0].id;
-    const sectionStyle =
-      this.config.section_style ||
-      this.config.grouped_section_style ||
-      "subtle";
-
-    let html = `<div class="effects-tabbed-container yc-stack yc-controls style-${sectionStyle}">`;
-
-    // Tab headers
-    html += '<div class="tab-headers">';
-    sections.forEach((section) => {
-      const isActive = section.id === activeTab;
-      html += `
-        <button 
-          class="tab-header ${isActive ? "active" : ""}" 
-          title="${section.title}"
-          onclick="this.getRootNode().host.switchTab('${section.id}')"
-        >
-          <span class="tab-icon">${section.icon}</span>
-          <span class="tab-title">${section.title}</span>
-          <span class="change-indicator" data-section-id="${section.id}"></span>
-        </button>
-      `;
-    });
-    html += "</div>";
-
-    // Tab content
-    html += '<div class="tab-content-container">';
-    sections.forEach((section) => {
-      const isActive = section.id === activeTab;
-
-      // Determine button visibility based on mode
-      const resetButtonMode = this.config.reset_button_mode || "always";
-      let resetButtonVisible = "none";
-      if (resetButtonMode === "always") {
-        resetButtonVisible = "flex";
-      } else if (resetButtonMode === "changed") {
-        const hasChanges = this._checkSectionChanges(section.id);
-        resetButtonVisible = hasChanges ? "flex" : "none";
-      }
-      // resetButtonMode === "never" ? stays "none"
-
-      html += `
-        <div class="tab-content ${isActive ? "active" : ""}" data-tab="${
-          section.id
-        }" data-section-id="${section.id}">
-      `;
-
-      section.effects.forEach((effect) => {
-        const displayValue =
-          effect.value !== undefined ? effect.value : effect.default;
-        html += `
-          <div class="tabbed-slider-row">
-            <div class="tabbed-label-row">
-              <label class="tabbed-label" data-effect="${effect.name}">${
-                effect.label
-              }: <strong>${displayValue}${effect.unit}</strong></label>
-              ${
-                effect.hint
-                  ? `<span class="tabbed-hint">${effect.hint}</span>`
-                  : ""
-              }
-            </div>
-            <input 
-              type="range" 
-              min="${effect.min}" 
-              max="${effect.max}" 
-              value="${displayValue}" 
-              class="tabbed-slider effect-slider"
-              data-effect="${effect.name}"
-              data-default="${effect.default}"
-              onmousedown="this.getRootNode().host._startDrag()"
-              ontouchstart="this.getRootNode().host._startDrag()"
-              onmouseup="this.getRootNode().host._endDrag()"
-              ontouchend="this.getRootNode().host._endDrag()"
-              oninput="this.getRootNode().host.handleEffectChange('${
-                effect.name
-              }', event)"
-            />
-          </div>
-        `;
-      });
-
-      // Add reset button at the end (always rendered, visibility controlled by inline style)
-      html += `
-        <button 
-          class="tabbed-reset-button" 
-          data-section-id="${section.id}"
-          onclick="this.getRootNode().host.resetSection('${section.id}')"
-          title="Reset ${section.title}"
-          style="display: ${resetButtonVisible};"
-        >
-          🔄 Reset
-        </button>
-      `;
-
-      html += "</div>";
-    });
-    html += "</div>";
-
-    html += "</div>";
-    return html;
+    return html`<div
+      class="effects-tabbed-container yc-stack yc-controls style-${this._sectionStyle()}"
+    >
+      <div class="tab-headers">
+        ${sections.map(
+          (section) =>
+            html`<button
+              class="tab-header ${section.id === activeTab ? "active" : ""}"
+              title=${section.title}
+              @click=${() => this.switchTab(section.id)}
+            >
+              <span class="tab-icon">${section.icon}</span>
+              <span class="tab-title">${section.title}</span>
+              <span
+                class=${this._sectionIndicatorClass(section.id)}
+                data-section-id=${section.id}
+              ></span>
+            </button>`,
+        )}
+      </div>
+      <div class="tab-content-container">
+        ${sections.map(
+          (section) =>
+            html`<div
+              class="tab-content ${section.id === activeTab ? "active" : ""}"
+              data-tab=${section.id}
+              data-section-id=${section.id}
+            >
+              ${section.effects.map((effect) => {
+                // Plain "Label: value" text: the steady-state output of the
+                // former label updates (which replaced the initial <strong>).
+                return html`<div class="tabbed-slider-row">
+                  <div class="tabbed-label-row">
+                    <label class="tabbed-label" data-effect=${effect.name}
+                      >${`${effect.label}: ${this._effectValueText(effect)}`}</label
+                    >
+                    ${effect.hint
+                      ? html`<span class="tabbed-hint">${effect.hint}</span>`
+                      : nothing}
+                  </div>
+                  ${this._effectSlider(effect, "tabbed-slider effect-slider")}
+                </div>`;
+              })}
+              <button
+                class="tabbed-reset-button"
+                data-section-id=${section.id}
+                @click=${this._onResetSection}
+                title="Reset ${section.title}"
+                style="display: ${this._sectionResetDisplay(
+                  section.id,
+                  "flex",
+                )};"
+              >
+                🔄 Reset
+              </button>
+            </div>`,
+        )}
+      </div>
+    </div>`;
   }
 
   // Grouped Layout: Modern collapsible cards with better spacing (default)
-  _generateGroupedLayout(sections) {
-    const sectionStyle =
-      this.config.section_style ||
-      this.config.grouped_section_style ||
-      "subtle";
-    let html = '<div class="effects-grouped-container yc-stack yc-controls">';
-
-    sections.forEach((section, index) => {
-      const isExpanded = this._expandedSections[section.id] === true;
-
-      // Determine button visibility based on mode
-      const resetButtonMode = this.config.reset_button_mode || "always";
-      let resetButtonVisible = "none";
-      if (resetButtonMode === "always") {
-        resetButtonVisible = "block";
-      } else if (resetButtonMode === "changed") {
-        const hasChanges = this._checkSectionChanges(section.id);
-        resetButtonVisible = hasChanges ? "block" : "none";
-      }
-      // resetButtonMode === "never" ? stays "none"
-
-      html += `
-        <div class="grouped-section style-${sectionStyle} ${
-          isExpanded ? "expanded" : "collapsed"
-        }" data-section-id="${section.id}" style="z-index: ${
-          isExpanded ? 100 : 10 - index
-        };">
-          <div class="grouped-header" onclick="this.getRootNode().host.toggleSection('${
-            section.id
-          }')">
+  _groupedLayout(sections) {
+    const sectionStyle = this._sectionStyle();
+    const anyExpanded = Object.values(this._expandedSections).some(
+      (value) => value === true,
+    );
+    return html`<div class="effects-grouped-container yc-stack yc-controls">
+      ${sections.map((section, index) => {
+        const isExpanded = this._expandedSections[section.id] === true;
+        const state = isExpanded
+          ? "expanded"
+          : anyExpanded
+            ? "collapsed hidden"
+            : "collapsed";
+        return html`<div
+          class="grouped-section style-${sectionStyle} ${state}"
+          data-section-id=${section.id}
+          style="z-index: ${isExpanded ? 100 : 10 - index};"
+        >
+          <div
+            class="grouped-header"
+            @click=${() => this.toggleSection(section.id)}
+          >
             <div class="grouped-header-left">
-              <span class="grouped-icon">${
-                section.icon
-              }<span class="change-indicator" data-section-id="${
-                section.id
-              }"></span></span>
+              <span class="grouped-icon"
+                >${section.icon}<span
+                  class=${this._sectionIndicatorClass(section.id)}
+                  data-section-id=${section.id}
+                ></span
+              ></span>
               <div class="grouped-title-area">
                 <span class="grouped-title">${section.title}</span>
                 <span class="grouped-description">${section.description}</span>
               </div>
             </div>
             <div class="grouped-header-right">
-              <button 
-                class="grouped-reset" 
-                data-section-id="${section.id}"
-                onclick="event.stopPropagation(); this.getRootNode().host.resetSection('${
-                  section.id
-                }');"
+              <button
+                class="grouped-reset"
+                data-section-id=${section.id}
+                @click=${this._onResetSection}
                 title="Reset ${section.title}"
-                style="display: ${resetButtonVisible};"
+                style="display: ${this._sectionResetDisplay(section.id)};"
               >
                 🔄
               </button>
             </div>
           </div>
-          <div class="grouped-content" data-section="${section.id}">
-      `;
-
-      section.effects.forEach((effect) => {
-        const displayValue =
-          effect.value !== undefined ? effect.value : effect.default;
-        html += `
-          <div class="grouped-slider-row">
-            <div class="grouped-label-row">
-              <label class="grouped-label">${effect.label}</label>
-              <span class="grouped-value" data-effect="${
-                effect.name
-              }">${displayValue}${effect.unit}</span>
-            </div>
-            <input 
-              type="range" 
-              min="${effect.min}" 
-              max="${effect.max}" 
-              value="${displayValue}" 
-              class="grouped-slider effect-slider"
-              data-effect="${effect.name}"
-              data-default="${effect.default}"
-              onmousedown="this.getRootNode().host._startDrag()"
-              ontouchstart="this.getRootNode().host._startDrag()"
-              onmouseup="this.getRootNode().host._endDrag()"
-              ontouchend="this.getRootNode().host._endDrag()"
-              oninput="this.getRootNode().host.handleEffectChange('${
-                effect.name
-              }', event)"
-            />
-            ${
-              effect.hint
-                ? `<span class="grouped-hint">${effect.hint}</span>`
-                : ""
-            }
+          <div class="grouped-content" data-section=${section.id}>
+            ${section.effects.map(
+              (effect) =>
+                html`<div class="grouped-slider-row">
+                  <div class="grouped-label-row">
+                    <label class="grouped-label">${effect.label}</label>
+                    <span class="grouped-value" data-effect=${effect.name}
+                      >${this._effectValueText(effect)}</span
+                    >
+                  </div>
+                  ${this._effectSlider(effect, "grouped-slider effect-slider")}
+                  ${effect.hint
+                    ? html`<span class="grouped-hint">${effect.hint}</span>`
+                    : nothing}
+                </div>`,
+            )}
           </div>
-        `;
-      });
-
-      html += "</div></div>";
-    });
-
-    html += "</div>";
-    return html;
+        </div>`;
+      })}
+    </div>`;
   }
 
   // Radial Layout: Color wheel selector with dynamic slider panel
-  _generateRadialLayout(sections) {
+  _radialLayout(sections) {
     // Select active category (default to first section)
     if (!this._activeRadialCategory && sections[0]?.id) {
       this._activeRadialCategory = sections[0].id;
@@ -2718,17 +2258,6 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     const selectedEffect =
       this._selectedRadialEffect || activeSection?.effects[0]?.name || null;
 
-    const sectionStyle =
-      this.config.section_style ||
-      this.config.grouped_section_style ||
-      "subtle";
-
-    let html = `<div class="effects-radial-container style-${sectionStyle}">`;
-
-    // Left side: Half-circle selector (facing right, positioned at left edge)
-    html += '<div class="radial-wheel-container">';
-    html += '<svg class="radial-wheel" viewBox="-5 0 80 160">';
-
     const centerX = 0; // At the left edge
     const centerY = 80; // Vertically centered
     const outerRadius = 70;
@@ -2737,8 +2266,9 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     // Draw CATEGORY segments only (not individual effects)
     const numCategories = sections.length;
     const angleStep = 180 / numCategories; // Divide half-circle by number of categories
+    const showIndicators = this.config?.show_change_indicators ?? true;
 
-    sections.forEach((section, index) => {
+    const segments = sections.map((section, index) => {
       // Change to -90° to 90° to draw on the RIGHT side
       const startAngle = (-90 + index * angleStep) * (Math.PI / 180);
       const endAngle = (-90 + (index + 1) * angleStep) * (Math.PI / 180);
@@ -2754,31 +2284,12 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       const y4 = centerY + innerRadius * Math.sin(endAngle);
 
       const isActive = section.id === activeCategory;
-
-      // Determine segment styling based on state and config
-      // IMPORTANT: Classes are set during HTML generation, NOT post-render
-      // This prevents blinking when switching categories
-      const showIndicators = this.config?.show_change_indicators ?? true;
       const hasChanges =
         showIndicators && this._checkSectionChanges(section.id);
 
       let segmentClass = "radial-segment";
-      if (isActive) {
-        segmentClass += " active-category";
-      }
-      if (hasChanges) {
-        segmentClass += " has-changes";
-      }
-
-      html += `
-        <path 
-          class="${segmentClass}" 
-          d="M ${x1} ${y1} L ${x2} ${y2} A ${outerRadius} ${outerRadius} 0 0 1 ${x3} ${y3} L ${x4} ${y4} A ${innerRadius} ${innerRadius} 0 0 0 ${x1} ${y1} Z"
-          data-category="${section.id}"
-          data-section-id="${section.id}"
-          onclick="this.getRootNode().host.selectRadialCategory('${section.id}')"
-        ><title>${section.title}</title></path>
-      `;
+      if (isActive) segmentClass += " active-category";
+      if (hasChanges) segmentClass += " has-changes";
 
       // Category icon in the ring
       const midAngle = (startAngle + endAngle) / 2;
@@ -2786,248 +2297,259 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
       const iconX = centerX + iconRadius * Math.cos(midAngle);
       const iconY = centerY + iconRadius * Math.sin(midAngle);
 
-      html += `
-        <text 
-          x="${iconX}" 
-          y="${iconY}" 
+      return svg`<path
+          class=${segmentClass}
+          d="M ${x1} ${y1} L ${x2} ${y2} A ${outerRadius} ${outerRadius} 0 0 1 ${x3} ${y3} L ${x4} ${y4} A ${innerRadius} ${innerRadius} 0 0 0 ${x1} ${y1} Z"
+          data-category=${section.id}
+          data-section-id=${section.id}
+          @click=${() => this.selectRadialCategory(section.id)}
+        ><title>${section.title}</title></path>
+        <text
+          x=${iconX}
+          y=${iconY}
           class="radial-icon ${isActive ? "active-category" : ""}"
-          text-anchor="middle" 
+          text-anchor="middle"
           dominant-baseline="middle"
           pointer-events="none"
-        >${section.icon}</text>
-      `;
+        >${section.icon}</text>`;
     });
 
-    // Center half-circle (only draw the right half)
-    const innerArcPath = `M ${centerX} ${
-      centerY - innerRadius
-    } A ${innerRadius} ${innerRadius} 0 0 1 ${centerX} ${
-      centerY + innerRadius
-    }`;
-    html += `<path d="${innerArcPath} L ${centerX} ${
-      centerY + innerRadius
-    } L ${centerX} ${centerY - innerRadius} Z" class="radial-center" />`;
-
-    // Draw separator lines between categories (AFTER center so they're visible)
+    // Separator lines between categories (drawn after the center)
+    const separators = [];
     for (let i = 1; i < numCategories; i++) {
       const angle = (-90 + i * angleStep) * (Math.PI / 180);
-      const x1 = centerX + innerRadius * Math.cos(angle);
-      const y1 = centerY + innerRadius * Math.sin(angle);
-      const x2 = centerX + outerRadius * Math.cos(angle);
-      const y2 = centerY + outerRadius * Math.sin(angle);
-
-      html += `
-        <line 
-          x1="${x1}" y1="${y1}" 
-          x2="${x2}" y2="${y2}" 
+      separators.push(svg`<line
+          x1=${centerX + innerRadius * Math.cos(angle)}
+          y1=${centerY + innerRadius * Math.sin(angle)}
+          x2=${centerX + outerRadius * Math.cos(angle)}
+          y2=${centerY + outerRadius * Math.sin(angle)}
           class="radial-separator"
           pointer-events="none"
-        />
-      `;
+        />`);
     }
 
-    // Draw outer border arc (half-circle)
-    const outerArcPath = `M ${centerX} ${
-      centerY - outerRadius
-    } A ${outerRadius} ${outerRadius} 0 0 1 ${centerX} ${
-      centerY + outerRadius
-    }`;
-    html += `<path d="${outerArcPath}" class="radial-outer-border" pointer-events="none" />`;
+    // Center half-circle (only draw the right half) and outer border arc
+    const innerArcPath = `M ${centerX} ${centerY - innerRadius} A ${innerRadius} ${innerRadius} 0 0 1 ${centerX} ${centerY + innerRadius}`;
+    const outerArcPath = `M ${centerX} ${centerY - outerRadius} A ${outerRadius} ${outerRadius} 0 0 1 ${centerX} ${centerY + outerRadius}`;
 
-    if (activeSection) {
-      // Position icon in the center of the visible half circle (at half the radius)
-      html += `
-        <text 
-          x="${innerRadius / 2}" 
-          y="${centerY}" 
-          class="radial-center-icon"
-          text-anchor="middle" 
-          dominant-baseline="middle"
-        ><title>${activeSection.title}</title>${activeSection.icon}</text>
-      `;
-    }
-
-    html += "</svg>";
-    html += "</div>"; // End radial-wheel-container
-
-    // Right side: Sliders for all effects in active category
-    html +=
-      '<div class="radial-slider-panel" data-section-id="' +
-      activeSection.id +
-      '">';
-
-    if (activeSection) {
-      // Determine button visibility based on mode
-      const resetButtonMode = this.config.reset_button_mode || "always";
-      let resetButtonVisible = "none";
-      if (resetButtonMode === "always") {
-        resetButtonVisible = "block";
-      } else if (resetButtonMode === "changed") {
-        const hasChanges = this._checkSectionChanges(activeSection.id);
-        resetButtonVisible = hasChanges ? "block" : "none";
-      }
-      // resetButtonMode === "never" ? stays "none"
-
-      html += `
-        <div class="radial-category-header">
-          <div class="radial-category-title">${activeSection.title}<span class="change-indicator" data-section-id="${activeSection.id}"></span></div>
-          <button class="radial-reset-button" 
-            data-section-id="${activeSection.id}"
-            onclick="this.getRootNode().host.resetSection('${activeSection.id}')" 
-            title="Reset ${activeSection.title}"
-            style="display: ${resetButtonVisible};">
-            🔄 Reset
-          </button>
-        </div>
-      `;
-
-      activeSection.effects.forEach((effect) => {
-        const displayValue =
-          effect.value !== undefined ? effect.value : effect.default;
-        const isSelected = effect.name === selectedEffect;
-        const selectedClass = isSelected ? " selected" : "";
-
-        html += `
-          <div class="radial-effect-row${selectedClass}" data-effect="${effect.name}">
-            <div class="radial-effect-row-header">
-              <span class="radial-effect-row-label">${effect.label}</span>
-              <span class="radial-effect-row-value">${displayValue}${effect.unit}</span>
-            </div>
-            <input 
-              type="range" 
-              min="${effect.min}" 
-              max="${effect.max}" 
-              value="${displayValue}" 
-              class="radial-effect-slider effect-slider"
-              data-effect="${effect.name}"
-              data-default="${effect.default}"
-              onmousedown="this.getRootNode().host._startDrag()"
-              ontouchstart="this.getRootNode().host._startDrag()"
-              onmouseup="this.getRootNode().host._endDrag()"
-              ontouchend="this.getRootNode().host._endDrag()"
-              oninput="this.getRootNode().host.handleEffectChange('${effect.name}', event)"
-              onclick="event.stopPropagation()"
-            />
-          </div>
-        `;
-      });
-    }
-
-    html += "</div>"; // End radial-slider-panel
-    html += "</div>"; // End effects-radial-container
-
-    return html;
+    return html`<div class="effects-radial-container style-${this._sectionStyle()}">
+      <div class="radial-wheel-container">
+        <svg class="radial-wheel" viewBox="-5 0 80 160">
+          ${segments}
+          <path
+            d="${innerArcPath} L ${centerX} ${centerY + innerRadius} L ${centerX} ${centerY - innerRadius} Z"
+            class="radial-center"
+          />
+          ${separators}
+          <path
+            d=${outerArcPath}
+            class="radial-outer-border"
+            pointer-events="none"
+          />
+          ${activeSection
+            ? svg`<text
+                x=${innerRadius / 2}
+                y=${centerY}
+                class="radial-center-icon"
+                text-anchor="middle"
+                dominant-baseline="middle"
+              ><title>${activeSection.title}</title>${activeSection.icon}</text>`
+            : nothing}
+        </svg>
+      </div>
+      <div class="radial-slider-panel" data-section-id=${activeSection.id}>
+        ${activeSection
+          ? html`<div class="radial-category-header">
+                <div class="radial-category-title">
+                  ${activeSection.title}<span
+                    class=${this._sectionIndicatorClass(activeSection.id)}
+                    data-section-id=${activeSection.id}
+                  ></span>
+                </div>
+                <button
+                  class="radial-reset-button"
+                  data-section-id=${activeSection.id}
+                  @click=${this._onResetSection}
+                  title="Reset ${activeSection.title}"
+                  style="display: ${this._sectionResetDisplay(
+                    activeSection.id,
+                  )};"
+                >
+                  🔄 Reset
+                </button>
+              </div>
+              ${activeSection.effects.map(
+                (effect) =>
+                  html`<div
+                    class="radial-effect-row${effect.name === selectedEffect
+                      ? " selected"
+                      : ""}"
+                    data-effect=${effect.name}
+                  >
+                    <div class="radial-effect-row-header">
+                      <span class="radial-effect-row-label"
+                        >${effect.label}</span
+                      >
+                      <span class="radial-effect-row-value"
+                        >${this._effectValueText(effect)}</span
+                      >
+                    </div>
+                    ${this._effectSlider(
+                      effect,
+                      "radial-effect-slider effect-slider",
+                    )}
+                  </div>`,
+              )}`
+          : nothing}
+      </div>
+    </div>`;
   }
 
   // Categories Layout: Icon column on left with category-based slider panel
-  _generateCategoriesLayout(sections) {
+  _categoriesLayout(sections) {
     const activeSection =
       sections.find((s) => s.id === this._activeRadialSection) || sections[0];
     this._activeRadialSection = activeSection.id;
 
-    const sectionStyle =
-      this.config.section_style ||
-      this.config.grouped_section_style ||
-      "subtle";
-
-    let html = `<div class="effects-categories-container style-${sectionStyle}">`;
-
-    // Left side: Vertical icon column
-    html += '<div class="categories-icon-column">';
-    sections.forEach((section, index) => {
-      const isActive = section.id === activeSection.id;
-      html += `
-        <div 
-          class="categories-icon-button ${isActive ? "active" : ""}" 
-          onclick="this.getRootNode().host.selectCircularCategory('${
-            section.id
-          }')"
-          title="${section.title}"
-        >
-          <span class="categories-icon-emoji">${section.icon}</span>
-          <span class="change-indicator" data-section-id="${section.id}"></span>
-        </div>
-      `;
-    });
-    html += "</div>"; // End icon column
-
-    // Right side: Sliders for active category
-    html +=
-      '<div class="categories-slider-panel" data-section-id="' +
-      activeSection.id +
-      '">';
-
-    if (activeSection) {
-      const resetButtonVisible = this._shouldShowResetButton(activeSection.id)
-        ? "block"
-        : "none";
-
-      html += `
+    return html`<div
+      class="effects-categories-container style-${this._sectionStyle()}"
+    >
+      <div class="categories-icon-column">
+        ${sections.map(
+          (section) =>
+            html`<div
+              class="categories-icon-button ${section.id === activeSection.id
+                ? "active"
+                : ""}"
+              @click=${() => this.selectCircularCategory(section.id)}
+              title=${section.title}
+            >
+              <span class="categories-icon-emoji">${section.icon}</span>
+              <span
+                class=${this._sectionIndicatorClass(section.id)}
+                data-section-id=${section.id}
+              ></span>
+            </div>`,
+        )}
+      </div>
+      <div class="categories-slider-panel" data-section-id=${activeSection.id}>
         <div class="categories-category-header">
           <div class="categories-category-title">${activeSection.title}</div>
-          <button 
-            class="categories-reset-button" 
-            data-section-id="${activeSection.id}"
+          <button
+            class="categories-reset-button"
+            data-section-id=${activeSection.id}
             title="Reset ${activeSection.title}"
-            onclick="this.getRootNode().host.resetSection('${activeSection.id}')"
-            style="display: ${resetButtonVisible};"
+            @click=${this._onResetSection}
+            style="display: ${this._shouldShowResetButton(activeSection.id)
+              ? "block"
+              : "none"};"
           >
             🔄 Reset
           </button>
         </div>
-      `;
-
-      activeSection.effects.forEach((effect) => {
-        const displayValue =
-          effect.value !== undefined ? effect.value : effect.default;
-        html += `
-          <div class="categories-effect-row">
-            <div class="categories-effect-row-header">
-              <span class="categories-effect-row-label">${effect.label}</span>
-              <span class="categories-effect-row-value" data-effect="${
-                effect.name
-              }">${displayValue}${effect.unit}</span>
-            </div>
-            <input
-              type="range"
-              class="categories-effect-slider"
-              min="${effect.min}"
-              max="${effect.max}"
-              step="${effect.step || 1}"
-              value="${displayValue}"
-              data-effect="${effect.name}"
-              data-default="${effect.default}"
-              onmousedown="this.getRootNode().host._startDrag()"
-              ontouchstart="this.getRootNode().host._startDrag()"
-              onmouseup="this.getRootNode().host._endDrag()"
-              ontouchend="this.getRootNode().host._endDrag()"
-              oninput="this.getRootNode().host.handleEffectChange('${
-                effect.name
-              }', event)"
-            />
-          </div>
-        `;
-      });
-    }
-
-    html += "</div>"; // End categories-slider-panel
-    html += "</div>"; // End effects-categories-container
-
-    return html;
+        ${activeSection.effects.map(
+          (effect) =>
+            html`<div class="categories-effect-row">
+              <div class="categories-effect-row-header">
+                <span class="categories-effect-row-label">${effect.label}</span>
+                <span
+                  class="categories-effect-row-value"
+                  data-effect=${effect.name}
+                  >${this._effectValueText(effect)}</span
+                >
+              </div>
+              ${this._effectSlider(
+                effect,
+                "categories-effect-slider",
+                effect.step || 1,
+              )}
+            </div>`,
+        )}
+      </div>
+    </div>`;
   }
 
+  render() {
+    const entityId = this.config?.entity;
+    const hass = this._hass;
+    // Nothing to show yet (or any more): keep whatever was rendered last.
+    if (!hass || !entityId) return this._lastTemplate ?? nothing;
+    const stateObj = hass.states[entityId];
+    if (!stateObj) {
+      return html`<ha-card>
+        <div style="padding: 16px;">
+          <h3>${`Entity not found: ${entityId}`}</h3>
+          <p>Please check your configuration and ensure the entity exists.</p>
+        </div>
+      </ha-card>`;
+    }
+
+    const showCard = this.config.show_card_background !== false;
+    const cardTitle = this.config.title || this.config.card_title || "";
+    const usingFallbackMatrix = !stateObj.attributes.matrix_colors;
+    const content = html`${this.config.show_lamp_preview !== false
+      ? this._matrixTemplate(stateObj)
+      : nothing}${this.config.show_lamp_control !== false
+      ? this._lampControlsTemplate(stateObj)
+      : nothing}${this.config.show_adjustment_controls === true
+      ? this._adjustmentControlsTemplate(this._currentEffects(stateObj))
+      : nothing}`;
+
+    this._lastTemplate = html`<style>
+        ${this._stylesText()}
+      </style>
+      ${showCard
+        ? html`<ha-card
+            header=${cardTitle
+              ? `${cardTitle}${usingFallbackMatrix ? " (No Matrix Data)" : ""}`
+              : nothing}
+          >
+            <div style="display: flex; width: 100%;">
+              <div class="yeelight-cube-lamp-preview-container yc-stack">
+                ${content}
+              </div>
+            </div>
+          </ha-card>`
+        : html`<div style="display: flex; width: 100%;">
+            <div class="yeelight-cube-lamp-preview-container yc-stack">
+              ${cardTitle
+                ? html`<div style="font-weight:600;font-size:1.1em;">
+                    ${cardTitle}
+                  </div>`
+                : nothing}
+              ${content}
+            </div>
+          </div>`}`;
+    return this._lastTemplate;
+  }
+
+  // The card stylesheet wrapped in a <style> element, as an HTML string (for
+  // callers that embed a static snapshot next to _generateMatrixHtml).
   _getStyles() {
-    const totalRows = 5;
-    const totalCols = 20;
+    return `<style>${this._stylesText()}</style>`;
+  }
+
+  // The card CSS. Only the pixel shape and dot shadow depend on the config, so
+  // the text is memoised on those and Lit only rewrites it when they change.
+  _stylesText() {
     const pixelStyle = this.config.matrix_pixel_style || "square";
     // Resolve pixel spacing mode for CSS styles
     const spacingMode =
       this.config.matrix_spacing_mode ||
       (this.config.matrix_pixel_spacing === false ? "none" : "normal");
     const lampDotShadow = spacingMode === "subtle" || spacingMode === "normal";
+    const key = `${pixelStyle}|${lampDotShadow}`;
+    if (this._stylesKey !== key) {
+      this._stylesKey = key;
+      this._stylesCache = this._buildStylesText(pixelStyle, lampDotShadow);
+    }
+    return this._stylesCache;
+  }
 
+  _buildStylesText(pixelStyle, lampDotShadow) {
+    const totalRows = 5;
+    const totalCols = 20;
     return `
-      <style>
         /* Inject centralized button styles */
         ${exportImportButtonStyles}
         ${cardLayoutStyles}
@@ -4411,11 +3933,23 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
             width: 100%;
           }
         }
-      </style>
     `;
   }
 
+  connectedCallback() {
+    super.connectedCallback();
+    // Reattached after a disconnect (dashboard edit mode, view switch): the
+    // animation loops were stopped, so run a full update to restart them.
+    if (this._wasDisconnected) {
+      this._wasDisconnected = false;
+      this._isInitialRenderComplete = false;
+      this._refresh();
+    }
+  }
+
   disconnectedCallback() {
+    super.disconnectedCallback();
+    this._wasDisconnected = true;
     this._actionCommands.reset();
     this._actions.configure(
       this.config,
@@ -4423,6 +3957,7 @@ class YeelightCubeLampPreviewCard extends HTMLElement {
     );
     this._effectContext = (this._effectContext || 0) + 1;
     this._localEffects = {};
+    this._resetPending = new Set();
     this._isDragging = false;
     this._orientationContext = (this._orientationContext || 0) + 1;
     this._orientationPending = null;

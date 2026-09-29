@@ -464,7 +464,7 @@ export class ModeControlsController {
           : this.adapter.apply(name),
       );
     const context = this.context;
-    return this.command(async () => {
+    return this.selectQuietly(async () => {
       const success = await (this.adapter.select
         ? this.adapter.select(name)
         : this.adapter.apply(name));
@@ -475,6 +475,28 @@ export class ModeControlsController {
       );
       return true;
     });
+  }
+
+  // Picking a style/effect in the browser is a card-level selection, not a
+  // control-row command: it must not mark the controller busy, or the actions,
+  // favourites and colour rows would flash disabled until the lamp answers.
+  // Service calls are already serialised by the card's command queue.
+  async selectQuietly(callback) {
+    if (this.adapter.disabled()) return false;
+    this.stop();
+    const context = this.context;
+    this.error = "";
+    if (!this._freezing) this.frozen = false;
+    this.notifyIfChanged();
+    try {
+      return (await callback()) !== false && context === this.context;
+    } catch (error) {
+      if (context === this.context) {
+        this.error = error.message || "The lamp could not be updated.";
+        this.notify();
+      }
+      return false;
+    }
   }
 
   chooseFavourite(item) {

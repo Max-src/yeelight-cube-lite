@@ -21,9 +21,9 @@ import {
 // Ownership: clock-card-adapter maps the domain; card-command-controller owns
 // transport; mode-controls-controller owns selection/favourites/rotation;
 // style-browser-ui and color-mode-ui own interactive DOM. This host retains
-// Clock format/preset policy and frame painting. The Lit shell is persistent.
+// Clock format/preset policy and frame painting. The card is a LitElement that
+// renders its shadow root from Lit templates into one persistent <ha-card>.
 
-import { escapeHtml } from "./html-escape-utils.js";
 import {
   independentActionConfig,
   DEFAULT_BUTTON_STYLE,
@@ -31,7 +31,7 @@ import {
 } from "./action-button-utils.js";
 import { ModeControlsController } from "./mode-controls-controller.js";
 import { CardCommandController } from "./card-command-controller.js";
-import { LitElement, html, unsafeHTML } from "./lib/lit-all.js";
+import { LitElement, html, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
 import "./style-browser-ui.js";
 import "./color-mode-ui.js";
 import {
@@ -89,17 +89,14 @@ import {
   renderClockFrame,
   flipMatrixVertical,
 } from "./clock-preview-utils.js";
-import { previewBrightnessScale } from "./draw_card_const.js";
+import { previewBrightnessScale } from "./matrix-const.js";
 import {
   createRafLoop,
   paintCellBackground,
   paintCellBoxShadow,
 } from "./matrix-animator.js";
-import {
-  actionButtonStyles,
-  renderActionButtonGroupHTML,
-  bindActionButtonGroup,
-} from "./action-button-utils.js";
+import { actionButtonStyles } from "./action-button-utils.js";
+import { renderActionButtonGroup } from "./action-button-ui.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 
 const CONTENT_OPTIONS = [
@@ -128,29 +125,100 @@ function rgbToHex(rgb) {
   );
 }
 
-class ClockCardShell extends LitElement {
-  static properties = {
-    content: { attribute: false },
-    stylesText: {},
-    background: { type: Boolean },
-  };
-  createRenderRoot() {
-    return this;
-  }
-  render() {
-    return html`<style>
-        ${this.stylesText}</style
-      ><ha-card
-        class=${this.background
-          ? "clock-card yc-stack"
-          : "clock-card no-bg yc-stack"}
-        >${this.content}</ha-card
-      >`;
-  }
-}
-defineOnce("yeelight-clock-shell", ClockCardShell);
+// Card styles (static Lit styles; unchanged from the former inline <style>).
+const CLOCK_CARD_CSS = `
+      ${cardLayoutStyles}
+      :host { display: block; --action-row-icon-align: flex-start; }
+      .loading, .empty { padding: 16px; color: var(--secondary-text-color, #888); }
+      /* ha-card supplies the native background, border and radius when
+         "Show Card Background" is on; the plain .no-bg variant drops them. */
+      ha-card.clock-card { padding: 14px; }
+      .clock-card.no-bg {
+        background: transparent;
+        box-shadow: none;
+        border: none;
+        padding: 8px 0;
+      }
+      .card-title { font-size: 1.15em; font-weight: 600; }
+      .active-label { font-size: 0.9em; color: var(--secondary-text-color, #9aa); }
+      /* The Content and Format sections sit side by side when the card is
+         wide enough, and wrap to their own rows otherwise. */
+      .section-row > .section { flex: 1 1 auto; min-width: 0; }
 
-class YeelightCubeClockCard extends HTMLElement {
+      .current-preview { display: flex; justify-content: center; }
+      .current-preview-inner { width: 100%; }
+      .clock-preview { width: 100%; }
+
+      ${actionButtonStyles}
+      ${colorPickerStyles}
+      .clock-color-control { display: flex; flex-wrap: wrap; align-items: center; gap: 8px;     justify-content: space-between;}
+      /* Saved colours + the trailing picker share one button group; the save
+         buttons sit next to them when there's room and wrap below otherwise. */
+      .clock-color-presets { flex: 0 1 auto; min-width: 0; }
+      .clock-color-choices { flex-wrap: wrap; }
+      /* Filled style: fixed square chips so empty (name-less) colours match the
+         add/replace button beside them. max-width overrides the shared group's
+         fit-content cap, which would otherwise collapse the empty chips. */
+      .clock-color-choices.cc-filled .shared-action-button {
+        flex: 0 0 auto; width: 44px; max-width: 44px; height: 44px; min-height: 0; padding: 0;
+      }
+      /* Swatch-only style: fixed-size colour chips whose shape is configurable. */
+      .clock-color-choices.cc-swatch .shared-action-button {
+        flex: 0 0 44px; width: 44px; max-width: 44px; height: 44px; min-height: 0; padding: 0;
+        overflow: visible; border-radius: 12px;
+      }
+      .clock-color-choices.cc-swatch.cc-shape-square .shared-action-button { border-radius: 4px; }
+      .clock-color-choices.cc-swatch.cc-shape-circle .shared-action-button { border-radius: 50%; }
+      /* The picker's dashed "add" border only suits the outline button style. */
+      .clock-color-choices button[data-value="__pick__"].btn-style-outline {
+        border-style: dashed;
+      }
+      /* Saving is a distinct action, so the save buttons take a different hue
+         and sit together on their own row. */
+      /* While the save form is open, hide the choice row and give the form the
+         full width so its fields are comfortable. */
+      .clock-color-control:has(yeelight-clock-preset-manager[editing]) .clock-color-presets { display: none; }
+      .clock-color-control:has(yeelight-clock-preset-manager[editing]) .clock-color-save { flex: 1 1 100%; }
+      .clock-color-control:has(yeelight-clock-preset-manager[editing]) .clock-color-save yeelight-clock-preset-manager { width: 100%; }
+
+      /* Shared design language: text selectors + shape/size axes */
+      ${selectorSharedStyles}
+      ${paginationStyles}
+      /* Shared preview renderers (gallery list/grid/wheel + carousel) */
+      ${galleryDisplayStyles}
+      ${carouselStyles}
+      /* Shared multi-style value slider (same control as brightness) */
+      ${sliderControlStyles}
+
+      ${colorModeSelectorStyles}
+
+      /* ── Carousel: match the gradient card exactly ──────────────────
+         Transparent wrapper (each item paints its own background), keep the
+         subtle nav-button hover (not a solid blue fill), and never let a
+         preview grow wider than the card. */
+      .gc-preview-shell .carousel-content-card {
+        background: transparent !important;
+        box-shadow: none !important;
+        padding: 0 !important;
+      }
+      .gc-preview-shell .carousel-nav-btn:hover:not(:disabled) {
+        background: color-mix(
+          in srgb,
+          var(--primary-color, #1976d2) 30%,
+          var(--card-background-color, #fff)
+        );
+      }
+      .gc-preview-shell .gallery-matrix-preview { max-width: 100% !important; }
+
+      /* Active-style highlight: clearly visible on any background colour. */
+      .gc-preview-shell .gallery-item[data-active-mode="true"] {
+        outline: 2px solid var(--primary-color, #03a9f4) !important;
+        outline-offset: -2px;
+        box-shadow: 0 0 8px rgba(3, 169, 244, 0.5) !important;
+      }
+    `;
+
+class YeelightCubeClockCard extends LitElement {
   constructor() {
     super();
     this._hass = null;
@@ -319,7 +387,6 @@ class YeelightCubeClockCard extends HTMLElement {
         this._controls.adapter.currentColor(),
       );
     this._controls.listeners.add(this._markFavouritesListener);
-    if (!this.shadowRoot) this.attachShadow({ mode: "open" });
     this._stateSignature = null;
     this.render();
   }
@@ -356,6 +423,17 @@ class YeelightCubeClockCard extends HTMLElement {
   }
 
   set hass(hass) {
+    if (this._hassInputsUnchanged(hass)) {
+      // Nothing this card reads was replaced: keep the fresh hass object (for
+      // service calls) but skip attribute reads, controller updates and the
+      // state-signature work. Drag previews still drop once the drag ends.
+      this._hass = hass;
+      if (!this._anySliderDragging) {
+        this._speedPreview = null;
+        this._brightnessPreview = null;
+      }
+      return;
+    }
     this._attrs();
     const wasPreviewOnly = previewOnly(this);
     this._hass = hass;
@@ -368,7 +446,7 @@ class YeelightCubeClockCard extends HTMLElement {
     }
     this._controls?.update();
     this._restoreCustomColor();
-    if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+    this._ensureRenderRoot();
     // Once the lamp echoes the applied values, drop the live-drag overrides so
     // the previews follow the real values again.
     if (!this._anySliderDragging) {
@@ -388,12 +466,42 @@ class YeelightCubeClockCard extends HTMLElement {
     return this._hass;
   }
 
+  // Home Assistant hands out a new hass object on every state push anywhere.
+  // Everything this card reads comes from the config, the primary/target lamp
+  // states, the clock preset library (cached per hass.states and resolved via
+  // its remembered sensor), the native font sensor and the service registry;
+  // when all of those are the same references as the last processed update
+  // (and the first render is done) the update can be skipped entirely.
+  _hassInputsUnchanged(hass) {
+    const states = hass?.states;
+    const primary = this._primaryEntity();
+    const inputs = [
+      this.config,
+      hass?.services,
+      clockPresetLibrary(hass),
+      this._nativeFontState(states),
+      primary ? states?.[primary] : undefined,
+      ...getTargetEntities(this.config).map((entity) => states?.[entity]),
+    ];
+    const last = this._lastHassInputs;
+    this._lastHassInputs = inputs;
+    return (
+      !!last &&
+      this.hasUpdated &&
+      this._stateSignature !== null &&
+      last.length === inputs.length &&
+      inputs.every((value, index) => value === last[index])
+    );
+  }
+
   connectedCallback() {
+    super.connectedCallback();
     this._controls?.listeners.add(this._markFavouritesListener);
     this._startAnimation();
   }
 
   disconnectedCallback() {
+    super.disconnectedCallback();
     this._commands.reset();
     this._controls?.listeners.delete(this._markFavouritesListener);
     this._controls?.disconnect();
@@ -530,26 +638,54 @@ class YeelightCubeClockCard extends HTMLElement {
   // Locate the "Font Characters" sensor and return the firmware "native" clock
   // font + its monospace metrics, so previews render with the SAME font the
   // lamp uses for the clock (not the matrix-mode font). Mirrors the lamp
-  // preview card; cached per hass object.
-  _getNativeClockFont() {
-    const states = this._hass?.states;
+  // preview card. The sensor's entity id is remembered once found and the
+  // result is cached on that entity's state object, so state pushes elsewhere
+  // never rescan every entity; only a missing sensor falls back to a scan
+  // (cached per hass.states until one appears).
+  _getNativeClockFont(states = this._hass?.states) {
     if (!states) return { fontMap: null, metrics: null };
-    if (this._nativeFontCacheStates === states && this._nativeFontCache)
-      return this._nativeFontCache;
-    let result = { fontMap: null, metrics: null };
-    for (const eid in states) {
-      const a = states[eid]?.attributes;
-      if (a && a.font_maps && a.font_maps.native) {
-        result = {
-          fontMap: a.font_maps.native,
-          metrics: (a.font_metrics || {}).native || null,
-        };
-        break;
+    const cache = this._nativeFontCache;
+    if (
+      cache &&
+      (cache.entityId
+        ? states[cache.entityId] === cache.state
+        : cache.states === states)
+    )
+      return cache.font;
+    let entityId = cache?.entityId || null;
+    let state = entityId ? states[entityId] : null;
+    if (!state?.attributes?.font_maps?.native) {
+      entityId = null;
+      state = null;
+      for (const eid in states) {
+        if (states[eid]?.attributes?.font_maps?.native) {
+          entityId = eid;
+          state = states[eid];
+          break;
+        }
       }
     }
-    this._nativeFontCacheStates = states;
-    this._nativeFontCache = result;
-    return result;
+    const a = state?.attributes;
+    const font = a
+      ? {
+          fontMap: a.font_maps.native,
+          metrics: (a.font_metrics || {}).native || null,
+        }
+      : { fontMap: null, metrics: null };
+    this._nativeFontCache = {
+      entityId,
+      state,
+      states: entityId ? null : states,
+      font,
+    };
+    return font;
+  }
+
+  // The font sensor state object backing the cached native font (null when
+  // no sensor exists), used as a cheap change marker for hass updates.
+  _nativeFontState(states) {
+    this._getNativeClockFont(states);
+    return this._nativeFontCache?.state ?? null;
   }
 
   _controlStyles(attrs = this._attrs()) {
@@ -1004,8 +1140,28 @@ class YeelightCubeClockCard extends HTMLElement {
       },
       { root: null, rootMargin: "120px", threshold: 0 },
     );
+    // The observer reports visibility asynchronously (next frame at best), so
+    // a re-render (new style/colour selected) would leave the freshly built
+    // gallery tiles on their static first frame until then -- a visible blink.
+    // Seed the visible set synchronously with the same 120px margin so the
+    // following _paintVisible() repaints them before the browser shows them.
+    const margin = 120;
+    const viewHeight = globalThis.innerHeight || 0;
+    const viewWidth = globalThis.innerWidth || 0;
     tiles.forEach((el) => {
       if (el.hasAttribute("data-clock-preview")) this._visible.add(el);
+      else {
+        const rect = el.getBoundingClientRect?.();
+        if (
+          rect &&
+          rect.width > 0 &&
+          rect.bottom >= -margin &&
+          rect.top <= viewHeight + margin &&
+          rect.right >= -margin &&
+          rect.left <= viewWidth + margin
+        )
+          this._visible.add(el);
+      }
       this._io.observe(el);
     });
   }
@@ -1163,26 +1319,110 @@ class YeelightCubeClockCard extends HTMLElement {
 
   // ── Rendering ─────────────────────────────────────────────────────────────
   //
-  // Lit owns the stable shell and interactive component positions. Never
-  // replace the shell's innerHTML: HA's asynchronously slotted ha-card must
-  // survive updates. Legacy noninteractive fragments remain string renderers.
+  // Lit renders the whole shadow root from `_template()` into one persistent
+  // <ha-card> (HA's asynchronously slotted ha-card must survive updates).
+  // `render()` keeps its imperative meaning for domain actions and external
+  // callers: outside Lit's own update cycle it re-renders synchronously, and
+  // inside it (LitElement.update -> render) it returns the template.
   render() {
-    if (!this.shadowRoot) this.attachShadow({ mode: "open" });
-    if (!this._hass) {
-      this._shellContent(html`<div class="loading">Loading…</div>`, false);
-      return;
-    }
-    const entity = this._primaryEntity();
-    if (!entity) {
-      this._shellContent(
-        html`<div class="empty">
-          Configure a Yeelight Cube Lite light entity in the card editor.
-        </div>`,
-        true,
-      );
-      return;
-    }
+    if (this._litRendering) return this._template();
+    this._ensureRenderRoot();
+    this.requestUpdate();
+    this.performUpdate();
+    return undefined;
+  }
 
+  _ensureRenderRoot() {
+    if (this.renderRoot === undefined)
+      this.renderRoot = this.createRenderRoot();
+  }
+
+  update(changedProperties) {
+    const focus = this._captureFocus();
+    this._litRendering = true;
+    try {
+      super.update(changedProperties);
+    } finally {
+      this._litRendering = false;
+    }
+    this._restoreFocus(focus);
+  }
+
+  // Post-render wiring for the main view (previews + favourite markers).
+  updated() {
+    if (!this._mainRendered) return;
+    this._controls?.update();
+    this._markActive();
+    this.dataset.favStars = String(this.config.favourites_show_stars !== false);
+    markFavouriteModes(
+      this.shadowRoot,
+      this._controls?.favourites,
+      this._currentColorMode(this._attrs()),
+      this._controls?.adapter.currentColor(),
+    );
+    this._setupObserver();
+    this._paintVisible();
+  }
+
+  // Remember which toggle button had focus so it can be restored when a
+  // re-render replaces its group (e.g. the Content/Format row reflows).
+  _captureFocus() {
+    const focused = this.shadowRoot?.activeElement;
+    const control = focused?.closest("[data-clock-control]")?.dataset
+      .clockControl;
+    const value = focused?.dataset.value;
+    return control && value ? { control, value } : null;
+  }
+
+  _restoreFocus(focus) {
+    if (!focus) return;
+    const group = this.shadowRoot.querySelector(
+      `[data-clock-control="${focus.control}"] .shared-button-group`,
+    );
+    const button = [...(group?.querySelectorAll("button") || [])].find(
+      (item) => item.dataset.value === focus.value,
+    );
+    if (!button || button.disabled) return;
+    if (group.getAttribute("role") === "radiogroup") {
+      group.querySelectorAll("button").forEach((item) => {
+        item.tabIndex = item === button ? 0 : -1;
+      });
+    }
+    if (this.shadowRoot.activeElement !== button)
+      button.focus({ preventScroll: true });
+  }
+
+  _onBrowserUpdated() {
+    this._markActive();
+    this._setupObserver();
+    this._paintVisible();
+  }
+
+  _template() {
+    this._mainRendered = false;
+    let content;
+    let background;
+    if (!this._hass) {
+      content = html`<div class="loading">Loading…</div>`;
+      background = false;
+    } else if (!this._primaryEntity()) {
+      content = html`<div class="empty">
+        Configure a Yeelight Cube Lite light entity in the card editor.
+      </div>`;
+      background = true;
+    } else {
+      content = this._mainTemplate();
+      background = this.config.show_card_background !== false;
+      this._mainRendered = true;
+    }
+    return html`<ha-card
+      class=${background ? "clock-card yc-stack" : "clock-card no-bg yc-stack"}
+      @browser-updated=${this._onBrowserUpdated}
+      >${content}</ha-card
+    >`;
+  }
+
+  _mainTemplate() {
     const a = this._attrs();
     let revealKey;
     if (this._revealSavedStyle) {
@@ -1198,184 +1438,110 @@ class YeelightCubeClockCard extends HTMLElement {
       }
     }
 
+    const config = this.config;
     const current = this._currentStyle();
-
-    const sections = [];
     const offline = previewOnly(this);
-    if (offline) {
-      sections.push(
-        html`<div class="muted" role="status">Lamp unavailable</div>`,
-      );
-    }
-    if (this.config.show_current_preview !== false) {
-      sections.push(unsafeHTML(this._renderCurrentPreview(current)));
-    }
-    sections.push(this._controlView("actions"));
-    if (
-      !offline &&
-      (this.config.show_brightness === true ||
-        this.config.show_animation_speed !== false)
-    ) {
-      sections.push(unsafeHTML(this._renderSliders(a)));
-    }
     // 12/24-hour and colon only affect the time, so hide them for date-only.
     const content =
       a.clock_content || (a.clock_show_date ? "time_date" : "time");
+    const showContent = !offline && config.show_content_toggle !== false;
+    const showFormat =
+      !offline && config.show_format_toggles !== false && content !== "date";
     // Content + Format share a row so they sit side by side when there's room.
-    const inlineToggles = [];
-    if (!offline && this.config.show_content_toggle !== false)
-      inlineToggles.push(this._renderContentToggle(a));
-    if (
+    const toggles =
+      showContent && showFormat
+        ? html`<div class="section-row yc-row">
+            ${this._renderContentToggle(a)}${this._renderFormatToggles(a)}
+          </div>`
+        : showContent
+          ? this._renderContentToggle(a)
+          : showFormat
+            ? this._renderFormatToggles(a)
+            : "";
+    const sliders =
       !offline &&
-      this.config.show_format_toggles !== false &&
-      content !== "date"
-    )
-      inlineToggles.push(this._renderFormatToggles(a));
-    if (inlineToggles.length)
-      sections.push(
-        unsafeHTML(
-          inlineToggles.length > 1
-            ? `<div class="section-row yc-row">${inlineToggles.join("")}</div>`
-            : inlineToggles[0],
-        ),
-      );
-    if (this.config.show_color_modes) {
-      sections.push(this._renderColorMode(a));
-    }
-    if (this.config.show_gallery !== false) {
-      this._browser ||= document.createElement("yeelight-style-browser");
-      this._browser.config = this.config;
-      this._browser.items = this._previewItems();
-      this._browser.active = offline ? null : clockPresetKey(current);
-      this._browser.model = this._controls;
-      this._browser.disabled = this._commands.busy;
-      this._browser.searchLabel = "Search clock modes";
-      this._browser.searchClass = "clock-search";
-      this._browser.heading = "Clock style";
-      this._browser.onSelect = (name) => this._controls.choose(name);
-      this._browser.onQuery = (query) => {
-        this._searchQuery = query;
-      };
-      if (revealKey)
-        this._browser.updateComplete.then(() =>
-          this._browser.reveal(revealKey),
-        );
-    }
-
-    const showCard = this.config.show_card_background !== false;
-    const title = this.config.title
-      ? `<div class="card-title">${escapeHtml(this.config.title)}</div>`
-      : "";
-    const activeLabel =
-      !offline && this.config.show_active_label !== false
-        ? `<div class="active-label">${escapeHtml(current?.name || "")}</div>`
+      (config.show_brightness === true || config.show_animation_speed !== false)
+        ? this._renderSliders(a)
         : "";
 
-    const inner = html`${unsafeHTML(title)}${unsafeHTML(activeLabel)}${sections}
-    ${this.config.show_gallery !== false ? this._browser : ""}
-    ${this._controlView("collections")}`;
-    const focusedButton = this.shadowRoot.activeElement;
-    const focusedControl = focusedButton?.closest("[data-clock-control]")
-      ?.dataset.clockControl;
-    const focusedValue = focusedButton?.dataset.value;
-    this._shellContent(inner, showCard);
+    return html`${config.title
+        ? html`<div class="card-title">${config.title}</div>`
+        : ""}${!offline && config.show_active_label !== false
+        ? html`<div class="active-label">${current?.name || ""}</div>`
+        : ""}${offline
+        ? html`<div class="muted" role="status">Lamp unavailable</div>`
+        : ""}${config.show_current_preview !== false
+        ? this._renderCurrentPreview(current)
+        : ""}
+      <yeelight-mode-controls
+        area="actions"
+        .model=${this._controls}
+      ></yeelight-mode-controls>
+      ${sliders}${toggles}${config.show_color_modes
+        ? this._renderColorMode(a)
+        : ""}
+      ${config.show_gallery !== false
+        ? this._galleryBrowser(offline, current, revealKey)
+        : ""}
+      <yeelight-mode-controls
+        area="collections"
+        .model=${this._controls}
+      ></yeelight-mode-controls>`;
+  }
 
-    this._controls?.update();
-    this._attachHandlers();
-    if (focusedControl && focusedValue) {
-      const group = this.shadowRoot.querySelector(
-        `[data-clock-control="${focusedControl}"] .shared-button-group`,
-      );
-      const button = [...(group?.querySelectorAll("button") || [])].find(
-        (item) => item.dataset.value === focusedValue,
-      );
-      if (button && !button.disabled) {
-        if (group.getAttribute("role") === "radiogroup") {
-          group.querySelectorAll("button").forEach((item) => {
-            item.tabIndex = item === button ? 0 : -1;
-          });
-        }
-        button.focus({ preventScroll: true });
-      }
-    }
-    this._markActive();
-    this.dataset.favStars = String(this.config.favourites_show_stars !== false);
-    markFavouriteModes(
-      this.shadowRoot,
-      this._controls?.favourites,
-      this._currentColorMode(this._attrs()),
-      this._controls?.adapter.currentColor(),
-    );
-    this._browserUpdated ||= () => {
-      this._markActive();
-      this._setupObserver();
-      this._paintVisible();
+  // The browser owns its own query/page/wheel state, so one instance is kept
+  // for the card's lifetime (it survives the gallery being hidden and shown).
+  _galleryBrowser(offline, current, revealKey) {
+    this._browser ||= document.createElement("yeelight-style-browser");
+    this._browser.config = this.config;
+    this._browser.items = this._previewItems();
+    this._browser.active = offline ? null : clockPresetKey(current);
+    this._browser.model = this._controls;
+    this._browser.disabled = this._commands.busy;
+    this._browser.searchLabel = "Search clock modes";
+    this._browser.searchClass = "clock-search";
+    this._browser.heading = "Clock style";
+    this._browser.onSelect = (name) => this._controls.choose(name);
+    this._browser.onQuery = (query) => {
+      this._searchQuery = query;
     };
-    this.shadowRoot.removeEventListener(
-      "browser-updated",
-      this._browserUpdated,
-    );
-    this.shadowRoot.addEventListener("browser-updated", this._browserUpdated);
-    this._setupObserver();
-    this._paintVisible();
+    if (revealKey)
+      this._browser.updateComplete.then(() => this._browser.reveal(revealKey));
+    return this._browser;
   }
 
-  // Keep the imperative card API while Lit incrementally updates its shell.
-  _shellContent(inner, showCard) {
-    const css = this._styles().replace(/^\s*<style>|<\/style>\s*$/g, "");
-    if (!this._shell) {
-      this._shell = document.createElement("yeelight-clock-shell");
-      this._shell.style.display = "contents";
-      this.shadowRoot.append(this._shell);
-    }
-    this._shell.content = inner;
-    this._shell.stylesText = css;
-    this._shell.background = showCard;
-    this._shell.renderRoot ||= this._shell.createRenderRoot();
-    this._shell.performUpdate();
-  }
-
-  _controlView(area) {
-    this._controlViews ||= new Map();
-    if (!this._controlViews.has(area)) {
-      const view = document.createElement("yeelight-mode-controls");
-      view.area = area;
-      this._controlViews.set(area, view);
-    }
-    const view = this._controlViews.get(area);
-    view.model = this._controls;
-    return view;
-  }
-
-  get updateComplete() {
-    return Promise.all([
-      this._shell?.updateComplete,
+  async getUpdateComplete() {
+    // Renders are synchronous; Lit's scheduler only settles once connected.
+    const result = this.isConnected
+      ? await super.getUpdateComplete()
+      : !this.isUpdatePending;
+    await Promise.all([
       this._browser?.updateComplete,
       this.shadowRoot?.querySelector("ha-card")?.updateComplete,
       this.shadowRoot?.querySelector("yeelight-color-mode")?.updateComplete,
     ]);
-  }
-
-  requestUpdate() {
-    this.render();
+    return result;
   }
 
   _previewTile(style, { current = false, size } = {}) {
     const px = size || this._previewSizePx();
-    return `<div class="clock-preview" data-clock-preview data-style-name="${escapeHtml(
-      clockPresetKey(style),
-    )}" data-current="${current ? "1" : "0"}" data-size="${px}"></div>`;
+    return html`<div
+      class="clock-preview"
+      data-clock-preview
+      data-style-name=${clockPresetKey(style) ?? ""}
+      data-current=${current ? "1" : "0"}
+      data-size=${px}
+    ></div>`;
   }
 
   _renderCurrentPreview(current) {
     const pct = Number(this.config.lamp_preview_size) || 55;
     const maxW = Math.round(120 + (pct / 100) * 380);
-    return `
-      <div class="current-preview">
-        <div class="current-preview-inner" style="max-width:${maxW}px;">
-          ${this._previewTile(current, { current: true })}
-        </div>
-      </div>`;
+    return html`<div class="current-preview">
+      <div class="current-preview-inner" style="max-width:${maxW}px;">
+        ${this._previewTile(current, { current: true })}
+      </div>
+    </div>`;
   }
 
   // Build the shared-renderer item list: one animated clock frame per style.
@@ -1403,29 +1569,51 @@ class YeelightCubeClockCard extends HTMLElement {
     return style.experimental ? "Experimental" : "Official";
   }
 
-  _controlGroup(options) {
-    return renderActionButtonGroupHTML({
-      buttonStyle: this.config.buttons_style || DEFAULT_BUTTON_STYLE,
-      contentMode:
-        this.config.buttons_content_mode || DEFAULT_BUTTON_CONTENT_MODE,
-      ...options,
-    });
+  _controlGroup(options, onChange) {
+    return renderActionButtonGroup(
+      {
+        buttonStyle: this.config.buttons_style || DEFAULT_BUTTON_STYLE,
+        contentMode:
+          this.config.buttons_content_mode || DEFAULT_BUTTON_CONTENT_MODE,
+        ...options,
+      },
+      onChange,
+    );
+  }
+
+  _toggleFormat(value) {
+    const a = this._attrs();
+    this._applyFormat(
+      value === "twelve"
+        ? { twelve_hour: !a.clock_12_hour }
+        : { colon_blink: !a.clock_colon_blink },
+    );
   }
 
   _renderContentToggle(a) {
     const cur = a.clock_content || (a.clock_show_date ? "time_date" : "time");
-    return `
-      <div class="section">
-        <div data-clock-control="content">${this._controlGroup({ label: "Content", items: CONTENT_OPTIONS, value: cur })}</div>
-      </div>`;
+    return html`<div class="section">
+      <div data-clock-control="content">
+        ${this._controlGroup(
+          { label: "Content", items: CONTENT_OPTIONS, value: cur },
+          (value) => this._applyContent(value),
+        )}
+      </div>
+    </div>`;
   }
 
   _renderFormatToggles(a) {
     const twelve = !!a.clock_12_hour;
     const blink = !!a.clock_colon_blink;
-    return `
-      <div class="section" style="--ctl-accent: color-mix(in srgb, var(--primary-color, #1976d2) 58%, #12a594);">
-        <div data-clock-control="format" style="--primary-color: var(--ctl-accent); --primary-color-dark: color-mix(in srgb, var(--ctl-accent) 74%, #000);">${this._controlGroup(
+    return html`<div
+      class="section"
+      style="--ctl-accent: color-mix(in srgb, var(--primary-color, #1976d2) 58%, #12a594);"
+    >
+      <div
+        data-clock-control="format"
+        style="--primary-color: var(--ctl-accent); --primary-color-dark: color-mix(in srgb, var(--ctl-accent) 74%, #000);"
+      >
+        ${this._controlGroup(
           {
             label: "Format",
             multiple: true,
@@ -1468,8 +1656,10 @@ class YeelightCubeClockCard extends HTMLElement {
               },
             ],
           },
-        )}</div>
-      </div>`;
+          (value) => this._toggleFormat(value),
+        )}
+      </div>
+    </div>`;
   }
 
   _renderColorMode(a) {
@@ -1538,10 +1728,11 @@ class YeelightCubeClockCard extends HTMLElement {
         ns: "speed",
       });
     }
-    return `
-      <div class="section section-sliders">
-        ${renderSliderGroup(controls)}
-      </div>`;
+    // The shared slider renderer emits an HTML string with inline handlers
+    // that resolve through `this.getRootNode().host._sl*`.
+    return html`<div class="section section-sliders">
+      ${unsafeHTML(renderSliderGroup(controls))}
+    </div>`;
   }
 
   _onPresetSaved({ kind, name, color }) {
@@ -1573,27 +1764,6 @@ class YeelightCubeClockCard extends HTMLElement {
     this.render();
   }
 
-  _attachHandlers() {
-    const root = this.shadowRoot;
-    if (!root) return;
-
-    bindActionButtonGroup(
-      root.querySelector('[data-clock-control="content"] .shared-button-group'),
-      (value) => this._applyContent(value),
-    );
-    bindActionButtonGroup(
-      root.querySelector('[data-clock-control="format"] .shared-button-group'),
-      (value) => {
-        const a = this._attrs();
-        this._applyFormat(
-          value === "twelve"
-            ? { twelve_hour: !a.clock_12_hour }
-            : { colon_blink: !a.clock_colon_blink },
-        );
-      },
-    );
-  }
-
   // The trailing "+" choice opens the native picker; changes apply live.
   _openCustomPicker(anchor) {
     openRgbColorPicker(this, anchor, this._customDraft, (rgb) =>
@@ -1601,99 +1771,7 @@ class YeelightCubeClockCard extends HTMLElement {
     );
   }
 
-  _styles() {
-    return `<style>
-      ${cardLayoutStyles}
-      :host { display: block; --action-row-icon-align: flex-start; }
-      .loading, .empty { padding: 16px; color: var(--secondary-text-color, #888); }
-      /* ha-card supplies the native background, border and radius when
-         "Show Card Background" is on; the plain .no-bg variant drops them. */
-      ha-card.clock-card { padding: 14px; }
-      .clock-card.no-bg {
-        background: transparent;
-        box-shadow: none;
-        border: none;
-        padding: 8px 0;
-      }
-      .card-title { font-size: 1.15em; font-weight: 600; }
-      .active-label { font-size: 0.9em; color: var(--secondary-text-color, #9aa); }
-      /* The Content and Format sections sit side by side when the card is
-         wide enough, and wrap to their own rows otherwise. */
-      .section-row > .section { flex: 1 1 auto; min-width: 0; }
-
-      .current-preview { display: flex; justify-content: center; }
-      .current-preview-inner { width: 100%; }
-      .clock-preview { width: 100%; }
-
-      ${actionButtonStyles}
-      ${colorPickerStyles}
-      .clock-color-control { display: flex; flex-wrap: wrap; align-items: center; gap: 8px;     justify-content: space-between;}
-      /* Saved colours + the trailing picker share one button group; the save
-         buttons sit next to them when there's room and wrap below otherwise. */
-      .clock-color-presets { flex: 0 1 auto; min-width: 0; }
-      .clock-color-choices { flex-wrap: wrap; }
-      /* Filled style: fixed square chips so empty (name-less) colours match the
-         add/replace button beside them. max-width overrides the shared group's
-         fit-content cap, which would otherwise collapse the empty chips. */
-      .clock-color-choices.cc-filled .shared-action-button {
-        flex: 0 0 auto; width: 44px; max-width: 44px; height: 44px; min-height: 0; padding: 0;
-      }
-      /* Swatch-only style: fixed-size colour chips whose shape is configurable. */
-      .clock-color-choices.cc-swatch .shared-action-button {
-        flex: 0 0 44px; width: 44px; max-width: 44px; height: 44px; min-height: 0; padding: 0;
-        overflow: visible; border-radius: 12px;
-      }
-      .clock-color-choices.cc-swatch.cc-shape-square .shared-action-button { border-radius: 4px; }
-      .clock-color-choices.cc-swatch.cc-shape-circle .shared-action-button { border-radius: 50%; }
-      /* The picker's dashed "add" border only suits the outline button style. */
-      .clock-color-choices button[data-value="__pick__"].btn-style-outline {
-        border-style: dashed;
-      }
-      /* Saving is a distinct action, so the save buttons take a different hue
-         and sit together on their own row. */
-      /* While the save form is open, hide the choice row and give the form the
-         full width so its fields are comfortable. */
-      .clock-color-control:has(yeelight-clock-preset-manager[editing]) .clock-color-presets { display: none; }
-      .clock-color-control:has(yeelight-clock-preset-manager[editing]) .clock-color-save { flex: 1 1 100%; }
-      .clock-color-control:has(yeelight-clock-preset-manager[editing]) .clock-color-save yeelight-clock-preset-manager { width: 100%; }
-
-      /* Shared design language: text selectors + shape/size axes */
-      ${selectorSharedStyles}
-      ${paginationStyles}
-      /* Shared preview renderers (gallery list/grid/wheel + carousel) */
-      ${galleryDisplayStyles}
-      ${carouselStyles}
-      /* Shared multi-style value slider (same control as brightness) */
-      ${sliderControlStyles}
-
-      ${colorModeSelectorStyles}
-
-      /* ── Carousel: match the gradient card exactly ──────────────────
-         Transparent wrapper (each item paints its own background), keep the
-         subtle nav-button hover (not a solid blue fill), and never let a
-         preview grow wider than the card. */
-      .gc-preview-shell .carousel-content-card {
-        background: transparent !important;
-        box-shadow: none !important;
-        padding: 0 !important;
-      }
-      .gc-preview-shell .carousel-nav-btn:hover:not(:disabled) {
-        background: color-mix(
-          in srgb,
-          var(--primary-color, #1976d2) 30%,
-          var(--card-background-color, #fff)
-        );
-      }
-      .gc-preview-shell .gallery-matrix-preview { max-width: 100% !important; }
-
-      /* Active-style highlight: clearly visible on any background colour. */
-      .gc-preview-shell .gallery-item[data-active-mode="true"] {
-        outline: 2px solid var(--primary-color, #03a9f4) !important;
-        outline-offset: -2px;
-        box-shadow: 0 0 8px rgba(3, 169, 244, 0.5) !important;
-      }
-    </style>`;
-  }
+  static styles = unsafeCSS(CLOCK_CARD_CSS);
 }
 
 defineOnce("yeelight-cube-clock-card", YeelightCubeClockCard);

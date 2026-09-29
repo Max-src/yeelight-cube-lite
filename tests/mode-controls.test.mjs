@@ -341,6 +341,35 @@ test("manual selection queues after stopping rotation without rejecting its own 
   assert.deepEqual(sent, ["stop_effect_rotation", "apply"]);
   assert.equal(controller.currentFavourite().key, "B");
 });
+test("browser selection keeps the control rows enabled while the lamp answers", async () => {
+  let finish;
+  const notified = [];
+  const { controller } = fixture({
+    apply: () => new Promise((resolve) => (finish = resolve)),
+  });
+  controller.listeners.add(() => notified.push(controller.busy));
+  const pending = controller.choose("B");
+  // The lamp has not answered yet: actions, favourites and colour modes read
+  // `busy` and must not flash disabled for a style/effect selection.
+  assert.equal(controller.busy, false);
+  assert.ok(notified.every((busy) => busy === false));
+  finish();
+  assert.equal(await pending, true);
+  assert.equal(controller.busy, false);
+  assert.equal(controller.currentFavourite().key, "B");
+});
+
+test("browser selection reports a failure without ever marking busy", async () => {
+  const { controller } = fixture({
+    apply: async () => {
+      throw new Error("Lamp offline");
+    },
+  });
+  assert.equal(await controller.choose("B"), false);
+  assert.equal(controller.busy, false);
+  assert.equal(controller.error, "Lamp offline");
+});
+
 test("rotation uses available unique modes and bounds intervals", () => {
   const { controller } = fixture({ available: (name) => name === "B" });
   assert.deepEqual(controller.names(), ["B"]);

@@ -82,7 +82,7 @@ _RECTS_NORMAL = [r for row in _PIXEL_RECTS_NORMAL for r in row]
 _RECTS_FLIPPED = [r for row in _PIXEL_RECTS_FLIPPED for r in row]
 
 
-# ── Perceptual brightness boost (must match JS draw_card_const.js) ─────
+# ── Perceptual brightness boost (must match JS matrix-const.js) ─────
 # LCD screens look dimmer than real LEDs at the same RGB value.
 # The JS lamp-preview card applies a boost curve to compensate.
 # We replicate the exact same formula here so both previews match.

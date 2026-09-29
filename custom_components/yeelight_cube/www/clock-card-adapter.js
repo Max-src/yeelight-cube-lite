@@ -44,8 +44,9 @@ export function createClockCardAdapter(card) {
       getTargetEntities(card.config).every(
         (entity) => card._hass?.states[entity]?.state === "on",
       ),
+    // Only lamp availability: a running card request must not disable the
+    // shared controls (requests are queued by the card's command controller).
     disabled: () =>
-      card._commands.busy ||
       getTargetEntities(card.config).some(
         (entity) =>
           !card._hass?.states[entity] ||

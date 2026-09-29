@@ -39,15 +39,28 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
             async_write_ha_state=Mock(),
         )
         self.targets = [self.target]
-        self.handle = _load_standalone_functions(
+        # Like set_clock_style, the lamp update is scheduled in the background;
+        # capture it so tests can run it after the handler has returned.
+        self.scheduled = []
+        self.logger = Mock()
+        self.raw_handle = _load_standalone_functions(
             (ROOT / "light_services.py").read_text(encoding="utf-8"),
             {"handle_set_native_effect"},
             {"asyncio": asyncio, "ALL_NATIVE_EFFECTS": CONSTANTS["ALL_NATIVE_EFFECTS"],
              "CLOCK_COLOR_MODES": CONSTANTS["CLOCK_COLOR_MODES"],
              "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
              "effect_supports_color_override": NATIVE_PREVIEW["effect_supports_color_override"],
-             "HomeAssistantError": ValueError, "_resolve_entities": lambda *args: self.targets},
+             "HomeAssistantError": ValueError, "_resolve_entities": lambda *args: self.targets,
+             "_fire_and_forget": lambda *coros: self.scheduled.extend(coros),
+             "_LOGGER": self.logger},
         )["handle_set_native_effect"]
+
+        async def handle(call):
+            await self.raw_handle(call)
+            pending, self.scheduled[:] = list(self.scheduled), []
+            await asyncio.gather(*pending)
+
+        self.handle = handle
 
     async def test_apply_selects_and_activates_through_existing_display_path(self):
         await self.handle(SimpleNamespace(data={"effect": "Rainbow", "speed": 120}))
@@ -142,13 +155,27 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.target._native_effect, "Streamer")
         self.target.async_apply_display_mode.assert_not_awaited()
 
-    async def test_speed_only_does_not_switch_modes_and_errors_propagate(self):
+    async def test_speed_only_does_not_switch_modes_and_hardware_errors_are_logged(self):
         await self.handle(SimpleNamespace(data={"speed": 80, "activate": False}))
         self.assertEqual(self.target._mode, "Clock")
         self.target.async_apply_display_mode.assert_not_awaited()
+        # Hardware failures happen after the service returned, like
+        # set_clock_style: they are logged instead of raised to the caller.
         self.target.async_apply_display_mode.side_effect = RuntimeError("Offline")
-        with self.assertRaisesRegex(RuntimeError, "Offline"):
-            await self.handle(SimpleNamespace(data={"effect": "Rainbow"}))
+        await self.handle(SimpleNamespace(data={"effect": "Rainbow"}))
+        self.logger.exception.assert_called_once()
+        self.assertEqual(self.target._native_effect, "Rainbow")
+
+    async def test_returns_before_the_lamp_round_trip_with_state_published(self):
+        await self.raw_handle(SimpleNamespace(data={"effect": "Rainbow"}))
+        # The new settings are visible to cards as soon as the call returns...
+        self.assertEqual(self.target._native_effect, "Rainbow")
+        self.assertEqual(self.target._mode, "Native Effect")
+        self.target.async_write_ha_state.assert_called()
+        # ...while the lamp itself is only contacted by the background task.
+        self.target.async_apply_display_mode.assert_not_awaited()
+        await asyncio.gather(*self.scheduled)
+        self.target.async_apply_display_mode.assert_awaited_once_with(update_type="color_change")
 
     async def test_unsupported_speed_and_multi_target_preflight(self):
         self.target._extended_effects_enabled = True

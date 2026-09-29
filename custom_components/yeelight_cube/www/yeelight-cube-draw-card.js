@@ -1174,6 +1174,7 @@ class YeelightCubeDrawCard extends LitElement {
     const pixelartSensor = this.config?.pixelart_sensor;
     if (!pixelartSensor || !hass) {
       this._hass = hass;
+      this._pixelArtOverlay = null;
       return;
     }
 
@@ -1186,6 +1187,9 @@ class YeelightCubeDrawCard extends LitElement {
       incomingStateObj?.attributes?.count,
     );
     this._hass = hass;
+    // A new hass replaces the previous snapshot, so any fresh/optimistic
+    // overlay from the last one is dropped (re-applied below when still valid).
+    this._pixelArtOverlay = null;
     if (this._pendingReorderedPixelArts && incomingStateObj) {
       this._hass = {
         ...hass,
@@ -1215,7 +1219,8 @@ class YeelightCubeDrawCard extends LitElement {
     // attributes over the state feed — only scalars like content_hash/count. So
     // `this._hass = hass` above can silently revert the gallery to pre-rename
     // data on any unrelated state change. If we've already fetched the array for
-    // this exact content_hash, re-inject it to keep the fresh names.
+    // this exact content_hash, re-inject it to keep the fresh names. The
+    // overlay is read through _pixelArtState() so we never copy hass.states.
     if (
       !this._pendingReorderedPixelArts &&
       this._freshPixelArts &&
@@ -1223,18 +1228,9 @@ class YeelightCubeDrawCard extends LitElement {
       currHash === this._freshPixelArtsHash &&
       stateObj.attributes?.pixel_arts !== this._freshPixelArts
     ) {
-      this._hass = {
-        ...this._hass,
-        states: {
-          ...this._hass.states,
-          [pixelartSensor]: {
-            ...stateObj,
-            attributes: {
-              ...stateObj.attributes,
-              pixel_arts: this._freshPixelArts,
-            },
-          },
-        },
+      this._pixelArtOverlay = {
+        sensorId: pixelartSensor,
+        attributes: { pixel_arts: this._freshPixelArts },
       };
     }
 
@@ -1259,13 +1255,32 @@ class YeelightCubeDrawCard extends LitElement {
       }
     }
 
-    // Check if light entity state changed (for Lamp Colors palette)
+    // Re-render only when something this card displays from the light changed:
+    // text_colors (Lamp Palette), matrix_colors (Lamp Colors) and the theme
+    // (dark-mode item borders). The backend bumps _update_epoch on every state
+    // write, so keying on it re-rendered the whole gallery for unrelated
+    // updates. HA keeps unchanged attribute values by reference across pushes.
     if (this.entity) {
       const lightState = this._hass.states[this.entity];
       if (lightState) {
-        const newEpoch = lightState.attributes?._update_epoch;
-        if (newEpoch !== this._lastLampEpoch) {
-          this._lastLampEpoch = newEpoch;
+        const cfg = this.config || {};
+        const textColors =
+          cfg.show_lamp_palette !== false
+            ? lightState.attributes?.text_colors
+            : undefined;
+        const matrixColors =
+          cfg.show_lamp_colors !== false
+            ? lightState.attributes?.matrix_colors
+            : undefined;
+        const themes = hass.themes;
+        if (
+          textColors !== this._lastLampTextColors ||
+          matrixColors !== this._lastLampMatrixColors ||
+          themes !== this._lastLampThemes
+        ) {
+          this._lastLampTextColors = textColors;
+          this._lastLampMatrixColors = matrixColors;
+          this._lastLampThemes = themes;
           if (!this._renderScheduled) {
             this._renderScheduled = true;
             requestAnimationFrame(() => {
@@ -1280,6 +1295,26 @@ class YeelightCubeDrawCard extends LitElement {
 
   get hass() {
     return this._hass;
+  }
+
+  /**
+   * The effective pixel-art sensor state: the hass state with the card's
+   * fresh (REST-fetched) or optimistic pixel_arts overlay applied. The merged
+   * object is cached per underlying state object, so repeated reads return the
+   * same reference and no hass.states copy is ever made.
+   */
+  _pixelArtState(sensorId = this.config?.pixelart_sensor) {
+    const raw = sensorId ? this._hass?.states?.[sensorId] : undefined;
+    const overlay = this._pixelArtOverlay;
+    if (!raw || !overlay || overlay.sensorId !== sensorId) return raw;
+    if (overlay.base !== raw) {
+      overlay.base = raw;
+      overlay.state = {
+        ...raw,
+        attributes: { ...raw.attributes, ...overlay.attributes },
+      };
+    }
+    return overlay.state;
   }
 
   disconnectedCallback() {
@@ -1545,6 +1580,39 @@ class YeelightCubeDrawCard extends LitElement {
 
   _cleanupDrag() {
     // Delegated to ToolManager
+  }
+
+  /** Matrix HTML for one pixel art, cached per art object and config. */
+  _pixelArtHTML(art) {
+    if (!art || typeof art !== "object")
+      return this._pixelArtMatrix(this._convertPixelArtToDisplayMatrix(art));
+    const cfg = this.config;
+    const cache = (this._pixelArtHTMLCache ||= new WeakMap());
+    const hit = cache.get(art);
+    if (hit && hit.cfg === cfg) return hit.html;
+    const html = this._pixelArtMatrix(this._convertPixelArtToDisplayMatrix(art));
+    cache.set(art, { cfg, html });
+    return html;
+  }
+
+  /**
+   * Return the cached HTML string for `slot` when the rendered items (by
+   * identity) and deps are unchanged, so unrelated re-renders reuse the same
+   * string (and unsafeHTML keeps its DOM); otherwise build and cache it.
+   */
+  _memoPixelArtHTML(slot, items, deps, build) {
+    const memo = (this._pixelArtHTMLMemo ||= {});
+    const prev = memo[slot];
+    if (
+      prev &&
+      prev.items.length === items.length &&
+      prev.items.every((item, i) => item === items[i]) &&
+      prev.deps.every((dep, i) => dep === deps[i])
+    )
+      return prev.html;
+    const html = build();
+    memo[slot] = { items: items.slice(), deps, html };
+    return html;
   }
 
   _pixelArtMatrix(pixelMatrix) {
@@ -1884,10 +1952,16 @@ class YeelightCubeDrawCard extends LitElement {
     const stateObj = this.hass.states[this.entity];
     if (!stateObj || !Array.isArray(stateObj.attributes.matrix_colors))
       return { palette: [], weights: null };
-    return extractDiversePaletteWithWeights(
-      stateObj.attributes.matrix_colors,
-      MAX_IMAGE_PALETTE_COLORS,
-    );
+    // K-means is expensive; memoise by the attribute's reference identity.
+    const matrixColors = stateObj.attributes.matrix_colors;
+    if (this._lampMatrixColorsRef !== matrixColors) {
+      this._lampMatrixColorsRef = matrixColors;
+      this._lampMatrixColorsCache = extractDiversePaletteWithWeights(
+        matrixColors,
+        MAX_IMAGE_PALETTE_COLORS,
+      );
+    }
+    return this._lampMatrixColorsCache;
   }
 
   /**
@@ -2107,7 +2181,7 @@ class YeelightCubeDrawCard extends LitElement {
     const cfg = this.config || {};
     const pixelartSensor = cfg.pixelart_sensor;
 
-    if (!this.hass || !pixelartSensor || !this.hass.states[pixelartSensor]) {
+    if (!this.hass || !pixelartSensor || !this._pixelArtState(pixelartSensor)) {
       return html`
         <div class="pixelart-gallery-message">
           Pixel art sensor not found or not configured.
@@ -2115,16 +2189,23 @@ class YeelightCubeDrawCard extends LitElement {
       `;
     }
 
-    const stateObj = this.hass.states[pixelartSensor];
-    const pixelArts = this._applyPendingRenames(
+    const stateObj = this._pixelArtState(pixelartSensor);
+    // Memoised by source array so art objects keep their identity across
+    // unrelated re-renders (the per-art and gallery/album HTML caches key on it).
+    const sourceArts = this._applyPendingRenames(
       stateObj.attributes.pixel_arts || [],
-    ).map((art) => {
-      const name =
-        typeof art?.name === "string"
-          ? art.name.replace(/[<>]/g, "")
-          : art?.name;
-      return name === art?.name ? art : { ...art, name };
-    });
+    );
+    if (this._sanitizedArtsSource !== sourceArts) {
+      this._sanitizedArtsSource = sourceArts;
+      this._sanitizedArts = sourceArts.map((art) => {
+        const name =
+          typeof art?.name === "string"
+            ? art.name.replace(/[<>]/g, "")
+            : art?.name;
+        return name === art?.name ? art : { ...art, name };
+      });
+    }
+    const pixelArts = this._sanitizedArts;
 
     if (pixelArts.length === 0) {
       return html`
@@ -2427,8 +2508,6 @@ class YeelightCubeDrawCard extends LitElement {
 
     // Render function for pixel art content - make it fully responsive
     const renderPixelArtContent = (art, idx) => {
-      const pixelMatrix = this._convertPixelArtToDisplayMatrix(art);
-
       // Scale padding from 6px at 100% to 4px at 55%
       // Formula: padding = 6 - ((100 - previewSizePercent) / (100 - 55)) * (6 - 4)
       const minPadding = 4;
@@ -2453,23 +2532,29 @@ class YeelightCubeDrawCard extends LitElement {
                     align-items: center;
                     justify-content: center;
                     padding:0;">
-            ${this._pixelArtMatrix(pixelMatrix)}
+            ${this._pixelArtHTML(art)}
         </div>
       `;
     };
 
-    const galleryHTML = renderGalleryMode(pixelArts, renderPixelArtContent, {
-      showTitle: showTitles,
-      showDelete: allowDelete,
-      deleteButtonClass: removeBtnClass,
-      posClass: btnCfg.posClass,
-      sideClass: btnCfg.sideClass,
-      onDeleteClick: "handleGridDelete",
-      onItemClick: "handleGridItemClick",
-      onTitleClick: allowRename ? "handleGridTitleClick" : null,
-      cardSizeMultiplier: cardSizeMultiplier,
-      roundedCards: cfg.rounded_cards,
-    });
+    const galleryHTML = this._memoPixelArtHTML(
+      "gallery",
+      pixelArts,
+      [cfg, showTitles, allowDelete, allowRename, removeBtnClass],
+      () =>
+        renderGalleryMode(pixelArts, renderPixelArtContent, {
+          showTitle: showTitles,
+          showDelete: allowDelete,
+          deleteButtonClass: removeBtnClass,
+          posClass: btnCfg.posClass,
+          sideClass: btnCfg.sideClass,
+          onDeleteClick: "handleGridDelete",
+          onItemClick: "handleGridItemClick",
+          onTitleClick: allowRename ? "handleGridTitleClick" : null,
+          cardSizeMultiplier: cardSizeMultiplier,
+          roundedCards: cfg.rounded_cards,
+        }),
+    );
 
     return html`
       <style>
@@ -2519,8 +2604,6 @@ class YeelightCubeDrawCard extends LitElement {
 
     // Render function for each pixel art item content
     const renderPixelArtContent = (art, idx) => {
-      const pixelMatrix = this._convertPixelArtToDisplayMatrix(art);
-
       return `
         <div class="album-content-container">
           ${
@@ -2539,18 +2622,24 @@ class YeelightCubeDrawCard extends LitElement {
           <div class="album-preview pixelart-preview-album"
                style="padding:0;background:transparent;"
                data-index="${idx}">
-            ${this._pixelArtMatrix(pixelMatrix)}
+            ${this._pixelArtHTML(art)}
           </div>
         </div>
       `;
     };
 
     // Get album HTML using shared utility
-    const albumHTML = renderAlbumView(
+    const albumHTML = this._memoPixelArtHTML(
+      "album",
       pixelArts,
-      renderPixelArtContent,
-      albumConfig,
-      "pixelarts",
+      [cfg, showTitles, allowDelete, allowRename],
+      () =>
+        renderAlbumView(
+          pixelArts,
+          renderPixelArtContent,
+          albumConfig,
+          "pixelarts",
+        ),
     );
 
     // Return unsafeHTML wrapped content
@@ -2842,7 +2931,6 @@ class YeelightCubeDrawCard extends LitElement {
           // --pixelart-list-radius is set on the wrapper div above; the CSS var
           // propagates into every .pixelart-list-item child via cascade.
           (art, idx) => {
-            const pixelMatrix = this._convertPixelArtToDisplayMatrix(art);
             const globalIdx = globalOffset + idx;
 
             return html`
@@ -2875,7 +2963,7 @@ class YeelightCubeDrawCard extends LitElement {
                         ? " and lamp"
                         : ""}"
                     >
-                      ${unsafeHTML(this._pixelArtMatrix(pixelMatrix))}
+                      ${unsafeHTML(this._pixelArtHTML(art))}
                     </div>
                   </div>
                   ${showTitles
@@ -3056,9 +3144,6 @@ class YeelightCubeDrawCard extends LitElement {
     // Make padding proportional to preview size (base padding is 8px at 100%)
     const proportionalPadding = (8 * previewSizePercent) / 100;
 
-    // Convert pixel art to 20x5 matrix for rendering
-    const pixelMatrix = this._convertPixelArtToDisplayMatrix(art);
-
     // Box shadow settings — resolve from pixel_art_spacing_mode with backward compat
     const artSpacingMode =
       cfg.pixel_art_spacing_mode ||
@@ -3153,7 +3238,7 @@ class YeelightCubeDrawCard extends LitElement {
                   ? " and lamp"
                   : ""}"
               >
-                ${unsafeHTML(this._pixelArtMatrix(pixelMatrix))}
+                ${unsafeHTML(this._pixelArtHTML(art))}
               </div>
               ${showTitles
                 ? html`<div
@@ -3192,7 +3277,7 @@ class YeelightCubeDrawCard extends LitElement {
                     &#10006;
                   </button>`
                 : ""}
-              ${unsafeHTML(this._pixelArtMatrix(pixelMatrix))}
+              ${unsafeHTML(this._pixelArtHTML(art))}
             </div>`}
         ${!titleOnTop && displayMode !== "list" && showTitles
           ? html`<div
@@ -3213,11 +3298,11 @@ class YeelightCubeDrawCard extends LitElement {
     const cfg = this.config || {};
     const pixelartSensor = cfg.pixelart_sensor;
 
-    if (!this.hass || !pixelartSensor || !this.hass.states[pixelartSensor]) {
+    if (!this.hass || !pixelartSensor || !this._pixelArtState(pixelartSensor)) {
       return;
     }
 
-    const stateObj = this.hass.states[pixelartSensor];
+    const stateObj = this._pixelArtState(pixelartSensor);
     let pixelArts = stateObj.attributes.pixel_arts || [];
 
     // CRITICAL FIX: Trim stale array to match count attribute
@@ -3285,7 +3370,7 @@ class YeelightCubeDrawCard extends LitElement {
     const cfg = this.config || {};
     const pixelartSensor = cfg.pixelart_sensor;
 
-    if (!this.hass || !pixelartSensor || !this.hass.states[pixelartSensor]) {
+    if (!this.hass || !pixelartSensor || !this._pixelArtState(pixelartSensor)) {
       return;
     }
 
@@ -3316,7 +3401,7 @@ class YeelightCubeDrawCard extends LitElement {
       ".compact-item",
       (newOrder) => {
         // Get current pixel arts
-        const stateObj = this.hass.states[pixelartSensor];
+        const stateObj = this._pixelArtState(pixelartSensor);
         let pixelArts = stateObj.attributes.pixel_arts || [];
 
         // CRITICAL FIX: Trim stale array to match count attribute
@@ -3591,7 +3676,7 @@ class YeelightCubeDrawCard extends LitElement {
       return;
     }
 
-    const stateObj = this.hass.states[sensorEntityId];
+    const stateObj = this._pixelArtState(sensorEntityId);
     if (!stateObj) {
       console.error("[Rename] Sensor entity not found:", sensorEntityId);
       return;
@@ -3691,7 +3776,7 @@ class YeelightCubeDrawCard extends LitElement {
       try {
         const shown =
           this._pendingReorderedPixelArts ??
-          this.hass.states[pixelartSensor]?.attributes?.pixel_arts ??
+          this._pixelArtState(pixelartSensor)?.attributes?.pixel_arts ??
           [];
         await this.callServiceOnTargetEntities("apply_pixel_art", {
           idx,
@@ -3711,7 +3796,7 @@ class YeelightCubeDrawCard extends LitElement {
     const cfg = this.config || {};
     const pixelartSensor = cfg.pixelart_sensor;
 
-    if (!this.hass || !pixelartSensor || !this.hass.states[pixelartSensor]) {
+    if (!this.hass || !pixelartSensor || !this._pixelArtState(pixelartSensor)) {
       console.error(
         "[draw-card] Cannot apply pixel art to matrix: missing hass or pixelart_sensor",
       );
@@ -3719,7 +3804,7 @@ class YeelightCubeDrawCard extends LitElement {
     }
 
     try {
-      const stateObj = this.hass.states[pixelartSensor];
+      const stateObj = this._pixelArtState(pixelartSensor);
       const pixelArts = stateObj.attributes.pixel_arts || [];
       const pixelArt = pixelArts[idx];
 
@@ -3808,22 +3893,16 @@ class YeelightCubeDrawCard extends LitElement {
           await new Promise((r) => setTimeout(r, 200));
           continue;
         }
-        // Patch _hass directly (not via setter) to avoid re-triggering set hass logic
-        this._hass = {
-          ...this._hass,
-          states: {
-            ...this._hass.states,
-            [sensorEntityId]: {
-              ...this._hass.states[sensorEntityId],
-              attributes: {
-                ...this._hass.states[sensorEntityId].attributes,
-                pixel_arts:
-                  this._pixelArtCollection?.observe(
-                    freshState.attributes.pixel_arts,
-                    freshState.attributes.count,
-                  ) ?? freshState.attributes.pixel_arts,
-              },
-            },
+        // Overlay the fresh array (read via _pixelArtState) instead of
+        // copying hass.states or re-triggering set hass logic.
+        this._pixelArtOverlay = {
+          sensorId: sensorEntityId,
+          attributes: {
+            pixel_arts:
+              this._pixelArtCollection?.observe(
+                freshState.attributes.pixel_arts,
+                freshState.attributes.count,
+              ) ?? freshState.attributes.pixel_arts,
           },
         };
         this._freshPixelArts = freshState.attributes.pixel_arts;
@@ -3857,21 +3936,14 @@ class YeelightCubeDrawCard extends LitElement {
             (art) => JSON.stringify(art) === JSON.stringify(expectedArt),
           )
         ) {
-          this._hass = {
-            ...this._hass,
-            states: {
-              ...this._hass.states,
-              [sensorEntityId]: {
-                ...this._hass.states[sensorEntityId],
-                attributes: {
-                  ...this._hass.states[sensorEntityId].attributes,
-                  pixel_arts:
-                    this._pixelArtCollection?.observe(
-                      arts,
-                      freshState.attributes.count,
-                    ) ?? arts,
-                },
-              },
+          this._pixelArtOverlay = {
+            sensorId: sensorEntityId,
+            attributes: {
+              pixel_arts:
+                this._pixelArtCollection?.observe(
+                  arts,
+                  freshState.attributes.count,
+                ) ?? arts,
             },
           };
           this._freshPixelArts = arts;
@@ -3894,12 +3966,12 @@ class YeelightCubeDrawCard extends LitElement {
     // Get current sensor state
     const cfg = this.config || {};
     const pixelartSensor = cfg.pixelart_sensor;
-    if (!this.hass || !pixelartSensor || !this.hass.states[pixelartSensor]) {
+    if (!this.hass || !pixelartSensor || !this._pixelArtState(pixelartSensor)) {
       console.error("[Delete] No sensor found");
       return;
     }
 
-    const stateObj = this.hass.states[pixelartSensor];
+    const stateObj = this._pixelArtState(pixelartSensor);
 
     // Use pending reordered pixel arts if available (after drag-and-drop, before websocket confirms)
     // Otherwise use the sensor's pixel arts
@@ -3921,22 +3993,14 @@ class YeelightCubeDrawCard extends LitElement {
     const collection = this._pixelArtCollection;
     const operation = collection.pending;
 
-    // Create a modified hass object with updated pixel arts
-    const updatedState = {
-      ...stateObj,
+    // Overlay the optimistic state (read via _pixelArtState); keep the
+    // previous overlay so a failed delete can restore exactly what was shown.
+    const previousOverlay = this._pixelArtOverlay;
+    this._pixelArtOverlay = {
+      sensorId: pixelartSensor,
       attributes: {
-        ...stateObj.attributes,
         pixel_arts: updatedPixelArts,
         count: updatedPixelArts.length,
-      },
-    };
-
-    // Update hass with the optimistic state
-    this._hass = {
-      ...this.hass,
-      states: {
-        ...this.hass.states,
-        [pixelartSensor]: updatedState,
       },
     };
 
@@ -3957,10 +4021,7 @@ class YeelightCubeDrawCard extends LitElement {
       console.error("[PIXELART-DELETE] Error calling backend:", err);
       if (collection.rollback(operation)) {
         notifyUnreported(this, err);
-        this._hass = {
-          ...this._hass,
-          states: { ...this._hass.states, [pixelartSensor]: stateObj },
-        };
+        this._pixelArtOverlay = previousOverlay;
         this.requestUpdate();
         this._fetchFreshPixelArts(pixelartSensor);
       }
@@ -3971,12 +4032,12 @@ class YeelightCubeDrawCard extends LitElement {
     const cfg = this.config || {};
     const pixelartSensor = cfg.pixelart_sensor;
 
-    if (!this.hass || !pixelartSensor || !this.hass.states[pixelartSensor]) {
+    if (!this.hass || !pixelartSensor || !this._pixelArtState(pixelartSensor)) {
       console.error("[draw-card] Pixel art sensor not found for export");
       return;
     }
 
-    const stateObj = this.hass.states[pixelartSensor];
+    const stateObj = this._pixelArtState(pixelartSensor);
     const pixelArts = stateObj.attributes.pixel_arts || [];
 
     const json = JSON.stringify(pixelArts, null, 2);

@@ -495,6 +495,46 @@ test("gallery reload disconnects its observer and paints only current previews b
   assert.deepEqual([...card._visible], [current]);
 });
 
+test("gallery reload paints on-screen tiles immediately to avoid a blink", () => {
+  const rect = (top) => ({ top, bottom: top + 40, left: 0, right: 80, width: 80 });
+  const current = { hasAttribute: () => true };
+  const onScreen = { hasAttribute: () => false, getBoundingClientRect: () => rect(100) };
+  const nearScreen = { hasAttribute: () => false, getBoundingClientRect: () => rect(850) };
+  const offScreen = { hasAttribute: () => false, getBoundingClientRect: () => rect(5000) };
+  const detached = {
+    hasAttribute: () => false,
+    getBoundingClientRect: () => ({ top: 0, bottom: 0, left: 0, right: 0, width: 0 }),
+  };
+  const previous = { innerHeight: globalThis.innerHeight, innerWidth: globalThis.innerWidth };
+  globalThis.innerHeight = 800;
+  globalThis.innerWidth = 1200;
+  try {
+    const card = {
+      shadowRoot: {
+        querySelectorAll: (selector) =>
+          selector === "[data-clock-preview]"
+            ? [current]
+            : selector === ".original-gallery .original-item"
+              ? []
+              : [onScreen, nearScreen, offScreen, detached],
+      },
+      ...cardMethods(["_setupObserver"], {
+        IntersectionObserver: class {
+          observe() {}
+          disconnect() {}
+        },
+      }),
+    };
+    card._setupObserver();
+    // Current preview, the visible tile and the one inside the 120px margin
+    // are painted right away; off-screen and detached tiles wait for the observer.
+    assert.deepEqual([...card._visible], [current, onScreen, nearScreen]);
+  } finally {
+    globalThis.innerHeight = previous.innerHeight;
+    globalThis.innerWidth = previous.innerWidth;
+  }
+});
+
 test("hostile saved names remain escaped in all text selectors", () => {
   const selectorSource = readFileSync(
     new URL(

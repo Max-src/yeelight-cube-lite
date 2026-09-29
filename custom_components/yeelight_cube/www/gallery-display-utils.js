@@ -1,4 +1,4 @@
-import { BLACK_THRESHOLD } from "./draw_card_const.js";
+import { BLACK_THRESHOLD } from "./matrix-const.js";
 import { previewLength } from "./preview-appearance.js";
 import { escapeHtml } from "./html-escape-utils.js";
 import { favouriteId, normalizeFavourite } from "./mode-controls-controller.js";

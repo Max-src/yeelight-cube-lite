@@ -25,7 +25,9 @@ export function createNativeCardAdapter(card) {
     current: () => card._effect()?.name,
     available: (name) => card._effectAvailable(name),
     ready: () => card._rotationTargetsReady(),
-    disabled: () => card._disabled() || card._busy,
+    // Only lamp availability: a running card request must not disable the
+    // shared controls (requests are queued by the card's command controller).
+    disabled: () => card._disabled(),
     on: () => card._state?.state === "on",
     orientation: () => card._attrs().device_orientation || "right",
     apply: (name) => card._apply(name, true),

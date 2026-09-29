@@ -1,10 +1,11 @@
-﻿import { cardLayoutStyles } from "./card-layout-utils.js";
+﻿import { LitElement, html, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
+import { cardLayoutStyles } from "./card-layout-utils.js";
 import {
   resolvePreviewAppearance,
   previewLength,
 } from "./preview-appearance.js";
-import { BLACK_THRESHOLD } from "./draw_card_const.js";
-import { escapeHtml } from "./html-escape-utils.js";
+import { BLACK_THRESHOLD } from "./matrix-const.js";
+import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
 import {
   renderGalleryDisplay,
   renderMatrixPreview,
@@ -31,7 +32,6 @@ import {
 import {
   renderCarouselString,
   carouselStyles,
-  attachCarouselSwipe,
 } from "./carousel-utils.js";
 import {
   TEXT_SELECTOR_STYLES,
@@ -44,9 +44,93 @@ import {
 import {
   paginationStyles,
   renderPagination,
-  attachPaginationListeners,
 } from "./pagination-utils.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
+
+// ── Lit helpers not exported by the bundled lit-all.js ─────────────────────
+// Lit's `nothing` sentinel is a registered symbol (same trick as
+// action-button-ui.js).
+const nothing = Symbol.for("lit-nothing");
+// `svg` tag: identical to lit-html's own (SVG_RESULT = 2).  Needed for
+// sub-templates rendered INSIDE an <svg> element so they are created in the
+// SVG namespace.
+const svg = (strings, ...values) => ({ _$litType$: 2, strings, values });
+// `unsafeSVG`: lit-html's UnsafeSVGDirective is UnsafeHTMLDirective with an
+// SVG result type.  Used only for the SVG fragments produced by the shared
+// angle-wheel-utils helpers (gradient <stop>s, shape masks).
+const UnsafeHTMLDirective = unsafeHTML("")._$litDirective$;
+class UnsafeSVGDirective extends UnsafeHTMLDirective {}
+UnsafeSVGDirective.directiveName = "unsafeSVG";
+UnsafeSVGDirective.resultType = 2;
+const unsafeSVG = (value) => ({
+  _$litDirective$: UnsafeSVGDirective,
+  values: [value],
+});
+
+const _escapeMarkup = (value) =>
+  String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+/**
+ * Serialise a Lit template (as produced by this card: text/attribute
+ * bindings, boolean `?attr` bindings, nested templates/arrays and
+ * unsafeHTML/unsafeSVG directives) to an escaped HTML string.  Only used by
+ * the string-returning `_renderAngleRotary()` compatibility API — the card
+ * itself renders the templates through Lit.
+ */
+function templateToString(value) {
+  if (value == null || value === false || value === nothing) return "";
+  if (Array.isArray(value)) return value.map(templateToString).join("");
+  if (typeof value === "object" && value._$litDirective$) {
+    const raw = value.values?.[0];
+    return raw == null || raw === nothing ? "" : String(raw);
+  }
+  if (typeof value === "object" && value._$litType$ !== undefined) {
+    const { strings, values } = value;
+    let out = strings[0];
+    for (let i = 0; i < values.length; i++) {
+      let next = strings[i + 1];
+      const bound = /\s([?@.])([\w:-]+)=(["']?)$/.exec(out);
+      const attr = /\s[\w:-]+=(["']?)[^"'<>]*$/.test(out) && !/>[^<]*$/.test(out);
+      if (bound) {
+        out = out.slice(0, bound.index);
+        if (bound[3] && next.startsWith(bound[3])) next = next.slice(1);
+        if (bound[1] === "?" && values[i] && values[i] !== nothing)
+          out += ` ${bound[2]}`;
+      } else if (attr) {
+        const v = values[i];
+        if (v === nothing) {
+          // Attribute removed: drop `name=` (and a surrounding quote pair).
+          const m = /\s([\w:-]+)=(["']?)$/.exec(out);
+          if (m) {
+            out = out.slice(0, m.index);
+            if (m[2] && next.startsWith(m[2])) next = next.slice(1);
+          }
+        } else if (/\s[\w:-]+=$/.test(out)) {
+          // Unquoted binding (`attr=${v}`): quote the serialised value.
+          out += `"${_escapeMarkup(v ?? "")}"`;
+        } else {
+          out += _escapeMarkup(v ?? "");
+        }
+      } else {
+        const v = values[i];
+        out +=
+          typeof v === "object" && v !== null
+            ? templateToString(v)
+            : v == null || v === nothing
+              ? ""
+              : _escapeMarkup(v);
+      }
+      out += next;
+    }
+    return out;
+  }
+  return _escapeMarkup(value);
+}
 
 /**
  * Convert gallery_preview_size config value (%) to pixels.
@@ -87,6 +171,11 @@ const FILL_PANEL_CHARS = {
 const FILL_PANEL_CHAR_TO_COLS = Object.fromEntries(
   Object.entries(FILL_PANEL_CHARS).map(([k, v]) => [v, Number(k)]),
 );
+
+// Angle value displays/inputs inside the rotary: pointer-downs on these never
+// start a rotary drag.
+const ANGLE_NO_DRAG_SELECTOR =
+  "#angleinput, #angletext, .rotary-overlay-value, .matrix-angle-value, .capsule-angle-slot";
 
 // Mode visibility is config-based: `custom_visible_modes` (boolean) +
 // `visible_modes` (ordered array) set from the editor's drag-drop list.
@@ -177,852 +266,8 @@ function resolveSelectorTextScale(cfg) {
   return Math.max(0.8, Math.min(1.4, pct / 50));
 }
 
-class YeelightCubeGradientCard extends HTMLElement {
-  constructor() {
-    super();
-    // --- UI/interaction state ---
-    this._pendingAngle = null;
-    this._angleCommands = new AngleCommandController(
-      (angle) => {
-        this._lastAngleSent = angle;
-        this._onAngleApplied();
-      },
-      (error) =>
-        this.dispatchEvent(
-          new CustomEvent("hass-notification", {
-            bubbles: true,
-            composed: true,
-            detail: {
-              message: error.message || "The angle could not be updated.",
-            },
-          }),
-        ),
-    );
-    this._lastAngleSent = null;
-    this._isDragging = false;
-    this._draggingRotary = false;
-    this._usingSlider = false;
-    this._processingModeChange = false;
-    this._dropdownOpen = false; // Prevent re-render when dropdown is open
-    this._lastModeChangeTime = 0; // Track when mode was last changed
-    this._optimisticMode = null; // Store the optimistic mode selection
-    this._renderScheduled = false;
-    this._pendingHassRender = false; // Track if a render was blocked by interaction flags
-    this._interactionSafetyTimer = null; // Safety timer to flush pending renders
-    this._previewEventListenerRegistered = false; // Track event listener for global preview cache
-    this._cachedPreviewHtml = null; // Cache rendered preview HTML
-    this._lastPreviewDataHash = null; // Track if preview data changed
-    this._lastWheelMode = null; // Track wheel mode to prevent unnecessary syncs
-    this._wheelCenterIndex = 0; // Track center item in wheel mode
-    this._wheelNavigationController = null; // Controller for wheel navigation
-    // All preview data is now stored in window._yeelightPreviewCaches (see top of file)
-    // This ensures preview data persists across card destruction/recreation.
-  }
-
-  // --- Mode Visibility helpers (config-based) ---
-  _isModeVisible(mode) {
-    if (this.config?.custom_visible_modes !== true) return true;
-    const list = this.config.visible_modes;
-    return !Array.isArray(list) || !list.length || list.includes(mode);
-  }
-
-  /** Gradient mode names in display order, honoring the visible-modes config. */
-  _orderedModes() {
-    if (
-      this.config?.custom_visible_modes === true &&
-      Array.isArray(this.config.visible_modes) &&
-      this.config.visible_modes.length
-    ) {
-      const picked = this.config.visible_modes.filter((m) =>
-        GRADIENT_MODES.includes(m),
-      );
-      if (picked.length) return picked;
-    }
-    return GRADIENT_MODES;
-  }
-
-  // Helper method to call services on target entities.
-  // Delegates to the shared utility.  The Python backend holds per-IP locks,
-  // so different lamps execute in parallel.
-  async callServiceOnTargetEntities(serviceName, serviceData = {}) {
-    return callServiceSequentially(
-      this._hass,
-      this.config,
-      serviceName,
-      serviceData,
-      { callerTag: "Gradient Card" },
-    );
-  }
-
-  connectedCallback() {
-    // Re-establish preview event subscription lost during disconnection.
-    // disconnectedCallback unsubscribes, but the persistent _previewElement
-    // survives, so the creation-time setTimeout that calls
-    // _setupPreviewEventListener never runs again.  Re-subscribe here.
-    if (!this._previewEventListenerRegistered && this._hass) {
-      this._setupPreviewEventListener();
-    }
-
-    // After reconnection, the wheel controller was destroyed in disconnectedCallback.
-    // We must re-initialize it once the DOM is ready again.
-    if (
-      this._isPreviewSelectorActive?.() &&
-      this._getDisplayMode?.() === "wheel" &&
-      !this._wheelNavigationController
-    ) {
-      // Reset _lastWheelMode so that the next set hass() triggers a sync
-      this._lastWheelMode = null;
-      // Defer re-init until the preview element is re-attached in the next render
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (!this._wheelNavigationController && this._previewElement) {
-            this._setupWheelNavigation();
-          }
-        });
-      });
-    }
-  }
-
-  disconnectedCallback() {
-    this._angleCommands.reset();
-    this._previewContext = (this._previewContext || 0) + 1;
-    // Clean up wheel navigation controller
-    if (this._wheelNavigationController) {
-      this._wheelNavigationController.destroy();
-      this._wheelNavigationController = null;
-    }
-    // Unsubscribe from preview events
-    if (this._unsubscribePreviewEvents) {
-      this._unsubscribePreviewEvents();
-      this._unsubscribePreviewEvents = null;
-    }
-    this._previewEventListenerRegistered = false;
-
-    // Clear pending timers
-    if (this._previewReloadTimer) {
-      clearTimeout(this._previewReloadTimer);
-      this._previewReloadTimer = null;
-    }
-    if (this._panelModeTimeout) {
-      clearTimeout(this._panelModeTimeout);
-      this._panelModeTimeout = null;
-    }
-    if (this._fillPanelTimeout) {
-      clearTimeout(this._fillPanelTimeout);
-      this._fillPanelTimeout = null;
-    }
-    if (this._anglePreviewReloadTimer) {
-      clearTimeout(this._anglePreviewReloadTimer);
-      this._anglePreviewReloadTimer = null;
-    }
-    if (this._previewRetryTimer) {
-      clearTimeout(this._previewRetryTimer);
-      this._previewRetryTimer = null;
-    }
-    if (this._optimisticModeTimeout) {
-      clearTimeout(this._optimisticModeTimeout);
-      this._optimisticModeTimeout = null;
-    }
-    if (this._carouselNavTimer) {
-      clearTimeout(this._carouselNavTimer);
-      this._carouselNavTimer = null;
-    }
-
-    // Reset interaction flags and cleanup safety timer
-    this._pendingHassRender = false;
-    if (this._interactionSafetyTimer) {
-      clearInterval(this._interactionSafetyTimer);
-      this._interactionSafetyTimer = null;
-    }
-
-    // Detach any document-level rotary drag listeners left from an
-    // in-progress drag.
-    this._removeRotaryDocListeners();
-    this._draggingRotary = false;
-  }
-
-  /**
-   * Remove the document-level mouse/touch listeners attached for an active
-   * rotary drag (recorded in this._rotaryDocListeners by _bindAngleEvents).
-   */
-  _removeRotaryDocListeners() {
-    const listeners = this._rotaryDocListeners;
-    this._rotaryDocListeners = null;
-    if (!listeners) return;
-    listeners.forEach(([type, fn]) => document.removeEventListener(type, fn));
-  }
-
-  setConfig(config) {
-    config = resolvePreviewAppearance(config, "gradient");
-    this._angleCommands.reset();
-    this._pendingAngle = null;
-    this._removeRotaryDocListeners();
-    this._draggingRotary = false;
-    clearTimeout(this._anglePreviewReloadTimer);
-    clearTimeout(this._previewRetryTimer);
-    clearTimeout(this._previewReloadTimer);
-    this._unsubscribePreviewEvents?.();
-    this._unsubscribePreviewEvents = null;
-    this._previewEventListenerRegistered = false;
-    this._previewContext = (this._previewContext || 0) + 1;
-    // Check if wheel-affecting settings changed
-    // Skip change detection on first init — this.config is undefined so every
-    // comparison fires as "changed", causing a wasteful teardown/rebuild cycle
-    // that races with preview loading and leaves a no-op wheel controller.
-
-    // Structural changes require full preview element rebuild.
-    // Compare the RESOLVED selector styles so legacy-key changes and
-    // text↔preview switches are detected uniformly.
-    const wheelStructureChanged = this.config
-      ? resolveModeSelectorStyle(this.config) !==
-          resolveModeSelectorStyle(config) ||
-        this.config.wheel_nav_position !== config?.wheel_nav_position ||
-        this.config.preview_show_titles !== config?.preview_show_titles
-      : false;
-
-    // Height-only changes can be handled with an in-place content refresh
-    // (avoids destroy/recreate race condition when slider is dragged rapidly)
-    const wheelHeightChanged = this.config
-      ? this.config.wheel_height !== config?.wheel_height
-      : false;
-
-    if (wheelStructureChanged) {
-      // Full rebuild: display mode, nav position, or titles changed
-      if (this._wheelNavigationController) {
-        this._wheelNavigationController.destroy();
-        this._wheelNavigationController = null;
-      }
-      this._lastPreviewDataHash = null;
-      this._cachedPreviewHtml = null;
-      // Re-anchor the carousel on the active mode after a style switch
-      this._carouselIndex = null;
-      if (this._previewElement) {
-        this._previewElement = null;
-      }
-    } else if (wheelHeightChanged) {
-      // Height-only change: keep preview element alive, refresh content in-place
-      if (this._wheelNavigationController) {
-        this._wheelNavigationController.destroy();
-        this._wheelNavigationController = null;
-      }
-      this._lastPreviewDataHash = null;
-      this._cachedPreviewHtml = null;
-      this._pendingWheelHeightUpdate = true;
-    }
-
-    this.config = config;
-    this._setupPreviewEventListener();
-
-    if (!this.shadowRoot) {
-      this.attachShadow({ mode: "open" });
-    }
-
-    // Always render when setConfig is called (config changed in editor)
-    // But we'll preserve the preview element across renders
-    if (!this._renderScheduled) {
-      this._renderScheduled = true;
-      requestAnimationFrame(() => {
-        this._renderScheduled = false;
-        this.render();
-      });
-    }
-  }
-
-  static async getConfigElement() {
-    if (!customElements.get("yeelight-cube-gradient-card-editor")) {
-      await import("./yeelight-cube-gradient-card-editor.js");
-    }
-    return document.createElement("yeelight-cube-gradient-card-editor");
-  }
-  static getStubConfig(hass) {
-    const allEntities = Object.keys(hass?.states || {}).filter(
-      (e) =>
-        e.startsWith("light.yeelight_cube") || e.startsWith("light.cubelite_"),
-    );
-    const firstEntity = allEntities[0] || "";
-    return {
-      type: "custom:yeelight-cube-gradient-card",
-      entity: firstEntity,
-      target_entities: allEntities.length > 0 ? allEntities : [],
-      mode_selector_style: "preview-wheel",
-      selector_shape: "rounded",
-      show_mode_selector: true,
-      show_panel_toggle: true,
-      show_active_mode_label: false,
-      rotary_unified_style: "rectangle",
-      show_angle_section: true,
-      angle_value_display: "none",
-      show_angle_slider: false,
-      panel_toggle_style: "minimal",
-      rotary_size: "100",
-      gallery_background_color: "transparent",
-      wheel_nav_position: "sides",
-      preview_show_titles: false,
-      gallery_pixel_style: "circle",
-      gallery_ignore_black_pixels: true,
-      gallery_preview_size: "64",
-      gallery_spacing_mode: "normal",
-      rectangle_shape: "rectangle",
-      show_selector_dot: true,
-      compass_snap_to_coordinates: false,
-      wheel_height: "195",
-      gallery_matrix_box_shadow: false,
-      show_card_background: true,
-    };
-  }
-
-  set hass(hass) {
-    if (this._hass?.connection !== hass?.connection) {
-      this._unsubscribePreviewEvents?.();
-      this._unsubscribePreviewEvents = null;
-      this._previewEventListenerRegistered = false;
-      this._previewContext = (this._previewContext || 0) + 1;
-    }
-    this._hass = hass;
-
-    // Re-establish preview event subscription if lost (connectedCallback may
-    // fire before hass is available, so this is a belt-and-suspenders guard).
-    if (!this._previewEventListenerRegistered && hass) {
-      this._setupPreviewEventListener();
-    }
-
-    // Fast path: HA calls this setter for every state change anywhere in the
-    // instance, but only replaces the state object of the entity that changed.
-    // If our primary entity's state object is the same reference we fully
-    // processed last time (same config, no optimistic flag waiting for a
-    // backend echo, wheel already synced to this mode), everything below would
-    // be a no-op, so skip it.
-    if (this.config && this._seenConfig === this.config) {
-      const seenId = this._getPrimaryEntity();
-      const seenState = seenId ? hass?.states?.[seenId] : undefined;
-      if (
-        seenState &&
-        seenId === this._seenEntityId &&
-        seenState === this._seenStateObj &&
-        this._optimisticMode == null &&
-        this._optimisticPanelMode === undefined &&
-        this._optimisticFillCols === undefined &&
-        (this._getDisplayMode() !== "wheel" ||
-          this._lastWheelMode === seenState.attributes?.mode)
-      ) {
-        return;
-      }
-    }
-
-    // Track entity state changes to auto-reload gallery previews (debounced)
-    // Only relevant when a preview-style selector is shown — text selectors
-    // never call the preview service.
-    const entityId = this._getPrimaryEntity();
-    if (
-      hass &&
-      entityId &&
-      this._isPreviewSelectorActive() &&
-      // Same state object as the last check => all derived values are equal.
-      (!hass.states[entityId] ||
-        hass.states[entityId] !== this._lastPreviewStateObj)
-    ) {
-      const stateObj = hass.states[entityId];
-      this._lastPreviewStateObj = stateObj;
-      const currentText = stateObj?.attributes?.custom_text;
-      const currentAngle = stateObj?.attributes?.angle;
-      const currentColors = stateObj?.attributes?.text_colors;
-      const currentPanelMode = stateObj?.attributes?.full_panel || false;
-      // Only re-stringify when the array reference changed.
-      let colorsHash = this._lastPreviewColors;
-      if (
-        currentColors === undefined ||
-        currentColors !== this._lastPreviewColorsRef
-      ) {
-        colorsHash = currentColors ? JSON.stringify(currentColors) : null;
-        this._lastPreviewColorsRef = currentColors;
-      }
-      // Also watch matrix_colors: in "Panel Color Sequence" mode the palette
-      // paints the panel directly, so the rendered output (matrix_colors) can
-      // change without text_colors differing.  Watching it here keeps the
-      // preview in sync with the actual lamp output in every mode.
-      const currentMatrixColors = stateObj?.attributes?.matrix_colors;
-      let matrixColorsHash = this._lastPreviewMatrixColors;
-      if (
-        currentMatrixColors === undefined ||
-        currentMatrixColors !== this._lastPreviewMatrixColorsRef
-      ) {
-        matrixColorsHash = currentMatrixColors
-          ? JSON.stringify(currentMatrixColors)
-          : null;
-        this._lastPreviewMatrixColorsRef = currentMatrixColors;
-      }
-      if (
-        this._lastPreviewText !== currentText ||
-        this._lastPreviewAngle !== currentAngle ||
-        this._lastPreviewColors !== colorsHash ||
-        this._lastPreviewMatrixColors !== matrixColorsHash ||
-        this._lastPreviewPanelMode !== currentPanelMode
-      ) {
-        this._lastPreviewText = currentText;
-        this._lastPreviewAngle = currentAngle;
-        this._lastPreviewColors = colorsHash;
-        this._lastPreviewMatrixColors = matrixColorsHash;
-        this._lastPreviewPanelMode = currentPanelMode;
-        // Debounce preview reload to avoid flickering on rapid updates
-        // (gallery thumbnails still use the preview cache)
-        if (this._previewReloadTimer) clearTimeout(this._previewReloadTimer);
-        this._previewReloadTimer = setTimeout(() => {
-          this._loadPreviews().catch((err) =>
-            console.error("[Gradient Card] Error reloading previews:", err),
-          );
-        }, 500);
-      }
-    }
-
-    // Check if we recently changed mode (within last 2 seconds)
-    const timeSinceLastModeChange = Date.now() - this._lastModeChangeTime;
-    const ignoreUpdateWindow = 2000; // Ignore sensor updates for 2 seconds after mode change
-
-    // Skip if config not set yet (hass can be set before config)
-    if (!this.config) {
-      return;
-    }
-
-    // Use the primary entity (first target_entity, or fallback to config.entity)
-    const _primaryEntityId = this._getPrimaryEntity();
-    if (!_primaryEntityId) {
-      return;
-    }
-
-    // Check if the entities we care about actually changed
-    const entity = this._hass.states[_primaryEntityId];
-    if (!entity) {
-      // Entity no longer exists in HA — force a render to show the error state
-      this._previousHass = hass;
-      this.render();
-      return;
-    }
-    const oldEntity = this._previousHass
-      ? this._previousHass.states[_primaryEntityId]
-      : null;
-
-    // Only render if attributes that actually affect the card UI changed.
-    // HA keeps the same state object for entities that did not change, but
-    // replaces THIS entity's state object on ANY of its attribute updates
-    // (brightness, etc.), so `entity !== oldEntity` alone would trigger
-    // spurious full-DOM rebuilds that destroy & recreate the capsule slider,
-    // causing the visible "blink" (thumb jumps to 0 then animates back).
-    // Compare only the attributes the card actually reads during render().
-    // NOTE: when this entity's state object is replaced, its attribute arrays
-    // (text_colors/matrix_colors) are new references even if the values are
-    // unchanged, so fall back to a JSON comparison when the reference differs.
-    const entityChanged =
-      !oldEntity ||
-      (entity !== oldEntity &&
-      (() => {
-        if (entity.state !== oldEntity.state) return true;
-        const a = entity.attributes;
-        const b = oldEntity.attributes;
-        if (
-          a.angle !== b.angle ||
-          a.mode !== b.mode ||
-          a.full_panel !== b.full_panel ||
-          a.custom_text !== b.custom_text
-        )
-          return true;
-        // Deep-compare arrays only when the reference changed
-        if (
-          a.text_colors !== b.text_colors &&
-          JSON.stringify(a.text_colors) !== JSON.stringify(b.text_colors)
-        )
-          return true;
-        if (
-          a.matrix_colors !== b.matrix_colors &&
-          JSON.stringify(a.matrix_colors) !== JSON.stringify(b.matrix_colors)
-        )
-          return true;
-        return false;
-      })());
-
-    // --- Optimistic Panel Mode: clear only when backend matches ---
-    if (this._optimisticPanelMode !== undefined && entity) {
-      const backendPanelMode = entity.attributes.full_panel || false;
-      if (backendPanelMode === this._optimisticPanelMode) {
-        this._optimisticPanelMode = undefined;
-      }
-    }
-
-    // --- Optimistic Mode: clear only when backend echoes the new mode ---
-    // (prevents the highlight snapping back to the old mode between service
-    // completion and the entity state echo — see _selectMode)
-    if (this._optimisticMode && entity) {
-      if (entity.attributes.mode === this._optimisticMode) {
-        this._optimisticMode = null;
-        if (this._optimisticModeTimeout) {
-          clearTimeout(this._optimisticModeTimeout);
-          this._optimisticModeTimeout = null;
-        }
-      }
-    }
-
-    // --- Optimistic Fill Panel Cols: clear when backend custom_text matches ---
-    if (this._optimisticFillCols !== undefined && entity) {
-      const backendText = entity.attributes.custom_text || "";
-      const backendCols = FILL_PANEL_CHAR_TO_COLS[backendText] || 0;
-      if (backendCols === this._optimisticFillCols) {
-        this._optimisticFillCols = undefined;
-      }
-    }
-
-    // Store current hass for next comparison
-    this._previousHass = this._hass;
-    // Remember what was fully processed (used by the fast path above)
-    this._seenConfig = this.config;
-    this._seenEntityId = _primaryEntityId;
-    this._seenStateObj = entity;
-
-    // Re-initialize wheel center ONLY if mode attribute actually changed
-    if (this._getDisplayMode() === "wheel" && entity) {
-      const currentMode = entity.attributes?.mode;
-
-      // Only sync if:
-      // 1. Mode actually changed from last known value
-      // 2. Not in optimistic mode (we're already showing the right mode)
-      // 3. First initialization (no last mode tracked)
-      const modeChanged = this._lastWheelMode !== currentMode;
-      const isFirstInit = this._lastWheelMode === null;
-
-      if (modeChanged && !this._optimisticMode) {
-        this._lastWheelMode = currentMode;
-        setTimeout(
-          () => {
-            this._syncWheelToCurrentMode();
-            this._markActiveMode();
-          },
-          isFirstInit ? 100 : 0,
-        );
-      } else if (modeChanged && this._optimisticMode) {
-        // Mode changed but we're in optimistic mode - still sync wheel position
-        // (e.g. mode changed via color-mode selector buttons, not the wheel itself)
-        this._lastWheelMode = currentMode;
-        setTimeout(() => {
-          this._syncWheelToCurrentMode();
-          this._markActiveMode();
-        }, 0);
-      } else if (!modeChanged) {
-        // Mode didn't change - this is just a color/angle/sensor update
-        // DO NOT sync wheel - this prevents the blink you're seeing
-        // `[Wheel Sync] Sensor update detected but mode unchanged ('${currentMode}'), skipping wheel sync`
-        // );
-      }
-    }
-
-    // For non-wheel display modes: detect external mode changes and update highlight
-    if (this._getDisplayMode() !== "wheel" && entity && oldEntity) {
-      const currentMode = entity.attributes?.mode;
-      const prevMode = oldEntity.attributes?.mode;
-      if (prevMode !== currentMode) {
-        this._markActiveMode();
-      }
-    }
-
-    // Skip render if entity didn't change
-    if (!entityChanged) {
-      return;
-    }
-
-    // Always allow render for button updates unless:
-    // 1. Actively dragging rotary controls or angle slider
-    // 2. Dropdown is open
-    // 3. Recently changed mode (prevent sensor updates from overriding optimistic UI)
-    if (
-      !this._draggingRotary &&
-      !this._isDragging &&
-      !this._usingSlider &&
-      !this._dropdownOpen &&
-      !this._typingAngle &&
-      timeSinceLastModeChange > ignoreUpdateWindow
-    ) {
-      this._pendingHassRender = false;
-      if (!this._renderScheduled) {
-        this._renderScheduled = true;
-        requestAnimationFrame(() => {
-          this._renderScheduled = false;
-          this.render();
-        });
-      }
-    } else {
-      // Interaction in progress — remember that a state-driven render was blocked
-      this._pendingHassRender = true;
-      this._startInteractionSafety();
-    }
-  }
-
-  // Flush any render that was blocked while interaction flags were set.
-  // Called when an interaction flag is cleared to recover missed state updates.
-  _flushPendingRender() {
-    if (!this._pendingHassRender) return;
-    if (
-      this._draggingRotary ||
-      this._isDragging ||
-      this._usingSlider ||
-      this._dropdownOpen ||
-      this._typingAngle
-    )
-      return; // Another flag still active
-    this._pendingHassRender = false;
-    if (this._interactionSafetyTimer) {
-      clearInterval(this._interactionSafetyTimer);
-      this._interactionSafetyTimer = null;
-    }
-    if (!this._renderScheduled) {
-      this._renderScheduled = true;
-      requestAnimationFrame(() => {
-        this._renderScheduled = false;
-        this.render();
-      });
-    }
-  }
-
-  // Safety timer: periodically check if all interaction flags have cleared
-  // and flush the pending render. Covers edge cases where flag-clearing code
-  // paths don't explicitly call _flushPendingRender().
-  _startInteractionSafety() {
-    if (this._interactionSafetyTimer) return; // Already running
-    this._interactionSafetyTimer = setInterval(() => {
-      if (
-        !this._draggingRotary &&
-        !this._isDragging &&
-        !this._usingSlider &&
-        !this._dropdownOpen &&
-        !this._typingAngle
-      ) {
-        clearInterval(this._interactionSafetyTimer);
-        this._interactionSafetyTimer = null;
-        this._flushPendingRender();
-      }
-    }, 1000);
-  }
-
-  render() {
-    // Only block render if actively dragging/interacting with angle controls to prevent interference
-    if (
-      this._draggingRotary ||
-      this._isDragging ||
-      this._usingSlider ||
-      this._typingAngle
-    )
-      return;
-
-    const hass = this._hass;
-    if (!hass) return;
-
-    // Support both old single entity config and new multi-entity config
-    const primaryEntity = this._getPrimaryEntity();
-    const stateObj = primaryEntity ? hass.states[primaryEntity] : null;
-
-    if (!primaryEntity || !stateObj) {
-      const entityCount = (this.config.target_entities || []).length;
-      const message =
-        entityCount === 0
-          ? "No entities configured"
-          : `Primary entity (${escapeHtml(String(primaryEntity))}) not found`;
-      this.shadowRoot.innerHTML = `<ha-card><div style="padding: 16px;">${message}</div></ha-card>`;
-      this._skeletonKey = null; // force full rebuild when the entity recovers
-      return;
-    }
-    let textColors = this._pendingColors ||
-      stateObj.attributes.text_colors || [[255, 255, 255]];
-
-    // Get current angle from entity
-    const currentAngle = stateObj.attributes.angle ?? 0;
-
-    // ── SURGICAL RENDER FAST PATH ──────────────────────────────────────
-    // Rebuilding the whole shadow DOM on every entity update caused visible
-    // blinking: the ~2000-line <style> block re-parsed, the persistent
-    // preview element was detached/re-appended, and every control was
-    // recreated.  The skeleton is now built ONCE per structural configuration
-    // (config + text colors, which are baked into rotary/button gradients);
-    // afterwards every render() call only syncs dynamic values in place.
-    const structuralKey = JSON.stringify({
-      cfg: this.config,
-      colors: textColors,
-    });
-    if (
-      this._skeletonKey === structuralKey &&
-      this.shadowRoot.querySelector(".card-content")
-    ) {
-      this._syncDynamicUI(stateObj, currentAngle);
-      return;
-    }
-    this._skeletonKey = structuralKey;
-
-    const showCard = this.config.show_card_background !== false;
-    // Unified mode selector (replaces the old separate color-mode selector +
-    // always-on preview section — they served the same purpose).
-    const selectorStyle = this._getModeSelectorStyle();
-    const isPreviewSelector = PREVIEW_SELECTOR_STYLES.includes(selectorStyle);
-    const showModeSelector =
-      this.config.show_mode_selector !== undefined
-        ? this.config.show_mode_selector !== false
-        : true;
-    // Panel toggle is independent of the selector now.  Legacy fallback: it
-    // used to live inside the text selector block, so respect the old
-    // show_color_mode_selector=false as "hide panel toggle" for old configs.
-    const showPanelToggle =
-      this.config.show_panel_toggle !== undefined
-        ? this.config.show_panel_toggle !== false
-        : this.config.show_color_mode_selector !== false;
-    const showAngleSection = this.config.show_angle_section !== false;
-
-    // Individual angle control visibility
-    const angleValueDisplay =
-      this.config.angle_value_display ||
-      (this.config.show_angle_input === true ? "input" : "none");
-    const showAngleSlider = this.config.show_angle_slider !== false;
-
-    const cardTitle =
-      typeof this.config.title === "string" ? this.config.title.trim() : "";
-
-    // Get current lamp state for runtime controls
-    const currentMode = this._getCurrentMode() || "Solid Color";
-    // Use optimistic panel mode if set, else backend state
-    const applyToWholePanel =
-      this._optimisticPanelMode !== undefined
-        ? this._optimisticPanelMode
-        : stateObj.attributes.full_panel || false;
-    // Fill panel column selector: detect active column count from custom_text
-    const currentCustomText = stateObj.attributes.custom_text || "";
-    const fillPanelCols =
-      this._optimisticFillCols !== undefined
-        ? this._optimisticFillCols
-        : FILL_PANEL_CHAR_TO_COLS[currentCustomText] || 0;
-    const colorMode = currentMode;
-
-    // Get panel toggle style + shape + alignment from config
-    const panelToggleStyle = this.config.panel_toggle_style || "minimal";
-    const panelToggleShape = this.config.panel_toggle_shape || "round";
-    const labelAlign = this.config.active_mode_label_align || "left";
-    const panelToggleAlign = this.config.panel_toggle_align || "left";
-    const _alignToJustify = (a) =>
-      a === "center" ? "center" : a === "right" ? "flex-end" : "flex-start";
-
-    // Check if rotary should be in header
-    const rotaryInHeader = this.config.rotary_in_header === true;
-
-    const cardContent = `
-      <div class="yc-stack" style="padding:16px;">
-        ${!showCard && cardTitle ? `<div style="font-weight:600;font-size:1.1em;">${escapeHtml(cardTitle)}</div>` : ""}
-        ${
-          rotaryInHeader && showAngleSection
-            ? `
-          <div class="card-header" style="display: flex; justify-content: flex-end; align-items: center;">
-            <div class="header-rotary">${this._renderAngleRotary(
-              currentAngle,
-              true,
-            )}</div>
-          </div>
-        `
-            : ""
-        }
-        
-        ${
-          showModeSelector || showPanelToggle
-            ? `
-        <!-- Runtime Controls: unified mode selector -->
-        <div class="runtime-controls" ${this.config.show_active_mode_label === true || (showModeSelector && !isPreviewSelector) ? "" : "hidden"}>
-          <div class="control-section yc-stack yc-controls">
-            ${
-              this.config.show_active_mode_label === true
-                ? `<div style="display:flex;justify-content:${_alignToJustify(labelAlign)};width:100%;">
-                     <div class="gc-active-mode-label" id="gc-active-mode-label" title="Currently active mode" style="margin:0;">
-                       <span class="gc-aml-dot"></span>
-                       <span class="gc-aml-text">${colorMode}</span>
-                     </div>
-                   </div>`
-                : ""
-            }
-            ${
-              showModeSelector && !isPreviewSelector
-                ? this.generateColorModeSelector(
-                    colorMode,
-                    selectorStyle,
-                    textColors,
-                    this._draggingRotary && this._pendingAngle !== undefined
-                      ? this._pendingAngle
-                      : currentAngle,
-                  )
-                : ""
-            }
-          </div>
-        </div>
-        <div id="preview-anchor" style="display:none;"></div>
-        ${
-          showPanelToggle
-            ? `
-        <div class="panel-section-wrapper yc-row" style="${panelToggleStyle !== "card" && panelToggleStyle !== "tabs" ? `justify-content:${_alignToJustify(panelToggleAlign)};` : ""}">
-          ${this._renderPanelToggle(applyToWholePanel, panelToggleStyle, panelToggleShape)}
-          <div class="panel-toggle default" style="margin-top: 4px; display: none; align-items: center; gap: 8px;">
-            <label for="fill-panel-cols" style="white-space: nowrap;">Fill Panel Test:</label>
-            <select id="fill-panel-cols" style="flex: 1; padding: 4px;">
-              <option value="0" ${fillPanelCols === 0 ? "selected" : ""}>Off</option>
-              ${Array.from({ length: 20 }, (_, i) => i + 1)
-                .map(
-                  (n) =>
-                    `<option value="${n}" ${fillPanelCols === n ? "selected" : ""}>${n} col${n > 1 ? "s" : ""} (${n * 5} px)</option>`,
-                )
-                .join("")}
-            </select>
-          </div>
-        </div>`
-            : ""
-        }
-        `
-            : ""
-        }
-        
-        ${
-          showAngleSection
-            ? `
-        <div class="angle-section">
-          <div class="angle-row">
-            ${(() => {
-              // Angle value is now shown in-place on all rotary styles, skip external display
-              return "";
-              return angleValueDisplay === "input"
-                ? `<input id="angleinput" class="angle-input" type="number" min="0" max="359" step="1" value="${Math.round(currentAngle)}" /><span>°</span>`
-                : angleValueDisplay === "text"
-                  ? `<span id="angletext" class="angle-text">${Math.round(currentAngle)}°</span>`
-                  : "";
-            })()}
-            ${
-              showAngleSlider && this._getRotaryStyleInfo().style !== "capsule"
-                ? `
-              <input id="angleslider" class="angle-slider" type="range" min="0" max="359" step="1" value="${Math.round(
-                currentAngle,
-              )}" />
-            `
-                : ""
-            }
-            ${!rotaryInHeader ? this._renderAngleRotary(currentAngle) : ""}
-          </div>
-        </div>
-        `
-            : ""
-        }
-      </div>
-    `;
-
-    // "[Gradient Card] Setting shadowRoot.innerHTML - THIS REPLACES ALL DOM",
-    // {
-    // previewSectionInitialized: this._previewSectionInitialized,
-    // timestamp: Date.now(),
-    // }
-    // );
-
-    // NOTE: Do NOT destroy the wheel navigation controller here.
-    // The wheel DOM lives inside _previewElement, which persists across
-    // render() calls (it's detached and re-appended, not rebuilt).
-    // Destroying the controller would remove event listeners from the
-    // surviving wheel DOM, making it permanently unresponsive.
-
-    this.shadowRoot.innerHTML = `
-      <style>
+// Card stylesheet (static; adopted once per shadow root by LitElement).
+const GRADIENT_CARD_CSS = `
         ${cardLayoutStyles}
         .card-title {
           font-size: 1.3em;
@@ -1990,115 +1235,1022 @@ class YeelightCubeGradientCard extends HTMLElement {
           min-width: 160px;
         }
 
-      </style>
-      ${
-        showCard
-          ? `<ha-card${cardTitle ? ` header="${escapeHtml(cardTitle)}"` : ""}><div class="card-content">${cardContent}</div></ha-card>`
-          : `<div class="card-content">${cardContent}</div>`
-      }
-    `;
+`;
 
-    // Create/append the persistent preview element ONLY when the selector
-    // uses a preview style.  For text-style selectors, tear it down so no
-    // preview machinery (wheel controller, backend calls) stays alive.
-    if (!(showModeSelector && isPreviewSelector)) {
+class YeelightCubeGradientCard extends LitElement {
+  // No reactive properties: rendering is driven explicitly by _renderCard()
+  // (set hass fast path / skeleton key), which calls requestUpdate() only
+  // when the card structure changes and syncs dynamic values in place
+  // otherwise.
+  static styles = unsafeCSS(GRADIENT_CARD_CSS);
+
+  constructor() {
+    super();
+    // Passive delegated swipe listeners for the carousel preview (stable
+    // objects so Lit never re-binds them across renders).
+    this._previewTouchStartListener = {
+      handleEvent: (e) => this._onPreviewTouchStart(e),
+      passive: true,
+    };
+    this._previewTouchEndListener = {
+      handleEvent: (e) => this._onPreviewTouchEnd(e),
+      passive: true,
+    };
+    // Document-level drag handlers (attached only for an active rotary drag,
+    // tracked in _rotaryDocListeners so they can never leak or stack).
+    this._onDocMouseMove = (e) => {
+      if (this._draggingRotary) {
+        e.preventDefault(); // Prevent text selection during drag
+        this._handleRotaryDrag(e);
+      }
+    };
+    this._onDocTouchMove = (e) => {
+      if (this._draggingRotary) {
+        e.preventDefault(); // Prevent text selection
+        this._handleRotaryDrag(e.touches[0]);
+      }
+    };
+    this._onDocDragEnd = (e) => {
+      // Always detach the document listeners, even if _draggingRotary was
+      // reset elsewhere (e.g. setConfig mid-drag) — otherwise they leak.
+      this._removeRotaryDocListeners();
+      if (this._draggingRotary) {
+        e.preventDefault(); // Prevent text selection
+
+        // Cancel pending debounce and apply the final angle immediately
+        if (this._pendingAngle !== null && this._pendingAngle !== undefined) {
+          this._applyAngle(this._pendingAngle);
+          this._lastAngleSent = this._pendingAngle;
+        }
+
+        this._draggingRotary = false;
+        this._isDragging = false;
+        this._pendingAngle = null;
+        this._flushPendingRender();
+      }
+    };
+    // --- UI/interaction state ---
+    this._pendingAngle = null;
+    this._angleCommands = new AngleCommandController(
+      (angle) => {
+        this._lastAngleSent = angle;
+        this._onAngleApplied();
+      },
+      (error) =>
+        this.dispatchEvent(
+          new CustomEvent("hass-notification", {
+            bubbles: true,
+            composed: true,
+            detail: {
+              message: error.message || "The angle could not be updated.",
+            },
+          }),
+        ),
+    );
+    this._lastAngleSent = null;
+    this._isDragging = false;
+    this._draggingRotary = false;
+    this._usingSlider = false;
+    this._processingModeChange = false;
+    this._dropdownOpen = false; // Prevent re-render when dropdown is open
+    this._lastModeChangeTime = 0; // Track when mode was last changed
+    this._optimisticMode = null; // Store the optimistic mode selection
+    this._renderScheduled = false;
+    this._pendingHassRender = false; // Track if a render was blocked by interaction flags
+    this._interactionSafetyTimer = null; // Safety timer to flush pending renders
+    this._previewEventListenerRegistered = false; // Track event listener for global preview cache
+    this._cachedPreviewHtml = null; // Cache rendered preview HTML
+    this._lastPreviewDataHash = null; // Track if preview data changed
+    this._lastWheelMode = null; // Track wheel mode to prevent unnecessary syncs
+    this._wheelCenterIndex = 0; // Track center item in wheel mode
+    this._wheelNavigationController = null; // Controller for wheel navigation
+    // All preview data is now stored in window._yeelightPreviewCaches (see top of file)
+    // This ensures preview data persists across card destruction/recreation.
+  }
+
+  // --- Mode Visibility helpers (config-based) ---
+  _isModeVisible(mode) {
+    if (this.config?.custom_visible_modes !== true) return true;
+    const list = this.config.visible_modes;
+    return !Array.isArray(list) || !list.length || list.includes(mode);
+  }
+
+  /** Gradient mode names in display order, honoring the visible-modes config. */
+  _orderedModes() {
+    if (
+      this.config?.custom_visible_modes === true &&
+      Array.isArray(this.config.visible_modes) &&
+      this.config.visible_modes.length
+    ) {
+      const picked = this.config.visible_modes.filter((m) =>
+        GRADIENT_MODES.includes(m),
+      );
+      if (picked.length) return picked;
+    }
+    return GRADIENT_MODES;
+  }
+
+  // Helper method to call services on target entities.
+  // Delegates to the shared utility.  The Python backend holds per-IP locks,
+  // so different lamps execute in parallel.
+  async callServiceOnTargetEntities(serviceName, serviceData = {}) {
+    return callServiceSequentially(
+      this._hass,
+      this.config,
+      serviceName,
+      serviceData,
+      { callerTag: "Gradient Card" },
+    );
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    // Re-establish preview event subscription lost during disconnection.
+    // disconnectedCallback unsubscribes, but the persistent _previewElement
+    // survives, so the creation-time setTimeout that calls
+    // _setupPreviewEventListener never runs again.  Re-subscribe here.
+    if (!this._previewEventListenerRegistered && this._hass) {
+      this._setupPreviewEventListener();
+    }
+
+    // After reconnection, the wheel controller was destroyed in disconnectedCallback.
+    // We must re-initialize it once the DOM is ready again.
+    if (
+      this._isPreviewSelectorActive?.() &&
+      this._getDisplayMode?.() === "wheel" &&
+      !this._wheelNavigationController
+    ) {
+      // Reset _lastWheelMode so that the next set hass() triggers a sync
+      this._lastWheelMode = null;
+      // Defer re-init until the preview element is re-attached in the next render
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          if (!this._wheelNavigationController && this._previewElement) {
+            this._setupWheelNavigation();
+          }
+        });
+      });
+    }
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this._angleCommands.reset();
+    this._previewContext = (this._previewContext || 0) + 1;
+    // Clean up wheel navigation controller
+    if (this._wheelNavigationController) {
+      this._wheelNavigationController.destroy();
+      this._wheelNavigationController = null;
+    }
+    // Unsubscribe from preview events
+    if (this._unsubscribePreviewEvents) {
+      this._unsubscribePreviewEvents();
+      this._unsubscribePreviewEvents = null;
+    }
+    this._previewEventListenerRegistered = false;
+
+    // Clear pending timers
+    if (this._previewReloadTimer) {
+      clearTimeout(this._previewReloadTimer);
+      this._previewReloadTimer = null;
+    }
+    if (this._panelModeTimeout) {
+      clearTimeout(this._panelModeTimeout);
+      this._panelModeTimeout = null;
+    }
+    if (this._fillPanelTimeout) {
+      clearTimeout(this._fillPanelTimeout);
+      this._fillPanelTimeout = null;
+    }
+    if (this._anglePreviewReloadTimer) {
+      clearTimeout(this._anglePreviewReloadTimer);
+      this._anglePreviewReloadTimer = null;
+    }
+    if (this._previewRetryTimer) {
+      clearTimeout(this._previewRetryTimer);
+      this._previewRetryTimer = null;
+    }
+    if (this._optimisticModeTimeout) {
+      clearTimeout(this._optimisticModeTimeout);
+      this._optimisticModeTimeout = null;
+    }
+    if (this._carouselNavTimer) {
+      clearTimeout(this._carouselNavTimer);
+      this._carouselNavTimer = null;
+    }
+
+    // Reset interaction flags and cleanup safety timer
+    this._pendingHassRender = false;
+    if (this._interactionSafetyTimer) {
+      clearInterval(this._interactionSafetyTimer);
+      this._interactionSafetyTimer = null;
+    }
+
+    // Detach any document-level rotary drag listeners left from an
+    // in-progress drag.
+    this._removeRotaryDocListeners();
+    this._draggingRotary = false;
+  }
+
+  /**
+   * Remove the document-level mouse/touch listeners attached for an active
+   * rotary drag (recorded in this._rotaryDocListeners by _startRotaryDrag).
+   */
+  _removeRotaryDocListeners() {
+    const listeners = this._rotaryDocListeners;
+    this._rotaryDocListeners = null;
+    if (!listeners) return;
+    listeners.forEach(([type, fn]) => document.removeEventListener(type, fn));
+  }
+
+  /**
+   * Attach document-level drag listeners, recording them on the instance so
+   * they can be removed from anywhere (drag end, setConfig, disconnect).
+   * Any previously attached set is removed first so listeners never stack.
+   */
+  _startRotaryDocDrag(touch) {
+    this._removeRotaryDocListeners();
+    this._rotaryDocListeners = touch
+      ? [
+          ["touchmove", this._onDocTouchMove],
+          ["touchend", this._onDocDragEnd],
+          ["touchcancel", this._onDocDragEnd],
+        ]
+      : [
+          ["mousemove", this._onDocMouseMove],
+          ["mouseup", this._onDocDragEnd],
+        ];
+    this._rotaryDocListeners.forEach(([type, fn]) =>
+      document.addEventListener(type, fn),
+    );
+  }
+
+  setConfig(config) {
+    config = resolvePreviewAppearance(config, "gradient");
+    this._angleCommands.reset();
+    this._pendingAngle = null;
+    this._removeRotaryDocListeners();
+    this._draggingRotary = false;
+    clearTimeout(this._anglePreviewReloadTimer);
+    clearTimeout(this._previewRetryTimer);
+    clearTimeout(this._previewReloadTimer);
+    this._unsubscribePreviewEvents?.();
+    this._unsubscribePreviewEvents = null;
+    this._previewEventListenerRegistered = false;
+    this._previewContext = (this._previewContext || 0) + 1;
+    // Check if wheel-affecting settings changed
+    // Skip change detection on first init — this.config is undefined so every
+    // comparison fires as "changed", causing a wasteful teardown/rebuild cycle
+    // that races with preview loading and leaves a no-op wheel controller.
+
+    // Structural changes require full preview element rebuild.
+    // Compare the RESOLVED selector styles so legacy-key changes and
+    // text↔preview switches are detected uniformly.
+    const wheelStructureChanged = this.config
+      ? resolveModeSelectorStyle(this.config) !==
+          resolveModeSelectorStyle(config) ||
+        this.config.wheel_nav_position !== config?.wheel_nav_position ||
+        this.config.preview_show_titles !== config?.preview_show_titles
+      : false;
+
+    // Height-only changes can be handled with an in-place content refresh
+    // (avoids destroy/recreate race condition when slider is dragged rapidly)
+    const wheelHeightChanged = this.config
+      ? this.config.wheel_height !== config?.wheel_height
+      : false;
+
+    if (wheelStructureChanged) {
+      // Full rebuild: display mode, nav position, or titles changed
+      if (this._wheelNavigationController) {
+        this._wheelNavigationController.destroy();
+        this._wheelNavigationController = null;
+      }
+      this._lastPreviewDataHash = null;
+      this._cachedPreviewHtml = null;
+      // Re-anchor the carousel on the active mode after a style switch
+      this._carouselIndex = null;
+      if (this._previewElement) {
+        this._previewElement = null;
+      }
+    } else if (wheelHeightChanged) {
+      // Height-only change: keep preview element alive, refresh content in-place
+      if (this._wheelNavigationController) {
+        this._wheelNavigationController.destroy();
+        this._wheelNavigationController = null;
+      }
+      this._lastPreviewDataHash = null;
+      this._cachedPreviewHtml = null;
+      this._pendingWheelHeightUpdate = true;
+    }
+
+    this.config = config;
+    this._setupPreviewEventListener();
+
+    // Always render when setConfig is called (config changed in editor)
+    // But we'll preserve the preview element across renders
+    if (!this._renderScheduled) {
+      this._renderScheduled = true;
+      requestAnimationFrame(() => {
+        this._renderScheduled = false;
+        this._renderCard();
+      });
+    }
+  }
+
+  static async getConfigElement() {
+    if (!customElements.get("yeelight-cube-gradient-card-editor")) {
+      await import("./yeelight-cube-gradient-card-editor.js");
+    }
+    return document.createElement("yeelight-cube-gradient-card-editor");
+  }
+  static getStubConfig(hass) {
+    const allEntities = Object.keys(hass?.states || {}).filter(
+      (e) =>
+        e.startsWith("light.yeelight_cube") || e.startsWith("light.cubelite_"),
+    );
+    const firstEntity = allEntities[0] || "";
+    return {
+      type: "custom:yeelight-cube-gradient-card",
+      entity: firstEntity,
+      target_entities: allEntities.length > 0 ? allEntities : [],
+      mode_selector_style: "preview-wheel",
+      selector_shape: "rounded",
+      show_mode_selector: true,
+      show_panel_toggle: true,
+      show_active_mode_label: false,
+      rotary_unified_style: "rectangle",
+      show_angle_section: true,
+      angle_value_display: "none",
+      show_angle_slider: false,
+      panel_toggle_style: "minimal",
+      rotary_size: "100",
+      gallery_background_color: "transparent",
+      wheel_nav_position: "sides",
+      preview_show_titles: false,
+      gallery_pixel_style: "circle",
+      gallery_ignore_black_pixels: true,
+      gallery_preview_size: "64",
+      gallery_spacing_mode: "normal",
+      rectangle_shape: "rectangle",
+      show_selector_dot: true,
+      compass_snap_to_coordinates: false,
+      wheel_height: "195",
+      gallery_matrix_box_shadow: false,
+      show_card_background: true,
+    };
+  }
+
+  set hass(hass) {
+    if (this._hass?.connection !== hass?.connection) {
+      this._unsubscribePreviewEvents?.();
+      this._unsubscribePreviewEvents = null;
+      this._previewEventListenerRegistered = false;
+      this._previewContext = (this._previewContext || 0) + 1;
+    }
+    this._hass = hass;
+
+    // Re-establish preview event subscription if lost (connectedCallback may
+    // fire before hass is available, so this is a belt-and-suspenders guard).
+    if (!this._previewEventListenerRegistered && hass) {
+      this._setupPreviewEventListener();
+    }
+
+    // Fast path: HA calls this setter for every state change anywhere in the
+    // instance, but only replaces the state object of the entity that changed.
+    // If our primary entity's state object is the same reference we fully
+    // processed last time (same config, no optimistic flag waiting for a
+    // backend echo, wheel already synced to this mode), everything below would
+    // be a no-op, so skip it.
+    if (this.config && this._seenConfig === this.config) {
+      const seenId = this._getPrimaryEntity();
+      const seenState = seenId ? hass?.states?.[seenId] : undefined;
+      if (
+        seenState &&
+        seenId === this._seenEntityId &&
+        seenState === this._seenStateObj &&
+        this._optimisticMode == null &&
+        this._optimisticPanelMode === undefined &&
+        this._optimisticFillCols === undefined &&
+        (this._getDisplayMode() !== "wheel" ||
+          this._lastWheelMode === seenState.attributes?.mode)
+      ) {
+        return;
+      }
+    }
+
+    // Track entity state changes to auto-reload gallery previews (debounced)
+    // Only relevant when a preview-style selector is shown — text selectors
+    // never call the preview service.
+    const entityId = this._getPrimaryEntity();
+    if (
+      hass &&
+      entityId &&
+      this._isPreviewSelectorActive() &&
+      // Same state object as the last check => all derived values are equal.
+      (!hass.states[entityId] ||
+        hass.states[entityId] !== this._lastPreviewStateObj)
+    ) {
+      const stateObj = hass.states[entityId];
+      this._lastPreviewStateObj = stateObj;
+      const currentText = stateObj?.attributes?.custom_text;
+      const currentAngle = stateObj?.attributes?.angle;
+      const currentColors = stateObj?.attributes?.text_colors;
+      const currentPanelMode = stateObj?.attributes?.full_panel || false;
+      // Only re-stringify when the array reference changed.
+      let colorsHash = this._lastPreviewColors;
+      if (
+        currentColors === undefined ||
+        currentColors !== this._lastPreviewColorsRef
+      ) {
+        colorsHash = currentColors ? JSON.stringify(currentColors) : null;
+        this._lastPreviewColorsRef = currentColors;
+      }
+      // Also watch matrix_colors: in "Panel Color Sequence" mode the palette
+      // paints the panel directly, so the rendered output (matrix_colors) can
+      // change without text_colors differing.  Watching it here keeps the
+      // preview in sync with the actual lamp output in every mode.
+      const currentMatrixColors = stateObj?.attributes?.matrix_colors;
+      let matrixColorsHash = this._lastPreviewMatrixColors;
+      if (
+        currentMatrixColors === undefined ||
+        currentMatrixColors !== this._lastPreviewMatrixColorsRef
+      ) {
+        matrixColorsHash = currentMatrixColors
+          ? JSON.stringify(currentMatrixColors)
+          : null;
+        this._lastPreviewMatrixColorsRef = currentMatrixColors;
+      }
+      if (
+        this._lastPreviewText !== currentText ||
+        this._lastPreviewAngle !== currentAngle ||
+        this._lastPreviewColors !== colorsHash ||
+        this._lastPreviewMatrixColors !== matrixColorsHash ||
+        this._lastPreviewPanelMode !== currentPanelMode
+      ) {
+        this._lastPreviewText = currentText;
+        this._lastPreviewAngle = currentAngle;
+        this._lastPreviewColors = colorsHash;
+        this._lastPreviewMatrixColors = matrixColorsHash;
+        this._lastPreviewPanelMode = currentPanelMode;
+        // Debounce preview reload to avoid flickering on rapid updates
+        // (gallery thumbnails still use the preview cache)
+        if (this._previewReloadTimer) clearTimeout(this._previewReloadTimer);
+        this._previewReloadTimer = setTimeout(() => {
+          this._loadPreviews().catch((err) =>
+            console.error("[Gradient Card] Error reloading previews:", err),
+          );
+        }, 500);
+      }
+    }
+
+    // Check if we recently changed mode (within last 2 seconds)
+    const timeSinceLastModeChange = Date.now() - this._lastModeChangeTime;
+    const ignoreUpdateWindow = 2000; // Ignore sensor updates for 2 seconds after mode change
+
+    // Skip if config not set yet (hass can be set before config)
+    if (!this.config) {
+      return;
+    }
+
+    // Use the primary entity (first target_entity, or fallback to config.entity)
+    const _primaryEntityId = this._getPrimaryEntity();
+    if (!_primaryEntityId) {
+      return;
+    }
+
+    // Check if the entities we care about actually changed
+    const entity = this._hass.states[_primaryEntityId];
+    if (!entity) {
+      // Entity no longer exists in HA — force a render to show the error state
+      this._previousHass = hass;
+      this._renderCard();
+      return;
+    }
+    const oldEntity = this._previousHass
+      ? this._previousHass.states[_primaryEntityId]
+      : null;
+
+    // Only render if attributes that actually affect the card UI changed.
+    // HA keeps the same state object for entities that did not change, but
+    // replaces THIS entity's state object on ANY of its attribute updates
+    // (brightness, etc.), so `entity !== oldEntity` alone would trigger
+    // spurious full-DOM rebuilds that destroy & recreate the capsule slider,
+    // causing the visible "blink" (thumb jumps to 0 then animates back).
+    // Compare only the attributes the card actually reads during render().
+    // NOTE: when this entity's state object is replaced, its attribute arrays
+    // (text_colors/matrix_colors) are new references even if the values are
+    // unchanged, so fall back to a JSON comparison when the reference differs.
+    const entityChanged =
+      !oldEntity ||
+      (entity !== oldEntity &&
+      (() => {
+        if (entity.state !== oldEntity.state) return true;
+        const a = entity.attributes;
+        const b = oldEntity.attributes;
+        if (
+          a.angle !== b.angle ||
+          a.mode !== b.mode ||
+          a.full_panel !== b.full_panel ||
+          a.custom_text !== b.custom_text
+        )
+          return true;
+        // Deep-compare arrays only when the reference changed
+        if (
+          a.text_colors !== b.text_colors &&
+          JSON.stringify(a.text_colors) !== JSON.stringify(b.text_colors)
+        )
+          return true;
+        if (
+          a.matrix_colors !== b.matrix_colors &&
+          JSON.stringify(a.matrix_colors) !== JSON.stringify(b.matrix_colors)
+        )
+          return true;
+        return false;
+      })());
+
+    // --- Optimistic Panel Mode: clear only when backend matches ---
+    if (this._optimisticPanelMode !== undefined && entity) {
+      const backendPanelMode = entity.attributes.full_panel || false;
+      if (backendPanelMode === this._optimisticPanelMode) {
+        this._optimisticPanelMode = undefined;
+      }
+    }
+
+    // --- Optimistic Mode: clear only when backend echoes the new mode ---
+    // (prevents the highlight snapping back to the old mode between service
+    // completion and the entity state echo — see _selectMode)
+    if (this._optimisticMode && entity) {
+      if (entity.attributes.mode === this._optimisticMode) {
+        this._optimisticMode = null;
+        if (this._optimisticModeTimeout) {
+          clearTimeout(this._optimisticModeTimeout);
+          this._optimisticModeTimeout = null;
+        }
+      }
+    }
+
+    // --- Optimistic Fill Panel Cols: clear when backend custom_text matches ---
+    if (this._optimisticFillCols !== undefined && entity) {
+      const backendText = entity.attributes.custom_text || "";
+      const backendCols = FILL_PANEL_CHAR_TO_COLS[backendText] || 0;
+      if (backendCols === this._optimisticFillCols) {
+        this._optimisticFillCols = undefined;
+      }
+    }
+
+    // Store current hass for next comparison
+    this._previousHass = this._hass;
+    // Remember what was fully processed (used by the fast path above)
+    this._seenConfig = this.config;
+    this._seenEntityId = _primaryEntityId;
+    this._seenStateObj = entity;
+
+    // Re-initialize wheel center ONLY if mode attribute actually changed
+    if (this._getDisplayMode() === "wheel" && entity) {
+      const currentMode = entity.attributes?.mode;
+
+      // Only sync if:
+      // 1. Mode actually changed from last known value
+      // 2. Not in optimistic mode (we're already showing the right mode)
+      // 3. First initialization (no last mode tracked)
+      const modeChanged = this._lastWheelMode !== currentMode;
+      const isFirstInit = this._lastWheelMode === null;
+
+      if (modeChanged && !this._optimisticMode) {
+        this._lastWheelMode = currentMode;
+        setTimeout(
+          () => {
+            this._syncWheelToCurrentMode();
+            this._markActiveMode();
+          },
+          isFirstInit ? 100 : 0,
+        );
+      } else if (modeChanged && this._optimisticMode) {
+        // Mode changed but we're in optimistic mode - still sync wheel position
+        // (e.g. mode changed via color-mode selector buttons, not the wheel itself)
+        this._lastWheelMode = currentMode;
+        setTimeout(() => {
+          this._syncWheelToCurrentMode();
+          this._markActiveMode();
+        }, 0);
+      } else if (!modeChanged) {
+        // Mode didn't change - this is just a color/angle/sensor update
+        // DO NOT sync wheel - this prevents the blink you're seeing
+        // `[Wheel Sync] Sensor update detected but mode unchanged ('${currentMode}'), skipping wheel sync`
+        // );
+      }
+    }
+
+    // For non-wheel display modes: detect external mode changes and update highlight
+    if (this._getDisplayMode() !== "wheel" && entity && oldEntity) {
+      const currentMode = entity.attributes?.mode;
+      const prevMode = oldEntity.attributes?.mode;
+      if (prevMode !== currentMode) {
+        this._markActiveMode();
+      }
+    }
+
+    // Skip render if entity didn't change
+    if (!entityChanged) {
+      return;
+    }
+
+    // Always allow render for button updates unless:
+    // 1. Actively dragging rotary controls or angle slider
+    // 2. Dropdown is open
+    // 3. Recently changed mode (prevent sensor updates from overriding optimistic UI)
+    if (
+      !this._draggingRotary &&
+      !this._isDragging &&
+      !this._usingSlider &&
+      !this._dropdownOpen &&
+      !this._typingAngle &&
+      timeSinceLastModeChange > ignoreUpdateWindow
+    ) {
+      this._pendingHassRender = false;
+      if (!this._renderScheduled) {
+        this._renderScheduled = true;
+        requestAnimationFrame(() => {
+          this._renderScheduled = false;
+          this._renderCard();
+        });
+      }
+    } else {
+      // Interaction in progress — remember that a state-driven render was blocked
+      this._pendingHassRender = true;
+      this._startInteractionSafety();
+    }
+  }
+
+  // Flush any render that was blocked while interaction flags were set.
+  // Called when an interaction flag is cleared to recover missed state updates.
+  _flushPendingRender() {
+    if (!this._pendingHassRender) return;
+    if (
+      this._draggingRotary ||
+      this._isDragging ||
+      this._usingSlider ||
+      this._dropdownOpen ||
+      this._typingAngle
+    )
+      return; // Another flag still active
+    this._pendingHassRender = false;
+    if (this._interactionSafetyTimer) {
+      clearInterval(this._interactionSafetyTimer);
+      this._interactionSafetyTimer = null;
+    }
+    if (!this._renderScheduled) {
+      this._renderScheduled = true;
+      requestAnimationFrame(() => {
+        this._renderScheduled = false;
+        this._renderCard();
+      });
+    }
+  }
+
+  // Safety timer: periodically check if all interaction flags have cleared
+  // and flush the pending render. Covers edge cases where flag-clearing code
+  // paths don't explicitly call _flushPendingRender().
+  _startInteractionSafety() {
+    if (this._interactionSafetyTimer) return; // Already running
+    this._interactionSafetyTimer = setInterval(() => {
+      if (
+        !this._draggingRotary &&
+        !this._isDragging &&
+        !this._usingSlider &&
+        !this._dropdownOpen &&
+        !this._typingAngle
+      ) {
+        clearInterval(this._interactionSafetyTimer);
+        this._interactionSafetyTimer = null;
+        this._flushPendingRender();
+      }
+    }, 1000);
+  }
+
+  /**
+   * Imperative render entry point (called from set hass / setConfig /
+   * interaction handlers).  Chooses between the surgical in-place sync
+   * (structure unchanged) and a Lit re-render of the card skeleton.
+   */
+  _renderCard() {
+    // Only block render if actively dragging/interacting with angle controls to prevent interference
+    if (
+      this._draggingRotary ||
+      this._isDragging ||
+      this._usingSlider ||
+      this._typingAngle
+    )
+      return;
+
+    const hass = this._hass;
+    if (!hass) return;
+
+    // Support both old single entity config and new multi-entity config
+    const primaryEntity = this._getPrimaryEntity();
+    const stateObj = primaryEntity ? hass.states[primaryEntity] : null;
+
+    if (!primaryEntity || !stateObj) {
+      const entityCount = (this.config.target_entities || []).length;
+      this._errorMessage =
+        entityCount === 0
+          ? "No entities configured"
+          : `Primary entity (${String(primaryEntity)}) not found`;
+      this._skeletonKey = null; // force full rebuild when the entity recovers
+      this.requestUpdate();
+      return;
+    }
+    this._errorMessage = null;
+    const textColors = this._pendingColors ||
+      stateObj.attributes.text_colors || [[255, 255, 255]];
+
+    // Get current angle from entity
+    const currentAngle = stateObj.attributes.angle ?? 0;
+
+    // ── SURGICAL RENDER FAST PATH ──────────────────────────────────────
+    // The skeleton is (re)rendered through Lit ONCE per structural
+    // configuration (config + text colors, which are baked into
+    // rotary/button gradients); afterwards every call only syncs dynamic
+    // values in place, which keeps state updates flicker-free.
+    const structuralKey = JSON.stringify({
+      cfg: this.config,
+      colors: textColors,
+    });
+    if (
+      this._skeletonKey === structuralKey &&
+      this.shadowRoot?.querySelector(".card-content")
+    ) {
+      this._syncDynamicUI(stateObj, currentAngle);
+      return;
+    }
+    this._skeletonKey = structuralKey;
+
+    // For text-style selectors tear down the preview machinery (wheel
+    // controller, cached preview HTML); the Lit template drops the host.
+    if (!this._isPreviewSelectorActive()) {
       if (this._wheelNavigationController) {
         this._wheelNavigationController.destroy();
         this._wheelNavigationController = null;
       }
       if (this._previewElement) {
-        if (this._previewElement.parentElement) {
-          this._previewElement.parentElement.removeChild(this._previewElement);
-        }
         this._previewElement = null;
         this._cachedPreviewHtml = null;
         this._lastPreviewDataHash = null;
       }
-    } else if (!this._previewElement) {
-      // "[Gradient Card] Creating persistent preview element for first time",
-      // { displayMode: this.config?.preview_display_mode }
-      // );
-      this._previewElement = document.createElement("div");
-      this._previewElement.className = "yc-stack yc-controls";
-
-      const initialHTML = this._renderPreviewSection();
-      // htmlLength: initialHTML.length,
-      // containsWheelDisplay: initialHTML.includes('class="wheel-display"'),
-      // containsWheelItem: initialHTML.includes('class="wheel-item"'),
-      // });
-
-      this._previewElement.innerHTML = `
-        <div id="preview-section-container">${initialHTML}</div>
-      `;
-      // No need to track _previewSectionInitialized anymore
-
-      // Setup event listener and load previews
-      setTimeout(() => {
-        if (!this._previewEventListenerRegistered) {
-          this._setupPreviewEventListener();
-        }
-        // Only load previews if we don't have recent data in global cache
-        const cache = this._previewCache();
-        const timeSinceLastRequest = Date.now() - cache.timestamp;
-        const hasRecentData = cache.data && timeSinceLastRequest < 5000; // 5 seconds
-
-        if (!hasRecentData) {
-          // hasCache: !!cache.data,
-          // timeSince: timeSinceLastRequest,
-          // });
-          this._loadPreviews();
-        } else {
-          // "[Gradient Card] Using cached preview data from global cache",
-          // {
-          // timeSinceLastRequest,
-          // hasData: !!cache.data,
-          // displayMode: this.config?.preview_display_mode,
-          // }
-          // );
-          // Immediately render with cached data
-          // "[Gradient Card] About to call _updatePreviewSection with cached data"
-          // );
-          this._updatePreviewSection();
-        }
-      }, 100);
     }
 
-    // Always append the persistent preview element after innerHTML replacement
-    const cardContentDiv = this.shadowRoot.querySelector(".card-content");
-    // cardContentDivFound: !!cardContentDiv,
-    // previewElementExists: !!this._previewElement,
-    // previewElementParent: this._previewElement?.parentElement?.tagName,
-    // });
+    this._rebuildPending = true;
+    this.requestUpdate();
+  }
 
-    if (cardContentDiv && this._previewElement) {
-      // Remove from old parent if it exists
-      if (this._previewElement.parentElement) {
-        this._previewElement.parentElement.removeChild(this._previewElement);
-      }
-      const previewAnchor = cardContentDiv.querySelector("#preview-anchor");
-      if (previewAnchor && previewAnchor.parentNode) {
-        // insertBefore requires the reference node to be a direct child of the
-        // parent — use parentNode (the padding div), not cardContentDiv itself.
-        previewAnchor.parentNode.insertBefore(
-          this._previewElement,
-          previewAnchor,
-        );
-      } else {
-        cardContentDiv.appendChild(this._previewElement);
+  render() {
+    if (this._errorMessage != null) {
+      return html`<ha-card><div style="padding: 16px;">${this._errorMessage}</div></ha-card>`;
+    }
+    const hass = this._hass;
+    if (!hass || !this.config || this._skeletonKey == null) return nothing;
+    const stateObj = hass.states[this._getPrimaryEntity()];
+    if (!stateObj) return nothing;
+
+    const textColors = this._pendingColors ||
+      stateObj.attributes.text_colors || [[255, 255, 255]];
+    const currentAngle = stateObj.attributes.angle ?? 0;
+
+    const showCard = this.config.show_card_background !== false;
+    // Unified mode selector (replaces the old separate color-mode selector +
+    // always-on preview section — they served the same purpose).
+    const selectorStyle = this._getModeSelectorStyle();
+    const isPreviewSelector = PREVIEW_SELECTOR_STYLES.includes(selectorStyle);
+    const showModeSelector =
+      this.config.show_mode_selector !== undefined
+        ? this.config.show_mode_selector !== false
+        : true;
+    // Panel toggle is independent of the selector now.  Legacy fallback: it
+    // used to live inside the text selector block, so respect the old
+    // show_color_mode_selector=false as "hide panel toggle" for old configs.
+    const showPanelToggle =
+      this.config.show_panel_toggle !== undefined
+        ? this.config.show_panel_toggle !== false
+        : this.config.show_color_mode_selector !== false;
+    const showAngleSection = this.config.show_angle_section !== false;
+    const showAngleSlider = this.config.show_angle_slider !== false;
+
+    const cardTitle =
+      typeof this.config.title === "string" ? this.config.title.trim() : "";
+
+    // Get current lamp state for runtime controls
+    const colorMode = this._getCurrentMode() || "Solid Color";
+    // Use optimistic panel mode if set, else backend state
+    const applyToWholePanel =
+      this._optimisticPanelMode !== undefined
+        ? this._optimisticPanelMode
+        : stateObj.attributes.full_panel || false;
+    // Fill panel column selector: detect active column count from custom_text
+    const currentCustomText = stateObj.attributes.custom_text || "";
+    const fillPanelCols =
+      this._optimisticFillCols !== undefined
+        ? this._optimisticFillCols
+        : FILL_PANEL_CHAR_TO_COLS[currentCustomText] || 0;
+
+    // Get panel toggle style + shape + alignment from config
+    const panelToggleStyle = this.config.panel_toggle_style || "minimal";
+    const panelToggleShape = this.config.panel_toggle_shape || "round";
+    const labelAlign = this.config.active_mode_label_align || "left";
+    const panelToggleAlign = this.config.panel_toggle_align || "left";
+    const _alignToJustify = (a) =>
+      a === "center" ? "center" : a === "right" ? "flex-end" : "flex-start";
+
+    // Check if rotary should be in header
+    const rotaryInHeader = this.config.rotary_in_header === true;
+    const showActiveModeLabel = this.config.show_active_mode_label === true;
+
+    const cardContent = html`
+      <div class="yc-stack" style="padding:16px;">
+        ${!showCard && cardTitle ? html`<div style="font-weight:600;font-size:1.1em;">${cardTitle}</div>` : nothing}
+        ${
+          rotaryInHeader && showAngleSection
+            ? html`
+          <div class="card-header" style="display: flex; justify-content: flex-end; align-items: center;">
+            <div class="header-rotary"
+              @mousedown=${this._onAngleAreaMouseDown}
+              @touchstart=${this._onAngleAreaTouchStart}
+              @focusin=${this._onAngleAreaFocusIn}
+              @focusout=${this._onAngleAreaFocusOut}
+              @input=${this._onAngleAreaInput}
+              @keydown=${this._onAngleAreaKeyDown}
+              @change=${this._onAngleAreaChange}
+              @mouseout=${this._onAngleAreaMouseOut}
+            >${this._angleRotaryTemplate(currentAngle, true)}</div>
+          </div>
+        `
+            : nothing
+        }
+        ${
+          showModeSelector || showPanelToggle
+            ? html`
+        <!-- Runtime Controls: unified mode selector -->
+        <div class="runtime-controls" ?hidden=${!(showActiveModeLabel || (showModeSelector && !isPreviewSelector))}>
+          <div class="control-section yc-stack yc-controls">
+            ${
+              showActiveModeLabel
+                ? html`<div style="display:flex;justify-content:${_alignToJustify(labelAlign)};width:100%;">
+                     <div class="gc-active-mode-label" id="gc-active-mode-label" title="Currently active mode" style="margin:0;">
+                       <span class="gc-aml-dot"></span>
+                       <span class="gc-aml-text">${colorMode}</span>
+                     </div>
+                   </div>`
+                : nothing
+            }
+            ${
+              showModeSelector && !isPreviewSelector
+                ? this.generateColorModeSelector(
+                    colorMode,
+                    selectorStyle,
+                    textColors,
+                    this._draggingRotary && this._pendingAngle !== undefined
+                      ? this._pendingAngle
+                      : currentAngle,
+                  )
+                : nothing
+            }
+          </div>
+        </div>
+        ${showModeSelector && isPreviewSelector ? this._previewHostTemplate() : nothing}
+        <div id="preview-anchor" style="display:none;"></div>
+        ${
+          showPanelToggle
+            ? html`
+        <div class="panel-section-wrapper yc-row" style=${panelToggleStyle !== "card" && panelToggleStyle !== "tabs" ? `justify-content:${_alignToJustify(panelToggleAlign)};` : ""}>
+          ${this._renderPanelToggle(applyToWholePanel, panelToggleStyle, panelToggleShape)}
+          <div class="panel-toggle default" style="margin-top: 4px; display: none; align-items: center; gap: 8px;">
+            <label for="fill-panel-cols" style="white-space: nowrap;">Fill Panel Test:</label>
+            <select id="fill-panel-cols" style="flex: 1; padding: 4px;" @change=${this._onFillPanelChange}>
+              <option value="0" ?selected=${fillPanelCols === 0}>Off</option>
+              ${Array.from({ length: 20 }, (_, i) => i + 1).map(
+                (n) =>
+                  html`<option value=${n} ?selected=${fillPanelCols === n}>${n} col${n > 1 ? "s" : ""} (${n * 5} px)</option>`,
+              )}
+            </select>
+          </div>
+        </div>`
+            : nothing
+        }
+        `
+            : nothing
+        }
+        ${
+          showAngleSection
+            ? html`
+        <div class="angle-section">
+          <div class="angle-row"
+            @mousedown=${this._onAngleAreaMouseDown}
+            @touchstart=${this._onAngleAreaTouchStart}
+            @focusin=${this._onAngleAreaFocusIn}
+            @focusout=${this._onAngleAreaFocusOut}
+            @input=${this._onAngleAreaInput}
+            @keydown=${this._onAngleAreaKeyDown}
+            @change=${this._onAngleAreaChange}
+            @mouseout=${this._onAngleAreaMouseOut}
+          >
+            ${
+              showAngleSlider && this._getRotaryStyleInfo().style !== "capsule"
+                ? html`
+              <input id="angleslider" class="angle-slider" type="range" min="0" max="359" step="1" value=${Math.round(currentAngle)}
+                @input=${this._onAngleSliderInput}
+                @mouseup=${this._onAngleSliderRelease}
+                @touchend=${this._onAngleSliderRelease}
+                @touchcancel=${this._onAngleSliderRelease}
+                @mouseleave=${this._onAngleSliderLeave} />
+            `
+                : nothing
+            }
+            ${!rotaryInHeader ? this._angleRotaryTemplate(currentAngle) : nothing}
+          </div>
+        </div>
+        `
+            : nothing
+        }
+      </div>
+    `;
+
+    return showCard
+      ? html`<ha-card header=${cardTitle || nothing}><div class="card-content">${cardContent}</div></ha-card>`
+      : html`<div class="card-content">${cardContent}</div>`;
+  }
+
+  /**
+   * Lit-rendered persistent host for the preview-style mode selector.  Its
+   * `.preview-grid-container` content is shared-renderer HTML (gallery /
+   * carousel / wheel / pagination) that the card updates in place
+   * (surgical per-item swaps, wheel controller), so Lit renders the
+   * container without child bindings and all item interactions are
+   * delegated from the host.
+   */
+  _previewHostTemplate() {
+    return html`<div class="yc-stack yc-controls" id="gc-preview-host"
+      @click=${this._onPreviewClick}
+      @touchstart=${this._previewTouchStartListener}
+      @touchend=${this._previewTouchEndListener}
+    ><div id="preview-section-container"><div class="preview-section yc-stack yc-controls"><div class="preview-grid-container" style="max-width: 100%; overflow: visible;"></div></div></div></div>`;
+  }
+
+  updated(changedProperties) {
+    super.updated(changedProperties);
+    if (!this._rebuildPending || this._errorMessage != null) return;
+    if (!this.shadowRoot?.querySelector(".card-content")) return;
+    this._rebuildPending = false;
+    this._afterRebuild();
+  }
+
+  /** Post-render work after the card skeleton was (re)rendered by Lit. */
+  _afterRebuild() {
+    const root = this.shadowRoot;
+    const stateObj = this._hass?.states?.[this._getPrimaryEntity()];
+    if (!root || !stateObj) return;
+    const currentAngle = stateObj.attributes.angle ?? 0;
+
+    const host = root.getElementById("gc-preview-host");
+    if (host) {
+      if (host !== this._previewElement) {
+        // New host (first render, preview-structure change reset by
+        // setConfig, or recovery from the error state): fill it from the
+        // global preview cache and (re)load previews.
+        if (this._wheelNavigationController) {
+          this._wheelNavigationController.destroy();
+          this._wheelNavigationController = null;
+        }
+        this._previewElement = host;
+        const container = host.querySelector(".preview-grid-container");
+        container.innerHTML = this._getCachedPreviewGrid();
+
+        setTimeout(() => {
+          if (!this._previewEventListenerRegistered) {
+            this._setupPreviewEventListener();
+          }
+          // Only load previews if we don't have recent data in global cache
+          const cache = this._previewCache();
+          const timeSinceLastRequest = Date.now() - cache.timestamp;
+          const hasRecentData = cache.data && timeSinceLastRequest < 5000; // 5 seconds
+
+          if (!hasRecentData) {
+            this._loadPreviews();
+          } else {
+            // Immediately render with cached data
+            this._updatePreviewSection();
+          }
+        }, 100);
       }
 
-      // Refresh preview content from latest global cache.  This catches updates
-      // that arrived while the element was detached or whose event-based
-      // _updatePreviewSection() ran before the element was re-appended.
+      // Refresh preview content from latest global cache.  This catches
+      // updates whose event-based _updatePreviewSection() ran before the
+      // host existed.
       this._updatePreviewSection();
 
-      // Handle pending wheel height update (preview element kept alive,
-      // container content needs refresh with new height)
+      // Handle pending wheel height update (host kept alive, container
+      // content needs refresh with new height)
       if (this._pendingWheelHeightUpdate) {
         this._pendingWheelHeightUpdate = false;
-        const container = this._previewElement.querySelector(
-          ".preview-grid-container",
-        );
+        const container = host.querySelector(".preview-grid-container");
         if (container) {
           const newPreviewHtml = this._renderPreviewGrid();
           // Always keep overflow visible — hover highlights (border +
@@ -2136,18 +2288,18 @@ class YeelightCubeGradientCard extends HTMLElement {
             : null;
           // Use immediate mode for wheel re-init (skip double-rAF delay)
           this._wheelReInitializing = true;
-          // Re-attach listeners and wheel controller for the new content
+          // Re-initialise the wheel controller for the new content
           this._attachPreviewEventListeners();
         }
       }
 
-      // Safety net: after re-appending preview element, ensure wheel controller
-      // is alive if we're in wheel display mode (fixes disconnect/reconnect)
+      // Safety net: ensure the wheel controller is alive in wheel display
+      // mode (fixes disconnect/reconnect)
       if (
         this._getDisplayMode() === "wheel" &&
         !this._wheelNavigationController
       ) {
-        const wheelExists = this._previewElement.querySelector(
+        const wheelExists = host.querySelector(
           ".wheel-item[data-mode], .wheel-compact-item[data-mode]",
         );
         if (wheelExists) {
@@ -2158,37 +2310,15 @@ class YeelightCubeGradientCard extends HTMLElement {
           });
         }
       }
-    } else if (showModeSelector && isPreviewSelector) {
-      // Only a genuine failure when a preview element was expected
-      console.warn("[Gradient Card] Failed to append preview element", {
-        reason: !cardContentDiv
-          ? "cardContentDiv not found"
-          : "previewElement not created",
-      });
     }
 
-    this.addEventListeners();
-
-    // Update active-mode highlight on the persistent preview element
+    // Update active-mode highlight on the preview items
     this._markActiveMode();
 
-    setTimeout(() => {
-      const root = this.shadowRoot;
-      if (!root) return;
-      root.querySelectorAll("input.hex-input").forEach((input) => {
-        const idx = parseInt(input.dataset.idx);
-        if (Array.isArray(textColors[idx])) {
-          const hex = this._rgbToHex(textColors[idx]);
-          if (input.value !== hex) input.value = hex;
-        }
-      });
-
-      // Initialize angle preview if angle section is shown
-      if (showAngleSection) {
-        this._updateRotaryDisplay(currentAngle);
-        this._bindAngleEvents();
-      }
-    }, 0);
+    // Re-apply every dynamic value in place: Lit only patches bindings whose
+    // template value changed, so DOM state written by the in-place sync
+    // path (classes, input values, rotary visuals) is reconciled here.
+    this._syncDynamicUI(stateObj, currentAngle);
   }
 
   /**
@@ -2278,308 +2408,453 @@ class YeelightCubeGradientCard extends HTMLElement {
     }
   }
 
-  addEventListeners() {
+  // ── Declarative event handlers (bound in the Lit templates) ─────────────
+
+  /** Text selector (filled buttons / chips) click. */
+  _onModeButtonClick(e) {
     const root = this.shadowRoot;
     if (!root) return;
+    const target = e.currentTarget;
+    // Use currentTarget to get the button, not the clicked child element
+    const mode = target.dataset.mode;
+    if (!this._hass || !this._getPrimaryEntity() || this._processingModeChange)
+      return;
 
-    // Runtime Controls - Color Mode selectors (filled buttons + chips)
     const modeSelectors = [
       ...root.querySelectorAll(".mode-btn-filled"),
       ...root.querySelectorAll(".mode-chip"),
     ];
 
-    modeSelectors.forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        // Use currentTarget to get the button, not the clicked child element
-        const mode = e.currentTarget.dataset.mode;
-        if (
-          !this._hass ||
-          !this._getPrimaryEntity() ||
-          this._processingModeChange
-        )
-          return;
+    // OPTIMISTIC UI UPDATE - immediately show selection
+    modeSelectors.forEach((button) => {
+      button.classList.remove("active");
+    });
+    target.classList.add("active");
 
-        // OPTIMISTIC UI UPDATE - immediately show selection
-        modeSelectors.forEach((button) => {
-          button.classList.remove("active");
-        });
-        e.currentTarget.classList.add("active");
-
-        // Disable all mode selectors during processing (but keep visual feedback)
-        modeSelectors.forEach((button) => {
-          button.style.pointerEvents = "none";
-          if (!button.classList.contains("active")) {
-            button.style.opacity = "0.6";
-          }
-        });
-
-        // Also disable dropdown if present
-        const dropdown = root.querySelector(".mode-select");
-        if (dropdown) {
-          dropdown.style.pointerEvents = "none";
-          dropdown.style.opacity = "0.6";
-        }
-
-        this._selectMode(mode).finally(() => {
-          // Re-enable all mode selectors
-          modeSelectors.forEach((button) => {
-            button.style.pointerEvents = "";
-            button.style.opacity = "";
-          });
-
-          // Re-enable dropdown if present
-          const dropdown = root.querySelector(".mode-select");
-          if (dropdown) {
-            dropdown.style.pointerEvents = "";
-            dropdown.style.opacity = "";
-          }
-        });
-      });
+    // Disable all mode selectors during processing (but keep visual feedback)
+    modeSelectors.forEach((button) => {
+      button.style.pointerEvents = "none";
+      if (!button.classList.contains("active")) {
+        button.style.opacity = "0.6";
+      }
     });
 
-    // Runtime Controls - Dropdown selector
-    const modeDropdown = root.querySelector(".mode-select");
-    if (modeDropdown) {
-      // Prevent re-render when dropdown is open
-      modeDropdown.addEventListener("focus", () => {
-        this._dropdownOpen = true;
-      });
-
-      modeDropdown.addEventListener("blur", () => {
-        this._dropdownOpen = false;
-        this._flushPendingRender();
-      });
-
-      modeDropdown.addEventListener("change", (e) => {
-        this._dropdownOpen = false; // Close flag when selection made
-        this._flushPendingRender();
-        const mode = e.target.value;
-        if (!this._hass || this._processingModeChange) return;
-
-        if (!this._getPrimaryEntity()) return;
-
-        // Disable dropdown during processing, re-enable after
-        modeDropdown.style.pointerEvents = "none";
-        modeDropdown.style.opacity = "0.6";
-
-        this._selectMode(mode).finally(() => {
-          modeDropdown.style.pointerEvents = "";
-          modeDropdown.style.opacity = "";
-        });
-      });
+    // Also disable dropdown if present
+    const dropdown = root.querySelector(".mode-select");
+    if (dropdown) {
+      dropdown.style.pointerEvents = "none";
+      dropdown.style.opacity = "0.6";
     }
 
-    // Runtime Controls - Apply to Whole Panel checkbox
-    const panelCheckbox = root.getElementById("apply-to-panel");
-    if (panelCheckbox) {
-      panelCheckbox.addEventListener("change", (e) => {
-        if (!this._hass || !this._getPrimaryEntity()) return;
-        const applyToPanel = e.target.checked;
+    this._selectMode(mode).finally(() => {
+      // Re-enable all mode selectors
+      modeSelectors.forEach((button) => {
+        button.style.pointerEvents = "";
+        button.style.opacity = "";
+      });
 
-        // Optimistically update UI (show new value immediately)
-        this._optimisticPanelMode = applyToPanel;
-        // Safety timeout: clear optimistic state if backend doesn't confirm within 5s
-        if (this._panelModeTimeout) clearTimeout(this._panelModeTimeout);
-        this._panelModeTimeout = setTimeout(() => {
-          if (this._optimisticPanelMode !== undefined) {
-            this._optimisticPanelMode = undefined;
-            this.render();
-          }
-        }, 5000);
-        this.render();
+      // Re-enable dropdown if present
+      const dropdown = root.querySelector(".mode-select");
+      if (dropdown) {
+        dropdown.style.pointerEvents = "";
+        dropdown.style.opacity = "";
+      }
+    });
+  }
 
-        // Disable checkbox while updating
-        panelCheckbox.disabled = true;
+  // Dropdown selector: prevent re-render while the dropdown is open
+  _onModeDropdownFocus() {
+    this._dropdownOpen = true;
+  }
 
-        this.callServiceOnTargetEntities("set_full_panel", {
-          full_panel: applyToPanel,
+  _onModeDropdownBlur() {
+    this._dropdownOpen = false;
+    this._flushPendingRender();
+  }
+
+  _onModeDropdownChange(e) {
+    const modeDropdown = e.currentTarget;
+    this._dropdownOpen = false; // Close flag when selection made
+    this._flushPendingRender();
+    const mode = e.target.value;
+    if (!this._hass || this._processingModeChange) return;
+
+    if (!this._getPrimaryEntity()) return;
+
+    // Disable dropdown during processing, re-enable after
+    modeDropdown.style.pointerEvents = "none";
+    modeDropdown.style.opacity = "0.6";
+
+    this._selectMode(mode).finally(() => {
+      modeDropdown.style.pointerEvents = "";
+      modeDropdown.style.opacity = "";
+    });
+  }
+
+  /** "Apply to Whole Panel" checkbox change (every toggle style). */
+  _onPanelCheckboxChange(e) {
+    const panelCheckbox = e.currentTarget;
+    if (!this._hass || !this._getPrimaryEntity()) return;
+    const applyToPanel = panelCheckbox.checked;
+
+    // Optimistically update UI (show new value immediately)
+    this._optimisticPanelMode = applyToPanel;
+    // Safety timeout: clear optimistic state if backend doesn't confirm within 5s
+    if (this._panelModeTimeout) clearTimeout(this._panelModeTimeout);
+    this._panelModeTimeout = setTimeout(() => {
+      if (this._optimisticPanelMode !== undefined) {
+        this._optimisticPanelMode = undefined;
+        this._renderCard();
+      }
+    }, 5000);
+    this._renderCard();
+
+    // Disable checkbox while updating
+    panelCheckbox.disabled = true;
+
+    this.callServiceOnTargetEntities("set_full_panel", {
+      full_panel: applyToPanel,
+    })
+      .then(() => {
+        // Re-enable checkbox, but do NOT clear optimistic state here
+        panelCheckbox.disabled = false;
+        // Matrix preview updates instantly via matrix_colors entity state
+        // (same as lamp preview card).  Gallery thumbnails still need
+        // preview cache, so trigger a reload for those.
+        this._loadPreviews().catch(() => {});
+      })
+      .catch((err) => {
+        // On error, revert optimistic state
+        this._optimisticPanelMode = undefined;
+        panelCheckbox.disabled = false;
+        this._renderCard();
+      });
+  }
+
+  /** Fill Panel column selector change. */
+  _onFillPanelChange(e) {
+    if (!this._hass || !this._getPrimaryEntity()) return;
+    // Guard: ignore rapid change events while a service call is in flight.
+    if (this._fillPanelBusy) return;
+
+    // DEBOUNCE: After each fill-panel change, enforce a 600ms cooldown
+    // before the next change can be sent.  Rapid column-count changes
+    // (1→5→10→20) each trigger activate_fx_mode + draw_matrices on the
+    // backend.  The Cube firmware can become overwhelmed by rapid FX
+    // sessions and enter a confused state where commands are silently
+    // ignored, making the lamp appear stuck.
+    const now = Date.now();
+    if (this._fillPanelLastSend && now - this._fillPanelLastSend < 600) {
+      return; // Drop this change — too soon after previous
+    }
+    const cols = parseInt(e.target.value, 10);
+
+    // Optimistic UI update
+    this._optimisticFillCols = cols;
+    if (this._fillPanelTimeout) clearTimeout(this._fillPanelTimeout);
+    this._fillPanelTimeout = setTimeout(() => {
+      if (this._optimisticFillCols !== undefined) {
+        this._optimisticFillCols = undefined;
+        this._renderCard();
+      }
+    }, 5000);
+
+    // Mark busy BEFORE render so another change event arriving meanwhile
+    // short-circuits.
+    this._fillPanelBusy = true;
+    this._fillPanelLastSend = Date.now(); // Debounce timestamp
+    this._renderCard();
+
+    // Resolve the full list of target entities (same list used by
+    // callServiceOnTargetEntities).
+    const allTargets =
+      this.config.target_entities ||
+      (this.config.entity ? [this.config.entity] : []);
+
+    if (cols > 0) {
+      // Save each entity's current text before filling.
+      // Use a Map so each entity can be restored to its own text.
+      if (!this._savedTextPerEntity) {
+        this._savedTextPerEntity = {};
+      }
+      for (const eid of allTargets) {
+        const st = this._hass.states[eid];
+        const curText = st?.attributes?.custom_text || "";
+        // Only save if not already a fill char (avoid overwriting the
+        // real text with another fill char when changing column count).
+        if (!FILL_PANEL_CHAR_TO_COLS[curText]) {
+          this._savedTextPerEntity[eid] = curText;
+        }
+      }
+      this.callServiceOnTargetEntities("set_custom_text", {
+        text: FILL_PANEL_CHARS[cols],
+      })
+        .then(() => {
+          this._fillPanelBusy = false;
+          this._renderCard();
         })
-          .then(() => {
-            // Re-enable checkbox, but do NOT clear optimistic state here
-            panelCheckbox.disabled = false;
-            // Matrix preview updates instantly via matrix_colors entity state
-            // (same as lamp preview card).  Gallery thumbnails still need
-            // preview cache, so trigger a reload for those.
-            this._loadPreviews().catch(() => {});
-          })
-          .catch((err) => {
-            // On error, revert optimistic state
-            this._optimisticPanelMode = undefined;
-            panelCheckbox.disabled = false;
-            this.render();
+        .catch(() => {
+          this._optimisticFillCols = undefined;
+          this._fillPanelBusy = false;
+          this._renderCard();
+        });
+    } else {
+      // Off: restore each entity to its own previously-saved text.
+      const saved = this._savedTextPerEntity || {};
+      const restorePromises = allTargets.map(async (eid) => {
+        const restoreText = saved[eid] ?? "";
+        try {
+          await this._hass.callService("yeelight_cube", "set_custom_text", {
+            text: restoreText,
+            entity_id: eid,
           });
-      });
-    }
-
-    // --- Fill Panel Column Selector ---
-    const fillPanelSel = root.getElementById("fill-panel-cols");
-    if (fillPanelSel) {
-      fillPanelSel.addEventListener("change", (e) => {
-        if (!this._hass || !this._getPrimaryEntity()) return;
-        // Guard: ignore rapid change events while a service call is in flight.
-        // The select can't be reliably disabled via the DOM reference because
-        // render() rebuilds the DOM (detaching the element).  Use a flag instead.
-        if (this._fillPanelBusy) return;
-
-        // DEBOUNCE: After each fill-panel change, enforce a 600ms cooldown
-        // before the next change can be sent.  Rapid column-count changes
-        // (1→5→10→20) each trigger activate_fx_mode + draw_matrices on the
-        // backend.  The Cube firmware can become overwhelmed by rapid FX
-        // sessions and enter a confused state where commands are silently
-        // ignored, making the lamp appear stuck.
-        const now = Date.now();
-        if (this._fillPanelLastSend && now - this._fillPanelLastSend < 600) {
-          return; // Drop this change — too soon after previous
-        }
-        const cols = parseInt(e.target.value, 10);
-
-        // Optimistic UI update
-        this._optimisticFillCols = cols;
-        if (this._fillPanelTimeout) clearTimeout(this._fillPanelTimeout);
-        this._fillPanelTimeout = setTimeout(() => {
-          if (this._optimisticFillCols !== undefined) {
-            this._optimisticFillCols = undefined;
-            this.render();
-          }
-        }, 5000);
-
-        // Mark busy BEFORE render so the re-created select's listener also
-        // sees the flag and short-circuits if another change event arrives.
-        this._fillPanelBusy = true;
-        this._fillPanelLastSend = Date.now(); // Debounce timestamp
-        this.render();
-
-        // Resolve the full list of target entities (same list used by
-        // callServiceOnTargetEntities).
-        const allTargets =
-          this.config.target_entities ||
-          (this.config.entity ? [this.config.entity] : []);
-
-        if (cols > 0) {
-          // Save each entity's current text before filling.
-          // Use a Map so each entity can be restored to its own text.
-          if (!this._savedTextPerEntity) {
-            this._savedTextPerEntity = {};
-          }
-          for (const eid of allTargets) {
-            const st = this._hass.states[eid];
-            const curText = st?.attributes?.custom_text || "";
-            // Only save if not already a fill char (avoid overwriting the
-            // real text with another fill char when changing column count).
-            if (!FILL_PANEL_CHAR_TO_COLS[curText]) {
-              this._savedTextPerEntity[eid] = curText;
-            }
-          }
-          this.callServiceOnTargetEntities("set_custom_text", {
-            text: FILL_PANEL_CHARS[cols],
-          })
-            .then(() => {
-              this._fillPanelBusy = false;
-              this.render();
-            })
-            .catch(() => {
-              this._optimisticFillCols = undefined;
-              this._fillPanelBusy = false;
-              this.render();
-            });
-        } else {
-          // Off: restore each entity to its own previously-saved text.
-          const saved = this._savedTextPerEntity || {};
-          const restorePromises = allTargets.map(async (eid) => {
-            const restoreText = saved[eid] ?? "";
-            try {
-              await this._hass.callService("yeelight_cube", "set_custom_text", {
-                text: restoreText,
-                entity_id: eid,
-              });
-            } catch (err) {
-              console.error(
-                `[Gradient Card] Error restoring text for ${eid}:`,
-                err,
-              );
-            }
-          });
-          Promise.all(restorePromises)
-            .then(() => {
-              this._fillPanelBusy = false;
-              this._savedTextPerEntity = undefined;
-              this.render();
-            })
-            .catch(() => {
-              this._optimisticFillCols = undefined;
-              this._fillPanelBusy = false;
-              this.render();
-            });
+        } catch (err) {
+          console.error(
+            `[Gradient Card] Error restoring text for ${eid}:`,
+            err,
+          );
         }
       });
+      Promise.all(restorePromises)
+        .then(() => {
+          this._fillPanelBusy = false;
+          this._savedTextPerEntity = undefined;
+          this._renderCard();
+        })
+        .catch(() => {
+          this._optimisticFillCols = undefined;
+          this._fillPanelBusy = false;
+          this._renderCard();
+        });
     }
+  }
 
-    // Handle panel toggle interactions for switch and card styles
-    const switchContainer = root.querySelector(
-      ".panel-toggle.switch .switch-container",
-    );
-    if (switchContainer) {
-      switchContainer.addEventListener("click", (e) => {
-        e.preventDefault();
+  // Panel toggle interactions: switch container/label and card style
+  _onPanelToggleClick(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    this._togglePanelCheckbox();
+  }
+
+  // Chip / minimal styles
+  _onPanelChipClick(e) {
+    e.preventDefault();
+    this._togglePanelCheckbox();
+  }
+
+  // Tabs style: each segment sets an explicit value
+  _onPanelTabClick(e) {
+    e.preventDefault();
+    const targetValue = e.currentTarget.dataset.panelSeg === "true";
+    const cb = this.shadowRoot?.getElementById("apply-to-panel");
+    if (cb && cb.checked !== targetValue) {
+      cb.checked = targetValue;
+      cb.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+  }
+
+  /**
+   * Delegated click handler on the Lit-rendered preview host.  The preview
+   * content itself is shared-renderer HTML (gallery / carousel / wheel /
+   * pagination) that is swapped in place, so a single listener on the
+   * persistent host replaces the per-item listeners (nothing can stack).
+   */
+  _onPreviewClick(e) {
+    const host = e.currentTarget;
+    const t = e.target;
+    if (!t?.closest) return;
+    const within = (el) => el && host.contains(el);
+
+    // Carousel: prev/next buttons, indicator dots and the displayed item
+    if (this._getDisplayMode() === "carousel") {
+      const nav = t.closest('[data-action="navigate"]');
+      if (within(nav)) {
         e.stopPropagation();
-        this._togglePanelCheckbox();
-      });
-    }
-
-    const switchLabel = root.querySelector(".panel-toggle.switch label");
-    if (switchLabel) {
-      switchLabel.addEventListener("click", (e) => {
-        e.preventDefault();
+        const dir = parseInt(nav.dataset.direction, 10);
+        this._gcCarouselNavigate(dir || 1);
+        return;
+      }
+      const dot = t.closest('[data-action="set-index"]');
+      if (within(dot)) {
         e.stopPropagation();
-        this._togglePanelCheckbox();
-      });
-    }
-
-    const cardToggle = root.querySelector(
-      ".panel-toggle.card[data-toggle-card='true']",
-    );
-    if (cardToggle) {
-      cardToggle.addEventListener("click", (e) => {
-        e.preventDefault();
+        const idx = parseInt(dot.dataset.index, 10);
+        this._gcCarouselSetIndex(idx || 0);
+        return;
+      }
+      const selectItem = t.closest('[data-action="select-mode"]');
+      if (within(selectItem)) {
         e.stopPropagation();
-        this._togglePanelCheckbox();
-      });
+        const mode = selectItem.dataset.mode;
+        if (mode) this._selectMode(mode);
+        return;
+      }
     }
 
-    root.querySelectorAll(".panel-toggle.tabs .tab-btn").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.preventDefault();
-        const targetValue = btn.dataset.panelSeg === "true";
-        const cb = root.getElementById("apply-to-panel");
-        if (cb && cb.checked !== targetValue) {
-          cb.checked = targetValue;
-          cb.dispatchEvent(new Event("change", { bubbles: true }));
-        }
-      });
-    });
-
-    const chipToggle = root.querySelector(
-      ".panel-toggle.chip[data-chip-toggle='true']",
-    );
-    if (chipToggle) {
-      chipToggle.addEventListener("click", (e) => {
-        e.preventDefault();
-        this._togglePanelCheckbox();
-      });
+    // Preview item clicks - apply the selected mode
+    const item = t.closest(".gallery-item[data-mode]");
+    if (within(item)) {
+      const mode = item.dataset.mode;
+      if (mode) this._selectMode(mode);
+      return;
     }
 
-    const minimalToggle = root.querySelector(
-      ".panel-toggle.minimal[data-minimal-toggle='true']",
-    );
-    if (minimalToggle) {
-      minimalToggle.addEventListener("click", (e) => {
-        e.preventDefault();
-        this._togglePanelCheckbox();
-      });
+    // Pagination (list / grid modes)
+    const pageBtn = t.closest("[data-pagination-page], [data-pagination-action]");
+    if (within(pageBtn)) {
+      const directPage = pageBtn.dataset.paginationPage;
+      const action = pageBtn.dataset.paginationAction;
+      let pageOrAction;
+      if (directPage !== undefined) pageOrAction = parseInt(directPage, 10);
+      else if (action === "prev" || action === "next") pageOrAction = action;
+      else return;
+      const cur = this._selectorPage || 0;
+      this._selectorPage =
+        pageOrAction === "prev"
+          ? Math.max(0, cur - 1)
+          : pageOrAction === "next"
+            ? cur + 1
+            : pageOrAction;
+      this._lastPreviewDataHash = null; // Force preview re-render
+      this._updatePreviewSection();
     }
+  }
 
-    // NOTE: Preview item click handlers are bound in _attachPreviewEventListeners(),
-    // not here, to avoid double-binding when the preview DOM is updated.
+  // Carousel swipe gesture (delegated, passive listeners — see constructor)
+  _onPreviewTouchStart(e) {
+    if (this._getDisplayMode() !== "carousel") return;
+    if (!e.target?.closest?.(".gc-preview-shell")) return;
+    this._swipeStartX = e.touches[0].clientX;
+  }
+
+  _onPreviewTouchEnd(e) {
+    if (this._getDisplayMode() !== "carousel") return;
+    if (!e.target?.closest?.(".gc-preview-shell")) return;
+    const dx = e.changedTouches[0].clientX - (this._swipeStartX || 0);
+    if (Math.abs(dx) > 40) {
+      this._gcCarouselNavigate(dx < 0 ? 1 : -1);
+    }
+  }
+
+  // ── Angle controls (delegated from the Lit-rendered .angle-row /
+  //    .header-rotary containers; also covers the shared capsule markup) ──
+
+  _angleDragStart(e, touch) {
+    const t = e.target;
+    if (!t?.closest) return;
+    // Value displays / inputs never start a drag (they need their own
+    // clicks, and the read-only text must not move the selector).
+    if (t.closest(ANGLE_NO_DRAG_SELECTOR)) {
+      e.stopPropagation();
+      return;
+    }
+    // Rotary (and its selector dot): click or drag to set angle
+    if (!t.closest("#angle-preview")) return;
+    e.preventDefault(); // Prevent text selection
+    if (
+      this.config.show_selector_dot !== false &&
+      t.closest(".wheel-selector, .rect-selector, .square-selector")
+    ) {
+      e.stopPropagation();
+    }
+    this._draggingRotary = true;
+    this._handleRotaryDrag(touch ? e.touches[0] : e);
+    this._startRotaryDocDrag(touch);
+  }
+
+  _onAngleAreaMouseDown(e) {
+    this._angleDragStart(e, false);
+  }
+
+  _onAngleAreaTouchStart(e) {
+    this._angleDragStart(e, true);
+  }
+
+  // Block renders while the user is focused on the angle input so DOM
+  // updates don't fight the typing.
+  _onAngleAreaFocusIn(e) {
+    if (e.target?.id === "angleinput") this._typingAngle = true;
+  }
+
+  _onAngleAreaFocusOut(e) {
+    const angleInput = e.target;
+    if (angleInput?.id !== "angleinput") return;
+    this._typingAngle = false;
+    // Apply the final value on blur (covers Tab-out, click-away)
+    let angle = parseFloat(angleInput.value);
+    if (!isNaN(angle)) {
+      angle = Math.max(0, Math.min(359, angle));
+      const angleSlider = this.shadowRoot?.getElementById("angleslider");
+      if (angleSlider) angleSlider.value = angle;
+      this._updateRotaryDisplay(angle);
+      this._debouncedApplyAngle(angle);
+    }
+    this._flushPendingRender();
+  }
+
+  // Live visual feedback while typing (debounced backend call).
+  _onAngleAreaInput(e) {
+    const angleInput = e.target;
+    if (angleInput?.id !== "angleinput") return;
+    let angle = parseFloat(angleInput.value);
+    if (isNaN(angle)) return; // incomplete input, skip
+    angle = Math.max(0, Math.min(359, angle));
+    const angleSlider = this.shadowRoot?.getElementById("angleslider");
+    if (angleSlider) angleSlider.value = angle;
+    this._updateRotaryDisplay(angle);
+    this._debouncedApplyAngle(angle);
+  }
+
+  // Enter key: apply immediately and blur (confirms the value)
+  _onAngleAreaKeyDown(e) {
+    if (e.target?.id === "angleinput" && e.key === "Enter") {
+      e.target.blur();
+    }
+  }
+
+  // Capsule slider safety handlers: `change` fires reliably when the native
+  // slider finalises its value; leaving the input covers releases outside.
+  _onAngleAreaChange(e) {
+    if (e.target?.matches?.(".angle-capsule-host .capsule-input")) {
+      this._endCapsuleDrag();
+    }
+  }
+
+  _onAngleAreaMouseOut(e) {
+    const input = e.target;
+    if (!input?.matches?.(".angle-capsule-host .capsule-input")) return;
+    if (e.relatedTarget && input.contains(e.relatedTarget)) return;
+    if (this._usingSlider) {
+      setTimeout(() => {
+        this._usingSlider = false;
+        this._flushPendingRender();
+      }, 200);
+    }
+  }
+
+  // Standalone angle slider
+  _onAngleSliderInput(e) {
+    this._usingSlider = true; // Flag to prevent re-renders during slider use
+    let angle = parseFloat(e.currentTarget.value);
+    if (isNaN(angle)) angle = 0;
+    this._syncAngleValueDisplay(angle);
+    this._updateRotaryDisplay(angle);
+    this._debouncedApplyAngle(angle);
+  }
+
+  // Clear the slider flag when slider interaction ends
+  _onAngleSliderRelease() {
+    setTimeout(() => {
+      this._usingSlider = false;
+      this._flushPendingRender();
+    }, 100);
+  }
+
+  // Safety timeout to ensure flag gets cleared
+  _onAngleSliderLeave() {
+    setTimeout(() => {
+      this._usingSlider = false;
+      this._flushPendingRender();
+    }, 200);
   }
 
   _renderPanelToggle(applyToWholePanel, style, shape = "round") {
@@ -2587,8 +2862,6 @@ class YeelightCubeGradientCard extends HTMLElement {
     if (this._optimisticPanelMode !== undefined) {
       applyToWholePanel = this._optimisticPanelMode;
     }
-    const checkboxId = "apply-to-panel";
-    const shapeAttr = `data-shape="${shape}"`;
 
     // Inline legacy migrations so old saved configs render correctly
     // without requiring an editor round-trip to normalise.
@@ -2597,41 +2870,37 @@ class YeelightCubeGradientCard extends HTMLElement {
 
     switch (style) {
       case "switch":
-        return `
-          <div class="panel-toggle switch" ${shapeAttr}>
-            <label for="${checkboxId}">Apply to Whole Panel</label>
-            <div class="switch-container">
-              <input type="checkbox" id="${checkboxId}" ${
-                applyToWholePanel ? "checked" : ""
-              }>
+        return html`
+          <div class="panel-toggle switch" data-shape=${shape}>
+            <label for="apply-to-panel" @click=${this._onPanelToggleClick}>Apply to Whole Panel</label>
+            <div class="switch-container" @click=${this._onPanelToggleClick}>
+              <input type="checkbox" id="apply-to-panel" .checked=${applyToWholePanel} @change=${this._onPanelCheckboxChange}>
               <span class="switch-slider"></span>
             </div>
           </div>
         `;
 
       case "card":
-        return `
+        return html`
           <div class="panel-toggle card ${
             applyToWholePanel ? "active" : ""
-          }" ${shapeAttr} data-toggle-card="true">
-            <label for="${checkboxId}">Apply to Whole Panel</label>
+          }" data-shape=${shape} data-toggle-card="true" @click=${this._onPanelToggleClick}>
+            <label for="apply-to-panel">Apply to Whole Panel</label>
             <div class="card-indicator"></div>
-            <input type="checkbox" id="${checkboxId}" ${
-              applyToWholePanel ? "checked" : ""
-            }>
+            <input type="checkbox" id="apply-to-panel" .checked=${applyToWholePanel} @change=${this._onPanelCheckboxChange}>
           </div>
         `;
 
       case "tabs":
-        return `
-          <div class="panel-toggle tabs" ${shapeAttr} data-active="${applyToWholePanel ? "1" : "0"}">
-            <input type="checkbox" id="${checkboxId}" style="display:none;" ${applyToWholePanel ? "checked" : ""}>
+        return html`
+          <div class="panel-toggle tabs" data-shape=${shape} data-active=${applyToWholePanel ? "1" : "0"}>
+            <input type="checkbox" id="apply-to-panel" style="display:none;" .checked=${applyToWholePanel} @change=${this._onPanelCheckboxChange}>
             <div class="tabs-thumb"></div>
-            <button class="tab-btn${!applyToWholePanel ? " active" : ""}" data-panel-seg="false">
+            <button class="tab-btn${!applyToWholePanel ? " active" : ""}" data-panel-seg="false" @click=${this._onPanelTabClick}>
               <svg width="12" height="9" viewBox="0 0 12 9" fill="currentColor" style="flex-shrink:0;opacity:0.75"><rect x="0" y="0" width="3" height="3" rx="0.5"/><rect x="4.5" y="0" width="3" height="3" rx="0.5"/><rect x="9" y="0" width="3" height="3" rx="0.5"/><rect x="0" y="5" width="3" height="3" rx="0.5"/><rect x="4.5" y="5" width="3" height="3" rx="0.5"/><rect x="9" y="5" width="3" height="3" rx="0.5"/></svg>
               Pixels
             </button>
-            <button class="tab-btn${applyToWholePanel ? " active" : ""}" data-panel-seg="true">
+            <button class="tab-btn${applyToWholePanel ? " active" : ""}" data-panel-seg="true" @click=${this._onPanelTabClick}>
               <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" style="flex-shrink:0;opacity:0.85"><rect x="0" y="0" width="5" height="5" rx="1"/><rect x="7" y="0" width="5" height="5" rx="1"/><rect x="0" y="7" width="5" height="5" rx="1"/><rect x="7" y="7" width="5" height="5" rx="1"/></svg>
               Panel
             </button>
@@ -2639,9 +2908,9 @@ class YeelightCubeGradientCard extends HTMLElement {
         `;
 
       case "chip":
-        return `
-          <div class="panel-toggle chip${applyToWholePanel ? " active" : ""}" ${shapeAttr} data-chip-toggle="true">
-            <input type="checkbox" id="${checkboxId}" style="display:none;" ${applyToWholePanel ? "checked" : ""}>
+        return html`
+          <div class="panel-toggle chip${applyToWholePanel ? " active" : ""}" data-shape=${shape} data-chip-toggle="true" @click=${this._onPanelChipClick}>
+            <input type="checkbox" id="apply-to-panel" style="display:none;" .checked=${applyToWholePanel} @change=${this._onPanelCheckboxChange}>
             <span class="chip-dot"></span>
             <span class="chip-text">Whole Panel</span>
           </div>
@@ -2649,9 +2918,9 @@ class YeelightCubeGradientCard extends HTMLElement {
 
       case "minimal":
       default:
-        return `
-          <div class="panel-toggle minimal${applyToWholePanel ? " active" : ""}" ${shapeAttr} data-minimal-toggle="true">
-            <input type="checkbox" id="${checkboxId}" style="display:none;" ${applyToWholePanel ? "checked" : ""}>
+        return html`
+          <div class="panel-toggle minimal${applyToWholePanel ? " active" : ""}" data-shape=${shape} data-minimal-toggle="true" @click=${this._onPanelChipClick}>
+            <input type="checkbox" id="apply-to-panel" style="display:none;" .checked=${applyToWholePanel} @change=${this._onPanelCheckboxChange}>
             <span class="minimal-indicator"></span>
             <span class="minimal-text">Whole Panel</span>
           </div>
@@ -2672,24 +2941,6 @@ class YeelightCubeGradientCard extends HTMLElement {
     // Create and dispatch a change event to trigger the existing change handler
     const changeEvent = new Event("change", { bubbles: true });
     checkbox.dispatchEvent(changeEvent);
-  }
-
-  _renderPreviewSection() {
-    // "[Gradient Card] _renderPreviewSection() called - just returning HTML template",
-    // {
-    // cachedPreviewHtml: this._cachedPreviewHtml ? "exists" : "null",
-    // timestamp: Date.now(),
-    // }
-    // );
-
-    // Just return the HTML template, initialization is handled elsewhere now
-    return `
-      <div class="preview-section yc-stack yc-controls">
-        <div class="preview-grid-container" style="max-width: 100%; overflow: visible;">
-          ${this._getCachedPreviewGrid()}
-        </div>
-      </div>
-    `;
   }
 
   _updatePreviewSection() {
@@ -2758,13 +3009,13 @@ class YeelightCubeGradientCard extends HTMLElement {
         } else {
           container.innerHTML = newPreviewHtml;
           this._cachedPreviewHtml = newPreviewHtml;
-          // Re-attach event listeners for preview items after updating DOM
+          // Refresh highlight / wheel controller for the new preview DOM
+          // (clicks are delegated from the persistent preview host)
           this._attachPreviewEventListeners();
         }
       } else {
-        // Content unchanged — but listeners may be missing if _previewElement
-        // was just recreated.  _attachPreviewEventListeners uses per-element
-        // guards (_gcClickBound) and also refreshes the active-mode highlight.
+        // Content unchanged — refresh the active-mode highlight and make
+        // sure the wheel controller exists (e.g. after a host re-render).
         this._attachPreviewEventListeners();
       }
       this._lastPreviewPresentationKey = presentationKey;
@@ -3086,7 +3337,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         this._syncWheelToCurrentMode();
         this._markActiveMode();
       } else {
-        this.render();
+        this._renderCard();
       }
     } catch (error) {
       console.error("Error changing mode:", error);
@@ -3099,7 +3350,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         this._syncWheelToCurrentMode();
         this._markActiveMode();
       } else {
-        this.render();
+        this._renderCard();
       }
     } finally {
       this._processingModeChange = false;
@@ -3204,115 +3455,19 @@ class YeelightCubeGradientCard extends HTMLElement {
     const root = this.shadowRoot;
     if (!root) return;
 
+    // Item, carousel, pagination and swipe interactions are delegated from
+    // the Lit-rendered preview host (see _onPreviewClick), so nothing is
+    // bound per item here — only the active-mode highlight and the shared
+    // wheel controller (which binds to the wheel DOM itself) are refreshed.
+
     // Mark the active mode item in the DOM
     this._markActiveMode();
 
-    // Pagination (list / grid modes) — delegated listener on the persistent
-    // container, bound once (the container survives innerHTML swaps).
-    const pagContainer = root.querySelector(".preview-grid-container");
-    if (pagContainer && !pagContainer._gcPaginationBound) {
-      pagContainer._gcPaginationBound = true;
-      attachPaginationListeners(pagContainer, (pageOrAction) => {
-        const cur = this._selectorPage || 0;
-        this._selectorPage =
-          pageOrAction === "prev"
-            ? Math.max(0, cur - 1)
-            : pageOrAction === "next"
-              ? cur + 1
-              : pageOrAction;
-        this._lastPreviewDataHash = null; // Force preview re-render
-        this._updatePreviewSection();
-      });
-    }
-
-    // Preview item clicks - apply the selected mode
-    // Guarded: each DOM element is marked once to prevent duplicate listeners
-    const previewItems = root.querySelectorAll(".gallery-item[data-mode]");
-    let boundCount = 0;
-    previewItems.forEach((item) => {
-      if (item._gcClickBound) return; // Already has listener
-      item._gcClickBound = true;
-      boundCount++;
-      item.addEventListener("click", (e) => {
-        const mode = e.currentTarget.dataset.mode;
-        if (!mode) return;
-
-        this._selectMode(mode);
-      });
-    });
-
     // Setup wheel mode navigation
     // After DOM update, we need to re-initialize if wheel was destroyed
-    const displayMode = this._getDisplayMode();
-    if (displayMode === "wheel") {
+    if (this._getDisplayMode() === "wheel") {
       if (!this._wheelNavigationController) {
         this._setupWheelNavigation();
-      }
-    }
-
-    // Carousel mode: bind directly on the nav buttons and dots that were
-    // just written by innerHTML.  Direct binding is simpler and more reliable
-    // than delegated binding on a guarded container — the buttons are always
-    // fresh DOM elements after an innerHTML swap so there are never duplicates.
-    if (displayMode === "carousel") {
-      // Prev / Next buttons — guarded with _gcNavBound so repeated
-      // _attachPreviewEventListeners calls don't stack extra listeners.
-      root.querySelectorAll('[data-action="navigate"]').forEach((btn) => {
-        if (btn._gcNavBound) return;
-        btn._gcNavBound = true;
-        btn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const dir = parseInt(btn.dataset.direction, 10);
-          this._gcCarouselNavigate(dir || 1);
-        });
-      });
-
-      // Indicator dots — same guard
-      root.querySelectorAll('[data-action="set-index"]').forEach((dot) => {
-        if (dot._gcDotBound) return;
-        dot._gcDotBound = true;
-        dot.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const idx = parseInt(dot.dataset.index, 10);
-          this._gcCarouselSetIndex(idx || 0);
-        });
-      });
-
-      // Preview item click (select current mode)
-      root.querySelectorAll('[data-action="select-mode"]').forEach((item) => {
-        if (item._gcClickBound) return;
-        item._gcClickBound = true;
-        item.addEventListener("click", (e) => {
-          e.stopPropagation();
-          const mode = item.dataset.mode;
-          if (mode) {
-            this._selectMode(mode);
-          }
-        });
-      });
-
-      // Swipe gesture
-      const shell = root.querySelector(".gc-preview-shell");
-      if (shell && !shell._gcSwipeBound) {
-        shell._gcSwipeBound = true;
-        let _tx = 0;
-        shell.addEventListener(
-          "touchstart",
-          (e) => {
-            _tx = e.touches[0].clientX;
-          },
-          { passive: true },
-        );
-        shell.addEventListener(
-          "touchend",
-          (e) => {
-            const dx = e.changedTouches[0].clientX - _tx;
-            if (Math.abs(dx) > 40) {
-              this._gcCarouselNavigate(dx < 0 ? 1 : -1);
-            }
-          },
-          { passive: true },
-        );
       }
     }
   }
@@ -3812,7 +3967,7 @@ class YeelightCubeGradientCard extends HTMLElement {
 
       // Fresh preview data arrived — if text preview mode is active and we are
       // NOT mid-drag, force the exact same path as toggling the "Show Text
-      // Preview" switch: a synchronous this.render() that rebuilds the full DOM
+      // Preview" switch: a synchronous this._renderCard() that rebuilds the full DOM
       // from the now-fresh cache.  Previous attempts using requestAnimationFrame
       // were silently blocked by the _renderScheduled guard when a set-hass
       // render was already queued.
@@ -3821,7 +3976,7 @@ class YeelightCubeGradientCard extends HTMLElement {
         !this._draggingRotary
       ) {
         this._renderScheduled = false; // clear any pending guard
-        this.render(); // full DOM rebuild from fresh cache
+        this._renderCard(); // full DOM rebuild from fresh cache
       }
     });
   }
@@ -3915,334 +4070,11 @@ class YeelightCubeGradientCard extends HTMLElement {
   }
 
   // Angle-related methods (from angle gradient card)
-  _bindAngleEvents() {
-    const root = this.shadowRoot;
-    if (!root) return;
+  // Angle control events are bound declaratively on the Lit-rendered
+  // .angle-row / .header-rotary containers (see _onAngleArea* handlers and
+  // _startRotaryDocDrag for the document-level drag listeners).
 
-    const angleInput = root.getElementById("angleinput");
-    const angleText = root.getElementById("angletext");
-    const angleSlider = root.getElementById("angleslider");
-    const rotary = root.getElementById("angle-preview");
-
-    // Readonly text display: block clicks from triggering the SVG drag handler
-    if (angleText) {
-      angleText.addEventListener("mousedown", (e) => e.stopPropagation());
-      angleText.addEventListener("touchstart", (e) => e.stopPropagation());
-    }
-
-    // Block clicks on the overlay wrapper div too (HTML modes: rect/square/matrix)
-    const overlayDiv = root.querySelector(".rotary-overlay-value");
-    if (overlayDiv) {
-      overlayDiv.addEventListener("mousedown", (e) => e.stopPropagation());
-      overlayDiv.addEventListener("touchstart", (e) => e.stopPropagation());
-    }
-
-    // Same for matrix below-grid angle value
-    const matrixAngleDiv = root.querySelector(".matrix-angle-value");
-    if (matrixAngleDiv) {
-      matrixAngleDiv.addEventListener("mousedown", (e) => e.stopPropagation());
-      matrixAngleDiv.addEventListener("touchstart", (e) => e.stopPropagation());
-    }
-
-    // Same for capsule angle slot
-    const capsuleAngleSlot = root.querySelector(".capsule-angle-slot");
-    if (capsuleAngleSlot) {
-      capsuleAngleSlot.addEventListener("mousedown", (e) =>
-        e.stopPropagation(),
-      );
-      capsuleAngleSlot.addEventListener("touchstart", (e) =>
-        e.stopPropagation(),
-      );
-    }
-
-    // Angle input control
-    if (angleInput) {
-      // Stop propagation on mousedown/touchstart so the compass SVG drag
-      // handler doesn't capture clicks meant for the input field.
-      angleInput.addEventListener("mousedown", (e) => e.stopPropagation());
-      angleInput.addEventListener("touchstart", (e) => e.stopPropagation());
-
-      // Block render() while the user is focused on the input so DOM
-      // rebuilds don't destroy the element mid-typing.
-      angleInput.addEventListener("focus", () => {
-        this._typingAngle = true;
-      });
-      angleInput.addEventListener("blur", () => {
-        this._typingAngle = false;
-        // Apply the final value on blur (covers Tab-out, click-away)
-        let angle = parseFloat(angleInput.value);
-        if (!isNaN(angle)) {
-          angle = Math.max(0, Math.min(359, angle));
-          if (angleSlider) angleSlider.value = angle;
-          this._updateRotaryDisplay(angle);
-          this._debouncedApplyAngle(angle);
-        }
-        this._flushPendingRender();
-      });
-
-      // Live visual feedback while typing — update rotary/slider preview
-      // without triggering a backend call (that comes on blur or Enter).
-      angleInput.addEventListener("input", () => {
-        let angle = parseFloat(angleInput.value);
-        if (isNaN(angle)) return; // incomplete input, skip
-        angle = Math.max(0, Math.min(359, angle));
-        if (angleSlider) angleSlider.value = angle;
-        this._updateRotaryDisplay(angle);
-        this._debouncedApplyAngle(angle);
-      });
-
-      // Enter key: apply immediately and blur (confirms the value)
-      angleInput.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
-          angleInput.blur();
-        }
-      });
-    }
-
-    // Angle slider control
-    if (angleSlider) {
-      angleSlider.addEventListener("input", () => {
-        this._usingSlider = true; // Flag to prevent re-renders during slider use
-        let angle = parseFloat(angleSlider.value);
-        if (isNaN(angle)) angle = 0;
-        this._syncAngleValueDisplay(angle);
-        this._updateRotaryDisplay(angle);
-        this._debouncedApplyAngle(angle);
-      });
-
-      // Clear the slider flag when slider interaction ends
-      angleSlider.addEventListener("mouseup", () => {
-        setTimeout(() => {
-          this._usingSlider = false;
-          this._flushPendingRender();
-        }, 100);
-      });
-      angleSlider.addEventListener("touchend", () => {
-        setTimeout(() => {
-          this._usingSlider = false;
-          this._flushPendingRender();
-        }, 100);
-      });
-      angleSlider.addEventListener("touchcancel", () => {
-        setTimeout(() => {
-          this._usingSlider = false;
-          this._flushPendingRender();
-        }, 100);
-      });
-
-      // Safety timeout to ensure flag gets cleared
-      angleSlider.addEventListener("mouseleave", () => {
-        setTimeout(() => {
-          this._usingSlider = false;
-          this._flushPendingRender();
-        }, 200);
-      });
-    }
-
-    // Enhanced drag behavior: Document-level event handlers for continuous interaction
-    // This allows dragging to continue even when mouse/touch leaves the rotary control area
-    // These handlers are shared between rotary containers and selector dots for consistent behavior
-    const handleMouseMove = (e) => {
-      if (this._draggingRotary) {
-        e.preventDefault(); // Prevent text selection during drag
-        this._handleRotaryDrag(e);
-      }
-    };
-
-    const handleMouseUp = (e) => {
-      // Always detach the document listeners, even if _draggingRotary was
-      // reset elsewhere (e.g. setConfig mid-drag) — otherwise they leak.
-      this._removeRotaryDocListeners();
-      if (this._draggingRotary) {
-        e.preventDefault(); // Prevent text selection
-
-        // Cancel pending debounce and apply the final angle immediately
-        if (this._pendingAngle !== null && this._pendingAngle !== undefined) {
-          this._applyAngle(this._pendingAngle);
-          this._lastAngleSent = this._pendingAngle;
-        }
-
-        this._draggingRotary = false;
-        this._isDragging = false;
-        this._pendingAngle = null;
-        this._flushPendingRender();
-      }
-    };
-
-    const handleTouchMove = (e) => {
-      if (this._draggingRotary) {
-        e.preventDefault(); // Prevent text selection
-        this._handleRotaryDrag(e.touches[0]);
-      }
-    };
-
-    const handleTouchEnd = (e) => {
-      // Always detach the document listeners (see handleMouseUp).
-      this._removeRotaryDocListeners();
-      if (this._draggingRotary) {
-        e.preventDefault(); // Prevent text selection
-
-        // Cancel pending debounce and apply the final angle immediately
-        if (this._pendingAngle !== null && this._pendingAngle !== undefined) {
-          this._applyAngle(this._pendingAngle);
-          this._lastAngleSent = this._pendingAngle;
-        }
-
-        this._draggingRotary = false;
-        this._isDragging = false;
-        this._pendingAngle = null;
-        this._flushPendingRender();
-      }
-    };
-
-    // Attach document-level drag listeners, recording them on the instance so
-    // they can be removed from anywhere (drag end, setConfig, disconnect).
-    // Any previously attached set is removed first so listeners never stack.
-    const startMouseDrag = () => {
-      this._removeRotaryDocListeners();
-      this._rotaryDocListeners = [
-        ["mousemove", handleMouseMove],
-        ["mouseup", handleMouseUp],
-      ];
-      this._rotaryDocListeners.forEach(([type, fn]) =>
-        document.addEventListener(type, fn),
-      );
-    };
-    const startTouchDrag = () => {
-      this._removeRotaryDocListeners();
-      this._rotaryDocListeners = [
-        ["touchmove", handleTouchMove],
-        ["touchend", handleTouchEnd],
-        ["touchcancel", handleTouchEnd],
-      ];
-      this._rotaryDocListeners.forEach(([type, fn]) =>
-        document.addEventListener(type, fn),
-      );
-    };
-
-    // Rotary slider (SVG): click or drag to set angle
-    if (rotary) {
-      rotary.addEventListener("mousedown", (e) => {
-        e.preventDefault(); // Prevent text selection
-        this._draggingRotary = true;
-        this._handleRotaryDrag(e);
-
-        startMouseDrag();
-      });
-
-      rotary.addEventListener("touchstart", (e) => {
-        e.preventDefault(); // Prevent text selection
-        this._draggingRotary = true;
-        this._handleRotaryDrag(e.touches[0]);
-
-        startTouchDrag();
-      });
-
-      rotary.addEventListener("click", (e) => {
-        // Skip: mousedown already handled this interaction and mouseup applied the angle.
-        // The click fires after mouseup and would redundantly set _isDragging=true
-        // without any handler to clear it, permanently blocking renders.
-      });
-    }
-
-    // Enhanced selector dot interaction: Make selector dots clickable and draggable
-    // This provides an alternative interaction method alongside the rotary container itself
-    // Both elements share the same event handlers for consistent behavior across all rotary styles
-    if (this.config.show_selector_dot !== false) {
-      // Wheel selector dot (SVG circle)
-      const wheelSelector = root.querySelector(".wheel-selector");
-      if (wheelSelector) {
-        wheelSelector.addEventListener("mousedown", (e) => {
-          e.preventDefault();
-          e.stopPropagation(); // Prevent event from bubbling to parent
-          this._draggingRotary = true;
-          this._handleRotaryDrag(e);
-          startMouseDrag();
-        });
-
-        wheelSelector.addEventListener("touchstart", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          this._draggingRotary = true;
-          this._handleRotaryDrag(e.touches[0]);
-          startTouchDrag();
-        });
-
-        wheelSelector.addEventListener("click", (e) => {
-          // Skip: mousedown already handled; mouseup applied the angle.
-        });
-      }
-
-      // Rectangle selector dot (div)
-      const rectSelector = root.querySelector(".rect-selector");
-      if (rectSelector) {
-        rectSelector.addEventListener("mousedown", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          this._draggingRotary = true;
-          this._handleRotaryDrag(e);
-          startMouseDrag();
-        });
-
-        rectSelector.addEventListener("touchstart", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          this._draggingRotary = true;
-          this._handleRotaryDrag(e.touches[0]);
-          startTouchDrag();
-        });
-
-        rectSelector.addEventListener("click", (e) => {
-          // Skip: mousedown already handled; mouseup applied the angle.
-        });
-      }
-
-      // Square selector dot (div)
-      const squareSelector = root.querySelector(".square-selector");
-      if (squareSelector) {
-        squareSelector.addEventListener("mousedown", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          this._draggingRotary = true;
-          this._handleRotaryDrag(e);
-          startMouseDrag();
-        });
-
-        squareSelector.addEventListener("touchstart", (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          this._draggingRotary = true;
-          this._handleRotaryDrag(e.touches[0]);
-          startTouchDrag();
-        });
-
-        squareSelector.addEventListener("click", (e) => {
-          // Skip: mousedown already handled; mouseup applied the angle.
-        });
-      }
-    }
-
-    // Capsule slider safety handlers (change + mouseleave)
-    // The capsule <input type="range"> uses inline oninput/onmouseup/ontouchend,
-    // but `change` fires reliably when the native slider finalises its value and
-    // `mouseleave` covers the edge case of releasing outside the element.
-    const capsuleInput = root.querySelector(
-      ".angle-capsule-host .capsule-input",
-    );
-    if (capsuleInput) {
-      capsuleInput.addEventListener("change", () => {
-        this._endCapsuleDrag();
-      });
-      capsuleInput.addEventListener("mouseleave", () => {
-        if (this._usingSlider) {
-          setTimeout(() => {
-            this._usingSlider = false;
-            this._flushPendingRender();
-          }, 200);
-        }
-      });
-    }
-  } // Always get the current textColors from the entity state
+  // Always get the current textColors from the entity state
   _getCurrentTextColors() {
     const entityId = this._getPrimaryEntity();
     const hass = this._hass;
@@ -4306,264 +4138,61 @@ class YeelightCubeGradientCard extends HTMLElement {
     return _sharedGenerateShapeMask(shape, selectorRadius);
   }
 
+  /**
+   * String form of the angle rotary markup.  Compatibility API (used by
+   * the preview-appearance fixtures); the card itself renders
+   * _angleRotaryTemplate() through Lit.
+   */
   _renderAngleRotary(currentAngle, isHeaderMode = false) {
-    const styleInfo = this._getRotaryStyleInfo();
-    const style = styleInfo.style;
+    return templateToString(
+      this._angleRotaryTemplate(currentAngle, isHeaderMode),
+    );
+  }
 
-    switch (style) {
-      case "wheel":
-        // Wheel mode: gradient circle with optional arrow window mask
-        const textColors = this._getCurrentTextColors();
-        const wheelGradientStops = this._createWheelGradientStops(textColors);
-        const visualAngle =
-          this._draggingRotary && this._pendingAngle !== undefined
-            ? this._pendingAngle
-            : currentAngle;
-        const selectorAngle = visualAngle;
-        const selectorRadians = (selectorAngle * Math.PI) / 180;
-        const baseWheelSizePercent = this._getRotarySize();
-        const wheelSizePercent = baseWheelSizePercent;
-        const wheelSize = Math.min(100, wheelSizePercent);
-        const wheelRadius = (wheelSize * 45) / 100;
-        const selectorRadius = wheelRadius;
-        const selectorX = 50 + selectorRadius * Math.cos(selectorRadians);
-        const selectorY = 50 - selectorRadius * Math.sin(selectorRadians);
-        const gradientAngle = -visualAngle;
+  /** Resolved angle value display mode: "none" | "text" | "input". */
+  _getAngleValueDisplay() {
+    return (
+      this.config.angle_value_display ||
+      (this.config.show_angle_input === true ? "input" : "none")
+    );
+  }
 
-        // Optional arrow window mask
-        const showMask = this._getWheelShowMask();
-        let wheelMaskDefs = "";
-        let wheelMaskOverlay = "";
-        if (showMask) {
-          const al = wheelRadius * 2,
-            abw = wheelRadius * 0.45;
-          const ahw = wheelRadius * 0.85,
-            ahl = wheelRadius * 0.55;
-          const awTipX = 50 + al / 2;
-          const awBl = 50 - al / 2;
-          const awBt = 50 - abw / 2,
-            awBb = 50 + abw / 2;
-          const awHt = 50 - ahw / 2,
-            awHb = 50 + ahw / 2;
-          const awHs = awTipX - ahl;
-          const arrowWindowPath = `M ${awBl} ${awBt} L ${awHs} ${awBt} L ${awHs} ${awHt} L ${awTipX} 50 L ${awHs} ${awHb} L ${awHs} ${awBb} L ${awBl} ${awBb} Z`;
-          wheelMaskDefs = `
-                <mask id="awDimMask">
-                  <rect x="0" y="0" width="100" height="100" fill="white"/>
-                  <g class="aw-rotate" transform="rotate(${gradientAngle} 50 50)">
-                    <path d="${arrowWindowPath}" fill="black"/>
-                  </g>
-                </mask>`;
-          wheelMaskOverlay = `
-              <circle cx="50" cy="50" r="${wheelRadius}" fill="black" opacity="0.55" mask="url(#awDimMask)"/>
-              <g class="aw-rotate" transform="rotate(${gradientAngle} 50 50)">
-                <path d="${arrowWindowPath}" fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="0.8"/>
-              </g>`;
-        }
-
-        return `
-          <div class="wheel-container" style="width: 100%; display: flex; flex-direction: column; align-items: center;">
-            <svg width="${
-              isHeaderMode ? "88px" : `${wheelSizePercent}%`
-            }" height="${
-              isHeaderMode ? "88px" : `${wheelSizePercent}%`
-            }" viewBox="0 0 100 100" id="angle-preview" class="color-wheel" style="max-width: 200px; max-height: 200px;">
-              <defs>
-                <linearGradient id="wheelGradient" x1="0%" y1="50%" x2="100%" y2="50%">
-                  ${wheelGradientStops}
-                </linearGradient>
-                <mask id="circleMask">
-                  <circle cx="50" cy="50" r="${wheelRadius}" fill="white"/>
-                </mask>
-                ${wheelMaskDefs}
-              </defs>
-              <g ${showMask ? 'class="aw-grad-group" ' : ""}transform="rotate(${gradientAngle} 50 50)">
-                <rect x="${50 - wheelRadius}" y="${50 - wheelRadius}" width="${
-                  wheelRadius * 2
-                }" height="${
-                  wheelRadius * 2
-                }" fill="url(#wheelGradient)" mask="url(#circleMask)"/>
-              </g>
-              ${wheelMaskOverlay}
-              <circle cx="50" cy="50" r="${wheelRadius}" fill="none" stroke="var(--divider-color, #ddd)" stroke-width="1"/>
-              ${
-                this.config.compass_snap_to_coordinates
-                  ? [0, 45, 90, 135, 180, 225, 270, 315]
-                      .map((a) => {
-                        const rad = (a * Math.PI) / 180;
-                        const inner = wheelRadius - 3;
-                        const outer = wheelRadius + 1;
-                        return `<line x1="${50 + inner * Math.cos(rad)}" y1="${50 - inner * Math.sin(rad)}" x2="${50 + outer * Math.cos(rad)}" y2="${50 - outer * Math.sin(rad)}" stroke="var(--secondary-text-color, #999)" stroke-width="${a % 90 === 0 ? 1.8 : 1}" opacity="0.7"/>`;
-                      })
-                      .join("")
-                  : ""
-              }
-              ${
-                this.config.show_selector_dot !== false
-                  ? `<circle cx="${selectorX}" cy="${selectorY}" r="4" class="wheel-selector" fill="#fff" stroke="#333" stroke-width="2"/>`
-                  : ""
-              }
-              <circle cx="50" cy="50" r="${wheelRadius}" fill="transparent" style="cursor: pointer;"/>
-              ${(() => {
-                const avd =
-                  this.config.angle_value_display ||
-                  (this.config.show_angle_input === true ? "input" : "none");
-                if (avd === "none") return "";
-                const displayAngle = Math.round(visualAngle);
-                const foW = Math.max(wheelRadius * 1.11, 30);
-                const foH = Math.max(wheelRadius * 0.58, 16);
-                const foX = 50 - foW / 2;
-                const foY = 50 - foH / 2;
-                const foFS = Math.max(wheelRadius * 0.27, 7.5).toFixed(1);
-                const foBR = Math.max(wheelRadius * 0.13, 3.5).toFixed(1);
-                if (avd === "input") {
-                  return `<foreignObject x="${foX.toFixed(1)}" y="${foY.toFixed(1)}" width="${foW.toFixed(1)}" height="${foH.toFixed(1)}">
-                      <input xmlns="http://www.w3.org/1999/xhtml" id="angleinput" class="compass-center-input" type="number" min="0" max="359" step="1" value="${displayAngle}" style="font-size:${foFS}px;border-radius:${foBR}px" />
+  /** In-SVG angle value (text or input) for the circular rotary styles. */
+  _svgAngleValueTemplate(radius, visualAngle) {
+    const avd = this._getAngleValueDisplay();
+    if (avd === "none") return nothing;
+    const displayAngle = Math.round(visualAngle);
+    const foW = Math.max(radius * 1.11, 30);
+    const foH = Math.max(radius * 0.58, 16);
+    const foX = 50 - foW / 2;
+    const foY = 50 - foH / 2;
+    const foFS = Math.max(radius * 0.27, 7.5).toFixed(1);
+    const foBR = Math.max(radius * 0.13, 3.5).toFixed(1);
+    if (avd === "input") {
+      return svg`<foreignObject x=${foX.toFixed(1)} y=${foY.toFixed(1)} width=${foW.toFixed(1)} height=${foH.toFixed(1)}>
+                      <input xmlns="http://www.w3.org/1999/xhtml" id="angleinput" class="compass-center-input" type="number" min="0" max="359" step="1" value=${displayAngle} style="font-size:${foFS}px;border-radius:${foBR}px" />
                     </foreignObject>`;
-                }
-                return `<foreignObject x="${foX.toFixed(1)}" y="${foY.toFixed(1)}" width="${foW.toFixed(1)}" height="${foH.toFixed(1)}">
+    }
+    return svg`<foreignObject x=${foX.toFixed(1)} y=${foY.toFixed(1)} width=${foW.toFixed(1)} height=${foH.toFixed(1)}>
                     <input xmlns="http://www.w3.org/1999/xhtml" id="angletext" class="compass-center-input" type="text" value="${displayAngle}°" readonly tabindex="-1" style="font-size:${foFS}px;border-radius:${foBR}px" />
                   </foreignObject>`;
-              })()}
-            </svg>
-          </div>
-        `;
+  }
 
-      case "rect":
-        // Get the actual colors from the lamp
-        const rectTextColors = this._getCurrentTextColors();
-        const rectGradientStops =
-          this._createWheelGradientStops(rectTextColors);
+  /** HTML angle value (text or input) for the rect/square/matrix styles. */
+  _htmlAngleValueTemplate(className, visualAngle) {
+    const avd = this._getAngleValueDisplay();
+    if (avd === "none") return nothing;
+    const da = Math.round(visualAngle);
+    if (avd === "input") {
+      return html`<div class=${className}><input id="angleinput" type="number" min="0" max="359" step="1" value=${da} /></div>`;
+    }
+    return html`<div class=${className}><input id="angletext" type="text" value="${da}°" readonly tabindex="-1" /></div>`;
+  }
 
-        // Use visual angle for immediate feedback during dragging
-        const rectVisualAngle =
-          this._draggingRotary && this._pendingAngle !== undefined
-            ? this._pendingAngle
-            : currentAngle;
-
-        // EXACT same logic as wheel for consistency
-        const rectNormalizedAngle = ((rectVisualAngle % 360) + 360) % 360;
-
-        // Map angle to rectangle perimeter position using continuous mapping
-        // Rectangle has 4:1 aspect ratio, so we need to map to the perimeter
-        const rectWidth = 4;
-        const rectHeight = 1;
-        const perimeter = 2 * (rectWidth + rectHeight); // Total perimeter = 10 units
-
-        // Map angle (0-360°) to perimeter position (0 to perimeter)
-        const perimeterPosition = (rectNormalizedAngle / 360) * perimeter;
-
-        let rectSelectorX, rectSelectorY;
-
-        // Start from right edge center, go clockwise
-        if (perimeterPosition <= rectHeight / 2) {
-          // Right edge, top half (0° to ~18°)
-          rectSelectorX = 100;
-          rectSelectorY = 50 - (perimeterPosition / (rectHeight / 2)) * 50;
-        } else if (perimeterPosition <= rectHeight / 2 + rectWidth) {
-          // Top edge (going from right to left)
-          const topProgress = (perimeterPosition - rectHeight / 2) / rectWidth;
-          rectSelectorX = 100 - topProgress * 100;
-          rectSelectorY = 0;
-        } else if (
-          perimeterPosition <=
-          rectHeight / 2 + rectWidth + rectHeight
-        ) {
-          // Left edge (going from top to bottom)
-          const leftProgress =
-            (perimeterPosition - rectHeight / 2 - rectWidth) / rectHeight;
-          rectSelectorX = 0;
-          rectSelectorY = leftProgress * 100;
-        } else if (
-          perimeterPosition <=
-          rectHeight / 2 + rectWidth + rectHeight + rectWidth
-        ) {
-          // Bottom edge (going from left to right)
-          const bottomProgress =
-            (perimeterPosition - rectHeight / 2 - rectWidth - rectHeight) /
-            rectWidth;
-          rectSelectorX = bottomProgress * 100;
-          rectSelectorY = 100;
-        } else {
-          // Right edge, bottom half (back to start)
-          const rightBottomProgress =
-            (perimeterPosition -
-              rectHeight / 2 -
-              rectWidth -
-              rectHeight -
-              rectWidth) /
-            (rectHeight / 2);
-          rectSelectorX = 100;
-          rectSelectorY = 100 - rightBottomProgress * 50;
-        }
-
-        // Gradient rotation EXACT same as wheel
-        const rectGradientAngle = -rectNormalizedAngle;
-
-        // Make rectangle use full width of container with 4:1 aspect ratio
-        // In header mode, use rotary size directly (no minimum constraint)
-        const baseRectSizePercent = this._getRotarySize();
-        const rectSizePercent = baseRectSizePercent;
-
-        // Calculate header mode dimensions based on rotary size
-        const headerWidth = isHeaderMode
-          ? Math.round((rectSizePercent / 100) * 300)
-          : 300;
-        const headerHeight = isHeaderMode
-          ? Math.round((rectSizePercent / 100) * 88)
-          : 88;
-
-        return `
-          <div class="rect-container" style="width: 100%; position: relative;">
-            <div 
-              id="angle-preview" 
-              class="color-rect rect-gradient" 
-              style="
-                ${
-                  isHeaderMode
-                    ? `width: ${headerWidth}px !important; height: ${headerHeight}px !important;`
-                    : `width: ${rectSizePercent}%; aspect-ratio: 4 / 1;`
-                }
-                background: linear-gradient(${
-                  90 + rectGradientAngle
-                }deg, ${rectTextColors
-                  .map((color) => `rgb(${color.join(",")})`)
-                  .join(", ")});
-                box-shadow: inset 0 0 0 1px var(--divider-color, #ddd);
-                border-radius: 6px;
-                margin: 0 auto;
-                position: relative;
-                cursor: pointer;
-              "
-            >
-              <!-- Selector dot positioned EXACTLY like the wheel -->
-              ${
-                this.config.show_selector_dot !== false
-                  ? `<div 
-                class="rect-selector" 
-                style="
-                  position: absolute;
-                  width: 12px;
-                  height: 12px;
-                  background: var(--card-background-color, #fff);
-                  border: 2px solid var(--primary-text-color, #333);
-                  border-radius: 50%;
-                  transform: translate(-50%, -50%);
-                  left: ${rectSelectorX}%;
-                  top: ${rectSelectorY}%;
-                  cursor: pointer;
-                "
-              ></div>`
-                  : ""
-              }
-${(() => {
-  if (!this.config.compass_snap_to_coordinates) return "";
-  const snapAngles = [0, 45, 90, 135, 180, 225, 270, 315];
-  const rw = 4,
-    rh = 1,
-    rp = 2 * (rw + rh);
-  return snapAngles
-    .map((sa) => {
+  /** Snap ticks along a w:h rectangle perimeter (rect/square styles). */
+  _perimeterSnapTicks(angles, rw, rh) {
+    const rp = 2 * (rw + rh);
+    return angles.map((sa) => {
       const pp = (sa / 360) * rp;
       let sx, sy, cls;
       if (pp <= rh / 2) {
@@ -4588,98 +4217,196 @@ ${(() => {
         cls = "right";
       }
       if (cls === "top" || cls === "bottom")
-        return `<div class="snap-tick snap-tick-${cls}" style="left:${sx}%"></div>`;
-      return `<div class="snap-tick snap-tick-${cls}" style="top:${sy}%"></div>`;
-    })
-    .join("");
-})()}
-${(() => {
-  const avd =
-    this.config.angle_value_display ||
-    (this.config.show_angle_input === true ? "input" : "none");
-  if (avd === "none") return "";
-  const da = Math.round(rectVisualAngle);
-  if (avd === "input") {
-    return `<div class="rotary-overlay-value"><input id="angleinput" type="number" min="0" max="359" step="1" value="${da}" /></div>`;
+        return html`<div class="snap-tick snap-tick-${cls}" style="left:${sx}%"></div>`;
+      return html`<div class="snap-tick snap-tick-${cls}" style="top:${sy}%"></div>`;
+    });
   }
-  return `<div class="rotary-overlay-value"><input id="angletext" type="text" value="${da}°" readonly tabindex="-1" /></div>`;
-})()}
+
+  /** Angle rotary control as a Lit template (every rotary style). */
+  _angleRotaryTemplate(currentAngle, isHeaderMode = false) {
+    const styleInfo = this._getRotaryStyleInfo();
+    const style = styleInfo.style;
+    // Use visual angle for immediate feedback during dragging
+    const visualAngle =
+      this._draggingRotary && this._pendingAngle !== undefined
+        ? this._pendingAngle
+        : currentAngle;
+
+    switch (style) {
+      case "wheel": {
+        // Wheel mode: gradient circle with optional arrow window mask
+        const textColors = this._getCurrentTextColors();
+        const wheelGradientStops = this._createWheelGradientStops(textColors);
+        const selectorRadians = (visualAngle * Math.PI) / 180;
+        const wheelSizePercent = this._getRotarySize();
+        const wheelSize = Math.min(100, wheelSizePercent);
+        const wheelRadius = (wheelSize * 45) / 100;
+        const selectorX = 50 + wheelRadius * Math.cos(selectorRadians);
+        const selectorY = 50 - wheelRadius * Math.sin(selectorRadians);
+        const gradientAngle = -visualAngle;
+
+        // Optional arrow window mask
+        const showMask = this._getWheelShowMask();
+        let wheelMaskDefs = nothing;
+        let wheelMaskOverlay = nothing;
+        if (showMask) {
+          const al = wheelRadius * 2,
+            abw = wheelRadius * 0.45;
+          const ahw = wheelRadius * 0.85,
+            ahl = wheelRadius * 0.55;
+          const awTipX = 50 + al / 2;
+          const awBl = 50 - al / 2;
+          const awBt = 50 - abw / 2,
+            awBb = 50 + abw / 2;
+          const awHt = 50 - ahw / 2,
+            awHb = 50 + ahw / 2;
+          const awHs = awTipX - ahl;
+          const arrowWindowPath = `M ${awBl} ${awBt} L ${awHs} ${awBt} L ${awHs} ${awHt} L ${awTipX} 50 L ${awHs} ${awHb} L ${awHs} ${awBb} L ${awBl} ${awBb} Z`;
+          wheelMaskDefs = svg`
+                <mask id="awDimMask">
+                  <rect x="0" y="0" width="100" height="100" fill="white"/>
+                  <g class="aw-rotate" transform="rotate(${gradientAngle} 50 50)">
+                    <path d=${arrowWindowPath} fill="black"/>
+                  </g>
+                </mask>`;
+          wheelMaskOverlay = svg`
+              <circle cx="50" cy="50" r=${wheelRadius} fill="black" opacity="0.55" mask="url(#awDimMask)"/>
+              <g class="aw-rotate" transform="rotate(${gradientAngle} 50 50)">
+                <path d=${arrowWindowPath} fill="none" stroke="rgba(255,255,255,0.5)" stroke-width="0.8"/>
+              </g>`;
+        }
+        const svgSize = isHeaderMode ? "88px" : `${wheelSizePercent}%`;
+
+        return html`
+          <div class="wheel-container" style="width: 100%; display: flex; flex-direction: column; align-items: center;">
+            <svg width=${svgSize} height=${svgSize} viewBox="0 0 100 100" id="angle-preview" class="color-wheel" style="max-width: 200px; max-height: 200px;">
+              <defs>
+                <linearGradient id="wheelGradient" x1="0%" y1="50%" x2="100%" y2="50%">
+                  ${unsafeSVG(wheelGradientStops)}
+                </linearGradient>
+                <mask id="circleMask">
+                  <circle cx="50" cy="50" r=${wheelRadius} fill="white"/>
+                </mask>
+                ${wheelMaskDefs}
+              </defs>
+              <g class=${showMask ? "aw-grad-group" : nothing} transform="rotate(${gradientAngle} 50 50)">
+                <rect x=${50 - wheelRadius} y=${50 - wheelRadius} width=${wheelRadius * 2} height=${wheelRadius * 2} fill="url(#wheelGradient)" mask="url(#circleMask)"/>
+              </g>
+              ${wheelMaskOverlay}
+              <circle cx="50" cy="50" r=${wheelRadius} fill="none" stroke="var(--divider-color, #ddd)" stroke-width="1"/>
+              ${
+                this.config.compass_snap_to_coordinates
+                  ? [0, 45, 90, 135, 180, 225, 270, 315].map((a) => {
+                      const rad = (a * Math.PI) / 180;
+                      const inner = wheelRadius - 3;
+                      const outer = wheelRadius + 1;
+                      return svg`<line x1=${50 + inner * Math.cos(rad)} y1=${50 - inner * Math.sin(rad)} x2=${50 + outer * Math.cos(rad)} y2=${50 - outer * Math.sin(rad)} stroke="var(--secondary-text-color, #999)" stroke-width=${a % 90 === 0 ? 1.8 : 1} opacity="0.7"/>`;
+                    })
+                  : nothing
+              }
+              ${
+                this.config.show_selector_dot !== false
+                  ? svg`<circle cx=${selectorX} cy=${selectorY} r="4" class="wheel-selector" fill="#fff" stroke="#333" stroke-width="2"/>`
+                  : nothing
+              }
+              <circle cx="50" cy="50" r=${wheelRadius} fill="transparent" style="cursor: pointer;"/>
+              ${this._svgAngleValueTemplate(wheelRadius, visualAngle)}
+            </svg>
+          </div>
+        `;
+      }
+
+      case "rect": {
+        // Get the actual colors from the lamp
+        const rectTextColors = this._getCurrentTextColors();
+
+        // EXACT same logic as wheel for consistency
+        const rectNormalizedAngle = ((visualAngle % 360) + 360) % 360;
+        const { x: rectSelectorX, y: rectSelectorY } = this._perimeterPoint(
+          rectNormalizedAngle,
+          4,
+          1,
+        );
+
+        // Gradient rotation EXACT same as wheel
+        const rectGradientAngle = -rectNormalizedAngle;
+
+        // Make rectangle use full width of container with 4:1 aspect ratio
+        // In header mode, use rotary size directly (no minimum constraint)
+        const rectSizePercent = this._getRotarySize();
+
+        // Calculate header mode dimensions based on rotary size
+        const headerWidth = isHeaderMode
+          ? Math.round((rectSizePercent / 100) * 300)
+          : 300;
+        const headerHeight = isHeaderMode
+          ? Math.round((rectSizePercent / 100) * 88)
+          : 88;
+        const sizeCss = isHeaderMode
+          ? `width: ${headerWidth}px !important; height: ${headerHeight}px !important;`
+          : `width: ${rectSizePercent}%; aspect-ratio: 4 / 1;`;
+        const background = `linear-gradient(${90 + rectGradientAngle}deg, ${rectTextColors
+          .map((color) => rgbToCss(color))
+          .join(", ")})`;
+
+        return html`
+          <div class="rect-container" style="width: 100%; position: relative;">
+            <div
+              id="angle-preview"
+              class="color-rect rect-gradient"
+              style="
+                ${sizeCss}
+                background: ${background};
+                box-shadow: inset 0 0 0 1px var(--divider-color, #ddd);
+                border-radius: 6px;
+                margin: 0 auto;
+                position: relative;
+                cursor: pointer;
+              "
+            >
+              <!-- Selector dot positioned EXACTLY like the wheel -->
+              ${
+                this.config.show_selector_dot !== false
+                  ? html`<div
+                class="rect-selector"
+                style="
+                  position: absolute;
+                  width: 12px;
+                  height: 12px;
+                  background: var(--card-background-color, #fff);
+                  border: 2px solid var(--primary-text-color, #333);
+                  border-radius: 50%;
+                  transform: translate(-50%, -50%);
+                  left: ${rectSelectorX}%;
+                  top: ${rectSelectorY}%;
+                  cursor: pointer;
+                "
+              ></div>`
+                  : nothing
+              }
+              ${
+                this.config.compass_snap_to_coordinates
+                  ? this._perimeterSnapTicks(
+                      [0, 45, 90, 135, 180, 225, 270, 315],
+                      4,
+                      1,
+                    )
+                  : nothing
+              }
+              ${this._htmlAngleValueTemplate("rotary-overlay-value", visualAngle)}
             </div>
           </div>
         `;
+      }
 
-      case "square":
+      case "square": {
         // Get the actual colors from the lamp (EXACT same as rectangle)
         const squareTextColors = this._getCurrentTextColors();
 
-        // Use visual angle for immediate feedback during dragging (EXACT same as rectangle)
-        const squareVisualAngle =
-          this._draggingRotary && this._pendingAngle !== undefined
-            ? this._pendingAngle
-            : currentAngle;
-
         // Angle processing (EXACT same as rectangle)
-        const squareNormalizedAngle = ((squareVisualAngle % 360) + 360) % 360;
-
-        // Calculate position on square perimeter using continuous mapping
-        // For 1:1 square: width = 1 unit, height = 1 unit
-        const squareWidth = 1;
-        const squareHeight = 1;
-        const squarePerimeter = 2 * (squareWidth + squareHeight); // Total perimeter = 4 units
-
-        // Map angle (0-360°) to perimeter position (0 to perimeter)
-        const squarePerimeterPosition =
-          (squareNormalizedAngle / 360) * squarePerimeter;
-
-        let squareSelectorX, squareSelectorY;
-
-        // Start from right edge center, go clockwise
-        if (squarePerimeterPosition <= squareHeight / 2) {
-          // Right edge, top half (0° to 45°)
-          squareSelectorX = 100;
-          squareSelectorY =
-            50 - (squarePerimeterPosition / (squareHeight / 2)) * 50;
-        } else if (squarePerimeterPosition <= squareHeight / 2 + squareWidth) {
-          // Top edge (going from right to left) (45° to 135°)
-          const topProgress =
-            (squarePerimeterPosition - squareHeight / 2) / squareWidth;
-          squareSelectorX = 100 - topProgress * 100;
-          squareSelectorY = 0;
-        } else if (
-          squarePerimeterPosition <=
-          squareHeight / 2 + squareWidth + squareHeight
-        ) {
-          // Left edge (going from top to bottom) (135° to 225°)
-          const leftProgress =
-            (squarePerimeterPosition - squareHeight / 2 - squareWidth) /
-            squareHeight;
-          squareSelectorX = 0;
-          squareSelectorY = leftProgress * 100;
-        } else if (
-          squarePerimeterPosition <=
-          squareHeight / 2 + squareWidth + squareHeight + squareWidth
-        ) {
-          // Bottom edge (going from left to right) (225° to 315°)
-          const bottomProgress =
-            (squarePerimeterPosition -
-              squareHeight / 2 -
-              squareWidth -
-              squareHeight) /
-            squareWidth;
-          squareSelectorX = bottomProgress * 100;
-          squareSelectorY = 100;
-        } else {
-          // Right edge, bottom half (back to start) (315° to 360°)
-          const rightBottomProgress =
-            (squarePerimeterPosition -
-              squareHeight / 2 -
-              squareWidth -
-              squareHeight -
-              squareWidth) /
-            (squareHeight / 2);
-          squareSelectorX = 100;
-          squareSelectorY = 100 - rightBottomProgress * 50;
-        }
+        const squareNormalizedAngle = ((visualAngle % 360) + 360) % 360;
+        const { x: squareSelectorX, y: squareSelectorY } =
+          this._perimeterPoint(squareNormalizedAngle, 1, 1);
 
         // Gradient rotation EXACT same as rectangle
         const squareGradientAngle = -squareNormalizedAngle;
@@ -4693,23 +4420,21 @@ ${(() => {
         const squareHeaderSize = isHeaderMode
           ? Math.round((baseSquareSizePercent / 100) * 88)
           : 88;
+        const sizeCss = isHeaderMode
+          ? `width: ${squareHeaderSize}px !important; height: ${squareHeaderSize}px !important;`
+          : `width: ${squareSidePercent}%; aspect-ratio: 1 / 1;`;
+        const background = `linear-gradient(${90 + squareGradientAngle}deg, ${squareTextColors
+          .map((color) => rgbToCss(color))
+          .join(", ")})`;
 
-        return `
+        return html`
           <div class="square-container" style="width: 100%; position: relative;">
-            <div 
-              id="angle-preview" 
-              class="color-square square-gradient" 
+            <div
+              id="angle-preview"
+              class="color-square square-gradient"
               style="
-                ${
-                  isHeaderMode
-                    ? `width: ${squareHeaderSize}px !important; height: ${squareHeaderSize}px !important;`
-                    : `width: ${squareSidePercent}%; aspect-ratio: 1 / 1;`
-                }
-                background: linear-gradient(${
-                  90 + squareGradientAngle
-                }deg, ${squareTextColors
-                  .map((color) => `rgb(${color.join(",")})`)
-                  .join(", ")});
+                ${sizeCss}
+                background: ${background};
                 box-shadow: inset 0 0 0 1px var(--divider-color, #ddd);
                 border-radius: 6px;
                 margin: 0 auto;
@@ -4720,8 +4445,8 @@ ${(() => {
               <!-- Selector dot positioned EXACTLY like the rectangle -->
               ${
                 this.config.show_selector_dot !== false
-                  ? `<div 
-                class="square-selector" 
+                  ? html`<div
+                class="square-selector"
                 style="
                   position: absolute;
                   width: 12px;
@@ -4735,74 +4460,24 @@ ${(() => {
                   cursor: pointer;
                 "
               ></div>`
-                  : ""
+                  : nothing
               }
-${(() => {
-  if (!this.config.compass_snap_to_coordinates) return "";
-  /* Cardinal angles (0/90/180/270) → edge half-circles */
-  const sw = 1,
-    sh = 1,
-    sp = 2 * (sw + sh);
-  const edgeTicks = [0, 90, 180, 270]
-    .map((sa) => {
-      const pp = (sa / 360) * sp;
-      let sx, sy, cls;
-      if (pp <= sh / 2) {
-        sx = 100;
-        sy = 50 - (pp / (sh / 2)) * 50;
-        cls = "right";
-      } else if (pp <= sh / 2 + sw) {
-        sx = 100 - ((pp - sh / 2) / sw) * 100;
-        sy = 0;
-        cls = "top";
-      } else if (pp <= sh / 2 + sw + sh) {
-        sx = 0;
-        sy = ((pp - sh / 2 - sw) / sh) * 100;
-        cls = "left";
-      } else if (pp <= sh / 2 + sw + sh + sw) {
-        sx = ((pp - sh / 2 - sw - sh) / sw) * 100;
-        sy = 100;
-        cls = "bottom";
-      } else {
-        sx = 100;
-        sy = 100 - ((pp - sh / 2 - sw - sh - sw) / (sh / 2)) * 50;
-        cls = "right";
-      }
-      if (cls === "top" || cls === "bottom")
-        return `<div class="snap-tick snap-tick-${cls}" style="left:${sx}%"></div>`;
-      return `<div class="snap-tick snap-tick-${cls}" style="top:${sy}%"></div>`;
-    })
-    .join("");
-  /* Diagonal angles (45/135/225/315) → corner dots */
-  const cornerTicks = [
-    `<div class="snap-tick snap-tick-corner" style="top:-2px;right:-2px"></div>`,
-    `<div class="snap-tick snap-tick-corner" style="top:-2px;left:-2px"></div>`,
-    `<div class="snap-tick snap-tick-corner" style="bottom:-2px;left:-2px"></div>`,
-    `<div class="snap-tick snap-tick-corner" style="bottom:-2px;right:-2px"></div>`,
-  ].join("");
-  return edgeTicks + cornerTicks;
-})()}
-${(() => {
-  const avd =
-    this.config.angle_value_display ||
-    (this.config.show_angle_input === true ? "input" : "none");
-  if (avd === "none") return "";
-  const da = Math.round(squareVisualAngle);
-  if (avd === "input") {
-    return `<div class="rotary-overlay-value"><input id="angleinput" type="number" min="0" max="359" step="1" value="${da}" /></div>`;
-  }
-  return `<div class="rotary-overlay-value"><input id="angletext" type="text" value="${da}°" readonly tabindex="-1" /></div>`;
-})()}
+              ${
+                this.config.compass_snap_to_coordinates
+                  ? html`${
+                      /* Cardinal angles (0/90/180/270) → edge half-circles */
+                      this._perimeterSnapTicks([0, 90, 180, 270], 1, 1)
+                    }<div class="snap-tick snap-tick-corner" style="top:-2px;right:-2px"></div><div class="snap-tick snap-tick-corner" style="top:-2px;left:-2px"></div><div class="snap-tick snap-tick-corner" style="bottom:-2px;left:-2px"></div><div class="snap-tick snap-tick-corner" style="bottom:-2px;right:-2px"></div>`
+                  : nothing
+              }
+              ${this._htmlAngleValueTemplate("rotary-overlay-value", visualAngle)}
             </div>
           </div>
         `;
+      }
 
       case "matrix_preview": {
         const mpColors = this._getCurrentTextColors();
-        const mpVisualAngle =
-          this._draggingRotary && this._pendingAngle !== undefined
-            ? this._pendingAngle
-            : currentAngle;
         const baseMpSz = this._getRotarySize();
         const mpRows = 5;
         const mpCols = 20;
@@ -4837,7 +4512,7 @@ ${(() => {
         // Text preview mode: use cached preview data from the backend
         // The backend already returns correct data (all LEDs lit when panel mode is on)
         const mpTextPreview = this.config.matrix_rotary_text_preview === true;
-        let mpPixelDivs = "";
+        let mpPixelDivs;
 
         if (mpTextPreview) {
           // Use backend preview for the current gradient mode
@@ -4851,64 +4526,26 @@ ${(() => {
           );
         } else {
           // Pure angle gradient computation
-          const angleRad = (mpVisualAngle * Math.PI) / 180;
-          const dirX = Math.cos(angleRad);
-          const dirY = -Math.sin(angleRad);
-
-          const centerCol = (mpCols - 1) / 2;
-          const centerRow = (mpRows - 1) / 2;
-          const mpCorners = [
-            [-centerCol, -centerRow],
-            [centerCol, -centerRow],
-            [-centerCol, centerRow],
-            [centerCol, centerRow],
-          ];
-          const mpCornerProjs = mpCorners.map(([c, r]) => c * dirX + r * dirY);
-          const mpMinProj = Math.min(...mpCornerProjs);
-          const mpMaxProj = Math.max(...mpCornerProjs);
-          const mpProjRange = mpMaxProj - mpMinProj || 1;
-
-          for (let row = 0; row < mpRows; row++) {
-            for (let col = 0; col < mpCols; col++) {
-              const centeredCol = col - centerCol;
-              const centeredRow = row - centerRow;
-              const projection = centeredCol * dirX + centeredRow * dirY;
-              const t = Math.max(
-                0,
-                Math.min(1, (projection - mpMinProj) / mpProjRange),
-              );
-              const colorIdx = t * (mpColors.length - 1);
-              const i1 = Math.max(
-                0,
-                Math.min(mpColors.length - 1, Math.floor(colorIdx)),
-              );
-              const i2 = Math.min(mpColors.length - 1, i1 + 1);
-              const frac = colorIdx - i1;
-              const r = Math.round(
-                mpColors[i1][0] * (1 - frac) + mpColors[i2][0] * frac,
-              );
-              const g = Math.round(
-                mpColors[i1][1] * (1 - frac) + mpColors[i2][1] * frac,
-              );
-              const b = Math.round(
-                mpColors[i1][2] * (1 - frac) + mpColors[i2][2] * frac,
-              );
+          mpPixelDivs = this._angleGradientPixelColors(
+            mpColors,
+            visualAngle,
+            mpRows,
+            mpCols,
+          ).map(
+            ([r, g, b]) => {
               const isBlack = r <= 5 && g <= 5 && b <= 5;
               const shouldIgnore = mpIgnoreBlack && isBlack;
-              mpPixelDivs += `<div class="matrix-pixel" style="background:${shouldIgnore ? "transparent" : `rgb(${r},${g},${b})`};border-radius:${mpBorderRadius};aspect-ratio:1;${mpPixelShadowStyle}"></div>`;
-            }
-          }
+              return html`<div class="matrix-pixel" style="background:${shouldIgnore ? "transparent" : rgbToCss([r, g, b])};border-radius:${mpBorderRadius};aspect-ratio:1;${mpPixelShadowStyle}"></div>`;
+            },
+          );
         }
 
         // Calculate header mode dimensions to match rectangle sizing
         const mpHeaderWidth = isHeaderMode
           ? Math.round((baseMpSz / 100) * 300)
           : null;
-        const mpHeaderHeight = isHeaderMode
-          ? Math.round((baseMpSz / 100) * 88)
-          : null;
 
-        return `
+        return html`
           <div class="matrix-preview-container" id="angle-preview" style="width:100%;display:flex;flex-direction:column;align-items:center;cursor:pointer;position:relative;">
             <div style="container-type:inline-size;max-width:100%;width:${isHeaderMode ? `${mpHeaderWidth}px` : `${baseMpSz}%`};">
             <div class="matrix-preview-grid" style="
@@ -4924,17 +4561,7 @@ ${(() => {
               box-sizing:border-box;
             ">${mpPixelDivs}</div>
             </div>
-${(() => {
-  const avd =
-    this.config.angle_value_display ||
-    (this.config.show_angle_input === true ? "input" : "none");
-  if (avd === "none") return "";
-  const da = Math.round(mpVisualAngle);
-  if (avd === "input") {
-    return `<div class="matrix-angle-value"><input id="angleinput" type="number" min="0" max="359" step="1" value="${da}" /></div>`;
-  }
-  return `<div class="matrix-angle-value"><input id="angletext" type="text" value="${da}\u00b0" readonly tabindex="-1" /></div>`;
-})()}
+            ${this._htmlAngleValueTemplate("matrix-angle-value", visualAngle)}
           </div>
         `;
       }
@@ -4943,76 +4570,81 @@ ${(() => {
         // Compass mode: circular dial with configurable overlay shape + optional labels
         const compColors = this._getCurrentTextColors();
         const compGradientStops = this._createWheelGradientStops(compColors);
-        const compVisualAngle =
-          this._draggingRotary && this._pendingAngle !== undefined
-            ? this._pendingAngle
-            : currentAngle;
         const baseCmpSz = this._getRotarySize();
         const compRadius = (Math.min(100, baseCmpSz) * 45) / 100;
-        const compGradAngle = -compVisualAngle;
-        const compSelRadius = compRadius;
-        const compRad = (compVisualAngle * Math.PI) / 180;
-        const compSX = 50 + compSelRadius * Math.cos(compRad);
-        const compSY = 50 - compSelRadius * Math.sin(compRad);
+        const compGradAngle = -visualAngle;
+        const compRad = (visualAngle * Math.PI) / 180;
+        const compSX = 50 + compRadius * Math.cos(compRad);
+        const compSY = 50 - compRadius * Math.sin(compRad);
 
         const compassShape = this._getCompassShape();
         const labelsMode = this._getCompassLabelsMode();
 
         // Tick marks and cardinal labels (conditional)
-        let ticksAndLabels = "";
+        let ticksAndLabels = nothing;
         if (labelsMode !== "none") {
-          const ticks = [0, 45, 90, 135, 180, 225, 270, 315]
-            .map((a) => {
-              const rad = (a * Math.PI) / 180;
-              const inner = compRadius - 4;
-              const outer = compRadius - (a % 90 === 0 ? 1 : 2);
-              return `<line x1="${50 + inner * Math.cos(rad)}" y1="${50 - inner * Math.sin(rad)}" x2="${50 + outer * Math.cos(rad)}" y2="${50 - outer * Math.sin(rad)}" stroke="var(--secondary-text-color, #999)" stroke-width="${a % 90 === 0 ? 1.5 : 0.8}"/>`;
-            })
-            .join("");
+          const ticks = [0, 45, 90, 135, 180, 225, 270, 315].map((a) => {
+            const rad = (a * Math.PI) / 180;
+            const inner = compRadius - 4;
+            const outer = compRadius - (a % 90 === 0 ? 1 : 2);
+            return svg`<line x1=${50 + inner * Math.cos(rad)} y1=${50 - inner * Math.sin(rad)} x2=${50 + outer * Math.cos(rad)} y2=${50 - outer * Math.sin(rad)} stroke="var(--secondary-text-color, #999)" stroke-width=${a % 90 === 0 ? 1.5 : 0.8}/>`;
+          });
           const cLabelR = compRadius - 10;
-          ticksAndLabels = `
+          ticksAndLabels = svg`
               ${ticks}
-              <text x="${50 + cLabelR}" y="52" text-anchor="middle" font-size="5.5" fill="var(--secondary-text-color, #999)" font-weight="600">E</text>
-              <text x="50" y="${50 - cLabelR + 2}" text-anchor="middle" font-size="5.5" fill="var(--secondary-text-color, #999)" font-weight="600">N</text>
-              <text x="${50 - cLabelR}" y="52" text-anchor="middle" font-size="5.5" fill="var(--secondary-text-color, #999)" font-weight="600">W</text>
-              <text x="50" y="${50 + cLabelR + 2}" text-anchor="middle" font-size="5.5" fill="var(--secondary-text-color, #999)" font-weight="600">S</text>`;
+              <text x=${50 + cLabelR} y="52" text-anchor="middle" font-size="5.5" fill="var(--secondary-text-color, #999)" font-weight="600">E</text>
+              <text x="50" y=${50 - cLabelR + 2} text-anchor="middle" font-size="5.5" fill="var(--secondary-text-color, #999)" font-weight="600">N</text>
+              <text x=${50 - cLabelR} y="52" text-anchor="middle" font-size="5.5" fill="var(--secondary-text-color, #999)" font-weight="600">W</text>
+              <text x="50" y=${50 + cLabelR + 2} text-anchor="middle" font-size="5.5" fill="var(--secondary-text-color, #999)" font-weight="600">S</text>`;
         }
 
         // Shape overlay (needle / beam / arrow)
-        // Determine if center dot should be shown (hidden when angle value text/input is displayed)
-        const compAvd =
-          this.config.angle_value_display ||
-          (this.config.show_angle_input === true ? "input" : "none");
+        // Center dot hidden when angle value text/input is displayed
+        const compAvd = this._getAngleValueDisplay();
         const compCenterDot =
           compAvd === "none"
-            ? `<circle cx="50" cy="50" r="3" fill="var(--card-background-color, #fff)" stroke="var(--divider-color, #ddd)" stroke-width="1"/>`
-            : "";
+            ? svg`<circle cx="50" cy="50" r="3" fill="var(--card-background-color, #fff)" stroke="var(--divider-color, #ddd)" stroke-width="1"/>`
+            : nothing;
         const compCenterDotSmall =
           compAvd === "none"
-            ? `<circle cx="50" cy="50" r="2.5" fill="var(--card-background-color, #fff)" stroke="var(--divider-color, #ddd)" stroke-width="0.8"/>`
-            : "";
-        let shapeOverlayDefs = "";
-        let shapeOverlayContent = "";
+            ? svg`<circle cx="50" cy="50" r="2.5" fill="var(--card-background-color, #fff)" stroke="var(--divider-color, #ddd)" stroke-width="0.8"/>`
+            : nothing;
+        let shapeOverlayDefs = nothing;
+        let shapeOverlayContent = nothing;
+        // Shared rendering for the rotating clip shapes (arrow/star/rect/needle)
+        const rotatingShape = (shapePath) => {
+          shapeOverlayDefs = svg`<clipPath id="compShapeClip"><path d=${shapePath}/></clipPath>`;
+          shapeOverlayContent = svg`
+              <g clip-path="url(#compCircleClip)">
+                <g class="comp-rotate" transform="rotate(${compGradAngle} 50 50)">
+                  <g clip-path="url(#compShapeClip)">
+                    <rect x="0" y="0" width="100" height="100" fill="url(#compGrad)"/>
+                  </g>
+                </g>
+              </g>
+              <g class="comp-rotate" transform="rotate(${compGradAngle} 50 50)">
+                <path d=${shapePath} fill="none" stroke="var(--divider-color, #ddd)" stroke-width="0.5"/>
+              </g>
+              ${compCenterDot}`;
+        };
 
         if (compassShape === "none") {
           // No overlay — empty circle, just selector dot
-          shapeOverlayDefs = "";
-          shapeOverlayContent = "";
         } else if (compassShape === "beam") {
           // Beam wedge — origin from opposite border so full gradient is visible
           const beamSpread = 30;
-          const angleRad = (compVisualAngle * Math.PI) / 180;
+          const angleRad = (visualAngle * Math.PI) / 180;
           const originX = 50 - compRadius * Math.cos(angleRad);
           const originY = 50 + compRadius * Math.sin(angleRad);
-          const bRad1 = ((compVisualAngle + beamSpread) * Math.PI) / 180;
-          const bRad2 = ((compVisualAngle - beamSpread) * Math.PI) / 180;
+          const bRad1 = ((visualAngle + beamSpread) * Math.PI) / 180;
+          const bRad2 = ((visualAngle - beamSpread) * Math.PI) / 180;
           const bx1 = 50 + compRadius * Math.cos(bRad1);
           const by1 = 50 - compRadius * Math.sin(bRad1);
           const bx2 = 50 + compRadius * Math.cos(bRad2);
           const by2 = 50 - compRadius * Math.sin(bRad2);
           const beamPath = `M ${originX} ${originY} L ${bx1} ${by1} A ${compRadius} ${compRadius} 0 0 1 ${bx2} ${by2} Z`;
-          shapeOverlayDefs = `<clipPath id="compShapeClip"><path class="beam-wedge-path" d="${beamPath}"/></clipPath>`;
-          shapeOverlayContent = `
+          shapeOverlayDefs = svg`<clipPath id="compShapeClip"><path class="beam-wedge-path" d=${beamPath}/></clipPath>`;
+          shapeOverlayContent = svg`
               <g clip-path="url(#compCircleClip)">
                 <g clip-path="url(#compShapeClip)">
                   <g class="beam-grad-group" transform="rotate(${compGradAngle} 50 50)">
@@ -5020,7 +4652,7 @@ ${(() => {
                   </g>
                 </g>
               </g>
-              <path class="beam-outline" d="${beamPath}" fill="none" stroke="var(--divider-color, #ddd)" stroke-width="0.8" opacity="0.6"/>
+              <path class="beam-outline" d=${beamPath} fill="none" stroke="var(--divider-color, #ddd)" stroke-width="0.8" opacity="0.6"/>
               ${compCenterDotSmall}`;
         } else if (compassShape === "arrow") {
           // Arrow shape overlay — border to border
@@ -5035,20 +4667,9 @@ ${(() => {
           const headTop = 50 - arrowHeadW / 2;
           const headBottom = 50 + arrowHeadW / 2;
           const headStart = tipX - arrowHeadLen;
-          const arrowPath = `M ${bodyLeft} ${bodyTop} L ${headStart} ${bodyTop} L ${headStart} ${headTop} L ${tipX} 50 L ${headStart} ${headBottom} L ${headStart} ${bodyBottom} L ${bodyLeft} ${bodyBottom} Z`;
-          shapeOverlayDefs = `<clipPath id="compShapeClip"><path d="${arrowPath}"/></clipPath>`;
-          shapeOverlayContent = `
-              <g clip-path="url(#compCircleClip)">
-                <g class="comp-rotate" transform="rotate(${compGradAngle} 50 50)">
-                  <g clip-path="url(#compShapeClip)">
-                    <rect x="0" y="0" width="100" height="100" fill="url(#compGrad)"/>
-                  </g>
-                </g>
-              </g>
-              <g class="comp-rotate" transform="rotate(${compGradAngle} 50 50)">
-                <path d="${arrowPath}" fill="none" stroke="var(--divider-color, #ddd)" stroke-width="0.5"/>
-              </g>
-              ${compCenterDot}`;
+          rotatingShape(
+            `M ${bodyLeft} ${bodyTop} L ${headStart} ${bodyTop} L ${headStart} ${headTop} L ${tipX} 50 L ${headStart} ${headBottom} L ${headStart} ${bodyBottom} L ${bodyLeft} ${bodyBottom} Z`,
+          );
         } else if (compassShape === "star") {
           // Star shape overlay — border to border
           const starOuterR = compRadius;
@@ -5059,20 +4680,7 @@ ${(() => {
             const r = i % 2 === 0 ? starOuterR : starInnerR;
             starPoints.push(`${50 + r * Math.cos(a)},${50 - r * Math.sin(a)}`);
           }
-          const starPath = `M ${starPoints.join(" L ")} Z`;
-          shapeOverlayDefs = `<clipPath id="compShapeClip"><path d="${starPath}"/></clipPath>`;
-          shapeOverlayContent = `
-              <g clip-path="url(#compCircleClip)">
-                <g class="comp-rotate" transform="rotate(${compGradAngle} 50 50)">
-                  <g clip-path="url(#compShapeClip)">
-                    <rect x="0" y="0" width="100" height="100" fill="url(#compGrad)"/>
-                  </g>
-                </g>
-              </g>
-              <g class="comp-rotate" transform="rotate(${compGradAngle} 50 50)">
-                <path d="${starPath}" fill="none" stroke="var(--divider-color, #ddd)" stroke-width="0.5"/>
-              </g>
-              ${compCenterDot}`;
+          rotatingShape(`M ${starPoints.join(" L ")} Z`);
         } else if (compassShape === "rectangle") {
           // Rectangle shape overlay — border to border, thinner aspect
           const trW = compRadius * 2;
@@ -5080,20 +4688,9 @@ ${(() => {
           const trX = 50 - trW / 2;
           const trY = 50 - trH / 2;
           const trR = 4;
-          const trPath = `M ${trX + trR} ${trY} L ${trX + trW - trR} ${trY} Q ${trX + trW} ${trY} ${trX + trW} ${trY + trR} L ${trX + trW} ${trY + trH - trR} Q ${trX + trW} ${trY + trH} ${trX + trW - trR} ${trY + trH} L ${trX + trR} ${trY + trH} Q ${trX} ${trY + trH} ${trX} ${trY + trH - trR} L ${trX} ${trY + trR} Q ${trX} ${trY} ${trX + trR} ${trY} Z`;
-          shapeOverlayDefs = `<clipPath id="compShapeClip"><path d="${trPath}"/></clipPath>`;
-          shapeOverlayContent = `
-              <g clip-path="url(#compCircleClip)">
-                <g class="comp-rotate" transform="rotate(${compGradAngle} 50 50)">
-                  <g clip-path="url(#compShapeClip)">
-                    <rect x="0" y="0" width="100" height="100" fill="url(#compGrad)"/>
-                  </g>
-                </g>
-              </g>
-              <g class="comp-rotate" transform="rotate(${compGradAngle} 50 50)">
-                <path d="${trPath}" fill="none" stroke="var(--divider-color, #ddd)" stroke-width="0.5"/>
-              </g>
-              ${compCenterDot}`;
+          rotatingShape(
+            `M ${trX + trR} ${trY} L ${trX + trW - trR} ${trY} Q ${trX + trW} ${trY} ${trX + trW} ${trY + trR} L ${trX + trW} ${trY + trH - trR} Q ${trX + trW} ${trY + trH} ${trX + trW - trR} ${trY + trH} L ${trX + trR} ${trY + trH} Q ${trX} ${trY + trH} ${trX} ${trY + trH - trR} L ${trX} ${trY + trR} Q ${trX} ${trY} ${trX + trR} ${trY} Z`,
+          );
         } else {
           // Needle (default) — border to border
           const nLen = compRadius;
@@ -5102,73 +4699,41 @@ ${(() => {
           const nTail = 50 - nLen;
           const nTop = 50 - nW;
           const nBot = 50 + nW;
-          const needlePath = `M ${nTip} 50 L ${50 + nW * 0.6} ${nTop} L ${nTail} 50 L ${50 + nW * 0.6} ${nBot} Z`;
-          shapeOverlayDefs = `<clipPath id="compShapeClip"><path d="${needlePath}"/></clipPath>`;
-          shapeOverlayContent = `
-              <g clip-path="url(#compCircleClip)">
-                <g class="comp-rotate" transform="rotate(${compGradAngle} 50 50)">
-                  <g clip-path="url(#compShapeClip)">
-                    <rect x="0" y="0" width="100" height="100" fill="url(#compGrad)"/>
-                  </g>
-                </g>
-              </g>
-              <g class="comp-rotate" transform="rotate(${compGradAngle} 50 50)">
-                <path d="${needlePath}" fill="none" stroke="var(--divider-color, #ddd)" stroke-width="0.5"/>
-              </g>
-              ${compCenterDot}`;
+          rotatingShape(
+            `M ${nTip} 50 L ${50 + nW * 0.6} ${nTop} L ${nTail} 50 L ${50 + nW * 0.6} ${nBot} Z`,
+          );
         }
 
-        return `
+        const svgSize = isHeaderMode ? "88px" : `${baseCmpSz}%`;
+        return html`
           <div class="compass-container" style="width:100%;display:flex;flex-direction:column;align-items:center;">
-            <svg width="${isHeaderMode ? "88px" : `${baseCmpSz}%`}" height="${isHeaderMode ? "88px" : `${baseCmpSz}%`}" viewBox="0 0 100 100" id="angle-preview" class="color-wheel" style="max-width:200px;max-height:200px;">
+            <svg width=${svgSize} height=${svgSize} viewBox="0 0 100 100" id="angle-preview" class="color-wheel" style="max-width:200px;max-height:200px;">
               <defs>
-                <linearGradient id="compGrad" x1="0%" y1="50%" x2="100%" y2="50%">${compGradientStops}</linearGradient>
-                <clipPath id="compCircleClip"><circle cx="50" cy="50" r="${compRadius}"/></clipPath>
+                <linearGradient id="compGrad" x1="0%" y1="50%" x2="100%" y2="50%">${unsafeSVG(compGradientStops)}</linearGradient>
+                <clipPath id="compCircleClip"><circle cx="50" cy="50" r=${compRadius}/></clipPath>
                 ${shapeOverlayDefs}
               </defs>
-              <circle cx="50" cy="50" r="${compRadius}" fill="var(--card-background-color, #fff)" stroke="var(--divider-color, #ddd)" stroke-width="1"/>
-              ${labelsMode === "under" ? ticksAndLabels : ""}
+              <circle cx="50" cy="50" r=${compRadius} fill="var(--card-background-color, #fff)" stroke="var(--divider-color, #ddd)" stroke-width="1"/>
+              ${labelsMode === "under" ? ticksAndLabels : nothing}
               ${shapeOverlayContent}
-              ${labelsMode === "over" ? ticksAndLabels : ""}
+              ${labelsMode === "over" ? ticksAndLabels : nothing}
               ${
                 this.config.show_selector_dot !== false
-                  ? `<circle cx="${compSX}" cy="${compSY}" r="4" class="wheel-selector" fill="#fff" stroke="#333" stroke-width="2"/>`
-                  : ""
+                  ? svg`<circle cx=${compSX} cy=${compSY} r="4" class="wheel-selector" fill="#fff" stroke="#333" stroke-width="2"/>`
+                  : nothing
               }
-              <circle cx="50" cy="50" r="${compRadius}" fill="transparent" style="cursor:pointer;"/>
-              ${(() => {
-                const avd =
-                  this.config.angle_value_display ||
-                  (this.config.show_angle_input === true ? "input" : "none");
-                if (avd === "none") return "";
-                const displayAngle = Math.round(compVisualAngle);
-                const foW = Math.max(compRadius * 1.11, 30);
-                const foH = Math.max(compRadius * 0.58, 16);
-                const foX = 50 - foW / 2;
-                const foY = 50 - foH / 2;
-                const foFS = Math.max(compRadius * 0.27, 7.5).toFixed(1);
-                const foBR = Math.max(compRadius * 0.13, 3.5).toFixed(1);
-                if (avd === "input") {
-                  return `<foreignObject x="${foX.toFixed(1)}" y="${foY.toFixed(1)}" width="${foW.toFixed(1)}" height="${foH.toFixed(1)}">
-                      <input xmlns="http://www.w3.org/1999/xhtml" id="angleinput" class="compass-center-input" type="number" min="0" max="359" step="1" value="${displayAngle}" style="font-size:${foFS}px;border-radius:${foBR}px" />
-                    </foreignObject>`;
-                }
-                return `<foreignObject x="${foX.toFixed(1)}" y="${foY.toFixed(1)}" width="${foW.toFixed(1)}" height="${foH.toFixed(1)}">
-                    <input xmlns="http://www.w3.org/1999/xhtml" id="angletext" class="compass-center-input" type="text" value="${displayAngle}°" readonly tabindex="-1" style="font-size:${foFS}px;border-radius:${foBR}px" />
-                  </foreignObject>`;
-              })()}
+              <circle cx="50" cy="50" r=${compRadius} fill="transparent" style="cursor:pointer;"/>
+              ${this._svgAngleValueTemplate(compRadius, visualAngle)}
             </svg>
           </div>
         `;
       }
 
       case "capsule": {
-        // Capsule/pill style — horizontal slider for angle
-        const capsuleAngle =
-          this._draggingRotary && this._pendingAngle !== undefined
-            ? this._pendingAngle
-            : currentAngle;
-        const capsulePercent = (capsuleAngle / 359) * 100;
+        // Capsule/pill style — horizontal slider for angle.  The capsule
+        // markup comes from the shared capsule-slider-utils renderer (HTML
+        // string with its own inline handlers), inserted via unsafeHTML.
+        const capsuleAngle = visualAngle;
         const capsuleTheme = resolveCapsuleTheme(
           this.config.capsule_theme,
           undefined,
@@ -5179,9 +4744,7 @@ ${(() => {
           6,
         );
         // Angle value display: replace an icon with text/input
-        const capsuleAvd =
-          this.config.angle_value_display ||
-          (this.config.show_angle_input === true ? "input" : "none");
+        const capsuleAvd = this._getAngleValueDisplay();
         const capsuleAvdSide = this.config.capsule_angle_value_side || "right";
         const capsuleAngleRounded = Math.round(capsuleAngle);
 
@@ -5193,6 +4756,7 @@ ${(() => {
         let capsuleValueText = "";
         let capsuleUnderHtml = null;
 
+        // Slot markup handed to the shared renderer (numbers only).
         if (capsuleAvd !== "none") {
           const isInput = capsuleAvd === "input";
           if (capsuleAvdSide === "under") {
@@ -5242,28 +4806,20 @@ ${(() => {
             : "",
         });
 
-        return `<div class="angle-capsule-host" style="width:${this._getRotarySize()}%;margin:0 auto;">${capsuleHTML}</div>`;
+        return html`<div class="angle-capsule-host" style="width:${this._getRotarySize()}%;margin:0 auto;">${unsafeHTML(capsuleHTML)}</div>`;
       }
 
-      default:
+      default: {
         // Get the actual colors from the lamp (EXACT same as wheel)
         const defaultTextColors = this._getCurrentTextColors();
         const defaultGradientStops =
           this._createShapeGradientStops(defaultTextColors);
 
-        // Use visual angle for immediate feedback during dragging (EXACT same as wheel)
-        const defaultVisualAngle =
-          this._draggingRotary && this._pendingAngle !== undefined
-            ? this._pendingAngle
-            : currentAngle;
-
-        const defaultSelectorAngle = defaultVisualAngle;
-        const defaultSelectorRadians = (defaultSelectorAngle * Math.PI) / 180;
+        const defaultSelectorRadians = (visualAngle * Math.PI) / 180;
 
         // Make size configurable (EXACT same as wheel)
         // In header mode, use rotary size directly (no minimum constraint)
-        const baseDefaultSizePercent = this._getRotarySize();
-        const defaultSizePercent = baseDefaultSizePercent;
+        const defaultSizePercent = this._getRotarySize();
         const defaultSize = Math.min(100, defaultSizePercent);
         const defaultRadius = (defaultSize * 45) / 100;
         const defaultSelectorRadius = (defaultSize * 40) / 100;
@@ -5275,7 +4831,7 @@ ${(() => {
           50 - defaultSelectorRadius * Math.sin(defaultSelectorRadians);
 
         // Gradient rotation (EXACT same as wheel)
-        const defaultGradientAngle = -defaultVisualAngle;
+        const defaultGradientAngle = -visualAngle;
 
         // Get selected shape
         const defaultShape = styleInfo.shape || "rectangle";
@@ -5288,63 +4844,115 @@ ${(() => {
         const gradientSize = defaultSelectorRadius * 2.0; // Exact match to shape boundaries
         const gradientX = 50 - gradientSize / 2;
         const gradientY = 50 - gradientSize / 2;
+        const svgSize = isHeaderMode ? "88px" : `${defaultSizePercent}%`;
 
-        return `
+        return html`
           <div class="default-container" style="width: 100%; display: flex; flex-direction: column; align-items: center;">
-            <svg width="${
-              isHeaderMode ? "88px" : `${defaultSizePercent}%`
-            }" height="${
-              isHeaderMode ? "88px" : `${defaultSizePercent}%`
-            }" viewBox="0 0 100 100" id="angle-preview" class="color-wheel" style="max-width: 200px; max-height: 200px;">
+            <svg width=${svgSize} height=${svgSize} viewBox="0 0 100 100" id="angle-preview" class="color-wheel" style="max-width: 200px; max-height: 200px;">
               <defs>
                 <linearGradient id="defaultGradient" x1="0%" y1="50%" x2="100%" y2="50%">
-                  ${defaultGradientStops}
+                  ${unsafeSVG(defaultGradientStops)}
                 </linearGradient>
                 <mask id="shapeMask">
-                  ${shapeMask}
+                  ${unsafeSVG(shapeMask)}
                 </mask>
               </defs>
               <g transform="rotate(${defaultGradientAngle} 50 50)">
-                <rect x="${gradientX}" y="${gradientY}" width="${gradientSize}" height="${gradientSize}" fill="url(#defaultGradient)" mask="url(#shapeMask)"/>
+                <rect x=${gradientX} y=${gradientY} width=${gradientSize} height=${gradientSize} fill="url(#defaultGradient)" mask="url(#shapeMask)"/>
               </g>
               <!-- NO static frame - removed the stroke rectangle -->
               ${
                 this.config.show_selector_dot !== false
-                  ? `<circle cx="${defaultSelectorX}" cy="${defaultSelectorY}" r="4" class="wheel-selector" fill="#fff" stroke="#333" stroke-width="2"/>`
-                  : ""
+                  ? svg`<circle cx=${defaultSelectorX} cy=${defaultSelectorY} r="4" class="wheel-selector" fill="#fff" stroke="#333" stroke-width="2"/>`
+                  : nothing
               }
               <!-- Invisible circle to make entire area draggable -->
-              <circle cx="50" cy="50" r="${defaultRadius}" fill="transparent" style="cursor: pointer;"/>
-              ${(() => {
-                const avd =
-                  this.config.angle_value_display ||
-                  (this.config.show_angle_input === true ? "input" : "none");
-                if (avd === "none") return "";
-                const displayAngle = Math.round(defaultVisualAngle);
-                const foW = Math.max(defaultRadius * 1.11, 30);
-                const foH = Math.max(defaultRadius * 0.58, 16);
-                const foX = 50 - foW / 2;
-                const foY = 50 - foH / 2;
-                const foFS = Math.max(defaultRadius * 0.27, 7.5).toFixed(1);
-                const foBR = Math.max(defaultRadius * 0.13, 3.5).toFixed(1);
-                if (avd === "input") {
-                  return `<foreignObject x="${foX.toFixed(1)}" y="${foY.toFixed(1)}" width="${foW.toFixed(1)}" height="${foH.toFixed(1)}">
-                      <input xmlns="http://www.w3.org/1999/xhtml" id="angleinput" class="compass-center-input" type="number" min="0" max="359" step="1" value="${displayAngle}" style="font-size:${foFS}px;border-radius:${foBR}px" />
-                    </foreignObject>`;
-                }
-                return `<foreignObject x="${foX.toFixed(1)}" y="${foY.toFixed(1)}" width="${foW.toFixed(1)}" height="${foH.toFixed(1)}">
-                    <input xmlns="http://www.w3.org/1999/xhtml" id="angletext" class="compass-center-input" type="text" value="${displayAngle}°" readonly tabindex="-1" style="font-size:${foFS}px;border-radius:${foBR}px" />
-                  </foreignObject>`;
-              })()}
+              <circle cx="50" cy="50" r=${defaultRadius} fill="transparent" style="cursor: pointer;"/>
+              ${this._svgAngleValueTemplate(defaultRadius, visualAngle)}
             </svg>
           </div>
         `;
+      }
     }
   }
 
+  /**
+   * Selector position (percent of the box) on a w:h rectangle perimeter,
+   * starting at the right-edge centre and going counter-clockwise with the
+   * angle — shared by the rect/square rotary render and visual updates.
+   */
+  _perimeterPoint(normalizedAngle, w, h) {
+    const perimeter = 2 * (w + h);
+    const pos = (normalizedAngle / 360) * perimeter;
+    if (pos <= h / 2) {
+      // Right edge, top half
+      return { x: 100, y: 50 - (pos / (h / 2)) * 50 };
+    }
+    if (pos <= h / 2 + w) {
+      // Top edge (going from right to left)
+      return { x: 100 - ((pos - h / 2) / w) * 100, y: 0 };
+    }
+    if (pos <= h / 2 + w + h) {
+      // Left edge (going from top to bottom)
+      return { x: 0, y: ((pos - h / 2 - w) / h) * 100 };
+    }
+    if (pos <= h / 2 + w + h + w) {
+      // Bottom edge (going from left to right)
+      return { x: ((pos - h / 2 - w - h) / w) * 100, y: 100 };
+    }
+    // Right edge, bottom half (back to start)
+    return { x: 100, y: 100 - ((pos - h / 2 - w - h - w) / (h / 2)) * 50 };
+  }
+
+  /**
+   * Per-pixel [r,g,b] colours of a pure angle gradient over a rows×cols
+   * matrix (row-major, top row first) — matrix rotary render and updates.
+   */
+  _angleGradientPixelColors(colors, angle, rows, cols) {
+    const angleRad = (angle * Math.PI) / 180;
+    const dirX = Math.cos(angleRad);
+    const dirY = -Math.sin(angleRad);
+
+    const centerCol = (cols - 1) / 2;
+    const centerRow = (rows - 1) / 2;
+    const corners = [
+      [-centerCol, -centerRow],
+      [centerCol, -centerRow],
+      [-centerCol, centerRow],
+      [centerCol, centerRow],
+    ];
+    const cornerProjs = corners.map(([c, r]) => c * dirX + r * dirY);
+    const minProj = Math.min(...cornerProjs);
+    const maxProj = Math.max(...cornerProjs);
+    const projRange = maxProj - minProj || 1;
+
+    const out = [];
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const projection = (col - centerCol) * dirX + (row - centerRow) * dirY;
+        const t = Math.max(0, Math.min(1, (projection - minProj) / projRange));
+        const colorIdx = t * (colors.length - 1);
+        const i1 = Math.max(
+          0,
+          Math.min(colors.length - 1, Math.floor(colorIdx)),
+        );
+        const i2 = Math.min(colors.length - 1, i1 + 1);
+        const frac = colorIdx - i1;
+        out.push([
+          Math.round(colors[i1][0] * (1 - frac) + colors[i2][0] * frac),
+          Math.round(colors[i1][1] * (1 - frac) + colors[i2][1] * frac),
+          Math.round(colors[i1][2] * (1 - frac) + colors[i2][2] * frac),
+        ]);
+      }
+    }
+    return out;
+  }
+
   _handleRotaryDrag(e) {
-    // Prevent text selection during dragging
-    e.preventDefault();
+    // Prevent text selection during dragging.  Touch drags pass a Touch
+    // point (no preventDefault) — the touch event itself is already
+    // cancelled by the caller.
+    e.preventDefault?.();
 
     const rotaryElement = this.shadowRoot.getElementById("angle-preview");
     if (!rotaryElement) return;
@@ -5820,55 +5428,12 @@ ${(() => {
     // EXACT same logic as wheel for consistency
     const normalizedAngle = ((angle % 360) + 360) % 360;
 
-    // Calculate position on rectangle perimeter using continuous mapping
-    // For 4:1 rectangle: width = 4 units, height = 1 unit
-    const rectWidth = 4;
-    const rectHeight = 1;
-    const perimeter = 2 * (rectWidth + rectHeight); // Total perimeter = 10 units
-
-    // Map angle (0-360°) to perimeter position (0 to perimeter)
-    const perimeterPosition = (normalizedAngle / 360) * perimeter;
-
-    let rectSelectorX, rectSelectorY;
-
-    // Start from right edge center, go clockwise
-    if (perimeterPosition <= rectHeight / 2) {
-      // Right edge, top half (0° to ~18°)
-      rectSelectorX = 100;
-      rectSelectorY = 50 - (perimeterPosition / (rectHeight / 2)) * 50;
-    } else if (perimeterPosition <= rectHeight / 2 + rectWidth) {
-      // Top edge (going from right to left)
-      const topProgress = (perimeterPosition - rectHeight / 2) / rectWidth;
-      rectSelectorX = 100 - topProgress * 100;
-      rectSelectorY = 0;
-    } else if (perimeterPosition <= rectHeight / 2 + rectWidth + rectHeight) {
-      // Left edge (going from top to bottom)
-      const leftProgress =
-        (perimeterPosition - rectHeight / 2 - rectWidth) / rectHeight;
-      rectSelectorX = 0;
-      rectSelectorY = leftProgress * 100;
-    } else if (
-      perimeterPosition <=
-      rectHeight / 2 + rectWidth + rectHeight + rectWidth
-    ) {
-      // Bottom edge (going from left to right)
-      const bottomProgress =
-        (perimeterPosition - rectHeight / 2 - rectWidth - rectHeight) /
-        rectWidth;
-      rectSelectorX = bottomProgress * 100;
-      rectSelectorY = 100;
-    } else {
-      // Right edge, bottom half (back to start)
-      const rightBottomProgress =
-        (perimeterPosition -
-          rectHeight / 2 -
-          rectWidth -
-          rectHeight -
-          rectWidth) /
-        (rectHeight / 2);
-      rectSelectorX = 100;
-      rectSelectorY = 100 - rightBottomProgress * 50;
-    }
+    // Position on the 4:1 rectangle perimeter (same mapping as the render)
+    const { x: rectSelectorX, y: rectSelectorY } = this._perimeterPoint(
+      normalizedAngle,
+      4,
+      1,
+    );
 
     // Gradient rotation EXACT same as wheel
     const gradientAngle = -normalizedAngle;
@@ -5885,7 +5450,7 @@ ${(() => {
     if (rectElement) {
       const rectTextColors = this._getCurrentTextColors();
       const colorStops = rectTextColors
-        .map((color) => `rgb(${color.join(",")})`)
+        .map((color) => rgbToCss(color))
         .join(", ");
       rectElement.style.background = `linear-gradient(${
         90 + gradientAngle
@@ -5897,58 +5462,12 @@ ${(() => {
     // EXACT same logic as rectangle but for 1:1 square
     const normalizedAngle = ((angle % 360) + 360) % 360;
 
-    // Calculate position on square perimeter using continuous mapping
-    // For 1:1 square: width = 1 unit, height = 1 unit
-    const squareWidth = 1;
-    const squareHeight = 1;
-    const perimeter = 2 * (squareWidth + squareHeight); // Total perimeter = 4 units
-
-    // Map angle (0-360°) to perimeter position (0 to perimeter)
-    const perimeterPosition = (normalizedAngle / 360) * perimeter;
-
-    let squareSelectorX, squareSelectorY;
-
-    // Start from right edge center, go clockwise
-    if (perimeterPosition <= squareHeight / 2) {
-      // Right edge, top half (0° to 45°)
-      squareSelectorX = 100;
-      squareSelectorY = 50 - (perimeterPosition / (squareHeight / 2)) * 50;
-    } else if (perimeterPosition <= squareHeight / 2 + squareWidth) {
-      // Top edge (going from right to left) (45° to 135°)
-      const topProgress = (perimeterPosition - squareHeight / 2) / squareWidth;
-      squareSelectorX = 100 - topProgress * 100;
-      squareSelectorY = 0;
-    } else if (
-      perimeterPosition <=
-      squareHeight / 2 + squareWidth + squareHeight
-    ) {
-      // Left edge (going from top to bottom) (135° to 225°)
-      const leftProgress =
-        (perimeterPosition - squareHeight / 2 - squareWidth) / squareHeight;
-      squareSelectorX = 0;
-      squareSelectorY = leftProgress * 100;
-    } else if (
-      perimeterPosition <=
-      squareHeight / 2 + squareWidth + squareHeight + squareWidth
-    ) {
-      // Bottom edge (going from left to right) (225° to 315°)
-      const bottomProgress =
-        (perimeterPosition - squareHeight / 2 - squareWidth - squareHeight) /
-        squareWidth;
-      squareSelectorX = bottomProgress * 100;
-      squareSelectorY = 100;
-    } else {
-      // Right edge, bottom half (back to start) (315° to 360°)
-      const rightBottomProgress =
-        (perimeterPosition -
-          squareHeight / 2 -
-          squareWidth -
-          squareHeight -
-          squareWidth) /
-        (squareHeight / 2);
-      squareSelectorX = 100;
-      squareSelectorY = 100 - rightBottomProgress * 50;
-    }
+    // Position on the 1:1 square perimeter (same mapping as the render)
+    const { x: squareSelectorX, y: squareSelectorY } = this._perimeterPoint(
+      normalizedAngle,
+      1,
+      1,
+    );
 
     // Gradient rotation EXACT same as rectangle
     const gradientAngle = -normalizedAngle;
@@ -5965,7 +5484,7 @@ ${(() => {
     if (squareElement) {
       const squareTextColors = this._getCurrentTextColors();
       const colorStops = squareTextColors
-        .map((color) => `rgb(${color.join(",")})`)
+        .map((color) => rgbToCss(color))
         .join(", ");
       squareElement.style.background = `linear-gradient(${
         90 + gradientAngle
@@ -6069,22 +5588,28 @@ ${(() => {
 
     if (!previewColors || previewColors.length < rows * cols) {
       // Fallback: show empty grid if no preview data yet
-      let divs = "";
-      for (let i = 0; i < rows * cols; i++) {
-        divs += `<div class="matrix-pixel" style="background:${bgColor === "transparent" ? "rgba(128,128,128,0.2)" : "rgba(255,255,255,0.08)"};border-radius:${borderRadius};aspect-ratio:1;${pixelShadowStyle}"></div>`;
-      }
-      return divs;
+      const emptyBg =
+        bgColor === "transparent"
+          ? "rgba(128,128,128,0.2)"
+          : "rgba(255,255,255,0.08)";
+      return Array.from(
+        { length: rows * cols },
+        () =>
+          html`<div class="matrix-pixel" style="background:${emptyBg};border-radius:${borderRadius};aspect-ratio:1;${pixelShadowStyle}"></div>`,
+      );
     }
 
     // Flip vertically (same convention as _renderPreviewGrid)
-    let divs = "";
+    const divs = [];
     for (let row = rows - 1; row >= 0; row--) {
       for (let col = 0; col < cols; col++) {
         const color = previewColors[row * cols + col];
         const [r, g, b] = color;
         const isBlack = r <= 5 && g <= 5 && b <= 5;
         const shouldIgnore = ignoreBlack && isBlack;
-        divs += `<div class="matrix-pixel" style="background:${shouldIgnore ? "transparent" : `rgb(${r},${g},${b})`};border-radius:${borderRadius};aspect-ratio:1;${pixelShadowStyle}"></div>`;
+        divs.push(
+          html`<div class="matrix-pixel" style="background:${shouldIgnore ? "transparent" : rgbToCss(color)};border-radius:${borderRadius};aspect-ratio:1;${pixelShadowStyle}"></div>`,
+        );
       }
     }
     return divs;
@@ -6117,7 +5642,7 @@ ${(() => {
             const shouldIgnore = mpIgnoreBlack && isBlack;
             pixels[idx].style.background = shouldIgnore
               ? "transparent"
-              : `rgb(${r},${g},${b})`;
+              : rgbToCss(color);
             idx++;
           }
         }
@@ -6127,49 +5652,20 @@ ${(() => {
     }
 
     // Pure angle gradient mode
-    const colors = this._getCurrentTextColors();
-    const angleRad = (angle * Math.PI) / 180;
-    const dirX = Math.cos(angleRad);
-    const dirY = -Math.sin(angleRad);
-
-    const centerCol = (mpCols - 1) / 2;
-    const centerRow = (mpRows - 1) / 2;
-    const corners = [
-      [-centerCol, -centerRow],
-      [centerCol, -centerRow],
-      [-centerCol, centerRow],
-      [centerCol, centerRow],
-    ];
-    const cornerProjs = corners.map(([c, r]) => c * dirX + r * dirY);
-    const minProj = Math.min(...cornerProjs);
-    const maxProj = Math.max(...cornerProjs);
-    const projRange = maxProj - minProj || 1;
-
-    let idx = 0;
-    for (let row = 0; row < mpRows; row++) {
-      for (let col = 0; col < mpCols; col++) {
-        if (idx >= pixels.length) break;
-        const centeredCol = col - centerCol;
-        const centeredRow = row - centerRow;
-        const projection = centeredCol * dirX + centeredRow * dirY;
-        const t = Math.max(0, Math.min(1, (projection - minProj) / projRange));
-        const colorIdx = t * (colors.length - 1);
-        const i1 = Math.max(
-          0,
-          Math.min(colors.length - 1, Math.floor(colorIdx)),
-        );
-        const i2 = Math.min(colors.length - 1, i1 + 1);
-        const frac = colorIdx - i1;
-        const r = Math.round(colors[i1][0] * (1 - frac) + colors[i2][0] * frac);
-        const g = Math.round(colors[i1][1] * (1 - frac) + colors[i2][1] * frac);
-        const b = Math.round(colors[i1][2] * (1 - frac) + colors[i2][2] * frac);
-        const isBlack = r <= 5 && g <= 5 && b <= 5;
-        const shouldIgnore = mpIgnoreBlack && isBlack;
-        pixels[idx].style.background = shouldIgnore
-          ? "transparent"
-          : `rgb(${r},${g},${b})`;
-        idx++;
-      }
+    const colors = this._angleGradientPixelColors(
+      this._getCurrentTextColors(),
+      angle,
+      mpRows,
+      mpCols,
+    );
+    const count = Math.min(colors.length, pixels.length);
+    for (let idx = 0; idx < count; idx++) {
+      const [r, g, b] = colors[idx];
+      const isBlack = r <= 5 && g <= 5 && b <= 5;
+      const shouldIgnore = mpIgnoreBlack && isBlack;
+      pixels[idx].style.background = shouldIgnore
+        ? "transparent"
+        : rgbToCss(colors[idx]);
     }
   }
 
@@ -6234,8 +5730,8 @@ ${(() => {
       ];
     };
 
-    // Convert RGB array to CSS color
-    const rgbToCss = (rgb) => `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+    // RGB arrays are converted with the hardened shared rgbToCss
+    // (./yeelight-cube-dotmatrix.js), which clamps every channel.
 
     // Create deterministic "random" based on colors array to avoid constant changes
     const colorHash = colors.map((c) => c.join(",")).join("|");
@@ -6377,7 +5873,6 @@ ${(() => {
     // Shared appearance axes — identical semantics across every style
     const selShape = resolveSelectorShape(this.config);
     const selScale = resolveSelectorTextScale(this.config);
-    const selAttrs = `data-shape="${selShape}"`;
     const allModes = [
       { value: "Solid Color", label: "Solid" },
       { value: "Letter Gradient", label: "Letter Grad" },
@@ -6398,59 +5893,56 @@ ${(() => {
     switch (style) {
       case "chips":
         // Chip style: HA-chip-like pills with a live gradient swatch per mode
-        return `
-          <div class="gc-selector color-mode-chips yc-row" ${selAttrs} style="--gc-sel-scale:${selScale};">
-            ${modes
-              .map((mode) => {
-                let swatchBg;
-                if (mode.value === "Text Color Sequence") {
-                  // Conic-gradient \"pie\" with up to 4 colors gives a
-                  // compact multi-color swatch that reflects the randomness
-                  // of the mode — much clearer than vertical stripes.
-                  const stops = textColors.slice(0, 4);
-                  while (stops.length < 4)
-                    stops.push(stops[stops.length - 1] || [200, 200, 200]);
-                  const pct = 100 / stops.length;
-                  swatchBg = `conic-gradient(${stops
-                    .map(
-                      (c, i) =>
-                        `rgb(${c.join(",")}) ${i * pct}% ${(i + 1) * pct}%`,
-                    )
-                    .join(", ")})`;
-                } else {
-                  swatchBg = this.getModeGradientColors(
-                    mode.value,
-                    textColors,
-                    currentAngle,
-                  );
-                }
-                return `
+        return html`
+          <div class="gc-selector color-mode-chips yc-row" data-shape=${selShape} style="--gc-sel-scale:${selScale};">
+            ${modes.map((mode) => {
+              let swatchBg;
+              if (mode.value === "Text Color Sequence") {
+                // Conic-gradient "pie" with up to 4 colors gives a
+                // compact multi-color swatch that reflects the randomness
+                // of the mode — much clearer than vertical stripes.
+                const stops = textColors.slice(0, 4);
+                while (stops.length < 4)
+                  stops.push(stops[stops.length - 1] || [200, 200, 200]);
+                const pct = 100 / stops.length;
+                swatchBg = `conic-gradient(${stops
+                  .map(
+                    (c, i) =>
+                      `${rgbToCss(c)} ${i * pct}% ${(i + 1) * pct}%`,
+                  )
+                  .join(", ")})`;
+              } else {
+                swatchBg = this.getModeGradientColors(
+                  mode.value,
+                  textColors,
+                  currentAngle,
+                );
+              }
+              return html`
               <button class="mode-chip ${
                 colorMode === mode.value ? "active" : ""
-              }" data-mode="${mode.value}" title="${mode.value}">
+              }" data-mode=${mode.value} title=${mode.value} @click=${this._onModeButtonClick}>
                 <span class="mode-chip-swatch" style="background:${swatchBg}"></span>
                 <span class="mode-chip-label">${mode.label}</span>
               </button>
             `;
-              })
-              .join("")}
+            })}
           </div>`;
 
       case "dropdown":
-        return `
-          <div class="gc-selector color-mode-dropdown" ${selAttrs} style="--gc-sel-scale:${selScale};">
-            <select class="mode-select" data-mode-select="true">
-              ${modes
-                .map(
-                  (mode) => `
-                <option value="${mode.value}" ${
-                  colorMode === mode.value ? "selected" : ""
-                }>
+        return html`
+          <div class="gc-selector color-mode-dropdown" data-shape=${selShape} style="--gc-sel-scale:${selScale};">
+            <select class="mode-select" data-mode-select="true"
+              @focus=${this._onModeDropdownFocus}
+              @blur=${this._onModeDropdownBlur}
+              @change=${this._onModeDropdownChange}>
+              ${modes.map(
+                (mode) => html`
+                <option value=${mode.value} ?selected=${colorMode === mode.value}>
                   ${mode.value}
                 </option>
               `,
-                )
-                .join("")}
+              )}
             </select>
           </div>`;
 
@@ -6460,21 +5952,20 @@ ${(() => {
       case "filled":
       default:
         // Unified "Filled" text style (legacy buttons/pills/compact fall here).
-        return `
-          <div class="gc-selector color-mode-filled yc-row" ${selAttrs} style="--gc-sel-scale:${selScale};">
-            ${modes
-              .map(
-                (mode) => `
+        return html`
+          <div class="gc-selector color-mode-filled yc-row" data-shape=${selShape} style="--gc-sel-scale:${selScale};">
+            ${modes.map(
+              (mode) => html`
               <button class="mode-btn-filled ${
                 colorMode === mode.value ? "active" : ""
-              }" 
-                      data-mode="${mode.value}"
-                      title="${mode.label}">
+              }"
+                      data-mode=${mode.value}
+                      title=${mode.label}
+                      @click=${this._onModeButtonClick}>
                 ${mode.label}
               </button>
             `,
-              )
-              .join("")}
+            )}
           </div>`;
     }
   }

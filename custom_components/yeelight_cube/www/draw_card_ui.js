@@ -10,12 +10,6 @@ export function renderColorSwatch(color, onClick) {
   ></div>`;
 }
 
-export function renderPaletteList(palette, onClick) {
-  return html`${palette.map((color) =>
-    renderColorSwatch(color, () => onClick(color)),
-  )}`;
-}
-
 export function renderMatrixPixel(
   idx,
   color,

@@ -1,17 +1,17 @@
-﻿import { getActionRowClass } from "./action-button-utils.js";
+import { LitElement, html, css, unsafeCSS, repeat } from "./lib/lit-all.js";
+import {
+  getActionRowClass,
+  exportImportButtonStyles,
+  getExportImportButtonClass,
+} from "./action-button-utils.js";
+import { renderActionButtonContent } from "./action-button-ui.js";
 import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
-import { escapeHtml } from "./html-escape-utils.js";
 import { cardLayoutStyles } from "./card-layout-utils.js";
 import {
   openColorPicker,
   closeColorPicker,
   bindColorPickerTrigger,
 } from "./color-picker-utils.js";
-import {
-  exportImportButtonStyles,
-  getExportImportButtonClass,
-  renderButtonContent,
-} from "./action-button-utils.js";
 import {
   deleteButtonStyles,
   getDeleteButtonClass,
@@ -21,15 +21,9 @@ import { compactModeStyles } from "./compact-mode-styles.js";
 import { compactLayoutStyles } from "./compact-layout-utils.js";
 import { callServiceOnTargetEntities as callServiceSequentially } from "./service-call-utils.js";
 import { CardCommandController } from "./card-command-controller.js";
-import {
-  AngleCommandController,
-  rgbToHex as _sharedRgbToHex,
-  createColorWheelSegments as _sharedCreateColorWheelSegments,
-  createWheelGradientStops as _sharedCreateWheelGradientStops,
-  createShapeGradientStops as _sharedCreateShapeGradientStops,
-  generateShapeMask as _sharedGenerateShapeMask,
-} from "./angle-wheel-utils.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
+
+const nothing = Symbol.for("lit-nothing");
 
 // Global storage for pending (optimistic) colors per entity (shared across all
 // card instances).  Entries are { colors, ts }.  The cache only exists to
@@ -40,688 +34,31 @@ import { defineOnce, registerCustomCard } from "./card-registration.js";
 const PENDING_COLORS_STORE = {};
 const PENDING_COLORS_GRACE_MS = 2000;
 
-class YeelightCubeColorListEditorCard extends HTMLElement {
-  constructor() {
-    super();
-    this._pendingAngle = null;
-    this._angleCommands = new AngleCommandController(
-      (angle) => {
-        this._lastAngleSent = angle;
-      },
-      (error) =>
-        this.dispatchEvent(
-          new CustomEvent("hass-notification", {
-            bubbles: true,
-            composed: true,
-            detail: {
-              message: error.message || "The angle could not be updated.",
-            },
-          }),
-        ),
-    );
-    this._lastAngleSent = null;
-    this._draggingRotary = false;
-    this._processingModeChange = false;
-    this._isInitialRenderComplete = false;
-    this._lastLayoutMode = null;
-    this._lastColorsKey = null;
-    this._lastColorsLength = null;
-    this._isReordering = false; // Flag to skip animations during drag-and-drop
-    this._renderScheduled = false; // Track if render is scheduled
-    this._pendingServiceCalls = []; // Queue service calls if hass not ready
-    this._pendingHassRender = false; // Track if a render was blocked by interaction flags
-    this._interactionSafetyTimer = null; // Safety timer to flush pending renders
-  }
+// Item selectors of the list layouts that reorder by moving their own items.
+const ITEM_DRAG_SELECTORS = {
+  compact: ".compact-item",
+  chips: ".chip-item",
+  tiles: ".tile-item",
+  rows: ".row-item",
+};
 
-  setConfig(config) {
-    this._angleCommands.reset();
-    this._pendingAngle = null;
-    this._draggingRotary = false;
-    this._colorCommands?.reset();
-    this._pendingServiceCalls = [];
-    this.config = config;
+// Elements that open the colour picker when clicked (resolved by delegation).
+const PICKER_TRIGGERS =
+  '.row-item[data-color-row="true"], .card-color-bar.clickable, .tile-color-preview, .chip-color-swatch, .compact-swatch, .color-grid-swatch';
 
-    // Auto-resolve palette_sensor if not explicitly configured
-    if (!this.config.palette_sensor && this._hass) {
-      const autoSensor = Object.keys(this._hass.states || {}).find(
-        (e) => e.startsWith("sensor.") && e.includes("color_palettes"),
-      );
-      if (autoSensor) {
-        this.config = { ...this.config, palette_sensor: autoSensor };
-      }
-    }
-    if (!this.shadowRoot) {
-      this.attachShadow({ mode: "open" });
-    }
-    // Force re-render after config change
-    this._isInitialRenderComplete = false;
-    this._lastLayoutMode = null;
-    this._lastColorsKey = null;
-    this._lastColorsLength = null;
+const isRgb = (color) =>
+  Array.isArray(color) &&
+  color.length === 3 &&
+  color.every((v) => typeof v === "number");
 
-    // Use requestAnimationFrame instead of setTimeout
-    if (this._renderScheduled) return;
-    this._renderScheduled = true;
-    requestAnimationFrame(() => {
-      this._renderScheduled = false;
-      this.render();
-      // Attach listeners after initial render, even if hass not ready yet
-      // The listeners use this._getCurrentColors() which has proper fallbacks
-      this._attachColorListEventListeners();
-    });
-  }
-
-  static async getConfigElement() {
-    if (!customElements.get("yeelight-cube-color-list-editor-card-editor")) {
-      await import("./yeelight-cube-color-list-editor-card-editor.js");
-    }
-    return document.createElement(
-      "yeelight-cube-color-list-editor-card-editor",
-    );
-  }
-  static getStubConfig(hass) {
-    const firstEntity =
-      Object.keys(hass?.states || {}).find(
-        (e) =>
-          e.startsWith("light.yeelight_cube") ||
-          e.startsWith("light.cubelite_"),
-      ) || "";
-    return {
-      type: "custom:yeelight-cube-color-list-editor-card",
-      target_entities: firstEntity ? [firstEntity] : [],
-      remove_button_style: "none",
-      list_layout: "rows",
-      color_info_display: "name",
-      show_hex_input: false,
-      buttons_style: "icon",
-      buttons_content_mode: "icon",
-    };
-  }
-
-  set hass(hass) {
-    const oldHass = this._hass;
-    this._hass = hass;
-
-    // Auto-resolve palette_sensor on first hass set (setConfig may run before hass is available)
-    if (this.config && !this.config.palette_sensor && hass) {
-      const autoSensor = Object.keys(hass.states || {}).find(
-        (e) => e.startsWith("sensor.") && e.includes("color_palettes"),
-      );
-      if (autoSensor) {
-        this.config = { ...this.config, palette_sensor: autoSensor };
-      }
-    }
-
-    // If this is the first time hass is set, flush any pending service calls
-    if (!oldHass && hass && this._pendingServiceCalls.length > 0) {
-      this._pendingServiceCalls.forEach((call) => {
-        this._commitColors(call.entityId, call.entry, call.config);
-      });
-      this._pendingServiceCalls = [];
-    }
-
-    // PENDING-CACHE EXPIRY: if the optimistic cache is older than the
-    // expected service-echo window, drop it.  Without this, one failed or
-    // mismatched echo left the cache stale forever and the card ignored all
-    // external color changes (e.g. selecting a palette on another card).
-    let staleCacheCleared = false;
-    if (this.config) {
-      const entityId = this._getPrimaryEntity();
-      const entry = entityId ? PENDING_COLORS_STORE[entityId] : null;
-      if (entry && Date.now() - entry.ts > PENDING_COLORS_GRACE_MS) {
-        const backendColors =
-          hass.states?.[entityId]?.attributes?.text_colors || null;
-        delete PENDING_COLORS_STORE[entityId];
-        if (
-          backendColors &&
-          JSON.stringify(backendColors) !== JSON.stringify(entry.colors)
-        ) {
-          // Displayed colors were masking newer backend state — must render
-          staleCacheCleared = true;
-        }
-      }
-    }
-
-    // Only render if our entity's state actually changed
-    if (!staleCacheCleared && oldHass && this.config) {
-      const entityId = this._getPrimaryEntity();
-      if (entityId) {
-        const oldState = oldHass.states[entityId];
-        const newState = hass.states[entityId];
-
-        // Skip render if state hasn't changed. HA only replaces the state
-        // object of the entity that changed, so the common case (another
-        // entity changed) is a cheap reference hit; deep-compare only when
-        // our entity's state object was actually replaced.
-        if (
-          oldState &&
-          newState &&
-          (oldState === newState ||
-            (oldState.state === newState.state &&
-              JSON.stringify(oldState.attributes) ===
-                JSON.stringify(newState.attributes)))
-        ) {
-          return;
-        }
-      }
-    }
-
-    if (
-      !this._isDragging &&
-      !this._draggingRotary &&
-      !this._usingSlider &&
-      !this._usingColorPicker &&
-      !this._editingText
-    ) {
-      this._pendingHassRender = false;
-      // Use requestAnimationFrame to batch renders
-      if (this._renderScheduled) return;
-      this._renderScheduled = true;
-      requestAnimationFrame(() => {
-        this._renderScheduled = false;
-        this.render();
-      });
-    } else {
-      // Interaction in progress — remember that a state-driven render was blocked
-      this._pendingHassRender = true;
-      this._startInteractionSafety();
-    }
-  }
-
-  // Flush any render that was blocked while interaction flags were set.
-  // Called when an interaction flag is cleared to recover missed state updates.
-  _flushPendingRender() {
-    if (!this._pendingHassRender) return;
-    if (
-      this._isDragging ||
-      this._draggingRotary ||
-      this._usingSlider ||
-      this._usingColorPicker ||
-      this._editingText
-    )
-      return; // Another flag still active
-    this._pendingHassRender = false;
-    if (this._interactionSafetyTimer) {
-      clearInterval(this._interactionSafetyTimer);
-      this._interactionSafetyTimer = null;
-    }
-    if (!this._renderScheduled) {
-      this._renderScheduled = true;
-      requestAnimationFrame(() => {
-        this._renderScheduled = false;
-        this.render();
-      });
-    }
-  }
-
-  // Safety timer: periodically check if all interaction flags have cleared
-  // and flush the pending render. Covers edge cases where flag-clearing code
-  // paths don't explicitly call _flushPendingRender().
-  _startInteractionSafety() {
-    if (this._interactionSafetyTimer) return; // Already running
-    this._interactionSafetyTimer = setInterval(() => {
-      if (
-        !this._isDragging &&
-        !this._draggingRotary &&
-        !this._usingSlider &&
-        !this._usingColorPicker &&
-        !this._editingText
-      ) {
-        clearInterval(this._interactionSafetyTimer);
-        this._interactionSafetyTimer = null;
-        this._flushPendingRender();
-      }
-    }, 1000);
-  }
-
-  // Resolve the primary entity: first VALID entity from target_entities,
-  // fallback to legacy entity.  Skips entity IDs that no longer exist in
-  // hass.states (stale config entries after entity renames / IP changes).
-  _getPrimaryEntity() {
-    const candidates = [
-      ...(this.config?.target_entities || []),
-      this.config?.entity,
-    ].filter(Boolean);
-    if (!this._hass?.states) return candidates[0] || null;
-    for (const eid of candidates) {
-      if (this._hass.states[eid]) return eid;
-    }
-    return candidates[0] || null; // return first even if stale (so error is shown)
-  }
-
-  // Helper method for calling services on multiple entities.
-  // Delegates to the shared utility.  The Python backend holds per-IP locks,
-  // so different lamps execute in parallel.
-  async callServiceOnTargetEntities(service, serviceData) {
-    return callServiceSequentially(
-      this._hass,
-      this.config,
-      service,
-      serviceData,
-      { callerTag: "ColorList Card" },
-    );
-  }
-
-  render() {
-    if (
-      this._isDragging ||
-      this._draggingRotary ||
-      this._usingSlider ||
-      this._usingColorPicker ||
-      this._editingText
-    )
-      return;
-
-    // For multi-entity support: use the first *valid* entity as source of truth.
-    // _getPrimaryEntity() skips stale entity IDs that no longer exist.
-    const entityId = this._getPrimaryEntity();
-    const hass = this._hass;
-    if (!hass || !entityId) {
-      return;
-    }
-    const stateObj = hass.states[entityId];
-    if (!stateObj) {
-      this.shadowRoot.innerHTML = `<ha-card><div style="padding:16px;color:var(--error-color,#db4437)">Entity not found: ${escapeHtml(entityId)}<br><small style="color:var(--secondary-text-color)">Check the card configuration — the selected entity may have been removed or renamed.</small></div></ha-card>`;
-      this._isInitialRenderComplete = false;
-      return;
-    }
-
-    // Get colors from sensor
-    const sensorColors = stateObj.attributes.text_colors || [[255, 255, 255]];
-
-    // Use global pending colors store (shared across all card instances for this entity)
-    const pendingEntry = PENDING_COLORS_STORE[entityId];
-
-    // Clear pending colors if sensor has caught up
-    if (
-      pendingEntry &&
-      JSON.stringify(pendingEntry.colors) === JSON.stringify(sensorColors)
-    ) {
-      delete PENDING_COLORS_STORE[entityId];
-    }
-
-    // Use pending colors for instant feedback, fall back to sensor
-    let textColors = PENDING_COLORS_STORE[entityId]?.colors || sensorColors;
-
-    // Get current angle from entity
-    const currentAngle = stateObj.attributes.angle ?? 0;
-
-    const showCard = this.config.show_card_background !== false;
-    const showItemBorder = true;
-    const showSavePalette = this.config.show_save_palette !== false;
-    const enableColorPicker = this.config.enable_color_picker !== false;
-    const showHexInput = this.config.show_hex_input !== false;
-    const allowDragDrop = this.config.allow_drag_drop !== false;
-    const showAddColorButton = this.config.show_add_color_button !== false;
-    const showRandomizeButton = this.config.show_randomize_button !== false;
-    const showColorSection = this.config.show_color_section !== false;
-    const fullRowColorMode = this.config.full_row_color_mode === true;
-
-    // Remove button styling configuration
-    const removeButtonStyle = this.config.remove_button_style || "default";
-    const allowDelete = removeButtonStyle !== "none";
-
-    // Universal button shape & position configuration
-    const buttonShape = this.config.delete_button_shape || "round";
-    const buttonInside = this.config.delete_button_inside === true;
-    const buttonLeft = this.config.delete_button_left === true;
-
-    const cardTitle =
-      typeof this.config.title === "string" ? this.config.title : "";
-
-    // Get scroll state from entity attributes
-    const scrollSpeed = stateObj.attributes.scroll_speed || 1.0;
-    const scrollEnabled = stateObj.attributes.scroll_enabled !== false;
-    const scrollOffset = stateObj.attributes.scroll_offset || 0;
-    const maxScrollOffset = stateObj.attributes.max_scroll_offset || 0;
-
-    // Smart update: Only do full render on first load or config change
-    const currentLayout = this.config.list_layout || "list";
-    const layoutChanged = this._lastLayoutMode !== currentLayout;
-
-    // For cards layout, check if colors actually changed to prevent hover blinking
-    const currentColorsKey = JSON.stringify(textColors);
-    const colorsChanged = this._lastColorsKey !== currentColorsKey;
-
-    // Track length changes separately - if number of colors changed, force full re-render
-    const lengthChanged = this._lastColorsLength !== textColors.length;
-
-    if (
-      this._isInitialRenderComplete &&
-      this.shadowRoot.querySelector("#color-list") &&
-      !layoutChanged &&
-      !lengthChanged
-    ) {
-      // For cards layout, handle animations for adding/removing/reordering
-      if (currentLayout === "cards" && colorsChanged) {
-        const colorListElement = this.shadowRoot.querySelector("#color-list");
-        if (colorListElement) {
-          // If we're just reordering (drag-and-drop), skip animations
-          if (this._isReordering) {
-            // Just update the HTML without animations
-            colorListElement.innerHTML = `
-              ${this._generateColorList(textColors, {
-                allowDelete,
-                fullRowColorMode,
-                enableColorPicker,
-                showHexInput,
-                allowDragDrop,
-                removeButtonStyle,
-                buttonShape,
-                buttonInside,
-                buttonLeft,
-              })}
-            `;
-            this._attachColorListEventListeners();
-            this._lastColorsKey = currentColorsKey;
-            this._lastColorsLength = textColors.length;
-            this._isReordering = false; // Reset flag
-            return;
-          }
-
-          // Store previous cards data
-          const oldCards = Array.from(
-            colorListElement.querySelectorAll(".card-wrapper"),
-          ).map((wrapper) => {
-            const idx = parseInt(wrapper.dataset.position);
-            const colorHex =
-              wrapper.querySelector(".card-hex-display, .card-hex")
-                ?.textContent || wrapper.querySelector(".card-hex")?.value;
-            return { idx, colorHex, element: wrapper };
-          });
-
-          const newColorHexes = textColors.map((c) => this.rgbToHex(c));
-          const oldColorHexes = oldCards.map((c) => c.colorHex);
-
-          // Check if this is just a reorder (same colors, different positions)
-          const oldColorHexesSorted = [...oldColorHexes].sort();
-          const newColorHexesSorted = [...newColorHexes].sort();
-          const isJustReorder =
-            oldColorHexesSorted.length === newColorHexesSorted.length &&
-            oldColorHexesSorted.every(
-              (hex, i) => hex === newColorHexesSorted[i],
-            );
-
-          if (isJustReorder) {
-            // Just reorder, no animation needed
-            colorListElement.innerHTML = `
-              ${this._generateColorList(textColors, {
-                allowDelete,
-                fullRowColorMode,
-                enableColorPicker,
-                showHexInput,
-                allowDragDrop,
-                removeButtonStyle,
-                buttonShape,
-                buttonInside,
-                buttonLeft,
-              })}
-            `;
-            this._attachColorListEventListeners();
-            this._lastColorsKey = currentColorsKey;
-            this._lastColorsLength = textColors.length;
-            return;
-          }
-
-          // Check if only one card was added
-          const addedColors = newColorHexes.filter(
-            (hex) => !oldColorHexes.includes(hex),
-          );
-          const removedColors = oldColorHexes.filter(
-            (hex) => !newColorHexes.includes(hex),
-          );
-
-          // Handle removal - just remove the specific card
-          if (removedColors.length > 0 && addedColors.length === 0) {
-            oldCards.forEach((oldCard) => {
-              if (!newColorHexes.includes(oldCard.colorHex)) {
-                // Card was removed - animate out
-                oldCard.element.classList.add("card-removing");
-                setTimeout(() => {
-                  if (oldCard.element.parentNode) {
-                    oldCard.element.remove();
-                  }
-                  // Update data attributes for remaining cards
-                  this._updateCardPositions();
-                }, 300);
-              }
-            });
-            this._lastColorsKey = currentColorsKey;
-            this._lastColorsLength = textColors.length;
-            return;
-          }
-
-          // Handle addition - rebuild and animate only the new card
-          if (addedColors.length > 0 && removedColors.length === 0) {
-            // Rebuild the list
-            colorListElement.innerHTML = `
-              ${this._generateColorList(textColors, {
-                allowDelete,
-                fullRowColorMode,
-                enableColorPicker,
-                showHexInput,
-                allowDragDrop,
-                removeButtonStyle,
-                buttonShape,
-                buttonInside,
-                buttonLeft,
-              })}
-            `;
-
-            // Find and animate only the new card
-            const newWrappers =
-              colorListElement.querySelectorAll(".card-wrapper");
-            newWrappers.forEach((wrapper, idx) => {
-              const colorHex = textColors[idx]
-                ? this.rgbToHex(textColors[idx])
-                : null;
-              if (colorHex && addedColors.includes(colorHex)) {
-                // New card - animate in
-                wrapper.classList.add("card-entering");
-                setTimeout(() => {
-                  wrapper.classList.remove("card-entering");
-                }, 400);
-              }
-            });
-
-            this._attachColorListEventListeners();
-            this._lastColorsKey = currentColorsKey;
-            this._lastColorsLength = textColors.length;
-            return;
-          }
-
-          // For complex changes (multiple adds/removes), just rebuild without animation
-          colorListElement.innerHTML = `
-            ${this._generateColorList(textColors, {
-              allowDelete,
-              fullRowColorMode,
-              enableColorPicker,
-              showHexInput,
-              allowDragDrop,
-              removeButtonStyle,
-              buttonShape,
-              buttonInside,
-              buttonLeft,
-            })}
-          `;
-          this._attachColorListEventListeners();
-          this._lastColorsKey = currentColorsKey;
-          this._lastColorsLength = textColors.length;
-        }
-        return;
-      }
-
-      // For cards layout when colors haven't changed
-      if (currentLayout === "cards" && !colorsChanged) {
-        // Just update action row if needed, don't touch the cards
-        const actionRowElement = this.shadowRoot.querySelector(".action-row");
-        if (actionRowElement) {
-          actionRowElement.className = `action-row${
-            this.config.buttons_style === "icon" ? " icon-mode" : ""
-          }`;
-        }
-        // Re-attach event listeners even when skipping re-render (buttons need to work!)
-        this._attachColorListEventListeners();
-        return;
-      }
-
-      // For all other layouts (compact, chips, tiles, rows, grid), prevent re-render if colors haven't changed
-      if (
-        !colorsChanged &&
-        (currentLayout === "compact" ||
-          currentLayout === "chips" ||
-          currentLayout === "tiles" ||
-          currentLayout === "rows" ||
-          currentLayout === "grid")
-      ) {
-        // Just update action row if needed, don't touch the color list
-        const actionRowElement = this.shadowRoot.querySelector(".action-row");
-        if (actionRowElement) {
-          actionRowElement.className = `action-row${
-            this.config.buttons_style === "icon" ? " icon-mode" : ""
-          }`;
-        }
-        // Re-attach event listeners even when skipping re-render (buttons need to work!)
-        this._attachColorListEventListeners();
-        return;
-      }
-
-      // Just update the color list content without rebuilding entire card
-      const colorListElement = this.shadowRoot.querySelector("#color-list");
-      const actionRowElement = this.shadowRoot.querySelector(".action-row");
-      if (colorListElement) {
-        // Update layout class in case it changed
-        colorListElement.className = `layout-${currentLayout}${showItemBorder ? " item-card-border" : ""}`;
-
-        colorListElement.innerHTML = `
-          ${this._generateColorList(textColors, {
-            allowDelete,
-            fullRowColorMode,
-            enableColorPicker,
-            showHexInput,
-            allowDragDrop,
-            removeButtonStyle,
-            buttonShape,
-            buttonInside,
-            buttonLeft,
-          })}
-        `;
-
-        // Only update action row if it doesn't exist yet
-        // This prevents button "blinking" on sensor updates
-        if (actionRowElement && !actionRowElement.querySelector("button")) {
-          actionRowElement.className = `action-row${
-            this.config.buttons_style === "icon" ? " icon-mode" : ""
-          }`;
-          const contentMode =
-            this.config.buttons_style === "icon"
-              ? "icon"
-              : this.config.buttons_content_mode || "icon_text";
-          actionRowElement.innerHTML = `
-            ${
-              showAddColorButton
-                ? `<button id="add-color" title="Add Color" class="${this._getButtonClasses(
-                    "add",
-                  )}">${renderButtonContent("mdi:plus", "Add Color", contentMode)}</button>`
-                : ""
-            }
-            ${
-              showRandomizeButton
-                ? `<button id="randomize-order" title="Shuffle Order" class="${this._getButtonClasses(
-                    "randomize",
-                  )}">${renderButtonContent("mdi:shuffle-variant", "Shuffle Order", contentMode)}</button>`
-                : ""
-            }
-            ${
-              showSavePalette
-                ? `<button id="save-palette" title="Save as Palette" class="${this._getButtonClasses(
-                    "save",
-                  )}">${renderButtonContent("mdi:content-save", "Save as Palette", contentMode)}</button>`
-                : ""
-            }
-          `;
-        }
-        this._attachColorListEventListeners();
-        this._lastColorsKey = currentColorsKey;
-        return;
-      }
-    }
-
-    // Full render for initial load
-    const cardContent = `
-      <div class="yc-stack" style="padding:16px; box-sizing: border-box; max-width: 100%;">
-        ${!showCard && cardTitle ? `<div style="font-weight:600;font-size:1.1em;">${escapeHtml(cardTitle)}</div>` : ""}
-        
-        ${
-          showColorSection
-            ? `
-        <div id="color-list" class="layout-${
-          this.config.list_layout || "list"
-        }${showItemBorder ? " item-card-border" : ""} surface-${
-          this.config.card_surface_effect || "none"
-        } shadow-${this.config.card_shadow_style || "soft"} hover-${
-          this.config.card_hover_effect || "lift"
-        }" style="--card-size-multiplier: ${
-          (this.config.card_size || 70) / 100
-        };">
-          ${this._generateColorList(textColors, {
-            allowDelete,
-            fullRowColorMode,
-            enableColorPicker,
-            showHexInput,
-            allowDragDrop,
-            removeButtonStyle,
-            buttonShape,
-            buttonInside,
-            buttonLeft,
-          })}
-        </div>
-        <div class="${getActionRowClass({ buttonStyle: this.config.buttons_style, contentMode: this.config.buttons_content_mode })}" ${showAddColorButton || showRandomizeButton || showSavePalette ? "" : "hidden"}>
-            ${(() => {
-              const contentMode =
-                this.config.buttons_style === "icon"
-                  ? "icon"
-                  : this.config.buttons_content_mode || "icon_text";
-              return `
-            ${
-              showAddColorButton
-                ? `<button id="add-color" title="Add Color" class="${this._getButtonClasses(
-                    "add",
-                  )}">${renderButtonContent("mdi:plus", "Add Color", contentMode)}</button>`
-                : ""
-            }
-            ${
-              showRandomizeButton
-                ? `<button id="randomize-order" title="Shuffle Order" class="${this._getButtonClasses(
-                    "randomize",
-                  )}">${renderButtonContent("mdi:shuffle-variant", "Shuffle Order", contentMode)}</button>`
-                : ""
-            }
-            ${
-              showSavePalette
-                ? `<button id="save-palette" title="Save as Palette" class="${this._getButtonClasses(
-                    "save",
-                  )}">${renderButtonContent("mdi:content-save", "Save as Palette", contentMode)}</button>`
-                : ""
-            }
-            `;
-            })()}
-          </div>
-        `
-            : ""
-        }
-      </div>
-    `;
-
-    this.shadowRoot.innerHTML = `
-      <style>
-        ${cardLayoutStyles}
+class YeelightCubeColorListEditorCard extends LitElement {
+  static styles = css`
+        ${unsafeCSS(cardLayoutStyles)}
         :host {
           display: block;
           max-width: 100%;
           box-sizing: border-box;
           overflow: visible;
-          --rounded-cards-radius: ${this._getCardBorderRadius()}px;
         }
         ha-card {
           overflow: visible;
@@ -936,10 +273,10 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         }
         
         /* Inject centralized button styles */
-        ${exportImportButtonStyles}
+        ${unsafeCSS(exportImportButtonStyles)}
         
         /* Inject centralized compact layout styles */
-        ${compactLayoutStyles}
+        ${unsafeCSS(compactLayoutStyles)}
         
         /* Grid Layout */
         .layout-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(114.29px * var(--card-size-multiplier, 0.7)), 1fr)); gap: 12px; padding: 8px 0; }
@@ -2154,2243 +1491,1006 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         /* lift uses the existing default hover rules */
 
         /* Shared Delete Button Styles */
-        ${deleteButtonStyles}
+        ${unsafeCSS(deleteButtonStyles)}
 
         /* Shared Compact Mode Styles */
-        ${compactModeStyles}
+        ${unsafeCSS(compactModeStyles)}
 
-      </style>
-      ${
-        showCard
-          ? `<ha-card${cardTitle ? ` header="${escapeHtml(cardTitle)}"` : ""}><div class="card-content">${cardContent}</div></ha-card>`
-          : `<div class="card-content">${cardContent}</div>`
+  `;
+
+  constructor() {
+    super();
+    this.config = undefined;
+    this._pendingServiceCalls = []; // Queue service calls if hass not ready
+    // Interaction guards. Lit diffs the DOM, so ordinary renders no longer
+    // destroy inputs; these remain only where a render would still hurt:
+    // - _isDragging: drag reordering moves DOM nodes by hand, so every render
+    //   is held back until the drop (see shouldUpdate).
+    // - _usingColorPicker / _editingText: state-driven (hass) renders are
+    //   deferred so an open picker or a focused hex input is never clobbered.
+    this._isDragging = false;
+    this._usingColorPicker = false;
+    this._editingText = false;
+    this._editing = null; // { idx, value } of the focused hex input
+    this._pendingHassRender = false; // A render was held back by a guard
+    this._interactionSafetyTimer = null; // Safety timer to flush held renders
+    this._drag = null; // Active drag session state
+    this._dragCleanup = null; // Tears down drag artefacts outside the card
+    this._listKey = 0; // Bumped after a drag so Lit rebuilds the moved DOM
+    this._renderedColors = [];
+    this._fanHover = { wrapper: null, justCollapsed: false };
+    this._pickerBoundList = null;
+    // Listener objects carry their own options (Lit re-binds them only if the
+    // object identity changes, so they are created once).
+    this._touchStartListener = {
+      handleEvent: (event) => this._onTouchStart(event),
+      passive: true,
+    };
+    this._touchMoveListener = {
+      handleEvent: (event) => this._onTouchMove(event),
+      passive: false,
+    };
+    this._touchEndListener = {
+      handleEvent: (event) => this._onTouchEnd(event, false),
+      passive: true,
+    };
+    this._touchCancelListener = {
+      handleEvent: (event) => this._onTouchEnd(event, true),
+      passive: true,
+    };
+    this._fanTouchListener = {
+      handleEvent: (event) => this._onFanTouch(event),
+      passive: true,
+    };
+  }
+
+  setConfig(config) {
+    this._colorCommands?.reset();
+    this._pendingServiceCalls = [];
+    this.config = config;
+
+    // Auto-resolve palette_sensor if not explicitly configured
+    if (!this.config.palette_sensor && this._hass) {
+      const autoSensor = Object.keys(this._hass.states || {}).find(
+        (e) => e.startsWith("sensor.") && e.includes("color_palettes"),
+      );
+      if (autoSensor) {
+        this.config = { ...this.config, palette_sensor: autoSensor };
       }
-    `;
-    this._isInitialRenderComplete = true;
-    this._lastLayoutMode = currentLayout;
-    this._lastColorsKey = JSON.stringify(textColors);
-    this._lastColorsLength = textColors.length;
-    this.addEventListeners(textColors);
-
-    setTimeout(() => {
-      const root = this.shadowRoot;
-      if (!root) return;
-      root.querySelectorAll("input.hex-input").forEach((input) => {
-        const idx = parseInt(input.dataset.idx);
-        if (Array.isArray(textColors[idx])) {
-          const hex = this.rgbToHex(textColors[idx]);
-          if (input.value !== hex) input.value = hex;
-        }
-      });
-    }, 0);
+    }
+    this.requestUpdate();
   }
 
-  _attachColorListEventListeners() {
-    const root = this.shadowRoot;
-    if (!root) return;
-
-    // For multi-entity support: use the first *valid* entity.
-    const entityId = this._getPrimaryEntity();
-    if (!entityId) return;
-
-    // Determine textColors based on whether _hass is ready
-    let textColors;
-    if (!this._hass || !this._hass.states) {
-      textColors = [[255, 255, 255]];
-    } else {
-      const stateObj = this._hass.states[entityId];
-      textColors = PENDING_COLORS_STORE[entityId]?.colors ||
-        (stateObj &&
-          stateObj.attributes &&
-          stateObj.attributes.text_colors) || [[255, 255, 255]];
+  static async getConfigElement() {
+    if (!customElements.get("yeelight-cube-color-list-editor-card-editor")) {
+      await import("./yeelight-cube-color-list-editor-card-editor.js");
     }
-
-    // Add Color button - only attach if not already attached
-    const addBtn = root.querySelector("#add-color");
-    if (addBtn && !addBtn.hasAttribute("data-listener-attached")) {
-      addBtn.setAttribute("data-listener-attached", "true");
-      addBtn.addEventListener("click", () => {
-        // Get CURRENT colors (not stale closure variable)
-        const currentColors = this._getCurrentColors();
-        currentColors.push([255, 255, 255]);
-        this.saveColors(currentColors);
-      });
-    }
-
-    // Randomize Order button - only attach if not already attached
-    const randomizeBtn = root.querySelector("#randomize-order");
-
-    if (randomizeBtn && !randomizeBtn.hasAttribute("data-listener-attached")) {
-      randomizeBtn.setAttribute("data-listener-attached", "true");
-
-      randomizeBtn.addEventListener("click", () => {
-        // Get CURRENT colors (not stale closure variable)
-        const currentColors = this._getCurrentColors();
-
-        // Fisher-Yates shuffle algorithm
-        const shuffled = [...currentColors];
-        for (let i = shuffled.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-        }
-
-        this.saveColors(shuffled);
-      });
-    }
-
-    // Re-attach all color list event listeners
-    this.addEventListeners(textColors);
+    return document.createElement(
+      "yeelight-cube-color-list-editor-card-editor",
+    );
+  }
+  static getStubConfig(hass) {
+    const firstEntity =
+      Object.keys(hass?.states || {}).find(
+        (e) =>
+          e.startsWith("light.yeelight_cube") ||
+          e.startsWith("light.cubelite_"),
+      ) || "";
+    return {
+      type: "custom:yeelight-cube-color-list-editor-card",
+      target_entities: firstEntity ? [firstEntity] : [],
+      remove_button_style: "none",
+      list_layout: "rows",
+      color_info_display: "name",
+      show_hex_input: false,
+      buttons_style: "icon",
+      buttons_content_mode: "icon",
+    };
   }
 
-  addEventListeners(textColors) {
-    const root = this.shadowRoot;
-    if (!root) return;
+  set hass(hass) {
+    const oldHass = this._hass;
+    this._hass = hass;
 
-    // Runtime Controls - Color Mode selectors (all styles)
-    const modeSelectors = [
-      ...root.querySelectorAll(".mode-btn"),
-      ...root.querySelectorAll(".mode-btn-colorized"),
-    ];
+    // Auto-resolve palette_sensor on first hass set (setConfig may run before hass is available)
+    if (this.config && !this.config.palette_sensor && hass) {
+      const autoSensor = Object.keys(hass.states || {}).find(
+        (e) => e.startsWith("sensor.") && e.includes("color_palettes"),
+      );
+      if (autoSensor) {
+        this.config = { ...this.config, palette_sensor: autoSensor };
+      }
+    }
 
-    modeSelectors.forEach((btn) => {
-      // Guard: addEventListeners() also runs on skipped-render passes where the
-      // DOM is NOT replaced — without this, each pass stacks another listener.
-      if (btn.hasAttribute("data-listener-attached")) return;
-      btn.setAttribute("data-listener-attached", "true");
-      btn.addEventListener("click", async (e) => {
-        const mode = e.target.dataset.mode;
-        if (!this._hass || !this._getPrimaryEntity()) return;
-
-        // Prevent multiple rapid clicks
-        if (this._processingModeChange) {
-          return;
-        }
-        this._processingModeChange = true;
-
-        // Get current panel setting
-        const applyToPanel =
-          root.getElementById("apply-to-panel")?.checked || false;
-
-        // Disable all mode selectors during processing
-        modeSelectors.forEach((button) => {
-          button.style.pointerEvents = "none";
-          button.style.opacity = "0.6";
-        });
-
-        // Also disable dropdown if present
-        const dropdown = root.querySelector(".mode-select");
-        if (dropdown) {
-          dropdown.style.pointerEvents = "none";
-          dropdown.style.opacity = "0.6";
-        }
-
-        try {
-          // Single merged call instead of two separate calls
-          await this.callServiceOnTargetEntities("set_mode", {
-            mode: mode,
-            full_panel: applyToPanel,
-          });
-
-          // Reduced wait time since only 1 call now
-          await new Promise((resolve) => setTimeout(resolve, 100));
-
-          // Re-render to update button states
-          this.render();
-        } catch (error) {
-          // Force re-render even on error to clear button states
-          this.render();
-        } finally {
-          // Re-enable all mode selectors and clear processing flag
-          modeSelectors.forEach((button) => {
-            button.style.pointerEvents = "";
-            button.style.opacity = "";
-          });
-
-          // Re-enable dropdown if present
-          const dropdown = root.querySelector(".mode-select");
-          if (dropdown) {
-            dropdown.style.pointerEvents = "";
-            dropdown.style.opacity = "";
-          }
-
-          this._processingModeChange = false;
-        }
+    // If this is the first time hass is set, flush any pending service calls
+    if (!oldHass && hass && this._pendingServiceCalls.length > 0) {
+      this._pendingServiceCalls.forEach((call) => {
+        this._commitColors(call.entityId, call.entry, call.config);
       });
-    });
+      this._pendingServiceCalls = [];
+    }
 
-    // Runtime Controls - Dropdown selector
-    const modeDropdown = root.querySelector(".mode-select");
-    if (modeDropdown && !modeDropdown.hasAttribute("data-listener-attached")) {
-      modeDropdown.setAttribute("data-listener-attached", "true");
-      modeDropdown.addEventListener("change", async (e) => {
-        const mode = e.target.value;
+    // PENDING-CACHE EXPIRY: if the optimistic cache is older than the
+    // expected service-echo window, drop it.  Without this, one failed or
+    // mismatched echo left the cache stale forever and the card ignored all
+    // external color changes (e.g. selecting a palette on another card).
+    let staleCacheCleared = false;
+    if (this.config) {
+      const entityId = this._getPrimaryEntity();
+      const entry = entityId ? PENDING_COLORS_STORE[entityId] : null;
+      if (entry && Date.now() - entry.ts > PENDING_COLORS_GRACE_MS) {
+        const backendColors =
+          hass.states?.[entityId]?.attributes?.text_colors || null;
+        delete PENDING_COLORS_STORE[entityId];
         if (
-          !this._hass ||
-          !this._getPrimaryEntity() ||
-          this._processingModeChange
-        )
-          return;
-
-        this._processingModeChange = true;
-
-        // Get current panel setting
-        const applyToPanel =
-          root.getElementById("apply-to-panel")?.checked || false;
-
-        // Disable dropdown during processing
-        modeDropdown.style.pointerEvents = "none";
-        modeDropdown.style.opacity = "0.6";
-
-        try {
-          await this.callServiceOnTargetEntities("set_mode", {
-            mode: mode,
-            full_panel: applyToPanel,
-          });
-
-          await new Promise((resolve) => setTimeout(resolve, 100));
-
-          this.render();
-        } catch (error) {
-          console.error("Error changing mode:", error);
-          this.render();
-        } finally {
-          modeDropdown.style.pointerEvents = "";
-          modeDropdown.style.opacity = "";
-          this._processingModeChange = false;
+          backendColors &&
+          JSON.stringify(backendColors) !== JSON.stringify(entry.colors)
+        ) {
+          // Displayed colors were masking newer backend state — must render
+          staleCacheCleared = true;
         }
-      });
+      }
     }
 
-    // Runtime Controls - Apply to Whole Panel checkbox
-    const panelCheckbox = root.getElementById("apply-to-panel");
-    if (
-      panelCheckbox &&
-      !panelCheckbox.hasAttribute("data-listener-attached")
-    ) {
-      panelCheckbox.setAttribute("data-listener-attached", "true");
-      panelCheckbox.addEventListener("change", async (e) => {
-        if (!this._hass) return;
+    // Only render if our entity's state actually changed
+    if (!staleCacheCleared && oldHass && this.config) {
+      const entityId = this._getPrimaryEntity();
+      if (entityId) {
+        const oldState = oldHass.states[entityId];
+        const newState = hass.states[entityId];
 
-        const applyToPanel = e.target.checked;
-
-        // Simply set the panel mode flag on all target entities
-        await this.callServiceOnTargetEntities("set_full_panel", {
-          full_panel: applyToPanel,
-        });
-
-        // Re-render to update states
-        if (!this._renderScheduled) {
-          this._renderScheduled = true;
-          requestAnimationFrame(() => {
-            this._renderScheduled = false;
-            this.render();
-          });
-        }
-      });
-    }
-
-    // Save as Palette button
-    const savePaletteBtn = root.getElementById("save-palette");
-    if (
-      savePaletteBtn &&
-      !savePaletteBtn.hasAttribute("data-listener-attached")
-    ) {
-      savePaletteBtn.setAttribute("data-listener-attached", "true");
-      savePaletteBtn.addEventListener("click", async () => {
-        if (!this._hass) return;
-
-        // Get the current colors (not the stale closure variable)
-        const currentColors = this._getCurrentColors();
-
-        try {
-          const primaryEntity = this._getPrimaryEntity();
-          if (!primaryEntity) {
-            console.error(
-              "[ColorList Card] No primary entity available for save_palette",
-            );
-            return;
-          }
-          await this._hass.callService("yeelight_cube", "save_palette", {
-            palette: currentColors,
-            entity_id: primaryEntity,
-          });
-
-          // Force sensor update to get fresh data immediately
-          if (this.config && this.config.palette_sensor) {
-            await this._hass.callService("homeassistant", "update_entity", {
-              entity_id: this.config.palette_sensor,
-            });
-          }
-        } catch (err) {
-          console.error("Error saving palette:", err);
-        }
-
-        window.dispatchEvent(
-          new CustomEvent("palette-saved", {
-            detail: { palette: currentColors },
-          }),
-        );
-      });
-    }
-    const self = this;
-    root.querySelectorAll("input[type=color]").forEach((input) => {
-      bindColorPickerTrigger(input, (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const bounds = input.getBoundingClientRect();
-        this._openColorPickerAt(
-          parseInt(input.dataset.idx),
-          input.value,
-          e.detail ? e.pageX : bounds.left + window.scrollX,
-          e.detail ? e.pageY : bounds.bottom + window.scrollY,
-        );
-      });
-    });
-    root.querySelectorAll("input.hex-input").forEach((input) => {
-      // Prevent re-renders while typing in hex input
-      input.addEventListener("focus", (e) => {
-        this._editingText = true;
-      });
-
-      input.addEventListener("blur", (e) => {
-        this._editingText = false;
-        this._flushPendingRender();
-      }); // Handle Enter/Escape keys to finish editing
-      input.addEventListener("keydown", (e) => {
-        if (e.key === "Enter" || e.key === "Escape") {
-          input.blur(); // This will trigger the blur event and clear _editingText
-        }
-      });
-
-      input.addEventListener("input", (e) => {
-        const idx = parseInt(e.target.dataset.idx);
-        const hex = e.target.value;
-        const rgb = this.hexToRgb(hex);
-        if (rgb) {
-          // Get current colors (not stale closure)
-          const currentColors = this._getCurrentColors();
-          currentColors[idx] = rgb;
-
-          const colorInput = root.querySelector(
-            `input[type=color][data-idx='${idx}']`,
-          );
-          if (colorInput) colorInput.value = hex;
-
-          // Optimistically update all visual elements for instant feedback
-          this._updateColorVisuals(idx, rgb, hex);
-
-          this.saveColors(currentColors);
-        }
-      });
-    });
-
-    // Color row click handler (covers standard list rows, full-row-color rows, and "rows" mode items)
-    root
-      .querySelectorAll('.color-row, [data-color-row="true"]')
-      .forEach((row) => {
-        bindColorPickerTrigger(row, (e) => {
-          // Don't trigger if clicking on buttons, inputs, or drag handle
-          if (
-            e.target.tagName === "BUTTON" ||
-            e.target.tagName === "INPUT" ||
-            e.target.classList.contains("drag-handle") ||
-            e.target.closest("button") ||
-            e.target.closest(".drag-handle")
-          ) {
-            return;
-          }
-
-          const idx = parseInt(row.dataset.idx);
-          const hiddenColorInput = row.querySelector('input[type="color"]');
-          if (hiddenColorInput) {
-            this._openColorPickerAt(
-              idx,
-              hiddenColorInput.value,
-              e.pageX,
-              e.pageY,
-            );
-          }
-        });
-      });
-
-    // Card color bar click handler (for cards mode with pointer-events: none on color picker)
-    root.querySelectorAll(".card-color-bar.clickable").forEach((bar) => {
-      bindColorPickerTrigger(bar, (e) => {
-        // Don't trigger if clicking on delete button or other interactive elements
+        // Skip render if state hasn't changed. HA only replaces the state
+        // object of the entity that changed, so the common case (another
+        // entity changed) is a cheap reference hit; deep-compare only when
+        // our entity's state object was actually replaced.
         if (
-          e.target.tagName === "BUTTON" ||
-          e.target.tagName === "INPUT" ||
-          e.target.closest("button")
+          oldState &&
+          newState &&
+          (oldState === newState ||
+            (oldState.state === newState.state &&
+              JSON.stringify(oldState.attributes) ===
+                JSON.stringify(newState.attributes)))
         ) {
           return;
         }
-
-        // Find the color picker input inside this bar
-        const colorInput = bar.querySelector(
-          'input[type="color"].card-color-picker',
-        );
-        if (colorInput) {
-          const idx = parseInt(colorInput.dataset.idx);
-          this._openColorPickerAt(idx, colorInput.value, e.pageX, e.pageY);
-        }
-      });
-    });
-
-    root
-      .querySelectorAll(
-        ".tile-color-preview, .chip-color-swatch, .compact-swatch, .color-grid-swatch",
-      )
-      .forEach((swatch) => {
-        bindColorPickerTrigger(swatch, (event) => {
-          if (event.target.closest("button, .drag-handle")) return;
-          const container =
-            swatch.closest(".tile-item, .color-grid-item") || swatch;
-          const input = container.querySelector('input[type="color"]');
-          if (!input) return;
-          event.preventDefault();
-          event.stopPropagation();
-          this._openColorPickerAt(
-            parseInt(input.dataset.idx),
-            input.value,
-            event.pageX,
-            event.pageY,
-          );
-        });
-      });
-
-    // Remove button - Use event delegation on container instead of individual buttons
-    // This dramatically improves performance by avoiding iteration through all buttons on every render
-    const colorListContainer = root.querySelector("#color-list");
-    if (
-      colorListContainer &&
-      !colorListContainer.hasAttribute("data-remove-listener-attached")
-    ) {
-      colorListContainer.setAttribute("data-remove-listener-attached", "true");
-
-      colorListContainer.addEventListener("click", (e) => {
-        // Check if clicked element is a remove button or inside one
-        const button = e.target.closest("button[data-action=remove]");
-        if (!button) return;
-
-        e.preventDefault();
-        e.stopPropagation();
-
-        const idx = parseInt(button.dataset.idx);
-
-        // Get CURRENT colors (not stale closure variable)
-        const currentColors = this._getCurrentColors();
-
-        if (isNaN(idx) || idx < 0 || idx >= currentColors.length) {
-          console.error(
-            `[REMOVE COLOR] Invalid remove index: ${idx}, valid range: 0-${
-              currentColors.length - 1
-            }`,
-          );
-
-          // Disable the button to prevent multiple clicks
-          button.disabled = true;
-          button.style.opacity = "0.5";
-          button.style.pointerEvents = "none";
-
-          // Force a full re-render to clean up stale DOM
-          this._isInitialRenderComplete = false;
-          this.render();
-          return;
-        }
-
-        if (currentColors.length > 1) {
-          // Create a new array without the removed item (don't mutate the original)
-          const newColors = currentColors.filter((_, i) => i !== idx);
-          this.saveColors(newColors);
-        } else {
-        }
-      });
+      }
     }
 
-    // NEW MODES DRAG-AND-DROP SETUP
-    const newModesLayout = this.config.list_layout || "compact";
+    if (this._interacting) {
+      // Interaction in progress — remember that a state-driven render was held
+      this._pendingHassRender = true;
+      this._startInteractionSafety();
+    } else {
+      this._pendingHassRender = false;
+      this.requestUpdate();
+    }
+  }
 
+  get _interacting() {
+    return this._isDragging || this._usingColorPicker || this._editingText;
+  }
+
+  shouldUpdate() {
+    // A drag moves rendered nodes by hand; rendering now would fight it.
+    if (!this._isDragging) return true;
+    this._pendingHassRender = true;
+    this._startInteractionSafety();
+    return false;
+  }
+
+  // Flush any render that was held back while an interaction was active.
+  // Called when an interaction flag is cleared to recover missed state updates.
+  _flushPendingRender() {
+    if (!this._pendingHassRender || this._interacting) return;
+    this._pendingHassRender = false;
+    if (this._interactionSafetyTimer) {
+      clearInterval(this._interactionSafetyTimer);
+      this._interactionSafetyTimer = null;
+    }
+    this.requestUpdate();
+  }
+
+  // Safety timer: periodically check if all interaction flags have cleared
+  // and flush the pending render. Covers edge cases where flag-clearing code
+  // paths don't explicitly call _flushPendingRender().
+  _startInteractionSafety() {
+    if (this._interactionSafetyTimer) return; // Already running
+    this._interactionSafetyTimer = setInterval(() => {
+      if (!this._interacting) {
+        clearInterval(this._interactionSafetyTimer);
+        this._interactionSafetyTimer = null;
+        this._flushPendingRender();
+      }
+    }, 1000);
+  }
+
+  // Resolve the primary entity: first VALID entity from target_entities,
+  // fallback to legacy entity.  Skips entity IDs that no longer exist in
+  // hass.states (stale config entries after entity renames / IP changes).
+  _getPrimaryEntity() {
+    const candidates = [
+      ...(this.config?.target_entities || []),
+      this.config?.entity,
+    ].filter(Boolean);
+    if (!this._hass?.states) return candidates[0] || null;
+    for (const eid of candidates) {
+      if (this._hass.states[eid]) return eid;
+    }
+    return candidates[0] || null; // return first even if stale (so error is shown)
+  }
+
+  // Helper method for calling services on multiple entities.
+  // Delegates to the shared utility.  The Python backend holds per-IP locks,
+  // so different lamps execute in parallel.
+  async callServiceOnTargetEntities(service, serviceData) {
+    return callServiceSequentially(
+      this._hass,
+      this.config,
+      service,
+      serviceData,
+      { callerTag: "ColorList Card" },
+    );
+  }
+
+  render() {
+    // For multi-entity support: use the first *valid* entity as source of truth.
+    // _getPrimaryEntity() skips stale entity IDs that no longer exist.
+    const entityId = this.config ? this._getPrimaryEntity() : null;
+    const hass = this._hass;
+    if (!hass || !entityId) return nothing;
+    const stateObj = hass.states[entityId];
+    if (!stateObj) {
+      return html`<ha-card
+        ><div style="padding:16px;color:var(--error-color,#db4437)">
+          Entity not found: ${entityId}<br /><small
+            style="color:var(--secondary-text-color)"
+            >Check the card configuration — the selected entity may have been
+            removed or renamed.</small
+          >
+        </div></ha-card
+      >`;
+    }
+
+    // Get colors from sensor
+    const sensorColors = stateObj.attributes.text_colors || [[255, 255, 255]];
+
+    // Clear pending colors if sensor has caught up
+    const pendingEntry = PENDING_COLORS_STORE[entityId];
     if (
-      (newModesLayout === "compact" ||
-        newModesLayout === "chips" ||
-        newModesLayout === "tiles" ||
-        newModesLayout === "rows") &&
-      this.config.allow_drag_drop !== false
+      pendingEntry &&
+      JSON.stringify(pendingEntry.colors) === JSON.stringify(sensorColors)
     ) {
-      let draggedItem = null;
-      let draggedIndex = null;
+      delete PENDING_COLORS_STORE[entityId];
+    }
 
-      const itemSelector =
-        newModesLayout === "chips"
-          ? ".chip-item"
-          : newModesLayout === "compact"
-            ? ".compact-item"
-            : newModesLayout === "tiles"
-              ? ".tile-item"
-              : ".row-item";
+    // Use pending colors for instant feedback, fall back to sensor
+    const textColors = PENDING_COLORS_STORE[entityId]?.colors || sensorColors;
+    this._renderedColors = textColors;
 
-      root.querySelectorAll(itemSelector).forEach((item) => {
-        item.addEventListener("dragstart", (e) => {
-          const focusedElement = document.activeElement;
-          if (
-            focusedElement &&
-            focusedElement.classList.contains("hex-input")
-          ) {
-            e.preventDefault();
-            return;
-          }
+    const config = this.config;
+    const showCard = config.show_card_background !== false;
+    const showSavePalette = config.show_save_palette !== false;
+    const showAddColorButton = config.show_add_color_button !== false;
+    const showRandomizeButton = config.show_randomize_button !== false;
+    const showColorSection = config.show_color_section !== false;
+    const cardTitle = typeof config.title === "string" ? config.title : "";
 
-          self._isDragging = true;
-          draggedItem = item;
-          draggedIndex = parseInt(item.dataset.idx);
-          item.classList.add("dragging");
-          e.dataTransfer.effectAllowed = "move";
+    // Remove button styling configuration
+    const removeButtonStyle = config.remove_button_style || "default";
+    // Universal button shape & position configuration
+    const buttonInside = config.delete_button_inside === true;
+    const buttonLeft = config.delete_button_left === true;
+    const options = {
+      allowDelete: removeButtonStyle !== "none",
+      enableColorPicker: config.enable_color_picker !== false,
+      showHexInput: config.show_hex_input !== false,
+      allowDragDrop: config.allow_drag_drop !== false,
+      deleteBtnClass: getDeleteButtonClass(
+        removeButtonStyle,
+        config.delete_button_shape || "round",
+      ),
+      posClass: buttonInside ? "btn-pos-inside" : "btn-pos-outside",
+      sideClass: buttonLeft ? "btn-side-left" : "",
+      buttonPositionStyles: getButtonPositionStyles(buttonInside, buttonLeft),
+    };
 
-          // Force layout calculation before drag operations begin
-          // This prevents position offset issues on the first drag
-          void item.offsetHeight;
-        });
+    const content = html`
+      <div
+        class="yc-stack"
+        style="padding:16px; box-sizing: border-box; max-width: 100%;"
+      >
+        ${!showCard && cardTitle
+          ? html`<div style="font-weight:600;font-size:1.1em;">
+              ${cardTitle}
+            </div>`
+          : ""}
+        ${showColorSection
+          ? html`
+              ${repeat(
+                [this._listKey],
+                (key) => key,
+                () => this._renderColorList(textColors, options),
+              )}
+              ${this._renderActionRow(
+                showAddColorButton,
+                showRandomizeButton,
+                showSavePalette,
+              )}
+            `
+          : ""}
+      </div>
+    `;
+    const radius = `--rounded-cards-radius: ${this._getCardBorderRadius()}px;`;
+    return showCard
+      ? html`<ha-card header=${cardTitle || nothing}
+          ><div class="card-content" style=${radius}>${content}</div></ha-card
+        >`
+      : html`<div class="card-content" style=${radius}>${content}</div>`;
+  }
 
-        item.addEventListener("dragend", () => {
-          if (draggedItem) {
-            draggedItem.classList.remove("dragging");
+  updated() {
+    // Colour-picker triggers are resolved by delegation from the list
+    // container. bindColorPickerTrigger replaces its own listeners, and the
+    // container is only rebound when Lit created a new one.
+    const list = this.renderRoot.querySelector("#color-list");
+    if (list && list !== this._pickerBoundList) {
+      this._pickerBoundList = list;
+      bindColorPickerTrigger(list, (event) => this._onPickerTrigger(event));
+    }
+  }
 
-            // Get new order
-            const items = Array.from(root.querySelectorAll(itemSelector));
-            const newOrder = items.map((i) => parseInt(i.dataset.idx));
-            const newColors = newOrder
-              .map((idx) => textColors[idx])
-              .filter((color) => Array.isArray(color) && color.length === 3);
+  _renderColorList(textColors, options) {
+    const config = this.config;
+    return html`
+      <div
+        id="color-list"
+        class="layout-${config.list_layout ||
+        "list"} item-card-border surface-${config.card_surface_effect ||
+        "none"} shadow-${config.card_shadow_style ||
+        "soft"} hover-${config.card_hover_effect || "lift"}"
+        style="--card-size-multiplier: ${(config.card_size || 70) / 100};"
+        @click=${this._onListClick}
+        @mousedown=${this._onListMouseDown}
+        @mouseup=${this._onListMouseUp}
+        @dragstart=${this._onDragStart}
+        @dragover=${this._onDragOver}
+        @dragend=${this._onDragEnd}
+        @drop=${this._onDrop}
+        @touchstart=${this._touchStartListener}
+        @touchmove=${this._touchMoveListener}
+        @touchend=${this._touchEndListener}
+        @touchcancel=${this._touchCancelListener}
+      >
+        ${this._renderItems(textColors, options)}
+      </div>
+    `;
+  }
 
-            const orderChanged = newOrder.some((pos, idx) => pos !== idx);
+  _renderActionRow(showAdd, showRandomize, showSave) {
+    const config = this.config;
+    const contentMode =
+      config.buttons_style === "icon"
+        ? "icon"
+        : config.buttons_content_mode || "icon_text";
+    return html`<div
+      class=${getActionRowClass({
+        buttonStyle: config.buttons_style,
+        contentMode: config.buttons_content_mode,
+      })}
+      ?hidden=${!(showAdd || showRandomize || showSave)}
+    >
+      ${showAdd
+        ? html`<button
+            id="add-color"
+            title="Add Color"
+            class=${this._getButtonClasses("add")}
+            @click=${this._onAddColor}
+          >
+            ${renderActionButtonContent("mdi:plus", "Add Color", contentMode)}
+          </button>`
+        : ""}
+      ${showRandomize
+        ? html`<button
+            id="randomize-order"
+            title="Shuffle Order"
+            class=${this._getButtonClasses("randomize")}
+            @click=${this._onShuffle}
+          >
+            ${renderActionButtonContent(
+              "mdi:shuffle-variant",
+              "Shuffle Order",
+              contentMode,
+            )}
+          </button>`
+        : ""}
+      ${showSave
+        ? html`<button
+            id="save-palette"
+            title="Save as Palette"
+            class=${this._getButtonClasses("save")}
+            @click=${this._onSavePalette}
+          >
+            ${renderActionButtonContent(
+              "mdi:content-save",
+              "Save as Palette",
+              contentMode,
+            )}
+          </button>`
+        : ""}
+    </div>`;
+  }
 
-            if (orderChanged && newColors.length === textColors.length) {
-              self._isReordering = true;
-              self.saveColors(newColors);
-            }
-          }
+  _renderItems(textColors, options) {
+    const layoutMode = this.config.list_layout || "compact";
 
-          draggedItem = null;
-          draggedIndex = null;
-          self._isDragging = false;
-          self._flushPendingRender();
-        });
+    switch (layoutMode) {
+      case "chips":
+        return this._renderChipsLayout(textColors, options);
+      case "tiles":
+        return this._renderTilesLayout(textColors, options);
+      case "rows":
+        return this._renderRowsLayout(textColors, options);
+      case "grid":
+        return this._renderGridLayout(textColors, options);
+      case "cards":
+        return this._renderCardsLayout(textColors, options);
+      case "compact":
+      default:
+        return this._renderCompactLayout(textColors, options);
+    }
+  }
 
-        item.addEventListener("dragover", (e) => {
-          if (e.preventDefault) e.preventDefault();
-          e.dataTransfer.dropEffect = "move";
+  _hexInput(idx, hex, className, style) {
+    // While an input is focused, bind what the user typed so a render (e.g.
+    // saving another colour) never overwrites a half-typed value.
+    const value = this._editing?.idx === idx ? this._editing.value : hex;
+    return html`<input
+      type="text"
+      class=${className}
+      .value=${value}
+      data-idx=${idx}
+      maxlength="7"
+      style=${style ?? nothing}
+      @focus=${this._onHexFocus}
+      @blur=${this._onHexBlur}
+      @keydown=${this._onHexKeydown}
+      @input=${this._onHexInput}
+    />`;
+  }
 
-          if (draggedItem && item !== draggedItem) {
-            const items = Array.from(root.querySelectorAll(itemSelector));
-            const draggedIdx = items.indexOf(draggedItem);
-            const targetIdx = items.indexOf(item);
+  _removeButton(idx, className, options, style) {
+    return html`<button
+      data-action="remove"
+      data-idx=${idx}
+      class="${options.deleteBtnClass} ${className}"
+      style=${style ?? nothing}
+      title="Remove"
+    ></button>`;
+  }
 
-            // Only update DOM if the position would actually change
-            if (
-              draggedIdx !== -1 &&
-              targetIdx !== -1 &&
-              Math.abs(draggedIdx - targetIdx) > 0
-            ) {
-              // Check if draggedItem is already in the correct position relative to item
-              const currentNext = draggedItem.nextElementSibling;
-              const currentPrev = draggedItem.previousElementSibling;
+  _colorInput(idx, hex, className) {
+    return html`<input
+      type="color"
+      .value=${hex}
+      data-idx=${idx}
+      class=${className}
+    />`;
+  }
 
-              if (draggedIdx < targetIdx) {
-                // Moving forward - should be after target
-                if (currentPrev !== item) {
-                  const nextSibling = item.nextElementSibling;
-                  if (nextSibling) {
-                    item.parentNode.insertBefore(draggedItem, nextSibling);
-                  } else {
-                    item.parentNode.appendChild(draggedItem);
-                  }
-                }
-              } else {
-                // Moving backward - should be before target
-                if (currentNext !== item) {
-                  item.parentNode.insertBefore(draggedItem, item);
-                }
-              }
-            }
-          }
-
-          return false;
-        });
-
-        // --- Touch drag support (mobile) ---
-        let touchStartX = 0;
-        let touchStartY = 0;
-        let touchIsDragging = false;
-        let touchClone = null;
-
-        item.addEventListener(
-          "touchstart",
-          (e) => {
-            // Don't start if input is focused or on remove buttons
-            const focused = document.activeElement;
-            if (focused && focused.classList.contains("hex-input")) return;
-            if (
-              e.target.closest(
-                ".chip-remove, .compact-remove, .tile-remove, .row-remove",
-              )
+  // COMPACT MODE - Minimal inline design with hover actions
+  _renderCompactLayout(textColors, options) {
+    const { posClass, sideClass } = options;
+    const display = this.config.color_info_display || "hex";
+    return textColors.map((color, idx) => {
+      if (!(Array.isArray(color) && color.length === 3)) return "";
+      const hex = this.rgbToHex(color);
+      return html`<div
+        class="compact-item"
+        data-idx=${idx}
+        draggable=${options.allowDragDrop ? "true" : nothing}
+      >
+        <div
+          class="compact-swatch"
+          style="background: ${rgbToCss(color)};"
+          title="Click to change color"
+        >
+          ${options.enableColorPicker
+            ? this._colorInput(idx, hex, "compact-color-input")
+            : ""}
+        </div>
+        <div class="compact-info">
+          ${options.showHexInput
+            ? this._hexInput(idx, hex, "compact-hex-input hex-input")
+            : ""}
+          <span class="compact-color-name"
+            >${this.formatColorInfo(color, display)}</span
+          >
+        </div>
+        ${options.allowDelete
+          ? this._removeButton(
+              idx,
+              `compact-remove ${posClass} ${sideClass}`,
+              options,
             )
-              return;
+          : ""}
+      </div>`;
+    });
+  }
 
-            const touch = e.touches[0];
-            touchStartX = touch.clientX;
-            touchStartY = touch.clientY;
-            touchIsDragging = false;
+  // CHIPS MODE - Colorful tag/pill style
+  _renderChipsLayout(textColors, options) {
+    const { posClass, sideClass } = options;
+    const display = this.config.color_info_display || "hex";
+    return html`<div class="chips-container">
+      ${textColors.map((color, idx) => {
+        if (!(Array.isArray(color) && color.length === 3)) return "";
+        const hex = this.rgbToHex(color);
+        const contrast = this.getContrastTextColor(color);
+        const shade = contrast === "#ffffff" ? "255,255,255" : "0,0,0";
+        return html`<div
+          class="chip-item"
+          data-idx=${idx}
+          draggable=${options.allowDragDrop ? "true" : nothing}
+          style="background: ${rgbToCss(color)}; color: ${contrast};"
+        >
+          ${options.enableColorPicker
+            ? html`<div
+                class="chip-color-swatch"
+                title="Click to change color"
+              >
+                ${this._colorInput(idx, hex, "chip-color-input")}
+              </div>`
+            : ""}
+          ${options.showHexInput
+            ? this._hexInput(
+                idx,
+                hex,
+                "chip-hex-input hex-input",
+                `color: ${contrast}; background: rgba(${shade}, 0.2);`,
+              )
+            : ""}
+          <span class="chip-content" title="Drag to reorder">
+            ${this.formatColorInfo(color, display)}
+          </span>
+          ${options.allowDelete
+            ? this._removeButton(
+                idx,
+                `chip-remove ${posClass} ${sideClass}`,
+                options,
+              )
+            : ""}
+        </div>`;
+      })}
+    </div>`;
+  }
 
-            draggedItem = item;
-            draggedIndex = parseInt(item.dataset.idx);
-          },
-          { passive: true },
-        );
+  // TILES MODE - Card-like items in vertical list
+  _renderTilesLayout(textColors, options) {
+    const { posClass, sideClass } = options;
+    const display = this.config.color_info_display || "name";
+    return textColors.map((color, idx) => {
+      if (!(Array.isArray(color) && color.length === 3)) return "";
+      const hex = this.rgbToHex(color);
+      return html`<div
+        class="tile-item"
+        data-idx=${idx}
+        draggable=${options.allowDragDrop ? "true" : nothing}
+      >
+        ${options.allowDragDrop
+          ? html`<div class="tile-drag-area" title="Drag to reorder">⋮⋮</div>`
+          : ""}
+        <div class="tile-color-preview" style="background: ${rgbToCss(color)};">
+          ${options.enableColorPicker
+            ? this._colorInput(idx, hex, "tile-color-input")
+            : ""}
+        </div>
+        <div class="tile-info">
+          ${options.showHexInput
+            ? this._hexInput(idx, hex, "tile-hex-input hex-input")
+            : ""}
+          <span class="tile-color-name"
+            >${this.formatColorInfo(color, display)}</span
+          >
+        </div>
+        ${options.allowDelete
+          ? this._removeButton(
+              idx,
+              `tile-remove ${posClass} ${sideClass}`,
+              options,
+            )
+          : ""}
+      </div>`;
+    });
+  }
 
-        item.addEventListener(
-          "touchmove",
-          (e) => {
-            if (!draggedItem || draggedItem !== item) return;
-            const touch = e.touches[0];
-            const dx = Math.abs(touch.clientX - touchStartX);
-            const dy = Math.abs(touch.clientY - touchStartY);
+  // ROWS MODE - Full-width colored rows with gradient effects
+  _renderRowsLayout(textColors, options) {
+    const { posClass, sideClass } = options;
+    const display = this.config.color_info_display || "name";
+    return textColors.map((color, idx) => {
+      if (!(Array.isArray(color) && color.length === 3)) return "";
+      const hex = this.rgbToHex(color);
+      const contrast = this.getContrastTextColor(color);
+      const shade = contrast === "#ffffff" ? "255,255,255" : "0,0,0";
+      return html`<div
+        class="row-item"
+        data-idx=${idx}
+        draggable=${options.allowDragDrop ? "true" : nothing}
+        style="background: linear-gradient(135deg, ${rgbToCss(
+          color,
+        )} 0%, ${this.adjustColorBrightness(
+          color,
+          -20,
+        )} 100%); color: ${contrast};"
+        data-color-row="true"
+      >
+        ${options.enableColorPicker
+          ? this._colorInput(idx, hex, "row-color-input")
+          : ""}
+        <div class="row-content">
+          ${options.allowDragDrop
+            ? html`<span class="row-drag-indicator" title="Drag to reorder"
+                >⋮⋮</span
+              >`
+            : ""}
+          ${options.showHexInput
+            ? this._hexInput(
+                idx,
+                hex,
+                "row-hex-input hex-input",
+                `background: rgba(${shade}, 0.2); color: ${contrast}; border-color: rgba(${shade}, 0.3);`,
+              )
+            : ""}
+          <span class="row-color-name"
+            >${this.formatColorInfo(color, display)}</span
+          >
+        </div>
+        ${options.allowDelete
+          ? this._removeButton(
+              idx,
+              `row-remove ${posClass} ${sideClass}`,
+              options,
+            )
+          : ""}
+      </div>`;
+    });
+  }
 
-            if (!touchIsDragging && (dx > 8 || dy > 8)) {
-              touchIsDragging = true;
-              self._isDragging = true;
-              item.classList.add("dragging");
+  _renderGridLayout(textColors, options) {
+    const { posClass, sideClass } = options;
+    const display = this.config.color_info_display || "hex";
+    return textColors.map((color, idx) => {
+      if (!(Array.isArray(color) && color.length === 3)) return "";
+      const hex = this.rgbToHex(color);
+      const info = this.formatColorInfo(color, display);
+      return html`<div
+        class="color-grid-item"
+        data-idx=${idx}
+        draggable=${options.allowDragDrop ? "true" : nothing}
+      >
+        <div
+          class="color-grid-swatch"
+          style="background-color: ${rgbToCss(color)};"
+          title=${info}
+        >
+          ${options.enableColorPicker
+            ? this._colorInput(idx, hex, "grid-color-picker")
+            : ""}
+          ${options.allowDelete
+            ? this._removeButton(
+                idx,
+                `grid-remove-btn ${posClass} ${sideClass}`,
+                options,
+              )
+            : ""}
+        </div>
+        ${options.showHexInput
+          ? this._hexInput(idx, hex, "hex-input grid-hex-input")
+          : ""}
+        <div class="color-grid-info">${info}</div>
+      </div>`;
+    });
+  }
 
-              // Create clone to follow finger
-              const rect = item.getBoundingClientRect();
-              touchClone = item.cloneNode(true);
-              touchClone.style.cssText = `
-                position: fixed; z-index: 99999; pointer-events: none;
-                width: ${rect.width}px; opacity: 0.85;
-                box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-                transform: scale(1.03); transition: none;
-                left: ${touch.clientX - rect.width / 2}px;
-                top: ${touch.clientY - 20}px;
-              `;
-              document.body.appendChild(touchClone);
-            }
+  // CARDS MODE - playing cards in one of five arrangements
+  _renderCardsLayout(textColors, options) {
+    const arrangement = this.config.card_arrangement || "hand";
+    const valid = (color) => Array.isArray(color) && color.length === 3;
+    const card = (color, idx, layout) =>
+      valid(color) ? this._renderCard(color, idx, options, layout) : "";
 
-            if (touchIsDragging) {
-              e.preventDefault();
-              // Move clone
-              if (touchClone) {
-                const rect = item.getBoundingClientRect();
-                touchClone.style.left = touch.clientX - rect.width / 2 + "px";
-                touchClone.style.top = touch.clientY - 20 + "px";
-              }
-
-              // Find element under finger and reorder
-              const elemBelow = document.elementFromPoint(
-                touch.clientX,
-                touch.clientY,
-              );
-              if (elemBelow) {
-                const targetItem = elemBelow.closest(itemSelector);
-                if (
-                  targetItem &&
-                  targetItem !== draggedItem &&
-                  targetItem.parentNode === draggedItem.parentNode
-                ) {
-                  const allItems = Array.from(
-                    root.querySelectorAll(itemSelector),
-                  );
-                  const dIdx = allItems.indexOf(draggedItem);
-                  const tIdx = allItems.indexOf(targetItem);
-                  if (dIdx !== -1 && tIdx !== -1) {
-                    if (dIdx < tIdx) {
-                      const next = targetItem.nextElementSibling;
-                      if (next)
-                        targetItem.parentNode.insertBefore(draggedItem, next);
-                      else targetItem.parentNode.appendChild(draggedItem);
-                    } else {
-                      targetItem.parentNode.insertBefore(
-                        draggedItem,
-                        targetItem,
-                      );
-                    }
-                  }
-                }
-              }
-            }
-          },
-          { passive: false },
-        );
-
-        item.addEventListener(
-          "touchend",
-          (e) => {
-            if (!draggedItem || draggedItem !== item) return;
-
-            // Remove clone
-            if (touchClone && touchClone.parentNode) {
-              touchClone.parentNode.removeChild(touchClone);
-              touchClone = null;
-            }
-
-            if (touchIsDragging) {
-              draggedItem.classList.remove("dragging");
-              const items = Array.from(root.querySelectorAll(itemSelector));
-              const newOrder = items.map((i) => parseInt(i.dataset.idx));
-              const newColors = newOrder
-                .map((idx) => textColors[idx])
-                .filter((color) => Array.isArray(color) && color.length === 3);
-              const orderChanged = newOrder.some((pos, idx) => pos !== idx);
-              if (orderChanged && newColors.length === textColors.length) {
-                self._isReordering = true;
-                self.saveColors(newColors);
-              }
-            }
-
-            draggedItem = null;
-            draggedIndex = null;
-            touchIsDragging = false;
-            self._isDragging = false;
-            self._flushPendingRender();
-          },
-          { passive: true },
-        );
-
-        item.addEventListener(
-          "touchcancel",
-          () => {
-            if (touchClone && touchClone.parentNode)
-              touchClone.parentNode.removeChild(touchClone);
-            touchClone = null;
-            if (draggedItem) draggedItem.classList.remove("dragging");
-            draggedItem = null;
-            draggedIndex = null;
-            touchIsDragging = false;
-            self._isDragging = false;
-            self._flushPendingRender();
-          },
-          { passive: true },
-        );
-      });
-    }
-
-    // Drag reorder setup if enabled
-    if (this.config.allow_drag_drop !== false) {
-      let dragStartIndex = null;
-      let draggingElem = null;
-      root.querySelectorAll(".drag-handle").forEach((handle) => {
-        handle.addEventListener("mousedown", (e) => {
-          // Don't start dragging if a hex input field is focused (user might be selecting text)
-          const focusedElement = document.activeElement;
-          if (
-            focusedElement &&
-            focusedElement.classList.contains("hex-input")
-          ) {
-            return;
-          }
-
-          e.preventDefault();
-          self._isDragging = true;
-          dragStartIndex = parseInt(handle.dataset.idx);
-          draggingElem = handle.closest(".color-row");
-          if (draggingElem) draggingElem.classList.add("dragging");
-          const handleMouseMove = (e) => {
-            if (!draggingElem) return;
-            const colorList = root.getElementById("color-list");
-            const actionRow = root.querySelector(".action-row");
-
-            // Check if mouse is over the action row area
-            if (actionRow) {
-              const actionRowRect = actionRow.getBoundingClientRect();
-              if (e.clientY >= actionRowRect.top) {
-                // Mouse is over action row area, place at end of color list
-                colorList.appendChild(draggingElem);
-                return;
-              }
-            }
-
-            const afterElement = getDragAfterElement(colorList, e.clientY);
-
-            if (afterElement == null) {
-              // If no after element found, insert before action row (at the end of color rows)
-              if (actionRow) {
-                colorList.insertBefore(draggingElem, actionRow);
-              } else {
-                colorList.appendChild(draggingElem);
-              }
-            } else {
-              colorList.insertBefore(draggingElem, afterElement);
-            }
-          };
-          const handleMouseUp = () => {
-            document.removeEventListener("mousemove", handleMouseMove);
-            document.removeEventListener("mouseup", handleMouseUp);
-            self._dragCleanup = null;
-            self._isDragging = false;
-            self._flushPendingRender();
-            if (!draggingElem) return;
-            draggingElem.classList.remove("dragging");
-            const colorList = root.getElementById("color-list");
-            const newOrder = [
-              ...colorList.querySelectorAll(".color-row[data-idx]"),
-            ].map((row) => parseInt(row.dataset.idx));
-            let dragColors = newOrder.map((i) => textColors[i]);
-            if (dragColors && dragColors.length > 0) {
-              dragColors = dragColors.filter(
-                (c) =>
-                  Array.isArray(c) &&
-                  c.length === 3 &&
-                  c.every((v) => typeof v === "number"),
-              );
-              draggingElem = null;
-
-              // Set flag to skip animations during reorder
-              self._isReordering = true;
-
-              self.saveColors(dragColors);
-            } else {
-              draggingElem = null;
-            }
-            if (!self._renderScheduled) {
-              self._renderScheduled = true;
-              requestAnimationFrame(() => {
-                self._renderScheduled = false;
-                self.render();
-              });
-            }
-          };
-          // Drop any listeners left by a previous (unfinished) drag, then
-          // store references so disconnectedCallback can clean up mid-drag
-          self._removeDragDocListeners();
-          self._dragCleanup = {
-            listeners: [
-              ["mousemove", handleMouseMove],
-              ["mouseup", handleMouseUp],
-            ],
-          };
-
-          document.addEventListener("mousemove", handleMouseMove);
-          document.addEventListener("mouseup", handleMouseUp);
-        });
-
-        // --- Touch support for list drag handles (mobile) ---
-        handle.addEventListener(
-          "touchstart",
-          (e) => {
-            const focused = document.activeElement;
-            if (focused && focused.classList.contains("hex-input")) return;
-
-            const touch = e.touches[0];
-            self._isDragging = true;
-            dragStartIndex = parseInt(handle.dataset.idx);
-            draggingElem = handle.closest(".color-row");
-            if (draggingElem) draggingElem.classList.add("dragging");
-
-            let lastTouchY = touch.clientY;
-
-            const handleTouchMove = (e) => {
-              if (!draggingElem) return;
-              e.preventDefault();
-              const t = e.touches[0];
-              lastTouchY = t.clientY;
-
-              const colorList = root.getElementById("color-list");
-              const actionRow = root.querySelector(".action-row");
-
-              if (actionRow) {
-                const actionRowRect = actionRow.getBoundingClientRect();
-                if (t.clientY >= actionRowRect.top) {
-                  colorList.appendChild(draggingElem);
-                  return;
-                }
-              }
-
-              const afterElement = getDragAfterElement(colorList, t.clientY);
-              if (afterElement == null) {
-                if (actionRow) colorList.insertBefore(draggingElem, actionRow);
-                else colorList.appendChild(draggingElem);
-              } else {
-                colorList.insertBefore(draggingElem, afterElement);
-              }
-            };
-
-            const handleTouchEnd = () => {
-              document.removeEventListener("touchmove", handleTouchMove);
-              document.removeEventListener("touchend", handleTouchEnd);
-              document.removeEventListener("touchcancel", handleTouchEnd);
-              self._dragCleanup = null;
-              self._isDragging = false;
-              self._flushPendingRender();
-              if (!draggingElem) return;
-              draggingElem.classList.remove("dragging");
-
-              const colorList = root.getElementById("color-list");
-              const newOrder = [
-                ...colorList.querySelectorAll(".color-row[data-idx]"),
-              ].map((row) => parseInt(row.dataset.idx));
-              let dragColors = newOrder.map((i) => textColors[i]);
-              if (dragColors && dragColors.length > 0) {
-                dragColors = dragColors.filter(
-                  (c) =>
-                    Array.isArray(c) &&
-                    c.length === 3 &&
-                    c.every((v) => typeof v === "number"),
-                );
-                draggingElem = null;
-                self._isReordering = true;
-                self.saveColors(dragColors);
-              } else {
-                draggingElem = null;
-              }
-              if (!self._renderScheduled) {
-                self._renderScheduled = true;
-                requestAnimationFrame(() => {
-                  self._renderScheduled = false;
-                  self.render();
-                });
-              }
-            };
-
-            // Record touch listeners too, so disconnectedCallback can remove
-            // them if the card is detached mid-drag.
-            self._removeDragDocListeners();
-            self._dragCleanup = {
-              listeners: [
-                ["touchmove", handleTouchMove],
-                ["touchend", handleTouchEnd],
-                ["touchcancel", handleTouchEnd],
-              ],
-            };
-
-            document.addEventListener("touchmove", handleTouchMove, {
-              passive: false,
+    switch (arrangement) {
+      case "spread":
+        return html`<div class="cards-container">
+          ${textColors.map((color, idx) => {
+            // Pseudo-random rotation / offset per position for a spread look
+            const seed1 = (idx * 2654435761) % 2147483647;
+            const seed2 = (idx * 1103515245 + 12345) % 2147483647;
+            const rotationDeg = (seed1 % 25) - 12;
+            const verticalOffset = (seed2 % 12) - 6;
+            return card(color, idx, {
+              transform: `rotate(${rotationDeg}deg) translateY(${verticalOffset}px)`,
+              zIndex: idx,
             });
-            document.addEventListener("touchend", handleTouchEnd, {
-              passive: true,
-            });
-            document.addEventListener("touchcancel", handleTouchEnd, {
-              passive: true,
-            });
-          },
-          { passive: true },
-        );
-      });
-      function getDragAfterElement(container, y) {
-        const draggableElements = [
-          ...container.querySelectorAll(
-            ".color-row:not(.dragging):not(.action-row)",
-          ),
-        ];
-        return draggableElements.reduce(
-          (closest, child) => {
-            const box = child.getBoundingClientRect();
-            const offset = y - box.top - box.height / 2;
-            if (offset < 0 && offset > closest.offset) {
-              return { offset: offset, element: child };
-            } else {
-              return closest;
-            }
-          },
-          { offset: Number.NEGATIVE_INFINITY },
-        ).element;
-      }
-      root.querySelectorAll("input[type=color]").forEach((input) => {
-        input.addEventListener("mousedown", (e) => {
-          e.stopPropagation();
-        });
-        input.addEventListener("touchstart", (e) => {
-          e.stopPropagation();
-        });
-      });
-    }
-
-    // Fan arrangement: spread neighbour cards on hover, collapse when cursor
-    // leaves the fan area entirely.
-    //
-    // The initial fan shape is created by card-item inline transforms
-    // (rotate around card center). The wrapper has NO initial transform.
-    // Spread/collapse only add/remove a PUSH OFFSET on the wrapper
-    // (rotated around transform-origin 50% 320%), never the base rotation.
-    const currentLayout = this.config.list_layout || "list";
-    const cardArrangementForFan = this.config.card_arrangement || "hand";
-    if (currentLayout === "cards" && cardArrangementForFan === "fan") {
-      const fanContainer = root.querySelector(".cards-fan-container");
-      if (fanContainer && !fanContainer._fanHoverInit) {
-        fanContainer._fanHoverInit = true;
-        let currentHoveredWrapper = null;
-        let justCollapsed = false;
-
-        // Cumulative push: each step away from the hovered card adds spacing,
-        // with a decay factor so distant cards are still pushed but less per step.
-        // The first gap (immediately next to hovered) is the largest.
-        const firstGap = 18; // degrees for the immediate neighbour gap
-        const pushPerStep = 8; // additional degrees per subsequent step
-        const decay = 0.6; // each subsequent step pushes slightly less
-
-        const spreadFan = (hoveredWrapper) => {
-          if (hoveredWrapper === currentHoveredWrapper) return;
-          currentHoveredWrapper = hoveredWrapper;
-          const wrappers = Array.from(
-            fanContainer.querySelectorAll(".card-wrapper"),
-          );
-          const hoveredIdx = wrappers.indexOf(hoveredWrapper);
-          if (hoveredIdx === -1) return;
-          fanContainer.classList.add("fan-active");
-          wrappers.forEach((w, i) => {
-            w.style.transition = "";
-            if (i === hoveredIdx) {
-              w.classList.add("fan-hovered");
-              w.style.transform = "none";
-            } else {
-              w.classList.remove("fan-hovered");
-              const dist = Math.abs(i - hoveredIdx);
-              const sign = i > hoveredIdx ? 1 : -1;
-              // First gap is large, then cumulative smaller steps
-              let totalPush = firstGap;
-              for (let k = 1; k < dist; k++) {
-                totalPush += pushPerStep * Math.pow(decay, k - 1);
-              }
-              const push = sign * totalPush;
-              w.style.transform = `rotate(${push}deg)`;
-            }
-          });
-        };
-
-        const collapseFan = () => {
-          if (!currentHoveredWrapper) return;
-          currentHoveredWrapper = null;
-          justCollapsed = true;
-          fanContainer.classList.remove("fan-active");
-          fanContainer.querySelectorAll(".card-wrapper").forEach((w) => {
-            w.classList.remove("fan-hovered");
-            w.style.transition = "none";
-            w.style.transform = "none";
-          });
-          requestAnimationFrame(() => {
-            fanContainer.querySelectorAll(".card-wrapper").forEach((w) => {
-              w.style.transition = "";
-            });
-          });
-        };
-
-        // --- Helper: resolve card-wrapper from a pointer coordinate ---
-        const wrapperFromPoint = (clientX, clientY) => {
-          const el = fanContainer
-            .getRootNode()
-            .elementFromPoint(clientX, clientY);
-          if (!el) return null;
-          const cardItem = el.closest && el.closest(".card-item");
-          if (!cardItem) return null;
-          return cardItem.closest(".card-wrapper");
-        };
-
-        // --- Mouse events (desktop) ---
-        fanContainer.addEventListener("mousemove", (e) => {
-          if (justCollapsed) return;
-          if (fanContainer.classList.contains("dragging-active")) return;
-          const wrapper = wrapperFromPoint(e.clientX, e.clientY);
-          if (wrapper && fanContainer.contains(wrapper)) spreadFan(wrapper);
-        });
-
-        fanContainer.addEventListener("mouseenter", () => {
-          justCollapsed = false;
-        });
-
-        fanContainer.addEventListener("mouseleave", () => {
-          collapseFan();
-        });
-
-        // --- Touch events (mobile / tablet) ---
-        // touchstart on a card → spread around it
-        fanContainer.addEventListener(
-          "touchstart",
-          (e) => {
-            if (fanContainer.classList.contains("dragging-active")) return;
-            const touch = e.touches[0];
-            if (!touch) return;
-            justCollapsed = false;
-            const wrapper = wrapperFromPoint(touch.clientX, touch.clientY);
-            if (wrapper && fanContainer.contains(wrapper)) spreadFan(wrapper);
-          },
-          { passive: true },
-        );
-
-        // touchmove → update spread as finger slides across cards
-        fanContainer.addEventListener(
-          "touchmove",
-          (e) => {
-            if (fanContainer.classList.contains("dragging-active")) return;
-            const touch = e.touches[0];
-            if (!touch) return;
-            const wrapper = wrapperFromPoint(touch.clientX, touch.clientY);
-            if (wrapper && fanContainer.contains(wrapper)) {
-              spreadFan(wrapper);
-            }
-          },
-          { passive: true },
-        );
-
-        // touchend / touchcancel → collapse fan
-        fanContainer.addEventListener(
-          "touchend",
-          () => {
-            collapseFan();
-          },
-          { passive: true },
-        );
-        fanContainer.addEventListener(
-          "touchcancel",
-          () => {
-            collapseFan();
-          },
-          { passive: true },
-        );
-
-        // Expose collapseFan so drag-and-drop code can call it
-        fanContainer._collapseFan = collapseFan;
-      }
-    }
-
-    // Cards layout drag-and-drop with wrapper-based drop zones
-    if (currentLayout === "cards" && this.config.allow_drag_drop !== false) {
-      const cardArrangement = this.config.card_arrangement || "hand";
-      let draggedCard = null;
-      let draggedIndex = null;
-      let targetWrapper = null; // Track which wrapper has the gap indicator
-      let touchStartY = 0;
-      let touchStartX = 0;
-      let isDragging = false;
-      let lastUpdateTime = 0; // Throttle timer
-      let clonedCard = null; // Clone that follows the finger
-      const cardsContainer =
-        cardArrangement === "hand"
-          ? root.querySelector(".cards-poker-container")
-          : root.querySelector(".cards-container") ||
-            root.querySelector(".cards-fan-container");
-
-      // Fan mode helpers (simplified for drag).
-      // recalcFanRotations: restore normal fan arc after drop.
-      const recalcFanRotations = () => {
-        if (cardArrangement !== "fan" || !cardsContainer) return;
-        const wrappers = Array.from(
-          cardsContainer.querySelectorAll(".card-wrapper"),
-        );
-        const totalCards = wrappers.length;
-        if (totalCards <= 1) return;
+          })}
+        </div>`;
+      case "cascade":
+        // Cascade: overlapping diagonal waterfall with a gentle vertical step
+        // per card (reset every 8 cards) and a uniform slight rotation.
+        return html`<div class="cards-container cascade-mode">
+          ${textColors.map((color, idx) =>
+            card(color, idx, {
+              transform: `rotate(-3deg) translateY(${(idx % 8) * 4}px)`,
+              zIndex: idx,
+            }),
+          )}
+        </div>`;
+      case "tilt":
+        // Tilt: clean grid with all cards rotated at the same uniform angle.
+        return html`<div class="cards-container tilt-mode">
+          ${textColors.map((color, idx) =>
+            card(color, idx, { transform: "rotate(-5deg)", zIndex: idx }),
+          )}
+        </div>`;
+      case "fan": {
+        // Fan: semicircular arc from a single origin point below the cards.
+        const totalCards = textColors.filter(valid).length;
+        // Spread angle range: up to ±50° for many cards, narrower for fewer
         const maxSpread = Math.min(50, totalCards * 6);
         const centerIndex = (totalCards - 1) / 2;
-        wrappers.forEach((w, i) => {
-          const offset = i - centerIndex;
-          const rotationDeg =
-            centerIndex > 0 ? (offset / centerIndex) * maxSpread : 0;
-          const cardItem = w.querySelector(".card-item");
-          if (cardItem) {
-            cardItem.style.transform = `rotate(${rotationDeg.toFixed(1)}deg)`;
-            cardItem.style.zIndex = i;
-          }
-          w.style.transform = "none";
-          w.classList.remove("fan-hovered");
-        });
-      };
-
-      // Fan mode: collapse fan hover state when drag starts.
-      // Robust: directly cleans all fan classes/transforms without relying
-      // on collapseFan's internal guard (avoids race with mouseleave).
-      const spreadFanForDrag = () => {
-        if (cardArrangement !== "fan" || !cardsContainer) return;
-        // Reset internal hover tracking if collapseFan exists
-        try {
-          if (cardsContainer._collapseFan) cardsContainer._collapseFan();
-        } catch (_) {}
-        // Force-clean all fan hover state regardless
-        cardsContainer.classList.remove("fan-active");
-        cardsContainer.querySelectorAll(".card-wrapper").forEach((w) => {
-          w.classList.remove("fan-hovered");
-          w.style.transition = "none";
-          w.style.transform = "none";
-        });
-        // Restore transitions next frame
-        requestAnimationFrame(() => {
-          if (!cardsContainer) return;
-          cardsContainer.querySelectorAll(".card-wrapper").forEach((w) => {
-            w.style.transition = "";
-          });
-        });
-      };
-
-      // Helper function to find insertion position and reorder DOM
-      const updateCardPositions = (clientX, clientY) => {
-        if (!draggedCard) return;
-
-        const wrappers = Array.from(root.querySelectorAll(".card-wrapper"));
-        const draggedCardIndex = wrappers.indexOf(draggedCard);
-
-        // Find the wrapper closest to the cursor position
-        let closestWrapper = null;
-        let closestDistance = Infinity;
-        let insertIndex = -1;
-
-        wrappers.forEach((wrapper, index) => {
-          if (wrapper === draggedCard) return;
-
-          // Fan mode: wrappers are all position:absolute at the same spot,
-          // so use card-item rects (which differ due to rotation) for distance.
-          const el =
-            cardArrangement === "fan"
-              ? wrapper.querySelector(".card-item") || wrapper
-              : wrapper;
-          const rect = el.getBoundingClientRect();
-          const centerX = rect.left + rect.width / 2;
-          const centerY = rect.top + rect.height / 2;
-
-          const distance = Math.sqrt(
-            Math.pow(clientX - centerX, 2) + Math.pow(clientY - centerY, 2),
-          );
-
-          if (distance < closestDistance) {
-            closestDistance = distance;
-            closestWrapper = wrapper;
-            insertIndex = index;
-          }
-        });
-
-        if (closestWrapper && insertIndex !== -1) {
-          // Determine if we should insert before or after based on position
-          // Fan mode: use card-item rect for before/after determination
-          const beforeAfterEl =
-            cardArrangement === "fan"
-              ? closestWrapper.querySelector(".card-item") || closestWrapper
-              : closestWrapper;
-          const rect = beforeAfterEl.getBoundingClientRect();
-          const centerX = rect.left + rect.width / 2;
-
-          // If cursor is to the right of the card's center, insert after
-          if (clientX > centerX) {
-            insertIndex++;
-          }
-
-          // Adjust insert index if dragging from left to right
-          if (draggedCardIndex < insertIndex) {
-            insertIndex--;
-          }
-
-          // Only reorder if position changed
-          if (insertIndex !== draggedCardIndex) {
-            // For hand mode, we need to reorganize into rows
-            if (cardArrangement === "hand") {
-              // Get all wrappers in their new order
-              const allWrappers = Array.from(
-                root.querySelectorAll(".card-wrapper"),
-              );
-              const newOrder = [...allWrappers];
-
-              // Remove dragged card from its current position
-              newOrder.splice(draggedCardIndex, 1);
-
-              // Insert at new position
-              newOrder.splice(insertIndex, 0, draggedCard);
-
-              // Clear all poker-hand containers
-              const pokerContainer = root.querySelector(
-                ".cards-poker-container",
-              );
-              if (pokerContainer) {
-                pokerContainer.innerHTML = "";
-
-                // Reorganize into rows of 4
-                const cardsPerRow = 4;
-                for (let i = 0; i < newOrder.length; i += cardsPerRow) {
-                  const rowWrapper = document.createElement("div");
-                  rowWrapper.className = "poker-hand";
-
-                  // Add up to 4 cards to this row
-                  for (
-                    let j = 0;
-                    j < cardsPerRow && i + j < newOrder.length;
-                    j++
-                  ) {
-                    const card = newOrder[i + j];
-
-                    // Recalculate poker hand positioning
-                    const rowSize = Math.min(cardsPerRow, newOrder.length - i);
-                    const centerIndex = (rowSize - 1) / 2;
-                    const offset = j - centerIndex;
-                    const rotationDeg = offset * 8;
-                    const verticalOffset = Math.abs(offset) * 10;
-                    const horizontalOffset = offset * -15;
-
-                    // Update the card-item's inline styles
-                    const cardItem = card.querySelector(".card-item");
-                    if (cardItem) {
-                      cardItem.style.transform = `rotate(${rotationDeg}deg) translateY(${verticalOffset}px) translateX(${horizontalOffset}px)`;
-                      cardItem.style.zIndex = j;
-                    }
-
-                    rowWrapper.appendChild(card);
-                  }
-
-                  pokerContainer.appendChild(rowWrapper);
-                }
-              }
-            } else {
-              // Non-hand arrangements - simple reorder
-              // Physically move the dragged card wrapper in the DOM
-              if (insertIndex >= 0 && insertIndex < wrappers.length) {
-                const targetPosition = wrappers[insertIndex];
-
-                if (targetPosition && targetPosition !== draggedCard) {
-                  if (insertIndex > draggedCardIndex) {
-                    // Moving right - insert after target
-                    const nextSibling = targetPosition.nextSibling;
-                    if (nextSibling) {
-                      cardsContainer.insertBefore(draggedCard, nextSibling);
-                    } else {
-                      // Target is last element, append to end
-                      cardsContainer.appendChild(draggedCard);
-                    }
-                  } else {
-                    // Moving left - insert before target
-                    cardsContainer.insertBefore(draggedCard, targetPosition);
-                  }
-                  // Fan mode: recalculate rotations after reorder
-                  // so cards animate to their new positions in the arc
-                  recalcFanRotations();
-                }
-              }
-            }
-          }
-
-          targetWrapper = closestWrapper;
-        }
-      };
-
-      // Helper function to perform the drop
-      const performDrop = () => {
-        if (draggedCard) {
-          // Use DOM order for all modes (fan is now flattened during drag)
-          const wrappers = Array.from(root.querySelectorAll(".card-wrapper"));
-          const newOrder = wrappers.map((w) => parseInt(w.dataset.position));
-
-          // Reorder colors array based on new DOM order
-          const newColors = newOrder
-            .map((idx) => textColors[idx])
-            .filter(
-              (color) =>
-                Array.isArray(color) &&
-                color.length === 3 &&
-                color.every((v) => typeof v === "number"),
-            );
-
-          // Only save if order actually changed and we have valid colors
-          const orderChanged = newOrder.some((pos, idx) => pos !== idx);
-
-          if (orderChanged && newColors.length === textColors.length) {
-            // Set flag to skip animations during reorder
-            self._isReordering = true;
-
-            // Save the new order
-            self.saveColors(newColors);
-          }
-        }
-
-        // Clean up
-        if (draggedCard) {
-          draggedCard.classList.remove(
-            "dragging",
-            "touch-dragging-placeholder",
-            "drag-placeholder",
-          );
-        }
-        if (cardsContainer) {
-          cardsContainer.classList.remove("dragging-active");
-        }
-
-        // Clean up fan state
-        if (cardArrangement === "fan") {
-          recalcFanRotations();
-        }
-
-        // Remove cloned card
-        if (clonedCard && clonedCard.parentNode) {
-          clonedCard.parentNode.removeChild(clonedCard);
-        }
-
-        targetWrapper = null;
-        draggedCard = null;
-        draggedIndex = null;
-        clonedCard = null;
-        isDragging = false;
-      };
-
-      root.querySelectorAll(".card-wrapper").forEach((wrapper) => {
-        const card = wrapper.querySelector(".card-item");
-        card.setAttribute("draggable", "true");
-
-        // Mouse drag events
-        card.addEventListener("dragstart", (e) => {
-          // Don't start dragging if a hex input field is focused (user might be selecting text)
-          const focusedElement = document.activeElement;
-          if (
-            focusedElement &&
-            focusedElement.classList.contains("hex-input")
-          ) {
-            e.preventDefault();
-            return;
-          }
-
-          draggedCard = wrapper;
-          draggedIndex = parseInt(wrapper.dataset.position);
-          wrapper.classList.add("dragging");
-          if (cardsContainer) {
-            cardsContainer.classList.add("dragging-active");
-          }
-          e.dataTransfer.effectAllowed = "move";
-          e.dataTransfer.setData("text/html", card.innerHTML);
-
-          // Create a colored drag ghost so the user sees the color being carried
-          const dragColor =
-            card.style.getPropertyValue("--card-color") || "#888";
-          const dragImg = document.createElement("div");
-          dragImg.style.cssText = `width:50px;height:70px;background:${dragColor};border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);position:absolute;top:-9999px;left:-9999px;`;
-          document.body.appendChild(dragImg);
-          e.dataTransfer.setDragImage(dragImg, 25, 35);
-          // Clean up drag image element after browser captures it
-          setTimeout(() => {
-            if (dragImg.parentNode) dragImg.parentNode.removeChild(dragImg);
-          }, 100);
-
-          // CRITICAL: Defer fan collapse to AFTER browser captures the drag image.
-          // Collapsing synchronously changes transforms, which makes the element
-          // jump away from the cursor and the browser aborts the drag.
-          if (cardArrangement === "fan") {
-            setTimeout(() => spreadFanForDrag(), 0);
-          }
-        });
-
-        card.addEventListener("dragend", (e) => {
-          performDrop();
-        });
-
-        wrapper.addEventListener("dragover", (e) => {
-          if (e.preventDefault) {
-            e.preventDefault();
-          }
-          e.dataTransfer.dropEffect = "move";
-
-          if (wrapper !== draggedCard) {
-            // Throttle updates to max 60fps (every ~16ms)
-            const now = Date.now();
-            if (now - lastUpdateTime > 16) {
-              lastUpdateTime = now;
-              updateCardPositions(e.clientX, e.clientY);
-            }
-          }
-          return false;
-        });
-
-        // Touch drag events
-        card.addEventListener(
-          "touchstart",
-          (e) => {
-            // Don't start dragging if a hex input field is focused (user might be selecting text)
-            const focusedElement = document.activeElement;
-            if (
-              focusedElement &&
-              focusedElement.classList.contains("hex-input")
-            ) {
-              return;
-            }
-
-            const touch = e.touches[0];
-            touchStartX = touch.clientX;
-            touchStartY = touch.clientY;
-
-            draggedCard = wrapper;
-            draggedIndex = parseInt(wrapper.dataset.position);
-            isDragging = false; // Will become true after slight movement
-          },
-          { passive: false },
-        );
-
-        card.addEventListener(
-          "touchmove",
-          (e) => {
-            if (!draggedCard) return;
-
-            const touch = e.touches[0];
-            const deltaX = Math.abs(touch.clientX - touchStartX);
-            const deltaY = Math.abs(touch.clientY - touchStartY);
-
-            // Start dragging after 5px movement to avoid accidental drags
-            if (!isDragging && (deltaX > 5 || deltaY > 5)) {
-              isDragging = true;
-
-              // Prevent scrolling
-              e.preventDefault();
-
-              // Add placeholder styling to original card
-              wrapper.classList.add("touch-dragging-placeholder");
-              if (cardsContainer) {
-                cardsContainer.classList.add("dragging-active");
-              }
-
-              // Create clone that follows finger BEFORE collapsing fan
-              // (so cardRect captures the current spread position)
-              const cardRect = card.getBoundingClientRect();
-
-              // Fan mode: defer collapse so clone captures correct position
-              if (cardArrangement === "fan") {
-                setTimeout(() => spreadFanForDrag(), 0);
-              }
-              clonedCard = card.cloneNode(true);
-              clonedCard.classList.add("touch-dragging");
-              clonedCard.style.width = cardRect.width + "px";
-              clonedCard.style.height = cardRect.height + "px";
-              clonedCard.style.left = touch.clientX - cardRect.width / 2 + "px";
-              clonedCard.style.top = touch.clientY - cardRect.height / 2 + "px";
-              document.body.appendChild(clonedCard);
-            }
-
-            if (isDragging) {
-              e.preventDefault(); // Prevent scrolling
-
-              // Update clone position
-              if (clonedCard) {
-                const cardRect = card.getBoundingClientRect();
-                clonedCard.style.left =
-                  touch.clientX - cardRect.width / 2 + "px";
-                clonedCard.style.top =
-                  touch.clientY - cardRect.height / 2 + "px";
-              }
-
-              updateCardPositions(touch.clientX, touch.clientY);
-            }
-          },
-          { passive: false },
-        );
-
-        card.addEventListener(
-          "touchend",
-          (e) => {
-            if (!draggedCard) return;
-            if (isDragging) {
-              performDrop();
-            } else {
-              // Was a tap, not a drag - clean up
-              draggedCard = null;
-              draggedIndex = null;
-            }
-          },
-          { passive: false },
-        );
-
-        card.addEventListener(
-          "touchcancel",
-          (e) => {
-            if (!draggedCard) return;
-            performDrop();
-          },
-          { passive: false },
-        );
-      });
-
-      // Add drop listener to container to catch drops in gaps (mouse only)
-      if (cardsContainer) {
-        cardsContainer.addEventListener("dragover", (e) => {
-          if (e.preventDefault) {
-            e.preventDefault();
-          }
-          e.dataTransfer.dropEffect = "move";
-
-          // Throttle updates to max 60fps (every ~16ms)
-          const now = Date.now();
-          if (now - lastUpdateTime > 16) {
-            lastUpdateTime = now;
-            updateCardPositions(e.clientX, e.clientY);
-          }
-
-          return false;
-        });
-
-        cardsContainer.addEventListener("drop", (e) => {
-          if (e.stopPropagation) {
-            e.stopPropagation();
-          }
-          performDrop();
-          return false;
-        });
+        return html`<div
+          class="cards-fan-container"
+          @mousemove=${this._onFanMouseMove}
+          @mouseenter=${this._onFanMouseEnter}
+          @mouseleave=${this._onFanMouseLeave}
+          @touchstart=${this._fanTouchListener}
+          @touchmove=${this._fanTouchListener}
+          @touchend=${this._fanTouchListener}
+          @touchcancel=${this._fanTouchListener}
+        >
+          ${textColors.map((color, idx) => {
+            const rotation = (
+              totalCards > 1 ? ((idx - centerIndex) / centerIndex) * maxSpread : 0
+            ).toFixed(1);
+            return card(color, idx, {
+              transform: `rotate(${rotation}deg)`,
+              zIndex: idx,
+              baseRotation: rotation,
+            });
+          })}
+        </div>`;
       }
-    }
-
-    // Grid layout drag-and-drop
-    if (currentLayout === "grid" && this.config.allow_drag_drop !== false) {
-      let draggedItem = null;
-      let draggedIndex = null;
-      let lastGridUpdateTime = 0; // Throttle timer
-      const gridContainer = root.querySelector(".layout-grid");
-
-      const updateGridPositions = (clientX, clientY) => {
-        if (!draggedItem) return;
-
-        const items = Array.from(root.querySelectorAll(".color-grid-item"));
-        const draggedItemIndex = items.indexOf(draggedItem);
-
-        // Find the item closest to cursor with expanded hitbox
-        let closestItem = null;
-        let closestDistance = Infinity;
-        let insertIndex = -1;
-
-        items.forEach((item, index) => {
-          if (item === draggedItem) return;
-
-          const rect = item.getBoundingClientRect();
-
-          // Expand hitbox by 20px on all sides
-          const expandedRect = {
-            left: rect.left - 20,
-            right: rect.right + 20,
-            top: rect.top - 20,
-            bottom: rect.bottom + 20,
-          };
-
-          const centerX = rect.left + rect.width / 2;
-          const centerY = rect.top + rect.height / 2;
-
-          // Check if cursor is within expanded hitbox
-          const isInExpandedHitbox =
-            clientX >= expandedRect.left &&
-            clientX <= expandedRect.right &&
-            clientY >= expandedRect.top &&
-            clientY <= expandedRect.bottom;
-
-          if (isInExpandedHitbox) {
-            // Use distance for priority when in multiple hitboxes
-            const distance = Math.sqrt(
-              Math.pow(clientX - centerX, 2) + Math.pow(clientY - centerY, 2),
+      default: {
+        // Hand: poker-hand rows. Cards per row follow the card size:
+        // at 70% (default) 120px cards fit 4 per row in ~600px.
+        const cardSizePercent = this.config.card_size || 70;
+        const baseCardWidth = 171.43 * (cardSizePercent / 100);
+        const cardsPerRow = Math.max(
+          3,
+          Math.min(10, Math.floor(600 / (baseCardWidth + 30))),
+        );
+        const rows = [];
+        for (let i = 0; i < textColors.length; i += cardsPerRow) {
+          rows.push(i);
+        }
+        return html`<div class="cards-poker-container">
+          ${rows.map((rowStartIdx) => {
+            const rowColors = textColors.slice(
+              rowStartIdx,
+              rowStartIdx + cardsPerRow,
             );
-
-            if (distance < closestDistance) {
-              closestDistance = distance;
-              closestItem = item;
-              insertIndex = index;
-            }
-          }
-        });
-
-        if (closestItem && insertIndex !== -1) {
-          // Determine if we should insert before or after
-          const rect = closestItem.getBoundingClientRect();
-          const centerX = rect.left + rect.width / 2;
-
-          if (clientX > centerX) {
-            insertIndex++;
-          }
-
-          if (draggedItemIndex < insertIndex) {
-            insertIndex--;
-          }
-
-          // Reorder in DOM
-          if (insertIndex !== draggedItemIndex) {
-            const targetItem = items[insertIndex];
-
-            if (targetItem && targetItem !== draggedItem) {
-              if (insertIndex > draggedItemIndex) {
-                const nextSibling = targetItem.nextSibling;
-                if (nextSibling) {
-                  gridContainer.insertBefore(draggedItem, nextSibling);
-                } else {
-                  // Target is last element, append to end
-                  gridContainer.appendChild(draggedItem);
-                }
-              } else {
-                gridContainer.insertBefore(draggedItem, targetItem);
-              }
-            }
-          }
-
-          // Remove drag-over class from all items
-          items.forEach((item) => item.classList.remove("grid-drag-over"));
-          // Add to closest item
-          if (closestItem) {
-            closestItem.classList.add("grid-drag-over");
-          }
-        }
-      };
-
-      const performGridDrop = () => {
-        // Re-enable rendering
-        self._isDragging = false;
-        self._flushPendingRender();
-
-        if (draggedItem) {
-          // Get new order from DOM
-          const items = Array.from(root.querySelectorAll(".color-grid-item"));
-          const newOrder = items.map((item) => parseInt(item.dataset.idx));
-
-          // Reorder colors
-          const newColors = newOrder
-            .map((idx) => textColors[idx])
-            .filter(
-              (color) =>
-                Array.isArray(color) &&
-                color.length === 3 &&
-                color.every((v) => typeof v === "number"),
-            );
-
-          const orderChanged = newOrder.some((pos, idx) => pos !== idx);
-
-          if (orderChanged && newColors.length === textColors.length) {
-            self._isReordering = true;
-            self.saveColors(newColors);
-          }
-        }
-
-        // Clean up
-        if (draggedItem) {
-          draggedItem.classList.remove("dragging");
-        }
-        if (gridContainer) {
-          gridContainer.classList.remove("dragging-active");
-        }
-        root.querySelectorAll(".color-grid-item").forEach((item) => {
-          item.classList.remove("grid-drag-over");
-        });
-
-        draggedItem = null;
-        draggedIndex = null;
-      };
-
-      root.querySelectorAll(".color-grid-item").forEach((item) => {
-        item.setAttribute("draggable", "true");
-
-        // Prevent dragging when clicking on color picker or remove button
-        const colorPicker = item.querySelector(".grid-color-picker");
-        const removeBtn = item.querySelector(".grid-remove-btn");
-        const colorInfo = item.querySelector(".color-grid-info");
-
-        if (colorPicker) {
-          colorPicker.addEventListener("mousedown", (e) => {
-            e.stopPropagation();
-          });
-        }
-
-        // Allow dragging from the color info text
-        if (colorInfo) {
-          colorInfo.addEventListener("mousedown", (e) => {
-            // Ensure dragging is enabled when starting from color info
-            item.setAttribute("draggable", "true");
-          });
-        }
-
-        if (removeBtn) {
-          removeBtn.addEventListener("mousedown", (e) => {
-            e.stopPropagation();
-            item.setAttribute("draggable", "false");
-          });
-          removeBtn.addEventListener("mouseup", (e) => {
-            setTimeout(() => item.setAttribute("draggable", "true"), 100);
-          });
-        }
-
-        item.addEventListener("dragstart", (e) => {
-          // Don't start dragging if a hex input field is focused (user might be selecting text)
-          const focusedElement = document.activeElement;
-          if (
-            focusedElement &&
-            focusedElement.classList.contains("hex-input")
-          ) {
-            e.preventDefault();
-            return;
-          }
-
-          // Prevent re-renders during drag
-          self._isDragging = true;
-
-          draggedItem = item;
-          draggedIndex = parseInt(item.dataset.idx);
-          item.classList.add("dragging");
-          if (gridContainer) {
-            gridContainer.classList.add("dragging-active");
-          }
-          e.dataTransfer.effectAllowed = "move";
-          e.dataTransfer.setData("text/html", item.innerHTML);
-
-          // Force layout calculation before drag operations begin
-          // This prevents position offset issues on the first drag
-          void item.offsetHeight;
-        });
-
-        item.addEventListener("dragend", (e) => {
-          performGridDrop();
-        });
-
-        item.addEventListener("dragover", (e) => {
-          if (e.preventDefault) {
-            e.preventDefault();
-          }
-          e.dataTransfer.dropEffect = "move";
-
-          if (item !== draggedItem) {
-            // Throttle updates to max 60fps (every ~16ms)
-            const now = Date.now();
-            if (now - lastGridUpdateTime > 16) {
-              lastGridUpdateTime = now;
-              updateGridPositions(e.clientX, e.clientY);
-            }
-          }
-          return false;
-        });
-
-        // --- Touch drag support for grid items (mobile) ---
-        let gridTouchStartX = 0;
-        let gridTouchStartY = 0;
-        let gridTouchDragging = false;
-        let gridTouchClone = null;
-
-        item.addEventListener(
-          "touchstart",
-          (e) => {
-            if (e.target.closest(".grid-remove-btn, .grid-color-picker"))
-              return;
-            const focused = document.activeElement;
-            if (focused && focused.classList.contains("hex-input")) return;
-
-            const touch = e.touches[0];
-            gridTouchStartX = touch.clientX;
-            gridTouchStartY = touch.clientY;
-            gridTouchDragging = false;
-
-            draggedItem = item;
-            draggedIndex = parseInt(item.dataset.idx);
-          },
-          { passive: true },
-        );
-
-        item.addEventListener(
-          "touchmove",
-          (e) => {
-            if (!draggedItem || draggedItem !== item) return;
-            const touch = e.touches[0];
-            const dx = Math.abs(touch.clientX - gridTouchStartX);
-            const dy = Math.abs(touch.clientY - gridTouchStartY);
-
-            if (!gridTouchDragging && (dx > 8 || dy > 8)) {
-              gridTouchDragging = true;
-              self._isDragging = true;
-              item.classList.add("dragging");
-              if (gridContainer) gridContainer.classList.add("dragging-active");
-
-              const rect = item.getBoundingClientRect();
-              gridTouchClone = item.cloneNode(true);
-              gridTouchClone.style.cssText = `
-                position: fixed; z-index: 99999; pointer-events: none;
-                width: ${rect.width}px; height: ${rect.height}px;
-                opacity: 0.85; box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-                transform: scale(1.03); transition: none;
-                left: ${touch.clientX - rect.width / 2}px;
-                top: ${touch.clientY - rect.height / 2}px;
-              `;
-              document.body.appendChild(gridTouchClone);
-            }
-
-            if (gridTouchDragging) {
-              e.preventDefault();
-              if (gridTouchClone) {
-                const rect = item.getBoundingClientRect();
-                gridTouchClone.style.left =
-                  touch.clientX - rect.width / 2 + "px";
-                gridTouchClone.style.top =
-                  touch.clientY - rect.height / 2 + "px";
-              }
-
-              const now = Date.now();
-              if (now - lastGridUpdateTime > 16) {
-                lastGridUpdateTime = now;
-                updateGridPositions(touch.clientX, touch.clientY);
-              }
-            }
-          },
-          { passive: false },
-        );
-
-        item.addEventListener(
-          "touchend",
-          () => {
-            if (gridTouchClone && gridTouchClone.parentNode) {
-              gridTouchClone.parentNode.removeChild(gridTouchClone);
-              gridTouchClone = null;
-            }
-            if (gridTouchDragging) {
-              performGridDrop();
-            } else {
-              if (draggedItem) draggedItem.classList.remove("dragging");
-              draggedItem = null;
-              draggedIndex = null;
-              self._isDragging = false;
-              self._flushPendingRender();
-            }
-            gridTouchDragging = false;
-          },
-          { passive: true },
-        );
-
-        item.addEventListener(
-          "touchcancel",
-          () => {
-            if (gridTouchClone && gridTouchClone.parentNode)
-              gridTouchClone.parentNode.removeChild(gridTouchClone);
-            gridTouchClone = null;
-            if (draggedItem) draggedItem.classList.remove("dragging");
-            if (gridContainer)
-              gridContainer.classList.remove("dragging-active");
-            draggedItem = null;
-            draggedIndex = null;
-            gridTouchDragging = false;
-            self._isDragging = false;
-            self._flushPendingRender();
-          },
-          { passive: true },
-        );
-      });
-
-      if (gridContainer) {
-        gridContainer.addEventListener("dragover", (e) => {
-          if (e.preventDefault) {
-            e.preventDefault();
-          }
-          e.dataTransfer.dropEffect = "move";
-
-          // Throttle updates to max 60fps (every ~16ms)
-          const now = Date.now();
-          if (now - lastGridUpdateTime > 16) {
-            lastGridUpdateTime = now;
-            updateGridPositions(e.clientX, e.clientY);
-          }
-          return false;
-        });
-
-        gridContainer.addEventListener("drop", (e) => {
-          if (e.stopPropagation) {
-            e.stopPropagation();
-          }
-          performGridDrop();
-          return false;
-        });
+            const centerIndex = (rowColors.length - 1) / 2;
+            return html`<div class="poker-hand">
+              ${rowColors.map((color, idx) => {
+                const offset = idx - centerIndex;
+                return card(color, rowStartIdx + idx, {
+                  wrapperClass: "card-wrapper poker-card",
+                  transform: `rotate(${offset * 8}deg) translateY(${
+                    Math.abs(offset) * 10
+                  }px) translateX(${offset * -15}px)`,
+                  zIndex: idx,
+                });
+              })}
+            </div>`;
+          })}
+        </div>`;
       }
     }
   }
 
-  // Angle-related methods (from angle gradient card)
-  _bindAngleEvents() {
-    const root = this.shadowRoot;
-    if (!root) return;
+  _renderCard(color, idx, options, layout) {
+    const hex = this.rgbToHex(color);
+    const cssColor = rgbToCss(color);
+    return html`<div
+      class=${layout.wrapperClass || "card-wrapper"}
+      data-position=${idx}
+      data-base-rotation=${layout.baseRotation ?? nothing}
+    >
+      <div
+        class="card-item"
+        data-idx=${idx}
+        draggable=${options.allowDragDrop ? "true" : nothing}
+        style="--card-color: ${cssColor}; transform: ${layout.transform}; z-index: ${layout.zIndex};"
+      >
+        <div class="card-face">
+          <div
+            class="card-color-bar${options.enableColorPicker
+              ? " clickable"
+              : ""}"
+            style="background: ${cssColor};"
+          >
+            ${options.enableColorPicker
+              ? this._colorInput(idx, hex, "card-color-picker")
+              : ""}
+          </div>
+          <div class="card-info-area">
+            ${options.showHexInput
+              ? this._hexInput(idx, hex, "hex-input card-hex")
+              : ""}
+            <div class="card-name">
+              ${this.formatColorInfo(
+                color,
+                this.config.color_info_display || "hex",
+              )}
+            </div>
+          </div>
+        </div>
+        ${options.allowDelete
+          ? this._removeButton(
+              idx,
+              "card-remove",
+              options,
+              options.buttonPositionStyles,
+            )
+          : ""}
+      </div>
+    </div>`;
+  }
 
-    const angleInput = root.getElementById("angleinput");
-    const angleSlider = root.getElementById("angleslider");
-    const rotary = root.getElementById("angle-preview");
+  // ----- Action buttons -------------------------------------------------
 
-    // Angle input control
-    if (angleInput) {
-      angleInput.addEventListener("input", () => {
-        let angle = parseFloat(angleInput.value);
-        if (isNaN(angle)) angle = 0;
-        angle = Math.max(0, Math.min(359, angle));
-        if (angleSlider) angleSlider.value = angle;
-        this._drawAnglePreviewMulti(angle, this._getCurrentTextColors());
-        this._debouncedApplyAngle(angle);
-      });
+  _onAddColor() {
+    const currentColors = this._getCurrentColors();
+    currentColors.push([255, 255, 255]);
+    this.saveColors(currentColors);
+  }
+
+  _onShuffle() {
+    // Fisher-Yates shuffle
+    const shuffled = this._getCurrentColors();
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
-
-    // Angle slider control
-    if (angleSlider) {
-      angleSlider.addEventListener("input", () => {
-        this._usingSlider = true; // Flag to prevent re-renders during slider use
-        let angle = parseFloat(angleSlider.value);
-        if (isNaN(angle)) angle = 0;
-        if (angleInput) angleInput.value = angle;
-        this._drawAnglePreviewMulti(angle, this._getCurrentTextColors());
-        this._debouncedApplyAngle(angle);
-      });
-
-      // Clear the slider flag when slider interaction ends
-      angleSlider.addEventListener("mouseup", () => {
-        setTimeout(() => {
-          this._usingSlider = false;
-          this._flushPendingRender();
-        }, 100);
-      });
-      angleSlider.addEventListener("touchend", () => {
-        setTimeout(() => {
-          this._usingSlider = false;
-          this._flushPendingRender();
-        }, 100);
-      });
-      angleSlider.addEventListener("touchcancel", () => {
-        setTimeout(() => {
-          this._usingSlider = false;
-          this._flushPendingRender();
-        }, 100);
-      });
-
-      // Safety timeout to ensure flag gets cleared
-      angleSlider.addEventListener("mouseleave", () => {
-        setTimeout(() => {
-          this._usingSlider = false;
-          this._flushPendingRender();
-        }, 200);
-      });
-    }
-
-    // Rotary slider (SVG): click or drag to set angle
-    if (rotary) {
-      rotary.addEventListener("mousedown", (e) => {
-        e.preventDefault(); // Prevent text selection
-        this._draggingRotary = true;
-        this._handleRotaryDrag(e);
-      });
-      rotary.addEventListener("mousemove", (e) => {
-        if (this._draggingRotary) {
-          e.preventDefault(); // Prevent text selection
-          this._handleRotaryDrag(e);
-        }
-      });
-      rotary.addEventListener("mouseup", (e) => {
-        e.preventDefault(); // Prevent text selection
-        this._draggingRotary = false;
-        this._isDragging = false;
-        this._pendingAngle = undefined;
-        this._flushPendingRender();
-      });
-      rotary.addEventListener("mouseleave", (e) => {
-        e.preventDefault(); // Prevent text selection
-        this._draggingRotary = false;
-        this._isDragging = false;
-        this._pendingAngle = undefined;
-        this._flushPendingRender();
-      });
-      rotary.addEventListener("touchstart", (e) => {
-        e.preventDefault(); // Prevent text selection
-        this._draggingRotary = true;
-        this._handleRotaryDrag(e.touches[0]);
-      });
-      rotary.addEventListener("touchmove", (e) => {
-        if (this._draggingRotary) {
-          e.preventDefault(); // Prevent text selection
-          this._handleRotaryDrag(e.touches[0]);
-        }
-      });
-      rotary.addEventListener("touchend", (e) => {
-        e.preventDefault(); // Prevent text selection
-        this._draggingRotary = false;
-        this._isDragging = false;
-        this._pendingAngle = undefined;
-        this._flushPendingRender();
-      });
-      rotary.addEventListener("touchcancel", (e) => {
-        e.preventDefault();
-        this._draggingRotary = false;
-        this._isDragging = false;
-        this._pendingAngle = undefined;
-        this._flushPendingRender();
-      });
-      rotary.addEventListener("click", (e) => {
-        e.preventDefault(); // Prevent text selection
-        this._handleRotaryDrag(e);
-      });
-    }
-  } // Always get the current textColors from the entity state
-  _getCurrentTextColors() {
-    const entityId = this._getPrimaryEntity();
-    const hass = this._hass;
-    if (hass && entityId && hass.states[entityId]) {
-      const stateObj = hass.states[entityId];
-      return stateObj.attributes.text_colors || [[255, 255, 255]];
-    }
-    return [[255, 255, 255]];
+    this.saveColors(shuffled);
   }
 
-  // Draw rotary preview with multi-stop gradient
-  _drawAnglePreviewMulti(angle, stops) {
-    const style = this.config.angle_rotary_style || "default";
-
-    // For ALL styles (including default), just update the display
-    this._updateRotaryDisplay(angle);
-    return;
-  }
-
-  _debouncedApplyAngle(angle) {
-    this._pendingAngle = angle;
-    this._angleCommands.schedule(this._hass, this.config, angle);
-  }
-
-  _applyAngle(angle) {
-    this._angleCommands.schedule(this._hass, this.config, angle, true);
-  }
-
-  _rgbToHex(rgb) {
-    return _sharedRgbToHex(rgb);
-  }
-
-  _createColorWheelSegments(colors, radius) {
-    return _sharedCreateColorWheelSegments(colors, radius);
-  }
-
-  _createWheelGradientStops(colors) {
-    return _sharedCreateWheelGradientStops(colors);
-  }
-
-  _createShapeGradientStops(colors) {
-    return _sharedCreateShapeGradientStops(colors);
-  }
-  _generateShapeMask(shape, selectorRadius) {
-    return _sharedGenerateShapeMask(shape, selectorRadius);
-  }
-
-  _handleRotaryDrag(e) {
-    // Prevent text selection during dragging
-    e.preventDefault();
-
-    const rotaryElement = this.shadowRoot.getElementById("angle-preview");
-    if (!rotaryElement) return;
-
-    const style = this.config.angle_rotary_style || "default";
-    let angle = 0;
-
-    const rect = rotaryElement.getBoundingClientRect();
-
-    switch (style) {
-      case "wheel":
-        const wheelCx = rect.left + rect.width / 2;
-        const wheelCy = rect.top + rect.height / 2;
-        const wheelX = e.clientX - wheelCx;
-        const wheelY = -(e.clientY - wheelCy); // Invert Y to match SVG coordinate system
-        // Fix: 0° should be at center-right (3 o'clock), remove the +90 offset
-        angle = (Math.atan2(wheelY, wheelX) * 180) / Math.PI;
-        if (angle < 0) angle += 360;
-        break;
-
-      case "rect":
-        const rectCx = rect.left + rect.width / 2;
-        const rectCy = rect.top + rect.height / 2;
-        const rectX = e.clientX - rectCx;
-        const rectY = -(e.clientY - rectCy); // Invert Y to match SVG coordinate system
-        // Same logic as wheel - calculate angle from center
-        angle = (Math.atan2(rectY, rectX) * 180) / Math.PI;
-        if (angle < 0) angle += 360;
-        break;
-
-      default:
-        const defaultCx = rect.left + rect.width / 2;
-        const defaultCy = rect.top + rect.height / 2;
-        const defaultX = e.clientX - defaultCx;
-        const defaultY = defaultCy - e.clientY;
-        angle = (Math.atan2(defaultY, defaultX) * 180) / Math.PI;
-        if (angle < 0) angle += 360;
-        break;
-    }
-
-    // Validate the calculated angle
-    if (isNaN(angle) || !isFinite(angle)) {
-      console.warn("Invalid angle calculated:", angle);
+  async _onSavePalette() {
+    if (!this._hass) return;
+    const currentColors = this._getCurrentColors();
+    const primaryEntity = this._getPrimaryEntity();
+    if (!primaryEntity) {
+      console.error(
+        "[ColorList Card] No primary entity available for save_palette",
+      );
       return;
     }
-
-    // Store the pending angle for immediate visual feedback
-    this._isDragging = true;
-    this._pendingAngle = angle;
-
-    // Update both input and slider if they exist
-    const angleInput = this.shadowRoot.getElementById("angleinput");
-    const angleSlider = this.shadowRoot.getElementById("angleslider");
-    if (angleInput) angleInput.value = Math.round(angle);
-    if (angleSlider) angleSlider.value = Math.round(angle);
-
-    // For wheel, rect, and default styles, update visual elements directly for better performance
-    if (style === "wheel") {
-      this._updateWheelVisual(angle);
-    } else if (style === "rect") {
-      this._updateRectVisual(angle);
-    } else if (style === "default") {
-      // Use EXACT same logic as wheel for default mode
-      this._updateDefaultVisual(angle);
-    } else {
-      this._updateRotaryDisplay(angle);
+    try {
+      await this._hass.callService("yeelight_cube", "save_palette", {
+        palette: currentColors,
+        entity_id: primaryEntity,
+      });
+    } catch (err) {
+      console.error("Error saving palette:", err);
+      return;
     }
-
-    this._debouncedApplyAngle(angle);
-  }
-
-  _updateRotaryDisplay(angle) {
-    const rotaryContainer = this.shadowRoot.querySelector(
-      ".wheel-container, .rect-container, .default-container",
-    );
-    if (!rotaryContainer) return;
-
-    const style = this.config.angle_rotary_style || "default";
-
-    switch (style) {
-      case "wheel":
-        this._updateWheelVisual(angle);
-        break;
-
-      case "rect":
-        this._updateRectVisual(angle);
-        break;
-
-      case "default":
-        // Use EXACT same logic as wheel
-        const defaultSelectorRadians = (angle * Math.PI) / 180;
-        const defaultSizePercent = this.config.default_size || 80;
-        const defaultSize = Math.min(100, defaultSizePercent);
-        const defaultSelectorRadius = (defaultSize * 40) / 100;
-
-        const defaultSelectorX =
-          50 + defaultSelectorRadius * Math.cos(defaultSelectorRadians);
-        const defaultSelectorY =
-          50 - defaultSelectorRadius * Math.sin(defaultSelectorRadians);
-        const defaultGradientAngle = -angle;
-
-        // Update selector dot position
-        const defaultSelectorDot =
-          this.shadowRoot.querySelector(".wheel-selector");
-        if (defaultSelectorDot) {
-          defaultSelectorDot.setAttribute("cx", defaultSelectorX);
-          defaultSelectorDot.setAttribute("cy", defaultSelectorY);
-        }
-
-        // Update gradient rotation
-        const defaultGradientGroup = this.shadowRoot.querySelector(
-          "g[transform*='rotate']",
-        );
-        if (defaultGradientGroup) {
-          defaultGradientGroup.setAttribute(
-            "transform",
-            `rotate(${defaultGradientAngle} 50 50)`,
-          );
-        }
-
-        // Update angle display
-        const defaultAngleDisplay =
-          this.shadowRoot.querySelector(".default-angle");
-        if (defaultAngleDisplay) {
-          defaultAngleDisplay.textContent = `${Math.round(angle)}°`;
-        }
-        break;
-    }
-  }
-
-  // Helper to update card position attributes after removal
-  _updateCardPositions() {
-    const root = this.shadowRoot;
-    if (!root) return;
-
-    const wrappers = root.querySelectorAll(".card-wrapper");
-    wrappers.forEach((wrapper, index) => {
-      wrapper.dataset.position = index;
-      const cardItem = wrapper.querySelector(".card-item");
-      if (cardItem) {
-        cardItem.dataset.idx = index;
+    // Force sensor update to get fresh data immediately
+    if (this.config?.palette_sensor) {
+      try {
+        await this._hass.callService("homeassistant", "update_entity", {
+          entity_id: this.config.palette_sensor,
+        });
+      } catch (err) {
+        console.error("Error refreshing palette sensor:", err);
       }
-    });
+    }
+    window.dispatchEvent(
+      new CustomEvent("palette-saved", {
+        detail: { palette: currentColors },
+      }),
+    );
+  }
+
+  // ----- Hex inputs -----------------------------------------------------
+
+  _onHexFocus(event) {
+    this._editingText = true;
+    this._editing = {
+      idx: parseInt(event.target.dataset.idx),
+      value: event.target.value,
+    };
+  }
+
+  _onHexBlur(event) {
+    this._editingText = false;
+    this._editing = null;
+    // An unfinished value reverts to the actual colour. Lit only rewrites
+    // .value when the bound value changes, so reset the live value here.
+    const color = this._getCurrentColors()[parseInt(event.target.dataset.idx)];
+    if (Array.isArray(color)) event.target.value = this.rgbToHex(color);
+    this._flushPendingRender();
+    this.requestUpdate();
+  }
+
+  _onHexKeydown(event) {
+    if (event.key === "Enter" || event.key === "Escape") {
+      event.target.blur(); // Clears _editingText via the blur handler
+    }
+  }
+
+  _onHexInput(event) {
+    const idx = parseInt(event.target.dataset.idx);
+    const hex = event.target.value;
+    this._editing = { idx, value: hex };
+    const rgb = /^#[0-9a-f]{6}$/i.test(hex) ? this.hexToRgb(hex) : null;
+    if (!rgb) {
+      this.requestUpdate();
+      return;
+    }
+    const currentColors = this._getCurrentColors();
+    currentColors[idx] = rgb;
+    this.saveColors(currentColors);
+  }
+
+  // ----- Colour list clicks (remove buttons, colour picker) ---------------
+
+  _onListClick(event) {
+    const button = event.target.closest("button[data-action=remove]");
+    if (!button) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    const idx = parseInt(button.dataset.idx);
+    const currentColors = this._getCurrentColors();
+    if (isNaN(idx) || idx < 0 || idx >= currentColors.length) {
+      console.error(
+        `[REMOVE COLOR] Invalid remove index: ${idx}, valid range: 0-${
+          currentColors.length - 1
+        }`,
+      );
+      this.requestUpdate();
+      return;
+    }
+    if (currentColors.length > 1) {
+      this.saveColors(currentColors.filter((_, i) => i !== idx));
+    }
+  }
+
+  _onPickerTrigger(event) {
+    if (this.config.enable_color_picker === false) return;
+    const target = event.target;
+    // Buttons, inputs and drag handles keep their own behaviour
+    if (target.closest("button, input, .drag-handle")) return;
+    const trigger = target.closest(PICKER_TRIGGERS);
+    const idx = parseInt(trigger?.closest("[data-idx]")?.dataset.idx);
+    const color = this._renderedColors[idx];
+    if (!Array.isArray(color)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this._openColorPickerAt(
+      idx,
+      this.rgbToHex(color),
+      event.pageX,
+      event.pageY,
+    );
+  }
+
+  _getCardBorderRadius() {
+    const v = this.config.rounded_cards;
+    if (v === undefined || v === true || v === "round") return 16;
+    if (v === false || v === "square") return 0;
+    if (v === "rounded") return 4;
+    return typeof v === "number" ? v : parseInt(v, 10) || 16;
   }
 
   _getCurrentColors() {
@@ -4434,16 +2534,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
         const currentColors = this._getCurrentColors();
         if (idx >= currentColors.length) return;
         currentColors[idx] = rgb;
-        const root = this.shadowRoot;
-        const originalInput = root?.querySelector(
-          `input[type="color"][data-idx='${idx}']`,
-        );
-        if (originalInput) originalInput.value = hex;
-        const hexInput = root?.querySelector(
-          `input.hex-input[data-idx='${idx}']`,
-        );
-        if (hexInput) hexInput.value = hex;
-        this._updateColorVisuals(idx, rgb, hex);
+        // Our own edits render immediately; hass renders stay deferred.
         this.saveColors(currentColors);
       },
       onClose: () => {
@@ -4462,76 +2553,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     }
   }
 
-  // Optimistically update all visual elements when a color changes
-  _updateColorVisuals(idx, rgb, hex) {
-    const root = this.shadowRoot;
-    if (!root) return;
-
-    const displayMode = this.config.color_info_display || "rgb";
-
-    // Update LIST mode elements
-    const colorNameSpan = root.querySelector(
-      `.color-row[data-idx='${idx}'] span`,
-    );
-    if (colorNameSpan) {
-      colorNameSpan.textContent = this.formatColorInfo(rgb, displayMode);
-    }
-
-    const colorRow = root.querySelector(`.color-row[data-idx='${idx}']`);
-    if (colorRow) {
-      colorRow.style.backgroundColor = `rgb(${rgb.join(", ")})`;
-
-      // Update text color for contrast if in full row mode
-      if (colorRow.classList.contains("full-row-color")) {
-        const contrastColor = this.getContrastTextColor(rgb);
-        colorRow.style.color = contrastColor;
-
-        // Update all text elements in the row for proper contrast
-        const textElements = colorRow.querySelectorAll("span, .drag-handle");
-        textElements.forEach((element) => {
-          element.style.color = contrastColor;
-        });
-      }
-    }
-
-    // Update TILES mode elements
-    const tilePreview = root.querySelector(
-      `.tile-color-preview[data-idx='${idx}']`,
-    );
-    if (tilePreview) {
-      tilePreview.style.background = hex;
-    }
-
-    const tileName = root.querySelector(
-      `.tile-item[data-idx='${idx}'] .tile-color-name`,
-    );
-    if (tileName) {
-      tileName.textContent = this.formatColorInfo(rgb, displayMode);
-    }
-
-    // Update CARDS mode elements
-    const cardBar = root.querySelector(
-      `.card-wrapper[data-position='${idx}'] .card-color-bar`,
-    );
-    if (cardBar) {
-      cardBar.style.backgroundColor = hex;
-    }
-
-    const cardName = root.querySelector(
-      `.card-wrapper[data-position='${idx}'] .card-name`,
-    );
-    if (cardName) {
-      cardName.textContent = this.formatColorInfo(rgb, displayMode);
-    }
-
-    const cardHex = root.querySelector(
-      `.card-wrapper[data-position='${idx}'] .card-hex-display`,
-    );
-    if (cardHex) {
-      cardHex.textContent = hex;
-    }
-  }
-
   saveColors(textColors) {
     // For multi-entity support: use first valid entity as the source of truth
     const entityId = this._getPrimaryEntity();
@@ -4539,13 +2560,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     if (!entityId) {
       return;
     }
-
-    // Store old length to detect if array size changed
-    const oldColors =
-      PENDING_COLORS_STORE[entityId]?.colors ||
-      this._hass?.states[entityId]?.attributes.text_colors ||
-      [];
-    const lengthChanged = oldColors.length !== textColors.length;
 
     // Store pending colors in global store (shared across all card instances).
     // Timestamped so `set hass` can expire the entry if the backend echo
@@ -4555,21 +2569,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       ts: Date.now(),
     };
     PENDING_COLORS_STORE[entityId] = entry;
-
-    // Render SYNCHRONOUSLY if length changed to prevent stale DOM issues
-    // (e.g., rapid clicks on remove button need immediate DOM updates)
-    if (lengthChanged) {
-      this.render();
-    } else {
-      // For color changes only, async render is fine
-      if (!this._renderScheduled) {
-        this._renderScheduled = true;
-        requestAnimationFrame(() => {
-          this._renderScheduled = false;
-          this.render();
-        });
-      }
-    }
+    this.requestUpdate();
 
     // If hass not ready yet, queue the service call for later
     if (!this._hass) {
@@ -4599,7 +2599,7 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     if (context !== commands.context || success) return success;
     if (PENDING_COLORS_STORE[entityId] !== entry) return false;
     delete PENDING_COLORS_STORE[entityId];
-    this.render();
+    this.requestUpdate?.();
     this.dispatchEvent(
       new CustomEvent("hass-notification", {
         bubbles: true,
@@ -4611,13 +2611,650 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     );
     return false;
   }
-  _getCardBorderRadius() {
-    const v = this.config.rounded_cards;
-    if (v === undefined || v === true || v === "round") return 16;
-    if (v === false || v === "square") return 0;
-    if (v === "rounded") return 4;
-    return typeof v === "number" ? v : parseInt(v, 10) || 16;
+
+  // ----- Drag and drop reordering -------------------------------------
+  //
+  // All drag events are delegated from the Lit-rendered #color-list
+  // container. While a drag is active the nodes are moved by hand for live
+  // feedback and renders are held back (shouldUpdate); on drop the new order
+  // is saved and _listKey is bumped so Lit discards the hand-moved DOM and
+  // renders the list afresh.
+
+  _dragKind() {
+    if (this.config?.allow_drag_drop === false) return null;
+    const layout = this.config.list_layout || "compact";
+    if (ITEM_DRAG_SELECTORS[layout]) return "items";
+    if (layout === "grid" || layout === "cards") return layout;
+    return null;
   }
+
+  _dragItemSelector(kind) {
+    if (kind === "grid") return ".color-grid-item";
+    if (kind === "cards") return ".card-wrapper";
+    return ITEM_DRAG_SELECTORS[this.config.list_layout || "compact"];
+  }
+
+  _dragItemFrom(target, kind) {
+    if (kind === "cards") {
+      return target.closest?.(".card-item")?.closest(".card-wrapper") || null;
+    }
+    return target.closest?.(this._dragItemSelector(kind)) || null;
+  }
+
+  _dragContainer(kind) {
+    const root = this.renderRoot;
+    if (kind === "grid") return root.querySelector(".layout-grid");
+    if (kind !== "cards") return null;
+    return (this.config.card_arrangement || "hand") === "hand"
+      ? root.querySelector(".cards-poker-container")
+      : root.querySelector(".cards-container") ||
+          root.querySelector(".cards-fan-container");
+  }
+
+  _hexInputFocused() {
+    return !!this.renderRoot?.activeElement?.classList?.contains("hex-input");
+  }
+
+  _beginDrag(kind, item, touch) {
+    this._drag = {
+      kind,
+      item,
+      touch,
+      active: !touch,
+      container: this._dragContainer(kind),
+      colors: this._renderedColors,
+      lastUpdate: 0,
+      startX: 0,
+      startY: 0,
+    };
+    if (!touch) this._isDragging = true;
+    return this._drag;
+  }
+
+  _onDragStart(event) {
+    const kind = this._dragKind();
+    const item = kind && this._dragItemFrom(event.target, kind);
+    if (!item) return;
+    // Don't start dragging while a hex input is focused (text selection)
+    if (this._hexInputFocused()) {
+      event.preventDefault();
+      return;
+    }
+    const drag = this._beginDrag(kind, item, false);
+    item.classList.add("dragging");
+    drag.container?.classList.add("dragging-active");
+    event.dataTransfer.effectAllowed = "move";
+
+    if (kind === "cards") {
+      const card = item.querySelector(".card-item");
+      event.dataTransfer.setData("text/html", card.innerHTML);
+      // Create a colored drag ghost so the user sees the color being carried
+      const dragColor = card.style.getPropertyValue("--card-color") || "#888";
+      const dragImg = document.createElement("div");
+      dragImg.style.cssText = `width:50px;height:70px;background:${dragColor};border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.3);position:absolute;top:-9999px;left:-9999px;`;
+      document.body.appendChild(dragImg);
+      event.dataTransfer.setDragImage(dragImg, 25, 35);
+      // Clean up drag image element after browser captures it
+      setTimeout(() => dragImg.remove(), 100);
+      // CRITICAL: Defer fan collapse to AFTER browser captures the drag image.
+      // Collapsing synchronously changes transforms, which makes the element
+      // jump away from the cursor and the browser aborts the drag.
+      if (this.config.card_arrangement === "fan") {
+        setTimeout(() => this._collapseFanForDrag(drag.container), 0);
+      }
+      return;
+    }
+    if (kind === "grid") {
+      event.dataTransfer.setData("text/html", item.innerHTML);
+    }
+    // Force layout calculation before drag operations begin
+    // This prevents position offset issues on the first drag
+    void item.offsetHeight;
+  }
+
+  _onDragOver(event) {
+    const kind = this._dragKind();
+    if (!kind) return;
+    const drag = this._drag;
+    if (kind === "items") {
+      const item = this._dragItemFrom(event.target, kind);
+      if (!item) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = "move";
+      if (drag?.item && item !== drag.item) this._moveItemTo(drag, item);
+      return;
+    }
+    // Grid and cards accept drops anywhere in their container
+    const container = drag?.container || this._dragContainer(kind);
+    if (!container?.contains(event.target)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (!drag || drag.touch) return;
+    // Throttle updates to max 60fps (every ~16ms)
+    const now = Date.now();
+    if (now - drag.lastUpdate <= 16) return;
+    drag.lastUpdate = now;
+    if (kind === "grid") this._updateGridPositions(event.clientX, event.clientY);
+    else this._updateCardPositions(event.clientX, event.clientY);
+  }
+
+  _onDrop(event) {
+    const drag = this._drag;
+    if (!drag || drag.touch || drag.kind === "items") return;
+    if (!drag.container?.contains(event.target)) return;
+    event.stopPropagation();
+    this._finishDrag(true);
+  }
+
+  _onDragEnd() {
+    if (this._drag && !this._drag.touch) this._finishDrag(true);
+  }
+
+  _onTouchStart(event) {
+    const kind = this._dragKind();
+    if (!kind || this._hexInputFocused()) return;
+    const target = event.target;
+    if (
+      (kind === "items" &&
+        target.closest(
+          ".chip-remove, .compact-remove, .tile-remove, .row-remove",
+        )) ||
+      (kind === "grid" &&
+        target.closest(".grid-remove-btn, .grid-color-picker"))
+    ) {
+      return;
+    }
+    const item = this._dragItemFrom(target, kind);
+    if (!item) return;
+    const touch = event.touches[0];
+    const drag = this._beginDrag(kind, item, true);
+    drag.startX = touch.clientX;
+    drag.startY = touch.clientY;
+  }
+
+  _onTouchMove(event) {
+    const drag = this._drag;
+    if (!drag?.touch) return;
+    const touch = event.touches[0];
+    const { kind, item } = drag;
+    const threshold = kind === "cards" ? 5 : 8;
+    if (
+      !drag.active &&
+      (Math.abs(touch.clientX - drag.startX) > threshold ||
+        Math.abs(touch.clientY - drag.startY) > threshold)
+    ) {
+      drag.active = true;
+      this._isDragging = true;
+      this._startTouchGhost(drag, touch);
+    }
+    if (!drag.active) return;
+    event.preventDefault(); // Prevent scrolling
+
+    // Move the ghost that follows the finger
+    const ghost = drag.ghost;
+    if (ghost) {
+      const rect = (drag.ghostSource || item).getBoundingClientRect();
+      ghost.style.left = touch.clientX - rect.width / 2 + "px";
+      ghost.style.top =
+        touch.clientY - (kind === "items" ? 20 : rect.height / 2) + "px";
+    }
+
+    if (kind === "items") {
+      // Find the item under the finger (inside our shadow root) and reorder
+      const below = this.renderRoot.elementFromPoint(
+        touch.clientX,
+        touch.clientY,
+      );
+      const target = below && this._dragItemFrom(below, kind);
+      if (target && target !== item && target.parentNode === item.parentNode) {
+        this._moveItemTo(drag, target);
+      }
+    } else if (kind === "grid") {
+      const now = Date.now();
+      if (now - drag.lastUpdate > 16) {
+        drag.lastUpdate = now;
+        this._updateGridPositions(touch.clientX, touch.clientY);
+      }
+    } else {
+      this._updateCardPositions(touch.clientX, touch.clientY);
+    }
+  }
+
+  _onTouchEnd(event, cancelled) {
+    const drag = this._drag;
+    if (!drag?.touch) return;
+    if (!drag.active) {
+      // Was a tap, not a drag
+      this._drag = null;
+      return;
+    }
+    // A cancelled card drag still commits the order the user dragged to.
+    this._finishDrag(!cancelled || drag.kind === "cards");
+  }
+
+  _startTouchGhost(drag, touch) {
+    const { kind, item } = drag;
+    let ghost;
+    if (kind === "cards") {
+      // Add placeholder styling to original card
+      item.classList.add("touch-dragging-placeholder");
+      drag.container?.classList.add("dragging-active");
+      const card = item.querySelector(".card-item");
+      // Measure BEFORE collapsing the fan so the ghost starts where the
+      // card currently is
+      const rect = card.getBoundingClientRect();
+      if (this.config.card_arrangement === "fan") {
+        setTimeout(() => this._collapseFanForDrag(drag.container), 0);
+      }
+      ghost = card.cloneNode(true);
+      ghost.classList.add("touch-dragging");
+      ghost.style.width = rect.width + "px";
+      ghost.style.height = rect.height + "px";
+      ghost.style.left = touch.clientX - rect.width / 2 + "px";
+      ghost.style.top = touch.clientY - rect.height / 2 + "px";
+      drag.ghostSource = card;
+    } else {
+      item.classList.add("dragging");
+      drag.container?.classList.add("dragging-active");
+      const rect = item.getBoundingClientRect();
+      ghost = item.cloneNode(true);
+      ghost.style.cssText = `
+        position: fixed; z-index: 99999; pointer-events: none;
+        width: ${rect.width}px;${kind === "grid" ? ` height: ${rect.height}px;` : ""}
+        opacity: 0.85; box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+        transform: scale(1.03); transition: none;
+        left: ${touch.clientX - rect.width / 2}px;
+        top: ${touch.clientY - (kind === "grid" ? rect.height / 2 : 20)}px;
+      `;
+    }
+    drag.ghost = ghost;
+    document.body.appendChild(ghost);
+    // Anything placed outside the card is torn down with the drag session,
+    // including when the card is disconnected mid-drag.
+    this._dragCleanup = () => ghost.remove();
+  }
+
+  _endDragSession() {
+    const cleanup = this._dragCleanup;
+    this._dragCleanup = null;
+    cleanup?.();
+  }
+
+  // End the active drag. With `save`, the order now shown in the DOM is
+  // saved; either way the hand-moved DOM is discarded and re-rendered.
+  _finishDrag(save) {
+    const drag = this._drag;
+    this._drag = null;
+    this._endDragSession();
+    this._isDragging = false;
+    if (!drag) {
+      this._flushPendingRender();
+      return;
+    }
+    let newColors = null;
+    if (save && drag.active) {
+      const order = [
+        ...this.renderRoot.querySelectorAll(this._dragItemSelector(drag.kind)),
+      ].map((el) =>
+        parseInt(drag.kind === "cards" ? el.dataset.position : el.dataset.idx),
+      );
+      const reordered = order.map((idx) => drag.colors[idx]).filter(isRgb);
+      const orderChanged = order.some((pos, idx) => pos !== idx);
+      if (orderChanged && reordered.length === drag.colors.length) {
+        newColors = reordered;
+      }
+    }
+    this._listKey++;
+    this._fanHover = { wrapper: null, justCollapsed: false };
+    this._pendingHassRender = false;
+    if (newColors) this.saveColors(newColors);
+    else this.requestUpdate();
+  }
+
+  // Items layouts: place the dragged item before/after the hovered item.
+  _moveItemTo(drag, target) {
+    const dragged = drag.item;
+    const items = [
+      ...this.renderRoot.querySelectorAll(this._dragItemSelector(drag.kind)),
+    ];
+    const draggedIdx = items.indexOf(dragged);
+    const targetIdx = items.indexOf(target);
+    if (draggedIdx === -1 || targetIdx === -1 || draggedIdx === targetIdx) {
+      return;
+    }
+    if (draggedIdx < targetIdx) {
+      // Moving forward - should be after target
+      if (dragged.previousElementSibling !== target) {
+        const next = target.nextElementSibling;
+        if (next) target.parentNode.insertBefore(dragged, next);
+        else target.parentNode.appendChild(dragged);
+      }
+    } else if (dragged.nextElementSibling !== target) {
+      // Moving backward - should be before target
+      target.parentNode.insertBefore(dragged, target);
+    }
+  }
+
+  _onListMouseDown(event) {
+    if (this._dragKind() !== "grid") return;
+    const item = event.target.closest?.(".color-grid-item");
+    if (!item) return;
+    // Prevent dragging when pressing the remove button
+    if (event.target.closest(".grid-remove-btn")) {
+      event.stopPropagation();
+      item.setAttribute("draggable", "false");
+    } else if (event.target.closest(".color-grid-info")) {
+      // Allow dragging from the color info text
+      item.setAttribute("draggable", "true");
+    }
+  }
+
+  _onListMouseUp(event) {
+    if (this._dragKind() !== "grid") return;
+    if (!event.target.closest?.(".grid-remove-btn")) return;
+    const item = event.target.closest(".color-grid-item");
+    setTimeout(() => item?.setAttribute("draggable", "true"), 100);
+  }
+
+  _updateGridPositions(clientX, clientY) {
+    const drag = this._drag;
+    if (!drag?.item) return;
+    const draggedItem = drag.item;
+    const gridContainer = drag.container;
+
+    const items = Array.from(
+      this.renderRoot.querySelectorAll(".color-grid-item"),
+    );
+    const draggedItemIndex = items.indexOf(draggedItem);
+
+    // Find the item closest to cursor with expanded hitbox
+    let closestItem = null;
+    let closestDistance = Infinity;
+    let insertIndex = -1;
+
+    items.forEach((item, index) => {
+      if (item === draggedItem) return;
+      const rect = item.getBoundingClientRect();
+      // Expand hitbox by 20px on all sides
+      const isInExpandedHitbox =
+        clientX >= rect.left - 20 &&
+        clientX <= rect.right + 20 &&
+        clientY >= rect.top - 20 &&
+        clientY <= rect.bottom + 20;
+      if (isInExpandedHitbox) {
+        // Use distance for priority when in multiple hitboxes
+        const distance = Math.hypot(
+          clientX - (rect.left + rect.width / 2),
+          clientY - (rect.top + rect.height / 2),
+        );
+        if (distance < closestDistance) {
+          closestDistance = distance;
+          closestItem = item;
+          insertIndex = index;
+        }
+      }
+    });
+
+    if (!closestItem || insertIndex === -1) return;
+    // Determine if we should insert before or after
+    const rect = closestItem.getBoundingClientRect();
+    if (clientX > rect.left + rect.width / 2) insertIndex++;
+    if (draggedItemIndex < insertIndex) insertIndex--;
+
+    // Reorder in DOM
+    if (insertIndex !== draggedItemIndex && gridContainer) {
+      const targetItem = items[insertIndex];
+      if (targetItem && targetItem !== draggedItem) {
+        if (insertIndex > draggedItemIndex) {
+          const nextSibling = targetItem.nextSibling;
+          if (nextSibling) gridContainer.insertBefore(draggedItem, nextSibling);
+          else gridContainer.appendChild(draggedItem);
+        } else {
+          gridContainer.insertBefore(draggedItem, targetItem);
+        }
+      }
+    }
+
+    items.forEach((item) => item.classList.remove("grid-drag-over"));
+    closestItem.classList.add("grid-drag-over");
+  }
+
+  // Cards: find the insertion position closest to the pointer and reorder
+  // the card wrappers in the DOM.
+  _updateCardPositions(clientX, clientY) {
+    const drag = this._drag;
+    if (!drag?.item) return;
+    const root = this.renderRoot;
+    const draggedCard = drag.item;
+    const cardsContainer = drag.container;
+    const cardArrangement = this.config.card_arrangement || "hand";
+
+    const wrappers = Array.from(root.querySelectorAll(".card-wrapper"));
+    const draggedCardIndex = wrappers.indexOf(draggedCard);
+
+    // Fan mode: wrappers are all position:absolute at the same spot,
+    // so use card-item rects (which differ due to rotation) for distance.
+    const measure = (wrapper) =>
+      cardArrangement === "fan"
+        ? wrapper.querySelector(".card-item") || wrapper
+        : wrapper;
+
+    // Find the wrapper closest to the cursor position
+    let closestWrapper = null;
+    let closestDistance = Infinity;
+    let insertIndex = -1;
+    wrappers.forEach((wrapper, index) => {
+      if (wrapper === draggedCard) return;
+      const rect = measure(wrapper).getBoundingClientRect();
+      const distance = Math.hypot(
+        clientX - (rect.left + rect.width / 2),
+        clientY - (rect.top + rect.height / 2),
+      );
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestWrapper = wrapper;
+        insertIndex = index;
+      }
+    });
+    if (!closestWrapper || insertIndex === -1) return;
+
+    // If cursor is to the right of the card's center, insert after
+    const rect = measure(closestWrapper).getBoundingClientRect();
+    if (clientX > rect.left + rect.width / 2) insertIndex++;
+    // Adjust insert index if dragging from left to right
+    if (draggedCardIndex < insertIndex) insertIndex--;
+    // Only reorder if position changed
+    if (insertIndex === draggedCardIndex) return;
+
+    if (cardArrangement === "hand") {
+      // Hand mode: rebuild the poker-hand rows in the new order
+      const newOrder = [...wrappers];
+      newOrder.splice(draggedCardIndex, 1);
+      newOrder.splice(insertIndex, 0, draggedCard);
+      const pokerContainer = root.querySelector(".cards-poker-container");
+      if (!pokerContainer) return;
+      pokerContainer.replaceChildren();
+      const cardsPerRow = 4;
+      for (let i = 0; i < newOrder.length; i += cardsPerRow) {
+        const rowWrapper = document.createElement("div");
+        rowWrapper.className = "poker-hand";
+        const rowSize = Math.min(cardsPerRow, newOrder.length - i);
+        for (let j = 0; j < rowSize; j++) {
+          const card = newOrder[i + j];
+          // Recalculate poker hand positioning
+          const offset = j - (rowSize - 1) / 2;
+          const cardItem = card.querySelector(".card-item");
+          if (cardItem) {
+            cardItem.style.transform = `rotate(${offset * 8}deg) translateY(${
+              Math.abs(offset) * 10
+            }px) translateX(${offset * -15}px)`;
+            cardItem.style.zIndex = j;
+          }
+          rowWrapper.appendChild(card);
+        }
+        pokerContainer.appendChild(rowWrapper);
+      }
+      return;
+    }
+
+    // Non-hand arrangements - physically move the dragged card wrapper
+    if (!cardsContainer || insertIndex < 0 || insertIndex >= wrappers.length) {
+      return;
+    }
+    const targetPosition = wrappers[insertIndex];
+    if (!targetPosition || targetPosition === draggedCard) return;
+    if (insertIndex > draggedCardIndex) {
+      // Moving right - insert after target
+      const nextSibling = targetPosition.nextSibling;
+      if (nextSibling) cardsContainer.insertBefore(draggedCard, nextSibling);
+      else cardsContainer.appendChild(draggedCard);
+    } else {
+      // Moving left - insert before target
+      cardsContainer.insertBefore(draggedCard, targetPosition);
+    }
+    // Fan mode: recalculate rotations so cards animate to their new arc slots
+    this._recalcFanRotations(cardsContainer);
+  }
+
+  // Fan mode: restore the normal fan arc for the current DOM order.
+  _recalcFanRotations(container) {
+    if (this.config.card_arrangement !== "fan" || !container) return;
+    const wrappers = Array.from(container.querySelectorAll(".card-wrapper"));
+    const totalCards = wrappers.length;
+    if (totalCards <= 1) return;
+    const maxSpread = Math.min(50, totalCards * 6);
+    const centerIndex = (totalCards - 1) / 2;
+    wrappers.forEach((wrapper, i) => {
+      const rotationDeg =
+        centerIndex > 0 ? ((i - centerIndex) / centerIndex) * maxSpread : 0;
+      const cardItem = wrapper.querySelector(".card-item");
+      if (cardItem) {
+        cardItem.style.transform = `rotate(${rotationDeg.toFixed(1)}deg)`;
+        cardItem.style.zIndex = i;
+      }
+      wrapper.style.transform = "none";
+      wrapper.classList.remove("fan-hovered");
+    });
+  }
+
+  // Fan mode: drop the hover spread when a drag starts. Cleans all fan
+  // classes/transforms directly (avoids a race with mouseleave).
+  _collapseFanForDrag(container) {
+    if (!container) return;
+    this._collapseFan(container);
+    container.classList.remove("fan-active");
+    container.querySelectorAll(".card-wrapper").forEach((wrapper) => {
+      wrapper.classList.remove("fan-hovered");
+      wrapper.style.transition = "none";
+      wrapper.style.transform = "none";
+    });
+    // Restore transitions next frame
+    requestAnimationFrame(() => {
+      container.querySelectorAll(".card-wrapper").forEach((wrapper) => {
+        wrapper.style.transition = "";
+      });
+    });
+  }
+
+  // ----- Fan hover ----------------------------------------------------
+  //
+  // Fan arrangement: spread neighbour cards on hover, collapse when the
+  // pointer leaves the fan area entirely. The fan shape itself comes from the
+  // card-item transforms; spreading only adds a push offset on the wrapper
+  // (rotated around transform-origin 50% 320%).
+
+  _spreadFan(container, hoveredWrapper) {
+    if (hoveredWrapper === this._fanHover.wrapper) return;
+    this._fanHover.wrapper = hoveredWrapper;
+    const wrappers = Array.from(container.querySelectorAll(".card-wrapper"));
+    const hoveredIdx = wrappers.indexOf(hoveredWrapper);
+    if (hoveredIdx === -1) return;
+    // Cumulative push: the gap next to the hovered card is the largest, each
+    // further step adds a decaying amount.
+    const firstGap = 18; // degrees for the immediate neighbour gap
+    const pushPerStep = 8; // additional degrees per subsequent step
+    const decay = 0.6; // each subsequent step pushes slightly less
+    container.classList.add("fan-active");
+    wrappers.forEach((wrapper, i) => {
+      wrapper.style.transition = "";
+      if (i === hoveredIdx) {
+        wrapper.classList.add("fan-hovered");
+        wrapper.style.transform = "none";
+        return;
+      }
+      wrapper.classList.remove("fan-hovered");
+      const dist = Math.abs(i - hoveredIdx);
+      let totalPush = firstGap;
+      for (let k = 1; k < dist; k++) {
+        totalPush += pushPerStep * Math.pow(decay, k - 1);
+      }
+      wrapper.style.transform = `rotate(${(i > hoveredIdx ? 1 : -1) * totalPush}deg)`;
+    });
+  }
+
+  _collapseFan(container) {
+    if (!this._fanHover.wrapper) return;
+    this._fanHover.wrapper = null;
+    this._fanHover.justCollapsed = true;
+    container.classList.remove("fan-active");
+    container.querySelectorAll(".card-wrapper").forEach((wrapper) => {
+      wrapper.classList.remove("fan-hovered");
+      wrapper.style.transition = "none";
+      wrapper.style.transform = "none";
+    });
+    requestAnimationFrame(() => {
+      container.querySelectorAll(".card-wrapper").forEach((wrapper) => {
+        wrapper.style.transition = "";
+      });
+    });
+  }
+
+  _fanWrapperFromPoint(container, clientX, clientY) {
+    const el = container.getRootNode().elementFromPoint(clientX, clientY);
+    const wrapper = el?.closest?.(".card-item")?.closest(".card-wrapper");
+    return wrapper && container.contains(wrapper) ? wrapper : null;
+  }
+
+  _onFanMouseMove(event) {
+    const container = event.currentTarget;
+    if (this._fanHover.justCollapsed) return;
+    if (container.classList.contains("dragging-active")) return;
+    const wrapper = this._fanWrapperFromPoint(
+      container,
+      event.clientX,
+      event.clientY,
+    );
+    if (wrapper) this._spreadFan(container, wrapper);
+  }
+
+  _onFanMouseEnter() {
+    this._fanHover.justCollapsed = false;
+  }
+
+  _onFanMouseLeave(event) {
+    this._collapseFan(event.currentTarget);
+  }
+
+  _onFanTouch(event) {
+    const container = event.currentTarget;
+    if (event.type === "touchend" || event.type === "touchcancel") {
+      this._collapseFan(container);
+      return;
+    }
+    if (container.classList.contains("dragging-active")) return;
+    const touch = event.touches[0];
+    if (!touch) return;
+    if (event.type === "touchstart") this._fanHover.justCollapsed = false;
+    const wrapper = this._fanWrapperFromPoint(
+      container,
+      touch.clientX,
+      touch.clientY,
+    );
+    if (wrapper) this._spreadFan(container, wrapper);
+  }
+
+  // ----- Colour helpers -----------------------------------------------
+
   rgbToHex(rgb) {
     return (
       "#" +
@@ -4637,36 +3274,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
       parseInt(hex.slice(3, 5), 16),
       parseInt(hex.slice(5, 7), 16),
     ];
-  }
-
-  rgbToHsl(rgb) {
-    const [r, g, b] = rgb.map((c) => c / 255);
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    const diff = max - min;
-    const sum = max + min;
-
-    let h = 0;
-    let s = 0;
-    const l = sum / 2;
-
-    if (diff !== 0) {
-      s = l > 0.5 ? diff / (2 - sum) : diff / sum;
-
-      switch (max) {
-        case r:
-          h = ((g - b) / diff + (g < b ? 6 : 0)) / 6;
-          break;
-        case g:
-          h = ((b - r) / diff + 2) / 6;
-          break;
-        case b:
-          h = ((r - g) / diff + 4) / 6;
-          break;
-      }
-    }
-
-    return [Math.round(h * 360), Math.round(s * 100), Math.round(l * 100)];
   }
 
   getClosestCssColorName(rgb) {
@@ -4858,1241 +3465,6 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
     return `remove-btn btn-style-${style}`;
   }
 
-  _generateColorList(textColors, options) {
-    const layoutMode = this.config.list_layout || "compact";
-
-    switch (layoutMode) {
-      case "compact":
-        return this._generateCompactLayout(textColors, options);
-      case "chips":
-        return this._generateChipsLayout(textColors, options);
-      case "tiles":
-        return this._generateTilesLayout(textColors, options);
-      case "rows":
-        return this._generateRowsLayout(textColors, options);
-      case "grid":
-        return this._generateGridLayout(textColors, options);
-      case "cards": {
-        const arrangement = this.config.card_arrangement || "hand";
-        switch (arrangement) {
-          case "spread":
-            return this._generateSpreadLayout(textColors, options);
-          case "cascade":
-            return this._generateCascadeLayout(textColors, options);
-          case "tilt":
-            return this._generateTiltLayout(textColors, options);
-          case "fan":
-            return this._generateFanLayout(textColors, options);
-          default:
-            return this._generateCardsLayout(textColors, options);
-        }
-      }
-      default:
-        return this._generateCompactLayout(textColors, options);
-    }
-  }
-
-  _generateListLayout(textColors, options) {
-    const {
-      allowDelete,
-      fullRowColorMode,
-      enableColorPicker,
-      showHexInput,
-      allowDragDrop,
-    } = options;
-
-    return textColors
-      .map((color, idx) =>
-        Array.isArray(color) &&
-        color.length === 3 &&
-        color.every((v) => typeof v === "number")
-          ? `<div class="color-row${
-              fullRowColorMode ? " full-row-color" : ""
-            }" data-idx="${idx}" ${
-              fullRowColorMode
-                ? `style="background-color: ${this.rgbToHex(color)};" ${
-                    enableColorPicker ? `data-color-row="true"` : ""
-                  }`
-                : ""
-            }>
-                <div class="color-main">
-                  ${
-                    enableColorPicker && !fullRowColorMode
-                      ? `<input type="color" value="${this.rgbToHex(
-                          color,
-                        )}" data-idx="${idx}" />`
-                      : ""
-                  }
-                  ${
-                    enableColorPicker && fullRowColorMode
-                      ? `<input type="color" value="${this.rgbToHex(
-                          color,
-                        )}" data-idx="${idx}" style="display: none;" />`
-                      : ""
-                  }
-                  ${
-                    showHexInput
-                      ? `<input type="text" class="hex-input ${
-                          fullRowColorMode
-                            ? this.getContrastTextColor(color) === "#ffffff"
-                              ? "dark-bg"
-                              : "light-bg"
-                            : ""
-                        }" value="${this.rgbToHex(
-                          color,
-                        )}" data-idx="${idx}" maxlength="7" ${
-                          fullRowColorMode
-                            ? `style="background: rgba(255, 255, 255, 0.3); color: ${this.getContrastTextColor(
-                                color,
-                              )}; border-color: ${this.getContrastTextColor(
-                                color,
-                              )}40;"`
-                            : ""
-                        } />`
-                      : ""
-                  }
-                  <span style="margin-left:8px; ${
-                    fullRowColorMode
-                      ? `color: ${this.getContrastTextColor(color)};`
-                      : ""
-                  }">${this.formatColorInfo(
-                    color,
-                    this.config.color_info_display || "hex",
-                  )}</span>
-                </div>
-                <div class="color-actions">
-                  ${
-                    allowDelete
-                      ? `<button data-action="remove" data-idx="${idx}" title="Remove" class="${this._getButtonClasses(
-                          "remove",
-                        )}">${(() => {
-                          const contentMode =
-                            this.config.buttons_style === "icon"
-                              ? "icon"
-                              : this.config.buttons_content_mode || "icon_text";
-                          return renderButtonContent(
-                            "mdi:delete",
-                            "Remove",
-                            contentMode,
-                          );
-                        })()}</button>`
-                      : ""
-                  }
-                  ${
-                    allowDragDrop
-                      ? `<span class="drag-handle" data-idx="${idx}" ${
-                          fullRowColorMode
-                            ? `style="background: rgba(255, 255, 255, 0.3); color: ${this.getContrastTextColor(
-                                color,
-                              )}; border-radius: 4px; padding: 2px 4px;"`
-                            : ""
-                        }></span>`
-                      : ""
-                  }
-                </div>
-              </div>`
-          : `<div class="color-row" data-idx="${idx}" style="color:red;">Invalid color</div>`,
-      )
-      .join("");
-  }
-
-  // COMPACT MODE - Minimal inline design with hover actions
-  _generateCompactLayout(textColors, options) {
-    const {
-      enableColorPicker,
-      showHexInput,
-      allowDragDrop,
-      allowDelete,
-      removeButtonStyle = "default",
-      buttonShape = "round",
-      buttonInside = false,
-      buttonLeft = false,
-    } = options;
-
-    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
-    const posClass = buttonInside ? "btn-pos-inside" : "btn-pos-outside";
-    const sideClass = buttonLeft ? "btn-side-left" : "";
-
-    return textColors
-      .map((color, idx) =>
-        Array.isArray(color) && color.length === 3
-          ? `<div class="compact-item" data-idx="${idx}" ${
-              allowDragDrop !== false ? 'draggable="true"' : ""
-            }>
-              <div class="compact-swatch" style="background: ${this.rgbToHex(
-                color,
-              )};" title="Click to change color">
-                ${
-                  enableColorPicker
-                    ? `<input type="color" value="${this.rgbToHex(
-                        color,
-                      )}" data-idx="${idx}" class="compact-color-input" />`
-                    : ""
-                }
-              </div>
-              <div class="compact-info">
-                ${
-                  showHexInput
-                    ? `<input type="text" class="compact-hex-input hex-input" value="${this.rgbToHex(
-                        color,
-                      )}" data-idx="${idx}" maxlength="7" />`
-                    : ""
-                }
-                <span class="compact-color-name">${this.formatColorInfo(
-                  color,
-                  this.config.color_info_display || "hex",
-                )}</span>
-              </div>
-              ${
-                allowDelete !== false
-                  ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} compact-remove ${posClass} ${sideClass}" title="Remove"></button>`
-                  : ""
-              }
-            </div>`
-          : "",
-      )
-      .join("");
-  }
-
-  // CHIPS MODE - Colorful tag/pill style
-  _generateChipsLayout(textColors, options) {
-    const {
-      enableColorPicker,
-      showHexInput,
-      allowDragDrop,
-      allowDelete,
-      removeButtonStyle = "default",
-      buttonShape = "round",
-      buttonInside = false,
-      buttonLeft = false,
-    } = options;
-
-    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
-    const posClass = buttonInside ? "btn-pos-inside" : "btn-pos-outside";
-    const sideClass = buttonLeft ? "btn-side-left" : "";
-
-    return `<div class="chips-container">
-      ${textColors
-        .map((color, idx) =>
-          Array.isArray(color) && color.length === 3
-            ? `<div class="chip-item" data-idx="${idx}" ${
-                allowDragDrop !== false ? 'draggable="true"' : ""
-              } style="background: ${this.rgbToHex(
-                color,
-              )}; color: ${this.getContrastTextColor(color)};">
-                ${
-                  enableColorPicker
-                    ? `<div class="chip-color-swatch" title="Click to change color">
-                        <input type="color" value="${this.rgbToHex(
-                          color,
-                        )}" data-idx="${idx}" class="chip-color-input" />
-                      </div>`
-                    : ""
-                }
-                ${
-                  showHexInput
-                    ? `<input type="text" class="chip-hex-input hex-input" value="${this.rgbToHex(
-                        color,
-                      )}" data-idx="${idx}" maxlength="7" style="color: ${this.getContrastTextColor(
-                        color,
-                      )}; background: rgba(${
-                        this.getContrastTextColor(color) === "#ffffff"
-                          ? "255,255,255"
-                          : "0,0,0"
-                      }, 0.2);" />`
-                    : ""
-                }
-                <span class="chip-content" title="Drag to reorder">
-                  ${this.formatColorInfo(
-                    color,
-                    this.config.color_info_display || "hex",
-                  )}
-                </span>
-                ${
-                  allowDelete !== false
-                    ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} chip-remove ${posClass} ${sideClass}" title="Remove"></button>`
-                    : ""
-                }
-              </div>`
-            : "",
-        )
-        .join("")}
-    </div>`;
-  }
-
-  // TILES MODE - Card-like items in vertical list
-  _generateTilesLayout(textColors, options) {
-    const {
-      enableColorPicker,
-      showHexInput,
-      allowDragDrop,
-      allowDelete,
-      removeButtonStyle = "default",
-      buttonShape = "round",
-      buttonInside = false,
-      buttonLeft = false,
-    } = options;
-
-    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
-    const posClass = buttonInside ? "btn-pos-inside" : "btn-pos-outside";
-    const sideClass = buttonLeft ? "btn-side-left" : "";
-
-    return textColors
-      .map((color, idx) =>
-        Array.isArray(color) && color.length === 3
-          ? `<div class="tile-item" data-idx="${idx}" ${
-              allowDragDrop !== false ? 'draggable="true"' : ""
-            }>
-              ${
-                allowDragDrop !== false
-                  ? '<div class="tile-drag-area" title="Drag to reorder">⋮⋮</div>'
-                  : ""
-              }
-              <div class="tile-color-preview" style="background: ${this.rgbToHex(
-                color,
-              )};">
-                ${
-                  enableColorPicker
-                    ? `<input type="color" value="${this.rgbToHex(
-                        color,
-                      )}" data-idx="${idx}" class="tile-color-input" />`
-                    : ""
-                }
-              </div>
-              <div class="tile-info">
-                ${
-                  showHexInput
-                    ? `<input type="text" class="tile-hex-input hex-input" value="${this.rgbToHex(
-                        color,
-                      )}" data-idx="${idx}" maxlength="7" />`
-                    : ""
-                }
-                <span class="tile-color-name">${this.formatColorInfo(
-                  color,
-                  this.config.color_info_display || "name",
-                )}</span>
-              </div>
-              ${
-                allowDelete !== false
-                  ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} tile-remove ${posClass} ${sideClass}" title="Remove"></button>`
-                  : ""
-              }
-            </div>`
-          : "",
-      )
-      .join("");
-  }
-
-  // ROWS MODE - Full-width colored rows with gradient effects (IMPROVED VERSION)
-  _generateRowsLayout(textColors, options) {
-    const {
-      enableColorPicker,
-      showHexInput,
-      allowDragDrop,
-      allowDelete,
-      removeButtonStyle = "default",
-      buttonShape = "round",
-      buttonInside = false,
-      buttonLeft = false,
-    } = options;
-
-    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
-    const posClass = buttonInside ? "btn-pos-inside" : "btn-pos-outside";
-    const sideClass = buttonLeft ? "btn-side-left" : "";
-
-    return textColors
-      .map((color, idx) =>
-        Array.isArray(color) && color.length === 3
-          ? `<div class="row-item" data-idx="${idx}" ${
-              allowDragDrop !== false ? 'draggable="true"' : ""
-            } 
-                style="background: linear-gradient(135deg, ${this.rgbToHex(
-                  color,
-                )} 0%, ${this.adjustColorBrightness(color, -20)} 100%); 
-                       color: ${this.getContrastTextColor(color)};"
-                data-color-row="true">
-              ${
-                enableColorPicker
-                  ? `<input type="color" value="${this.rgbToHex(
-                      color,
-                    )}" data-idx="${idx}" class="row-color-input" />`
-                  : ""
-              }
-              <div class="row-content">
-                ${
-                  allowDragDrop !== false
-                    ? '<span class="row-drag-indicator" title="Drag to reorder">⋮⋮</span>'
-                    : ""
-                }
-                ${
-                  showHexInput
-                    ? `<input type="text" class="row-hex-input hex-input" value="${this.rgbToHex(
-                        color,
-                      )}" data-idx="${idx}" maxlength="7" 
-                      style="background: rgba(${
-                        this.getContrastTextColor(color) === "#ffffff"
-                          ? "255,255,255"
-                          : "0,0,0"
-                      }, 0.2); 
-                             color: ${this.getContrastTextColor(color)}; 
-                             border-color: rgba(${
-                               this.getContrastTextColor(color) === "#ffffff"
-                                 ? "255,255,255"
-                                 : "0,0,0"
-                             }, 0.3);" />`
-                    : ""
-                }
-                <span class="row-color-name">${this.formatColorInfo(
-                  color,
-                  this.config.color_info_display || "name",
-                )}</span>
-              </div>
-              ${
-                allowDelete
-                  ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} row-remove ${posClass} ${sideClass}" title="Remove"></button>`
-                  : ""
-              }
-            </div>`
-          : "",
-      )
-      .join("");
-  }
-
-  _generateGridLayout(textColors, options) {
-    const {
-      allowDragDrop,
-      removeButtonStyle = "default",
-      buttonShape = "round",
-      buttonInside = false,
-      buttonLeft = false,
-    } = options;
-
-    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
-    const posClass = buttonInside ? "btn-pos-inside" : "btn-pos-outside";
-    const sideClass = buttonLeft ? "btn-side-left" : "";
-
-    return textColors
-      .map((color, idx) =>
-        Array.isArray(color) && color.length === 3
-          ? `<div class="color-grid-item" data-idx="${idx}" ${
-              allowDragDrop !== false ? 'draggable="true"' : ""
-            }>
-              <div class="color-grid-swatch" style="background-color: ${this.rgbToHex(
-                color,
-              )};" title="${this.formatColorInfo(
-                color,
-                this.config.color_info_display || "hex",
-              )}">
-                ${
-                  options.enableColorPicker
-                    ? `<input type="color" value="${this.rgbToHex(
-                        color,
-                      )}" data-idx="${idx}" class="grid-color-picker" />`
-                    : ""
-                }
-                ${
-                  options.allowDelete
-                    ? `<button data-action="remove" data-idx="${idx}" class="${deleteBtnClass} grid-remove-btn ${posClass} ${sideClass}" title="Remove"></button>`
-                    : ""
-                }
-              </div>
-              ${
-                options.showHexInput
-                  ? `<input type="text" class="hex-input grid-hex-input" value="${this.rgbToHex(
-                      color,
-                    )}" data-idx="${idx}" maxlength="7" />`
-                  : ""
-              }
-              <div class="color-grid-info">${this.formatColorInfo(
-                color,
-                this.config.color_info_display || "hex",
-              )}</div>
-            </div>`
-          : "",
-      )
-      .join("");
-  }
-
-  _generateCardsLayout(textColors, options) {
-    const removeButtonStyle = options.removeButtonStyle || "default";
-    const buttonShape = options.buttonShape || "round";
-    const buttonInside = options.buttonInside === true;
-    const buttonLeft = options.buttonLeft === true;
-    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
-
-    // Card styling
-    const buttonPositionStyles = getButtonPositionStyles(
-      buttonInside,
-      buttonLeft,
-    );
-
-    // Calculate cards per row based on card size
-    // At 70% (default): 120px cards, 4 per row fits in ~600px
-    // At 30%: 51.4px cards, can fit 9-10 per row
-    // At 100%: 171.4px cards, fits 3 per row
-    const cardSizePercent = this.config.card_size || 70;
-    const baseCardWidth = 171.43 * (cardSizePercent / 100); // Width in px
-    const estimatedContainerWidth = 600; // Approximate available width
-    const cardsPerRow = Math.max(
-      3,
-      Math.min(10, Math.floor(estimatedContainerWidth / (baseCardWidth + 30))),
-    ); // 30px for gaps/margins
-    const rows = [];
-
-    // Split into rows based on calculated cards per row
-    for (let i = 0; i < textColors.length; i += cardsPerRow) {
-      rows.push(textColors.slice(i, i + cardsPerRow));
-    }
-
-    return `<div class="cards-poker-container">
-      ${rows
-        .map((rowColors, rowIdx) => {
-          const rowStartIdx = rows
-            .slice(0, rowIdx)
-            .reduce((sum, row) => sum + row.length, 0);
-          const cardsInRow = rowColors.length;
-
-          return `<div class="poker-hand">
-            ${rowColors
-              .map((color, idx) => {
-                if (Array.isArray(color) && color.length === 3) {
-                  const globalIdx = rowStartIdx + idx;
-                  const centerIndex = (cardsInRow - 1) / 2;
-                  const offset = idx - centerIndex;
-                  const rotationDeg = offset * 8; // Fan angle
-                  const verticalOffset = Math.abs(offset) * 10;
-                  const horizontalOffset = offset * -15; // Overlap
-
-                  return `<div class="card-wrapper poker-card" data-position="${globalIdx}">
-                    <div class="card-item" data-idx="${globalIdx}" 
-                      style="
-                        --card-color: ${this.rgbToHex(color)};
-                        transform: rotate(${rotationDeg}deg) translateY(${verticalOffset}px) translateX(${horizontalOffset}px);
-                        z-index: ${idx};
-                      ">
-                      <div class="card-face">
-                        <div class="card-color-bar${
-                          options.enableColorPicker ? " clickable" : ""
-                        }" style="background: ${this.rgbToHex(color)};">
-                          ${
-                            options.enableColorPicker
-                              ? `<input type="color" value="${this.rgbToHex(
-                                  color,
-                                )}" data-idx="${globalIdx}" class="card-color-picker" />`
-                              : ""
-                          }
-                        </div>
-                        <div class="card-info-area">
-                          ${
-                            options.showHexInput
-                              ? `<input type="text" class="hex-input card-hex" value="${this.rgbToHex(
-                                  color,
-                                )}" data-idx="${globalIdx}" maxlength="7" />`
-                              : ""
-                          }
-                          <div class="card-name">${this.formatColorInfo(
-                            color,
-                            this.config.color_info_display || "hex",
-                          )}</div>
-                        </div>
-                      </div>
-                      ${
-                        options.allowDelete
-                          ? `<button data-action="remove" data-idx="${globalIdx}" class="${deleteBtnClass} card-remove" style="${buttonPositionStyles}" title="Remove"></button>`
-                          : ""
-                      }
-                    </div>
-                  </div>`;
-                }
-                return "";
-              })
-              .join("")}
-          </div>`;
-        })
-        .join("")}
-    </div>`;
-  }
-
-  _generateSpreadLayout(textColors, options) {
-    const removeButtonStyle = options.removeButtonStyle || "default";
-    const buttonShape = options.buttonShape || "round";
-    const buttonInside = options.buttonInside === true;
-    const buttonLeft = options.buttonLeft === true;
-    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
-
-    // Card styling
-    const buttonPositionStyles = getButtonPositionStyles(
-      buttonInside,
-      buttonLeft,
-    );
-
-    return `<div class="cards-container">
-      ${textColors
-        .map((color, globalIdx) => {
-          if (Array.isArray(color) && color.length === 3) {
-            // Better random rotation for spread effect using multiple hash operations
-            const seed1 = (globalIdx * 2654435761) % 2147483647;
-            const seed2 = (globalIdx * 1103515245 + 12345) % 2147483647;
-            const seed3 = (globalIdx * 69069 + 1) % 2147483647;
-
-            // More random rotation between -12 and +12 degrees
-            const rotationDeg = (seed1 % 25) - 12;
-            // More varied vertical offset
-            const verticalOffset = (seed2 % 12) - 6;
-
-            return `<div class="card-wrapper" data-position="${globalIdx}">
-              <div class="card-item" data-idx="${globalIdx}" 
-                style="
-                  --card-color: ${this.rgbToHex(color)};
-                  transform: rotate(${rotationDeg}deg) translateY(${verticalOffset}px);
-                  z-index: ${globalIdx};
-                ">
-                <div class="card-face">
-                  <div class="card-color-bar${
-                    options.enableColorPicker ? " clickable" : ""
-                  }" style="background: ${this.rgbToHex(color)};">
-                    ${
-                      options.enableColorPicker
-                        ? `<input type="color" value="${this.rgbToHex(
-                            color,
-                          )}" data-idx="${globalIdx}" class="card-color-picker" />`
-                        : ""
-                    }
-                  </div>
-                  <div class="card-info-area">
-                    ${
-                      options.showHexInput
-                        ? `<input type="text" class="hex-input card-hex" value="${this.rgbToHex(
-                            color,
-                          )}" data-idx="${globalIdx}" maxlength="7" />`
-                        : ""
-                    }
-                    <div class="card-name">${this.formatColorInfo(
-                      color,
-                      this.config.color_info_display || "hex",
-                    )}</div>
-                  </div>
-                </div>
-                ${
-                  options.allowDelete
-                    ? `<button data-action="remove" data-idx="${globalIdx}" class="${deleteBtnClass} card-remove" style="${buttonPositionStyles}" title="Remove"></button>`
-                    : ""
-                }
-              </div>
-            </div>`;
-          }
-          return "";
-        })
-        .join("")}
-    </div>`;
-  }
-
-  _generateCascadeLayout(textColors, options) {
-    const removeButtonStyle = options.removeButtonStyle || "default";
-    const buttonShape = options.buttonShape || "round";
-    const buttonInside = options.buttonInside === true;
-    const buttonLeft = options.buttonLeft === true;
-    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
-    const buttonPositionStyles = getButtonPositionStyles(
-      buttonInside,
-      buttonLeft,
-    );
-
-    // Cascade: overlapping diagonal waterfall. Cards overlap horizontally
-    // with a uniform slight rotation, and a gentle vertical step per card.
-    const tiltDeg = -3;
-
-    return `<div class="cards-container cascade-mode">
-      ${textColors
-        .map((color, globalIdx) => {
-          if (Array.isArray(color) && color.length === 3) {
-            // Gentle vertical step: each card a bit lower, reset every ~8 cards
-            const verticalOffset = (globalIdx % 8) * 4;
-
-            return `<div class="card-wrapper" data-position="${globalIdx}">
-              <div class="card-item" data-idx="${globalIdx}" 
-                style="
-                  --card-color: ${this.rgbToHex(color)};
-                  transform: rotate(${tiltDeg}deg) translateY(${verticalOffset}px);
-                  z-index: ${globalIdx};
-                ">
-                <div class="card-face">
-                  <div class="card-color-bar${
-                    options.enableColorPicker ? " clickable" : ""
-                  }" style="background: ${this.rgbToHex(color)};">
-                    ${
-                      options.enableColorPicker
-                        ? `<input type="color" value="${this.rgbToHex(color)}" data-idx="${globalIdx}" class="card-color-picker" />`
-                        : ""
-                    }
-                  </div>
-                  <div class="card-info-area">
-                    ${
-                      options.showHexInput
-                        ? `<input type="text" class="hex-input card-hex" value="${this.rgbToHex(color)}" data-idx="${globalIdx}" maxlength="7" />`
-                        : ""
-                    }
-                    <div class="card-name">${this.formatColorInfo(color, this.config.color_info_display || "hex")}</div>
-                  </div>
-                </div>
-                ${
-                  options.allowDelete
-                    ? `<button data-action="remove" data-idx="${globalIdx}" class="${deleteBtnClass} card-remove" style="${buttonPositionStyles}" title="Remove"></button>`
-                    : ""
-                }
-              </div>
-            </div>`;
-          }
-          return "";
-        })
-        .join("")}
-    </div>`;
-  }
-
-  _generateTiltLayout(textColors, options) {
-    const removeButtonStyle = options.removeButtonStyle || "default";
-    const buttonShape = options.buttonShape || "round";
-    const buttonInside = options.buttonInside === true;
-    const buttonLeft = options.buttonLeft === true;
-    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
-    const buttonPositionStyles = getButtonPositionStyles(
-      buttonInside,
-      buttonLeft,
-    );
-
-    // Tilt: clean grid with all cards rotated at the exact same uniform angle.
-    // Looks organised like a catalog / magazine spread.
-    const uniformAngle = -5;
-
-    return `<div class="cards-container tilt-mode">
-      ${textColors
-        .map((color, globalIdx) => {
-          if (Array.isArray(color) && color.length === 3) {
-            return `<div class="card-wrapper" data-position="${globalIdx}">
-              <div class="card-item" data-idx="${globalIdx}" 
-                style="
-                  --card-color: ${this.rgbToHex(color)};
-                  transform: rotate(${uniformAngle}deg);
-                  z-index: ${globalIdx};
-                ">
-                <div class="card-face">
-                  <div class="card-color-bar${
-                    options.enableColorPicker ? " clickable" : ""
-                  }" style="background: ${this.rgbToHex(color)};">
-                    ${
-                      options.enableColorPicker
-                        ? `<input type="color" value="${this.rgbToHex(color)}" data-idx="${globalIdx}" class="card-color-picker" />`
-                        : ""
-                    }
-                  </div>
-                  <div class="card-info-area">
-                    ${
-                      options.showHexInput
-                        ? `<input type="text" class="hex-input card-hex" value="${this.rgbToHex(color)}" data-idx="${globalIdx}" maxlength="7" />`
-                        : ""
-                    }
-                    <div class="card-name">${this.formatColorInfo(color, this.config.color_info_display || "hex")}</div>
-                  </div>
-                </div>
-                ${
-                  options.allowDelete
-                    ? `<button data-action="remove" data-idx="${globalIdx}" class="${deleteBtnClass} card-remove" style="${buttonPositionStyles}" title="Remove"></button>`
-                    : ""
-                }
-              </div>
-            </div>`;
-          }
-          return "";
-        })
-        .join("")}
-    </div>`;
-  }
-
-  _generateFanLayout(textColors, options) {
-    const removeButtonStyle = options.removeButtonStyle || "default";
-    const buttonShape = options.buttonShape || "round";
-    const buttonInside = options.buttonInside === true;
-    const buttonLeft = options.buttonLeft === true;
-    const deleteBtnClass = getDeleteButtonClass(removeButtonStyle, buttonShape);
-    const buttonPositionStyles = getButtonPositionStyles(
-      buttonInside,
-      buttonLeft,
-    );
-
-    // Fan: semicircular arc from a single origin point below the cards.
-    // Each card is rotated around a distant pivot so they fan out evenly.
-    const totalCards = textColors.filter(
-      (c) => Array.isArray(c) && c.length === 3,
-    ).length;
-    // Spread angle range: up to ±50° for many cards, narrower for fewer
-    const maxSpread = Math.min(50, totalCards * 6);
-
-    return `<div class="cards-fan-container">
-      ${textColors
-        .map((color, globalIdx) => {
-          if (Array.isArray(color) && color.length === 3) {
-            const centerIndex = (totalCards - 1) / 2;
-            const offset = globalIdx - centerIndex;
-            // Distribute evenly across the arc
-            const rotationDeg =
-              totalCards > 1 ? (offset / centerIndex) * maxSpread : 0;
-
-            return `<div class="card-wrapper" data-position="${globalIdx}" data-base-rotation="${rotationDeg.toFixed(1)}">
-              <div class="card-item" data-idx="${globalIdx}" 
-                style="
-                  --card-color: ${this.rgbToHex(color)};
-                  transform: rotate(${rotationDeg.toFixed(1)}deg);
-                  z-index: ${globalIdx};
-                ">
-                <div class="card-face">
-                  <div class="card-color-bar${
-                    options.enableColorPicker ? " clickable" : ""
-                  }" style="background: ${this.rgbToHex(color)};">
-                    ${
-                      options.enableColorPicker
-                        ? `<input type="color" value="${this.rgbToHex(color)}" data-idx="${globalIdx}" class="card-color-picker" />`
-                        : ""
-                    }
-                  </div>
-                  <div class="card-info-area">
-                    ${
-                      options.showHexInput
-                        ? `<input type="text" class="hex-input card-hex" value="${this.rgbToHex(color)}" data-idx="${globalIdx}" maxlength="7" />`
-                        : ""
-                    }
-                    <div class="card-name">${this.formatColorInfo(color, this.config.color_info_display || "hex")}</div>
-                  </div>
-                </div>
-                ${
-                  options.allowDelete
-                    ? `<button data-action="remove" data-idx="${globalIdx}" class="${deleteBtnClass} card-remove" style="${buttonPositionStyles}" title="Remove"></button>`
-                    : ""
-                }
-              </div>
-            </div>`;
-          }
-          return "";
-        })
-        .join("")}
-    </div>`;
-  }
-
-  _updateWheelVisual(angle) {
-    const selectorRadians = (angle * Math.PI) / 180;
-
-    // Use configurable sizing like in render method
-    const wheelSizePercent = this.config.wheel_size || 80;
-    const wheelSize = Math.min(100, wheelSizePercent);
-    const selectorRadius = (wheelSize * 40) / 100; // Scale selector radius
-
-    const selectorX = 50 + selectorRadius * Math.cos(selectorRadians);
-    const selectorY = 50 - selectorRadius * Math.sin(selectorRadians);
-    const gradientAngle = -angle;
-
-    // Update selector dot position
-    const selectorDot = this.shadowRoot.querySelector(".wheel-selector");
-    if (selectorDot) {
-      selectorDot.setAttribute("cx", selectorX);
-      selectorDot.setAttribute("cy", selectorY);
-    }
-
-    // Update gradient rotation
-    const gradientGroup = this.shadowRoot.querySelector(
-      'g[transform*="rotate"]',
-    );
-    if (gradientGroup) {
-      gradientGroup.setAttribute("transform", `rotate(${gradientAngle} 50 50)`);
-    }
-
-    // Update angle display
-    const angleDisplay = this.shadowRoot.querySelector(".wheel-angle");
-    if (angleDisplay) {
-      angleDisplay.textContent = `${Math.round(angle)}°`;
-    }
-  }
-
-  _updateDefaultVisual(angle) {
-    // EXACT same logic as wheel for immediate visual feedback during dragging
-    const selectorRadians = (angle * Math.PI) / 180;
-
-    // Use configurable sizing like in render method
-    const defaultSizePercent = this.config.default_size || 80;
-    const defaultSize = Math.min(100, defaultSizePercent);
-    const selectorRadius = (defaultSize * 40) / 100; // Scale selector radius
-
-    const selectorX = 50 + selectorRadius * Math.cos(selectorRadians);
-    const selectorY = 50 - selectorRadius * Math.sin(selectorRadians);
-    const gradientAngle = -angle;
-
-    // Update selector dot position
-    const selectorDot = this.shadowRoot.querySelector(".wheel-selector");
-    if (selectorDot) {
-      selectorDot.setAttribute("cx", selectorX);
-      selectorDot.setAttribute("cy", selectorY);
-    }
-
-    // Update gradient rotation
-    const gradientGroup = this.shadowRoot.querySelector(
-      'g[transform*="rotate"]',
-    );
-    if (gradientGroup) {
-      gradientGroup.setAttribute("transform", `rotate(${gradientAngle} 50 50)`);
-    }
-
-    // Update angle display
-    const angleDisplay = this.shadowRoot.querySelector(".default-angle");
-    if (angleDisplay) {
-      angleDisplay.textContent = `${Math.round(angle)}°`;
-    }
-  }
-
-  _updateRectVisual(angle) {
-    // EXACT same logic as wheel for consistency
-    const normalizedAngle = ((angle % 360) + 360) % 360;
-
-    // Map angle to rectangle perimeter position
-    // Rectangle has 4:1 aspect ratio, so we need to map to the perimeter
-    const selectorRadians = (normalizedAngle * Math.PI) / 180;
-
-    // Calculate position on rectangle perimeter using continuous mapping
-    // For 4:1 rectangle: width = 4 units, height = 1 unit
-    const rectWidth = 4;
-    const rectHeight = 1;
-    const perimeter = 2 * (rectWidth + rectHeight); // Total perimeter = 10 units
-
-    // Map angle (0-360°) to perimeter position (0 to perimeter)
-    const perimeterPosition = (normalizedAngle / 360) * perimeter;
-
-    let rectSelectorX, rectSelectorY;
-
-    // Start from right edge center, go clockwise
-    if (perimeterPosition <= rectHeight / 2) {
-      // Right edge, top half (0° to ~18°)
-      rectSelectorX = 100;
-      rectSelectorY = 50 - (perimeterPosition / (rectHeight / 2)) * 50;
-    } else if (perimeterPosition <= rectHeight / 2 + rectWidth) {
-      // Top edge (going from right to left)
-      const topProgress = (perimeterPosition - rectHeight / 2) / rectWidth;
-      rectSelectorX = 100 - topProgress * 100;
-      rectSelectorY = 0;
-    } else if (perimeterPosition <= rectHeight / 2 + rectWidth + rectHeight) {
-      // Left edge (going from top to bottom)
-      const leftProgress =
-        (perimeterPosition - rectHeight / 2 - rectWidth) / rectHeight;
-      rectSelectorX = 0;
-      rectSelectorY = leftProgress * 100;
-    } else if (
-      perimeterPosition <=
-      rectHeight / 2 + rectWidth + rectHeight + rectWidth
-    ) {
-      // Bottom edge (going from left to right)
-      const bottomProgress =
-        (perimeterPosition - rectHeight / 2 - rectWidth - rectHeight) /
-        rectWidth;
-      rectSelectorX = bottomProgress * 100;
-      rectSelectorY = 100;
-    } else {
-      // Right edge, bottom half (back to start)
-      const rightBottomProgress =
-        (perimeterPosition -
-          rectHeight / 2 -
-          rectWidth -
-          rectHeight -
-          rectWidth) /
-        (rectHeight / 2);
-      rectSelectorX = 100;
-      rectSelectorY = 100 - rightBottomProgress * 50;
-    }
-
-    // Gradient rotation EXACT same as wheel
-    const gradientAngle = -normalizedAngle;
-
-    // Update selector dot position using CSS positioning
-    const rectSelectorDot = this.shadowRoot.querySelector(".rect-selector");
-    if (rectSelectorDot) {
-      rectSelectorDot.style.left = `${rectSelectorX}%`;
-      rectSelectorDot.style.top = `${rectSelectorY}%`;
-    }
-
-    // Update gradient background using CSS - SAME rotation as wheel
-    const rectElement = this.shadowRoot.querySelector(".rect-gradient");
-    if (rectElement) {
-      const rectTextColors = this._getCurrentTextColors();
-      const colorStops = rectTextColors
-        .map((color) => `rgb(${color.join(",")})`)
-        .join(", ");
-      rectElement.style.background = `linear-gradient(${
-        90 + gradientAngle
-      }deg, ${colorStops})`;
-    }
-
-    // Update angle display
-    const rectAngleDisplay = this.shadowRoot.querySelector(".rect-angle");
-    if (rectAngleDisplay) {
-      rectAngleDisplay.textContent = `${Math.round(angle)}°`;
-    }
-  }
-
-  getModeGradientColors(mode, textColors, currentAngle) {
-    // Use default colors if none provided
-    const colors =
-      textColors && textColors.length > 0
-        ? textColors
-        : [
-            [255, 0, 0],
-            [0, 255, 0],
-            [0, 0, 255],
-          ];
-
-    // Helper function to replicate Python's calculate_multi_gradient_color
-    const calculateMultiGradientColor = (colors, position, totalPositions) => {
-      if (!colors || colors.length === 0) return [255, 0, 0];
-      if (colors.length === 1 || totalPositions <= 1) return colors[0];
-
-      position = Math.max(0, Math.min(position, totalPositions - 1));
-      const nSegments = colors.length - 1;
-      const segmentLength =
-        nSegments > 0 ? (totalPositions - 1) / nSegments : 1;
-      const segment = Math.min(
-        Math.floor(position / segmentLength),
-        nSegments - 1,
-      );
-
-      const startColor = colors[segment];
-      const endColor = colors[Math.min(segment + 1, colors.length - 1)];
-
-      const localStart = segment * segmentLength;
-      const localFactor =
-        segmentLength > 0 ? (position - localStart) / segmentLength : 0;
-
-      return [
-        Math.round(startColor[0] + (endColor[0] - startColor[0]) * localFactor),
-        Math.round(startColor[1] + (endColor[1] - startColor[1]) * localFactor),
-        Math.round(startColor[2] + (endColor[2] - startColor[2]) * localFactor),
-      ];
-    };
-
-    // Convert RGB array to CSS color
-    const rgbToCss = (rgb) => `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
-
-    // Create mini-preview gradients that replicate the actual mode calculations
-    switch (mode) {
-      case "Solid Color":
-        // Use first color only
-        return rgbToCss(colors[0]);
-
-      case "Letter Gradient":
-        // Each letter gets a different color - show discrete steps, not smooth gradient
-        if (colors.length === 1) return rgbToCss(colors[0]);
-        const letterSteps = colors
-          .map((color, i) => {
-            const startPercent = (i / colors.length) * 100;
-            const endPercent = ((i + 1) / colors.length) * 100;
-            return `${rgbToCss(color)} ${startPercent}% ${endPercent}%`;
-          })
-          .join(", ");
-        return `linear-gradient(90deg, ${letterSteps})`;
-
-      case "Column Gradient":
-        // Vertical columns get gradient - show vertical gradient
-        const colGradient = [];
-        for (let i = 0; i < 10; i++) {
-          // 10 columns
-          const color = calculateMultiGradientColor(colors, i, 10);
-          colGradient.push(`${rgbToCss(color)} ${(i / 9) * 100}%`);
-        }
-        return `linear-gradient(90deg, ${colGradient.join(", ")})`;
-
-      case "Row Gradient":
-        // Horizontal rows get gradient - show horizontal gradient
-        const rowGradient = [];
-        for (let i = 0; i < 10; i++) {
-          // 10 rows
-          const color = calculateMultiGradientColor(colors, i, 10);
-          rowGradient.push(`${rgbToCss(color)} ${(i / 9) * 100}%`);
-        }
-        return `linear-gradient(0deg, ${rowGradient.join(", ")})`;
-
-      case "Angle Gradient":
-        // Directional gradient based on current angle setting
-        const angleDeg = currentAngle || 0;
-        const angleGradient = [];
-        for (let i = 0; i < colors.length; i++) {
-          angleGradient.push(
-            `${rgbToCss(colors[i])} ${(i / (colors.length - 1)) * 100}%`,
-          );
-        }
-        return `linear-gradient(${angleDeg}deg, ${angleGradient.join(", ")})`;
-
-      case "Radial Gradient":
-        // Radial from center outward
-        const radialGradient = [];
-        const steps = 8;
-        for (let i = 0; i < steps; i++) {
-          const distance = i / (steps - 1);
-          const color = calculateMultiGradientColor(
-            colors,
-            distance * (colors.length - 1),
-            colors.length,
-          );
-          radialGradient.push(`${rgbToCss(color)} ${(i / (steps - 1)) * 100}%`);
-        }
-        return `radial-gradient(circle, ${radialGradient.join(", ")})`;
-
-      case "Letter Vertical Gradient":
-        // Vertical gradient within each letter - columns get different colors (left to right)
-        const letterVertGradient = [];
-        for (let i = 0; i < colors.length; i++) {
-          letterVertGradient.push(
-            `${rgbToCss(colors[i])} ${(i / (colors.length - 1)) * 100}%`,
-          );
-        }
-        return `linear-gradient(90deg, ${letterVertGradient.join(", ")})`;
-
-      case "Letter Angle Gradient":
-        // Angle gradient within each letter using current angle setting
-        const letterAngleGrad = [];
-        for (let i = 0; i < colors.length; i++) {
-          letterAngleGrad.push(
-            `${rgbToCss(colors[i])} ${(i / (colors.length - 1)) * 100}%`,
-          );
-        }
-        const letterAngle = currentAngle || 0;
-        return `linear-gradient(${letterAngle}deg, ${letterAngleGrad.join(
-          ", ",
-        )})`;
-
-      case "Text Color Sequence":
-        // Random/shuffled colors - create a 5x8 grid with deterministic random colors
-        if (colors.length === 1) return rgbToCss(colors[0]);
-
-        // Create deterministic "random" based on colors array to avoid constant changes
-        const colorHash = colors.map((c) => c.join(",")).join("|");
-        let seed = 0;
-        for (let i = 0; i < colorHash.length; i++) {
-          seed = ((seed << 5) - seed + colorHash.charCodeAt(i)) & 0xffffffff;
-        }
-
-        // Simple deterministic random function
-        const deterministicRandom = (index) => {
-          const x = Math.sin(seed + index * 12.9898) * 43758.5453;
-          return x - Math.floor(x);
-        };
-
-        // Create a 5x8 grid (40 zones) - more reasonable size
-        const rows = 5;
-        const cols = 8;
-        const zoneWidth = 100 / cols; // Each zone width
-        const zoneHeight = 100 / rows; // Each zone height
-
-        // Generate 40 deterministic random color assignments
-        const randomZones = [];
-        for (let row = 0; row < rows; row++) {
-          for (let col = 0; col < cols; col++) {
-            const zoneIndex = row * cols + col;
-            const randomValue = deterministicRandom(zoneIndex);
-            const randomColorIndex = Math.floor(randomValue * colors.length);
-            const randomColor = colors[randomColorIndex];
-
-            const x = col * zoneWidth;
-            const y = row * zoneHeight;
-            const x2 = (col + 1) * zoneWidth;
-            const y2 = (row + 1) * zoneHeight;
-
-            // Create a small rectangular gradient for each zone
-            randomZones.push(
-              `linear-gradient(0deg, transparent ${y}%, ${rgbToCss(
-                randomColor,
-              )} ${y}% ${y2}%, transparent ${y2}%) ${x}% 0% / ${zoneWidth}% 100% no-repeat`,
-            );
-          }
-        }
-
-        // Combine all zones into one background
-        return randomZones.join(", ");
-
-      default:
-        return rgbToCss(colors[0]);
-    }
-  }
-
-  generateColorModeSelector(colorMode, style, textColors, currentAngle) {
-    const modes = [
-      { value: "Solid Color", label: "Solid" },
-      { value: "Letter Gradient", label: "Letter Grad" },
-      { value: "Column Gradient", label: "Column Grad" },
-      { value: "Row Gradient", label: "Row Grad" },
-      { value: "Angle Gradient", label: "Angle Grad" },
-      { value: "Radial Gradient", label: "Radial Grad" },
-      { value: "Letter Vertical Gradient", label: "Letter Vert" },
-      { value: "Letter Angle Gradient", label: "Letter Angle" },
-      { value: "Text Color Sequence", label: "Color Seq" },
-    ];
-
-    switch (style) {
-      case "colorized":
-        return `
-          <div class="color-mode-colorized" style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px;">
-            ${modes
-              .map((mode, index) => {
-                const gradientColors = this.getModeGradientColors(
-                  mode.value,
-                  textColors,
-                  currentAngle,
-                );
-                return `
-              <button class="mode-btn-colorized ${
-                colorMode === mode.value ? "active" : ""
-              }" 
-                      data-mode="${mode.value}"
-                      title="${mode.label}"
-                      style="background: ${gradientColors}; color: white; text-shadow: 1px 1px 2px rgba(0,0,0,0.8);">
-                ${mode.label}
-              </button>
-            `;
-              })
-              .join("")}
-          </div>`;
-
-      case "dropdown":
-        return `
-          <div class="color-mode-dropdown" style="margin-bottom: 12px;">
-            <select class="mode-select" data-mode-select="true">
-              ${modes
-                .map(
-                  (mode) => `
-                <option value="${mode.value}" ${
-                  colorMode === mode.value ? "selected" : ""
-                }>
-                  ${mode.value}
-                </option>
-              `,
-                )
-                .join("")}
-            </select>
-          </div>`;
-
-      case "buttons":
-      default:
-        return `
-          <div class="color-mode-buttons" style="display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px;">
-            ${modes
-              .map(
-                (mode) => `
-              <button class="mode-btn ${
-                colorMode === mode.value ? "active" : ""
-              }" 
-                      data-mode="${mode.value}"
-                      title="${mode.label}">
-                ${mode.label}
-              </button>
-            `,
-              )
-              .join("")}
-          </div>`;
-    }
-  }
-
   // Calculate relative luminance based on WCAG guidelines
   getRelativeLuminance(rgb) {
     const [r, g, b] = rgb.map((c) => {
@@ -6111,50 +3483,31 @@ class YeelightCubeColorListEditorCard extends HTMLElement {
 
   // Adjust color brightness for gradients
   adjustColorBrightness(rgb, amount) {
-    return this.rgbToHex([
-      Math.max(0, Math.min(255, rgb[0] + amount)),
-      Math.max(0, Math.min(255, rgb[1] + amount)),
-      Math.max(0, Math.min(255, rgb[2] + amount)),
-    ]);
+    return rgbToCss(rgb.map((channel) => channel + amount));
   }
 
   getCardSize() {
     return 4;
   }
 
-  /**
-   * Remove document-level listeners recorded in this._dragCleanup for an
-   * in-progress color-row drag (mouse or touch).
-   */
-  _removeDragDocListeners() {
-    const cleanup = this._dragCleanup;
-    this._dragCleanup = null;
-    if (!cleanup || !Array.isArray(cleanup.listeners)) return;
-    cleanup.listeners.forEach(([type, fn]) =>
-      document.removeEventListener(type, fn),
-    );
-  }
-
   disconnectedCallback() {
-    this._angleCommands.reset();
+    super.disconnectedCallback();
     this._colorCommands?.reset();
     this._pendingServiceCalls = [];
 
-    // Clean up document-level drag listeners (mouse or touch) if
-    // disconnected mid-drag
-    this._removeDragDocListeners();
+    // Tear down anything a drag placed outside the card (touch ghost) if
+    // disconnected mid-drag; the drag's DOM is rebuilt on the next render.
+    this._endDragSession();
+    if (this._drag) this._listKey++;
+    this._drag = null;
 
     this._cleanupColorPicker(true);
 
     // Reset interaction flags
-    this._renderScheduled = false;
     this._isDragging = false;
-    this._draggingRotary = false;
-    this._processingModeChange = false;
     this._usingColorPicker = false;
-    this._usingSlider = false;
     this._editingText = false;
-    this._isReordering = false;
+    this._editing = null;
     this._pendingHassRender = false;
     if (this._interactionSafetyTimer) {
       clearInterval(this._interactionSafetyTimer);
