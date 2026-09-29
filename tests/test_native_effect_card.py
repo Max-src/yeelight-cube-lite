@@ -164,7 +164,43 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         self.target.async_apply_display_mode.side_effect = RuntimeError("Offline")
         await self.handle(SimpleNamespace(data={"effect": "Rainbow"}))
         self.logger.exception.assert_called_once()
-        self.assertEqual(self.target._native_effect, "Rainbow")
+        # The lamp did not take the change: the previous settings are
+        # republished so cards show what the lamp actually runs.
+        self.assertEqual(self.target._native_effect, "Streamer")
+        self.assertEqual(self.target._mode, "Clock")
+        self.target.async_write_ha_state.assert_called()
+
+    async def test_lamp_rejection_reported_as_false_also_rolls_back(self):
+        # The hardware wrapper reports failures by returning False, not raising.
+        self.target.async_apply_display_mode = AsyncMock(return_value=False)
+        await self.handle(SimpleNamespace(data={"effect": "Rainbow"}))
+        self.assertEqual(self.target._native_effect, "Streamer")
+        self.assertEqual(self.target._mode, "Clock")
+        self.logger.warning.assert_called_once()
+
+    async def test_rollback_keeps_a_newer_change_from_another_path(self):
+        async def fail_after_other_path_changed_mode(**_kwargs):
+            # e.g. set_mode / rotation switched to the clock meanwhile
+            self.target._mode = "Clock"
+            return False
+
+        self.target.async_apply_display_mode = AsyncMock(
+            side_effect=fail_after_other_path_changed_mode
+        )
+        await self.handle(SimpleNamespace(data={"effect": "Rainbow"}))
+        # The effect this call set is restored; the clock mode set by the other
+        # path is kept rather than being replaced by this call's snapshot.
+        self.assertEqual(self.target._native_effect, "Streamer")
+        self.assertEqual(self.target._mode, "Clock")
+
+    async def test_older_background_apply_is_skipped_after_a_newer_call(self):
+        await self.raw_handle(SimpleNamespace(data={"effect": "Rainbow"}))
+        await self.raw_handle(SimpleNamespace(data={"effect": "Ocean Waves"}))
+        pending, self.scheduled[:] = list(self.scheduled), []
+        await asyncio.gather(*pending)
+        # Only the latest settings are sent to the lamp.
+        self.target.async_apply_display_mode.assert_awaited_once_with(update_type="color_change")
+        self.assertEqual(self.target._native_effect, "Ocean Waves")
 
     async def test_returns_before_the_lamp_round_trip_with_state_published(self):
         await self.raw_handle(SimpleNamespace(data={"effect": "Rainbow"}))

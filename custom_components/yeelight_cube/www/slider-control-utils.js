@@ -21,6 +21,7 @@
 // inline `this.getRootNode().host._sl*` handlers).
 
 import { cardSpacing } from "./card-layout-utils.js";
+import { escapeHtml } from "./html-escape-utils.js";
 import {
   getCapsuleCSS,
   renderCapsuleHTML,
@@ -83,6 +84,55 @@ export function sliderRawValue(pct, gc) {
     : derived;
 }
 
+// Card configuration reaches the slider markup (class names, inline styles,
+// text), and a dashboard config can come from anywhere (pasted YAML). Keep
+// every value to its expected shape so none can break out of the HTML:
+// class-name tokens, finite numbers, a CSS colour, and escaped text.
+const SLIDER_TOKEN_KEYS = [
+  "style",
+  "theme",
+  "barFill",
+  "variant",
+  "wheelStyle",
+  "rotaryStyle",
+  "matrixPixelStyle",
+  "matrixDir",
+  "stepPosition",
+  "valueDisplay",
+  "valueSide",
+  "capsuleVariant",
+];
+const SLIDER_NUMBER_KEYS = [
+  "width",
+  "thickness",
+  "wheelStep",
+  "matrixCols",
+  "matrixRows",
+  "stepSize",
+];
+const SLIDER_TEXT_KEYS = ["unit", "rawUnit", "iconLeft", "iconRight"];
+const TOKEN_PATTERN = /^[a-z0-9_-]+$/i;
+const CSS_COLOR_PATTERN =
+  /^(#[0-9a-f]{3,8}|(rgb|rgba|hsl|hsla)\([\d\s.,%/]+\)|[a-z]+|var\(--[\w-]+\))$/i;
+
+export function sanitizeSliderGc(gc = {}) {
+  const safe = { ...gc };
+  for (const key of SLIDER_TOKEN_KEYS)
+    if (safe[key] != null && !TOKEN_PATTERN.test(String(safe[key])))
+      delete safe[key];
+  for (const key of SLIDER_NUMBER_KEYS) {
+    if (safe[key] == null) continue;
+    const number = Number(safe[key]);
+    if (Number.isFinite(number)) safe[key] = number;
+    else delete safe[key];
+  }
+  if (safe.color != null && !CSS_COLOR_PATTERN.test(String(safe.color).trim()))
+    delete safe.color;
+  for (const key of SLIDER_TEXT_KEYS)
+    if (safe[key] != null) safe[key] = escapeHtml(String(safe[key]));
+  return safe;
+}
+
 // The text shown for a 1-100 value, honouring the percent/raw display toggle.
 export function formatSliderValue(pct, gc) {
   return sliderRawMode(gc)
@@ -105,6 +155,9 @@ export function formatSliderValue(pct, gc) {
  * }
  */
 export function renderSliderControl(gc, value, ns = "") {
+  gc = sanitizeSliderGc(gc);
+  ns = TOKEN_PATTERN.test(String(ns)) ? ns : "";
+  value = Math.max(1, Math.min(100, Math.round(Number(value)) || 1));
   const style = gc.style || "slider";
   const width = Math.max(30, Math.min(100, Number(gc.width) || 100));
   const thickness = gc.thickness ?? 6;
@@ -434,12 +487,15 @@ export function renderSliderGroup(controls) {
   const items = controls
     .filter(Boolean)
     .map(({ label = "", gc, value, ns = "" }) => {
-      const width = Math.max(30, Math.min(100, Number(gc.width) || 100));
-      const style = gc.style || "slider";
+      // Sanitised here only for the wrapper's own values; renderSliderControl
+      // sanitises `gc` itself (doing both would escape text twice).
+      const safe = sanitizeSliderGc(gc);
+      const width = Math.max(30, Math.min(100, Number(safe.width) || 100));
+      const style = safe.style || "slider";
       return `
         <div class="brightness-control-item brightness-control-item-${style}"
              style="--brightness-control-width:${width}%">
-          ${label ? `<div class="brightness-control-label">${label}</div>` : ""}
+          ${label ? `<div class="brightness-control-label">${escapeHtml(label)}</div>` : ""}
           ${renderSliderControl({ ...gc, width: 100 }, value, ns)}
         </div>`;
     })

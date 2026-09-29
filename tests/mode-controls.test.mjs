@@ -370,6 +370,83 @@ test("browser selection reports a failure without ever marking busy", async () =
   assert.equal(controller.error, "Lamp offline");
 });
 
+test("a pick made while rotation is starting stops it after the start, not before", async () => {
+  const order = [];
+  let finishStart;
+  const { controller } = fixture({
+    rotationSupported: () => true,
+    startRotation: () => {
+      order.push("start");
+      return new Promise((resolve) => (finishStart = resolve));
+    },
+    stopRotation: () => order.push("stop"),
+    apply: async (name) => order.push(`apply ${name}`),
+  });
+  const starting = controller.start();
+  const picking = controller.choose("B");
+  await Promise.resolve();
+  // The pick waits for the in-flight start instead of racing it.
+  assert.deepEqual(order, ["start"]);
+  finishStart(true);
+  await starting;
+  await picking;
+  assert.deepEqual(order, ["start", "stop", "apply B"]);
+  assert.equal(controller.active, false);
+});
+
+test("a rotation stopped while its start is in flight is cancelled", async () => {
+  const order = [];
+  let finishStart;
+  const { controller } = fixture({
+    rotationSupported: () => true,
+    startRotation: () =>
+      new Promise((resolve) => (finishStart = resolve)),
+    stopRotation: () => order.push("stop"),
+  });
+  const starting = controller.start();
+  controller.stop(); // nothing active yet, so this sends no stop itself
+  finishStart(true);
+  await starting;
+  assert.deepEqual(order, ["stop"]);
+  assert.equal(controller.active, false);
+  // A deliberate cancel is not a failure.
+  assert.equal(controller.error, "");
+  assert.equal(controller.whenIdle(), null);
+});
+
+test("queued picks collapse to the latest; an in-flight pick still completes", async () => {
+  const sent = [];
+  const releases = [];
+  const commands = new CardCommandController(
+    () => {},
+    (hass, config, service, data) => {
+      sent.push(data.effect ?? data.speed);
+      return new Promise((resolve) => releases.push(resolve));
+    },
+  );
+  const run = (data, options) =>
+    commands.execute({}, { entity: "light.a" }, "set_native_effect", data, "yeelight_cube", options);
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+  const drain = async (expected) => {
+    while (sent.length < expected || releases.length) {
+      while (!releases.length) await tick();
+      releases.shift()();
+      await tick();
+    }
+  };
+  // A is already being sent when B, a speed change and C are queued behind it.
+  const first = run({ effect: "A" }, { coalesce: "select" });
+  while (!releases.length) await tick();
+  const queued = [
+    run({ effect: "B" }, { coalesce: "select" }),
+    run({ speed: 80 }), // not coalesced: always sent
+    run({ effect: "C" }, { coalesce: "select" }),
+  ];
+  await drain(3);
+  assert.deepEqual(await Promise.all([first, ...queued]), [true, true, true, true]);
+  assert.deepEqual(sent, ["A", 80, "C"]);
+});
+
 test("rotation uses available unique modes and bounds intervals", () => {
   const { controller } = fixture({ available: (name) => name === "B" });
   assert.deepEqual(controller.names(), ["B"]);

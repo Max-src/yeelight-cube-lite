@@ -373,7 +373,13 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     return lightSliderConfig(this.config, ns);
   }
 
-  async _command(service, data, domain = "yeelight_cube", managed = false) {
+  async _command(
+    service,
+    data,
+    domain = "yeelight_cube",
+    managed = false,
+    options = {},
+  ) {
     if (previewOnly(this) && service === "set_native_effect") {
       setPreviewAttributes(this, {
         ...(data.effect ? { native_effect: data.effect } : {}),
@@ -388,13 +394,20 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       return true;
     }
     if (this._disabled()) return false;
-    if (!managed) this._stopRotation();
+    if (!managed) {
+      // A rotation start in flight must finish first, so the stop below
+      // really cancels it and it cannot overwrite this command afterwards.
+      const pendingStart = this._controls?.whenIdle?.();
+      if (pendingStart) await pendingStart;
+      this._stopRotation();
+    }
     return this._commands.execute(
       this._hass,
       this.config,
       service,
       data,
       domain,
+      options,
     );
   }
 
@@ -404,6 +417,19 @@ class YeelightCubeNativeEffectsCard extends LitElement {
 
   async _applyFavourite(favourite) {
     const context = this._context;
+    // Show the favourite's effect and colour straight away: a colour mode
+    // clicked before the lamp answers is built from the selected effect, so it
+    // must already be the favourite's (restored below if the request fails).
+    const previous = {
+      selected: this._selected,
+      draft: this._customColorDraft,
+      presetId: this._selectedColorPresetId,
+    };
+    this._selected = favourite.key;
+    this._customColorDraft =
+      favourite.colorMode === "custom" ? [...favourite.color] : null;
+    this._selectedColorPresetId = null;
+    this.requestUpdate();
     const success = await this._command(
       "set_native_effect",
       {
@@ -415,12 +441,17 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       "yeelight_cube",
       true,
     );
-    if (!success || context !== this._context) return false;
-    this._selected = favourite.key;
-    this._customColorDraft =
-      favourite.colorMode === "custom" ? [...favourite.color] : null;
-    this._selectedColorPresetId = null;
-    this.requestUpdate();
+    if (context !== this._context) return false;
+    if (!success) {
+      // Only roll back if nothing newer replaced the favourite meanwhile.
+      if (this._selected === favourite.key) {
+        this._selected = previous.selected;
+        this._customColorDraft = previous.draft;
+        this._selectedColorPresetId = previous.presetId;
+        this.requestUpdate();
+      }
+      return false;
+    }
     return true;
   }
 
@@ -437,6 +468,8 @@ class YeelightCubeNativeEffectsCard extends LitElement {
         action,
         "yeelight_cube",
         managed,
+        // Quick successive picks only send the latest one.
+        { coalesce: "select" },
       )) &&
       context === this._context
     ) {
@@ -718,6 +751,9 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       return;
     }
     const context = this._context;
+    // Each click owns the pending highlight until a newer click replaces it
+    // (compared by click, not value: A, B, A must not clear on the first A).
+    const click = (this._colorClick = (this._colorClick || 0) + 1);
     this._pendingColorSelection = value;
     let success = false;
     try {
@@ -731,9 +767,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
             : {}),
       });
     } finally {
-      // Only the latest click owns the pending highlight.
-      if (this._pendingColorSelection === value)
-        this._pendingColorSelection = null;
+      if (this._colorClick === click) this._pendingColorSelection = null;
     }
     if (success && context === this._context) {
       this._customColorDraft = null;

@@ -885,7 +885,7 @@ class YeelightCubeClockCard extends LitElement {
   }
 
   // ── Actions ───────────────────────────────────────────────────────────────
-  async _callSetClock(data, managed = false) {
+  async _callSetClock(data, managed = false, options = {}) {
     if (previewOnly(this)) {
       const style = this._controlStyles().find(
         (item) => item.id === data.style || item.name === data.style,
@@ -908,17 +908,36 @@ class YeelightCubeClockCard extends LitElement {
       this.render();
       return true;
     }
-    return this._command("set_clock_style", data, "yeelight_cube", managed);
+    return this._command(
+      "set_clock_style",
+      data,
+      "yeelight_cube",
+      managed,
+      options,
+    );
   }
 
-  _command(service, data, domain = "yeelight_cube", managed = false) {
-    if (!managed) this._controls?.stop();
+  async _command(
+    service,
+    data,
+    domain = "yeelight_cube",
+    managed = false,
+    options = {},
+  ) {
+    if (!managed) {
+      // A rotation start in flight must finish first, so the stop below
+      // really cancels it and it cannot overwrite this command afterwards.
+      const pendingStart = this._controls?.whenIdle?.();
+      if (pendingStart) await pendingStart;
+      this._controls?.stop();
+    }
     return this._commands.execute(
       this._hass,
       this.config,
       service,
       data,
       domain,
+      options,
     );
   }
 
@@ -942,7 +961,8 @@ class YeelightCubeClockCard extends LitElement {
     this._pendingStyleColor = null;
     this._selectedStylePresetId = style.presetId || null;
     this._customMode = keepCustom;
-    const result = this._callSetClock(action, managed);
+    // Quick successive picks only send the latest one.
+    const result = this._callSetClock(action, managed, { coalesce: "select" });
     this.render();
     return result;
   }

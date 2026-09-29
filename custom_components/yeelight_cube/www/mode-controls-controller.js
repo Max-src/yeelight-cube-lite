@@ -481,9 +481,18 @@ export class ModeControlsController {
   // control-row command: it must not mark the controller busy, or the actions,
   // favourites and colour rows would flash disabled until the lamp answers.
   // Service calls are already serialised by the card's command queue.
+  // The in-flight rotation start, or null when none (callers only wait when
+  // there is one, so ordinary commands keep running synchronously).
+  whenIdle() {
+    return this._startPending;
+  }
+
   async selectQuietly(callback) {
     if (this.adapter.disabled()) return false;
-    this.stop();
+    const pendingStart = this.whenIdle();
+    if (pendingStart) await pendingStart;
+    // One listener pass per pick: notifyIfChanged below covers the stop.
+    this.stop({ silent: true });
     const context = this.context;
     this.error = "";
     if (!this._freezing) this.frozen = false;
@@ -555,7 +564,7 @@ export class ModeControlsController {
     this.notify();
   }
 
-  stop() {
+  stop({ silent = false } = {}) {
     this.selectedFavourite = null;
     clearTimeout(this.timer);
     this.token++;
@@ -571,7 +580,7 @@ export class ModeControlsController {
         );
     this.active = false;
     if (wasActive && this.adapter.stopRotation) this.adapter.stopRotation();
-    this.notify();
+    if (!silent) this.notify();
   }
 
   async refresh() {
@@ -646,9 +655,15 @@ export class ModeControlsController {
       // Server-side rotation: hand the list to the backend and let it drive
       // the lamp. No client timer is involved, so it survives a page refresh.
       const context = this.context;
+      const token = this.token;
       this.busy = true;
       this._rotationPending = true;
       this.error = "";
+      // Commands that stop rotation wait for this start (see whenIdle), so
+      // their stop is sent after it and cannot be overtaken by it.
+      let finishStart;
+      const pending = new Promise((resolve) => (finishStart = resolve));
+      this._startPending = pending;
       this.notify();
       let started = true;
       try {
@@ -661,10 +676,26 @@ export class ModeControlsController {
         started = false;
         this.error = error?.message || "Rotation could not be started.";
       }
-      if (context !== this.context) return;
+      // A newer start (after a reconfigure) owns the marker from now on.
+      if (this._startPending === pending) this._startPending = null;
+      if (context !== this.context) {
+        finishStart();
+        return;
+      }
       this.busy = false;
       this._rotationPending = false;
+      // Stopped while the start was in flight (nothing was active yet, so that
+      // stop sent nothing): cancel the rotation that has just started. This is
+      // a deliberate cancel, not a failure, so no error is shown.
+      if (token !== this.token) {
+        if (started) this.adapter.stopRotation?.();
+        this.active = false;
+        finishStart();
+        this.notify();
+        return;
+      }
       this.active = started;
+      finishStart();
       if (!started) {
         if (!this.error)
           this.error =

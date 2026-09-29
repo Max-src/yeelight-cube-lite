@@ -28,9 +28,27 @@ export class CardCommandController {
     this.notify();
   }
 
-  async execute(hass, config, service, data = {}, domain = "yeelight_cube") {
+  /**
+   * @param {Object} [options]
+   * @param {string} [options.coalesce] - requests sharing this key replace each
+   *   other while queued: when one reaches the front of the queue and a newer
+   *   one with the same key is already waiting, it is skipped (and reported as
+   *   done) so quick successive picks only send the latest.
+   */
+  async execute(
+    hass,
+    config,
+    service,
+    data = {},
+    domain = "yeelight_cube",
+    { coalesce } = {},
+  ) {
     if (!hass || !getTargetEntities(config).length) return false;
     const context = this.context;
+    this._latest ||= {};
+    const generation = coalesce
+      ? (this._latest[coalesce] = (this._latest[coalesce] || 0) + 1)
+      : 0;
     const targets = { target_entities: [...getTargetEntities(config)] };
     const payload = structuredClone(data);
     this.error = "";
@@ -38,6 +56,7 @@ export class CardCommandController {
     this.notify();
     const job = this.queue.then(async () => {
       if (context !== this.context) return false;
+      if (coalesce && this._latest[coalesce] !== generation) return true;
       await this.send(hass, targets, service, payload, { domain });
       return context === this.context;
     });

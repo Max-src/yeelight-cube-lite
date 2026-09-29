@@ -2940,7 +2940,24 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                 raise HomeAssistantError("Lamp is off and auto-turn-on is disabled")
 
         def update_one(target):
-            """Record the requested settings and publish them immediately."""
+            """Record the requested settings and publish them immediately.
+
+            Returns what is needed to undo them if the lamp rejects the change:
+            the previous values and this call's generation.
+            """
+            snapshot = {
+                attr: getattr(target, attr, None)
+                for attr in (
+                    "_native_effect",
+                    "_native_effect_speed",
+                    "_native_effect_color_mode",
+                    "_native_effect_color",
+                    "_mode",
+                    "_custom_draw_active",
+                )
+            }
+            generation = getattr(target, "_native_effect_generation", 0) + 1
+            target._native_effect_generation = generation
             if effect is not None:
                 target._native_effect = effect
             if speed is not None:
@@ -2958,28 +2975,62 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             if target._native_effect_speed_entity:
                 target._native_effect_speed_entity.async_write_ha_state()
             target.async_write_ha_state()
+            applied = {attr: getattr(target, attr, None) for attr in snapshot}
+            return snapshot, applied, generation
 
-        async def apply_one(target):
+        async def apply_one(target, snapshot, applied, generation):
             """Send the effect to the lamp (runs after the service returned)."""
             if target._mode != "Native Effect":
                 return
+            # A newer set_native_effect call already replaced these settings and
+            # will apply the latest ones itself: skip this redundant update.
+            if getattr(target, "_native_effect_generation", generation) != generation:
+                return
             try:
-                await target.async_apply_display_mode(update_type="color_change")
+                # The hardware wrapper reports failures by returning False
+                # (timeouts, offline lamp, circuit breaker) rather than raising.
+                ok = await target.async_apply_display_mode(update_type="color_change")
             except Exception:  # noqa: BLE001 -- background task, nobody awaits it
                 _LOGGER.exception(
                     "[SET_NATIVE_EFFECT] Failed to apply %s on %s",
                     target._native_effect,
                     getattr(target, "entity_id", target),
                 )
+                ok = False
+            else:
+                if ok is False:
+                    _LOGGER.warning(
+                        "[SET_NATIVE_EFFECT] Lamp did not accept %s on %s",
+                        target._native_effect,
+                        getattr(target, "entity_id", target),
+                    )
+            if ok is False and (
+                getattr(target, "_native_effect_generation", generation) == generation
+            ):
+                # The lamp did not take the change: publish what it still shows.
+                # Only fields still holding this call's values are restored, so a
+                # newer change from another path (rotation, set_mode, the select
+                # entities) is never overwritten.
+                for attr, value in snapshot.items():
+                    if getattr(target, attr, None) == applied[attr]:
+                        setattr(target, attr, value)
+                target._refresh_linked_entities()
+                if target._native_effect_speed_entity:
+                    target._native_effect_speed_entity.async_write_ha_state()
             target.async_write_ha_state()
 
         # Like set_clock_style: validation errors are raised above, then the
         # new settings are published at once and the lamp is updated in the
         # background, so cards are not held up by the hardware round trip.
-        # Hardware failures are logged rather than returned to the caller.
-        for target in targets:
-            update_one(target)
-        _fire_and_forget(*(apply_one(target) for target in targets))
+        # Hardware failures are logged and the previous settings republished,
+        # rather than returned to the caller.
+        undo = [update_one(target) for target in targets]
+        _fire_and_forget(
+            *(
+                apply_one(target, snapshot, applied, generation)
+                for target, (snapshot, applied, generation) in zip(targets, undo)
+            )
+        )
 
     hass.services.async_register(
         DOMAIN, "set_native_effect", handle_set_native_effect,

@@ -14,7 +14,13 @@ globalThis.document ??= {
   addEventListener() {},
   removeEventListener() {},
 };
-const { createSliderDraft, createSliderHandlers, stableSliderMarkup } =
+const {
+  createSliderDraft,
+  createSliderHandlers,
+  stableSliderMarkup,
+  renderSliderGroup,
+  sanitizeSliderGc,
+} =
   await import("../custom_components/yeelight_cube/www/slider-control-utils.js");
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -136,4 +142,41 @@ test("slider markup is kept unchanged while a drag is held", () => {
   assert.equal(stableSliderMarkup(host, "s", "<a value=9>"), "<a value=1>");
   host._anySliderDragging = false;
   assert.equal(stableSliderMarkup(host, "s", "<a value=9>"), "<a value=9>");
+});
+
+test("slider config cannot inject markup into the rendered HTML", () => {
+  const payload = '"><img src=x onerror=alert(1)>';
+  const gc = {
+    style: `slider${payload}`,
+    theme: payload,
+    color: `red;${payload}`,
+    thickness: `6${payload}`,
+    width: payload,
+    unit: payload,
+    iconLeft: payload,
+  };
+  const safe = sanitizeSliderGc(gc);
+  assert.equal(safe.style, undefined);
+  assert.equal(safe.color, undefined);
+  assert.equal(safe.thickness, undefined);
+  const html = renderSliderGroup([
+    { label: payload, gc: { ...gc, style: "capsule" }, value: 40 },
+    { label: "Speed", gc, value: 40, ns: `x${payload}` },
+  ]);
+  assert.ok(!html.includes("<img"), html);
+  assert.ok(!html.includes('onerror=alert(1)"'), html);
+  // Valid values are kept.
+  const valid = sanitizeSliderGc({ style: "bar", color: "#ff9800", thickness: "8", unit: "%" });
+  assert.deepEqual(
+    [valid.style, valid.color, valid.thickness, valid.unit],
+    ["bar", "#ff9800", 8, "%"],
+  );
+});
+
+test("slider text is escaped exactly once", () => {
+  const html = renderSliderGroup([
+    { gc: { style: "slider", unit: " & up" }, value: 40, ns: "a" },
+  ]);
+  assert.ok(html.includes("40 &amp; up"), html);
+  assert.ok(!html.includes("&amp;amp;"), html);
 });
