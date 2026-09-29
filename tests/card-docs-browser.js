@@ -1,3 +1,33 @@
+// Freeze every requestAnimationFrame loop anywhere in and under `root`
+// (matrix-animator.js's createRafLoop returns a duck-typed {start, stop,
+// running} controller: see matrix-animator.js). This walks `root` itself,
+// every own enumerable property, and every nested shadow root, instead of
+// naming each card's loop property one by one.
+//
+// DO NOT replace this with a fixed list of property names (e.g. only
+// card._animLoop) - that has gone stale TWICE already: once when a loop was
+// renamed (mode-controls-ui.js's `_frame` became `_previewLoop`), and once
+// because a card's second loop (yeelight-cube-lamp-preview-card.js's
+// `_nativeLoop`/`_clockLoop`) was simply never added to the list. Each time,
+// the loop kept running via real requestAnimationFrame, so the two captures
+// of the same scenario (see card-docs.cjs, which renders and captures each
+// scenario twice and diffs the pixels) came out different and CI failed with
+// "Capture pixels changed". Any new card/component with its own animation
+// loop is covered automatically as long as it returns createRafLoop's shape.
+function stopAnimationLoops(root) {
+  const queue = [root];
+  for (const node of queue) {
+    for (const key of Object.keys(node)) {
+      const value = node[key];
+      if (value && typeof value.stop === "function" && "running" in value)
+        value.stop();
+    }
+    if (node.shadowRoot)
+      for (const element of node.shadowRoot.querySelectorAll("*"))
+        queue.push(element);
+  }
+}
+
 window.cardDocs = {
   async prepare(fonts) {
     const host = document.querySelector("home-assistant");
@@ -223,20 +253,14 @@ window.cardDocs = {
     );
   },
 
-  // Freeze every real-time animation loop before the pixel-for-pixel capture
-  // (each scenario is rendered twice and compared; a running loop makes the
-  // two captures differ and fails with "Capture pixels changed" in CI).
-  // Each animated component owns its loop under its OWN property name, so
-  // renaming/adding a requestAnimationFrame loop on any card/component below
-  // must update the matching stop() call here too:
-  //   - card._animLoop / card._loop: the clock/native/lamp-preview card's own
-  //     grid animation (createRafLoop from matrix-animator.js).
-  //   - view._previewLoop: yeelight-mode-controls' favourites/collections
-  //     preview loop (also createRafLoop; see mode-controls-ui.js).
+  // Freeze every real-time animation loop before the pixel-for-pixel capture:
+  // each scenario is rendered twice and the captures are diffed byte-for-byte
+  // (card-docs.cjs), so a loop left running makes them differ and CI fails
+  // with "Capture pixels changed". See stopAnimationLoops() above for why this
+  // must stay a generic sweep, not a list of property names.
   async settle() {
     const card = this.card;
-    card._animLoop?.stop();
-    card._loop?.stop();
+    stopAnimationLoops(card);
     if (this.options.section || this.kind === "lamp-preview") {
       await card.updateComplete;
     } else if (card._paintPreview) {
@@ -261,8 +285,6 @@ window.cardDocs = {
     for (const view of card.shadowRoot.querySelectorAll(
       "yeelight-mode-controls",
     )) {
-      // Keep in sync with mode-controls-ui.js's own loop property name.
-      view._previewLoop?.stop();
       view.requestUpdate();
       await view.updateComplete;
     }
