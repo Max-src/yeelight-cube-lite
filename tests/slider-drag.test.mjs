@@ -1,0 +1,139 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+// slider-control-utils.js pulls in the bundled Lit (via the editor helpers),
+// which touches a few browser globals while loading. A minimal shim is enough:
+// the behaviour under test is plain JS and never renders.
+globalThis.window ??= globalThis;
+globalThis.HTMLElement ??= class {};
+globalThis.customElements ??= { define() {}, get() {} };
+globalThis.document ??= {
+  createComment: () => ({}),
+  createTreeWalker: () => ({}),
+  createElement: () => ({ setAttribute() {} }),
+  addEventListener() {},
+  removeEventListener() {},
+};
+const { createSliderDraft, createSliderHandlers, stableSliderMarkup } =
+  await import("../custom_components/yeelight_cube/www/slider-control-utils.js");
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Minimal document stub: records capture listeners so tests can "release".
+function stubDocument() {
+  const listeners = new Map();
+  const previous = globalThis.document;
+  globalThis.document = {
+    addEventListener(type, fn) {
+      listeners.set(type, fn);
+    },
+    removeEventListener(type, fn) {
+      if (listeners.get(type) === fn) listeners.delete(type);
+    },
+  };
+  return {
+    release: () => listeners.get("mouseup")?.(),
+    held: () => listeners.has("mouseup"),
+    restore: () => {
+      globalThis.document = previous;
+    },
+  };
+}
+
+function slider({ commitDelay = 10, onDragEnd } = {}) {
+  const host = {};
+  const commits = [];
+  const handlers = createSliderHandlers({
+    host,
+    getConfig: () => ({}),
+    onCommit: (value) => commits.push(value),
+    commitDelay,
+    onDragEnd,
+  });
+  return { host, commits, handlers };
+}
+
+test("a slow drag stays a drag after the debounced commit fires", async () => {
+  const doc = stubDocument();
+  try {
+    let ended = 0;
+    const { host, commits, handlers } = slider({ onDragEnd: () => ended++ });
+    handlers._slStartDrag();
+    handlers._slChange({ target: { value: "40" } });
+    await wait(30); // longer than the commit delay, button still held
+    assert.deepEqual(commits, [40]);
+    assert.equal(host._anySliderDragging, true);
+    assert.ok(doc.held());
+    doc.release();
+    await wait(70);
+    assert.equal(host._anySliderDragging, false);
+    assert.equal(ended, 1);
+    assert.deepEqual(commits, [40]); // nothing pending, nothing re-sent
+  } finally {
+    doc.restore();
+  }
+});
+
+test("releasing sends the pending value immediately", () => {
+  const doc = stubDocument();
+  try {
+    const { commits, handlers } = slider({ commitDelay: 5000 });
+    handlers._slStartDrag();
+    handlers._slChange({ target: { value: "70" } });
+    assert.deepEqual(commits, []);
+    doc.release();
+    assert.deepEqual(commits, [70]);
+    assert.equal(doc.held(), false);
+  } finally {
+    doc.restore();
+  }
+});
+
+test("a wheel change without a held pointer ends with its commit", async () => {
+  const doc = stubDocument();
+  try {
+    const { host, commits, handlers } = slider();
+    handlers._slChange({ target: { value: "55" } });
+    assert.equal(host._anySliderDragging, true);
+    await wait(30);
+    assert.deepEqual(commits, [55]);
+    assert.equal(host._anySliderDragging, false);
+  } finally {
+    doc.restore();
+  }
+});
+
+test("the draft survives stale state and clears once the lamp confirms", () => {
+  let dragging = false;
+  const draft = createSliderDraft({ isDragging: () => dragging });
+  draft.live(30);
+  draft.commit(60);
+  // An echo of an older, in-between value must not replace the user's value.
+  assert.equal(draft.settle(30), false);
+  assert.equal(draft.value, 60);
+  // Never dropped while the pointer is held, even when the lamp agrees.
+  dragging = true;
+  assert.equal(draft.settle(60), false);
+  dragging = false;
+  // Within tolerance of the committed value: back to the lamp's state.
+  assert.equal(draft.settle(59), true);
+  assert.equal(draft.value, null);
+});
+
+test("an unconfirmed draft expires after its timeout", async () => {
+  let expired = 0;
+  const draft = createSliderDraft({ timeoutMs: 20, onExpire: () => expired++ });
+  draft.commit(80);
+  await wait(50);
+  assert.equal(draft.value, null);
+  assert.equal(expired, 1);
+});
+
+test("slider markup is kept unchanged while a drag is held", () => {
+  const host = {};
+  assert.equal(stableSliderMarkup(host, "s", "<a value=1>"), "<a value=1>");
+  host._anySliderDragging = true;
+  assert.equal(stableSliderMarkup(host, "s", "<a value=9>"), "<a value=1>");
+  host._anySliderDragging = false;
+  assert.equal(stableSliderMarkup(host, "s", "<a value=9>"), "<a value=9>");
+});

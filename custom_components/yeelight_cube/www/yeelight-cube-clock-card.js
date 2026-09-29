@@ -68,6 +68,8 @@ import {
   renderSliderGroup,
   lightSliderConfig,
   createSliderHandlers,
+  createSliderDraft,
+  stableSliderMarkup,
   sliderControlStyles,
   sliderKeys,
   sliderPctToRaw,
@@ -235,8 +237,18 @@ class YeelightCubeClockCard extends LitElement {
     this._visible = new Set();
     this._io = null;
     this._stateSignature = null;
-    this._speedPreview = null;
-    this._brightnessPreview = null;
+    // Dragged slider values (in slider %) survive until the lamp reports them
+    // back, so a slow drag or an in-between update never jumps them back.
+    this._sliderDrafts = {
+      speed: createSliderDraft({
+        isDragging: () => this._anySliderDragging,
+        onExpire: () => this.requestUpdate(),
+      }),
+      brightness: createSliderDraft({
+        isDragging: () => this._anySliderDragging,
+        onExpire: () => this.requestUpdate(),
+      }),
+    };
     // Two independent sliders on one host (shared appearance config), wired
     // through the shared module with distinct namespaces so their handlers and
     // DOM don't collide.
@@ -247,10 +259,12 @@ class YeelightCubeClockCard extends LitElement {
         host: this,
         ns: "speed",
         getConfig: () => this._speedGc(),
-        onCommit: (pct) => this._applySpeed(this._pctToRaw(pct)),
-        onLive: (pct) => {
-          this._speedPreview = this._pctToRaw(pct);
+        onCommit: (pct) => {
+          this._sliderDrafts.speed.commit(pct);
+          this._applySpeed(this._pctToRaw(pct));
         },
+        onLive: (pct) => this._sliderDrafts.speed.live(pct),
+        onDragEnd: () => this.requestUpdate(),
       }),
     );
     Object.assign(
@@ -259,12 +273,25 @@ class YeelightCubeClockCard extends LitElement {
         host: this,
         ns: "brightness",
         getConfig: () => this._brightnessGc(),
-        onCommit: (pct) => this._applyBrightness(this._pctToBri(pct)),
-        onLive: (pct) => {
-          this._brightnessPreview = pct;
+        onCommit: (pct) => {
+          this._sliderDrafts.brightness.commit(pct);
+          this._applyBrightness(this._pctToBri(pct));
         },
+        onLive: (pct) => this._sliderDrafts.brightness.live(pct),
+        onDragEnd: () => this.requestUpdate(),
       }),
     );
+  }
+
+  // Live speed as a raw device value (1-255), or null when not overridden.
+  get _speedPreview() {
+    const pct = this._sliderDrafts?.speed.value;
+    return pct == null ? null : this._pctToRaw(pct);
+  }
+
+  // Live brightness in slider %, or null when not overridden.
+  get _brightnessPreview() {
+    return this._sliderDrafts?.brightness.value ?? null;
   }
 
   _pctToRaw(pct) {
@@ -428,10 +455,6 @@ class YeelightCubeClockCard extends LitElement {
       // service calls) but skip attribute reads, controller updates and the
       // state-signature work. Drag previews still drop once the drag ends.
       this._hass = hass;
-      if (!this._anySliderDragging) {
-        this._speedPreview = null;
-        this._brightnessPreview = null;
-      }
       return;
     }
     this._attrs();
@@ -447,12 +470,15 @@ class YeelightCubeClockCard extends LitElement {
     this._controls?.update();
     this._restoreCustomColor();
     this._ensureRenderRoot();
-    // Once the lamp echoes the applied values, drop the live-drag overrides so
-    // the previews follow the real values again.
-    if (!this._anySliderDragging) {
-      this._speedPreview = null;
-      this._brightnessPreview = null;
-    }
+    // Once the lamp reports (about) the dragged values, drop the overrides so
+    // the sliders and previews follow the real values again.
+    const sliderAttrs = this._attrs();
+    this._sliderDrafts.brightness.settle(
+      this._briToPct(Number(sliderAttrs.brightness) || 3),
+    );
+    this._sliderDrafts.speed.settle(
+      this._rawToPct(Number(sliderAttrs.native_effect_speed) || 50),
+    );
     // Only rebuild the DOM when a relevant attribute changes; the animation
     // loop repaints the previews in place so live updates stay cheap.
     const sig = this._computeStateSignature();
@@ -1723,15 +1749,17 @@ class YeelightCubeClockCard extends LitElement {
       );
       controls.push({
         label: "Animation speed",
-        gc: { ...this._speedGc(), rawValue: raw },
-        value: this._rawToPct(raw),
+        gc: { ...this._speedGc(), rawValue: this._speedPreview ?? raw },
+        value: this._sliderDrafts.speed.value ?? this._rawToPct(raw),
         ns: "speed",
       });
     }
     // The shared slider renderer emits an HTML string with inline handlers
     // that resolve through `this.getRootNode().host._sl*`.
     return html`<div class="section section-sliders">
-      ${unsafeHTML(renderSliderGroup(controls))}
+      ${unsafeHTML(
+        stableSliderMarkup(this, "sliders", renderSliderGroup(controls)),
+      )}
     </div>`;
   }
 

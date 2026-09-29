@@ -50,6 +50,8 @@ import {
   lightSliderConfig,
   sliderPctToRaw,
   sliderRawToPct,
+  createSliderDraft,
+  stableSliderMarkup,
 } from "./slider-control-utils.js";
 import { paginationStyles } from "./pagination-utils.js";
 import {
@@ -108,7 +110,14 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       },
       { minIntervalMs: 100 },
     );
+    // Dragged slider values survive until the lamp reports them back, so a
+    // slow drag or an in-between state update never jumps the slider back.
+    this._sliderDrafts = {};
     for (const ns of ["speed", "brightness"]) {
+      this._sliderDrafts[ns] = createSliderDraft({
+        isDragging: () => this._anySliderDragging,
+        onExpire: () => this.requestUpdate(),
+      });
       Object.assign(
         this,
         createSliderHandlers({
@@ -116,12 +125,13 @@ class YeelightCubeNativeEffectsCard extends LitElement {
           ns,
           getConfig: () => this._sliderConfig(ns),
           onLive: (value) => {
-            this[`_${ns}Draft`] = value;
+            this._sliderDrafts[ns].live(value);
             this._paint();
           },
+          onDragEnd: () => this.requestUpdate(),
           onCommit: (value) => {
             this._stopRotation();
-            this[`_${ns}Draft`] = null;
+            this._sliderDrafts[ns].commit(value);
             if (ns === "speed")
               this._command("set_native_effect", {
                 speed: this._speedRaw(value),
@@ -151,6 +161,21 @@ class YeelightCubeNativeEffectsCard extends LitElement {
           id.startsWith("light.") && hass.states[id].attributes.native_effect,
       ),
     };
+  }
+
+  get _speedDraft() {
+    return this._sliderDrafts?.speed.value ?? null;
+  }
+  set _speedDraft(value) {
+    if (value == null) this._sliderDrafts?.speed.clear();
+    else this._sliderDrafts?.speed.live(value);
+  }
+  get _brightnessDraft() {
+    return this._sliderDrafts?.brightness.value ?? null;
+  }
+  set _brightnessDraft(value) {
+    if (value == null) this._sliderDrafts?.brightness.clear();
+    else this._sliderDrafts?.brightness.live(value);
   }
 
   setConfig(config) {
@@ -208,8 +233,20 @@ class YeelightCubeNativeEffectsCard extends LitElement {
         !this._busy
       )
         this._selected = null;
+      this._settleSliderDrafts?.(state);
       this._state = state;
     }
+  }
+
+  // Drop dragged slider values once the lamp reports (about) them.
+  _settleSliderDrafts(state) {
+    const attrs = state?.attributes || {};
+    this._sliderDrafts.brightness.settle(
+      sliderRawToPct(attrs.brightness || 3, 3, 255),
+    );
+    this._sliderDrafts.speed.settle(
+      sliderRawToPct(attrs.native_effect_speed || 50, 1, 255),
+    );
   }
 
   // Rotation status and colour modes read every target lamp (not just the
@@ -504,7 +541,9 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       });
     if (!controls.length) return "";
     return html`<div class="sliders" ?inert=${this._disabled() || this._busy}>
-      ${unsafeHTML(renderSliderGroup(controls))}
+      ${unsafeHTML(
+        stableSliderMarkup(this, "sliders", renderSliderGroup(controls)),
+      )}
     </div>`;
   }
 

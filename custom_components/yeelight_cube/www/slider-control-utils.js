@@ -448,6 +448,83 @@ export function renderSliderGroup(controls) {
 }
 
 /**
+ * The value a slider shows while (and just after) the user drags it, kept
+ * until the lamp reports about that value. Without it the card falls back to
+ * the lamp's last-known state between commits and the slider jumps back.
+ *
+ * - live(pct): value under the pointer during a drag
+ * - commit(pct): value just sent to the lamp
+ * - settle(statePct): call with the lamp's current value (in slider %) on each
+ *   state update; drops the draft once it is within `tolerance`, or after
+ *   `timeoutMs` if the lamp never confirms. Never drops it while dragging.
+ */
+export function createSliderDraft({
+  isDragging = () => false,
+  onExpire,
+  tolerance = 2,
+  timeoutMs = 5000,
+} = {}) {
+  let value = null;
+  let at = 0;
+  let timer = null;
+  const clear = () => {
+    value = null;
+    clearTimeout(timer);
+    timer = null;
+  };
+  const expire = () => {
+    timer = null;
+    if (isDragging()) {
+      timer = setTimeout(expire, timeoutMs);
+      return;
+    }
+    if (value == null) return;
+    value = null;
+    onExpire?.();
+  };
+  return {
+    get value() {
+      return value;
+    },
+    live(pct) {
+      value = pct;
+      at = Date.now();
+    },
+    commit(pct) {
+      value = pct;
+      at = Date.now();
+      clearTimeout(timer);
+      timer = setTimeout(expire, timeoutMs);
+    },
+    settle(statePct) {
+      if (value == null || isDragging()) return false;
+      if (
+        Math.abs(Number(statePct) - value) <= tolerance ||
+        Date.now() - at > timeoutMs
+      ) {
+        clear();
+        return true;
+      }
+      return false;
+    },
+    clear,
+  };
+}
+
+/**
+ * Keep a slider group's markup unchanged while one of the host's sliders is
+ * held. The markup bakes in the current value, so re-rendering it mid-drag
+ * would make Lit replace the <input> under the pointer (the value is shown by
+ * the live visual updates instead). Rebuilt normally once the drag ends.
+ */
+export function stableSliderMarkup(host, key, markup) {
+  const cache = (host._stableSliderMarkup ||= {});
+  if (host._anySliderDragging && cache[key] != null) return cache[key];
+  cache[key] = markup;
+  return markup;
+}
+
+/**
  * Create the interaction handlers for a host element. Assign the returned
  * object onto the host (e.g. `Object.assign(this, createSliderHandlers({...}))`)
  * so the inline `this.getRootNode().host._sl*` handlers resolve.
@@ -464,6 +541,11 @@ export function renderSliderGroup(controls) {
  * @param {Function} [p.onLive]      - (value1to100) => void, immediate feedback
  * @param {number}  [p.commitDelay]  - debounce ms (default 500)
  * @param {string}  [p.ns]           - namespace (must match renderSliderControl)
+ * @param {Function} [p.onDragEnd]   - called once the pointer is released
+ *
+ * `host._anySliderDragging` stays true for as long as a pointer is held on any
+ * of the host's sliders (released anywhere on the page), so cards can keep
+ * the lamp's older state from overwriting the value under the user's finger.
  */
 export function createSliderHandlers({
   host,
@@ -472,6 +554,7 @@ export function createSliderHandlers({
   onLive,
   commitDelay = 500,
   ns = "",
+  onDragEnd,
 }) {
   const nsCap = ns ? ns.charAt(0).toUpperCase() + ns.slice(1) : "";
   const typingProp = `_sl${nsCap}Typing`;
@@ -485,7 +568,40 @@ export function createSliderHandlers({
       `.brightness-slider-container[data-sl-ns="${ns}"]`,
     ) || host.shadowRoot;
   let commitTimer = null;
+  let pendingCommit = null;
   let dragCleanup = null;
+  let pointerHeld = false;
+
+  // A pointer press on the slider: mark the host as dragging until the button
+  // is released *anywhere* (inline onmouseup only fires over the input). The
+  // debounced commit must not end the drag while the button is still down,
+  // otherwise a slow drag lets the lamp's older state jump the slider back.
+  const releasePointer = () => {
+    if (!pointerHeld) return;
+    pointerHeld = false;
+    for (const type of ["mouseup", "pointerup", "touchend", "touchcancel"])
+      document.removeEventListener(type, releasePointer, true);
+    // Send the final value now instead of waiting out the debounce.
+    if (commitTimer) {
+      clearTimeout(commitTimer);
+      commitTimer = null;
+      const value = pendingCommit;
+      pendingCommit = null;
+      onCommit(value);
+    }
+    setTimeout(() => {
+      if (pointerHeld) return;
+      host._anySliderDragging = false;
+      onDragEnd?.();
+    }, 50);
+  };
+  const holdPointer = () => {
+    host._anySliderDragging = true;
+    if (pointerHeld) return;
+    pointerHeld = true;
+    for (const type of ["mouseup", "pointerup", "touchend", "touchcancel"])
+      document.addEventListener(type, releasePointer, true);
+  };
 
   const getWheelStops = () => {
     const gc = getConfig();
@@ -619,8 +735,12 @@ export function createSliderHandlers({
 
   const commit = (value) => {
     if (commitTimer) clearTimeout(commitTimer);
+    pendingCommit = value;
     commitTimer = setTimeout(() => {
-      host._anySliderDragging = false;
+      commitTimer = null;
+      pendingCommit = null;
+      // Wheel/keyboard changes end here; a held pointer ends on release.
+      if (!pointerHeld) host._anySliderDragging = false;
       onCommit(value);
     }, commitDelay);
   };
@@ -648,12 +768,10 @@ export function createSliderHandlers({
     UpdateVisuals: updateVisuals,
 
     StartDrag() {
-      host._anySliderDragging = true;
+      holdPointer();
     },
     EndDrag() {
-      setTimeout(() => {
-        host._anySliderDragging = false;
-      }, 50);
+      releasePointer();
     },
 
     Change(event) {
@@ -739,7 +857,7 @@ export function createSliderHandlers({
       );
       const tick = viewport.querySelector(".brightness-wheel-tick");
       const tickW = tick ? tick.offsetWidth || 52 : 52;
-      host._anySliderDragging = true;
+      holdPointer();
       const move = (e) => {
         const cx = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
         const steps = Math.round(-(cx - startX) / tickW);
@@ -751,7 +869,7 @@ export function createSliderHandlers({
         }
       };
       const end = () => {
-        setTimeout(() => (host._anySliderDragging = false), 50);
+        releasePointer();
         document.removeEventListener("mousemove", move);
         document.removeEventListener("mouseup", end);
         document.removeEventListener("touchmove", move);
@@ -765,7 +883,7 @@ export function createSliderHandlers({
 
     MatrixDown(event) {
       event.preventDefault();
-      host._anySliderDragging = true;
+      holdPointer();
       const grid = event.currentTarget;
       const total = parseInt(grid.dataset.total) || 1;
       const input = grid.parentElement?.querySelector(
@@ -800,7 +918,7 @@ export function createSliderHandlers({
         }
       };
       const end = () => {
-        setTimeout(() => (host._anySliderDragging = false), 50);
+        releasePointer();
         document.removeEventListener("mousemove", move);
         document.removeEventListener("mouseup", end);
         document.removeEventListener("touchmove", move);
@@ -816,7 +934,7 @@ export function createSliderHandlers({
 
     RotaryStart(event) {
       host[rotaryProp] = true;
-      host._anySliderDragging = true;
+      holdPointer();
       const container = event.currentTarget;
       const rotaryClick = (e) => {
         const rect = container.getBoundingClientRect();
@@ -843,7 +961,7 @@ export function createSliderHandlers({
       };
       const end = () => {
         host[rotaryProp] = false;
-        setTimeout(() => (host._anySliderDragging = false), 50);
+        releasePointer();
         document.removeEventListener("mousemove", move);
         document.removeEventListener("mouseup", end);
         document.removeEventListener("touchmove", move);
@@ -883,6 +1001,13 @@ export function createSliderHandlers({
     // Called from disconnectedCallback to clean up any in-flight drag listeners.
     Destroy() {
       if (commitTimer) clearTimeout(commitTimer);
+      commitTimer = null;
+      pendingCommit = null;
+      if (pointerHeld) {
+        pointerHeld = false;
+        for (const type of ["mouseup", "pointerup", "touchend", "touchcancel"])
+          document.removeEventListener(type, releasePointer, true);
+      }
       if (dragCleanup) {
         document.removeEventListener("mousemove", dragCleanup.move);
         document.removeEventListener("mouseup", dragCleanup.end);

@@ -46,6 +46,7 @@ import {
   renderPagination,
 } from "./pagination-utils.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
+import { createSliderDraft } from "./slider-control-utils.js";
 
 // ── Lit helpers not exported by the bundled lit-all.js ─────────────────────
 // Lit's `nothing` sentinel is a registered symbol (same trick as
@@ -1246,6 +1247,20 @@ class YeelightCubeGradientCard extends LitElement {
 
   constructor() {
     super();
+    // The angle the user is setting, kept until the lamp reports it back so
+    // re-renders during/after a drag never snap the controls to the old angle.
+    this._angleDraft = createSliderDraft({
+      tolerance: 1,
+      isDragging: () =>
+        !!(
+          this._angleHeld ||
+          this._usingSlider ||
+          this._draggingRotary ||
+          this._isDragging ||
+          this._typingAngle
+        ),
+      onExpire: () => this._renderCard(),
+    });
     // Passive delegated swipe listeners for the carousel preview (stable
     // objects so Lit never re-binds them across renders).
     this._previewTouchStartListener = {
@@ -1395,6 +1410,12 @@ class YeelightCubeGradientCard extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
+    if (this._angleRelease) {
+      for (const type of ["mouseup", "pointerup", "touchend", "touchcancel"])
+        document.removeEventListener(type, this._angleRelease, true);
+      this._angleRelease = null;
+      this._angleHeld = false;
+    }
     this._angleCommands.reset();
     this._previewContext = (this._previewContext || 0) + 1;
     // Clean up wheel navigation controller
@@ -1964,8 +1985,8 @@ class YeelightCubeGradientCard extends LitElement {
     const textColors = this._pendingColors ||
       stateObj.attributes.text_colors || [[255, 255, 255]];
 
-    // Get current angle from entity
-    const currentAngle = stateObj.attributes.angle ?? 0;
+    // Current angle: the in-flight value while the lamp catches up.
+    const currentAngle = this._displayAngle(stateObj);
 
     // ── SURGICAL RENDER FAST PATH ──────────────────────────────────────
     // The skeleton is (re)rendered through Lit ONCE per structural
@@ -2014,7 +2035,7 @@ class YeelightCubeGradientCard extends LitElement {
 
     const textColors = this._pendingColors ||
       stateObj.attributes.text_colors || [[255, 255, 255]];
-    const currentAngle = stateObj.attributes.angle ?? 0;
+    const currentAngle = this._displayAngle(stateObj);
 
     const showCard = this.config.show_card_background !== false;
     // Unified mode selector (replaces the old separate color-mode selector +
@@ -2156,6 +2177,8 @@ class YeelightCubeGradientCard extends LitElement {
               showAngleSlider && this._getRotaryStyleInfo().style !== "capsule"
                 ? html`
               <input id="angleslider" class="angle-slider" type="range" min="0" max="359" step="1" value=${Math.round(currentAngle)}
+                @mousedown=${this._onAngleSliderPress}
+                @touchstart=${this._onAngleSliderPress}
                 @input=${this._onAngleSliderInput}
                 @mouseup=${this._onAngleSliderRelease}
                 @touchend=${this._onAngleSliderRelease}
@@ -2207,7 +2230,7 @@ class YeelightCubeGradientCard extends LitElement {
     const root = this.shadowRoot;
     const stateObj = this._hass?.states?.[this._getPrimaryEntity()];
     if (!root || !stateObj) return;
-    const currentAngle = stateObj.attributes.angle ?? 0;
+    const currentAngle = this._displayAngle(stateObj);
 
     const host = root.getElementById("gc-preview-host");
     if (host) {
@@ -2823,6 +2846,7 @@ class YeelightCubeGradientCard extends LitElement {
     const input = e.target;
     if (!input?.matches?.(".angle-capsule-host .capsule-input")) return;
     if (e.relatedTarget && input.contains(e.relatedTarget)) return;
+    if (this._angleHeld) return;
     if (this._usingSlider) {
       setTimeout(() => {
         this._usingSlider = false;
@@ -2851,6 +2875,7 @@ class YeelightCubeGradientCard extends LitElement {
 
   // Safety timeout to ensure flag gets cleared
   _onAngleSliderLeave() {
+    if (this._angleHeld) return;
     setTimeout(() => {
       this._usingSlider = false;
       this._flushPendingRender();
@@ -4087,11 +4112,43 @@ class YeelightCubeGradientCard extends LitElement {
 
   _debouncedApplyAngle(angle) {
     this._pendingAngle = angle;
+    this._angleDraft.commit(angle);
     this._angleCommands.schedule(this._hass, this.config, angle);
   }
 
   _applyAngle(angle) {
+    this._angleDraft.commit(angle);
     this._angleCommands.schedule(this._hass, this.config, angle, true);
+  }
+
+  // The angle to display: the one being set (until the lamp reports about
+  // that value, or a timeout) or else the lamp's current angle.
+  _displayAngle(stateObj) {
+    const stateAngle = stateObj?.attributes?.angle ?? 0;
+    this._angleDraft.settle(stateAngle);
+    return this._angleDraft.value ?? stateAngle;
+  }
+
+  // A pointer press on the angle slider/capsule: the drag lasts until the
+  // button is released anywhere on the page, not when the pointer merely
+  // leaves the control (which used to let a state update snap it back).
+  _holdAngleControl(onRelease) {
+    this._angleHeld = true;
+    if (this._angleRelease) return;
+    this._angleRelease = () => {
+      for (const type of ["mouseup", "pointerup", "touchend", "touchcancel"])
+        document.removeEventListener(type, this._angleRelease, true);
+      this._angleRelease = null;
+      this._angleHeld = false;
+      onRelease();
+    };
+    for (const type of ["mouseup", "pointerup", "touchend", "touchcancel"])
+      document.addEventListener(type, this._angleRelease, true);
+  }
+
+  _onAngleSliderPress() {
+    this._usingSlider = true;
+    this._holdAngleControl(() => this._onAngleSliderRelease());
   }
 
   _onAngleApplied() {
@@ -5223,6 +5280,7 @@ class YeelightCubeGradientCard extends LitElement {
   // ── Capsule angle slider handlers ──────────────────────────
   _startCapsuleDrag() {
     this._usingSlider = true;
+    this._holdAngleControl(() => this._endCapsuleDrag());
   }
 
   _endCapsuleDrag() {
