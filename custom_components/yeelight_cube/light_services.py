@@ -2945,7 +2945,11 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             Returns what is needed to undo them if the lamp rejects the change:
             the previous values and this call's generation.
             """
-            snapshot = {
+            # The rollback target is what the lamp last accepted. While an
+            # earlier call is still unconfirmed (in flight, or skipped because
+            # this one replaced it) its values never reached the lamp, so this
+            # call inherits that call's baseline instead of snapshotting them.
+            snapshot = getattr(target, "_native_effect_baseline", None) or {
                 attr: getattr(target, attr, None)
                 for attr in (
                     "_native_effect",
@@ -2956,6 +2960,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                     "_custom_draw_active",
                 )
             }
+            target._native_effect_baseline = snapshot
             generation = getattr(target, "_native_effect_generation", 0) + 1
             target._native_effect_generation = generation
             if effect is not None:
@@ -2981,6 +2986,10 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         async def apply_one(target, snapshot, applied, generation):
             """Send the effect to the lamp (runs after the service returned)."""
             if target._mode != "Native Effect":
+                # Nothing to send (e.g. a speed change while the clock runs):
+                # the settings stand as published.
+                if getattr(target, "_native_effect_generation", generation) == generation:
+                    target._native_effect_baseline = None
                 return
             # A newer set_native_effect call already replaced these settings and
             # will apply the latest ones itself: skip this redundant update.
@@ -3004,19 +3013,28 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                         target._native_effect,
                         getattr(target, "entity_id", target),
                     )
-            if ok is False and (
+            latest = (
                 getattr(target, "_native_effect_generation", generation) == generation
-            ):
-                # The lamp did not take the change: publish what it still shows.
-                # Only fields still holding this call's values are restored, so a
-                # newer change from another path (rotation, set_mode, the select
-                # entities) is never overwritten.
-                for attr, value in snapshot.items():
+            )
+            if ok is False and latest:
+                # The lamp did not take the change: publish what it last
+                # accepted (an older call may have succeeded since this one
+                # started). Only fields still holding this call's values are
+                # restored, so a newer change from another path (rotation,
+                # set_mode, the select entities) is never overwritten.
+                baseline = getattr(target, "_native_effect_baseline", None) or snapshot
+                for attr, value in baseline.items():
                     if getattr(target, attr, None) == applied[attr]:
                         setattr(target, attr, value)
                 target._refresh_linked_entities()
                 if target._native_effect_speed_entity:
                     target._native_effect_speed_entity.async_write_ha_state()
+            if latest:
+                target._native_effect_baseline = None
+            elif ok is not False:
+                # The lamp now shows this call's values: the baseline for the
+                # newer call that is still pending.
+                target._native_effect_baseline = applied
             target.async_write_ha_state()
 
         # Like set_clock_style: validation errors are raised above, then the

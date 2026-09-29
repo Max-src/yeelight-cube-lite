@@ -112,8 +112,13 @@ const SLIDER_NUMBER_KEYS = [
 ];
 const SLIDER_TEXT_KEYS = ["unit", "rawUnit", "iconLeft", "iconRight"];
 const TOKEN_PATTERN = /^[a-z0-9_-]+$/i;
-const CSS_COLOR_PATTERN =
-  /^(#[0-9a-f]{3,8}|(rgb|rgba|hsl|hsla)\([\d\s.,%/]+\)|[a-z]+|var\(--[\w-]+\))$/i;
+// A colour lands inside style="--brightness-color: …;". Rather than listing
+// every CSS colour syntax (var() with fallbacks, color-mix(), oklch(), deg
+// units, ...), allow only the characters colours use: no quotes, <>, ;, :,
+// braces or backslashes means the value cannot leave the declaration, and
+// url()/expression()/image() are refused outright.
+const CSS_COLOR_PATTERN = /^[\w#(),.%\s/+-]+$/;
+const CSS_COLOR_FORBIDDEN = /(url|expression|image|element)\s*\(/i;
 
 export function sanitizeSliderGc(gc = {}) {
   const safe = { ...gc };
@@ -122,12 +127,25 @@ export function sanitizeSliderGc(gc = {}) {
       delete safe[key];
   for (const key of SLIDER_NUMBER_KEYS) {
     if (safe[key] == null) continue;
+    // An empty value means "not set" (Number("") would be 0).
+    if (String(safe[key]).trim() === "") {
+      delete safe[key];
+      continue;
+    }
     const number = Number(safe[key]);
     if (Number.isFinite(number)) safe[key] = number;
     else delete safe[key];
   }
-  if (safe.color != null && !CSS_COLOR_PATTERN.test(String(safe.color).trim()))
-    delete safe.color;
+  if (safe.color != null) {
+    const color = String(safe.color).trim();
+    if (
+      !color ||
+      !CSS_COLOR_PATTERN.test(color) ||
+      CSS_COLOR_FORBIDDEN.test(color)
+    )
+      delete safe.color;
+    else safe.color = color;
+  }
   for (const key of SLIDER_TEXT_KEYS)
     if (safe[key] != null) safe[key] = escapeHtml(String(safe[key]));
   return safe;

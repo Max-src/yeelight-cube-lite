@@ -180,3 +180,17 @@ test("slider text is escaped exactly once", () => {
   assert.ok(html.includes("40 &amp; up"), html);
   assert.ok(!html.includes("&amp;amp;"), html);
 });
+
+test("valid CSS colour syntaxes and empty numbers are handled sensibly", () => {
+  for (const color of [
+    "var(--primary-color, #fff)",
+    "color-mix(in srgb, red 50%, blue)",
+    "oklch(70% 0.1 200deg)",
+    "rgb(1 2 3 / 50%)",
+  ])
+    assert.equal(sanitizeSliderGc({ color }).color, color);
+  for (const color of ['red"><x>', "red;top:0", "url(x)", "a:b"])
+    assert.equal(sanitizeSliderGc({ color }).color, undefined);
+  assert.equal(sanitizeSliderGc({ thickness: "" }).thickness, undefined);
+  assert.equal(sanitizeSliderGc({ thickness: " 8 " }).thickness, 8);
+});

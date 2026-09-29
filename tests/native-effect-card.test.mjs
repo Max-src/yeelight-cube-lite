@@ -5,7 +5,10 @@ import {
   previewAttributes,
 } from "../custom_components/yeelight_cube/www/offline-preview-state.js";
 import { resolvePreviewAppearance } from "../custom_components/yeelight_cube/www/preview-appearance.js";
-import { CardCommandController } from "../custom_components/yeelight_cube/www/card-command-controller.js";
+import {
+  CardCommandController,
+  SUPERSEDED,
+} from "../custom_components/yeelight_cube/www/card-command-controller.js";
 import { requestedPage } from "../custom_components/yeelight_cube/www/pagination-utils.js";
 import { modeActionOptions } from "../custom_components/yeelight_cube/www/action-button-utils.js";
 import {
@@ -901,8 +904,9 @@ test("preview selection applies immediately and includes a supported speed draft
   };
   card._apply = new Function(
     "nativeEffectAction",
+    "SUPERSEDED",
     `return async function(name, managed = false) {${applyBody}}`,
-  )(nativeEffectAction);
+  )(nativeEffectAction, SUPERSEDED);
   new Function("name", selectBody).call(card, "Rainbow");
   assert.equal(card._selected, "Rainbow");
   await new Promise((resolve) => setTimeout(resolve));
@@ -916,6 +920,10 @@ test("preview selection applies immediately and includes a supported speed draft
   card._speedDraft = 45;
   card._command = async () => false;
   await card._apply("Streamer");
+  assert.equal(card._speedDraft, 45);
+  // A pick replaced by a newer one before it was sent keeps the speed draft.
+  card._command = async () => SUPERSEDED;
+  assert.equal(await card._apply("Streamer"), SUPERSEDED);
   assert.equal(card._speedDraft, 45);
   card._context = 1;
   let finish;

@@ -8,6 +8,7 @@ import {
   DEFAULT_ACTION_BUTTON_STYLE,
   DEFAULT_BUTTON_CONTENT_MODE,
 } from "./action-button-utils.js";
+import { SUPERSEDED } from "./card-command-controller.js";
 export {
   normalizeFavourite,
   favouriteId,
@@ -469,6 +470,8 @@ export class ModeControlsController {
         ? this.adapter.select(name)
         : this.adapter.apply(name));
       if (success === false || context !== this.context) return false;
+      // Replaced by a newer pick before it was sent: that pick records itself.
+      if (success === SUPERSEDED) return SUPERSEDED;
       this.selection.record(
         this.captureFavourite(name),
         this.captureFavourite(),

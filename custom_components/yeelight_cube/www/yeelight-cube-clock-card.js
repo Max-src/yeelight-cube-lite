@@ -1163,7 +1163,11 @@ class YeelightCubeClockCard extends LitElement {
   // inside the preview shell).
   _setupObserver() {
     if (this._io) this._io.disconnect();
+    this._io = null;
     this._visible = new Set();
+    // A render can land after the card left the page (disconnectedCallback
+    // already ran): never create an observer nothing would clean up.
+    if (!this.isConnected) return;
     const tiles = this.shadowRoot
       ? [
           ...this.shadowRoot.querySelectorAll("[data-clock-preview]"),

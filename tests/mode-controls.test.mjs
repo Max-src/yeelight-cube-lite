@@ -1,7 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { CardCommandController } from "../custom_components/yeelight_cube/www/card-command-controller.js";
+import {
+  CardCommandController,
+  SUPERSEDED,
+} from "../custom_components/yeelight_cube/www/card-command-controller.js";
 import {
   rotationTargets,
   retryFailedRotations,
@@ -443,8 +446,17 @@ test("queued picks collapse to the latest; an in-flight pick still completes", a
     run({ effect: "C" }, { coalesce: "select" }),
   ];
   await drain(3);
-  assert.deepEqual(await Promise.all([first, ...queued]), [true, true, true, true]);
+  // B was never sent: it reports SUPERSEDED, not success.
+  assert.deepEqual(await Promise.all([first, ...queued]), [true, SUPERSEDED, true, true]);
   assert.deepEqual(sent, ["A", 80, "C"]);
+});
+
+test("a superseded pick is not recorded as the selection", async () => {
+  const { controller } = fixture({ apply: async () => SUPERSEDED });
+  assert.equal(await controller.choose("B"), true);
+  // Nothing was sent, so the pending selection stays on the current mode.
+  assert.equal(controller.selection.pending, null);
+  assert.equal(controller.error, "");
 });
 
 test("rotation uses available unique modes and bounds intervals", () => {

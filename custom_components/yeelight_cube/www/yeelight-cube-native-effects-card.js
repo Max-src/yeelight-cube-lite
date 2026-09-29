@@ -8,7 +8,10 @@ import { resolvePreviewAppearance } from "./preview-appearance.js";
 import { createNativeCardAdapter } from "./native-card-adapter.js";
 import { LitElement, html, css, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
 import { ModeControlsController } from "./mode-controls-controller.js";
-import { CardCommandController } from "./card-command-controller.js";
+import {
+  CardCommandController,
+  SUPERSEDED,
+} from "./card-command-controller.js";
 import "./style-browser-ui.js";
 import "./color-mode-ui.js";
 import { colorModeSelectorStyles } from "./color-mode-selector-utils.js";
@@ -415,8 +418,18 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     return this._commands.context;
   }
 
+  // Every action that changes what is selected (effect, favourite, colour)
+  // takes a new version. A late success or failure only touches the shown
+  // selection while it is still the latest, so an earlier request finishing
+  // can never overwrite or roll back a newer choice.
+  _nextSelection() {
+    this._selectionVersion = (this._selectionVersion || 0) + 1;
+    return this._selectionVersion;
+  }
+
   async _applyFavourite(favourite) {
     const context = this._context;
+    const version = this._nextSelection?.();
     // Show the favourite's effect and colour straight away: a colour mode
     // clicked before the lamp answers is built from the selected effect, so it
     // must already be the favourite's (restored below if the request fails).
@@ -444,7 +457,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     if (context !== this._context) return false;
     if (!success) {
       // Only roll back if nothing newer replaced the favourite meanwhile.
-      if (this._selected === favourite.key) {
+      if (this._selectionVersion === version) {
         this._selected = previous.selected;
         this._customColorDraft = previous.draft;
         this._selectedColorPresetId = previous.presetId;
@@ -458,21 +471,22 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   async _apply(name = this._effect()?.name, managed = false) {
     if (!name || /^\d+$/.test(name.trim())) return;
     const context = this._context;
+    this._nextSelection?.();
     this._selected = name;
     const action = nativeEffectAction(name);
     if (this._speedDraft != null && this._effect()?.speed)
       action.speed = this._speedRaw(this._speedDraft);
-    if (
-      (await this._command(
-        "set_native_effect",
-        action,
-        "yeelight_cube",
-        managed,
-        // Quick successive picks only send the latest one.
-        { coalesce: "select" },
-      )) &&
-      context === this._context
-    ) {
+    const result = await this._command(
+      "set_native_effect",
+      action,
+      "yeelight_cube",
+      managed,
+      // Quick successive picks only send the latest one.
+      { coalesce: "select" },
+    );
+    // Never sent: keep the drafted speed for the pick that replaced it.
+    if (result === SUPERSEDED) return SUPERSEDED;
+    if (result && context === this._context) {
       this._speedDraft = null;
       return true;
     }
@@ -700,12 +714,17 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       return false;
     }
     const context = this._context;
+    const version = this._nextSelection?.();
     const success = await this._command("set_native_effect", {
       effect,
       color_mode: "normal",
       color,
     });
-    if (success && context === this._context) {
+    if (
+      success &&
+      context === this._context &&
+      this._selectionVersion === version
+    ) {
       this._customColorDraft = [...color];
       this._selectedColorPresetId = null;
       this._selected = effect;
@@ -754,6 +773,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     // Each click owns the pending highlight until a newer click replaces it
     // (compared by click, not value: A, B, A must not clear on the first A).
     const click = (this._colorClick = (this._colorClick || 0) + 1);
+    const version = this._nextSelection?.();
     this._pendingColorSelection = value;
     let success = false;
     try {
@@ -769,7 +789,11 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     } finally {
       if (this._colorClick === click) this._pendingColorSelection = null;
     }
-    if (success && context === this._context) {
+    if (
+      success &&
+      context === this._context &&
+      this._selectionVersion === version
+    ) {
       this._customColorDraft = null;
       this._selectedColorPresetId = preset?.id;
       this._selected = effect;

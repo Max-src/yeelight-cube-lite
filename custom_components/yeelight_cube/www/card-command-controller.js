@@ -7,6 +7,11 @@ import {
  * results from the previous configuration; it cannot cancel an in-flight HA call.
  * Domain adapters build payloads. This class owns transport busy/error state.
  */
+/** Result of a coalesced request that was skipped because a newer one with
+ * the same key replaced it. Distinct from success: it was never sent, so
+ * callers must not treat it as applied (nor as a failure to report). */
+export const SUPERSEDED = "superseded";
+
 export class CardCommandController {
   constructor(notify = () => {}, send = callServiceOnTargetEntities) {
     this.notify = notify;
@@ -32,8 +37,8 @@ export class CardCommandController {
    * @param {Object} [options]
    * @param {string} [options.coalesce] - requests sharing this key replace each
    *   other while queued: when one reaches the front of the queue and a newer
-   *   one with the same key is already waiting, it is skipped (and reported as
-   *   done) so quick successive picks only send the latest.
+   *   one with the same key is already waiting, it is skipped and resolves
+   *   SUPERSEDED, so quick successive picks only send the latest.
    */
   async execute(
     hass,
@@ -56,7 +61,7 @@ export class CardCommandController {
     this.notify();
     const job = this.queue.then(async () => {
       if (context !== this.context) return false;
-      if (coalesce && this._latest[coalesce] !== generation) return true;
+      if (coalesce && this._latest[coalesce] !== generation) return SUPERSEDED;
       await this.send(hass, targets, service, payload, { domain });
       return context === this.context;
     });

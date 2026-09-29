@@ -193,6 +193,48 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.target._native_effect, "Streamer")
         self.assertEqual(self.target._mode, "Clock")
 
+    async def test_rollback_ignores_values_of_a_skipped_call(self):
+        # X is replaced by Y before X reaches the lamp; Y then fails. The lamp
+        # still shows the original effect, never X's, so that is restored.
+        self.target.async_apply_display_mode = AsyncMock(return_value=False)
+        await self.raw_handle(SimpleNamespace(data={"effect": "Rainbow"}))
+        await self.raw_handle(SimpleNamespace(data={"effect": "Ocean Waves"}))
+        pending, self.scheduled[:] = list(self.scheduled), []
+        await asyncio.gather(*pending)
+        self.assertEqual(self.target._native_effect, "Streamer")
+        self.assertEqual(self.target._mode, "Clock")
+
+    async def test_rollback_restores_an_older_call_that_succeeded_meanwhile(self):
+        release_first = asyncio.Event()
+        results = iter([True, False])
+
+        async def apply(**_kwargs):
+            outcome = next(results)
+            if outcome:
+                await release_first.wait()
+            return outcome
+
+        self.target.async_apply_display_mode = AsyncMock(side_effect=apply)
+        await self.raw_handle(SimpleNamespace(data={"effect": "Rainbow"}))
+        first = asyncio.ensure_future(self.scheduled.pop())
+        await asyncio.sleep(0)  # Rainbow is now being sent to the lamp
+        await self.raw_handle(SimpleNamespace(data={"effect": "Ocean Waves"}))
+        release_first.set()
+        await first  # the lamp accepted Rainbow
+        await asyncio.gather(*self.scheduled)  # Ocean Waves is rejected
+        self.assertEqual(self.target._native_effect, "Rainbow")
+        self.assertEqual(self.target._mode, "Native Effect")
+
+    async def test_nothing_to_send_leaves_no_stale_baseline(self):
+        # A speed change while the clock runs sends nothing to the lamp...
+        await self.handle(SimpleNamespace(data={"speed": 80, "activate": False}))
+        self.assertIsNone(getattr(self.target, "_native_effect_baseline", None))
+        # ...so a later failed call rolls back to the state before *it*.
+        self.target.async_apply_display_mode = AsyncMock(return_value=False)
+        await self.handle(SimpleNamespace(data={"effect": "Rainbow"}))
+        self.assertEqual(self.target._native_effect_speed, 80)
+        self.assertEqual(self.target._native_effect, "Streamer")
+
     async def test_older_background_apply_is_skipped_after_a_newer_call(self):
         await self.raw_handle(SimpleNamespace(data={"effect": "Rainbow"}))
         await self.raw_handle(SimpleNamespace(data={"effect": "Ocean Waves"}))

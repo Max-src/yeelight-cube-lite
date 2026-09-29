@@ -471,6 +471,7 @@ test("gallery reload disconnects its observer and paints only current previews b
             : gallery,
     },
     _io: { disconnect: () => disconnects++ },
+    isConnected: true,
     ...cardMethods(["_setupObserver"], {
       IntersectionObserver: class {
         constructor(handler) {
@@ -518,7 +519,8 @@ test("gallery reload paints on-screen tiles immediately to avoid a blink", () =>
               ? []
               : [onScreen, nearScreen, offScreen, detached],
       },
-      ...cardMethods(["_setupObserver"], {
+      isConnected: true,
+    ...cardMethods(["_setupObserver"], {
         IntersectionObserver: class {
           observe() {}
           disconnect() {}
@@ -533,6 +535,27 @@ test("gallery reload paints on-screen tiles immediately to avoid a blink", () =>
     globalThis.innerHeight = previous.innerHeight;
     globalThis.innerWidth = previous.innerWidth;
   }
+});
+
+test("no preview observer is created while the card is off the page", () => {
+  let created = 0;
+  const card = {
+    isConnected: false,
+    _io: { disconnect() {} },
+    shadowRoot: { querySelectorAll: () => [] },
+    ...cardMethods(["_setupObserver"], {
+      IntersectionObserver: class {
+        constructor() {
+          created++;
+        }
+        observe() {}
+        disconnect() {}
+      },
+    }),
+  };
+  card._setupObserver();
+  assert.equal(created, 0);
+  assert.equal(card._io, null);
 });
 
 test("hostile saved names remain escaped in all text selectors", () => {
