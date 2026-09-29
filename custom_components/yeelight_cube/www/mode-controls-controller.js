@@ -9,6 +9,8 @@ import {
   DEFAULT_BUTTON_CONTENT_MODE,
 } from "./action-button-utils.js";
 import { SUPERSEDED } from "./card-command-controller.js";
+import { CollectionState } from "./collection-state.js";
+import { favouriteToItem } from "./shared-lamp-settings.js";
 export {
   normalizeFavourite,
   favouriteId,
@@ -29,7 +31,7 @@ export const ROTATION_INTERVAL_UNITS = [
 ];
 
 export function rotationIntervalSeconds(config) {
-  return Math.max(10, Math.min(604800, Number(config.rotation_interval) || 60));
+  return Math.max(10, Math.min(604800, Number(config?.rotation_interval) || 60));
 }
 
 export function rotationIntervalMs(config) {
@@ -122,6 +124,13 @@ export function sanitizeModeNames(names, limit = 100) {
 
 // Advance to the next mode in list order (wrapping). Rotation is always
 // in-order; randomness is a one-shot favourites-list shuffle instead.
+// A favourites list as one comparable value (order matters).
+const favouriteListId = (items) => items.map(favouriteId).join("\u0001");
+
+// A frozen/resumed state the card set itself is kept until the lamp reports
+// it (freeze_display is applied in the background) or this long has passed.
+const FROZEN_ECHO_MS = 10000;
+
 export function nextRotationMode(names, current) {
   names = sanitizeModeNames(names);
   if (!names.length) return undefined;
@@ -146,6 +155,8 @@ export class ModeControlsController {
     this.error = "";
     this.token = 0;
     this.context = 0;
+    // A just-saved favourites list, shown until the lamp publishes it.
+    this._sharedFavourites = new CollectionState();
   }
 
   configure(config, targets) {
@@ -166,15 +177,133 @@ export class ModeControlsController {
     this.config = config;
     this.targets = targets;
     this.key = modeCollectionKey(this.adapter.kind, targets);
+    this._sharedFavourites.reset();
+    this._frozenExpected = null;
+    this._intervalExpected = null;
+    this.syncInterval();
+    this._migrating = false;
+    // Browser-stored favourites: what older versions kept, and the list used
+    // while the lamp does not publish shared favourites.
+    this._localFavourites = this.readLocalFavourites();
+    this.favourites = this._localFavourites;
+    // Favourites shared through the lamp replace them as soon as known.
+    this.syncFavourites();
+    this.notify();
+  }
+
+  readLocalFavourites() {
     try {
-      this.favourites = this.sanitize(
+      return this.sanitize(
         JSON.parse(globalThis.localStorage?.getItem(this.key) || "{}")
           .favourites,
       );
     } catch {
-      this.favourites = [];
+      return [];
     }
+  }
+
+  forgetLocalFavourites() {
+    this._localFavourites = [];
+    try {
+      globalThis.localStorage?.removeItem(this.key);
+    } catch {
+      // Storage blocked: nothing was kept there either.
+    }
+  }
+
+  // Whether favourites are stored on the lamp (backend version and lamp
+  // availability): undefined from the adapter means they are not.
+  sharesFavourites() {
+    return !!this.adapter.saveFavourites && this.adapter.favourites?.() !== undefined;
+  }
+
+  // Follow the favourites the lamp publishes (every dashboard sees the same
+  // list). A list this card just saved is kept until the lamp reports it, so
+  // an older state push never makes the list jump back.
+  syncFavourites() {
+    const remote = this.adapter.favourites?.();
+    if (remote === undefined || !this.adapter.saveFavourites) return;
+    if (remote === null) {
+      // Never saved on this lamp: move this browser's list there (once).
+      if (this._localFavourites.length && !this._migrating) {
+        this._migrating = true;
+        this.save(this._localFavourites);
+      }
+      return;
+    }
+    // The lamp has its own list now: the browser copy is obsolete.
+    if (this._localFavourites.length) this.forgetLocalFavourites();
+    const shown = this.sanitize(this._sharedFavourites.observe(remote));
+    if (favouriteListId(shown) !== favouriteListId(this.favourites))
+      this.favourites = shown;
+  }
+
+  // Follow the lamp's frozen state (a freeze from any dashboard or an
+  // automation), keeping a state this card just set until the lamp reports it.
+  syncFrozen() {
+    const remote = this.adapter.frozen?.();
+    if (typeof remote !== "boolean" || this._freezing) return;
+    const expected = this._frozenExpected;
+    if (expected) {
+      if (remote !== expected.value && Date.now() < expected.until) return;
+      this._frozenExpected = null;
+    }
+    this.frozen = remote;
+  }
+
+  // Whether the rotation interval is stored on the lamp (every dashboard uses
+  // the same); otherwise it is this card's configured value.
+  sharesInterval() {
+    return (
+      !!this.adapter.setRotationInterval &&
+      this.adapter.rotationInterval?.() !== undefined
+    );
+  }
+
+  // The interval a Start uses and the section shows: the lamp's, else this
+  // card's configured default. A change made here is kept until the lamp
+  // reports it.
+  syncInterval() {
+    const remote = this.adapter.rotationInterval?.();
+    const expected = this._intervalExpected;
+    if (expected) {
+      if (remote !== expected.value && Date.now() < expected.until) return;
+      this._intervalExpected = null;
+    }
+    this.interval = Number.isFinite(remote)
+      ? remote
+      : rotationIntervalSeconds(this.config);
+  }
+
+  async setRotationInterval(seconds) {
+    const value = Math.max(
+      10,
+      Math.min(604800, Math.round(Number(seconds) || 60)),
+    );
+    if (!this.sharesInterval() || this.adapter.disabled()) return false;
+    const context = this.context;
+    this.interval = value;
+    this._intervalExpected = { value, until: Date.now() + FROZEN_ECHO_MS };
+    this.error = "";
     this.notify();
+    let ok;
+    try {
+      ok = (await this.adapter.setRotationInterval(value)) !== false;
+    } catch {
+      ok = false;
+    }
+    if (!ok && context === this.context) {
+      this._intervalExpected = null;
+      this.syncInterval();
+      this.error = "The rotation interval could not be saved.";
+      this.notify();
+    }
+    return ok;
+  }
+
+  expectFrozen(value) {
+    this.frozen = value;
+    this._frozenExpected = { value, until: Date.now() + FROZEN_ECHO_MS };
   }
 
   sanitize(names) {
@@ -234,6 +363,7 @@ export class ModeControlsController {
         this.busy,
         this.active,
         this.frozen,
+        this.interval,
         this.error,
         this.pendingOrientation,
         this._rotationPending,
@@ -293,14 +423,17 @@ export class ModeControlsController {
   }
 
   update() {
+    this.syncFavourites();
+    this.syncInterval();
     this.selection.observe(this.captureFavourite());
     if (this.pendingOrientation === this.adapter.orientation?.()) {
       this.pendingOrientation = null;
       clearTimeout(this.orientationTimer);
     }
     // Switching to a different mode resumes playback, so the freeze indicator
-    // returns to its idle state.
-    if (this.frozen && this.adapter.current() !== this._frozenKey)
+    // returns to its idle state. The lamp's own report wins when it has one.
+    if (typeof this.adapter.frozen?.() === "boolean") this.syncFrozen();
+    else if (this.frozen && this.adapter.current() !== this._frozenKey)
       this.frozen = false;
     // Reflect server-side rotation state so a page reload (or an automation
     // that started/stops rotation) is mirrored in the UI.
@@ -330,17 +463,41 @@ export class ModeControlsController {
   }
 
   save(names) {
-    this.favourites = this.sanitize(names);
-    try {
-      globalThis.localStorage.setItem(
-        this.key,
-        JSON.stringify({ favourites: this.favourites }),
-      );
-    } catch {
-      this.error =
-        "Browser storage is unavailable; favourites are saved for this session only.";
+    const favourites = this.sanitize(names);
+    this.favourites = favourites;
+    if (this.sharesFavourites()) this.saveShared(favourites);
+    else {
+      try {
+        globalThis.localStorage.setItem(
+          this.key,
+          JSON.stringify({ favourites }),
+        );
+      } catch {
+        this.error =
+          "Browser storage is unavailable; favourites are saved for this session only.";
+      }
     }
     this.update();
+  }
+
+  // Save on the lamp: shown at once, kept until the lamp publishes it, and
+  // put back to the lamp's list if the save fails.
+  saveShared(favourites) {
+    const operation = this._sharedFavourites.record(favourites);
+    const context = this.context;
+    const migrating = this._migrating;
+    const failed = () => {
+      if (context !== this.context || !this._sharedFavourites.rollback(operation))
+        return;
+      this._migrating = false;
+      this.favourites = this.sanitize(this.adapter.favourites?.() || []);
+      this.error = "Favourites could not be saved.";
+      this.notify();
+    };
+    Promise.resolve(this.adapter.saveFavourites(favourites)).then((ok) => {
+      if (ok === false) failed();
+      else if (migrating && context === this.context) this.forgetLocalFavourites();
+    }, failed);
   }
 
   // Fisher–Yates shuffle of the favourites list itself, so the new order is
@@ -391,11 +548,7 @@ export class ModeControlsController {
     // colour mode that was recorded when it was saved.
     return this.sanitize(this.favourites)
       .filter((favourite) => this.adapter.available(favourite.key))
-      .map((favourite) => ({
-        name: favourite.key,
-        color_mode: favourite.colorMode,
-        ...(favourite.color ? { color: favourite.color } : {}),
-      }));
+      .map(favouriteToItem);
   }
 
   async command(callback, rotating = false) {
@@ -406,7 +559,7 @@ export class ModeControlsController {
     this.error = "";
     // Any command other than the freeze toggle itself resumes the display, so
     // the frozen indicator mirrors the lamp.
-    if (!this._freezing) this.frozen = false;
+    if (!this._freezing && this.frozen) this.expectFrozen(false);
     this.notify();
     try {
       return (await callback()) !== false && context === this.context;
@@ -430,13 +583,13 @@ export class ModeControlsController {
       return await this.command(async () => {
         if (this.frozen) {
           const ok = await this.adapter.apply(this.adapter.current());
-          if (ok !== false) this.frozen = false;
+          if (ok !== false) this.expectFrozen(false);
           return ok;
         }
         if (!this.adapter.freeze || !this.freezable()) return false;
         const ok = await this.adapter.freeze();
         if (ok !== false) {
-          this.frozen = true;
+          this.expectFrozen(true);
           this._frozenKey = this.adapter.current();
         }
         return ok;
@@ -498,7 +651,7 @@ export class ModeControlsController {
     this.stop({ silent: true });
     const context = this.context;
     this.error = "";
-    if (!this._freezing) this.frozen = false;
+    if (!this._freezing && this.frozen) this.expectFrozen(false);
     this.notifyIfChanged();
     try {
       return (await callback()) !== false && context === this.context;
@@ -671,10 +824,7 @@ export class ModeControlsController {
       let started = true;
       try {
         started =
-          (await this.adapter.startRotation(
-            items,
-            rotationIntervalSeconds(this.config),
-          )) !== false;
+          (await this.adapter.startRotation(items, this.interval)) !== false;
       } catch (error) {
         started = false;
         this.error = error?.message || "Rotation could not be started.";

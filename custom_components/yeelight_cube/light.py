@@ -113,6 +113,8 @@ LIGHT_SERVICE_NAMES = (
     "start_effect_rotation",
     "stop_effect_rotation",
     "skip_effect_rotation",
+    "set_favourites",
+    "set_rotation_interval",
     # Registered further below alongside the diagnostic/native-effect handlers;
     # listed here so async_remove_light_services() tears them down on unload too.
     "send_fx_effect",
@@ -134,6 +136,9 @@ APPLY_HARD_TIMEOUT = 12.0      # Seconds -- absolute safety timeout for a single
                               # releases the lock so other entities can proceed.
                               # Reduced from 8s to 5s -- inner timeouts are now tighter:
                               #   probe 0.5s + raw_cmd 1.5sx2 + draw 0.5s = 4s worst case.
+FAVOURITE_KINDS = ("native", "clock")
+MAX_FAVOURITES = 100          # per lamp and kind
+MAX_FAVOURITE_NAME = 100
 LOCK_WAIT_WARNING_MS = 3000   # Waiting for the lamp longer than this is logged as a
                               # warning (commands piling up); shorter waits are normal
                               # queueing behind a redraw/transition and logged at debug.
@@ -441,6 +446,14 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         # background phase at exactly this moment, not at the next render.
         self._display_frozen_at = None
 
+        # -- Favourites -----------------------------------------------------
+        # Favourite native effects / clock styles per kind ("native", "clock"),
+        # stored with the integration data (not in a browser) and published in
+        # the `favourites` attribute so every dashboard shows the same list.
+        # A kind is absent until it is first saved (cards then migrate the
+        # list they kept in browser storage before this existed).
+        self._favourites: dict = {}
+
         # -- Effect / clock mode rotation -----------------------------------
         # A server-side timed loop that advances the lamp through a list of
         # native effect or clock style names on its own timer, independently of
@@ -450,6 +463,14 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         self._rotation_kind = "native"       # "native" | "clock"
         self._rotation_items: list = []
         self._rotation_interval = 60          # whole seconds between steps
+        # The interval every dashboard uses per kind, once set (by a Start or
+        # set_rotation_interval); published in `rotation_intervals`.
+        self._rotation_intervals: dict = {}
+        # A rotation saved before a restart, resumed once the lamp is set up.
+        self._rotation_restore = None
+        # Set when the interval changed while the loop sleeps: re-time the
+        # wait instead of advancing to the next item.
+        self._rotation_retime = False
         self._rotation_index = -1
         self._rotation_task = None
         self._rotation_wake = None
@@ -1378,6 +1399,14 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             # the background animation on the frozen frame while the clock
             # digits keep updating.
             "display_frozen": bool(getattr(self, "_display_frozen", False)),
+            # Shared favourites per kind, e.g. {"clock": [{"name", "color_mode",
+            # "color"}, ...]} (set_favourites). Rotation plays them in order.
+            "favourites": {
+                kind: [dict(item) for item in items]
+                for kind, items in self._favourites.items()
+            },
+            # Shared rotation interval per kind (seconds), once set.
+            "rotation_intervals": dict(self._rotation_intervals),
             # Server-side effect/clock rotation status (start/stop_effect_rotation).
             "effect_rotation": {
                 "active": bool(getattr(self, "_rotation_active", False)),
@@ -1796,6 +1825,8 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             if old_state.attributes.get("scroll_enabled") is not None:
                 self._scroll_enabled = bool(old_state.attributes["scroll_enabled"])
         self._restore_music_flow_runtime_state()
+        self._restore_favourites()
+        self._restore_rotation_settings()
         # Palettes and pixel arts are accessed via @property from global storage
         # No restoration needed - __init__.py loads from Store into hass.data[DOMAIN]
         _LOGGER.debug(f"[RESTORE] Entity initialized. Palettes: {len(self._palettes)}, Pixel Arts: {len(self._pixel_arts)}")
@@ -1820,13 +1851,19 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             await self.async_apply_display_mode(update_type='turn_on')
         else:
             _LOGGER.debug(f"[INIT] Light is off, not applying display mode")
+        if self._rotation_restore:
+            self._create_tracked_task(
+                self._async_resume_saved_rotation(),
+                name=f"yeelight_cube_rotation_resume_{self._ip}",
+            )
 
     async def async_will_remove_from_hass(self):
         """Clean up when entity is removed"""
         self.stop_scroll_timer()
 
-        # Stop any server-side rotation loop owned by this entity.
-        self.stop_effect_rotation()
+        # Stop any server-side rotation loop owned by this entity. Its saved
+        # state is kept: a restart or reload resumes it.
+        self.stop_effect_rotation(persist=False)
         
         # Cancel display retry task
         if self._retry_display_task and not self._retry_display_task.done():
@@ -3621,6 +3658,169 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             )
         return result
 
+    def _normalize_favourites(self, items) -> list:
+        """Normalize a favourites list the way rotation items are normalized
+        (same entries, de-duplicated per name + colour mode), dropping names
+        the cards never create (numeric) and capping its length."""
+        return [
+            item
+            for item in self._normalize_rotation_items(items)
+            if not item["name"].isdigit() and len(item["name"]) <= MAX_FAVOURITE_NAME
+        ][:MAX_FAVOURITES]
+
+    def _device_store(self, name: str) -> dict | None:
+        """A persisted per-lamp collection (``favourites``, ``rotation``) in
+        hass.data[DOMAIN], keyed like the music-flow runtime state (config
+        entry id, else IP)."""
+        if self.hass is None:
+            return None
+        domain_data = self.hass.data.get(DOMAIN)
+        if not isinstance(domain_data, dict):
+            return None
+        store = domain_data.setdefault(name, {})
+        if not isinstance(store, dict):
+            store = domain_data[name] = {}
+        return store
+
+    def _favourites_store(self) -> dict | None:
+        return self._device_store("favourites")
+
+    def _restore_favourites(self) -> None:
+        store = self._favourites_store()
+        saved = store.get(self._music_flow_runtime_storage_key()) if store else None
+        if not isinstance(saved, dict):
+            return
+        self._favourites = {
+            kind: self._normalize_favourites(items)
+            for kind, items in saved.items()
+            if kind in FAVOURITE_KINDS and isinstance(items, list)
+        }
+
+    async def async_set_favourites(self, kind: str, items) -> None:
+        """Replace the favourites of ``kind``, publish them, then persist."""
+        if kind not in FAVOURITE_KINDS:
+            raise HomeAssistantError(f"Unknown favourites kind: {kind}")
+        self._favourites = {**self._favourites, kind: self._normalize_favourites(items)}
+        # Publish first: every open dashboard updates without waiting for disk.
+        if self.hass is not None:
+            self.async_write_ha_state()
+        store = self._favourites_store()
+        if store is None:
+            return
+        store[self._music_flow_runtime_storage_key()] = {
+            key: [dict(item) for item in value]
+            for key, value in self._favourites.items()
+        }
+        await self._persist_integration_data()
+
+    async def _persist_integration_data(self) -> None:
+        """Write hass.data[DOMAIN] (palettes, favourites, ...) to disk."""
+        from . import async_save_data
+
+        await async_save_data(self.hass)
+
+    # -- Rotation settings and restart recovery ------------------------------
+
+    def _restore_rotation_settings(self) -> None:
+        store = self._device_store("rotation")
+        saved = store.get(self._music_flow_runtime_storage_key()) if store else None
+        if not isinstance(saved, dict):
+            return
+        intervals = saved.get("intervals")
+        if isinstance(intervals, dict):
+            self._rotation_intervals = {
+                kind: max(10, min(604800, int(value)))
+                for kind, value in intervals.items()
+                if kind in FAVOURITE_KINDS and isinstance(value, (int, float))
+            }
+        active = saved.get("active")
+        if isinstance(active, dict) and active.get("kind") in FAVOURITE_KINDS:
+            self._rotation_restore = active
+
+    def _save_rotation_state(self) -> None:
+        """Persist the shared intervals and the running rotation (if any), so
+        a Home Assistant restart or integration reload resumes it."""
+        store = self._device_store("rotation")
+        if store is None:
+            return
+        running = None
+        if self._rotation_active or getattr(self, "_rotation_resume_pending", False):
+            running = {
+                "kind": self._rotation_kind,
+                "items": [dict(item) for item in self._rotation_items],
+                "interval": self._rotation_interval,
+            }
+        store[self._music_flow_runtime_storage_key()] = {
+            "intervals": dict(self._rotation_intervals),
+            "active": running,
+        }
+        if self.hass is not None:
+            self.hass.async_create_task(self._persist_integration_data())
+
+    async def _async_resume_saved_rotation(self) -> None:
+        """Resume the rotation that ran before the restart, if the lamp is
+        still on and in that mode (turning it off or switching mode stops a
+        rotation, so neither is overridden here)."""
+        saved, self._rotation_restore = self._rotation_restore, None
+        if not saved:
+            return
+        kind = saved.get("kind")
+        expected_mode = "Clock" if kind == "clock" else "Native Effect"
+        if (
+            not self._is_on
+            or self._music_flow_enabled
+            or getattr(self, "_calibration_lock", False)
+            or self._mode != expected_mode
+        ):
+            _LOGGER.info(
+                "[ROTATION] [%s] Not resuming the %s rotation after restart "
+                "(lamp off or no longer in %s mode)", self._ip, kind, expected_mode,
+            )
+            self._save_rotation_state()
+            return
+        try:
+            await self.start_effect_rotation(
+                saved.get("items") or [], saved.get("interval", 60), kind
+            )
+            _LOGGER.info("[ROTATION] [%s] Resumed the %s rotation after restart", self._ip, kind)
+        except HomeAssistantError as err:
+            # An unreachable lamp keeps the rotation pending: the health check
+            # resumes it once the lamp answers again.
+            _LOGGER.warning(
+                "[ROTATION] [%s] Could not resume the %s rotation yet: %s",
+                self._ip, kind, err,
+            )
+
+    def set_rotation_interval(self, kind: str, interval) -> None:
+        """Set the interval every dashboard uses for ``kind``. A running
+        rotation of that kind switches to it at once, keeping its current item
+        until the next step on the new time grid."""
+        if kind not in FAVOURITE_KINDS:
+            raise HomeAssistantError(f"Unknown rotation kind: {kind}")
+        interval = max(10, min(604800, int(interval)))
+        self._rotation_intervals = {**self._rotation_intervals, kind: interval}
+        if (
+            self._rotation_kind == kind
+            and (self._rotation_active or getattr(self, "_rotation_resume_pending", False))
+            and interval != self._rotation_interval
+        ):
+            self._retime_rotation(interval)
+        if self.hass is not None:
+            self.async_write_ha_state()
+        self._save_rotation_state()
+
+    def _retime_rotation(self, interval: int) -> None:
+        loop = asyncio.get_running_loop()
+        self._rotation_interval = interval
+        # The next boundary of the new grid shows the item after the current one.
+        self._rotation_timeline = {
+            "tick": int(loop.time() // interval) + 1,
+            "index": self._rotation_index + 1,
+        }
+        self._rotation_retime = True
+        if self._rotation_wake is not None:
+            self._rotation_wake.set()
+
     async def start_effect_rotation(self, items, interval, kind="native", *, timeline=None) -> None:
         """Start an entity-owned loop, acknowledging only its first display result.
 
@@ -3630,7 +3830,8 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         items = self._normalize_rotation_items(items)
         if len(items) < 2:
             raise HomeAssistantError("Provide at least two different rotation modes")
-        self.stop_effect_rotation()
+        # Replacing a running loop: its saved state is rewritten below.
+        self.stop_effect_rotation(persist=False)
         self._rotation_error = None
         self._rotation_retry_attempt = 0
         self._rotation_retry_at = None
@@ -3645,7 +3846,15 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         timeline.setdefault("tick", int(asyncio.get_running_loop().time() // self._rotation_interval))
         timeline.setdefault("index", self._rotation_index + 1)
         self._rotation_timeline = dict(timeline)
+        self._rotation_retime = False
         self._rotation_active = True
+        # Starting sets the interval every dashboard uses for this kind, and
+        # saves the rotation so a restart resumes it.
+        self._rotation_intervals = {
+            **self._rotation_intervals,
+            self._rotation_kind: self._rotation_interval,
+        }
+        self._save_rotation_state()
         self._rotation_wake = asyncio.Event()
         started = asyncio.get_running_loop().create_future()
         self._rotation_started = started
@@ -3657,8 +3866,14 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 self._rotation_error or "Rotation stopped before its first display update"
             )
 
-    def stop_effect_rotation(self) -> None:
-        """Stop the server-side rotation loop."""
+    def stop_effect_rotation(self, persist: bool = True) -> None:
+        """Stop the server-side rotation loop.
+
+        ``persist=False`` keeps the saved rotation (entity removal on a
+        shutdown/reload, or a Start replacing the loop); every other stop (the
+        Stop button, a manual pick, lamp off, ...) also forgets it, so it is
+        not resumed after a restart.
+        """
         self._rotation_active = False
         self._rotation_resume_pending = False
         self._rotation_waiting_for_reconnect = False
@@ -3671,6 +3886,8 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         self._rotation_wake = None
         if self._rotation_started is not None and not self._rotation_started.done():
             self._rotation_started.set_result(False)
+        if persist:
+            self._save_rotation_state()
         if self.hass is not None:
             self.async_write_ha_state()
 
@@ -3730,6 +3947,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         task = asyncio.current_task()
         started = self._rotation_started
         loop = asyncio.get_running_loop()
+        cancelled = False
         try:
             while self._rotation_active:
                 interval = self._rotation_interval
@@ -3780,8 +3998,16 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                         pass
                     if self._rotation_wake is not None:
                         self._rotation_wake.clear()
+                    if self._rotation_retime:
+                        # The interval changed: keep the current item and wait
+                        # for the next boundary of the new grid.
+                        self._rotation_retime = False
+                        interval = self._rotation_interval
+                        next_tick = (int(loop.time() // interval) + 1) * interval
+                        continue
                     break
         except asyncio.CancelledError:
+            cancelled = True
             raise
         finally:
             if not started.done():
@@ -3791,6 +4017,10 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 self._rotation_active = False
                 self._rotation_task = None
                 self._rotation_retry_at = None
+                # Ended by itself (failure, lamp off): forget it unless it is
+                # waiting to resume. Cancelled (shutdown): keep it saved.
+                if not cancelled:
+                    self._save_rotation_state()
                 if self.hass is not None:
                     self.async_write_ha_state()
 

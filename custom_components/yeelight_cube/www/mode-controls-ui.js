@@ -25,8 +25,10 @@ import {
   favouriteId,
   nextRotationMode,
   rotationIntervalSeconds,
+  rotationIntervalParts,
   formatRotationInterval,
   actionButtonOrder,
+  ROTATION_INTERVAL_UNITS,
 } from "./mode-controls-controller.js";
 import { defineOnce } from "./card-registration.js";
 import {
@@ -192,6 +194,45 @@ class YeelightModeControls extends LitElement {
     } finally {
       this._pending = null;
     }
+  }
+
+  // "Every [value] [unit]": the rotation interval stored on the lamp, shared
+  // by every dashboard and applied at once to a running rotation.
+  _intervalControl(model, seconds, disabled) {
+    const { value, unit } = rotationIntervalParts(seconds);
+    const apply = (nextValue, nextUnit) => {
+      const size =
+        ROTATION_INTERVAL_UNITS.find((item) => item.unit === nextUnit)
+          ?.seconds || 1;
+      const total = Math.max(1, Math.round(Number(nextValue) || 1)) * size;
+      if (total !== seconds) model.setRotationInterval(total);
+      else this.requestUpdate();
+    };
+    return html`<div class="interval">
+      <label for="rotation-interval-value">Every</label>
+      <input
+        id="rotation-interval-value"
+        type="number"
+        min="1"
+        max="999"
+        aria-label="Rotation interval value"
+        .value=${String(value)}
+        ?disabled=${disabled}
+        @change=${(event) => apply(event.target.value, unit)}
+      />
+      <select
+        aria-label="Rotation interval unit"
+        ?disabled=${disabled}
+        @change=${(event) => apply(value, event.target.value)}
+      >
+        ${ROTATION_INTERVAL_UNITS.map(
+          (item) =>
+            html`<option value=${item.unit} ?selected=${item.unit === unit}>
+              ${item.label}
+            </option>`,
+        )}
+      </select>
+    </div>`;
   }
 
   handleOrientationControl(event) {
@@ -415,6 +456,25 @@ class YeelightModeControls extends LitElement {
       (target) => target.active || target.waitingForReconnect,
     );
     const rotationCanStop = rotationHasActive || model.active;
+    // While a rotation runs, show what the lamp actually plays (it may have
+    // been started from another dashboard, or before a favourites edit).
+    // Otherwise the favourites it would play; if none can be checked right
+    // now (a lamp is unavailable), still list the saved favourites.
+    const runningRotation = rotationTargets.find(
+      (target) => target.active && target.items.length,
+    );
+    const rotationNames = runningRotation
+      ? runningRotation.items.map((item) => item.name)
+      : names.length
+        ? names
+        : (model.favouriteKeys?.() ?? []);
+    // The interval is the lamp's, shared by every dashboard (an older backend
+    // only knows the running rotation's and this card's configured one).
+    const sharedInterval = !!model.sharesInterval?.();
+    const rotationInterval =
+      (!sharedInterval && runningRotation?.interval) ||
+      model.interval ||
+      rotationIntervalSeconds(config);
     const selectedFavourite = model.currentFavourite();
     const isSelected = (favourite) =>
       favouriteId(favourite) === favouriteId(selectedFavourite);
@@ -563,9 +623,9 @@ class YeelightModeControls extends LitElement {
           </header>
           <div class="summary">
             <span
-              >${rotationStatusUnavailable
+              >${rotationStatusUnavailable && !rotationNames.length
                 ? `${model.favourites.length} saved favourites`
-                : `${names.length} ${noun}${names.length === 1 ? "" : "s"} · every ${formatRotationInterval(rotationIntervalSeconds(config))}`}</span
+                : `${rotationNames.length} ${noun}${rotationNames.length === 1 ? "" : "s"} · every ${formatRotationInterval(rotationInterval)}`}</span
             >
             <div class="tools">
               ${this._button(
@@ -595,10 +655,14 @@ class YeelightModeControls extends LitElement {
             </div>
           </div>
           <div class="muted">
-            ${rotationStatusUnavailable
+            ${rotationNames.map(title).join(" / ") ||
+            (rotationStatusUnavailable
               ? "Rotation details unavailable"
-              : names.map(title).join(" / ") || `No ${noun}s selected.`}
+              : `No ${noun}s selected.`)}
           </div>
+          ${sharedInterval
+            ? this._intervalControl(model, rotationInterval, adapter.disabled())
+            : ""}
           ${rotationErrors.length
             ? html`
                 <div>
@@ -656,6 +720,26 @@ class YeelightModeControls extends LitElement {
         justify-content: space-between;
         gap: ${unsafeCSS(cardSpacing.control)};
         flex-wrap: wrap;
+      }
+      .interval {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        min-width: 0;
+      }
+      .interval input,
+      .interval select {
+        min-width: 0;
+        padding: 6px 8px;
+        border: 1px solid var(--divider-color, #d0d7de);
+        border-radius: 6px;
+        background: var(--card-background-color, #fff);
+        color: var(--primary-text-color, #333);
+        font: inherit;
+        box-sizing: border-box;
+      }
+      .interval input {
+        width: 72px;
       }
       h3 {
         margin: 0;

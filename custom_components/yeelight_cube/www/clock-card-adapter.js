@@ -4,6 +4,12 @@ import { previewOnly } from "./offline-preview-state.js";
 import { clockPresetKey } from "./clock-preset-utils.js";
 import { getTargetEntities } from "./service-call-utils.js";
 import { rotationTargets, retryFailedRotations } from "./rotation-status.js";
+import {
+  sharedFavourites,
+  saveSharedFavourites,
+  sharedRotationInterval,
+  saveSharedRotationInterval,
+} from "./shared-lamp-settings.js";
 import { renderClockFrame, flipMatrixVertical } from "./clock-preview-utils.js";
 import { effectSupportsFreeze } from "./native-effect-preview.js";
 
@@ -69,6 +75,17 @@ export function createClockCardAdapter(card) {
     command: (service, data, domain = "yeelight_cube") =>
       card._command(service, data, domain, true),
     freeze: () => card._command("freeze_display", {}, "yeelight_cube", true),
+    // The lamp's frozen state, shared by every dashboard.
+    frozen: () => card._attrs().display_frozen,
+    // Favourites and rotation interval stored on the lamp (see
+    // shared-lamp-settings.js).
+    favourites: () => sharedFavourites(card._hass, card.config, "clock"),
+    saveFavourites: (favourites) =>
+      saveSharedFavourites(card, "clock", favourites),
+    rotationInterval: () =>
+      sharedRotationInterval(card._hass, card.config, "clock"),
+    setRotationInterval: (seconds) =>
+      saveSharedRotationInterval(card, "clock", seconds),
     refresh: () =>
       card._commands.execute(card._hass, card.config, "force_refresh"),
     freezable: () => effectSupportsFreeze(card._currentStyle()?.name),

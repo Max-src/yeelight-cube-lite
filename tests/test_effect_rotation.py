@@ -34,6 +34,12 @@ def _rotation_helpers():
             "_apply_rotation_native",
             "_apply_rotation_clock",
             "_rotation_current_name",
+            "_save_rotation_state",
+            "_device_store",
+            "_restore_rotation_settings",
+            "_async_resume_saved_rotation",
+            "set_rotation_interval",
+            "_retime_rotation",
             "async_apply_display_mode",
             "_force_refresh_impl",
             "async_force_refresh",
@@ -51,6 +57,7 @@ def _rotation_helpers():
             "_LOGGER": Mock(),
             "APPLY_HARD_TIMEOUT": 8,
             "HomeAssistantError": ValueError,
+            "FAVOURITE_KINDS": ("native", "clock"),
         },
     )
 
@@ -64,9 +71,18 @@ def _bind(light, helpers, *names):
 def make_light(helpers, kind="native", is_on=True, extended=False):
     light = SimpleNamespace(
         _ip="192.168.4.102",
-        hass=SimpleNamespace(data={DOMAIN: {"clock_presets": [
-            {"id": "abc123", "name": "My Solid", "kind": "style", "color": [12, 34, 56]},
-        ]}}),
+        hass=SimpleNamespace(
+            data={DOMAIN: {"clock_presets": [
+                {"id": "abc123", "name": "My Solid", "kind": "style", "color": [12, 34, 56]},
+            ]}},
+            # Saving to disk is stubbed (_persist_integration_data).
+            async_create_task=Mock(side_effect=lambda coro: coro.close()),
+        ),
+        _music_flow_runtime_storage_key=lambda: "entry-1",
+        _persist_integration_data=AsyncMock(),
+        _rotation_intervals={},
+        _rotation_retime=False,
+        _rotation_restore=None,
         _is_on=is_on,
         _extended_effects_enabled=extended,
         _rotation_kind=kind,
@@ -100,7 +116,10 @@ def make_light(helpers, kind="native", is_on=True, extended=False):
           "skip_effect_rotation", "_normalize_rotation_items", "_rotation_loop",
           "_apply_rotation_step", "_wait_rotation_retry", "_resume_rotation_after_reconnect", "_rotation_scheduled_index",
           "_apply_rotation_item", "_start_rotation_apply", "_apply_rotation_native",
-          "_apply_rotation_clock", "_rotation_current_name")
+          "_apply_rotation_clock", "_rotation_current_name",
+          "_save_rotation_state", "_device_store",
+          "_restore_rotation_settings", "_async_resume_saved_rotation",
+          "set_rotation_interval", "_retime_rotation")
     return light
 
 
@@ -527,6 +546,70 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         light.stop_effect_rotation()
         self.assertFalse(light._rotation_active)
         self.assertIsNone(light._rotation_task)
+
+    async def test_running_rotation_is_saved_and_only_a_real_stop_forgets_it(self):
+        light = make_light(self.helpers, kind="native")
+        items = [{"name": "Rainbow"}, "Streamer"]
+        await light.start_effect_rotation(items, 30)
+        saved = light.hass.data[DOMAIN]["rotation"]["entry-1"]
+        self.assertEqual(saved["intervals"], {"native": 30})
+        self.assertEqual(saved["active"]["kind"], "native")
+        self.assertEqual(saved["active"]["interval"], 30)
+        self.assertEqual([item["name"] for item in saved["active"]["items"]], ["Rainbow", "Streamer"])
+        # A shutdown / reload (entity removal) stops the loop but keeps it saved.
+        light.stop_effect_rotation(persist=False)
+        self.assertIsNotNone(light.hass.data[DOMAIN]["rotation"]["entry-1"]["active"])
+        # A Stop (button, manual pick, lamp off, ...) forgets it; the shared
+        # interval stays.
+        await light.start_effect_rotation(items, 30)
+        light.stop_effect_rotation()
+        saved = light.hass.data[DOMAIN]["rotation"]["entry-1"]
+        self.assertIsNone(saved["active"])
+        self.assertEqual(saved["intervals"], {"native": 30})
+
+    async def test_saved_rotation_resumes_after_restart_only_in_its_mode(self):
+        light = make_light(self.helpers, kind="native")
+        await light.start_effect_rotation([{"name": "Rainbow"}, "Streamer"], 45)
+        light.stop_effect_rotation(persist=False)  # Home Assistant stops
+        # A new entity after the restart, same stored data.
+        restarted = make_light(self.helpers, kind="native")
+        restarted.hass = light.hass
+        restarted._restore_rotation_settings()
+        self.assertEqual(restarted._rotation_intervals, {"native": 45})
+        await restarted._async_resume_saved_rotation()
+        self.assertTrue(restarted._rotation_active)
+        self.assertEqual(restarted._rotation_interval, 45)
+        self.assertEqual(len(restarted._rotation_items), 2)
+        restarted.stop_effect_rotation(persist=False)
+        # The lamp came back in another mode (or off): nothing is resumed and
+        # the saved rotation is dropped.
+        other = make_light(self.helpers, kind="native")
+        other.hass = light.hass
+        other._mode = "Clock"
+        other._restore_rotation_settings()
+        await other._async_resume_saved_rotation()
+        self.assertFalse(other._rotation_active)
+        self.assertIsNone(light.hass.data[DOMAIN]["rotation"]["entry-1"]["active"])
+
+    async def test_interval_change_applies_live_without_skipping_the_current_item(self):
+        light = make_light(self.helpers, kind="native")
+        await light.start_effect_rotation([{"name": "Rainbow"}, "Streamer"], 60)
+        index = light._rotation_index
+        light.set_rotation_interval("native", 20)
+        await asyncio.sleep(0.05)  # the loop wakes and re-times
+        self.assertEqual(light._rotation_interval, 20)
+        self.assertEqual(light._rotation_index, index)  # still the same item
+        self.assertEqual(light._rotation_intervals, {"native": 20})
+        self.assertEqual(light._rotation_timeline["index"], index + 1)
+        self.assertFalse(light._rotation_retime)
+        self.assertEqual(
+            light.hass.data[DOMAIN]["rotation"]["entry-1"]["active"]["interval"], 20
+        )
+        # Another kind only records its interval.
+        light.set_rotation_interval("clock", 90)
+        self.assertEqual(light._rotation_interval, 20)
+        self.assertEqual(light._rotation_intervals, {"native": 20, "clock": 90})
+        light.stop_effect_rotation()
 
     async def test_normalize_rotation_items(self):
         light = make_light(self.helpers)

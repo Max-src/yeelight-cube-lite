@@ -1326,6 +1326,70 @@ start_effect_rotation:
             - label: Clock styles
               value: clock
 
+set_favourites:
+  name: Set Favourites
+  description: Replace a lamp's favourite native effects or clock styles (shown on every dashboard; rotation plays them in this order).
+  fields:
+    kind:
+      description: Which favourites to replace.
+      example: native
+      required: true
+      selector:
+        select:
+          options:
+            - label: Native effects
+              value: native
+            - label: Clock styles
+              value: clock
+    favourites:
+      description: Ordered list (at most 100) of {name, color_mode, color}. Clock presets use custom:<id>; color is an RGB list for color_mode custom.
+      example: '[{"name": "Rainbow"}, {"name": "Aurora", "color_mode": "custom", "color": [255, 80, 20]}]'
+      required: true
+      selector:
+        object:
+    entity_id:
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
+      example: "light.yeelight_cube_192_168_1_100"
+      required: true
+      selector:
+        entity:
+          domain: light
+          multiple: true
+
+set_rotation_interval:
+  name: Set Rotation Interval
+  description: Set the rotation interval every dashboard uses for a lamp (per kind). A running rotation of that kind switches to it at once.
+  fields:
+    kind:
+      description: Which rotation the interval is for.
+      example: native
+      required: true
+      selector:
+        select:
+          options:
+            - label: Native effects
+              value: native
+            - label: Clock styles
+              value: clock
+    interval:
+      description: Seconds between changes (10 seconds to 7 days).
+      example: 120
+      required: true
+      selector:
+        number:
+          min: 10
+          max: 604800
+          unit_of_measurement: s
+          mode: box
+    entity_id:
+      description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
+      example: "light.yeelight_cube_192_168_1_100"
+      required: true
+      selector:
+        entity:
+          domain: light
+          multiple: true
+
 stop_effect_rotation:
   name: Stop Effect Rotation
   description: Stop the server-side effect rotation on the target lamps.

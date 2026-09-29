@@ -150,7 +150,9 @@ export function renderModeControlSettings(
       : ""}`;
   // Rotation always follows the favourites list: no custom source, no
   // shuffle toggle. The only setting is how often to advance, edited as a
-  // value + unit (seconds → days) and stored as whole seconds.
+  // value + unit (seconds → days) and stored as whole seconds. It is the
+  // default until a lamp has its own interval (set from the card's rotation
+  // section or by a Start), which every dashboard then shares.
   const parts = rotationIntervalParts(config.rotation_interval ?? 60);
   const applyInterval = (value, unit) => {
     const size =
@@ -169,7 +171,7 @@ export function renderModeControlSettings(
         "Rotation Settings",
         html`
           <div class="form-row">
-            <label>Rotate every</label>
+            <label>Default interval</label>
             <div style="display:flex;gap:8px;align-items:center;min-width:0;">
               <input
                 type="number"
@@ -198,6 +200,11 @@ export function renderModeControlSettings(
                 )}
               </select>
             </div>
+          </div>
+          <div class="muted" style="font-size:0.85em;opacity:0.8;">
+            Used until the lamp has its own interval. Changing it from the
+            card's rotation section (or starting a rotation) stores it on the
+            lamp for every dashboard.
           </div>
         `,
       )

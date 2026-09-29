@@ -538,6 +538,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "palettes_v2": stored_data.get("palettes_v2", []),
             "pixel_arts": _migrated_pixel_arts,
             "device_runtime_state": stored_data.get("device_runtime_state", {}),
+            "favourites": stored_data.get("favourites", {}),
+            "rotation": stored_data.get("rotation", {}),
         })
         hass.data[DOMAIN].pop("storage_init_error", None)
         storage_ready.set()
@@ -981,10 +983,26 @@ async def async_save_data(hass: HomeAssistant):
         "palettes_v2": palettes_v2,
         "pixel_arts": pixel_arts,
         "device_runtime_state": device_runtime_state,
+        "favourites": hass.data[DOMAIN].get("favourites", {}),
+        "rotation": hass.data[DOMAIN].get("rotation", {}),
     }
     
     await store.async_save(data_to_save)
     _LOGGER.debug(f"[STORAGE-SAVE] COMPLETE: Saved {len(data_to_save['palettes_v2'])} palettes, {len(data_to_save['pixel_arts'])} pixel arts")
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Forget the stored per-lamp data (favourites, rotation, runtime state) of a lamp
+    that was deleted, so it does not linger in the storage file."""
+    domain_data = hass.data.get(DOMAIN)
+    if not isinstance(domain_data, dict):
+        return
+    changed = False
+    for key in ("favourites", "rotation", "device_runtime_state"):
+        store = domain_data.get(key)
+        if isinstance(store, dict) and store.pop(entry.entry_id, None) is not None:
+            changed = True
+    if changed:
+        await async_save_data(hass)
 
 async def async_remove(hass: HomeAssistant) -> None:
     """Remove the component."""

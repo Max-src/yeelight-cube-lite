@@ -44,7 +44,7 @@ while direct service calls use `entity_id`.
 | `visible_styles` / `visible_effects` | Clock / Native Effects | Ordered browser selection of style keys / effect names (Clock also needs `custom_visible_styles: true`) |
 | `show_favourites`, `favourites_show_stars`, `favourites_show_previews` | Both | Show saved style/effect and colour combinations, the gold star badges, and animated favourite previews |
 | `show_rotation` | Both | Show backend rotation status and commands |
-| `rotation_interval` | Both | Seconds between rotation steps, 10-604800 |
+| `rotation_interval` | Both | Default seconds between rotation steps, 10-604800, used until the lamp has its own interval (see [`set_rotation_interval`](#set_rotation_interval)) |
 | `preview_appearance`, `preview_overrides`, `appearance_presets` | Both | Shared and per-surface appearance, described below |
 
 Use the visual editor for section visibility, button styles, orientation,
@@ -54,10 +54,14 @@ by the lamp's **Experimental Features** setting, not a card-only toggle.
 
 ### Favourites, Presets and Offline Use
 
-- **Favourites** are browser-local, separated by card kind and target entity set.
-  Each entry stores a style/effect key, colour mode and optional RGB. Reordering
-  or shuffling favourites changes the list used by the next rotation Start.
-  Browser storage clearing or a different browser does not preserve this list.
+- **Favourites** are stored per lamp in Home Assistant, separately for Clock and
+  Native Effects (see [`set_favourites`](#set_favourites)), and published in the
+  lamp's `favourites` attribute, so every dashboard and device shows the same
+  list. Each entry stores a style/effect key, colour mode and optional RGB.
+  Reordering or shuffling favourites changes the list used by the next rotation
+  Start. A card targeting several lamps shows the first lamp's list and saves to
+  all of them. Lists that older versions kept in browser storage move to the lamp
+  the first time that browser opens the card (only while the lamp has none).
 - **Saved clock styles / reusable colours** use `save_clock_preset` and live in
   Home Assistant. These are distinct from favourites and require a working HA
   connection, though the lamp itself need not be reachable to save a preset.
@@ -1043,6 +1047,65 @@ data:
 
 ---
 
+### `set_favourites`
+
+Replace a lamp's favourite native effects or clock styles. The Clock and Native
+Effects cards use it for every favourites edit (add, remove, reorder, shuffle);
+rotation plays favourites in this order. The list is saved with the integration
+data (it survives restarts) and published in the lamp's `favourites` attribute,
+e.g. `favourites: {clock: [{name: Rainbow, color_mode: normal, color: null}]}`.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `kind` | Yes | `native` or `clock` |
+| `favourites` | Yes | Ordered list (at most 100) of objects with `name` (effect or style name; clock presets use `custom:<id>`), optional `color_mode` (default `normal`) and optional RGB `color` for `custom` |
+| `entity_id` | Yes | Target lamp entity (list supported: each lamp gets the same list) |
+
+```yaml
+action: yeelight_cube.set_favourites
+data:
+  kind: native
+  favourites:
+    - name: Rainbow
+    - name: Aurora
+      color_mode: custom
+      color: [255, 80, 20]
+  entity_id: light.cubelite_a904
+```
+
+Duplicates (same name and colour mode) are dropped. An empty list is valid and
+clears the favourites.
+
+---
+
+### `set_rotation_interval`
+
+Set the rotation interval every dashboard uses for a lamp (per kind). The Clock
+and Native Effects cards call it from **Every [value] [unit]** in their rotation
+section; `start_effect_rotation` also stores the interval it starts with. The
+value is saved with the integration data and published in the lamp's
+`rotation_intervals` attribute, e.g. `rotation_intervals: {native: 120}`.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `kind` | Yes | `native` or `clock` |
+| `interval` | Yes | Seconds between changes, 10–604800 |
+| `entity_id` | Yes | Target lamp entity (list supported) |
+
+```yaml
+action: yeelight_cube.set_rotation_interval
+data:
+  kind: clock
+  interval: 300
+  entity_id: light.cubelite_a904
+```
+
+A running rotation of that kind switches to the new interval at once: the
+current item stays until the next boundary of the new time grid (nothing is
+skipped or re-sent), and every target lamp stays aligned.
+
+---
+
 ### `start_effect_rotation`
 
 Start a **server-side** rotation that advances the lamp through the given mode
@@ -1052,7 +1115,7 @@ it keeps rotating after the dashboard tab is closed or refreshed.
 | Field | Required | Description |
 | :-- | :-- | :-- |
 | `items` | Yes | Ordered names or objects with `name`, optional `color_mode`, and optional RGB `color`; clock presets use `custom:<id>` |
-| `interval` | No | Seconds between changes, 10–604800 (default `60`) |
+| `interval` | No | Seconds between changes, 10–604800 (default `60`); also stored as the lamp's shared interval for this kind |
 | `kind` | No | `native` (default) or `clock` |
 | `entity_id` | Yes | Target lamp entity (list supported) |
 
@@ -1109,9 +1172,17 @@ the clock activation or brightness phase; retry logs include IP, item and attemp
 
 Explicit Stop, turning the lamp off, relevant content changes, calibration lock
 or enabling Music Flow cancel pending recovery. Offline preview edits do not
-cancel rotation. Rotation is held
-in memory and does **not** auto-resume after a Home Assistant restart or an
-integration reload. Commands from other automations do not universally stop it.
+cancel rotation. Commands from other automations do not universally stop it.
+
+**Restart recovery:** a running (or reconnect-pending) rotation is saved with
+the lamp's integration data. After a Home Assistant restart or an integration
+reload it is started again with the same kind, list and interval, once the
+lamp's startup display has been applied, provided the lamp is still on, in
+Clock / Native Effect mode as before, with no Music Flow or calibration lock.
+If the lamp is not reachable yet, the usual reconnect recovery resumes it. A
+rotation stopped for any reason (Stop, a manual pick, lamp off, a mode change,
+a non-retryable failure) is forgotten and not resumed. Shutting down or
+reloading does not count as a stop.
 
 **Rotation ownership:** state updates must only observe backend rotation. The
 old card controller sent Stop when its browser-local favourites contained fewer

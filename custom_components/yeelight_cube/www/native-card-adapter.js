@@ -6,6 +6,12 @@ import {
 import { getTargetEntities } from "./service-call-utils.js";
 import { previewOnly } from "./offline-preview-state.js";
 import { rotationTargets, retryFailedRotations } from "./rotation-status.js";
+import {
+  sharedFavourites,
+  saveSharedFavourites,
+  sharedRotationInterval,
+  saveSharedRotationInterval,
+} from "./shared-lamp-settings.js";
 
 /** Native-effect domain bridge, including manual Apply and capability gates.
  * Shared controllers own commands/selection; this module maps catalogues,
@@ -41,6 +47,17 @@ export function createNativeCardAdapter(card) {
     command: (service, data, domain) =>
       card._command(service, data, domain, true),
     freeze: () => card._command("freeze_display", {}, "yeelight_cube", true),
+    // The lamp's frozen state, shared by every dashboard.
+    frozen: () => card._attrs().display_frozen,
+    // Favourites and rotation interval stored on the lamp (see
+    // shared-lamp-settings.js).
+    favourites: () => sharedFavourites(card._hass, card.config, "native"),
+    saveFavourites: (favourites) =>
+      saveSharedFavourites(card, "native", favourites),
+    rotationInterval: () =>
+      sharedRotationInterval(card._hass, card.config, "native"),
+    setRotationInterval: (seconds) =>
+      saveSharedRotationInterval(card, "native", seconds),
     refresh: () =>
       card._commands.execute(card._hass, card.config, "force_refresh"),
     freezable: () => effectSupportsFreeze(card._effect()?.name),

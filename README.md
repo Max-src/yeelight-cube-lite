@@ -246,8 +246,8 @@ server-side favourites rotation that continues after you close the dashboard.
 | **Sliders** | Brightness and animation speed with selectable slider styles, labels and values |
 | **Content & format** | Switch time/date, 12/24-hour format and colon blinking |
 | **Actions** | Previous, next, random, freeze, refresh and power controls |
-| **Favourites & rotation** | Save style-and-colour combinations in this browser; rotate at a configurable interval, even after closing the dashboard |
-| **Multiple lamps & offline editing** | Target several lamps; previews and local favourite edits remain available while lamps are unavailable |
+| **Favourites & rotation** | Save style-and-colour combinations on the lamp (the same on every dashboard and device); rotate at a configurable interval, even after closing the dashboard |
+| **Multiple lamps & offline editing** | Target several lamps; previews and colour choices remain available while lamps are unavailable |
 
 <details>
 <summary>View editor sections</summary>
@@ -344,7 +344,7 @@ available where supported. Experimental effects require the lamp's
 | **Sliders** | Brightness and effect speed with selectable slider styles; speed is shown for effects that support it |
 | **Orientation & actions** | Device orientation, previous, next, random, freeze, refresh and power controls |
 | **Favourites & rotation** | Order saved effect-and-colour combinations and rotate them on the lamp at a configurable interval |
-| **Multiple lamps & offline editing** | Control several targets; browse previews and edit browser-local favourites even while lamps are unavailable |
+| **Multiple lamps & offline editing** | Control several targets; browse previews even while lamps are unavailable |
 
 <details>
 <summary>View editor sections</summary>
@@ -399,13 +399,17 @@ rotation_interval: 30
 </details>
 
 **Shared behaviour:** favourites store the style/effect together with its colour
-mode and custom RGB, separately for Clock and Native Effects. They belong to the
-browser and configured target set, not the lamp. Add at least two available
+mode and custom RGB, separately for Clock and Native Effects. They are saved on
+the lamp in Home Assistant (a card with several lamps shows the first lamp's list
+and saves it to all of them), so every dashboard, browser and device shows the
+same favourites, rotation interval and rotation status. A running rotation is
+resumed after a Home Assistant restart. Add at least two available
 favourites to start rotation. For multiple lamps, use `target_entities` with a
 list of light entity IDs on either card.
 
-**When a lamp is unavailable:** previews, colour choices, and local favourite
-editing remain usable, even if the entity temporarily disappears. Hardware
+**When a lamp is unavailable:** previews and colour choices remain usable, and
+the last known favourites stay shown (they are edited again once the lamp is
+back), even if the entity temporarily disappears. Hardware
 controls are gated. Reconnection discards local preview drafts without sending
 them to the lamps. Unknown rotation status is not treated as an active rotation.
 
@@ -1045,12 +1049,19 @@ Set `target_entities` to control several lamps together (`entity` remains
 supported for a single lamp). The first target supplies the main preview and
 control values. Optional `show_favourites` and `show_rotation` sections provide
 animated, reorderable favourites and timed effect rotation. Favourites are stored
-in this browser per target set, not synced between browsers.
+on the lamp in Home Assistant (`set_favourites`) and published in its
+`favourites` attribute, so every dashboard shows the same list and updates when
+another one edits it. Favourites an older version kept in a browser move to the
+lamp automatically the first time that browser opens the card.
 
-Rotation always follows the favourites list, advanced in order every
-`rotation_interval` seconds (edited as a value + unit, from 10 seconds up to 7
-days; the Shuffle button in the Favourites toolbar randomly reorders the list
-itself). Rotation is driven **server-side** by the light entity via the
+Rotation always follows the favourites list, advanced in order at the lamp's
+rotation interval (the Shuffle button in the Favourites toolbar randomly
+reorders the list itself). The interval (10 seconds up to 7 days) is stored on
+the lamp per kind and shared by every dashboard: change it with **Every
+[value] [unit]** in the card's rotation section, and a running rotation switches
+to it at once, keeping its current item. Until a lamp has its own interval, the
+card's `rotation_interval` (**Default interval** in the editor) is used; a Start
+also stores the interval it uses on the lamp. Rotation is driven **server-side** by the light entity via the
 `start_effect_rotation` / `stop_effect_rotation` / `skip_effect_rotation`
 services, so it keeps rotating after the dashboard tab is closed or refreshed —
 the lamp(s) hold the loop, not the browser. It only uses effects available on
@@ -1059,14 +1070,18 @@ lamp's loop is scheduled concurrently, so several lamps advance in parallel.
 Stop and manual card commands stop rotation. Retryable failures use bounded
 per-lamp recovery; an unreachable lamp can retain rotation intent and rejoin
 the group's current scheduled item after reconnecting. Turning a lamp off
-or enabling Music Flow cancels pending rotation intent. Rotation is
-in-memory only: it does not auto-resume after a Home Assistant restart or
-integration reload, and it does not wake lamps. Per-lamp failures are reported
+or enabling Music Flow cancels pending rotation intent. A running rotation is
+saved with the lamp: after a Home Assistant restart or an integration reload it
+resumes automatically (same list, interval and kind) if the lamp is still on
+and in that mode; an unreachable lamp resumes when it reconnects. A rotation
+that was stopped (Stop, a manual pick, lamp off, a mode change) is not resumed,
+and a rotation never wakes a lamp. Per-lamp failures are reported
 in `effect_rotation.error`. Unknown or gated items are skipped, so a successful
 Start is not proof of a display command or physical output. See
 [rotation diagnostics](SERVICES.md#rotation-diagnostics-and-regression-checks).
-Other cards observing the same lamp cannot stop the loop merely because their
-local favourites are empty or different.
+While a rotation runs, every card shows the list and interval the lamp is
+actually playing, wherever it was started from, and the freeze indicator follows
+the lamp's `display_frozen` state.
 
 Favourites are indicated by a gold star badge next to every item in the style
 browser (text, preview and original selectors, including the wheel). Set

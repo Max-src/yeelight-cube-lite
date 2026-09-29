@@ -54,7 +54,10 @@ from .layout import FONT_MAPS, TOTAL_COLUMNS, TOTAL_ROWS
 from .name_utils import normalize_display_name
 from .light import (
     DEVICE_ORIENTATIONS,
+    FAVOURITE_KINDS,
     LIGHT_SERVICE_NAMES,
+    MAX_FAVOURITE_NAME,
+    MAX_FAVOURITES,
     YeelightCubeLight,
     _ENTITY_REGISTRY,
     _entity_id_or_list,
@@ -106,6 +109,21 @@ PALETTE_SCHEMA = vol.Schema(
     extra=vol.REMOVE_EXTRA,
 )
 PALETTE_LIST_SCHEMA = vol.All([PALETTE_SCHEMA], vol.Length(max=MAX_PALETTES))
+FAVOURITE_SCHEMA = vol.Schema(
+    {
+        vol.Required("name"): vol.All(
+            cv.string, vol.Length(min=1, max=MAX_FAVOURITE_NAME)
+        ),
+        vol.Optional("color_mode", default="normal"): vol.All(
+            cv.string, vol.Length(max=40)
+        ),
+        vol.Optional("color"): vol.Any(None, RGB_SCHEMA),
+    },
+    extra=vol.REMOVE_EXTRA,
+)
+FAVOURITE_LIST_SCHEMA = vol.All(
+    [FAVOURITE_SCHEMA], vol.Length(max=MAX_FAVOURITES)
+)
 PIXEL_ART_SCHEMA = vol.Schema(
     {
         vol.Optional("name"): OPTIONAL_NAME_SCHEMA,
@@ -2897,6 +2915,46 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                 vol.Coerce(int), vol.Range(min=10, max=604800)
             ),
             vol.Optional("kind", default="native"): vol.In(["native", "clock"]),
+        }),
+    )
+    async def handle_set_favourites(service_call):
+        """Replace a lamp's favourite effects or clock styles (all dashboards
+        show them; rotation plays them in this order)."""
+        targets = _resolve_entities(service_call, "SET_FAVOURITES")
+        if not targets:
+            raise HomeAssistantError("No matching Yeelight Cube lamps")
+        kind = service_call.data["kind"]
+        items = service_call.data["favourites"]
+        for target in targets:
+            await target.async_set_favourites(kind, items)
+
+    async def handle_set_rotation_interval(service_call):
+        """Set the rotation interval every dashboard uses (applied at once to
+        a running rotation of that kind)."""
+        targets = _resolve_entities(service_call, "SET_ROTATION_INTERVAL")
+        if not targets:
+            raise HomeAssistantError("No matching Yeelight Cube lamps")
+        for target in targets:
+            target.set_rotation_interval(
+                service_call.data["kind"], service_call.data["interval"]
+            )
+
+    hass.services.async_register(
+        DOMAIN, "set_rotation_interval", handle_set_rotation_interval,
+        schema=vol.Schema({
+            vol.Required("entity_id"): _entity_id_or_list,
+            vol.Required("kind"): vol.In(list(FAVOURITE_KINDS)),
+            vol.Required("interval"): vol.All(
+                vol.Coerce(int), vol.Range(min=10, max=604800)
+            ),
+        }),
+    )
+    hass.services.async_register(
+        DOMAIN, "set_favourites", handle_set_favourites,
+        schema=vol.Schema({
+            vol.Required("entity_id"): _entity_id_or_list,
+            vol.Required("kind"): vol.In(list(FAVOURITE_KINDS)),
+            vol.Required("favourites"): FAVOURITE_LIST_SCHEMA,
         }),
     )
     hass.services.async_register(

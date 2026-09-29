@@ -3924,7 +3924,7 @@ const server = http.createServer(async (request, response) => {
       );
       const text = editor.shadowRoot.textContent;
       results.editorControl =
-        text.includes("Rotate every") &&
+        text.includes("Default interval") &&
         !text.includes("Custom List") &&
         !text.includes("No Immediate Repeats") &&
         input?.value === "2" &&
