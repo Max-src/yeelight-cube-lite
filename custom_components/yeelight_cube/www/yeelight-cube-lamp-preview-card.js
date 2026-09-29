@@ -281,6 +281,10 @@ class YeelightCubeLampPreviewCard extends LitElement {
     super();
     this.config = {};
     this._hass = null;
+    // Lamp calls (brightness, adjustments, resets, orientation) share one
+    // ordered queue. The action row has its own, so a slider commit never
+    // shows the actions as busy.
+    this._commands = new CardCommandController();
     this._actionCommands = new CardCommandController(() => {
       if (!this._actions) return;
       this._actions.error = this._actionCommands.error;
@@ -394,8 +398,8 @@ class YeelightCubeLampPreviewCard extends LitElement {
           if (!this._hass || !this.config || !this.config.entity) return;
           const haBrightness = Math.round(3 + ((pct - 1) * 252) / 99);
           const safeBrightness = Math.max(3, Math.min(255, haBrightness));
-          this._hass
-            .callService("light", "turn_on", {
+          this._commands
+            .call(this._hass, "light", "turn_on", {
               entity_id: this.config.entity,
               brightness: safeBrightness,
             })
@@ -461,6 +465,7 @@ class YeelightCubeLampPreviewCard extends LitElement {
   }
 
   setConfig(config) {
+    this._commands?.reset();
     this._effectContext = (this._effectContext || 0) + 1;
     clearTimeout(this._effectDebounceTimer);
     this._effectDebounceTimer = null;
@@ -715,10 +720,12 @@ class YeelightCubeLampPreviewCard extends LitElement {
         // Track when we make the service call
         this._lastServiceCallTime = Date.now();
 
-        await hass.callService("yeelight_cube", "set_preview_adjustments", {
-          entity_id: entityId,
-          ...effects,
-        });
+        await this._commands.call(
+          hass,
+          "yeelight_cube",
+          "set_preview_adjustments",
+          { entity_id: entityId, ...effects },
+        );
 
         // Don't clear local state on a timer - let the entity state update handle it
         // The set hass() method will trigger a render when entity updates
@@ -837,21 +844,41 @@ class YeelightCubeLampPreviewCard extends LitElement {
     this.requestUpdate();
 
     // Send everything to the lamp (only this section's values changed)
-    await this._hass.callService("yeelight_cube", "set_preview_adjustments", {
-      entity_id: this.config.entity,
-      ...allEffects,
-    });
-
-    // Sliders and labels keep showing the defaults until the entity echoes
-    // them; the local overrides are then dropped (see _pruneResetEffects).
-    Object.keys(defaultValues).forEach((effectName) =>
-      this._resetPending.add(effectName),
-    );
-    this._pruneResetEffects(this._hass?.states?.[this.config.entity]);
+    if (await this._sendReset(defaultValues, allEffects)) {
+      // Sliders and labels keep showing the defaults until the entity echoes
+      // them; the local overrides are then dropped (see _pruneResetEffects).
+      Object.keys(defaultValues).forEach((effectName) =>
+        this._resetPending.add(effectName),
+      );
+      this._pruneResetEffects(this._hass?.states?.[this.config.entity]);
+    }
 
     // Update change indicators and section reset button visibility
     this._updateChangeIndicators();
     this._updateSectionResetButtons();
+  }
+
+  // Send a reset whose defaults are already shown. If the lamp refuses it,
+  // drop those defaults again (unless the user moved a slider meanwhile) so
+  // the controls show what the lamp really has. True once sent.
+  async _sendReset(defaults, allEffects) {
+    const context = this._effectContext;
+    try {
+      const sent = await this._commands.call(
+        this._hass,
+        "yeelight_cube",
+        "set_preview_adjustments",
+        { entity_id: this.config.entity, ...allEffects },
+      );
+      return sent === true && context === this._effectContext;
+    } catch (error) {
+      if (context !== this._effectContext) return false;
+      for (const [name, value] of Object.entries(defaults))
+        if (this._localEffects[name] === value) delete this._localEffects[name];
+      this._refresh();
+      console.error("[lamp-preview] Reset failed:", error);
+      return false;
+    }
   }
 
   async resetEffect(effectName) {
@@ -878,14 +905,13 @@ class YeelightCubeLampPreviewCard extends LitElement {
     this.requestUpdate();
 
     // Send to the lamp
-    await this._hass.callService("yeelight_cube", "set_preview_adjustments", {
-      entity_id: this.config.entity,
-      ...allEffects,
-    });
-
-    // Keep showing the default until the entity echoes it.
-    this._resetPending.add(effectName);
-    this._pruneResetEffects(this._hass?.states?.[this.config.entity]);
+    if (
+      await this._sendReset({ [effectName]: defaultValue }, allEffects)
+    ) {
+      // Keep showing the default until the entity echoes it.
+      this._resetPending.add(effectName);
+      this._pruneResetEffects(this._hass?.states?.[this.config.entity]);
+    }
 
     // Update change indicators and reset button visibility
     this._updateChangeIndicators();
@@ -1899,16 +1925,13 @@ class YeelightCubeLampPreviewCard extends LitElement {
     this._orientationSettled = false;
     this._orientationError = null;
     this._refreshOrientationControls();
-    const request = (this._orientationQueue || Promise.resolve()).then(() => {
-      if (context !== this._orientationContext) return;
-      return hass.callService("yeelight_cube", "set_device_orientation", {
+    try {
+      // Queued behind earlier clicks; dropped (resolves false) if the card is
+      // reconfigured before it is sent.
+      await this._commands.call(hass, "yeelight_cube", "set_device_orientation", {
         entity_id: entity,
         orientation,
       });
-    });
-    this._orientationQueue = request.catch(() => {});
-    try {
-      await request;
       if (
         context !== this._orientationContext ||
         sequence !== this._orientationSequence
@@ -3951,6 +3974,7 @@ class YeelightCubeLampPreviewCard extends LitElement {
     super.disconnectedCallback();
     this._wasDisconnected = true;
     this._actionCommands.reset();
+    this._commands.reset();
     this._actions.configure(
       this.config,
       this.config.entity ? [this.config.entity] : [],

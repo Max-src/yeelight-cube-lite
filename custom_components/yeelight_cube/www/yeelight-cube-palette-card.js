@@ -26,7 +26,7 @@ import {
 } from "./carousel-utils.js";
 import { gridModeStyles } from "./grid-mode-utils.js";
 import { galleryModeStyles, renderGalleryMode } from "./gallery-mode-utils.js";
-import { callServiceOnTargetEntities as callServiceSequentially } from "./service-call-utils.js";
+import { CardCommandController } from "./card-command-controller.js";
 import { CollectionState } from "./collection-state.js";
 import { notify, notifyUnreported } from "./notify-utils.js";
 import {
@@ -51,6 +51,9 @@ const isActivationKey = (event) =>
 class YeelightCubePaletteCard extends LitElement {
   constructor() {
     super();
+    // Every lamp/sensor call of this card goes through one ordered queue
+    // (palette collection edits use _collection).
+    this._commands = new CardCommandController();
     this._hass = null;
     this.config = {};
     this._importStatus = { active: false, success: false };
@@ -161,6 +164,7 @@ class YeelightCubePaletteCard extends LitElement {
 
   setConfig(config) {
     this._collection?.reset();
+    this._commands?.reset();
     // target_entities is deliberately not defaulted: an empty array counts as
     // "configured" for the service helper and would override `entity`.
     this.config = {
@@ -1464,13 +1468,11 @@ class YeelightCubePaletteCard extends LitElement {
     this._deletePalette(idx);
   }
 
-  // Call a service on every configured target entity (in parallel).
-  // Delegates to the shared utility.  The Python backend holds per-IP locks,
-  // so different lamps execute in parallel.
-  async callServiceOnTargetEntities(service, data = {}) {
-    return callServiceSequentially(this._hass, this.config, service, data, {
-      callerTag: "Palette Card",
-    });
+  // One call for all target lamps (the backend runs them in parallel), through
+  // the card's command queue: sent in order, results from a previous
+  // configuration dropped. Rejects on failure (HA has already shown it).
+  callServiceOnTargetEntities(service, data = {}) {
+    return this._commands.request(this._hass, this.config, service, data);
   }
 
   // Prompt for a new palette name and persist it via the backend. Shared by
@@ -1554,9 +1556,12 @@ class YeelightCubePaletteCard extends LitElement {
             // Force sensor update to get fresh data immediately
             const paletteSensor = this.config?.palette_sensor;
             if (paletteSensor) {
-              await this._hass.callService("homeassistant", "update_entity", {
-                entity_id: paletteSensor,
-              });
+              await this._commands.call(
+                this._hass,
+                "homeassistant",
+                "update_entity",
+                { entity_id: paletteSensor },
+              );
             }
           })
           .catch((error) => this._notifyUnreported(error));

@@ -125,6 +125,9 @@ test("colour-save failures roll back only their own pending edit", async (contex
           fail = reject;
         }),
     },
+    _cardCommands() {
+      return (this._commands ||= new CardCommandController());
+    },
     render() {},
     dispatchEvent(event) {
       notices.push(event);
@@ -314,6 +317,7 @@ test("lamp adjustment timers and stale failures cannot cross configuration conte
   const card = {
     shadowRoot: {},
     _actionCommands: { reset() {} },
+    _commands: new CardCommandController(),
     _actions: { configure() {} },
     _hass: {
       states: { "light.a": { attributes: {} }, "light.b": { attributes: {} } },
@@ -342,6 +346,7 @@ test("lamp adjustment timers and stale failures cannot cross configuration conte
   assert.deepEqual(card._localEffects, {});
   await change.call(card, "contrast", { target: { value: "80" } });
   const running = timers.get(card._effectDebounceTimer)();
+  await new Promise((resolve) => setImmediate(resolve)); // sent from the queue
   assert.equal(calls[0][2].entity_id, "light.b");
   configure.call(card, { entity: "light.a" });
   card._localEffects.contrast = 90;
@@ -405,4 +410,86 @@ test("Draw ignores a collection fetch completed after reconfiguration", async ()
   await result;
   assert.equal(card._hass, hass);
   assert.equal(card._freshPixelArts, undefined);
+});
+
+test("card commands keep lamp and non-lamp calls in order, and report failures", async () => {
+  const sent = [];
+  const pending = [];
+  const hass = {
+    callService(domain, service, data) {
+      sent.push([domain, service, data]);
+      return new Promise((resolve, reject) => pending.push({ resolve, reject }));
+    },
+  };
+  const commands = new CardCommandController();
+  const config = { entity: "light.a" };
+  const lamp = commands.request(hass, config, "apply_pixel_art", { idx: 1 });
+  const refresh = commands.call(hass, "homeassistant", "update_entity", {
+    entity_id: "sensor.art",
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  // The refresh waits for the lamp command it follows.
+  assert.deepEqual(sent, [
+    ["yeelight_cube", "apply_pixel_art", { idx: 1, entity_id: "light.a" }],
+  ]);
+  pending.shift().resolve();
+  assert.equal(await lamp, true);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(sent[1], [
+    "homeassistant",
+    "update_entity",
+    { entity_id: "sensor.art" },
+  ]);
+  pending.shift().reject({ code: "x", message: "offline" });
+  await assert.rejects(refresh, { message: "offline" });
+  assert.equal(commands.error, "offline");
+  // execute reports the same failure as false instead of rejecting.
+  const quiet = commands.execute(hass, config, "set_mode", {});
+  await new Promise((resolve) => setImmediate(resolve));
+  pending.shift().reject(Error("refused"));
+  assert.equal(await quiet, false);
+  // A call queued before a reconfiguration is never sent.
+  const blocker = commands.request(hass, config, "a");
+  await new Promise((resolve) => setImmediate(resolve)); // "a" is in flight
+  const dropped = commands.call(hass, "homeassistant", "update_entity", {});
+  commands.reset();
+  pending.shift().resolve();
+  assert.equal(await blocker, false);
+  assert.equal(await dropped, false);
+  assert.equal(sent.at(-1)[1], "a");
+  // No lamp configured: nothing is sent.
+  assert.equal(await commands.request(hass, {}, "set_mode"), false);
+});
+
+test("a refused lamp-preview reset drops the defaults it showed", async (context) => {
+  context.mock.method(console, "error", () => {});
+  const sendReset = cardMethod("yeelight-cube-lamp-preview-card", "_sendReset");
+  let fail;
+  let refreshed = 0;
+  const card = {
+    config: { entity: "light.a" },
+    _effectContext: 1,
+    _localEffects: { contrast: 100, saturation: 100 },
+    _hass: {
+      callService: () =>
+        new Promise((resolve, reject) => {
+          fail = reject;
+        }),
+    },
+    _commands: new CardCommandController(),
+    _refresh() {
+      refreshed++;
+    },
+  };
+  const result = sendReset.call(
+    card,
+    { contrast: 100, saturation: 100 },
+    { contrast: 100, saturation: 100 },
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  card._localEffects.saturation = 40; // moved while the reset was pending
+  fail(Error("offline"));
+  assert.equal(await result, false);
+  assert.deepEqual(card._localEffects, { saturation: 40 });
+  assert.equal(refreshed, 1);
 });

@@ -8,6 +8,7 @@ import {
   ORIENTATION_ORDER,
 } from "../custom_components/yeelight_cube/www/orientation-control-utils.js";
 import { actionButtonStyleChoices } from "../custom_components/yeelight_cube/www/action-button-utils.js";
+import { CardCommandController } from "../custom_components/yeelight_cube/www/card-command-controller.js";
 
 function orientationCard(callService) {
   const source = readFileSync(
@@ -20,6 +21,7 @@ function orientationCard(callService) {
   const card = {
     config: { entity: "light.demo" },
     _orientationContext: 1,
+    _commands: new CardCommandController(),
     _hass: {
       states: {
         "light.demo": {
@@ -118,7 +120,9 @@ test("changing card context discards queued commands and stale responses", async
   const first = card.handleOrientationSelect("down");
   const second = card.handleOrientationSelect("left");
   await Promise.resolve();
+  // What setConfig / disconnectedCallback do.
   card._orientationContext++;
+  card._commands.reset();
   card._orientationPending = null;
   release();
   await Promise.all([first, second]);
@@ -268,7 +272,7 @@ test("rotation and flip work without visible direction arrows", async () => {
     card.handleOrientationControl({
       target: { closest: () => ({ dataset: { value }, disabled: false }) },
     });
-    await card._orientationQueue;
+    await card._commands.queue;
   }
   assert.deepEqual(calls, ["down", "up", "left"]);
 });

@@ -12,7 +12,8 @@ import {
   galleryDisplayStyles,
 } from "./gallery-display-utils.js";
 import { initializeWheelNavigation } from "./wheel-navigation-utils.js";
-import { callServiceOnTargetEntities as callServiceSequentially } from "./service-call-utils.js";
+import { getTargetEntities } from "./service-call-utils.js";
+import { CardCommandController } from "./card-command-controller.js";
 import { gradientPreviewStore } from "./gradient-preview-store.js";
 import {
   AngleCommandController,
@@ -1247,6 +1248,9 @@ class YeelightCubeGradientCard extends LitElement {
 
   constructor() {
     super();
+    // Every service call of this card (except the debounced angle, see
+    // _angleCommands) goes through one ordered queue.
+    this._commands = new CardCommandController();
     // The angle the user is setting, kept until the lamp reports it back so
     // re-renders during/after a drag never snap the controls to the old angle.
     this._angleDraft = createSliderDraft({
@@ -1365,16 +1369,15 @@ class YeelightCubeGradientCard extends LitElement {
     return GRADIENT_MODES;
   }
 
-  // Helper method to call services on target entities.
-  // Delegates to the shared utility.  The Python backend holds per-IP locks,
-  // so different lamps execute in parallel.
-  async callServiceOnTargetEntities(serviceName, serviceData = {}) {
-    return callServiceSequentially(
+  // One call for all target lamps (the backend runs them in parallel), through
+  // the card's command queue: sent in order, results from a previous
+  // configuration dropped. Rejects on failure (HA has already shown it).
+  callServiceOnTargetEntities(serviceName, serviceData = {}) {
+    return this._commands.request(
       this._hass,
       this.config,
       serviceName,
       serviceData,
-      { callerTag: "Gradient Card" },
     );
   }
 
@@ -1509,6 +1512,7 @@ class YeelightCubeGradientCard extends LitElement {
   setConfig(config) {
     config = resolvePreviewAppearance(config, "gradient");
     this._angleCommands.reset();
+    this._commands?.reset();
     this._pendingAngle = null;
     this._removeRotaryDocListeners();
     this._draggingRotary = false;
@@ -2590,9 +2594,7 @@ class YeelightCubeGradientCard extends LitElement {
 
     // Resolve the full list of target entities (same list used by
     // callServiceOnTargetEntities).
-    const allTargets =
-      this.config.target_entities ||
-      (this.config.entity ? [this.config.entity] : []);
+    const allTargets = getTargetEntities(this.config);
 
     if (cols > 0) {
       // Save each entity's current text before filling.
@@ -2627,10 +2629,12 @@ class YeelightCubeGradientCard extends LitElement {
       const restorePromises = allTargets.map(async (eid) => {
         const restoreText = saved[eid] ?? "";
         try {
-          await this._hass.callService("yeelight_cube", "set_custom_text", {
-            text: restoreText,
-            entity_id: eid,
-          });
+          await this._commands.call(
+            this._hass,
+            "yeelight_cube",
+            "set_custom_text",
+            { text: restoreText, entity_id: eid },
+          );
         } catch (err) {
           console.error(
             `[Gradient Card] Error restoring text for ${eid}:`,

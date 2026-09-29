@@ -2,25 +2,26 @@
 import { hexToRgb, rgbToHex } from "./draw_utils.js";
 
 /**
- * Save `colors` as a named palette. Returns the service-call promise so the
- * caller can handle failures (it rejects if either call fails).
+ * Save `colors` as a named palette, then refresh the palette sensor.
+ * `call(domain, service, data)` sends one service call (the card's command
+ * queue); it rejects if either call fails so the caller can report it.
  */
 export async function savePalette(
-  hass,
+  call,
   paletteSensor,
   colors,
   entityId = null,
   name = null,
 ) {
-  if (!hass || !paletteSensor) return;
+  if (!call || !paletteSensor) return;
   const rgbColors = colors.map((c) => hexToRgb(c));
   const serviceData = { palette: rgbColors };
   if (name) serviceData.name = name;
   if (entityId) {
     serviceData.entity_id = entityId;
   }
-  await hass.callService("yeelight_cube", "save_palette", serviceData);
-  await hass.callService("homeassistant", "update_entity", {
+  await call("yeelight_cube", "save_palette", serviceData);
+  await call("homeassistant", "update_entity", {
     entity_id: paletteSensor,
   });
 }

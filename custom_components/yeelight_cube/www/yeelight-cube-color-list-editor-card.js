@@ -19,7 +19,6 @@ import {
 } from "./delete-button-styles.js";
 import { compactModeStyles } from "./compact-mode-styles.js";
 import { compactLayoutStyles } from "./compact-layout-utils.js";
-import { callServiceOnTargetEntities as callServiceSequentially } from "./service-call-utils.js";
 import { CardCommandController } from "./card-command-controller.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 
@@ -1545,7 +1544,7 @@ class YeelightCubeColorListEditorCard extends LitElement {
   }
 
   setConfig(config) {
-    this._colorCommands?.reset();
+    this._commands?.reset();
     this._pendingServiceCalls = [];
     this.config = config;
 
@@ -1719,16 +1718,21 @@ class YeelightCubeColorListEditorCard extends LitElement {
     return candidates[0] || null; // return first even if stale (so error is shown)
   }
 
-  // Helper method for calling services on multiple entities.
-  // Delegates to the shared utility.  The Python backend holds per-IP locks,
-  // so different lamps execute in parallel.
-  async callServiceOnTargetEntities(service, serviceData) {
-    return callServiceSequentially(
+  // Every service call of this card goes through one ordered queue
+  // (card-command-controller): results from a previous configuration are
+  // dropped. Created on first use.
+  _cardCommands() {
+    return (this._commands ||= new CardCommandController());
+  }
+
+  // One call for all target lamps (the backend runs them in parallel).
+  // Rejects on failure (HA has already shown it).
+  callServiceOnTargetEntities(service, serviceData = {}) {
+    return this._cardCommands().request(
       this._hass,
       this.config,
       service,
       serviceData,
-      { callerTag: "ColorList Card" },
     );
   }
 
@@ -2375,11 +2379,15 @@ class YeelightCubeColorListEditorCard extends LitElement {
       );
       return;
     }
+    const commands = this._cardCommands();
     try {
-      await this._hass.callService("yeelight_cube", "save_palette", {
-        palette: currentColors,
-        entity_id: primaryEntity,
-      });
+      if (
+        !(await commands.call(this._hass, "yeelight_cube", "save_palette", {
+          palette: currentColors,
+          entity_id: primaryEntity,
+        }))
+      )
+        return;
     } catch (err) {
       console.error("Error saving palette:", err);
       return;
@@ -2387,7 +2395,7 @@ class YeelightCubeColorListEditorCard extends LitElement {
     // Force sensor update to get fresh data immediately
     if (this.config?.palette_sensor) {
       try {
-        await this._hass.callService("homeassistant", "update_entity", {
+        await commands.call(this._hass, "homeassistant", "update_entity", {
           entity_id: this.config.palette_sensor,
         });
       } catch (err) {
@@ -2586,7 +2594,7 @@ class YeelightCubeColorListEditorCard extends LitElement {
   }
 
   async _commitColors(entityId, entry, config) {
-    const commands = (this._colorCommands ||= new CardCommandController());
+    const commands = this._cardCommands();
     const context = commands.context;
     const success = await commands.execute(
       this._hass,
@@ -3492,7 +3500,7 @@ class YeelightCubeColorListEditorCard extends LitElement {
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    this._colorCommands?.reset();
+    this._commands?.reset();
     this._pendingServiceCalls = [];
 
     // Tear down anything a drag placed outside the card (touch ghost) if

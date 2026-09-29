@@ -81,7 +81,7 @@ import {
 import { StorageUtils } from "./draw_card_storage.js";
 import { CollectionState } from "./collection-state.js";
 import { notifyUnreported } from "./notify-utils.js";
-import { callServiceOnTargetEntities as callServiceSequentially } from "./service-call-utils.js";
+import { CardCommandController } from "./card-command-controller.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 
 /**
@@ -1074,6 +1074,8 @@ class YeelightCubeDrawCard extends LitElement {
 
   constructor() {
     super();
+    // Every service call of this card goes through one ordered queue.
+    this._commands = new CardCommandController();
     this._onToolVisibilityReset = this._onToolVisibilityReset.bind(this);
     this._onActionOrderReset = this._onActionOrderReset.bind(this);
     this._onActionVisibilityReset = this._onActionVisibilityReset.bind(this);
@@ -1402,6 +1404,7 @@ class YeelightCubeDrawCard extends LitElement {
     this._collectionContext = (this._collectionContext || 0) + 1;
     this._fetchingPixelArts = false;
     this._pixelArtCollection?.reset();
+    this._commands?.reset();
     // Create a mutable copy of the config to allow adding new properties
     this.config = { ...config };
 
@@ -1483,26 +1486,27 @@ class YeelightCubeDrawCard extends LitElement {
     // Do NOT reset this.matrix here!
   }
 
-  // Helper method to call services on target entities (multi-entity support)
-  // Call a service sequentially on every configured target entity.
-  // Delegates to the shared utility.  The Python backend holds per-IP locks,
-  // so different lamps execute in parallel.
-  async callServiceOnTargetEntities(service, data = {}) {
-    return callServiceSequentially(this.hass, this.config, service, data, {
-      callerTag: "Draw Card",
-    });
+  // Service calls go through the card's command queue (card-command-controller):
+  // sent in order, and results from a previous configuration are dropped.
+  // They reject on failure (Home Assistant has already shown the error).
+
+  // One call for all target lamps; the backend runs them in parallel.
+  callServiceOnTargetEntities(service, data = {}) {
+    return this._commands.request(this.hass, this.config, service, data);
   }
 
-  // Helper method for global services (pixel art operations) - only called ONCE regardless of number of target entities
-  async callGlobalService(service, data = {}) {
-    // Pixel art services are truly global and don't require entity_id
-    // Including an invalid entity_id causes "unknown.unknown" errors
-    try {
-      await this.hass.callService("yeelight_cube", service, data);
-    } catch (error) {
-      console.error(`Error calling service ${service}:`, error);
-      throw error;
-    }
+  // Pixel-art services are global: sent once, without entity_id (an invalid
+  // one causes "unknown.unknown" errors).
+  callGlobalService(service, data = {}) {
+    return this._commands.call(this.hass, "yeelight_cube", service, data);
+  }
+
+  // Ask Home Assistant to refresh a sensor now rather than at its next poll.
+  _refreshEntity(entityId) {
+    if (!entityId) return Promise.resolve(false);
+    return this._commands.call(this.hass, "homeassistant", "update_entity", {
+      entity_id: entityId,
+    });
   }
 
   _pushMatrixHistory() {
@@ -2005,7 +2009,8 @@ class YeelightCubeDrawCard extends LitElement {
 
   _savePalette(colors, name = "Custom Palette") {
     return savePalette(
-      this.hass,
+      (domain, service, data) =>
+        this._commands.call(this.hass, domain, service, data),
       this.paletteSensor,
       colors,
       this.entity,
@@ -2099,12 +2104,7 @@ class YeelightCubeDrawCard extends LitElement {
       pixels,
     });
     // Update pixel art sensor entity
-    const pixelartSensor = this.config?.pixelart_sensor;
-    if (pixelartSensor) {
-      await this.hass.callService("homeassistant", "update_entity", {
-        entity_id: pixelartSensor,
-      });
-    }
+    await this._refreshEntity(this.config?.pixelart_sensor);
     // Fire pixelart-saved event
     window.dispatchEvent(new Event("pixelart-saved"));
   }
@@ -2133,12 +2133,7 @@ class YeelightCubeDrawCard extends LitElement {
       pixels,
     });
     // Also call update_entity for lamp entity or palette sensor
-    const updateTarget = this.entity || this.paletteSensor;
-    if (updateTarget) {
-      await this.hass.callService("homeassistant", "update_entity", {
-        entity_id: updateTarget,
-      });
-    }
+    await this._refreshEntity(this.entity || this.paletteSensor);
     // Fire pixelart-saved event for consistency
     window.dispatchEvent(new Event("pixelart-saved"));
   }
@@ -3729,9 +3724,7 @@ class YeelightCubeDrawCard extends LitElement {
       if (context !== this._collectionContext) return;
 
       // Trigger sensor update
-      await this.hass.callService("homeassistant", "update_entity", {
-        entity_id: sensorEntityId,
-      });
+      await this._refreshEntity(sensorEntityId);
 
       // The content_hash-triggered fetch in `set hass` can race the backend and
       // cache the pre-rename array, leaving _hass stale until a full reload.
@@ -3782,9 +3775,7 @@ class YeelightCubeDrawCard extends LitElement {
           idx,
           expected_name: shown[idx]?.name,
         });
-        await this.hass.callService("homeassistant", "update_entity", {
-          entity_id: pixelartSensor,
-        });
+        await this._refreshEntity(pixelartSensor);
         window.dispatchEvent(new Event("pixelart-saved"));
       } catch (err) {
         this._reportFailure(err, "Failed to apply the pixel art.");
@@ -4098,9 +4089,7 @@ class YeelightCubeDrawCard extends LitElement {
       )
         throw new Error("The pixel-art collection changed. Please retry.");
 
-      await this.hass.callService("homeassistant", "update_entity", {
-        entity_id: pixelartSensor,
-      });
+      await this._refreshEntity(pixelartSensor);
 
       window.dispatchEvent(new Event("pixelart-saved"));
       this._showImportStatus("success");
