@@ -157,5 +157,5 @@ export function renderOrientationControls(
       );
     })
     .join("");
-  return `<div class="device-orientation-row" role="group" aria-label="Device orientation" onclick="this.getRootNode().host.handleOrientationControl(event)"><div class="orientation-buttons">${buttons}</div></div>`;
+  return `<div class="device-orientation-row" role="group" aria-label="Device orientation" data-on-click="handleOrientationControl"><div class="orientation-buttons">${buttons}</div></div>`;
 }

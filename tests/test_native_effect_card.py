@@ -225,6 +225,30 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.target._native_effect, "Rainbow")
         self.assertEqual(self.target._mode, "Native Effect")
 
+    async def test_an_older_call_finishing_last_leaves_no_stale_baseline(self):
+        # Rainbow is slow; Ocean Waves is sent and accepted before it. When
+        # Rainbow then finishes, the lamp shows Ocean Waves: a later failure
+        # must roll back to Ocean Waves, not to Rainbow.
+        release_first = asyncio.Event()
+        results = iter([True, True, False])
+
+        async def apply(**_kwargs):
+            outcome = next(results)
+            if not release_first.is_set() and self.target._native_effect == "Rainbow":
+                await release_first.wait()
+            return outcome
+
+        self.target.async_apply_display_mode = AsyncMock(side_effect=apply)
+        await self.raw_handle(SimpleNamespace(data={"effect": "Rainbow"}))
+        first = asyncio.ensure_future(self.scheduled.pop())
+        await asyncio.sleep(0)  # Rainbow is now being sent to the lamp
+        await self.handle(SimpleNamespace(data={"effect": "Ocean Waves"}))
+        release_first.set()
+        await first
+        self.assertIsNone(getattr(self.target, "_native_effect_baseline", None))
+        await self.handle(SimpleNamespace(data={"effect": "Aurora"}))  # rejected
+        self.assertEqual(self.target._native_effect, "Ocean Waves")
+
     async def test_nothing_to_send_leaves_no_stale_baseline(self):
         # A speed change while the clock runs sends nothing to the lamp...
         await self.handle(SimpleNamespace(data={"speed": 80, "activate": False}))

@@ -5,6 +5,7 @@ import { renderColorModeSelector } from "../custom_components/yeelight_cube/www/
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { escapeHtml } from "../custom_components/yeelight_cube/www/html-escape-utils.js";
+import { PreviewVisibility } from "../custom_components/yeelight_cube/www/preview-visibility.js";
 import {
   renderActionButtonHTML,
   renderActionButtonGroupHTML,
@@ -453,13 +454,15 @@ test("preview style lists reuse snapshots and invalidate on library/config chang
   assert.equal(scans, 3);
 });
 
-test("gallery reload disconnects its observer and paints only current previews before visibility arrives", () => {
+test("re-renders keep one observer: unchanged tiles keep their visibility", () => {
   const current = { hasAttribute: () => true };
   const gallery = Array.from({ length: 100 }, () => ({
     hasAttribute: () => false,
   }));
+  let shown = gallery;
   const observed = [];
-  let disconnects = 0;
+  const released = [];
+  let created = 0;
   let callback;
   const card = {
     shadowRoot: {
@@ -468,31 +471,43 @@ test("gallery reload disconnects its observer and paints only current previews b
           ? [current]
           : selector === ".original-gallery .original-item"
             ? []
-            : gallery,
+            : shown,
     },
-    _io: { disconnect: () => disconnects++ },
     isConnected: true,
     ...cardMethods(["_setupObserver"], {
+      PreviewVisibility,
       IntersectionObserver: class {
         constructor(handler) {
+          created++;
           callback = handler;
         }
         observe(element) {
           observed.push(element);
         }
-        disconnect() {
-          disconnects++;
+        unobserve(element) {
+          released.push(element);
         }
+        disconnect() {}
       },
     }),
   };
   card._setupObserver();
+  // Only the current preview is painted before visibility arrives.
   assert.deepEqual([...card._visible], [current]);
   assert.equal(observed.length, 101);
   callback([{ target: gallery[0], isIntersecting: true }]);
   assert.equal(card._visible.size, 2);
+  // Same tiles again: nothing re-observed, known visibility kept.
   card._setupObserver();
-  assert.equal(disconnects, 2);
+  assert.equal(created, 1);
+  assert.equal(observed.length, 101);
+  assert.deepEqual([...card._visible], [current, gallery[0]]);
+  // A tile removed from the DOM is released; a new one is observed.
+  const added = { hasAttribute: () => false };
+  shown = [...gallery.slice(1), added];
+  card._setupObserver();
+  assert.deepEqual(released, [gallery[0]]);
+  assert.equal(observed.at(-1), added);
   assert.deepEqual([...card._visible], [current]);
 });
 
@@ -520,7 +535,8 @@ test("gallery reload paints on-screen tiles immediately to avoid a blink", () =>
               : [onScreen, nearScreen, offScreen, detached],
       },
       isConnected: true,
-    ...cardMethods(["_setupObserver"], {
+      ...cardMethods(["_setupObserver"], {
+        PreviewVisibility,
         IntersectionObserver: class {
           observe() {}
           disconnect() {}
@@ -539,11 +555,17 @@ test("gallery reload paints on-screen tiles immediately to avoid a blink", () =>
 
 test("no preview observer is created while the card is off the page", () => {
   let created = 0;
+  let released = 0;
   const card = {
     isConnected: false,
-    _io: { disconnect() {} },
+    _visibility: {
+      disconnect() {
+        released++;
+      },
+    },
     shadowRoot: { querySelectorAll: () => [] },
     ...cardMethods(["_setupObserver"], {
+      PreviewVisibility,
       IntersectionObserver: class {
         constructor() {
           created++;
@@ -555,7 +577,8 @@ test("no preview observer is created while the card is off the page", () => {
   };
   card._setupObserver();
   assert.equal(created, 0);
-  assert.equal(card._io, null);
+  assert.equal(released, 1);
+  assert.equal(card._visible.size, 0);
 });
 
 test("hostile saved names remain escaped in all text selectors", () => {

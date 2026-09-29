@@ -8,6 +8,7 @@
  */
 
 import { escapeHtml } from "./html-escape-utils.js";
+import { hostEventAttrs } from "./host-events.js";
 
 export const galleryModeStyles = `
   /* Gallery Mode - Modern Gallery Layout */
@@ -220,6 +221,11 @@ export const galleryModeStyles = `
  * @param {Array} items - Array of items to render
  * @param {Function} renderContent - Function to render item content (receives item, index)
  * @param {Object} options - Configuration options
+ * @param {string|null} [options.onItemClick] / [options.onTitleClick] /
+ *   [options.onDeleteClick] - host method names, called with (event, index)
+ *   through data-on-click (the host binds them with bindHostEvents). Or leave
+ *   them null and handle clicks yourself (items carry data-idx; the delete
+ *   button is still rendered when showDelete is set).
  * @param {string} [options.posClass]  - "btn-pos-inside" | "btn-pos-outside" (default "")
  * @param {string} [options.sideClass] - "btn-side-left" or "" (default "")
  * @returns {string} HTML string
@@ -275,7 +281,7 @@ export function renderGalleryMode(items, renderContent, options = {}) {
           <div class="gallery-item-image" ${gradientStyle}
                ${
                  onItemClick
-                   ? `onclick="this.getRootNode().host.${onItemClick}(event, ${idx});"`
+                   ? hostEventAttrs({ click: onItemClick }, ["$event", idx])
                    : ""
                }>
             <div class="gallery-item-content">
@@ -292,7 +298,11 @@ export function renderGalleryMode(items, renderContent, options = {}) {
                   }" 
                      ${
                        onTitleClick
-                         ? `onclick="event.stopPropagation(); this.getRootNode().host.${onTitleClick}(event, ${idx});"`
+                         ? hostEventAttrs(
+                             { click: onTitleClick },
+                             ["$event", idx],
+                             "click",
+                           )
                          : ""
                      }>
                      ${title}
@@ -300,10 +310,16 @@ export function renderGalleryMode(items, renderContent, options = {}) {
                 : ""
             }
             ${
-              showDelete && onDeleteClick
-                ? `<button class="${deleteButtonClass} ${posClass} ${sideClass}" 
-                     onclick="event.stopPropagation(); this.getRootNode().host.${onDeleteClick}(event, ${idx});" 
-                     title="Delete"></button>`
+              showDelete
+                ? `<button type="button" class="${deleteButtonClass} ${posClass} ${sideClass}" ${
+                    onDeleteClick
+                      ? hostEventAttrs(
+                          { click: onDeleteClick },
+                          ["$event", idx],
+                          "click",
+                        )
+                      : ""
+                  } title="Delete" aria-label="Delete"></button>`
                 : ""
             }
           </div>

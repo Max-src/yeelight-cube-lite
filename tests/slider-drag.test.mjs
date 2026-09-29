@@ -20,6 +20,11 @@ const {
   stableSliderMarkup,
   renderSliderGroup,
   sanitizeSliderGc,
+  brightnessPctToRaw,
+  brightnessRawToPct,
+  speedPctToRaw,
+  speedRawToPct,
+  lightSliderConfig,
 } =
   await import("../custom_components/yeelight_cube/www/slider-control-utils.js");
 
@@ -193,4 +198,23 @@ test("valid CSS colour syntaxes and empty numbers are handled sensibly", () => {
     assert.equal(sanitizeSliderGc({ color }).color, undefined);
   assert.equal(sanitizeSliderGc({ thickness: "" }).thickness, undefined);
   assert.equal(sanitizeSliderGc({ thickness: " 8 " }).thickness, 8);
+});
+
+test("brightness and speed use one curve, exact at the ends and round-tripping", () => {
+  assert.deepEqual(
+    [brightnessPctToRaw(1), brightnessPctToRaw(100), brightnessRawToPct(3)],
+    [3, 255, 1],
+  );
+  assert.deepEqual([speedPctToRaw(1), speedPctToRaw(100), speedRawToPct(50)], [1, 255, 20]);
+  for (let pct = 1; pct <= 100; pct++) {
+    assert.equal(brightnessRawToPct(brightnessPctToRaw(pct)), pct);
+    assert.equal(speedRawToPct(speedPctToRaw(pct)), pct);
+  }
+  // Out-of-range device values clamp (a lamp reporting 0 or 256).
+  assert.deepEqual([brightnessRawToPct(0), brightnessRawToPct(300)], [1, 100]);
+  // The raw-value display uses the same ranges.
+  assert.deepEqual(
+    [lightSliderConfig({}, "brightness").rawMin, lightSliderConfig({}, "speed").rawMin],
+    [3, 1],
+  );
 });

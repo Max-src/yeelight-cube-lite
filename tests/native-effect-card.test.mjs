@@ -238,18 +238,26 @@ test("native unsaved colour survives stale state echoes and unrelated updates", 
 });
 
 test("light slider settings share icon toggles and non-capsule value visibility", () => {
-  const body = sourceFor("slider-control-utils.js").match(
-    /export function renderLightSliderSettings\(config, onChange\) \{([\s\S]*?)\n\}/,
-  )[1];
+  const [, params, body] = sourceFor("slider-control-utils.js").match(
+    /export function renderLightSliderSettings\(([\s\S]*?)\) \{([\s\S]*?)\n\}/,
+  );
   const render = new Function(
     "sliderKeys",
     "renderSliderSettings",
-    `return function(config, onChange) {${body}}`,
+    `return function(${params}) {${body}}`,
   )(
     () => ({ showValue: "slider_show_value" }),
     (config, keys, change, options) => options,
   );
   const options = render({}, () => {});
+  // A card can pass its own key map and replace a default option.
+  const custom = render({}, () => {}, {
+    keys: { showValue: "show_pct" },
+    icons: { leftLabel: "Moon", rightLabel: "Sun" },
+  });
+  assert.equal(custom.showValueToggle.key, "show_pct");
+  assert.equal(custom.icons.leftLabel, "Moon");
+  assert.equal(custom.rawValueToggle.key, "slider_show_raw_value");
   assert.ok(options.icons.leftLabel);
   assert.ok(options.icons.rightLabel);
   assert.equal(options.showValueToggle.key, "slider_show_value");
@@ -328,23 +336,34 @@ test("shared slider conversions agree across cards and fix the speed 20/19 misma
   );
   // Every card derives speed/brightness from the shared helpers, and the raw
   // toggle key is the one global config key.
-  assert.match(
-    sourceFor("yeelight-cube-clock-card.js"),
-    /_rawToPct\(raw\) \{\s*return sliderRawToPct\(raw, 1, 255\)/,
-  );
+  // No card retypes a range or a formula: all use the named helpers.
+  for (const file of [
+    "yeelight-cube-clock-card.js",
+    "yeelight-cube-native-effects-card.js",
+    "yeelight-cube-lamp-preview-card.js",
+  ]) {
+    const card = sourceFor(file);
+    assert.match(card, /brightness(PctToRaw|RawToPct)\(/, file);
+    assert.doesNotMatch(card, /slider(PctToRaw|RawToPct)\(|\* 252\) \/ 99|brightness_pct:/, file);
+  }
   assert.match(
     sourceFor("yeelight-cube-native-effects-card.js"),
-    /sliderRawToPct\(attrs\.native_effect_speed/,
+    /speedRawToPct\(attrs\.native_effect_speed/,
   );
   assert.match(
     src,
     /valueMode: config\.slider_show_raw_value \? "raw" : "percent"/,
   );
-  for (const file of [
-    "yeelight-cube-lamp-preview-card.js",
-    "yeelight-cube-lamp-preview-card-editor.js",
-  ])
-    assert.match(sourceFor(file), /slider_show_raw_value/);
+  // The Lamp Preview gets the raw toggle (and the rest) from the shared
+  // lamp-slider config and editor block, with its own key names.
+  assert.match(
+    sourceFor("yeelight-cube-lamp-preview-card.js"),
+    /lightSliderConfig\(this\.config, "brightness", BRIGHTNESS_SLIDER_KEYS,/,
+  );
+  assert.match(
+    sourceFor("yeelight-cube-lamp-preview-card-editor.js"),
+    /renderLightSliderSettings\([\s\S]*?keys: BRIGHTNESS_SLIDER_KEYS/,
+  );
 });
 
 test("removed saved looks are ignored without losing favourites", () => {
@@ -540,7 +559,7 @@ test("named effects exclude raw experimental mode numbers even when explicitly v
 test("native and clock sliders share capsule icon configuration", () => {
   const source = sourceFor("slider-control-utils.js");
   const body = source.match(
-    /export function lightSliderConfig\(config, kind, keys = sliderKeys\("slider"\)\) \{([\s\S]*?)\n\}/,
+    /export function lightSliderConfig\([\s\S]*?\) \{([\s\S]*?)\n\}/,
   )[1];
   const keys = {
     iconLeftShow: "slider_show_icon_left",
@@ -548,8 +567,15 @@ test("native and clock sliders share capsule icon configuration", () => {
   };
   const config = new Function(
     "sliderConfigToGc",
-    `return function(config, kind, keys) {${body}}`,
-  )((cfg, map, overrides) => overrides);
+    "SPEED_RAW",
+    "BRIGHTNESS_RAW",
+    `return function(config, kind, keys, overrides = {}) {${body}}`,
+  )((cfg, map, overrides) => overrides, { min: 1, max: 255 }, { min: 3, max: 255 });
+  // A card's own additions win (the Lamp Preview's colour).
+  assert.equal(
+    config({}, "brightness", keys, { color: "#123456" }).color,
+    "#123456",
+  );
   assert.equal(config({}, "brightness", keys).iconLeft, "🌙");
   assert.equal(config({}, "speed", keys).iconRight, "⚡");
   assert.equal(
@@ -896,7 +922,6 @@ test("preview selection applies immediately and includes a supported speed draft
       this._collections = value;
     },
     _effect: () => rainbow,
-    _speedRaw: (value) => Math.round(1 + ((value - 1) * 254) / 99),
     _command: async (service, data) => {
       calls.push({ service, data });
       return true;
@@ -905,8 +930,11 @@ test("preview selection applies immediately and includes a supported speed draft
   card._apply = new Function(
     "nativeEffectAction",
     "SUPERSEDED",
+    "speedPctToRaw",
     `return async function(name, managed = false) {${applyBody}}`,
-  )(nativeEffectAction, SUPERSEDED);
+  )(nativeEffectAction, SUPERSEDED, (value) =>
+    Math.round(1 + ((value - 1) * 254) / 99),
+  );
   new Function("name", selectBody).call(card, "Rainbow");
   assert.equal(card._selected, "Rainbow");
   await new Promise((resolve) => setTimeout(resolve));

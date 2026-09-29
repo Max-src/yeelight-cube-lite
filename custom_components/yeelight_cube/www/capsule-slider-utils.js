@@ -52,13 +52,12 @@ export function resolveCapsuleThickness(
  * @param {number}  opts.max           – range max
  * @param {string|null} opts.iconLeft  – emoji / text for left icon, or null
  * @param {string|null} opts.iconRight – emoji / text for right icon, or null
- * @param {string}  opts.hostInputHandler  – JS expression for oninput (called on host)
- * @param {string}  opts.hostDragStart     – JS expression for onmousedown/touchstart
- * @param {string}  opts.hostDragEnd       – JS expression for onmouseup/touchend
+ * @param {string}  opts.inputEvents   – data-on-* attributes for the range input
+ *   (drag start/end, input), from hostEventAttrs (host-events.js)
  * @param {string|null} opts.label         – label text above the capsule (or null)
  * @param {boolean} opts.showValue         – show value text below
  * @param {string}  opts.valueText         – formatted value text (e.g. "72%" or "180°")
- * @param {string}  opts.wheelHandler      – JS expression for onwheel (optional)
+ * @param {string}  opts.wheelEvents   – data-on-wheel attribute (optional)
  * @returns {string} HTML string
  */
 export function renderCapsuleHTML(opts) {
@@ -72,14 +71,12 @@ export function renderCapsuleHTML(opts) {
     iconRight = null,
     leftSlotHtml = null,
     rightSlotHtml = null,
-    hostInputHandler = "",
-    hostDragStart = "",
-    hostDragEnd = "",
+    inputEvents = "",
     label = null,
     showValue = true,
     valueText = "",
     underHtml = null,
-    wheelHandler = "",
+    wheelEvents = "",
     trackExtraHtml = "",
   } = opts;
 
@@ -111,7 +108,7 @@ export function renderCapsuleHTML(opts) {
   const initialPercent = ((value - min) / range) * 100;
 
   return `
-    <div class="capsule-container capsule-theme-${theme}" style="--capsule-thickness: ${thickness}px;"${wheelHandler ? ` onwheel="${wheelHandler}"` : ""}>
+    <div class="capsule-container capsule-theme-${theme}" style="--capsule-thickness: ${thickness}px;" ${wheelEvents}>
       ${labelHtml}
       <div class="capsule-wrapper">
         <div class="capsule-pill capsule-pill-${theme}">
@@ -126,9 +123,7 @@ export function renderCapsuleHTML(opts) {
               max="${max}"
               value="${value}"
               class="capsule-input"
-              ${hostDragStart ? `onmousedown="${hostDragStart}" ontouchstart="${hostDragStart}"` : ""}
-              ${hostDragEnd ? `onmouseup="${hostDragEnd}" ontouchend="${hostDragEnd}"` : ""}
-              ${hostInputHandler ? `oninput="${hostInputHandler}"` : ""}
+              ${inputEvents}
             />
           </div>
           ${rightContentHtml}

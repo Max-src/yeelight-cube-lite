@@ -49,7 +49,7 @@ from .const import (
     PANEL_FULL_CHAR,
     TEXT_RENDER_MODES,
 )
-from .image_utils import image_to_matrix
+from .image_utils import MAX_IMAGE_B64_LENGTH, image_to_matrix
 from .layout import FONT_MAPS, TOTAL_COLUMNS, TOTAL_ROWS
 from .name_utils import normalize_display_name
 from .light import (
@@ -2174,8 +2174,11 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         Supports multi-entity parallel dispatch."""
         image_b64 = service_call.data.get("image_b64")
         if not image_b64:
-            _LOGGER.error("No image_b64 provided to display_image service.")
-            return
+            raise HomeAssistantError("image_b64 is required")
+        # Resolved before decoding: no work for a call that targets no lamp.
+        targets = _resolve_entities(service_call, "DISPLAY_IMAGE")
+        if not targets:
+            raise HomeAssistantError("No matching Yeelight Cube lamps")
 
         # Process image once (shared across all targets). PIL decode/resize is
         # CPU-bound, so run it off the event loop.
@@ -2192,13 +2195,12 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                 {"position": pos, "color": color}
                 for pos, color in enumerate(flipped_matrix)
             ]
-        except Exception as e:
-            _LOGGER.error(f"Error processing image: {e}")
-            return
-
-        targets = _resolve_entities(service_call, "DISPLAY_IMAGE")
-        if not targets:
-            return
+        except ValueError as err:
+            # Too large, not base64 or not an image: tell the caller.
+            raise HomeAssistantError(str(err)) from err
+        except Exception as err:  # noqa: BLE001 -- unexpected decoder failure
+            _LOGGER.exception("Error processing image")
+            raise HomeAssistantError(f"The image could not be processed: {err}") from err
 
         async def _apply_one(target_entity):
             if not target_entity._is_on and not target_entity._should_auto_turn_on():
@@ -2221,7 +2223,9 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
         "display_image",
         handle_display_image,
         schema=vol.Schema({
-            vol.Required("image_b64"): cv.string,
+            vol.Required("image_b64"): vol.All(
+                cv.string, vol.Length(min=1, max=MAX_IMAGE_B64_LENGTH)
+            ),
             vol.Required("entity_id", description="Target lamp entity (e.g. light.cubelite_192_168_4_102)"): _entity_id_or_list,
         })
     )
@@ -3031,9 +3035,11 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                     target._native_effect_speed_entity.async_write_ha_state()
             if latest:
                 target._native_effect_baseline = None
-            elif ok is not False:
+            elif ok is not False and getattr(target, "_native_effect_baseline", None):
                 # The lamp now shows this call's values: the baseline for the
-                # newer call that is still pending.
+                # newer call that is still pending. If that call already
+                # finished (it cleared the baseline), the lamp shows its values
+                # instead and there is nothing to record.
                 target._native_effect_baseline = applied
             target.async_write_ha_state()
 

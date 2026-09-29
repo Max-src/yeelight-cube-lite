@@ -2279,7 +2279,38 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertIn("render_music_flow_effect(", preview)
         self.assertIn('("left", "up")', preview)
         self.assertNotIn('"_music_flow_enabled"', animated)
-        self.assertIn('"_music_flow_enabled"', generated)
+        # One definition of "the firmware draws the matrix", on the light.
+        self.assertIn('"firmware_draws_matrix"', generated)
+
+    def test_matrix_colors_publish_what_the_lamp_shows(self):
+        """matrix_colors never republishes a stale plugin frame: black when
+        off, empty while the firmware draws (clock, native effect, music flow)."""
+        fns = _load_standalone_functions(
+            LIGHT_SOURCE, {"_published_matrix_colors", "firmware_draws_matrix"}
+        )
+
+        class Lamp:
+            firmware_draws_matrix = fns["firmware_draws_matrix"]
+            _published_matrix_colors = fns["_published_matrix_colors"]
+
+        lamp = Lamp()
+        lamp._layout = types.SimpleNamespace(device_layout=[object()] * 100)
+        lamp._apply_final_brightness = lambda rgb: tuple(v // 2 for v in rgb)
+        # The last pixel art the plugin drew, kept after switching away.
+        lamp._base_matrix_colors = [(200, 100, 50)] * 100
+        lamp._music_flow_enabled = False
+        lamp._is_on, lamp._mode = True, "Custom Draw"
+        self.assertEqual([(100, 50, 25)] * 100, lamp._published_matrix_colors())
+        for mode in ("Clock", "Native Effect"):
+            lamp._mode = mode
+            self.assertEqual([], lamp._published_matrix_colors(), mode)
+        lamp._mode, lamp._music_flow_enabled = "Custom Draw", True
+        self.assertEqual([], lamp._published_matrix_colors())
+        for mode in ("Clock", "Custom Draw"):
+            lamp._is_on, lamp._mode = False, mode
+            self.assertEqual([(0, 0, 0)] * 100, lamp._published_matrix_colors())
+        attributes = _function_source(LIGHT_SOURCE, "extra_state_attributes")
+        self.assertIn('attrs["matrix_colors"] = self._published_matrix_colors()', attributes)
 
     def test_clock_mixer_effects_map_to_supported_native_effects(self):
         mixer_effects = CONSTANTS["CLOCK_MIXER_EFFECTS"]

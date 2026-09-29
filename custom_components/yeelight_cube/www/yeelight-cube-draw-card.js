@@ -22,12 +22,20 @@ import {
 } from "./delete-button-styles.js";
 import {
   exportImportButtonStyles,
-  renderButtonContent as renderExportImportButtonContent,
   getExportImportButtonClass,
 } from "./action-button-utils.js";
+import { renderActionButtonContent } from "./action-button-ui.js";
 import { renderCarousel } from "./carousel-utils.js";
 import { listModeStyles } from "./list-mode-utils.js";
 import { galleryModeStyles, renderGalleryMode } from "./gallery-mode-utils.js";
+import { bindHostEvents } from "./host-events.js";
+
+// Host methods the pixel-art gallery markup may call (see bindHostEvents).
+const GALLERY_HANDLERS = new Set([
+  "handleGridItemClick",
+  "handleGridDelete",
+  "handleGridTitleClick",
+]);
 import { savePalette, getLampPalette } from "./draw_card_palette.js";
 import { ToolManager, ActionManager } from "./draw_card_tools.js";
 import { MatrixOperations1D } from "./draw_card_matrix_1d.js";
@@ -1126,6 +1134,8 @@ class YeelightCubeDrawCard extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    // The pixel-art gallery names its handlers in data-on-* attributes.
+    bindHostEvents(this, (name) => GALLERY_HANDLERS.has(name));
     // No window "config-changed" listener: HA delivers editor changes through
     // setConfig() on the edited card only; a window bus leaked one card's
     // config (entity, sensors, tools) into every draw card on the dashboard.
@@ -1760,12 +1770,10 @@ class YeelightCubeDrawCard extends LitElement {
                 @click="${() => this._exportPixelArts()}"
                 title="Export all pixel arts as JSON file"
               >
-                ${unsafeHTML(
-                  renderExportImportButtonContent(
-                    "mdi:download",
-                    "Export",
-                    contentMode,
-                  ),
+                ${renderActionButtonContent(
+                  "mdi:download",
+                  "Export",
+                  contentMode,
                 )}
               </button>
             `
@@ -1777,23 +1785,13 @@ class YeelightCubeDrawCard extends LitElement {
                 @click="${() => this._triggerImportFile()}"
                 title="Import pixel arts from JSON file"
               >
-                ${isImportStatus
-                  ? unsafeHTML(
-                      renderExportImportButtonContent(
-                        "mdi:upload",
-                        "Import",
-                        contentMode,
-                        true,
-                        statusType,
-                      ),
-                    )
-                  : unsafeHTML(
-                      renderExportImportButtonContent(
-                        "mdi:upload",
-                        "Import",
-                        contentMode,
-                      ),
-                    )}
+                ${renderActionButtonContent(
+                  "mdi:upload",
+                  "Import",
+                  contentMode,
+                  isImportStatus,
+                  statusType,
+                )}
               </button>
             `
           : ""}

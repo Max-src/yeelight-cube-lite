@@ -3,7 +3,10 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { GradientPreviewStore } from "../custom_components/yeelight_cube/www/gradient-preview-store.js";
-import { CardCommandController } from "../custom_components/yeelight_cube/www/card-command-controller.js";
+import {
+  CardCommandController,
+  SUPERSEDED,
+} from "../custom_components/yeelight_cube/www/card-command-controller.js";
 import { CollectionState } from "../custom_components/yeelight_cube/www/collection-state.js";
 import { AngleCommandController } from "../custom_components/yeelight_cube/www/angle-wheel-utils.js";
 
@@ -492,4 +495,58 @@ test("a refused lamp-preview reset drops the defaults it showed", async (context
   assert.equal(await result, false);
   assert.deepEqual(card._localEffects, { saturation: 40 });
   assert.equal(refreshed, 1);
+});
+
+test("queued slider commits only send the latest value while one is in flight", async () => {
+  const sent = [];
+  let release;
+  const hass = {
+    callService(domain, service, data) {
+      sent.push(data.brightness);
+      return new Promise((resolve) => {
+        release = resolve;
+      });
+    },
+  };
+  const commands = new CardCommandController();
+  const commit = (brightness) =>
+    commands.call(hass, "light", "turn_on", { brightness }, {
+      coalesce: "brightness",
+    });
+  const results = [commit(10)];
+  await new Promise((resolve) => setImmediate(resolve)); // 10 is in flight
+  results.push(commit(20), commit(30), commit(40));
+  release(); // 20 and 30 were replaced by 40 while they waited
+  await new Promise((resolve) => setImmediate(resolve));
+  release();
+  assert.deepEqual(await Promise.all(results), [
+    true,
+    SUPERSEDED,
+    SUPERSEDED,
+    true,
+  ]);
+  assert.deepEqual(sent, [10, 40]);
+});
+
+test("the gallery renders a delegated delete button without inline handlers", async () => {
+  const { renderGalleryMode } = await import(
+    "../custom_components/yeelight_cube/www/gallery-mode-utils.js"
+  );
+  const items = [{ name: "A" }, { name: "B" }];
+  const delegated = renderGalleryMode(items, () => "", { showDelete: true });
+  assert.equal(delegated.match(/<button /g)?.length, 2);
+  assert.doesNotMatch(delegated, /onclick=/);
+  const named = renderGalleryMode(items, () => "", {
+    showDelete: true,
+    onDeleteClick: "handleGridDelete",
+  });
+  assert.match(
+    named,
+    /data-on-click="handleGridDelete" data-args='\["\$event",1\]'/,
+  );
+  assert.doesNotMatch(named, /onclick=/);
+  assert.doesNotMatch(
+    renderGalleryMode(items, () => "", { showDelete: false }),
+    /<button /,
+  );
 });

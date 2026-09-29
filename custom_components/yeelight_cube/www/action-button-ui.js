@@ -1,11 +1,10 @@
-import { html, unsafeHTML } from "./lib/lit-all.js";
+import { html } from "./lib/lit-all.js";
 import { createButtonGroup } from "./button-group-utils.js";
 import {
   actionButtonModel,
   actionButtonStyleChoices,
   actionButtonContentChoices,
   resolveActionButtonOptions,
-  renderButtonContent,
   getActionRowClass,
   actionButtonGroupModel,
   handleActionButtonGroupEvent,
@@ -17,8 +16,44 @@ export function renderActionRow(content, options = {}) {
   return html`<div class=${getActionRowClass(options)}>${content}</div>`;
 }
 
-export function renderActionButtonContent(...args) {
-  return unsafeHTML(renderButtonContent(...args));
+/**
+ * A button's icon/swatch and label as a Lit template: labels (favourite and
+ * preset names) are bound as text, never parsed as HTML. A status button
+ * (isStatus) shows a success/error icon and text instead.
+ */
+export function renderActionButtonContent(
+  icon,
+  text,
+  contentMode = "icon_text",
+  isStatus = false,
+  statusType = null,
+  swatch = null,
+  swatchShape = null,
+) {
+  if (isStatus) {
+    const success = statusType === "success";
+    icon = success ? "mdi:check" : "mdi:alert-circle";
+    text = success ? "Success!" : "Error!";
+    swatch = null;
+  }
+  const shape =
+    swatchShape === "square"
+      ? " btn-swatch-square"
+      : swatchShape === "circle" || swatchShape === "round"
+        ? " btn-swatch-round"
+        : "";
+  const visual = swatch
+    ? html`<span class=${`btn-swatch${shape}`} style=${`background:${swatch}`}></span>`
+    : html`<ha-icon icon=${icon}></ha-icon>`;
+  switch (contentMode) {
+    case "icon":
+      return visual;
+    case "text":
+      return text;
+    case "icon_text":
+    default:
+      return html`${visual}<span class="btn-text">${text}</span>`;
+  }
 }
 
 export function renderActionButton(options = {}) {

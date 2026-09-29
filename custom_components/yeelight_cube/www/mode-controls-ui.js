@@ -1,4 +1,5 @@
 import { LitElement, html, css, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
+import { bindHostEvents } from "./host-events.js";
 import { cardLayoutStyles, cardSpacing } from "./card-layout-utils.js";
 import { renderActionButton, renderActionRow } from "./action-button-ui.js";
 import {
@@ -66,6 +67,8 @@ class YeelightModeControls extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    // The orientation row names its handler in data-on-click.
+    bindHostEvents(this, (name) => name === "handleOrientationControl");
     this.classList.add("yc-stack");
     this._refresh ||= () => this.requestUpdate();
     this._subscribe();

@@ -72,9 +72,13 @@ import {
   stableSliderMarkup,
   sliderControlStyles,
   sliderKeys,
-  sliderPctToRaw,
-  sliderRawToPct,
+  brightnessPctToRaw,
+  brightnessRawToPct,
+  speedPctToRaw,
+  speedRawToPct,
+  isSliderHandler,
 } from "./slider-control-utils.js";
+import { bindHostEvents } from "./host-events.js";
 import {
   TEXT_SELECTOR_STYLES,
   PREVIEW_SELECTOR_STYLES,
@@ -100,6 +104,7 @@ import {
 import { actionButtonStyles } from "./action-button-utils.js";
 import { renderActionButtonGroup } from "./action-button-ui.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
+import { PreviewVisibility } from "./preview-visibility.js";
 
 const CONTENT_OPTIONS = [
   { value: "time", label: "Time", icon: "mdi:clock-outline" },
@@ -235,7 +240,7 @@ class YeelightCubeClockCard extends LitElement {
     this._lastPhaseTs = null;
     this._animLoop = null;
     this._visible = new Set();
-    this._io = null;
+    this._visibility = null;
     this._stateSignature = null;
     // Dragged slider values (in slider %) survive until the lamp reports them
     // back, so a slow drag or an in-between update never jumps them back.
@@ -261,7 +266,7 @@ class YeelightCubeClockCard extends LitElement {
         getConfig: () => this._speedGc(),
         onCommit: (pct) => {
           this._sliderDrafts.speed.commit(pct);
-          this._applySpeed(this._pctToRaw(pct));
+          this._applySpeed(speedPctToRaw(pct));
         },
         onLive: (pct) => this._sliderDrafts.speed.live(pct),
         onDragEnd: () => this.requestUpdate(),
@@ -275,7 +280,7 @@ class YeelightCubeClockCard extends LitElement {
         getConfig: () => this._brightnessGc(),
         onCommit: (pct) => {
           this._sliderDrafts.brightness.commit(pct);
-          this._applyBrightness(this._pctToBri(pct));
+          this._applyBrightness(brightnessPctToRaw(pct));
         },
         onLive: (pct) => this._sliderDrafts.brightness.live(pct),
         onDragEnd: () => this.requestUpdate(),
@@ -286,29 +291,12 @@ class YeelightCubeClockCard extends LitElement {
   // Live speed as a raw device value (1-255), or null when not overridden.
   get _speedPreview() {
     const pct = this._sliderDrafts?.speed.value;
-    return pct == null ? null : this._pctToRaw(pct);
+    return pct == null ? null : speedPctToRaw(pct);
   }
 
   // Live brightness in slider %, or null when not overridden.
   get _brightnessPreview() {
     return this._sliderDrafts?.brightness.value ?? null;
-  }
-
-  _pctToRaw(pct) {
-    return sliderPctToRaw(pct, 1, 255);
-  }
-
-  _rawToPct(raw) {
-    return sliderRawToPct(raw, 1, 255);
-  }
-
-  // Brightness maps 1-100% ↔ HA 3-255 (same curve as the lamp-preview card).
-  _pctToBri(pct) {
-    return sliderPctToRaw(pct, 3, 255);
-  }
-
-  _briToPct(bri) {
-    return sliderRawToPct(bri, 3, 255);
   }
 
   // Both sliders share the appearance config (slider_*); only colour + icons
@@ -474,10 +462,10 @@ class YeelightCubeClockCard extends LitElement {
     // the sliders and previews follow the real values again.
     const sliderAttrs = this._attrs();
     this._sliderDrafts.brightness.settle(
-      this._briToPct(Number(sliderAttrs.brightness) || 3),
+      brightnessRawToPct(Number(sliderAttrs.brightness) || 3),
     );
     this._sliderDrafts.speed.settle(
-      this._rawToPct(Number(sliderAttrs.native_effect_speed) || 50),
+      speedRawToPct(Number(sliderAttrs.native_effect_speed) || 50),
     );
     // Only rebuild the DOM when a relevant attribute changes; the animation
     // loop repaints the previews in place so live updates stay cheap.
@@ -522,6 +510,8 @@ class YeelightCubeClockCard extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    // Slider markup names its handlers in data-on-* attributes.
+    bindHostEvents(this, isSliderHandler);
     this._controls?.listeners.add(this._markFavouritesListener);
     this._startAnimation();
   }
@@ -1127,10 +1117,7 @@ class YeelightCubeClockCard extends LitElement {
 
   _stopAnimation() {
     if (this._animLoop) this._animLoop.stop();
-    if (this._io) {
-      this._io.disconnect();
-      this._io = null;
-    }
+    this._visibility?.disconnect();
     this._visible = new Set();
   }
 
@@ -1162,12 +1149,13 @@ class YeelightCubeClockCard extends LitElement {
   // tiles (data-clock-preview) and the shared-renderer items ([data-mode]
   // inside the preview shell).
   _setupObserver() {
-    if (this._io) this._io.disconnect();
-    this._io = null;
-    this._visible = new Set();
     // A render can land after the card left the page (disconnectedCallback
-    // already ran): never create an observer nothing would clean up.
-    if (!this.isConnected) return;
+    // already ran): never keep an observer nothing would clean up.
+    if (!this.isConnected) {
+      this._visibility?.disconnect();
+      this._visible = new Set();
+      return;
+    }
     const tiles = this.shadowRoot
       ? [
           ...this.shadowRoot.querySelectorAll("[data-clock-preview]"),
@@ -1177,42 +1165,41 @@ class YeelightCubeClockCard extends LitElement {
           ),
         ]
       : [];
-    if (typeof IntersectionObserver === "undefined") {
-      tiles.forEach((el) => this._visible.add(el));
-      return;
-    }
-    this._io = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          if (e.isIntersecting) this._visible.add(e.target);
-          else this._visible.delete(e.target);
-        }
-      },
-      { root: null, rootMargin: "120px", threshold: 0 },
-    );
-    // The observer reports visibility asynchronously (next frame at best), so
-    // a re-render (new style/colour selected) would leave the freshly built
+    // One observer for the card's lifetime: a re-render only observes the
+    // tiles it added and releases the ones it removed.
+    this._visibility ||= new PreviewVisibility({
+      rootMargin: "120px",
+      Observer:
+        typeof IntersectionObserver === "undefined"
+          ? null
+          : IntersectionObserver,
+    });
+    // The observer reports a new tile asynchronously (next frame at best), so
+    // a re-render (new style/colour selected) would leave freshly built
     // gallery tiles on their static first frame until then -- a visible blink.
-    // Seed the visible set synchronously with the same 120px margin so the
+    // Seed new tiles synchronously with the same 120px margin so the
     // following _paintVisible() repaints them before the browser shows them.
     const margin = 120;
     const viewHeight = globalThis.innerHeight || 0;
     const viewWidth = globalThis.innerWidth || 0;
+    this._visibility.track(tiles, (el) => {
+      if (el.hasAttribute("data-clock-preview")) return true;
+      const rect = el.getBoundingClientRect?.();
+      return (
+        !!rect &&
+        rect.width > 0 &&
+        rect.bottom >= -margin &&
+        rect.top <= viewHeight + margin &&
+        rect.right >= -margin &&
+        rect.left <= viewWidth + margin
+      );
+    });
+    this._visible = this._visibility.visible;
+    // The card's own previews (lamp/current) are always repainted after a
+    // render, whatever the observer last reported: a re-render (e.g. an
+    // appearance change) must show on them at once.
     tiles.forEach((el) => {
       if (el.hasAttribute("data-clock-preview")) this._visible.add(el);
-      else {
-        const rect = el.getBoundingClientRect?.();
-        if (
-          rect &&
-          rect.width > 0 &&
-          rect.bottom >= -margin &&
-          rect.top <= viewHeight + margin &&
-          rect.right >= -margin &&
-          rect.left <= viewWidth + margin
-        )
-          this._visible.add(el);
-      }
-      this._io.observe(el);
     });
   }
 
@@ -1344,7 +1331,7 @@ class YeelightCubeClockCard extends LitElement {
     );
     const brightnessRaw =
       this._brightnessPreview != null
-        ? this._pctToBri(this._brightnessPreview)
+        ? brightnessPctToRaw(this._brightnessPreview)
         : Number(this._attrs().brightness) || 255;
     const brightnessScale = isCurrent
       ? previewBrightnessScale(brightnessRaw, this._attrs().preview_darken)
@@ -1753,12 +1740,12 @@ class YeelightCubeClockCard extends LitElement {
     if (showBrightness) {
       const briRaw =
         this._brightnessPreview != null
-          ? this._pctToBri(this._brightnessPreview)
+          ? brightnessPctToRaw(this._brightnessPreview)
           : Number(this._attrs().brightness) || 3;
       const briPct =
         this._brightnessPreview != null
           ? this._brightnessPreview
-          : this._briToPct(briRaw);
+          : brightnessRawToPct(briRaw);
       controls.push({
         label: "Brightness",
         gc: { ...this._brightnessGc(), rawValue: briRaw },
@@ -1774,12 +1761,12 @@ class YeelightCubeClockCard extends LitElement {
       controls.push({
         label: "Animation speed",
         gc: { ...this._speedGc(), rawValue: this._speedPreview ?? raw },
-        value: this._sliderDrafts.speed.value ?? this._rawToPct(raw),
+        value: this._sliderDrafts.speed.value ?? speedRawToPct(raw),
         ns: "speed",
       });
     }
-    // The shared slider renderer emits an HTML string with inline handlers
-    // that resolve through `this.getRootNode().host._sl*`.
+    // The shared slider renderer emits an HTML string naming this card's
+    // `_sl*` handlers in data-on-* attributes (see host-events.js).
     return html`<div class="section section-sliders">
       ${unsafeHTML(
         stableSliderMarkup(this, "sliders", renderSliderGroup(controls)),

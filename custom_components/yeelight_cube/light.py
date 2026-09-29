@@ -62,7 +62,6 @@ from .layout import Layout, Module, FONT_MAPS, FONT_METRICS, char_advance, TOTAL
 from . import async_save_data
 
 from .color_utils import hex_to_rgb, rgb_to_hex
-from .image_utils import image_to_matrix
 from .light_color import ColorPipelineMixin
 from .light_transitions import TransitionMixin
 from .light_native import NativeModesMixin, _parse_music_flow_config
@@ -135,6 +134,9 @@ APPLY_HARD_TIMEOUT = 12.0      # Seconds -- absolute safety timeout for a single
                               # releases the lock so other entities can proceed.
                               # Reduced from 8s to 5s -- inner timeouts are now tighter:
                               #   probe 0.5s + raw_cmd 1.5sx2 + draw 0.5s = 4s worst case.
+LOCK_WAIT_WARNING_MS = 3000   # Waiting for the lamp longer than this is logged as a
+                              # warning (commands piling up); shorter waits are normal
+                              # queueing behind a redraw/transition and logged at debug.
 CIRCUIT_BREAKER_WINDOW = 30.0 # Seconds -- if 2+ hard timeouts occur within this window,
                               # reject new operations immediately instead of queueing them
                               # behind the lock for another 8s timeout each.
@@ -185,6 +187,8 @@ def _entity_id_or_list(value):
 # Within a single lamp, the lock ensures command chains (activate_fx_mode  -> 
 # set_bright -> update_leds) complete atomically without interleaving.
 _DEVICE_LOCKS: dict[str, asyncio.Lock] = {}
+# Name of the operation holding each device lock, for the lock-wait log.
+_DEVICE_LOCK_HOLDERS: dict[str, str] = {}
 
 def _get_device_lock(ip: str) -> asyncio.Lock:
     """Get or create the per-device lock for a given IP."""
@@ -210,6 +214,7 @@ def cleanup_module_state(ip: str) -> None:
         del _ENTITY_REGISTRY[key]
     # Remove per-device lock
     _DEVICE_LOCKS.pop(ip, None)
+    _DEVICE_LOCK_HOLDERS.pop(ip, None)
 
 # 4-way physical device orientation (matches the official app's mount picker).
 # The lamp has no single firmware command for this, so we translate it to the
@@ -722,12 +727,31 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         is_display_op = op_name.startswith('display:')
         try:
             lock_wait_start = time.time()
-            async with _get_device_lock(self._ip):
+            device_lock = _get_device_lock(self._ip)
+            # The operation this one queues behind, named in the log below.
+            waited_behind = (
+                _DEVICE_LOCK_HOLDERS.get(self._ip) if device_lock.locked() else None
+            )
+            async with device_lock:
+                _DEVICE_LOCK_HOLDERS[self._ip] = op_name
                 self._hardware_operation_phase = op_name
                 lock_wait_ms = (time.time() - lock_wait_start) * 1000
                 if lock_wait_ms > 5:
-                    _LOGGER.warning(
-                        f"[OP #{op_id}] [{self._ip}] Lock waited {lock_wait_ms:.0f}ms"
+                    # Waiting for the lamp to finish its previous operation (a
+                    # redraw with a transition takes 1-2 s) is normal. Only a
+                    # long wait suggests commands are piling up.
+                    log = (
+                        _LOGGER.warning
+                        if lock_wait_ms >= LOCK_WAIT_WARNING_MS
+                        else _LOGGER.debug
+                    )
+                    log(
+                        "[OP #%s] [%s] %s waited %.0fms for the lamp%s",
+                        op_id,
+                        self._ip,
+                        op_name,
+                        lock_wait_ms,
+                        f" (queued behind {waited_behind})" if waited_behind else "",
                     )
                 try:
                     await asyncio.wait_for(func(), timeout=effective_timeout)
@@ -748,6 +772,8 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                     if is_display_op:
                         self._maybe_schedule_retry()
                     return False
+                finally:
+                    _DEVICE_LOCK_HOLDERS.pop(self._ip, None)
             # Success
             _LOGGER.debug(f"[OP #{op_id}] [{self._ip}] [OK] {op_name} complete")
             # Only reset display retry state on display op success
@@ -1443,39 +1469,56 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             "scroll_speed": self._scroll_speed,
             "scroll_enabled": self._scroll_enabled,
         }
-        # Add current matrix state: list of 100 RGB tuples (or hex), and brightness.
-        # CRITICAL: Apply _apply_final_brightness here so the JS card gets
-        # brightness-adjusted colors IMMEDIATELY when the user drags the slider,
-        # without waiting for the lamp roundtrip.  set_brightness() updates
-        # _preview_darken and calls async_schedule_update_ha_state() before
-        # queuing the actual lamp command -- so this property is read with the
-        # new darken value and the card preview updates instantly.
-        #
-        # We read from _base_matrix_colors (snapshot of un-darkened layout colors
-        # taken right before apply()) and apply _apply_final_brightness() which
-        # uses the full two-range brightness system (darken + brighten, floor()
-        # math, channel preservation).  This avoids double-darkening: module.data
-        # may already be darkened after apply(), but _base_matrix_colors is always
-        # un-darkened.
-        try:
-            base_colors = getattr(self, '_base_matrix_colors', None)
-            if base_colors and len(base_colors) == len(self._layout.device_layout):
-                matrix_colors = [self._apply_final_brightness(rgb) for rgb in base_colors]
-                attrs["matrix_colors"] = matrix_colors
-            else:
-                # Fallback: read directly from module data (may be darkened or not)
-                matrix_colors = []
-                for module in self._layout.device_layout:
-                    if hasattr(module, 'data') and module.data:
-                        hex_color = module.data[0].lstrip('#')
-                        rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-                        matrix_colors.append(rgb)
-                    else:
-                        matrix_colors.append((0, 0, 0))
-                attrs["matrix_colors"] = matrix_colors
-        except Exception as e:
-            attrs["matrix_colors"] = []
+        attrs["matrix_colors"] = self._published_matrix_colors()
         return attrs
+
+    def _published_matrix_colors(self) -> list:
+        """What the lamp shows right now, as 100 RGB tuples (matrix_colors).
+
+        Not simply the last frame the plugin drew: _base_matrix_colors is only
+        refreshed when the plugin draws, so it still holds old content (e.g.
+        the last pixel art) while the lamp is off or the firmware draws the
+        matrix. Published colours are brightness-adjusted so the cards preview
+        a brightness drag at once, before the lamp round trip:
+        set_brightness() updates _preview_darken and writes the state first.
+        _base_matrix_colors is un-darkened (module.data may already be
+        darkened after apply()), so _apply_final_brightness() (the full
+        two-range darken/brighten system) is applied here exactly once.
+        """
+        try:
+            count = len(self._layout.device_layout)
+            if not self._is_on:
+                # Off: the matrix is dark, whatever content is kept for turn-on.
+                return [(0, 0, 0)] * count
+            if self.firmware_draws_matrix:
+                # Frames drawn by the firmware cannot be read back: no pixels.
+                # Cards and the preview camera render these modes themselves.
+                return []
+            base_colors = getattr(self, "_base_matrix_colors", None)
+            if base_colors and len(base_colors) == count:
+                return [self._apply_final_brightness(rgb) for rgb in base_colors]
+            # Fallback: read directly from module data (may be darkened or not)
+            matrix_colors = []
+            for module in self._layout.device_layout:
+                if hasattr(module, "data") and module.data:
+                    hex_color = module.data[0].lstrip("#")
+                    matrix_colors.append(
+                        tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+                    )
+                else:
+                    matrix_colors.append((0, 0, 0))
+            return matrix_colors
+        except Exception:  # noqa: BLE001 -- attributes must always build
+            return []
+
+    @property
+    def firmware_draws_matrix(self) -> bool:
+        """Whether the lamp's firmware draws the matrix (clock, native effect,
+        music flow) rather than the plugin, so its frames cannot be read back."""
+        return bool(self._music_flow_enabled) or self._mode in (
+            "Clock",
+            "Native Effect",
+        )
 
     def set_extended_effects_enabled(self, enabled: bool) -> None:
         self._extended_effects_enabled = enabled

@@ -36,8 +36,12 @@ import {
   renderSliderGroup,
   createSliderHandlers,
   sliderControlStyles,
-  sliderConfigToGc,
+  lightSliderConfig,
+  brightnessPctToRaw,
+  brightnessRawToPct,
+  isSliderHandler,
 } from "./slider-control-utils.js";
+import { bindHostEvents } from "./host-events.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { LitElement, html, repeat, unsafeHTML } from "./lib/lit-all.js";
 
@@ -387,7 +391,7 @@ class YeelightCubeLampPreviewCard extends LitElement {
 
     // Wire the shared multi-style slider (render + CSS + interactions) for the
     // brightness control. The handlers are assigned onto this element as
-    // _slChange/_slWheel/... and the render emits inline `_sl*` handlers.
+    // _slChange/_slWheel/..., named by the markup in data-on-* attributes.
     // Works in 1-100 display space; onCommit maps that to HA brightness 3-255.
     Object.assign(
       this,
@@ -396,13 +400,17 @@ class YeelightCubeLampPreviewCard extends LitElement {
         getConfig: () => this._brightnessGc(),
         onCommit: (pct) => {
           if (!this._hass || !this.config || !this.config.entity) return;
-          const haBrightness = Math.round(3 + ((pct - 1) * 252) / 99);
-          const safeBrightness = Math.max(3, Math.min(255, haBrightness));
+          const safeBrightness = brightnessPctToRaw(pct);
           this._commands
-            .call(this._hass, "light", "turn_on", {
-              entity_id: this.config.entity,
-              brightness: safeBrightness,
-            })
+            .call(
+              this._hass,
+              "light",
+              "turn_on",
+              { entity_id: this.config.entity, brightness: safeBrightness },
+              // A drag commits every few hundred ms and each call waits for
+              // the lamp: while one is sent, only the latest value waits.
+              { coalesce: "brightness" },
+            )
             .catch((error) => {
               this._refresh();
               const errorMsg = error?.message || String(error);
@@ -439,7 +447,10 @@ class YeelightCubeLampPreviewCard extends LitElement {
   // Build the generic slider render config from the brightness config, applying
   // the same legacy theme/thickness migrations the card used before.
   _brightnessGc() {
-    return sliderConfigToGc(this.config, BRIGHTNESS_SLIDER_KEYS, {
+    // The shared lamp-slider config (units, raw range, icons: same as the
+    // Clock and Native Effects cards), with this card's own additions.
+    return lightSliderConfig(this.config, "brightness", BRIGHTNESS_SLIDER_KEYS, {
+      // Older theme names and the old "thick"/"thin" appearance still work.
       theme: resolveCapsuleTheme(
         this.config.brightness_theme,
         this.config.capsule_theme,
@@ -449,18 +460,10 @@ class YeelightCubeLampPreviewCard extends LitElement {
         this.config.brightness_slider_appearance,
         6,
       ),
+      // Only this card lets the user pick the slider colour.
       color: this.config.brightness_matrix_color || "#ff9800",
-      unit: "%",
-      // Global "Show Raw Value" toggle: display HA brightness 3-255 instead of %.
-      valueMode: this.config.slider_show_raw_value ? "raw" : "percent",
-      rawMin: 3,
-      rawMax: 255,
-      rawUnit: "",
       rawValue:
         this._hass?.states?.[this.config?.entity]?.attributes?.brightness,
-      // Capsule moon/sun icons (shown unless explicitly disabled).
-      iconLeft: this.config.show_capsule_moon_icon !== false ? "🌙" : null,
-      iconRight: this.config.show_capsule_sun_icon !== false ? "☀️" : null,
     });
   }
 
@@ -725,6 +728,9 @@ class YeelightCubeLampPreviewCard extends LitElement {
           "yeelight_cube",
           "set_preview_adjustments",
           { entity_id: entityId, ...effects },
+          // Each call carries every adjustment, so a newer one waiting in
+          // the queue replaces this one.
+          { coalesce: "adjustments" },
         );
 
         // Don't clear local state on a timer - let the entity state update handle it
@@ -1215,25 +1221,17 @@ class YeelightCubeLampPreviewCard extends LitElement {
     this._pruneResetEffects(stateObj);
     let matrixColors = stateObj.attributes.matrix_colors;
 
-    if (!matrixColors) {
-      // Use a blank matrix as fallback instead of showing an error
+    if (!matrixColors?.length) {
+      // Blank matrix: no data yet, or the firmware draws the matrix (Clock,
+      // Native Effect, Music Flow), whose frames the backend can't read back.
       matrixColors = getInitialMatrix(5, 20); // 5 rows x 20 cols
     }
 
     // Use entity state for brightness (no optimistic updates to prevent flash)
     const entityBrightness = stateObj.attributes.brightness ?? 255;
 
-    // Convert entity brightness (3-255) to slider scale (1-100) for display
-    // This matches the forward conversion: slider 1-100 ? HA 3-255
-    let sliderBrightness;
-    if (entityBrightness <= 3) {
-      sliderBrightness = 1;
-    } else if (entityBrightness >= 255) {
-      sliderBrightness = 100;
-    } else {
-      // Reverse the forward formula: ((brightness-3) / 252) * 99 + 1
-      sliderBrightness = Math.round(((entityBrightness - 3) / 252) * 99) + 1;
-    }
+    // Entity brightness (3-255) on the slider's 1-100 scale (shared curve).
+    const sliderBrightness = brightnessRawToPct(entityBrightness);
 
     // Get all effect values (local or entity state)
     const effects = this._currentEffects(stateObj);
@@ -1843,7 +1841,7 @@ class YeelightCubeLampPreviewCard extends LitElement {
 
   // Markup of the shared 4-way device orientation control (right / down /
   // left / up). The shared renderer returns an HTML string whose row carries
-  // its own delegated click handler (handleOrientationControl).
+  // its click handler (handleOrientationControl) in data-on-click.
   _orientationMarkup(stateObj) {
     const current =
       this._orientationPending ||
@@ -3961,6 +3959,8 @@ class YeelightCubeLampPreviewCard extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    // Slider and orientation markup name their handlers in data-on-*.
+    bindHostEvents(this, (name) => isSliderHandler(name) || name === "handleOrientationControl");
     // Reattached after a disconnect (dashboard edit mode, view switch): the
     // animation loops were stopped, so run a full update to restart them.
     if (this._wasDisconnected) {

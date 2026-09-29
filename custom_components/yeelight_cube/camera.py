@@ -219,10 +219,10 @@ class _YeelightCubeMatrixCameraBase(Camera):
         )
 
     def _uses_generated_preview(self) -> bool:
-        """Return whether pixels are generated locally instead of cached content."""
-        return bool(
-            getattr(self._light_entity, "_music_flow_enabled", False)
-        ) or self._is_native_preview_mode()
+        """Return whether pixels are generated locally instead of cached content:
+        the firmware draws the matrix, so there is no plugin frame to show (the
+        same rule the light's matrix_colors attribute follows)."""
+        return bool(getattr(self._light_entity, "firmware_draws_matrix", False))
 
     def _get_matrix_colors(self) -> list[tuple]:
         """Get brightness-corrected matrix colours with perceptual boost.

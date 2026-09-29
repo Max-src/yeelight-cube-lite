@@ -24,7 +24,8 @@ import {
   createToggleRow,
   createSliderRow,
 } from "./form-row-utils.js";
-import { renderSliderSettings } from "./slider-control-utils.js";
+import { renderLightSliderSettings } from "./slider-control-utils.js";
+import { resolveCapsuleThickness } from "./capsule-slider-utils.js";
 import { BRIGHTNESS_SLIDER_KEYS } from "./yeelight-cube-lamp-preview-card.js";
 import { defineOnce } from "./card-registration.js";
 
@@ -265,32 +266,30 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
               cfg.show_brightness_slider === true,
               (e) => this._onToggleChange(e),
             )}
-            ${renderSliderSettings(
+            ${renderLightSliderSettings(
               cfg,
-              BRIGHTNESS_SLIDER_KEYS,
               (key, value) => {
                 this._config = { ...this._config, [key]: value };
                 this._fireConfigChanged();
                 this.requestUpdate();
               },
               {
+                keys: BRIGHTNESS_SLIDER_KEYS,
                 showValueToggle: {
                   label: "Show Brightness Percentage",
-                  key: "show_brightness_percentage",
+                  key: BRIGHTNESS_SLIDER_KEYS.showValue,
                 },
-                rawValueToggle: {
-                  label: "Show Raw Value (device units)",
-                  key: "slider_show_raw_value",
-                },
-                matrixColorKey: "brightness_matrix_color",
                 icons: {
                   leftLabel: "Show Moon Icon (🌙)",
                   rightLabel: "Show Sun Icon (☀️)",
                 },
-                thickness:
-                  cfg.brightness_slider_thickness ??
-                  ({ thick: 12, thin: 3 }[cfg.brightness_slider_appearance] ||
-                    6),
+                // Only this card lets the user pick the slider colour.
+                matrixColorKey: BRIGHTNESS_SLIDER_KEYS.color,
+                thickness: resolveCapsuleThickness(
+                  cfg.brightness_slider_thickness,
+                  cfg.brightness_slider_appearance,
+                  6,
+                ),
               },
             )}
         `)}

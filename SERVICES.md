@@ -597,8 +597,10 @@ Display a base64-encoded image on the lamp (resized/cropped to 20×5).
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
-| `image_b64` | Yes | Base64-encoded image string |
+| `image_b64` | Yes | Base64-encoded image string (any format Pillow reads: PNG, JPEG, GIF, ...). At most 4,000,000 characters (about a 3 MB file) and 2048×2048 pixels |
 | `entity_id` | Yes | Target lamp entity |
+
+The call fails with an error when the data is too large, not base64, or not an image, or when no Yeelight Cube lamp matches `entity_id`.
 
 ```yaml
 action: yeelight_cube.display_image

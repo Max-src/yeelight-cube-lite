@@ -8,6 +8,7 @@ import { resolvePreviewAppearance } from "./preview-appearance.js";
 import { createNativeCardAdapter } from "./native-card-adapter.js";
 import { LitElement, html, css, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
 import { ModeControlsController } from "./mode-controls-controller.js";
+import { PreviewVisibility } from "./preview-visibility.js";
 import {
   CardCommandController,
   SUPERSEDED,
@@ -51,11 +52,15 @@ import {
   createSliderHandlers,
   sliderControlStyles,
   lightSliderConfig,
-  sliderPctToRaw,
-  sliderRawToPct,
+  brightnessPctToRaw,
+  brightnessRawToPct,
+  speedPctToRaw,
+  speedRawToPct,
   createSliderDraft,
   stableSliderMarkup,
+  isSliderHandler,
 } from "./slider-control-utils.js";
+import { bindHostEvents } from "./host-events.js";
 import { paginationStyles } from "./pagination-utils.js";
 import {
   createRafLoop,
@@ -137,13 +142,14 @@ class YeelightCubeNativeEffectsCard extends LitElement {
             this._sliderDrafts[ns].commit(value);
             if (ns === "speed")
               this._command("set_native_effect", {
-                speed: this._speedRaw(value),
+                speed: speedPctToRaw(value),
                 activate: false,
               });
             else
+              // Raw brightness on the shared curve, like the other cards.
               this._command(
                 "turn_on",
-                { brightness_pct: Math.round(value) },
+                { brightness: brightnessPctToRaw(value) },
                 "light",
               );
           },
@@ -245,10 +251,10 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   _settleSliderDrafts(state) {
     const attrs = state?.attributes || {};
     this._sliderDrafts.brightness.settle(
-      sliderRawToPct(attrs.brightness || 3, 3, 255),
+      brightnessRawToPct(attrs.brightness || 3),
     );
     this._sliderDrafts.speed.settle(
-      sliderRawToPct(attrs.native_effect_speed || 50, 1, 255),
+      speedRawToPct(attrs.native_effect_speed || 50),
     );
   }
 
@@ -277,6 +283,8 @@ class YeelightCubeNativeEffectsCard extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    // Slider markup names its handlers in data-on-* attributes.
+    bindHostEvents(this, isSliderHandler);
     this._controls.listeners.add(this._onFavouritesChanged);
     this._visibility = createVisibilityTracker(this);
     this._visibility.connect();
@@ -292,7 +300,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     this._commands.reset();
     this._loop.stop();
     this._visibility?.disconnect();
-    this._observer?.disconnect();
+    this._previewVisibility?.disconnect();
     this._frames = [];
   }
 
@@ -368,9 +376,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     return (
       !this._state || ["unavailable", "unknown"].includes(this._state.state)
     );
-  }
-  _speedRaw(value) {
-    return sliderPctToRaw(value, 1, 255);
   }
   _sliderConfig(ns) {
     return lightSliderConfig(this.config, ns);
@@ -475,7 +480,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     this._selected = name;
     const action = nativeEffectAction(name);
     if (this._speedDraft != null && this._effect()?.speed)
-      action.speed = this._speedRaw(this._speedDraft);
+      action.speed = speedPctToRaw(this._speedDraft);
     const result = await this._command(
       "set_native_effect",
       action,
@@ -572,7 +577,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
         gc: { ...this._sliderConfig("brightness"), rawValue: attrs.brightness },
         value:
           this._brightnessDraft ??
-          sliderRawToPct(attrs.brightness || 3, 3, 255),
+          brightnessRawToPct(attrs.brightness || 3),
       });
     if (this.config.show_animation_speed && effect?.speed)
       controls.push({
@@ -584,7 +589,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
         },
         value:
           this._speedDraft ??
-          sliderRawToPct(attrs.native_effect_speed || 50, 1, 255),
+          speedRawToPct(attrs.native_effect_speed || 50),
       });
     if (!controls.length) return "";
     return html`<div class="sliders" ?inert=${this._disabled() || this._busy}>
@@ -921,7 +926,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   }
 
   _refreshPreviews() {
-    this._observer?.disconnect();
     this._frames = [
       ...this.shadowRoot.querySelectorAll(
         ".effect-matrix, .original-item-preview, .reference-selector [data-mode]",
@@ -932,18 +936,26 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       appearance: node.classList.contains("current-matrix")
         ? this._matrixAppearance(true)
         : this._matrixAppearance(false),
-      visible: true,
       cells: [...node.querySelectorAll(".gallery-matrix-preview > div")],
     }));
-    if (typeof IntersectionObserver !== "undefined") {
-      this._observer = new IntersectionObserver((entries) => {
-        for (const entry of entries) {
-          const frame = this._frames.find((item) => item.node === entry.target);
-          if (frame) frame.visible = entry.isIntersecting;
-        }
-      });
-      this._frames.forEach((frame) => this._observer.observe(frame.node));
-    }
+    // A render can land after the card left the page: never observe then
+    // (disconnectedCallback already released the observer).
+    if (this.isConnected === false) return;
+    // One observer for the card's lifetime: a re-render only observes the
+    // previews it added and releases the ones it removed. New previews count
+    // as visible until the observer reports, so they are painted at once.
+    this._previewVisibility ||= new PreviewVisibility({
+      Observer:
+        typeof IntersectionObserver === "undefined"
+          ? null
+          : IntersectionObserver,
+    });
+    this._previewVisibility.track(this._frames.map((frame) => frame.node));
+    // The current preview is always repainted after a render, whatever the
+    // observer last reported (same rule as the Clock card).
+    for (const frame of this._frames)
+      if (frame.node.classList.contains("current-matrix"))
+        this._previewVisibility.visible.add(frame.node);
     this._paint();
   }
 
@@ -955,17 +967,17 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       native_effect_speed:
         this._speedDraft == null
           ? this._attrs().native_effect_speed
-          : this._speedRaw(this._speedDraft),
+          : speedPctToRaw(this._speedDraft),
     };
     const cache = new Map();
     const brightness =
       this.config.preview_brightness === true
-        ? (this._brightnessDraft ?? ((attrs.brightness || 255) * 100) / 255) /
+        ? (this._brightnessDraft ?? brightnessRawToPct(attrs.brightness || 255)) /
           100
         : 1;
     const off = this._state?.state === "off";
     for (const frame of this._frames) {
-      if (!frame.visible) continue;
+      if (!this._previewVisibility?.visible.has(frame.node)) continue;
       // A powered-off lamp shows a blank screen: black out the current preview.
       if (off && frame.node.classList.contains("current-matrix")) {
         frame.cells.forEach((cell) => {

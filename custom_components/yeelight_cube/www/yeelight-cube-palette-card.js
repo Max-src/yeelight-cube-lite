@@ -11,9 +11,9 @@ import {
 } from "./delete-button-styles.js";
 import {
   exportImportButtonStyles,
-  renderButtonContent,
   getExportImportButtonClass,
 } from "./action-button-utils.js";
+import { renderActionButtonContent } from "./action-button-ui.js";
 import {
   getAlbumStyles,
   renderAlbumView,
@@ -38,12 +38,6 @@ import { defineOnce, registerCustomCard } from "./card-registration.js";
 
 // lit-all.js does not re-export `nothing`; Lit defines it as this global symbol.
 const nothing = Symbol.for("lit-nothing");
-
-// renderGalleryMode() only renders the delete button together with an inline
-// onclick handler; the card handles that click by delegation instead, so the
-// generated handler is stripped (handleGalleryDelete stays as a fallback).
-const GALLERY_INLINE_DELETE =
-  /\s*onclick="event\.stopPropagation\(\); this\.getRootNode\(\)\.host\.handleGalleryDelete\(event, \d+\);"/g;
 
 const isActivationKey = (event) =>
   event.key === "Enter" || event.key === " " || event.key === "Spacebar";
@@ -1420,10 +1414,12 @@ class YeelightCubePaletteCard extends LitElement {
   // backend refuses the call if another client changed the list meanwhile.
   // Never rejects: failures are logged by the service helper and reported once.
   _applyPalette(idx) {
-    return this.callServiceOnTargetEntities("load_palette", {
-      idx,
-      expected_name: this._paletteItems()[idx]?.name,
-    }).catch((error) =>
+    return this.callServiceOnTargetEntities(
+      "load_palette",
+      { idx, expected_name: this._paletteItems()[idx]?.name },
+      // Quick successive picks only send the latest one.
+      { coalesce: "select" },
+    ).catch((error) =>
       this._notifyUnreported(error, "Failed to load the palette."),
     );
   }
@@ -1461,18 +1457,18 @@ class YeelightCubePaletteCard extends LitElement {
     });
   }
 
-  // Fallback for renderGalleryMode's inline delete handler, should the markup
-  // ever escape GALLERY_INLINE_DELETE.
-  handleGalleryDelete(event, idx) {
-    event.stopPropagation();
-    this._deletePalette(idx);
-  }
-
   // One call for all target lamps (the backend runs them in parallel), through
   // the card's command queue: sent in order, results from a previous
   // configuration dropped. Rejects on failure (HA has already shown it).
-  callServiceOnTargetEntities(service, data = {}) {
-    return this._commands.request(this._hass, this.config, service, data);
+  // options.coalesce: see CardCommandController.execute.
+  callServiceOnTargetEntities(service, data = {}, options = {}) {
+    return this._commands.request(
+      this._hass,
+      this.config,
+      service,
+      data,
+      options,
+    );
   }
 
   // Prompt for a new palette name and persist it via the backend. Shared by
@@ -1805,9 +1801,8 @@ class YeelightCubePaletteCard extends LitElement {
         }))
       : palettes;
 
-    // Item and title clicks are delegated (see _onContentClick), so no inline
-    // handler names are passed; the delete handler name is required for the
-    // helper to render the button at all, and its inline onclick is stripped.
+    // Item, title and delete clicks are all delegated (see _onContentClick),
+    // so no handler names are passed.
     const galleryHTML = renderGalleryMode(
       palettesWithGradient,
       renderPaletteContent,
@@ -1817,7 +1812,7 @@ class YeelightCubePaletteCard extends LitElement {
         deleteButtonClass: removeBtnClass,
         posClass,
         sideClass,
-        onDeleteClick: "handleGalleryDelete",
+        onDeleteClick: null,
         onItemClick: null,
         onTitleClick: null,
         cardSizeMultiplier: cardSizeMultiplier,
@@ -1827,7 +1822,7 @@ class YeelightCubePaletteCard extends LitElement {
         globalOffset: options.globalOffset || 0,
         roundedCards: this.config.rounded_cards,
       },
-    ).replace(GALLERY_INLINE_DELETE, "");
+    );
 
     return html`
       <style>
@@ -2080,9 +2075,7 @@ class YeelightCubePaletteCard extends LitElement {
               aria-label="Export palettes to JSON file"
               @click=${() => this._exportPalettes()}
             >
-              ${unsafeHTML(
-                renderButtonContent("mdi:download", "Export", contentMode),
-              )}
+              ${renderActionButtonContent("mdi:download", "Export", contentMode)}
             </button>`
           : nothing}
         ${showImport
@@ -2093,16 +2086,12 @@ class YeelightCubePaletteCard extends LitElement {
               aria-label="Import palettes from JSON file"
               @click=${() => this._importPalettes()}
             >
-              ${unsafeHTML(
-                isImportStatus
-                  ? renderButtonContent(
-                      "mdi:upload",
-                      "Import",
-                      contentMode,
-                      true,
-                      statusType,
-                    )
-                  : renderButtonContent("mdi:upload", "Import", contentMode),
+              ${renderActionButtonContent(
+                "mdi:upload",
+                "Import",
+                contentMode,
+                isImportStatus,
+                statusType,
               )}
             </button>`
           : nothing}

@@ -1101,7 +1101,7 @@ display_image:
   description: Display a base64-encoded image on the cube matrix (resized to 20x5).
   fields:
     image_b64:
-      description: Base64-encoded image data
+      description: Base64-encoded image data (at most 4,000,000 characters, about a 3 MB file, and 2048x2048 pixels)
       example: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
       required: true
       selector:

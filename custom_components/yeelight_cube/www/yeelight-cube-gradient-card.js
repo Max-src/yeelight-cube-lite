@@ -13,7 +13,10 @@ import {
 } from "./gallery-display-utils.js";
 import { initializeWheelNavigation } from "./wheel-navigation-utils.js";
 import { getTargetEntities } from "./service-call-utils.js";
-import { CardCommandController } from "./card-command-controller.js";
+import {
+  CardCommandController,
+  SUPERSEDED,
+} from "./card-command-controller.js";
 import { gradientPreviewStore } from "./gradient-preview-store.js";
 import {
   AngleCommandController,
@@ -48,6 +51,15 @@ import {
 } from "./pagination-utils.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { createSliderDraft } from "./slider-control-utils.js";
+import { bindHostEvents, hostEventAttrs } from "./host-events.js";
+
+// Host methods the angle capsule markup may call (see bindHostEvents).
+const CAPSULE_HANDLERS = new Set([
+  "_startCapsuleDrag",
+  "_endCapsuleDrag",
+  "_handleCapsuleAngleInput",
+  "_handleCapsuleWheel",
+]);
 
 // ── Lit helpers not exported by the bundled lit-all.js ─────────────────────
 // Lit's `nothing` sentinel is a registered symbol (same trick as
@@ -1372,17 +1384,21 @@ class YeelightCubeGradientCard extends LitElement {
   // One call for all target lamps (the backend runs them in parallel), through
   // the card's command queue: sent in order, results from a previous
   // configuration dropped. Rejects on failure (HA has already shown it).
-  callServiceOnTargetEntities(serviceName, serviceData = {}) {
+  // options.coalesce: see CardCommandController.execute.
+  callServiceOnTargetEntities(serviceName, serviceData = {}, options = {}) {
     return this._commands.request(
       this._hass,
       this.config,
       serviceName,
       serviceData,
+      options,
     );
   }
 
   connectedCallback() {
     super.connectedCallback();
+    // The angle capsule names its handlers in data-on-* attributes.
+    bindHostEvents(this, (name) => CAPSULE_HANDLERS.has(name));
     // Re-establish preview event subscription lost during disconnection.
     // disconnectedCallback unsubscribes, but the persistent _previewElement
     // survives, so the creation-time setTimeout that calls
@@ -3340,10 +3356,14 @@ class YeelightCubeGradientCard extends LitElement {
             ?.full_panel || false;
 
     try {
-      await this.callServiceOnTargetEntities("set_mode", {
-        mode,
-        full_panel: applyToPanel,
-      });
+      const result = await this.callServiceOnTargetEntities(
+        "set_mode",
+        { mode, full_panel: applyToPanel },
+        // Quick successive picks only send the latest one.
+        { coalesce: "select" },
+      );
+      // Never sent: the newer pick owns the highlight and the wheel.
+      if (result === SUPERSEDED) return;
       // Keep _optimisticMode SET until the backend echoes the new mode back
       // through entity state (cleared in `set hass`).  The service resolves
       // before the hardware command completes (fire-and-forget backend), so
@@ -4793,7 +4813,8 @@ class YeelightCubeGradientCard extends LitElement {
       case "capsule": {
         // Capsule/pill style — horizontal slider for angle.  The capsule
         // markup comes from the shared capsule-slider-utils renderer (HTML
-        // string with its own inline handlers), inserted via unsafeHTML.
+        // string naming this card's handlers in data-on-* attributes),
+        // inserted via unsafeHTML.
         const capsuleAngle = visualAngle;
         const capsuleTheme = resolveCapsuleTheme(
           this.config.capsule_theme,
@@ -4853,15 +4874,18 @@ class YeelightCubeGradientCard extends LitElement {
           iconRight: capsuleIconRight,
           leftSlotHtml: capsuleLeftSlot,
           rightSlotHtml: capsuleRightSlot,
-          hostInputHandler:
-            "this.getRootNode().host._handleCapsuleAngleInput(event)",
-          hostDragStart: "this.getRootNode().host._startCapsuleDrag()",
-          hostDragEnd: "this.getRootNode().host._endCapsuleDrag()",
+          inputEvents: hostEventAttrs({
+            mousedown: "_startCapsuleDrag",
+            touchstart: "_startCapsuleDrag",
+            mouseup: "_endCapsuleDrag",
+            touchend: "_endCapsuleDrag",
+            input: "_handleCapsuleAngleInput",
+          }),
           label: null,
           showValue: capsuleShowValue,
           valueText: capsuleValueText,
           underHtml: capsuleUnderHtml,
-          wheelHandler: "this.getRootNode().host._handleCapsuleWheel(event)",
+          wheelEvents: hostEventAttrs({ wheel: "_handleCapsuleWheel" }),
           trackExtraHtml: this.config.compass_snap_to_coordinates
             ? `<div class="capsule-snap-ticks">${[45, 90, 135, 180, 225, 270, 315].map((a) => `<div class="capsule-snap-tick" style="left:${(a / 359) * 100}%"></div>`).join("")}</div>`
             : "",
@@ -5623,10 +5647,16 @@ class YeelightCubeGradientCard extends LitElement {
     const entityId = this._getPrimaryEntity();
     const stateObj = entityId ? this._hass?.states?.[entityId] : null;
     const matrixColors = stateObj?.attributes?.matrix_colors;
-    if (matrixColors && matrixColors.length >= rows * cols) {
+    // While the lamp is off its matrix is black (and it is empty while the
+    // firmware draws it): preview the text from the cache instead.
+    if (
+      stateObj?.state === "on" &&
+      matrixColors &&
+      matrixColors.length >= rows * cols
+    ) {
       return matrixColors;
     }
-    // FALLBACK: preview cache (for when entity state doesn't have matrix_colors)
+    // FALLBACK: preview cache (lamp off, firmware-drawn mode, or no data yet)
     const cache = this._previewCache();
     const previewData = cache?.data;
     const currentMode = this._getCurrentMode();

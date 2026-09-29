@@ -17,8 +17,9 @@
 // Rendering keeps the `brightness-*` class names + `--brightness-color` /
 // `--slider-thickness` CSS vars so `sliderControlStyles` is the exact,
 // battle-tested CSS. The interaction handlers are produced by
-// `createSliderHandlers()` and assigned onto the host element (the render emits
-// inline `this.getRootNode().host._sl*` handlers).
+// `createSliderHandlers()` and assigned onto the host element; the render names
+// them in data-on-* attributes, dispatched by bindHostEvents (host-events.js)
+// with no inline script.
 
 import { cardSpacing } from "./card-layout-utils.js";
 import { escapeHtml } from "./html-escape-utils.js";
@@ -35,8 +36,10 @@ import {
 } from "./button-group-utils.js";
 import { createSliderRow, createToggleRow } from "./form-row-utils.js";
 import { renderModeSettingsSection } from "./editor_ui_utils.js";
+import { hostEventAttrs } from "./host-events.js";
 
-const H = "this.getRootNode().host";
+/** Which host methods slider markup may call (see bindHostEvents). */
+export const isSliderHandler = (name) => /^_sl[A-Za-z]*$/.test(name);
 
 function resolveWheelStyle(style) {
   return style === "bars" || style === "mesh" ? "mesh" : "ticks";
@@ -63,6 +66,21 @@ export function sliderRawToPct(raw, min, max) {
     Math.min(100, Math.round(1 + ((r - min) * 99) / (max - min))),
   );
 }
+
+// The lamp's device ranges. Cards convert through the helpers below instead of
+// retyping a range or a formula, so every card (and the raw-value display)
+// reads the same device value as the same percentage.
+export const BRIGHTNESS_RAW = Object.freeze({ min: 3, max: 255 }); // HA brightness; the Cube's floor is 3
+export const SPEED_RAW = Object.freeze({ min: 1, max: 255 });
+
+export const brightnessPctToRaw = (pct) =>
+  sliderPctToRaw(pct, BRIGHTNESS_RAW.min, BRIGHTNESS_RAW.max);
+export const brightnessRawToPct = (raw) =>
+  sliderRawToPct(raw, BRIGHTNESS_RAW.min, BRIGHTNESS_RAW.max);
+export const speedPctToRaw = (pct) =>
+  sliderPctToRaw(pct, SPEED_RAW.min, SPEED_RAW.max);
+export const speedRawToPct = (raw) =>
+  sliderRawToPct(raw, SPEED_RAW.min, SPEED_RAW.max);
 
 // True when a gc should display the device's raw value instead of a percent.
 function sliderRawMode(gc) {
@@ -197,10 +215,28 @@ export function renderSliderControl(gc, value, ns = "") {
   // method names are suffixed (e.g. _slSpeedChange) and DOM queries scope to
   // the container carrying data-sl-ns. Empty ns keeps the historical names.
   const nsCap = ns ? ns.charAt(0).toUpperCase() + ns.slice(1) : "";
-  const SL = `${H}._sl${nsCap}`;
+  // data-on-* attributes naming this slider's host handlers (e.g.
+  // { input: "Change" } -> data-on-input="_slSpeedChange").
+  const on = (handlers, args) =>
+    hostEventAttrs(
+      Object.fromEntries(
+        Object.entries(handlers).map(([type, name]) => [
+          type,
+          `_sl${nsCap}${name}`,
+        ]),
+      ),
+      args,
+    );
+  const drag = on({
+    mousedown: "StartDrag",
+    touchstart: "StartDrag",
+    mouseup: "EndDrag",
+    touchend: "EndDrag",
+    input: "Change",
+  });
   const idOf = (b) => (ns ? `${b}-${ns}` : b);
 
-  let html = `<div class="brightness-slider-container brightness-style-${style} brightness-theme-${theme}" data-sl-ns="${ns}" style="--slider-thickness: ${thickness}px; --brightness-color: ${color};" onwheel="${SL}Wheel(event)">`;
+  let html = `<div class="brightness-slider-container brightness-style-${style} brightness-theme-${theme}" data-sl-ns="${ns}" style="--slider-thickness: ${thickness}px; --brightness-color: ${color};" ${on({ wheel: "Wheel" })}>`;
 
   if (style === "bar") {
     const barFill = gc.barFill || "solid";
@@ -212,11 +248,7 @@ export function renderSliderControl(gc, value, ns = "") {
           <div class="brightness-bar-seams"></div>
           <input type="range" min="1" max="100" value="${v}"
             class="brightness-slider brightness-slider-bar"
-            onmousedown="${SL}StartDrag(); this.closest('.brightness-bar-track')?.classList.remove('bar-stripes-idle');"
-            ontouchstart="${SL}StartDrag(); this.closest('.brightness-bar-track')?.classList.remove('bar-stripes-idle');"
-            onmouseup="${SL}EndDrag(); this.closest('.brightness-bar-track')?.classList.add('bar-stripes-idle');"
-            ontouchend="${SL}EndDrag(); this.closest('.brightness-bar-track')?.classList.add('bar-stripes-idle');"
-            oninput="${SL}Change(event)" />
+            ${drag} />
         </div>
         ${showValue ? `<div class="brightness-value-right">${formatSliderValue(v, gc)}</div>` : ""}
       </div>`;
@@ -240,7 +272,7 @@ export function renderSliderControl(gc, value, ns = "") {
           <button type="button" class="brightness-wheel-tick${
             i === activeIndex ? " active" : ""
           }" data-value="${sv}" data-index="${i}" style="width:${tickW}px;flex:0 0 ${tickW}px;"
-            onclick="${SL}WheelTick(${sv})">
+            ${on({ click: "WheelTick" }, [sv])}>
             <span class="wheel-tick-mark"></span>
             ${showWheelLabels ? `<span class="wheel-tick-label">${sv}</span>` : ""}
           </button>`,
@@ -251,9 +283,7 @@ export function renderSliderControl(gc, value, ns = "") {
         <div class="brightness-wheel-value">${showValue ? formatSliderValue(v, gc) : ""}</div>
         <div class="brightness-wheel-viewport wheel-style-${wheelStyle}"
           style="height:${thickness * 5 + 20}px;"
-          onwheel="${SL}WheelStep(event)"
-          onmousedown="${SL}WheelDragStart(event)"
-          ontouchstart="${SL}WheelDragStart(event)">
+          ${on({ wheel: "WheelStep", mousedown: "WheelDragStart", touchstart: "WheelDragStart" })}>
           <div class="brightness-wheel-caret"></div>
           <div class="brightness-wheel-fade brightness-wheel-fade-left"></div>
           <div class="brightness-wheel-fade brightness-wheel-fade-right"></div>
@@ -263,7 +293,7 @@ export function renderSliderControl(gc, value, ns = "") {
         </div>
         <input type="range" min="${step}" max="100" step="${step}" value="${stops[activeIndex]}"
           class="brightness-slider brightness-slider-wheel" style="display:none;"
-          oninput="${SL}Change(event)" />
+          ${on({ input: "Change" })} />
       </div>`;
   } else if (style === "matrix") {
     const cols = Math.max(3, Math.min(20, parseInt(gc.matrixCols) || 10));
@@ -288,14 +318,13 @@ export function renderSliderControl(gc, value, ns = "") {
       <div class="brightness-matrix-wrapper">
         <div class="brightness-matrix-grid pixel-shape-${matrixPixelStyle}" data-total="${total}"
              style="box-sizing:border-box;grid-template-columns:repeat(${cols},1fr);gap:3px;max-width:${cols * (cellPx + 3) + 16}px;"
-             onmousedown="${SL}MatrixDown(event)"
-             ontouchstart="${SL}MatrixDown(event)">
+             ${on({ mousedown: "MatrixDown", touchstart: "MatrixDown" })}>
           ${cells}
         </div>
         ${showValue ? `<div class="brightness-matrix-value">${formatSliderValue(v, gc)}</div>` : ""}
         <input type="range" min="1" max="100" value="${v}"
           class="brightness-slider brightness-slider-matrix" style="display:none;"
-          oninput="${SL}Change(event)" />
+          ${on({ input: "Change" })} />
       </div>`;
   } else if (style === "rotary") {
     const rotaryStyle = gc.rotaryStyle || "glow";
@@ -309,10 +338,9 @@ export function renderSliderControl(gc, value, ns = "") {
     const dialKnobX = (50 + radius * Math.cos(dialKnobAngleRad)).toFixed(2);
     const dialKnobY = (50 + radius * Math.sin(dialKnobAngleRad)).toFixed(2);
     html += `
-      <div class="brightness-rotary-wrapper" onwheel="${SL}Wheel(event)">
+      <div class="brightness-rotary-wrapper" ${on({ wheel: "Wheel" })}>
         <div class="brightness-rotary-container rotary-style-${rotaryStyle}"
-             onmousedown="${SL}RotaryStart(event)"
-             ontouchstart="${SL}RotaryStart(event)"
+             ${on({ mousedown: "RotaryStart", touchstart: "RotaryStart" })}
              style="position: relative; z-index: 10; --rotary-stroke: ${thickness * 2};">
           <svg class="brightness-rotary-svg" viewBox="0 0 100 100">
             <defs>
@@ -356,7 +384,7 @@ export function renderSliderControl(gc, value, ns = "") {
     let bValueText = "";
     let bUnderHtml = null;
 
-    const inputBase = `class="brightness-capsule-input" type="number" min="${capMin}" max="${capMax}" step="1" value="${capVal}" onfocus="${SL}Typing=true" onblur="${SL}ValueBlur(event)" onkeydown="if(event.key==='Enter')this.blur()" oninput="${SL}ValueInput(event)" onmousedown="event.stopPropagation()" ontouchstart="event.stopPropagation()"`;
+    const inputBase = `class="brightness-capsule-input" type="number" min="${capMin}" max="${capMax}" step="1" value="${capVal}" ${on({ focusin: "ValueFocus", focusout: "ValueBlur", keydown: "ValueKey", input: "ValueInput" })} data-stop="mousedown touchstart"`;
 
     if (bvd !== "none") {
       const isInput = bvd === "input";
@@ -409,9 +437,7 @@ export function renderSliderControl(gc, value, ns = "") {
       iconRight: bIconRight,
       leftSlotHtml: bLeftSlot,
       rightSlotHtml: bRightSlot,
-      hostInputHandler: `${SL}Change(event)`,
-      hostDragStart: `${SL}StartDrag()`,
-      hostDragEnd: `${SL}EndDrag()`,
+      inputEvents: drag,
       showValue: bShowValue,
       valueText: bValueText,
       underHtml: bUnderHtml,
@@ -428,9 +454,7 @@ export function renderSliderControl(gc, value, ns = "") {
         <input type="range" min="1" max="100" value="${v}"
           class="brightness-slider brightness-slider-variable slider-variant-${variant}"
           style="--slider-pct:${v}%"
-          onmousedown="${SL}StartDrag()" ontouchstart="${SL}StartDrag()"
-          onmouseup="${SL}EndDrag()" ontouchend="${SL}EndDrag()"
-          oninput="${SL}Change(event)" />
+          ${drag} />
         ${showValue ? `<span class="brightness-value-slider">${formatSliderValue(v, gc)}</span>` : ""}
       </div>`;
   }
@@ -470,8 +494,8 @@ export function renderSliderControl(gc, value, ns = "") {
              style="--slider-step-gap:${mGap}px;--slider-step-pad-x:${mPadX}px;--slider-step-track-max:${trackMaxWidth ? `${trackMaxWidth}px` : "none"};">
           ${spacer(mLeft)}
           <div class="brightness-step-btn-area">
-            <button class="rotary-step-btn" title="Decrease by ${globalStep}%" onclick="${SL}RotaryStep(-${globalStep})">&#x2212;</button>
-            <button class="rotary-step-btn" title="Increase by ${globalStep}%" onclick="${SL}RotaryStep(${globalStep})">&#x2b;</button>
+            <button type="button" class="rotary-step-btn" title="Decrease by ${globalStep}%" ${on({ click: "RotaryStep" }, [-globalStep])}>&#x2212;</button>
+            <button type="button" class="rotary-step-btn" title="Increase by ${globalStep}%" ${on({ click: "RotaryStep" }, [globalStep])}>&#x2b;</button>
           </div>
           ${spacer(mRight)}
         </div>`;
@@ -487,9 +511,9 @@ export function renderSliderControl(gc, value, ns = "") {
     const inner = html.slice(lastDiv, closingIdx + 6);
     html = html.slice(0, lastDiv);
     html += `<div class="brightness-sides-row">
-      <button class="rotary-step-btn rotary-step-side" title="Decrease by ${globalStep}%" onclick="${SL}RotaryStep(-${globalStep})">&#x2212;</button>
+      <button type="button" class="rotary-step-btn rotary-step-side" title="Decrease by ${globalStep}%" ${on({ click: "RotaryStep" }, [-globalStep])}>&#x2212;</button>
       ${inner}
-      <button class="rotary-step-btn rotary-step-side" title="Increase by ${globalStep}%" onclick="${SL}RotaryStep(${globalStep})">&#x2b;</button>
+      <button type="button" class="rotary-step-btn rotary-step-side" title="Increase by ${globalStep}%" ${on({ click: "RotaryStep" }, [globalStep])}>&#x2b;</button>
     </div>`;
   }
 
@@ -601,7 +625,8 @@ export function stableSliderMarkup(host, key, markup) {
 /**
  * Create the interaction handlers for a host element. Assign the returned
  * object onto the host (e.g. `Object.assign(this, createSliderHandlers({...}))`)
- * so the inline `this.getRootNode().host._sl*` handlers resolve.
+ * so the data-on-* handler names in the slider markup resolve (the host binds
+ * them with bindHostEvents(host, isSliderHandler)).
  *
  * Pass a unique `ns` to run several independent sliders on one host: the
  * returned method names are suffixed (e.g. `_slSpeedChange`) and DOM queries
@@ -647,7 +672,7 @@ export function createSliderHandlers({
   let pointerHeld = false;
 
   // A pointer press on the slider: mark the host as dragging until the button
-  // is released *anywhere* (inline onmouseup only fires over the input). The
+  // is released *anywhere* (the input's own mouseup only fires over it). The
   // debounced commit must not end the drag while the button is still down,
   // otherwise a slow drag lets the lamp's older state jump the slider back.
   const releasePointer = () => {
@@ -841,10 +866,18 @@ export function createSliderHandlers({
   const base = {
     UpdateVisuals: updateVisuals,
 
-    StartDrag() {
+    // `element` is the control the event was bound on (see host-events.js).
+    StartDrag(event, element) {
+      // Bar style: the idle stripes animation pauses while dragging.
+      element
+        ?.closest?.(".brightness-bar-track")
+        ?.classList.remove("bar-stripes-idle");
       holdPointer();
     },
-    EndDrag() {
+    EndDrag(event, element) {
+      element
+        ?.closest?.(".brightness-bar-track")
+        ?.classList.add("bar-stripes-idle");
       releasePointer();
     },
 
@@ -852,9 +885,9 @@ export function createSliderHandlers({
       applyValue(event.target.value);
     },
 
-    Wheel(event) {
+    Wheel(event, element) {
       event.preventDefault();
-      const container = event.currentTarget;
+      const container = element ?? event.currentTarget;
       const slider =
         container.querySelector(".brightness-slider-rotary") ||
         container.querySelector(".brightness-slider") ||
@@ -913,9 +946,9 @@ export function createSliderHandlers({
       applyValue(value);
     },
 
-    WheelDragStart(event) {
+    WheelDragStart(event, element) {
       event.preventDefault();
-      const viewport = event.currentTarget;
+      const viewport = element ?? event.currentTarget;
       const startX = event.clientX ?? event.touches?.[0]?.clientX ?? 0;
       const stops = getWheelStops();
       const input = viewport
@@ -955,10 +988,10 @@ export function createSliderHandlers({
       document.addEventListener("touchend", end);
     },
 
-    MatrixDown(event) {
+    MatrixDown(event, element) {
       event.preventDefault();
       holdPointer();
-      const grid = event.currentTarget;
+      const grid = element ?? event.currentTarget;
       const total = parseInt(grid.dataset.total) || 1;
       const input = grid.parentElement?.querySelector(
         ".brightness-slider-matrix",
@@ -1006,10 +1039,10 @@ export function createSliderHandlers({
       document.addEventListener("touchend", end);
     },
 
-    RotaryStart(event) {
+    RotaryStart(event, element) {
       host[rotaryProp] = true;
       holdPointer();
-      const container = event.currentTarget;
+      const container = element ?? event.currentTarget;
       const rotaryClick = (e) => {
         const rect = container.getBoundingClientRect();
         const cx = rect.width / 2;
@@ -1047,6 +1080,14 @@ export function createSliderHandlers({
       document.addEventListener("mouseup", end);
       document.addEventListener("touchmove", move, { passive: false });
       document.addEventListener("touchend", end);
+    },
+
+    ValueFocus() {
+      host[typingProp] = true;
+    },
+
+    ValueKey(event) {
+      if (event.key === "Enter") event.target.blur();
     },
 
     ValueInput(event) {
@@ -1093,7 +1134,7 @@ export function createSliderHandlers({
   };
 
   // Namespace the handler keys (e.g. UpdateVisuals -> _slSpeedUpdateVisuals) so
-  // the inline `${SL}...` calls emitted by renderSliderControl resolve.
+  // the data-on-* handler names emitted by renderSliderControl resolve.
   const handlers = {};
   for (const k in base) handlers[`_sl${nsCap}${k}`] = base[k];
   return handlers;
@@ -1984,8 +2025,15 @@ export function sliderKeys(prefix) {
   };
 }
 
-// Build the generic render config (gc) from a card config + key map + overrides.
-export function lightSliderConfig(config, kind, keys = sliderKeys("slider")) {
+// Build the generic render config (gc) for a lamp brightness/speed slider from a
+// card config + key map. `overrides` holds a card's own additions (e.g. the
+// Lamp Preview's configurable colour and legacy values, a live rawValue).
+export function lightSliderConfig(
+  config,
+  kind,
+  keys = sliderKeys("slider"),
+  overrides = {},
+) {
   const speed = kind === "speed";
   return sliderConfigToGc(config, keys, {
     color: speed ? "#5aa9ff" : "#ffb74d",
@@ -1997,9 +2045,10 @@ export function lightSliderConfig(config, kind, keys = sliderKeys("slider")) {
     // Global "Show Raw Value" toggle: display the device value (speed 1-255,
     // brightness 3-255) instead of a percentage.
     valueMode: config.slider_show_raw_value ? "raw" : "percent",
-    rawMin: speed ? 1 : 3,
-    rawMax: 255,
+    rawMin: (speed ? SPEED_RAW : BRIGHTNESS_RAW).min,
+    rawMax: (speed ? SPEED_RAW : BRIGHTNESS_RAW).max,
     rawUnit: "",
+    ...overrides,
   });
 }
 
@@ -2059,8 +2108,14 @@ const STYLE_CHOICES = [
  *                                      (uses K.iconLeftShow / K.iconRightShow)
  *   - thickness: number                override the displayed track thickness
  */
-export function renderLightSliderSettings(config, onChange) {
-  const keys = sliderKeys("slider");
+// Editor block for a lamp brightness/speed slider (the counterpart of
+// lightSliderConfig). `options.keys` selects a card's key map; any other
+// option (see renderSliderSettings) is added or replaces a default.
+export function renderLightSliderSettings(
+  config,
+  onChange,
+  { keys = sliderKeys("slider"), ...options } = {},
+) {
   return renderSliderSettings(config, keys, onChange, {
     icons: { leftLabel: "Show Left Icon", rightLabel: "Show Right Icon" },
     showValueToggle: { label: "Show Value", key: keys.showValue },
@@ -2068,6 +2123,7 @@ export function renderLightSliderSettings(config, onChange) {
       label: "Show Raw Value (device units)",
       key: "slider_show_raw_value",
     },
+    ...options,
   });
 }
 
