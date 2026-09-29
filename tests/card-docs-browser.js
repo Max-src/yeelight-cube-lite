@@ -214,7 +214,8 @@ window.cardDocs = {
     const icons = [];
     for (const root of roots)
       for (const element of root.querySelectorAll("*")) {
-        if (element.localName === "ha-icon" && element.icon) icons.push(element);
+        if (element.localName === "ha-icon" && element.icon)
+          icons.push(element);
         if (element.shadowRoot) roots.push(element.shadowRoot);
       }
     return icons.every(
@@ -222,6 +223,16 @@ window.cardDocs = {
     );
   },
 
+  // Freeze every real-time animation loop before the pixel-for-pixel capture
+  // (each scenario is rendered twice and compared; a running loop makes the
+  // two captures differ and fails with "Capture pixels changed" in CI).
+  // Each animated component owns its loop under its OWN property name, so
+  // renaming/adding a requestAnimationFrame loop on any card/component below
+  // must update the matching stop() call here too:
+  //   - card._animLoop / card._loop: the clock/native/lamp-preview card's own
+  //     grid animation (createRafLoop from matrix-animator.js).
+  //   - view._previewLoop: yeelight-mode-controls' favourites/collections
+  //     preview loop (also createRafLoop; see mode-controls-ui.js).
   async settle() {
     const card = this.card;
     card._animLoop?.stop();
@@ -250,7 +261,8 @@ window.cardDocs = {
     for (const view of card.shadowRoot.querySelectorAll(
       "yeelight-mode-controls",
     )) {
-      cancelAnimationFrame(view._frame);
+      // Keep in sync with mode-controls-ui.js's own loop property name.
+      view._previewLoop?.stop();
       view.requestUpdate();
       await view.updateComplete;
     }
