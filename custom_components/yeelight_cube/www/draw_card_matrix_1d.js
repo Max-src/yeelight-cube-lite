@@ -5,6 +5,8 @@ import {
 } from "./draw_utils.js";
 import { MATRIX_SIZE } from "./draw_card_const.js";
 import { updateRecentColors } from "./draw_card_state.js";
+// Saves the drawing and recent colours (batched, see draw_card_storage.js).
+import { StorageUtils } from "./draw_card_storage.js";
 
 export class MatrixOperations1D {
   constructor(card) {
@@ -36,10 +38,7 @@ export class MatrixOperations1D {
     const previousMatrix = this.card._matrixHistory.pop();
     if (previousMatrix) {
       this.card.matrix = previousMatrix;
-      // Save to storage if available
-      if (typeof StorageUtils !== "undefined" && StorageUtils.saveMatrix) {
-        StorageUtils.saveMatrix(this.card.matrix);
-      }
+      StorageUtils.saveMatrix(this.card.matrix);
       this.card.requestUpdate();
     }
   }
@@ -47,6 +46,8 @@ export class MatrixOperations1D {
   // Set pixel at index
   setPixel(idx) {
     if (!this.card.matrix || idx < 0 || idx >= this.card.matrix.length) return;
+    // Dragging over a cell that already has the colour changes nothing.
+    if (this.card.matrix[idx] === this.card.selectedColor) return;
 
     this.card.matrix = [
       ...this.card.matrix.slice(0, idx),
@@ -54,10 +55,7 @@ export class MatrixOperations1D {
       ...this.card.matrix.slice(idx + 1),
     ];
 
-    // Save to storage if available
-    if (typeof StorageUtils !== "undefined" && StorageUtils.saveMatrix) {
-      StorageUtils.saveMatrix(this.card.matrix);
-    }
+    StorageUtils.saveMatrix(this.card.matrix);
 
     // Update recent colors
     this.updateRecentColors();
@@ -83,6 +81,7 @@ export class MatrixOperations1D {
   erasePixel(e, idx) {
     if (e) e.preventDefault();
     if (!this.card.matrix || idx < 0 || idx >= this.card.matrix.length) return;
+    if (this.card.matrix[idx] === "#000000") return;
 
     this.card.matrix = [
       ...this.card.matrix.slice(0, idx),
@@ -90,10 +89,7 @@ export class MatrixOperations1D {
       ...this.card.matrix.slice(idx + 1),
     ];
 
-    // Save to storage if available
-    if (typeof StorageUtils !== "undefined" && StorageUtils.saveMatrix) {
-      StorageUtils.saveMatrix(this.card.matrix);
-    }
+    StorageUtils.saveMatrix(this.card.matrix);
 
     // Batch updates during drawing to improve performance
     if (this.card._drawingActive) {
@@ -114,10 +110,7 @@ export class MatrixOperations1D {
     this.pushMatrixHistory();
     this.card.matrix = _createEmptyMatrix();
 
-    // Save to storage if available
-    if (typeof StorageUtils !== "undefined" && StorageUtils.saveMatrix) {
-      StorageUtils.saveMatrix(this.card.matrix);
-    }
+    StorageUtils.saveMatrix(this.card.matrix);
 
     this.card.requestUpdate();
   }
@@ -128,10 +121,7 @@ export class MatrixOperations1D {
       this.pushMatrixHistory();
       this.card.matrix = Array(MATRIX_SIZE).fill(this.card.selectedColor);
 
-      // Save to storage if available
-      if (typeof StorageUtils !== "undefined" && StorageUtils.saveMatrix) {
-        StorageUtils.saveMatrix(this.card.matrix);
-      }
+      StorageUtils.saveMatrix(this.card.matrix);
     }
   }
 
@@ -203,10 +193,7 @@ export class MatrixOperations1D {
       this.card.matrix = Array(this.card.matrix.length).fill(
         normalizeHex(this.card.selectedColor),
       );
-      // Save to storage if available
-      if (typeof StorageUtils !== "undefined" && StorageUtils.saveMatrix) {
-        StorageUtils.saveMatrix(this.card.matrix);
-      }
+      StorageUtils.saveMatrix(this.card.matrix);
       this.card.previewFillArea = new Set();
       this.card.requestUpdate();
       return;
@@ -220,10 +207,7 @@ export class MatrixOperations1D {
           newMatrix[i] = normalizeHex(this.card.selectedColor);
         });
         this.card.matrix = newMatrix;
-        // Save to storage if available
-        if (typeof StorageUtils !== "undefined" && StorageUtils.saveMatrix) {
-          StorageUtils.saveMatrix(this.card.matrix);
-        }
+        StorageUtils.saveMatrix(this.card.matrix);
         this.card.previewFillArea = new Set();
         this.card.requestUpdate();
       }
@@ -241,15 +225,20 @@ export class MatrixOperations1D {
   // Update recent colors when setting pixels
   updateRecentColors() {
     if (typeof updateRecentColors !== "function") return;
+    // Already the most recent colour (every cell of a stroke): nothing to do.
+    const latest = this.card.recentColors?.[0];
+    if (
+      typeof latest === "string" &&
+      typeof this.card.selectedColor === "string" &&
+      latest.toLowerCase() === this.card.selectedColor.toLowerCase()
+    )
+      return;
 
     this.card.recentColors = updateRecentColors(
       this.card.recentColors,
       this.card.selectedColor,
     );
-    // Save to storage if available
-    if (typeof StorageUtils !== "undefined" && StorageUtils.saveRecentColors) {
-      StorageUtils.saveRecentColors(this.card.recentColors);
-    }
+    StorageUtils.saveRecentColors(this.card.recentColors);
   }
 
   // Get color count in matrix

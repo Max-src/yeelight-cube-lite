@@ -658,7 +658,8 @@ class NativeFeatureTests(unittest.TestCase):
     def test_music_flow_runtime_state_is_persisted_after_storage_ready(self):
         attributes = _function_source(LIGHT_SOURCE, "extra_state_attributes")
         restore = _function_source(LIGHT_SOURCE, "async_added_to_hass")
-        save = _function_source(INIT_SOURCE, "async_save_data")
+        # Everything saved (immediate or batched) comes from _storage_data.
+        save = _function_source(INIT_SOURCE, "_storage_data")
         setup = _function_source(INIT_SOURCE, "async_setup_entry")
         self.assertIn('"music_flow_restore_power"', attributes)
         self.assertIn("_restore_music_flow_runtime_state()", restore)

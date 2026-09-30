@@ -159,8 +159,8 @@ class YeelightCubePaletteCard extends LitElement {
   setConfig(config) {
     this._collection?.reset();
     this._commands?.reset();
-    // target_entities is deliberately not defaulted: an empty array counts as
-    // "configured" for the service helper and would override `entity`.
+    // target_entities is not defaulted: `entity` covers single-lamp configs
+    // (getTargetEntities falls back to it when the list is missing or empty).
     this.config = {
       palette_sensor: config.palette_sensor,
       ...config,
@@ -439,7 +439,22 @@ class YeelightCubePaletteCard extends LitElement {
     `;
   }
 
+  // The card CSS (about 700 lines) depends only on the config and whether
+  // titles are editable: built once per change, not on every render.
   _styles(allowTitleEdit) {
+    const cache = this._stylesCache;
+    if (
+      cache &&
+      cache.config === this.config &&
+      cache.allowTitleEdit === allowTitleEdit
+    )
+      return cache.text;
+    const text = this._buildStyles(allowTitleEdit);
+    this._stylesCache = { config: this.config, allowTitleEdit, text };
+    return text;
+  }
+
+  _buildStyles(allowTitleEdit) {
     return `
         ${cardLayoutStyles}
         /* Shared Compact Mode Styles */

@@ -30,6 +30,10 @@ import {
 } from "./clock-preset-utils.js";
 import { getTargetEntities } from "./service-call-utils.js";
 import {
+  sharedRotationInterval,
+  saveEditorRotationInterval,
+} from "./shared-lamp-settings.js";
+import {
   nativeEffectItems,
   nativeEffectPreviewConfig,
   nativeEffectFrame,
@@ -362,6 +366,13 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
           config,
           change,
           effects.map((item) => ({ key: item.name, title: item.name })),
+          "effect",
+          null,
+          {
+            interval: sharedRotationInterval(this.hass, config, "native"),
+            onIntervalChange: (seconds) =>
+              saveEditorRotationInterval(this.hass, config, "native", seconds),
+          },
         ),
       )}
     </div>`;

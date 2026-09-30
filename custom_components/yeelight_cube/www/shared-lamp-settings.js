@@ -80,3 +80,21 @@ export function saveSharedRotationInterval(card, kind, seconds) {
     { coalesce: "rotation-interval" },
   );
 }
+
+/**
+ * From a card editor: store `seconds` as the lamp's rotation interval (every
+ * dashboard uses it; a running rotation switches at once). Skipped when the
+ * lamp does not publish intervals (older backend or unavailable).
+ */
+export function saveEditorRotationInterval(hass, config, kind, seconds) {
+  if (!hass || sharedRotationInterval(hass, config, kind) === undefined) return;
+  Promise.resolve(
+    hass.callService("yeelight_cube", "set_rotation_interval", {
+      entity_id: getTargetEntities(config),
+      kind,
+      interval: seconds,
+    }),
+  ).catch((error) =>
+    console.warn("[Yeelight Cube] Rotation interval not saved:", error),
+  );
+}

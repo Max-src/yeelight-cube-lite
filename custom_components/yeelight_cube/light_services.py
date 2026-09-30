@@ -58,6 +58,8 @@ from .light import (
     LIGHT_SERVICE_NAMES,
     MAX_FAVOURITE_NAME,
     MAX_FAVOURITES,
+    MAX_ROTATION_INTERVAL,
+    MIN_ROTATION_INTERVAL,
     YeelightCubeLight,
     _ENTITY_REGISTRY,
     _entity_id_or_list,
@@ -2867,10 +2869,20 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             raise HomeAssistantError("Provide at least two modes in 'items'")
 
         timeline = {}
+        # Lamps started by one call share a schedule; the group is saved so a
+        # restart resumes them together.
+        group = sorted(
+            entity_id
+            for entity_id in (getattr(target, "entity_id", None) for target in targets)
+            if entity_id
+        )
 
         async def _start_one(target):
             try:
-                await target.start_effect_rotation(items, interval, kind, timeline=timeline)
+                await target.start_effect_rotation(
+                    items, interval, kind, timeline=timeline,
+                    group=group if len(group) > 1 else None,
+                )
             except Exception as exc:  # noqa: BLE001 — isolate per-lamp failures
                 if getattr(target, "_rotation_active", False):
                     target.stop_effect_rotation()
@@ -2912,7 +2924,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
                 )
             ],
             vol.Optional("interval", default=60): vol.All(
-                vol.Coerce(int), vol.Range(min=10, max=604800)
+                vol.Coerce(int), vol.Range(min=MIN_ROTATION_INTERVAL, max=MAX_ROTATION_INTERVAL)
             ),
             vol.Optional("kind", default="native"): vol.In(["native", "clock"]),
         }),
@@ -2945,7 +2957,7 @@ def async_setup_light_services(hass: HomeAssistant) -> bool:
             vol.Required("entity_id"): _entity_id_or_list,
             vol.Required("kind"): vol.In(list(FAVOURITE_KINDS)),
             vol.Required("interval"): vol.All(
-                vol.Coerce(int), vol.Range(min=10, max=604800)
+                vol.Coerce(int), vol.Range(min=MIN_ROTATION_INTERVAL, max=MAX_ROTATION_INTERVAL)
             ),
         }),
     )

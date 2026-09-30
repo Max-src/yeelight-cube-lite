@@ -58,6 +58,10 @@ def _rotation_helpers():
             "APPLY_HARD_TIMEOUT": 8,
             "HomeAssistantError": ValueError,
             "FAVOURITE_KINDS": ("native", "clock"),
+            "MIN_ROTATION_INTERVAL": 1,
+            "MAX_ROTATION_INTERVAL": 604800,
+            "_ROTATION_RESUME_TIMELINES": {},
+            "ROTATION_RESUME_TIMELINE_TTL": 300.0,
         },
     )
 
@@ -75,11 +79,10 @@ def make_light(helpers, kind="native", is_on=True, extended=False):
             data={DOMAIN: {"clock_presets": [
                 {"id": "abc123", "name": "My Solid", "kind": "style", "color": [12, 34, 56]},
             ]}},
-            # Saving to disk is stubbed (_persist_integration_data).
-            async_create_task=Mock(side_effect=lambda coro: coro.close()),
         ),
         _music_flow_runtime_storage_key=lambda: "entry-1",
-        _persist_integration_data=AsyncMock(),
+        # Saving to disk is stubbed.
+        _schedule_integration_save=Mock(),
         _rotation_intervals={},
         _rotation_retime=False,
         _rotation_restore=None,
@@ -611,6 +614,61 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(light._rotation_intervals, {"native": 20, "clock": 90})
         light.stop_effect_rotation()
 
+    async def test_unchanged_rotation_state_is_not_written_again(self):
+        light = make_light(self.helpers, kind="native")
+        light.stop_effect_rotation()  # e.g. turning the lamp off, nothing running
+        light.stop_effect_rotation()
+        self.assertEqual(light._schedule_integration_save.call_count, 1)
+        await light.start_effect_rotation([{"name": "Rainbow"}, "Streamer"], 30)
+        self.assertEqual(light._schedule_integration_save.call_count, 2)
+        light.stop_effect_rotation()
+        light.stop_effect_rotation()
+        self.assertEqual(light._schedule_integration_save.call_count, 3)
+
+    async def test_interval_change_while_reconnecting_does_not_skip_a_step(self):
+        light = make_light(self.helpers, kind="native")
+        await light.start_effect_rotation([{"name": "Rainbow"}, "Streamer"], 60)
+        light.stop_effect_rotation(persist=False)
+        # Waiting for the lamp: no loop runs, so nothing may be flagged.
+        light._rotation_resume_pending = True
+        light.set_rotation_interval("native", 20)
+        self.assertFalse(light._rotation_retime)
+        self.assertEqual(light._rotation_interval, 20)
+
+    async def test_a_multi_lamp_rotation_resumes_on_one_schedule(self):
+        group = ["light.bottom", "light.top"]
+        lamps = []
+        for entity in group:
+            lamp = make_light(self.helpers, kind="native")
+            lamp.hass.data[DOMAIN]["rotation"] = {"entry-1": {
+                "intervals": {"native": 30},
+                "active": {"kind": "native", "interval": 30, "group": group,
+                           "items": [{"name": "Rainbow"}, {"name": "Streamer"}]},
+            }}
+            lamp._restore_rotation_settings()
+            lamps.append(lamp)
+        # The second lamp comes back showing another item, and later.
+        lamps[1]._native_effect = "Streamer"
+        await lamps[0]._async_resume_saved_rotation()
+        await asyncio.sleep(0.02)
+        await lamps[1]._async_resume_saved_rotation()
+        # Same schedule values: both show the same item at each step.
+        self.assertEqual(lamps[0]._rotation_timeline, lamps[1]._rotation_timeline)
+        self.assertEqual(lamps[0]._rotation_index, lamps[1]._rotation_index)
+        self.assertEqual(lamps[0]._rotation_group, group)
+        for lamp in lamps:
+            lamp.stop_effect_rotation(persist=False)
+
+    async def test_intervals_down_to_one_second_are_kept(self):
+        light = make_light(self.helpers, kind="native")
+        light.set_rotation_interval("native", 1)
+        self.assertEqual(light._rotation_intervals, {"native": 1})
+        await light.start_effect_rotation([{"name": "Rainbow"}, "Streamer"], 2)
+        self.assertEqual(light._rotation_interval, 2)
+        light.set_rotation_interval("native", 0)  # below the minimum
+        self.assertEqual(light._rotation_interval, 1)
+        light.stop_effect_rotation()
+
     async def test_normalize_rotation_items(self):
         light = make_light(self.helpers)
         normalized = light._normalize_rotation_items(
@@ -697,7 +755,28 @@ class EffectRotationServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         for coro in queued:
             await coro
-        target.start_effect_rotation.assert_awaited_once_with(["A", "B"], 45, "clock", timeline={})
+        target.start_effect_rotation.assert_awaited_once_with(["A", "B"], 45, "clock", timeline={}, group=None)
+
+    async def test_one_start_on_several_lamps_records_their_group(self):
+        targets = [
+            SimpleNamespace(entity_id=entity, start_effect_rotation=AsyncMock())
+            for entity in ("light.top", "light.bottom")
+        ]
+        queued = []
+        handlers = self._handlers(lambda *args: targets, lambda *c: queued.extend(c))
+        await handlers["handle_start_effect_rotation"](
+            SimpleNamespace(data={"items": ["A", "B"], "interval": 45, "kind": "clock"})
+        )
+        for coro in queued:
+            await coro
+        for target in targets:
+            kwargs = target.start_effect_rotation.await_args.kwargs
+            self.assertEqual(kwargs["group"], ["light.bottom", "light.top"])
+        # One shared schedule for the whole call.
+        self.assertIs(
+            targets[0].start_effect_rotation.await_args.kwargs["timeline"],
+            targets[1].start_effect_rotation.await_args.kwargs["timeline"],
+        )
 
     async def test_start_requires_two_items(self):
         handlers = self._handlers(lambda *args: [SimpleNamespace()], lambda *c: None)
@@ -720,7 +799,7 @@ class EffectRotationServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(scheduled), 1)
         target.start_effect_rotation.assert_not_awaited()
         await scheduled[0]
-        target.start_effect_rotation.assert_awaited_once_with(["A", "B"], 60, "native", timeline={})
+        target.start_effect_rotation.assert_awaited_once_with(["A", "B"], 60, "native", timeline={}, group=None)
 
     async def test_start_failure_stops_only_the_failing_target(self):
         ok = SimpleNamespace(entity_id="light.a", start_effect_rotation=AsyncMock(), stop_effect_rotation=Mock())

@@ -67,6 +67,55 @@ export const CLOCK_COLOR_MODES = [
  * @param {number} rows
  * @returns {Array} a new array with the row order reversed
  */
+const NO_FONT = Object.freeze({ fontMap: null, metrics: null });
+
+/**
+ * The bundled "native" clock font (and its metrics) from the integration's
+ * Font Characters sensor, so previews use the font the lamp renders.
+ *
+ * Home Assistant replaces `hass.states` on every state change anywhere, so
+ * scanning all entities each time is costly. The sensor's entity id is kept
+ * in `cache` (the previous result): later lookups read that one entity, and
+ * only rescan when it disappears or changes. Returns the new cache; the font
+ * is `cache.font`.
+ */
+export function lookupNativeClockFont(states, cache) {
+  if (!states) return { entityId: null, state: null, states: null, font: NO_FONT };
+  if (
+    cache &&
+    (cache.entityId
+      ? states[cache.entityId] === cache.state
+      : cache.states === states)
+  )
+    return cache;
+  let entityId = cache?.entityId || null;
+  let state = entityId ? states[entityId] : null;
+  if (!state?.attributes?.font_maps?.native) {
+    entityId = null;
+    state = null;
+    for (const id in states) {
+      if (states[id]?.attributes?.font_maps?.native) {
+        entityId = id;
+        state = states[id];
+        break;
+      }
+    }
+  }
+  const attributes = state?.attributes;
+  return {
+    entityId,
+    state,
+    // Without a sensor, remember which states object was scanned.
+    states: entityId ? null : states,
+    font: attributes
+      ? {
+          fontMap: attributes.font_maps.native,
+          metrics: (attributes.font_metrics || {}).native || null,
+        }
+      : NO_FONT,
+  };
+}
+
 export function flipMatrixVertical(pixels, cols = 20, rows = 5) {
   const out = new Array(pixels.length);
   for (let r = 0; r < rows; r++) {

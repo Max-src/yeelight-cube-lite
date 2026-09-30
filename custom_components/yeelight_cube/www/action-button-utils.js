@@ -236,10 +236,6 @@ export function actionButtonGroupModel({
   }));
 }
 
-export function renderActionButtonGroupHTML(options) {
-  return `<div class="shared-button-group ${getActionRowClass(options)}" role="${options.multiple ? "group" : "radiogroup"}" aria-label="${escapeHtml(options.label)}">${actionButtonGroupModel(options).map(renderActionButtonHTML).join("")}</div>`;
-}
-
 export function bindActionButtonGroup(group, onChange) {
   if (!group) return;
   group.onclick = (event) => handleActionButtonGroupEvent(event, onChange);

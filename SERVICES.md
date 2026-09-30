@@ -26,7 +26,7 @@ while direct service calls use `entity_id`.
 | Configuration | Applies To | Purpose |
 | :-- | :-- | :-- |
 | `entity` | Both | Primary light entity for a single-lamp card |
-| `target_entities` | Both | List of target light entities for multi-lamp commands |
+| `target_entities` | Both | List of target light entities for multi-lamp commands (an empty list falls back to `entity`) |
 | `title`, `show_card_background` | Both | Card title and `ha-card` background |
 | `show_current_preview` | Clock | Show the current clock preview |
 | `show_preview`, `lamp_preview_size`, `preview_brightness` | Native Effects | Show the current animation preview, its size (30–100 %) and whether it follows lamp brightness |
@@ -44,7 +44,10 @@ while direct service calls use `entity_id`.
 | `visible_styles` / `visible_effects` | Clock / Native Effects | Ordered browser selection of style keys / effect names (Clock also needs `custom_visible_styles: true`) |
 | `show_favourites`, `favourites_show_stars`, `favourites_show_previews` | Both | Show saved style/effect and colour combinations, the gold star badges, and animated favourite previews |
 | `show_rotation` | Both | Show backend rotation status and commands |
-| `rotation_interval` | Both | Default seconds between rotation steps, 10-604800, used until the lamp has its own interval (see [`set_rotation_interval`](#set_rotation_interval)) |
+| `rotation_interval` | Both | Seconds between rotation steps, 1-604800, used until the lamp has its own interval (see [`set_rotation_interval`](#set_rotation_interval)); the editor stores it on the lamp too |
+| `rotation_interval_parts` | Both | The editor's **Rotate every** rows as entered, one per unit, e.g. `[{value: 1, unit: minutes}, {value: 10, unit: seconds}]` (units: seconds, minutes, hours, days); they add up to `rotation_interval` |
+| `rotation_follow_active` | Both | **Follow in effect/style list**, default `true`: while a rotation runs, the style/effect list highlights each step, shows its colour mode and turns to its page. `false` keeps the user's selection, page and colour mode until the rotation stops |
+| `rotation_highlight_favourite` | Both | **Highlight in favourites**, default `true`: the playing favourite is highlighted during a rotation. `false` keeps the user's own selection highlighted |
 | `preview_appearance`, `preview_overrides`, `appearance_presets` | Both | Shared and per-surface appearance, described below |
 
 Use the visual editor for section visibility, button styles, orientation,
@@ -1081,15 +1084,16 @@ clears the favourites.
 ### `set_rotation_interval`
 
 Set the rotation interval every dashboard uses for a lamp (per kind). The Clock
-and Native Effects cards call it from **Every [value] [unit]** in their rotation
-section; `start_effect_rotation` also stores the interval it starts with. The
+and Native Effects card editors call it when **Rotate every** changes in their
+Rotation Settings; `start_effect_rotation` also stores the interval it starts
+with. The
 value is saved with the integration data and published in the lamp's
 `rotation_intervals` attribute, e.g. `rotation_intervals: {native: 120}`.
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
 | `kind` | Yes | `native` or `clock` |
-| `interval` | Yes | Seconds between changes, 10–604800 |
+| `interval` | Yes | Seconds between changes, 1–604800 |
 | `entity_id` | Yes | Target lamp entity (list supported) |
 
 ```yaml
@@ -1115,7 +1119,7 @@ it keeps rotating after the dashboard tab is closed or refreshed.
 | Field | Required | Description |
 | :-- | :-- | :-- |
 | `items` | Yes | Ordered names or objects with `name`, optional `color_mode`, and optional RGB `color`; clock presets use `custom:<id>` |
-| `interval` | No | Seconds between changes, 10–604800 (default `60`); also stored as the lamp's shared interval for this kind |
+| `interval` | No | Seconds between changes, 1–604800 (default `60`); also stored as the lamp's shared interval for this kind |
 | `kind` | No | `native` (default) or `clock` |
 | `entity_id` | Yes | Target lamp entity (list supported) |
 
@@ -1179,10 +1183,15 @@ the lamp's integration data. After a Home Assistant restart or an integration
 reload it is started again with the same kind, list and interval, once the
 lamp's startup display has been applied, provided the lamp is still on, in
 Clock / Native Effect mode as before, with no Music Flow or calibration lock.
-If the lamp is not reachable yet, the usual reconnect recovery resumes it. A
-rotation stopped for any reason (Stop, a manual pick, lamp off, a mode change,
-a non-retryable failure) is forgotten and not resumed. Shutting down or
-reloading does not count as a stop.
+If the lamp is not reachable yet, the usual reconnect recovery resumes it. Lamps
+that one Start call rotated together resume on one shared schedule again, so
+they keep showing the same item at each step (a lamp coming back within five
+minutes rejoins it). A rotation stopped for any reason (Stop, a manual pick,
+lamp off, a mode change, a non-retryable failure) is forgotten and not resumed.
+Shutting down or reloading does not count as a stop. The saved state is written
+to disk about a second after it changes (several changes become one write, and
+a pending write is flushed when Home Assistant stops); unchanged state, such as
+turning off a lamp that was not rotating, writes nothing.
 
 **Rotation ownership:** state updates must only observe backend rotation. The
 old card controller sent Stop when its browser-local favourites contained fewer

@@ -960,6 +960,32 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _LOGGER.debug("Unloaded Yeelight Cube Lite at %s", ip_address)
     return unload_ok
 
+def _storage_data(hass: HomeAssistant) -> dict:
+    """Everything the integration persists, read from hass.data[DOMAIN]."""
+    data = hass.data[DOMAIN]
+    return {
+        "clock_presets": data.get("clock_presets", []),
+        "palettes_v2": data.get("palettes_v2", []),
+        "pixel_arts": data.get("pixel_arts", []),
+        "device_runtime_state": data.get("device_runtime_state", {}),
+        "favourites": data.get("favourites", {}),
+        "rotation": data.get("rotation", {}),
+    }
+
+
+def async_schedule_save(hass: HomeAssistant, delay: float = 1.0) -> None:
+    """Save the integration data after ``delay`` seconds.
+
+    Changes made within that window (favourite edits, rotation start/stop,
+    interval changes) become one write, and Home Assistant flushes a pending
+    save when it stops. The data is read at write time, so it is the latest.
+    """
+    store = hass.data.get(DOMAIN, {}).get("storage")
+    if store is None:
+        return
+    store.async_delay_save(lambda: _storage_data(hass), delay)
+
+
 async def async_save_data(hass: HomeAssistant):
     """Save current data to persistent storage."""
     if DOMAIN not in hass.data:
@@ -971,22 +997,13 @@ async def async_save_data(hass: HomeAssistant):
         _LOGGER.warning("[STORAGE-SAVE] No storage object found!")
         return
     
-    palettes_v2 = hass.data[DOMAIN].get("palettes_v2", [])
-    pixel_arts = hass.data[DOMAIN].get("pixel_arts", [])
-    device_runtime_state = hass.data[DOMAIN].get("device_runtime_state", {})
-    
-    _LOGGER.debug(f"[STORAGE-SAVE] About to save: {len(palettes_v2)} palettes, {len(pixel_arts)} pixel arts")
-    _LOGGER.debug(f"[STORAGE-SAVE] Palette names: {[p.get('name', 'Unnamed') for p in palettes_v2[:5]]}...")
-    
-    data_to_save = {
-        "clock_presets": hass.data[DOMAIN].get("clock_presets", []),
-        "palettes_v2": palettes_v2,
-        "pixel_arts": pixel_arts,
-        "device_runtime_state": device_runtime_state,
-        "favourites": hass.data[DOMAIN].get("favourites", {}),
-        "rotation": hass.data[DOMAIN].get("rotation", {}),
-    }
-    
+    data_to_save = _storage_data(hass)
+    _LOGGER.debug(
+        "[STORAGE-SAVE] About to save: %s palettes, %s pixel arts",
+        len(data_to_save["palettes_v2"]),
+        len(data_to_save["pixel_arts"]),
+    )
+
     await store.async_save(data_to_save)
     _LOGGER.debug(f"[STORAGE-SAVE] COMPLETE: Saved {len(data_to_save['palettes_v2'])} palettes, {len(data_to_save['pixel_arts'])} pixel arts")
 

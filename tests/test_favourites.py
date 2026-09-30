@@ -50,7 +50,7 @@ def make_lamp(hass_data, entry_id="entry-1"):
     lamp._ip = "192.168.4.104"
     lamp._favourites = {}
     lamp.async_write_ha_state = Mock()
-    lamp._persist_integration_data = AsyncMock()
+    lamp._schedule_integration_save = Mock()
     return lamp
 
 
@@ -73,7 +73,7 @@ class FavouritesTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertEqual({"clock": expected}, lamp._favourites)
         lamp.async_write_ha_state.assert_called_once()
-        lamp._persist_integration_data.assert_awaited_once()
+        lamp._schedule_integration_save.assert_called_once()
         self.assertEqual({"entry-1": {"clock": expected}}, data[DOMAIN]["favourites"])
         # Another kind is kept separately; a restart restores both.
         await lamp.async_set_favourites("native", [{"name": "Aurora"}])
@@ -138,11 +138,13 @@ class FavouritesTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("self._restore_favourites()", source)
         init = (ROOT / "__init__.py").read_text(encoding="utf-8")
         self.assertIn('"favourites": stored_data.get("favourites", {})', init)
-        self.assertIn('"favourites": hass.data[DOMAIN].get("favourites", {})', init)
+        self.assertIn('"favourites": data.get("favourites", {})', init)
         # Rotation (running state + shared intervals) is saved and restored too.
         self.assertIn('"rotation_intervals": dict(self._rotation_intervals)', source)
         self.assertIn('"rotation": stored_data.get("rotation", {})', init)
-        self.assertIn('"rotation": hass.data[DOMAIN].get("rotation", {})', init)
+        self.assertIn('"rotation": data.get("rotation", {})', init)
+        # Saves are batched (one write per burst, flushed on shutdown).
+        self.assertIn("store.async_delay_save(lambda: _storage_data(hass), delay)", init)
         self.assertIn('for key in ("favourites", "rotation", "device_runtime_state")', init)
         self.assertIn("self.stop_effect_rotation(persist=False)", source)
 

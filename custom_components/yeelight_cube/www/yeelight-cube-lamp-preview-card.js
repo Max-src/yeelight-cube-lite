@@ -14,9 +14,10 @@ import { CardCommandController } from "./card-command-controller.js";
 import {
   orientationOptions,
   nextOrientation,
-  renderOrientationControls,
+  orientationControlModel,
   orientationControlStyles,
 } from "./orientation-control-utils.js";
+import { renderOrientationControls } from "./orientation-control-ui.js";
 import { getInitialMatrix } from "./draw_card_state.js";
 import { renderNativeEffectOriented } from "./native-effect-preview.js";
 import {
@@ -24,6 +25,7 @@ import {
   CLOCK_MIXER_EFFECT_SPEED,
   clockStyleMixer,
   renderClockFrame,
+  lookupNativeClockFont,
 } from "./clock-preview-utils.js";
 import { BLACK_THRESHOLD, previewBrightnessScale } from "./matrix-const.js";
 import { createRafLoop, createVisibilityTracker } from "./matrix-animator.js";
@@ -1556,28 +1558,14 @@ class YeelightCubeLampPreviewCard extends LitElement {
     this._updateMatrixColors(grid, st);
   }
 
-  // Locate the component's "Font Characters" sensor and return the bundled
-  // "native" clock font + its monospace metrics, so the preview matches the
-  // font the lamp actually renders.  Cached per hass object for cheap lookups.
+  // The bundled "native" clock font + its monospace metrics from the
+  // component's "Font Characters" sensor, so the preview matches the font the
+  // lamp renders (the sensor is remembered: no scan of every entity per frame).
   _getNativeClockFont() {
     const states = this._hass?.states;
     if (!states) return { fontMap: null, metrics: null };
-    if (this._nativeFontCacheStates === states && this._nativeFontCache)
-      return this._nativeFontCache;
-    let result = { fontMap: null, metrics: null };
-    for (const eid in states) {
-      const a = states[eid]?.attributes;
-      if (a && a.font_maps && a.font_maps.native) {
-        result = {
-          fontMap: a.font_maps.native,
-          metrics: (a.font_metrics || {}).native || null,
-        };
-        break;
-      }
-    }
-    this._nativeFontCacheStates = states;
-    this._nativeFontCache = result;
-    return result;
+    this._nativeFontCache = lookupNativeClockFont(states, this._nativeFontCache);
+    return this._nativeFontCache.font;
   }
 
   _nativeAnimFrame() {
@@ -1839,26 +1827,36 @@ class YeelightCubeLampPreviewCard extends LitElement {
     return `<div class="${alignClass}" style="${escapeHtml(outerStyle)}"><div class="lamp-preview-css" style="${escapeHtml(gridStyle)}">${pixels}</div></div>`;
   }
 
-  // Markup of the shared 4-way device orientation control (right / down /
-  // left / up). The shared renderer returns an HTML string whose row carries
-  // its click handler (handleOrientationControl) in data-on-click.
-  _orientationMarkup(stateObj) {
-    const current =
+  // The shared 4-way device orientation control (right / down / left / up):
+  // its current orientation and whether the lamp can take a command.
+  _orientationState(stateObj) {
+    return [
       this._orientationPending ||
-      stateObj?.attributes?.device_orientation ||
-      "right";
-    const unavailable =
-      !stateObj || ["unavailable", "unknown"].includes(stateObj.state);
-    return renderOrientationControls(this.config, current, unavailable);
+        stateObj?.attributes?.device_orientation ||
+        "right",
+      !stateObj || ["unavailable", "unknown"].includes(stateObj.state),
+    ];
+  }
+
+  // What the row shows, as a comparable key (re-render only on change).
+  _orientationKey(stateObj) {
+    const [current, unavailable] = this._orientationState(stateObj);
+    return `${JSON.stringify(
+      orientationControlModel(this.config, current, unavailable),
+    )}\u0000${this._orientationError || ""}`;
   }
 
   _orientationTemplate(stateObj) {
-    const markup = this._orientationMarkup(stateObj);
-    this._renderedOrientationKey = `${markup}\u0000${this._orientationError || ""}`;
+    const [current, unavailable] = this._orientationState(stateObj);
+    this._renderedOrientationKey = this._orientationKey(stateObj);
     const error = this._orientationError
       ? html`<div class="orientation-error" role="alert">${this._orientationError}</div>`
       : nothing;
-    return html`<div class="orientation-controls">${unsafeHTML(markup)}${error}</div>`;
+    return html`<div class="orientation-controls">
+      ${renderOrientationControls(this.config, current, unavailable, (event) =>
+        this.handleOrientationControl(event),
+      )}${error}
+    </div>`;
   }
 
   // Re-render the orientation control when its markup or error changed, and
@@ -1866,11 +1864,8 @@ class YeelightCubeLampPreviewCard extends LitElement {
   _refreshOrientationControls() {
     const container = this.shadowRoot?.querySelector(".orientation-controls");
     if (!container) return;
-    const markup = this._orientationMarkup(
-      this._hass?.states[this.config?.entity],
-    );
     if (
-      `${markup}\u0000${this._orientationError || ""}` ===
+      this._orientationKey(this._hass?.states[this.config?.entity]) ===
       this._renderedOrientationKey
     )
       return;
@@ -3959,8 +3954,8 @@ class YeelightCubeLampPreviewCard extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    // Slider and orientation markup name their handlers in data-on-*.
-    bindHostEvents(this, (name) => isSliderHandler(name) || name === "handleOrientationControl");
+    // Slider markup names its handlers in data-on-* attributes.
+    bindHostEvents(this, isSliderHandler);
     // Reattached after a disconnect (dashboard edit mode, view switch): the
     // animation loops were stopped, so run a full update to restart them.
     if (this._wasDisconnected) {

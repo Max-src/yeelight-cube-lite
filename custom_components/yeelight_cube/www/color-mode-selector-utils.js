@@ -1,8 +1,6 @@
-import { escapeHtml } from "./html-escape-utils.js";
 import { cardSpacing } from "./card-layout-utils.js";
 import {
   actionButtonGroupModel,
-  renderActionButtonHTML,
   getActionRowClass,
   DEFAULT_BUTTON_STYLE,
   DEFAULT_BUTTON_CONTENT_MODE,
@@ -60,16 +58,19 @@ export function matchingColorOption(options, color, selectedId, selectedName) {
   );
 }
 
-export function renderColorModeSelector(
+/**
+ * What the colour-mode row shows (rendered as Lit by <yeelight-color-mode>):
+ * - { kind: "dropdown", shape, disabled, placeholder, options } where
+ *   placeholder is shown (and selected) when the current mode is not listed;
+ * - { kind: "buttons", rowClass, buttons }: shared action-button models, in
+ *   order, the Add button ("__pick__") flagged `add` and showing the draft.
+ * Labels (saved colour names) are plain data, bound as text by the renderer.
+ */
+export function colorModeSelectorModel(
   config,
   options,
   current,
-  {
-    placeholder = "Current mode hidden",
-    renderItem,
-    disabled = false,
-    draft = null,
-  } = {},
+  { placeholder = "Current mode hidden", disabled = false, draft = null } = {},
 ) {
   const shape = ["square", "round"].includes(config.color_mode_shape)
     ? config.color_mode_shape
@@ -85,57 +86,65 @@ export function renderColorModeSelector(
     : "rounded";
   const hex = (color) =>
     `#${color.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
-  const renderChoice =
-    renderItem ||
-    ((option) =>
-      option.value === "__pick__"
-        ? `<span class="color-add">${renderActionButtonHTML({
-            ...option,
-            action: "tool",
-            role: "button",
-            icon: "mdi:plus",
-            label: draft ? "Change" : "Add",
-            title: draft ? "Change unsaved colour" : "Add a colour",
-            contentMode: "icon_text",
-            selected: !!draft,
-            swatch: draft ? hex(draft) : undefined,
-            swatchShape: presetShape,
-          })}</span>`
-        : renderActionButtonHTML(option));
   if (config.color_mode_selector === "dropdown")
-    return `<div class="gc-selector" data-shape="${shape}">
-    <select class="mode-select colormode-select" aria-label="Colour mode"${disabled ? " disabled" : ""}>
-      ${options.some((option) => option.value === current) ? "" : `<option value="" disabled selected>${escapeHtml(placeholder)}</option>`}
-      ${options.map((option) => `<option value="${escapeHtml(option.value)}"${current === option.value ? " selected" : ""}${option.disabled ? " disabled" : ""}>${escapeHtml(option.label)}</option>`).join("")}
-    </select></div>`;
-  return `<div class="color-mode-choices shared-button-group ${getActionRowClass({ buttonStyle: config.buttons_style || DEFAULT_BUTTON_STYLE, contentMode: config.buttons_content_mode || DEFAULT_BUTTON_CONTENT_MODE })}" role="radiogroup" aria-label="Colour mode">${actionButtonGroupModel(
-    {
-      buttonStyle: config.buttons_style || DEFAULT_BUTTON_STYLE,
-      contentMode: config.buttons_content_mode || DEFAULT_BUTTON_CONTENT_MODE,
-      items: options.map((option) => ({
-        ...option,
-        ...(option.color
-          ? presetStyle === "filled"
-            ? {
-                contentMode: "text",
-                label: "",
-                title: option.label,
-                icon: "",
-                fill: hex(option.color),
-              }
-            : presetStyle === "name"
-              ? { contentMode: "text", icon: "" }
-              : {
-                  contentMode: "icon_text",
-                  swatch: hex(option.color),
-                  swatchShape: presetShape,
-                }
-          : {}),
-        disabled: disabled || option.disabled,
+    return {
+      kind: "dropdown",
+      shape,
+      disabled: !!disabled,
+      placeholder: options.some((option) => option.value === current)
+        ? null
+        : placeholder,
+      options: options.map((option) => ({
+        value: option.value,
+        label: option.label,
+        disabled: !!option.disabled,
+        selected: current === option.value,
       })),
-      value: current,
-    },
-  )
-    .map(renderChoice)
-    .join("")}</div>`;
+    };
+  const group = {
+    buttonStyle: config.buttons_style || DEFAULT_BUTTON_STYLE,
+    contentMode: config.buttons_content_mode || DEFAULT_BUTTON_CONTENT_MODE,
+  };
+  const buttons = actionButtonGroupModel({
+    ...group,
+    items: options.map((option) => ({
+      ...option,
+      ...(option.color
+        ? presetStyle === "filled"
+          ? {
+              contentMode: "text",
+              label: "",
+              title: option.label,
+              icon: "",
+              fill: hex(option.color),
+            }
+          : presetStyle === "name"
+            ? { contentMode: "text", icon: "" }
+            : {
+                contentMode: "icon_text",
+                swatch: hex(option.color),
+                swatchShape: presetShape,
+              }
+        : {}),
+      disabled: disabled || option.disabled,
+    })),
+    value: current,
+  }).map((option) =>
+    option.value === "__pick__"
+      ? {
+          ...option,
+          add: true,
+          action: "tool",
+          role: "button",
+          icon: "mdi:plus",
+          label: draft ? "Change" : "Add",
+          title: draft ? "Change unsaved colour" : "Add a colour",
+          contentMode: "icon_text",
+          selected: !!draft,
+          swatch: draft ? hex(draft) : undefined,
+          swatchShape: presetShape,
+        }
+      : option,
+  );
+  return { kind: "buttons", rowClass: getActionRowClass(group), buttons };
 }

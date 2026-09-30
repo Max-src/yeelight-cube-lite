@@ -1306,12 +1306,12 @@ start_effect_rotation:
       selector:
         object:
     interval:
-      description: Seconds to wait between changes (10 to 604800).
+      description: Seconds to wait between changes (1 to 604800).
       required: false
       default: 60
       selector:
         number:
-          min: 10
+          min: 1
           max: 604800
           mode: box
     kind:
@@ -1372,12 +1372,12 @@ set_rotation_interval:
             - label: Clock styles
               value: clock
     interval:
-      description: Seconds between changes (10 seconds to 7 days).
+      description: Seconds between changes (1 second to 7 days).
       example: 120
       required: true
       selector:
         number:
-          min: 10
+          min: 1
           max: 604800
           unit_of_measurement: s
           mode: box

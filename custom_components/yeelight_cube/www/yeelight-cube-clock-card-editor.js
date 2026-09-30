@@ -42,6 +42,11 @@ import {
   orderableListStyles,
 } from "./orderable-list-utils.js";
 import { defineOnce } from "./card-registration.js";
+import { getTargetEntities } from "./service-call-utils.js";
+import {
+  sharedRotationInterval,
+  saveEditorRotationInterval,
+} from "./shared-lamp-settings.js";
 
 class YeelightCubeClockCardEditor extends LitElement {
   static get properties() {
@@ -130,10 +135,13 @@ class YeelightCubeClockCardEditor extends LitElement {
       buttons_content_mode: "icon_text",
       ...this.config,
     });
-    const selectedEntities =
-      config.target_entities || (config.entity ? [config.entity] : []);
+    const selectedEntities = getTargetEntities(config);
+    // Several changes from one control (e.g. the interval rows and their
+    // total) build on each other.
+    let next = config;
     const change = (key, value) => {
-      this.config = { ...config, [key]: value };
+      next = { ...next, [key]: value };
+      this.config = next;
       this.requestUpdate();
       this._fire();
     };
@@ -385,6 +393,12 @@ class YeelightCubeClockCardEditor extends LitElement {
             change,
             modes,
             "clock mode",
+            null,
+            {
+              interval: sharedRotationInterval(this._hass, config, "clock"),
+              onIntervalChange: (seconds) =>
+                saveEditorRotationInterval(this._hass, config, "clock", seconds),
+            },
           ),
         )}
       </div>

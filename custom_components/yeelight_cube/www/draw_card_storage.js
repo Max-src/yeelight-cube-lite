@@ -51,12 +51,34 @@ class StorageManager {
   }
 }
 
+const MATRIX_SAVE_DELAY_MS = 300;
+let pendingMatrix = null;
+let matrixSaveTimer = null;
+
+function flushMatrix() {
+  clearTimeout(matrixSaveTimer);
+  matrixSaveTimer = null;
+  if (!pendingMatrix) return true;
+  const matrix = pendingMatrix;
+  pendingMatrix = null;
+  return StorageManager.save(STORAGE_KEYS.MATRIX, matrix);
+}
+
+// Write a pending drawing before the page goes away (tab hidden, closed or
+// reloaded): browsers may not run the timer then.
+globalThis.addEventListener?.("pagehide", flushMatrix);
+globalThis.document?.addEventListener?.("visibilitychange", () => {
+  if (globalThis.document.visibilityState === "hidden") flushMatrix();
+});
+
 /**
  * Specific storage functions for different data types
  */
 export const StorageUtils = {
   // Matrix storage (100-element array)
   loadMatrix() {
+    // A drawing still waiting to be written is the latest one.
+    if (pendingMatrix) return [...pendingMatrix];
     return StorageManager.load(
       STORAGE_KEYS.MATRIX,
       Array(MATRIX_SIZE).fill(OFF_COLOR),
@@ -64,8 +86,19 @@ export const StorageUtils = {
     );
   },
 
+  // Batched: a drag paints many cells in a row, and each synchronous
+  // localStorage write (JSON of the whole grid) costs a frame. The latest
+  // grid is written once the drawing pauses, and at once when the page is
+  // hidden or closed, so nothing is lost.
   saveMatrix(matrix) {
-    return StorageManager.save(STORAGE_KEYS.MATRIX, matrix);
+    pendingMatrix = matrix;
+    clearTimeout(matrixSaveTimer);
+    matrixSaveTimer = setTimeout(flushMatrix, MATRIX_SAVE_DELAY_MS);
+    return true;
+  },
+
+  flushMatrix() {
+    return flushMatrix();
   },
 
   // Recent colors storage (array of hex strings)

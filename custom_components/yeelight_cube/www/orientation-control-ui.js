@@ -9,7 +9,54 @@ import {
   ORIENTATION_CHOICES,
   ORIENTATION_ORDER,
   orientationOptions,
+  orientationControlModel,
 } from "./orientation-control-utils.js";
+import { renderActionButton } from "./action-button-ui.js";
+
+// lit-all.js does not re-export `nothing`; Lit defines it as this global symbol.
+const nothing = Symbol.for("lit-nothing");
+
+/**
+ * The device-orientation row as a Lit template ("" when hidden). `onClick`
+ * receives every click on the row; buttons carry their value in data-value.
+ */
+export function renderOrientationControls(config, current, unavailable, onClick) {
+  const model = orientationControlModel(config, current, unavailable);
+  if (!model) return "";
+  const button = (item) =>
+    model.style === "original"
+      ? html`<button
+          type="button"
+          class=${`orient-btn${item.selected ? " active" : ""}`}
+          data-value=${item.value}
+          title=${item.label}
+          aria-label=${item.label}
+          aria-pressed=${item.selected === undefined
+            ? nothing
+            : String(item.selected)}
+          ?disabled=${item.disabled}
+        >
+          ${item.glyph || html`<ha-icon icon=${item.icon}></ha-icon>`}
+        </button>`
+      : renderActionButton({
+          action: "tool",
+          buttonStyle: model.style,
+          contentMode: model.contentMode,
+          value: item.value,
+          label: item.label,
+          icon: item.icon,
+          selected: item.selected,
+          disabled: item.disabled,
+        });
+  return html`<div
+    class="device-orientation-row"
+    role="group"
+    aria-label="Device orientation"
+    @click=${onClick}
+  >
+    <div class="orientation-buttons">${model.buttons.map(button)}</div>
+  </div>`;
+}
 import { renderModeSettingsSection } from "./editor_ui_utils.js";
 
 export function renderOrientationSettings(config, onChange) {

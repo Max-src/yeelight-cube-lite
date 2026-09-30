@@ -1,7 +1,4 @@
-import {
-  renderActionButtonHTML,
-  actionButtonStyleChoices,
-} from "./action-button-utils.js";
+import { actionButtonStyleChoices } from "./action-button-utils.js";
 
 import { cardSpacing } from "./card-layout-utils.js";
 
@@ -111,51 +108,37 @@ export function nextOrientation(current, step, directions = ORIENTATION_ORDER) {
   return null;
 }
 
-export function renderOrientationControls(
-  config,
-  current,
-  unavailable = false,
-) {
+// Arrow glyphs of the "original" button style.
+const ORIENTATION_GLYPHS = { right: "\u2192", down: "\u2193", left: "\u2190", up: "\u2191" };
+
+/**
+ * What the orientation row shows (rendered by renderOrientationControls in
+ * orientation-control-ui.js): null when hidden, else the button style and one
+ * entry per configured button. Direction arrows carry `selected` (the current
+ * orientation); rotate/flip buttons are disabled when they would not move.
+ */
+export function orientationControlModel(config, current, unavailable = false) {
   const options = orientationOptions(config);
   if (config.show_device_orientation === false || !options.buttons.length)
-    return "";
-  const button = (value, label, icon, selected, disabled = unavailable) => {
-    if (options.style !== "original") {
-      return renderActionButtonHTML({
-        action: "tool",
-        buttonStyle: options.style,
-        contentMode: options.contentMode,
-        value,
-        label,
-        icon,
-        selected,
-        disabled,
-      });
-    }
-    const glyph = {
-      right: "&#8594;",
-      down: "&#8595;",
-      left: "&#8592;",
-      up: "&#8593;",
-    }[value];
-    return `<button type="button" class="orient-btn${selected ? " active" : ""}" data-value="${value}" title="${label}" aria-label="${label}"${selected === undefined ? "" : ` aria-pressed="${selected}"`}${disabled ? " disabled" : ""}>${glyph || `<ha-icon icon="${icon}"></ha-icon>`}</button>`;
-  };
-  const buttons = options.buttons
-    .map((value) => {
+    return null;
+  return {
+    style: options.style,
+    contentMode: options.contentMode,
+    buttons: options.buttons.map((value) => {
       const { label, icon, step } = ORIENTATION_CHOICES.find(
         (choice) => choice.value === value,
       );
       const target = step
         ? nextOrientation(current, step, options.directions)
         : value;
-      return button(
+      return {
         value,
         label,
         icon,
-        step ? undefined : value === current,
-        unavailable || !target || (step && target === current),
-      );
-    })
-    .join("");
-  return `<div class="device-orientation-row" role="group" aria-label="Device orientation" data-on-click="handleOrientationControl"><div class="orientation-buttons">${buttons}</div></div>`;
+        glyph: ORIENTATION_GLYPHS[value] || null,
+        selected: step ? undefined : value === current,
+        disabled: !!(unavailable || !target || (step && target === current)),
+      };
+    }),
+  };
 }

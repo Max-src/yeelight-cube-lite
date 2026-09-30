@@ -1056,12 +1056,24 @@ lamp automatically the first time that browser opens the card.
 
 Rotation always follows the favourites list, advanced in order at the lamp's
 rotation interval (the Shuffle button in the Favourites toolbar randomly
-reorders the list itself). The interval (10 seconds up to 7 days) is stored on
-the lamp per kind and shared by every dashboard: change it with **Every
-[value] [unit]** in the card's rotation section, and a running rotation switches
-to it at once, keeping its current item. Until a lamp has its own interval, the
-card's `rotation_interval` (**Default interval** in the editor) is used; a Start
-also stores the interval it uses on the lamp. Rotation is driven **server-side** by the light entity via the
+reorders the list itself). The interval (1 second up to 7 days) is set in the
+card editor's **Rotation Settings** (**Rotate every**): add rows that add up,
+e.g. 1 minute + 10 seconds = 70 seconds (**+ Add interval**, one row per unit;
+each row can be removed). It is stored on the lamp per kind, so every dashboard uses the same
+interval, and a running rotation switches to it at once, keeping its current
+item. Until a lamp has its own interval, the card's `rotation_interval` is
+used; a Start also stores the interval it uses on the lamp. Very short
+intervals are limited by how fast the lamp applies a change (around a second):
+a step that takes longer lands on the next boundary of the schedule.
+
+While a rotation runs, the card's effect / clock style list follows it: each
+step is highlighted, its colour mode is shown in the colour row, and the list
+turns to the page holding it. Turn off **Follow in effect list / Follow in style
+list** (`rotation_follow_active: false`, in Rotation Settings) to browse and pick
+freely while the rotation runs: the list keeps your selection, page and colour
+mode until it stops. The playing favourite stays highlighted either way; turn
+off **Highlight in favourites** (`rotation_highlight_favourite: false`) to keep
+the favourites highlight on your own selection too. Rotation is driven **server-side** by the light entity via the
 `start_effect_rotation` / `stop_effect_rotation` / `skip_effect_rotation`
 services, so it keeps rotating after the dashboard tab is closed or refreshed —
 the lamp(s) hold the loop, not the browser. It only uses effects available on

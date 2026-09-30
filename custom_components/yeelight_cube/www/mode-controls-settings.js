@@ -16,8 +16,11 @@ import {
   renderMatrixAppearanceSettings,
 } from "./editor_ui_utils.js";
 import {
-  rotationIntervalParts,
   ROTATION_INTERVAL_UNITS,
+  rotationIntervalRows,
+  intervalPartsSeconds,
+  nextIntervalUnit,
+  formatRotationInterval,
   actionButtonOrder,
   ACTION_BUTTON_KEYS,
   ACTION_BUTTON_LABELS,
@@ -71,6 +74,8 @@ export function renderColorModeSettings(config, change) {
         )}`;
 }
 
+// `rotation` (rotation area): { interval: the lamp's shared interval in
+// seconds, or null/undefined; onIntervalChange: stores a new total on the lamp }.
 export function renderModeControlSettings(
   area,
   config,
@@ -78,6 +83,7 @@ export function renderModeControlSettings(
   items = [],
   noun = "effect",
   renderAppearance = null,
+  rotation = {},
 ) {
   const toggle = (label, key, fallback = true) =>
     createToggleRow(label, key, config[key] ?? fallback, (event) =>
@@ -148,20 +154,23 @@ export function renderModeControlSettings(
           `,
         )
       : ""}`;
-  // Rotation always follows the favourites list: no custom source, no
-  // shuffle toggle. The only setting is how often to advance, edited as a
-  // value + unit (seconds → days) and stored as whole seconds. It is the
-  // default until a lamp has its own interval (set from the card's rotation
-  // section or by a Start), which every dashboard then shares.
-  const parts = rotationIntervalParts(config.rotation_interval ?? 60);
-  const applyInterval = (value, unit) => {
-    const size =
-      ROTATION_INTERVAL_UNITS.find((item) => item.unit === unit)?.seconds || 1;
-    change(
-      "rotation_interval",
-      Math.max(1, Math.round(Number(value) || 1)) * size,
-    );
+  // Rotation always follows the favourites list. Settings: how often to
+  // advance, composed of rows that add up (1 minute + 10 seconds = 70 s, one
+  // row per unit), and whether the lists follow each step. The interval is
+  // stored on the lamp, so every dashboard uses it; the card config keeps the
+  // rows as entered.
+  const rows = rotationIntervalRows(config, rotation.interval);
+  const inputStyle =
+    "min-width:0;padding:8px;border:1px solid var(--divider-color,#d0d7de);border-radius:6px;background:var(--card-background-color,#fff);color:var(--primary-text-color,#333);font:inherit;box-sizing:border-box;";
+  const applyRows = (next) => {
+    const total = intervalPartsSeconds(next);
+    change("rotation_interval_parts", next);
+    change("rotation_interval", total);
+    rotation.onIntervalChange?.(total);
   };
+  const setRow = (index, patch) =>
+    applyRows(rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
+  const suffix = (index) => (index ? ` ${index + 1}` : "");
   return html`${toggle(
     `Show ${noun === "effect" ? "Effect" : "Clock Mode"} Rotation`,
     "show_rotation",
@@ -170,42 +179,84 @@ export function renderModeControlSettings(
     ? renderModeSettingsSection(
         "Rotation Settings",
         html`
-          <div class="form-row">
-            <label>Default interval</label>
-            <div style="display:flex;gap:8px;align-items:center;min-width:0;">
-              <input
-                type="number"
-                aria-label="Rotation interval value"
-                min="1"
-                max="999"
-                style="width:80px;min-width:0;padding:8px;border:1px solid var(--divider-color,#d0d7de);border-radius:6px;background:var(--card-background-color,#fff);color:var(--primary-text-color,#333);font:inherit;box-sizing:border-box;"
-                .value=${String(parts.value)}
-                @change=${(event) =>
-                  applyInterval(event.target.value, parts.unit)}
-              />
-              <select
-                aria-label="Rotation interval unit"
-                style="flex:1;min-width:0;padding:8px;border:1px solid var(--divider-color,#d0d7de);border-radius:6px;background:var(--card-background-color,#fff);color:var(--primary-text-color,#333);font:inherit;"
-                @change=${(event) =>
-                  applyInterval(parts.value, event.target.value)}
-              >
-                ${ROTATION_INTERVAL_UNITS.map(
-                  (item) =>
-                    html`<option
-                      value=${item.unit}
-                      ?selected=${item.unit === parts.unit}
-                    >
-                      ${item.label}
-                    </option>`,
-                )}
-              </select>
+          <div class="form-row" style="align-items:flex-start;">
+            <label>Rotate every</label>
+            <div style="display:flex;flex-direction:column;gap:6px;min-width:0;flex:1;">
+              ${rows.map(
+                (row, index) => html`<div
+                  style="display:flex;gap:8px;align-items:center;min-width:0;"
+                >
+                  ${index
+                    ? html`<span aria-hidden="true" style="opacity:0.7;">+</span>`
+                    : ""}
+                  <input
+                    type="number"
+                    aria-label=${`Rotation interval value${suffix(index)}`}
+                    min="0"
+                    max="9999"
+                    style=${`width:80px;${inputStyle}`}
+                    .value=${String(row.value)}
+                    @change=${(event) => setRow(index, { value: event.target.value })}
+                  />
+                  <select
+                    aria-label=${`Rotation interval unit${suffix(index)}`}
+                    style=${`flex:1;${inputStyle}`}
+                    @change=${(event) => setRow(index, { unit: event.target.value })}
+                  >
+                    ${ROTATION_INTERVAL_UNITS.filter(
+                      // Each unit once: another row's unit is not offered.
+                      (item) =>
+                        item.unit === row.unit ||
+                        !rows.some((other) => other.unit === item.unit),
+                    ).map(
+                      (item) =>
+                        html`<option
+                          value=${item.unit}
+                          ?selected=${item.unit === row.unit}
+                        >
+                          ${item.label}
+                        </option>`,
+                    )}
+                  </select>
+                  ${rows.length > 1
+                    ? html`<button
+                        type="button"
+                        aria-label=${`Remove interval${suffix(index)}`}
+                        title="Remove"
+                        style=${inputStyle}
+                        @click=${() => applyRows(rows.filter((_, i) => i !== index))}
+                      >
+                        ✕
+                      </button>`
+                    : ""}
+                </div>`,
+              )}
+              ${nextIntervalUnit(rows)
+                ? html`<button
+                    type="button"
+                    style=${`align-self:flex-start;cursor:pointer;${inputStyle}`}
+                    @click=${() =>
+                      applyRows([
+                        ...rows,
+                        { value: 0, unit: nextIntervalUnit(rows) },
+                      ])}
+                  >
+                    + Add interval
+                  </button>`
+                : ""}
+              ${rows.length > 1
+                ? html`<span class="muted" style="font-size:0.85em;opacity:0.8;"
+                    >= ${formatRotationInterval(intervalPartsSeconds(rows))}</span
+                  >`
+                : ""}
             </div>
           </div>
-          <div class="muted" style="font-size:0.85em;opacity:0.8;">
-            Used until the lamp has its own interval. Changing it from the
-            card's rotation section (or starting a rotation) stores it on the
-            lamp for every dashboard.
-          </div>
+          ${toggle(
+            noun === "effect" ? "Follow in effect list" : "Follow in style list",
+            "rotation_follow_active",
+            true,
+          )}
+          ${toggle("Highlight in favourites", "rotation_highlight_favourite", true)}
         `,
       )
     : ""}`;

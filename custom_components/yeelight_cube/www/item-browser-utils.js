@@ -12,21 +12,34 @@ export function browseItems(
   return compare ? result.sort(compare) : result;
 }
 
+// One indicator badge: its state (responds / unchanged / unknown), icon,
+// short text and accessible description. Shared by the HTML-string renderer
+// below (gallery browsers) and the Lit one in orderable-list-utils.js.
+export function itemIndicatorModel(indicator) {
+  const state = ["responds", "unchanged"].includes(indicator.state)
+    ? indicator.state
+    : "unknown";
+  return {
+    state,
+    icon:
+      state === "responds"
+        ? "mdi:check-circle-outline"
+        : state === "unchanged"
+          ? "mdi:minus-circle-outline"
+          : "mdi:help-circle-outline",
+    label: indicator.shortLabel || indicator.label,
+    description: indicator.description,
+  };
+}
+
 export function renderItemIndicators(indicators = []) {
   return indicators.length
     ? `<span class="item-indicators">${indicators
-        .map((indicator) => {
-          const state = ["responds", "unchanged"].includes(indicator.state)
-            ? indicator.state
-            : "unknown";
-          const icon =
-            state === "responds"
-              ? "mdi:check-circle-outline"
-              : state === "unchanged"
-                ? "mdi:minus-circle-outline"
-                : "mdi:help-circle-outline";
-          return `<span class="item-indicator" data-state="${state}" tabindex="0" role="img" aria-label="${escapeHtml(indicator.description)}"><ha-icon icon="${icon}"></ha-icon><span class="item-indicator-label">${escapeHtml(indicator.shortLabel || indicator.label)}</span></span>`;
-        })
+        .map(itemIndicatorModel)
+        .map(
+          (badge) =>
+            `<span class="item-indicator" data-state="${badge.state}" tabindex="0" role="img" aria-label="${escapeHtml(badge.description)}"><ha-icon icon="${badge.icon}"></ha-icon><span class="item-indicator-label">${escapeHtml(badge.label)}</span></span>`,
+        )
         .join("")}</span>`
     : "";
 }

@@ -93,6 +93,7 @@ import {
   clockStyleByName,
   getClockStyles,
   renderClockFrame,
+  lookupNativeClockFont,
   flipMatrixVertical,
 } from "./clock-preview-utils.js";
 import { previewBrightnessScale } from "./matrix-const.js";
@@ -660,41 +661,8 @@ class YeelightCubeClockCard extends LitElement {
   // (cached per hass.states until one appears).
   _getNativeClockFont(states = this._hass?.states) {
     if (!states) return { fontMap: null, metrics: null };
-    const cache = this._nativeFontCache;
-    if (
-      cache &&
-      (cache.entityId
-        ? states[cache.entityId] === cache.state
-        : cache.states === states)
-    )
-      return cache.font;
-    let entityId = cache?.entityId || null;
-    let state = entityId ? states[entityId] : null;
-    if (!state?.attributes?.font_maps?.native) {
-      entityId = null;
-      state = null;
-      for (const eid in states) {
-        if (states[eid]?.attributes?.font_maps?.native) {
-          entityId = eid;
-          state = states[eid];
-          break;
-        }
-      }
-    }
-    const a = state?.attributes;
-    const font = a
-      ? {
-          fontMap: a.font_maps.native,
-          metrics: (a.font_metrics || {}).native || null,
-        }
-      : { fontMap: null, metrics: null };
-    this._nativeFontCache = {
-      entityId,
-      state,
-      states: entityId ? null : states,
-      font,
-    };
-    return font;
+    this._nativeFontCache = lookupNativeClockFont(states, this._nativeFontCache);
+    return this._nativeFontCache.font;
   }
 
   // The font sensor state object backing the cached native font (null when
@@ -1532,7 +1500,11 @@ class YeelightCubeClockCard extends LitElement {
     this._browser ||= document.createElement("yeelight-style-browser");
     this._browser.config = this.config;
     this._browser.items = this._previewItems();
-    this._browser.active = offline ? null : clockPresetKey(current);
+    // While a rotation runs with "Highlight the playing clock mode" off, the
+    // list keeps the selection from before it started (see displayed()).
+    this._browser.active = offline
+      ? null
+      : this._controls.displayed("key", clockPresetKey(current));
     this._browser.model = this._controls;
     this._browser.disabled = this._commands.busy;
     this._browser.searchLabel = "Search clock modes";
@@ -1720,7 +1692,7 @@ class YeelightCubeClockCard extends LitElement {
       <yeelight-color-mode
         .config=${this.config}
         .options=${options}
-        .selected=${cur}
+        .selected=${this._controls.displayed("colour", cur)}
         .draft=${draft || null}
         .hass=${this._hass}
         .saveKinds=${this._saveKinds()}

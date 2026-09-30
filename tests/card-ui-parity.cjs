@@ -3152,6 +3152,13 @@ const server = http.createServer(async (request, response) => {
             clock._customPresetColor = color;
             clock.render();
             await clock.updateComplete;
+            // Selection changes update the buttons in place, so their colour
+            // transitions: measure the settled state.
+            await Promise.all(
+              [clock, native].flatMap((card) =>
+                card.shadowRoot.getAnimations().map((animation) => animation.finished),
+              ),
+            );
             return { clock: snapshot(clock), native: snapshot(native) };
           },
           { mode, shape },
@@ -3924,7 +3931,7 @@ const server = http.createServer(async (request, response) => {
       );
       const text = editor.shadowRoot.textContent;
       results.editorControl =
-        text.includes("Default interval") &&
+        text.includes("Rotate every") &&
         !text.includes("Custom List") &&
         !text.includes("No Immediate Repeats") &&
         input?.value === "2" &&

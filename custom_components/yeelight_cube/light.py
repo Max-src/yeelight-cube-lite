@@ -137,6 +137,10 @@ APPLY_HARD_TIMEOUT = 12.0      # Seconds -- absolute safety timeout for a single
                               # Reduced from 8s to 5s -- inner timeouts are now tighter:
                               #   probe 0.5s + raw_cmd 1.5sx2 + draw 0.5s = 4s worst case.
 FAVOURITE_KINDS = ("native", "clock")
+# Rotation interval bounds (seconds). A step that takes longer to apply than
+# the interval lands on the next boundary of the shared time grid.
+MIN_ROTATION_INTERVAL = 1
+MAX_ROTATION_INTERVAL = 604800  # 7 days
 MAX_FAVOURITES = 100          # per lamp and kind
 MAX_FAVOURITE_NAME = 100
 LOCK_WAIT_WARNING_MS = 3000   # Waiting for the lamp longer than this is logged as a
@@ -194,6 +198,11 @@ def _entity_id_or_list(value):
 _DEVICE_LOCKS: dict[str, asyncio.Lock] = {}
 # Name of the operation holding each device lock, for the lock-wait log.
 _DEVICE_LOCK_HOLDERS: dict[str, str] = {}
+# Shared schedules for lamps resuming the same multi-lamp rotation after a
+# restart: the first lamp creates it, the others join, so the group shows the
+# same item at each step again. Keyed by the group, kind and interval.
+_ROTATION_RESUME_TIMELINES: dict = {}
+ROTATION_RESUME_TIMELINE_TTL = 300.0  # seconds a late lamp can still join
 
 def _get_device_lock(ip: str) -> asyncio.Lock:
     """Get or create the per-device lock for a given IP."""
@@ -3711,13 +3720,14 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             key: [dict(item) for item in value]
             for key, value in self._favourites.items()
         }
-        await self._persist_integration_data()
+        self._schedule_integration_save()
 
-    async def _persist_integration_data(self) -> None:
-        """Write hass.data[DOMAIN] (palettes, favourites, ...) to disk."""
-        from . import async_save_data
+    def _schedule_integration_save(self) -> None:
+        """Save hass.data[DOMAIN] (palettes, favourites, rotation, ...) to
+        disk shortly: a burst of changes becomes one write."""
+        from . import async_schedule_save
 
-        await async_save_data(self.hass)
+        async_schedule_save(self.hass)
 
     # -- Rotation settings and restart recovery ------------------------------
 
@@ -3729,7 +3739,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         intervals = saved.get("intervals")
         if isinstance(intervals, dict):
             self._rotation_intervals = {
-                kind: max(10, min(604800, int(value)))
+                kind: max(MIN_ROTATION_INTERVAL, min(MAX_ROTATION_INTERVAL, int(value)))
                 for kind, value in intervals.items()
                 if kind in FAVOURITE_KINDS and isinstance(value, (int, float))
             }
@@ -3749,13 +3759,17 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 "kind": self._rotation_kind,
                 "items": [dict(item) for item in self._rotation_items],
                 "interval": self._rotation_interval,
+                "group": list(getattr(self, "_rotation_group", None) or []),
             }
-        store[self._music_flow_runtime_storage_key()] = {
-            "intervals": dict(self._rotation_intervals),
-            "active": running,
-        }
+        record = {"intervals": dict(self._rotation_intervals), "active": running}
+        key = self._music_flow_runtime_storage_key()
+        # Most stops happen with no rotation running (e.g. every turn-off):
+        # nothing changed, nothing to write.
+        if store.get(key) == record:
+            return
+        store[key] = record
         if self.hass is not None:
-            self.hass.async_create_task(self._persist_integration_data())
+            self._schedule_integration_save()
 
     async def _async_resume_saved_rotation(self) -> None:
         """Resume the rotation that ran before the restart, if the lamp is
@@ -3778,9 +3792,21 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             )
             self._save_rotation_state()
             return
+        interval = saved.get("interval", 60)
+        group = sorted(saved.get("group") or [])
+        timeline = None
+        if len(group) > 1:
+            # Lamps started together share one schedule again.
+            now = asyncio.get_running_loop().time()
+            key = (tuple(group), kind, interval)
+            shared = _ROTATION_RESUME_TIMELINES.get(key)
+            if shared is None or now - shared["created"] > ROTATION_RESUME_TIMELINE_TTL:
+                shared = _ROTATION_RESUME_TIMELINES[key] = {"created": now, "timeline": {}}
+            timeline = shared["timeline"]
         try:
             await self.start_effect_rotation(
-                saved.get("items") or [], saved.get("interval", 60), kind
+                saved.get("items") or [], interval, kind,
+                timeline=timeline, group=group or None,
             )
             _LOGGER.info("[ROTATION] [%s] Resumed the %s rotation after restart", self._ip, kind)
         except HomeAssistantError as err:
@@ -3797,7 +3823,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         until the next step on the new time grid."""
         if kind not in FAVOURITE_KINDS:
             raise HomeAssistantError(f"Unknown rotation kind: {kind}")
-        interval = max(10, min(604800, int(interval)))
+        interval = max(MIN_ROTATION_INTERVAL, min(MAX_ROTATION_INTERVAL, int(interval)))
         self._rotation_intervals = {**self._rotation_intervals, kind: interval}
         if (
             self._rotation_kind == kind
@@ -3817,11 +3843,17 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             "tick": int(loop.time() // interval) + 1,
             "index": self._rotation_index + 1,
         }
-        self._rotation_retime = True
-        if self._rotation_wake is not None:
-            self._rotation_wake.set()
+        # A sleeping loop re-times its wait; a rotation waiting to reconnect
+        # simply resumes on the new grid.
+        task = self._rotation_task
+        if task is not None and not task.done():
+            self._rotation_retime = True
+            if self._rotation_wake is not None:
+                self._rotation_wake.set()
 
-    async def start_effect_rotation(self, items, interval, kind="native", *, timeline=None) -> None:
+    async def start_effect_rotation(
+        self, items, interval, kind="native", *, timeline=None, group=None
+    ) -> None:
         """Start an entity-owned loop, acknowledging only its first display result.
 
         Returning before that result hides hardware failures from the calling
@@ -3837,7 +3869,12 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         self._rotation_retry_at = None
         self._rotation_kind = kind if kind in ("native", "clock") else "native"
         self._rotation_items = items
-        self._rotation_interval = max(10, min(604800, int(interval)))
+        # The lamps started together (one service call), saved so a restart
+        # resumes them on one schedule.
+        self._rotation_group = sorted(group) if group else None
+        self._rotation_interval = max(
+            MIN_ROTATION_INTERVAL, min(MAX_ROTATION_INTERVAL, int(interval))
+        )
         current = self._rotation_current_name()
         names = [item["name"] for item in items]
         self._rotation_index = names.index(current) if current in names else -1
@@ -3908,6 +3945,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         self._rotation_retry_attempt = 0
         self._rotation_retry_at = None
         self._rotation_index -= 1
+        self._rotation_retime = False
         self._rotation_active = True
         self._rotation_wake = asyncio.Event()
         self._rotation_started = asyncio.get_running_loop().create_future()

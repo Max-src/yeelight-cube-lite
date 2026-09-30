@@ -1,5 +1,4 @@
 import { LitElement, html, css, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
-import { bindHostEvents } from "./host-events.js";
 import { cardLayoutStyles, cardSpacing } from "./card-layout-utils.js";
 import { renderActionButton, renderActionRow } from "./action-button-ui.js";
 import {
@@ -11,11 +10,11 @@ import {
   DEFAULT_COLLECTION_BUTTON_CONTENT_MODE,
 } from "./action-button-utils.js";
 import {
-  renderOrientationControls,
   orientationControlStyles,
   orientationOptions,
   nextOrientation,
 } from "./orientation-control-utils.js";
+import { renderOrientationControls } from "./orientation-control-ui.js";
 import {
   renderOrderableList,
   orderableListStyles,
@@ -25,10 +24,8 @@ import {
   favouriteId,
   nextRotationMode,
   rotationIntervalSeconds,
-  rotationIntervalParts,
   formatRotationInterval,
   actionButtonOrder,
-  ROTATION_INTERVAL_UNITS,
 } from "./mode-controls-controller.js";
 import { defineOnce } from "./card-registration.js";
 import {
@@ -69,8 +66,6 @@ class YeelightModeControls extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    // The orientation row names its handler in data-on-click.
-    bindHostEvents(this, (name) => name === "handleOrientationControl");
     this.classList.add("yc-stack");
     this._refresh ||= () => this.requestUpdate();
     this._subscribe();
@@ -194,45 +189,6 @@ class YeelightModeControls extends LitElement {
     } finally {
       this._pending = null;
     }
-  }
-
-  // "Every [value] [unit]": the rotation interval stored on the lamp, shared
-  // by every dashboard and applied at once to a running rotation.
-  _intervalControl(model, seconds, disabled) {
-    const { value, unit } = rotationIntervalParts(seconds);
-    const apply = (nextValue, nextUnit) => {
-      const size =
-        ROTATION_INTERVAL_UNITS.find((item) => item.unit === nextUnit)
-          ?.seconds || 1;
-      const total = Math.max(1, Math.round(Number(nextValue) || 1)) * size;
-      if (total !== seconds) model.setRotationInterval(total);
-      else this.requestUpdate();
-    };
-    return html`<div class="interval">
-      <label for="rotation-interval-value">Every</label>
-      <input
-        id="rotation-interval-value"
-        type="number"
-        min="1"
-        max="999"
-        aria-label="Rotation interval value"
-        .value=${String(value)}
-        ?disabled=${disabled}
-        @change=${(event) => apply(event.target.value, unit)}
-      />
-      <select
-        aria-label="Rotation interval unit"
-        ?disabled=${disabled}
-        @change=${(event) => apply(value, event.target.value)}
-      >
-        ${ROTATION_INTERVAL_UNITS.map(
-          (item) =>
-            html`<option value=${item.unit} ?selected=${item.unit === unit}>
-              ${item.label}
-            </option>`,
-        )}
-      </select>
-    </div>`;
   }
 
   handleOrientationControl(event) {
@@ -427,12 +383,11 @@ class YeelightModeControls extends LitElement {
         : ""}`;
     }
     if (this.area === "orientation")
-      return unsafeHTML(
-        renderOrientationControls(
-          config,
-          model.pendingOrientation || adapter.orientation(),
-          model.busy || adapter.disabled(),
-        ),
+      return renderOrientationControls(
+        config,
+        model.pendingOrientation || adapter.orientation(),
+        model.busy || adapter.disabled(),
+        (event) => this.handleOrientationControl(event),
       );
     const playable = model.favourites.filter((f) => adapter.available(f.key));
     const names = model.names();
@@ -660,9 +615,7 @@ class YeelightModeControls extends LitElement {
               ? "Rotation details unavailable"
               : `No ${noun}s selected.`)}
           </div>
-          ${sharedInterval
-            ? this._intervalControl(model, rotationInterval, adapter.disabled())
-            : ""}
+
           ${rotationErrors.length
             ? html`
                 <div>
@@ -720,26 +673,6 @@ class YeelightModeControls extends LitElement {
         justify-content: space-between;
         gap: ${unsafeCSS(cardSpacing.control)};
         flex-wrap: wrap;
-      }
-      .interval {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-        min-width: 0;
-      }
-      .interval input,
-      .interval select {
-        min-width: 0;
-        padding: 6px 8px;
-        border: 1px solid var(--divider-color, #d0d7de);
-        border-radius: 6px;
-        background: var(--card-background-color, #fff);
-        color: var(--primary-text-color, #333);
-        font: inherit;
-        box-sizing: border-box;
-      }
-      .interval input {
-        width: 72px;
       }
       h3 {
         margin: 0;

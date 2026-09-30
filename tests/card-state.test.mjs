@@ -550,3 +550,20 @@ test("the gallery renders a delegated delete button without inline handlers", as
     /<button /,
   );
 });
+
+test("an emptied target list falls back to the single entity", async () => {
+  const { getTargetEntities } = await import(
+    "../custom_components/yeelight_cube/www/service-call-utils.js"
+  );
+  assert.deepEqual(
+    getTargetEntities({ entity: "light.a", target_entities: [] }),
+    ["light.a"],
+  );
+  assert.deepEqual(
+    getTargetEntities({ entity: "light.a", target_entities: ["light.b", ""] }),
+    ["light.b"],
+  );
+  assert.deepEqual(getTargetEntities({ entity: "light.a" }), ["light.a"]);
+  assert.deepEqual(getTargetEntities({}), []);
+  assert.deepEqual(getTargetEntities(), []);
+});

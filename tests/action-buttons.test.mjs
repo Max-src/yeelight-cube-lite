@@ -8,7 +8,6 @@ import {
   renderActionButtonHTML,
   getActionRowClass,
   actionButtonGroupModel,
-  renderActionButtonGroupHTML,
   handleActionButtonGroupEvent,
   modeActionOptions,
   independentActionConfig,
@@ -175,21 +174,14 @@ test("choice groups have one tab stop and toggles expose independent pressed sta
       { selected: true, tabIndex: 0, role: "radio" },
     ],
   );
-  const markup = renderActionButtonGroupHTML({
-    label: 'Content "options"',
-    items,
-    value: "date",
-  });
-  assert.match(markup, /role="radiogroup"/);
-  assert.match(markup, /aria-checked="true"/);
-  assert.ok(!markup.includes("aria-pressed"));
-  const toggles = renderActionButtonGroupHTML({
-    label: "Format",
+  // Choices are radios (aria-checked); toggles are pressed buttons. The Lit
+  // group (renderActionButtonGroup) renders exactly these model fields.
+  assert.ok(choices.every((button) => button.role === "radio"));
+  const toggles = actionButtonGroupModel({
     multiple: true,
     items: items.map((item) => ({ ...item, selected: true })),
   });
-  assert.equal((toggles.match(/aria-pressed="true"/g) || []).length, 2);
-  assert.ok(!toggles.includes("aria-checked"));
+  assert.ok(toggles.every((button) => !button.role && button.selected === true));
   assert.ok(
     !renderActionButtonHTML({ label: "Save" }).includes("aria-pressed"),
   );

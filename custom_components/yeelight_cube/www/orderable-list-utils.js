@@ -10,11 +10,30 @@
 // row highlight classes are cleaned up via DOM traversal, so any number of
 // lists can coexist in one editor.
 
-import { html, css, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
+import { html, css, unsafeCSS } from "./lib/lit-all.js";
 import {
-  renderItemIndicators,
+  itemIndicatorModel,
   itemBrowserStyles,
 } from "./item-browser-utils.js";
+
+// Indicator badges as a Lit template (names/descriptions bound as text).
+function indicatorsTemplate(indicators = []) {
+  if (!indicators.length) return "";
+  return html`<span class="item-indicators"
+    >${indicators.map(itemIndicatorModel).map(
+      (badge) =>
+        html`<span
+          class="item-indicator"
+          data-state=${badge.state}
+          tabindex="0"
+          role="img"
+          aria-label=${badge.description ?? ""}
+          ><ha-icon icon=${badge.icon}></ha-icon
+          ><span class="item-indicator-label">${badge.label}</span></span
+        >`,
+    )}</span
+  >`;
+}
 
 export const orderableListStyles = css`
   ${unsafeCSS(itemBrowserStyles)}
@@ -232,7 +251,7 @@ export function renderOrderableList({
         </button>
         <div class="orderable-list-content">
           <span class="orderable-list-name">${labelFor(name)}</span>
-          ${unsafeHTML(renderItemIndicators(indicatorsFor(name)))}
+          ${indicatorsTemplate(indicatorsFor(name))}
         </div>
         <button class="remove" title="Remove" @click="${() => onRemove(idx)}">
           ✕

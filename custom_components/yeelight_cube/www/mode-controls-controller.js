@@ -30,8 +30,15 @@ export const ROTATION_INTERVAL_UNITS = [
   { unit: "days", label: "Days", seconds: 86400 },
 ];
 
+// Rotation interval bounds in seconds (same as the backend).
+export const MIN_ROTATION_INTERVAL = 1;
+export const MAX_ROTATION_INTERVAL = 604800; // 7 days
+
 export function rotationIntervalSeconds(config) {
-  return Math.max(10, Math.min(604800, Number(config?.rotation_interval) || 60));
+  return Math.max(
+    MIN_ROTATION_INTERVAL,
+    Math.min(MAX_ROTATION_INTERVAL, Number(config?.rotation_interval) || 60),
+  );
 }
 
 export function rotationIntervalMs(config) {
@@ -50,10 +57,70 @@ export function rotationIntervalParts(seconds) {
   return { value: seconds, unit: "seconds" };
 }
 
+const unitSeconds = (unit) =>
+  ROTATION_INTERVAL_UNITS.find((item) => item.unit === unit)?.seconds || 1;
+
+// The interval rows' total in seconds (at least the minimum).
+export function intervalPartsSeconds(parts) {
+  const total = (Array.isArray(parts) ? parts : []).reduce(
+    (sum, part) =>
+      sum + Math.max(0, Math.round(Number(part?.value) || 0)) * unitSeconds(part?.unit),
+    0,
+  );
+  return Math.max(MIN_ROTATION_INTERVAL, Math.min(MAX_ROTATION_INTERVAL, total));
+}
+
+// An interval as rows, largest unit first (70 s -> 1 minute + 10 seconds).
+export function intervalPartsFromSeconds(seconds) {
+  let rest = Math.max(MIN_ROTATION_INTERVAL, Math.round(Number(seconds) || 60));
+  const parts = [];
+  for (const { unit, seconds: size } of [...ROTATION_INTERVAL_UNITS].reverse()) {
+    const value = Math.floor(rest / size);
+    if (value) parts.push({ value, unit });
+    rest -= value * size;
+  }
+  return parts;
+}
+
+// The rows the editor shows: the ones the user composed (kept as entered,
+// e.g. "90 seconds"), unless the interval changed elsewhere (the lamp's
+// shared interval): then that interval, split into units.
+export function rotationIntervalRows(config, sharedSeconds) {
+  const target = Number.isFinite(sharedSeconds)
+    ? sharedSeconds
+    : rotationIntervalSeconds(config);
+  // One row per unit (an older config could repeat a unit: added together).
+  const stored = [];
+  for (const part of Array.isArray(config?.rotation_interval_parts)
+    ? config.rotation_interval_parts
+    : []) {
+    if (!part || !ROTATION_INTERVAL_UNITS.some((item) => item.unit === part.unit))
+      continue;
+    const value = Math.max(0, Math.round(Number(part.value) || 0));
+    const same = stored.find((row) => row.unit === part.unit);
+    if (same) same.value += value;
+    else stored.push({ value, unit: part.unit });
+  }
+  return stored.length && intervalPartsSeconds(stored) === target
+    ? stored
+    : intervalPartsFromSeconds(target);
+}
+
+// The unit a new interval row uses: one not used yet (minutes, then seconds,
+// hours, days), or null when every unit has a row.
+export function nextIntervalUnit(rows) {
+  const used = new Set((rows || []).map((row) => row.unit));
+  return (
+    ["minutes", "seconds", "hours", "days"].find((unit) => !used.has(unit)) ??
+    null
+  );
+}
+
 export function formatRotationInterval(seconds) {
-  const { value, unit } = rotationIntervalParts(seconds);
   const short = { seconds: "s", minutes: "min", hours: "h", days: "d" };
-  return `${value}${short[unit]}`;
+  return intervalPartsFromSeconds(seconds)
+    .map(({ value, unit }) => `${value}${short[unit]}`)
+    .join(" ");
 }
 
 // Actions shown in the shared Actions row, in their default order. Users can
@@ -251,6 +318,17 @@ export class ModeControlsController {
     this.frozen = remote;
   }
 
+  // What a list shows for `slot`: the live value, or, while a rotation runs
+  // and `follow` is off, the value it showed when the rotation started.
+  // The style/effect list (highlight, page, colour mode) follows unless
+  // `rotation_follow_active: false`; the favourites highlight follows unless
+  // `rotation_highlight_favourite: false`.
+  displayed(slot, live, follow = this.config?.rotation_follow_active !== false) {
+    this._held ||= {};
+    if (follow || !this.active || !(slot in this._held)) this._held[slot] = live;
+    return this._held[slot];
+  }
+
   // Whether the rotation interval is stored on the lamp (every dashboard uses
   // the same); otherwise it is this card's configured value.
   sharesInterval() {
@@ -277,8 +355,8 @@ export class ModeControlsController {
 
   async setRotationInterval(seconds) {
     const value = Math.max(
-      10,
-      Math.min(604800, Math.round(Number(seconds) || 60)),
+      MIN_ROTATION_INTERVAL,
+      Math.min(MAX_ROTATION_INTERVAL, Math.round(Number(seconds) || 60)),
     );
     if (!this.sharesInterval() || this.adapter.disabled()) return false;
     const context = this.context;
@@ -325,7 +403,14 @@ export class ModeControlsController {
   }
 
   currentFavourite() {
-    return this.selectedFavourite || this.captureFavourite();
+    return (
+      this.selectedFavourite ||
+      this.displayed(
+        "favourite",
+        this.captureFavourite(),
+        this.config?.rotation_highlight_favourite !== false,
+      )
+    );
   }
 
   get selectedFavourite() {

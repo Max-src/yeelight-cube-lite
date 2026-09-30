@@ -177,6 +177,7 @@ const server = http.createServer(async (request, response) => {
       window.seen = { one: [], two: [] };
       const watch = () => {
         for (const card of cards) {
+          if (!card._controls) continue; // the editor
           const list = (seen[card.id] ||= []);
           const count = card._controls.favourites.length;
           if (list.at(-1) !== count) list.push(count);
@@ -250,8 +251,8 @@ const server = http.createServer(async (request, response) => {
     assert.deepEqual(seen.one, [0, 1, 2], "dashboard one never flickered");
     assert.deepEqual(seen.two, [0, 1, 2], "dashboard two never flickered");
 
-    // 3. The rotation interval is the lamp's: dashboard two sets 2 minutes,
-    //    dashboard one (configured with 45 s) follows, and Start uses it.
+    // 3. The rotation interval is the lamp's: set from a card editor (2 min,
+    //    then + 10 s), every dashboard follows, and Start uses it.
     const sectionText = (id) =>
       page.evaluate(
         (id) =>
@@ -262,9 +263,28 @@ const server = http.createServer(async (request, response) => {
         id,
       );
     assert.match(await sectionText(one), /every 45s/); // card default so far
-    await page.locator(`${two} [aria-label="Rotation interval unit"]`).selectOption("minutes");
-    await page.locator(`${two} [aria-label="Rotation interval value"]`).fill("2");
-    await page.locator(`${two} [aria-label="Rotation interval value"]`).press("Enter");
+    // Set from a card editor (not on the card): rows add up, stored on the lamp.
+    await page.evaluate(async () => {
+      await import(
+        "/custom_components/yeelight_cube/www/yeelight-cube-native-effects-card-editor.js"
+      );
+      const editor = document.createElement("yeelight-cube-native-effects-card-editor");
+      editor.id = "editor";
+      editor._open = { rotation: true };
+      editor.setConfig({ ...document.querySelector("#two").config, show_rotation: true });
+      editor.hass = makeHass();
+      // Like Home Assistant: an edited config is handed back to the editor.
+      editor.addEventListener("config-changed", (event) =>
+        editor.setConfig(event.detail.config),
+      );
+      document.querySelector("main").append(editor);
+      cards.push(editor); // receives every state update, like in Home Assistant
+      await editor.updateComplete;
+    });
+    const editorSel = "#editor";
+    await page.locator(`${editorSel} [aria-label="Rotation interval unit"]`).selectOption("minutes");
+    await page.locator(`${editorSel} [aria-label="Rotation interval value"]`).fill("2");
+    await page.locator(`${editorSel} [aria-label="Rotation interval value"]`).press("Enter");
     await waitFor(
       () => calls.some((c) => c.service === "set_rotation_interval" && c.data.interval === 120),
       null,
@@ -276,6 +296,39 @@ const server = http.createServer(async (request, response) => {
       "interval reaches dashboard one",
     );
     assert.match(await sectionText(one), /every 2min/);
+    // Compose: + 10 seconds = 2 min 10 s. The new row takes an unused unit,
+    // and no row offers a unit another row already uses.
+    await page.locator(`${editorSel} button:has-text("+ Add interval")`).click();
+    const unitOptions = (label) =>
+      page.evaluate(
+        ({ label }) =>
+          [
+            ...document
+              .querySelector("#editor")
+              .shadowRoot.querySelector(`select[aria-label="${label}"]`).options,
+          ].map((option) => option.value),
+        { label },
+      );
+    assert.deepEqual(await unitOptions("Rotation interval unit 2"), ["seconds", "hours", "days"]);
+    assert.deepEqual(await unitOptions("Rotation interval unit"), ["minutes", "hours", "days"]);
+    await page.locator(`${editorSel} [aria-label="Rotation interval value 2"]`).fill("10");
+    await page.locator(`${editorSel} [aria-label="Rotation interval value 2"]`).press("Enter");
+    await waitFor(
+      () => calls.some((c) => c.service === "set_rotation_interval" && c.data.interval === 130),
+      null,
+      "composed interval saved",
+    );
+    await waitFor(
+      () => document.querySelector("#two")._controls.interval === 130,
+      null,
+      "composed interval reaches dashboard two",
+    );
+    assert.match(await sectionText(two), /every 2min 10s/);
+    await page.evaluate(() => {
+      const editor = document.querySelector("#editor");
+      cards.splice(cards.indexOf(editor), 1);
+      editor.remove();
+    });
 
     // 4. Start rotation on dashboard one: dashboard two shows it running,
     //    with the lamp's list and interval, and can stop it.
@@ -297,12 +350,12 @@ const server = http.createServer(async (request, response) => {
         .map((el) => el.shadowRoot?.textContent || "")
         .join(" "),
     );
-    assert.match(rotationText, /2 effects · every 2min/);
+    assert.match(rotationText, /2 effects · every 2min 10s/);
     assert.equal(
       await page.evaluate(
         () => calls.find((c) => c.service === "start_effect_rotation").data.interval,
       ),
-      120,
+      130,
     );
     assert.ok(
       await page.locator(`${two} [aria-label="Stop rotation"]`).count(),
@@ -343,7 +396,105 @@ const server = http.createServer(async (request, response) => {
       "resume reaches dashboard two",
     );
 
-    // 6. Clock cards: favourites and the rotation list reach the other
+    // 6. Rotation steps in the effect list: the list turns to the page of the
+    //    playing effect; with "Highlight the playing effect" off it keeps the
+    //    user's selection, page and colour mode. The interval is not edited on
+    //    the card (editor only).
+    assert.equal(
+      await page.locator(`${one} [aria-label="Rotation interval value"]`).count(),
+      0,
+      "no interval control on the card",
+    );
+    await page.evaluate(async () => {
+      for (const card of cards) {
+        card.setConfig({
+          ...card.config,
+          show_gallery: true,
+          show_color_modes: true,
+          style_selector_style: "preview-grid",
+          items_per_page: 1,
+          rotation_follow_active: card.id === "one",
+        });
+        card.hass = makeHass();
+        await card.updateComplete;
+      }
+      // The lamp shows Rainbow (page 1), in its normal colours.
+      pushLater((a) => {
+        a.native_effect = "Rainbow";
+        a.native_effect_color_mode = "normal";
+      }, 0);
+    });
+    const browserState = (id) =>
+      page.evaluate((id) => {
+        const card = document.querySelector(id);
+        const browser = card.shadowRoot.querySelector("yeelight-style-browser");
+        const colours = card.shadowRoot.querySelector("yeelight-color-mode");
+        return {
+          page: browser.page,
+          active: browser.activeKey,
+          colour: colours?.selected ?? null,
+        };
+      }, id);
+    await page.waitForTimeout(250);
+    assert.deepEqual((await browserState(one)).page, 0);
+    // A rotation runs; its next step is Tide (page 2) in red/blue.
+    await page.evaluate(() =>
+      pushLater((a) => {
+        a.effect_rotation = {
+          active: true,
+          kind: "native",
+          items: [{ name: "Rainbow" }, { name: "Tide", color_mode: "red_blue" }],
+          interval: 5,
+          index: 0,
+        };
+      }, 0),
+    );
+    await page.waitForTimeout(250);
+    await page.evaluate(() =>
+      pushLater((a) => {
+        a.native_effect = "Tide";
+        a.native_effect_color_mode = "red_blue";
+        a.effect_rotation = { ...a.effect_rotation, index: 1 };
+      }, 0),
+    );
+    await waitFor(
+      () =>
+        document.querySelector("#one").shadowRoot.querySelector("yeelight-style-browser")
+          .activeKey === "Tide",
+      null,
+      "rotation step highlighted",
+    );
+    const following = await browserState(one);
+    assert.equal(following.page, 1, "list turned to the playing effect's page");
+    assert.equal(following.colour, "red_blue");
+    const holding = await browserState(two);
+    assert.deepEqual(
+      [holding.page, holding.active, holding.colour],
+      [0, "Rainbow", "normal"],
+      "following off: selection, page and colour mode kept",
+    );
+    // The favourites highlight has its own switch (on): it still follows.
+    assert.equal(
+      await page.evaluate(
+        () => document.querySelector("#two")._controls.currentFavourite().key,
+      ),
+      "Tide",
+    );
+    // Stopped: every list follows the lamp again.
+    await page.evaluate(() =>
+      pushLater((a) => {
+        a.effect_rotation = { ...a.effect_rotation, active: false };
+      }, 0),
+    );
+    await waitFor(
+      () =>
+        document.querySelector("#two").shadowRoot.querySelector("yeelight-style-browser")
+          .activeKey === "Tide",
+      null,
+      "after stop, dashboard two follows again",
+    );
+
+    // 7. Clock cards: favourites and the rotation list reach the other
     //    dashboard too, and stay listed when a second lamp is unavailable.
     await page.evaluate(async () => {
       document.querySelector("main").replaceChildren();
@@ -406,7 +557,7 @@ const server = http.createServer(async (request, response) => {
 
     assert.deepEqual(errors, []);
     console.log(
-      "PASS two dashboards stay in sync: native + clock favourites (no flicker), shared rotation interval, rotation status/list/stop, freeze and resume; clock list shown with an unavailable lamp",
+      "PASS two dashboards stay in sync: native + clock favourites (no flicker), shared rotation interval, rotation status/list/stop, freeze and resume; clock list shown with an unavailable lamp; rotation steps turn pages / hold with following off; no interval control on the card",
     );
   } finally {
     await browser.close();

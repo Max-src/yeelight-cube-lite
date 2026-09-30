@@ -8,8 +8,16 @@
  * to finish its transition.
  */
 
-export function getTargetEntities(config) {
-  return config.target_entities || (config.entity ? [config.entity] : []);
+/**
+ * The lamps a card controls: `target_entities`, or the single legacy `entity`
+ * when that list is missing or empty (an emptied selector saves []).
+ */
+export function getTargetEntities(config = {}) {
+  const targets = Array.isArray(config?.target_entities)
+    ? config.target_entities.filter(Boolean)
+    : [];
+  if (targets.length) return targets;
+  return config?.entity ? [config.entity] : [];
 }
 
 /**

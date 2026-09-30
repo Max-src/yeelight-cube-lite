@@ -870,7 +870,10 @@ class YeelightCubeNativeEffectsCard extends LitElement {
               <yeelight-color-mode
                 .config=${this.config}
                 .options=${this._colorOptions()}
-                .selected=${this._currentColorSelection()}
+                .selected=${this._controls.displayed(
+                  "colour",
+                  this._currentColorSelection(),
+                )}
                 .draft=${this._customColorDraft}
                 .hass=${this._hass}
                 .saveKinds=${this._supportsCustomColor() &&
@@ -888,7 +891,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
           ? html`<section class="browser">
               <yeelight-style-browser
                 .config=${this.config}
-                .active=${effect?.name}
+                .active=${this._controls.displayed("key", effect?.name)}
                 .model=${this._controls}
                 .disabled=${this._busy}
                 .items=${all.map((item) => ({

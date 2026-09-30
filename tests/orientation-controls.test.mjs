@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   orientationOptions,
   nextOrientation,
-  renderOrientationControls,
+  orientationControlModel,
   ORIENTATION_ORDER,
 } from "../custom_components/yeelight_cube/www/orientation-control-utils.js";
 import { actionButtonStyleChoices } from "../custom_components/yeelight_cube/www/action-button-utils.js";
@@ -132,14 +132,21 @@ test("changing card context discards queued commands and stale responses", async
 
 test("orientation defaults preserve the original arrows and order", () => {
   assert.deepEqual(orientationOptions().directions, ORIENTATION_ORDER);
-  const markup = renderOrientationControls({}, "right");
+  const model = orientationControlModel({}, "right");
+  assert.equal(model.style, "original");
   assert.deepEqual(
-    [...markup.matchAll(/data-value="([^"]+)"/g)].map((match) => match[1]),
+    model.buttons.map((button) => button.value),
     ORIENTATION_ORDER,
   );
-  assert.match(markup, /class="orient-btn active" data-value="right"/);
-  assert.match(markup, /aria-pressed="true"/);
-  assert.doesNotMatch(markup, /Rotate \+/);
+  assert.deepEqual(
+    model.buttons.map((button) => button.selected),
+    [true, false, false, false],
+  );
+  assert.deepEqual(
+    model.buttons.map((button) => button.glyph),
+    ["\u2192", "\u2193", "\u2190", "\u2191"],
+  );
+  assert.ok(!model.buttons.some((button) => button.label === "Rotate +"));
 });
 
 test("orientation choices are sanitized, reorderable and can all be hidden", () => {
@@ -149,12 +156,12 @@ test("orientation choices are sanitized, reorderable and can all be hidden", () 
     ["up", "right"],
   );
   assert.equal(
-    renderOrientationControls({ orientation_directions: [] }, "right"),
-    "",
+    orientationControlModel({ orientation_directions: [] }, "right"),
+    null,
   );
   assert.equal(
-    renderOrientationControls({ show_device_orientation: false }, "right"),
-    "",
+    orientationControlModel({ show_device_orientation: false }, "right"),
+    null,
   );
   assert.equal(
     orientationOptions({
@@ -190,7 +197,7 @@ test("rotation follows physical order, skips hidden directions and wraps", () =>
 test("orientation styles reuse shared buttons with labels and disabled states", () => {
   for (const { value: style } of actionButtonStyleChoices) {
     for (const content of ["icon", "text", "icon_text"]) {
-      const markup = renderOrientationControls(
+      const model = orientationControlModel(
         {
           orientation_button_style: style,
           orientation_content_mode: content,
@@ -200,19 +207,21 @@ test("orientation styles reuse shared buttons with labels and disabled states", 
         "up",
         true,
       );
-      assert.match(markup, new RegExp(`btn-style-${style}`));
-      assert.equal((markup.match(/ disabled/g) || []).length, 7);
-      assert.match(markup, /aria-label="Rotate \+"/);
-      assert.match(markup, /aria-label="Rotate -"/);
-      assert.match(markup, /aria-label="Flip"/);
+      assert.equal(model.style, style);
+      assert.equal(model.contentMode, content);
+      assert.equal(model.buttons.filter((button) => button.disabled).length, 7);
+      const labels = model.buttons.map((button) => button.label);
+      for (const label of ["Rotate +", "Rotate -", "Flip"])
+        assert.ok(labels.includes(label), label);
     }
   }
-  const rotate = renderOrientationControls(
+  // Rotating with a single allowed direction goes nowhere: both disabled.
+  const rotate = orientationControlModel(
     { orientation_layout: "rotate", orientation_directions: ["right"] },
     "right",
   );
-  assert.equal((rotate.match(/ disabled/g) || []).length, 2);
-  assert.doesNotMatch(rotate, /data-value="right"/);
+  assert.equal(rotate.buttons.filter((button) => button.disabled).length, 2);
+  assert.ok(!rotate.buttons.some((button) => button.value === "right"));
 });
 
 test("one list composes arrows and actions in exact configured order", () => {
@@ -223,15 +232,13 @@ test("one list composes arrows and actions in exact configured order", () => {
     orientation_half_turn: false,
   };
   assert.deepEqual(orientationOptions(config).buttons, buttons);
-  const markup = renderOrientationControls(config, "right");
   assert.deepEqual(
-    [...markup.matchAll(/data-value="([^"]+)"/g)].map((match) => match[1]),
+    orientationControlModel(config, "right").buttons.map((button) => button.value),
     buttons,
   );
-  assert.equal((markup.match(/class="orientation-buttons"/g) || []).length, 1);
   assert.equal(
-    renderOrientationControls({ orientation_buttons: [] }, "right"),
-    "",
+    orientationControlModel({ orientation_buttons: [] }, "right"),
+    null,
   );
 });
 
@@ -264,9 +271,10 @@ test("rotation and flip work without visible direction arrows", async () => {
   ];
   const options = orientationOptions(card.config);
   assert.deepEqual(options.directions, ORIENTATION_ORDER);
-  assert.doesNotMatch(
-    renderOrientationControls(card.config, "right"),
-    / disabled/,
+  assert.ok(
+    orientationControlModel(card.config, "right").buttons.every(
+      (button) => !button.disabled,
+    ),
   );
   for (const value of card.config.orientation_buttons) {
     card.handleOrientationControl({

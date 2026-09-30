@@ -4,6 +4,7 @@ import {
   renderPreviewStyleSelector,
   bindStyleSelectorEvents,
   selectorPagination,
+  selectorPageSize,
 } from "./style-selector-utils.js";
 import {
   renderOriginalGallery,
@@ -86,9 +87,14 @@ class YeelightStyleBrowser extends LitElement {
     const index = this.visibleItems.findIndex((item) => item.dataMode === key);
     if (index < 0) return;
     this.index = index;
-    const size = Number(this.config.items_per_page) || 0;
-    this.page = size > 0 ? Math.floor(index / size) : 0;
+    this.page = this._pageOf(index);
     this.requestUpdate();
+  }
+
+  // The page showing item `index` in the current layout.
+  _pageOf(index) {
+    const size = selectorPageSize(this.config, this.selectorStyle);
+    return size > 0 ? Math.floor(index / size) : 0;
   }
 
   _changePage(value) {
@@ -152,7 +158,12 @@ class YeelightStyleBrowser extends LitElement {
     if (this.activeKey !== this._lastActive) {
       this._lastActive = this.activeKey;
       const index = items.findIndex((item) => item.dataMode === this.activeKey);
-      if (index >= 0) this.index = index;
+      if (index >= 0) {
+        this.index = index;
+        // Turn to the page of the newly active item (a rotation step, Next,
+        // a favourite); a pick on the page shown stays on it.
+        this.page = this._pageOf(index);
+      }
     }
     const active = this.activeKey;
     const style = this.selectorStyle;

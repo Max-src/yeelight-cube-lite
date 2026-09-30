@@ -464,13 +464,14 @@ test("rotation uses available unique modes and bounds intervals", () => {
   assert.deepEqual(controller.names(), ["B"]);
   assert.equal(nextRotationMode(["A", "B"], "A"), "B");
   assert.equal(nextRotationMode(["A", "B"], "B"), "A");
-  assert.equal(rotationIntervalMs({ rotation_interval: 1 }), 10000);
+  assert.equal(rotationIntervalMs({ rotation_interval: 1 }), 1000);
   assert.equal(rotationIntervalMs({ rotation_interval: 9999999 }), 604800000);
   assert.deepEqual(rotationIntervalParts(90), { value: 90, unit: "seconds" });
   assert.deepEqual(rotationIntervalParts(3600), { value: 1, unit: "hours" });
   assert.deepEqual(rotationIntervalParts(172800), { value: 2, unit: "days" });
   assert.equal(formatRotationInterval(600), "10min");
   assert.equal(formatRotationInterval(86400), "1d");
+  assert.equal(formatRotationInterval(70), "1min 10s");
 });
 test("shuffle reorders and persists the favourites list itself", () => {
   const { controller } = fixture();

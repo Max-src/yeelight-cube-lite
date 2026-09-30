@@ -262,3 +262,96 @@ test("stored intervals are read per kind", () => {
     undefined,
   );
 });
+
+test("interval rows add up, keep the user's split and follow the lamp", async () => {
+  const {
+    intervalPartsSeconds,
+    intervalPartsFromSeconds,
+    rotationIntervalRows,
+  } = await import(
+    "../custom_components/yeelight_cube/www/mode-controls-controller.js"
+  );
+  const rows = [
+    { value: 10, unit: "seconds" },
+    { value: 1, unit: "minutes" },
+  ];
+  assert.equal(intervalPartsSeconds(rows), 70);
+  assert.equal(intervalPartsSeconds([{ value: 1, unit: "seconds" }]), 1);
+  assert.equal(intervalPartsSeconds([{ value: 0, unit: "seconds" }]), 1); // never 0
+  assert.deepEqual(intervalPartsFromSeconds(3725), [
+    { value: 1, unit: "hours" },
+    { value: 2, unit: "minutes" },
+    { value: 5, unit: "seconds" },
+  ]);
+  const config = { rotation_interval: 70, rotation_interval_parts: rows };
+  // The user's rows as entered while they match the interval.
+  assert.deepEqual(rotationIntervalRows(config, 70), rows);
+  assert.deepEqual(rotationIntervalRows(config, null), rows);
+  // Changed on the lamp (another dashboard): its value, split into units.
+  assert.deepEqual(rotationIntervalRows(config, 90), [
+    { value: 1, unit: "minutes" },
+    { value: 30, unit: "seconds" },
+  ]);
+  assert.deepEqual(rotationIntervalRows({}, undefined), [
+    { value: 1, unit: "minutes" },
+  ]);
+  // One row per unit: an older config repeating a unit is added together.
+  assert.deepEqual(
+    rotationIntervalRows(
+      {
+        rotation_interval: 25,
+        rotation_interval_parts: [
+          { value: 10, unit: "seconds" },
+          { value: 15, unit: "seconds" },
+        ],
+      },
+      null,
+    ),
+    [{ value: 25, unit: "seconds" }],
+  );
+  const { nextIntervalUnit } = await import(
+    "../custom_components/yeelight_cube/www/mode-controls-controller.js"
+  );
+  assert.equal(nextIntervalUnit([{ value: 10, unit: "seconds" }]), "minutes");
+  assert.equal(nextIntervalUnit([{ value: 1, unit: "minutes" }]), "seconds");
+  assert.equal(
+    nextIntervalUnit(
+      ["seconds", "minutes", "hours", "days"].map((unit) => ({ value: 1, unit })),
+    ),
+    null,
+  );
+});
+
+test("with following off, the style list keeps its selection; favourites still highlight", () => {
+  const { controller } = setup({ lamp: { favourites: [A, B] } });
+  controller.configure({ rotation_follow_active: false }, ["light.a"]);
+  // The favourites highlight has its own switch (on by default).
+  let current = "A";
+  controller.adapter.current = () => current;
+  assert.equal(controller.currentFavourite().key, "A");
+  controller.active = true;
+  current = "B";
+  assert.equal(controller.currentFavourite().key, "B");
+  controller.configure(
+    { rotation_follow_active: false, rotation_highlight_favourite: false },
+    ["light.a"],
+  );
+  current = "A";
+  assert.equal(controller.currentFavourite().key, "A");
+  controller.active = true;
+  current = "B";
+  assert.equal(controller.currentFavourite().key, "A"); // kept while rotating
+  controller.active = false;
+  controller.configure({ rotation_follow_active: false }, ["light.a"]);
+  assert.equal(controller.displayed("key", "Rainbow"), "Rainbow");
+  controller.active = true; // rotation running
+  assert.equal(controller.displayed("key", "Tide"), "Rainbow");
+  assert.equal(controller.displayed("colour", "red_blue"), "red_blue"); // first seen
+  assert.equal(controller.displayed("colour", "bw"), "red_blue");
+  controller.active = false; // stopped: follow the lamp again
+  assert.equal(controller.displayed("key", "Tide"), "Tide");
+  // Default: always follow.
+  controller.configure({}, ["light.a"]);
+  controller.active = true;
+  assert.equal(controller.displayed("key", "Aurora"), "Aurora");
+});

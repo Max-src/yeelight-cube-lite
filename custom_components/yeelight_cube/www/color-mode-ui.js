@@ -1,10 +1,11 @@
-import { LitElement, html, unsafeHTML } from "./lib/lit-all.js";
-import { renderColorModeSelector } from "./color-mode-selector-utils.js";
+import { LitElement, html, repeat } from "./lib/lit-all.js";
+import { colorModeSelectorModel } from "./color-mode-selector-utils.js";
 import {
-  bindActionButtonGroup,
+  handleActionButtonGroupEvent,
   DEFAULT_BUTTON_STYLE,
   DEFAULT_BUTTON_CONTENT_MODE,
 } from "./action-button-utils.js";
+import { renderActionButton } from "./action-button-ui.js";
 import "./clock-preset-manager.js";
 import { defineOnce } from "./card-registration.js";
 
@@ -46,13 +47,7 @@ class YeelightColorMode extends LitElement {
         class="unified-color-modes colormode-buttons"
         data-clock-control="colormode"
       >
-        ${unsafeHTML(
-          renderColorModeSelector(this.config, this.options, this.selected, {
-            disabled: this.disabled,
-            placeholder: this.draft ? "Unsaved colour" : "Current mode hidden",
-            draft: this.draft,
-          }),
-        )}
+        ${this._selector()}
       </div>
       ${this.draft && this.saveKinds.length
         ? html`<div class="clock-color-control">
@@ -73,13 +68,63 @@ class YeelightColorMode extends LitElement {
         : ""}`;
   }
 
-  updated() {
-    bindActionButtonGroup(this.querySelector(".shared-button-group"), (value) =>
-      this.onSelect?.(value),
+  // The colour modes as a dropdown or a row of shared buttons. Buttons are
+  // keyed by value, so a selection updates them in place (no re-created row).
+  _selector() {
+    const model = colorModeSelectorModel(
+      this.config,
+      this.options,
+      this.selected,
+      {
+        disabled: this.disabled,
+        placeholder: this.draft ? "Unsaved colour" : "Current mode hidden",
+        draft: this.draft,
+      },
     );
-    const dropdown = this.querySelector(".colormode-select");
-    if (dropdown)
-      dropdown.onchange = (event) => this.onSelect?.(event.target.value);
+    if (model.kind === "dropdown")
+      return html`<div class="gc-selector" data-shape=${model.shape}>
+        <select
+          class="mode-select colormode-select"
+          aria-label="Colour mode"
+          ?disabled=${model.disabled}
+          .value=${model.placeholder === null ? this.selected : ""}
+          @change=${(event) => this.onSelect?.(event.target.value)}
+        >
+          ${model.placeholder === null
+            ? ""
+            : html`<option value="" disabled selected>
+                ${model.placeholder}
+              </option>`}
+          ${model.options.map(
+            (option) =>
+              html`<option
+                value=${option.value}
+                ?selected=${option.selected}
+                ?disabled=${option.disabled}
+              >
+                ${option.label}
+              </option>`,
+          )}
+        </select>
+      </div>`;
+    const choose = (event) =>
+      handleActionButtonGroupEvent(event, (value) => this.onSelect?.(value));
+    return html`<div
+      class=${`color-mode-choices shared-button-group ${model.rowClass}`}
+      role="radiogroup"
+      aria-label="Colour mode"
+      @click=${choose}
+      @keydown=${choose}
+    >
+      ${repeat(
+        model.buttons,
+        (button) => button.value,
+        (button) =>
+          button.add
+            ? html`<span class="color-add">${renderActionButton(button)}</span>`
+            : renderActionButton(button),
+      )}
+    </div>`;
   }
 
   async getUpdateComplete() {

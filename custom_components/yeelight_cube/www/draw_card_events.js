@@ -1,7 +1,6 @@
 // Event handler functions for Yeelight Cube Lite Draw Card
 // Each function should be exported and receive the card instance as first argument if needed
 
-import { StorageUtils } from "./draw_card_storage.js";
 import { GRID_COLS, GRID_ROWS } from "./draw_card_const.js";
 
 export function drawPixel(card, e, idx) {
@@ -14,13 +13,7 @@ export function drawPixel(card, e, idx) {
   } else if (card.eraserMode) {
     card.isDrawing = true;
     if (!card._drawingActive) card._pushMatrixHistory();
-    card.matrix = [
-      ...card.matrix.slice(0, idx),
-      "#000000",
-      ...card.matrix.slice(idx + 1),
-    ];
-    StorageUtils.saveMatrix(card.matrix);
-    // requestUpdate now handled in matrixOperations.erasePixel
+    card.matrixOperations.erasePixel(null, idx);
   }
 }
 
@@ -56,13 +49,7 @@ export function drawMove(card, e) {
     if (card.pencilMode) {
       card._setPixel(idx);
     } else if (card.eraserMode) {
-      card.matrix = [
-        ...card.matrix.slice(0, idx),
-        "#000000",
-        ...card.matrix.slice(idx + 1),
-      ];
-      StorageUtils.saveMatrix(card.matrix);
-      // requestUpdate now batched in matrix operations
+      card.matrixOperations.erasePixel(null, idx);
     }
   }
 }
@@ -76,13 +63,7 @@ export function erasePixel(card, e, idx) {
   e.preventDefault();
   // For single pixel erase (not drag), push history here
   if (!card._drawingActive) card._pushMatrixHistory();
-  card.matrix = [
-    ...card.matrix.slice(0, idx),
-    "#000000",
-    ...card.matrix.slice(idx + 1),
-  ];
-  StorageUtils.saveMatrix(card.matrix);
-  // requestUpdate now handled in matrix operations
+  card.matrixOperations.erasePixel(null, idx);
 }
 
 export function onMatrixMouseOver(card, idx) {

@@ -18,6 +18,10 @@ import {
   ACTION_BUTTON_LABELS,
   rotationIntervalParts,
   ROTATION_INTERVAL_UNITS,
+  rotationIntervalRows,
+  intervalPartsSeconds,
+  nextIntervalUnit,
+  formatRotationInterval,
 } from "../custom_components/yeelight_cube/www/mode-controls-controller.js";
 import { readFileSync } from "node:fs";
 import {
@@ -433,7 +437,9 @@ test("rotation order and interval are bounded", () => {
     "Rainbow",
   );
   assert.equal(nextRotationEffect([], "Rainbow"), undefined);
-  assert.equal(rotationIntervalMs({ rotation_interval: 1 }), 10000);
+  // No lower limit beyond one second.
+  assert.equal(rotationIntervalMs({ rotation_interval: 1 }), 1000);
+  assert.equal(rotationIntervalMs({ rotation_interval: 0 }), 60000);
   assert.equal(rotationIntervalMs({ rotation_interval: 9999999 }), 604800000);
   assert.equal(rotationIntervalMs({}), 60000);
 });
@@ -637,6 +643,12 @@ test("native editor sections follow the card and use shared conditional controls
     },
     rotationIntervalParts,
     ROTATION_INTERVAL_UNITS,
+    rotationIntervalRows,
+    intervalPartsSeconds,
+    nextIntervalUnit,
+    formatRotationInterval,
+    sharedRotationInterval: () => undefined,
+    saveEditorRotationInterval: () => {},
     sliderKeys: (prefix) => prefix,
   };
   const sharedBody = sourceFor("mode-controls-settings.js").match(
@@ -644,7 +656,7 @@ test("native editor sections follow the card and use shared conditional controls
   )[1];
   dependencies.renderModeControlSettings = new Function(
     ...Object.keys(dependencies),
-    `return function(area, config, change, items = [], noun = "effect", renderAppearance = null) {${sharedBody}}`,
+    `return function(area, config, change, items = [], noun = "effect", renderAppearance = null, rotation = {}) {${sharedBody}}`,
   )(...Object.values(dependencies));
   const render = new Function(
     ...Object.keys(dependencies),
@@ -891,9 +903,10 @@ test("native commands send all targets through the shared service path", async (
   assert.deepEqual(getTargetEntities({ entity: "light.legacy" }), [
     "light.legacy",
   ]);
+  // An emptied target selector saves []: the legacy entity still applies.
   assert.deepEqual(
     getTargetEntities({ entity: "light.legacy", target_entities: [] }),
-    [],
+    ["light.legacy"],
   );
   card.config = { entity: "light.legacy" };
   await command.call(card, "turn_on", {}, "light");

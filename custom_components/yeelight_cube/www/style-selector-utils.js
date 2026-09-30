@@ -21,13 +21,18 @@ export function selectorItemsPerPage(config) {
   const value = parseInt(config?.items_per_page, 10);
   return value > 0 ? value : 0;
 }
+// Items per page of a browser layout (0: the layout does not page).
+export function selectorPageSize(config, style) {
+  return ["original", "preview-list", "preview-grid"].includes(style)
+    ? selectorItemsPerPage(config)
+    : 0;
+}
+
 export function selectorPagination(config, items, style, page = 0) {
   return renderPagination({
     items,
     currentPage: page,
-    itemsPerPage: ["original", "preview-list", "preview-grid"].includes(style)
-      ? selectorItemsPerPage(config)
-      : 0,
+    itemsPerPage: selectorPageSize(config, style),
   });
 }
 export function bindStyleSelectorEvents(

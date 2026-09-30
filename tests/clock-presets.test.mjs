@@ -1,14 +1,13 @@
 import { matchingColorOption } from "../custom_components/yeelight_cube/www/color-mode-selector-utils.js";
 
 import assert from "node:assert/strict";
-import { renderColorModeSelector } from "../custom_components/yeelight_cube/www/color-mode-selector-utils.js";
+import { colorModeSelectorModel } from "../custom_components/yeelight_cube/www/color-mode-selector-utils.js";
 import test from "node:test";
 import { readFileSync } from "node:fs";
 import { escapeHtml } from "../custom_components/yeelight_cube/www/html-escape-utils.js";
 import { PreviewVisibility } from "../custom_components/yeelight_cube/www/preview-visibility.js";
 import {
   renderActionButtonHTML,
-  renderActionButtonGroupHTML,
   actionButtonGroupModel,
 } from "../custom_components/yeelight_cube/www/action-button-utils.js";
 import {
@@ -291,65 +290,83 @@ test("unified colour row has saved colours and Add without a Custom tab", () => 
   let config = {};
   const options = () =>
     clockColorModeOptions(CLOCK_COLOR_MODES, presets, config);
-  let markup = renderColorModeSelector(config, options(), "normal");
-  assert.ok(markup.includes('data-value="custom:pink"'));
-  assert.ok(markup.includes('data-value="__pick__"'));
-  assert.doesNotMatch(markup, /data-value="custom"|data-preset-save|<img/);
+  const values = (model) => model.buttons.map((button) => button.value);
+  let model = colorModeSelectorModel(config, options(), "normal");
+  assert.ok(values(model).includes("custom:pink"));
+  assert.ok(values(model).includes("__pick__"));
+  assert.ok(!values(model).includes("custom"));
+  // The saved name is plain data: the Lit renderer binds it as text.
+  assert.equal(
+    model.buttons.find((button) => button.value === "custom:pink").label,
+    "<img src=x onerror=alert(1)>",
+  );
   presets.push({ ...presets[0], id: "duplicate", name: "Other Pink" });
   const selected = matchingColorOption(
     options(),
     presets[0].color,
     "duplicate",
   );
-  markup = renderColorModeSelector(config, options(), selected.value);
-  assert.match(markup, /aria-checked="true"[^>]*data-value="custom:duplicate"/);
+  model = colorModeSelectorModel(config, options(), selected.value);
+  const checked = model.buttons.filter(
+    (button) => button.role === "radio" && button.selected,
+  );
+  assert.deepEqual(
+    checked.map((button) => button.value),
+    ["custom:duplicate"],
+  );
   assert.equal(
     matchingColorOption(options(), presets[0].color, null, "Other Pink").value,
     "custom:duplicate",
   );
-  markup = renderColorModeSelector(config, options(), null, {
+  model = colorModeSelectorModel(config, options(), null, {
     draft: [255, 100, 180],
   });
-  assert.match(markup, /Change unsaved colour/);
+  const add = model.buttons.find((button) => button.add);
+  assert.equal(add.title, "Change unsaved colour");
+  assert.equal(add.swatch, "#ff64b4");
   config = clockColorModeVisibilityConfig({}, options(), []);
-  markup = renderColorModeSelector(config, options(), null);
-  assert.ok(!markup.includes('data-value="__pick__"'));
-  assert.doesNotMatch(markup, /role="radio"/);
+  model = colorModeSelectorModel(config, options(), null);
+  assert.deepEqual(values(model), []);
   config = clockColorModeVisibilityConfig(
     {},
     clockColorModeOptions(CLOCK_COLOR_MODES, presets),
     ["__pick__", "normal"],
   );
-  markup = renderColorModeSelector(config, options(), null);
-  assert.ok(
-    markup.indexOf('data-value="__pick__"') <
-      markup.indexOf('data-value="normal"'),
+  model = colorModeSelectorModel(config, options(), null);
+  assert.ok(values(model).indexOf("__pick__") < values(model).indexOf("normal"));
+  // Dropdown: a hidden current mode shows the placeholder.
+  model = colorModeSelectorModel(
+    { color_mode_selector: "dropdown" },
+    options(),
+    "gone",
   );
+  assert.equal(model.kind, "dropdown");
+  assert.equal(model.placeholder, "Current mode hidden");
 });
 
 test("custom mode styles support name-only and migrate legacy swatches to Filled", () => {
   const options = [
     { value: "custom:pink", label: "Pink", color: [255, 153, 187] },
   ];
-  const name = renderColorModeSelector(
+  const [name] = colorModeSelectorModel(
     { color_preset_style: "name" },
     options,
     "normal",
+  ).buttons;
+  assert.equal(name.label, "Pink");
+  assert.equal(name.contentMode, "text");
+  assert.ok(!name.swatch && !name.fill);
+  assert.deepEqual(
+    colorModeSelectorModel({ color_preset_style: "swatch" }, options, "normal"),
+    colorModeSelectorModel({ color_preset_style: "filled" }, options, "normal"),
   );
-  assert.match(name, /Pink/);
-  assert.doesNotMatch(name, /btn-swatch|btn-fill/);
-  assert.equal(
-    renderColorModeSelector(
-      { color_preset_style: "swatch" },
-      options,
-      "normal",
-    ),
-    renderColorModeSelector(
-      { color_preset_style: "filled" },
-      options,
-      "normal",
-    ),
-  );
+  const [filled] = colorModeSelectorModel(
+    { color_preset_style: "filled" },
+    options,
+    "normal",
+  ).buttons;
+  assert.equal(filled.fill, "#ff99bb");
+  assert.equal(filled.title, "Pink");
 });
 
 test("Add opens the picker without sending a colour-mode command", () => {
