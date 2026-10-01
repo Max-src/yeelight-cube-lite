@@ -1,41 +1,47 @@
 """Software transition animations for the Yeelight Cube Lite light entity.
 
 Extracted from light.py as a mixin.  Renders a transition frame-by-frame between
-two 100-pixel colour states and streams each frame to the lamp.  Reads/writes
+two 100-pixel color states and streams each frame to the lamp.  Reads/writes
 state via ``self`` (the concrete :class:`YeelightCubeLight`); used only as a mixin.
 """
 import asyncio
 import logging
-import math
 import random
 import time
 
-from .color_utils import hex_to_rgb, rgb_to_hex
+from .color_utils import rgb_to_hex
+from .cube_matrix import encode_rgb_frame
 from .layout import TOTAL_COLUMNS, TOTAL_ROWS
 
 _LOGGER = logging.getLogger(__name__)
 
 
 class TransitionMixin:
-    """Frame-by-frame software transitions between two matrix colour states."""
+    """Frame-by-frame software transitions between two matrix color states."""
 
     async def _send_transition_frame(self, frame):
-        """Write a single 100-pixel frame to modules and push to the lamp.
-        
+        """Push a single 100-pixel frame to the lamp.
+
         Returns True on success, False if the send failed (connection error,
         quota exceeded, etc.).  Callers should break out of the transition
         loop on False -- the post-transition ensure_fx_ready will recover.
+        The layout is left as is: apply() writes the target frame back once
+        the transition ends.
         """
-        for i, module in enumerate(self._layout.device_layout):
-            if i < len(frame):
-                module.data = [rgb_to_hex(frame[i])]
-        raw_rgb_data = self._layout.get_raw_rgb_data()
+        if len(frame) == len(self._layout.device_layout):
+            raw_rgb_data = encode_rgb_frame(frame)
+        else:
+            # A partial frame: the rest keeps what the layout shows.
+            for i, module in enumerate(self._layout.device_layout):
+                if i < len(frame):
+                    module.data = [rgb_to_hex(frame[i])]
+            raw_rgb_data = self._layout.get_raw_rgb_data()
         try:
             await self._cube_matrix.draw_matrices_fast(raw_rgb_data)
             return True
         except Exception as e:
             _LOGGER.warning(
-                f"[TRANSITION] [{self._ip}] Frame send failed -- aborting transition early: {e}"
+                "[TRANSITION] [%s] Frame send failed -- aborting transition early: %s", self._ip, e
             )
             return False
 
@@ -90,14 +96,16 @@ class TransitionMixin:
             # not from last command) and gives us a pristine persistent socket for
             # the burst of transition frames that follows.
             _LOGGER.debug(
-                f"[TRANSITION] [{self._ip}] Re-activating FX mode via clean TCP "
-                f"before transition (fx_age={time.time() - self._last_fx_mode_time:.0f}s)"
+                "[TRANSITION] [%s] Re-activating FX mode via clean TCP "
+                "before transition (fx_age=%.0fs)",
+                self._ip, time.time() - self._last_fx_mode_time
             )
             await self.ensure_fx_ready()
             
             _LOGGER.debug(
-                f"[TRANSITION] [{self._ip}] Starting '{self._transition_type}' "
-                f"({steps} steps, {duration:.1f}s, {step_delay*1000:.0f}ms/frame)"
+                "[TRANSITION] [%s] Starting '%s' "
+                "(%s steps, %.1fs, %.0fms/frame)",
+                self._ip, self._transition_type, steps, duration, step_delay*1000
             )
             
             ttype = self._transition_type
@@ -601,8 +609,9 @@ class TransitionMixin:
                     await asyncio.sleep(step_delay)
             
             _LOGGER.debug(
-                f"[TRANSITION] [{self._ip}] Completed '{self._transition_type}' "
-                f"({steps} steps, {duration:.1f}s)"
+                "[TRANSITION] [%s] Completed '%s' "
+                "(%s steps, %.1fs)",
+                self._ip, self._transition_type, steps, duration
             )
         finally:
             self._transition_active = False

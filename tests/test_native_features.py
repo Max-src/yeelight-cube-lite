@@ -40,9 +40,16 @@ INIT_SOURCE = (ROOT / "__init__.py").read_text(encoding="utf-8")
 CAMERA_SOURCE = (ROOT / "camera.py").read_text(encoding="utf-8")
 SELECT_SOURCE = (ROOT / "select.py").read_text(encoding="utf-8")
 SWITCH_SOURCE = (ROOT / "switch.py").read_text(encoding="utf-8")
-CLOCK_CARD_SOURCE = (
-    ROOT / "www" / "yeelight-cube-lamp-preview-card.js"
-).read_text(encoding="utf-8")
+# The JS that renders clock previews: the shared clock-preview module and the
+# cards that use it.
+CLOCK_CARD_SOURCE = "\n\n".join(
+    (ROOT / "www" / name).read_text(encoding="utf-8")
+    for name in (
+        "clock-preview-utils.js",
+        "yeelight-cube-lamp-preview-card.js",
+        "yeelight-cube-clock-card.js",
+    )
+)
 
 
 def _function_source(source: str, name: str) -> str:
@@ -74,6 +81,12 @@ def _function_source(source: str, name: str) -> str:
     raise AssertionError(f"Function {name} was not found")
 
 
+def _js_object(source: str, name: str) -> str:
+    """Source text of the JS object literal assigned to `name`."""
+    start = source.index(f"{name} = {{")
+    return source[start: source.index("\n};", start) + 3]
+
+
 def _load_standalone_functions(source: str, names: set, extra_namespace=None) -> dict:
     """Load selected helpers without importing Home Assistant."""
     tree = ast.parse(source)
@@ -99,6 +112,26 @@ def _load_standalone_functions(source: str, names: set, extra_namespace=None) ->
 
 
 class NativeFeatureTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("node"), "Node is required for preview parity")
+    def test_clock_background_direction_matches_between_previews(self):
+        # The camera (Python) and the cards (JS) draw a clock style's mixer
+        # background in the effect's calibrated clock direction.
+        orientation = runpy.run_path(str(ROOT / "effect_orientation.py"))
+        effects = sorted(set(CONSTANTS["CLOCK_MIXER_EFFECTS"].values()))
+        module_uri = (ROOT / "www" / "effect-orientation.js").as_uri()
+        script = (
+            f"import {{clockEffectDirection}} from {json.dumps(module_uri)};"
+            f"const names = {json.dumps(effects)};"
+            "process.stdout.write(JSON.stringify(Object.fromEntries("
+            "names.map((n) => [n, clockEffectDirection(n)]))));"
+        )
+        result = subprocess.run(
+            [shutil.which("node"), "--input-type=module", "-e", script],
+            text=True, capture_output=True, check=True,
+        )
+        expected = {name: orientation["clock_effect_direction"](name) for name in effects}
+        self.assertEqual(expected, json.loads(result.stdout))
+
     @unittest.skipUnless(shutil.which("node"), "Node is required for catalogue parity")
     def test_offline_native_catalogue_matches_backend(self):
         module_uri = (ROOT / "www" / "native-effect-card-utils.js").as_uri()
@@ -227,7 +260,7 @@ class NativeFeatureTests(unittest.TestCase):
         )
 
     def test_clock_color_override_cleared_for_any_active_palette_mode(self):
-        # A custom colour override must not linger once a palette mode (B&W,
+        # A custom color override must not linger once a palette mode (B&W,
         # Vivid, Retro Orange, ...) is active on an animated style - it would
         # otherwise re-tint the firmware's own palette remap. Solid styles
         # have no mixer effect to protect and stay unaffected (except B&W).
@@ -305,7 +338,7 @@ class NativeFeatureTests(unittest.TestCase):
                 self.assertEqual(CONSTANTS["CLOCK_COLOR_MODES"][mode], params[0])
 
         # Solid style (mixer 0): palette modes other than B&W leave the
-        # override and command id untouched; B&W still clears the colour.
+        # override and command id untouched; B&W still clears the color.
         for mode in ("red_blue", "white_orange", "blue_yellow", "purple_orange"):
             with self.subTest(mode=mode):
                 params = asyncio.run(run(6, mode))
@@ -730,7 +763,7 @@ class NativeFeatureTests(unittest.TestCase):
                 self.assertLessEqual(sum(map(is_near_white, frame)), 15)
 
         # Whole rows (Right/Left) or whole columns (Up/Down) must be uniform so
-        # a region can never colour only part of a line.
+        # a region can never color only part of a line.
         for direction, vertical in (("Right", False), ("Left", False), ("Up", True), ("Down", True)):
             for phase in range(40):
                 frame = render("Flower Sea", phase / 2, direction)
@@ -1445,7 +1478,7 @@ class NativeFeatureTests(unittest.TestCase):
         # Mode 60 is a selectable native effect but must NOT be a clock option:
         # it goes fully dark for most of its cycle, so masked characters vanish.
         self.assertNotIn(60, CONSTANTS["CLOCK_MIXER_EFFECTS"])
-        self.assertNotIn('60: "Spectrum', CLOCK_CARD_SOURCE)
+        self.assertNotIn("60:", _js_object(CLOCK_CARD_SOURCE, "CLOCK_MIXER_EFFECTS"))
         style_mixers = {
             style["mixer"] for style in CONSTANTS["NATIVE_CLOCK_STYLES"].values()
         }
@@ -1524,7 +1557,7 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertEqual(100, len(frame))
 
         # Dot-by-dot: adjacent columns within a row differ (a continuous
-        # gradient), unlike Rainbow which paints each row a single colour.
+        # gradient), unlike Rainbow which paints each row a single color.
         top_row = [frame[(4 - 0) * 20 + col] for col in range(20)]
         self.assertGreater(len({tuple(p) for p in top_row}), 12)
 
@@ -1658,7 +1691,6 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertNotEqual(down, right)
         fixed = CONSTANTS["CLOCK_MIXER_FIXED_DIRECTION"]
         self.assertEqual("Left", fixed["Monochrome Waves"])
-        self.assertIn('"Monochrome Waves": "Left"', CLOCK_CARD_SOURCE)
 
     def test_prism_matches_measured_domino_trains_and_clock_mixer(self):
         render = NATIVE_PREVIEW["render_native_effect"]
@@ -1721,7 +1753,6 @@ class NativeFeatureTests(unittest.TestCase):
             "Right",
             CONSTANTS["CLOCK_MIXER_FIXED_DIRECTION"]["Prism"],
         )
-        self.assertIn('Prism: "Right"', CLOCK_CARD_SOURCE)
 
     def test_drift_is_monochrome_aurora_and_clock_mixer(self):
         render = NATIVE_PREVIEW["render_native_effect"]
@@ -1758,7 +1789,6 @@ class NativeFeatureTests(unittest.TestCase):
             "Right",
             CONSTANTS["CLOCK_MIXER_FIXED_DIRECTION"]["Drift"],
         )
-        self.assertIn('Drift: "Right"', CLOCK_CARD_SOURCE)
 
     def test_spectrum_bands_matches_static_column_gradient_and_clock_mixer(self):
         render = NATIVE_PREVIEW["render_native_effect"]
@@ -1879,7 +1909,7 @@ class NativeFeatureTests(unittest.TestCase):
             self.assertLess(orange_pixels / lit_pixels, 0.34)
 
         # Right and Left restart the same gradient sequence on the firmware;
-        # Up and Down likewise share the fixed-colour trail sequence.
+        # Up and Down likewise share the fixed-color trail sequence.
         for phase in (0.37, 3.2, 11.8):
             right = render("Color Trails", phase, "Right")
             left = render("Color Trails", phase, "Left")
@@ -1894,7 +1924,6 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertEqual("Right", fixed["Color Trails"])
         for direction in ("Right", "Down", "Left", "Up"):
             self.assertEqual("Right", resolve(direction, "Color Trails"))
-        self.assertIn('"Color Trails": "Right"', CLOCK_CARD_SOURCE)
 
         # At least one constant-hue body changes lane through a vertical pair,
         # rather than all colors being independent straight row bands.
@@ -1971,7 +2000,7 @@ class NativeFeatureTests(unittest.TestCase):
             places=3,
         )
 
-    def test_pastel_pulse_matches_measured_colour_maps_and_clock_mixer(self):
+    def test_pastel_pulse_matches_measured_color_maps_and_clock_mixer(self):
         render = NATIVE_PREVIEW["render_native_effect"]
 
         self.assertEqual("Pastel Pulse", CONSTANTS["CLOCK_MIXER_EFFECTS"][9])
@@ -2009,7 +2038,7 @@ class NativeFeatureTests(unittest.TestCase):
                 self.assertEqual(left[row * 20 + col], right[(4 - row) * 20 + (19 - col)])
 
         # The field breathes subtly: a non-neutral phase shifts brightness a
-        # little without recolouring cells.
+        # little without recoloring cells.
         breathed = render("Pastel Pulse", 0.8, "Right")
         self.assertNotEqual(right, breathed)
         drift = sum(
@@ -2105,7 +2134,7 @@ class NativeFeatureTests(unittest.TestCase):
         frames = [render("Solar Flare", k * 0.1, "Right") for k in range(120)]
 
         # Every pixel lies on the smooth gradient between two adjacent palette
-        # colours (fades now interpolate instead of snapping to a palette step).
+        # colors (fades now interpolate instead of snapping to a palette step).
         def level_of(color):
             best_level = 0.0
             best_dist = None
@@ -2139,7 +2168,7 @@ class NativeFeatureTests(unittest.TestCase):
                 # Rounding leaves each channel within 0.5 of the ideal gradient.
                 self.assertLessEqual(level_of(pixel)[1], 1.0)
 
-        # The panel starts entirely at the darkest colour.
+        # The panel starts entirely at the darkest color.
         self.assertTrue(all(pixel == darkest for pixel in frames[0]))
 
         # Animation is alive.
@@ -2346,7 +2375,7 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertEqual("Spectrum", mixer_effects[clock_styles[3]["mixer"]])
         for mixer, effect_name in mixer_effects.items():
             self.assertEqual(mixer, native_effects[effect_name]["mode"])
-        # The direction must produce colour variation across columns so the
+        # The direction must produce color variation across columns so the
         # masked clock characters sweep horizontally rather than banding by row.
         frame = render("Rainbow", 0.0, CONSTANTS["CLOCK_MIXER_EFFECT_DIRECTION"])
         columns = {tuple(frame[c]) for c in range(20)}
@@ -2358,7 +2387,7 @@ class NativeFeatureTests(unittest.TestCase):
         dirs = CONSTANTS["NATIVE_EFFECT_DIRECTIONS"]
         # Named effects must show through the clock (previously only a curated
         # subset did) -- including four-direction effects and direction-less
-        # ones like Starry sky (whose blue colour previously fell back to the
+        # ones like Starry sky (whose blue color previously fell back to the
         # default yellow gradient).
         for name in (
             "Waterfall",
@@ -2422,10 +2451,10 @@ class NativeFeatureTests(unittest.TestCase):
         effects = CONSTANTS["ALL_NATIVE_EFFECTS"]
         styles = CONSTANTS["NATIVE_CLOCK_STYLES"]
         default_color = CONSTANTS["clock_style_default_color"]
-        # Every effect that carries a default colour (e.g. Waterfall = 255) must
+        # Every effect that carries a default color (e.g. Waterfall = 255) must
         # be reachable as a clock style whose mixer equals that effect's mode
         # (unless the effect is excluded from the clock entirely), and the
-        # shared helper must resolve that colour from the style.
+        # shared helper must resolve that color from the style.
         colored = {
             name: spec
             for name, spec in effects.items()
@@ -2443,12 +2472,12 @@ class NativeFeatureTests(unittest.TestCase):
                 continue
             self.assertIsNotNone(style, f"no clock style backs {name}")
             self.assertEqual(spec["color"], default_color(style))
-        # A solid-colour style keeps its own colour; a mixer effect without a
-        # default colour resolves to None.
+        # A solid-color style keeps its own color; a mixer effect without a
+        # default color resolves to None.
         self.assertEqual(styles[6]["color"], default_color(styles[6]))
         self.assertIsNone(default_color({"mixer": 39}))
-        # Both clock payload builders resolve the colour through the shared
-        # helper so none of them can silently drop the mixer effect's colour.
+        # Both clock payload builders resolve the color through the shared
+        # helper so none of them can silently drop the mixer effect's color.
         resolve = _function_source(LIGHT_SOURCE, "_resolve_native_clock_color")
         self.assertIn("clock_style_default_color", resolve)
         activate = _function_source(LIGHT_SOURCE, "_activate_native_clock")
@@ -2460,7 +2489,7 @@ class NativeFeatureTests(unittest.TestCase):
         clock = _function_source(CAMERA_SOURCE, "_get_clock_preview")
         # Mixer-effect styles render the effect and mask it to the glyph pixels.
         self.assertIn("CLOCK_MIXER_EFFECTS", clock)
-        self.assertIn("render_native_effect(", clock)
+        self.assertIn("render_native_effect_oriented(", clock)
         self.assertIn("effect_frame[row * COLS + col]", clock)
         # Colon blink, date/12h/offset handling stay intact.
         self.assertIn('char == ":"', clock)
@@ -2468,7 +2497,7 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertIn("_native_clock_12_hour", clock)
         # The JS card mirrors the same masking and colon-blink behaviour.
         self.assertIn("CLOCK_MIXER_EFFECTS", CLOCK_CARD_SOURCE)
-        self.assertIn("renderNativeEffect(effectName", CLOCK_CARD_SOURCE)
+        self.assertIn("renderNativeEffectOriented(", CLOCK_CARD_SOURCE)
         self.assertIn("effectFrame[row * COLS + col]", CLOCK_CARD_SOURCE)
         self.assertIn("colonVisible", CLOCK_CARD_SOURCE)
 
@@ -2503,7 +2532,6 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertEqual("Right", fixed["Spectrum Bands"])
         for label in ("Right", "Down", "Left", "Up"):
             self.assertEqual("Right", resolve(label, "Spectrum Bands"))
-        self.assertIn('CLOCK_MIXER_FIXED_DIRECTION[effectName]', CLOCK_CARD_SOURCE)
         # A direction-less effect or unknown mixer yields no direction byte.
         self.assertIsNone(resolve("Up", "Magic"))
         self.assertIsNone(resolve("Up", None))
@@ -2521,15 +2549,14 @@ class NativeFeatureTests(unittest.TestCase):
         reflect = _function_source(LIGHT_SOURCE, "handle_send_fx_effect")
         self.assertIn("target._native_effect_direction = _dn", reflect)
 
-        # Both previews resolve the mixer direction from the native-effect
-        # direction (never the mount, so the clock face is not flipped).
+        # Both previews draw the clock background in the effect's calibrated
+        # clock direction (not the lamp's native-effect direction, which is
+        # unrelated to the clock), through the oriented renderer.
         clock_preview = _function_source(CAMERA_SOURCE, "_get_clock_preview")
-        self.assertIn("resolve_clock_mixer_direction(", clock_preview)
-        self.assertIn("_native_effect_direction", clock_preview)
-        self.assertIn("native_effect_direction", CLOCK_CARD_SOURCE)
-        self.assertIn(
-            "renderNativeEffect(effectName, phase, direction)", CLOCK_CARD_SOURCE
-        )
+        self.assertIn("clock_effect_direction(effect_name)", clock_preview)
+        self.assertIn("render_native_effect_oriented(", clock_preview)
+        self.assertIn("clockEffectDirection(effectName)", CLOCK_CARD_SOURCE)
+        self.assertIn("renderNativeEffectOriented(", CLOCK_CARD_SOURCE)
 
     def test_native_effect_send_keeps_firmware_direction_remap(self):
         # REGRESSION GUARD: the firmware `direction_remap` on the SEND path is the
@@ -2549,7 +2576,7 @@ class NativeFeatureTests(unittest.TestCase):
         # runs even when persist is unchecked (the fx-explorer card default).
         reflect = handler.split("persisted = False")[0]
         # Selecting a clock style must update the style itself (not just the
-        # mode) so the preview card renders the correct masked effect / colour,
+        # mode) so the preview card renders the correct masked effect / color,
         # and must refresh the linked settings controls -- matching a normal
         # clock-style selection from the device page.
         self.assertIn('target._mode = MODE_CLOCK', reflect)
@@ -2558,7 +2585,7 @@ class NativeFeatureTests(unittest.TestCase):
         # The card derives the effect from clock_style_id, so it must be the
         # attribute that gets updated.
         self.assertIn("clock_style_id", CLOCK_CARD_SOURCE)
-        self.assertIn("_clockStyleMixer", CLOCK_CARD_SOURCE)
+        self.assertIn("clockStyleMixer(", CLOCK_CARD_SOURCE)
 
     def test_extended_native_effects_are_hidden_gradient_modes(self):
         official = CONSTANTS["NATIVE_EFFECTS"]

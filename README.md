@@ -38,12 +38,12 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a
 
 | Card | Description |
 | :-- | :-- |
-| **[Preview Card](#preview-card)** | Live lamp preview with brightness and colour adjustments |
-| **[Clock Card](#clock-card)** | Time/date styles, colour modes, live previews, favourites, and server-side rotation |
-| **[Native Effects Card](#native-effects-card)** | Firmware animation previews, colour modes, favourites, rotation, and lamp controls |
-| **[Colors Card](#colors-card)** | Edit the colours used to display text and apply gradients |
-| **[Palettes Card](#palettes-card)** | Manage reusable lists of colours (palettes) |
-| **[Gradient Card](#gradient-card)** | Configure and preview gradient & colour modes |
+| **[Preview Card](#preview-card)** | Live lamp preview with brightness and color adjustments |
+| **[Clock Card](#clock-card)** | Time/date styles, color modes, live previews, favourites, and server-side rotation |
+| **[Native Effects Card](#native-effects-card)** | Firmware animation previews, color modes, favourites, rotation, and lamp controls |
+| **[Colors Card](#colors-card)** | Edit the colors used to display text and apply gradients |
+| **[Palettes Card](#palettes-card)** | Manage reusable lists of colors (palettes) |
+| **[Gradient Card](#gradient-card)** | Configure and preview gradient & color modes |
 | **[Draw Card](#draw-card)** | Pixel art editor with a personal gallery |
 
 > [!NOTE]
@@ -53,7 +53,7 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a
 
 Both cards offer **Text**, **Live Preview**, and **Original** browsers in the
 visual editor's **Previews** section. Styles follow your configured order and
-automatically filter to those that respond to the selected colour mode or RGB
+automatically filter to those that respond to the selected color mode or RGB
 override. This does not delete favourites. The former
 `show_only_responding_styles` toggle is no longer used.
 
@@ -212,8 +212,8 @@ Every card comes with a **visual configuration editor** - click the pencil icon 
 
 ### Clock Card (`custom:yeelight-cube-clock-card`)
 
-Browse firmware clock styles with live time/date previews, choose a colour mode
-or custom RGB, and save your favourite style-and-colour combinations. The card
+Browse firmware clock styles with live time/date previews, choose a color mode
+or custom RGB, and save your favourite style-and-color combinations. The card
 also provides content/format controls, brightness, animation speed, and a
 server-side favourites rotation that continues after you close the dashboard.
 
@@ -242,12 +242,12 @@ server-side favourites rotation that continues after you close the dashboard.
 | :-- | :-- |
 | **Clock preview** | Live time/date preview using the lamp's native font, with configurable pixels, spacing, background, shadow and size |
 | **Style browser** | Search clock styles using text, grid, list, strip, carousel or wheel layouts, with pagination and favourite markers |
-| **Colour modes** | Choose supported palettes or custom RGB; save reusable colour modes and clock presets |
+| **Color modes** | Choose supported palettes or custom RGB; save reusable color modes and clock presets |
 | **Sliders** | Brightness and animation speed with selectable slider styles, labels and values |
 | **Content & format** | Switch time/date, 12/24-hour format and colon blinking |
 | **Actions** | Previous, next, random, freeze, refresh and power controls |
-| **Favourites & rotation** | Save style-and-colour combinations on the lamp (the same on every dashboard and device); rotate at a configurable interval, even after closing the dashboard |
-| **Multiple lamps & offline editing** | Target several lamps; previews and colour choices remain available while lamps are unavailable |
+| **Favourites & rotation** | Save style-and-color combinations on the lamp (the same on every dashboard and device); rotate at a configurable interval, even after closing the dashboard |
+| **Multiple lamps & offline editing** | Target several lamps; previews and color choices remain available while lamps are unavailable |
 
 <details>
 <summary>View editor sections</summary>
@@ -265,7 +265,7 @@ server-side favourites rotation that continues after you close the dashboard.
     <td valign="top"><img src="images/Cards/generated/clock-editor-display.png" alt="Clock - Content &amp; Controls" width="220"><br>Content &amp; Controls</td>
   </tr>
   <tr>
-    <td valign="top"><img src="images/Cards/generated/clock-editor-presets.png" alt="Clock - Custom clock styles and colours" width="220"><br>Custom clock styles and colours</td>
+    <td valign="top"><img src="images/Cards/generated/clock-editor-presets.png" alt="Clock - Custom clock styles and colors" width="220"><br>Custom clock styles and colors</td>
     <td valign="top"><img src="images/Cards/generated/clock-editor-previews.png" alt="Clock - Previews" width="220"><br>Previews</td>
     <td valign="top"><img src="images/Cards/generated/clock-editor-favourites.png" alt="Clock - Favourites" width="220"><br>Favourites</td>
   </tr>
@@ -340,10 +340,10 @@ available where supported. Experimental effects require the lamp's
 | :-- | :-- |
 | **Live previews** | Preview firmware animations with configurable pixels, spacing, background, shadow and size |
 | **Effect browser** | Search effects using text, grid, list, strip, carousel or wheel layouts, with pagination and availability badges |
-| **Colour modes** | Apply supported palette modes or custom RGB; favourites remember the chosen colours |
+| **Color modes** | Apply supported palette modes or custom RGB; favourites remember the chosen colors |
 | **Sliders** | Brightness and effect speed with selectable slider styles; speed is shown for effects that support it |
 | **Orientation & actions** | Device orientation, previous, next, random, freeze, refresh and power controls |
-| **Favourites & rotation** | Order saved effect-and-colour combinations and rotate them on the lamp at a configurable interval |
+| **Favourites & rotation** | Order saved effect-and-color combinations and rotate them on the lamp at a configurable interval |
 | **Multiple lamps & offline editing** | Control several targets; browse previews even while lamps are unavailable |
 
 <details>
@@ -362,8 +362,8 @@ available where supported. Experimental effects require the lamp's
     <td valign="top"><img src="images/Cards/generated/native-effects-editor-orientation.png" alt="Native Effects - Device Orientation" width="220"><br>Device Orientation</td>
   </tr>
   <tr>
-    <td valign="top"><img src="images/Cards/generated/native-effects-editor-colors.png" alt="Native Effects - Colour Modes &amp; Controls" width="220"><br>Colour Modes &amp; Controls</td>
-    <td valign="top"><img src="images/Cards/generated/native-effects-editor-presets.png" alt="Native Effects - Custom colours" width="220"><br>Custom colours</td>
+    <td valign="top"><img src="images/Cards/generated/native-effects-editor-colors.png" alt="Native Effects - Color Modes &amp; Controls" width="220"><br>Color Modes &amp; Controls</td>
+    <td valign="top"><img src="images/Cards/generated/native-effects-editor-presets.png" alt="Native Effects - Custom colors" width="220"><br>Custom colors</td>
     <td valign="top"><img src="images/Cards/generated/native-effects-editor-previews.png" alt="Native Effects - Previews" width="220"><br>Previews</td>
   </tr>
   <tr>
@@ -398,7 +398,7 @@ rotation_interval: 30
 
 </details>
 
-**Shared behaviour:** favourites store the style/effect together with its colour
+**Shared behaviour:** favourites store the style/effect together with its color
 mode and custom RGB, separately for Clock and Native Effects. They are saved on
 the lamp in Home Assistant (a card with several lamps shows the first lamp's list
 and saves it to all of them), so every dashboard, browser and device shows the
@@ -407,7 +407,7 @@ resumed after a Home Assistant restart. Add at least two available
 favourites to start rotation. For multiple lamps, use `target_entities` with a
 list of light entity IDs on either card.
 
-**When a lamp is unavailable:** previews and colour choices remain usable, and
+**When a lamp is unavailable:** previews and color choices remain usable, and
 the last known favourites stay shown (they are edited again once the lamp is
 back), even if the entity temporarily disappears. Hardware
 controls are gated. Reconnection discards local preview drafts without sending
@@ -430,7 +430,7 @@ A live dashboard card that mirrors the lamp's current state with real-time matri
 <!-- card-docs:lamp-preview:variations:start -->
 <table>
   <tr>
-    <td valign="top"><img src="images/Cards/generated/lamp-preview-overview.png" alt="Preview - Light theme with brightness and colour adjustments" width="280"><br>Light theme with brightness and colour adjustments</td>
+    <td valign="top"><img src="images/Cards/generated/lamp-preview-overview.png" alt="Preview - Light theme with brightness and color adjustments" width="280"><br>Light theme with brightness and color adjustments</td>
     <td valign="top"><img src="images/Cards/generated/lamp-preview-dark.png" alt="Preview - Dark theme with round pixels" width="280"><br>Dark theme with round pixels</td>
   </tr>
 </table>
@@ -692,7 +692,7 @@ between Drawing Tools and Drawing Matrix Section.
 
 ## Entities Created
 
-Each lamp creates its own set of per-device entities, plus the integration creates **global entities** (palettes, drawings, fonts, clock colour presets) shared across all lamps.
+Each lamp creates its own set of per-device entities, plus the integration creates **global entities** (palettes, drawings, fonts, clock color presets) shared across all lamps.
 
 > [!NOTE]
 > The names below are the entity names shown on the device page. Matrix-only
@@ -720,7 +720,7 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 
 | Entity | Type | Description |
 | :-- | :-- | :-- |
-| **Auto Turn On** | Switch | Automatically turn on the lamp when a mode, drawing or colour change is applied while it is off |
+| **Auto Turn On** | Switch | Automatically turn on the lamp when a mode, drawing or color change is applied while it is off |
 | **Yeelight Cube Lite** | Light | Main light entity (on/off and brightness; RGB color in Matrix mode) |
 | **Content mode** | Select | Switch between Matrix, firmware-native Clock, Native Effect, and Music Flow |
 | **Matrix: Display Mode** | Select | Choose the Matrix render mode (see [Display Modes](#display-modes)) |
@@ -788,7 +788,7 @@ These sensor entities are created **once per integration install** and shared ac
 > Entity IDs are generated from the entity name the first time it is created,
 > so they differ between installations: a fresh install gets
 > `sensor.saved_drawings`, `sensor.color_palettes`, `sensor.font_characters`
-> and `sensor.clock_colour_presets`, while older installations may still use
+> and `sensor.clock_color_presets`, while older installations may still use
 > `sensor.yeelight_cube_saved_pixel_arts`, `sensor.yeelight_cube_color_palettes`
 > and `sensor.yeelight_cube_font_letter_map`. Check **Settings → Devices &
 > services → Entities** and adjust the examples below. The cards find these
@@ -854,9 +854,9 @@ Read-only bitmap font maps used for text rendering.
 
 ---
 
-#### Clock Colour Presets (`sensor.clock_colour_presets`)
+#### Clock Color Presets (`sensor.clock_color_presets`)
 
-Stores the shared library of saved clock styles and reusable colour modes
+Stores the shared library of saved clock styles and reusable color modes
 managed by the Clock and Native Effects cards (see
 [`save_clock_preset`](SERVICES.md#save_clock_preset--delete_clock_preset)).
 
@@ -1067,10 +1067,10 @@ intervals are limited by how fast the lamp applies a change (around a second):
 a step that takes longer lands on the next boundary of the schedule.
 
 While a rotation runs, the card's effect / clock style list follows it: each
-step is highlighted, its colour mode is shown in the colour row, and the list
+step is highlighted, its color mode is shown in the color row, and the list
 turns to the page holding it. Turn off **Follow in effect list / Follow in style
 list** (`rotation_follow_active: false`, in Rotation Settings) to browse and pick
-freely while the rotation runs: the list keeps your selection, page and colour
+freely while the rotation runs: the list keeps your selection, page and color
 mode until it stops. The playing favourite stays highlighted either way; turn
 off **Highlight in favourites** (`rotation_highlight_favourite: false`) to keep
 the favourites highlight on your own selection too. Rotation is driven **server-side** by the light entity via the
@@ -1108,13 +1108,13 @@ Device Orientation is native-effect-only; the firmware clock cannot rotate. Enab
 favourites retain saved style IDs across renames and are stored separately from
 native-effect favourites. Both rotations share the same server-side lifecycle.
 
-Enable `show_color_modes` on the Native Effects Card for **Colour Modes &
+Enable `show_color_modes` on the Native Effects Card for **Color Modes &
 Controls**. Its button/dropdown presentation and settings are shared with the
 Clock Card. Only hardware-confirmed palettes for the selected effect are offered:
 Normal, Black & White, Vivid, Retro Orange, Tropical, and Violet & Gold where
 supported. The `set_native_effect` service accepts `color_mode`; this setting is
-independent of clock colours and persists with the lamp state. An incompatible
-effect uses its original colours. Restart Home Assistant after updating before using
+independent of clock colors and persists with the lamp state. An incompatible
+effect uses its original colors. Restart Home Assistant after updating before using
 this feature; an older backend does not expose the palette controls.
 
 Time/date content, clock format and the saved clock-style

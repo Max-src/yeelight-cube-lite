@@ -590,7 +590,7 @@ def _render_flower_sea(
     """Render broad pink/purple bands filling whole rows or columns.
 
     Each band spans a full line perpendicular to the arrow so a region can
-    never colour only part of a row or column. Right/Left move across the
+    never color only part of a row or column. Right/Left move across the
     5 rows; Up/Down move across the 20 columns.
     """
     velocity = 0.16
@@ -1079,7 +1079,7 @@ def _render_spectrum_chase(
     return pixels
 
 
-# Measured Cube Lite mode-9 colour maps (renderer coords: row 0 = physical
+# Measured Cube Lite mode-9 color maps (renderer coords: row 0 = physical
 # bottom, col 0 = left), flat-field corrected from calibrated recordings. The
 # horizontal-flow map serves Left as captured and Right column-mirrored; the
 # vertical-flow map serves Down as captured and Up row-mirrored.
@@ -1105,7 +1105,7 @@ def _render_pastel_pulse(
     direction: str,
     color_mode=None,
 ) -> list[tuple[int, int, int]]:
-    """Render mode 9 from the measured colour maps with a subtle brightness pulse."""
+    """Render mode 9 from the measured color maps with a subtle brightness pulse."""
     breath = math.sin(math.tau * phase / 3.2)
     pixels = []
 
@@ -1121,7 +1121,7 @@ def _render_pastel_pulse(
                 base = _PASTEL_PULSE_H[ROWS - 1 - row][COLS - 1 - col]
 
             # Push low-chroma (grey/pale) cells toward white so only genuinely
-            # coloured islands stand out, matching the real panel.
+            # colored islands stand out, matching the real panel.
             red, green, blue = base
             chroma = max(red, green, blue) - min(red, green, blue)
             tint = min(1.0, max(0.0, (chroma - 30) / 40.0))
@@ -1497,7 +1497,7 @@ def _render_palette(
     phase: float,
     direction: str,
 ) -> list[tuple[int, int, int]]:
-    """Render sparse daubs horizontally and broad colour fields vertically."""
+    """Render sparse daubs horizontally and broad color fields vertically."""
     broad = direction in ("Up", "Down")
     phase *= 1.50 if broad else 1.25
     spawn = 0.90 if broad else 0.58
@@ -1965,7 +1965,7 @@ def _render_pulse(
     phase: float,
     direction: str,
 ) -> list[tuple[int, int, int]]:
-    """Render mode 18's single direction-indexed expanding colour profile."""
+    """Render mode 18's single direction-indexed expanding color profile."""
     pulse = 0.5 - 0.5 * math.cos(math.tau * phase / _PULSE_PERIOD)
     last = COLS * ROWS - 1
     pixels = []
@@ -1978,10 +1978,10 @@ def _render_pulse(
     return pixels
 
 
-# Effects the firmware can recolour with a single "colour override": each pixel
+# Effects the firmware can recolor with a single "color override": each pixel
 # keeps its own brightness but adopts the override hue, so dark stays dark and
-# multi-colour effects collapse toward one colour. Effects NOT listed ignore the
-# override (they keep their own colours on the lamp). Names must match
+# multi-color effects collapse toward one color. Effects NOT listed ignore the
+# override (they keep their own colors on the lamp). Names must match
 # _render_native_effect_raw exactly. Mirrors native-effect-preview.js.
 _COLOR_OVERRIDE_EFFECTS = {
     "Rainbow",
@@ -2014,7 +2014,7 @@ def effect_supports_color_override(effect: str) -> bool:
 
 # Effects that the firmware B&W palette mode (command id 15) converts to
 # grayscale. Verified on hardware; Starry sky / Waterfall / Aurora only convert
-# once we stop injecting their default colour (see light_native). Mirrors
+# once we stop injecting their default color (see light_native). Mirrors
 # native-effect-preview.js COLOR_MODE_BW_EFFECTS.
 _COLOR_MODE_BW_EFFECTS = {
     "Rainbow",
@@ -2094,7 +2094,7 @@ def _rainbow_palette_color(position, mode):
 
 
 # Spectrum Chase is intentionally absent: hardware confirmed it ignores these
-# firmware palette modes, so it must not be listed or previewed as recoloured.
+# firmware palette modes, so it must not be listed or previewed as recolored.
 _COLOR_PALETTE_EFFECTS = {
     "Rainbow", "Spectrum", "Streamer", "Rainbow Flow",
     "Pastel Pulse", "Prism", "Color Trails", "Tide", "Spectrum Bands", "Kaleidoscope",
@@ -2137,7 +2137,7 @@ def effect_supports_color_mode(effect: str, mode: str) -> bool:
 
 
 def _apply_color_override(pixels, override):
-    """Recolour a frame toward ``override`` ([r,g,b]) preserving each pixel's
+    """Recolor a frame toward ``override`` ([r,g,b]) preserving each pixel's
     brightness (HSV value = max channel). Black stays black."""
     o_red, o_green, o_blue = override
     return [
@@ -2164,13 +2164,13 @@ def render_native_effect(
     color_mode=None,
 ) -> list[tuple[int, int, int]]:
     """Return one animated 20x5 approximation of a firmware effect, optionally
-    recoloured toward a custom colour override or a firmware palette mode."""
+    recolored toward a custom color override or a firmware palette mode."""
     if (color_mode in _COLOR_PALETTE_MODES and effect_supports_color_mode(effect, color_mode)) or (
         effect == "Rainbow" and color_mode == "bw"
     ):
         return _render_native_effect_raw(effect, phase, direction, color_mode)
     pixels = _render_native_effect_raw(effect, phase, direction)
-    # A palette colour mode takes precedence over the custom colour override.
+    # A palette color mode takes precedence over the custom color override.
     if color_mode is not None and color_mode != "normal":
         if color_mode == "bw" and effect_supports_color_mode(effect, "bw"):
             return _apply_grayscale(pixels)
@@ -2432,7 +2432,7 @@ def _render_native_effect_raw(
                 # is clamped to the border it exited, sliding as a half-ball.
                 # Each ball is point-mirrored through the panel centre, and both
                 # periodically split into a two-child trailing trace (identical
-                # colour/brightness, in sync) while slowly cycling colour.
+                # color/brightness, in sync) while slowly cycling color.
                 def _tri(t):
                     return 1.0 - abs((t % 2.0) - 1.0)
 
@@ -2480,7 +2480,7 @@ def _render_native_effect_raw(
                 # Black sky with independent shooting stars. Five slots cap the
                 # count at 5; each runs its own spawn -> travel -> idle-gap cycle
                 # (~50% duty) so 0 and 5 are both rare. Per spawn the lane,
-                # colour (10 rainbow hues), speed and length (4-9 px) are random,
+                # color (10 rainbow hues), speed and length (4-9 px) are random,
                 # and a fresh spawn can reuse a busy lane. Direction picks the
                 # travel axis and sense:
                 #   Left top->bottom, Right bottom->top (lanes = columns)

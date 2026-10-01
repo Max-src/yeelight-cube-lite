@@ -52,8 +52,8 @@ export async function retryFailedRotations(card, kind) {
 }
 
 function rotationItems(items) {
-  // The exposed rotation attribute stores a null colour for non-custom modes;
-  // the service schema rejects a null colour, so omit the key when empty.
+  // The exposed rotation attribute stores a null color for non-custom modes;
+  // the service schema rejects a null color, so omit the key when empty.
   return items.map(({ color, ...rest }) =>
     Array.isArray(color) && color.length ? { ...rest, color } : rest,
   );

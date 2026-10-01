@@ -12,8 +12,8 @@ def rgb_to_hex(rgb: Tuple[int, int, int]) -> str:
     return '#{:02X}{:02X}{:02X}'.format(*rgb)
 
 
-# The firmware takes a custom clock/effect colour as one integer 0x01RRGGBB
-# (the 0x01 flag byte marks it as an explicit colour).
+# The firmware takes a custom clock/effect color as one integer 0x01RRGGBB
+# (the 0x01 flag byte marks it as an explicit color).
 def rgb_to_argb(rgb) -> int:
     red, green, blue = (int(channel) & 0xFF for channel in rgb[:3])
     return 0x01000000 | (red << 16) | (green << 8) | blue

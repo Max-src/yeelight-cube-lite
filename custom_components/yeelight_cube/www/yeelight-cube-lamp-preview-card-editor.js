@@ -283,7 +283,7 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
                   leftLabel: "Show Moon Icon (🌙)",
                   rightLabel: "Show Sun Icon (☀️)",
                 },
-                // Only this card lets the user pick the slider colour.
+                // Only this card lets the user pick the slider color.
                 matrixColorKey: BRIGHTNESS_SLIDER_KEYS.color,
                 thickness: resolveCapsuleThickness(
                   cfg.brightness_slider_thickness,

@@ -134,8 +134,8 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
         this._config = config;
         fireEvent(this, "config-changed", { config: this._config });
       },
-      addPlaceholder: "Show a colour mode...",
-      resetLabel: "Reset to all colour modes",
+      addPlaceholder: "Show a color mode...",
+      resetLabel: "Reset to all color modes",
     });
   }
 
@@ -243,18 +243,18 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
       )}
       ${this._section(
         "colors",
-        "Colour Modes & Controls",
-        html`${this._toggle("Show Colour Modes", "show_color_modes", false)}
+        "Color Modes & Controls",
+        html`${this._toggle("Show Color Modes", "show_color_modes", false)}
         ${config.show_color_modes
           ? renderModeSettingsSection(
-              "Colour Mode Style",
+              "Color Mode Style",
               html`${renderColorModeSettings(config, change)}
               ${this._toggle(
-                "Show 'save colour mode' button",
+                "Show 'save color mode' button",
                 "show_save_color_mode_button",
               )}
               ${renderModeSettingsSection(
-                "Visible colour modes",
+                "Visible color modes",
                 this._renderVisibleColorModeList(),
               )}`,
             )
@@ -268,7 +268,7 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
       )}
       ${this._section(
         "presets",
-        "Custom colours",
+        "Custom colors",
         html`<yeelight-clock-preset-manager
           .hass=${this.hass}
           .showLibrary=${true}

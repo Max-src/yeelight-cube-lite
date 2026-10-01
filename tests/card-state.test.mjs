@@ -103,7 +103,7 @@ test("Palette rename completion never mutates an HA item at a stale index", asyn
   );
 });
 
-test("colour-save failures roll back only their own pending edit", async (context) => {
+test("color-save failures roll back only their own pending edit", async (context) => {
   context.mock.method(console, "error", () => {});
   const pending = {};
   const commit = cardMethod(

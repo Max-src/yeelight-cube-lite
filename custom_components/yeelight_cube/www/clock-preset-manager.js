@@ -11,7 +11,7 @@ import { defineOnce } from "./card-registration.js";
 
 // Trigger buttons for each save destination (shown under Custom on the card).
 const SAVE_TRIGGERS = {
-  color_mode: { icon: "mdi:content-save-outline", label: "Save colour mode" },
+  color_mode: { icon: "mdi:content-save-outline", label: "Save color mode" },
   style: { icon: "mdi:clock-outline", label: "Save clock style" },
 };
 
@@ -57,7 +57,7 @@ class ClockPresetManager extends LitElement {
       display: block;
       color: var(--primary-text-color, #222);
     }
-    /* Inline in the colour row: drop the leading action-row margin and match
+    /* Inline in the color row: drop the leading action-row margin and match
        the height of the neighbouring control buttons. */
     :host([compact]) .action-row {
       margin-top: 0;
@@ -374,7 +374,7 @@ class ClockPresetManager extends LitElement {
                   action: "save",
                   icon: SAVE_TRIGGERS[kind].icon,
                   label: SAVE_TRIGGERS[kind].label,
-                  // Inline in the colour row each trigger fills its slot.
+                  // Inline in the color row each trigger fills its slot.
                   compact: !this.compact,
                   disabled: !available || this.busy,
                   onClick: () => this._open(undefined, kind),
@@ -408,7 +408,7 @@ class ClockPresetManager extends LitElement {
             /></label>
             ${this.showLibrary
               ? html`<label
-                    >Colour<input
+                    >Color<input
                       type="color"
                       .value=${this.color}
                       ?disabled=${this.busy}
@@ -421,8 +421,8 @@ class ClockPresetManager extends LitElement {
                     class="preview"
                     role="img"
                     aria-label=${this.frameRenderer
-                      ? "Effect colour preview"
-                      : "Clock colour preview"}
+                      ? "Effect color preview"
+                      : "Clock color preview"}
                   >
                     ${frame.map(
                       (pixel) =>
@@ -458,7 +458,7 @@ class ClockPresetManager extends LitElement {
               <div class="kind-options">
                 ${[
                   ["style", "Clock styles"],
-                  ["color_mode", "Colour modes"],
+                  ["color_mode", "Color modes"],
                 ]
                   .filter(([value]) => this.libraryKinds.includes(value))
                   .map(
@@ -489,7 +489,7 @@ class ClockPresetManager extends LitElement {
                     No saved
                     ${this.libraryKind === "style"
                       ? "clock styles"
-                      : "colour modes"}.
+                      : "color modes"}.
                   </p>`}
               ${presets.map(
                 (preset) =>

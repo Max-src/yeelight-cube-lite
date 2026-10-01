@@ -37,7 +37,7 @@ async def async_setup_entry(
     ]
     
     async_add_entities(switches)
-    _LOGGER.debug(f"Added {len(switches)} switch entities for Yeelight Cube Lite")
+    _LOGGER.debug("Added %s switch entities for Yeelight Cube Lite", len(switches))
 
 
 class YeelightCubeAutoTurnOnSwitch(CubeDeviceEntity, SwitchEntity):

@@ -5,7 +5,7 @@ import {
 } from "./draw_utils.js";
 import { MATRIX_SIZE } from "./draw_card_const.js";
 import { updateRecentColors } from "./draw_card_state.js";
-// Saves the drawing and recent colours (batched, see draw_card_storage.js).
+// Saves the drawing and recent colors (batched, see draw_card_storage.js).
 import { StorageUtils } from "./draw_card_storage.js";
 
 export class MatrixOperations1D {
@@ -46,7 +46,7 @@ export class MatrixOperations1D {
   // Set pixel at index
   setPixel(idx) {
     if (!this.card.matrix || idx < 0 || idx >= this.card.matrix.length) return;
-    // Dragging over a cell that already has the colour changes nothing.
+    // Dragging over a cell that already has the color changes nothing.
     if (this.card.matrix[idx] === this.card.selectedColor) return;
 
     this.card.matrix = [
@@ -225,7 +225,7 @@ export class MatrixOperations1D {
   // Update recent colors when setting pixels
   updateRecentColors() {
     if (typeof updateRecentColors !== "function") return;
-    // Already the most recent colour (every cell of a stroke): nothing to do.
+    // Already the most recent color (every cell of a stroke): nothing to do.
     const latest = this.card.recentColors?.[0];
     if (
       typeof latest === "string" &&

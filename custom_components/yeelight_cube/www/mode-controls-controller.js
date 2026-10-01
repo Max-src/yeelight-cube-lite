@@ -207,7 +207,7 @@ export function nextRotationMode(names, current) {
 export class ModeControlsController {
   /** Adapter contract: items/current/available describe the domain; apply and
    * applyFavourite return false on failure; frame returns top-origin RGB pixels.
-   * Cards resolve colour drafts, mode-selection owns identity/pending echoes,
+   * Cards resolve color drafts, mode-selection owns identity/pending echoes,
    * card-command-controller owns service transport, and UI modules own DOM.
    * Backend rotation remains entity-owned and is never stopped by observation.
    */
@@ -320,7 +320,7 @@ export class ModeControlsController {
 
   // What a list shows for `slot`: the live value, or, while a rotation runs
   // and `follow` is off, the value it showed when the rotation started.
-  // The style/effect list (highlight, page, colour mode) follows unless
+  // The style/effect list (highlight, page, color mode) follows unless
   // `rotation_follow_active: false`; the favourites highlight follows unless
   // `rotation_highlight_favourite: false`.
   displayed(slot, live, follow = this.config?.rotation_follow_active !== false) {
@@ -603,7 +603,7 @@ export class ModeControlsController {
     if (this.busy) return;
     const current = this.currentFavourite();
     if (!current) return;
-    // Toggle only the (key, colour mode) pair: a style favourited under one
+    // Toggle only the (key, color mode) pair: a style favourited under one
     // mode can still be added under another, and removing removes just that
     // mode's entry.
     if (
@@ -630,7 +630,7 @@ export class ModeControlsController {
 
   rotationItems() {
     // Rotation always follows the favourites list, applying each item in the
-    // colour mode that was recorded when it was saved.
+    // color mode that was recorded when it was saved.
     return this.sanitize(this.favourites)
       .filter((favourite) => this.adapter.available(favourite.key))
       .map(favouriteToItem);
@@ -720,7 +720,7 @@ export class ModeControlsController {
 
   // Picking a style/effect in the browser is a card-level selection, not a
   // control-row command: it must not mark the controller busy, or the actions,
-  // favourites and colour rows would flash disabled until the lamp answers.
+  // favourites and color rows would flash disabled until the lamp answers.
   // Service calls are already serialised by the card's command queue.
   // The in-flight rotation start, or null when none (callers only wait when
   // there is one, so ordinary commands keep running synchronously).

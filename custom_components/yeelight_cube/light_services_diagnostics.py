@@ -1,5 +1,5 @@
 """Diagnostic and calibration actions (mostly admin-only): raw firmware
-commands, capabilities, python-yeelight calls, colour calibration and the
+commands, capabilities, python-yeelight calls, color calibration and the
 test display.
 
 Registered by :func:`light_services.async_setup_light_services`.
@@ -193,8 +193,8 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
                 # state so the lamp-preview card matches exactly what selecting
                 # the same clock style / effect from the device settings page
                 # would show -- not just the mode, but the specific style,
-                # colour and options (so clock_style_id, and thus the masked
-                # effect / colour the card renders, are correct even when
+                # color and options (so clock_style_id, and thus the masked
+                # effect / color the card renders, are correct even when
                 # persist is unchecked).
                 if is_clock_command:
                     target._mode = MODE_CLOCK
@@ -669,14 +669,14 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
             return
         
         _LOGGER.debug("[TEST] handle_test_display called")
-        _LOGGER.debug(f"[TEST] Testing entity: {target_entity._attr_name}")
-        _LOGGER.debug(f"[TEST] Current state - text: '{target_entity._custom_text}', mode: '{target_entity._mode}', is_on: {target_entity._is_on}")
-        _LOGGER.debug(f"[TEST] Text colors: {target_entity._text_colors}")
-        _LOGGER.debug(f"[TEST] Background color: {target_entity._background_color}")
-        _LOGGER.debug(f"[TEST] Brightness: {target_entity._brightness}")
-        _LOGGER.debug(f"[TEST] Alignment: {target_entity._alignment}")
-        _LOGGER.debug(f"[TEST] Font: {target_entity._font}")
-        _LOGGER.debug(f"[TEST] Connection status - has_error: {getattr(target_entity, '_connection_error', False)}, last_error: {getattr(target_entity, '_last_connection_error', 'None')}")
+        _LOGGER.debug("[TEST] Testing entity: %s", target_entity._attr_name)
+        _LOGGER.debug("[TEST] Current state - text: '%s', mode: '%s', is_on: %s", target_entity._custom_text, target_entity._mode, target_entity._is_on)
+        _LOGGER.debug("[TEST] Text colors: %s", target_entity._text_colors)
+        _LOGGER.debug("[TEST] Background color: %s", target_entity._background_color)
+        _LOGGER.debug("[TEST] Brightness: %s", target_entity._brightness)
+        _LOGGER.debug("[TEST] Alignment: %s", target_entity._alignment)
+        _LOGGER.debug("[TEST] Font: %s", target_entity._font)
+        _LOGGER.debug("[TEST] Connection status - has_error: %s, last_error: %s", getattr(target_entity, '_connection_error', False), getattr(target_entity, '_last_connection_error', 'None'))
         
         # Force the light to be on and apply display mode.
         # Reset _fx_mode_is_direct so apply() calls ensure_fx_ready()
@@ -688,7 +688,7 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         _LOGGER.debug("[TEST] Display mode applied")
         
         # Report final connection status
-        _LOGGER.debug(f"[TEST] After apply - connection_error: {getattr(target_entity, '_connection_error', False)}")
+        _LOGGER.debug("[TEST] After apply - connection_error: %s", getattr(target_entity, '_connection_error', False))
 
     hass.services.async_register(
         DOMAIN,
@@ -701,7 +701,7 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
     )
 
     async def handle_set_color_accuracy(service_call):
-        """Toggle hardware colour accuracy correction (per-channel gain).
+        """Toggle hardware color accuracy correction (per-channel gain).
         Supports multi-entity parallel dispatch."""
         targets = _resolve_entities(service_call, "SET_COLOR_ACCURACY")
         if not targets:
@@ -712,8 +712,9 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         async def _apply_one(target_entity):
             target_entity._color_accuracy_enabled = enabled
             _LOGGER.debug(
-                f"[COLOR_ACCURACY] [{target_entity._ip}] "
-                f"Color accuracy {'enabled' if enabled else 'disabled'}"
+                "[COLOR_ACCURACY] [%s] "
+                "Color accuracy %s",
+                target_entity._ip, 'enabled' if enabled else 'disabled'
             )
             if target_entity.hass is not None:
                 target_entity.async_schedule_update_ha_state()
@@ -774,7 +775,7 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
                     changed.append(f"{key}: {old_val} -> {new_val}")
             if changed:
                 _LOGGER.info(
-                    f"[CALIBRATION] [{target_entity._ip}] Updated: {', '.join(changed)}"
+                    "[CALIBRATION] [%s] Updated: %s", target_entity._ip, ', '.join(changed)
                 )
                 if target_entity.hass is not None:
                     target_entity.async_schedule_update_ha_state()

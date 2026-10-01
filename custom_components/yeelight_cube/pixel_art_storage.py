@@ -1,6 +1,6 @@
 """Stored pixel-art format.
 
-Pixel arts are stored grouped by colour, black (background) pixels omitted:
+Pixel arts are stored grouped by color, black (background) pixels omitted:
 ``[{"color": [R, G, B], "position": [int, ...]}, ...]``. The renderer and the
 cards work with the flat form ``[{"position": int, "color": [R, G, B]}, ...]``.
 
@@ -10,10 +10,10 @@ Older storage used the flat form, or a grouped form keyed ``"positions"``
 
 
 def group_pixels(pixels: list) -> list:
-    """Group non-black pixels by colour, one entry per distinct colour.
+    """Group non-black pixels by color, one entry per distinct color.
 
     Accepts the flat form (``position`` scalar or list) and the legacy
-    ``positions`` key. The first colour given for a position wins; positions
+    ``positions`` key. The first color given for a position wins; positions
     are sorted within each group.
     """
     seen_positions: dict = {}  # position -> color (first definition wins)

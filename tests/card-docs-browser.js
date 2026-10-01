@@ -316,7 +316,7 @@ window.cardDocs = {
         .querySelector("yeelight-color-mode")
         ?.getBoundingClientRect().height
     )
-      throw Error("Missing colours");
+      throw Error("Missing colors");
     if (
       !card.shadowRoot
         .querySelector(

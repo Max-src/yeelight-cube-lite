@@ -9,7 +9,7 @@ import { renderActionButton } from "./action-button-ui.js";
 import "./clock-preset-manager.js";
 import { defineOnce } from "./card-registration.js";
 
-/** Shared colour interaction view. Domain adapters provide selector values,
+/** Shared color interaction view. Domain adapters provide selector values,
  * RGB drafts and save kinds; the view owns bindings and stable save-form DOM.
  */
 class YeelightColorMode extends LitElement {
@@ -68,7 +68,7 @@ class YeelightColorMode extends LitElement {
         : ""}`;
   }
 
-  // The colour modes as a dropdown or a row of shared buttons. Buttons are
+  // The color modes as a dropdown or a row of shared buttons. Buttons are
   // keyed by value, so a selection updates them in place (no re-created row).
   _selector() {
     const model = colorModeSelectorModel(
@@ -77,7 +77,7 @@ class YeelightColorMode extends LitElement {
       this.selected,
       {
         disabled: this.disabled,
-        placeholder: this.draft ? "Unsaved colour" : "Current mode hidden",
+        placeholder: this.draft ? "Unsaved color" : "Current mode hidden",
         draft: this.draft,
       },
     );
@@ -85,7 +85,7 @@ class YeelightColorMode extends LitElement {
       return html`<div class="gc-selector" data-shape=${model.shape}>
         <select
           class="mode-select colormode-select"
-          aria-label="Colour mode"
+          aria-label="Color mode"
           ?disabled=${model.disabled}
           .value=${model.placeholder === null ? this.selected : ""}
           @change=${(event) => this.onSelect?.(event.target.value)}
@@ -112,7 +112,7 @@ class YeelightColorMode extends LitElement {
     return html`<div
       class=${`color-mode-choices shared-button-group ${model.rowClass}`}
       role="radiogroup"
-      aria-label="Colour mode"
+      aria-label="Color mode"
       @click=${choose}
       @keydown=${choose}
     >

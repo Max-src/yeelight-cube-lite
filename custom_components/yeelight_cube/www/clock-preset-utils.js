@@ -172,7 +172,7 @@ export function matchingClockPreset(styles, attrs, preferredId) {
 }
 
 export function clockStyleAction(style) {
-  // A preset IS a colour choice, so it sets one explicitly. Any other style
+  // A preset IS a color choice, so it sets one explicitly. Any other style
   // switch omits `color` entirely so an active custom override (or "clear")
   // persists across style changes instead of resetting to the style default.
   return style.presetId

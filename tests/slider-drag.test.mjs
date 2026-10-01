@@ -186,7 +186,7 @@ test("slider text is escaped exactly once", () => {
   assert.ok(!html.includes("&amp;amp;"), html);
 });
 
-test("valid CSS colour syntaxes and empty numbers are handled sensibly", () => {
+test("valid CSS color syntaxes and empty numbers are handled sensibly", () => {
   for (const color of [
     "var(--primary-color, #fff)",
     "color-mix(in srgb, red 50%, blue)",

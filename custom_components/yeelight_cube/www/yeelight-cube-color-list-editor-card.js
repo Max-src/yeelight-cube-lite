@@ -41,7 +41,7 @@ const ITEM_DRAG_SELECTORS = {
   rows: ".row-item",
 };
 
-// Elements that open the colour picker when clicked (resolved by delegation).
+// Elements that open the color picker when clicked (resolved by delegation).
 const PICKER_TRIGGERS =
   '.row-item[data-color-row="true"], .card-color-bar.clickable, .tile-color-preview, .chip-color-swatch, .compact-swatch, .color-grid-swatch';
 
@@ -1833,7 +1833,7 @@ class YeelightCubeColorListEditorCard extends LitElement {
   }
 
   updated() {
-    // Colour-picker triggers are resolved by delegation from the list
+    // Color-picker triggers are resolved by delegation from the list
     // container. bindColorPickerTrigger replaces its own listeners, and the
     // container is only rebound when Lit created a new one.
     const list = this.renderRoot.querySelector("#color-list");
@@ -1946,7 +1946,7 @@ class YeelightCubeColorListEditorCard extends LitElement {
 
   _hexInput(idx, hex, className, style) {
     // While an input is focused, bind what the user typed so a render (e.g.
-    // saving another colour) never overwrites a half-typed value.
+    // saving another color) never overwrites a half-typed value.
     const value = this._editing?.idx === idx ? this._editing.value : hex;
     return html`<input
       type="text"
@@ -2422,7 +2422,7 @@ class YeelightCubeColorListEditorCard extends LitElement {
   _onHexBlur(event) {
     this._editingText = false;
     this._editing = null;
-    // An unfinished value reverts to the actual colour. Lit only rewrites
+    // An unfinished value reverts to the actual color. Lit only rewrites
     // .value when the bound value changes, so reset the live value here.
     const color = this._getCurrentColors()[parseInt(event.target.dataset.idx)];
     if (Array.isArray(color)) event.target.value = this.rgbToHex(color);
@@ -2450,7 +2450,7 @@ class YeelightCubeColorListEditorCard extends LitElement {
     this.saveColors(currentColors);
   }
 
-  // ----- Colour list clicks (remove buttons, colour picker) ---------------
+  // ----- Color list clicks (remove buttons, color picker) ---------------
 
   _onListClick(event) {
     const button = event.target.closest("button[data-action=remove]");
@@ -2613,7 +2613,7 @@ class YeelightCubeColorListEditorCard extends LitElement {
         bubbles: true,
         composed: true,
         detail: {
-          message: commands.error || "The colours could not be saved.",
+          message: commands.error || "The colors could not be saved.",
         },
       }),
     );
@@ -3261,7 +3261,7 @@ class YeelightCubeColorListEditorCard extends LitElement {
     if (wrapper) this._spreadFan(container, wrapper);
   }
 
-  // ----- Colour helpers -----------------------------------------------
+  // ----- Color helpers -----------------------------------------------
 
   rgbToHex(rgb) {
     return (

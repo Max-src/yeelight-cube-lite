@@ -67,19 +67,25 @@ const server = http.createServer(async (request, response) => {
       const results = await Promise.allSettled(
         names.map((name) => import(`${base}yeelight-cube-${name}-card.js`)),
       );
-      await import(`${base}yeelight-cube-font-editor-card.js`);
+      // The font editor is an internal card (gitignored, absent from the
+      // public repo and CI): only check it when the file is there.
+      const fontUrl = `${base}yeelight-cube-font-editor-card.js`;
+      const fontAvailable = (await fetch(fontUrl, { method: "HEAD" })).ok;
+      if (fontAvailable) await import(fontUrl);
       return {
         status: results.map((result) => result.status),
         registered: names.map(
           (name) => !!customElements.get(`yeelight-cube-${name}-card`),
         ),
-        font: !!customElements.get("yeelight-cube-font-editor-card"),
+        font: fontAvailable
+          ? !!customElements.get("yeelight-cube-font-editor-card")
+          : null,
       };
     };
     const failedStartup = await startup.evaluate(loadCards);
     assert.ok(failedStartup.status.every((status) => status === "rejected"));
     assert.ok(failedStartup.registered.every((registered) => !registered));
-    assert.equal(failedStartup.font, true);
+    if (failedStartup.font !== null) assert.equal(failedStartup.font, true);
     const failedReport = await startup.evaluate(() =>
       window.yeelightCubeDiagnostics.report(),
     );
@@ -669,7 +675,7 @@ const server = http.createServer(async (request, response) => {
     }
     assert.deepEqual(errors, []);
     console.log(
-      "PASS real favourite clicks restore colours and Remove targets the saved variant before state echo",
+      "PASS real favourite clicks restore colors and Remove targets the saved variant before state echo",
     );
     const paginationResults = await page.evaluate(async () => {
       const results = [];
@@ -795,11 +801,11 @@ const server = http.createServer(async (request, response) => {
       assert.equal(
         result.commands,
         1,
-        `${result.tag}: one colour selection, one command`,
+        `${result.tag}: one color selection, one command`,
       );
     }
     console.log(
-      "PASS shared browser reset/reconnect and single colour-command ownership on both cards",
+      "PASS shared browser reset/reconnect and single color-command ownership on both cards",
     );
     const rotationErrors = await page.evaluate(async () => {
       const results = [];
@@ -1046,7 +1052,7 @@ const server = http.createServer(async (request, response) => {
         const shown = (element) =>
           element && element.getBoundingClientRect().height > 0;
         if (!shown(cold.shadowRoot.querySelector("yeelight-color-mode")))
-          throw Error(`${tag}: screenshot layout must show offline colours`);
+          throw Error(`${tag}: screenshot layout must show offline colors`);
         if (!shown(cold.shadowRoot.querySelector(".original-gallery")))
           throw Error(`${tag}: screenshot layout must show offline gallery`);
         const favouriteButtons = [
@@ -1089,7 +1095,7 @@ const server = http.createServer(async (request, response) => {
         );
         check(
           cold.shadowRoot.querySelector("yeelight-color-mode"),
-          "offline colours",
+          "offline colors",
         );
         check(
           await cold._controls.choose("Kaleidoscope"),
@@ -1103,7 +1109,7 @@ const server = http.createServer(async (request, response) => {
         );
         check(
           cold._controls.adapter.currentColorMode() === "white_orange",
-          "selected offline colour",
+          "selected offline color",
         );
         cold._controls.save([]);
         cold._controls.toggleFavourite();
@@ -1111,7 +1117,7 @@ const server = http.createServer(async (request, response) => {
         check(cold._controls.favourites.length === 1, "save offline favourite");
         check(
           cold._controls.favourites[0].colorMode === "white_orange",
-          "saved favourite colour",
+          "saved favourite color",
         );
         const offlineFrame = cold._controls.adapter.frame(
           "Kaleidoscope",
@@ -1138,7 +1144,7 @@ const server = http.createServer(async (request, response) => {
         await offlineSettle();
         check(
           cold._controls.adapter.currentColorMode() === "bw",
-          "favourite restores colour",
+          "favourite restores color",
         );
         const customFavourite = {
           key: "Rainbow",
@@ -1147,7 +1153,7 @@ const server = http.createServer(async (request, response) => {
         };
         check(
           await cold._controls.chooseFavourite(customFavourite),
-          "choose offline custom colour",
+          "choose offline custom color",
         );
         await offlineSettle();
         cold._controls.toggleFavourite();
@@ -1416,7 +1422,7 @@ const server = http.createServer(async (request, response) => {
           (card) =>
             card._previewCache().data.previews["Solid Color"][0][1] === 255,
         ),
-        "Gradient cache must contain updated colours",
+        "Gradient cache must contain updated colors",
       );
       const colors = await create("color-list-editor", { list_layout: "rows" });
       const notices = [];
@@ -1426,16 +1432,16 @@ const server = http.createServer(async (request, response) => {
       failColors = true;
       check(
         (await colors.saveColors([[0, 0, 255]])) === false,
-        "Colour save must report failure",
+        "Color save must report failure",
       );
       check(
         notices.includes("Test offline"),
-        "Colour save failure must be visible",
+        "Color save failure must be visible",
       );
       check(
         JSON.stringify(colors._getCurrentColors()) ===
           JSON.stringify([[255, 0, 0]]),
-        "Colour save must roll back",
+        "Color save must roll back",
       );
       const palette = await create("palette", {
         display_mode: "list",
@@ -1880,7 +1886,7 @@ const server = http.createServer(async (request, response) => {
           check(
             accentOf(refreshBtn) !== accentOf(powerBtn) &&
               accentOf(refreshBtn).includes("gradient"),
-            "Refresh and Power use distinct accent colours",
+            "Refresh and Power use distinct accent colors",
           );
           card.setConfig({
             ...config,
@@ -3152,7 +3158,7 @@ const server = http.createServer(async (request, response) => {
             clock._customPresetColor = color;
             clock.render();
             await clock.updateComplete;
-            // Selection changes update the buttons in place, so their colour
+            // Selection changes update the buttons in place, so their color
             // transitions: measure the settled state.
             await Promise.all(
               [clock, native].flatMap((card) =>
@@ -3178,7 +3184,7 @@ const server = http.createServer(async (request, response) => {
         style,
       );
       await page.locator("main").screenshot({
-        path: path.join(os.tmpdir(), `card-colour-parity-${style}.png`),
+        path: path.join(os.tmpdir(), `card-color-parity-${style}.png`),
       });
     }
     let commonComparisons = 0;
@@ -3524,7 +3530,7 @@ const server = http.createServer(async (request, response) => {
       "yeelight-cube-native-effects-card yeelight-clock-preset-manager",
     );
     await nativeManager
-      .getByRole("button", { name: "Save colour mode", exact: true })
+      .getByRole("button", { name: "Save color mode", exact: true })
       .click();
     await nativeManager.locator('input[type="text"]').fill("Keep my draft");
     const stable = await page.evaluate(async () => {
@@ -3576,7 +3582,7 @@ const server = http.createServer(async (request, response) => {
     );
     assert.deepEqual(errors, []);
     console.log(
-      `PASS ${comparisons} colour/save and ${commonComparisons} Actions/slider comparisons; stable Icon save trigger and form across delayed state echoes; successful save.`,
+      `PASS ${comparisons} color/save and ${commonComparisons} Actions/slider comparisons; stable Icon save trigger and form across delayed state echoes; successful save.`,
     );
 
     // The live lamp-preview card's own clock/native loops hold the background

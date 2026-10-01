@@ -8,6 +8,7 @@ from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 
 from .const import (
+    TRANSITION_TYPES,
     FIRMWARE_MODES,
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
@@ -142,11 +143,11 @@ class YeelightCubePaletteSelect(CubeControlEntity, SelectEntity):
             palette_names.append(name)
         
         self._attr_options = palette_names
-        _LOGGER.debug(f"[PALETTE SELECT] Updated options: {len(palette_names)} palettes")
+        _LOGGER.debug("[PALETTE SELECT] Updated options: %s palettes", len(palette_names))
     
     async def async_select_option(self, option: str) -> None:
         """Handle palette selection."""
-        _LOGGER.debug(f"[PALETTE SELECT] User selected: '{option}' for entity {self.entity_id}")
+        _LOGGER.debug("[PALETTE SELECT] User selected: '%s' for entity %s", option, self.entity_id)
         
         # Get palettes from storage
         if DOMAIN not in self._hass.data:
@@ -167,18 +168,18 @@ class YeelightCubePaletteSelect(CubeControlEntity, SelectEntity):
                 break
         
         if palette_idx is None:
-            _LOGGER.error(f"[PALETTE SELECT] Palette '{option}' not found in storage")
+            _LOGGER.error("[PALETTE SELECT] Palette '%s' not found in storage", option)
             return
         
         # Apply the palette to the light entity
         palette = palettes[palette_idx]
         if "colors" not in palette or not isinstance(palette["colors"], list):
-            _LOGGER.error(f"[PALETTE SELECT] Invalid palette format")
+            _LOGGER.error("[PALETTE SELECT] Invalid palette format")
             return
         
         # Set the palette colors as the active color list for gradients/text modes
         self._light_entity._text_colors = palette["colors"]
-        _LOGGER.debug(f"[PALETTE SELECT] Applied {len(palette['colors'])} colors to light entity")
+        _LOGGER.debug("[PALETTE SELECT] Applied %s colors to light entity", len(palette['colors']))
         
         # Update rgb_color to stay in sync with Home Assistant color picker
         if self._light_entity._text_colors:
@@ -219,12 +220,12 @@ class YeelightCubePaletteSelect(CubeControlEntity, SelectEntity):
         
         # If options changed, update state
         if old_options != self._attr_options:
-            _LOGGER.debug(f"[PALETTE SELECT] Options updated: {len(old_options)} -> {len(self._attr_options)}")
+            _LOGGER.debug("[PALETTE SELECT] Options updated: %s -> %s", len(old_options), len(self._attr_options))
             
             # If current selection is no longer valid, clear it
             if self._attr_current_option and self._attr_current_option not in self._attr_options:
                 self._attr_current_option = None
-                _LOGGER.debug(f"[PALETTE SELECT] Cleared invalid selection")
+                _LOGGER.debug("[PALETTE SELECT] Cleared invalid selection")
             
             if self.hass is not None:
                 self.async_write_ha_state()
@@ -237,11 +238,11 @@ class YeelightCubePaletteSelect(CubeControlEntity, SelectEntity):
         self.async_on_remove(
             self.hass.bus.async_listen(f"{DOMAIN}_palettes_updated", self._handle_palette_update)
         )
-        _LOGGER.debug(f"[PALETTE SELECT] Registered for palette update events")
+        _LOGGER.debug("[PALETTE SELECT] Registered for palette update events")
     
     async def _handle_palette_update(self, event):
         """Handle palette update events."""
-        _LOGGER.debug(f"[PALETTE SELECT] Received palette update event")
+        _LOGGER.debug("[PALETTE SELECT] Received palette update event")
         self.async_update_from_palette_sensor()
 
 
@@ -282,11 +283,11 @@ class YeelightCubePixelArtSelect(CubeControlEntity, SelectEntity):
             art_names.append(name)
 
         self._attr_options = art_names + list(get_builtin_pixel_art_map())
-        _LOGGER.debug(f"[PIXEL ART SELECT] Updated options: {len(art_names)} pixel arts")
+        _LOGGER.debug("[PIXEL ART SELECT] Updated options: %s pixel arts", len(art_names))
 
     async def async_select_option(self, option: str) -> None:
         """Handle pixel art selection — apply the chosen pixel art to the lamp."""
-        _LOGGER.debug(f"[PIXEL ART SELECT] User selected: '{option}' for entity {self.entity_id}")
+        _LOGGER.debug("[PIXEL ART SELECT] User selected: '%s' for entity %s", option, self.entity_id)
 
         pixel_arts = self._hass.data.get(DOMAIN, {}).get("pixel_arts", [])
 
@@ -300,12 +301,12 @@ class YeelightCubePixelArtSelect(CubeControlEntity, SelectEntity):
         if art_idx is None:
             art = get_builtin_pixel_art_map().get(option)
             if art is None:
-                _LOGGER.error(f"[PIXEL ART SELECT] Pixel art '{option}' not found")
+                _LOGGER.error("[PIXEL ART SELECT] Pixel art '%s' not found", option)
                 return
         else:
             art = pixel_arts[art_idx]
         if "pixels" not in art or not isinstance(art["pixels"], list) or len(art["pixels"]) == 0:
-            _LOGGER.error(f"[PIXEL ART SELECT] Invalid pixel art format for '{option}'")
+            _LOGGER.error("[PIXEL ART SELECT] Invalid pixel art format for '%s'", option)
             return
 
         # Check auto-turn-on setting
@@ -328,7 +329,7 @@ class YeelightCubePixelArtSelect(CubeControlEntity, SelectEntity):
             pass  # Palette entity doesn't need clearing — it just keeps its last selection
 
         await self._light_entity.async_apply_display_mode(update_type='pixel_art')
-        _LOGGER.debug(f"[PIXEL ART SELECT] Applied pixel art '{option}' to {self._ip}")
+        _LOGGER.debug("[PIXEL ART SELECT] Applied pixel art '%s' to %s", option, self._ip)
 
         # Update the current selection
         self._attr_current_option = option
@@ -373,7 +374,7 @@ class YeelightCubePixelArtSelect(CubeControlEntity, SelectEntity):
         self._update_options()
 
         if old_options != self._attr_options:
-            _LOGGER.debug(f"[PIXEL ART SELECT] Options updated: {len(old_options)} -> {len(self._attr_options)}")
+            _LOGGER.debug("[PIXEL ART SELECT] Options updated: %s -> %s", len(old_options), len(self._attr_options))
 
             # If current selection is no longer valid, clear it
             if self._attr_current_option and self._attr_current_option not in self._attr_options:
@@ -394,14 +395,14 @@ class YeelightCubePixelArtSelect(CubeControlEntity, SelectEntity):
         self.async_on_remove(
             self.hass.bus.async_listen(f"{DOMAIN}_pixel_arts_updated", self._handle_pixel_arts_update)
         )
-        _LOGGER.debug(f"[PIXEL ART SELECT] Registered for pixel art update events, linked to {self._ip}")
+        _LOGGER.debug("[PIXEL ART SELECT] Registered for pixel art update events, linked to %s", self._ip)
 
         # Sync initial state from light entity
         self.async_update_from_light()
 
     async def _handle_pixel_arts_update(self, event):
         """Handle pixel art update events (fired when arts are saved/deleted/imported)."""
-        _LOGGER.debug(f"[PIXEL ART SELECT] Received pixel arts update event")
+        _LOGGER.debug("[PIXEL ART SELECT] Received pixel arts update event")
         self.async_update_from_pixel_art_sensor()
 
 
@@ -550,10 +551,10 @@ class YeelightCubeDisplayModeSelect(CubeControlEntity, SelectEntity):
 
     async def async_select_option(self, option: str) -> None:
         """Handle display mode selection — apply the chosen mode to the lamp."""
-        _LOGGER.debug(f"[MODE SELECT] User selected: '{option}' for {self._light_entity._ip}")
+        _LOGGER.debug("[MODE SELECT] User selected: '%s' for %s", option, self._light_entity._ip)
 
         if option not in MATRIX_DISPLAY_MODES:
-            _LOGGER.error(f"[MODE SELECT] Invalid mode: '{option}'")
+            _LOGGER.error("[MODE SELECT] Invalid mode: '%s'", option)
             return
 
         # Check auto-turn-on setting
@@ -602,7 +603,7 @@ class YeelightCubeDisplayModeSelect(CubeControlEntity, SelectEntity):
         """Run when entity is added to hass."""
         await super().async_added_to_hass()
         self._light_entity._mode_select_entity = self
-        _LOGGER.debug(f"[MODE SELECT] Registered for {self._light_entity._ip}, current mode={self._light_entity._mode}")
+        _LOGGER.debug("[MODE SELECT] Registered for %s, current mode=%s", self._light_entity._ip, self._light_entity._mode)
 
 
 def _clock_style_label(style_id: int) -> str:
@@ -668,7 +669,7 @@ class YeelightCubeClockStyleSelect(CubeControlEntity, SelectEntity):
     async def async_select_option(self, option: str) -> None:
         style_id = _CLOCK_STYLE_TO_ID.get(option)
         if style_id is None:
-            _LOGGER.error(f"[CLOCK STYLE] Unknown option: '{option}'")
+            _LOGGER.error("[CLOCK STYLE] Unknown option: '%s'", option)
             return
         if (
             style_id in EXPERIMENTAL_CLOCK_STYLE_IDS
@@ -708,8 +709,9 @@ class YeelightCubeClockStyleSelect(CubeControlEntity, SelectEntity):
         self._light_entity._clock_style_select_entity = self
         self.async_update_from_light()
         _LOGGER.debug(
-            f"[CLOCK STYLE] Registered for {self._light_entity._ip}, "
-            f"current style={self._light_entity._native_clock_style}"
+            "[CLOCK STYLE] Registered for %s, "
+            "current style=%s",
+            self._light_entity._ip, self._light_entity._native_clock_style
         )
 
 
@@ -758,7 +760,7 @@ class YeelightCubeClockContentSelect(CubeControlEntity, SelectEntity):
     async def async_select_option(self, option: str) -> None:
         key = _CLOCK_CONTENT_LABEL_TO_KEY.get(option)
         if key is None:
-            _LOGGER.error(f"[CLOCK CONTENT] Unknown option: '{option}'")
+            _LOGGER.error("[CLOCK CONTENT] Unknown option: '%s'", option)
             return
         self._attr_current_option = option
         await self._light_entity.async_set_native_clock_content(key)
@@ -1001,10 +1003,10 @@ class YeelightCubeAlignmentSelect(CubeControlEntity, SelectEntity):
 
     async def async_select_option(self, option: str) -> None:
         """Handle alignment selection — apply to the lamp."""
-        _LOGGER.debug(f"[ALIGNMENT SELECT] User selected: '{option}' for {self._light_entity._ip}")
+        _LOGGER.debug("[ALIGNMENT SELECT] User selected: '%s' for %s", option, self._light_entity._ip)
 
         if option not in ALIGNMENT_OPTIONS:
-            _LOGGER.error(f"[ALIGNMENT SELECT] Invalid alignment: '{option}'")
+            _LOGGER.error("[ALIGNMENT SELECT] Invalid alignment: '%s'", option)
             return
 
         # Check auto-turn-on setting
@@ -1031,7 +1033,7 @@ class YeelightCubeAlignmentSelect(CubeControlEntity, SelectEntity):
         """Run when entity is added to hass."""
         await super().async_added_to_hass()
         self._light_entity._alignment_select_entity = self
-        _LOGGER.debug(f"[ALIGNMENT SELECT] Registered for {self._light_entity._ip}, current alignment={self._light_entity._alignment}")
+        _LOGGER.debug("[ALIGNMENT SELECT] Registered for %s, current alignment=%s", self._light_entity._ip, self._light_entity._alignment)
 
 
 # ── Device orientation selector ────────────────────────────────────────
@@ -1078,7 +1080,7 @@ class YeelightCubeDeviceOrientationSelect(CubeControlEntity, SelectEntity):
     async def async_select_option(self, option: str) -> None:
         key = _DEVICE_ORIENTATION_LABEL_TO_KEY.get(option)
         if key is None:
-            _LOGGER.error(f"[DEVICE ORIENTATION] Invalid option: '{option}'")
+            _LOGGER.error("[DEVICE ORIENTATION] Invalid option: '%s'", option)
             return
         await self._light_entity.set_device_orientation(key)
         if self.hass is not None:
@@ -1124,10 +1126,10 @@ class YeelightCubeFontSelect(CubeControlEntity, SelectEntity):
     async def async_select_option(self, option: str) -> None:
         font_key = _LABEL_TO_KEY.get(option)
         if not font_key:
-            _LOGGER.error(f"[FONT SELECT] Unknown font label: '{option}'")
+            _LOGGER.error("[FONT SELECT] Unknown font label: '%s'", option)
             return
 
-        _LOGGER.debug(f"[FONT SELECT] User selected: '{option}' (key={font_key}) for {self._light_entity._ip}")
+        _LOGGER.debug("[FONT SELECT] User selected: '%s' (key=%s) for %s", option, font_key, self._light_entity._ip)
 
         if not self._light_entity._is_on and not self._light_entity._should_auto_turn_on():
             _LOGGER.debug("[FONT SELECT] Lamp is off and auto-turn-on is disabled, ignoring")
@@ -1151,40 +1153,15 @@ class YeelightCubeFontSelect(CubeControlEntity, SelectEntity):
         await super().async_added_to_hass()
         self._light_entity._font_select_entity = self
         _LOGGER.debug(
-            f"[FONT SELECT] Registered for {self._light_entity._ip}, "
-            f"current font={self._light_entity._font}"
+            "[FONT SELECT] Registered for %s, "
+            "current font=%s",
+            self._light_entity._ip, self._light_entity._font
         )
 
 
 # ── Transition selector ───────────────────────────────────────────────
-_TRANSITION_TYPES = {
-    "none": "None",
-    "fade_through_black": "Fade Through Black",
-    "direct_crossfade": "Direct Crossfade",
-    "random_dissolve": "Random Dissolve",
-    "wipe_right": "Wipe Right",
-    "wipe_left": "Wipe Left",
-    "wipe_down": "Wipe Down",
-    "wipe_up": "Wipe Up",
-    "slide_left": "Slide Left",
-    "slide_right": "Slide Right",
-    "slide_up": "Slide Up",
-    "slide_down": "Slide Down",
-    "card_from_right": "Card From Right",
-    "card_from_left": "Card From Left",
-    "card_from_top": "Card From Top",
-    "card_from_bottom": "Card From Bottom",
-    "explode_reform": "Explode & Reform",
-    "snake": "Snake",
-    "wave_wipe": "Wave Wipe",
-    "iris": "Iris (Circle Wipe)",
-    "vertical_flip": "Vertical Flip",
-    "curtain": "Curtain",
-    "gravity_drop": "Gravity Drop",
-    "pixel_migration": "Pixel Migration",
-}
-_TRANSITION_OPTIONS = list(_TRANSITION_TYPES.values())
-_TRANSITION_LABEL_TO_KEY = {v: k for k, v in _TRANSITION_TYPES.items()}
+_TRANSITION_OPTIONS = list(TRANSITION_TYPES.values())
+_TRANSITION_LABEL_TO_KEY = {v: k for k, v in TRANSITION_TYPES.items()}
 
 
 class YeelightCubeTransitionSelect(CubeControlEntity, SelectEntity):
@@ -1198,24 +1175,25 @@ class YeelightCubeTransitionSelect(CubeControlEntity, SelectEntity):
         self._attr_icon = "mdi:animation-play"
         self._attr_options = _TRANSITION_OPTIONS
         self._attr_entity_category = EntityCategory.CONFIG
-        self._attr_current_option = _TRANSITION_TYPES.get(
+        self._attr_current_option = TRANSITION_TYPES.get(
             getattr(light_entity, '_transition_type', 'none'), "None"
         )
 
     @property
     def current_option(self) -> str | None:
         key = getattr(self._light_entity, '_transition_type', 'none')
-        return _TRANSITION_TYPES.get(key, "None")
+        return TRANSITION_TYPES.get(key, "None")
 
     async def async_select_option(self, option: str) -> None:
         key = _TRANSITION_LABEL_TO_KEY.get(option)
         if key is None:
-            _LOGGER.error(f"[TRANSITION SELECT] Unknown option: '{option}'")
+            _LOGGER.error("[TRANSITION SELECT] Unknown option: '%s'", option)
             return
 
         _LOGGER.debug(
-            f"[TRANSITION SELECT] User selected: '{option}' (key={key}) "
-            f"for {self._light_entity._ip}"
+            "[TRANSITION SELECT] User selected: '%s' (key=%s) "
+            "for %s",
+            option, key, self._light_entity._ip
         )
 
         self._light_entity._transition_type = key
@@ -1230,7 +1208,7 @@ class YeelightCubeTransitionSelect(CubeControlEntity, SelectEntity):
     def async_update_from_light(self):
         """Sync the dropdown with the light entity's current transition type."""
         key = getattr(self._light_entity, '_transition_type', 'none')
-        self._attr_current_option = _TRANSITION_TYPES.get(key, "None")
+        self._attr_current_option = TRANSITION_TYPES.get(key, "None")
         if self.hass is not None:
             self.async_write_ha_state()
 
@@ -1238,6 +1216,7 @@ class YeelightCubeTransitionSelect(CubeControlEntity, SelectEntity):
         await super().async_added_to_hass()
         self._light_entity._transition_select_entity = self
         _LOGGER.debug(
-            f"[TRANSITION SELECT] Registered for {self._light_entity._ip}, "
-            f"current type={self._light_entity._transition_type}"
+            "[TRANSITION SELECT] Registered for %s, "
+            "current type=%s",
+            self._light_entity._ip, self._light_entity._transition_type
         )

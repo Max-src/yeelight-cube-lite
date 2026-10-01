@@ -65,7 +65,7 @@ class YeelightCubePaletteCard extends LitElement {
   }
 
   // Swatches as an HTML string, for the shared helpers that take strings
-  // (album, carousel). Colours come from rgbToCss, which only emits rgb().
+  // (album, carousel). Colors come from rgbToCss, which only emits rgb().
   _renderPaletteColors(colors, style = "square", idx) {
     switch (style) {
       case "round":
@@ -1421,7 +1421,7 @@ class YeelightCubePaletteCard extends LitElement {
   _notifySkipped(skipped) {
     if (skipped)
       this._notify(
-        `${skipped} palette${skipped === 1 ? " was" : "s were"} skipped: colours must be [R, G, B] values from 0 to 255 or #hex.`,
+        `${skipped} palette${skipped === 1 ? " was" : "s were"} skipped: colors must be [R, G, B] values from 0 to 255 or #hex.`,
       );
   }
 

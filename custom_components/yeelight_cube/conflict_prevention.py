@@ -2,7 +2,6 @@
 import logging
 from typing import Set
 from homeassistant.core import HomeAssistant, callback # type: ignore
-from homeassistant.config_entries import ConfigEntry # type: ignore
 from .const import DOMAIN, CONF_IP
 
 _LOGGER = logging.getLogger(__name__)
@@ -23,19 +22,19 @@ class YeelightConflictPrevention:
             ip_address = entry.data.get(CONF_IP)
             if ip_address:
                 self._managed_ips.add(ip_address)
-                _LOGGER.debug(f"Loaded managed device: {ip_address}")
+                _LOGGER.debug("Loaded managed device: %s", ip_address)
     
     @callback
     def add_managed_device(self, ip_address: str):
         """Add a device to the managed list."""
         self._managed_ips.add(ip_address)
-        _LOGGER.debug(f"Added {ip_address} to managed Yeelight Cube Lite devices")
+        _LOGGER.debug("Added %s to managed Yeelight Cube Lite devices", ip_address)
     
     @callback
     def remove_managed_device(self, ip_address: str):
         """Remove a device from the managed list."""
         self._managed_ips.discard(ip_address)
-        _LOGGER.debug(f"Removed {ip_address} from managed Yeelight Cube Lite devices")
+        _LOGGER.debug("Removed %s from managed Yeelight Cube Lite devices", ip_address)
     
     @callback
     def is_device_managed(self, ip_address: str) -> bool:

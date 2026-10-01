@@ -40,7 +40,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 - Sliders and the Gradient card's angle control no longer snap back to the
   lamp's last-known value during a slow drag or an in-between state update.
 - Picking a style or effect no longer flashes the shared Actions, Favourites,
-  and colour controls as busy while the lamp responds, and rapid successive
+  and color controls as busy while the lamp responds, and rapid successive
   picks now only send the latest one.
 - Drawing on the pixel-art canvas batches its writes instead of saving on
   every single cell of a stroke, and skips writes that would not change
@@ -68,7 +68,7 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   before decoding it, guarding against a decompression-bomb-style resource
   exhaustion.
 - Palette and pixel-art collection services now validate size limits
-  (collection length, colours per palette, pixel entries, name length)
+  (collection length, colors per palette, pixel entries, name length)
   instead of accepting unbounded input.
 - Removed inline event-handler HTML (`onclick="..."`) from shared card
   renderers in favour of a Content-Security-Policy-safe delegated-event
@@ -79,10 +79,10 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 - **Native Effects Lovelace card** for controlling one or more lamps, with the
-  same selector, action, slider, colour, orientation, favourites, and rotation
+  same selector, action, slider, color, orientation, favourites, and rotation
   controls as the Clock card.
 - **Shared Clock and Native Effects controls**, including configurable Actions
-  order, shared brightness and animation-speed sliders, and shared colour-mode
+  order, shared brightness and animation-speed sliders, and shared color-mode
   controls.
 - **Freeze display action** for compatible modes. It sends a freeze frame and
   resumes by reapplying the current mode; previews hold their background while
@@ -91,15 +91,15 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   Rotation follows the favourites list, survives a dashboard refresh, and can
   be started, stopped, or skipped. Starting rotation on several lamps no longer
   waits for one lamp before starting the next.
-- **Saved custom colour-mode presets**, including native custom RGB, with a
-  unified colour row and inline save flow.
+- **Saved custom color-mode presets**, including native custom RGB, with a
+  unified color row and inline save flow.
 - **Shared Original effect browser** for both cards, with Grid and List display,
   capability badges, live matrix previews, and favourite stars.
 - **Configurable device orientation controls**, including direction order,
   visibility, rotation, and flip.
 - **Strip preview mode** and a shared slider Control Width setting.
 - **Clock-style filtering** based on whether a style responds to the active
-  colour mode.
+  color mode.
 
 ### Changed
 - Clock and Native Effects cards now share one selector configuration. The same
@@ -120,12 +120,12 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 - Fixed the shared Original selector settings so the Clock and Native Effects
   editors load their foldable sections instead of showing a configuration error.
-- Native effect previews now follow the calibrated direction, speed, and colour
+- Native effect previews now follow the calibrated direction, speed, and color
   state, including brightness-only updates and frozen playback.
-- Clock colour overrides now recolour compatible native effects and persist
+- Clock color overrides now recolor compatible native effects and persist
   correctly, including solid black-and-white fallbacks and measured palette
   previews.
-- Fixed colour-picker opening and anchoring, clock preview ghost pixels, and
+- Fixed color-picker opening and anchoring, clock preview ghost pixels, and
   the shared slider speed-value mismatch.
 - Cards render a placeholder instead of a permanent Configuration error when no
   entity is available yet.

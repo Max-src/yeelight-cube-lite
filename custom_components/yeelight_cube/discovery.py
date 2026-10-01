@@ -1,7 +1,7 @@
 """Discovery support for Yeelight Cube Lite devices."""
 import logging
 import re
-from .const import DOMAIN, DEFAULT_CUBE_MODELS, CUBE_NAME_PATTERNS
+from .const import DEFAULT_CUBE_MODELS, CUBE_NAME_PATTERNS
 
 _LOGGER = logging.getLogger(__name__)
 

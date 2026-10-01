@@ -346,8 +346,8 @@ test("with following off, the style list keeps its selection; favourites still h
   assert.equal(controller.displayed("key", "Rainbow"), "Rainbow");
   controller.active = true; // rotation running
   assert.equal(controller.displayed("key", "Tide"), "Rainbow");
-  assert.equal(controller.displayed("colour", "red_blue"), "red_blue"); // first seen
-  assert.equal(controller.displayed("colour", "bw"), "red_blue");
+  assert.equal(controller.displayed("color", "red_blue"), "red_blue"); // first seen
+  assert.equal(controller.displayed("color", "bw"), "red_blue");
   controller.active = false; // stopped: follow the lamp again
   assert.equal(controller.displayed("key", "Tide"), "Tide");
   // Default: always follow.

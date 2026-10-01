@@ -61,7 +61,7 @@ class YeelightCubeCustomTextInput(CubeControlEntity, TextEntity):
     
     async def async_set_value(self, value: str) -> None:
         """Update the text and apply to the lamp."""
-        _LOGGER.debug(f"[TEXT INPUT] Setting custom text to: '{value}'")
+        _LOGGER.debug("[TEXT INPUT] Setting custom text to: '%s'", value)
         
         # Check if light entity is ready
         if not self._light_entity.hass:
@@ -103,18 +103,18 @@ class YeelightCubeCustomTextInput(CubeControlEntity, TextEntity):
     def async_update_from_light(self):
         """Update the text input when light entity's text changes."""
         new_value = self._light_entity._custom_text
-        _LOGGER.debug(f"[TEXT INPUT] async_update_from_light called: current='{self._attr_native_value}', new='{new_value}'")
+        _LOGGER.debug("[TEXT INPUT] async_update_from_light called: current='%s', new='%s'", self._attr_native_value, new_value)
         if self._attr_native_value != new_value:
-            _LOGGER.debug(f"[TEXT INPUT] Updating value from '{self._attr_native_value}' to '{new_value}'")
+            _LOGGER.debug("[TEXT INPUT] Updating value from '%s' to '%s'", self._attr_native_value, new_value)
             self._attr_native_value = new_value
             # Only update state if we're added to hass
             if self.hass is not None:
                 self.async_write_ha_state()
-                _LOGGER.debug(f"[TEXT INPUT] State written to HA")
+                _LOGGER.debug("[TEXT INPUT] State written to HA")
             else:
-                _LOGGER.debug(f"[TEXT INPUT] Not added to hass yet, skipping state write")
+                _LOGGER.debug("[TEXT INPUT] Not added to hass yet, skipping state write")
         else:
-            _LOGGER.debug(f"[TEXT INPUT] Value unchanged, skipping update")
+            _LOGGER.debug("[TEXT INPUT] Value unchanged, skipping update")
     
     async def async_added_to_hass(self):
         """Run when entity is added to hass."""

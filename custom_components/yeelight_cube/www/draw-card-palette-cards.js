@@ -1,5 +1,5 @@
-// Palette cards of the draw card (recent / lamp palette / lamp colours / image
-// palette) in their side, carousel, tabs and floating layouts, the colour
+// Palette cards of the draw card (recent / lamp palette / lamp colors / image
+// palette) in their side, carousel, tabs and floating layouts, the color
 // carousel and the palette-preview hover measurement. Mixed into
 // YeelightCubeDrawCard.
 import { renderPaletteSection } from "./draw_card_palette_ui.js";

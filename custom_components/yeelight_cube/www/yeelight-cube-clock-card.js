@@ -16,7 +16,7 @@ import {
 //
 // Select, configure and visualise the firmware clock: pick a clock style from
 // an animated live-preview gallery, set the content (Time / Time & Date /
-// Date), 12/24-hour and colon-blink format, and an optional colour override.
+// Date), 12/24-hour and colon-blink format, and an optional color override.
 //
 // Ownership: clock-card-adapter maps the domain; card-command-controller owns
 // transport; mode-controls-controller owns selection/favourites/rotation;
@@ -160,17 +160,17 @@ const CLOCK_CARD_CSS = `
       ${actionButtonStyles}
       ${colorPickerStyles}
       .clock-color-control { display: flex; flex-wrap: wrap; align-items: center; gap: 8px;     justify-content: space-between;}
-      /* Saved colours + the trailing picker share one button group; the save
+      /* Saved colors + the trailing picker share one button group; the save
          buttons sit next to them when there's room and wrap below otherwise. */
       .clock-color-presets { flex: 0 1 auto; min-width: 0; }
       .clock-color-choices { flex-wrap: wrap; }
-      /* Filled style: fixed square chips so empty (name-less) colours match the
+      /* Filled style: fixed square chips so empty (name-less) colors match the
          add/replace button beside them. max-width overrides the shared group's
          fit-content cap, which would otherwise collapse the empty chips. */
       .clock-color-choices.cc-filled .shared-action-button {
         flex: 0 0 auto; width: 44px; max-width: 44px; height: 44px; min-height: 0; padding: 0;
       }
-      /* Swatch-only style: fixed-size colour chips whose shape is configurable. */
+      /* Swatch-only style: fixed-size color chips whose shape is configurable. */
       .clock-color-choices.cc-swatch .shared-action-button {
         flex: 0 0 44px; width: 44px; max-width: 44px; height: 44px; min-height: 0; padding: 0;
         overflow: visible; border-radius: 12px;
@@ -218,7 +218,7 @@ const CLOCK_CARD_CSS = `
       }
       .gc-preview-shell .gallery-matrix-preview { max-width: 100% !important; }
 
-      /* Active-style highlight: clearly visible on any background colour. */
+      /* Active-style highlight: clearly visible on any background color. */
       .gc-preview-shell .gallery-item[data-active-mode="true"] {
         outline: 2px solid var(--primary-color, #03a9f4) !important;
         outline-offset: -2px;
@@ -300,7 +300,7 @@ class YeelightCubeClockCard extends LitElement {
     return this._sliderDrafts?.brightness.value ?? null;
   }
 
-  // Both sliders share the appearance config (slider_*); only colour + icons
+  // Both sliders share the appearance config (slider_*); only color + icons
   // differ per slider.
   _speedGc() {
     return lightSliderConfig(this.config, "speed", this._sliderKeys);
@@ -365,7 +365,7 @@ class YeelightCubeClockCard extends LitElement {
       show_color_modes: false,
       color_mode_selector: "buttons", // buttons | dropdown
       color_mode_shape: "rounded", // dropdown shape: square | rounded | round
-      // Custom colour is now a colour mode; its picker style lives here.
+      // Custom color is now a color mode; its picker style lives here.
       color_override_style: "swatch",
       // Sliders: brightness + animation speed share one appearance config
       // (slider_*); each can be shown/hidden independently.
@@ -381,7 +381,7 @@ class YeelightCubeClockCard extends LitElement {
       show_active_label: true,
       ...resolveClockAppearance(cfg),
     };
-    // Custom colour moved from its own section into the colour-mode selector;
+    // Custom color moved from its own section into the color-mode selector;
     // surface it for configs that only enabled the old override control.
     if (this.config.show_color_override) this.config.show_color_modes = true;
     delete this.config.show_color_override;
@@ -726,7 +726,7 @@ class YeelightCubeClockCard extends LitElement {
     );
   }
 
-  // The colour-mode selector value: a firmware palette when one is active,
+  // The color-mode selector value: a firmware palette when one is active,
   // otherwise "custom" when a free custom RGB override is set, else "normal".
   _currentColorMode(a) {
     if (this._customMode) return "custom";
@@ -734,9 +734,9 @@ class YeelightCubeClockCard extends LitElement {
     if (mode !== "normal") return mode;
     const rgb = clockColorToRgb(a.clock_color);
     if (!rgb) return "normal";
-    // The user explicitly entered Custom (even if the colour happens to match a
+    // The user explicitly entered Custom (even if the color happens to match a
     // saved preset); honour that so Custom stays selectable.
-    // A style we just saved/selected owns this colour until the HA library
+    // A style we just saved/selected owns this color until the HA library
     // echoes it back as a matchable preset; treat it as a style (Normal), not a
     // free override, so the selector doesn't flash "Custom" during that window.
     if (
@@ -744,7 +744,7 @@ class YeelightCubeClockCard extends LitElement {
       this._pendingStyleColor.every((channel, index) => channel === rgb[index])
     )
       return "normal";
-    // A saved solid-colour clock style carries its colour on White; that is a
+    // A saved solid-color clock style carries its color on White; that is a
     // style choice (like Yellow/Mint), not a free override, so it stays Normal.
     if (this._activeStylePreset(a)) return "normal";
     return "custom";
@@ -787,14 +787,14 @@ class YeelightCubeClockCard extends LitElement {
       native_effect_direction: a.native_effect_direction,
     };
     if (style.presetId) {
-      // A preset previews its OWN saved colour, not the active override.
+      // A preset previews its OWN saved color, not the active override.
       attrs.clock_style = "White";
       attrs.clock_color_rgb = style.color;
       return attrs;
     }
-    // renderClockFrame applies the override only to colour-supporting styles;
+    // renderClockFrame applies the override only to color-supporting styles;
     // incompatible effects ignore it and solid styles show it flat. Only a free
-    // custom colour propagates to the gallery — a selected style preset does not.
+    // custom color propagates to the gallery — a selected style preset does not.
     const rgb =
       this._currentColorMode(a) === "custom"
         ? this._customDraft || this._customPresetColor
@@ -804,8 +804,8 @@ class YeelightCubeClockCard extends LitElement {
     return attrs;
   }
 
-  // Like _previewAttrs, but renders a favourite under its recorded colour mode
-  // (and custom colour) instead of the card's currently selected mode.
+  // Like _previewAttrs, but renders a favourite under its recorded color mode
+  // (and custom color) instead of the card's currently selected mode.
   _previewAttrsFor(style, colorMode, color) {
     const a = this._attrs();
     const attrs = {
@@ -908,7 +908,7 @@ class YeelightCubeClockCard extends LitElement {
       this._currentColorMode(this._attrs()) === "custom" && !style.presetId;
     const action = clockStyleAction(style);
     // Leaving a style/preset for a plain built-in style drops any residual
-    // colour override unless the user is genuinely in Custom mode (where the
+    // color override unless the user is genuinely in Custom mode (where the
     // override is meant to follow the style change).
     if (
       !style.presetId &&
@@ -979,8 +979,8 @@ class YeelightCubeClockCard extends LitElement {
       this._applyColorPreset(mode.slice(7));
       return;
     }
-    // A colour attached to the CURRENT state only counts as "the custom
-    // colour" while Custom mode is genuinely active; if it merely belongs to
+    // A color attached to the CURRENT state only counts as "the custom
+    // color" while Custom mode is genuinely active; if it merely belongs to
     // an active style preset, entering Custom must not inherit it.
     const wasCustom = this._currentColorMode(this._attrs()) === "custom";
     const preserveStyle =
@@ -990,7 +990,7 @@ class YeelightCubeClockCard extends LitElement {
     const currentColor = wasCustom ? this._customDraft : null;
     if (currentColor) this._lastCustomHex = rgbToHex(currentColor);
     // Track the user's explicit mode choice (Custom is inferred, not a backend
-    // field, so a colour that matches a preset must not snap back to Normal).
+    // field, so a color that matches a preset must not snap back to Normal).
     this._customMode = mode === "custom";
     this._pendingStyleColor = null;
     if (mode === "custom") {
@@ -1009,7 +1009,7 @@ class YeelightCubeClockCard extends LitElement {
       this._customPresetColor = null;
     }
     // The custom flag is local UI state; repaint now so the selector reflects
-    // it even when the backend colour (and thus the state signature) is unchanged.
+    // it even when the backend color (and thus the state signature) is unchanged.
     this.render();
   }
 
@@ -1143,7 +1143,7 @@ class YeelightCubeClockCard extends LitElement {
           : IntersectionObserver,
     });
     // The observer reports a new tile asynchronously (next frame at best), so
-    // a re-render (new style/colour selected) would leave freshly built
+    // a re-render (new style/color selected) would leave freshly built
     // gallery tiles on their static first frame until then -- a visible blink.
     // Seed new tiles synchronously with the same 120px margin so the
     // following _paintVisible() repaints them before the browser shows them.
@@ -1692,7 +1692,7 @@ class YeelightCubeClockCard extends LitElement {
       <yeelight-color-mode
         .config=${this.config}
         .options=${options}
-        .selected=${this._controls.displayed("colour", cur)}
+        .selected=${this._controls.displayed("color", cur)}
         .draft=${draft || null}
         .hass=${this._hass}
         .saveKinds=${this._saveKinds()}
@@ -1761,7 +1761,7 @@ class YeelightCubeClockCard extends LitElement {
     this._customPresetColor = null;
     this._customMode = false;
     this._revealSavedStyle = name;
-    // That colour is now owned by the new style, not the freeform Custom
+    // That color is now owned by the new style, not the freeform Custom
     // slot — forget it so the next Custom pick doesn't reuse it, and mark it
     // pending so the mode reads Normal until the library echoes the preset.
     this._lastCustomHex = null;
@@ -1791,7 +1791,7 @@ registerCustomCard({
   type: "yeelight-cube-clock-card",
   name: "Yeelight Cube Clock Card",
   description:
-    "Select, configure and visualise the Cube Lite firmware clock: styles, content, format and colour.",
+    "Select, configure and visualise the Cube Lite firmware clock: styles, content, format and color.",
   preview: true,
   documentationURL: "https://github.com/Max-src/yeelight-cube-lite",
 });

@@ -232,7 +232,7 @@ export const BRIGHTNESS_SLIDER_KEYS = {
 //   oscillation guards, full vs smart update). A full update re-captures the
 //   brightness slider markup and requests a Lit update; a smart update patches
 //   the matrix dots and slider visuals in place.
-// - The 20x5 .lamp-dot nodes carry no reactive bindings: their colours are only
+// - The 20x5 .lamp-dot nodes carry no reactive bindings: their colors are only
 //   ever painted directly (change-only) by _paintDots, from the static preview
 //   and the native-effect / clock animation loops.
 class YeelightCubeLampPreviewCard extends LitElement {
@@ -457,7 +457,7 @@ class YeelightCubeLampPreviewCard extends LitElement {
         this.config.brightness_slider_appearance,
         6,
       ),
-      // Only this card lets the user pick the slider colour.
+      // Only this card lets the user pick the slider color.
       color: this.config.brightness_matrix_color || "#ff9800",
       rawValue:
         this._hass?.states?.[this.config?.entity]?.attributes?.brightness,
@@ -1298,7 +1298,7 @@ class YeelightCubeLampPreviewCard extends LitElement {
     const needsFullRender =
       !this._isInitialRenderComplete ||
       // A full update is still waiting for Lit: fold this one into it so its
-      // post-render paint uses the newest colours.
+      // post-render paint uses the newest colors.
       this._pendingFull !== null ||
       // The matrix (.lamp-preview-css) is absent when show_lamp_preview is
       // false, so check the always-rendered container instead; otherwise a
@@ -1631,7 +1631,7 @@ class YeelightCubeLampPreviewCard extends LitElement {
     }
 
     // If the device orientation changed, the grid geometry (rows/cols, tall vs
-    // wide) changed too — a colour-only update can't fix that, so full re-render.
+    // wide) changed too — a color-only update can't fix that, so full re-render.
     const orientation = stateObj?.attributes?.device_orientation || "right";
     if (this._lastPreviewOrientation !== orientation) {
       this._lastPreviewOrientation = orientation;
@@ -1656,7 +1656,7 @@ class YeelightCubeLampPreviewCard extends LitElement {
 
       const color = gridColors[colorIndex] || "#000000";
 
-      // Change-only: the raw colour fully determines the black/empty/display
+      // Change-only: the raw color fully determines the black/empty/display
       // state, so skip the parse and DOM writes when it hasn't changed.
       if (dot._rawColor === color) return;
       dot._rawColor = color;
@@ -1674,7 +1674,7 @@ class YeelightCubeLampPreviewCard extends LitElement {
   }
 
   // Black detection (shared BLACK_THRESHOLD from matrix-const.js) and the
-  // hide_black_dots display rule for one CSS colour.
+  // hide_black_dots display rule for one CSS color.
   _dotAppearance(color) {
     let isBlack = false;
     if (color.startsWith("#")) {
@@ -1783,7 +1783,7 @@ class YeelightCubeLampPreviewCard extends LitElement {
 
   // Lit matrix preview. The dots are keyed by the full-update generation (so
   // every full update gets fresh nodes, like the former rebuild) and carry no
-  // bindings: _paintDots and the animation loops own their colours.
+  // bindings: _paintDots and the animation loops own their colors.
   _matrixTemplate(stateObj) {
     const { layout, alignClass, outerStyle, gridStyle } =
       this._matrixGeometry(stateObj);
@@ -1803,7 +1803,7 @@ class YeelightCubeLampPreviewCard extends LitElement {
     </div>`;
   }
 
-  // HTML-string rendering of the same preview with its colours inline, for
+  // HTML-string rendering of the same preview with its colors inline, for
   // callers that embed a static snapshot (e.g. the appearance regression tests).
   _generateMatrixHtml(gridColors, stateObj) {
     const { layout, alignClass, outerStyle, gridStyle } =

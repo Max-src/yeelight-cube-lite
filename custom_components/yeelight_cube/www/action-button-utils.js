@@ -57,7 +57,7 @@ export function getActionButtonClass(type, style = "modern") {
 
 export const getExportImportButtonClass = getActionButtonClass;
 
-// Perceived-luminance ink so text/glyphs stay legible on any fill colour.
+// Perceived-luminance ink so text/glyphs stay legible on any fill color.
 export function contrastInk(color) {
   const match = /^#?([0-9a-f]{6})$/i.exec(color || "");
   if (!match) return "#111";
@@ -192,10 +192,10 @@ export function actionButtonModel({
     role: role === "radio" ? "radio" : undefined,
     value,
     tabIndex,
-    // A colour swatch stands in for the icon (e.g. saved-colour buttons).
+    // A color swatch stands in for the icon (e.g. saved-color buttons).
     swatch: busy ? null : swatch,
     swatchShape,
-    // A whole-button fill colour with matching contrast ink.
+    // A whole-button fill color with matching contrast ink.
     fill: busy ? null : fill,
     ink: fill ? contrastInk(fill) : undefined,
     dataMode,
@@ -355,7 +355,7 @@ export const actionButtonStyles = `
 
   /* The Icon style is round buttons of one uniform size. Per-type classes
      (tool-btn, randomize-btn, force-refresh-btn, power-btn...) only override
-     colour, but .tool-btn.btn-style-icon elsewhere overrides size to 44px
+     color, but .tool-btn.btn-style-icon elsewhere overrides size to 44px
      (compact toolbars) - reassert 48px here so every action button matches,
      the same size already used for .shared-button-group icon buttons. */
   .action-row .shared-action-button.btn-style-icon {
@@ -967,7 +967,7 @@ export const actionButtonStyles = `
   .btn-swatch-square {
     border-radius: 0;
   }
-  /* Whole-button fill colour (e.g. saved-colour choices). The tool-active
+  /* Whole-button fill color (e.g. saved-color choices). The tool-active
      selectors match the stateful/selected specificity so the fill still wins. */
   .shared-action-button.btn-fill,
   .tool-btn.tool-active.btn-fill {

@@ -265,18 +265,18 @@ class YeelightCubeClockCardEditor extends LitElement {
               (e) => this._onToggle(e, "show_format_toggles"),
             )}
             ${createToggleRow(
-              "Show colour modes",
+              "Show color modes",
               "show_color_modes",
               !!config.show_color_modes,
               (e) => this._onToggle(e, "show_color_modes"),
             )}
             ${config.show_color_modes
               ? renderModeSettingsSection(
-                  "Colour mode style",
+                  "Color mode style",
                   html`
                     ${renderColorModeSettings(config, change)}
                     ${createToggleRow(
-                      "Show 'save colour mode' button",
+                      "Show 'save color mode' button",
                       "show_save_color_mode_button",
                       config.show_save_color_mode_button !== false,
                       (e) => this._onToggle(e, "show_save_color_mode_button"),
@@ -288,7 +288,7 @@ class YeelightCubeClockCardEditor extends LitElement {
                       (e) => this._onToggle(e, "show_save_clock_style_button"),
                     )}
                     ${renderModeSettingsSection(
-                      "Visible colour modes",
+                      "Visible color modes",
                       this._renderVisibleColorModeList(),
                     )}
                   `,
@@ -306,7 +306,7 @@ class YeelightCubeClockCardEditor extends LitElement {
         )}
         ${this._section(
           "presets",
-          "Custom clock styles and colours",
+          "Custom clock styles and colors",
           html`
             <yeelight-clock-preset-manager
               .hass=${this._hass}
@@ -475,8 +475,8 @@ class YeelightCubeClockCardEditor extends LitElement {
         this.requestUpdate();
         this._fire();
       },
-      addPlaceholder: "Show a colour mode...",
-      resetLabel: "Reset to all colour modes",
+      addPlaceholder: "Show a color mode...",
+      resetLabel: "Reset to all color modes",
     });
   }
 

@@ -24,7 +24,7 @@ export function openRgbColorPicker(owner, anchor, rgb, onColor) {
 export const colorPickerStyleChoices = [
   { value: "swatch", label: "Swatch" },
   { value: "chip", label: "Hex chip" },
-  { value: "row", label: "Colour row" },
+  { value: "row", label: "Color row" },
 ];
 
 export function resolveColorPickerStyle(style) {
@@ -40,8 +40,8 @@ export function renderColorPicker(value, style = "swatch") {
   const blue = parseInt(hex.slice(5, 7), 16);
   const ink =
     (red * 299 + green * 587 + blue * 114) / 1000 > 150 ? "#111" : "#fff";
-  return `<label class="shared-color-picker picker-style-${resolveColorPickerStyle(style)}" style="--picker-color:${hex};--picker-ink:${ink};" title="Choose colour">
-    <input type="color" class="color-picker" value="${hex}" aria-label="Choose colour" />
+  return `<label class="shared-color-picker picker-style-${resolveColorPickerStyle(style)}" style="--picker-color:${hex};--picker-ink:${ink};" title="Choose color">
+    <input type="color" class="color-picker" value="${hex}" aria-label="Choose color" />
     <span class="picker-swatch" aria-hidden="true"></span>
     <span class="picker-value" aria-hidden="true">${hex.toUpperCase()}</span>
   </label>`;
@@ -171,7 +171,7 @@ export function openColorPicker(
   input.type = "color";
   input.value = value;
   input.tabIndex = -1;
-  input.setAttribute("aria-label", "Choose colour");
+  input.setAttribute("aria-label", "Choose color");
   input.style.cssText = `position:fixed;inset:auto;left:${pageX - view.scrollX}px;top:${pageY - view.scrollY}px;width:1px;height:1px;margin:0;padding:0;border:0;opacity:0;pointer-events:none;`;
 
   let notified = false;

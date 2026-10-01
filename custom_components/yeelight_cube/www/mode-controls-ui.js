@@ -34,7 +34,7 @@ import {
   paintCellBackground,
 } from "./matrix-animator.js";
 
-// A favourite is uniquely identified by its key AND colour mode: the same style
+// A favourite is uniquely identified by its key AND color mode: the same style
 // can be saved once per mode. The manage list works on these synthetic ids so
 // duplicate keys never collapse into a single row.
 const FAVOURITE_MODE_LABELS = {
@@ -94,7 +94,7 @@ class YeelightModeControls extends LitElement {
       (child) => child.tagName !== "STYLE",
     );
     // Preview markup (and its data-color attributes) may have been replaced by
-    // this render; re-collect nodes/cells and re-parse colours lazily.
+    // this render; re-collect nodes/cells and re-parse colors lazily.
     this._previewTargets = null;
     this._syncPreviewLoop();
   }

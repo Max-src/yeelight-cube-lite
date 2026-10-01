@@ -49,7 +49,7 @@ test("actions normalize icon alignment and preserve independent migrated setting
   );
 });
 
-test("colour swatches replace the icon across styles and content modes", () => {
+test("color swatches replace the icon across styles and content modes", () => {
   for (const { value: buttonStyle } of actionButtonStyleChoices) {
     for (const { value: contentMode } of actionButtonContentChoices) {
       const markup = renderActionButtonHTML({
@@ -75,7 +75,7 @@ test("colour swatches replace the icon across styles and content modes", () => {
   assert.ok(actionButtonStyles.includes(".btn-swatch"));
 });
 
-test("filled buttons and round swatches expose reusable colour styling", () => {
+test("filled buttons and round swatches expose reusable color styling", () => {
   const filled = renderActionButtonHTML({
     label: "Amber",
     contentMode: "text",

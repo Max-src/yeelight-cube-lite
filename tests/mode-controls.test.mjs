@@ -67,7 +67,7 @@ test("missing rotation status preserves the observed kind without inventing acti
 });
 
 test("rotation retry targets only failed, stopped, on lamps with their backend lists", async () => {
-  // The backend exposes a null colour for non-custom modes and a list for custom.
+  // The backend exposes a null color for non-custom modes and a list for custom.
   const items = [
     { name: "Rainbow", color_mode: "bw", color: null },
     { name: "White", color_mode: "custom", color: [1, 2, 3] },
@@ -269,8 +269,8 @@ test("favourites preview frames render at current time, not phase 0", () => {
   });
   // A phase of 0 here flashes the animation's first frame on every Lit
   // re-render (the favourites blink); the frame must match the RAF loop's
-  // timebase (now / 1000) so re-renders are seamless. The recorded colour
-  // mode/colour must ride along so a favourite keeps its own look.
+  // timebase (now / 1000) so re-renders are seamless. The recorded color
+  // mode/color must ride along so a favourite keeps its own look.
   assert.deepEqual(phases, [[12.345, "red_blue", [1, 2, 3]]]);
 });
 
@@ -352,7 +352,7 @@ test("browser selection keeps the control rows enabled while the lamp answers", 
   });
   controller.listeners.add(() => notified.push(controller.busy));
   const pending = controller.choose("B");
-  // The lamp has not answered yet: actions, favourites and colour modes read
+  // The lamp has not answered yet: actions, favourites and color modes read
   // `busy` and must not flash disabled for a style/effect selection.
   assert.equal(controller.busy, false);
   assert.ok(notified.every((busy) => busy === false));
@@ -498,7 +498,7 @@ test("shuffle reorders and persists the favourites list itself", () => {
   ]);
 });
 
-test("legacy string favourites migrate to normal colour mode", () => {
+test("legacy string favourites migrate to normal color mode", () => {
   const { controller } = fixture();
   controller.favourites = ["A", "B"];
   assert.deepEqual(controller.names(), ["A", "B"]);
@@ -509,7 +509,7 @@ test("legacy string favourites migrate to normal colour mode", () => {
   assert.equal(controller.hasFavourite("A"), true);
 });
 
-test("favourites record their active colour mode", () => {
+test("favourites record their active color mode", () => {
   const { controller } = fixture({
     current: () => "B",
     currentColorMode: () => "red_blue",
@@ -524,12 +524,12 @@ test("favourites record their active colour mode", () => {
     { name: "A", color_mode: "normal" },
     { name: "B", color_mode: "red_blue" },
   ]);
-  // Toggling again removes only the matching colour-mode entry.
+  // Toggling again removes only the matching color-mode entry.
   controller.toggleFavourite();
   assert.deepEqual(controller.favourites, [{ key: "A", colorMode: "normal" }]);
 });
 
-test("the same style can be favourited under multiple colour modes", () => {
+test("the same style can be favourited under multiple color modes", () => {
   let mode = "normal";
   const { controller } = fixture({
     current: () => "A",
@@ -559,7 +559,7 @@ test("the same style can be favourited under multiple colour modes", () => {
   assert.deepEqual(controller.favourites, [{ key: "A", colorMode: "normal" }]);
 });
 
-test("selecting a saved favourite then removing it ignores stale live colour mode", async () => {
+test("selecting a saved favourite then removing it ignores stale live color mode", async () => {
   let mode = "red_blue";
   const applied = [];
   const { controller } = fixture({

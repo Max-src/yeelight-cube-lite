@@ -36,7 +36,6 @@ from .const import (
     NATIVE_CLOCK_STYLES,
     NATIVE_EFFECT_APPLY,
     NATIVE_EFFECT_DIRECTION_VALUES,
-    NATIVE_EFFECTS,
     resolve_clock_mixer_direction,
 )
 
@@ -156,7 +155,7 @@ class NativeModesMixin:
         """Return the ARGB color integer to send for the current clock style.
 
         Priority: user override (``_native_clock_color`` attribute) > style
-        default (its own colour, else its mixer effect's default colour).
+        default (its own color, else its mixer effect's default color).
         """
         override = self._native_clock_color
         if override is not None:
@@ -179,14 +178,14 @@ class NativeModesMixin:
             "data": base64.b64encode(clock_data).decode("ascii"),
         }
         clock_color = self._resolve_native_clock_color(style)
-        # A palette colour mode (B&W, Vivid, Retro Orange, ...) remaps an
-        # animated effect's colours via the outer command id below; an
-        # additionally injected colour would conflict with that remap, so
+        # A palette color mode (B&W, Vivid, Retro Orange, ...) remaps an
+        # animated effect's colors via the outer command id below; an
+        # additionally injected color would conflict with that remap, so
         # clear it for any active mode - mirrors camera.py's preview and the
         # card's renderClockFrame(), which both drop the override whenever a
         # mode is active. Solid styles (no mixer effect) have no remap to
         # protect except B&W, which the firmware renders as plain white when
-        # no colour is sent.
+        # no color is sent.
         effect_name = CLOCK_MIXER_EFFECTS.get(style["mixer"])
         clock_color_mode = self._native_clock_color_mode
         if clock_color_mode == "bw" or (
@@ -209,15 +208,15 @@ class NativeModesMixin:
                 sent_direction
             ]
 
-        # A few mixers only render in full colour when the outer command id
+        # A few mixers only render in full color when the outer command id
         # (first array element) is overridden; otherwise the default clock id is
         # used. The config still carries mode 40 so the clock face renders.
         command_id = CLOCK_MIXER_COMMAND_IDS.get(style["mixer"], NATIVE_CLOCK_EFFECT_ID)
-        # A colour-mode preset remaps the palette by forcing the outer command
+        # A color-mode preset remaps the palette by forcing the outer command
         # id (B&W, Red-Blue, ...); it wins over the mixer's default command id.
         # Solid styles (mixer 0, e.g. White/Mint/Yellow/Pink/Red/Cyan/Purple)
         # have no animated renderer to remap - they already go B&W from the
-        # colour skip above, so leave their command id untouched.
+        # color skip above, so leave their command id untouched.
         mode_override = CLOCK_COLOR_MODES.get(clock_color_mode)
         if mode_override is not None and effect_name is not None:
             command_id = mode_override

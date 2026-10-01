@@ -110,7 +110,7 @@ export function renderTextStyleSelector(config, items, sel, active) {
   }
 
   // "filled" (default text style) — rendered through the shared action-button
-  // system (text-only, no icons) so these buttons match the colour-mode buttons
+  // system (text-only, no icons) so these buttons match the color-mode buttons
   // on every card.
   return `
       <div class="gc-selector" ${selAttrs}>
@@ -148,7 +148,7 @@ export function renderPreviewStyleSelector(config, items, sel, active, state) {
         : previewSize;
   const pixelStyle = config.gallery_pixel_style || "square";
   const bgName = config.gallery_background_color || "black";
-  // The shared renderers colour titles white only when the bg is exactly
+  // The shared renderers color titles white only when the bg is exactly
   // "#000000"; pass that (not "black") so titles stay readable on a black bg.
   const rendererBg = bgName === "black" ? "#000000" : bgName;
   const showTitles = config.preview_show_titles !== false;

@@ -24,6 +24,9 @@ class ClockPreviewTests(unittest.TestCase):
         self.camera = SimpleNamespace(
             _light_entity=self.clock,
             _clock_pixel_color=lambda *args: (255, 255, 255),
+            # freeze_display state, as set by the camera's constructor
+            _frozen_background_phase=None,
+            _clock_phase_offset=0.0,
         )
         self.timer = SimpleNamespace(monotonic=lambda: 0.75)
         namespace = {
@@ -120,7 +123,7 @@ class ClockPresetTests(unittest.TestCase):
             delete(presets, "missing")
 
 
-    def test_repeated_colours_can_be_saved_and_edited(self):
+    def test_repeated_colors_can_be_saved_and_edited(self):
         for kind in ["style", "color_mode"]:
             with self.subTest(kind=kind):
                 presets = save([], "Amber", [255, 120, 0], ["White"], kind=kind)
@@ -146,7 +149,7 @@ class ClockPresetServiceTests(unittest.IsolatedAsyncioTestCase):
         self.data = {"storage": self.store, "clock_presets": [], "palettes_v2": [{"name": "Existing"}]}
         self.hass = SimpleNamespace(data={"yeelight_cube": self.data}, bus=SimpleNamespace(async_fire=Mock()))
         namespace = {"DOMAIN": "yeelight_cube", "_LOGGER": logging.getLogger(__name__)}
-        save_data = _load_standalone_functions((ROOT / "__init__.py").read_text(encoding="utf-8"), {"async_save_data"}, namespace)["async_save_data"]
+        save_data = _load_standalone_functions((ROOT / "__init__.py").read_text(encoding="utf-8"), {"async_save_data", "_storage_data"}, namespace)["async_save_data"]
         module = ModuleType("_clock_preset_test")
         module.async_save_data = save_data
         self.modules = patch.dict(sys.modules, {module.__name__: module})

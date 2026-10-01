@@ -425,7 +425,7 @@ def _migrate_pixel_arts(raw_pixel_arts: list) -> tuple[list, bool]:
                 art = {**art, "name": safe_name}
             else:
                 # Flat or legacy "positions" form: drop black pixels and
-                # duplicate positions, group the rest by colour.
+                # duplicate positions, group the rest by color.
                 art = {"name": safe_name, "pixels": group_pixels(art["pixels"])}
                 changed = True
         migrated.append(art)
@@ -533,7 +533,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Persist migrated data immediately so the grouped format survives the next reboot
         # without needing to re-migrate from the flat on-disk format.
         if _needs_save:
-            _LOGGER.info(f"[pixelart-migration] Migrating {len(_migrated_pixel_arts)} pixel arts to grouped format — saving to disk.")
+            _LOGGER.info("[pixelart-migration] Migrating %s pixel arts to grouped format — saving to disk.", len(_migrated_pixel_arts))
             await async_save_data(hass)
         
         # Register cards as Lovelace resources (same mechanism as HACS plugins).
@@ -695,7 +695,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # but cannot properly control them. Dismiss those flows so users aren't confused.
     _schedule_dismiss_yeelight_discoveries(hass)
     
-    _LOGGER.debug(f"Set up Yeelight Cube Lite at {ip_address}")
+    _LOGGER.debug("Set up Yeelight Cube Lite at %s", ip_address)
     return True
 
 
@@ -991,7 +991,7 @@ async def async_save_data(hass: HomeAssistant):
     )
 
     await store.async_save(data_to_save)
-    _LOGGER.debug(f"[STORAGE-SAVE] COMPLETE: Saved {len(data_to_save['palettes_v2'])} palettes, {len(data_to_save['pixel_arts'])} pixel arts")
+    _LOGGER.debug("[STORAGE-SAVE] COMPLETE: Saved %s palettes, %s pixel arts", len(data_to_save['palettes_v2']), len(data_to_save['pixel_arts']))
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Forget the stored per-lamp data (favourites, rotation, runtime state) of a lamp

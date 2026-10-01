@@ -42,7 +42,7 @@ test("a drag over many cells writes the drawing once, after it pauses", async ()
   const matrix = card.matrix;
   ops.setPixel(3);
   assert.equal(card.matrix, matrix);
-  // Recent colours: written once for the stroke, not per cell.
+  // Recent colors: written once for the stroke, not per cell.
   assert.equal(writes.filter((key) => key.includes("recent")).length, 1);
   // The grid itself: not yet, then once.
   assert.equal(writes.filter((key) => key.includes("matrix")).length, 0);

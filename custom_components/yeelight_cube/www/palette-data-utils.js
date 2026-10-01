@@ -26,7 +26,7 @@ export function toRgbTriplet(color) {
 
 /**
  * Normalise an imported palette file: an array of `{name, colors}` objects or
- * bare colour arrays. Returns the valid palettes and how many were skipped.
+ * bare color arrays. Returns the valid palettes and how many were skipped.
  */
 export function normalizeImportedPalettes(data) {
   if (!Array.isArray(data)) return { palettes: [], skipped: 0 };

@@ -1124,7 +1124,7 @@ export const AngleControlMixin = (Base) => class extends Base {
   }
 
   /**
-   * Per-pixel [r,g,b] colours of a pure angle gradient over a rows×cols
+   * Per-pixel [r,g,b] colors of a pure angle gradient over a rows×cols
    * matrix (row-major, top row first) — matrix rotary render and updates.
    */
   _angleGradientPixelColors(colors, angle, rows, cols) {

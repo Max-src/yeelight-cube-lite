@@ -52,7 +52,7 @@ export function renderColorModeSettings(config, change) {
         )
       : ""}
     <div class="form-row">
-      <label>Custom colour modes style</label>
+      <label>Custom color modes style</label>
       ${createButtonGroup(
         COLOR_PRESET_STYLE_CHOICES,
         config.color_preset_style === "swatch"

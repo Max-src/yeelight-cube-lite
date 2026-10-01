@@ -112,7 +112,7 @@ def _resolve_entity(service_call, service_name: str):
     """
     entity_id = service_call.data.get("entity_id")
     if not entity_id:
-        _LOGGER.warning(f"[{service_name}] No entity_id provided -- cannot determine target")
+        _LOGGER.warning("[%s] No entity_id provided -- cannot determine target", service_name)
         return None
 
     # If a list was provided, return only the first one (legacy compat)
@@ -131,7 +131,7 @@ def _resolve_entity(service_call, service_name: str):
         if hasattr(entity_obj, 'entity_id') and entity_obj.entity_id == entity_id:
             return entity_obj
 
-    _LOGGER.warning(f"[{service_name}] Entity {entity_id} not found in registry (keys: {list(_ENTITY_REGISTRY.keys())})")
+    _LOGGER.warning("[%s] Entity %s not found in registry (keys: %s)", service_name, entity_id, list(_ENTITY_REGISTRY.keys()))
     return None
 
 
@@ -144,7 +144,7 @@ def _resolve_entities(service_call, service_name: str):
     """
     entity_id = service_call.data.get("entity_id")
     if not entity_id:
-        _LOGGER.warning(f"[{service_name}] No entity_id provided -- cannot determine target")
+        _LOGGER.warning("[%s] No entity_id provided -- cannot determine target", service_name)
         return []
 
     ids = entity_id if isinstance(entity_id, list) else [entity_id]
@@ -160,7 +160,7 @@ def _resolve_entities(service_call, service_name: str):
         if target:
             results.append(target)
         else:
-            _LOGGER.warning(f"[{service_name}] Entity {eid} not found in registry")
+            _LOGGER.warning("[%s] Entity %s not found in registry", service_name, eid)
     return results
 
 

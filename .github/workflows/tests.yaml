@@ -1,0 +1,49 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: npm ci
+      - run: python -m pip install pillow
+
+      # Backend: loads the integration's modules without Home Assistant; some
+      # tests compare the Python and JS previews through Node.
+      - name: Python tests
+        run: python -m unittest discover -s tests -p "test_*.py"
+
+      # Frontend: unit tests of the card modules.
+      - name: JS tests
+        run: node --test tests/*.test.mjs
+
+      # The real cards in a browser against a fake Home Assistant backend.
+      - run: npx playwright install --with-deps chromium
+      - name: Browser checks
+        env:
+          BROWSER_CHANNEL: chromium
+        run: |
+          node tests/card-events-browser.cjs
+          node tests/card-sync-browser.cjs
+          node tests/card-ui-parity.cjs

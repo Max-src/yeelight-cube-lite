@@ -1,4 +1,4 @@
-"""Validation for the shared solid-colour clock library."""
+"""Validation for the shared solid-color clock library."""
 
 from uuid import uuid4
 
@@ -19,7 +19,7 @@ def save_clock_preset(presets, name, color, builtin_names, preset_id=None, kind=
     if not isinstance(color, (list, tuple)) or len(color) != 3 or any(
         type(channel) is not int or not 0 <= channel <= 255 for channel in color
     ):
-        raise ValueError("Colour must contain three integers between 0 and 255")
+        raise ValueError("Color must contain three integers between 0 and 255")
     if preset_id and not any(item["id"] == preset_id for item in presets):
         raise ValueError("This preset no longer exists")
     same_kind = [item for item in presets if item.get("kind", "style") == kind]

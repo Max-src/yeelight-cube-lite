@@ -118,7 +118,7 @@ test("experimental editor status distinguishes device gates, missing states and 
   assert.equal(render(hass, [], {}, false), "");
 });
 
-test("native colour choices retain configured order while effects respond to the colour", async () => {
+test("native color choices retain configured order while effects respond to the color", async () => {
   const attrs = {
     native_effect_color_mode: "normal",
     native_effect_catalog: ["Starry sky", "Tide", "Rainbow"].map((name) => ({
@@ -201,7 +201,7 @@ function cardMethod(name, dependencies = {}) {
   )(...Object.values(dependencies));
 }
 
-test("native unsaved colour survives stale state echoes and unrelated updates", () => {
+test("native unsaved color survives stale state echoes and unrelated updates", () => {
   const source = sourceFor("yeelight-cube-native-effects-card.js");
   const body = source.match(/  set hass\(hass\) \{([\s\S]*?)\n  \}/)[1];
   const update = new Function(
@@ -577,7 +577,7 @@ test("native and clock sliders share capsule icon configuration", () => {
     "BRIGHTNESS_RAW",
     `return function(config, kind, keys, overrides = {}) {${body}}`,
   )((cfg, map, overrides) => overrides, { min: 1, max: 255 }, { min: 3, max: 255 });
-  // A card's own additions win (the Lamp Preview's colour).
+  // A card's own additions win (the Lamp Preview's color).
   assert.equal(
     config({}, "brightness", keys, { color: "#123456" }).color,
     "#123456",

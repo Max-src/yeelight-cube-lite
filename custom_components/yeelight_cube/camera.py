@@ -23,7 +23,6 @@ from .const import (
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
     DOMAIN,
-    CONF_IP,
     CLOCK_MIXER_EFFECTS,
     CLOCK_MIXER_EFFECT_SPEED,
     DEFAULT_NATIVE_CLOCK_STYLE,
@@ -33,7 +32,6 @@ from .entity import CubeDeviceEntity
 from .effect_orientation import clock_effect_direction
 from .layout import FONT_MAPS, char_advance
 from .native_effect_preview import (
-    effect_supports_color_mode,
     effect_supports_color_override,
     render_music_flow_effect,
     render_native_effect_oriented,
@@ -172,9 +170,10 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         self.async_update_token()
         self.async_write_ha_state()
         _LOGGER.debug(
-            f"[TIMING] camera{self._SUFFIX} async_refresh_preview: "
-            f"render={(_t1 - _t0)*1000:.1f}ms "
-            f"total={(_time.time() - _t0)*1000:.1f}ms"
+            "[TIMING] camera%s async_refresh_preview: "
+            "render=%.1fms "
+            "total=%.1fms",
+            self._SUFFIX, (_t1 - _t0)*1000, (_time.time() - _t0)*1000
         )
 
     # ── Image serving ──────────────────────────────────────────────────
@@ -199,7 +198,7 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         self._cached_image = self._render_matrix(colors)
 
     async def _async_pre_render(self) -> None:
-        """Compute colours on the loop, encode the PNG in an executor thread."""
+        """Compute colors on the loop, encode the PNG in an executor thread."""
         colors = self._get_matrix_colors()
         self._cached_image = await self.hass.async_add_executor_job(
             self._render_matrix, colors
@@ -216,7 +215,7 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         return bool(getattr(self._light_entity, "firmware_draws_matrix", False))
 
     def _get_matrix_colors(self) -> list[tuple]:
-        """Get brightness-corrected matrix colours with perceptual boost.
+        """Get brightness-corrected matrix colors with perceptual boost.
 
         The JS lamp-preview card receives *darkened* pixel values (via
         ``matrix_colors`` in state attributes) and applies:
@@ -369,12 +368,12 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
 
         # Styles whose mixer is a native effect show that effect through the lit
         # glyph pixels; render it once and mask it below. Others use the
-        # solid/gradient colour.
+        # solid/gradient color.
         style = NATIVE_CLOCK_STYLES.get(
             style_id, NATIVE_CLOCK_STYLES[DEFAULT_NATIVE_CLOCK_STYLE]
         )
-        # A colour override (ARGB int) recolours compatible mixer effects (dark
-        # stays dark); incompatible styles fall back to the flat override colour.
+        # A color override (ARGB int) recolors compatible mixer effects (dark
+        # stays dark); incompatible styles fall back to the flat override color.
         override_int = getattr(le, "_native_clock_color", None)
         override_rgb = (
             (
@@ -386,7 +385,7 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
             else None
         )
         effect_name = CLOCK_MIXER_EFFECTS.get(style.get("mixer", 0))
-        # A palette colour mode (e.g. B&W) takes precedence over the override.
+        # A palette color mode (e.g. B&W) takes precedence over the override.
         color_mode = getattr(le, "_native_clock_color_mode", "normal") or "normal"
         mode_active = color_mode != "normal"
         override_compatible = (
@@ -395,9 +394,9 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
             and effect_name is not None
             and effect_supports_color_override(effect_name)
         )
-        # Compatible effects recolour toward the override; incompatible effects
+        # Compatible effects recolor toward the override; incompatible effects
         # render normally (ignore it); styles with no effect fall back to the
-        # flat override colour in the mask loop below.
+        # flat override color in the mask loop below.
         effect_frame = None
         if effect_name is not None:
             # While frozen, hold the background effect on the frame the lamp is
@@ -432,10 +431,10 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
                 override_rgb if override_compatible else None,
                 color_mode if mode_active else None,
             )
-        # A palette mode overrides the custom colour, so don't flat-fill with it.
+        # A palette mode overrides the custom color, so don't flat-fill with it.
         flat_override = None if mode_active else override_rgb
         # Solid styles (no mixer effect) have no animated renderer to remap for
-        # B&W; the backend achieves it by omitting their colour, which the
+        # B&W; the backend achieves it by omitting their color, which the
         # firmware renders as plain white.
         solo_bw_fallback = effect_frame is None and color_mode == "bw"
 
@@ -560,7 +559,7 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
 
         buf = io.BytesIO()
         # compress_level=1: fastest zlib setting; the image is tiny and
-        # few-coloured, so the extra bytes are negligible but the encode is
+        # few-colored, so the extra bytes are negligible but the encode is
         # noticeably cheaper per frame.
         img.save(buf, format="PNG", compress_level=1)
         return buf.getvalue()

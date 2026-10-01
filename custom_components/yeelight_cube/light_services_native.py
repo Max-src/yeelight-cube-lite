@@ -207,12 +207,12 @@ def async_register_native_services(hass: HomeAssistant) -> None:
             if speed is not None and not spec.get("speed"):
                 raise HomeAssistantError(f"{name} does not support animation speed")
             if has_color and not clear_color and not effect_supports_color_override(name):
-                raise HomeAssistantError(f"{name} does not support custom colours")
+                raise HomeAssistantError(f"{name} does not support custom colors")
             if color_mode is not None and (
                 color_mode not in CLOCK_COLOR_MODES
                 or (color_mode != "normal" and not effect_supports_color_mode(name, color_mode))
             ):
-                raise HomeAssistantError(f"{name} does not support colour mode {color_mode}")
+                raise HomeAssistantError(f"{name} does not support color mode {color_mode}")
             if not target._is_on and not target._should_auto_turn_on():
                 raise HomeAssistantError("Lamp is off and auto-turn-on is disabled")
 
@@ -345,12 +345,12 @@ def async_register_native_services(hass: HomeAssistant) -> None:
     )
 
     async def handle_set_clock_style(service_call):
-        """Configure the firmware clock (style, colour, content, format).
+        """Configure the firmware clock (style, color, content, format).
 
         A single clean action the Clock card drives: any subset of the fields
         may be provided. ``style`` accepts a style name or numeric id; ``color``
         is an ``[r, g, b]`` override (or ``"clear"`` / null to drop it back to
-        the style's own colour). By default the lamp is switched to Clock mode
+        the style's own color). By default the lamp is switched to Clock mode
         (``activate``) so the change is visible immediately.
         """
         targets = _resolve_entities(service_call, "SET_CLOCK_STYLE")
@@ -389,7 +389,7 @@ def async_register_native_services(hass: HomeAssistant) -> None:
                 raise HomeAssistantError(f"Unknown clock style: {style}")
 
         # Encode an [r, g, b] override into the firmware's 0x01RRGGBB clock
-        # colour integer (high byte 0x01 = custom colour, matching the built-in
+        # color integer (high byte 0x01 = custom color, matching the built-in
         # style presets like Yellow = 0x01FFFE00).
         clock_color = None
         clear_color = False

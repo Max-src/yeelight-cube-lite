@@ -53,10 +53,10 @@ export function selectorShapeToCarouselButtonShape(shape) {
 export const selectorSharedStyles = `
   /* Clock/Native text selector buttons render through the shared
      action-button system (action-button-utils.js) so they match the
-     colour-mode buttons. The gradient card still uses the legacy filled
+     color-mode buttons. The gradient card still uses the legacy filled
      buttons below. */
 
-  /* Legacy filled style — still used by the gradient card's colour-mode
+  /* Legacy filled style — still used by the gradient card's color-mode
      selector. Soft pill background, no border; solid primary when active. */
   .mode-btn-filled {
     padding: 6px 14px;
@@ -154,7 +154,7 @@ export const selectorSharedStyles = `
   }
 
   /* Text selector buttons reuse the shared action-button look. Match the
-     colour-mode radio group: neutralise the tool-active ring/scale so only the
+     color-mode radio group: neutralise the tool-active ring/scale so only the
      fill changes when selected. */
   .gc-selector .shared-action-button.tool-active {
     transform: none;

@@ -77,13 +77,13 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.target._native_effect_color_mode, "red_blue")
         self.assertEqual(self.target._native_clock_color_mode, "bw")
         for color_mode in ("missing", "purple_orange"):
-            with self.assertRaisesRegex(ValueError, "colour mode"):
+            with self.assertRaisesRegex(ValueError, "color mode"):
                 await self.handle(SimpleNamespace(data={"effect": "Ocean Waves", "color_mode": color_mode}))
         self.assertEqual(self.target._native_effect, "Rainbow")
         await self.handle(SimpleNamespace(data={"effect": "Rainbow", "color_mode": "normal"}))
         self.assertEqual(self.target._native_effect_color_mode, "normal")
 
-    async def test_native_palette_payload_preserves_effect_and_omits_default_colour(self):
+    async def test_native_palette_payload_preserves_effect_and_omits_default_color(self):
         source = (ROOT / "light_native.py").read_text(encoding="utf-8").replace(
             "        from .light import _DEVICE_ORIENTATION_TO_EFFECT_DIR\n", ""
         )
@@ -125,7 +125,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         await activate(target)
         self.assertNotIn("color", target._cube_matrix.send_raw_command.call_args.args[1][3])
 
-    async def test_custom_colour_validation_preflight_and_clear(self):
+    async def test_custom_color_validation_preflight_and_clear(self):
         self.target._native_clock_color = 123
         await self.handle(SimpleNamespace(data={"effect": "Rainbow", "color": [12, 34, 56]}))
         self.assertEqual(self.target._native_effect_color, [12, 34, 56])
@@ -138,7 +138,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
                            if not spec.get("extended") and not NATIVE_PREVIEW["effect_supports_color_override"](name))
         second = SimpleNamespace(_native_effect=unsupported, _extended_effects_enabled=False, _is_on=True)
         self.targets.append(second)
-        with self.assertRaisesRegex(ValueError, "custom colours"):
+        with self.assertRaisesRegex(ValueError, "custom colors"):
             await self.handle(SimpleNamespace(data={"color": [1, 2, 3]}))
         self.assertEqual(self.target._native_effect_color, [12, 34, 56])
         self.targets.pop()

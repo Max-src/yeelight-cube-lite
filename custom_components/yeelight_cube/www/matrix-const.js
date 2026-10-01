@@ -1,7 +1,7 @@
 /**
  * Matrix preview constants shared by every card (Clock, Native Effects, Lamp
  * Preview, Gradient, Draw and the gallery renderers): black-pixel detection
- * and the on-screen brightness boost applied to LED colours.
+ * and the on-screen brightness boost applied to LED colors.
  */
 
 // --- Black pixel detection threshold ---

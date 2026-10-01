@@ -41,7 +41,7 @@ class LockWaitLogTests(unittest.IsolatedAsyncioTestCase):
             _connection_error=False, _display_retry_count=0,
             _retry_display_task=None,
             _cube_matrix=SimpleNamespace(
-                state_summary=lambda: "", record_success=Mock(), record_failure=Mock()
+                state_summary=lambda: "", summary="", record_success=Mock(), record_failure=Mock()
             ),
         )
 

@@ -1,7 +1,7 @@
-"""Colour pipeline for the Yeelight Cube Lite light entity.
+"""Color pipeline for the Yeelight Cube Lite light entity.
 
 Extracted from light.py as a mixin to keep the entity class focused.  These
-methods are pure colour math plus hardware colour-correction/accuracy: they only
+methods are pure color math plus hardware color-correction/accuracy: they only
 read per-instance state via ``self`` (initialised in ``YeelightCubeLight.__init__``
 and the calibration attributes) and the matrix geometry constants imported below.
 Mixed into ``YeelightCubeLight``; not usable on its own.
@@ -17,7 +17,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class ColorPipelineMixin:
-    """Colour adjustment, LED correction/accuracy and the brightness curve.
+    """Color adjustment, LED correction/accuracy and the brightness curve.
 
     All state is read from ``self`` (the concrete :class:`YeelightCubeLight`),
     e.g. ``self._preview_*`` adjustment values and ``self._calib_*`` calibration
@@ -271,7 +271,7 @@ class ColorPipelineMixin:
             darken_factor = 1 - (self._preview_darken / 100)
             # Use floor() to avoid rounding up, then ensure non-zero channels stay alive.
             # Each channel has its own minimum lit value (calibrated): a channel that
-            # is intended to be on never drops below its floor, so dim colours keep
+            # is intended to be on never drops below its floor, so dim colors keep
             # their hue instead of crushing channels that the LED can't render low.
             floor_r = max(1, int(self._calib_floor_r))
             floor_g = max(1, int(self._calib_floor_g))
@@ -281,7 +281,7 @@ class ColorPipelineMixin:
             b = max(floor_b, math.floor(b * darken_factor)) if b > 0 else 0
             
             # Log darken effect for debugging (reduced to debug level to avoid spam)
-            _LOGGER.debug(f"[FINAL BRIGHTNESS] RGB{original_rgb} -> darken {self._preview_darken}% -> RGB({r}, {g}, {b})")
+            _LOGGER.debug("[FINAL BRIGHTNESS] RGB%s -> darken %s%% -> RGB(%s, %s, %s)", original_rgb, self._preview_darken, r, g, b)
         
         # Brighten (0-100: interpolate towards white) - Kept for future use
         if self._preview_brighten > 0:
@@ -315,16 +315,16 @@ class ColorPipelineMixin:
         2. Correction strength ramps with HARDWARE brightness: zero when the
            LEDs run at high duty cycle, full at very low duty cycle.
         3. Only affects hardware-bound values; the preview card always shows
-           the original intended colours.
+           the original intended colors.
 
         IMPORTANT: The strength must be driven by the actual hardware
         brightness (PWM duty cycle), NOT the software darken%.  In the
         dual-brightness system, mid-range user brightness (e.g. 59%) has
         hardware=100% but darken=72%: the LEDs are at full power so there
         is NO non-linearity to compensate for.  Using darken% here would
-        over-correct and desaturate colours ("faded / merged with white").
+        over-correct and desaturate colors ("faded / merged with white").
         
-        TUNING PARAMETERS - adjust these if colours still look off:
+        TUNING PARAMETERS - adjust these if colors still look off:
         -------------------------------------------------------------------
 
         HW_BRIGHT_THRESHOLD  (default 50)
@@ -454,16 +454,16 @@ class ColorPipelineMixin:
 
     def _apply_color_accuracy(self, rgb_color):
         """
-        Apply per-channel gain correction to compensate for LED colour rendering
+        Apply per-channel gain correction to compensate for LED color rendering
         differences vs. a computer monitor.  Toggled via a button on the
         preview card (service: set_color_accuracy).
 
         The correction strength fades with brightness: full effect at 100%,
         zero effect at 0-1%.  This avoids over-correcting at low brightness
-        where _apply_color_correction (gamma) already adjusts the colour.
+        where _apply_color_correction (gamma) already adjusts the color.
 
         WHY THIS IS NEEDED:
-        LED strips / matrices rarely match sRGB.  Each LED colour has its own
+        LED strips / matrices rarely match sRGB.  Each LED color has its own
         efficiency and wavelength, so the *same* RGB values look different on
         a monitor versus the physical lamp.  Typical symptoms on this lamp:
 
@@ -479,13 +479,13 @@ class ColorPipelineMixin:
         brightness.  The blend factor is derived from self._brightness
         (1--255, HA brightness).
 
-        Pipeline order:  colour effects -> brightness darken ->
+        Pipeline order:  color effects -> brightness darken ->
                          _apply_color_correction (low-brightness gamma) ->
                          * _apply_color_accuracy (this, channel gain) * ->
                          encode & send to lamp
 
         The preview card is NOT affected -- it always shows the original
-        intended colours.
+        intended colors.
 
         TUNING PARAMETERS - adjust these to match YOUR lamp:
         -------------------------------------------------------------------
@@ -499,11 +499,11 @@ class ColorPipelineMixin:
             Green channel multiplier.  Reduced because the green LED is
             over-efficient, causing yellows/cyans/whites to shift green.
             If still too green, try 0.80--0.85.
-            If colours look too pink/magenta, raise to 0.90--0.94.
+            If colors look too pink/magenta, raise to 0.90--0.94.
 
         GAIN_B  (default 0.72)
             Blue channel multiplier.  Reduced for deeper blues
-            and to prevent mid-range colours from looking washed out.
+            and to prevent mid-range colors from looking washed out.
             If blues are too dark, raise to 0.80--0.90.
             If blues still look washed, lower to 0.65-0.70.
         """
@@ -580,8 +580,9 @@ class ColorPipelineMixin:
         darken_percent = int(round(max(0, min(100, darken_percent))))
 
         _LOGGER.debug(
-            f"[BRIGHTNESS] unified: user={p*100:.1f}% -> "
-            f"hardware={hardware_brightness}%, darkness={darken_percent}%"
+            "[BRIGHTNESS] unified: user=%.1f%% -> "
+            "hardware=%s%%, darkness=%s%%",
+            p*100, hardware_brightness, darken_percent
         )
 
         return (hardware_brightness, darken_percent)

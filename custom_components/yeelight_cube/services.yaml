@@ -155,8 +155,8 @@ set_button_effects:
           domain: light
 
 save_clock_preset:
-  name: Save Clock Colour Preset
-  description: Create or update a shared clock style or custom colour-mode preset without changing the lamp.
+  name: Save Clock Color Preset
+  description: Create or update a shared clock style or custom color-mode preset without changing the lamp.
   fields:
     name:
       required: true
@@ -164,7 +164,7 @@ save_clock_preset:
         text:
     color:
       required: true
-      description: RGB colour as three integers from 0 to 255.
+      description: RGB color as three integers from 0 to 255.
       selector:
         color_rgb:
     preset_id:
@@ -172,18 +172,18 @@ save_clock_preset:
       selector:
         text:
     kind:
-      description: Save as a solid-colour clock style or a colour reusable with the current clock effect. Defaults to clock style for new presets; preserves the type when editing.
+      description: Save as a solid-color clock style or a color reusable with the current clock effect. Defaults to clock style for new presets; preserves the type when editing.
       selector:
         select:
           options:
             - label: Clock style
               value: style
-            - label: Colour mode
+            - label: Color mode
               value: color_mode
 
 delete_clock_preset:
-  name: Delete Clock Colour Preset
-  description: Remove a saved clock colour without changing the lamp.
+  name: Delete Clock Color Preset
+  description: Remove a saved clock color without changing the lamp.
   fields:
     preset_id:
       required: true
@@ -193,7 +193,7 @@ delete_clock_preset:
 set_clock_style:
   name: Set Clock Style
   description: >-
-    Configure the firmware clock in one call: style, colour override, content
+    Configure the firmware clock in one call: style, color override, content
     and time format. Any subset of fields may be provided. Drives the Clock
     card. By default the lamp switches to Clock mode so the change is visible.
   fields:
@@ -212,8 +212,8 @@ set_clock_style:
         text:
     color:
       description: >-
-        RGB colour override [r, g, b] applied to the clock, or "clear" to drop
-        the override and use the style's own colour.
+        RGB color override [r, g, b] applied to the clock, or "clear" to drop
+        the override and use the style's own color.
       required: false
       example: "[255, 120, 0]"
       selector:
@@ -242,8 +242,8 @@ set_clock_style:
         boolean:
     color_mode:
       description: >-
-        Firmware colour palette preset for compatible effects/styles. "normal"
-        keeps each effect's own colours; the others remap the palette.
+        Firmware color palette preset for compatible effects/styles. "normal"
+        keeps each effect's own colors; the others remap the palette.
       required: false
       example: red_blue
       selector:
@@ -575,7 +575,7 @@ set_default:
 
 set_native_effect:
   name: Set Native Effect
-  description: Select and apply a firmware animation, optionally setting its speed and compatible colour palette. Respects auto-turn-on and Experimental Features settings.
+  description: Select and apply a firmware animation, optionally setting its speed and compatible color palette. Respects auto-turn-on and Experimental Features settings.
   fields:
     entity_id:
       required: true
@@ -597,13 +597,13 @@ set_native_effect:
           mode: slider
     color:
       description: >-
-        Custom RGB colour [r, g, b] for effects that support a colour override,
-        or "clear" to return to the effect's own colours.
+        Custom RGB color [r, g, b] for effects that support a color override,
+        or "clear" to return to the effect's own colors.
       example: "[255, 80, 20]"
       selector:
         object:
     color_mode:
-      description: Palette for compatible effects. Normal restores the effect's own colours. Independent of clock palettes.
+      description: Palette for compatible effects. Normal restores the effect's own colors. Independent of clock palettes.
       selector:
         select:
           options:
@@ -1300,7 +1300,7 @@ start_effect_rotation:
         Ordered modes to cycle through. Each item is either a plain name
         (native effect name, or clock style name / "custom:<id>" saved preset)
         or an object {"name": ..., "color_mode": ..., "color": [r, g, b]} that
-        reapplies the colour mode recorded with the favourite.
+        reapplies the color mode recorded with the favourite.
       required: true
       example: '["Rainbow", "Ocean Waves", "Streamer"]'
       selector:
@@ -1421,7 +1421,7 @@ save_state:
   description: >
     Snapshot the lamp's current display state (text, colors, gradient mode,
     angle, drawing/pixel art, font, alignment, orientation, brightness and all
-    colour effects). Only one snapshot is kept per lamp; calling again
+    color effects). Only one snapshot is kept per lamp; calling again
     overwrites it. Pair with restore_state to show something temporarily and
     then return to what was displayed before. Note: the snapshot is held in
     memory and does not survive a Home Assistant restart.
@@ -1451,14 +1451,14 @@ restore_state:
 set_color_accuracy:
   name: Set Color Accuracy
   description: >
-    Toggle hardware colour accuracy correction.  Applies per-channel gain to
-    compensate for LED colour rendering differences vs. a computer monitor.
+    Toggle hardware color accuracy correction.  Applies per-channel gain to
+    compensate for LED color rendering differences vs. a computer monitor.
     Reduces green and blue channels slightly so yellows, cyans, and whites
     look neutral rather than greenish, and blues/purples appear deeper instead
     of washed out.  The preview card is NOT affected.
   fields:
     enabled:
-      description: Enable or disable colour accuracy correction.
+      description: Enable or disable color accuracy correction.
       example: true
       required: true
       selector:

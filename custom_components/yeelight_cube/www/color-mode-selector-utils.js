@@ -59,12 +59,12 @@ export function matchingColorOption(options, color, selectedId, selectedName) {
 }
 
 /**
- * What the colour-mode row shows (rendered as Lit by <yeelight-color-mode>):
+ * What the color-mode row shows (rendered as Lit by <yeelight-color-mode>):
  * - { kind: "dropdown", shape, disabled, placeholder, options } where
  *   placeholder is shown (and selected) when the current mode is not listed;
  * - { kind: "buttons", rowClass, buttons }: shared action-button models, in
  *   order, the Add button ("__pick__") flagged `add` and showing the draft.
- * Labels (saved colour names) are plain data, bound as text by the renderer.
+ * Labels (saved color names) are plain data, bound as text by the renderer.
  */
 export function colorModeSelectorModel(
   config,
@@ -138,7 +138,7 @@ export function colorModeSelectorModel(
           role: "button",
           icon: "mdi:plus",
           label: draft ? "Change" : "Add",
-          title: draft ? "Change unsaved colour" : "Add a colour",
+          title: draft ? "Change unsaved color" : "Add a color",
           contentMode: "icon_text",
           selected: !!draft,
           swatch: draft ? hex(draft) : undefined,

@@ -116,7 +116,7 @@ test("presentations share accessible native inputs and sanitize values", () => {
   for (const style of ["swatch", "chip", "row"]) {
     const markup = renderColorPicker("#123456", style);
     assert.match(markup, new RegExp(`picker-style-${style}`));
-    assert.match(markup, /aria-label="Choose colour"/);
+    assert.match(markup, /aria-label="Choose color"/);
     assert.match(markup, /value="#123456"/);
   }
   assert.equal(resolveColorPickerStyle("unknown"), "swatch");

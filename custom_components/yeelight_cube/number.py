@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant, callback  # type: ignore
 from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: ignore
 
-from .const import DOMAIN, CONF_IP, ALL_NATIVE_EFFECTS, MODE_CLOCK, MODE_NATIVE_EFFECT
+from .const import DOMAIN, ALL_NATIVE_EFFECTS, MODE_CLOCK, MODE_NATIVE_EFFECT
 from .entity import CubeControlEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -156,7 +156,7 @@ class YeelightCubeGradientAngleNumber(CubeControlEntity, NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         """Set the gradient angle and apply to the lamp."""
-        _LOGGER.debug(f"[ANGLE NUMBER] User set angle to {value}° for {self._light_entity._ip}")
+        _LOGGER.debug("[ANGLE NUMBER] User set angle to %s° for %s", value, self._light_entity._ip)
 
         # Check auto-turn-on setting
         if not self._light_entity._is_on and not self._light_entity._should_auto_turn_on():
@@ -186,7 +186,7 @@ class YeelightCubeGradientAngleNumber(CubeControlEntity, NumberEntity):
 
         # Register ourselves with the light entity so it can notify us
         self._light_entity._angle_number_entity = self
-        _LOGGER.debug(f"[ANGLE NUMBER] Registered for {self._light_entity._ip}, current angle={self._light_entity._angle}")
+        _LOGGER.debug("[ANGLE NUMBER] Registered for %s, current angle=%s", self._light_entity._ip, self._light_entity._angle)
 
 
 class YeelightCubePreviewAdjustmentNumber(CubeControlEntity, NumberEntity):
@@ -217,7 +217,7 @@ class YeelightCubePreviewAdjustmentNumber(CubeControlEntity, NumberEntity):
     async def async_set_native_value(self, value: float) -> None:
         """Set the adjustment value and re-render the lamp display."""
         int_val = max(self._spec["min"], min(self._spec["max"], int(value)))
-        _LOGGER.debug(f"[{self._spec['key'].upper()}] Set to {int_val} for {self._light_entity._ip}")
+        _LOGGER.debug("[%s] Set to %s for %s", self._spec['key'].upper(), int_val, self._light_entity._ip)
 
         setattr(self._light_entity, self._attr_key, int_val)
 
@@ -244,7 +244,7 @@ class YeelightCubePreviewAdjustmentNumber(CubeControlEntity, NumberEntity):
         if not hasattr(self._light_entity, '_preview_number_entities'):
             self._light_entity._preview_number_entities = {}
         self._light_entity._preview_number_entities[self._spec["key"]] = self
-        _LOGGER.debug(f"[{self._spec['key'].upper()}] Registered for {self._light_entity._ip}")
+        _LOGGER.debug("[%s] Registered for %s", self._spec['key'].upper(), self._light_entity._ip)
 
 
 # ── Transition Step Count ──────────────────────────────────────────────
@@ -271,7 +271,7 @@ class YeelightCubeTransitionStepsNumber(CubeControlEntity, NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         int_val = max(1, min(10, int(value)))
-        _LOGGER.debug(f"[TRANSITION STEPS] Set to {int_val} for {self._light_entity._ip}")
+        _LOGGER.debug("[TRANSITION STEPS] Set to %s for %s", int_val, self._light_entity._ip)
         self._light_entity._transition_steps = int_val
 
         if self.hass is not None:
@@ -288,8 +288,9 @@ class YeelightCubeTransitionStepsNumber(CubeControlEntity, NumberEntity):
         await super().async_added_to_hass()
         self._light_entity._transition_steps_entity = self
         _LOGGER.debug(
-            f"[TRANSITION STEPS] Registered for {self._light_entity._ip}, "
-            f"current steps={self._light_entity._transition_steps}"
+            "[TRANSITION STEPS] Registered for %s, "
+            "current steps=%s",
+            self._light_entity._ip, self._light_entity._transition_steps
         )
 
 
@@ -317,7 +318,7 @@ class YeelightCubeTransitionDurationNumber(CubeControlEntity, NumberEntity):
 
     async def async_set_native_value(self, value: float) -> None:
         clamped = max(0.2, min(10.0, round(value, 1)))
-        _LOGGER.debug(f"[TRANSITION DURATION] Set to {clamped}s for {self._light_entity._ip}")
+        _LOGGER.debug("[TRANSITION DURATION] Set to %ss for %s", clamped, self._light_entity._ip)
         self._light_entity._transition_duration = clamped
 
         if self.hass is not None:
@@ -334,8 +335,9 @@ class YeelightCubeTransitionDurationNumber(CubeControlEntity, NumberEntity):
         await super().async_added_to_hass()
         self._light_entity._transition_duration_entity = self
         _LOGGER.debug(
-            f"[TRANSITION DURATION] Registered for {self._light_entity._ip}, "
-            f"current duration={self._light_entity._transition_duration}s"
+            "[TRANSITION DURATION] Registered for %s, "
+            "current duration=%ss",
+            self._light_entity._ip, self._light_entity._transition_duration
         )
 
 

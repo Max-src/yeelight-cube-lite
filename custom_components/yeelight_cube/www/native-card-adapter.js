@@ -15,7 +15,7 @@ import {
 
 /** Native-effect domain bridge, including manual Apply and capability gates.
  * Shared controllers own commands/selection; this module maps catalogues,
- * colours and preview frames without owning interactive DOM.
+ * colors and preview frames without owning interactive DOM.
  */
 export function createNativeCardAdapter(card) {
   const rotationSnapshots = new Map();

@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant  # type: ignore
 from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: ignore
 
-from .const import DOMAIN, CONF_IP
+from .const import DOMAIN
 from .entity import CubeDeviceEntity
 
 _LOGGER = logging.getLogger(__name__)
@@ -50,7 +50,8 @@ class YeelightCubeForceRefreshButton(CubeDeviceEntity, ButtonEntity):
     async def async_press(self) -> None:
         """Handle the button press — trigger a force refresh."""
         _LOGGER.warning(
-            f"[FORCE REFRESH BUTTON] Pressed for {self._light_entity._ip} — "
-            f"triggering raw TCP reconnect"
+            "[FORCE REFRESH BUTTON] Pressed for %s — "
+            "triggering raw TCP reconnect",
+            self._light_entity._ip
         )
         await self._light_entity.async_force_refresh()

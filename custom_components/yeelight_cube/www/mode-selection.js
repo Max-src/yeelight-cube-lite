@@ -80,7 +80,7 @@ export function sanitizeFavourites(items, limit = 100) {
   for (const item of Array.isArray(items) ? items : []) {
     const favourite = normalizeFavourite(item);
     if (!favourite) continue;
-    // A favourite is unique per key AND colour mode, so the same style can be
+    // A favourite is unique per key AND color mode, so the same style can be
     // saved once for Normal and once for Vivid, etc.
     const id = favouriteId(favourite);
     if (seen.has(id)) continue;

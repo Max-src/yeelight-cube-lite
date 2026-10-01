@@ -33,8 +33,8 @@ while direct service calls use `entity_id`.
 | `show_actions`, `action_buttons`, `actions_buttons_style`, `actions_buttons_content_mode` | Both | Actions row (Previous, Next, Random, Freeze display, Refresh, Power), its order and button styling |
 | `show_brightness`, `show_animation_speed`, `slider_style`, `slider_show_raw_value` | Both | Lamp sliders, slider style, and raw device units (speed 1–255, brightness 3–255) instead of percentages |
 | `show_content_toggle`, `show_format_toggles` | Clock | Time/date content and time-format controls |
-| `show_color_modes`, `color_mode_selector`, `visible_color_modes`, `show_save_color_mode_button` | Both | Palette/custom-colour selection as `buttons` or `dropdown`, which modes are offered, and the inline save button |
-| `show_save_clock_style_button` | Clock | Inline "save clock style" button next to the colour row |
+| `show_color_modes`, `color_mode_selector`, `visible_color_modes`, `show_save_color_mode_button` | Both | Palette/custom-color selection as `buttons` or `dropdown`, which modes are offered, and the inline save button |
+| `show_save_clock_style_button` | Clock | Inline "save clock style" button next to the color row |
 | `show_device_orientation` | Native Effects | Device orientation control (the firmware clock cannot rotate, so the Clock card has none) |
 | `show_gallery`, `show_search` | Both | Show the style/effect browser and its text search |
 | `style_selector_style` | Both | `filled`, `dropdown`, `preview-list`, `preview-grid`, `preview-strip`, `preview-carousel`, `preview-wheel`, or `original` |
@@ -42,16 +42,16 @@ while direct service calls use `entity_id`.
 | `items_per_page` | Both | Pagination for Original and Live Preview list/grid browsers; editor range 0-16, with 0 meaning no pagination |
 | `show_badges` | Both | Capability labels in the Original browser |
 | `visible_styles` / `visible_effects` | Clock / Native Effects | Ordered browser selection of style keys / effect names (Clock also needs `custom_visible_styles: true`) |
-| `show_favourites`, `favourites_show_stars`, `favourites_show_previews` | Both | Show saved style/effect and colour combinations, the gold star badges, and animated favourite previews |
+| `show_favourites`, `favourites_show_stars`, `favourites_show_previews` | Both | Show saved style/effect and color combinations, the gold star badges, and animated favourite previews |
 | `show_rotation` | Both | Show backend rotation status and commands |
 | `rotation_interval` | Both | Seconds between rotation steps, 1-604800, used until the lamp has its own interval (see [`set_rotation_interval`](#set_rotation_interval)); the editor stores it on the lamp too |
 | `rotation_interval_parts` | Both | The editor's **Rotate every** rows as entered, one per unit, e.g. `[{value: 1, unit: minutes}, {value: 10, unit: seconds}]` (units: seconds, minutes, hours, days); they add up to `rotation_interval` |
-| `rotation_follow_active` | Both | **Follow in effect/style list**, default `true`: while a rotation runs, the style/effect list highlights each step, shows its colour mode and turns to its page. `false` keeps the user's selection, page and colour mode until the rotation stops |
+| `rotation_follow_active` | Both | **Follow in effect/style list**, default `true`: while a rotation runs, the style/effect list highlights each step, shows its color mode and turns to its page. `false` keeps the user's selection, page and color mode until the rotation stops |
 | `rotation_highlight_favourite` | Both | **Highlight in favourites**, default `true`: the playing favourite is highlighted during a rotation. `false` keeps the user's own selection highlighted |
 | `preview_appearance`, `preview_overrides`, `appearance_presets` | Both | Shared and per-surface appearance, described below |
 
 Use the visual editor for section visibility, button styles, orientation,
-appearance presets and browser layouts. Colour-responsive filtering is automatic;
+appearance presets and browser layouts. Color-responsive filtering is automatic;
 `show_only_responding_styles` is obsolete. Experimental playback is controlled
 by the lamp's **Experimental Features** setting, not a card-only toggle.
 
@@ -60,17 +60,17 @@ by the lamp's **Experimental Features** setting, not a card-only toggle.
 - **Favourites** are stored per lamp in Home Assistant, separately for Clock and
   Native Effects (see [`set_favourites`](#set_favourites)), and published in the
   lamp's `favourites` attribute, so every dashboard and device shows the same
-  list. Each entry stores a style/effect key, colour mode and optional RGB.
+  list. Each entry stores a style/effect key, color mode and optional RGB.
   Reordering or shuffling favourites changes the list used by the next rotation
   Start. A card targeting several lamps shows the first lamp's list and saves to
   all of them. Lists that older versions kept in browser storage move to the lamp
   the first time that browser opens the card (only while the lamp has none).
-- **Saved clock styles / reusable colours** use `save_clock_preset` and live in
+- **Saved clock styles / reusable colors** use `save_clock_preset` and live in
   Home Assistant. These are distinct from favourites and require a working HA
   connection, though the lamp itself need not be reachable to save a preset.
 - **Appearance presets** live in card YAML. They change previews, not lamp output.
 - If any configured lamp entity is missing, unknown or unavailable, style and
-  colour selections become local preview edits. Built-in catalogues and
+  color selections become local preview edits. Built-in catalogues and
   favourite previews remain available. Hardware actions stay gated; returning
   live state discards preview drafts without automatically applying them.
 - Missing rotation attributes show **Status unavailable**, not a fabricated
@@ -91,8 +91,8 @@ Screenshots and their automatic regeneration workflow are documented in
 ## Shared Preview Appearance
 
 Clock, Native Effects, Lamp Preview, Gradient and Draw use the same appearance
-model and preset controls for their matrix surfaces. Colour List and Palette
-keep their colour-swatch controls; matrix appearance settings do not apply to
+model and preset controls for their matrix surfaces. Color List and Palette
+keep their color-swatch controls; matrix appearance settings do not apply to
 those swatches.
 
 | Preset | Background | Pixels | Spacing | Shadow | Hide Black Pixels |
@@ -293,8 +293,8 @@ data:
 Push pixel art to the lamp, and manage the saved pixel art collection.
 
 > [!NOTE]
-> Colours are always `[R, G, B]` arrays of integers 0-255. Collections are
-> capped: 500 palettes, 500 pixel arts, 100 colours per palette or colour list,
+> Colors are always `[R, G, B]` arrays of integers 0-255. Collections are
+> capped: 500 palettes, 500 pixel arts, 100 colors per palette or color list,
 > 1000 pixel entries per pixel art, and names of up to 100 characters. Calls
 > that exceed these limits or contain malformed data are rejected with an error
 > instead of being stored.
@@ -745,8 +745,8 @@ data:
 Save, load, and manage color palettes shared across all cards and lamps.
 
 > [!NOTE]
-> Colours are always `[R, G, B]` arrays of integers 0-255. Collections are
-> capped: 500 palettes, 500 pixel arts, 100 colours per palette or colour list,
+> Colors are always `[R, G, B]` arrays of integers 0-255. Collections are
+> capped: 500 palettes, 500 pixel arts, 100 colors per palette or color list,
 > 1000 pixel entries per pixel art, and names of up to 100 characters. Calls
 > that exceed these limits or contain malformed data are rejected with an error
 > instead of being stored.
@@ -836,7 +836,7 @@ meantime are kept.
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
-| `palettes` | Yes | Array of `{ name, colors }` objects; colours are `[R, G, B]` arrays (0-255) |
+| `palettes` | Yes | Array of `{ name, colors }` objects; colors are `[R, G, B]` arrays (0-255) |
 
 ```yaml
 action: yeelight_cube.add_palettes
@@ -871,7 +871,7 @@ data:
 ## 🎬 Clock, Native Effects and Rotation
 
 Firmware-native display features: the clock, built-in animations, saved solid
-colours, display freeze, physical orientation, and the server-side effect
+colors, display freeze, physical orientation, and the server-side effect
 rotation that keeps cycling even after the dashboard is closed.
 
 ### `set_native_effect`
@@ -884,7 +884,7 @@ mode).
 | `effect` | No | Effect name (e.g. `Rainbow`, `Ocean Waves`). Omit to keep the current effect. |
 | `speed` | No | Animation speed 1–255 (only for effects that support it) |
 | `color_mode` | No | Palette (`normal`, `bw`, `red_blue`, `white_orange`, `blue_yellow`, `purple_orange`) when the effect supports it |
-| `color` | No | Custom `[r, g, b]` (0–255) or `"clear"`/`null` to drop a custom colour |
+| `color` | No | Custom `[r, g, b]` (0–255) or `"clear"`/`null` to drop a custom color |
 | `activate` | No | Switch to Native Effect mode immediately (default `true`) |
 | `entity_id` | Yes | Target lamp entity (list supported) |
 
@@ -918,7 +918,7 @@ because they have no stable name.
 
 Experimental effects require **Experimental Features** to be enabled on the lamp.
 
-The call validates its fields (unknown effect, unsupported speed or colour,
+The call validates its fields (unknown effect, unsupported speed or color,
 experimental effect while Experimental Features is off, lamp off with
 auto-turn-on disabled) and fails immediately on any of them. It then publishes
 the new settings and returns without waiting for the lamp, exactly like
@@ -938,7 +938,7 @@ be provided.
 | Field | Required | Description |
 | :-- | :-- | :-- |
 | `style` | No | Clock style name or numeric id (e.g. `Rainbow`, `Ocean Waves`) |
-| `color` | No | Custom `[r, g, b]` (0–255), or `"clear"`/`null` to use the style's own colour |
+| `color` | No | Custom `[r, g, b]` (0–255), or `"clear"`/`null` to use the style's own color |
 | `content` | No | `time`, `time_date` (alternating) or `date` |
 | `twelve_hour` | No | `true` for 12-hour, `false` for 24-hour |
 | `colon_blink` | No | `true` to blink the colon, `false` to keep it steady |
@@ -974,7 +974,7 @@ data:
 11 and up for experimental ones, as exposed by the light's `clock_style_id`
 attribute). Unnamed experimental styles, whose name is just their firmware mode
 number, can only be selected by id. Selecting an experimental style switches
-the lamp's Experimental Features on. Solid-colour styles (`White`, `Mint`,
+the lamp's Experimental Features on. Solid-color styles (`White`, `Mint`,
 `Yellow`, …) ignore `color_mode`; animated styles honour it.
 
 </details>
@@ -985,8 +985,8 @@ the lamp's Experimental Features on. Solid-colour styles (`White`, `Mint`,
 
 ### `save_clock_preset` / `delete_clock_preset`
 
-Manage the shared solid-colour clock library (reused by the Clock and Native
-Effects cards and exposed by the **Clock Colour Presets** sensor). Saved styles
+Manage the shared solid-color clock library (reused by the Clock and Native
+Effects cards and exposed by the **Clock Color Presets** sensor). Saved styles
 appear as clock styles with `custom:<id>` keys. The library holds at most 100
 presets; `style` names must not clash with a built-in clock style, and names
 are unique per kind. Neither service sends anything to the lamp.
@@ -994,9 +994,9 @@ are unique per kind. Neither service sends anything to the lamp.
 | Field | Required | Description |
 | :-- | :-- | :-- |
 | `name` | Yes | Display name (1–40 characters) |
-| `color` | Yes | RGB colour as three integers 0–255 |
+| `color` | Yes | RGB color as three integers 0–255 |
 | `preset_id` | No | Existing id when editing; omit to create |
-| `kind` | No | `style` (solid clock style) or `color_mode` (reusable colour) — default `style` for new presets, preserved when editing |
+| `kind` | No | `style` (solid clock style) or `color_mode` (reusable color) — default `style` for new presets, preserved when editing |
 
 ```yaml
 action: yeelight_cube.save_clock_preset
@@ -1076,7 +1076,7 @@ data:
   entity_id: light.cubelite_a904
 ```
 
-Duplicates (same name and colour mode) are dropped. An empty list is valid and
+Duplicates (same name and color mode) are dropped. An empty list is valid and
 clears the favourites.
 
 ---
@@ -1135,7 +1135,7 @@ data:
   entity_id: light.cubelite_a904
 ```
 
-To preserve a favourite's colour, use an object item such as
+To preserve a favourite's color, use an object item such as
 `{name: Rainbow, color_mode: white_orange}` or
 `{name: Rainbow, color_mode: custom, color: [255, 80, 20]}`.
 
@@ -1790,7 +1790,7 @@ result through an event on the HA event bus.
 | **State** | `save_state`, `restore_state` | Snapshot & restore what's displayed |
 | **Native presets** | `set_button_effects` | Configure physical-button effect slots |
 | **Clock / Native** | `set_native_effect`, `set_clock_style`, `freeze_display`, `set_device_orientation` | Firmware clock & animations |
-| **Clock presets** | `save_clock_preset`, `delete_clock_preset` | Shared solid-colour library |
+| **Clock presets** | `save_clock_preset`, `delete_clock_preset` | Shared solid-color library |
 | **Rotation** | `start_effect_rotation`, `stop_effect_rotation`, `skip_effect_rotation` | Server-side effect cycling |
 | **Recovery** | `force_refresh` | Reconnect & re-send display state |
 | **Management** | `create_cube_discovery`, `test_display`, `force_rediscovery` | Device setup & diagnostics |

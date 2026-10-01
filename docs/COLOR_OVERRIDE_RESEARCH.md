@@ -29,11 +29,11 @@ examined by the detector; they are not silently counted as usable measurements.
 
 ### Method
 
-The reproducible probe is [debug_rainbow_palettes.py](../debug_rainbow_palettes.py).
+The reproducible probe is [tools/debug_rainbow_palettes.py](../tools/debug_rainbow_palettes.py).
 It requires OpenCV and NumPy in the interpreter used to run it:
 
 ```powershell
-python debug_rainbow_palettes.py C:\Users\Maxime\Downloads C:\Users\Maxime\Downloads\rainbow-analysis
+python tools/debug_rainbow_palettes.py C:\Users\Maxime\Downloads C:\Users\Maxime\Downloads\rainbow-analysis
 ```
 
 It writes per-frame positions and centre/edge RGB samples to `samples.json`,
@@ -43,7 +43,7 @@ The recordings and generated diagnostic files remain outside the repository.
 
 1. Detect bright connected LED regions and group them into ten rows, five per
   lamp. Pair corresponding rows by normalized horizontal position. Skip
-  ambiguous geometry rather than assigning colours to unrelated glyph pixels.
+  ambiguous geometry rather than assigning colors to unrelated glyph pixels.
 2. Sample median RGB at LED centres. For B&W, also recover missing dark top-row
   LED positions from the lower lamp's geometry. Other dark/missing samples
   remain excluded; this is not a complete radiometric measurement.
@@ -55,7 +55,7 @@ The recordings and generated diagnostic files remain outside the repository.
 4. Bin upper-lamp samples by recovered lower-lamp phase in 0.05-cycle intervals.
   Normal blue/cyan centres are heavily clipped, so hue-only pairing cannot
   recover the middle of the cycle. Temporal phase remains usable there.
-5. For coloured modes, estimate chromaticity from less-exposed pixels around
+5. For colored modes, estimate chromaticity from less-exposed pixels around
   each LED (maximum channel 70-200), normalize each sample to a maximum of 255,
   and take median RGB. These edges recover the blue hidden in clipped centres.
   They still include camera response, optical bloom, and ambient-light bias.
@@ -73,7 +73,7 @@ Direction and speed remain controlled by the existing Rainbow renderer.
 | `bw` / 15 | Black & White | Dim neutral to white, with a bright plateau and hard reset |
 | `red_blue` / 64 | Vivid | Red, orange, yellow, green, cyan, blue; not a red/blue duotone |
 | `white_orange` / 65 | Retro Orange | Cool white, cream, peach, coral, red, slight warm rebound |
-| `blue_yellow` / 66 | Tropical | Blue-cyan, cyan, green, lime, pale yellow; not two alternating colours |
+| `blue_yellow` / 66 | Tropical | Blue-cyan, cyan, green, lime, pale yellow; not two alternating colors |
 | `purple_orange` / 67 | Violet & Gold | Blue/violet, pale lavender near-white transition, pale gold |
 
 > [!NOTE]
@@ -107,15 +107,15 @@ the exact minimum and sub-frame transition are estimates, not firmware facts.
 Mean absolute channel differences against samples, excluding lower-lamp phases
 outside 0.08-0.94, are 3.22 (B&W), 10.13 (64), 9.38 (65), 7.77 (66), and 5.54 (67),
 on a 0-255 scale. B&W compares against centre green with the 0.025 phase alignment;
-coloured modes compare against normalized edge RGB. These are **in-sample
-descriptive errors**, not held-out accuracy or colourimetric calibration.
+colored modes compare against normalized edge RGB. These are **in-sample
+descriptive errors**, not held-out accuracy or colorimetric calibration.
 
 ### Preview scope and verification
 
 Both native-effect renderers use the same piecewise RGB phase stops for Rainbow.
 Intermediate channels use half-up rounding with a 1e-9 tolerance for binary
 floating-point midpoint differences. End stops are held until the hard reset.
-All five modes take precedence over custom colour overrides. Normal Rainbow,
+All five modes take precedence over custom color overrides. Normal Rainbow,
 its direction mapping and timing, and transport IDs are unchanged.
 The new names are display-only; saved configurations keep their original keys.
 
@@ -131,13 +131,13 @@ Spectrum Bands uses its red-to-magenta index. Other hue-based renderers estimate
 palette position as normalized source hue / 0.85, capped at the final stop.
 RGB tables use source hue before fading or Pastel Pulse's whitening, with
 slightly pink reds clamped to the red endpoint. Achromatic RGB cells retain their
-original colour because their palette phase cannot be recovered from hue.
+original color because their palette phase cannot be recovered from hue.
 Each effect retains its geometry, direction, timing, and brightness envelope.
 Compatibility is hardware-confirmed by the operator; the additional phase
 mappings are approximations, not separately measured firmware curves.
 
 The focused tests cover all modes and directions, negative/positive phases,
-custom-colour precedence, brightness variation, channel bounds, and Python/JS
+custom-color precedence, brightness variation, channel bounds, and Python/JS
 parity across 3,840 frames (1,152,000 channels). Exact parity covers all four
 palettes for all eleven styles and the original Rainbow combinations. Tide's
 pre-existing one-channel normal-mode rounding difference is outside this check.

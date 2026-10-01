@@ -149,7 +149,7 @@ def async_setup_services(hass: HomeAssistant):
                     host = flow.get("context", {}).get("unique_id", "")
                     if ip_address in host or host == ip_address:
                         await hass.config_entries.flow.async_abort(flow["flow_id"])
-                        _LOGGER.debug(f"Aborted Yeelight discovery flow for {ip_address}")
+                        _LOGGER.debug("Aborted Yeelight discovery flow for %s", ip_address)
             
             # Fire success event
             hass.bus.async_fire(f"{DOMAIN}_yeelight_discovery_ignored", {
@@ -158,7 +158,7 @@ def async_setup_services(hass: HomeAssistant):
             })
             
         except Exception as e:
-            _LOGGER.error(f"Failed to ignore Yeelight discovery for {ip_address}: {e}")
+            _LOGGER.error("Failed to ignore Yeelight discovery for %s: %s", ip_address, e)
             hass.bus.async_fire(f"{DOMAIN}_yeelight_discovery_ignored", {
                 "ip_address": ip_address,
                 "success": False,
@@ -211,7 +211,7 @@ def async_setup_services(hass: HomeAssistant):
                 }
             )
             
-            _LOGGER.debug(f"Created discovery flow for Yeelight Cube Lite component at {ip_address}")
+            _LOGGER.debug("Created discovery flow for Yeelight Cube Lite component at %s", ip_address)
             
             hass.bus.async_fire(f"{DOMAIN}_cube_discovery_created", {
                 "ip_address": ip_address,
@@ -220,7 +220,7 @@ def async_setup_services(hass: HomeAssistant):
             })
             
         except Exception as e:
-            _LOGGER.error(f"Failed to create cube discovery flow: {e}")
+            _LOGGER.error("Failed to create cube discovery flow: %s", e)
             hass.bus.async_fire(f"{DOMAIN}_cube_discovery_created", {
                 "ip_address": ip_address,
                 "success": False,
@@ -246,7 +246,7 @@ def async_setup_services(hass: HomeAssistant):
             conflict_prevention = get_conflict_prevention(hass)
             conflict_prevention.add_managed_device(ip_address)
             
-            _LOGGER.debug(f"Ignored {ip_address} in Yeelight integration and added to managed devices")
+            _LOGGER.debug("Ignored %s in Yeelight integration and added to managed devices", ip_address)
             
             hass.bus.async_fire(f"{DOMAIN}_yeelight_device_ignored", {
                 "ip_address": ip_address,
@@ -254,7 +254,7 @@ def async_setup_services(hass: HomeAssistant):
             })
             
         except Exception as e:
-            _LOGGER.error(f"Failed to ignore Yeelight device {ip_address}: {e}")
+            _LOGGER.error("Failed to ignore Yeelight device %s: %s", ip_address, e)
             hass.bus.async_fire(f"{DOMAIN}_yeelight_device_ignored", {
                 "ip_address": ip_address,
                 "success": False,

@@ -70,7 +70,7 @@ import {
 import { getTargetEntities } from "./service-call-utils.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 
-/** Native host: catalogue/colour policy and frame painting. Adapter mapping is
+/** Native host: catalogue/color policy and frame painting. Adapter mapping is
  * in native-card-adapter; shared controllers own commands and selection, and
  * style-browser-ui/color-mode-ui own their DOM, subscriptions and bindings.
  */
@@ -258,8 +258,8 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     );
   }
 
-  // Rotation status and colour modes read every target lamp (not just the
-  // primary `_state`), the shared colour-preset library and the service
+  // Rotation status and color modes read every target lamp (not just the
+  // primary `_state`), the shared color-preset library and the service
   // registry. Home Assistant hands out a new hass on every state push anywhere,
   // so re-render only when one of those inputs was replaced.
   _hassInputsChanged(hass) {
@@ -423,7 +423,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     return this._commands.context;
   }
 
-  // Every action that changes what is selected (effect, favourite, colour)
+  // Every action that changes what is selected (effect, favourite, color)
   // takes a new version. A late success or failure only touches the shown
   // selection while it is still the latest, so an earlier request finishing
   // can never overwrite or roll back a newer choice.
@@ -435,7 +435,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   async _applyFavourite(favourite) {
     const context = this._context;
     const version = this._nextSelection?.();
-    // Show the favourite's effect and colour straight away: a colour mode
+    // Show the favourite's effect and color straight away: a color mode
     // clicked before the lamp answers is built from the selected effect, so it
     // must already be the favourite's (restored below if the request fails).
     const previous = {
@@ -652,7 +652,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   }
 
   _currentColorSelection() {
-    // A clicked colour mode is shown straight away while its request is in
+    // A clicked color mode is shown straight away while its request is in
     // flight (it may be queued behind an effect change); it reverts on failure.
     if (this._pendingColorSelection) return this._pendingColorSelection;
     const attrs = this._attrs();
@@ -684,8 +684,8 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     return "normal";
   }
 
-  // Normalized colour-mode key for favourites: "normal", a palette mode, or
-  // "custom" (covers both a draft and a saved custom colour preset).
+  // Normalized color-mode key for favourites: "normal", a palette mode, or
+  // "custom" (covers both a draft and a saved custom color preset).
   _colorModeKey() {
     const selection = this._currentColorSelection();
     if (selection === "normal") return "normal";
@@ -715,7 +715,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     const effect = this._effectForColor("normal", color);
     if (!effect) {
       this._error =
-        "No configured effect supports this colour on all selected lamps.";
+        "No configured effect supports this color on all selected lamps.";
       return false;
     }
     const context = this._context;
@@ -771,7 +771,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     const effect = this._effectForColor(mode, preset?.color);
     if (!effect) {
       this._error =
-        "No configured effect supports this colour on all selected lamps.";
+        "No configured effect supports this color on all selected lamps.";
       return;
     }
     const context = this._context;
@@ -871,7 +871,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
                 .config=${this.config}
                 .options=${this._colorOptions()}
                 .selected=${this._controls.displayed(
-                  "colour",
+                  "color",
                   this._currentColorSelection(),
                 )}
                 .draft=${this._customColorDraft}

@@ -42,7 +42,7 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
             _LOGGER.error("update_pixel_arts expects a list of pixel art dicts")
             return
         
-        # The schema has already validated every art, pixel and colour.
+        # The schema has already validated every art, pixel and color.
         existing_count = len(hass.data.get(DOMAIN, {}).get("pixel_arts", []))
         if not replace:
             _check_collection_size(
@@ -76,7 +76,7 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
         
         mode = "replace" if replace else "append"
         total = len(hass.data[DOMAIN]["pixel_arts"])
-        _LOGGER.debug(f"[pixelart-backend] update_pixel_arts ({mode}): {len(valid_pixel_arts)} items provided, {total} total in collection.")
+        _LOGGER.debug("[pixelart-backend] update_pixel_arts (%s): %s items provided, %s total in collection.", mode, len(valid_pixel_arts), total)
 
     # Register the pixel-art websocket command ONCE at setup time.
     # (This was previously nested inside handle_update_pixel_arts by mistake:
@@ -102,7 +102,7 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
                 return
             connection.send_result(msg["id"], {"name": art.get("name", "Unnamed"), "pixels": art.get("pixels", [])})
         except Exception as e:
-            _LOGGER.error(f"[pixelart-debug] Exception in ws_get_pixel_art_v2: {e}")
+            _LOGGER.error("[pixelart-debug] Exception in ws_get_pixel_art_v2: %s", e)
 
     websocket_api.async_register_command(hass, ws_get_pixel_art_v2)
 
@@ -142,11 +142,11 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
         # Save to persistent storage
         await async_save_data(hass)
         
-        _LOGGER.debug(f"[PIXELART-SAVE] Saved '{name}' with {len(pixels)} pixels, new count: {len(pixel_arts)}")
+        _LOGGER.debug("[PIXELART-SAVE] Saved '%s' with %s pixels, new count: %s", name, len(pixels), len(pixel_arts))
 
     async def handle_remove_pixel_art(service_call):
         idx = service_call.data.get("idx")
-        _LOGGER.debug(f"[PIXELART-DELETE] Service called with idx={idx}")
+        _LOGGER.debug("[PIXELART-DELETE] Service called with idx=%s", idx)
         
         # No duplicate detection - rapid successive deletions are valid
         # (indices shift after each deletion, so same idx can refer to different pixel arts)
@@ -157,12 +157,12 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
             return
         
         pixel_arts = hass.data[DOMAIN]["pixel_arts"]
-        _LOGGER.debug(f"[PIXELART-DELETE] Current pixel art count={len(pixel_arts)}")
+        _LOGGER.debug("[PIXELART-DELETE] Current pixel art count=%s", len(pixel_arts))
         _locate_item(
             pixel_arts, idx, service_call.data.get("expected_name"), "Pixel art"
         )
         removed = pixel_arts.pop(idx)
-        _LOGGER.debug(f"[PIXELART-DELETE] Deleted pixel art at idx {idx}: {removed.get('name', 'Unnamed')}")
+        _LOGGER.debug("[PIXELART-DELETE] Deleted pixel art at idx %s: %s", idx, removed.get('name', 'Unnamed'))
         
         # Pixel arts are global (not per-light), only need to:
         # 1. Fire event for sensor to pick up
@@ -170,11 +170,11 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
         # No need to update light entities - pixel arts are independent
         
         hass.bus.async_fire(f"{DOMAIN}_pixel_arts_updated", {"count": len(pixel_arts)})
-        _LOGGER.debug(f"[PIXELART-DELETE] Fired event, new count: {len(pixel_arts)}")
+        _LOGGER.debug("[PIXELART-DELETE] Fired event, new count: %s", len(pixel_arts))
         
         # Save to persistent storage
         await async_save_data(hass)
-        _LOGGER.debug(f"[PIXELART-DELETE] Saved to storage. New pixel art count: {len(pixel_arts)}")
+        _LOGGER.debug("[PIXELART-DELETE] Saved to storage. New pixel art count: %s", len(pixel_arts))
 
     async def handle_move_pixel_art(service_call):
         """Move one saved pixel art, keeping items other clients added meanwhile."""
@@ -217,7 +217,7 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
             # Save to persistent storage
             await async_save_data(hass)
             
-            _LOGGER.debug(f"[PIXELART-RENAME] Renamed idx {idx} to '{new_name}'")
+            _LOGGER.debug("[PIXELART-RENAME] Renamed idx %s to '%s'", idx, new_name)
 
     async def handle_apply_pixel_art(service_call):
         # Only accept idx, apply saved pixel art -- supports multi-entity parallel dispatch
@@ -234,14 +234,14 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
 
         async def _apply_one(target_entity):
             if not (isinstance(idx, int) and 0 <= idx < len(target_entity._pixel_arts)):
-                _LOGGER.error(f"[pixelart-backend] apply_pixel_art: Invalid idx {idx}.")
+                _LOGGER.error("[pixelart-backend] apply_pixel_art: Invalid idx %s.", idx)
                 return
             art = target_entity._pixel_arts[idx]
             if not (isinstance(art, dict) and "pixels" in art and isinstance(art["pixels"], list) and len(art["pixels"]) > 0):
-                _LOGGER.error(f"[pixelart-backend] apply_pixel_art: No valid pixels for idx {idx}.")
+                _LOGGER.error("[pixelart-backend] apply_pixel_art: No valid pixels for idx %s.", idx)
                 return
             if not target_entity._is_on and not target_entity._should_auto_turn_on():
-                _LOGGER.debug(f"[AUTO-TURN-ON] apply_pixel_art command ignored - lamp is off and auto-turn-on is disabled")
+                _LOGGER.debug("[AUTO-TURN-ON] apply_pixel_art command ignored - lamp is off and auto-turn-on is disabled")
                 return
             target_entity._custom_pixels = expand_pixels(art["pixels"])
             target_entity._mode = "Custom Draw"
@@ -261,16 +261,16 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
                 target_entity._mode_select_entity.async_update_from_light()
             if target_entity._content_mode_select_entity:
                 target_entity._content_mode_select_entity.async_update_from_light()
-            _LOGGER.debug(f"[pixelart-backend] Applied pixel art idx {idx} to {target_entity._ip}.")
+            _LOGGER.debug("[pixelart-backend] Applied pixel art idx %s to %s.", idx, target_entity._ip)
 
         _fire_and_forget(*[_apply_one(t) for t in targets])
 
     async def handle_apply_custom_pixels(service_call):
         pixels = service_call.data.get("pixels")
         bypass_lock = bool(service_call.data.get("bypass_lock", False))
-        _LOGGER.debug(f"[pixelart-backend] apply_custom_pixels: pixels={len(pixels) if pixels else 0}")
+        _LOGGER.debug("[pixelart-backend] apply_custom_pixels: pixels=%s", len(pixels) if pixels else 0)
         if not pixels or not isinstance(pixels, list):
-            _LOGGER.error(f"[pixelart-backend] apply_custom_pixels: No valid pixels provided.")
+            _LOGGER.error("[pixelart-backend] apply_custom_pixels: No valid pixels provided.")
             return
 
         targets = _resolve_entities(service_call, "APPLY_CUSTOM_PIXELS")
@@ -279,7 +279,7 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
 
         async def _apply_one(target_entity):
             if not target_entity._is_on and not target_entity._should_auto_turn_on():
-                _LOGGER.debug(f"[AUTO-TURN-ON] apply_custom_pixels command ignored - lamp is off and auto-turn-on is disabled")
+                _LOGGER.debug("[AUTO-TURN-ON] apply_custom_pixels command ignored - lamp is off and auto-turn-on is disabled")
                 return
             target_entity._custom_pixels = expand_pixels(pixels)
             target_entity._mode = "Custom Draw"
@@ -306,7 +306,7 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
         group_by_color = service_call.data.get("group_by_color", False)
         pixel_arts = hass.data.get(DOMAIN, {}).get("pixel_arts", [])
         if not (isinstance(idx, int) and 0 <= idx < len(pixel_arts)):
-            _LOGGER.error(f"[pixelart-backend] get_pixel_art: Invalid idx {idx}")
+            _LOGGER.error("[pixelart-backend] get_pixel_art: Invalid idx %s", idx)
             return {"error": "Invalid index"}
         art = pixel_arts[idx]
         if group_by_color:

@@ -1,4 +1,4 @@
-"""Display actions: text, colours, gradient mode and angle, brightness,
+"""Display actions: text, colors, gradient mode and angle, brightness,
 orientation, font, image, preview adjustments, freeze and save/restore of
 the display state.
 
@@ -379,7 +379,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         ha_brightness = round(3 + ((brightness_pct - 1) * 252) / 99)
         ha_brightness = max(3, min(255, ha_brightness))
         
-        _LOGGER.debug(f"[SET_BRIGHTNESS] Setting brightness to {brightness_pct}% (HA value: {ha_brightness}) for {target_entity.entity_id}")
+        _LOGGER.debug("[SET_BRIGHTNESS] Setting brightness to %s%% (HA value: %s) for %s", brightness_pct, ha_brightness, target_entity.entity_id)
         
         try:
             if bypass_lock:
@@ -397,9 +397,9 @@ def async_register_display_services(hass: HomeAssistant) -> None:
                     },
                     blocking=True
                 )
-            _LOGGER.debug(f"[SET_BRIGHTNESS] Successfully set brightness to {brightness_pct}%")
+            _LOGGER.debug("[SET_BRIGHTNESS] Successfully set brightness to %s%%", brightness_pct)
         except Exception as e:
-            _LOGGER.error(f"[SET_BRIGHTNESS] Failed to set brightness: {e}")
+            _LOGGER.error("[SET_BRIGHTNESS] Failed to set brightness: %s", e)
 
     hass.services.async_register(
         DOMAIN,
@@ -422,7 +422,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         
         # Check auto-turn-on setting
         if not target_entity._is_on and not target_entity._should_auto_turn_on():
-            _LOGGER.debug(f"[AUTO-TURN-ON] set_orientation command ignored - lamp is off and auto-turn-on is disabled")
+            _LOGGER.debug("[AUTO-TURN-ON] set_orientation command ignored - lamp is off and auto-turn-on is disabled")
             return
         
         await target_entity.set_orientation(orientation)
@@ -461,7 +461,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         entity_id = service_call.data.get("entity_id")
         from .layout import FONT_MAPS
         if font not in FONT_MAPS:
-            _LOGGER.error(f"Invalid font for set_font: {font}")
+            _LOGGER.error("Invalid font for set_font: %s", font)
             return
         
         target_entity = _resolve_entity(service_call, "SET_FONT")
@@ -470,7 +470,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         
         # Check auto-turn-on setting
         if not target_entity._is_on and not target_entity._should_auto_turn_on():
-            _LOGGER.debug(f"[AUTO-TURN-ON] set_font command ignored - lamp is off and auto-turn-on is disabled")
+            _LOGGER.debug("[AUTO-TURN-ON] set_font command ignored - lamp is off and auto-turn-on is disabled")
             return
         
         await target_entity.set_font(font)
@@ -491,7 +491,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         alignment = service_call.data.get("alignment")
         entity_id = service_call.data.get("entity_id")
         if alignment not in ("left", "center", "right"):
-            _LOGGER.error(f"Invalid alignment value for set_alignment: {alignment}")
+            _LOGGER.error("Invalid alignment value for set_alignment: %s", alignment)
             return
         
         target_entity = _resolve_entity(service_call, "SET_ALIGNMENT")
@@ -500,7 +500,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         
         # Check auto-turn-on setting
         if not target_entity._is_on and not target_entity._should_auto_turn_on():
-            _LOGGER.debug(f"[AUTO-TURN-ON] set_alignment command ignored - lamp is off and auto-turn-on is disabled")
+            _LOGGER.debug("[AUTO-TURN-ON] set_alignment command ignored - lamp is off and auto-turn-on is disabled")
             return
         
         await target_entity.set_alignment(alignment)
@@ -537,9 +537,9 @@ def async_register_display_services(hass: HomeAssistant) -> None:
 
         async def _apply_one(target_entity):
             if not target_entity._is_on and not target_entity._should_auto_turn_on():
-                _LOGGER.debug(f"[AUTO-TURN-ON] set_custom_text command ignored - lamp is off and auto-turn-on is disabled")
+                _LOGGER.debug("[AUTO-TURN-ON] set_custom_text command ignored - lamp is off and auto-turn-on is disabled")
                 return
-            _LOGGER.debug(f"[SET_TEXT] Setting custom text to: '{text}' for entity {target_entity.entity_id}")
+            _LOGGER.debug("[SET_TEXT] Setting custom text to: '%s' for entity %s", text, target_entity.entity_id)
             target_entity._custom_text = text
             target_entity._custom_pixels = None
             target_entity._custom_draw_active = False
@@ -563,7 +563,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             target_entity._scroll_direction = 1
             target_entity.stop_scroll_timer()
             await target_entity.async_apply_display_mode(update_type='text_change')
-            _LOGGER.debug(f"[SET_TEXT] Display mode applied successfully for entity {target_entity.entity_id}")
+            _LOGGER.debug("[SET_TEXT] Display mode applied successfully for entity %s", target_entity.entity_id)
 
         _fire_and_forget(*[_apply_one(t) for t in targets])
 
@@ -593,7 +593,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
 
         async def _apply_one(target_entity):
             if not target_entity._is_on and not target_entity._should_auto_turn_on():
-                _LOGGER.debug(f"[AUTO-TURN-ON] set_angle command ignored - lamp is off and auto-turn-on is disabled")
+                _LOGGER.debug("[AUTO-TURN-ON] set_angle command ignored - lamp is off and auto-turn-on is disabled")
                 return
             target_entity._angle = angle
             # Push angle to HA state immediately so the frontend card's set hass()
@@ -633,7 +633,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
 
         async def _apply_one(target_entity):
             if not target_entity._is_on and not target_entity._should_auto_turn_on():
-                _LOGGER.debug(f"[AUTO-TURN-ON] Command ignored - lamp is off and auto-turn-on is disabled")
+                _LOGGER.debug("[AUTO-TURN-ON] Command ignored - lamp is off and auto-turn-on is disabled")
                 return
             target_entity._text_colors = converted_colors
             if target_entity._text_colors:
@@ -695,7 +695,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
 
         async def _apply_one(target_entity):
             if not target_entity._is_on and not target_entity._should_auto_turn_on():
-                _LOGGER.debug(f"[AUTO-TURN-ON] display_image command ignored - lamp is off and auto-turn-on is disabled")
+                _LOGGER.debug("[AUTO-TURN-ON] display_image command ignored - lamp is off and auto-turn-on is disabled")
                 return
             target_entity._custom_pixels = custom_pixels
             target_entity._mode = "Custom Draw"
@@ -742,7 +742,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         ]
 
         if mode not in text_modes + ["Custom Draw"]:
-            _LOGGER.error(f"[set_mode] Invalid mode: {mode}")
+            _LOGGER.error("[set_mode] Invalid mode: %s", mode)
             return
 
         targets = _resolve_entities(service_call, "SET_MODE")
@@ -751,11 +751,11 @@ def async_register_display_services(hass: HomeAssistant) -> None:
 
         async def _apply_one(target_entity):
             if not target_entity._is_on and not target_entity._should_auto_turn_on():
-                _LOGGER.debug(f"[AUTO-TURN-ON] set_mode command ignored - lamp is off and auto-turn-on is disabled")
+                _LOGGER.debug("[AUTO-TURN-ON] set_mode command ignored - lamp is off and auto-turn-on is disabled")
                 return
             if full_panel is not None:
                 target_entity._full_panel = full_panel
-                _LOGGER.debug(f"[set_mode] Also setting full_panel to {full_panel}")
+                _LOGGER.debug("[set_mode] Also setting full_panel to %s", full_panel)
             if mode in MATRIX_DISPLAY_MODES:
                 target_entity._matrix_mode = mode
                 target_entity._mode = mode
@@ -853,8 +853,10 @@ def async_register_display_services(hass: HomeAssistant) -> None:
 
         async def _apply_one(target_entity):
             _LOGGER.debug(
-                f"[PANEL] [{getattr(target_entity, '_ip', '?')}] "
-                f"Setting full_panel={full_panel} (was {target_entity._full_panel})"
+                "[PANEL] [%s] "
+                "Setting full_panel=%s (was %s)",
+                getattr(target_entity, '_ip', '?'), full_panel,
+                target_entity._full_panel
             )
             target_entity._full_panel = full_panel
             # When enabling panel mode, deactivate custom draw so the display
@@ -1046,7 +1048,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
 
         async def _apply_one(target_entity):
             target_entity._save_display_state()
-            _LOGGER.debug(f"[SAVE_STATE] Saved display state for {target_entity.entity_id}")
+            _LOGGER.debug("[SAVE_STATE] Saved display state for %s", target_entity.entity_id)
 
         _fire_and_forget(*[_apply_one(t) for t in targets])
 
@@ -1070,14 +1072,15 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         async def _apply_one(target_entity):
             if not target_entity._restore_display_state():
                 _LOGGER.warning(
-                    f"[RESTORE_STATE] No saved state for {target_entity.entity_id} -- "
-                    f"call save_state first"
+                    "[RESTORE_STATE] No saved state for %s -- "
+                    "call save_state first",
+                    target_entity.entity_id
                 )
                 return
             if target_entity.hass is not None:
                 target_entity.async_schedule_update_ha_state()
             await target_entity.async_apply_display_mode(update_type='color_change')
-            _LOGGER.debug(f"[RESTORE_STATE] Restored display state for {target_entity.entity_id}")
+            _LOGGER.debug("[RESTORE_STATE] Restored display state for %s", target_entity.entity_id)
 
         _fire_and_forget(*[_apply_one(t) for t in targets])
 

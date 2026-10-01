@@ -539,9 +539,9 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(PixelArtGalleryMixin(Pal
 
     // Re-render only when something this card displays from the light changed:
     // text_colors (Lamp Palette), matrix_colors (Lamp Colors) and the theme
-    // (dark-mode item borders). The backend bumps _update_epoch on every state
-    // write, so keying on it re-rendered the whole gallery for unrelated
-    // updates. HA keeps unchanged attribute values by reference across pushes.
+    // (dark-mode item borders), not on every light update, which would
+    // re-render the whole gallery for unrelated changes. HA keeps unchanged
+    // attribute values by reference across pushes.
     if (this.entity) {
       const lightState = this._hass.states[this.entity];
       if (lightState) {

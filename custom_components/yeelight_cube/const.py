@@ -39,7 +39,7 @@ DEFAULT_NATIVE_CLOCK_STYLE = 6
 # Clock styles whose firmware ``mixer`` is a standalone native effect are
 # handled by CLOCK_MIXER_EFFECTS, derived after the native-effect tables are
 # built (see below). The clock command carries no direction/speed for the
-# mixer; "Down" gives the horizontal colour sweep across the characters the
+# mixer; "Down" gives the horizontal color sweep across the characters the
 # lamp shows, 50 is neutral.
 CLOCK_MIXER_EFFECT_DIRECTION = "Down"
 CLOCK_MIXER_EFFECT_SPEED = 50
@@ -144,10 +144,10 @@ _EXTENDED_EFFECT_IDS = {10: 71}
 # Public view used by the clock builder to override the command id per mixer.
 CLOCK_MIXER_COMMAND_IDS = dict(_EXTENDED_EFFECT_IDS)
 
-# Firmware "colour mode" palette presets for the clock (and compatible native
+# Firmware "color mode" palette presets for the clock (and compatible native
 # effects). Forcing the outer set_fx_effect command id (first array element) to
 # one of these ids remaps the effect's palette; ``None`` = normal (each effect
-# keeps its own colours). Ids discovered via the FX Explorer card. Which effects
+# keeps its own colors). Ids discovered via the FX Explorer card. Which effects
 # actually respond varies per effect and is verified on hardware.
 CLOCK_COLOR_MODES = {
     "normal": None,
@@ -189,7 +189,7 @@ _MODE_TO_EFFECT_NAME = {
 # combinations the hardware rejects outright when sent as the clock's mixer.
 _NON_CLOCK_EFFECT_MODES = {60, 46, 47, 49, 81}
 # Clock styles whose firmware ``mixer`` is a standalone native effect: the lamp
-# runs that effect across the whole panel and lets its colour through only on
+# runs that effect across the whole panel and lets its color through only on
 # the lit time/date pixels, so the characters animate with the effect. The
 # preview reproduces this by rendering the effect and masking it to the glyph
 # pixels. Every named effect with a real renderer qualifies; direction-less
@@ -273,11 +273,11 @@ def resolve_clock_mixer_direction(direction, effect_name):
 
 
 def clock_style_default_color(style):
-    """Return the ARGB colour a clock style sends by default, or None.
+    """Return the ARGB color a clock style sends by default, or None.
 
     A style's own ``color`` wins; otherwise, when its ``mixer`` is a native
-    effect that carries a default colour (e.g. Waterfall = 255), that colour is
-    used so the clock sends the same colour the standalone effect does.
+    effect that carries a default color (e.g. Waterfall = 255), that color is
+    used so the clock sends the same color the standalone effect does.
     """
     if style.get("color") is not None:
         return style["color"]
@@ -403,3 +403,31 @@ CUBE_NAME_PATTERNS = [
     "matrix",
     "panel",
 ]
+
+# Transition animations between two matrix frames: key -> select label.
+TRANSITION_TYPES = {
+    "none": "None",
+    "fade_through_black": "Fade Through Black",
+    "direct_crossfade": "Direct Crossfade",
+    "random_dissolve": "Random Dissolve",
+    "wipe_right": "Wipe Right",
+    "wipe_left": "Wipe Left",
+    "wipe_down": "Wipe Down",
+    "wipe_up": "Wipe Up",
+    "slide_left": "Slide Left",
+    "slide_right": "Slide Right",
+    "slide_up": "Slide Up",
+    "slide_down": "Slide Down",
+    "card_from_right": "Card From Right",
+    "card_from_left": "Card From Left",
+    "card_from_top": "Card From Top",
+    "card_from_bottom": "Card From Bottom",
+    "explode_reform": "Explode & Reform",
+    "snake": "Snake",
+    "wave_wipe": "Wave Wipe",
+    "iris": "Iris (Circle Wipe)",
+    "vertical_flip": "Vertical Flip",
+    "curtain": "Curtain",
+    "gravity_drop": "Gravity Drop",
+    "pixel_migration": "Pixel Migration",
+}

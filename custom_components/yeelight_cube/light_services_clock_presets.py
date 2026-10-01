@@ -1,4 +1,4 @@
-"""Clock preset actions: save and delete the shared solid-colour clock presets.
+"""Clock preset actions: save and delete the shared solid-color clock presets.
 
 Registered by :func:`light_services.async_setup_light_services`.
 """

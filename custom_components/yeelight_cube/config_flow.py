@@ -1,7 +1,6 @@
 import logging
 import voluptuous as vol # type: ignore
 from homeassistant import config_entries # type: ignore
-from homeassistant.helpers import config_validation as cv # type: ignore
 from homeassistant.core import callback # type: ignore
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo # type: ignore
 from .const import DOMAIN, CONF_IP, CONF_DEVICE_ID

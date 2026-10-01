@@ -15,14 +15,14 @@ class YeelightCubeBaseSensor(Entity):
         return None
 
 class ClockPresetSensor(YeelightCubeBaseSensor):
-    """Shared named solid-colour clocks, excluded from recorder history."""
+    """Shared named solid-color clocks, excluded from recorder history."""
 
     _unrecorded_attributes = frozenset({"clock_presets"})
 
     def __init__(self, hass):
         super().__init__(hass)
         self._attr_unique_id = "yeelight_cube_clock_presets"
-        self._attr_name = "Clock Colour Presets"
+        self._attr_name = "Clock Color Presets"
         self._attr_icon = "mdi:clock-outline"
 
     async def async_added_to_hass(self):
@@ -69,11 +69,11 @@ class PaletteSensor(YeelightCubeBaseSensor):
         import logging
         _LOGGER = logging.getLogger(__name__)
         event_count = event.data.get('count', 'unknown') if hasattr(event, 'data') else 'no-data'
-        _LOGGER.debug(f"[PALETTE-SENSOR] Event received! Count from event: {event_count}")
+        _LOGGER.debug("[PALETTE-SENSOR] Event received! Count from event: %s", event_count)
         
         # Get palette data BEFORE state update
         palettes_before = self.hass.data.get(DOMAIN, {}).get("palettes_v2", [])
-        _LOGGER.debug(f"[PALETTE-SENSOR] Before state update - palette count: {len(palettes_before)}")
+        _LOGGER.debug("[PALETTE-SENSOR] Before state update - palette count: %s", len(palettes_before))
         
         # Clear any attribute cache (if exists)
         if hasattr(self, '_attr_extra_state_attributes'):
@@ -93,9 +93,9 @@ class PaletteSensor(YeelightCubeBaseSensor):
         palettes_json = json.dumps(palettes_after, sort_keys=True)
         new_hash = hashlib.md5(palettes_json.encode('utf-8')).hexdigest()
         
-        _LOGGER.debug(f"[PALETTE-SENSOR] After schedule - count: {len(palettes_after)}, hash: {new_hash[:8]}...")
+        _LOGGER.debug("[PALETTE-SENSOR] After schedule - count: %s, hash: %s...", len(palettes_after), new_hash[:8])
         if len(palettes_after) > 0:
-            _LOGGER.debug(f"[PALETTE-SENSOR] Last 3 palette names: {[p.get('name', 'unnamed') for p in palettes_after[-3:]]}")
+            _LOGGER.debug("[PALETTE-SENSOR] Last 3 palette names: %s", [p.get('name', 'unnamed') for p in palettes_after[-3:]])
 
     @property
     def extra_state_attributes(self):
@@ -117,7 +117,7 @@ class PaletteSensor(YeelightCubeBaseSensor):
         palettes_json = json.dumps(hash_data, sort_keys=True)
         content_hash = hashlib.md5(palettes_json.encode('utf-8')).hexdigest()
         
-        _LOGGER.debug(f"[PALETTE-SENSOR-ATTR] Returning attributes - count: {len(palettes)}, hash: {content_hash[:8]}...")
+        _LOGGER.debug("[PALETTE-SENSOR-ATTR] Returning attributes - count: %s, hash: %s...", len(palettes), content_hash[:8])
         
         return {
             "palettes_v2": palettes,
@@ -185,7 +185,7 @@ class PixelArtSensor(YeelightCubeBaseSensor):
         """Force state update when pixel arts change."""
         import logging
         _LOGGER = logging.getLogger(__name__)
-        _LOGGER.debug(f"[PIXELART-SENSOR] Event received, forcing state update")
+        _LOGGER.debug("[PIXELART-SENSOR] Event received, forcing state update")
         
         # Clear any attribute cache
         if hasattr(self, '_attr_extra_state_attributes'):
@@ -193,7 +193,7 @@ class PixelArtSensor(YeelightCubeBaseSensor):
         
         self.async_schedule_update_ha_state(force_refresh=True)
         self.async_write_ha_state()
-        _LOGGER.debug(f"[PIXELART-SENSOR] State update completed")
+        _LOGGER.debug("[PIXELART-SENSOR] State update completed")
 
     @property
     def state(self):

@@ -104,6 +104,8 @@ class FakeCubeMatrix:
     def state_summary(self):
         return ""
 
+    summary = ""
+
 
 def make_light(helpers, kind="native", is_on=True, extended=False):
     light = SimpleNamespace(
@@ -482,7 +484,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(light._native_clock_style, rainbow_id)
         self.assertIsNone(light._native_clock_color)
         self.assertEqual(light._mode, "Clock")
-        # Saved preset -> White base + packed 0x01RRGGBB colour.
+        # Saved preset -> White base + packed 0x01RRGGBB color.
         self.assertTrue(
             await light._apply_rotation_clock(
                 {"name": "custom:abc123", "color_mode": "normal", "color": None}
@@ -504,24 +506,24 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_clock_apply_reapplies_recorded_color(self):
         light = make_light(self.helpers, kind="clock")
-        # Custom colour on a built-in style: packed 0x01RRGGBB, mode normal.
+        # Custom color on a built-in style: packed 0x01RRGGBB, mode normal.
         await light._apply_rotation_clock(
             {"name": "Rainbow", "color_mode": "custom", "color": [9, 8, 7]}
         )
         self.assertEqual(light._native_clock_color, 0x01090807)
         self.assertEqual(light._native_clock_color_mode, "normal")
-        # Palette mode clears the colour and sets the palette.
+        # Palette mode clears the color and sets the palette.
         await light._apply_rotation_clock(
             {"name": "Rainbow", "color_mode": "red_blue", "color": None}
         )
         self.assertIsNone(light._native_clock_color)
         self.assertEqual(light._native_clock_color_mode, "red_blue")
-        # A recorded custom colour overrides a preset's own colour.
+        # A recorded custom color overrides a preset's own color.
         await light._apply_rotation_clock(
             {"name": "custom:abc123", "color_mode": "custom", "color": [1, 2, 3]}
         )
         self.assertEqual(light._native_clock_color, 0x01010203)
-        # A palette on a preset drops its colour and remaps.
+        # A palette on a preset drops its color and remaps.
         await light._apply_rotation_clock(
             {"name": "custom:abc123", "color_mode": "bw", "color": None}
         )
@@ -896,6 +898,7 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
             **CONSTANTS, "asyncio": asyncio, "time": time, "base64": base64,
             "_LOGGER": Mock(), "_get_device_lock": lambda ip: lock,
             "APPLY_HARD_TIMEOUT": 8, "CIRCUIT_BREAKER_WINDOW": 30,
+            "LOCK_WAIT_WARNING_MS": 3000, "_DEVICE_LOCK_HOLDERS": {},
             "BulbException": BULB_EXCEPTION,
             "CubeConnectionError": CUBE_CONNECTION_ERROR,
             "__package__": "rotation_test",
@@ -931,7 +934,7 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
         light.async_schedule_update_ha_state = Mock()
         light._maybe_schedule_retry = Mock()
         light._cube_matrix = SimpleNamespace(
-            state_summary=lambda: "test transport", close_fast_socket=Mock(),
+            state_summary=lambda: "test transport", summary="test transport", close_fast_socket=Mock(),
             record_success=Mock(), record_failure=Mock(), is_unreachable=False,
             send_raw_command=AsyncMock(),
         )

@@ -1,23 +1,20 @@
 """Matrix rendering for the Yeelight Cube Lite light entity.
 
-Extracted from light.py as a mixin.  Turns the current mode/text/colours into a
+Extracted from light.py as a mixin.  Turns the current mode/text/colors into a
 100-pixel matrix: the mode router (:meth:`_apply_display_mode_internal`), letter
 and pixel placement, gradient/offset maths and orientation flips.  Reads/writes
 state via ``self``; used only as a mixin.
 """
-import copy
 import logging
 import math
 import random
 import traceback
 
-from .color_utils import hex_to_rgb, rgb_to_hex
+from .color_utils import rgb_to_hex
 from .cube_matrix import is_connection_error, is_quota_error
 from .const import (
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
-    DEFAULT_MATRIX_DISPLAY_MODE,
-    MATRIX_DISPLAY_MODES,
     ORIENTATION_NORMAL,
     PANEL_FULL_CHAR,
     TEXT_RENDER_MODES,
@@ -50,7 +47,7 @@ class MatrixRenderMixin:
             # Clamp scroll offset to valid range
             self._scroll_offset = max(0, min(self._scroll_offset, self._max_scroll_offset))
             offset = -self._scroll_offset  # Negative offset to move text left (0 at start)
-            _LOGGER.debug(f"[SCROLL] Scrolling mode: width={total_text_width}, max_offset={self._max_scroll_offset}, current_offset={self._scroll_offset}, returning={offset}")
+            _LOGGER.debug("[SCROLL] Scrolling mode: width=%s, max_offset=%s, current_offset=%s, returning=%s", total_text_width, self._max_scroll_offset, self._scroll_offset, offset)
             return offset
         else:
             # Text fits or scrolling disabled, use normal alignment
@@ -62,7 +59,7 @@ class MatrixRenderMixin:
                 offset = total_columns - total_text_width
             else:
                 offset = 0
-            _LOGGER.debug(f"[NORMAL] Normal positioning: width={total_text_width}, alignment={self._alignment}, returning={offset}")
+            _LOGGER.debug("[NORMAL] Normal positioning: width=%s, alignment=%s, returning=%s", total_text_width, self._alignment, offset)
             return offset
 
     def _flip_position(self, pos, total_columns=TOTAL_COLUMNS, total_rows=TOTAL_ROWS):
@@ -98,7 +95,7 @@ class MatrixRenderMixin:
                 return
 
             background_color_hex = rgb_to_hex(self._background_color)
-            _LOGGER.debug(f"Setting background color: {background_color_hex}")
+            _LOGGER.debug("Setting background color: %s", background_color_hex)
             for module in self._layout.device_layout:
                 module.set_colors([background_color_hex])
             # Priority: custom drawing if present and custom_draw_active, else text
@@ -170,21 +167,23 @@ class MatrixRenderMixin:
                     total_text_width = TOTAL_COLUMNS  # fills the full width
                     current_offset = 0  # no alignment shift -- it already covers everything
                     _LOGGER.debug(
-                        f"[DISPLAY] [{self._ip}] Panel mode: rendering virtual full-panel character "
-                        f"(mode='{self._mode}', colors={len(self._text_colors) if self._text_colors else 0} stops)"
+                        "[DISPLAY] [%s] Panel mode: rendering virtual full-panel character "
+                        "(mode='%s', colors=%s stops)",
+                        self._ip, self._mode,
+                        len(self._text_colors) if self._text_colors else 0
                     )
                 else:
                     effective_text = self._custom_text
                     total_columns = TOTAL_COLUMNS
                     total_text_width = sum(self._char_advance(letter) for letter in self._custom_text) - 1
                     current_offset = self.calculate_text_offset(total_text_width, total_columns)
-                _LOGGER.debug(f"[DISPLAY] Rendering text: '{effective_text}' with mode: '{self._mode}' and colors: {self._text_colors}")
-                _LOGGER.debug(f"[DISPLAY] Text layout - total_width: {total_text_width}, offset: {current_offset}")
+                _LOGGER.debug("[DISPLAY] Rendering text: '%s' with mode: '%s' and colors: %s", effective_text, self._mode, self._text_colors)
+                _LOGGER.debug("[DISPLAY] Text layout - total_width: %s, offset: %s", total_text_width, current_offset)
                 
                 # Debug: Check if we have proper text colors
-                _LOGGER.debug(f"[DISPLAY] Text colors check - _text_colors: {self._text_colors}, type: {type(self._text_colors)}")
+                _LOGGER.debug("[DISPLAY] Text colors check - _text_colors: %s, type: %s", self._text_colors, type(self._text_colors))
                 if not self._text_colors:
-                    _LOGGER.warning(f"[DISPLAY] No text colors set! Using default red.")
+                    _LOGGER.warning("[DISPLAY] No text colors set! Using default red.")
                 
                 def get_color(idx=None, factor=None, position=None, total=None):
                     if self._mode == "Solid Color":
@@ -204,7 +203,7 @@ class MatrixRenderMixin:
                     if isinstance(color, list):
                         color = color[0]
                     text_color_hex = rgb_to_hex(tuple(color))
-                    _LOGGER.debug(f"[DISPLAY] Solid color mode - color: {color}, hex: {text_color_hex}")
+                    _LOGGER.debug("[DISPLAY] Solid color mode - color: %s, hex: %s", color, text_color_hex)
                     self.place_letters(text_color_hex, effective_text, current_offset, flip=True)
                 elif self._mode == "Text Color Sequence":
                     # Fully randomize: shuffle both color list and pixel positions for each letter
@@ -489,19 +488,19 @@ class MatrixRenderMixin:
                         current_offset += self._char_advance(letter)
                 
                 # Apply changes for text modes
-                _LOGGER.debug(f"[DISPLAY] Text rendering complete, about to apply() to lamp")
-                _LOGGER.debug(f"[DISPLAY] Current lamp state before apply - modules with colors:")
+                _LOGGER.debug("[DISPLAY] Text rendering complete, about to apply() to lamp")
+                _LOGGER.debug("[DISPLAY] Current lamp state before apply - modules with colors:")
                 for i, module in enumerate(self._layout.device_layout):
                     colors = getattr(module, '_colors', None)
-                    _LOGGER.debug(f"[DISPLAY] Module {i}: colors={colors}")
+                    _LOGGER.debug("[DISPLAY] Module %s: colors=%s", i, colors)
                 
                 # Skip post-delay when scrolling to maintain smooth animation timing
                 await self.apply(skip_post_delay=skip_post_delay or self._is_scrolling)
-                _LOGGER.debug(f"[DISPLAY] Text apply() completed successfully")
+                _LOGGER.debug("[DISPLAY] Text apply() completed successfully")
                 
                 # Start scroll timer if text is longer than display and scrolling is enabled
                 if self._max_scroll_offset > 0 and self._scroll_enabled:
-                    _LOGGER.debug(f"[SCROLL] Starting scroll timer for long text (max_offset: {self._max_scroll_offset})")
+                    _LOGGER.debug("[SCROLL] Starting scroll timer for long text (max_offset: %s)", self._max_scroll_offset)
                     self._is_scrolling = True
                     self.start_scroll_timer()
                 else:
@@ -510,7 +509,7 @@ class MatrixRenderMixin:
                     self.stop_scroll_timer()
             # Handle Panel Color Sequence mode (applies colors to all modules, not just text)
             elif self._mode == "Panel Color Sequence":
-                _LOGGER.debug(f"[Panel Color Sequence] Applying mode with {len(self._text_colors) if self._text_colors else 0} colors")
+                _LOGGER.debug("[Panel Color Sequence] Applying mode with %s colors", len(self._text_colors) if self._text_colors else 0)
                 if self._text_colors:
                     colors = self._text_colors
                     for i, module in enumerate(self._layout.device_layout):
@@ -519,10 +518,10 @@ class MatrixRenderMixin:
                             color = tuple(max(0, min(255, int(c))) for c in color)
                             hex_color = rgb_to_hex(color)
                         else:
-                            _LOGGER.warning(f"[Panel Color Sequence] Invalid color format at index {i}: {color}, using red fallback")
+                            _LOGGER.warning("[Panel Color Sequence] Invalid color format at index %s: %s, using red fallback", i, color)
                             hex_color = '#ff0000'
                         module.set_colors([hex_color])
-                        _LOGGER.debug(f"[Panel Color Sequence] Module {i}: {hex_color}")
+                        _LOGGER.debug("[Panel Color Sequence] Module %s: %s", i, hex_color)
                 else:
                     # If no colors are set, use a default red color for all modules
                     _LOGGER.warning("[Panel Color Sequence] No colors set, using red for all modules")
@@ -539,10 +538,12 @@ class MatrixRenderMixin:
                 # actually shows it (e.g., when panel mode is turned OFF with
                 # no text set -- without this, the lamp stays on the old display).
                 _LOGGER.debug(
-                    f"[DISPLAY] [{self._ip}] No content to render "
-                    f"(text='{self._custom_text}', panel={self._full_panel}, "
-                    f"draw_active={self._custom_draw_active}, "
-                    f"mode='{self._mode}') -- pushing background-only display"
+                    "[DISPLAY] [%s] No content to render "
+                    "(text='%s', panel=%s, "
+                    "draw_active=%s, "
+                    "mode='%s') -- pushing background-only display",
+                    self._ip, self._custom_text, self._full_panel,
+                    self._custom_draw_active, self._mode
                 )
                 await self.apply(skip_post_delay=skip_post_delay)
         except Exception as e:
@@ -550,9 +551,9 @@ class MatrixRenderMixin:
             # which schedules retries. Only log at DEBUG to avoid duplicate noise.
             # The queue processor already logs the same error with full context.
             if is_connection_error(e) or is_quota_error(e):
-                _LOGGER.debug(f"[DISPLAY] [{self._ip}] Connection error in apply_display_mode (re-raising for retry): {e}")
+                _LOGGER.debug("[DISPLAY] [%s] Connection error in apply_display_mode (re-raising for retry): %s", self._ip, e)
             else:
-                _LOGGER.error(f"[DISPLAY] [{self._ip}] Unexpected error during apply_display_mode: {e}")
+                _LOGGER.error("[DISPLAY] [%s] Unexpected error during apply_display_mode: %s", self._ip, e)
             # Re-raise so the queue processor sees the failure and schedules
             # a display retry. Previously this was swallowed here, which meant
             # socket errors from apply() never reached the queue processor.
@@ -595,11 +596,11 @@ class MatrixRenderMixin:
             self.place_pixels(color, valid_positions)
 
     def place_letters(self, color: str, letters: str, current_offset: int, flip=False):
-        _LOGGER.debug(f"[PLACE_LETTERS] Starting with color: {color}, letters: '{letters}', offset: {current_offset}, flip: {flip}")
+        _LOGGER.debug("[PLACE_LETTERS] Starting with color: %s, letters: '%s', offset: %s, flip: %s", color, letters, current_offset, flip)
         
         # Calculate total text width for debugging
         total_width = sum(self._char_advance(letter) for letter in letters) - 1
-        _LOGGER.debug(f"[PLACE_LETTERS] Total text width: {total_width} columns, display width: {TOTAL_COLUMNS}")
+        _LOGGER.debug("[PLACE_LETTERS] Total text width: %s columns, display width: %s", total_width, TOTAL_COLUMNS)
         
         space_to_add = current_offset
         total_pixels_placed = 0
@@ -607,14 +608,14 @@ class MatrixRenderMixin:
             if i > 0:
                 prev_advance = self._char_advance(letters[i - 1])
                 space_to_add += prev_advance
-                _LOGGER.debug(f"[PLACE_LETTERS] Letter {i}: added {prev_advance} to offset (prev letter '{letters[i - 1]}')")
+                _LOGGER.debug("[PLACE_LETTERS] Letter %s: added %s to offset (prev letter '%s')", i, prev_advance, letters[i - 1])
             
             letter_positions = self.get_positions_for_letter(letters[i])
-            _LOGGER.debug(f"[PLACE_LETTERS] Letter '{letters[i]}' at index {i}: base_positions={letter_positions}, space_to_add={space_to_add}")
+            _LOGGER.debug("[PLACE_LETTERS] Letter '%s' at index %s: base_positions=%s, space_to_add=%s", letters[i], i, letter_positions, space_to_add)
             
             # Calculate adjusted positions for this letter
             adjusted_positions = [pos + space_to_add for pos in letter_positions]
-            _LOGGER.debug(f"[PLACE_LETTERS] Letter '{letters[i]}': adjusted_positions={adjusted_positions[:5]}{'...' if len(adjusted_positions) > 5 else ''}")
+            _LOGGER.debug("[PLACE_LETTERS] Letter '%s': adjusted_positions=%s%s", letters[i], adjusted_positions[:5], '...' if len(adjusted_positions) > 5 else '')
             
             visible_positions = []
             
@@ -631,23 +632,23 @@ class MatrixRenderMixin:
             if visible_positions:
                 if flip:
                     visible_positions = self._flip_positions(visible_positions)
-                _LOGGER.debug(f"[PLACE_LETTERS] Letter '{letters[i]}': visible_pixels={len(visible_positions)}/{len(adjusted_positions)} (offset: {space_to_add})")
+                _LOGGER.debug("[PLACE_LETTERS] Letter '%s': visible_pixels=%s/%s (offset: %s)", letters[i], len(visible_positions), len(adjusted_positions), space_to_add)
                 self.place_pixels(color, visible_positions)
                 total_pixels_placed += len(visible_positions)
             else:
-                _LOGGER.debug(f"[PLACE_LETTERS] Letter '{letters[i]}': no visible pixels (fully scrolled off, offset: {space_to_add})")
+                _LOGGER.debug("[PLACE_LETTERS] Letter '%s': no visible pixels (fully scrolled off, offset: %s)", letters[i], space_to_add)
                 
-        _LOGGER.debug(f"[PLACE_LETTERS] Completed placing {total_pixels_placed} total pixels")
+        _LOGGER.debug("[PLACE_LETTERS] Completed placing %s total pixels", total_pixels_placed)
 
     def place_pixels(self, color: str, positions):
-        _LOGGER.debug(f"[PLACE_PIXELS] Placing {len(positions)} pixels with color: {color}")
-        _LOGGER.debug(f"[PLACE_PIXELS] Positions: {positions}")
+        _LOGGER.debug("[PLACE_PIXELS] Placing %s pixels with color: %s", len(positions), color)
+        _LOGGER.debug("[PLACE_PIXELS] Positions: %s", positions)
         
         # Track bad positions and log stack trace
         bad_positions = [pos for pos in positions if pos < 0 or pos >= len(self._layout.device_layout)]
         if bad_positions:
-            _LOGGER.error(f"[PLACE_PIXELS] BAD POSITIONS DETECTED: {bad_positions}")
-            _LOGGER.error(f"[PLACE_PIXELS] Stack trace:\n{''.join(traceback.format_stack())}")
+            _LOGGER.error("[PLACE_PIXELS] BAD POSITIONS DETECTED: %s", bad_positions)
+            _LOGGER.error("[PLACE_PIXELS] Stack trace:\n%s", ''.join(traceback.format_stack()))
         
         current_colors = [color]
         pixels_placed = 0
@@ -657,10 +658,10 @@ class MatrixRenderMixin:
                     self._layout.device_layout[pos].set_colors(current_colors)
                     pixels_placed += 1
                 else:
-                    _LOGGER.warning(f"[PLACE_PIXELS] Position {pos} is not a Module: {type(self._layout.device_layout[pos])}")
+                    _LOGGER.warning("[PLACE_PIXELS] Position %s is not a Module: %s", pos, type(self._layout.device_layout[pos]))
             else:
-                _LOGGER.warning(f"[PLACE_PIXELS] Position {pos} is out of bounds (0-{len(self._layout.device_layout)-1})")
-        _LOGGER.debug(f"[PLACE_PIXELS] Successfully placed {pixels_placed}/{len(positions)} pixels")
+                _LOGGER.warning("[PLACE_PIXELS] Position %s is out of bounds (0-%s)", pos, len(self._layout.device_layout)-1)
+        _LOGGER.debug("[PLACE_PIXELS] Successfully placed %s/%s pixels", pixels_placed, len(positions))
 
     def letter_size(self, led_positions):
         unique_columns = set()
@@ -686,7 +687,7 @@ class MatrixRenderMixin:
             return list(range(TOTAL_COLUMNS * TOTAL_ROWS))
         font_map = FONT_MAPS.get(self._font, FONT_MAPS.get("basic", {}))
         positions = font_map.get(letter, [])
-        _LOGGER.debug(f"[GET_POSITIONS] Letter '{letter}' in font '{self._font}': {len(positions)} positions = {positions}")
+        _LOGGER.debug("[GET_POSITIONS] Letter '%s' in font '%s': %s positions = %s", letter, self._font, len(positions), positions)
         if not positions:
-            _LOGGER.warning(f"[GET_POSITIONS] No positions found for letter '{letter}' in font '{self._font}'")
+            _LOGGER.warning("[GET_POSITIONS] No positions found for letter '%s' in font '%s'", letter, self._font)
         return positions

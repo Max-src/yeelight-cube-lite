@@ -2,10 +2,10 @@
 
 The actions are registered by area, one module each:
 
-- ``light_services_display``     text, colours, gradients, brightness, orientation,
+- ``light_services_display``     text, colors, gradients, brightness, orientation,
                                  image, freeze and save/restore of the display
-- ``light_services_palette``     colour palettes
-- ``light_services_clock_presets`` saved solid-colour clock presets
+- ``light_services_palette``     color palettes
+- ``light_services_clock_presets`` saved solid-color clock presets
 - ``light_services_pixel_art``   pixel arts (+ the pixel-art websocket command)
 - ``light_services_native``      native effects, clock styles, physical button,
                                  rotation and favourites

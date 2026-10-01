@@ -398,7 +398,7 @@ const server = http.createServer(async (request, response) => {
 
     // 6. Rotation steps in the effect list: the list turns to the page of the
     //    playing effect; with "Highlight the playing effect" off it keeps the
-    //    user's selection, page and colour mode. The interval is not edited on
+    //    user's selection, page and color mode. The interval is not edited on
     //    the card (editor only).
     assert.equal(
       await page.locator(`${one} [aria-label="Rotation interval value"]`).count(),
@@ -418,7 +418,7 @@ const server = http.createServer(async (request, response) => {
         card.hass = makeHass();
         await card.updateComplete;
       }
-      // The lamp shows Rainbow (page 1), in its normal colours.
+      // The lamp shows Rainbow (page 1), in its normal colors.
       pushLater((a) => {
         a.native_effect = "Rainbow";
         a.native_effect_color_mode = "normal";
@@ -428,11 +428,11 @@ const server = http.createServer(async (request, response) => {
       page.evaluate((id) => {
         const card = document.querySelector(id);
         const browser = card.shadowRoot.querySelector("yeelight-style-browser");
-        const colours = card.shadowRoot.querySelector("yeelight-color-mode");
+        const colors = card.shadowRoot.querySelector("yeelight-color-mode");
         return {
           page: browser.page,
           active: browser.activeKey,
-          colour: colours?.selected ?? null,
+          color: colors?.selected ?? null,
         };
       }, id);
     await page.waitForTimeout(250);
@@ -466,12 +466,12 @@ const server = http.createServer(async (request, response) => {
     );
     const following = await browserState(one);
     assert.equal(following.page, 1, "list turned to the playing effect's page");
-    assert.equal(following.colour, "red_blue");
+    assert.equal(following.color, "red_blue");
     const holding = await browserState(two);
     assert.deepEqual(
-      [holding.page, holding.active, holding.colour],
+      [holding.page, holding.active, holding.color],
       [0, "Rainbow", "normal"],
-      "following off: selection, page and colour mode kept",
+      "following off: selection, page and color mode kept",
     );
     // The favourites highlight has its own switch (on): it still follows.
     assert.equal(

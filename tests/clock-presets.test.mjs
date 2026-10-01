@@ -206,7 +206,7 @@ test("inline preset saves only request a name and do not generate a preview", ()
     },
     {
       style: { label: "Save clock style" },
-      color_mode: { label: "Save colour mode" },
+      color_mode: { label: "Save color mode" },
     },
   );
   for (const kind of ["style", "color_mode"]) {
@@ -225,12 +225,12 @@ test("inline preset saves only request a name and do not generate a preview", ()
   assert.equal(frames, 1);
   manager.libraryKinds = ["color_mode"];
   manager.libraryKind = "color_mode";
-  const colourOnly = invoke.call(manager);
-  assert.doesNotMatch(colourOnly, /Clock styles/);
-  assert.match(colourOnly, /Colour modes/);
+  const colorOnly = invoke.call(manager);
+  assert.doesNotMatch(colorOnly, /Clock styles/);
+  assert.match(colorOnly, /Color modes/);
 });
 
-test("all colour modes share ordering and hiding without deleting defaults or losing new saves", () => {
+test("all color modes share ordering and hiding without deleting defaults or losing new saves", () => {
   const builtins = [
     { value: "normal", label: "Normal" },
     { value: "bw", label: "Black & White" },
@@ -278,7 +278,7 @@ test("all colour modes share ordering and hiding without deleting defaults or lo
   assert.ok(config.hidden_color_modes.includes("__pick__"));
 });
 
-test("unified colour row has saved colours and Add without a Custom tab", () => {
+test("unified color row has saved colors and Add without a Custom tab", () => {
   const presets = [
     {
       id: "pink",
@@ -322,7 +322,7 @@ test("unified colour row has saved colours and Add without a Custom tab", () => 
     draft: [255, 100, 180],
   });
   const add = model.buttons.find((button) => button.add);
-  assert.equal(add.title, "Change unsaved colour");
+  assert.equal(add.title, "Change unsaved color");
   assert.equal(add.swatch, "#ff64b4");
   config = clockColorModeVisibilityConfig({}, options(), []);
   model = colorModeSelectorModel(config, options(), null);
@@ -369,7 +369,7 @@ test("custom mode styles support name-only and migrate legacy swatches to Filled
   assert.equal(filled.title, "Pink");
 });
 
-test("Add opens the picker without sending a colour-mode command", () => {
+test("Add opens the picker without sending a color-mode command", () => {
   const anchor = { tagName: "BUTTON" };
   const opened = [];
   const card = {
@@ -636,7 +636,7 @@ test("hostile saved names remain escaped in all text selectors", () => {
   }
 });
 
-test("Custom stays selectable and built-in selections respect the active colour mode", () => {
+test("Custom stays selectable and built-in selections respect the active color mode", () => {
   const attrs = {
     clock_style: "White",
     clock_style_id: 4,
@@ -726,7 +726,7 @@ test("Custom stays selectable and built-in selections respect the active colour 
   assert.equal(card._currentStyle().presetId, "second");
 });
 
-test("Clock save capabilities independently include colour modes and styles", () => {
+test("Clock save capabilities independently include color modes and styles", () => {
   const card = {
     config: {},
     ...cardMethods(["_saveKinds"], {}),
@@ -778,7 +778,7 @@ test("custom clocks preserve builtins and have stable identity after rename", ()
   );
 });
 
-test("same-colour styles retain the explicitly selected identity", () => {
+test("same-color styles retain the explicitly selected identity", () => {
   const styles = clockStylesWithPresets(
     [],
     [
@@ -799,7 +799,7 @@ test("same-colour styles retain the explicitly selected identity", () => {
   );
 });
 
-test("colour-mode presets stay out of styles and apply colour without changing the clock style", () => {
+test("color-mode presets stay out of styles and apply color without changing the clock style", () => {
   const legacy = { id: "legacy", name: "Amber clock", color: [255, 120, 0] };
   const mode = {
     id: "mode",
@@ -886,7 +886,7 @@ test("new styles survive reload and explicit hide/reorder survives later saves",
   );
 });
 
-test("card colour actions leave Custom empty until a pick and ignore deleted presets", () => {
+test("card color actions leave Custom empty until a pick and ignore deleted presets", () => {
   const source = readFileSync(
     new URL(
       "../custom_components/yeelight_cube/www/yeelight-cube-clock-card.js",
@@ -969,7 +969,7 @@ test("card colour actions leave Custom empty until a pick and ignore deleted pre
   assert.deepEqual(calls.at(-1), { color_mode: "normal", color: "clear" });
 });
 
-test("saving a custom colour as a clock style forgets it as the Custom colour", () => {
+test("saving a custom color as a clock style forgets it as the Custom color", () => {
   const attrs = {
     clock_style: "White",
     clock_style_id: 4,
@@ -1011,11 +1011,11 @@ test("saving a custom colour as a clock style forgets it as the Custom colour", 
       },
     ),
   };
-  // Enter Custom and pick blue: a genuine free-colour choice.
+  // Enter Custom and pick blue: a genuine free-color choice.
   card._applyColorMode("custom");
   card._applyColor([40, 100, 220]);
   assert.equal(card._lastCustomHex, "#2864dc");
-  // Save it as a new clock style; the card applies it as White + that colour.
+  // Save it as a new clock style; the card applies it as White + that color.
   card._onPresetSaved({
     kind: "style",
     name: "Super Blue",
@@ -1040,7 +1040,7 @@ test("saving a custom colour as a clock style forgets it as the Custom colour", 
 
 test("a just-saved style reads as Normal before the library echoes it back", () => {
   // The HA library update lags the state echo; during that window the saved
-  // White+colour must NOT be mistaken for a free Custom override.
+  // White+color must NOT be mistaken for a free Custom override.
   const attrs = {
     clock_style: "Rainbow",
     clock_style_id: 1,
@@ -1097,14 +1097,14 @@ test("a just-saved style reads as Normal before the library echoes it back", () 
   // No preset match is possible yet, but the pending flag keeps it Normal.
   assert.equal(card._activeStylePreset(attrs), null);
   assert.equal(card._currentColorMode(attrs), "normal");
-  // Selecting another built-in style during this window drops the colour.
+  // Selecting another built-in style during this window drops the color.
   card._applyStyle("Rainbow");
   assert.equal(calls.at(-1).color, "clear");
   assert.equal(card._customMode, false);
 });
 
 test("renderClockFrame decodes the lamp's clock_color so every card shares one override", () => {
-  // The lamp state exposes the custom colour as a firmware ARGB integer
+  // The lamp state exposes the custom color as a firmware ARGB integer
   // (clock_color); cards that forward raw attributes (lamp-preview card) must
   // render the same override as those that pass a decoded clock_color_rgb.
   const base = {
@@ -1128,7 +1128,7 @@ test("renderClockFrame decodes the lamp's clock_color so every card shares one o
   assert.ok(litInt.length > 0, "clock renders lit pixels");
   assert.deepEqual(fromInt, fromRgb);
   assert.ok(litInt.every((p) => p[0] === 255 && p[1] === 238 && p[2] === 0));
-  // A palette colour mode still overrides the custom colour (not flat-filled).
+  // A palette color mode still overrides the custom color (not flat-filled).
   const bw = renderClockFrame(
     {
       ...base,

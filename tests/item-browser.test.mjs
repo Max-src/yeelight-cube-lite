@@ -79,7 +79,7 @@ test("clock responding-only filtering is always on", () => {
   );
   card._attrs = () => ({ clock_color_mode: "normal" });
   assert.deepEqual(shownStyles.call(card), items);
-  // Custom colour behaves like a mode: only colour-reacting styles remain.
+  // Custom color behaves like a mode: only color-reacting styles remain.
   card._attrs = () => ({ clock_color_mode: "normal", clock_color: 0x01ffee00 });
   assert.deepEqual(
     shownStyles.call(card).map((item) => item.name),
@@ -91,12 +91,12 @@ test("clock responding-only filtering is always on", () => {
   );
 });
 
-test("custom colour response covers solids and effects, excludes fixed presets", () => {
+test("custom color response covers solids and effects, excludes fixed presets", () => {
   assert.equal(clockStyleRespondsToCustomColor(style("Rainbow")), true);
   assert.equal(clockStyleRespondsToCustomColor(style("Ocean Waves")), true);
   assert.equal(clockStyleRespondsToCustomColor(style("White")), true);
   assert.equal(clockStyleRespondsToCustomColor(style("Sunset")), false);
-  // Saved presets are fixed-colour styles (Normal/B&W only), not custom mode.
+  // Saved presets are fixed-color styles (Normal/B&W only), not custom mode.
   assert.equal(clockStyleRespondsToCustomColor(style("Amber")), false);
   assert.equal(clockStyleRespondsToCustomColor({ name: "Unknown" }), false);
 });
@@ -123,7 +123,7 @@ test("clock pagination supports 16 items per page and zero disables pagination",
   assert.match(source, /allowOriginal: true/);
   assert.doesNotMatch(
     source,
-    /Compatibility indicators|Show filter and sort controls|Inspect colour mode|style_sort|style_filter/,
+    /Compatibility indicators|Show filter and sort controls|Inspect color mode|style_sort|style_filter/,
   );
   const items = Array.from({ length: 35 }, (_, index) => index);
   assert.deepEqual(

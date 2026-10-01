@@ -993,7 +993,7 @@ function renderSpectrumChase(phase, direction, colorMode = null) {
   return pixels;
 }
 
-// Measured Cube Lite mode-9 colour maps (renderer coords: row 0 = physical
+// Measured Cube Lite mode-9 color maps (renderer coords: row 0 = physical
 // bottom, col 0 = left), flat-field corrected from calibrated recordings. The
 // horizontal-flow map serves Left as captured and Right column-mirrored; the
 // vertical-flow map serves Down as captured and Up row-mirrored.
@@ -1241,7 +1241,7 @@ function renderPastelPulse(phase, direction, colorMode = null) {
       }
 
       // Push low-chroma (grey/pale) cells toward white so only genuinely
-      // coloured islands stand out, matching the real panel.
+      // colored islands stand out, matching the real panel.
       let red = base[0];
       let green = base[1];
       let blue = base[2];
@@ -1591,7 +1591,7 @@ function paletteHue(event) {
 
 function renderPalette(phase, direction) {
   // Horizontal arrows produce sparse daubs; vertical arrows produce broad,
-  // overlapping colour fields with occasional near-dark troughs.
+  // overlapping color fields with occasional near-dark troughs.
   const broad = direction === "Up" || direction === "Down";
   phase *= broad ? 1.5 : 1.25;
   const spawn = broad ? 0.9 : 0.58;
@@ -2100,7 +2100,7 @@ function renderRainbowFlow(phase, direction, colorMode = null) {
 }
 
 // Mode 18 follows Spectrum's direction-indexed pixel order but folds one warm
-// colour profile around the panel midpoint, expanding and contracting in place.
+// color profile around the panel midpoint, expanding and contracting in place.
 function renderPulse(phase, direction) {
   const pulse = 0.5 - 0.5 * Math.cos((TAU * phase) / PULSE_PERIOD);
   const last = PREVIEW_COLS * PREVIEW_ROWS - 1;
@@ -2121,10 +2121,10 @@ function renderPulse(phase, direction) {
  * Returns a flat array of 100 [r,g,b] tuples in row-major order
  * (row 0 = the panel's physical bottom, col 0 = left).
  */
-// Effects the firmware can recolour with a single "colour override": each
+// Effects the firmware can recolor with a single "color override": each
 // pixel keeps its own brightness but adopts the override hue, so dark stays
-// dark and multi-colour effects collapse toward one colour. Effects NOT listed
-// ignore the override (they keep their own colours on the lamp). Names must
+// dark and multi-color effects collapse toward one color. Effects NOT listed
+// ignore the override (they keep their own colors on the lamp). Names must
 // match renderNativeEffectRaw exactly (e.g. "Starry sky" lowercase).
 export const COLOR_OVERRIDE_EFFECTS = new Set([
   "Rainbow",
@@ -2185,7 +2185,7 @@ export function effectSupportsFreeze(name) {
 
 // Effects that the firmware B&W palette mode (command id 15) converts to
 // grayscale. Verified on hardware; Starry sky / Waterfall / Aurora only convert
-// once we stop injecting their default colour (see light_native).
+// once we stop injecting their default color (see light_native).
 export const COLOR_MODE_BW_EFFECTS = new Set([
   "Rainbow",
   "Ocean Waves",
@@ -2304,7 +2304,7 @@ function rainbowPaletteColor(position, mode) {
 }
 
 // Spectrum Chase is intentionally absent: hardware confirmed it ignores these
-// firmware palette modes, so it must not be listed or previewed as recoloured.
+// firmware palette modes, so it must not be listed or previewed as recolored.
 const COLOR_PALETTE_EFFECTS = new Set([
   "Rainbow",
   "Spectrum",
@@ -2361,7 +2361,7 @@ export function effectSupportsColorMode(effect, mode) {
   );
 }
 
-// Recolour a rendered frame toward `override` ([r,g,b]) while preserving each
+// Recolor a rendered frame toward `override` ([r,g,b]) while preserving each
 // pixel's brightness (its HSV value = max channel). Black stays black.
 function applyColorOverride(pixels, override) {
   const [or_, og, ob] = override;
@@ -2373,7 +2373,7 @@ function applyColorOverride(pixels, override) {
 
 // Desaturate a rendered frame to black & white (value-preserving grayscale):
 // gray = the pixel's HSV value (max channel). Black stays black, white stays
-// white, colours collapse to their brightness.
+// white, colors collapse to their brightness.
 function applyGrayscale(pixels) {
   return pixels.map(([r, g, b]) => {
     const m = Math.max(r, g, b);
@@ -2396,8 +2396,8 @@ export function renderNativeEffect(
     return renderNativeEffectRaw(effect, phase, direction, colorMode);
   }
   const pixels = renderNativeEffectRaw(effect, phase, direction);
-  // A palette colour mode (from the firmware command-id remap) takes precedence
-  // over the custom colour override, matching the lamp.
+  // A palette color mode (from the firmware command-id remap) takes precedence
+  // over the custom color override, matching the lamp.
   if (colorMode && colorMode !== "normal") {
     if (colorMode === "bw" && effectSupportsColorMode(effect, "bw")) {
       return applyGrayscale(pixels);
@@ -2710,7 +2710,7 @@ function renderNativeEffectRaw(
         // they follow its exact bouncing path. `spread` oscillates 0 (fused) ->
         // 1 (split) -> 0, shared by both balls so they divide/fuse in sync, and
         // never affects the main-ball position. Children are identical balls
-        // (same colour and brightness), not faded ghosts.
+        // (same color and brightness), not faded ghosts.
         const spread = (1.0 - Math.cos(phase * 1.25)) * 0.5;
         const lag = 0.6;
         const offsets = [0.0, spread * lag, spread * lag * 2.0];
@@ -2731,7 +2731,7 @@ function renderNativeEffectRaw(
             }
           }
         }
-        // Slow shared colour cycle: red -> violet -> pink -> blue -> cyan -> magenta -> red.
+        // Slow shared color cycle: red -> violet -> pink -> blue -> cyan -> magenta -> red.
         const ballColor = palette(
           [
             [255, 0, 0],
@@ -2748,7 +2748,7 @@ function renderNativeEffectRaw(
       } else if (effect === "Shooting Star") {
         // Black sky with independent shooting stars. Five slots cap the count
         // at 5; each runs its own spawn -> travel -> idle-gap cycle (~50% duty)
-        // so 0 and 5 are both rare. Per spawn the lane, colour (10 rainbow
+        // so 0 and 5 are both rare. Per spawn the lane, color (10 rainbow
         // hues), speed and length (4-9 px) are random, and a fresh spawn can
         // reuse a busy lane. Direction picks the travel axis and sense:
         //   Left top->bottom, Right bottom->top (lanes = columns)

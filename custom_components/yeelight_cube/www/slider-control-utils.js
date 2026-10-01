@@ -105,7 +105,7 @@ export function sliderRawValue(pct, gc) {
 // Card configuration reaches the slider markup (class names, inline styles,
 // text), and a dashboard config can come from anywhere (pasted YAML). Keep
 // every value to its expected shape so none can break out of the HTML:
-// class-name tokens, finite numbers, a CSS colour, and escaped text.
+// class-name tokens, finite numbers, a CSS color, and escaped text.
 const SLIDER_TOKEN_KEYS = [
   "style",
   "theme",
@@ -130,9 +130,9 @@ const SLIDER_NUMBER_KEYS = [
 ];
 const SLIDER_TEXT_KEYS = ["unit", "rawUnit", "iconLeft", "iconRight"];
 const TOKEN_PATTERN = /^[a-z0-9_-]+$/i;
-// A colour lands inside style="--brightness-color: …;". Rather than listing
-// every CSS colour syntax (var() with fallbacks, color-mix(), oklch(), deg
-// units, ...), allow only the characters colours use: no quotes, <>, ;, :,
+// A color lands inside style="--brightness-color: …;". Rather than listing
+// every CSS color syntax (var() with fallbacks, color-mix(), oklch(), deg
+// units, ...), allow only the characters colors use: no quotes, <>, ;, :,
 // braces or backslashes means the value cannot leave the declaration, and
 // url()/expression()/image() are refused outright.
 const CSS_COLOR_PATTERN = /^[\w#(),.%\s/+-]+$/;
@@ -2027,7 +2027,7 @@ export function sliderKeys(prefix) {
 
 // Build the generic render config (gc) for a lamp brightness/speed slider from a
 // card config + key map. `overrides` holds a card's own additions (e.g. the
-// Lamp Preview's configurable colour and legacy values, a live rawValue).
+// Lamp Preview's configurable color and legacy values, a live rawValue).
 export function lightSliderConfig(
   config,
   kind,

@@ -58,7 +58,7 @@
             "actions": "Actions",
             "speed": "Sliders",
             "display": "Content & Controls",
-            "presets": "Custom clock styles and colours",
+            "presets": "Custom clock styles and colors",
             "previews": "Previews",
             "favourites": "Favourites",
             "rotation": "Clock Mode Rotation"
@@ -128,8 +128,8 @@
                     "show_device_orientation": true
                 }
             },
-            "colors": "Colour Modes & Controls",
-            "presets": "Custom colours",
+            "colors": "Color Modes & Controls",
+            "presets": "Custom colors",
             "previews": "Previews",
             "favourites": "Favourites",
             "rotation": "Effect Rotation"
@@ -139,7 +139,7 @@
         "title": "Preview",
         "variations": {
             "overview": {
-                "title": "Light theme with brightness and colour adjustments",
+                "title": "Light theme with brightness and color adjustments",
                 "config": {
                     "brightness_slider_style": "capsule"
                 }

@@ -20,9 +20,9 @@ import {
 } from "./native-effect-preview.js";
 import { clockEffectDirection } from "./effect-orientation.js";
 
-// Firmware colour-mode palette presets (mirrors const.py CLOCK_COLOR_MODES).
+// Firmware color-mode palette presets (mirrors const.py CLOCK_COLOR_MODES).
 // Selecting one forces the outer command id so compatible effects re-map their
-// palette; "normal" keeps each effect's own colours. Which effects respond is
+// palette; "normal" keeps each effect's own colors. Which effects respond is
 // verified on hardware (previews are adjusted per effect separately).
 export const CLOCK_COLOR_MODES = [
   { value: "normal", label: "Normal", icon: "mdi:palette-outline" },
@@ -193,7 +193,7 @@ export const CLOCK_STYLE_MIXER = {
 // Base styles 1-15 plus generated experimental styles (every native-effect
 // mode not already used as a base mixer). style_id > 10 is experimental and
 // requires the "Experimental Features" switch. Solid styles (mixer 0) render a
-// fixed colour; effect styles render their mixer effect masked to the glyphs.
+// fixed color; effect styles render their mixer effect masked to the glyphs.
 const _BASE_CLOCK_STYLES = [
   { id: 1, name: "Rainbow", mixer: 39 },
   { id: 2, name: "Ocean Waves", mixer: 42 },
@@ -335,9 +335,9 @@ export function clockStyleColorModeState(style, mode, override = null) {
     : "unknown";
 }
 
-// A custom RGB override behaves like a colour mode: solid styles flat-fill with
-// it, colour-supporting effects recolour toward it, and other effects ignore
-// it (mirrors renderClockFrame). Saved presets are fixed-colour styles (like
+// A custom RGB override behaves like a color mode: solid styles flat-fill with
+// it, color-supporting effects recolor toward it, and other effects ignore
+// it (mirrors renderClockFrame). Saved presets are fixed-color styles (like
 // Yellow/Mint) — they belong under Normal/B&W, not the free Custom mode.
 export function clockStyleRespondsToCustomColor(style) {
   if (!style) return false;
@@ -540,9 +540,9 @@ function _clockPixelColor(styleId, charIndex, col) {
  *
  * `attrs` fields used: clock_style_id, clock_style (name), clock_content,
  * clock_show_date, clock_12_hour, clock_colon_blink,
- * clock_color_mode, and a custom colour override supplied either as a decoded
+ * clock_color_mode, and a custom color override supplied either as a decoded
  * clock_color_rgb -> [r,g,b] or the raw firmware clock_color ARGB integer the
- * lamp exposes (decoded here like camera.py). The override recolours every lit
+ * lamp exposes (decoded here like camera.py). The override recolors every lit
  * glyph pixel of compatible styles.
  * `fontMap`/`metrics` come from the Font Characters sensor ("native" font).
  * When absent, falls back to the embedded Basic-style glyphs (proportional).
@@ -602,13 +602,13 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0) {
           attrs.clock_color & 0xff,
         ]
       : null;
-  // A palette colour mode (e.g. B&W) takes precedence over the custom override
+  // A palette color mode (e.g. B&W) takes precedence over the custom override
   // and is applied inside renderNativeEffect for compatible effects.
   const colorMode = attrs.clock_color_mode || "normal";
   const modeActive = colorMode !== "normal";
-  // Compatible mixer effects are recoloured toward the override (dark stays
+  // Compatible mixer effects are recolored toward the override (dark stays
   // dark); incompatible effects render normally (ignore the override, matching
-  // the lamp); styles with no effect fall back to the flat override colour.
+  // the lamp); styles with no effect fall back to the flat override color.
   const overrideCompatible =
     !modeActive &&
     !!override &&
@@ -623,10 +623,10 @@ export function renderClockFrame(attrs, fontMap, metrics, phase = 0) {
         modeActive ? colorMode : null,
       )
     : null;
-  // A palette mode overrides the custom colour, so don't flat-fill with it.
+  // A palette mode overrides the custom color, so don't flat-fill with it.
   const flatOverride = modeActive ? null : override;
   // Solid styles (no mixer effect) have no animated renderer to remap for B&W;
-  // the backend achieves it by omitting their colour, which the firmware
+  // the backend achieves it by omitting their color, which the firmware
   // renders as plain white.
   const soloBwFallback = !effectFrame && colorMode === "bw";
   const matrix = Array.from({ length: 100 }, () => [0, 0, 0]);
