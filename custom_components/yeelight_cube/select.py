@@ -8,6 +8,9 @@ from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 
 from .const import (
+    FIRMWARE_MODES,
+    MODE_CLOCK,
+    MODE_NATIVE_EFFECT,
     ALL_NATIVE_EFFECTS,
     CONF_IP,
     CONTENT_MODES,
@@ -28,6 +31,7 @@ from .const import (
     NATIVE_EFFECTS,
     POWER_ON_STATES,
 )
+from .entity import CubeControlEntity
 from .builtin_pixel_art import get_builtin_pixel_art_map
 from .layout import FONT_MAPS
 
@@ -92,7 +96,7 @@ async def async_setup_entry(
     return True
 
 
-class YeelightCubePaletteSelect(SelectEntity):
+class YeelightCubePaletteSelect(CubeControlEntity, SelectEntity):
     """Select entity for choosing a palette to apply to the Yeelight Cube Lite."""
     
     def __init__(self, light_entity, ip: str, config_entry: ConfigEntry, hass: HomeAssistant):
@@ -108,21 +112,6 @@ class YeelightCubePaletteSelect(SelectEntity):
         
         # Initialize options from current palettes
         self._update_options()
-    
-    @property
-    def device_info(self):
-        """Return device info to group with the light entity."""
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Matrix",
-        }
-    
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        return True
     
     @property
     def options(self) -> list[str]:
@@ -256,7 +245,7 @@ class YeelightCubePaletteSelect(SelectEntity):
         self.async_update_from_palette_sensor()
 
 
-class YeelightCubePixelArtSelect(SelectEntity):
+class YeelightCubePixelArtSelect(CubeControlEntity, SelectEntity):
     """Select entity for choosing a saved pixel art to display on the Yeelight Cube Lite."""
 
     def __init__(self, light_entity, ip: str, config_entry: ConfigEntry, hass: HomeAssistant):
@@ -272,21 +261,6 @@ class YeelightCubePixelArtSelect(SelectEntity):
 
         # Initialize options from current pixel arts
         self._update_options()
-
-    @property
-    def device_info(self):
-        """Return device info to group with the light entity."""
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Matrix",
-        }
-
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        return True
 
     @property
     def options(self) -> list[str]:
@@ -434,7 +408,7 @@ class YeelightCubePixelArtSelect(SelectEntity):
 ALIGNMENT_OPTIONS = ["left", "center", "right"]
 
 
-class YeelightCubeContentModeSelect(SelectEntity):
+class YeelightCubeContentModeSelect(CubeControlEntity, SelectEntity):
     """Select the active content source: matrix or clock."""
 
     _attr_has_entity_name = True
@@ -455,20 +429,7 @@ class YeelightCubeContentModeSelect(SelectEntity):
         if getattr(self._light_entity, "_music_flow_enabled", False):
             return "Music Flow"
         mode = getattr(self._light_entity, "_mode", DEFAULT_MATRIX_DISPLAY_MODE)
-        return mode if mode in ("Clock", "Native Effect") else "Matrix"
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Matrix",
-        }
-
-    @property
-    def available(self) -> bool:
-        return True
+        return mode if mode in FIRMWARE_MODES else "Matrix"
 
     @property
     def current_option(self) -> str | None:
@@ -536,7 +497,7 @@ class YeelightCubeContentModeSelect(SelectEntity):
             self._light_entity._pixel_art_select_entity.async_update_from_light()
         # Keep native-effect helper entities in sync so their UI reflects the
         # current selection when switching into Native Effect content mode.
-        if option == "Native Effect":
+        if option == MODE_NATIVE_EFFECT:
             if self._light_entity._native_effect_select_entity:
                 self._light_entity._native_effect_select_entity.async_write_ha_state()
             if self._light_entity._native_effect_direction_select_entity:
@@ -558,7 +519,7 @@ class YeelightCubeContentModeSelect(SelectEntity):
         self.async_update_from_light()
 
 
-class YeelightCubeDisplayModeSelect(SelectEntity):
+class YeelightCubeDisplayModeSelect(CubeControlEntity, SelectEntity):
     """Select the render mode used by Matrix content."""
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
@@ -572,20 +533,6 @@ class YeelightCubeDisplayModeSelect(SelectEntity):
         self._attr_current_option = getattr(
             light_entity, "_matrix_mode", DEFAULT_MATRIX_DISPLAY_MODE
         )
-
-    @property
-    def device_info(self):
-        """Return device info to group with the light entity."""
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Matrix",
-        }
-
-    @property
-    def available(self) -> bool:
-        return True
 
     @property
     def options(self) -> list[str]:
@@ -669,7 +616,7 @@ _CLOCK_STYLE_TO_ID = {
 }
 
 
-class YeelightCubeClockStyleSelect(SelectEntity):
+class YeelightCubeClockStyleSelect(CubeControlEntity, SelectEntity):
     """Select a native firmware clock face."""
 
     _attr_has_entity_name = True
@@ -715,19 +662,6 @@ class YeelightCubeClockStyleSelect(SelectEntity):
         return _clock_style_label(style_id)
 
     @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Matrix",
-        }
-
-    @property
-    def available(self) -> bool:
-        return True
-
-    @property
     def current_option(self) -> str | None:
         return self._style_label()
 
@@ -748,7 +682,7 @@ class YeelightCubeClockStyleSelect(SelectEntity):
         self._attr_current_option = option
 
         if (
-            self._light_entity._mode == "Clock"
+            self._light_entity._mode == MODE_CLOCK
             and (
                 self._light_entity._is_on
                 or self._light_entity._should_auto_turn_on()
@@ -785,7 +719,7 @@ _CLOCK_CONTENT_OPTIONS = [
 ]
 
 
-class YeelightCubeClockContentSelect(SelectEntity):
+class YeelightCubeClockContentSelect(CubeControlEntity, SelectEntity):
     """Select what the native clock shows: Time, Time & Date, or Date only.
 
     Drives data byte 0 of the firmware clock payload (1 = time, 2 = alternate
@@ -818,19 +752,6 @@ class YeelightCubeClockContentSelect(SelectEntity):
         )
 
     @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Matrix",
-        }
-
-    @property
-    def available(self) -> bool:
-        return True
-
-    @property
     def current_option(self) -> str | None:
         return self._content_label()
 
@@ -854,7 +775,7 @@ class YeelightCubeClockContentSelect(SelectEntity):
         self.async_update_from_light()
 
 
-class YeelightCubeNativeEffectSelect(SelectEntity):
+class YeelightCubeNativeEffectSelect(CubeControlEntity, SelectEntity):
     """Select one of the firmware-native Cube Lite animations."""
 
     _attr_has_entity_name = True
@@ -886,19 +807,6 @@ class YeelightCubeNativeEffectSelect(SelectEntity):
         return names
 
     @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Lite",
-        }
-
-    @property
-    def available(self) -> bool:
-        return self._light_entity.available
-
-    @property
     def current_option(self) -> str:
         return getattr(self._light_entity, "_native_effect", DEFAULT_NATIVE_EFFECT)
 
@@ -917,7 +825,7 @@ class YeelightCubeNativeEffectSelect(SelectEntity):
             self._light_entity._native_effect_direction_select_entity.async_update_from_light()
         if self._light_entity._native_effect_speed_entity:
             self._light_entity._native_effect_speed_entity.async_write_ha_state()
-        if self._light_entity._mode == "Native Effect" and self._light_entity._is_on:
+        if self._light_entity._mode == MODE_NATIVE_EFFECT and self._light_entity._is_on:
             await self._light_entity.async_apply_display_mode(
                 update_type="color_change"
             )
@@ -929,7 +837,7 @@ class YeelightCubeNativeEffectSelect(SelectEntity):
         self._light_entity._native_effect_select_entity = self
 
 
-class YeelightCubeNativeEffectDirectionSelect(SelectEntity):
+class YeelightCubeNativeEffectDirectionSelect(CubeControlEntity, SelectEntity):
     """Select the direction used by directional native animations."""
 
     _attr_has_entity_name = True
@@ -945,15 +853,6 @@ class YeelightCubeNativeEffectDirectionSelect(SelectEntity):
         )
         self._attr_icon = "mdi:arrow-all"
         self._attr_options = list(NATIVE_EFFECT_DIRECTIONS)
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Lite",
-        }
 
     @property
     def available(self) -> bool:
@@ -986,7 +885,7 @@ class YeelightCubeNativeEffectDirectionSelect(SelectEntity):
         spec = ALL_NATIVE_EFFECTS[self._light_entity._native_effect]
         if (
             spec.get("directions")
-            and self._light_entity._mode == "Native Effect"
+            and self._light_entity._mode == MODE_NATIVE_EFFECT
             and self._light_entity._is_on
         ):
             await self._light_entity.async_apply_display_mode(
@@ -1012,7 +911,7 @@ class YeelightCubeNativeEffectDirectionSelect(SelectEntity):
         self.async_update_from_light()
 
 
-class YeelightCubeMusicFlowEffectSelect(SelectEntity):
+class YeelightCubeMusicFlowEffectSelect(CubeControlEntity, SelectEntity):
     """Select the firmware effect used by device-microphone Music Flow."""
 
     _attr_has_entity_name = True
@@ -1027,19 +926,6 @@ class YeelightCubeMusicFlowEffectSelect(SelectEntity):
         )
         self._attr_icon = "mdi:waveform"
         self._attr_options = list(MUSIC_FLOW_EFFECTS)
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Lite",
-        }
-
-    @property
-    def available(self) -> bool:
-        return self._light_entity.available
 
     @property
     def current_option(self) -> str:
@@ -1063,7 +949,7 @@ class YeelightCubeMusicFlowEffectSelect(SelectEntity):
             self.async_write_ha_state()
 
 
-class YeelightCubePowerOnStateSelect(SelectEntity):
+class YeelightCubePowerOnStateSelect(CubeControlEntity, SelectEntity):
     """Configure the device's behavior after mains power is restored."""
 
     _attr_has_entity_name = True
@@ -1079,19 +965,6 @@ class YeelightCubePowerOnStateSelect(SelectEntity):
         self._attr_options = list(POWER_ON_STATES)
 
     @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Lite",
-        }
-
-    @property
-    def available(self) -> bool:
-        return self._light_entity.available
-
-    @property
     def current_option(self) -> str:
         return self._light_entity._power_on_state
 
@@ -1104,7 +977,7 @@ class YeelightCubePowerOnStateSelect(SelectEntity):
         self._light_entity._power_on_state_select_entity = self
 
 
-class YeelightCubeAlignmentSelect(SelectEntity):
+class YeelightCubeAlignmentSelect(CubeControlEntity, SelectEntity):
     """Select entity for choosing text alignment (left/center/right) on the Yeelight Cube Lite."""
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
@@ -1116,20 +989,6 @@ class YeelightCubeAlignmentSelect(SelectEntity):
         self._attr_icon = "mdi:format-align-center"
         self._attr_options = ALIGNMENT_OPTIONS
         self._attr_current_option = getattr(light_entity, '_alignment', 'center')
-
-    @property
-    def device_info(self):
-        """Return device info to group with the light entity."""
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Matrix",
-        }
-
-    @property
-    def available(self) -> bool:
-        return True
 
     @property
     def options(self) -> list[str]:
@@ -1190,7 +1049,7 @@ _DEVICE_ORIENTATION_LABEL_TO_KEY = {
 }
 
 
-class YeelightCubeDeviceOrientationSelect(SelectEntity):
+class YeelightCubeDeviceOrientationSelect(CubeControlEntity, SelectEntity):
     """Select the 4-way physical device orientation (right/down/left/up).
 
     Replaces the old on/off "Flip Orientation" switch. Applies to the lamp
@@ -1206,19 +1065,6 @@ class YeelightCubeDeviceOrientationSelect(SelectEntity):
         )
         self._attr_icon = "mdi:screen-rotation"
         self._attr_options = _DEVICE_ORIENTATION_OPTIONS
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Matrix",
-        }
-
-    @property
-    def available(self) -> bool:
-        return True
 
     @property
     def options(self) -> list[str]:
@@ -1256,7 +1102,7 @@ _FONT_OPTIONS = list(_FONT_LABELS.values())               # ["Basic", "Fat", "It
 _LABEL_TO_KEY = {v: k for k, v in _FONT_LABELS.items()}   # reverse lookup
 
 
-class YeelightCubeFontSelect(SelectEntity):
+class YeelightCubeFontSelect(CubeControlEntity, SelectEntity):
     """Select entity for choosing the matrix font on the Yeelight Cube Lite."""
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
@@ -1269,19 +1115,6 @@ class YeelightCubeFontSelect(SelectEntity):
         self._attr_current_option = _FONT_LABELS.get(
             getattr(light_entity, '_font', 'basic'), "Basic"
         )
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Matrix",
-        }
-
-    @property
-    def available(self) -> bool:
-        return True
 
     @property
     def current_option(self) -> str | None:
@@ -1354,7 +1187,7 @@ _TRANSITION_OPTIONS = list(_TRANSITION_TYPES.values())
 _TRANSITION_LABEL_TO_KEY = {v: k for k, v in _TRANSITION_TYPES.items()}
 
 
-class YeelightCubeTransitionSelect(SelectEntity):
+class YeelightCubeTransitionSelect(CubeControlEntity, SelectEntity):
     """Select entity for choosing the display transition effect on the Yeelight Cube Lite."""
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
@@ -1368,19 +1201,6 @@ class YeelightCubeTransitionSelect(SelectEntity):
         self._attr_current_option = _TRANSITION_TYPES.get(
             getattr(light_entity, '_transition_type', 'none'), "None"
         )
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Matrix",
-        }
-
-    @property
-    def available(self) -> bool:
-        return True
 
     @property
     def current_option(self) -> str | None:

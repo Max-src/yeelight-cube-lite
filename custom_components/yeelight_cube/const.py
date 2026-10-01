@@ -339,7 +339,14 @@ POWER_ON_STATES = {"Off": 0, "On": 1, "Toggle": 2}
 # Content sources and matrix render modes are intentionally separate. Clock is
 # a native firmware experience; the remaining modes render the plugin's 20x5
 # matrix content.
-CONTENT_MODES = ("Matrix", "Clock", "Native Effect", "Music Flow")
+# Display modes the lamp's firmware renders itself (no frames from the plugin).
+MODE_CLOCK = "Clock"
+MODE_NATIVE_EFFECT = "Native Effect"
+FIRMWARE_MODES = (MODE_CLOCK, MODE_NATIVE_EFFECT)
+# Display mode a clock / native-effect rotation runs in, by rotation kind.
+ROTATION_KIND_MODES = {"clock": MODE_CLOCK, "native": MODE_NATIVE_EFFECT}
+
+CONTENT_MODES = ("Matrix", MODE_CLOCK, MODE_NATIVE_EFFECT, "Music Flow")
 MATRIX_DISPLAY_MODES = (
     "Solid Color",
     "Letter Gradient",

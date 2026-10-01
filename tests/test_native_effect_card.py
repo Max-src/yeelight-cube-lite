@@ -2,14 +2,14 @@ import asyncio
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
-from tests.test_native_features import ROOT, CONSTANTS, NATIVE_PREVIEW, _load_standalone_functions
+from tests.test_native_features import ROOT, CONSTANTS, NATIVE_PREVIEW, _load_standalone_functions, SERVICES_SOURCE
 
 
 class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
     async def test_direction_updates_every_target_and_propagates_errors(self):
         targets = [SimpleNamespace(_is_on=True, set_device_orientation=AsyncMock()) for _ in range(2)]
         handler = _load_standalone_functions(
-            (ROOT / "light_services.py").read_text(encoding="utf-8"),
+            SERVICES_SOURCE,
             {"handle_set_device_orientation"},
             {"asyncio": asyncio, "HomeAssistantError": ValueError,
              "_resolve_entities": lambda *args: targets},
@@ -44,7 +44,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         self.scheduled = []
         self.logger = Mock()
         self.raw_handle = _load_standalone_functions(
-            (ROOT / "light_services.py").read_text(encoding="utf-8"),
+            SERVICES_SOURCE,
             {"handle_set_native_effect"},
             {"asyncio": asyncio, "ALL_NATIVE_EFFECTS": CONSTANTS["ALL_NATIVE_EFFECTS"],
              "CLOCK_COLOR_MODES": CONSTANTS["CLOCK_COLOR_MODES"],
@@ -98,8 +98,8 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
             _native_effect="Starry sky", _native_effect_speed=50,
             _native_effect_direction="Right", _device_orientation="right",
             _native_effect_direction_select_entity=None,
-            _native_effect_color_mode="bw", hass=None,
-            _cube_matrix=SimpleNamespace(_close_fast_socket=Mock(), send_raw_command=AsyncMock()),
+            _native_effect_color_mode="bw", _native_effect_color=None, hass=None,
+            _cube_matrix=SimpleNamespace(close_fast_socket=Mock(), send_raw_command=AsyncMock()),
             _set_native_mode_brightness=AsyncMock(), _notify_camera_preview=Mock(),
         )
         for effect, mode in (("Starry sky", "bw"), ("Rainbow", "red_blue"), ("Ocean Waves", "red_blue"), ("Starry sky", "normal")):
@@ -300,7 +300,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
                 _native_clock_style=12,
                 _native_clock_data_bytes=lambda: bytes([1, 8, 0, 0]),
                 _cube_matrix=SimpleNamespace(
-                    _close_fast_socket=Mock(), send_raw_command=AsyncMock()
+                    close_fast_socket=Mock(), send_raw_command=AsyncMock()
                 ),
                 _execute_hardware_op=_exec,
             )
@@ -308,7 +308,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         native, clock = make_target("Native Effect"), make_target("Clock")
         scheduled = []
         handler = _load_standalone_functions(
-            (ROOT / "light_services.py").read_text(encoding="utf-8"),
+            SERVICES_SOURCE,
             {"handle_freeze_display"},
             {"asyncio": asyncio, "base64": __import__("base64"),
              "time": __import__("time"),
@@ -323,7 +323,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.gather(*scheduled)
         # Native effects use the renderer freeze-frame command and flag the
         # frozen state so the camera preview holds the background frame.
-        native._cube_matrix._close_fast_socket.assert_called_once()
+        native._cube_matrix.close_fast_socket.assert_called_once()
         native._cube_matrix.send_raw_command.assert_awaited_once_with(
             "set_fx_effect", [64, 0, 4, {"mode": 64}]
         )

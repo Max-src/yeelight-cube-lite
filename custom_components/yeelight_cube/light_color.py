@@ -273,9 +273,9 @@ class ColorPipelineMixin:
             # Each channel has its own minimum lit value (calibrated): a channel that
             # is intended to be on never drops below its floor, so dim colours keep
             # their hue instead of crushing channels that the LED can't render low.
-            floor_r = max(1, int(getattr(self, '_calib_floor_r', 1)))
-            floor_g = max(1, int(getattr(self, '_calib_floor_g', 1)))
-            floor_b = max(1, int(getattr(self, '_calib_floor_b', 1)))
+            floor_r = max(1, int(self._calib_floor_r))
+            floor_g = max(1, int(self._calib_floor_g))
+            floor_b = max(1, int(self._calib_floor_b))
             r = max(floor_r, math.floor(r * darken_factor)) if r > 0 else 0
             g = max(floor_g, math.floor(g * darken_factor)) if g > 0 else 0
             b = max(floor_b, math.floor(b * darken_factor)) if b > 0 else 0
@@ -364,8 +364,8 @@ class ColorPipelineMixin:
         #
         # The LED sees: pixel_value/255 * hw_bright/100 as its actual duty cycle.
         # Both low pixel values AND low hw contribute to non-linearity.
-        hw_bright = getattr(self, '_last_hardware_brightness', 100)
-        darken = getattr(self, '_preview_darken', 0)
+        hw_bright = self._last_hardware_brightness
+        darken = self._preview_darken
         effective_bright = hw_bright * (100 - darken) / 100
 
         if effective_bright >= HW_BRIGHT_THRESHOLD:
@@ -422,7 +422,7 @@ class ColorPipelineMixin:
         # At 0.5 default:
         #   white (10,10,10) -> ~(17,18,20): subtle blue boost -> neutral on LED
         #   pink  (10,3,6)  -> keeps pink character with modest blue nudge
-        CHANNEL_BALANCE = getattr(self, '_calib_channel_balance', 0.7)
+        CHANNEL_BALANCE = self._calib_channel_balance
 
         orig_lum = 0.299 * r + 0.587 * g + 0.114 * b
         corr_lum = 0.299 * r_corr + 0.587 * g_corr + 0.114 * b_corr
@@ -523,7 +523,7 @@ class ColorPipelineMixin:
         # Blend gains toward 1.0 (neutral) as brightness decreases.
         # At brightness 255 -> factor = 1.0 (full correction)
         # At brightness   1 -> factor ~= 0.0 (no correction)
-        brightness = max(1, min(255, getattr(self, '_brightness', 255)))
+        brightness = max(1, min(255, self._brightness))
         factor = (brightness - 1) / 254  # 0.0 .. 1.0
 
         GAIN_R = 1.0 + (GAIN_R - 1.0) * factor

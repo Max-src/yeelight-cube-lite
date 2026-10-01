@@ -3,6 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 from tests.test_native_features import (
+    SERVICES_SOURCE,
     CONSTANTS,
     LIGHT_SOURCE,
     ROOT,
@@ -106,7 +107,7 @@ class FavouritesTests(unittest.IsolatedAsyncioTestCase):
     async def test_the_service_updates_every_target(self):
         targets = [SimpleNamespace(async_set_favourites=AsyncMock()) for _ in range(2)]
         handler = _load_standalone_functions(
-            (ROOT / "light_services.py").read_text(encoding="utf-8"),
+            SERVICES_SOURCE,
             {"handle_set_favourites"},
             {
                 "HomeAssistantError": ValueError,
@@ -121,7 +122,7 @@ class FavouritesTests(unittest.IsolatedAsyncioTestCase):
     async def test_the_interval_service_updates_every_target(self):
         targets = [SimpleNamespace(set_rotation_interval=Mock()) for _ in range(2)]
         handler = _load_standalone_functions(
-            (ROOT / "light_services.py").read_text(encoding="utf-8"),
+            SERVICES_SOURCE,
             {"handle_set_rotation_interval"},
             {
                 "HomeAssistantError": ValueError,

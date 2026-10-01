@@ -1,32 +1,24 @@
-
-
 import logging
 import asyncio
 import base64
 import copy
-import json
-import math
 import random
 import time
-import traceback
-import colorsys
-from typing import Tuple
 import voluptuous as vol # type: ignore
-from homeassistant.components import websocket_api # type: ignore
 from homeassistant.components.light import LightEntity, ColorMode # type: ignore
-from homeassistant.helpers.entity import Entity # type: ignore
-from homeassistant.components.sensor import SensorEntity # type: ignore
 from homeassistant.helpers.restore_state import RestoreEntity # type: ignore
-from homeassistant.core import HomeAssistant, SupportsResponse, callback # type: ignore
+from homeassistant.core import HomeAssistant, callback # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 from homeassistant.config_entries import ConfigEntry # type: ignore
 from homeassistant.helpers.event import async_track_state_change_event # type: ignore
 from homeassistant.helpers import config_validation as cv # type: ignore
-from homeassistant.helpers import entity_registry as er # type: ignore
 from homeassistant.exceptions import HomeAssistantError # type: ignore
-from homeassistant.util import dt as dt_util # type: ignore
 from yeelight import BulbException # type: ignore
 from .const import (
+    FIRMWARE_MODES,
+    MODE_CLOCK,
+    MODE_NATIVE_EFFECT,
+    ROTATION_KIND_MODES,
     CONF_DEVICE_ID,
     CONF_IP,
     CLOCK_COLOR_MODES,
@@ -42,26 +34,30 @@ from .const import (
     MATRIX_DISPLAY_MODES,
     MUSIC_FLOW_EFFECT_IDS,
     MUSIC_FLOW_EFFECTS,
-    NATIVE_CLOCK_APPLY,
     NATIVE_CLOCK_CONTENT_BYTE,
     NATIVE_CLOCK_CONTENT_OPTIONS,
     NATIVE_CLOCK_EFFECT_ID,
     NATIVE_CLOCK_STYLES,
-    NATIVE_EFFECT_APPLY,
     NATIVE_EFFECT_DIRECTION_VALUES,
     NATIVE_EFFECT_RENAMES,
     NATIVE_EFFECTS,
     ORIENTATION_FLIPPED,
     ORIENTATION_NORMAL,
-    PANEL_FULL_CHAR,
     POWER_ON_STATES,
-    TEXT_RENDER_MODES,
 )
-from .cube_matrix import CubeMatrix, RECONNECT_COOLDOWN_INITIAL, CONNECT_TIMEOUT, RECOVERY_CONNECT_TIMEOUT
-from .layout import Layout, Module, FONT_MAPS, FONT_METRICS, char_advance, TOTAL_COLUMNS, TOTAL_ROWS
-from . import async_save_data
+from .cube_matrix import (
+    CubeConnectionError,
+    CubeFxModeLost,
+    CubeMatrix,
+    RECONNECT_COOLDOWN_INITIAL,
+    RECOVERY_CONNECT_TIMEOUT,
+    is_connection_error,
+    is_quota_error,
+)
+from .entity import cube_device_info
+from .layout import Layout, Module, FONT_MAPS
 
-from .color_utils import hex_to_rgb, rgb_to_hex
+from .color_utils import argb_to_rgb, hex_to_rgb, rgb_to_argb, rgb_to_hex
 from .light_color import ColorPipelineMixin
 from .light_transitions import TransitionMixin
 from .light_native import NativeModesMixin, _parse_music_flow_config
@@ -70,72 +66,14 @@ from .light_render import MatrixRenderMixin
 _LOGGER = logging.getLogger(__name__)
 _LOGGER.debug("Yeelight Cube Lite light.py module loaded")
 
-LIGHT_SERVICE_NAMES = (
-    "preview_gradient_modes",
-    "load_palette",
-    "get_pixel_art",
-    "save_pixel_art",
-    "remove_pixel_art",
-    "rename_pixel_art",
-    "apply_pixel_art",
-    "apply_custom_pixels",
-    "update_pixel_arts",
-    "move_pixel_art",
-    "set_brightness",
-    "set_orientation",
-    "set_device_orientation",
-    "set_font",
-    "set_alignment",
-    "set_palettes",
-    "add_palettes",
-    "save_palette",
-    "rename_palette",
-    "set_custom_text",
-    "set_angle",
-    "set_text_colors",
-    "display_image",
-    "set_mode",
-    "set_solid_color",
-    "set_full_panel",
-    "remove_palette",
-    "test_display",
-    "set_preview_adjustments",
-    "force_refresh",
-    "freeze_display",
-    "set_color_accuracy",
-    "set_color_calibration",
-    "set_calibration_lock",
-    "save_state",
-    "restore_state",
-    "set_button_effects",
-    "set_clock_style",
-    "set_native_effect",
-    "start_effect_rotation",
-    "stop_effect_rotation",
-    "skip_effect_rotation",
-    "set_favourites",
-    "set_rotation_interval",
-    # Registered further below alongside the diagnostic/native-effect handlers;
-    # listed here so async_remove_light_services() tears them down on unload too.
-    "send_fx_effect",
-    "query_raw",
-    "get_capabilities",
-    "bulb_call",
-    "set_default",
-)
-
 # Timing constants
 APPLY_POST_DELAY = 0.0        # No post-delay needed -- send_command_fast doesn't wait for responses
-APPLY_HARD_TIMEOUT = 12.0      # Seconds -- absolute safety timeout for a single apply() call under
-                               # the device lock. Raised from 5 s to give activate_fx_mode +
-                               # draw_matrices time to complete on slow Wi-Fi without triggering
-                               # the hard-timeout flash (lamp shows default ribbon between the
-                               # two commands if the lock is released prematurely).
-                              # the global lock.  If an apply() exceeds this (e.g., socket hangs
-                              # beyond the per-op 0.5s timeout), asyncio.wait_for cancels it and
-                              # releases the lock so other entities can proceed.
-                              # Reduced from 8s to 5s -- inner timeouts are now tighter:
-                              #   probe 0.5s + raw_cmd 1.5sx2 + draw 0.5s = 4s worst case.
+APPLY_HARD_TIMEOUT = 12.0      # Seconds -- safety timeout for one hardware operation under the
+                               # device lock. When exceeded, asyncio.wait_for cancels it and
+                               # releases the lock so queued operations can proceed. Long enough
+                               # for activate_fx_mode + draw_matrices on slow Wi-Fi: releasing the
+                               # lock between the two shows the default ribbon on the lamp.
+                               # Transitions add their duration on top (async_apply_display_mode).
 FAVOURITE_KINDS = ("native", "clock")
 # Rotation interval bounds (seconds). A step that takes longer to apply than
 # the interval lands on the next boundary of the shared time grid.
@@ -148,13 +86,12 @@ LOCK_WAIT_WARNING_MS = 3000   # Waiting for the lamp longer than this is logged 
                               # queueing behind a redraw/transition and logged at debug.
 CIRCUIT_BREAKER_WINDOW = 30.0 # Seconds -- if 2+ hard timeouts occur within this window,
                               # reject new operations immediately instead of queueing them
-                              # behind the lock for another 8s timeout each.
-FX_MODE_STALENESS_TIMEOUT = 90.0  # Seconds -- re-send activate_fx_mode when fx_age exceeds this
-                                  # The Cube silently exits direct FX mode ~25s after ACTIVATION
-                                  # (not after last command!).  It keeps the TCP connection open
-                                  # and silently ignores update_leds -- no error, no socket close.
-                                  # 20s gives ~5s safety margin.  Must check time since
-                                  # activate_fx_mode was sent, NOT time since last command.
+                              # behind the lock for another APPLY_HARD_TIMEOUT each.
+FX_MODE_STALENESS_TIMEOUT = 90.0  # Seconds -- re-send activate_fx_mode when _last_fx_mode_time
+                                  # (set by activate_fx_mode and by every full frame drawn in
+                                  # apply()) is older than this. An idle Cube can leave direct
+                                  # FX mode silently: it keeps the TCP connection open and ignores
+                                  # update_leds without an error.
 MUSIC_FLOW_EXIT_UPDATE_TYPES = {
     "turn_off",
     "brightness_change",
@@ -263,7 +200,7 @@ _DEVICE_ORIENTATION_TO_EFFECT_DIR = DEVICE_ORIENTATION_TO_EFFECT_DIR
 #     _periodic_health_check, retry + calibration-lock helpers), public
 #     properties + control setters (brightness, orientation, alignment, font…),
 #     turn_on/off, the apply queue (async_apply_display_mode) and frame builder
-#     (_apply_impl), scroll timer, and state snapshot / linked-entity sync.
+#     (apply()), scroll timer, and state snapshot / linked-entity sync.
 #
 #   light_color.py      (ColorPipelineMixin)  — colour adjustment/correction/
 #                        accuracy maths + the brightness curve.
@@ -282,6 +219,7 @@ _DEVICE_ORIENTATION_TO_EFFECT_DIR = DEVICE_ORIENTATION_TO_EFFECT_DIR
 # ─────────────────────────────────────────────────────────────────────────────
 
 class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, MatrixRenderMixin, LightEntity, RestoreEntity):
+    """Home Assistant LightEntity for the Yeelight Cube Lite."""
 
     @property
     def font(self):
@@ -296,39 +234,10 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         await self.async_apply_display_mode(update_type='text_change')
         if self.hass is not None:
             self.async_schedule_update_ha_state()
-    def _safeguard_entity_id(self, entity_id):
-    # Allow any entity name for palettes
-        return entity_id
     @property
     def device_info(self):
-        # Use config_entry.entry_id as the unique identifier for grouping (matches switch)
-        info = {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._attr_name,
-            "manufacturer": "Yeelight",
-            "model": self._cube_matrix.device_model or "Cube Lite",
-        }
-        if self._cube_matrix.firmware_version:
-            info["sw_version"] = self._cube_matrix.firmware_version
-        return info
-    # Store custom pixel data for Custom Draw mode
-    _custom_pixels = None
+        return cube_device_info(self)
 
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-
-
-
-    """Home Assistant LightEntity for the Yeelight Cube Lite."""
-    
     # UNIFIED BRIGHTNESS CONTROL CONFIGURATION
     # ----------------------------------------
     # The single user brightness slider (1-100%) drives BOTH mechanisms together
@@ -357,9 +266,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
     DARKEN_FLOOR_PERCENT = 97   # Darken % at 0% user brightness (0-100, safe <=97)
     HW_CURVE_EXPONENT = 0.5     # Shaping exponent for the hardware curve (0.1-3.0)
     DARKEN_CURVE_EXPONENT = 2.0 # Shaping exponent for the darken curve (0.1-4.0)
-    
 
-    
     def __init__(self, cube_matrix: CubeMatrix, ip: str, config_entry: ConfigEntry):
         # _palettes and _pixel_arts are now @property methods accessing global storage
         self._cube_matrix = cube_matrix
@@ -381,8 +288,6 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         # The config entry's entry_id is assigned once and stays constant even when
         # the stored IP is updated by rediscovery / zeroconf.
         self._attr_unique_id = f'yeelight_cube_{config_entry.entry_id}'
-        # Safeguard: check that the generated name does not end with _palettes (without _v2)
-        self._safeguard_entity_id(self._attr_name.lower().replace(' ', '_'))
         self._is_on = True
         self._layout = Layout("vertical", "bottom", [Module("1x1") for _ in range(100)])
         self._custom_text = "HELLO"
@@ -390,6 +295,9 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         self._text_colors = [(255, 0, 0), (0, 0, 255)]  # [solid/gradient start, gradient end]
         self._mode = DEFAULT_MATRIX_DISPLAY_MODE
         self._matrix_mode = DEFAULT_MATRIX_DISPLAY_MODE
+        # Custom Draw mode: pixel data and whether it is the active content.
+        self._custom_pixels = None
+        self._custom_draw_active = False
         self._full_panel = False  # Whether to apply gradients to whole panel instead of just text
         self._angle = 0.0
         self._background_color = (0, 0, 0)
@@ -487,6 +395,12 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         self._rotation_error = None
         self._rotation_resume_pending = False
         self._rotation_waiting_for_reconnect = False
+        # Shared time grid {"tick", "index"} the loop advances on.
+        self._rotation_timeline = None
+        # Lamps started together, saved so a restart resumes them together.
+        self._rotation_group = None
+        self._rotation_retry_attempt = 0
+        self._rotation_retry_at = None
 
         # Apply timing (for queue processor stats, not cooldown-gating)
         self._last_apply_time = 0
@@ -557,8 +471,12 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         self._display_retry_count = 0  # Track consecutive retries for logging
         
         # Circuit breaker: tracks recent hard timeouts to reject new ops early
-        # instead of queueing them behind the lock for 8s each.
+        # instead of queueing them behind the lock for APPLY_HARD_TIMEOUT each.
         self._hard_timeout_times = []  # List of timestamps of recent hard timeouts
+        # Set by _execute_hardware_op: whether the last failure was a
+        # connection problem worth retrying, and the operation holding the lock.
+        self._hardware_failure_retryable = False
+        self._hardware_operation_phase = None
         
         # Track background tasks (fire-and-forget brightness commands)
         self._background_tasks = set()
@@ -611,7 +529,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         
         # Periodic health check: detects when an unreachable device comes back online.
         # Runs in parallel with the retry system, probing at 10s intervals during
-        # active failures.  After MAX_DISPLAY_RETRIES (6), retries stop but the
+        # active failures.  After MAX_DISPLAY_RETRIES, retries stop but the
         # health check continues probing until the device recovers.
         self._health_check_task = None
         # Health check interval is adaptive (computed dynamically):
@@ -659,25 +577,38 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         # Camera entity references -- set by camera.py async_setup_entry.
         # Used for direct push notifications (bypass state-change-event delay).
         self._camera_entities: list = []
-    
-    def _notify_camera_preview(self) -> None:
-        """Re-render all camera entities and push their state SYNCHRONOUSLY.
 
-        Must be called BEFORE ``async_schedule_update_ha_state()`` on the
-        light entity so the camera image is already cached when the frontend
-        makes the HTTP fetch triggered by the light state change.
-        This avoids the double-request problem (stale image -> re-fetch).
+        # Helper entities that control the lamp (entity.CubeControlEntity).
+        # Their availability follows the lamp's, so they are rewritten when
+        # the published availability changes.
+        self._control_entities: set = set()
+        self._published_available = None
+
+    @callback
+    def async_write_ha_state(self) -> None:
+        super().async_write_ha_state()
+        available = self.available
+        if available != self._published_available:
+            self._published_available = available
+            for entity in self._control_entities:
+                if entity.hass is not None:
+                    entity.async_write_ha_state()
+
+    def _notify_camera_preview(self) -> None:
+        """Schedule every camera entity to re-render its preview.
+
+        Each camera renders in the background (PNG encoding runs in an
+        executor) and only then bumps its access token and writes its state,
+        so the frontend never fetches a stale frame for the new token.
         """
-        cams = getattr(self, '_camera_entities', None)
-        if cams:
-            for cam in cams:
-                try:
-                    cam.async_refresh_preview()
-                except Exception as exc:
-                    _LOGGER.debug(
-                        "[%s] Camera preview notification failed: %s",
-                        self._ip, exc
-                    )
+        for cam in self._camera_entities:
+            try:
+                cam.async_refresh_preview()
+            except Exception as exc:
+                _LOGGER.debug(
+                    "[%s] Camera preview notification failed: %s",
+                    self._ip, exc
+                )
 
     def _create_tracked_task(self, coro, *, name=None):
         """Create a background task and track it for cleanup on entity removal.
@@ -731,9 +662,9 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         self._hardware_failure_retryable = False
         
         # CIRCUIT BREAKER: If 2+ hard timeouts occurred in the last N seconds,
-        # reject immediately instead of queueing behind the lock for 8s each.
-        # This prevents the cascade where 5+ operations pile up, each waiting
-        # 8s to timeout, creating 40s+ of stuck state.
+        # reject immediately instead of queueing behind the lock for
+        # APPLY_HARD_TIMEOUT each. This prevents the cascade where 5+ operations
+        # pile up, each waiting for its own timeout, leaving the lamp stuck.
         now = time.time()
         self._hard_timeout_times = [t for t in self._hard_timeout_times if now - t < CIRCUIT_BREAKER_WINDOW]
         if len(self._hard_timeout_times) >= 2:
@@ -752,7 +683,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         _LOGGER.debug(
             f"[OP #{op_id}] [{self._ip}] > {op_name} "
             f"(is_on={self._is_on}, fx_direct={self._fx_mode_is_direct}) "
-            f"[{self._cube_matrix._state_summary()}]"
+            f"[{self._cube_matrix.state_summary()}]"
         )
         is_display_op = op_name.startswith('display:')
         try:
@@ -793,11 +724,11 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                         f"(phase={self._hardware_operation_phase})"
                     )
                     self._fx_mode_is_direct = False
-                    self._cube_matrix._close_fast_socket()
+                    self._cube_matrix.close_fast_socket()
                     self._connection_error = True
                     self._last_connection_error = f"Hard timeout: {op_name}"
                     self._hard_timeout_times.append(time.time())
-                    self._cube_matrix._consecutive_failures += 1
+                    self._cube_matrix.record_failure()
                     # Only schedule display retries for display operations
                     if is_display_op:
                         self._maybe_schedule_retry()
@@ -812,39 +743,21 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 if self._retry_display_task and not self._retry_display_task.done():
                     self._retry_display_task.cancel()
             self._connection_error = False
-            self._cube_matrix._consecutive_failures = 0
+            self._cube_matrix.record_success()
             # Clear circuit breaker on any success
             self._hard_timeout_times.clear()
             return True
-        except AttributeError as e:
-            if "'NoneType'" in str(e):
-                self._hardware_failure_retryable = True
-                _LOGGER.debug(
-                    f"[OP #{op_id}] [{self._ip}] Socket gone -- resetting FX mode"
-                )
-                self._connection_error = True
-                self._last_connection_error = "Connection lost"
-                self._fx_mode_is_direct = False
-                if is_display_op:
-                    self._maybe_schedule_retry()
-            else:
-                _LOGGER.error(f"[OP #{op_id}] [{self._ip}] AttributeError: {e}")
-        except BulbException as e:
-            error_dict = e.args[0] if e.args and isinstance(e.args[0], dict) else {}
-            error_message = error_dict.get('message', str(e))
+        except CubeConnectionError as e:
+            # The command did not reach the lamp (unreachable, cooldown, dead
+            # socket, FX mode lost while sending): retry once it answers.
+            self._hardware_failure_retryable = True
             self._connection_error = True
-            self._last_connection_error = f"BulbException: {error_message}"
-            if any(kw in error_message.lower() for kw in ['socket', 'closed', 'connection']):
-                self._hardware_failure_retryable = True
-                _LOGGER.warning(
-                    f"[OP #{op_id}] [{self._ip}] Connection error: {error_message}"
-                )
-                if is_display_op:
-                    self._maybe_schedule_retry()
-            else:
-                _LOGGER.warning(
-                    f"[OP #{op_id}] [{self._ip}] BulbException: {error_message}"
-                )
+            self._last_connection_error = e.message
+            _LOGGER.warning(
+                f"[OP #{op_id}] [{self._ip}] Connection error: {e.message}"
+            )
+            if is_display_op:
+                self._maybe_schedule_retry()
         except TimeoutError:
             self._hardware_failure_retryable = True
             _LOGGER.debug(
@@ -852,25 +765,34 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             )
             self._connection_error = True
             self._last_connection_error = "Device timeout"
-            self._cube_matrix._consecutive_failures += 1
+            self._cube_matrix.record_failure()
             if is_display_op:
                 self._maybe_schedule_retry()
+        except OSError as e:
+            # A raw socket failure (fresh-connection commands, probes).
+            self._hardware_failure_retryable = True
+            self._connection_error = True
+            self._last_connection_error = str(e)
+            _LOGGER.warning(
+                f"[OP #{op_id}] [{self._ip}] Connection error: {e}"
+            )
+            self._cube_matrix.record_failure()
+            if is_display_op:
+                self._maybe_schedule_retry()
+        except BulbException as e:
+            # The lamp answered but refused the command (rate limit, illegal
+            # request, ...): not a connection problem.
+            error_dict = e.args[0] if e.args and isinstance(e.args[0], dict) else {}
+            error_message = error_dict.get('message', str(e))
+            self._connection_error = True
+            self._last_connection_error = f"BulbException: {error_message}"
+            _LOGGER.warning(
+                f"[OP #{op_id}] [{self._ip}] BulbException: {error_message}"
+            )
         except Exception as e:
-            error_msg = str(e).lower()
-            if any(kw in error_msg for kw in ['socket', 'connection', 'cooldown', 'closed', 'timeout', 'unreachable']):
-                self._hardware_failure_retryable = True
-                self._connection_error = True
-                self._last_connection_error = str(e)
-                _LOGGER.warning(
-                    f"[OP #{op_id}] [{self._ip}] Connection error: {e}"
-                )
-                self._cube_matrix._consecutive_failures += 1
-                if is_display_op:
-                    self._maybe_schedule_retry()
-            else:
-                _LOGGER.error(
-                    f"[OP #{op_id}] [{self._ip}] Unexpected error in {op_name}: {e}"
-                )
+            _LOGGER.error(
+                f"[OP #{op_id}] [{self._ip}] Unexpected error in {op_name}: {e}"
+            )
         return False
 
     MAX_DISPLAY_RETRIES = 3  # 3 retries ~= 20s total, then health check takes over
@@ -949,8 +871,8 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         User-initiated actions (turn_on, set_color, etc.) also naturally re-queue,
         so this retry only matters when nothing else is driving updates.
         
-        After MAX_DISPLAY_RETRIES (6 retries ~= 50s), stops retrying -- health check
-        at 10s intervals takes over for longer outages. User actions will still
+        After MAX_DISPLAY_RETRIES, stops retrying -- the health check (probing
+        every 10s while there are failures) takes over for longer outages. User actions will still
         trigger a fresh display update, resetting the counter.
         """
         self._display_retry_count += 1
@@ -959,7 +881,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             _LOGGER.warning(
                 f"[RETRY] [{self._ip}] Stopping auto-retry after {self.MAX_DISPLAY_RETRIES} consecutive failures. "
                 f"The lamp appears to be offline. Display will resume on next user action or HA restart. "
-                f"[{self._cube_matrix._state_summary()}]"
+                f"[{self._cube_matrix.state_summary()}]"
             )
             return
         
@@ -968,12 +890,11 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             _LOGGER.debug(f"[RETRY] [{self._ip}] Cancelling existing display retry task")
             self._retry_display_task.cancel()
         
-        # Calculate delay: first retry is quick (2.5s) to catch transient network
+        # Calculate delay: the first retry is quick to catch transient network
         # hiccups before engaging exponential backoff.  Subsequent retries use
         # the device's current cooldown + buffer.
         QUICK_RETRY_DELAY = 1.5  # seconds -- fast enough to recover from a 1-2s WiFi hiccup
-                                 # Reduced from 2.5s since inner timeouts are now tighter
-        cooldown = self._cube_matrix._reconnect_cooldown
+        cooldown = self._cube_matrix.reconnect_cooldown
         if self._display_retry_count == 1:
             delay = QUICK_RETRY_DELAY
         else:
@@ -984,21 +905,20 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         # schedules and retry simultaneously -- each round has both lamps
         # hitting the network at once, prolonging the failure.  Jitter breaks
         # this synchronization so they stagger naturally.
-        import random as _rng
-        delay += _rng.uniform(0, 1.5)
+        delay += random.uniform(0, 1.5)
         
         async def _delayed_retry():
             try:
                 _LOGGER.debug(
                     f"[RETRY] [{self._ip}] Attempt {self._display_retry_count}/{self.MAX_DISPLAY_RETRIES} -- "
                     f"waiting {delay:.1f}s before retry "
-                    f"[{self._cube_matrix._state_summary()}]"
+                    f"[{self._cube_matrix.state_summary()}]"
                 )
                 await asyncio.sleep(delay)
                 
                 _LOGGER.debug(
                     f"[RETRY] [{self._ip}] Retrying display update now (attempt {self._display_retry_count}) "
-                    f"[{self._cube_matrix._state_summary()}]"
+                    f"[{self._cube_matrix.state_summary()}]"
                 )
                 await self.async_apply_display_mode(update_type='display_retry')
                 _LOGGER.debug(f"[RETRY] [{self._ip}] Display retry sent")
@@ -1012,7 +932,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         )
         _LOGGER.debug(
             f"[RETRY] [{self._ip}] Scheduled retry {self._display_retry_count}/{self.MAX_DISPLAY_RETRIES} "
-            f"in {delay:.1f}s (cooldown={cooldown:.0f}s, failures={self._cube_matrix._consecutive_failures})"
+            f"in {delay:.1f}s (cooldown={cooldown:.0f}s, failures={self._cube_matrix.consecutive_failures})"
         )
 
     async def _periodic_health_check(self):
@@ -1031,7 +951,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         Flow:
           1. Sleep for adaptive interval (10s during failures, 15s when recently online, 60s when long-dead)
           2. If device has no active issues -> skip
-          3. TCP probe the device (CONNECT_TIMEOUT timeout)
+          3. TCP probe the device (RECOVERY_CONNECT_TIMEOUT timeout)
           4. If reachable -> reset all failure counters and trigger a fresh display update
           5. If still unreachable -> log at debug level, try again next cycle
         """
@@ -1043,8 +963,8 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 #  - 15s when device was online recently (monitor mode)
                 #  - 60s when device has been down a while (reduce noise)
                 has_active_issues = (
-                    self._cube_matrix._device_unreachable or
-                    self._cube_matrix._consecutive_failures > 0 or
+                    self._cube_matrix.is_unreachable or
+                    self._cube_matrix.consecutive_failures > 0 or
                     self._display_retry_count > 0
                 )
                 # "Silent" firmware modes (Clock / Native Effect / Music Flow)
@@ -1055,10 +975,10 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 # and re-assert the mode on return -- exactly the re-apply that a
                 # Home Assistant restart performs (which the user confirmed works).
                 silent_mode = self._is_on and (
-                    self._mode in ("Clock", "Native Effect")
+                    self._mode in FIRMWARE_MODES
                     or self._music_flow_enabled
                 )
-                last_success = self._cube_matrix._last_success_time
+                last_success = self._cube_matrix.last_success_time
                 time_since_success = time.time() - last_success if last_success > 0 else 999
                 if has_active_issues:
                     interval = 10  # Aggressive probing during failures
@@ -1078,8 +998,8 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                     f"darken={self._preview_darken}%, "
                     f"last_applied_darken={self._last_applied_darken}, "
                     f"is_on={self._is_on}, fx_direct={self._fx_mode_is_direct}, "
-                    f"unreachable={self._cube_matrix._device_unreachable}, "
-                    f"failures={self._cube_matrix._consecutive_failures}, "
+                    f"unreachable={self._cube_matrix.is_unreachable}, "
+                    f"failures={self._cube_matrix.consecutive_failures}, "
                     f"interval={interval}s"
                 )
                 await asyncio.sleep(interval)
@@ -1090,10 +1010,10 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 # - consecutive failures > 0 (early detection before unreachable)
                 # - display retries in progress (parallel recovery path)
                 is_stuck = (
-                    self._cube_matrix._device_unreachable or
-                    getattr(self, "_rotation_waiting_for_reconnect", False) or
+                    self._cube_matrix.is_unreachable or
+                    self._rotation_waiting_for_reconnect or
                     self._display_retry_count >= self.MAX_DISPLAY_RETRIES or
-                    self._cube_matrix._consecutive_failures > 0 or
+                    self._cube_matrix.consecutive_failures > 0 or
                     self._display_retry_count > 0
                 )
                 if not is_stuck and not silent_mode:
@@ -1105,49 +1025,36 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 recovering = is_stuck
                 
                 _LOGGER.debug(
-                    f"[HEALTH] [{self._ip}] Probing device (unreachable={self._cube_matrix._device_unreachable}, "
+                    f"[HEALTH] [{self._ip}] Probing device (unreachable={self._cube_matrix.is_unreachable}, "
                     f"retries={self._display_retry_count}/{self.MAX_DISPLAY_RETRIES}, "
-                    f"failures={self._cube_matrix._consecutive_failures}, "
+                    f"failures={self._cube_matrix.consecutive_failures}, "
                     f"interval={interval}s)"
                 )
                 
                 # Quick TCP probe -- use longer timeout for recovery.
                 # Normal commands use 0.5s, but a lamp rebooting may have
-                # slow TCP handshakes.  3s gives reliable detection.
-                import socket as _socket
+                # slow TCP handshakes (RECOVERY_CONNECT_TIMEOUT).
                 probe_timeout = RECOVERY_CONNECT_TIMEOUT
-                sock = None
-                try:
-                    sock = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-                    sock.settimeout(probe_timeout)
-                    # SO_LINGER RST close -- avoids TIME_WAIT on probe sockets
-                    import struct as _struct
-                    sock.setsockopt(_socket.SOL_SOCKET, _socket.SO_LINGER, _struct.pack('ii', 1, 0))
-                    await asyncio.to_thread(sock.connect, (self._ip, self._cube_matrix._port))
-                    sock.close()
-                    sock = None
-                except (OSError, ConnectionRefusedError, TimeoutError):
+                if not await self._cube_matrix.probe(probe_timeout):
                     # The lamp is not answering -- record it so the next
                     # successful probe knows to re-assert the mode. This is what
                     # lets a mains power cut, detected proactively in a silent
                     # mode, recover on return.
-                    self._cube_matrix._device_unreachable = True
-                    if getattr(self, "_rotation_resume_pending", False):
+                    became_unreachable = self._cube_matrix.mark_unreachable()
+                    if self._rotation_resume_pending:
                         self._rotation_waiting_for_reconnect = True
-                        if self.hass is not None:
-                            self.async_write_ha_state()
+                    if self.hass is not None and (
+                        became_unreachable or self._rotation_waiting_for_reconnect
+                    ):
+                        # Publishes the light and its controls as unavailable.
+                        self.async_write_ha_state()
                     # Log at WARNING so the user can see probes are happening
                     _LOGGER.warning(
                         f"[HEALTH] [{self._ip}] Probe failed -- still unreachable "
                         f"(retries={self._display_retry_count}/{self.MAX_DISPLAY_RETRIES}, "
-                        f"failures={self._cube_matrix._consecutive_failures}, "
+                        f"failures={self._cube_matrix.consecutive_failures}, "
                         f"timeout={probe_timeout}s)"
                     )
-                    if sock is not None:
-                        try:
-                            sock.close()
-                        except Exception:
-                            pass
                     # The lamp may have moved to a new DHCP address: scan for
                     # it by hardware id and remap the config entry (throttled).
                     await self._async_maybe_rediscover()
@@ -1161,24 +1068,22 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 # Device is back! Reset everything and trigger a fresh display.
                 _LOGGER.warning(
                     f"[HEALTH] [{self._ip}] [OK] Device is BACK ONLINE! "
-                    f"Resetting failures ({self._cube_matrix._consecutive_failures} -> 0), "
+                    f"Resetting failures ({self._cube_matrix.consecutive_failures} -> 0), "
                     f"retries ({self._display_retry_count} -> 0), "
-                    f"cooldown ({self._cube_matrix._reconnect_cooldown:.0f}s -> {RECONNECT_COOLDOWN_INITIAL}s)"
+                    f"cooldown ({self._cube_matrix.reconnect_cooldown:.0f}s -> {RECONNECT_COOLDOWN_INITIAL}s)"
                 )
-                self._cube_matrix._close_fast_socket()  # Ensure fresh socket after recovery
-                self._cube_matrix._consecutive_failures = 0
-                self._cube_matrix._device_unreachable = False
-                self._cube_matrix._connection_healthy = True
-                self._cube_matrix._reconnect_cooldown = RECONNECT_COOLDOWN_INITIAL
-                self._cube_matrix._last_reconnect_attempt = 0
+                self._cube_matrix.mark_recovered()  # Fresh socket, backoff reset
                 self._display_retry_count = 0
                 self._fx_mode_is_direct = False  # Force FX mode re-send
                 self._connection_error = False
                 self._hard_timeout_times.clear()  # Clear circuit breaker
-                
+                if self.hass is not None:
+                    # Publishes the light and its controls as available again.
+                    self.async_write_ha_state()
+
                 if self._resume_rotation_after_reconnect():
                     continue
-                if getattr(self, "_rotation_active", False):
+                if self._rotation_active:
                     continue
 
                 if self._music_flow_enabled:
@@ -1282,7 +1187,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
 
         # For native effects, steer the effect's flow to match the mounting,
         # but only if the current effect supports that direction.
-        if self._mode == "Native Effect":
+        if self._mode == MODE_NATIVE_EFFECT:
             spec = ALL_NATIVE_EFFECTS.get(self._native_effect, {})
             directions = spec.get("directions")
             desired = _DEVICE_ORIENTATION_TO_EFFECT_DIR.get(orientation)
@@ -1290,7 +1195,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 self._native_effect_direction = desired
                 if self._native_effect_direction_select_entity:
                     self._native_effect_direction_select_entity.async_update_from_light()
-        elif self._mode == "Clock":
+        elif self._mode == MODE_CLOCK:
             # The firmware clock has NO orientation control, and re-activating it
             # here disrupts the running clock (it briefly drops / reverts). Since
             # we can't reorient it anyway, just update state so the preview
@@ -1325,14 +1230,14 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
 
     @property
     def supported_color_modes(self):
-        if self._music_flow_enabled or self._mode in ("Clock", "Native Effect"):
+        if self.firmware_draws_matrix:
             return {ColorMode.BRIGHTNESS}
         return {ColorMode.RGB}
 
     @property
     def color_mode(self):
         # Current active color mode
-        if self._music_flow_enabled or self._mode in ("Clock", "Native Effect"):
+        if self.firmware_draws_matrix:
             return ColorMode.BRIGHTNESS
         return ColorMode.RGB
 
@@ -1368,7 +1273,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
     def content_mode(self):
         if self._music_flow_enabled:
             return "Music Flow"
-        return self._mode if self._mode in ("Clock", "Native Effect") else "Matrix"
+        return self._mode if self._mode in FIRMWARE_MODES else "Matrix"
     
     def _should_auto_turn_on(self) -> bool:
         """Check if lamp should auto-turn-on when receiving commands while off."""
@@ -1386,7 +1291,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
 
     @property
     def available(self):
-        return not self._cube_matrix._device_unreachable
+        return not self._cube_matrix.is_unreachable
 
     @property
     def extra_state_attributes(self):
@@ -1407,7 +1312,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             # True while the panel is frozen (freeze_display); JS previews hold
             # the background animation on the frozen frame while the clock
             # digits keep updating.
-            "display_frozen": bool(getattr(self, "_display_frozen", False)),
+            "display_frozen": bool(self._display_frozen),
             # Shared favourites per kind, e.g. {"clock": [{"name", "color_mode",
             # "color"}, ...]} (set_favourites). Rotation plays them in order.
             "favourites": {
@@ -1418,15 +1323,15 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             "rotation_intervals": dict(self._rotation_intervals),
             # Server-side effect/clock rotation status (start/stop_effect_rotation).
             "effect_rotation": {
-                "active": bool(getattr(self, "_rotation_active", False)),
-                "kind": getattr(self, "_rotation_kind", "native"),
-                "interval": getattr(self, "_rotation_interval", 60),
-                "items": list(getattr(self, "_rotation_items", [])),
-                "index": getattr(self, "_rotation_index", -1),
-                "error": getattr(self, "_rotation_error", None),
-                "waiting_for_reconnect": getattr(self, "_rotation_waiting_for_reconnect", False),
-                "retry_attempt": getattr(self, "_rotation_retry_attempt", 0),
-                "retry_at": getattr(self, "_rotation_retry_at", None),
+                "active": bool(self._rotation_active),
+                "kind": self._rotation_kind,
+                "interval": self._rotation_interval,
+                "items": list(self._rotation_items),
+                "index": self._rotation_index,
+                "error": self._rotation_error,
+                "waiting_for_reconnect": self._rotation_waiting_for_reconnect,
+                "retry_attempt": self._rotation_retry_attempt,
+                "retry_at": self._rotation_retry_at,
             },
             "text_colors": self._text_colors,
             "custom_text": self._custom_text,
@@ -1532,20 +1437,11 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 # Frames drawn by the firmware cannot be read back: no pixels.
                 # Cards and the preview camera render these modes themselves.
                 return []
-            base_colors = getattr(self, "_base_matrix_colors", None)
+            base_colors = self._base_matrix_colors
             if base_colors and len(base_colors) == count:
                 return [self._apply_final_brightness(rgb) for rgb in base_colors]
             # Fallback: read directly from module data (may be darkened or not)
-            matrix_colors = []
-            for module in self._layout.device_layout:
-                if hasattr(module, "data") and module.data:
-                    hex_color = module.data[0].lstrip("#")
-                    matrix_colors.append(
-                        tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
-                    )
-                else:
-                    matrix_colors.append((0, 0, 0))
-            return matrix_colors
+            return self._layout_colors()
         except Exception:  # noqa: BLE001 -- attributes must always build
             return []
 
@@ -1553,10 +1449,27 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
     def firmware_draws_matrix(self) -> bool:
         """Whether the lamp's firmware draws the matrix (clock, native effect,
         music flow) rather than the plugin, so its frames cannot be read back."""
-        return bool(self._music_flow_enabled) or self._mode in (
-            "Clock",
-            "Native Effect",
+        return bool(self._music_flow_enabled) or self._mode in FIRMWARE_MODES
+
+    @property
+    def _has_color_effects(self) -> bool:
+        """Whether any colour adjustment (hue, saturation, tint, ...) is active."""
+        return (
+            self._preview_hue_shift != 0 or self._preview_saturation != 100 or
+            self._preview_temperature != 0 or self._preview_contrast != 100 or
+            self._preview_vibrance != 100 or self._preview_glow != 0 or
+            self._preview_grayscale != 0 or self._preview_invert != 0 or
+            self._preview_tint_strength != 0
         )
+
+    def _layout_colors(self) -> list:
+        """The layout's current pixel colours, one RGB tuple per module
+        (black where a module holds no data). Raises ValueError or TypeError
+        on a malformed colour."""
+        return [
+            hex_to_rgb(module.data[0]) if getattr(module, "data", None) else (0, 0, 0)
+            for module in self._layout.device_layout
+        ]
 
     def set_extended_effects_enabled(self, enabled: bool) -> None:
         self._extended_effects_enabled = enabled
@@ -1579,13 +1492,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         _LOGGER.debug(f"[INIT] async_added_to_hass called for {self._attr_name}")
         await super().async_added_to_hass()
         self.async_on_remove(async_track_state_change_event(self.hass, self.entity_id, self.async_update))
-        
-        # Store config entry reference for accessing options
-        for entry in self.hass.config_entries.async_entries(DOMAIN):
-            if entry.data.get(CONF_IP) == self._ip:
-                self._config_entry = entry
-                break
-        
+
         # Start periodic health check to detect devices coming back online
         self._health_check_task = self._create_tracked_task(
             self._periodic_health_check(), name=f"yeelight_cube_health_check_{self._ip}"
@@ -1689,10 +1596,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 # Fallback for old state: if mode == 'Custom Draw', treat as custom_draw_active
                 self._custom_draw_active = old_state.attributes.get("mode") == "Custom Draw"
             restored_mode = old_state.attributes.get("mode")
-            if restored_mode in MATRIX_DISPLAY_MODES or restored_mode in (
-                "Clock",
-                "Native Effect",
-            ):
+            if restored_mode in MATRIX_DISPLAY_MODES or restored_mode in FIRMWARE_MODES:
                 self._mode = restored_mode
             matrix_mode = old_state.attributes.get("matrix_mode")
             if matrix_mode in MATRIX_DISPLAY_MODES:
@@ -1916,7 +1820,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
              re-send on the next apply call)
 
         The caller is responsible for sending set_bright AFTER this returns.
-        In _apply_impl, set_bright is sent on the persistent socket (via
+        In apply(), set_bright is sent on the persistent socket (via
         send_command_fast) immediately after ensure_fx_ready, so both
         set_bright and update_leds travel on the same TCP connection.  This
         avoids the extra RST connection that was causing the firmware to exit
@@ -1931,11 +1835,11 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
 
         _LOGGER.debug(
             f"[ENSURE_FX] [{self._ip}] Activating FX mode via raw TCP "
-            f"[{cm._state_summary()}]"
+            f"[{cm.state_summary()}]"
         )
 
         # Step 1: Kill persistent socket
-        cm._close_fast_socket()
+        cm.close_fast_socket()
 
         # Step 2 (optional): When leaving a firmware-native mode (clock, native
         # animation, color flow), give the renderer + TCP stack time to settle
@@ -1963,10 +1867,10 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         await asyncio.sleep(0.15)
 
         # Step 5: Update state.
-        # _last_hardware_brightness is reset to 0 (sentinel) so _apply_impl
+        # _last_hardware_brightness is reset to 0 (sentinel) so apply()
         # unconditionally re-sends set_bright on the persistent socket -- both
         # the direct path (if not _fx_mode_is_direct) and the indirect path
-        # (force_refresh → _apply_display_mode_internal → _apply_impl else-branch
+        # (force_refresh → _apply_display_mode_internal → apply() else-branch
         # sees hardware_brightness != 0 and sends set_bright).
         self._fx_mode_is_direct = True
         self._in_native_fw_mode = False
@@ -1983,22 +1887,22 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         Reconnects the active renderer and re-renders its current display.
         
         IMPORTANT: We must NOT read raw pixel data from self._layout and
-        send it directly, because _apply_impl() applies software brightness
+        send it directly, because apply() applies software brightness
         darkening IN PLACE to module.data.  Sending those already-darkened
         pixels while also setting hardware brightness via set_bright would
         result in double-darkening (dimmer than intended).
         
         Instead, we re-render through _apply_display_mode_internal() which:
           1. Fills the layout with fresh un-darkened colours (text/drawing)
-          2. Calls _apply_impl() which applies colour effects + brightness
+          2. Calls apply() which applies colour effects + brightness
              darkening correctly, then sends the final pixel data.
         Since ensure_fx_ready() already set _fx_mode_is_direct=True,
-        _apply_impl() will skip redundant FX activation.
+        apply() will skip redundant FX activation.
         """
         if not self._is_on or self._music_flow_enabled:
             return
-        if self._mode in ("Clock", "Native Effect"):
-            self._cube_matrix._close_fast_socket()
+        if self._mode in FIRMWARE_MODES:
+            self._cube_matrix.close_fast_socket()
         else:
             await self.ensure_fx_ready()
         
@@ -2045,8 +1949,8 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         was_on = self._is_on
 
         if any(key in kwargs for key in ("rgb_color", "text_colors")) and (
-            getattr(self, "_rotation_active", False)
-            or getattr(self, "_rotation_resume_pending", False)
+            self._rotation_active
+            or self._rotation_resume_pending
         ):
             self.stop_effect_rotation()
 
@@ -2086,7 +1990,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 self.async_schedule_update_ha_state()
             return
 
-        if self._mode == "Clock":
+        if self._mode == MODE_CLOCK:
             self._is_on = True
             if "brightness" in kwargs:
                 self._brightness = max(1, min(255, kwargs["brightness"]))
@@ -2099,7 +2003,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             if self.hass is not None:
                 self.async_schedule_update_ha_state()
             return
-        if self._mode == "Native Effect":
+        if self._mode == MODE_NATIVE_EFFECT:
             self._is_on = True
             if "brightness" in kwargs:
                 self._brightness = max(1, min(255, kwargs["brightness"]))
@@ -2153,8 +2057,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 # and sends pixel data all in one pass.
                 await self._apply_display_mode_internal()
         except Exception as e:
-            msg = str(e)
-            if "quota exceeded" in msg.lower():
+            if is_quota_error(e):
                 _LOGGER.debug("Rate limit exceeded during turn_on")
             elif isinstance(e, TimeoutError):
                 _LOGGER.warning("Timeout during turn_on - device may be unreachable")
@@ -2163,9 +2066,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         
         if self.hass is not None:
             self.async_schedule_update_ha_state()
-        _LOGGER.debug(f"[TURN_ON] Turn on complete")
-        
-        _LOGGER.debug(f"[TURN_ON] Turn on complete")
+        _LOGGER.debug("[TURN_ON] Turn on complete")
 
     async def async_turn_off(self, **kwargs):
         """Turn off the light."""
@@ -2193,8 +2094,8 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         """Internal turn_off implementation that executes in the queue."""
         _LOGGER.debug(f"[TURN_OFF] Executing turn_off")
         was_music_flow_enabled = self._music_flow_enabled
-        if was_music_flow_enabled or self._mode in ("Clock", "Native Effect"):
-            self._cube_matrix._close_fast_socket()
+        if was_music_flow_enabled or self._mode in FIRMWARE_MODES:
+            self._cube_matrix.close_fast_socket()
             await self._cube_matrix.send_raw_command("set_power", ["off"])
         else:
             await self.erase_all()
@@ -2225,28 +2126,17 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
     async def set_brightness(self, brightness: int, **kwargs):
         """
         Unified brightness control using BOTH hardware brightness and RGB darkening.
-        
-        The system automatically chooses the best mechanism based on brightness level:
-        
-        LOW RANGE (e.g., 0-30%):
-        - Uses hardware dimming (25-100%) + maximum RGB darkening (94%)
-        - Allows VERY low brightness for night/ambient use
-        
-        HIGH RANGE (e.g., 30-100%):
-        - Uses maximum hardware (100%) + variable RGB darkening (94-0%)
-        - Preserves color accuracy at higher brightness levels
-        
-        HA Brightness Range:
-        - 0: Light OFF (handled by turn_off, not brightness adjustment)
-        - 1 (0.4%): Minimum brightness - hardware at MIN, darkness at MAX
-        - 255 (100%): Maximum brightness - hardware at 100%, darkness at 0%
-        
-        User sees ONE smooth slider controlling both mechanisms automatically.
-        
-        PERFORMANCE OPTIMIZATIONS:
-        - Fire-and-forget hardware brightness (no waiting for lamp response)
-        - Queue dropping: obsolete brightness calls are automatically dropped
-        - Parallel execution: hardware + display updates run simultaneously when both change
+
+        One slider (1-255) drives both mechanisms together across the whole
+        range, with no switch-over point (see the UNIFIED BRIGHTNESS CONTROL
+        notes on the class and _calculate_brightness_values):
+        - 1:   hardware at the hardware floor, darkening at the darken floor
+        - 255: hardware at 100%, no darkening
+
+        The new value is published at once so cards preview it, then the
+        hardware command runs under the device lock. set_bright is sent
+        without waiting for a reply, and only the parts that changed (hardware
+        level, pixel darkening) are re-sent.
         """
         # Calibration lock: ignore automation brightness changes while the wizard
         # drives the lamp. Wizard calls pass bypass_lock=True.
@@ -2305,7 +2195,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             self._brightness = max(1, min(255, brightness))  # Clamp to 1-255 for ON state
             _LOGGER.debug(f"[BRIGHTNESS #{call_id}] Brightness changed: {old_brightness} -> {self._brightness}")
 
-            if self._music_flow_enabled or self._mode in ("Clock", "Native Effect"):
+            if self.firmware_draws_matrix:
                 await self._set_native_mode_brightness()
                 if self.hass is not None:
                     self.async_schedule_update_ha_state()
@@ -2364,38 +2254,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                     # By awaiting the hardware command first, we ensure the lamp's hardware
                     # brightness is updated BEFORE it receives the new RGB pixel data.
                     
-                    # Pre-flight check: skip if connection is down
-                    if not self._cube_matrix.is_connected():
-                        _LOGGER.debug(f"[BRIGHTNESS] Skipping hardware command - connection down")
-                        self._pending_brightness = (self._brightness, time.time())
-                        _LOGGER.debug(f"[BRIGHTNESS] Queued brightness {self._brightness} for retry")
-                        self._start_brightness_retry_task()
-                    else:
-                        try:
-                            # Fire-and-forget: send-only, no recv() wait.
-                            # The Cube always closes TCP after each command  --
-                            # waiting for the response just wastes time on a
-                            # "Bulb closed the connection" exception.
-                            await self._cube_matrix.send_command_fast("set_bright", [hardware_brightness])
-                            # NOTE: We do NOT reset _fx_mode_is_direct here.
-                            # Testing shows set_bright does not knock the Cube out of
-                            # direct mode, and resetting this flag would force apply()
-                            # to re-send activate_fx_mode + set_bright AGAIN -- adding
-                            # ~300ms of unnecessary TCP commands on every brightness
-                            # change.  The FX_MODE_STALENESS_TIMEOUT check in
-                            # _apply_impl() is the safety net if the Cube does
-                            # silently exit direct mode after an idle period.
-                        except Exception as e:
-                            error_msg = str(e).lower()
-                            is_known_error = (
-                                "quota" in error_msg or 
-                                "timeout" in error_msg or 
-                                "socket" in error_msg or 
-                                "nonetype" in error_msg or
-                                isinstance(e, AttributeError)
-                            )
-                            if not is_known_error:
-                                _LOGGER.warning(f"[BRIGHTNESS] Unexpected error sending hardware brightness: {e}")
+                    await self._send_hardware_brightness(hardware_brightness)
                     
                     # PERFORMANCE: Use _apply_brightness_only() which re-darkens
                     # the existing _base_matrix_colors and sends draw_matrices_fast
@@ -2421,29 +2280,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                         f"[BRIGHTNESS #{call_id}] Hardware brightness changed: "
                         f"{old_hardware}% -> {hardware_brightness}%, sending..."
                     )
-                    # Pre-flight check: skip if connection is down
-                    if not self._cube_matrix.is_connected():
-                        _LOGGER.debug(f"[BRIGHTNESS] Skipping hardware command - connection down")
-                        self._pending_brightness = (self._brightness, time.time())
-                        _LOGGER.debug(f"[BRIGHTNESS] Queued brightness {self._brightness} for retry")
-                        self._start_brightness_retry_task()
-                    else:
-                        try:
-                            # Fire-and-forget: send-only, no recv() wait.
-                            await self._cube_matrix.send_command_fast("set_bright", [hardware_brightness])
-                            # NOTE: Do NOT reset _fx_mode_is_direct here -- see
-                            # comment in 'both changed' branch above.
-                        except Exception as e:
-                            error_msg = str(e).lower()
-                            is_known_error = (
-                                "quota" in error_msg or 
-                                "timeout" in error_msg or 
-                                "socket" in error_msg or 
-                                "nonetype" in error_msg or
-                                isinstance(e, AttributeError)
-                            )
-                            if not is_known_error:
-                                _LOGGER.warning(f"[BRIGHTNESS] Unexpected error sending hardware brightness: {e}")
+                    await self._send_hardware_brightness(hardware_brightness)
                     
                     # _last_hardware_brightness already set above (before branches)
                     
@@ -2478,14 +2315,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                     # re-places pixels from scratch and then apply() bakes in the
                     # effects.  Without this display update the lamp would show the
                     # raw (un-effected) pixels from the last _internal_turn_on.
-                    has_active_effects = (
-                        self._preview_hue_shift != 0 or self._preview_saturation != 100 or
-                        self._preview_temperature != 0 or self._preview_contrast != 100 or
-                        self._preview_vibrance != 100 or self._preview_glow != 0 or
-                        self._preview_grayscale != 0 or self._preview_invert != 0 or
-                        self._preview_tint_strength != 0
-                    )
-                    if has_active_effects:
+                    if self._has_color_effects:
                         _LOGGER.debug(
                             f"[BRIGHTNESS #{call_id}] Values unchanged but effects active "
                             f" -- forcing display update to preserve effects"
@@ -2498,8 +2328,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             except Exception as e:
                 # Most errors are already handled gracefully in cube_matrix.send_command_with_recovery
                 # Only truly unexpected errors reach here
-                msg = str(e)
-                if "quota exceeded" in msg.lower():
+                if is_quota_error(e):
                     _LOGGER.warning(f"[BRIGHTNESS #{call_id}] Rate limit exceeded - backing off")
                 elif isinstance(e, TimeoutError):
                     _LOGGER.warning(f"[BRIGHTNESS #{call_id}] Timeout - device may be unreachable")
@@ -2507,6 +2336,33 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                     _LOGGER.error(f"[BRIGHTNESS #{call_id}] Unexpected error: {e}")
         else:
             _LOGGER.debug(f"[BRIGHTNESS #{call_id}] Light is off, not applying brightness")
+
+    async def _send_hardware_brightness(self, hardware_brightness: int) -> None:
+        """Send set_bright on the persistent socket (fire-and-forget, no reply
+        awaited: the Cube closes TCP after each command). While the
+        connection is down the user's brightness is queued for retry instead.
+
+        _fx_mode_is_direct is NOT reset here: set_bright does not knock the
+        Cube out of direct mode, and resetting it would make apply() re-send
+        activate_fx_mode + set_bright (~300ms) on every brightness change. The
+        FX_MODE_STALENESS_TIMEOUT check in apply() is the safety net if the
+        Cube silently leaves direct mode after an idle period.
+        """
+        if not self._cube_matrix.is_connected():
+            _LOGGER.debug(
+                "[BRIGHTNESS] Connection down -- queued brightness %s for retry",
+                self._brightness,
+            )
+            self._pending_brightness = (self._brightness, time.time())
+            self._start_brightness_retry_task()
+            return
+        try:
+            await self._cube_matrix.send_command_fast("set_bright", [hardware_brightness])
+        except Exception as e:
+            if not (is_connection_error(e) or is_quota_error(e)):
+                _LOGGER.warning(
+                    "[BRIGHTNESS] Unexpected error sending hardware brightness: %s", e
+                )
 
     def _start_brightness_retry_task(self):
         """Start background task to retry failed brightness when connection recovers"""
@@ -2586,7 +2442,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         if self._music_flow_enabled:
             return
 
-        if self._mode == "Clock" and self._is_on:
+        if self._mode == MODE_CLOCK and self._is_on:
             timezone_hours = self._native_clock_timezone_hours()
             if self._native_clock_timezone_offset is None:
                 # First poll after startup / integration reload: the lamp is
@@ -2609,7 +2465,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         # Cube Lite does not answer get_prop while a firmware-native renderer
         # is active. Opening that standard LAN-control connection can also make
         # the firmware leave the clock/effect and restore an older mode.
-        if self._mode in ("Clock", "Native Effect"):
+        if self._mode in FIRMWARE_MODES:
             return
 
         now = time.monotonic()
@@ -2701,10 +2557,10 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
     async def async_apply_display_mode(self, update_type: str = 'display_update', bypass_lock: bool = False):
         """Queue a display mode update to be processed sequentially"""
         if update_type in {"color_change", "pixel_art", "text_change"} and (
-            getattr(self, "_rotation_resume_pending", False)
+            self._rotation_resume_pending
             or (
-                getattr(self, "_rotation_active", False)
-                and self._mode != ("Clock" if self._rotation_kind == "clock" else "Native Effect")
+                self._rotation_active
+                and self._mode != (ROTATION_KIND_MODES.get(self._rotation_kind, MODE_NATIVE_EFFECT))
             )
         ):
             self.stop_effect_rotation()
@@ -2738,7 +2594,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         #
         # DELIBERATE switches to matrix content (pixel_art, color_change from the
         # content-mode select, turn_on, brightness_change) are NOT in this set, so
-        # they pass through; when they render, _apply_impl -> ensure_fx_ready()
+        # they pass through; when they render, apply() -> ensure_fx_ready()
         # clears _in_native_fw_mode, so subsequent updates flow normally again.
         #
         # Persisted Clock / Native Effect modes (_mode in those values) route to
@@ -2749,7 +2605,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         }
         if (
             self._in_native_fw_mode
-            and self._mode not in ("Clock", "Native Effect")
+            and self._mode not in FIRMWARE_MODES
             and update_type in _NATIVE_COMPETING_UPDATE_TYPES
             and not bypass_lock
         ):
@@ -2775,7 +2631,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         # Periodic:     display_update (from HA state polling, clock, sensors)
         #
         # Previously ANY non-retry call reset the counter.  This meant periodic
-        # display_update calls arriving every ~30s would restart the 20-retry
+        # display_update calls arriving every ~30s would restart the retry
         # cycle for a device that's genuinely offline -- retrying forever.
         # Now only explicit user actions restart retries.
         user_action_types = {
@@ -2791,7 +2647,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 )
                 self._display_retry_count = 0
                 # Cancel any pending retry task -- without this, the old
-                # retry fires immediately and pushes the counter back to 6
+                # retry fires immediately and pushes the counter back to the limit
                 if self._retry_display_task and not self._retry_display_task.done():
                     self._retry_display_task.cancel()
                     _LOGGER.debug(f"[DISPLAY] [{self._ip}] Cancelled stale retry task")
@@ -2807,7 +2663,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         log_level(f"[DISPLAY] async_apply_display_mode called - mode: '{self._mode}', text: '{self._custom_text}', type: '{update_type}', is_on: {self._is_on}")
         
         # Track which type of update is running so the transition block in
-        # _apply_impl() can skip animations on retries / recovery / periodic
+        # apply() can skip animations on retries / recovery / periodic
         # refreshes.  Only genuine user-initiated content changes animate.
         self._current_update_type = update_type
 
@@ -2826,11 +2682,6 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             f"display:{update_type}",
             timeout_override=op_timeout
         )
-
-
-
-
-
 
     async def _apply_brightness_only(self):
         """
@@ -2852,22 +2703,19 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         Only valid when the underlying pixel art/text hasn't changed -- just the
         brightness level (darken_percent).
         """
-        await self._apply_brightness_only_impl()
-
-    async def _apply_brightness_only_impl(self):
         try:
             if not self._cube_matrix.is_connected():
                 _LOGGER.warning(f"[BRIGHTNESS_FAST] [{self._ip}] SKIP -- cooldown active")
-                raise Exception("Cooldown active -- device not yet reachable")
+                raise CubeConnectionError("Cooldown active -- device not yet reachable")
             
             # If we don't have base colors yet, fall back to the full path
-            base_colors = getattr(self, '_base_matrix_colors', None)
+            base_colors = self._base_matrix_colors
             if not base_colors or len(base_colors) != len(self._layout.device_layout):
                 _LOGGER.debug(f"[BRIGHTNESS_FAST] No base colors -- falling back to full apply")
                 await self._apply_display_mode_internal(skip_post_delay=True)
                 return
             
-            # STALENESS CHECK: Same as in _apply_impl -- check fx_age, not idle.
+            # STALENESS CHECK: Same as in apply() -- check fx_age, not idle.
             # Falls through to full apply path which uses ensure_fx_ready() (raw TCP).
             if self._fx_mode_is_direct and self._last_fx_mode_time > 0:
                 fx_age = time.time() - self._last_fx_mode_time
@@ -2896,7 +2744,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             # IMPORTANT: _base_matrix_colors already has color effects baked in
             # (hue_shift, saturation, contrast, temperature, vibrance, glow,
             #  grayscale, invert, tint).  They were applied during the full
-            # render in _apply_impl and snapshotted AFTER apply_color_adjustments.
+            # render in apply() and snapshotted AFTER apply_color_adjustments.
             # Do NOT call apply_color_adjustments() again here -- that would
             # double-apply every color effect (e.g., hue shift applied twice).
             #
@@ -2927,7 +2775,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             raw_rgb_data = self._layout.get_raw_rgb_data()
             await self._cube_matrix.draw_matrices_fast(raw_rgb_data)
             
-            # POST-SEND RECONNECTION CHECK: Same as in _apply_impl -- if the
+            # POST-SEND RECONNECTION CHECK: Same as in apply() -- if the
             # socket reconnected during send, pixels were silently ignored.
             if self._cube_matrix.consume_reconnected_flag():
                 self._fx_mode_is_direct = False
@@ -2944,13 +2792,8 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             
             # Update _last_sent_colors for future transitions
             try:
-                self._last_sent_colors = []
-                for module in self._layout.device_layout:
-                    if hasattr(module, 'data') and module.data:
-                        self._last_sent_colors.append(hex_to_rgb(module.data[0]))
-                    else:
-                        self._last_sent_colors.append((0, 0, 0))
-            except Exception:
+                self._last_sent_colors = self._layout_colors()
+            except (ValueError, TypeError):
                 self._last_sent_colors = None
             
             if self.hass is not None:
@@ -2960,37 +2803,26 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             _LOGGER.debug(f"[BRIGHTNESS_FAST] [OK] Done (darken={self._preview_darken}%)")
             
         except Exception as e:
-            msg = str(e)
-            if any(kw in msg.lower() for kw in ['socket', 'closed', 'connection', 'cooldown', 'timeout']):
+            if is_connection_error(e):
                 self._fx_mode_is_direct = False
                 self._connection_error = True
-                self._last_connection_error = msg
+                self._last_connection_error = str(e)
                 _LOGGER.debug(f"[BRIGHTNESS_FAST] Connection issue: {e} -- re-raising for retry")
             else:
                 _LOGGER.warning(f"[BRIGHTNESS_FAST] Error: {e}")
             raise
 
-
-
-
-
-
-
-
-
-
-
     async def async_set_power_on_state(self, option: str) -> None:
         """Set the Cube Lite's power recovery behavior."""
         if option not in POWER_ON_STATES:
             raise ValueError(f"Unsupported power-on state: {option}")
-        self._cube_matrix._close_fast_socket()
+        self._cube_matrix.close_fast_socket()
         try:
             result = await self._cube_matrix.send_command_with_recovery(
                 "set_ps", ["cfg_init_power", POWER_ON_STATES[option]]
             )
             if result is None:
-                raise RuntimeError(
+                raise CubeConnectionError(
                     "Power-on behavior command was skipped during connection cooldown"
                 )
         finally:
@@ -3047,7 +2879,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         """Write up to eight ordered presets used by the physical button."""
         if not 1 <= len(effect_names) <= 8:
             raise ValueError("The physical button list must contain 1 to 8 effects")
-        self._cube_matrix._close_fast_socket()
+        self._cube_matrix.close_fast_socket()
         try:
             for index, name in enumerate(effect_names):
                 result = await self._cube_matrix.send_command_with_recovery(
@@ -3055,7 +2887,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                     [index, self._effect_persist_item(name)],
                 )
                 if result is None:
-                    raise RuntimeError(
+                    raise CubeConnectionError(
                         f"Physical-button preset slot {index + 1} was skipped "
                         "during connection cooldown"
                     )
@@ -3065,18 +2897,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         if self.hass is not None:
             self.async_write_ha_state()
 
-
-
-
-
-
-
-
-
     async def apply(self, skip_post_delay: bool = False):
-        await self._apply_impl(skip_post_delay)
-
-    async def _apply_impl(self, skip_post_delay: bool = False):
         try:
             # Fast-fail: if we're in cooldown after a failed connection attempt,
             # RAISE so the queue processor sees this as a failure and schedules
@@ -3088,9 +2909,9 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                     f"[APPLY] [{self._ip}] SKIP -- cooldown active, raising to trigger retry "
                     f"(fx_direct={self._fx_mode_is_direct}, is_on={self._is_on}, "
                     f"retry_count={self._display_retry_count}/{self.MAX_DISPLAY_RETRIES}) "
-                    f"[{self._cube_matrix._state_summary()}]"
+                    f"[{self._cube_matrix.state_summary()}]"
                 )
-                raise Exception("Cooldown active -- device not yet reachable")
+                raise CubeConnectionError("Cooldown active -- device not yet reachable")
             
             # Check if the lamp just reconnected (socket was reset).
             # If so, we need to re-send FX mode and brightness before pixel data.
@@ -3101,12 +2922,12 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 )
                 self._fx_mode_is_direct = False  # Force re-send
             
-            # STALENESS CHECK: The Cube silently exits direct FX mode ~25s
-            # after ACTIVATION (not after last command!).  Check fx_age.
+            # STALENESS CHECK: an idle Cube can silently leave direct FX mode
+            # (see FX_MODE_STALENESS_TIMEOUT).  Check fx_age.
             if self._fx_mode_is_direct and self._last_fx_mode_time > 0:
                 fx_age = time.time() - self._last_fx_mode_time
                 if fx_age > FX_MODE_STALENESS_TIMEOUT:
-                    idle_seconds = time.time() - self._cube_matrix._last_command_time if self._cube_matrix._last_command_time > 0 else 999
+                    idle_seconds = time.time() - self._cube_matrix.last_command_time if self._cube_matrix.last_command_time > 0 else 999
                     _LOGGER.warning(
                         f"[APPLY] [{self._ip}] FX mode stale -- fx_age={fx_age:.0f}s > "
                         f"{FX_MODE_STALENESS_TIMEOUT:.0f}s threshold (idle={idle_seconds:.1f}s), "
@@ -3185,13 +3006,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                     f"{old_darken}% -> {darken_percent}% (user={self._brightness}/255)"
                 )
 
-            has_color_effect = (
-                self._preview_saturation != 100 or self._preview_hue_shift != 0 or
-                self._preview_contrast != 100 or self._preview_temperature != 0 or
-                self._preview_vibrance != 100 or self._preview_glow != 0 or
-                self._preview_grayscale != 0 or self._preview_invert != 0 or
-                self._preview_tint_strength != 0
-            )
+            has_color_effect = self._has_color_effects
             has_brightness_effect = (self._preview_darken != 0 or self._preview_brighten != 0)
             
             # SNAPSHOT: Capture base colors for _apply_brightness_only (fast path).
@@ -3206,21 +3021,16 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             #   [X] No color correction (gamma)
             #   [X] No color accuracy (per-channel gain)
             #
-            # The brightness fast path (_apply_brightness_only_impl) therefore
+            # The brightness fast path (_apply_brightness_only) therefore
             # must NOT re-apply color adjustments -- only brightness pipeline.
             snapshot_in_loop = has_color_effect or has_brightness_effect
             if not snapshot_in_loop:
                 try:
-                    self._base_matrix_colors = []
-                    for module in self._layout.device_layout:
-                        if hasattr(module, 'data') and module.data:
-                            hex_color = module.data[0].lstrip('#')
-                            rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
-                            self._base_matrix_colors.append(rgb)
-                        else:
-                            self._base_matrix_colors.append((0, 0, 0))
-                except Exception:
-                    pass
+                    self._base_matrix_colors = self._layout_colors()
+                except (ValueError, TypeError):
+                    # No usable snapshot: the brightness fast path falls back
+                    # to a full re-render.
+                    self._base_matrix_colors = None
             
             has_color_accuracy = self._color_accuracy_enabled
             needs_pixel_processing = has_color_effect or has_brightness_effect or has_color_accuracy
@@ -3263,12 +3073,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                     and not self._transition_active
                     and self._current_update_type in _TRANSITION_ANIMATE_TYPES):
                 # Extract target colors from current (post-effects) module data
-                target_colors = []
-                for module in self._layout.device_layout:
-                    if hasattr(module, 'data') and module.data:
-                        target_colors.append(hex_to_rgb(module.data[0]))
-                    else:
-                        target_colors.append((0, 0, 0))
+                target_colors = self._layout_colors()
                 # Only animate when content actually changed
                 if target_colors != self._last_sent_colors:
                     try:
@@ -3296,7 +3101,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             # Count lit pixels for diagnostic logging
             lit = sum(1 for m in self._layout.device_layout
                       if hasattr(m, 'data') and m.data and m.data[0] != '#000000')
-            idle_since_last_cmd = time.time() - self._cube_matrix._last_command_time if self._cube_matrix._last_command_time > 0 else -1
+            idle_since_last_cmd = time.time() - self._cube_matrix.last_command_time if self._cube_matrix.last_command_time > 0 else -1
             
             _LOGGER.debug(
                 f"[APPLY] [{self._ip}] Sending update_leds: "
@@ -3328,7 +3133,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                     f"[APPLY] [{self._ip}] Socket reconnected during update_leds -- "
                     f"FX mode lost, will re-activate on next update"
                 )
-                raise Exception("Socket reconnected during pixel send -- FX re-activation needed")
+                raise CubeFxModeLost("Socket reconnected during pixel send -- FX re-activation needed")
 
             # NATIVE-EXIT RE-SEND: When leaving a firmware-native renderer, the
             # first update_leds above can be dropped while the firmware finishes
@@ -3350,7 +3155,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                         f"[APPLY] [{self._ip}] Socket reconnected during native-exit "
                         f"re-send -- FX mode lost, will re-activate on next update"
                     )
-                    raise Exception("Socket reconnected during native-exit re-send")
+                    raise CubeFxModeLost("Socket reconnected during native-exit re-send")
             
             # Track that this darken% was successfully rendered to lamp pixels.
             # This keeps _last_applied_darken accurate even when apply() is called
@@ -3362,13 +3167,8 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             
             # Store the final colors that were sent to the lamp for future transitions
             try:
-                self._last_sent_colors = []
-                for module in self._layout.device_layout:
-                    if hasattr(module, 'data') and module.data:
-                        self._last_sent_colors.append(hex_to_rgb(module.data[0]))
-                    else:
-                        self._last_sent_colors.append((0, 0, 0))
-            except Exception:
+                self._last_sent_colors = self._layout_colors()
+            except (ValueError, TypeError):
                 self._last_sent_colors = None
             
             # Skip post-delay for scroll animations to maintain smooth timing
@@ -3409,11 +3209,12 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             
             self._connection_error = True
             self._last_connection_error = f"BulbException: {error_message}"
-            if "socket error" in error_message.lower() or "closed" in error_message.lower():
+            connection_lost = isinstance(e, CubeConnectionError)
+            if connection_lost:
                 self._fx_mode_is_direct = False
             self._last_apply_time = 0
             
-            if "socket error" in error_message.lower() or "closed" in error_message.lower():
+            if connection_lost:
                 _LOGGER.debug(
                     f"[APPLY] [{self._ip}] BulbException (connection): code={error_code}, "
                     f"msg='{error_message}' -- re-raising for retry"
@@ -3429,11 +3230,12 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             msg = str(e)
             self._connection_error = True
             self._last_connection_error = msg
-            if any(kw in msg.lower() for kw in ['socket', 'closed', 'connection', 'cooldown', 'timeout']):
+            connection_lost = is_connection_error(e)
+            if connection_lost:
                 self._fx_mode_is_direct = False
             self._last_apply_time = 0
             
-            if any(kw in msg.lower() for kw in ['socket', 'closed', 'connection', 'cooldown', 'none', 'quota', 'timeout']):
+            if connection_lost:
                 _LOGGER.debug(
                     f"[APPLY] [{self._ip}] Connection issue: {type(e).__name__}: {msg} -- re-raising for retry"
                 )
@@ -3492,11 +3294,11 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         
         # Determine timer delay - first and last positions pause longer
         if self._scroll_offset == 0 or self._scroll_offset == self._max_scroll_offset:
-            # First or last position: pause for double time (3.0s)
+            # First or last position: pause for twice the scroll speed
             delay = self._scroll_speed * 2
             _LOGGER.debug(f"[SCROLL_DEBUG] Pausing at boundary position for {delay}s")
         else:
-            # Normal position: use standard speed (1.5s)
+            # Normal position: use the scroll speed
             delay = self._scroll_speed
         
         self.start_scroll_timer(delay)
@@ -3552,7 +3354,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         # Migration: pre-4-way states saved only _orientation. If the device
         # orientation wasn't restored but the legacy flip is on, treat it as
         # "left" (the flipped equivalent) so the new select stays consistent.
-        if getattr(self, "_orientation", ORIENTATION_NORMAL) == ORIENTATION_FLIPPED \
+        if self._orientation == ORIENTATION_FLIPPED \
                 and self._device_orientation == "right":
             self._device_orientation = "left"
         # Reset scroll so restored text starts cleanly from the beginning.
@@ -3611,9 +3413,9 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         """
         if self._rotation_kind != "clock":
             return self._native_effect
-        color = getattr(self, "_native_clock_color", None)
+        color = self._native_clock_color
         if color is not None:
-            r, g, b = (color >> 16) & 0xFF, (color >> 8) & 0xFF, color & 0xFF
+            r, g, b = argb_to_rgb(color)
             for preset in self.hass.data.get(DOMAIN, {}).get("clock_presets", []):
                 if preset.get("kind", "style") == "style" and list(
                     preset.get("color", ())
@@ -3754,12 +3556,12 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         if store is None:
             return
         running = None
-        if self._rotation_active or getattr(self, "_rotation_resume_pending", False):
+        if self._rotation_active or self._rotation_resume_pending:
             running = {
                 "kind": self._rotation_kind,
                 "items": [dict(item) for item in self._rotation_items],
                 "interval": self._rotation_interval,
-                "group": list(getattr(self, "_rotation_group", None) or []),
+                "group": list(self._rotation_group or []),
             }
         record = {"intervals": dict(self._rotation_intervals), "active": running}
         key = self._music_flow_runtime_storage_key()
@@ -3779,11 +3581,11 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         if not saved:
             return
         kind = saved.get("kind")
-        expected_mode = "Clock" if kind == "clock" else "Native Effect"
+        expected_mode = ROTATION_KIND_MODES.get(kind, MODE_NATIVE_EFFECT)
         if (
             not self._is_on
             or self._music_flow_enabled
-            or getattr(self, "_calibration_lock", False)
+            or self._calibration_lock
             or self._mode != expected_mode
         ):
             _LOGGER.info(
@@ -3827,7 +3629,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         self._rotation_intervals = {**self._rotation_intervals, kind: interval}
         if (
             self._rotation_kind == kind
-            and (self._rotation_active or getattr(self, "_rotation_resume_pending", False))
+            and (self._rotation_active or self._rotation_resume_pending)
             and interval != self._rotation_interval
         ):
             self._retime_rotation(interval)
@@ -3929,9 +3731,9 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             self.async_write_ha_state()
 
     def _resume_rotation_after_reconnect(self) -> bool:
-        if not getattr(self, "_rotation_waiting_for_reconnect", False):
+        if not self._rotation_waiting_for_reconnect:
             return False
-        expected_mode = "Clock" if self._rotation_kind == "clock" else "Native Effect"
+        expected_mode = ROTATION_KIND_MODES.get(self._rotation_kind, MODE_NATIVE_EFFECT)
         if (
             not self._is_on or self._calibration_lock or self._music_flow_enabled
             or self._mode != expected_mode or len(self._rotation_items) < 2
@@ -3957,7 +3759,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         return True
 
     def _rotation_scheduled_index(self) -> int:
-        timeline = getattr(self, "_rotation_timeline", None)
+        timeline = self._rotation_timeline
         if timeline is None:
             return (self._rotation_index + 1) % len(self._rotation_items)
         tick = int(asyncio.get_running_loop().time() // self._rotation_interval)
@@ -3966,8 +3768,8 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
     def skip_effect_rotation(self) -> None:
         """Advance to the next mode immediately instead of waiting."""
         wake = self._rotation_wake
-        if self._rotation_active or getattr(self, "_rotation_resume_pending", False):
-            if getattr(self, "_rotation_timeline", None) is not None:
+        if self._rotation_active or self._rotation_resume_pending:
+            if self._rotation_timeline is not None:
                 self._rotation_timeline["index"] += 1
         if self._rotation_active and wake is not None:
             wake.set()
@@ -4004,8 +3806,8 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 if not ok or not self._rotation_active:
                     self._rotation_error = self._rotation_error or (
                         "Lamp is off" if not self._is_on else
-                        "Calibration lock is active" if getattr(self, "_calibration_lock", False) else
-                        getattr(self, "_last_connection_error", None) or
+                        "Calibration lock is active" if self._calibration_lock else
+                        self._last_connection_error or
                         f"Display update failed for {name}"
                     )
                     _LOGGER.warning("[ROTATION] [%s] Stopped: %s", self._ip, self._rotation_error)
@@ -4015,7 +3817,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 if self.hass is not None:
                     self.async_write_ha_state()
                 if (
-                    getattr(self, "_rotation_timeline", None) is not None
+                    self._rotation_timeline is not None
                     and self._rotation_index != self._rotation_scheduled_index()
                 ):
                     continue
@@ -4064,7 +3866,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
 
     async def _wait_rotation_retry(self, delay: float) -> bool:
         deadline = asyncio.get_running_loop().time() + delay
-        while self._rotation_active and self._is_on and not getattr(self, "_calibration_lock", False):
+        while self._rotation_active and self._is_on and not self._calibration_lock:
             remaining = deadline - asyncio.get_running_loop().time()
             if remaining <= 0:
                 return True
@@ -4075,16 +3877,16 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
         self._rotation_retry_attempt = 0
         self._rotation_retry_at = None
         for attempt in range(3):
-            if not self._rotation_active or not self._is_on or getattr(self, "_calibration_lock", False):
+            if not self._rotation_active or not self._is_on or self._calibration_lock:
                 if not self._is_on:
                     self._rotation_error = "Lamp is off"
-                elif getattr(self, "_calibration_lock", False):
+                elif self._calibration_lock:
                     self._rotation_error = "Calibration lock is active"
                 return False
             self._hardware_failure_retryable = False
             try:
                 success = await self._apply_rotation_item(item)
-            except (OSError, asyncio.TimeoutError) as error:
+            except (CubeConnectionError, OSError, asyncio.TimeoutError) as error:
                 self._last_connection_error = str(error) or "Device timeout"
                 self._hardware_failure_retryable = True
                 success = False
@@ -4097,7 +3899,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 self._rotation_retry_attempt = 0
                 self._rotation_retry_at = None
                 return True
-            self._rotation_error = getattr(self, "_last_connection_error", None) or f"Display update failed for {item['name']}"
+            self._rotation_error = self._last_connection_error or f"Display update failed for {item['name']}"
             if not self._hardware_failure_retryable or attempt == 2:
                 self._rotation_resume_pending = bool(
                     self._hardware_failure_retryable and self._rotation_active
@@ -4105,11 +3907,11 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 )
                 self._rotation_waiting_for_reconnect = bool(
                     self._rotation_resume_pending
-                    and getattr(getattr(self, "_cube_matrix", None), "_device_unreachable", False)
+                    and self._cube_matrix.is_unreachable
                 )
                 return False
             delay = (5.0, 15.0)[attempt]
-            recent = [stamp for stamp in getattr(self, "_hard_timeout_times", []) if time.time() - stamp < CIRCUIT_BREAKER_WINDOW]
+            recent = [stamp for stamp in self._hard_timeout_times if time.time() - stamp < CIRCUIT_BREAKER_WINDOW]
             if len(recent) >= 2:
                 delay = max(delay, max(recent) + CIRCUIT_BREAKER_WINDOW - time.time() + 0.1)
             self._rotation_retry_attempt = attempt + 1
@@ -4124,7 +3926,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 self._rotation_retry_at = None
                 if not self._is_on:
                     self._rotation_error = "Lamp is off"
-                elif getattr(self, "_calibration_lock", False):
+                elif self._calibration_lock:
                     self._rotation_error = "Calibration lock is active"
                 return False
             self._rotation_retry_at = None
@@ -4145,7 +3947,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
 
         Returns False when the lamp cannot take a rotation step right now.
         """
-        if getattr(self, "_calibration_lock", False):
+        if self._calibration_lock:
             _LOGGER.debug(
                 "[ROTATION] [%s] Calibration lock active -- stopping rotation",
                 self._ip,
@@ -4176,7 +3978,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             )
             return True
         self._native_effect = name
-        self._mode = "Native Effect"
+        self._mode = MODE_NATIVE_EFFECT
         self._custom_draw_active = False
         # Reapply the colour mode recorded with the favourite. The firmware
         # represents a free custom colour as mode "normal" plus an RGB override.
@@ -4224,25 +4026,13 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             # exactly like the card's preview: custom keeps the recorded colour,
             # a palette remaps it, normal uses the preset colour.
             if color_mode == "custom" and color:
-                red, green, blue = color
-                self._native_clock_color = (
-                    0x01000000
-                    | ((red & 0xFF) << 16)
-                    | ((green & 0xFF) << 8)
-                    | (blue & 0xFF)
-                )
+                self._native_clock_color = rgb_to_argb(color)
                 self._native_clock_color_mode = "normal"
             elif color_mode in CLOCK_COLOR_MODES and color_mode != "normal":
                 self._native_clock_color = None
                 self._native_clock_color_mode = color_mode
             else:
-                red, green, blue = (int(channel) for channel in preset["color"])
-                self._native_clock_color = (
-                    0x01000000
-                    | ((red & 0xFF) << 16)
-                    | ((green & 0xFF) << 8)
-                    | (blue & 0xFF)
-                )
+                self._native_clock_color = rgb_to_argb(preset["color"])
                 self._native_clock_color_mode = "normal"
         else:
             style_id = next(
@@ -4257,20 +4047,14 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 return True
             self._native_clock_style = style_id
             if color_mode == "custom" and color:
-                red, green, blue = color
-                self._native_clock_color = (
-                    0x01000000
-                    | ((red & 0xFF) << 16)
-                    | ((green & 0xFF) << 8)
-                    | (blue & 0xFF)
-                )
+                self._native_clock_color = rgb_to_argb(color)
                 self._native_clock_color_mode = "normal"
             else:
                 self._native_clock_color = None
                 self._native_clock_color_mode = (
                     color_mode if color_mode in CLOCK_COLOR_MODES else "normal"
                 )
-        self._mode = "Clock"
+        self._mode = MODE_CLOCK
         self._custom_draw_active = False
         if not await self._start_rotation_apply():
             return False
@@ -4336,7 +4120,4 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 # Service registration lives in light_services.py; re-exported here so
 # `from .light import async_setup_light_services` keeps working. Imported at
 # the very bottom so light_services can import back from a fully-defined light.
-from .light_services import (  # noqa: E402
-    async_setup_light_services,
-    async_remove_light_services,
-)
+from .light_services import async_setup_light_services  # noqa: E402

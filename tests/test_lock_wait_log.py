@@ -10,6 +10,7 @@ from tests.test_native_features import LIGHT_SOURCE, _load_standalone_functions
 class LockWaitLogTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.logger = Mock()
+        bulb_exception = type("BulbException", (Exception,), {})
         self.namespace = {
             "asyncio": asyncio,
             "time": time,
@@ -17,7 +18,8 @@ class LockWaitLogTests(unittest.IsolatedAsyncioTestCase):
             "APPLY_HARD_TIMEOUT": 5.0,
             "CIRCUIT_BREAKER_WINDOW": 30.0,
             "LOCK_WAIT_WARNING_MS": 3000,
-            "BulbException": type("BulbException", (Exception,), {}),
+            "BulbException": bulb_exception,
+            "CubeConnectionError": type("CubeConnectionError", (bulb_exception,), {}),
             "_DEVICE_LOCKS": {},
             "_DEVICE_LOCK_HOLDERS": {},
         }
@@ -39,7 +41,7 @@ class LockWaitLogTests(unittest.IsolatedAsyncioTestCase):
             _connection_error=False, _display_retry_count=0,
             _retry_display_task=None,
             _cube_matrix=SimpleNamespace(
-                _state_summary=lambda: "", _consecutive_failures=0
+                state_summary=lambda: "", record_success=Mock(), record_failure=Mock()
             ),
         )
 

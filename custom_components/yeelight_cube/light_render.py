@@ -12,7 +12,10 @@ import random
 import traceback
 
 from .color_utils import hex_to_rgb, rgb_to_hex
+from .cube_matrix import is_connection_error, is_quota_error
 from .const import (
+    MODE_CLOCK,
+    MODE_NATIVE_EFFECT,
     DEFAULT_MATRIX_DISPLAY_MODE,
     MATRIX_DISPLAY_MODES,
     ORIENTATION_NORMAL,
@@ -83,12 +86,12 @@ class MatrixRenderMixin:
         self._display_frozen = False
         self._display_frozen_at = None
         try:
-            if self._mode == "Clock":
+            if self._mode == MODE_CLOCK:
                 self._is_scrolling = False
                 self.stop_scroll_timer()
                 await self._activate_native_clock()
                 return
-            if self._mode == "Native Effect":
+            if self._mode == MODE_NATIVE_EFFECT:
                 self._is_scrolling = False
                 self.stop_scroll_timer()
                 await self._activate_native_effect()
@@ -99,7 +102,7 @@ class MatrixRenderMixin:
             for module in self._layout.device_layout:
                 module.set_colors([background_color_hex])
             # Priority: custom drawing if present and custom_draw_active, else text
-            if getattr(self, '_custom_draw_active', False) and self._custom_pixels:
+            if self._custom_draw_active and self._custom_pixels:
                 # Pixel art always uses a black background — missing positions = black
                 for module in self._layout.device_layout:
                     module.set_colors(["#000000"])
@@ -136,7 +139,7 @@ class MatrixRenderMixin:
                 await self.apply(skip_post_delay=skip_post_delay)
                 return
             # If not in custom draw mode, clear custom pixels so text/other modes work as expected
-            if not getattr(self, '_custom_draw_active', False):
+            if not self._custom_draw_active:
                 self._custom_pixels = None
             if self._custom_text or self._full_panel:
                 # SAFETY NET: the text/gradient renderer below only handles the
@@ -538,7 +541,7 @@ class MatrixRenderMixin:
                 _LOGGER.debug(
                     f"[DISPLAY] [{self._ip}] No content to render "
                     f"(text='{self._custom_text}', panel={self._full_panel}, "
-                    f"draw_active={getattr(self, '_custom_draw_active', False)}, "
+                    f"draw_active={self._custom_draw_active}, "
                     f"mode='{self._mode}') -- pushing background-only display"
                 )
                 await self.apply(skip_post_delay=skip_post_delay)
@@ -546,8 +549,7 @@ class MatrixRenderMixin:
             # Connection-related errors are expected and handled by the queue processor
             # which schedules retries. Only log at DEBUG to avoid duplicate noise.
             # The queue processor already logs the same error with full context.
-            error_msg = str(e).lower()
-            if any(kw in error_msg for kw in ['socket', 'closed', 'connection', 'cooldown', 'timeout', 'none']):
+            if is_connection_error(e) or is_quota_error(e):
                 _LOGGER.debug(f"[DISPLAY] [{self._ip}] Connection error in apply_display_mode (re-raising for retry): {e}")
             else:
                 _LOGGER.error(f"[DISPLAY] [{self._ip}] Unexpected error during apply_display_mode: {e}")

@@ -4,6 +4,7 @@ import asyncio
 import mimetypes
 import re
 import socket as _socket_module
+from homeassistant.const import EVENT_HOMEASSISTANT_STOP # type: ignore
 from homeassistant.core import HomeAssistant, callback as ha_callback # type: ignore
 from homeassistant.config_entries import ConfigEntry # type: ignore
 from homeassistant.exceptions import ConfigEntryNotReady # type: ignore
@@ -14,7 +15,8 @@ from homeassistant.helpers import entity_registry as er # type: ignore
 from .const import DOMAIN, CONF_IP, CONF_DEVICE_ID
 from .conflict_prevention import get_conflict_prevention
 from .name_utils import normalize_display_name
-from .services import async_setup_services, async_remove_services
+from .pixel_art_storage import group_pixels, is_grouped
+from .discovery_services import async_setup_services
 import homeassistant.helpers.config_validation as cv  # type: ignore
 
 _LOGGER = logging.getLogger(__name__)
@@ -231,8 +233,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             registered = True
             _LOGGER.debug(
                 "Yeelight Cube Lite: Serving frontend assets at %s with "
-                "stale-while-revalidate cache headers",
+                "Cache-Control '%s'",
                 FRONTEND_URL_BASE,
+                _CACHE_CONTROL,
             )
         except Exception:
             # Fall back to plain static serving if the custom route can't be
@@ -282,12 +285,22 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     # This is component-global discovery: it is intentionally kept alive for the
     # whole HA session (not per-config-entry) so new Cubes are still found even
-    # when no entry is loaded yet. We keep the unsubscribe handle in hass.data so
-    # it is tracked/cancellable rather than orphaned (async_setup has no teardown
-    # hook of its own).
+    # when no entry is loaded yet. It also dismisses the built-in Yeelight
+    # integration's discovery prompts for our lamps after each scan.
     hass.data.setdefault(DOMAIN, {})["_ssdp_scan_unsub"] = async_track_time_interval(
         hass, _periodic_ssdp_scan, timedelta(minutes=10)
     )
+
+    @ha_callback
+    def _cancel_discovery_timers(_event=None):
+        # async_setup has no teardown hook: stop the timers when HA stops so no
+        # network scan starts during shutdown.
+        for key in ("_ssdp_scan_unsub", "_dismiss_unsub"):
+            cancel = hass.data.get(DOMAIN, {}).pop(key, None)
+            if cancel:
+                cancel()
+
+    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _cancel_discovery_timers)
 
     return True
 
@@ -394,6 +407,31 @@ async def _async_migrate_entity_unique_ids(
         )
 
 
+def _migrate_pixel_arts(raw_pixel_arts: list) -> tuple[list, bool]:
+    """Bring stored pixel arts to the grouped storage form with safe names.
+
+    Returns the pixel arts and whether anything changed (needs saving).
+    """
+    migrated = []
+    changed = False
+    for idx, art in enumerate(raw_pixel_arts):
+        if isinstance(art, dict) and isinstance(art.get("pixels"), list):
+            safe_name = normalize_display_name(
+                art.get("name", "Unnamed"), f"Pixel Art {idx + 1}"
+            )
+            if safe_name != art.get("name"):
+                changed = True
+            if is_grouped(art["pixels"]):
+                art = {**art, "name": safe_name}
+            else:
+                # Flat or legacy "positions" form: drop black pixels and
+                # duplicate positions, group the rest by colour.
+                art = {"name": safe_name, "pixels": group_pixels(art["pixels"])}
+                changed = True
+        migrated.append(art)
+    return migrated, changed
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Yeelight Cube Lite from a config entry."""
     _LOGGER.debug("[SETUP-ENTRY] async_setup_entry() called for entry: %s", entry.entry_id)
@@ -475,63 +513,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 len(stored_data.get('pixel_arts', []))
             )
         
-        # Migrate existing pixel arts on load: convert to grouped {color, position: [...]} format
-        # (strips black pixels, deduplicates positions, groups remaining pixels by color).
-        # JS cards call expandPixelArt() to expand back to flat [{position, color}] at read time.
-        _raw_pixel_arts = stored_data.get("pixel_arts", [])
-        _migrated_pixel_arts = []
-        _needs_save = False  # Track whether any art was actually migrated (avoid unnecessary writes)
-        for _idx, _art in enumerate(_raw_pixel_arts):
-            if isinstance(_art, dict) and isinstance(_art.get("pixels"), list):
-                _safe_name = normalize_display_name(
-                    _art.get("name", "Unnamed"), f"Pixel Art {_idx + 1}"
-                )
-                if _safe_name != _art.get("name"):
-                    _needs_save = True
-                _art = {**_art, "name": _safe_name}
-                _pixels = _art["pixels"]
-                # Detect if already in grouped format:
-                # new format uses "position" as a list; legacy grouped format used "positions" (plural)
-                if _pixels and isinstance(_pixels[0], dict) and (
-                    ("position" in _pixels[0] and isinstance(_pixels[0]["position"], list))
-                    or "positions" in _pixels[0]
-                ):
-                    if "positions" in _pixels[0]:
-                        # Upgrade legacy "positions" key to "position"
-                        _needs_save = True
-                        _migrated_pixel_arts.append({
-                            "name": _art.get("name", "Unnamed"),
-                            "pixels": [
-                                {"color": _px.get("color", []), "position": _px.get("positions", [])}
-                                for _px in _pixels if isinstance(_px, dict)
-                            ]
-                        })
-                    else:
-                        _migrated_pixel_arts.append(_art)
-                else:
-                    # Flat format — strip blacks, deduplicate, group by color
-                    _needs_save = True
-                    _seen: dict = {}
-                    for _px in _pixels:
-                        if not isinstance(_px, dict):
-                            continue
-                        _pos = _px.get("position")
-                        _color = list(_px.get("color", []))
-                        if _color == [0, 0, 0] or _pos is None:
-                            continue
-                        if _pos not in _seen:
-                            _seen[_pos] = _color
-                    _cgroups: dict = {}
-                    for _pos, _color in _seen.items():
-                        _key = tuple(_color)
-                        _cgroups.setdefault(_key, []).append(_pos)
-                    _grouped = [
-                        {"color": list(_c), "position": sorted(_pp)}
-                        for _c, _pp in _cgroups.items()
-                    ]
-                    _migrated_pixel_arts.append({"name": _art.get("name", "Unnamed"), "pixels": _grouped})
-            else:
-                _migrated_pixel_arts.append(_art)
+        # Migrate stored pixel arts to the grouped storage form (see
+        # pixel_art_storage) and clean up names. Only a change is written back.
+        _migrated_pixel_arts, _needs_save = _migrate_pixel_arts(
+            stored_data.get("pixel_arts", [])
+        )
 
         hass.data[DOMAIN].update({
             "clock_presets": stored_data.get("clock_presets", []),
@@ -765,7 +751,7 @@ async def _async_ssdp_discover_cubelite(hass: HomeAssistant) -> None:
         # After creating our discovery flows, dismiss the built-in Yeelight
         # integration's discovery flows for the same CubeLite devices so
         # users see them only under our integration.
-        await _async_dismiss_yeelight_cubelite_discoveries(hass)
+        await _async_dismiss_yeelight_discoveries(hass)
 
     except Exception as exc:
         _LOGGER.warning("[SSDP-SCAN] Scan failed: %s", exc)
@@ -1021,20 +1007,6 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     if changed:
         await async_save_data(hass)
 
-async def async_remove(hass: HomeAssistant) -> None:
-    """Remove the component."""
-    # Remove services
-    from .light import async_remove_light_services
-
-    async_remove_light_services(hass)
-    async_remove_services(hass)
-    # Cancel any pending dismiss timers
-    cancel = hass.data.get(DOMAIN, {}).pop("_dismiss_unsub", None)
-    if cancel:
-        cancel()
-    _LOGGER.debug("Removed Yeelight Cube Lite component services")
-
-
 # ---------------------------------------------------------------------------
 #  Auto-dismiss built-in Yeelight discovery flows for managed CubeLite devices
 # ---------------------------------------------------------------------------
@@ -1047,7 +1019,9 @@ def _get_managed_ips(hass: HomeAssistant) -> set:
 
 @ha_callback
 def _schedule_dismiss_yeelight_discoveries(hass: HomeAssistant) -> None:
-    """Schedule multiple dismiss attempts to catch late-arriving discovery flows."""
+    """Schedule dismiss attempts after startup to catch late-arriving
+    discovery flows. Later ones are dismissed after each periodic SSDP scan
+    (every 10 minutes)."""
     if "_dismiss_unsub" in hass.data.get(DOMAIN, {}):
         return  # already scheduled
 
@@ -1057,14 +1031,10 @@ def _schedule_dismiss_yeelight_discoveries(hass: HomeAssistant) -> None:
     def _run_dismiss(_now=None):
         hass.async_create_task(_async_dismiss_yeelight_discoveries(hass))
 
-    # Run at 10s, 30s, 60s, and 120s after setup to catch flows that arrive later
-    for delay in (10, 30, 60, 120):
+    # Built-in discovery (zeroconf/DHCP/SSDP) reports devices over the first
+    # minutes after startup; the last run hands over to the 10-minute scan.
+    for delay in (10, 30, 60, 120, 300, 600):
         cancel_handles.append(async_call_later(hass, delay, _run_dismiss))
-
-    from datetime import timedelta
-    from homeassistant.helpers.event import async_track_time_interval
-
-    cancel_handles.append(async_track_time_interval(hass, _run_dismiss, timedelta(minutes=1)))
 
     @ha_callback
     def _cancel_all():
@@ -1109,7 +1079,3 @@ async def _async_dismiss_yeelight_discoveries(hass: HomeAssistant) -> None:
             except Exception as exc:
                 _LOGGER.debug("Could not abort Yeelight discovery flow: %s", exc)
 
-
-async def _async_dismiss_yeelight_cubelite_discoveries(hass: HomeAssistant) -> None:
-    """Dismiss duplicates without hiding discovery of unconfigured devices."""
-    await _async_dismiss_yeelight_discoveries(hass)

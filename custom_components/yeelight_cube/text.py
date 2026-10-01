@@ -7,6 +7,7 @@ from homeassistant.core import HomeAssistant, callback # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 
 from .const import DOMAIN, CONF_IP
+from .entity import CubeControlEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ async def async_setup_entry(
     return True
 
 
-class YeelightCubeCustomTextInput(TextEntity):
+class YeelightCubeCustomTextInput(CubeControlEntity, TextEntity):
     """Text input entity for controlling custom text displayed on the Yeelight Cube Lite."""
     
     def __init__(self, light_entity, ip: str, config_entry: ConfigEntry):
@@ -51,21 +52,6 @@ class YeelightCubeCustomTextInput(TextEntity):
         self._attr_native_max = 100  # Reasonable max length for scrolling text
         self._attr_pattern = None  # Allow any characters
         self._attr_mode = "text"  # Use text input mode
-    
-    @property
-    def device_info(self):
-        """Return device info to group with the light entity."""
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Matrix",
-        }
-    
-    @property
-    def available(self) -> bool:
-        """Return if entity is available."""
-        return True
     
     @property
     def native_value(self) -> str:

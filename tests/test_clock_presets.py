@@ -158,7 +158,7 @@ class ClockPresetServiceTests(unittest.IsolatedAsyncioTestCase):
             "save_clock_preset": save, "delete_clock_preset": delete,
             "NATIVE_CLOCK_STYLES": CONSTANTS["NATIVE_CLOCK_STYLES"],
         })
-        self.update = _load_standalone_functions((ROOT / "services.py").read_text(encoding="utf-8"), {"update_clock_presets"}, namespace)["update_clock_presets"]
+        self.update = _load_standalone_functions((ROOT / "light_services_clock_presets.py").read_text(encoding="utf-8"), {"update_clock_presets"}, namespace)["update_clock_presets"]
 
     async def test_save_update_delete_persist_and_publish(self):
         await self.update(SimpleNamespace(service="save_clock_preset", data={"name": "Amber", "color": [255, 120, 0]}))

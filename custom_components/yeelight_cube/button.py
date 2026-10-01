@@ -8,6 +8,7 @@ from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: ignore
 
 from .const import DOMAIN, CONF_IP
+from .entity import CubeDeviceEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ async def async_setup_entry(
     return True
 
 
-class YeelightCubeForceRefreshButton(ButtonEntity):
+class YeelightCubeForceRefreshButton(CubeDeviceEntity, ButtonEntity):
     """Button entity that triggers a force refresh via raw TCP on the Yeelight Cube Lite.
 
     This bypasses the persistent socket, re-activates FX mode, and re-sends
@@ -45,20 +46,6 @@ class YeelightCubeForceRefreshButton(ButtonEntity):
         self._attr_unique_id = f"{light_entity._attr_unique_id}_force_refresh"
         self._attr_icon = "mdi:refresh"
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
-
-    @property
-    def device_info(self):
-        """Return device info to group with the light entity."""
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Matrix",
-        }
-
-    @property
-    def available(self) -> bool:
-        return True
 
     async def async_press(self) -> None:
         """Handle the button press — trigger a force refresh."""

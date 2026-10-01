@@ -4,7 +4,7 @@ import unittest
 
 from PIL import Image
 
-from tests.test_native_features import ROOT, _load_standalone_functions
+from tests.test_native_features import ROOT, _load_standalone_functions, SERVICES_SOURCE
 import asyncio
 import importlib.util
 from types import SimpleNamespace
@@ -49,7 +49,7 @@ class DisplayImageServiceTests(unittest.IsolatedAsyncioTestCase):
             return func(*args)
 
         return _load_standalone_functions(
-            (ROOT / "light_services.py").read_text(encoding="utf-8"),
+            SERVICES_SOURCE,
             {"handle_display_image"},
             {
                 "HomeAssistantError": RuntimeError,

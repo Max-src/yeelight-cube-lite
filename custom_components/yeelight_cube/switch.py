@@ -7,7 +7,8 @@ from homeassistant.core import HomeAssistant # type: ignore
 from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 
-from .const import DOMAIN
+from .const import DOMAIN, MODE_CLOCK
+from .entity import CubeControlEntity, CubeDeviceEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,7 +40,7 @@ async def async_setup_entry(
     _LOGGER.debug(f"Added {len(switches)} switch entities for Yeelight Cube Lite")
 
 
-class YeelightCubeAutoTurnOnSwitch(SwitchEntity):
+class YeelightCubeAutoTurnOnSwitch(CubeDeviceEntity, SwitchEntity):
     """Switch to control auto-turn-on behavior for Yeelight Cube Lite."""
 
     def __init__(self, config_entry: ConfigEntry, light_data):
@@ -55,16 +56,6 @@ class YeelightCubeAutoTurnOnSwitch(SwitchEntity):
         
         # Load saved state or default to True (current behavior)
         self._attr_is_on = config_entry.options.get("auto_turn_on", True)
-
-    @property
-    def device_info(self):
-        """Return device info to group with the light entity."""
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._config_entry.data.get("name", "Yeelight Cube Lite"),
-            "manufacturer": "Yeelight",
-            "model": "Cube Matrix",
-        }
 
     async def async_turn_on(self, **kwargs):
         """Turn on auto-turn-on (enable automatic lamp activation on commands)."""
@@ -94,13 +85,8 @@ class YeelightCubeAutoTurnOnSwitch(SwitchEntity):
         self.async_write_ha_state()
         _LOGGER.debug("Auto-turn-on disabled: Commands will be ignored when lamp is off")
 
-    @property
-    def available(self) -> bool:
-        """Return True if entity is available."""
-        return self._light_entity is not None
 
-
-class YeelightCubeExtendedEffectsSwitch(SwitchEntity):
+class YeelightCubeExtendedEffectsSwitch(CubeDeviceEntity, SwitchEntity):
     """Reveal firmware native effects the official Yeelight app never exposed.
 
     When on, the native effect and clock style dropdowns also offer discovered
@@ -118,19 +104,6 @@ class YeelightCubeExtendedEffectsSwitch(SwitchEntity):
             f"{self._light_entity._attr_unique_id}_extended_effects"
         )
         self._attr_icon = "mdi:flask-outline"
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Matrix",
-        }
-
-    @property
-    def available(self) -> bool:
-        return self._light_entity is not None
 
     @property
     def is_on(self) -> bool:
@@ -168,7 +141,7 @@ class YeelightCubeExtendedEffectsSwitch(SwitchEntity):
         self.async_update_from_light()
 
 
-class _YeelightCubeClockOptionSwitch(SwitchEntity):
+class _YeelightCubeClockOptionSwitch(CubeControlEntity, SwitchEntity):
     """Base switch for a native clock option."""
 
     _attr_entity_category = EntityCategory.CONFIG
@@ -188,24 +161,11 @@ class _YeelightCubeClockOptionSwitch(SwitchEntity):
         self._attr_icon = self.option_icon
         self._attr_is_on = bool(getattr(self._light_entity, self.option_attr))
 
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Matrix",
-        }
-
-    @property
-    def available(self) -> bool:
-        return self._light_entity is not None
-
     async def _set_option(self, enabled: bool) -> None:
         setattr(self._light_entity, self.option_attr, enabled)
         self._attr_is_on = enabled
 
-        if self._light_entity._is_on and self._light_entity._mode == "Clock":
+        if self._light_entity._is_on and self._light_entity._mode == MODE_CLOCK:
             await self._light_entity.async_apply_display_mode(
                 update_type="color_change"
             )
@@ -288,7 +248,7 @@ class YeelightCubeClockColonBlinkSwitch(_YeelightCubeClockOptionSwitch):
         self.async_update_from_light()
 
 
-class YeelightCubeScrollSwitch(SwitchEntity):
+class YeelightCubeScrollSwitch(CubeControlEntity, SwitchEntity):
     """Enable automatic ping-pong scrolling for text wider than the matrix."""
 
     _attr_has_entity_name = True
@@ -302,19 +262,6 @@ class YeelightCubeScrollSwitch(SwitchEntity):
         self._attr_unique_id = f"{self._light_entity._attr_unique_id}_scroll_enabled"
         self._attr_icon = "mdi:format-text-rotation-none"
         self._attr_is_on = self._light_entity._scroll_enabled
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Lite",
-        }
-
-    @property
-    def available(self) -> bool:
-        return self._light_entity.available
 
     async def async_turn_on(self, **kwargs):
         self._light_entity._scroll_enabled = True

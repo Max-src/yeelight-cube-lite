@@ -7,7 +7,8 @@ from homeassistant.core import HomeAssistant, callback  # type: ignore
 from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: ignore
 
-from .const import DOMAIN, CONF_IP, ALL_NATIVE_EFFECTS
+from .const import DOMAIN, CONF_IP, ALL_NATIVE_EFFECTS, MODE_CLOCK, MODE_NATIVE_EFFECT
+from .entity import CubeControlEntity
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -125,7 +126,7 @@ PREVIEW_ADJUSTMENT_SPECS = [
 ]
 
 
-class YeelightCubeGradientAngleNumber(NumberEntity):
+class YeelightCubeGradientAngleNumber(CubeControlEntity, NumberEntity):
     """Number entity for controlling the gradient angle (0-360°) on the Yeelight Cube Lite."""
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
@@ -140,20 +141,6 @@ class YeelightCubeGradientAngleNumber(NumberEntity):
         self._attr_native_step = 1.0
         self._attr_native_unit_of_measurement = "°"
         self._attr_mode = NumberMode.SLIDER
-
-    @property
-    def device_info(self):
-        """Return device info to group with the light entity."""
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Matrix",
-        }
-
-    @property
-    def available(self) -> bool:
-        return True
 
     @property
     def native_value(self) -> float:
@@ -202,7 +189,7 @@ class YeelightCubeGradientAngleNumber(NumberEntity):
         _LOGGER.debug(f"[ANGLE NUMBER] Registered for {self._light_entity._ip}, current angle={self._light_entity._angle}")
 
 
-class YeelightCubePreviewAdjustmentNumber(NumberEntity):
+class YeelightCubePreviewAdjustmentNumber(CubeControlEntity, NumberEntity):
     """Generic number entity for a single preview color-adjustment slider."""
 
     def __init__(self, light_entity, config_entry: ConfigEntry, spec: dict):
@@ -221,19 +208,6 @@ class YeelightCubePreviewAdjustmentNumber(NumberEntity):
         self._attr_native_unit_of_measurement = spec.get("unit")
         self._attr_mode = NumberMode.SLIDER
         self._attr_entity_category = EntityCategory.CONFIG
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Matrix",
-        }
-
-    @property
-    def available(self) -> bool:
-        return True
 
     @property
     def native_value(self) -> float:
@@ -275,7 +249,7 @@ class YeelightCubePreviewAdjustmentNumber(NumberEntity):
 
 # ── Transition Step Count ──────────────────────────────────────────────
 
-class YeelightCubeTransitionStepsNumber(NumberEntity):
+class YeelightCubeTransitionStepsNumber(CubeControlEntity, NumberEntity):
     """Number entity for controlling the number of transition animation steps."""
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
@@ -290,19 +264,6 @@ class YeelightCubeTransitionStepsNumber(NumberEntity):
         self._attr_native_unit_of_measurement = "steps"
         self._attr_mode = NumberMode.SLIDER
         self._attr_entity_category = EntityCategory.CONFIG
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Matrix",
-        }
-
-    @property
-    def available(self) -> bool:
-        return True
 
     @property
     def native_value(self) -> float:
@@ -334,7 +295,7 @@ class YeelightCubeTransitionStepsNumber(NumberEntity):
 
 # ── Transition Duration ────────────────────────────────────────────────
 
-class YeelightCubeTransitionDurationNumber(NumberEntity):
+class YeelightCubeTransitionDurationNumber(CubeControlEntity, NumberEntity):
     """Number entity for controlling the total transition animation time."""
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
@@ -349,19 +310,6 @@ class YeelightCubeTransitionDurationNumber(NumberEntity):
         self._attr_native_unit_of_measurement = "s"
         self._attr_mode = NumberMode.SLIDER
         self._attr_entity_category = EntityCategory.CONFIG
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Matrix",
-        }
-
-    @property
-    def available(self) -> bool:
-        return True
 
     @property
     def native_value(self) -> float:
@@ -391,7 +339,7 @@ class YeelightCubeTransitionDurationNumber(NumberEntity):
         )
 
 
-class YeelightCubeNativeEffectSpeedNumber(NumberEntity):
+class YeelightCubeNativeEffectSpeedNumber(CubeControlEntity, NumberEntity):
     """Control the rate used by firmware-native animations."""
 
     _attr_has_entity_name = True
@@ -410,22 +358,13 @@ class YeelightCubeNativeEffectSpeedNumber(NumberEntity):
         self._attr_mode = NumberMode.SLIDER
 
     @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Lite",
-        }
-
-    @property
     def available(self) -> bool:
         light = self._light_entity
         if not light.available:
             return False
         # The firmware clock accepts the same rate byte, so the slider applies
         # to clock mode too; otherwise it depends on the selected effect.
-        if light._mode == "Clock":
+        if light._mode == MODE_CLOCK:
             return True
         spec = ALL_NATIVE_EFFECTS[light._native_effect]
         return bool(spec.get("speed"))
@@ -437,13 +376,13 @@ class YeelightCubeNativeEffectSpeedNumber(NumberEntity):
     async def async_set_native_value(self, value: float) -> None:
         light = self._light_entity
         light._native_effect_speed = max(1, min(255, int(value)))
-        if light._mode == "Clock":
+        if light._mode == MODE_CLOCK:
             reapply = light._is_on
         else:
             spec = ALL_NATIVE_EFFECTS[light._native_effect]
             reapply = (
                 bool(spec.get("speed"))
-                and light._mode == "Native Effect"
+                and light._mode == MODE_NATIVE_EFFECT
                 and light._is_on
             )
         if reapply:
@@ -456,7 +395,7 @@ class YeelightCubeNativeEffectSpeedNumber(NumberEntity):
         self._light_entity._native_effect_speed_entity = self
 
 
-class YeelightCubeScrollSpeedNumber(NumberEntity):
+class YeelightCubeScrollSpeedNumber(CubeControlEntity, NumberEntity):
     """Control the matrix text scroll interval."""
 
     _attr_has_entity_name = True
@@ -474,19 +413,6 @@ class YeelightCubeScrollSpeedNumber(NumberEntity):
         self._attr_native_step = 0.05
         self._attr_native_unit_of_measurement = "s"
         self._attr_mode = NumberMode.SLIDER
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Lite",
-        }
-
-    @property
-    def available(self) -> bool:
-        return self._light_entity.available
 
     @property
     def native_value(self) -> float:

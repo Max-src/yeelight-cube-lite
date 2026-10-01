@@ -2,7 +2,9 @@ import logging
 import asyncio
 import base64
 import json
+import select
 import socket
+import struct
 import time
 from yeelight import Bulb, BulbException # type: ignore
 
@@ -21,6 +23,49 @@ MAX_CONSECUTIVE_FAILURES = 2    # Circuit breaker: double cooldown after just 2 
 CONNECT_TIMEOUT = 0.5           # TCP connect timeout — LAN connects take <10ms, 0.5s catches failures fast
 RECOVERY_CONNECT_TIMEOUT = 1.5  # Longer timeout when recovering — LAN still connects in <50ms after reboot
 
+_RST_LINGER = struct.pack("ii", 1, 0)  # SO_LINGER value for an abortive close (RST)
+
+
+class CubeConnectionError(BulbException):
+    """A command did not reach the lamp: it is unreachable, the connection is
+    in its reconnect cooldown, or the socket died. Worth retrying once the
+    lamp answers again.
+
+    Subclasses BulbException (same ``{"code", "message"}`` argument) so code
+    that catches the library's exception keeps working.
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__({"code": 0, "message": message})
+
+    @property
+    def message(self) -> str:
+        return self.args[0]["message"]
+
+    def __str__(self) -> str:
+        return self.message
+
+
+class CubeFxModeLost(CubeConnectionError):
+    """The connection was re-opened while pixel data was being sent, so the
+    lamp may have ignored it: direct FX mode must be activated again."""
+
+
+def is_connection_error(err: BaseException) -> bool:
+    """Whether a command failed because it did not reach the lamp: a
+    CubeConnectionError, or a raw socket failure (OSError, which includes
+    timeouts) from a fresh-connection command."""
+    return isinstance(err, (CubeConnectionError, OSError))
+
+
+def is_quota_error(err: BaseException) -> bool:
+    """Whether the lamp refused a command because of its rate limit."""
+    return (
+        isinstance(err, BulbException)
+        and bool(err.args)
+        and isinstance(err.args[0], dict)
+        and err.args[0].get("code") == -1
+    )
 
 
 class CubeMatrix:
@@ -102,16 +147,101 @@ class CubeMatrix:
     def get_bulb(self):
         return self.device
 
+    # ── python-yeelight request socket ─────────────────────────────────
+    # The library keeps its request socket in the private, name-mangled
+    # attribute ``Bulb.__socket`` and has no API to inspect or drop it. All
+    # access goes through these two helpers, so a library change only needs
+    # fixing here.
+    def _library_socket(self):
+        return getattr(self.device, "_Bulb__socket", None)
+
+    def _drop_library_socket(self, abortive: bool = False) -> None:
+        """Close the library's request socket (RST when ``abortive``) so its
+        next command opens a fresh connection."""
+        sock = self._library_socket()
+        if sock is not None:
+            try:
+                if abortive:
+                    sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, _RST_LINGER)
+                sock.close()
+            except Exception as exc:
+                _LOGGER.debug("[%s] Failed to close library socket: %s", self._ip, exc)
+        self.device._Bulb__socket = None
+
     def close_command_socket(self) -> None:
         """Close the python-yeelight request socket without touching direct FX."""
+        self._drop_library_socket()
+
+    # ── Connection state (read and updated by the light entity) ────────
+    @property
+    def port(self) -> int:
+        return self._port
+
+    @property
+    def is_unreachable(self) -> bool:
+        """True after repeated failed connections, until a command succeeds."""
+        return self._device_unreachable
+
+    @property
+    def consecutive_failures(self) -> int:
+        return self._consecutive_failures
+
+    @property
+    def reconnect_cooldown(self) -> float:
+        return self._reconnect_cooldown
+
+    @property
+    def last_success_time(self) -> float:
+        """time.time() of the last successful command, 0 if none yet."""
+        return self._last_success_time
+
+    @property
+    def last_command_time(self) -> float:
+        """time.time() of the last command sent, 0 if none yet."""
+        return self._last_command_time
+
+    def record_failure(self) -> None:
+        """Count a failed operation (e.g. a hard timeout detected by the caller)."""
+        self._consecutive_failures += 1
+
+    def record_success(self) -> None:
+        """Clear the failure count after an operation completed."""
+        self._consecutive_failures = 0
+
+    def mark_unreachable(self) -> bool:
+        """Flag the lamp as unreachable. Returns True if it was reachable."""
+        was_reachable = not self._device_unreachable
+        self._device_unreachable = True
+        return was_reachable
+
+    def mark_recovered(self) -> None:
+        """The lamp answers again: drop the persistent socket and reset the
+        failure count, backoff and unreachable flag."""
+        self.close_fast_socket()
+        self._consecutive_failures = 0
+        self._device_unreachable = False
+        self._connection_healthy = True
+        self._reconnect_cooldown = RECONNECT_COOLDOWN_INITIAL
+        self._last_reconnect_attempt = 0
+
+    async def probe(self, timeout: float = CONNECT_TIMEOUT) -> bool:
+        """Whether the lamp accepts a TCP connection within ``timeout``.
+        The probe socket is RST-closed so it leaves no TIME_WAIT behind."""
+
+        def _connect() -> None:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            try:
+                sock.settimeout(timeout)
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, _RST_LINGER)
+                sock.connect((self._ip, self._port))
+            finally:
+                sock.close()
+
         try:
-            command_socket = self.device._Bulb__socket
-            if command_socket is not None:
-                command_socket.close()
-        except Exception as exc:
-            _LOGGER.debug("[%s] close_command_socket failed: %s", self._ip, exc)
-        finally:
-            self.device._Bulb__socket = None
+            await asyncio.to_thread(_connect)
+        except OSError:
+            return False
+        return True
 
     async def read_properties(self, properties: list[str]) -> dict[str, object]:
         """Read Yeelight properties and normalize the library response."""
@@ -153,7 +283,7 @@ class CubeMatrix:
             return True
         return False
 
-    def _state_summary(self) -> str:
+    def state_summary(self) -> str:
         """Return a compact summary of connection state for diagnostics."""
         # Show fast socket status (the persistent socket actually used for commands)
         if self._fast_socket is not None:
@@ -211,55 +341,35 @@ class CubeMatrix:
         Uses a lock to prevent concurrent reconnection storms.
         """
         if self._reconnect_lock.locked():
-            _LOGGER.debug(f"[RECONNECT] Already in progress, waiting... [{self._state_summary()}]")
+            _LOGGER.debug(f"[RECONNECT] Already in progress, waiting... [{self.state_summary()}]")
             async with self._reconnect_lock:
                 return self._connection_healthy
         
         async with self._reconnect_lock:
             # Double-check: maybe connection recovered while we waited for the lock
-            if self.device._Bulb__socket is not None and self._connection_healthy:
-                _LOGGER.debug(f"[RECONNECT] Connection already recovered, skipping [{self._state_summary()}]")
+            if self._library_socket() is not None and self._connection_healthy:
+                _LOGGER.debug(f"[RECONNECT] Connection already recovered, skipping [{self.state_summary()}]")
                 return True
-            
-            _LOGGER.warning(f"[RECONNECT] [{self._ip}] Starting socket reset [{self._state_summary()}]")
+
+            _LOGGER.warning(f"[RECONNECT] [{self._ip}] Starting socket reset [{self.state_summary()}]")
             self._last_reconnect_attempt = time.time()
-            
-            # Close existing sockets cleanly (both library and fast socket)
-            self._close_fast_socket()
-            try:
-                if self.device._Bulb__socket is not None:
-                    # Abortive close to avoid TIME_WAIT
-                    import struct
-                    try:
-                        self.device._Bulb__socket.setsockopt(
-                            socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0)
-                        )
-                    except Exception as exc:
-                        _LOGGER.debug("[%s] Failed to set SO_LINGER on old socket: %s", self._ip, exc)
-                    self.device._Bulb__socket.close()
-            except Exception as exc:
-                _LOGGER.debug("[%s] Failed to close old command socket: %s", self._ip, exc)
-            self.device._Bulb__socket = None
-            
+
+            # Close existing sockets (both library and fast socket); abortive
+            # close to avoid TIME_WAIT.
+            self.close_fast_socket()
+            self._drop_library_socket(abortive=True)
+
             # PROBE: Quick TCP connect test to verify device is actually reachable
             # before claiming "Complete".  Without this, the reconnect always
             # "succeeds" and the subsequent send_command wastes 3s on a connect
             # timeout when the device is genuinely offline.
-            import socket
-            import struct as _struct
-            probe_timeout = CONNECT_TIMEOUT  # Same timeout as normal commands
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(probe_timeout)
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, _struct.pack('ii', 1, 0))
-                await asyncio.to_thread(sock.connect, (self._ip, self._port))
-                sock.close()
+            if await self.probe(CONNECT_TIMEOUT):
                 _LOGGER.debug(
                     f"[RECONNECT] [{self._ip}] TCP probe succeeded — device is reachable"
                 )
-            except (socket.timeout, OSError, ConnectionRefusedError) as e:
+            else:
                 _LOGGER.warning(
-                    f"[RECONNECT] [{self._ip}] TCP probe FAILED ({type(e).__name__}) — "
+                    f"[RECONNECT] [{self._ip}] TCP probe FAILED — "
                     f"device is NOT reachable, skipping reconnect"
                 )
                 self._device_unreachable = True
@@ -281,7 +391,7 @@ class CubeMatrix:
             # after the lock is released.
             self._just_reconnected = True
             
-            _LOGGER.warning(f"[RECONNECT] [{self._ip}] Complete — fresh connection on next command [{self._state_summary()}]")
+            _LOGGER.warning(f"[RECONNECT] [{self._ip}] Complete — fresh connection on next command [{self.state_summary()}]")
             return True
 
     def is_connected(self) -> bool:
@@ -292,7 +402,7 @@ class CubeMatrix:
             True if socket is available and we can attempt commands
             False if socket is None and in reconnection cooldown
         """
-        if self.device._Bulb__socket is None:
+        if self._library_socket() is None:
             current_time = time.time()
             time_since = current_time - self._last_reconnect_attempt
             if time_since < self._reconnect_cooldown:
@@ -362,7 +472,7 @@ class CubeMatrix:
         """
         await self.send_command_with_recovery("update_leds", [rgb_data])
 
-    def _close_fast_socket(self):
+    def close_fast_socket(self):
         """Close the persistent fast socket if open.
         
         Uses SO_LINGER with zero timeout for an abortive close (RST).
@@ -372,9 +482,8 @@ class CubeMatrix:
         if self._fast_socket is not None:
             try:
                 # Abortive close: send RST instead of FIN → avoids TIME_WAIT
-                import struct
                 self._fast_socket.setsockopt(
-                    socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0)
+                    socket.SOL_SOCKET, socket.SO_LINGER, _RST_LINGER
                 )
                 self._fast_socket.close()
             except Exception as exc:
@@ -408,7 +517,6 @@ class CubeMatrix:
         request = (json.dumps(command_dict, separators=(",", ":")) + "\r\n").encode("utf8")
 
         def _send():
-            import struct
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(timeout)
             try:
@@ -424,7 +532,7 @@ class CubeMatrix:
                         sock.setsockopt(
                             socket.SOL_SOCKET,
                             socket.SO_LINGER,
-                            struct.pack('ii', 1, 0),
+                            _RST_LINGER,
                         )
                     sock.close()
                 except Exception as exc:
@@ -458,12 +566,11 @@ class CubeMatrix:
         # sensitive to concurrent TCP connections while native renderers are
         # running; leaving it open causes the lamp to drop the active effect
         # when the probe connection arrives.
-        self._close_fast_socket()
+        self.close_fast_socket()
         # Give the Cube TCP stack a moment to clean up the closed socket.
         await asyncio.sleep(0.1)
 
         def _send() -> str:
-            import struct
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.settimeout(timeout)
             reply = ""
@@ -490,7 +597,7 @@ class CubeMatrix:
             finally:
                 try:
                     sock.setsockopt(
-                        socket.SOL_SOCKET, socket.SO_LINGER, struct.pack("ii", 1, 0)
+                        socket.SOL_SOCKET, socket.SO_LINGER, _RST_LINGER
                     )
                     sock.close()
                 except Exception as exc:
@@ -569,7 +676,6 @@ class CubeMatrix:
                 
                 Returns True if peer has closed OR error responses detected.
                 """
-                import select
                 all_data = b""
                 try:
                     for _ in range(20):  # Safety bound — max 20 iterations
@@ -619,7 +725,6 @@ class CubeMatrix:
             
             def _open_and_send():
                 """Blocking: open a new socket, send, return the socket."""
-                import struct
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 # Use longer timeout when recovering from failure — lamp may be
                 # slow to accept TCP after reboot.  Normal ops stay at 0.5s.
@@ -635,7 +740,7 @@ class CubeMatrix:
                 # going through FIN → TIME_WAIT.  Prevents TIME_WAIT exhaustion
                 # on the Cube when we do need to open a fresh socket.
                 sock.setsockopt(
-                    socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0)
+                    socket.SOL_SOCKET, socket.SO_LINGER, _RST_LINGER
                 )
                 sock.connect((self._ip, self._port))
                 sock.sendall(request)
@@ -659,7 +764,7 @@ class CubeMatrix:
                             f"(socket already in FX data mode, socket_age={age:.0f}s, "
                             f"total_cmds={self._total_commands_sent})"
                         )
-                        self._close_fast_socket()
+                        self.close_fast_socket()
                         # The Cube needs time to process the RST (abortive close)
                         # before accepting a new TCP connection.  300ms gives
                         # reliable headroom on LAN.
@@ -689,7 +794,7 @@ class CubeMatrix:
                             f"— waiting 100ms then reconnecting "
                             f"(connect_timeout={connect_timeout}s, total_cmds={self._total_commands_sent})"
                         )
-                        self._close_fast_socket()
+                        self.close_fast_socket()
                         await asyncio.sleep(0.1)  # Brief settle — Cube TCP stack cleanup
                         new_sock = await asyncio.to_thread(_open_and_send)
                         self._fast_socket = new_sock
@@ -741,14 +846,7 @@ class CubeMatrix:
                 self._last_reconnect_attempt = 0
                 
                 # Invalidate the library's socket — we bypassed it.
-                try:
-                    lib_sock = self.device._Bulb__socket
-                    if lib_sock is not None:
-                        lib_sock.close()
-                        self.device._Bulb__socket = None
-                except Exception as exc:
-                    _LOGGER.debug("[%s] Failed to invalidate library socket: %s", self._ip, exc)
-                    self.device._Bulb__socket = None
+                self._drop_library_socket()
                 
                 self._total_commands_sent += 1
                 _LOGGER.debug(
@@ -758,7 +856,7 @@ class CubeMatrix:
                 
             except (socket.error, socket.timeout, OSError, ConnectionRefusedError, TimeoutError) as e:
                 # Connection failed entirely — close the socket so next attempt opens fresh
-                self._close_fast_socket()
+                self.close_fast_socket()
                 
                 self._consecutive_failures += 1
                 self._failed_commands_window.append(time.time())
@@ -793,10 +891,12 @@ class CubeMatrix:
                     )
                     self._device_unreachable = True
                     self._consecutive_failures = 1
-                
-                raise BulbException({"code": 0, "message": "A socket error occurred when sending the command."})
+
+                raise CubeConnectionError(
+                    f"Could not send {command}: {type(e).__name__}: {e}"
+                ) from e
             except Exception as e:
-                self._close_fast_socket()
+                self.close_fast_socket()
                 _LOGGER.error(f"[FAST #{cmd_id}] ✗ Unexpected: {type(e).__name__}: {e}")
                 raise
 
@@ -837,7 +937,7 @@ class CubeMatrix:
             Command result dict (or {'result': 'ok'} for closed connections)
         """
         cmd_id = int(time.time() * 1000) % 100000
-        _LOGGER.debug(f"[COMMAND #{cmd_id}] Queued: {command} [{self._state_summary()}]")
+        _LOGGER.debug(f"[COMMAND #{cmd_id}] Queued: {command} [{self.state_summary()}]")
         
         # Serialize all commands through the lock — the Yeelight Cube Lite cannot
         # handle concurrent TCP connections and returns error 6 ("illegal request")
@@ -857,7 +957,7 @@ class CubeMatrix:
             
             try:
                 # Check if socket is None — need to reconnect first
-                if self.device._Bulb__socket is None:
+                if self._library_socket() is None:
                     current_time = time.time()
                     time_since_last = current_time - self._last_reconnect_attempt
                     
@@ -898,8 +998,9 @@ class CubeMatrix:
                             )
                             # Don't increment _consecutive_failures here — the socket
                             # error handler below will do that when it catches this.
-                            # Use code=0 (not -1!) because -1 matches the quota handler.
-                            raise BulbException({"code": 0, "message": "A socket error occurred when sending the command."})
+                            raise CubeConnectionError(
+                                "Lamp unreachable (TCP probe failed)"
+                            )
                     else:
                         # Normal flow: socket=None after a successful "closed" response.
                         # The library creates a fresh socket on send_command() — no
@@ -980,16 +1081,18 @@ class CubeMatrix:
                     # update_leds would be SKIPPED because they'd see socket=None +
                     # _last_reconnect_attempt only 0.5s ago < 2s cooldown.
                     self._last_reconnect_attempt = 0
-                    try:
-                        self.device._Bulb__socket = None
-                    except:
-                        pass
+                    self._drop_library_socket()
                     return {"result": "ok"}
                     
-                elif "socket error" in error_message.lower():
-                    # "A socket error occurred when sending the command" = connect() or
-                    # send() failed. The command was NOT sent. The library already set
+                elif isinstance(e, CubeConnectionError) or "socket error" in error_message.lower():
+                    # Our failed reconnect probe, or the library's "A socket error
+                    # occurred when sending the command" = connect() or send()
+                    # failed. The command was NOT sent. The library already set
                     # __socket = None, so the next command will retry with a fresh socket.
+                    # The library only reports this as message text; it becomes a
+                    # CubeConnectionError here so callers can handle it by type.
+                    if not isinstance(e, CubeConnectionError):
+                        e = CubeConnectionError(error_message)
                     self._consecutive_failures += 1
                     self._failed_commands_window.append(time.time())
                     self._last_reconnect_attempt = time.time()  # Start cooldown from NOW
@@ -1039,7 +1142,7 @@ class CubeMatrix:
                     _LOGGER.warning(
                         f"[COMMAND #{cmd_id}] ✗ ILLEGAL REQUEST ({command}) — "
                         f"error code 6, backing off {RECONNECT_COOLDOWN_INITIAL}s "
-                        f"[{self._state_summary()}]"
+                        f"[{self.state_summary()}]"
                     )
                     await asyncio.sleep(RECONNECT_COOLDOWN_INITIAL)
                     raise e
@@ -1049,7 +1152,7 @@ class CubeMatrix:
                     self._failed_commands_window.append(time.time())
                     _LOGGER.warning(
                         f"[COMMAND #{cmd_id}] ✗ BULB ERROR ({command}): code={error_code}, "
-                        f"msg='{error_message}' [{self._state_summary()}]"
+                        f"msg='{error_message}' [{self.state_summary()}]"
                     )
                     raise e
                     
@@ -1058,14 +1161,16 @@ class CubeMatrix:
                 self._consecutive_failures += 1
                 self._failed_commands_window.append(time.time())
                 if "'NoneType' object has no attribute" in error_msg:
+                    # The library's socket vanished mid-command.
                     _LOGGER.debug(
                         f"[COMMAND #{cmd_id}] ✗ SOCKET GONE ({command}) — "
-                        f"NoneType AttributeError [{self._state_summary()}]"
+                        f"NoneType AttributeError [{self.state_summary()}]"
                     )
                     await asyncio.sleep(SOCKET_ERROR_WAIT)
+                    raise CubeConnectionError("Connection lost") from e
                 else:
                     _LOGGER.error(
-                        f"[COMMAND #{cmd_id}] ✗ ATTR ERROR ({command}): {e} [{self._state_summary()}]"
+                        f"[COMMAND #{cmd_id}] ✗ ATTR ERROR ({command}): {e} [{self.state_summary()}]"
                     )
                 raise e
                 
@@ -1075,7 +1180,7 @@ class CubeMatrix:
                 self._failed_commands_window.append(time.time())
                 _LOGGER.error(
                     f"[COMMAND #{cmd_id}] ✗ UNEXPECTED ({command}): {type(e).__name__}: {e} "
-                    f"[{self._state_summary()}]"
+                    f"[{self.state_summary()}]"
                 )
                 raise e
 

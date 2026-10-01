@@ -406,7 +406,7 @@ test("Draw ignores a collection fetch completed after reconfiguration", async ()
       assert.fail("stale fetch rendered");
     },
   };
-  const fetch = cardMethod("yeelight-cube-draw-card", "_fetchFreshPixelArts");
+  const fetch = cardMethod("draw-card-pixel-art-actions", "_fetchFreshPixelArts");
   const result = fetch.call(card, "sensor.old");
   card._collectionContext++;
   finish({ attributes: { pixel_arts: [{ name: "Old" }] } });

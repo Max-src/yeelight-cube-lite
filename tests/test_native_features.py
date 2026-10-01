@@ -19,10 +19,22 @@ ROOT = Path(__file__).parents[1] / "custom_components" / "yeelight_cube"
 CONSTANTS = runpy.run_path(ROOT / "const.py")
 PIXEL_ART = runpy.run_path(ROOT / "builtin_pixel_art.py")
 NATIVE_PREVIEW = runpy.run_path(ROOT / "native_effect_preview.py")
+COLOR_UTILS = runpy.run_path(ROOT / "color_utils.py")
+# Shared module-level names every loaded helper may reference.
+_DEFAULT_NAMESPACE = {
+    **{name: CONSTANTS[name] for name in (
+        "MODE_CLOCK", "MODE_NATIVE_EFFECT", "FIRMWARE_MODES", "ROTATION_KIND_MODES",
+    )},
+    **{name: COLOR_UTILS[name] for name in ("rgb_to_argb", "argb_to_rgb")},
+}
 # The light entity is split across light.py and its light_*.py mixins. Join them
 # so source-level invariant checks below still find methods wherever they live.
 LIGHT_SOURCE = "\n\n".join(
     p.read_text(encoding="utf-8") for p in sorted(ROOT.glob("light*.py"))
+)
+# The entity-facing actions are split across light_services*.py modules.
+SERVICES_SOURCE = "\n\n".join(
+    p.read_text(encoding="utf-8") for p in sorted(ROOT.glob("light_services*.py"))
 )
 INIT_SOURCE = (ROOT / "__init__.py").read_text(encoding="utf-8")
 CAMERA_SOURCE = (ROOT / "camera.py").read_text(encoding="utf-8")
@@ -71,7 +83,7 @@ def _load_standalone_functions(source: str, names: set, extra_namespace=None) ->
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
         and node.name in names
     ]
-    namespace = {"json": json}
+    namespace = {"json": json, **_DEFAULT_NAMESPACE}
     if extra_namespace:
         namespace.update(extra_namespace)
     exec(
@@ -244,7 +256,7 @@ class NativeFeatureTests(unittest.TestCase):
             def __init__(self):
                 self.params = None
 
-            def _close_fast_socket(self):
+            def close_fast_socket(self):
                 return None
 
             async def send_raw_command(self, command, params, abortive_close=False):
@@ -398,6 +410,8 @@ class NativeFeatureTests(unittest.TestCase):
         device = types.SimpleNamespace(
             _calibration_lock=False,
             _music_flow_enabled=True,
+            _rotation_active=False,
+            _rotation_resume_pending=False,
             _is_on=True,
             _brightness=255,
             _rgb_color=(255, 255, 255),
@@ -447,6 +461,8 @@ class NativeFeatureTests(unittest.TestCase):
         device = types.SimpleNamespace(
             _calibration_lock=False,
             _music_flow_enabled=True,
+            _rotation_active=False,
+            _rotation_resume_pending=False,
             _is_on=True,
             _brightness=255,
             _rgb_color=(255, 255, 255),
@@ -523,7 +539,7 @@ class NativeFeatureTests(unittest.TestCase):
                 self.commands = []
                 self.raw_commands = []
 
-            def _close_fast_socket(self):
+            def close_fast_socket(self):
                 return None
 
             def close_command_socket(self):
@@ -603,7 +619,7 @@ class NativeFeatureTests(unittest.TestCase):
         )
 
         class FakeCube:
-            def _close_fast_socket(self):
+            def close_fast_socket(self):
                 return None
 
             def close_command_socket(self):
@@ -2536,7 +2552,7 @@ class NativeFeatureTests(unittest.TestCase):
         # mode) so the preview card renders the correct masked effect / colour,
         # and must refresh the linked settings controls -- matching a normal
         # clock-style selection from the device page.
-        self.assertIn('target._mode = "Clock"', reflect)
+        self.assertIn('target._mode = MODE_CLOCK', reflect)
         self.assertIn("target._native_clock_style = effect_style", reflect)
         self.assertIn("target._refresh_linked_entities()", reflect)
         # The card derives the effect from clock_style_id, so it must be the

@@ -2,7 +2,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
-from tests.test_native_features import ROOT, CONSTANTS, _load_standalone_functions
+from tests.test_native_features import ROOT, CONSTANTS, _load_standalone_functions, SERVICES_SOURCE
 
 
 class DeviceLifecycleTests(unittest.IsolatedAsyncioTestCase):
@@ -68,7 +68,7 @@ class DeviceLifecycleTests(unittest.IsolatedAsyncioTestCase):
         light.async_apply_display_mode = AsyncMock()
         pending = []
         handler = _load_standalone_functions(
-            (ROOT / "light_services.py").read_text(encoding="utf-8"),
+            SERVICES_SOURCE,
             {"handle_set_clock_style"},
             {**CONSTANTS, "_resolve_entities": lambda *args: [light],
              "HomeAssistantError": ValueError, "_fire_and_forget": lambda *tasks: pending.extend(tasks)},

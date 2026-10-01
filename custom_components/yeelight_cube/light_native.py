@@ -11,11 +11,14 @@ import json
 import logging
 import time
 from .native_effect_preview import effect_supports_color_mode, effect_supports_color_override
+from .color_utils import rgb_to_argb
+from .cube_matrix import CubeConnectionError
 
 from homeassistant.exceptions import HomeAssistantError  # type: ignore
 from homeassistant.util import dt as dt_util  # type: ignore
 
 from .const import (
+    MODE_CLOCK,
     ALL_NATIVE_EFFECTS,
     CLOCK_COLOR_MODES,
     CLOCK_MIXER_COMMAND_IDS,
@@ -140,7 +143,7 @@ class NativeModesMixin:
             return
         self._native_clock_content = content
         self._native_clock_show_date = content == "time_date"
-        if self._is_on and self._mode == "Clock":
+        if self._is_on and self._mode == MODE_CLOCK:
             await self.async_apply_display_mode(update_type="color_change")
         if self._clock_content_select_entity:
             self._clock_content_select_entity.async_update_from_light()
@@ -155,7 +158,7 @@ class NativeModesMixin:
         Priority: user override (``_native_clock_color`` attribute) > style
         default (its own colour, else its mixer effect's default colour).
         """
-        override = getattr(self, "_native_clock_color", None)
+        override = self._native_clock_color
         if override is not None:
             return override
         return clock_style_default_color(style)
@@ -185,7 +188,7 @@ class NativeModesMixin:
         # protect except B&W, which the firmware renders as plain white when
         # no colour is sent.
         effect_name = CLOCK_MIXER_EFFECTS.get(style["mixer"])
-        clock_color_mode = getattr(self, "_native_clock_color_mode", "normal")
+        clock_color_mode = self._native_clock_color_mode
         if clock_color_mode == "bw" or (
             clock_color_mode != "normal" and effect_name is not None
         ):
@@ -225,7 +228,7 @@ class NativeModesMixin:
             effect_config,
         ]
 
-        self._cube_matrix._close_fast_socket()
+        self._cube_matrix.close_fast_socket()
         # Keep this as the first fresh-socket command. Cube Lite can drop the
         # clock activation when set_bright opens and resets a socket just before
         # set_fx_effect; brightness remains adjustable after activation.
@@ -294,16 +297,15 @@ class NativeModesMixin:
             ]
         elif spec.get("direction_fixed") is not None:
             effect_config["direction"] = spec["direction_fixed"]
-        color_mode = getattr(self, "_native_effect_color_mode", "normal")
+        color_mode = self._native_effect_color_mode
         palette_id = CLOCK_COLOR_MODES.get(color_mode)
         if not effect_supports_color_mode(self._native_effect, color_mode):
             palette_id = None
         if spec.get("color") is not None and palette_id is None:
             effect_config["color"] = [int(spec["color"])]
-        color = getattr(self, "_native_effect_color", None)
+        color = self._native_effect_color
         if color is not None and color_mode == "normal" and effect_supports_color_override(self._native_effect):
-            red, green, blue = color
-            effect_config["color"] = [0x01000000 | (red << 16) | (green << 8) | blue]
+            effect_config["color"] = [rgb_to_argb(color)]
 
         params = [
             spec["effect_id"] if palette_id is None else palette_id,
@@ -311,7 +313,7 @@ class NativeModesMixin:
             NATIVE_EFFECT_APPLY,
             effect_config,
         ]
-        self._cube_matrix._close_fast_socket()
+        self._cube_matrix.close_fast_socket()
         await self._set_native_mode_brightness()
         await asyncio.sleep(0.1)
         await self._cube_matrix.send_raw_command("set_fx_effect", params)
@@ -330,8 +332,8 @@ class NativeModesMixin:
     ) -> None:
         """Start or stop device-microphone music flow through private LAN control."""
         if enabled and (
-            getattr(self, "_rotation_active", False)
-            or getattr(self, "_rotation_resume_pending", False)
+            self._rotation_active
+            or self._rotation_resume_pending
         ):
             self.stop_effect_rotation()
 
@@ -340,14 +342,14 @@ class NativeModesMixin:
             previous_power = self._is_on
             payload = _build_music_flow_payload(enabled, self._music_flow_effect)
 
-            self._cube_matrix._close_fast_socket()
+            self._cube_matrix.close_fast_socket()
             try:
                 result = await self._cube_matrix.send_command_with_recovery(
                     "set_ps",
                     ["mic_music_mode", payload],
                 )
                 if result is None:
-                    raise RuntimeError(
+                    raise CubeConnectionError(
                         "Music flow command was skipped during connection cooldown"
                     )
             finally:
@@ -377,7 +379,7 @@ class NativeModesMixin:
                     self._in_native_fw_mode = False
                     await asyncio.sleep(0.1)
                     if restore_power is False:
-                        self._cube_matrix._close_fast_socket()
+                        self._cube_matrix.close_fast_socket()
                         await self._cube_matrix.send_raw_command(
                             "set_power",
                             ["off"],

@@ -19,6 +19,9 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: i
 from homeassistant.util import dt as dt_util  # type: ignore
 
 from .const import (
+    FIRMWARE_MODES,
+    MODE_CLOCK,
+    MODE_NATIVE_EFFECT,
     DOMAIN,
     CONF_IP,
     CLOCK_MIXER_EFFECTS,
@@ -26,6 +29,7 @@ from .const import (
     DEFAULT_NATIVE_CLOCK_STYLE,
     NATIVE_CLOCK_STYLES,
 )
+from .entity import CubeDeviceEntity
 from .effect_orientation import clock_effect_direction
 from .layout import FONT_MAPS, char_advance
 from .native_effect_preview import (
@@ -119,7 +123,7 @@ async def async_setup_entry(
 
 
 # ── Base camera ────────────────────────────────────────────────────────
-class _YeelightCubeMatrixCameraBase(Camera):
+class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
     """Abstract base for the 20×5 LED matrix live-preview cameras.
 
     Subclasses override ``_draw_pixel()`` to choose rectangle vs ellipse.
@@ -148,16 +152,6 @@ class _YeelightCubeMatrixCameraBase(Camera):
         self._frozen_background_phase: float | None = None
         # Seamless-resume offset for the clock's absolute-phase background.
         self._clock_phase_offset: float = 0.0
-
-    # ── Device grouping ────────────────────────────────────────────────
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._config_entry.entry_id)},
-            "name": self._light_entity._attr_name,
-            "manufacturer": "Yeelight",
-            "model": "Cube Matrix",
-        }
 
     # ── Lifecycle ──────────────────────────────────────────────────────
     async def async_added_to_hass(self) -> None:
@@ -213,10 +207,7 @@ class _YeelightCubeMatrixCameraBase(Camera):
 
     def _is_native_preview_mode(self) -> bool:
         """Return whether the preview changes without an HA state update."""
-        return getattr(self._light_entity, "_mode", None) in (
-            "Clock",
-            "Native Effect",
-        )
+        return getattr(self._light_entity, "_mode", None) in FIRMWARE_MODES
 
     def _uses_generated_preview(self) -> bool:
         """Return whether pixels are generated locally instead of cached content:
@@ -250,9 +241,9 @@ class _YeelightCubeMatrixCameraBase(Camera):
         mode = getattr(le, "_mode", None)
         if getattr(le, "_music_flow_enabled", False):
             base = self._get_music_flow_preview()
-        elif mode == "Clock":
+        elif mode == MODE_CLOCK:
             base = self._get_clock_preview()
-        elif mode == "Native Effect":
+        elif mode == MODE_NATIVE_EFFECT:
             base = self._get_native_effect_preview()
         else:
             base = getattr(le, "_base_matrix_colors", None)

@@ -6,11 +6,15 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
-from tests.test_native_features import ROOT, CONSTANTS, NATIVE_PREVIEW, _load_standalone_functions
+from tests.test_native_features import ROOT, CONSTANTS, NATIVE_PREVIEW, _load_standalone_functions, SERVICES_SOURCE
 
 NATIVE_CLOCK_STYLES = CONSTANTS["NATIVE_CLOCK_STYLES"]
 ALL_NATIVE_EFFECTS = CONSTANTS["ALL_NATIVE_EFFECTS"]
 DOMAIN = CONSTANTS["DOMAIN"]
+
+
+BULB_EXCEPTION = type("BulbException", (Exception,), {})
+CUBE_CONNECTION_ERROR = type("CubeConnectionError", (BULB_EXCEPTION,), {})
 
 
 def _rotation_helpers():
@@ -47,6 +51,7 @@ def _rotation_helpers():
         {
             "asyncio": asyncio,
             "time": time,
+            "CubeConnectionError": CUBE_CONNECTION_ERROR,
             "CIRCUIT_BREAKER_WINDOW": 30.0,
             "RECOVERY_CONNECT_TIMEOUT": 3.0,
             "RECONNECT_COOLDOWN_INITIAL": 1.0,
@@ -70,6 +75,34 @@ def _bind(light, helpers, *names):
     for name in names:
         fn = helpers[name]
         setattr(light, name, lambda *args, _f=fn, _s=light, **kwargs: _f(_s, *args, **kwargs))
+
+
+class FakeCubeMatrix:
+    """The CubeMatrix connection-state API the health check uses."""
+
+    def __init__(self, unreachable=False, reachable=True):
+        self.is_unreachable = unreachable
+        self.consecutive_failures = 0
+        self.last_success_time = time.time()
+        self.reconnect_cooldown = 30
+        self.close_fast_socket = Mock()
+        self._reachable = reachable
+
+    async def probe(self, timeout=None):
+        return self._reachable
+
+    def mark_unreachable(self):
+        was_reachable = not self.is_unreachable
+        self.is_unreachable = True
+        return was_reachable
+
+    def mark_recovered(self):
+        self.close_fast_socket()
+        self.consecutive_failures = 0
+        self.is_unreachable = False
+
+    def state_summary(self):
+        return ""
 
 
 def make_light(helpers, kind="native", is_on=True, extended=False):
@@ -104,6 +137,14 @@ def make_light(helpers, kind="native", is_on=True, extended=False):
         _rotation_error=None,
         _rotation_resume_pending=False,
         _rotation_waiting_for_reconnect=False,
+        _rotation_timeline=None,
+        _rotation_group=None,
+        _rotation_retry_attempt=0,
+        _rotation_retry_at=None,
+        _hardware_failure_retryable=False,
+        _last_connection_error=None,
+        _hard_timeout_times=[],
+        _cube_matrix=FakeCubeMatrix(),
         _calibration_lock=False,
         _music_flow_enabled=False,
         stop_scroll_timer=Mock(),
@@ -138,7 +179,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
                 light._rotation_active = True
                 light._last_hardware_brightness = 50
                 light.ensure_fx_ready = AsyncMock()
-                light._cube_matrix = SimpleNamespace(_close_fast_socket=Mock())
+                light._cube_matrix = SimpleNamespace(close_fast_socket=Mock())
                 light._apply_display_mode_internal = AsyncMock()
                 await self.helpers["_force_refresh_impl"](light)
                 self.assertEqual(light.ensure_fx_ready.await_count, int(mode == "Text"))
@@ -193,7 +234,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_offline_exhaustion_preserves_rotation_for_reconnect(self):
         light = make_light(self.helpers, kind="clock")
-        light._cube_matrix = SimpleNamespace(_device_unreachable=True)
+        light._cube_matrix = FakeCubeMatrix(unreachable=True)
         light._apply_rotation_item = AsyncMock(side_effect=TimeoutError("Device timeout"))
         light._wait_rotation_retry = AsyncMock(return_value=True)
         with self.assertRaises(ValueError):
@@ -215,19 +256,10 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         light.MAX_DISPLAY_RETRIES = 3
         light._hard_timeout_times = []
         light._async_maybe_rediscover = AsyncMock()
-        light._cube_matrix = SimpleNamespace(
-            _device_unreachable=light._rotation_waiting_for_reconnect,
-            _consecutive_failures=0,
-            _last_success_time=time.time(),
-            _port=55443,
-            _reconnect_cooldown=30,
-            _close_fast_socket=Mock(),
+        light._cube_matrix = FakeCubeMatrix(
+            unreachable=light._rotation_waiting_for_reconnect, reachable=reachable
         )
-        with (
-            patch("asyncio.sleep", new=AsyncMock(side_effect=[None, asyncio.CancelledError()])),
-            patch("socket.socket", return_value=Mock()),
-            patch("asyncio.to_thread", new=AsyncMock(side_effect=None if reachable else OSError("Offline"))),
-        ):
+        with patch("asyncio.sleep", new=AsyncMock(side_effect=[None, asyncio.CancelledError()])):
             await self.helpers["_periodic_health_check"](light)
 
     async def test_health_reconnect_resumes_exact_item_and_keeps_other_lamp_running(self):
@@ -728,7 +760,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
 
 class EffectRotationServiceTests(unittest.IsolatedAsyncioTestCase):
     def _handlers(self, resolve, fire):
-        source = (ROOT / "light_services.py").read_text(encoding="utf-8")
+        source = SERVICES_SOURCE
         return _load_standalone_functions(
             source,
             {
@@ -822,7 +854,7 @@ class EffectRotationServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_failed_start_service_preserves_offline_recovery_intent(self):
         light = make_light(_rotation_helpers(), kind="clock")
-        light._cube_matrix = SimpleNamespace(_device_unreachable=True)
+        light._cube_matrix = FakeCubeMatrix(unreachable=True)
         light._apply_rotation_item = AsyncMock(side_effect=TimeoutError("Offline"))
         light._wait_rotation_retry = AsyncMock(return_value=True)
         queued = []
@@ -864,7 +896,8 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
             **CONSTANTS, "asyncio": asyncio, "time": time, "base64": base64,
             "_LOGGER": Mock(), "_get_device_lock": lambda ip: lock,
             "APPLY_HARD_TIMEOUT": 8, "CIRCUIT_BREAKER_WINDOW": 30,
-            "BulbException": type("BulbException", (Exception,), {}),
+            "BulbException": BULB_EXCEPTION,
+            "CubeConnectionError": CUBE_CONNECTION_ERROR,
             "__package__": "rotation_test",
             "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
             "effect_supports_color_override": NATIVE_PREVIEW["effect_supports_color_override"],
@@ -898,8 +931,9 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
         light.async_schedule_update_ha_state = Mock()
         light._maybe_schedule_retry = Mock()
         light._cube_matrix = SimpleNamespace(
-            _state_summary=lambda: "test transport", _close_fast_socket=Mock(),
-            _consecutive_failures=0, send_raw_command=AsyncMock(),
+            state_summary=lambda: "test transport", close_fast_socket=Mock(),
+            record_success=Mock(), record_failure=Mock(), is_unreachable=False,
+            send_raw_command=AsyncMock(),
         )
         self.addCleanup(light.stop_effect_rotation)
         return light
