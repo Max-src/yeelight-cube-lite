@@ -2,13 +2,13 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
-from tests.test_native_features import ROOT, CONSTANTS, _load_standalone_functions, SERVICES_SOURCE
+from tests.test_native_features import ROOT, CONSTANTS, LIGHT_SOURCE, _load_standalone_functions, SERVICES_SOURCE
 
 
 class DeviceLifecycleTests(unittest.IsolatedAsyncioTestCase):
     def make_light(self, options):
         methods = _load_standalone_functions(
-            (ROOT / "light.py").read_text(encoding="utf-8"),
+            LIGHT_SOURCE,
             {"set_extended_effects_enabled", "_restore_extended_effects"},
         )
         entry = SimpleNamespace(options=dict(options))

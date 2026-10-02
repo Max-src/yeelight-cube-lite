@@ -373,6 +373,23 @@ TEXT_RENDER_MODES = tuple(m for m in MATRIX_DISPLAY_MODES if m != "Custom Draw")
 ORIENTATION_NORMAL = "normal"
 ORIENTATION_FLIPPED = "flipped"
 
+# 4-way physical device orientation (matches the official app's mount picker).
+# The lamp has no single firmware command for this, so we translate it to the
+# mechanisms that actually work:
+#   - matrix / text / pixel art: normal vs flipped (180 deg) pixel flip
+#   - native effects: the effect's own `direction` field
+#   - clock: no reorientation available (firmware-fixed)
+DEVICE_ORIENTATIONS = ("right", "down", "left", "up")
+DEFAULT_DEVICE_ORIENTATION = "right"
+# Physical mount -> matrix/text/pixel flip. right/down keep content upright;
+# left/up are 180 deg from them (verified against hardware for custom pixel art).
+DEVICE_ORIENTATION_TO_FLIP = {
+    "right": ORIENTATION_NORMAL,
+    "down": ORIENTATION_NORMAL,
+    "left": ORIENTATION_FLIPPED,
+    "up": ORIENTATION_FLIPPED,
+}
+
 # When full_panel is on, the text is replaced by this single sentinel character
 # whose glyph covers the entire 5x20 display (all 100 pixels), so every render
 # mode can treat it as one "giant letter" with no special-case branch.

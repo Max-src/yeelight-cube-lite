@@ -9,8 +9,7 @@ import {
   actionButtonGroupModel,
   handleActionButtonGroupEvent,
 } from "./action-button-utils.js";
-
-const nothing = Symbol.for("lit-nothing");
+import { nothing } from "./lit-extras.js";
 
 export function renderActionRow(content, options = {}) {
   return html`<div class=${getActionRowClass(options)}>${content}</div>`;

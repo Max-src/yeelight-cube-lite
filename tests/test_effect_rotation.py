@@ -6,7 +6,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
-from tests.test_native_features import ROOT, CONSTANTS, NATIVE_PREVIEW, _load_standalone_functions, SERVICES_SOURCE
+from tests.test_native_features import ROOT, CONSTANTS, LIGHT_SOURCE, NATIVE_PREVIEW, _load_standalone_functions, SERVICES_SOURCE
 
 NATIVE_CLOCK_STYLES = CONSTANTS["NATIVE_CLOCK_STYLES"]
 ALL_NATIVE_EFFECTS = CONSTANTS["ALL_NATIVE_EFFECTS"]
@@ -18,7 +18,7 @@ CUBE_CONNECTION_ERROR = type("CubeConnectionError", (BULB_EXCEPTION,), {})
 
 
 def _rotation_helpers():
-    source = (ROOT / "light.py").read_text(encoding="utf-8")
+    source = LIGHT_SOURCE
     return _load_standalone_functions(
         source,
         {
@@ -892,7 +892,10 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
         }
         source = "\n".join(
             (ROOT / filename).read_text(encoding="utf-8")
-            for filename in ("light.py", "light_render.py", "light_native.py")
+            for filename in (
+                "light.py", "light_render.py", "light_native.py",
+                "light_connection.py", "light_rotation.py",
+            )
         )
         helpers = _load_standalone_functions(source, names, {
             **CONSTANTS, "asyncio": asyncio, "time": time, "base64": base64,

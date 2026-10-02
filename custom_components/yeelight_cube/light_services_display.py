@@ -19,6 +19,7 @@ from homeassistant.helpers import config_validation as cv  # type: ignore
 from . import async_save_data
 from .color_utils import hex_to_rgb
 from .const import (
+    DEVICE_ORIENTATIONS,
     FIRMWARE_MODES,
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
@@ -31,7 +32,7 @@ from .const import (
 )
 from .image_utils import MAX_IMAGE_B64_LENGTH, image_to_matrix
 from .layout import FONT_MAPS, TOTAL_COLUMNS, TOTAL_ROWS
-from .light import DEVICE_ORIENTATIONS, _entity_id_or_list
+from .light import _entity_id_or_list
 from .light_services_common import (
     COLOR_LIST_SCHEMA,
     _resolve_entity,

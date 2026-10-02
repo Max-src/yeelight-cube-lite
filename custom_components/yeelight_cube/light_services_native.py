@@ -27,11 +27,11 @@ from .const import (
     NATIVE_CLOCK_STYLES,
     NATIVE_EFFECTS,
 )
-from .light import (
+from .light import _entity_id_or_list
+from .light_rotation import (
     FAVOURITE_KINDS,
     MAX_ROTATION_INTERVAL,
     MIN_ROTATION_INTERVAL,
-    _entity_id_or_list,
 )
 from .light_services_common import (
     FAVOURITE_LIST_SCHEMA,

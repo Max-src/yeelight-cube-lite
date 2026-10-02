@@ -13,9 +13,6 @@ import {
 } from "./orientation-control-utils.js";
 import { renderActionButton } from "./action-button-ui.js";
 
-// lit-all.js does not re-export `nothing`; Lit defines it as this global symbol.
-const nothing = Symbol.for("lit-nothing");
-
 /**
  * The device-orientation row as a Lit template ("" when hidden). `onClick`
  * receives every click on the row; buttons carry their value in data-value.
@@ -58,6 +55,7 @@ export function renderOrientationControls(config, current, unavailable, onClick)
   </div>`;
 }
 import { renderModeSettingsSection } from "./editor_ui_utils.js";
+import { nothing } from "./lit-extras.js";
 
 export function renderOrientationSettings(config, onChange) {
   const options = orientationOptions(config);

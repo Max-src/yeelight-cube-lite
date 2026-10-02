@@ -1,8 +1,6 @@
 import logging
 import asyncio
 import base64
-import copy
-import random
 import time
 import voluptuous as vol # type: ignore
 from homeassistant.components.light import LightEntity, ColorMode # type: ignore
@@ -11,17 +9,17 @@ from homeassistant.core import HomeAssistant, callback # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 from homeassistant.config_entries import ConfigEntry # type: ignore
 from homeassistant.helpers import config_validation as cv # type: ignore
-from homeassistant.exceptions import HomeAssistantError # type: ignore
 from yeelight import BulbException # type: ignore
 from .const import (
-    TRANSITION_TYPES,
+    DEFAULT_DEVICE_ORIENTATION,
+    DEVICE_ORIENTATIONS,
+    DEVICE_ORIENTATION_TO_FLIP,
     FIRMWARE_MODES,
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
     ROTATION_KIND_MODES,
     CONF_DEVICE_ID,
     CONF_IP,
-    CLOCK_COLOR_MODES,
     clock_style_default_color,
     DEFAULT_MATRIX_DISPLAY_MODE,
     DEFAULT_MUSIC_FLOW_EFFECT,
@@ -31,15 +29,11 @@ from .const import (
     DEVICE_ORIENTATION_TO_EFFECT_DIR,
     DOMAIN,
     ALL_NATIVE_EFFECTS,
-    MATRIX_DISPLAY_MODES,
     MUSIC_FLOW_EFFECT_IDS,
-    MUSIC_FLOW_EFFECTS,
     NATIVE_CLOCK_CONTENT_BYTE,
-    NATIVE_CLOCK_CONTENT_OPTIONS,
     NATIVE_CLOCK_EFFECT_ID,
     NATIVE_CLOCK_STYLES,
     NATIVE_EFFECT_DIRECTION_VALUES,
-    NATIVE_EFFECT_RENAMES,
     NATIVE_EFFECTS,
     ORIENTATION_FLIPPED,
     ORIENTATION_NORMAL,
@@ -50,42 +44,26 @@ from .cube_matrix import (
     CubeFxModeLost,
     CubeMatrix,
     encode_rgb_frame,
-    RECONNECT_COOLDOWN_INITIAL,
-    RECOVERY_CONNECT_TIMEOUT,
     is_connection_error,
     is_quota_error,
 )
 from .entity import cube_device_info
 from .layout import Layout, Module, FONT_MAPS
 
-from .color_utils import argb_to_rgb, hex_to_rgb, rgb_to_argb, rgb_to_hex
+from .color_utils import hex_to_rgb, rgb_to_hex
 from .light_color import ColorPipelineMixin
 from .light_transitions import TransitionMixin
 from .light_native import NativeModesMixin, _parse_music_flow_config
 from .light_render import MatrixRenderMixin
+from .light_connection import ConnectionMixin, APPLY_HARD_TIMEOUT, _DEVICE_LOCKS, _DEVICE_LOCK_HOLDERS
+from .light_restore import StateRestoreMixin
+from .light_rotation import RotationMixin
 
 _LOGGER = logging.getLogger(__name__)
 _LOGGER.debug("Yeelight Cube Lite light.py module loaded")
 
 # Timing constants
 APPLY_POST_DELAY = 0.0        # No post-delay needed -- send_command_fast doesn't wait for responses
-APPLY_HARD_TIMEOUT = 12.0      # Seconds -- safety timeout for one hardware operation under the
-                               # device lock. When exceeded, asyncio.wait_for cancels it and
-                               # releases the lock so queued operations can proceed. Long enough
-                               # for activate_fx_mode + draw_matrices on slow Wi-Fi: releasing the
-                               # lock between the two shows the default ribbon on the lamp.
-                               # Transitions add their duration on top (async_apply_display_mode).
-FAVOURITE_KINDS = ("native", "clock")
-# Rotation interval bounds (seconds). A step that takes longer to apply than
-# the interval lands on the next boundary of the shared time grid.
-MIN_ROTATION_INTERVAL = 1
-MAX_ROTATION_INTERVAL = 604800  # 7 days
-MAX_FAVOURITES = 100          # per lamp and kind
-MAX_FAVOURITE_NAME = 100
-LOCK_WAIT_WARNING_MS = 3000   # Waiting for the lamp longer than this is logged as a
-                              # warning (commands piling up); shorter waits are normal
-                              # queueing behind a redraw/transition and logged at debug.
-CIRCUIT_BREAKER_WINDOW = 30.0 # Seconds -- if 2+ hard timeouts occur within this window,
                               # reject new operations immediately instead of queueing them
                               # behind the lock for another APPLY_HARD_TIMEOUT each.
 FX_MODE_STALENESS_TIMEOUT = 90.0  # Seconds -- re-send activate_fx_mode when _last_fx_mode_time
@@ -127,28 +105,6 @@ def _entity_id_or_list(value):
     raise vol.Invalid(f"Expected entity_id string or list, got {type(value)}")
 
 
-# Per-device locks to serialize hardware commands to the SAME physical lamp.
-# Each IP gets its own asyncio.Lock, so operations to different lamps run
-# concurrently without cross-device cascade.  When one lamp is unreachable,
-# only that lamp's operations block -- the other lamp continues normally.
-# Within a single lamp, the lock ensures command chains (activate_fx_mode  -> 
-# set_bright -> update_leds) complete atomically without interleaving.
-_DEVICE_LOCKS: dict[str, asyncio.Lock] = {}
-# Name of the operation holding each device lock, for the lock-wait log.
-_DEVICE_LOCK_HOLDERS: dict[str, str] = {}
-# Shared schedules for lamps resuming the same multi-lamp rotation after a
-# restart: the first lamp creates it, the others join, so the group shows the
-# same item at each step again. Keyed by the group, kind and interval.
-_ROTATION_RESUME_TIMELINES: dict = {}
-ROTATION_RESUME_TIMELINE_TTL = 300.0  # seconds a late lamp can still join
-
-def _get_device_lock(ip: str) -> asyncio.Lock:
-    """Get or create the per-device lock for a given IP."""
-    if ip not in _DEVICE_LOCKS:
-        _DEVICE_LOCKS[ip] = asyncio.Lock()
-    return _DEVICE_LOCKS[ip]
-
-
 def cleanup_module_state(ip: str) -> None:
     """Remove module-level state for a device being unloaded.
 
@@ -168,124 +124,9 @@ def cleanup_module_state(ip: str) -> None:
     _DEVICE_LOCKS.pop(ip, None)
     _DEVICE_LOCK_HOLDERS.pop(ip, None)
 
-# 4-way physical device orientation (matches the official app's mount picker).
-# The lamp has no single firmware command for this, so we translate it to the
-# mechanisms that actually work:
-#   - matrix / text / pixel art: normal vs flipped (180 deg) pixel flip
-#   - native effects: the effect's own `direction` field
-#   - clock: no reorientation available (firmware-fixed)
-DEVICE_ORIENTATIONS = ("right", "down", "left", "up")
-DEFAULT_DEVICE_ORIENTATION = "right"
-# Physical mount -> matrix/text/pixel flip. right/down keep content upright;
-# left/up are 180 deg from them (verified against hardware for custom pixel art).
-_DEVICE_ORIENTATION_TO_FLIP = {
-    "right": ORIENTATION_NORMAL,
-    "down": ORIENTATION_NORMAL,
-    "left": ORIENTATION_FLIPPED,
-    "up": ORIENTATION_FLIPPED,
-}
 # Native effects and the native clock's mixer follow the physical mount; the
 # orientation -> direction map is the shared source of truth in const.py.
 _DEVICE_ORIENTATION_TO_EFFECT_DIR = DEVICE_ORIENTATION_TO_EFFECT_DIR
-
-# ── State restore after a Home Assistant restart ────────────────────────────
-# A converter returns the value to restore, or _INVALID to keep the default.
-_INVALID = object()
-
-
-def _member_of(options):
-    return lambda value: value if value in options else _INVALID
-
-
-def _clamped(convert, low, high):
-    return lambda value: max(low, min(high, convert(value)))
-
-
-def _int_or_none(value):
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _rgb_list(value):
-    if (
-        isinstance(value, (list, tuple)) and len(value) == 3
-        and all(type(channel) is int and 0 <= channel <= 255 for channel in value)
-    ):
-        return list(value)
-    return _INVALID
-
-
-def _native_effect_name(value):
-    # Migrate legacy names (e.g. "Ribbon") to current app names.
-    name = NATIVE_EFFECT_RENAMES.get(value, value)
-    return name if name in ALL_NATIVE_EFFECTS else _INVALID
-
-
-def _button_effect_names(value):
-    if not isinstance(value, list):
-        return _INVALID
-    return [
-        NATIVE_EFFECT_RENAMES.get(name, name)
-        for name in value
-        if NATIVE_EFFECT_RENAMES.get(name, name) in NATIVE_EFFECTS
-        or name.startswith("Clock: ")
-    ][:8]
-
-
-def _bool_only(value):
-    return value if isinstance(value, bool) else _INVALID
-
-
-# State attribute -> (entity attribute, converter), restored in this order.
-# Missing or None attributes are skipped, and so is a value the converter
-# rejects. Values that depend on each other (brightness, text colors, mode,
-# clock content, orientation) are restored in YeelightCubeLight._restore_state.
-_RESTORED_ATTRIBUTES = (
-    # Preview adjustments (preview_darken is derived from brightness instead)
-    ("preview_brighten", "_preview_brighten", int),
-    ("preview_hue_shift", "_preview_hue_shift", int),
-    ("preview_temperature", "_preview_temperature", int),
-    ("preview_saturation", "_preview_saturation", int),
-    ("preview_vibrance", "_preview_vibrance", int),
-    ("preview_contrast", "_preview_contrast", int),
-    ("preview_glow", "_preview_glow", int),
-    ("preview_grayscale", "_preview_grayscale", int),
-    ("preview_invert", "_preview_invert", int),
-    ("preview_tint_hue", "_preview_tint_hue", int),
-    ("preview_tint_strength", "_preview_tint_strength", int),
-    # Native clock
-    ("clock_style_id", "_native_clock_style", lambda v: int(v) if int(v) in NATIVE_CLOCK_STYLES else _INVALID),
-    ("clock_show_date", "_native_clock_show_date", bool),
-    ("clock_12_hour", "_native_clock_12_hour", bool),
-    ("clock_colon_blink", "_native_clock_colon_blink", bool),
-    ("clock_color", "_native_clock_color", _int_or_none),
-    ("clock_color_mode", "_native_clock_color_mode", _member_of(CLOCK_COLOR_MODES)),
-    # Native effects and Music Flow
-    ("native_effect_color", "_native_effect_color", _rgb_list),
-    ("native_effect_color_mode", "_native_effect_color_mode", _member_of(CLOCK_COLOR_MODES)),
-    ("native_effect", "_native_effect", _native_effect_name),
-    ("native_effect_speed", "_native_effect_speed", _clamped(int, 1, 255)),
-    ("native_effect_direction", "_native_effect_direction", _member_of(NATIVE_EFFECT_DIRECTION_VALUES)),
-    ("music_flow_enabled", "_music_flow_enabled", bool),
-    ("music_flow_effect", "_music_flow_effect", _member_of(MUSIC_FLOW_EFFECTS)),
-    ("music_flow_restore_power", "_music_flow_restore_power", _bool_only),
-    ("power_on_state", "_power_on_state", _member_of(POWER_ON_STATES)),
-    ("button_effects", "_button_effects", _button_effect_names),
-    # Text and layout
-    ("custom_text", "_custom_text", lambda v: v),
-    ("background_color", "_background_color", tuple),
-    ("alignment", "_alignment", _member_of(("left", "center", "right"))),
-    ("font", "_font", _member_of(FONT_MAPS)),
-    ("angle", "_angle", float),
-    # Transitions and scrolling
-    ("transition_type", "_transition_type", _member_of(TRANSITION_TYPES)),
-    ("transition_steps", "_transition_steps", _clamped(int, 1, 10)),
-    ("transition_duration", "_transition_duration", _clamped(float, 0.2, 10.0)),
-    ("scroll_speed", "_scroll_speed", float),
-    ("scroll_enabled", "_scroll_enabled", bool),
-)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -295,23 +136,30 @@ _RESTORED_ATTRIBUTES = (
 # (state initialised in __init__ here), so behaviour is identical to one class.
 #
 #   light.py (this file) — core entity:
-#     __init__, HA lifecycle (async_added_to_hass restore /
-#     async_will_remove_from_hass cleanup / async_update), connection-health &
-#     hardware-op plumbing (_execute_hardware_op, ensure_fx_ready,
-#     _periodic_health_check, retry + calibration-lock helpers), public
-#     properties + control setters (brightness, orientation, alignment, font…),
-#     turn_on/off, the apply queue (async_apply_display_mode) and frame builder
-#     (apply()), scroll timer, and state snapshot / linked-entity sync.
+#     __init__, HA lifecycle (async_added_to_hass / async_will_remove_from_hass
+#     / async_update), public properties + control setters (brightness,
+#     orientation, alignment, font…), extra_state_attributes, ensure_fx_ready,
+#     turn_on/off and brightness, the display queue (async_apply_display_mode),
+#     the frame sender (apply()) and its brightness fast path, scroll timer,
+#     physical-button presets and linked-entity sync.
 #
-#   light_color.py      (ColorPipelineMixin)  — color adjustment/correction/
+#   light_color.py      (ColorPipelineMixin)  — colour adjustment/correction/
 #                        accuracy maths + the brightness curve.
 #   light_transitions.py(TransitionMixin)     — frame-by-frame transition anims.
 #   light_native.py     (NativeModesMixin)    — firmware Clock + native-effect
-#                        activation (set_fx_effect payloads).
+#                        activation (set_fx_effect payloads), Music Flow.
 #   light_render.py     (MatrixRenderMixin)   — mode router
 #                        (_apply_display_mode_internal), letter/pixel placement,
 #                        gradient/offset maths and orientation flips.
-#   light_services.py                          — component `handle_*` services
+#   light_connection.py (ConnectionMixin)     — _execute_hardware_op (per-lamp
+#                        lock, hard timeout, circuit breaker), display retries,
+#                        health check / rediscovery, brightness retry,
+#                        calibration lock.
+#   light_restore.py    (StateRestoreMixin)   — restore after a restart
+#                        (_RESTORED_ATTRIBUTES) and the save/restore_state snapshot.
+#   light_rotation.py   (RotationMixin)       — effect / clock rotation loop,
+#                        favourites and their persistence.
+#   light_services*.py                         — entity-facing actions
 #                        (registered by async_setup_light_services, re-exported
 #                        from the bottom of this file).
 #
@@ -319,7 +167,17 @@ _RESTORED_ATTRIBUTES = (
 # here by convention.
 # ─────────────────────────────────────────────────────────────────────────────
 
-class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, MatrixRenderMixin, LightEntity, RestoreEntity):
+class YeelightCubeLight(
+    ColorPipelineMixin,
+    TransitionMixin,
+    NativeModesMixin,
+    MatrixRenderMixin,
+    ConnectionMixin,
+    StateRestoreMixin,
+    RotationMixin,
+    LightEntity,
+    RestoreEntity,
+):
     """Home Assistant LightEntity for the Yeelight Cube Lite."""
 
     # Published for the cards but not stored in the recorder's history: large
@@ -764,531 +622,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             self._rgb_color = self._text_colors[0]
             _LOGGER.debug("[SYNC] Synchronized _rgb_color to %s from text_colors", self._rgb_color)
     
-    async def _execute_hardware_op(self, func, op_name: str, timeout_override: float = None):
-        """Execute a hardware operation under the global lock with timeout and error handling.
-        
-        Replaces the old queue processor.  Operations are serialized across all
-        entity instances via per-device locks.  A hard timeout prevents hung
-        socket operations from blocking the lock indefinitely.
-        
-        Args:
-            timeout_override: Optional custom timeout (seconds).  Used when a
-                              display transition needs more time than the default
-                              APPLY_HARD_TIMEOUT.
-        """
-        op_id = int(time.time() * 1000) % 100000
-        effective_timeout = timeout_override or APPLY_HARD_TIMEOUT
-        self._hardware_failure_retryable = False
-        
-        # CIRCUIT BREAKER: If 2+ hard timeouts occurred in the last N seconds,
-        # reject immediately instead of queueing behind the lock for
-        # APPLY_HARD_TIMEOUT each. This prevents the cascade where 5+ operations
-        # pile up, each waiting for its own timeout, leaving the lamp stuck.
-        now = time.time()
-        self._hard_timeout_times = [t for t in self._hard_timeout_times if now - t < CIRCUIT_BREAKER_WINDOW]
-        if len(self._hard_timeout_times) >= 2:
-            self._hardware_failure_retryable = True
-            _LOGGER.warning(
-                "[OP #%s] [%s] [!] CIRCUIT BREAKER -- rejecting %s "
-                "(%s timeouts in last %.0fs). "
-                "Device appears unreachable, will recover via health check.",
-                op_id, self._ip, op_name, len(self._hard_timeout_times),
-                CIRCUIT_BREAKER_WINDOW
-            )
-            self._connection_error = True
-            # Only schedule display retries for display operations
-            if op_name.startswith('display:'):
-                self._maybe_schedule_retry()
-            return False
-        
-        _LOGGER.debug(
-            "[OP #%s] [%s] > %s "
-            "(is_on=%s, fx_direct=%s) "
-            "[%s]",
-            op_id, self._ip, op_name, self._is_on, self._fx_mode_is_direct,
-            self._cube_matrix.summary
-        )
-        is_display_op = op_name.startswith('display:')
-        try:
-            lock_wait_start = time.time()
-            device_lock = _get_device_lock(self._ip)
-            # The operation this one queues behind, named in the log below.
-            waited_behind = (
-                _DEVICE_LOCK_HOLDERS.get(self._ip) if device_lock.locked() else None
-            )
-            async with device_lock:
-                _DEVICE_LOCK_HOLDERS[self._ip] = op_name
-                self._hardware_operation_phase = op_name
-                lock_wait_ms = (time.time() - lock_wait_start) * 1000
-                if lock_wait_ms > 5:
-                    # Waiting for the lamp to finish its previous operation (a
-                    # redraw with a transition takes 1-2 s) is normal. Only a
-                    # long wait suggests commands are piling up.
-                    log = (
-                        _LOGGER.warning
-                        if lock_wait_ms >= LOCK_WAIT_WARNING_MS
-                        else _LOGGER.debug
-                    )
-                    log(
-                        "[OP #%s] [%s] %s waited %.0fms for the lamp%s",
-                        op_id,
-                        self._ip,
-                        op_name,
-                        lock_wait_ms,
-                        f" (queued behind {waited_behind})" if waited_behind else "",
-                    )
-                try:
-                    await asyncio.wait_for(func(), timeout=effective_timeout)
-                except asyncio.TimeoutError:
-                    self._hardware_failure_retryable = True
-                    _LOGGER.error(
-                        "[OP #%s] [%s] [!] HARD TIMEOUT -- "
-                        "%s exceeded %.0fs, releasing lock "
-                        "(phase=%s)",
-                        op_id, self._ip, op_name, effective_timeout,
-                        self._hardware_operation_phase
-                    )
-                    self._fx_mode_is_direct = False
-                    self._cube_matrix.close_fast_socket()
-                    self._connection_error = True
-                    self._last_connection_error = f"Hard timeout: {op_name}"
-                    self._hard_timeout_times.append(time.time())
-                    self._cube_matrix.record_failure()
-                    # Only schedule display retries for display operations
-                    if is_display_op:
-                        self._maybe_schedule_retry()
-                    return False
-                finally:
-                    _DEVICE_LOCK_HOLDERS.pop(self._ip, None)
-            # Success
-            _LOGGER.debug("[OP #%s] [%s] [OK] %s complete", op_id, self._ip, op_name)
-            # Only reset display retry state on display op success
-            if is_display_op:
-                self._display_retry_count = 0
-                if self._retry_display_task and not self._retry_display_task.done():
-                    self._retry_display_task.cancel()
-            self._connection_error = False
-            self._cube_matrix.record_success()
-            # Clear circuit breaker on any success
-            self._hard_timeout_times.clear()
-            return True
-        except CubeConnectionError as e:
-            # The command did not reach the lamp (unreachable, cooldown, dead
-            # socket, FX mode lost while sending): retry once it answers.
-            self._hardware_failure_retryable = True
-            self._connection_error = True
-            self._last_connection_error = e.message
-            _LOGGER.warning(
-                "[OP #%s] [%s] Connection error: %s", op_id, self._ip, e.message
-            )
-            if is_display_op:
-                self._maybe_schedule_retry()
-        except TimeoutError:
-            self._hardware_failure_retryable = True
-            _LOGGER.debug(
-                "[OP #%s] [%s] Timeout -- device unreachable", op_id, self._ip
-            )
-            self._connection_error = True
-            self._last_connection_error = "Device timeout"
-            self._cube_matrix.record_failure()
-            if is_display_op:
-                self._maybe_schedule_retry()
-        except OSError as e:
-            # A raw socket failure (fresh-connection commands, probes).
-            self._hardware_failure_retryable = True
-            self._connection_error = True
-            self._last_connection_error = str(e)
-            _LOGGER.warning(
-                "[OP #%s] [%s] Connection error: %s", op_id, self._ip, e
-            )
-            self._cube_matrix.record_failure()
-            if is_display_op:
-                self._maybe_schedule_retry()
-        except BulbException as e:
-            # The lamp answered but refused the command (rate limit, illegal
-            # request, ...): not a connection problem.
-            error_dict = e.args[0] if e.args and isinstance(e.args[0], dict) else {}
-            error_message = error_dict.get('message', str(e))
-            self._connection_error = True
-            self._last_connection_error = f"BulbException: {error_message}"
-            _LOGGER.warning(
-                "[OP #%s] [%s] BulbException: %s", op_id, self._ip, error_message
-            )
-        except Exception as e:
-            _LOGGER.error(
-                "[OP #%s] [%s] Unexpected error in %s: %s", op_id, self._ip, op_name, e
-            )
-        return False
 
-    MAX_DISPLAY_RETRIES = 3  # 3 retries ~= 20s total, then health check takes over
-
-    # Calibration lock auto-release: if the wizard is abandoned (browser closed
-    # without exiting), the lamp would stay frozen forever. The lock auto-releases
-    # after this many seconds. The wizard sends periodic re-locks (heartbeat) that
-    # reset this timer, so it only fires once the wizard truly stops talking.
-    CALIBRATION_LOCK_TIMEOUT = 900  # 15 minutes
-
-    @callback
-    def _set_calibration_lock(self, enabled: bool):
-        """Enable/disable the exclusive calibration lock and (re)arm the safety
-        auto-release timer. Re-enabling acts as a heartbeat that pushes back the
-        auto-release."""
-        if self._calibration_lock_unsub is not None:
-            self._calibration_lock_unsub.cancel()
-            self._calibration_lock_unsub = None
-        self._calibration_lock = bool(enabled)
-        if enabled:
-            self.stop_effect_rotation()
-            self._calibration_lock_unsub = self.hass.loop.call_later(
-                self.CALIBRATION_LOCK_TIMEOUT, self._auto_release_calibration_lock
-            )
-            _LOGGER.info(
-                "[CALIB_LOCK] [%s] Calibration lock ENABLED -- automation "
-                "display/brightness commands will be ignored (auto-release in "
-                "%ss)",
-                self._ip, self.CALIBRATION_LOCK_TIMEOUT
-            )
-        else:
-            _LOGGER.info(
-                "[CALIB_LOCK] [%s] Calibration lock DISABLED -- lamp resumes "
-                "normal command handling",
-                self._ip
-            )
-        if self.hass is not None:
-            self.async_schedule_update_ha_state()
-
-    @callback
-    def _auto_release_calibration_lock(self):
-        """Safety net: release the lock if the wizard heartbeat stops."""
-        self._calibration_lock_unsub = None
-        if self._calibration_lock:
-            self._calibration_lock = False
-            _LOGGER.warning(
-                "[CALIB_LOCK] [%s] Calibration lock auto-released after "
-                "%ss of inactivity (wizard abandoned?)",
-                self._ip, self.CALIBRATION_LOCK_TIMEOUT
-            )
-            if self.hass is not None:
-                self.async_schedule_update_ha_state()
-
-    def _maybe_schedule_retry(self):
-        """Schedule a display retry if the retry limit hasn't been reached.
-        
-        Thin wrapper that avoids log-spam: only logs 'stopping' ONCE when the
-        limit is first hit, then stays silent on subsequent calls.
-        """
-        if self._display_retry_count >= self.MAX_DISPLAY_RETRIES:
-            _LOGGER.debug(
-                "[RETRY] [%s] Skipping retry -- already at limit "
-                "(%s/%s)",
-                self._ip, self._display_retry_count, self.MAX_DISPLAY_RETRIES
-            )
-            return
-        self._schedule_display_retry()
-
-    def _schedule_display_retry(self):
-        """Schedule a delayed retry of the display update after a connection error.
-        
-        This is the critical piece that prevents the lamp from staying dark forever
-        after a boot failure. When the queue processor fails (e.g., device unreachable
-        after HA reboot), this schedules a future async_apply_display_mode() call
-        that respects the exponential backoff:
-        
-          boot -> apply fails -> retry in 2s -> fails -> retry in 2s -> fails -> backoff -> 4s -> ...
-        
-        Only ONE retry task runs at a time. A successful display update clears the retry.
-        User-initiated actions (turn_on, set_color, etc.) also naturally re-queue,
-        so this retry only matters when nothing else is driving updates.
-        
-        After MAX_DISPLAY_RETRIES, stops retrying -- the health check (probing
-        every 10s while there are failures) takes over for longer outages. User actions will still
-        trigger a fresh display update, resetting the counter.
-        """
-        self._display_retry_count += 1
-        
-        if self._display_retry_count > self.MAX_DISPLAY_RETRIES:
-            _LOGGER.warning(
-                "[RETRY] [%s] Stopping auto-retry after %s consecutive failures. "
-                "The lamp appears to be offline. Display will resume on next user action or HA restart. "
-                "[%s]",
-                self._ip, self.MAX_DISPLAY_RETRIES, self._cube_matrix.summary
-            )
-            return
-        
-        # Cancel any existing retry task (avoid stacking retries)
-        if self._retry_display_task and not self._retry_display_task.done():
-            _LOGGER.debug("[RETRY] [%s] Cancelling existing display retry task", self._ip)
-            self._retry_display_task.cancel()
-        
-        # Calculate delay: the first retry is quick to catch transient network
-        # hiccups before engaging exponential backoff.  Subsequent retries use
-        # the device's current cooldown + buffer.
-        QUICK_RETRY_DELAY = 1.5  # seconds -- fast enough to recover from a 1-2s WiFi hiccup
-        cooldown = self._cube_matrix.reconnect_cooldown
-        if self._display_retry_count == 1:
-            delay = QUICK_RETRY_DELAY
-        else:
-            delay = cooldown + 0.5
-        
-        # Add random jitter (0-1.5s) to desynchronize retries across lamps.
-        # When two lamps fail at the same moment, they get identical cooldown
-        # schedules and retry simultaneously -- each round has both lamps
-        # hitting the network at once, prolonging the failure.  Jitter breaks
-        # this synchronization so they stagger naturally.
-        delay += random.uniform(0, 1.5)
-        
-        async def _delayed_retry():
-            try:
-                _LOGGER.debug(
-                    "[RETRY] [%s] Attempt %s/%s -- "
-                    "waiting %.1fs before retry "
-                    "[%s]",
-                    self._ip, self._display_retry_count, self.MAX_DISPLAY_RETRIES,
-                    delay, self._cube_matrix.summary
-                )
-                await asyncio.sleep(delay)
-                
-                _LOGGER.debug(
-                    "[RETRY] [%s] Retrying display update now (attempt %s) "
-                    "[%s]",
-                    self._ip, self._display_retry_count, self._cube_matrix.summary
-                )
-                await self.async_apply_display_mode(update_type='display_retry')
-                _LOGGER.debug("[RETRY] [%s] Display retry sent", self._ip)
-            except asyncio.CancelledError:
-                _LOGGER.debug("[RETRY] [%s] Display retry CANCELLED", self._ip)
-            except Exception as e:
-                _LOGGER.warning("[RETRY] [%s] Unexpected error in display retry: %s", self._ip, e)
-        
-        self._retry_display_task = self._create_tracked_task(
-            _delayed_retry(), name=f"yeelight_cube_display_retry_{self._ip}"
-        )
-        _LOGGER.debug(
-            "[RETRY] [%s] Scheduled retry %s/%s "
-            "in %.1fs (cooldown=%.0fs, failures=%s)",
-            self._ip, self._display_retry_count, self.MAX_DISPLAY_RETRIES, delay,
-            cooldown, self._cube_matrix.consecutive_failures
-        )
-
-    async def _periodic_health_check(self):
-        """Periodically probe devices with active issues and reconnect when they come back.
-        
-        This runs in parallel with the retry system, providing a secondary
-        recovery path.  It probes whenever there are ANY active issues:
-        - consecutive failures > 0 (early detection, before retry exhaustion)
-        - device marked unreachable (exponential backoff triggered)
-        - display retries in progress (parallel recovery alongside retries)
-        - retry limit reached (sole recovery mechanism after retries exhausted)
-        
-        Uses adaptive intervals: 10s during active failures (matches max retry
-        backoff), 15s monitor mode, 60s when long-dead.
-        
-        Flow:
-          1. Sleep for adaptive interval (10s during failures, 15s when recently online, 60s when long-dead)
-          2. If device has no active issues -> skip
-          3. TCP probe the device (RECOVERY_CONNECT_TIMEOUT timeout)
-          4. If reachable -> reset all failure counters and trigger a fresh display update
-          5. If still unreachable -> log at debug level, try again next cycle
-        """
-        _LOGGER.debug("[HEALTH] [%s] Health check started (adaptive interval)", self._ip)
-        while True:
-            try:
-                # ADAPTIVE INTERVAL:
-                #  - 10s when there are active failures (fastest recovery)
-                #  - 15s when device was online recently (monitor mode)
-                #  - 60s when device has been down a while (reduce noise)
-                has_active_issues = (
-                    self._cube_matrix.is_unreachable or
-                    self._cube_matrix.consecutive_failures > 0 or
-                    self._display_retry_count > 0
-                )
-                # "Silent" firmware modes (Clock / Native Effect / Music Flow)
-                # pause get_prop polling and push no frames, so a mains power cut
-                # is never noticed: the lamp reboots to a firmware default while
-                # HA still believes the mode is active. Probe these on a SHORT
-                # fixed cadence so we reliably catch the brief unreachable window
-                # and re-assert the mode on return -- exactly the re-apply that a
-                # Home Assistant restart performs (which the user confirmed works).
-                silent_mode = self._is_on and (
-                    self._mode in FIRMWARE_MODES
-                    or self._music_flow_enabled
-                )
-                last_success = self._cube_matrix.last_success_time
-                time_since_success = time.time() - last_success if last_success > 0 else 999
-                if has_active_issues:
-                    interval = 10  # Aggressive probing during failures
-                elif silent_mode:
-                    interval = 10  # Catch power-cut outages while in a native mode
-                elif time_since_success < 300:  # online within last 5 minutes
-                    interval = 15
-                else:
-                    interval = 60
-                
-                # PERIODIC BRIGHTNESS STATE SNAPSHOT -- logs every cycle so we can
-                # see the stored brightness values even when nothing is changing.
-                _LOGGER.debug(
-                    "[BRIGHTNESS_DIAG] [%s] SNAPSHOT -- "
-                    "user=%s/255, "
-                    "last_hw=%s, "
-                    "darken=%s%%, "
-                    "last_applied_darken=%s, "
-                    "is_on=%s, fx_direct=%s, "
-                    "unreachable=%s, "
-                    "failures=%s, "
-                    "interval=%ss",
-                    self._ip, self._brightness, self._last_hardware_brightness,
-                    self._preview_darken, self._last_applied_darken, self._is_on,
-                    self._fx_mode_is_direct, self._cube_matrix.is_unreachable,
-                    self._cube_matrix.consecutive_failures, interval
-                )
-                await asyncio.sleep(interval)
-                
-                # Probe when the device has ANY active issue:
-                # - unreachable flag is set (exponential backoff triggered)
-                # - retry counter hit the limit (retries exhausted)
-                # - consecutive failures > 0 (early detection before unreachable)
-                # - display retries in progress (parallel recovery path)
-                is_stuck = (
-                    self._cube_matrix.is_unreachable or
-                    self._rotation_waiting_for_reconnect or
-                    self._display_retry_count >= self.MAX_DISPLAY_RETRIES or
-                    self._cube_matrix.consecutive_failures > 0 or
-                    self._display_retry_count > 0
-                )
-                if not is_stuck and not silent_mode:
-                    continue
-                # Only re-apply the mode when we are actually RECOVERING from a
-                # detected outage. A healthy proactive probe in silent mode must
-                # leave the running renderer untouched (re-applying every cycle
-                # would restart the clock/effect repeatedly).
-                recovering = is_stuck
-                
-                _LOGGER.debug(
-                    "[HEALTH] [%s] Probing device (unreachable=%s, "
-                    "retries=%s/%s, "
-                    "failures=%s, "
-                    "interval=%ss)",
-                    self._ip, self._cube_matrix.is_unreachable,
-                    self._display_retry_count, self.MAX_DISPLAY_RETRIES,
-                    self._cube_matrix.consecutive_failures, interval
-                )
-                
-                # Quick TCP probe -- use longer timeout for recovery.
-                # Normal commands use 0.5s, but a lamp rebooting may have
-                # slow TCP handshakes (RECOVERY_CONNECT_TIMEOUT).
-                probe_timeout = RECOVERY_CONNECT_TIMEOUT
-                if not await self._cube_matrix.probe(probe_timeout):
-                    # The lamp is not answering -- record it so the next
-                    # successful probe knows to re-assert the mode. This is what
-                    # lets a mains power cut, detected proactively in a silent
-                    # mode, recover on return.
-                    became_unreachable = self._cube_matrix.mark_unreachable()
-                    if self._rotation_resume_pending:
-                        self._rotation_waiting_for_reconnect = True
-                    if self.hass is not None and (
-                        became_unreachable or self._rotation_waiting_for_reconnect
-                    ):
-                        # Publishes the light and its controls as unavailable.
-                        self.async_write_ha_state()
-                    # Log at WARNING so the user can see probes are happening
-                    _LOGGER.warning(
-                        "[HEALTH] [%s] Probe failed -- still unreachable "
-                        "(retries=%s/%s, "
-                        "failures=%s, "
-                        "timeout=%ss)",
-                        self._ip, self._display_retry_count, self.MAX_DISPLAY_RETRIES,
-                        self._cube_matrix.consecutive_failures, probe_timeout
-                    )
-                    # The lamp may have moved to a new DHCP address: scan for
-                    # it by hardware id and remap the config entry (throttled).
-                    await self._async_maybe_rediscover()
-                    continue
-                
-                # Proactive healthy probe (silent mode, nothing was wrong): the
-                # lamp answered, so leave the running renderer untouched.
-                if not recovering:
-                    continue
-                
-                # Device is back! Reset everything and trigger a fresh display.
-                _LOGGER.warning(
-                    "[HEALTH] [%s] [OK] Device is BACK ONLINE! "
-                    "Resetting failures (%s -> 0), "
-                    "retries (%s -> 0), "
-                    "cooldown (%.0fs -> %ss)",
-                    self._ip, self._cube_matrix.consecutive_failures,
-                    self._display_retry_count, self._cube_matrix.reconnect_cooldown,
-                    RECONNECT_COOLDOWN_INITIAL
-                )
-                self._cube_matrix.mark_recovered()  # Fresh socket, backoff reset
-                self._display_retry_count = 0
-                self._fx_mode_is_direct = False  # Force FX mode re-send
-                self._connection_error = False
-                self._hard_timeout_times.clear()  # Clear circuit breaker
-                if self.hass is not None:
-                    # Publishes the light and its controls as available again.
-                    self.async_write_ha_state()
-
-                if self._resume_rotation_after_reconnect():
-                    continue
-                if self._rotation_active:
-                    continue
-
-                if self._music_flow_enabled:
-                    _LOGGER.debug(
-                        "[MUSIC FLOW] [%s] HEALTH RECOVERY -- restarting "
-                        "the requested Music Flow renderer",
-                        self._ip,
-                    )
-                    await self.async_set_music_flow(True)
-                else:
-                    # Trigger a full display update (turn_on type so it isn't blocked)
-                    _LOGGER.debug(
-                        "[BRIGHTNESS_DIAG] [%s] HEALTH RECOVERY -- will apply display mode. "
-                        "user=%s/255, last_hw=%s, "
-                        "darken=%s%%, fx_direct=%s",
-                        self._ip, self._brightness, self._last_hardware_brightness,
-                        self._preview_darken, self._fx_mode_is_direct
-                    )
-                    await self.async_apply_display_mode(update_type='turn_on')
-                
-            except asyncio.CancelledError:
-                _LOGGER.debug("[HEALTH] [%s] Health check cancelled", self._ip)
-                break
-            except Exception as e:
-                _LOGGER.debug("[HEALTH] [%s] Health check error: %s", self._ip, e)
-        
-        _LOGGER.debug("[HEALTH] [%s] Health check stopped", self._ip)
-
-    async def _async_maybe_rediscover(self):
-        """Scan for this lamp at a new IP after failed probes (throttled).
-
-        DHCP can move the lamp while the entry is loaded; probing the stale IP
-        forever can never recover. Rediscovery matches by hardware device_id
-        and updates the config entry, whose update listener reloads the entry
-        with the new address.
-        """
-        now = time.time()
-        if now - self._last_rediscovery_attempt < 60:
-            return
-        self._last_rediscovery_attempt = now
-        if self._config_entry is None or self.hass is None:
-            return
-        try:
-            from . import _async_try_rediscover
-
-            new_ip = await _async_try_rediscover(
-                self.hass, self._config_entry, self._ip
-            )
-            if new_ip and new_ip != self._ip:
-                _LOGGER.warning(
-                    "[HEALTH] [%s] Lamp found at new IP %s -- config entry "
-                    "updated, reloading with the new address",
-                    self._ip, new_ip,
-                )
-        except Exception as exc:
-            _LOGGER.debug(
-                "[HEALTH] [%s] Runtime rediscovery failed: %s", self._ip, exc
-            )
 
     # Removed duplicate/empty __init__ definition
     @property
@@ -1329,7 +663,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             return
         self._device_orientation = orientation
         # Drive the matrix/text/pixel flip (normal vs 180 deg).
-        self._orientation = _DEVICE_ORIENTATION_TO_FLIP[orientation]
+        self._orientation = DEVICE_ORIENTATION_TO_FLIP[orientation]
 
         # Whether we need to re-render/re-send to the lamp for this mode.
         reapply = True
@@ -1631,104 +965,6 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                 options={**self._config_entry.options, "extended_effects_enabled": enabled},
             )
 
-    def _restore_extended_effects(self, old_state) -> None:
-        saved = self._config_entry.options.get("extended_effects_enabled")
-        if isinstance(saved, bool):
-            self._extended_effects_enabled = saved
-        elif old_state is not None:
-            legacy = old_state.attributes.get("extended_effects_enabled")
-            if isinstance(legacy, bool):
-                self.set_extended_effects_enabled(legacy)
-
-    def _restore_state(self, old_state) -> None:
-        """Restore the display settings saved in the last state before a
-        Home Assistant restart (see _RESTORED_ATTRIBUTES)."""
-        attributes = old_state.attributes
-        _LOGGER.debug("[RESTORE] old_state=%s, attributes=%s", old_state.state, list(attributes))
-        for key, attr, convert in _RESTORED_ATTRIBUTES:
-            raw = attributes.get(key)
-            if raw is None:
-                continue
-            try:
-                value = convert(raw)
-            except (TypeError, ValueError):
-                _LOGGER.debug("[RESTORE] [%s] Ignoring invalid %s=%r", self._ip, key, raw)
-                continue
-            if value is not _INVALID:
-                setattr(self, attr, value)
-
-        if attributes.get("brightness") is not None:
-            restored_brightness = int(attributes["brightness"])
-            # Ensure brightness is at least 1 (Home Assistant minimum for ON lights)
-            self._brightness = max(1, min(255, restored_brightness))
-            # Recalculate hardware brightness and darken from user brightness
-            hardware_brightness, darken_percent = self._calculate_brightness_values(self._brightness)
-            self._preview_darken = darken_percent
-            self._last_hardware_brightness = hardware_brightness
-            self._last_applied_darken = darken_percent
-            _LOGGER.debug(
-                "[BRIGHTNESS_DIAG] [%s] RESTORE -- raw=%s -> user=%s/255, hardware=%s%%, darken=%s%%",
-                self._ip, restored_brightness, self._brightness, hardware_brightness, darken_percent,
-            )
-
-        if attributes.get("text_colors") is not None:
-            self._text_colors = [tuple(c) for c in attributes["text_colors"]]
-            self._sync_rgb_color()
-        else:
-            # Older states kept rgb_color (+ gradient_start / gradient_end)
-            rgb = attributes.get("rgb_color")
-            grad_start = attributes.get("gradient_start")
-            grad_end = attributes.get("gradient_end")
-            if rgb and grad_start and grad_end:
-                self._text_colors = [tuple(rgb), tuple(grad_end)]
-                self._sync_rgb_color()
-            elif rgb:
-                self._text_colors = [tuple(rgb)]
-                self._sync_rgb_color()
-            else:
-                _LOGGER.warning(
-                    "[RESTORE] No text_colors found, keeping defaults: %s", self._text_colors
-                )
-
-        # Mode and custom_draw_active (old states: mode 'Custom Draw')
-        if attributes.get("custom_draw_active") is not None:
-            self._custom_draw_active = bool(attributes["custom_draw_active"])
-        else:
-            self._custom_draw_active = attributes.get("mode") == "Custom Draw"
-        restored_mode = attributes.get("mode")
-        if restored_mode in MATRIX_DISPLAY_MODES or restored_mode in FIRMWARE_MODES:
-            self._mode = restored_mode
-        matrix_mode = attributes.get("matrix_mode")
-        if matrix_mode in MATRIX_DISPLAY_MODES:
-            self._matrix_mode = matrix_mode
-        elif self._mode in MATRIX_DISPLAY_MODES:
-            self._matrix_mode = self._mode
-
-        # Clock content (3-way): restore directly if present, otherwise
-        # migrate from the legacy boolean show_date flag, then keep the compat
-        # boolean consistent with it.
-        restored_content = attributes.get("clock_content")
-        if restored_content in NATIVE_CLOCK_CONTENT_OPTIONS:
-            self._native_clock_content = restored_content
-        else:
-            self._native_clock_content = (
-                "time_date" if self._native_clock_show_date else "time"
-            )
-        self._native_clock_show_date = self._native_clock_content == "time_date"
-
-        # The 4-way physical device orientation (right/down/left/up) is the
-        # source of truth for native-effect flow and matrix/pixel flip; keep
-        # the legacy normal/flipped flag consistent with it.
-        device_orientation_val = attributes.get("device_orientation")
-        if device_orientation_val in DEVICE_ORIENTATIONS:
-            self._device_orientation = device_orientation_val
-            self._orientation = _DEVICE_ORIENTATION_TO_FLIP[device_orientation_val]
-        elif attributes.get("orientation") in (ORIENTATION_NORMAL, ORIENTATION_FLIPPED):
-            # Legacy state that only stored normal/flipped.
-            self._orientation = attributes["orientation"]
-            self._device_orientation = (
-                "left" if self._orientation == ORIENTATION_FLIPPED else "right"
-            )
 
     async def async_added_to_hass(self):
         _LOGGER.debug("[INIT] async_added_to_hass called for %s", self._attr_name)
@@ -2396,78 +1632,7 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
                     "[BRIGHTNESS] Unexpected error sending hardware brightness: %s", e
                 )
 
-    def _start_brightness_retry_task(self):
-        """Start background task to retry failed brightness when connection recovers"""
-        if self._brightness_retry_task is None or self._brightness_retry_task.done():
-            self._brightness_retry_task = self._create_tracked_task(
-                self._process_brightness_retries(), name=f"yeelight_cube_brightness_retry_{self._ip}"
-            )
     
-    async def _process_brightness_retries(self):
-        """
-        Background task to retry failed brightness when connection recovers.
-        
-        ANTI-OVERWRITE PROTECTION:
-        - Only retries if no newer brightness has been successfully applied
-        - Drops stale queued brightness if user changed brightness since failure
-        - Example: Brightness 20% queued -> User sets 60% successfully -> Drop queued 20%
-        """
-        _LOGGER.debug("[BRIGHTNESS RETRY] Retry processor started")
-        
-        while self._pending_brightness is not None:
-            # Wait for connection to be available
-            if not self._cube_matrix.is_connected():
-                await asyncio.sleep(0.5)  # Check every 500ms
-                continue
-            
-            # Get pending brightness
-            pending_value, queued_timestamp = self._pending_brightness
-            
-            # Check if brightness expired (30s TTL)
-            if time.time() - queued_timestamp > 30.0:
-                _LOGGER.debug("[BRIGHTNESS RETRY] Dropping expired brightness: %s", pending_value)
-                self._pending_brightness = None
-                continue
-            
-            # ANTI-OVERWRITE CHECK: Has a newer brightness already succeeded?
-            if self._last_successful_brightness is not None:
-                last_success_time, last_success_value = self._last_successful_brightness
-                
-                # If a newer brightness succeeded AFTER this one was queued, drop it
-                if last_success_time > queued_timestamp:
-                    _LOGGER.debug(
-                        "[BRIGHTNESS RETRY] Dropping stale brightness %s - "
-                        "newer brightness %s already applied "
-                        "(queued at %.2f, superseded at %.2f)",
-                        pending_value, last_success_value, queued_timestamp,
-                        last_success_time
-                    )
-                    self._pending_brightness = None
-                    continue
-            
-            # Try to re-apply the complete brightness through the queue
-            try:
-                _LOGGER.debug("[BRIGHTNESS RETRY] Retrying brightness %s via queue", pending_value)
-                # Queue through the proper channel so it's serialized with other operations
-                await self.set_brightness(pending_value)
-                # Success - clear pending
-                self._pending_brightness = None
-                _LOGGER.debug("[BRIGHTNESS RETRY] Successfully queued brightness retry %s", pending_value)
-            except Exception as e:
-                # Failed again - will retry later
-                _LOGGER.debug("[BRIGHTNESS RETRY] Retry failed for brightness %s: %s", pending_value, e)
-                # If connection is down again, wait longer
-                if not self._cube_matrix.is_connected():
-                    await asyncio.sleep(1)
-                else:
-                    # Other error - clear pending to avoid infinite retry
-                    _LOGGER.warning("[BRIGHTNESS RETRY] Clearing pending brightness due to error: %s", e)
-                    self._pending_brightness = None
-            
-            # Small delay between retry attempts
-            await asyncio.sleep(0.1)
-        
-        _LOGGER.debug("[BRIGHTNESS RETRY] Retry processor finished (no pending brightness)")
 
     async def async_update(self, *args, **kwargs):
         """Refresh timezone and best-effort native device properties."""
@@ -3348,59 +2513,6 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
             self._scroll_timer = None
         _LOGGER.debug("[SCROLL] Timer stopped")
 
-    # Display-state attributes captured by save_state / restore_state.
-    # Together these fully determine what the panel is showing: content,
-    # mode, colors, layout, brightness and all color effects.
-    _DISPLAY_STATE_ATTRS = (
-        "_custom_text", "_text_colors", "_mode", "_matrix_mode", "_native_clock_style",
-        "_native_clock_show_date", "_native_clock_content", "_native_clock_12_hour",
-        "_native_clock_colon_blink", "_native_clock_color", "_full_panel",
-        "_native_effect", "_native_effect_speed", "_native_effect_direction", "_native_effect_color_mode", "_native_effect_color",
-        "_music_flow_effect",
-        "_angle",
-        "_background_color", "_alignment", "_font", "_orientation",
-        "_device_orientation", "_rgb_color",
-        "_brightness", "_custom_pixels", "_custom_draw_active",
-        "_active_pixel_art_name", "_scroll_enabled", "_scroll_speed",
-        "_preview_hue_shift", "_preview_temperature", "_preview_saturation",
-        "_preview_vibrance", "_preview_contrast", "_preview_glow",
-        "_preview_grayscale", "_preview_invert", "_preview_tint_hue",
-        "_preview_tint_strength", "_preview_darken", "_preview_brighten",
-        "_is_on",
-    )
-
-    def _save_display_state(self):
-        """Snapshot the current display state into self._saved_display_state.
-
-        Overwrites any previously saved snapshot -- only one is kept per
-        entity.  Values are deep-copied so later mutations to lists like
-        _custom_pixels / _text_colors don't corrupt the snapshot."""
-        self._saved_display_state = {
-            attr: copy.deepcopy(getattr(self, attr, None))
-            for attr in self._DISPLAY_STATE_ATTRS
-        }
-
-    def _restore_display_state(self):
-        """Restore attributes from the saved snapshot and refresh linked
-        helper entities.  Returns True if a snapshot existed, False otherwise.
-        The caller is responsible for triggering the hardware re-render."""
-        snapshot = self._saved_display_state
-        if not snapshot:
-            return False
-        for attr, value in snapshot.items():
-            setattr(self, attr, copy.deepcopy(value))
-        # Migration: pre-4-way states saved only _orientation. If the device
-        # orientation wasn't restored but the legacy flip is on, treat it as
-        # "left" (the flipped equivalent) so the new select stays consistent.
-        if self._orientation == ORIENTATION_FLIPPED \
-                and self._device_orientation == "right":
-            self._device_orientation = "left"
-        # Reset scroll so restored text starts cleanly from the beginning.
-        self._scroll_offset = 0
-        self._scroll_direction = 1
-        self.stop_scroll_timer()
-        self._refresh_linked_entities()
-        return True
 
     def _refresh_linked_entities(self):
         """Push the current state out to the linked text/select/number helper
@@ -3442,668 +2554,9 @@ class YeelightCubeLight(ColorPipelineMixin, TransitionMixin, NativeModesMixin, M
     #  Effect / clock mode rotation (server-side, survives client reload) #
     # ------------------------------------------------------------------ #
 
-    def _rotation_current_name(self) -> str | None:
-        """Return the key of the mode the lamp is currently showing.
-
-        For native effects this is the effect name.  For the clock it is the
-        built-in style name, or ``custom:<id>`` when a saved solid-color
-        preset is active (mirrors the card's ``clockPresetKey`` mapping).
-        """
-        if self._rotation_kind != "clock":
-            return self._native_effect
-        color = self._native_clock_color
-        if color is not None:
-            r, g, b = argb_to_rgb(color)
-            for preset in self.hass.data.get(DOMAIN, {}).get("clock_presets", []):
-                if preset.get("kind", "style") == "style" and list(
-                    preset.get("color", ())
-                ) == [r, g, b]:
-                    return f"custom:{preset['id']}"
-        style = NATIVE_CLOCK_STYLES.get(self._native_clock_style)
-        return style["name"] if style else None
-
-    def _normalize_rotation_items(self, items) -> list:
-        """Normalize rotation entries to ``{"name", "color_mode", "color"}`` dicts.
-
-        Accepts legacy plain strings (color mode defaults to "normal") and
-        dicts of the form ``{"name": ..., "color_mode": ..., "color": [r,g,b]}``
-        produced by the cards' favourites system.
-        """
-        result = []
-        seen = set()
-        for entry in items or []:
-            if isinstance(entry, str):
-                name, color_mode, color = entry.strip(), "normal", None
-            elif isinstance(entry, dict):
-                name = str(entry.get("name", "")).strip()
-                color_mode = entry.get("color_mode") or "normal"
-                color = entry.get("color")
-            else:
-                continue
-            if not name:
-                continue
-            if color_mode not in CLOCK_COLOR_MODES and color_mode != "custom":
-                color_mode = "normal"
-            if color_mode == "custom":
-                if (
-                    isinstance(color, (list, tuple))
-                    and len(color) == 3
-                    and all(isinstance(c, int) and 0 <= c <= 255 for c in color)
-                ):
-                    color = list(color)
-                else:
-                    # A custom mode without a valid color falls back to normal.
-                    color_mode, color = "normal", None
-            else:
-                color = None
-            # Uniqueness is per (name, color mode): the same style may appear
-            # twice when favourited under two different color modes.
-            color_key = (name, color_mode, tuple(color) if color else None)
-            if color_key in seen:
-                continue
-            seen.add(color_key)
-            result.append(
-                {"name": name, "color_mode": color_mode, "color": color}
-            )
-        return result
-
-    def _normalize_favourites(self, items) -> list:
-        """Normalize a favourites list the way rotation items are normalized
-        (same entries, de-duplicated per name + color mode), dropping names
-        the cards never create (numeric) and capping its length."""
-        return [
-            item
-            for item in self._normalize_rotation_items(items)
-            if not item["name"].isdigit() and len(item["name"]) <= MAX_FAVOURITE_NAME
-        ][:MAX_FAVOURITES]
-
-    def _device_store(self, name: str) -> dict | None:
-        """A persisted per-lamp collection (``favourites``, ``rotation``) in
-        hass.data[DOMAIN], keyed like the music-flow runtime state (config
-        entry id, else IP)."""
-        if self.hass is None:
-            return None
-        domain_data = self.hass.data.get(DOMAIN)
-        if not isinstance(domain_data, dict):
-            return None
-        store = domain_data.setdefault(name, {})
-        if not isinstance(store, dict):
-            store = domain_data[name] = {}
-        return store
-
-    def _favourites_store(self) -> dict | None:
-        return self._device_store("favourites")
-
-    def _restore_favourites(self) -> None:
-        store = self._favourites_store()
-        saved = store.get(self._music_flow_runtime_storage_key()) if store else None
-        if not isinstance(saved, dict):
-            return
-        self._favourites = {
-            kind: self._normalize_favourites(items)
-            for kind, items in saved.items()
-            if kind in FAVOURITE_KINDS and isinstance(items, list)
-        }
-
-    async def async_set_favourites(self, kind: str, items) -> None:
-        """Replace the favourites of ``kind``, publish them, then persist."""
-        if kind not in FAVOURITE_KINDS:
-            raise HomeAssistantError(f"Unknown favourites kind: {kind}")
-        self._favourites = {**self._favourites, kind: self._normalize_favourites(items)}
-        # Publish first: every open dashboard updates without waiting for disk.
-        if self.hass is not None:
-            self.async_write_ha_state()
-        store = self._favourites_store()
-        if store is None:
-            return
-        store[self._music_flow_runtime_storage_key()] = {
-            key: [dict(item) for item in value]
-            for key, value in self._favourites.items()
-        }
-        self._schedule_integration_save()
-
-    def _schedule_integration_save(self) -> None:
-        """Save hass.data[DOMAIN] (palettes, favourites, rotation, ...) to
-        disk shortly: a burst of changes becomes one write."""
-        from . import async_schedule_save
-
-        async_schedule_save(self.hass)
 
     # -- Rotation settings and restart recovery ------------------------------
 
-    def _restore_rotation_settings(self) -> None:
-        store = self._device_store("rotation")
-        saved = store.get(self._music_flow_runtime_storage_key()) if store else None
-        if not isinstance(saved, dict):
-            return
-        intervals = saved.get("intervals")
-        if isinstance(intervals, dict):
-            self._rotation_intervals = {
-                kind: max(MIN_ROTATION_INTERVAL, min(MAX_ROTATION_INTERVAL, int(value)))
-                for kind, value in intervals.items()
-                if kind in FAVOURITE_KINDS and isinstance(value, (int, float))
-            }
-        active = saved.get("active")
-        if isinstance(active, dict) and active.get("kind") in FAVOURITE_KINDS:
-            self._rotation_restore = active
-
-    def _save_rotation_state(self) -> None:
-        """Persist the shared intervals and the running rotation (if any), so
-        a Home Assistant restart or integration reload resumes it."""
-        store = self._device_store("rotation")
-        if store is None:
-            return
-        running = None
-        if self._rotation_active or self._rotation_resume_pending:
-            running = {
-                "kind": self._rotation_kind,
-                "items": [dict(item) for item in self._rotation_items],
-                "interval": self._rotation_interval,
-                "group": list(self._rotation_group or []),
-            }
-        record = {"intervals": dict(self._rotation_intervals), "active": running}
-        key = self._music_flow_runtime_storage_key()
-        # Most stops happen with no rotation running (e.g. every turn-off):
-        # nothing changed, nothing to write.
-        if store.get(key) == record:
-            return
-        store[key] = record
-        if self.hass is not None:
-            self._schedule_integration_save()
-
-    async def _async_resume_saved_rotation(self) -> None:
-        """Resume the rotation that ran before the restart, if the lamp is
-        still on and in that mode (turning it off or switching mode stops a
-        rotation, so neither is overridden here)."""
-        saved, self._rotation_restore = self._rotation_restore, None
-        if not saved:
-            return
-        kind = saved.get("kind")
-        expected_mode = ROTATION_KIND_MODES.get(kind, MODE_NATIVE_EFFECT)
-        if (
-            not self._is_on
-            or self._music_flow_enabled
-            or self._calibration_lock
-            or self._mode != expected_mode
-        ):
-            _LOGGER.info(
-                "[ROTATION] [%s] Not resuming the %s rotation after restart "
-                "(lamp off or no longer in %s mode)", self._ip, kind, expected_mode,
-            )
-            self._save_rotation_state()
-            return
-        interval = saved.get("interval", 60)
-        group = sorted(saved.get("group") or [])
-        timeline = None
-        if len(group) > 1:
-            # Lamps started together share one schedule again.
-            now = asyncio.get_running_loop().time()
-            key = (tuple(group), kind, interval)
-            shared = _ROTATION_RESUME_TIMELINES.get(key)
-            if shared is None or now - shared["created"] > ROTATION_RESUME_TIMELINE_TTL:
-                shared = _ROTATION_RESUME_TIMELINES[key] = {"created": now, "timeline": {}}
-            timeline = shared["timeline"]
-        try:
-            await self.start_effect_rotation(
-                saved.get("items") or [], interval, kind,
-                timeline=timeline, group=group or None,
-            )
-            _LOGGER.info("[ROTATION] [%s] Resumed the %s rotation after restart", self._ip, kind)
-        except HomeAssistantError as err:
-            # An unreachable lamp keeps the rotation pending: the health check
-            # resumes it once the lamp answers again.
-            _LOGGER.warning(
-                "[ROTATION] [%s] Could not resume the %s rotation yet: %s",
-                self._ip, kind, err,
-            )
-
-    def set_rotation_interval(self, kind: str, interval) -> None:
-        """Set the interval every dashboard uses for ``kind``. A running
-        rotation of that kind switches to it at once, keeping its current item
-        until the next step on the new time grid."""
-        if kind not in FAVOURITE_KINDS:
-            raise HomeAssistantError(f"Unknown rotation kind: {kind}")
-        interval = max(MIN_ROTATION_INTERVAL, min(MAX_ROTATION_INTERVAL, int(interval)))
-        self._rotation_intervals = {**self._rotation_intervals, kind: interval}
-        if (
-            self._rotation_kind == kind
-            and (self._rotation_active or self._rotation_resume_pending)
-            and interval != self._rotation_interval
-        ):
-            self._retime_rotation(interval)
-        if self.hass is not None:
-            self.async_write_ha_state()
-        self._save_rotation_state()
-
-    def _retime_rotation(self, interval: int) -> None:
-        loop = asyncio.get_running_loop()
-        self._rotation_interval = interval
-        # The next boundary of the new grid shows the item after the current one.
-        self._rotation_timeline = {
-            "tick": int(loop.time() // interval) + 1,
-            "index": self._rotation_index + 1,
-        }
-        # A sleeping loop re-times its wait; a rotation waiting to reconnect
-        # simply resumes on the new grid.
-        task = self._rotation_task
-        if task is not None and not task.done():
-            self._rotation_retime = True
-            if self._rotation_wake is not None:
-                self._rotation_wake.set()
-
-    async def start_effect_rotation(
-        self, items, interval, kind="native", *, timeline=None, group=None
-    ) -> None:
-        """Start an entity-owned loop, acknowledging only its first display result.
-
-        Returning before that result hides hardware failures from the calling
-        service. Subsequent steps belong to the entity, not the service/client.
-        """
-        items = self._normalize_rotation_items(items)
-        if len(items) < 2:
-            raise HomeAssistantError("Provide at least two different rotation modes")
-        # Replacing a running loop: its saved state is rewritten below.
-        self.stop_effect_rotation(persist=False)
-        self._rotation_error = None
-        self._rotation_retry_attempt = 0
-        self._rotation_retry_at = None
-        self._rotation_kind = kind if kind in ("native", "clock") else "native"
-        self._rotation_items = items
-        # The lamps started together (one service call), saved so a restart
-        # resumes them on one schedule.
-        self._rotation_group = sorted(group) if group else None
-        self._rotation_interval = max(
-            MIN_ROTATION_INTERVAL, min(MAX_ROTATION_INTERVAL, int(interval))
-        )
-        current = self._rotation_current_name()
-        names = [item["name"] for item in items]
-        self._rotation_index = names.index(current) if current in names else -1
-        if timeline is None:
-            timeline = {}
-        timeline.setdefault("tick", int(asyncio.get_running_loop().time() // self._rotation_interval))
-        timeline.setdefault("index", self._rotation_index + 1)
-        self._rotation_timeline = dict(timeline)
-        self._rotation_retime = False
-        self._rotation_active = True
-        # Starting sets the interval every dashboard uses for this kind, and
-        # saves the rotation so a restart resumes it.
-        self._rotation_intervals = {
-            **self._rotation_intervals,
-            self._rotation_kind: self._rotation_interval,
-        }
-        self._save_rotation_state()
-        self._rotation_wake = asyncio.Event()
-        started = asyncio.get_running_loop().create_future()
-        self._rotation_started = started
-        self._rotation_task = self._create_tracked_task(
-            self._rotation_loop(), name=f"yeelight_cube_rotation_{self._ip}"
-        )
-        if not await asyncio.shield(started):
-            raise HomeAssistantError(
-                self._rotation_error or "Rotation stopped before its first display update"
-            )
-
-    def stop_effect_rotation(self, persist: bool = True) -> None:
-        """Stop the server-side rotation loop.
-
-        ``persist=False`` keeps the saved rotation (entity removal on a
-        shutdown/reload, or a Start replacing the loop); every other stop (the
-        Stop button, a manual pick, lamp off, ...) also forgets it, so it is
-        not resumed after a restart.
-        """
-        self._rotation_active = False
-        self._rotation_resume_pending = False
-        self._rotation_waiting_for_reconnect = False
-        self._rotation_error = None
-        self._rotation_retry_attempt = 0
-        self._rotation_retry_at = None
-        if self._rotation_task and not self._rotation_task.done():
-            self._rotation_task.cancel()
-        self._rotation_task = None
-        self._rotation_wake = None
-        if self._rotation_started is not None and not self._rotation_started.done():
-            self._rotation_started.set_result(False)
-        if persist:
-            self._save_rotation_state()
-        if self.hass is not None:
-            self.async_write_ha_state()
-
-    def _resume_rotation_after_reconnect(self) -> bool:
-        if not self._rotation_waiting_for_reconnect:
-            return False
-        expected_mode = ROTATION_KIND_MODES.get(self._rotation_kind, MODE_NATIVE_EFFECT)
-        if (
-            not self._is_on or self._calibration_lock or self._music_flow_enabled
-            or self._mode != expected_mode or len(self._rotation_items) < 2
-        ):
-            self.stop_effect_rotation()
-            return False
-        if self._rotation_active:
-            return True
-        self._rotation_resume_pending = False
-        self._rotation_waiting_for_reconnect = False
-        self._rotation_retry_attempt = 0
-        self._rotation_retry_at = None
-        self._rotation_index -= 1
-        self._rotation_retime = False
-        self._rotation_active = True
-        self._rotation_wake = asyncio.Event()
-        self._rotation_started = asyncio.get_running_loop().create_future()
-        self._rotation_task = self._create_tracked_task(
-            self._rotation_loop(), name=f"yeelight_cube_rotation_{self._ip}"
-        )
-        if self.hass is not None:
-            self.async_write_ha_state()
-        return True
-
-    def _rotation_scheduled_index(self) -> int:
-        timeline = self._rotation_timeline
-        if timeline is None:
-            return (self._rotation_index + 1) % len(self._rotation_items)
-        tick = int(asyncio.get_running_loop().time() // self._rotation_interval)
-        return (timeline["index"] + tick - timeline["tick"]) % len(self._rotation_items)
-
-    def skip_effect_rotation(self) -> None:
-        """Advance to the next mode immediately instead of waiting."""
-        wake = self._rotation_wake
-        if self._rotation_active or self._rotation_resume_pending:
-            if self._rotation_timeline is not None:
-                self._rotation_timeline["index"] += 1
-        if self._rotation_active and wake is not None:
-            wake.set()
-
-    async def _rotation_loop(self) -> None:
-        """Advance through the rotation list on a shared time grid.
-
-        Each step is applied, then the loop sleeps until the next interval
-        boundary on the event loop's monotonic clock.  Every lamp in this Home
-        Assistant process shares that clock, so they advance at the same
-        absolute instants even though each apply takes a different amount of
-        time.  A slow apply that overruns a boundary realigns to the following
-        one instead of accumulating drift.
-        """
-        task = asyncio.current_task()
-        started = self._rotation_started
-        loop = asyncio.get_running_loop()
-        cancelled = False
-        try:
-            while self._rotation_active:
-                interval = self._rotation_interval
-                self._rotation_index = self._rotation_scheduled_index()
-                item = self._rotation_items[self._rotation_index]
-                name = item["name"]
-                try:
-                    ok = await self._apply_rotation_step(item)
-                except Exception as exc:  # noqa: BLE001 — keep rotation isolated
-                    _LOGGER.warning(
-                        "[ROTATION] [%s] Failed to apply %s: %s",
-                        self._ip, name, exc,
-                    )
-                    self._rotation_error = str(exc)
-                    ok = False
-                if not ok or not self._rotation_active:
-                    self._rotation_error = self._rotation_error or (
-                        "Lamp is off" if not self._is_on else
-                        "Calibration lock is active" if self._calibration_lock else
-                        self._last_connection_error or
-                        f"Display update failed for {name}"
-                    )
-                    _LOGGER.warning("[ROTATION] [%s] Stopped: %s", self._ip, self._rotation_error)
-                    break
-                if not started.done():
-                    started.set_result(True)
-                if self.hass is not None:
-                    self.async_write_ha_state()
-                if (
-                    self._rotation_timeline is not None
-                    and self._rotation_index != self._rotation_scheduled_index()
-                ):
-                    continue
-                # Sleep until the next boundary on the shared monotonic clock
-                # (or a manual skip).
-                next_tick = (int(loop.time() // interval) + 1) * interval
-                while self._rotation_wake is not None:
-                    delay = next_tick - loop.time()
-                    if delay <= 0:
-                        # A slow apply overran the boundary — realign to the next.
-                        next_tick = (int(loop.time() // interval) + 1) * interval
-                        continue
-                    try:
-                        await asyncio.wait_for(
-                            self._rotation_wake.wait(), timeout=delay
-                        )
-                    except asyncio.TimeoutError:
-                        pass
-                    if self._rotation_wake is not None:
-                        self._rotation_wake.clear()
-                    if self._rotation_retime:
-                        # The interval changed: keep the current item and wait
-                        # for the next boundary of the new grid.
-                        self._rotation_retime = False
-                        interval = self._rotation_interval
-                        next_tick = (int(loop.time() // interval) + 1) * interval
-                        continue
-                    break
-        except asyncio.CancelledError:
-            cancelled = True
-            raise
-        finally:
-            if not started.done():
-                started.set_result(False)
-            # A replaced loop must not clear the new loop's state.
-            if self._rotation_task is task:
-                self._rotation_active = False
-                self._rotation_task = None
-                self._rotation_retry_at = None
-                # Ended by itself (failure, lamp off): forget it unless it is
-                # waiting to resume. Cancelled (shutdown): keep it saved.
-                if not cancelled:
-                    self._save_rotation_state()
-                if self.hass is not None:
-                    self.async_write_ha_state()
-
-    async def _wait_rotation_retry(self, delay: float) -> bool:
-        deadline = asyncio.get_running_loop().time() + delay
-        while self._rotation_active and self._is_on and not self._calibration_lock:
-            remaining = deadline - asyncio.get_running_loop().time()
-            if remaining <= 0:
-                return True
-            await asyncio.sleep(min(remaining, 1.0))
-        return False
-
-    async def _apply_rotation_step(self, item) -> bool:
-        self._rotation_retry_attempt = 0
-        self._rotation_retry_at = None
-        for attempt in range(3):
-            if not self._rotation_active or not self._is_on or self._calibration_lock:
-                if not self._is_on:
-                    self._rotation_error = "Lamp is off"
-                elif self._calibration_lock:
-                    self._rotation_error = "Calibration lock is active"
-                return False
-            self._hardware_failure_retryable = False
-            try:
-                success = await self._apply_rotation_item(item)
-            except (CubeConnectionError, OSError, asyncio.TimeoutError) as error:
-                self._last_connection_error = str(error) or "Device timeout"
-                self._hardware_failure_retryable = True
-                success = False
-            if success:
-                if attempt:
-                    _LOGGER.info("[ROTATION] [%s] Recovered %s after %s retries", self._ip, item["name"], attempt)
-                self._rotation_error = None
-                self._rotation_resume_pending = False
-                self._rotation_waiting_for_reconnect = False
-                self._rotation_retry_attempt = 0
-                self._rotation_retry_at = None
-                return True
-            self._rotation_error = self._last_connection_error or f"Display update failed for {item['name']}"
-            if not self._hardware_failure_retryable or attempt == 2:
-                self._rotation_resume_pending = bool(
-                    self._hardware_failure_retryable and self._rotation_active
-                    and self._is_on and not self._calibration_lock
-                )
-                self._rotation_waiting_for_reconnect = bool(
-                    self._rotation_resume_pending
-                    and self._cube_matrix.is_unreachable
-                )
-                return False
-            delay = (5.0, 15.0)[attempt]
-            recent = [stamp for stamp in self._hard_timeout_times if time.time() - stamp < CIRCUIT_BREAKER_WINDOW]
-            if len(recent) >= 2:
-                delay = max(delay, max(recent) + CIRCUIT_BREAKER_WINDOW - time.time() + 0.1)
-            self._rotation_retry_attempt = attempt + 1
-            self._rotation_retry_at = time.time() + delay
-            _LOGGER.warning(
-                "[ROTATION] [%s] %s step=%s retry=%s/2 in %.1fs: %s",
-                self._ip, self._rotation_kind, item["name"], attempt + 1, delay, self._rotation_error,
-            )
-            if self.hass is not None:
-                self.async_write_ha_state()
-            if not await self._wait_rotation_retry(delay):
-                self._rotation_retry_at = None
-                if not self._is_on:
-                    self._rotation_error = "Lamp is off"
-                elif self._calibration_lock:
-                    self._rotation_error = "Calibration lock is active"
-                return False
-            self._rotation_retry_at = None
-        return False
-
-    async def _apply_rotation_item(self, item) -> bool:
-        """Apply one rotation item; return False to stop the loop."""
-        if not self._is_on:
-            _LOGGER.debug("[ROTATION] [%s] Lamp off -- stopping rotation", self._ip)
-            return False
-        if self._rotation_kind == "clock":
-            return await self._apply_rotation_clock(item)
-        return await self._apply_rotation_native(item)
-
-    async def _start_rotation_apply(self) -> bool:
-        """Run the guards + reset the full display pipeline performs before a
-        firmware mode switch, without its retry bookkeeping or queue overhead.
-
-        Returns False when the lamp cannot take a rotation step right now.
-        """
-        if self._calibration_lock:
-            _LOGGER.debug(
-                "[ROTATION] [%s] Calibration lock active -- stopping rotation",
-                self._ip,
-            )
-            return False
-        if self._music_flow_enabled:
-            await self.async_set_music_flow(False, restore_display=False)
-        # Applying a new clock/effect clears any frozen frame, exactly like the
-        # full _apply_display_mode_internal path does.
-        self._display_frozen = False
-        self._display_frozen_at = None
-        self._is_scrolling = False
-        self.stop_scroll_timer()
-        return True
-
-    async def _apply_rotation_native(self, item) -> bool:
-        name = item["name"]
-        color_mode = item.get("color_mode", "normal")
-        color = item.get("color")
-        spec = ALL_NATIVE_EFFECTS.get(name)
-        if spec is None:
-            _LOGGER.debug("[ROTATION] [%s] Unknown native effect %s -- skipped", self._ip, name)
-            return True
-        if spec.get("extended") and not self._extended_effects_enabled:
-            _LOGGER.debug(
-                "[ROTATION] [%s] Experimental effect %s skipped (Experimental Features off)",
-                self._ip, name,
-            )
-            return True
-        self._native_effect = name
-        self._mode = MODE_NATIVE_EFFECT
-        self._custom_draw_active = False
-        # Reapply the color mode recorded with the favourite. The firmware
-        # represents a free custom color as mode "normal" plus an RGB override.
-        self._native_effect_color_mode = (
-            "normal" if color_mode == "custom" else color_mode
-        )
-        self._native_effect_color = (
-            list(color) if color_mode == "custom" and color else None
-        )
-        if not await self._start_rotation_apply():
-            return False
-        if not await self._execute_hardware_op(
-            lambda: self._activate_native_effect(), "rotation:native"
-        ):
-            return False
-        self._refresh_linked_entities()
-        if self.hass is not None:
-            self.async_write_ha_state()
-        return True
-
-    async def _apply_rotation_clock(self, item) -> bool:
-        name = item["name"]
-        color_mode = item.get("color_mode", "normal")
-        color = item.get("color")
-        if name.startswith("custom:"):
-            preset_id = name[len("custom:"):]
-            preset = next(
-                (
-                    item for item in self.hass.data.get(DOMAIN, {}).get("clock_presets", [])
-                    if item.get("id") == preset_id and item.get("kind", "style") == "style"
-                ),
-                None,
-            )
-            if preset is None:
-                _LOGGER.debug("[ROTATION] [%s] Unknown clock preset %s -- skipped", self._ip, name)
-                return True
-            self._native_clock_style = next(
-                (
-                    sid for sid, style in NATIVE_CLOCK_STYLES.items()
-                    if style["name"] == "White"
-                ),
-                4,
-            )
-            # A recorded color mode overrides the preset's own solid color
-            # exactly like the card's preview: custom keeps the recorded color,
-            # a palette remaps it, normal uses the preset color.
-            if color_mode == "custom" and color:
-                self._native_clock_color = rgb_to_argb(color)
-                self._native_clock_color_mode = "normal"
-            elif color_mode in CLOCK_COLOR_MODES and color_mode != "normal":
-                self._native_clock_color = None
-                self._native_clock_color_mode = color_mode
-            else:
-                self._native_clock_color = rgb_to_argb(preset["color"])
-                self._native_clock_color_mode = "normal"
-        else:
-            style_id = next(
-                (
-                    sid for sid, style in NATIVE_CLOCK_STYLES.items()
-                    if style["name"] == name
-                ),
-                None,
-            )
-            if style_id is None:
-                _LOGGER.debug("[ROTATION] [%s] Unknown clock style %s -- skipped", self._ip, name)
-                return True
-            self._native_clock_style = style_id
-            if color_mode == "custom" and color:
-                self._native_clock_color = rgb_to_argb(color)
-                self._native_clock_color_mode = "normal"
-            else:
-                self._native_clock_color = None
-                self._native_clock_color_mode = (
-                    color_mode if color_mode in CLOCK_COLOR_MODES else "normal"
-                )
-        self._mode = MODE_CLOCK
-        self._custom_draw_active = False
-        if not await self._start_rotation_apply():
-            return False
-        if not await self._execute_hardware_op(
-            lambda: self._activate_native_clock(), "rotation:clock"
-        ):
-            return False
-        self._refresh_linked_entities()
-        if self.hass is not None:
-            self.async_write_ha_state()
-        return True
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> bool:
     # Create and register the light entity FIRST (this happens for EVERY device)

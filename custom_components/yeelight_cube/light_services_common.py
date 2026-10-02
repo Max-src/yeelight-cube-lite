@@ -17,7 +17,8 @@ from homeassistant.exceptions import (  # type: ignore
 from homeassistant.helpers import config_validation as cv  # type: ignore
 
 from .name_utils import normalize_display_name
-from .light import MAX_FAVOURITE_NAME, MAX_FAVOURITES, _ENTITY_REGISTRY
+from .light import _ENTITY_REGISTRY
+from .light_rotation import MAX_FAVOURITE_NAME, MAX_FAVOURITES
 
 _LOGGER = logging.getLogger(__name__)
 

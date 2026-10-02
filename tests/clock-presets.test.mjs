@@ -137,13 +137,15 @@ test("Rainbow clock uses calibrated Left regardless of the lamp direction", (con
 });
 
 function cardMethods(names, dependencies) {
-  const source = readFileSync(
-    new URL(
-      "../custom_components/yeelight_cube/www/yeelight-cube-clock-card.js",
-      import.meta.url,
-    ),
-    "utf8",
-  );
+  // The clock card and its preview mixin.
+  const source = ["yeelight-cube-clock-card.js", "clock-card-preview.js"]
+    .map((file) =>
+      readFileSync(
+        new URL(`../custom_components/yeelight_cube/www/${file}`, import.meta.url),
+        "utf8",
+      ),
+    )
+    .join("\n");
   return Object.fromEntries(
     names.map((name) => {
       const method = source.match(

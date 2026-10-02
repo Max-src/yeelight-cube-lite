@@ -306,7 +306,7 @@ test("lamp adjustment timers and stale failures cannot cross configuration conte
     EFFECT_DEFAULTS: { contrast: 100 },
   };
   const change = cardMethod(
-    "yeelight-cube-lamp-preview-card",
+    "lamp-preview-adjustments",
     "handleEffectChange",
     scope,
   );
@@ -466,7 +466,7 @@ test("card commands keep lamp and non-lamp calls in order, and report failures",
 
 test("a refused lamp-preview reset drops the defaults it showed", async (context) => {
   context.mock.method(console, "error", () => {});
-  const sendReset = cardMethod("yeelight-cube-lamp-preview-card", "_sendReset");
+  const sendReset = cardMethod("lamp-preview-adjustments", "_sendReset");
   let fail;
   let refreshed = 0;
   const card = {
