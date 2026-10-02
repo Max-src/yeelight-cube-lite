@@ -526,6 +526,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             "device_runtime_state": stored_data.get("device_runtime_state", {}),
             "favourites": stored_data.get("favourites", {}),
             "rotation": stored_data.get("rotation", {}),
+            "drawing": stored_data.get("drawing", {}),
         })
         hass.data[DOMAIN].pop("storage_init_error", None)
         storage_ready.set()
@@ -562,8 +563,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 from homeassistant.components.frontend import add_extra_js_url  # type: ignore
                 for card_file in _available_card_files:
                     add_extra_js_url(hass, f"{FRONTEND_URL_BASE}/{card_file}")
-            except (ImportError, Exception):
-                pass
+            except Exception:  # noqa: BLE001
+                # Without either mechanism the cards cannot load at all.
+                _LOGGER.warning(
+                    "Could not load the Lovelace cards automatically. Add them "
+                    "manually: Settings -> Dashboards -> Resources",
+                    exc_info=True,
+                )
 
         _LOGGER.debug("Yeelight Cube Lite: Storage, conflict prevention, and services initialized")
     
@@ -775,8 +781,11 @@ def _async_dismiss_own_discovery_flows(
                     "[REDISCOVER] Dismissed stale discovery flow %s (unique_id=%s)",
                     flow["flow_id"], context_uid,
                 )
-            except Exception:  # noqa: BLE001 — flow may already be gone
-                pass
+            except Exception as err:  # noqa: BLE001 — flow may already be gone
+                _LOGGER.debug(
+                    "[REDISCOVER] Could not dismiss discovery flow %s: %s",
+                    flow["flow_id"], err,
+                )
 
 
 async def _async_try_rediscover(
@@ -956,6 +965,7 @@ def _storage_data(hass: HomeAssistant) -> dict:
         "device_runtime_state": data.get("device_runtime_state", {}),
         "favourites": data.get("favourites", {}),
         "rotation": data.get("rotation", {}),
+        "drawing": data.get("drawing", {}),
     }
 
 
@@ -994,13 +1004,14 @@ async def async_save_data(hass: HomeAssistant):
     _LOGGER.debug("[STORAGE-SAVE] COMPLETE: Saved %s palettes, %s pixel arts", len(data_to_save['palettes_v2']), len(data_to_save['pixel_arts']))
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Forget the stored per-lamp data (favourites, rotation, runtime state) of a lamp
-    that was deleted, so it does not linger in the storage file."""
+    """Forget the stored per-lamp data (favourites, rotation, runtime state,
+    drawing) of a lamp that was deleted, so it does not linger in the storage
+    file."""
     domain_data = hass.data.get(DOMAIN)
     if not isinstance(domain_data, dict):
         return
     changed = False
-    for key in ("favourites", "rotation", "device_runtime_state"):
+    for key in ("favourites", "rotation", "device_runtime_state", "drawing"):
         store = domain_data.get(key)
         if isinstance(store, dict) and store.pop(entry.entry_id, None) is not None:
             changed = True

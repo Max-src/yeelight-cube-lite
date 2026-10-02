@@ -1,3 +1,4 @@
+import { hexToRgb as parseHex, rgbToHex } from "./color-utils.js";
 import {
   BLACK_THRESHOLD,
   OFF_COLOR,
@@ -64,13 +65,8 @@ export function matrixToLampCoords(matrixPos) {
 }
 
 // Color validation and conversion utilities
-export function rgbArrayToHex(rgbArray) {
-  if (!Array.isArray(rgbArray) || rgbArray.length < 3) return "#000000";
-  const r = Math.max(0, Math.min(255, Math.round(rgbArray[0])));
-  const g = Math.max(0, Math.min(255, Math.round(rgbArray[1])));
-  const b = Math.max(0, Math.min(255, Math.round(rgbArray[2])));
-  return `#${((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1)}`;
-}
+// [r, g, b] -> "#rrggbb" (rounded and clamped; "#000000" for invalid input)
+export const rgbArrayToHex = rgbToHex;
 
 // Utility functions for Yeelight Cube Lite Draw Card
 
@@ -85,22 +81,11 @@ export function normalizeHex(hex) {
   return hex;
 }
 
-// Convert RGB array to hex (delegates to rgbArrayToHex for clamping)
-export function rgbToHex(rgb) {
-  return rgbArrayToHex(rgb);
-}
+export { rgbToHex };
 
-// Convert hex to RGB array
+// Hex -> [r, g, b]; black for an invalid value (the drawing always needs a colour).
 export function hexToRgb(hex) {
-  hex = hex.replace("#", "");
-  if (hex.length === 3) {
-    hex = hex
-      .split("")
-      .map((x) => x + x)
-      .join("");
-  }
-  const num = parseInt(hex, 16);
-  return [(num >> 16) & 255, (num >> 8) & 255, num & 255];
+  return parseHex(hex) ?? [0, 0, 0];
 }
 
 /**

@@ -58,6 +58,7 @@ import { PaletteCardsMixin } from "./draw-card-palette-cards.js";
 import { PixelArtGalleryMixin } from "./draw-card-pixel-art-gallery.js";
 import { PixelArtActionsMixin } from "./draw-card-pixel-art-actions.js";
 import { expandPixelArt } from "./pixel-art-utils.js";
+import { findCollectionSensor } from "./sensor-lookup.js";
 
 const MAX_IMAGE_PALETTE_COLORS = 15;
 
@@ -435,17 +436,13 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(PixelArtGalleryMixin(Pal
     // Auto-resolve sensors on first hass set (setConfig may run before hass is available)
     if (this.config && hass) {
       if (!this.config.pixelart_sensor) {
-        const autoSensor = Object.keys(hass.states || {}).find(
-          (e) => e.startsWith("sensor.") && e.includes("pixel_art"),
-        );
+        const autoSensor = findCollectionSensor(hass, "pixel_art", this);
         if (autoSensor) {
           this.config = { ...this.config, pixelart_sensor: autoSensor };
         }
       }
       if (!this.config.palette_sensor) {
-        const autoSensor = Object.keys(hass.states || {}).find(
-          (e) => e.startsWith("sensor.") && e.includes("color_palettes"),
-        );
+        const autoSensor = findCollectionSensor(hass, "color_palettes", this);
         if (autoSensor) {
           this.config = { ...this.config, palette_sensor: autoSensor };
           this.paletteSensor = autoSensor;
@@ -690,9 +687,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(PixelArtGalleryMixin(Pal
 
     // Auto-resolve pixelart_sensor if not explicitly configured
     if (!this.config.pixelart_sensor && this._hass) {
-      const autoSensor = Object.keys(this._hass.states || {}).find(
-        (e) => e.startsWith("sensor.") && e.includes("pixel_art"),
-      );
+      const autoSensor = findCollectionSensor(this._hass, "pixel_art");
       if (autoSensor) {
         this.config.pixelart_sensor = autoSensor;
       }
@@ -700,9 +695,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(PixelArtGalleryMixin(Pal
 
     // Auto-resolve palette_sensor if not explicitly configured
     if (!this.config.palette_sensor && this._hass) {
-      const autoSensor = Object.keys(this._hass.states || {}).find(
-        (e) => e.startsWith("sensor.") && e.includes("color_palettes"),
-      );
+      const autoSensor = findCollectionSensor(this._hass, "color_palettes");
       if (autoSensor) {
         this.config.palette_sensor = autoSensor;
       }
@@ -771,8 +764,8 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(PixelArtGalleryMixin(Pal
   // They reject on failure (Home Assistant has already shown the error).
 
   // One call for all target lamps; the backend runs them in parallel.
-  callServiceOnTargetEntities(service, data = {}) {
-    return this._commands.request(this.hass, this.config, service, data);
+  callServiceOnTargetEntities(service, data = {}, options = {}) {
+    return this._commands.request(this.hass, this.config, service, data, options);
   }
 
   // Pixel-art services are global: sent once, without entity_id (an invalid
@@ -1377,7 +1370,16 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(PixelArtGalleryMixin(Pal
     window.dispatchEvent(new Event("pixelart-saved"));
   }
 
-  async _sendToLamp() {
+  /**
+   * Send the drawing matrix to the lamps.
+   * @param {Object} [options]
+   * @param {boolean} [options.latestOnly] - for quick successive picks (the
+   *   pixel-art gallery): a send still waiting in the queue is replaced by
+   *   this one, and the lamp entity is not polled afterwards (it pushes its
+   *   new state itself). Each click otherwise queues two calls, and a fast
+   *   run of clicks piles them up behind each other.
+   */
+  async _sendToLamp({ latestOnly = false } = {}) {
     if (!this.hass) return;
     const pixels = [];
     for (let row = 0; row < GRID_ROWS; row++) {
@@ -1397,9 +1399,12 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(PixelArtGalleryMixin(Pal
         pixels.push({ position: lampIdx, color: rgb });
       }
     }
-    await this.callServiceOnTargetEntities("apply_custom_pixels", {
-      pixels,
-    });
+    const sent = await this.callServiceOnTargetEntities(
+      "apply_custom_pixels",
+      { pixels },
+      latestOnly ? { coalesce: "send-matrix" } : {},
+    );
+    if (latestOnly) return sent;
     // Also call update_entity for lamp entity or palette sensor
     await this._refreshEntity(this.entity || this.paletteSensor);
     // Fire pixelart-saved event for consistency

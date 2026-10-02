@@ -18,10 +18,20 @@ import {
  * callers must not treat it as applied (nor as a failure to report). */
 export const SUPERSEDED = "superseded";
 
+/** A call Home Assistant has not answered after this long stops holding the
+ * queue: without a limit, one lost reply would block every later command of
+ * the card until the page is reloaded. */
+export const CALL_TIMEOUT_MS = 20000;
+
 export class CardCommandController {
-  constructor(notify = () => {}, send = callServiceOnTargetEntities) {
+  constructor(
+    notify = () => {},
+    send = callServiceOnTargetEntities,
+    timeoutMs = CALL_TIMEOUT_MS,
+  ) {
     this.notify = notify;
     this.send = send;
+    this.timeoutMs = timeoutMs;
     this.context = 0;
     this.pending = 0;
     this.error = "";
@@ -82,7 +92,7 @@ export class CardCommandController {
     return this._enqueue(
       (payload) => this.send(hass, targets, service, payload, { domain }),
       data,
-      options,
+      { ...options, label: `${domain}.${service}` },
     );
   }
 
@@ -97,11 +107,28 @@ export class CardCommandController {
     return this._enqueue(
       (payload) => hass.callService(domain, service, payload),
       data,
-      options,
+      { ...options, label: `${domain}.${service}` },
     );
   }
 
-  async _enqueue(send, data, { coalesce } = {}) {
+  /** Resolve with ``send``, or reject once the call has gone unanswered for
+   * timeoutMs (the call itself cannot be cancelled and may still complete). */
+  _withTimeout(sending, label) {
+    let timer;
+    const expired = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        console.warn(
+          `[Yeelight Cube] ${label} got no answer from Home Assistant after ${
+            this.timeoutMs / 1000
+          }s; continuing with the next command.`,
+        );
+        reject(new Error(`${label}: no answer from Home Assistant.`));
+      }, this.timeoutMs);
+    });
+    return Promise.race([sending, expired]).finally(() => clearTimeout(timer));
+  }
+
+  async _enqueue(send, data, { coalesce, label = "Service call" } = {}) {
     const context = this.context;
     this._latest ||= {};
     const generation = coalesce
@@ -114,7 +141,7 @@ export class CardCommandController {
     const job = this.queue.then(async () => {
       if (context !== this.context) return false;
       if (coalesce && this._latest[coalesce] !== generation) return SUPERSEDED;
-      await send(payload);
+      await this._withTimeout(send(payload), label);
       return context === this.context;
     });
     this.queue = job.catch(() => {});

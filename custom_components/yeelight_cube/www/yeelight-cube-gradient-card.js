@@ -13,7 +13,6 @@ import { AngleCommandController } from "./angle-wheel-utils.js";
 import {
   TEXT_SELECTOR_STYLES,
   PREVIEW_SELECTOR_STYLES,
-  resolveSelectorButtonShape,
 } from "./selector-shared-styles.js";
 
 import { defineOnce, registerCustomCard } from "./card-registration.js";
@@ -21,8 +20,8 @@ import { createSliderDraft } from "./slider-control-utils.js";
 import { bindHostEvents } from "./host-events.js";
 import { AngleControlMixin } from "./gradient-angle-control.js";
 import { ModeSelectorMixin } from "./gradient-mode-selector.js";
-import { nothing } from "./lit-extras.js";
 import { GRADIENT_CARD_CSS } from "./gradient-card-styles.js";
+import { nothing } from "./lib/lit-all.js";
 
 // Host methods the angle capsule markup may call (see bindHostEvents).
 const CAPSULE_HANDLERS = new Set([
@@ -1157,32 +1156,7 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(AngleControlMixin(LitEl
           this._cachedPreviewHtml = newPreviewHtml;
           // Sync the preview-data hash so _getCachedPreviewGrid won't
           // regenerate with stale values on the next call
-          this._lastPreviewDataHash = this._previewCache().data
-            ? JSON.stringify({
-                text: this._previewCache().data.text,
-                angle: Math.round(this._previewCache().data.angle * 10) / 10,
-                bgColor: this.config.gallery_background_color,
-                pixelStyle: this.config.gallery_pixel_style,
-                pixelGap:
-                  this.config.gallery_spacing_mode ||
-                  this.config.gallery_pixel_spacing,
-                previewSize: this.config.gallery_preview_size,
-                ignoreBlack: this.config.gallery_ignore_black_pixels,
-                matrixShadow: this.config.gallery_matrix_box_shadow,
-                displayMode: this._getModeSelectorStyle(),
-                showTitles: this.config.preview_show_titles,
-                visibleModes: JSON.stringify(
-                  this.config.custom_visible_modes === true
-                    ? this.config.visible_modes || null
-                    : null,
-                ),
-                buttonShape: resolveSelectorButtonShape(this.config),
-                itemsPerPage: this.config.items_per_page || 0,
-                selectorPage: this._selectorPage || 0,
-                wheelHeight: this.config.wheel_height,
-                wheelNavPosition: this.config.wheel_nav_position,
-              })
-            : null;
+          this._lastPreviewDataHash = this._previewDataHash();
           // Use immediate mode for wheel re-init (skip double-rAF delay)
           this._wheelReInitializing = true;
           // Re-initialise the wheel controller for the new content

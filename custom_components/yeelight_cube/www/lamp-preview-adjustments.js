@@ -8,8 +8,7 @@ import {
   SECTIONS_REGISTRY,
   EFFECTS_REGISTRY,
 } from "./lamp-preview-effects.js";
-import { html } from "./lib/lit-all.js";
-import { nothing, svg } from "./lit-extras.js";
+import { html, nothing, svg } from "./lib/lit-all.js";
 
 export const AdjustmentControlsMixin = (Base) => class extends Base {
   async handleEffectChange(effectName, event) {

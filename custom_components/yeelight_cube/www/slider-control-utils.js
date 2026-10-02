@@ -668,6 +668,7 @@ export function createSliderHandlers({
     ) || host.shadowRoot;
   let commitTimer = null;
   let pendingCommit = null;
+  // Detaches the drag in progress (see followDrag), or null.
   let dragCleanup = null;
   let pointerHeld = false;
 
@@ -701,6 +702,28 @@ export function createSliderHandlers({
     for (const type of ["mouseup", "pointerup", "touchend", "touchcancel"])
       document.addEventListener(type, releasePointer, true);
   };
+  // Follow a mouse / touch drag on the document: `move` for each movement,
+  // `onEnd` on release. Destroy() also detaches a drag still in progress.
+  const followDrag = (move, onEnd) => {
+    dragCleanup?.();
+    const detach = () => {
+      document.removeEventListener("mousemove", move);
+      document.removeEventListener("mouseup", end);
+      document.removeEventListener("touchmove", move);
+      document.removeEventListener("touchend", end);
+      if (dragCleanup === detach) dragCleanup = null;
+    };
+    const end = () => {
+      onEnd();
+      detach();
+    };
+    dragCleanup = detach;
+    document.addEventListener("mousemove", move);
+    document.addEventListener("mouseup", end);
+    document.addEventListener("touchmove", move, { passive: false });
+    document.addEventListener("touchend", end);
+  };
+
 
   const getWheelStops = () => {
     const gc = getConfig();
@@ -975,17 +998,7 @@ export function createSliderHandlers({
           applyValue(value);
         }
       };
-      const end = () => {
-        releasePointer();
-        document.removeEventListener("mousemove", move);
-        document.removeEventListener("mouseup", end);
-        document.removeEventListener("touchmove", move);
-        document.removeEventListener("touchend", end);
-      };
-      document.addEventListener("mousemove", move);
-      document.addEventListener("mouseup", end);
-      document.addEventListener("touchmove", move, { passive: false });
-      document.addEventListener("touchend", end);
+      followDrag(move, releasePointer);
     },
 
     MatrixDown(event, element) {
@@ -1024,19 +1037,7 @@ export function createSliderHandlers({
           });
         }
       };
-      const end = () => {
-        releasePointer();
-        document.removeEventListener("mousemove", move);
-        document.removeEventListener("mouseup", end);
-        document.removeEventListener("touchmove", move);
-        document.removeEventListener("touchend", end);
-        dragCleanup = null;
-      };
-      dragCleanup = { move, end };
-      document.addEventListener("mousemove", move);
-      document.addEventListener("mouseup", end);
-      document.addEventListener("touchmove", move, { passive: false });
-      document.addEventListener("touchend", end);
+      followDrag(move, releasePointer);
     },
 
     RotaryStart(event, element) {
@@ -1066,20 +1067,10 @@ export function createSliderHandlers({
         e.preventDefault();
         rotaryClick(e);
       };
-      const end = () => {
+      followDrag(move, () => {
         host[rotaryProp] = false;
         releasePointer();
-        document.removeEventListener("mousemove", move);
-        document.removeEventListener("mouseup", end);
-        document.removeEventListener("touchmove", move);
-        document.removeEventListener("touchend", end);
-        dragCleanup = null;
-      };
-      dragCleanup = { move, end };
-      document.addEventListener("mousemove", move);
-      document.addEventListener("mouseup", end);
-      document.addEventListener("touchmove", move, { passive: false });
-      document.addEventListener("touchend", end);
+      });
     },
 
     ValueFocus() {
@@ -1123,13 +1114,7 @@ export function createSliderHandlers({
         for (const type of ["mouseup", "pointerup", "touchend", "touchcancel"])
           document.removeEventListener(type, releasePointer, true);
       }
-      if (dragCleanup) {
-        document.removeEventListener("mousemove", dragCleanup.move);
-        document.removeEventListener("mouseup", dragCleanup.end);
-        document.removeEventListener("touchmove", dragCleanup.move);
-        document.removeEventListener("touchend", dragCleanup.end);
-        dragCleanup = null;
-      }
+      dragCleanup?.();
     },
   };
 

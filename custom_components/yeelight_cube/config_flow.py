@@ -1,3 +1,4 @@
+import ipaddress
 import logging
 import voluptuous as vol # type: ignore
 from homeassistant import config_entries # type: ignore
@@ -22,21 +23,24 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         
         if user_input is not None:
-            ip_address = user_input[CONF_IP]
-            self._async_abort_entries_match({CONF_IP: ip_address})
-            
-            # For manual setup, use IP as unique_id (no device_id available yet).
-            # When the device is later discovered via zeroconf, the unique_id will
-            # be migrated to the hardware device_id automatically.
-            await self.async_set_unique_id(ip_address)
-            self._abort_if_unique_id_configured()
-            
-            # Simple validation - check if IP format is reasonable
-            if not ip_address or not ip_address.replace(".", "").replace(":", "").isdigit():
+            try:
+                # Canonical form (spaces stripped, IPv6 compressed), so the
+                # same lamp always gets the same unique_id.
+                address = ipaddress.ip_address(user_input[CONF_IP].strip())
+            except ValueError:
+                address = None
+            if address is None or address.is_unspecified or address.is_multicast:
                 errors[CONF_IP] = "invalid_ip"
             else:
+                ip_address = str(address)
+                self._async_abort_entries_match({CONF_IP: ip_address})
+                # For manual setup, use IP as unique_id (no device_id available
+                # yet). When the device is later discovered, the unique_id is
+                # migrated to the hardware device_id automatically.
+                await self.async_set_unique_id(ip_address)
+                self._abort_if_unique_id_configured()
                 return self.async_create_entry(
-                    title=f"Yeelight Cube ({ip_address})", 
+                    title=f"Yeelight Cube ({ip_address})",
                     data={CONF_IP: ip_address}
                 )
 

@@ -26,14 +26,17 @@ _LOGGER = logging.getLogger(__name__)
 
 
 APPLY_HARD_TIMEOUT = 12.0      # Seconds -- safety timeout for one hardware operation under the
-
-
+                               # device lock. When exceeded, asyncio.wait_for cancels it and
+                               # releases the lock so queued operations can proceed. Long enough
+                               # for activate_fx_mode + draw_matrices on slow Wi-Fi: releasing the
+                               # lock between the two shows the default ribbon on the lamp.
+                               # Transitions add their duration on top (async_apply_display_mode).
 LOCK_WAIT_WARNING_MS = 3000   # Waiting for the lamp longer than this is logged as a
-
-
                               # warning (commands piling up); shorter waits are normal
                               # queueing behind a redraw/transition and logged at debug.
 CIRCUIT_BREAKER_WINDOW = 30.0 # Seconds -- if 2+ hard timeouts occur within this window,
+                              # reject new operations immediately instead of queueing them
+                              # behind the lock for another APPLY_HARD_TIMEOUT each.
 
 
 # Per-device locks to serialize hardware commands to the SAME physical lamp.
@@ -59,17 +62,27 @@ def _get_device_lock(ip: str) -> asyncio.Lock:
 class ConnectionMixin:
     """Hardware-operation serialisation, retries and connection health."""
 
-    async def _execute_hardware_op(self, func, op_name: str, timeout_override: float = None):
+    async def _execute_hardware_op(
+        self, func, op_name: str, timeout_override: float = None, coalesce: bool = False
+    ):
         """Execute a hardware operation under the global lock with timeout and error handling.
-        
+
         Replaces the old queue processor.  Operations are serialized across all
         entity instances via per-device locks.  A hard timeout prevents hung
         socket operations from blocking the lock indefinitely.
-        
+
         Args:
             timeout_override: Optional custom timeout (seconds).  Used when a
                               display transition needs more time than the default
                               APPLY_HARD_TIMEOUT.
+            coalesce: For full redraws, which render the entity's state as it
+                      is when they run. Skipped (returning True) if a newer
+                      coalesced operation was queued while this one waited for
+                      the lamp: the newer one draws the latest state anyway.
+                      Rapid changes (clicking through pixel arts) then cost
+                      the lamp one redraw instead of one transition and two
+                      fresh TCP connections each, which can crash the Cube's
+                      network stack.
         """
         op_id = int(time.time() * 1000) % 100000
         effective_timeout = timeout_override or APPLY_HARD_TIMEOUT
@@ -95,7 +108,11 @@ class ConnectionMixin:
             if op_name.startswith('display:'):
                 self._maybe_schedule_retry()
             return False
-        
+
+        if coalesce:
+            self._coalesced_op_generation += 1
+            generation = self._coalesced_op_generation
+
         _LOGGER.debug(
             "[OP #%s] [%s] > %s "
             "(is_on=%s, fx_direct=%s) "
@@ -112,6 +129,12 @@ class ConnectionMixin:
                 _DEVICE_LOCK_HOLDERS.get(self._ip) if device_lock.locked() else None
             )
             async with device_lock:
+                if coalesce and generation != self._coalesced_op_generation:
+                    _LOGGER.debug(
+                        "[OP #%s] [%s] %s skipped -- a newer redraw is queued",
+                        op_id, self._ip, op_name,
+                    )
+                    return True
                 _DEVICE_LOCK_HOLDERS[self._ip] = op_name
                 self._hardware_operation_phase = op_name
                 lock_wait_ms = (time.time() - lock_wait_start) * 1000
@@ -133,8 +156,15 @@ class ConnectionMixin:
                         f" (queued behind {waited_behind})" if waited_behind else "",
                     )
                 try:
-                    await asyncio.wait_for(func(), timeout=effective_timeout)
-                except asyncio.TimeoutError:
+                    async with asyncio.timeout(effective_timeout) as guard:
+                        await func()
+                except TimeoutError:
+                    if not guard.expired():
+                        # A socket timeout inside the operation (the lamp did
+                        # not accept a connection), not this guard: handled
+                        # below as a failed connection, without counting
+                        # towards the circuit breaker.
+                        raise
                     self._hardware_failure_retryable = True
                     _LOGGER.error(
                         "[OP #%s] [%s] [!] HARD TIMEOUT -- "
@@ -180,8 +210,9 @@ class ConnectionMixin:
                 self._maybe_schedule_retry()
         except TimeoutError:
             self._hardware_failure_retryable = True
-            _LOGGER.debug(
-                "[OP #%s] [%s] Timeout -- device unreachable", op_id, self._ip
+            _LOGGER.warning(
+                "[OP #%s] [%s] %s: the lamp did not accept a connection in time",
+                op_id, self._ip, op_name,
             )
             self._connection_error = True
             self._last_connection_error = "Device timeout"

@@ -97,12 +97,18 @@ export const PixelArtActionsMixin = (Base) => class extends Base {
 
   async _handlePixelArtCanvasClick(idx, autoApplyToLamp) {
     try {
-      // Always apply to matrix
-      await this._applyPixelArtToMatrix(idx);
+      // Always apply to matrix; send it to the lamp only if that worked
+      // (otherwise the lamp would just get the previous drawing again).
+      const applied = await this._applyPixelArtToMatrix(idx);
+      if (!applied) {
+        throw new Error(
+          this._pixelArtProblem || "This pixel art could not be loaded.",
+        );
+      }
 
       // If auto-apply is enabled, also send current matrix to lamp
       if (autoApplyToLamp) {
-        await this._sendToLamp();
+        await this._sendToLamp({ latestOnly: true });
       }
     } catch (err) {
       this._reportFailure(err, "Failed to apply the pixel art to the lamp.");
@@ -154,10 +160,9 @@ export const PixelArtActionsMixin = (Base) => class extends Base {
       }
     }
 
-    if (index === null || isNaN(index)) {
-      console.error("[Gallery] Invalid index, aborting");
-      return;
-    }
+    // Buttons without an index (pagination, ...) have their own handlers;
+    // their clicks only bubble through here.
+    if (index === null || isNaN(index)) return;
 
     if (target.classList.contains("apply-btn")) {
       this._applyPixelArt(index);
@@ -315,27 +320,42 @@ export const PixelArtActionsMixin = (Base) => class extends Base {
     }, 300);
   }
 
+  /** Load pixel art ``idx`` into the drawing matrix. Returns true if it was
+   * loaded; otherwise false, with the reason in ``_pixelArtProblem``. */
   async _applyPixelArtToMatrix(idx) {
     const cfg = this.config || {};
     const pixelartSensor = cfg.pixelart_sensor;
+    this._pixelArtProblem = null;
+    const fail = (problem, detail) => {
+      this._pixelArtProblem = problem;
+      console.error(`[draw-card] ${problem}`, detail ?? "");
+      return false;
+    };
 
     if (!this.hass || !pixelartSensor || !this._pixelArtState(pixelartSensor)) {
-      console.error(
-        "[draw-card] Cannot apply pixel art to matrix: missing hass or pixelart_sensor",
+      return fail(
+        "Cannot apply pixel art to matrix: missing hass or pixelart_sensor",
       );
-      return;
     }
 
     try {
       const stateObj = this._pixelArtState(pixelartSensor);
-      const pixelArts = stateObj.attributes.pixel_arts || [];
+      // The list the gallery shows (including a pending rename/reorder), so
+      // the index clicked is the art the user saw.
+      const pixelArts = this._applyPendingRenames(
+        stateObj.attributes.pixel_arts || [],
+      );
       const pixelArt = pixelArts[idx];
 
       if (!pixelArt || !pixelArt.pixels) {
-        console.error("[draw-card] Pixel art not found or has no pixels");
-        return;
+        return fail(
+          `Pixel art ${idx} not found or has no pixels (the card has ${pixelArts.length} pixel arts).`,
+          pixelArt,
+        );
       }
+      let placed = 0;
 
+      const previous = this.matrix;
       this._pushMatrixHistory();
 
       // Start with black matrix (same as image upload)
@@ -371,14 +391,26 @@ export const PixelArtActionsMixin = (Base) => class extends Base {
 
           if (matrixPosition >= 0 && matrixPosition < MATRIX_SIZE) {
             this.matrix[matrixPosition] = hex;
+            placed++;
           }
         }
+      }
+      if (!placed) {
+        // Keep the previous drawing rather than send an empty one, and show
+        // what the stored data looks like.
+        this.matrix = previous;
+        this._matrixHistory?.pop();
+        return fail(
+          `Pixel art "${pixelArt.name}" has no pixel this card can read.`,
+          JSON.stringify(pixelArt.pixels.slice(0, 3)),
+        );
       }
 
       StorageUtils.saveMatrix(this.matrix);
       this.requestUpdate();
+      return true;
     } catch (err) {
-      console.error("[draw-card] Error applying pixel art to matrix:", err);
+      return fail(`Error applying pixel art ${idx} to matrix: ${err?.message || err}`, err);
     }
   }
 

@@ -567,3 +567,25 @@ test("an emptied target list falls back to the single entity", async () => {
   assert.deepEqual(getTargetEntities({}), []);
   assert.deepEqual(getTargetEntities(), []);
 });
+
+test("an unanswered call stops holding the queue after the timeout", async (context) => {
+  const warnings = [];
+  context.mock.method(console, "warn", (message) => warnings.push(message));
+  const sent = [];
+  const hass = {
+    callService: (domain, service) => {
+      sent.push(service);
+      // update_entity never answers; everything else answers at once
+      return service === "update_entity" ? new Promise(() => {}) : Promise.resolve();
+    },
+  };
+  const commands = new CardCommandController(() => {}, undefined, 30);
+  const config = { entity: "light.a" };
+  const stuck = commands.call(hass, "homeassistant", "update_entity", { entity_id: "light.a" });
+  const next = commands.request(hass, config, "apply_custom_pixels", { pixels: [] });
+  await assert.rejects(stuck, /homeassistant\.update_entity: no answer/);
+  assert.equal(await next, true);
+  assert.deepEqual(sent, ["update_entity", "apply_custom_pixels"]);
+  assert.match(warnings[0], /homeassistant\.update_entity got no answer/);
+  assert.equal(commands.busy, false);
+});

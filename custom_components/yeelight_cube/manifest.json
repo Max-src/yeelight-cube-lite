@@ -14,10 +14,10 @@
     "zeroconf"
   ],
   "documentation": "https://github.com/Max-src/yeelight-cube-lite",
-  "iot_class": "local_push",
+  "iot_class": "local_polling",
   "issue_tracker": "https://github.com/Max-src/yeelight-cube-lite/issues",
   "requirements": [
-    "yeelight"
+    "yeelight>=0.7.16,<0.8"
   ],
   "version": "1.3.3",
   "zeroconf": [

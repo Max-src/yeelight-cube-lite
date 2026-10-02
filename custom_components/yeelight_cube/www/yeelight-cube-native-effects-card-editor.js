@@ -3,7 +3,7 @@ import "./preview-appearance-editor.js";
 import { normalizePreviewAppearance } from "./preview-appearance.js";
 import {
   sharedEditorStyles,
-  renderEditorSection,
+  EditorSectionsMixin,
   renderModeSettingsSection,
   renderMatrixAppearanceSettings,
   renderExperimentalAvailability,
@@ -46,7 +46,7 @@ import {
 } from "./mode-controls-settings.js";
 import { defineOnce } from "./card-registration.js";
 
-class YeelightCubeNativeEffectsCardEditor extends LitElement {
+class YeelightCubeNativeEffectsCardEditor extends EditorSectionsMixin(LitElement) {
   static properties = {
     _config: { state: true },
     hass: { attribute: false },
@@ -70,17 +70,6 @@ class YeelightCubeNativeEffectsCardEditor extends LitElement {
       delete this._config.orientation_directions;
     }
     fireEvent(this, "config-changed", { config: this._config });
-  }
-  _section(id, title, content) {
-    return renderEditorSection(
-      id,
-      title,
-      !!this._open[id],
-      () => {
-        this._open = { ...this._open, [id]: !this._open[id] };
-      },
-      content,
-    );
   }
   _toggle(label, key, fallback = true) {
     return createToggleRow(label, key, this._config[key] ?? fallback, (event) =>

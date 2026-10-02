@@ -39,6 +39,7 @@ from .const import (
     ORIENTATION_NORMAL,
     POWER_ON_STATES,
 )
+from .lamp_power import BASE_W, NO_LIMIT_W, estimated_power
 from .cube_matrix import (
     CubeConnectionError,
     CubeFxModeLost,
@@ -55,7 +56,7 @@ from .light_color import ColorPipelineMixin
 from .light_transitions import TransitionMixin
 from .light_native import NativeModesMixin, _parse_music_flow_config
 from .light_render import MatrixRenderMixin
-from .light_connection import ConnectionMixin, APPLY_HARD_TIMEOUT, _DEVICE_LOCKS, _DEVICE_LOCK_HOLDERS
+from .light_connection import ConnectionMixin, APPLY_HARD_TIMEOUT, _DEVICE_LOCKS, _DEVICE_LOCK_HOLDERS, _get_device_lock
 from .light_restore import StateRestoreMixin
 from .light_rotation import RotationMixin
 
@@ -64,8 +65,6 @@ _LOGGER.debug("Yeelight Cube Lite light.py module loaded")
 
 # Timing constants
 APPLY_POST_DELAY = 0.0        # No post-delay needed -- send_command_fast doesn't wait for responses
-                              # reject new operations immediately instead of queueing them
-                              # behind the lock for another APPLY_HARD_TIMEOUT each.
 FX_MODE_STALENESS_TIMEOUT = 90.0  # Seconds -- re-send activate_fx_mode when _last_fx_mode_time
                                   # (set by activate_fx_mode and by every full frame drawn in
                                   # apply()) is older than this. An idle Cube can leave direct
@@ -525,6 +524,17 @@ class YeelightCubeLight(
         self._transition_steps = 5               # Number of intermediate frames (1-10)
         self._transition_duration = 1.0          # Total transition time in seconds (0.2-10.0)
         self._transition_active = False          # Re-entrancy guard
+        # Power limit in W (NO_LIMIT_W = off): frames sent to the lamp are
+        # dimmed so its estimated draw stays under it, for weak or shared
+        # power supplies (lamp_power.py).
+        self._power_limit = NO_LIMIT_W
+        # Estimated draw of the last frame sent (None until one is sent).
+        self._last_frame_power = None
+        self._power_sensor = None
+        self._published_power = None
+        # Bumped by each queued redraw; an older one still waiting for the
+        # lamp is skipped (_execute_hardware_op, coalesce=True).
+        self._coalesced_op_generation = 0
 
         # -- Saved display state (save_state / restore_state services) ----
         # Holds a single snapshot of the full display state so an automation
@@ -570,6 +580,26 @@ class YeelightCubeLight(
             for entity in self._control_entities:
                 if entity.hass is not None:
                     entity.async_write_ha_state()
+        power = self.estimated_power
+        if power != self._published_power:
+            self._published_power = power
+            sensor = self._power_sensor
+            if sensor is not None and sensor.hass is not None:
+                sensor.async_write_ha_state()
+
+    @property
+    def estimated_power(self) -> float | None:
+        """Estimated draw in W (lamp_power.py): 0 while the lamp is not
+        reachable (most often unplugged); the electronics alone while off;
+        unknown while the firmware draws the matrix (clock, native effect,
+        Music Flow), whose frames Home Assistant cannot see."""
+        if not self.available:
+            return 0.0
+        if not self._is_on:
+            return BASE_W
+        if self.firmware_draws_matrix or self._last_frame_power is None:
+            return None
+        return round(self._last_frame_power, 2)
 
     def _notify_camera_preview(self) -> None:
         """Schedule every camera entity to re-render its preview.
@@ -891,6 +921,7 @@ class YeelightCubeLight(
             "transition_duration": self._transition_duration,
             "scroll_speed": self._scroll_speed,
             "scroll_enabled": self._scroll_enabled,
+            "power_limit": self._power_limit,
         }
         attrs["matrix_colors"] = self._published_matrix_colors()
         return attrs
@@ -993,6 +1024,7 @@ class YeelightCubeLight(
         self._restore_music_flow_runtime_state()
         self._restore_favourites()
         self._restore_rotation_settings()
+        self._restore_drawing()
         # Palettes and pixel arts are accessed via @property from global storage
         # No restoration needed - __init__.py loads from Store into hass.data[DOMAIN]
         _LOGGER.debug("[RESTORE] Entity initialized. Palettes: %s, Pixel Arts: %s", len(self._palettes), len(self._pixel_arts))
@@ -1674,6 +1706,11 @@ class YeelightCubeLight(
         # connection can make the Cube's small TCP stack drop animation frames.
         if self._fx_mode_is_direct:
             return
+        # Never open the polling connection while a command is talking to the
+        # lamp: the Cube copes badly with two connections at once. Poll on the
+        # next update instead.
+        if _get_device_lock(self._ip).locked():
+            return
         self._last_native_state_poll = now
         try:
             props = await self._cube_matrix.read_properties(
@@ -1836,7 +1873,7 @@ class YeelightCubeLight(
         # Now only explicit user actions restart retries.
         user_action_types = {
             'turn_on', 'turn_off', 'brightness_change', 'text_change',
-            'color_change', 'pixel_art',
+            'color_change', 'pixel_art', 'power_limit',
         }
         is_user_action = update_type in user_action_types
         if not is_retry and self._display_retry_count >= self.MAX_DISPLAY_RETRIES:
@@ -1883,7 +1920,8 @@ class YeelightCubeLight(
         return await self._execute_hardware_op(
             lambda: self._apply_display_mode_internal(),
             f"display:{update_type}",
-            timeout_override=op_timeout
+            timeout_override=op_timeout,
+            coalesce=True,
         )
 
     async def _apply_brightness_only(self):
@@ -1979,7 +2017,9 @@ class YeelightCubeLight(
             self._write_layout_colors(frame)
 
             # Send pixel data using fire-and-forget (no recv wait)
-            await self._cube_matrix.draw_matrices_fast(encode_rgb_frame(frame))
+            await self._cube_matrix.draw_matrices_fast(
+                encode_rgb_frame(self._lamp_frame(frame))
+            )
             
             # POST-SEND RECONNECTION CHECK: Same as in apply() -- if the
             # socket reconnected during send, pixels were silently ignored.
@@ -2289,7 +2329,8 @@ class YeelightCubeLight(
                             "[TRANSITION] [%s] Post-transition FX re-activation failed: %s", self._ip, e
                         )
             
-            raw_rgb_data = encode_rgb_frame(frame)
+            lamp_frame = self._lamp_frame(frame)
+            raw_rgb_data = encode_rgb_frame(lamp_frame)
 
             _apply_t0 = time.time()
 
@@ -2299,11 +2340,16 @@ class YeelightCubeLight(
             
             _LOGGER.debug(
                 "[APPLY] [%s] Sending update_leds: "
-                "%s lit / %s dark pixels, "
+                "%s lit / %s dark pixels, power=%.1fW%s "
                 "text='%s' mode='%s' "
                 "idle=%.1fs fx_age=%.0fs "
                 "bright=%s/255 hw=%s%% darken=%s%%",
-                self._ip, lit, 100 - lit, (self._custom_text or '')[:10], self._mode,
+                self._ip, lit, 100 - lit,
+                # estimated draw of the frame sent (see lamp_power.py)
+                self._last_frame_power,
+                "" if lamp_frame is frame else
+                f" (limited from {estimated_power(frame, hardware_brightness or 100):.1f}W)",
+                (self._custom_text or '')[:10], self._mode,
                 idle_since_last_cmd, time.time() - self._last_fx_mode_time,
                 self._brightness, hardware_brightness, darken_percent
             )

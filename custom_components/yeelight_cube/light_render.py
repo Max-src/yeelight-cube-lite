@@ -59,7 +59,6 @@ class MatrixRenderMixin:
                 offset = total_columns - total_text_width
             else:
                 offset = 0
-            _LOGGER.debug("[NORMAL] Normal positioning: width=%s, alignment=%s, returning=%s", total_text_width, self._alignment, offset)
             return offset
 
     def _flip_position(self, pos, total_columns=TOTAL_COLUMNS, total_rows=TOTAL_ROWS):
@@ -95,7 +94,6 @@ class MatrixRenderMixin:
                 return
 
             background_color_hex = rgb_to_hex(self._background_color)
-            _LOGGER.debug("Setting background color: %s", background_color_hex)
             for module in self._layout.device_layout:
                 module.set_colors([background_color_hex])
             # Priority: custom drawing if present and custom_draw_active, else text
@@ -133,6 +131,7 @@ class MatrixRenderMixin:
                     color_groups.setdefault(color_hex, []).append(pos)
                 for color_hex, positions in color_groups.items():
                     self.place_pixels(color_hex, self._flip_positions(positions))
+                self._remember_drawing()
                 await self.apply(skip_post_delay=skip_post_delay)
                 return
             # If not in custom draw mode, clear custom pixels so text/other modes work as expected
@@ -641,8 +640,6 @@ class MatrixRenderMixin:
         _LOGGER.debug("[PLACE_LETTERS] Completed placing %s total pixels", total_pixels_placed)
 
     def place_pixels(self, color: str, positions):
-        _LOGGER.debug("[PLACE_PIXELS] Placing %s pixels with color: %s", len(positions), color)
-        _LOGGER.debug("[PLACE_PIXELS] Positions: %s", positions)
         
         # Track bad positions and log stack trace
         bad_positions = [pos for pos in positions if pos < 0 or pos >= len(self._layout.device_layout)]
@@ -661,7 +658,6 @@ class MatrixRenderMixin:
                     _LOGGER.warning("[PLACE_PIXELS] Position %s is not a Module: %s", pos, type(self._layout.device_layout[pos]))
             else:
                 _LOGGER.warning("[PLACE_PIXELS] Position %s is out of bounds (0-%s)", pos, len(self._layout.device_layout)-1)
-        _LOGGER.debug("[PLACE_PIXELS] Successfully placed %s/%s pixels", pixels_placed, len(positions))
 
     def letter_size(self, led_positions):
         unique_columns = set()
@@ -687,7 +683,6 @@ class MatrixRenderMixin:
             return list(range(TOTAL_COLUMNS * TOTAL_ROWS))
         font_map = FONT_MAPS.get(self._font, FONT_MAPS.get("basic", {}))
         positions = font_map.get(letter, [])
-        _LOGGER.debug("[GET_POSITIONS] Letter '%s' in font '%s': %s positions = %s", letter, self._font, len(positions), positions)
         if not positions:
             _LOGGER.warning("[GET_POSITIONS] No positions found for letter '%s' in font '%s'", letter, self._font)
         return positions

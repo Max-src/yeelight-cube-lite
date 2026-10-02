@@ -1,4 +1,4 @@
-import { LitElement, html, repeat } from "./lib/lit-all.js";
+import { LitElement, html, repeat, nothing } from "./lib/lit-all.js";
 import { getActionRowClass, getExportImportButtonClass } from "./action-button-utils.js";
 import { renderActionButtonContent } from "./action-button-ui.js";
 
@@ -11,11 +11,11 @@ import { getDeleteButtonClass, getButtonPositionStyles } from "./delete-button-s
 
 import { CardCommandController } from "./card-command-controller.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
-import { nothing } from "./lit-extras.js";
 import { ColorListLayoutsMixin } from "./color-list-layouts.js";
 import { ColorListDragMixin } from "./color-list-drag.js";
 import { ColorInfoMixin } from "./color-list-color-info.js";
 import { COLOR_LIST_EDITOR_STYLES } from "./color-list-editor-styles.js";
+import { findCollectionSensor } from "./sensor-lookup.js";
 
 // Global storage for pending (optimistic) colors per entity (shared across all
 // card instances).  Entries are { colors, ts }.  The cache only exists to
@@ -86,9 +86,7 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(ColorListDragMixin(
 
     // Auto-resolve palette_sensor if not explicitly configured
     if (!this.config.palette_sensor && this._hass) {
-      const autoSensor = Object.keys(this._hass.states || {}).find(
-        (e) => e.startsWith("sensor.") && e.includes("color_palettes"),
-      );
+      const autoSensor = findCollectionSensor(this._hass, "color_palettes");
       if (autoSensor) {
         this.config = { ...this.config, palette_sensor: autoSensor };
       }
@@ -129,9 +127,7 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(ColorListDragMixin(
 
     // Auto-resolve palette_sensor on first hass set (setConfig may run before hass is available)
     if (this.config && !this.config.palette_sensor && hass) {
-      const autoSensor = Object.keys(hass.states || {}).find(
-        (e) => e.startsWith("sensor.") && e.includes("color_palettes"),
-      );
+      const autoSensor = findCollectionSensor(hass, "color_palettes", this);
       if (autoSensor) {
         this.config = { ...this.config, palette_sensor: autoSensor };
       }

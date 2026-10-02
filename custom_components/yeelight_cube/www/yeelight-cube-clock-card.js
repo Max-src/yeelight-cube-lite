@@ -80,6 +80,7 @@ import { renderActionButtonGroup } from "./action-button-ui.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { ClockPreviewMixin } from "./clock-card-preview.js";
 import { CLOCK_CARD_CSS } from "./clock-card-styles.js";
+import { rgbToHex } from "./color-utils.js";
 
 const CONTENT_OPTIONS = [
   { value: "time", label: "Time", icon: "mdi:clock-outline" },
@@ -91,21 +92,6 @@ export {
   COLOR_PRESET_STYLE_CHOICES,
   COLOR_PRESET_SHAPE_CHOICES,
 } from "./color-mode-selector-utils.js";
-
-function rgbToHex(rgb) {
-  if (!Array.isArray(rgb) || rgb.length < 3) return "#ffee00";
-  return (
-    "#" +
-    rgb
-      .slice(0, 3)
-      .map((v) =>
-        Math.max(0, Math.min(255, v | 0))
-          .toString(16)
-          .padStart(2, "0"),
-      )
-      .join("")
-  );
-}
 
 class YeelightCubeClockCard extends ClockPreviewMixin(LitElement) {
   constructor() {
@@ -869,7 +855,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(LitElement) {
       (!wasCustom || !(this._customDraft || this._customPresetColor));
     this._revealSavedStyle = null;
     const currentColor = wasCustom ? this._customDraft : null;
-    if (currentColor) this._lastCustomHex = rgbToHex(currentColor);
+    if (currentColor) this._lastCustomHex = rgbToHex(currentColor, "#ffee00");
     // Track the user's explicit mode choice (Custom is inferred, not a backend
     // field, so a color that matches a preset must not snap back to Normal).
     this._customMode = mode === "custom";
@@ -901,7 +887,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(LitElement) {
     this._customMode = Array.isArray(rgbOrClear);
     this._selectedStylePresetId = null;
     this._pendingStyleColor = null;
-    if (Array.isArray(rgbOrClear)) this._lastCustomHex = rgbToHex(rgbOrClear);
+    if (Array.isArray(rgbOrClear)) this._lastCustomHex = rgbToHex(rgbOrClear, "#ffee00");
     this._callSetClock({ color_mode: "normal", color: rgbOrClear });
     this.render();
   }
@@ -920,7 +906,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(LitElement) {
     this._customMode = true;
     this._selectedStylePresetId = null;
     this._pendingStyleColor = null;
-    this._lastCustomHex = rgbToHex(preset.color);
+    this._lastCustomHex = rgbToHex(preset.color, "#ffee00");
     this._callSetClock(clockColorPresetAction(preset));
     this.render();
   }

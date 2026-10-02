@@ -9,6 +9,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: i
 
 from .const import DOMAIN, ALL_NATIVE_EFFECTS, MODE_CLOCK, MODE_NATIVE_EFFECT
 from .entity import CubeControlEntity
+from .lamp_power import BASE_W, NO_LIMIT_W
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,6 +31,7 @@ async def async_setup_entry(
         YeelightCubeTransitionDurationNumber(light_entity, entry),
         YeelightCubeNativeEffectSpeedNumber(light_entity, entry),
         YeelightCubeScrollSpeedNumber(light_entity, entry),
+        YeelightCubePowerLimitNumber(light_entity, entry),
     ]
 
     # Add all preview adjustment sliders
@@ -430,3 +432,43 @@ class YeelightCubeScrollSpeedNumber(CubeControlEntity, NumberEntity):
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
         self._light_entity._scroll_speed_entity = self
+
+
+class YeelightCubePowerLimitNumber(CubeControlEntity, NumberEntity):
+    """Power limit: frames the integration draws are dimmed so the lamp's
+    estimated draw stays under this many watts (7 W = no limit; the lamp
+    never draws more than about 6.3 W). The minimum is the electronics'
+    own 0.4 W, where every frame is black. For lamps on a weak or shared
+    power supply; see "Power Supply" in the README."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_translation_key = "power_limit"
+    _attr_entity_category = EntityCategory.CONFIG
+
+    def __init__(self, light_entity, config_entry: ConfigEntry):
+        self._light_entity = light_entity
+        self._config_entry = config_entry
+        self._attr_unique_id = f"{light_entity._attr_unique_id}_power_limit"
+        self._attr_icon = "mdi:flash-alert-outline"
+        self._attr_native_min_value = BASE_W
+        self._attr_native_max_value = NO_LIMIT_W
+        self._attr_native_step = 0.1
+        self._attr_native_unit_of_measurement = "W"
+        self._attr_mode = NumberMode.SLIDER
+
+    @property
+    def native_value(self) -> float:
+        return float(self._light_entity._power_limit)
+
+    async def async_set_native_value(self, value: float) -> None:
+        light = self._light_entity
+        light._power_limit = max(BASE_W, min(NO_LIMIT_W, round(value, 1)))
+        self.async_write_ha_state()
+        light.async_write_ha_state()
+        # Redraw so the new limit shows at once. Only frames the integration
+        # draws are limited: firmware modes (clock, native effects, Music
+        # Flow) are left running. A user change, unlike a background
+        # "display_update": never suppressed, and not animated.
+        if light._is_on and not light.firmware_draws_matrix:
+            await light.async_apply_display_mode(update_type="power_limit")

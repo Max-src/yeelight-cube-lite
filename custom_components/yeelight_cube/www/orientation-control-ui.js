@@ -1,4 +1,4 @@
-import { html } from "./lib/lit-all.js";
+import { html, nothing } from "./lib/lit-all.js";
 import { createButtonGroup } from "./button-group-utils.js";
 import { renderOrderableList } from "./orderable-list-utils.js";
 import {
@@ -55,7 +55,6 @@ export function renderOrientationControls(config, current, unavailable, onClick)
   </div>`;
 }
 import { renderModeSettingsSection } from "./editor_ui_utils.js";
-import { nothing } from "./lit-extras.js";
 
 export function renderOrientationSettings(config, onChange) {
   const options = orientationOptions(config);

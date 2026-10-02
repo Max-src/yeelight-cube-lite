@@ -27,26 +27,12 @@ from .light_connection import CIRCUIT_BREAKER_WINDOW
 
 _LOGGER = logging.getLogger(__name__)
 
-
-                               # device lock. When exceeded, asyncio.wait_for cancels it and
-                               # releases the lock so queued operations can proceed. Long enough
-                               # for activate_fx_mode + draw_matrices on slow Wi-Fi: releasing the
-                               # lock between the two shows the default ribbon on the lamp.
-                               # Transitions add their duration on top (async_apply_display_mode).
 FAVOURITE_KINDS = ("native", "clock")
-
-
 # Rotation interval bounds (seconds). A step that takes longer to apply than
 # the interval lands on the next boundary of the shared time grid.
 MIN_ROTATION_INTERVAL = 1
-
-
 MAX_ROTATION_INTERVAL = 604800  # 7 days
-
-
 MAX_FAVOURITES = 100          # per lamp and kind
-
-
 MAX_FAVOURITE_NAME = 100
 
 

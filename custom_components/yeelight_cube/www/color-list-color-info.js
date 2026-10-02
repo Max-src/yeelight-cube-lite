@@ -2,29 +2,17 @@
 // conversion, the closest CSS colour name, luminance and contrasting text.
 // Mixed into YeelightCubeColorListEditorCard.
 import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
+import { hexToRgb, rgbToHex } from "./color-utils.js";
 
 export const ColorInfoMixin = (Base) => class extends Base {
   // ----- Color helpers -----------------------------------------------
 
   rgbToHex(rgb) {
-    return (
-      "#" +
-      rgb
-        .map((v) => {
-          const hex = v.toString(16).padStart(2, "0");
-          return hex;
-        })
-        .join("")
-    );
+    return rgbToHex(rgb);
   }
 
   hexToRgb(hex) {
-    if (!hex.startsWith("#") || hex.length !== 7) return null;
-    return [
-      parseInt(hex.slice(1, 3), 16),
-      parseInt(hex.slice(3, 5), 16),
-      parseInt(hex.slice(5, 7), 16),
-    ];
+    return hexToRgb(hex);
   }
 
   getClosestCssColorName(rgb) {

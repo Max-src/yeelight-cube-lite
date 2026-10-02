@@ -16,7 +16,7 @@ import {
 import {
   sharedEditorStyles,
   fireEvent,
-  renderEditorSection,
+  EditorSectionsMixin,
   renderModeSettingsSection,
 } from "./editor_ui_utils.js";
 import {
@@ -30,7 +30,7 @@ import { BRIGHTNESS_SLIDER_KEYS } from "./yeelight-cube-lamp-preview-card.js";
 import { defineOnce } from "./card-registration.js";
 
 // Editor class for the Yeelight Cube Lite Lamp Preview Card
-class YeelightCubeLampPreviewCardEditor extends LitElement {
+class YeelightCubeLampPreviewCardEditor extends EditorSectionsMixin(LitElement) {
   static get properties() {
     return {
       _config: { type: Object },
@@ -110,20 +110,6 @@ class YeelightCubeLampPreviewCardEditor extends LitElement {
         bubbles: true,
         composed: true,
       }),
-    );
-  }
-
-  _toggleSection(id) {
-    this._open = { ...this._open, [id]: !this._open[id] };
-  }
-
-  _section(id, title, content) {
-    return renderEditorSection(
-      id,
-      title,
-      !!this._open[id],
-      () => this._toggleSection(id),
-      content,
     );
   }
 

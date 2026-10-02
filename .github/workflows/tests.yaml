@@ -29,6 +29,12 @@ jobs:
       - run: npm ci
       - run: python -m pip install pillow
 
+      # The committed Lit bundle must be what `npm run build:lit` produces.
+      - name: Lit bundle is up to date
+        run: |
+          npm run build:lit
+          git diff --exit-code -- custom_components/yeelight_cube/www/lib/lit-all.js
+
       # Backend: loads the integration's modules without Home Assistant; some
       # tests compare the Python and JS previews through Node.
       - name: Python tests

@@ -723,10 +723,13 @@ test("native editor sections follow the card and use shared conditional controls
   for (const key of ["matrices", "buttons", "sliders", "orientation", "list"])
     assert.equal(records[key], undefined);
   assert.doesNotMatch(source, /<details|<summary/);
-  assert.match(
-    sourceFor("yeelight-cube-clock-card-editor.js"),
-    /renderEditorSection\(\s*id/,
-  );
+  // Every editor builds its collapsible sections through the shared mixin.
+  for (const card of ["clock", "native-effects", "lamp-preview"])
+    assert.match(
+      sourceFor(`yeelight-cube-${card}-card-editor.js`),
+      /extends EditorSectionsMixin\(LitElement\)/,
+    );
+  assert.match(sourceFor("editor_ui_utils.js"), /renderEditorSection\(\s*id/);
   assert.match(
     sourceFor("yeelight-cube-lamp-preview-card-editor.js"),
     /renderOrientationSettings\(\s*this\._config/,

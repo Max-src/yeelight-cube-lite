@@ -921,6 +921,7 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
         light.MAX_DISPLAY_RETRIES = 3
         light._retry_display_task = None
         light._hard_timeout_times = []
+        light._coalesced_op_generation = 0
         light._custom_text = ""
         light._transition_type = "none"
         light._scroll_timer = None
@@ -960,11 +961,9 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(light._rotation_active)
         light.skip_effect_rotation()
         second, _ = await asyncio.wait_for(commands.get(), 2)
-        light._rotation_interval = 0.1
-        light._rotation_timeline = {
-            "tick": int(asyncio.get_running_loop().time() // 0.1),
-            "index": light._rotation_index,
-        }
+        # Re-time the running rotation the way set_rotation_interval does:
+        # this also wakes the loop if it already sleeps on the 10s grid.
+        light._retime_rotation(0.5)
         third, _ = await asyncio.wait_for(commands.get(), 2)
         self.assertNotEqual(first[1], second[1])
         self.assertEqual(first[1], third[1])

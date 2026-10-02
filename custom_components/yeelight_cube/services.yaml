@@ -1,4 +1,4 @@
-﻿add_managed_device:
+add_managed_device:
   name: Add Managed Device
   description: Add a device IP to the managed devices list to prevent discovery conflicts
   fields:
@@ -338,7 +338,7 @@ apply_custom_pixels:
   description: Display a pixel art frame on the 20x5 matrix. Positions run 0-99 left-to-right then bottom-to-top; missing positions stay black.
   fields:
     pixels:
-      description: Array of {position, color} entries. position is a single index (0-99) or a list of indexes; color is [R, G, B].
+      description: Array of entries with position and color. position is a single index (0-99) or a list of indexes; color is [R, G, B].
       example: '[{"position": 49, "color": [255, 255, 0]}, {"position": [0, 1, 2], "color": [0, 128, 255]}]'
       required: true
       selector:
@@ -748,7 +748,7 @@ save_pixel_art:
   description: Save a drawing as a named pixel art in the shared collection for later reuse.
   fields:
     pixels:
-      description: Array of {position, color} entries; position is an index (0-99) or a list of indexes, color is [R, G, B]
+      description: Array of entries with position and color; position is an index (0-99) or a list of indexes, color is [R, G, B]
       example: '[{"position": 0, "color": [255, 0, 0]}, {"position": [5, 6, 7], "color": [0, 255, 0]}]'
       required: true
       selector:
@@ -852,7 +852,7 @@ get_pixel_art:
           min: 0
           mode: box
     group_by_color:
-      description: "When true, returns the internal grouped format directly — each entry has a color and a position list instead of one entry per pixel. Default (false) expands to flat [{position, color}] format compatible with save_pixel_art."
+      description: "When true, returns the internal grouped format directly — each entry has a color and a position list instead of one entry per pixel. Default (false) expands to a flat list of position/color entries compatible with save_pixel_art."
       example: true
       required: false
       default: false
@@ -891,7 +891,7 @@ update_pixel_arts:
   description: Append or replace the pixel art collection. Default is non-destructive (appends to existing).
   fields:
     pixel_arts:
-      description: Array of pixel art objects with name and pixels ({position, color} entries, as accepted by save_pixel_art)
+      description: Array of pixel art objects with name and pixels (entries with position and color, as accepted by save_pixel_art)
       example: '[{"name": "Art1", "pixels": [{"position": 0, "color": [255, 0, 0]}, {"position": [1, 2], "color": [0, 255, 0]}]}]'
       required: true
       selector:
@@ -1298,9 +1298,9 @@ start_effect_rotation:
     items:
       description: >-
         Ordered modes to cycle through. Each item is either a plain name
-        (native effect name, or clock style name / "custom:<id>" saved preset)
-        or an object {"name": ..., "color_mode": ..., "color": [r, g, b]} that
-        reapplies the color mode recorded with the favourite.
+        (native effect name, clock style name, or "custom:" followed by a saved
+        preset ID) or an object with name, color_mode and color (an RGB list)
+        that reapplies the color mode recorded with the favourite.
       required: true
       example: '["Rainbow", "Ocean Waves", "Streamer"]'
       selector:
@@ -1342,7 +1342,7 @@ set_favourites:
             - label: Clock styles
               value: clock
     favourites:
-      description: Ordered list (at most 100) of {name, color_mode, color}. Clock presets use custom:<id>; color is an RGB list for color_mode custom.
+      description: Ordered list (at most 100) of objects with name, color_mode and color. Clock presets use "custom:" followed by the preset ID; color is an RGB list for color_mode custom.
       example: '[{"name": "Rainbow"}, {"name": "Aurora", "color_mode": "custom", "color": [255, 80, 20]}]'
       required: true
       selector:

@@ -229,6 +229,27 @@ export function renderEditorSection(id, title, open, onToggle, content) {
 }
 
 /**
+ * Collapsible sections for the card editors. The editor keeps which sections
+ * are open in `this._open` ({sectionId: boolean}).
+ */
+export const EditorSectionsMixin = (Base) =>
+  class extends Base {
+    _section(id, title, content) {
+      return renderEditorSection(
+        id,
+        title,
+        !!this._open[id],
+        () => this._toggleSection(id),
+        content,
+      );
+    }
+
+    _toggleSection(id) {
+      this._open = { ...this._open, [id]: !this._open[id] };
+    }
+  };
+
+/**
  * Unified CSS styles for all editor cards.
  * Matches the color list editor card editor (the reference).
  * All editors should import this for consistent appearance.

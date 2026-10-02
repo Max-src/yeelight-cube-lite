@@ -4,7 +4,7 @@ import { LitElement, html, css } from "./lib/lit-all.js";
 import {
   sharedEditorStyles,
   fireEvent,
-  renderEditorSection,
+  EditorSectionsMixin,
   renderModeSettingsSection,
   roundedCardsToSliderValue,
   renderDeleteButtonSettings,
@@ -22,7 +22,7 @@ import { createToggleRow, createSliderRow } from "./form-row-utils.js";
 import { createYeelightCubeEntityPicker } from "./entity-selector-utils.js";
 import { defineOnce } from "./card-registration.js";
 
-class YeelightCubePaletteCardEditor extends LitElement {
+class YeelightCubePaletteCardEditor extends EditorSectionsMixin(LitElement) {
   static get properties() {
     return {
       localTitle: { type: String },
@@ -36,20 +36,6 @@ class YeelightCubePaletteCardEditor extends LitElement {
     this.localTitle = "";
     this._hass = null;
     this._open = {};
-  }
-
-  _toggleSection(id) {
-    this._open = { ...this._open, [id]: !this._open[id] };
-  }
-
-  _section(id, title, content) {
-    return renderEditorSection(
-      id,
-      title,
-      !!this._open[id],
-      () => this._toggleSection(id),
-      content,
-    );
   }
 
   static get styles() {

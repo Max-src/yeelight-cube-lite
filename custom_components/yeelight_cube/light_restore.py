@@ -26,6 +26,7 @@ from .const import (
     TRANSITION_TYPES,
 )
 from .layout import FONT_MAPS
+from .pixel_art_storage import expand_pixels, group_pixels
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -127,11 +128,53 @@ _RESTORED_ATTRIBUTES = (
     ("transition_duration", "_transition_duration", _clamped(float, 0.2, 10.0)),
     ("scroll_speed", "_scroll_speed", float),
     ("scroll_enabled", "_scroll_enabled", bool),
+    # Power
+    ("power_limit", "_power_limit", _clamped(float, 0.4, 7.0)),
 )
 
 
 class StateRestoreMixin:
     """Restore after a restart, and the save_state / restore_state snapshot."""
+
+    # -- The drawing shown in Custom Draw (pixel art, draw card) -------------
+    # Kept per lamp in the integration's storage ("drawing") rather than in the
+    # state attributes: without it a restart finds Custom Draw with no pixels
+    # and falls back to the text.
+
+    def _remember_drawing(self) -> None:
+        """Save the Custom Draw pixels about to be shown, if they changed.
+        Quick successive changes become one write."""
+        store = self._device_store("drawing")
+        if store is None or not self._custom_pixels:
+            return
+        entry = {
+            "pixels": group_pixels(self._custom_pixels),
+            "name": self._active_pixel_art_name,
+        }
+        key = self._music_flow_runtime_storage_key()
+        if store.get(key) == entry:
+            return
+        store[key] = entry
+        from . import async_schedule_save
+
+        async_schedule_save(self.hass, 2.0)
+
+    def _restore_drawing(self) -> None:
+        """After a restart, show the saved drawing again if the lamp was in
+        Custom Draw."""
+        if not self._custom_draw_active or self._custom_pixels:
+            return
+        store = self._device_store("drawing")
+        saved = store.get(self._music_flow_runtime_storage_key()) if store else None
+        if not isinstance(saved, dict) or not isinstance(saved.get("pixels"), list):
+            return
+        self._custom_pixels = expand_pixels(saved["pixels"])
+        if isinstance(saved.get("name"), str):
+            self._active_pixel_art_name = saved["name"]
+        _LOGGER.debug(
+            "[RESTORE] [%s] Restored the Custom Draw drawing (%s pixels, %r)",
+            self._ip, len(self._custom_pixels), self._active_pixel_art_name,
+        )
 
     def _restore_extended_effects(self, old_state) -> None:
         saved = self._config_entry.options.get("extended_effects_enabled")

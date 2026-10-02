@@ -3,7 +3,7 @@ import { renderActionButtonSettings } from "./action-button-ui.js";
 import { LitElement, html, css } from "./lib/lit-all.js";
 import {
   sharedEditorStyles,
-  renderEditorSection,
+  EditorSectionsMixin,
   renderModeSettingsSection,
   renderModeInfoMessage,
   roundedCardsToSliderValue,
@@ -34,7 +34,7 @@ import {
 } from "./draw_card_const.js";
 import { defineOnce } from "./card-registration.js";
 
-class YeelightCubeDrawCardEditor extends LitElement {
+class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
   static get properties() {
     return {
       hass: { type: Object },
@@ -142,20 +142,6 @@ class YeelightCubeDrawCardEditor extends LitElement {
         }),
       );
     }
-  }
-
-  _toggleSection(id) {
-    this._open = { ...this._open, [id]: !this._open[id] };
-  }
-
-  _section(id, title, content) {
-    return renderEditorSection(
-      id,
-      title,
-      !!this._open[id],
-      () => this._toggleSection(id),
-      content,
-    );
   }
 
   // Layout management methods

@@ -12,6 +12,7 @@ import math
 from typing import Tuple
 
 from .layout import TOTAL_COLUMNS, TOTAL_ROWS
+from .lamp_power import estimated_power, limit_frame_power
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -451,6 +452,18 @@ class ColorPipelineMixin:
         b_out = min(255, max(0, round(b_uni + (b_pc - b_uni) * bal)))
 
         return (r_out, g_out, b_out)
+
+    def _lamp_frame(self, frame):
+        """``frame`` as sent to the lamp: dimmed when its estimated draw is
+        over the power limit (lamp_power.py). Records that estimate for the
+        Estimated power sensor. The layout and previews keep the unscaled
+        frame."""
+        # Unknown hardware brightness (None, or the 0 re-confirm sentinel):
+        # assume full brightness, the worst case.
+        hardware = self._last_hardware_brightness or 100
+        sent = limit_frame_power(frame, self._power_limit, hardware)
+        self._last_frame_power = estimated_power(sent, hardware)
+        return sent
 
     def _apply_color_accuracy(self, rgb_color):
         """

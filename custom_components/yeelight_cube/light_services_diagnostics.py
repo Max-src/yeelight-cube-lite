@@ -225,8 +225,10 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
                                 if len(_cb) >= 4:
                                     # Firmware byte is inverted: 0 blinks, 1 steady.
                                     target._native_clock_colon_blink = _cb[3] == 0
-                            except Exception:
-                                pass
+                            except Exception as err:  # noqa: BLE001 -- best-effort reflection
+                                _LOGGER.debug(
+                                    "[SEND_FX] Could not decode clock data bytes: %s", err
+                                )
                         # Reflect the mixer flow direction so the preview matches
                         # the direction applied to the clock on the lamp.
                         if "direction" in effect_config:
@@ -303,8 +305,10 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
                         if len(clock_bytes) >= 4:
                             # Firmware byte is inverted: 0 = blink, 1 = steady
                             target._native_clock_colon_blink = clock_bytes[3] == 0
-                    except Exception:
-                        pass
+                    except Exception as err:  # noqa: BLE001 -- best-effort reflection
+                        _LOGGER.debug(
+                            "[SEND_FX] Could not decode clock data bytes: %s", err
+                        )
                 # Record the current UTC offset so the periodic ``async_update``
                 # timezone check does not immediately fire a SECOND clock
                 # activation (which races this one for the hardware lock and
@@ -538,8 +542,8 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
             if uses_control_socket:
                 try:
                     target._cube_matrix.close_command_socket()
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.debug("[BULB_CALL] Closing the command socket failed: %s", err)
             return value
 
         try:

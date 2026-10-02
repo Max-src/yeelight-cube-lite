@@ -2,8 +2,7 @@
 // carousel modes, item rendering, carousel navigation and the export/import
 // buttons. Mixed into YeelightCubePaletteCard.
 import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
-import { html, unsafeHTML } from "./lib/lit-all.js";
-import { nothing } from "./lit-extras.js";
+import { html, unsafeHTML, nothing } from "./lib/lit-all.js";
 import { renderGalleryMode, galleryModeStyles } from "./gallery-mode-utils.js";
 import { escapeHtml } from "./html-escape-utils.js";
 import { renderAlbumView } from "./album-view-coverflow.js";

@@ -73,10 +73,15 @@ test("rapid rotation clicks use the pending target and serialize hardware reques
   await Promise.resolve();
   assert.equal(calls.length, 1);
   for (let index = 0; index < 3; index++) {
+    assert.equal(calls.length, index + 1); // one request at a time
     releases[index]();
-    for (let tick = 0; tick < 6; tick++) await Promise.resolve();
+    // let the queue send the next request (a bounded number of microtasks)
+    for (let tick = 0; tick < 50 && releases.length === index + 1 && index < 2; tick++)
+      await Promise.resolve();
   }
-  await card._orientationQueue;
+  // the last request settles (a bounded number of microtasks)
+  for (let tick = 0; tick < 50 && card._orientationPending !== null; tick++)
+    await Promise.resolve();
   assert.deepEqual(
     calls.map((call) => call.orientation),
     ["down", "left", "up"],

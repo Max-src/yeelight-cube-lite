@@ -146,7 +146,7 @@ class FavouritesTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('"rotation": data.get("rotation", {})', init)
         # Saves are batched (one write per burst, flushed on shutdown).
         self.assertIn("store.async_delay_save(lambda: _storage_data(hass), delay)", init)
-        self.assertIn('for key in ("favourites", "rotation", "device_runtime_state")', init)
+        self.assertIn('for key in ("favourites", "rotation", "device_runtime_state", "drawing")', init)
         self.assertIn("self.stop_effect_rotation(persist=False)", source)
 
 

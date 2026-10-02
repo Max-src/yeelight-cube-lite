@@ -25,9 +25,8 @@ import {
 } from "./slider-control-utils.js";
 import { bindHostEvents } from "./host-events.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
-import { LitElement, html, unsafeHTML } from "./lib/lit-all.js";
+import { LitElement, html, unsafeHTML, nothing } from "./lib/lit-all.js";
 import { buildLampPreviewStyles } from "./lamp-preview-styles.js";
-import { nothing } from "./lit-extras.js";
 import { AdjustmentControlsMixin } from "./lamp-preview-adjustments.js";
 import { MatrixPreviewMixin } from "./lamp-preview-matrix.js";
 

@@ -1,7 +1,14 @@
+from homeassistant.components.sensor import (  # type: ignore
+    SensorDeviceClass,
+    SensorEntity,
+    SensorStateClass,
+)
+from homeassistant.const import UnitOfPower  # type: ignore
 from homeassistant.helpers.entity import Entity # type: ignore
 from homeassistant.config_entries import ConfigEntry # type: ignore
 from .layout import FONT_MAPS, FONT_METRICS
 from .const import DOMAIN, CONF_IP, CONF_DEVICE_ID
+from .entity import CubeDeviceEntity
 
 class YeelightCubeBaseSensor(Entity):
     """Base class for Yeelight Cube Lite sensors."""
@@ -278,6 +285,39 @@ class YeelightCubeIPSensor(Entity):
         return EntityCategory.DIAGNOSTIC
 
 
+class YeelightCubePowerSensor(CubeDeviceEntity, SensorEntity):
+    """Estimated power draw of the lamp (lamp_power.py), from the frames the
+    integration sends; unknown while the firmware draws the matrix (clock,
+    native effects, Music Flow). Stays available while the lamp is not
+    reachable and reads 0 W then, so an energy total keeps counting."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_translation_key = "estimated_power"
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = UnitOfPower.WATT
+    _attr_suggested_display_precision = 1
+
+    def __init__(self, light_entity):
+        self._light_entity = light_entity
+        self._attr_unique_id = f"{light_entity._attr_unique_id}_estimated_power"
+        self._attr_icon = "mdi:flash-outline"
+
+    @property
+    def native_value(self):
+        return self._light_entity.estimated_power
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self._light_entity._power_sensor = self
+
+    async def async_will_remove_from_hass(self) -> None:
+        if self._light_entity._power_sensor is self:
+            self._light_entity._power_sensor = None
+        await super().async_will_remove_from_hass()
+
+
 def _create_and_register_sensors(hass, async_add_entities, owner_entry_id):
     """Create global sensors and register them under the given entry's platform.
 
@@ -329,6 +369,11 @@ async def async_setup_entry(hass, entry, async_add_entities):
     # --- Per-device IP sensor (always created for every entry) ---
     ip_sensor = YeelightCubeIPSensor(hass, entry)
     async_add_entities([ip_sensor], update_before_add=True)
+
+    # --- Per-device estimated power ---
+    light_entity = hass.data[DOMAIN].get(entry.entry_id, {}).get("light")
+    if light_entity is not None:
+        async_add_entities([YeelightCubePowerSensor(light_entity)])
     _LOGGER.debug("Created IP address sensor for entry %s", entry.entry_id)
 
     # --- Global sensors (created only once, shared across all devices) ---

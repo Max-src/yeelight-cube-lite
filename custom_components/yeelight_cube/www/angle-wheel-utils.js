@@ -9,6 +9,7 @@ import {
   callServiceOnTargetEntities,
   getTargetEntities,
 } from "./service-call-utils.js";
+import { rgbToHex } from "./color-utils.js";
 
 export const ANGLE_UPDATE_DEBOUNCE_MS = 150;
 
@@ -72,21 +73,6 @@ export class AngleCommandController {
     this.timer = null;
     this.pending = null;
   }
-}
-
-/**
- * Convert an RGB array [r, g, b] to a hex color string "#rrggbb"
- */
-export function rgbToHex(rgb) {
-  return (
-    "#" +
-    rgb
-      .map((x) => {
-        const hex = x.toString(16);
-        return hex.length === 1 ? "0" + hex : hex;
-      })
-      .join("")
-  );
 }
 
 /**

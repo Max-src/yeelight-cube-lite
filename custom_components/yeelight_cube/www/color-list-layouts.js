@@ -1,8 +1,7 @@
 // Colour list layouts of the colour list editor card (compact, chips, tiles,
 // rows, grid, cards) and the per-colour controls. Mixed into
 // YeelightCubeColorListEditorCard.
-import { html } from "./lib/lit-all.js";
-import { nothing } from "./lit-extras.js";
+import { html, nothing } from "./lib/lit-all.js";
 import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
 
 export const ColorListLayoutsMixin = (Base) => class extends Base {

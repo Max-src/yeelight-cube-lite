@@ -25,7 +25,7 @@ import {
 
 import {
   sharedEditorStyles,
-  renderEditorSection,
+  EditorSectionsMixin,
   renderModeSettingsSection,
   renderExperimentalAvailability,
 } from "./editor_ui_utils.js";
@@ -48,7 +48,7 @@ import {
   saveEditorRotationInterval,
 } from "./shared-lamp-settings.js";
 
-class YeelightCubeClockCardEditor extends LitElement {
+class YeelightCubeClockCardEditor extends EditorSectionsMixin(LitElement) {
   static get properties() {
     return {
       localTitle: { type: String },
@@ -106,20 +106,6 @@ class YeelightCubeClockCardEditor extends LitElement {
 
   shouldUpdate() {
     return !!this._hass;
-  }
-
-  _toggleSection(id) {
-    this._open = { ...this._open, [id]: !this._open[id] };
-  }
-
-  _section(id, title, content) {
-    return renderEditorSection(
-      id,
-      title,
-      !!this._open[id],
-      () => this._toggleSection(id),
-      content,
-    );
   }
 
   render() {

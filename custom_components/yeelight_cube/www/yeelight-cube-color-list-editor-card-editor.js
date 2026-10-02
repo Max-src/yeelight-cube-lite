@@ -18,14 +18,14 @@ import {
 } from "./form-row-utils.js";
 import {
   fireEvent,
-  renderEditorSection,
+  EditorSectionsMixin,
   renderModeSettingsSection,
   roundedCardsToSliderValue,
   renderDeleteButtonSettings,
 } from "./editor_ui_utils.js";
 import { defineOnce } from "./card-registration.js";
 
-class YeelightCubeColorListEditorCardEditor extends LitElement {
+class YeelightCubeColorListEditorCardEditor extends EditorSectionsMixin(LitElement) {
   static get properties() {
     return {
       _config: { type: Object },
@@ -94,20 +94,6 @@ class YeelightCubeColorListEditorCardEditor extends LitElement {
       ...this._config,
     };
     fireEvent(this, "config-changed", { config });
-  }
-
-  _toggleSection(id) {
-    this._open = { ...this._open, [id]: !this._open[id] };
-  }
-
-  _section(id, title, content) {
-    return renderEditorSection(
-      id,
-      title,
-      !!this._open[id],
-      () => this._toggleSection(id),
-      content,
-    );
   }
 
   static get styles() {

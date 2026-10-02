@@ -1,4 +1,4 @@
-import { LitElement, html, unsafeHTML } from "./lib/lit-all.js";
+import { LitElement, html, unsafeHTML, nothing } from "./lib/lit-all.js";
 
 import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
 
@@ -16,9 +16,9 @@ import {
 } from "./palette-data-utils.js";
 import { renderPagination } from "./pagination-utils.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
-import { nothing } from "./lit-extras.js";
 import { PaletteGalleryMixin } from "./palette-card-gallery.js";
 import { buildPaletteCardStyles } from "./palette-card-styles.js";
+import { findCollectionSensor } from "./sensor-lookup.js";
 
 const isActivationKey = (event) =>
   event.key === "Enter" || event.key === " " || event.key === "Spacebar";
@@ -149,9 +149,7 @@ class YeelightCubePaletteCard extends PaletteGalleryMixin(LitElement) {
 
     // Auto-resolve palette_sensor if not explicitly configured
     if (!this.config.palette_sensor && this._hass) {
-      const autoSensor = Object.keys(this._hass.states || {}).find(
-        (e) => e.startsWith("sensor.") && e.includes("color_palettes"),
-      );
+      const autoSensor = findCollectionSensor(this._hass, "color_palettes");
       if (autoSensor) {
         this.config = { ...this.config, palette_sensor: autoSensor };
       }
@@ -221,9 +219,7 @@ class YeelightCubePaletteCard extends PaletteGalleryMixin(LitElement) {
 
     // Auto-resolve palette_sensor on first hass set (setConfig may run before hass is available)
     if (this.config && !this.config.palette_sensor && hass) {
-      const autoSensor = Object.keys(hass.states || {}).find(
-        (e) => e.startsWith("sensor.") && e.includes("color_palettes"),
-      );
+      const autoSensor = findCollectionSensor(hass, "color_palettes", this);
       if (autoSensor) {
         this.config = { ...this.config, palette_sensor: autoSensor };
       }

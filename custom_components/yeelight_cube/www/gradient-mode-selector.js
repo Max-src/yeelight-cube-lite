@@ -580,53 +580,48 @@ export const ModeSelectorMixin = (Base) => class extends Base {
     }
   }
 
-  _getCachedPreviewGrid() {
-    // Generate a hash of the preview data to detect changes
-    // Round angle to avoid re-renders on tiny floating point changes
+  /**
+   * Signature of everything the preview grid shows (preview data and the
+   * gallery settings), or null without preview data. The grid is only
+   * re-rendered when it changes.
+   */
+  _previewDataHash() {
     const previewData = this._previewCache().data;
-    // hasData: !!previewData,
-    // displayMode: this.config.preview_display_mode,
-    // });
-
-    const currentHash = previewData
+    return previewData
       ? JSON.stringify({
-          text: previewData.text,
-          angle: Math.round(previewData.angle * 10) / 10, // Round to 1 decimal
-          bgColor: this.config.gallery_background_color,
-          pixelStyle: this.config.gallery_pixel_style,
-          pixelGap:
-            this.config.gallery_spacing_mode ||
-            this.config.gallery_pixel_spacing,
-          previewSize: this.config.gallery_preview_size,
-          ignoreBlack: this.config.gallery_ignore_black_pixels,
-          matrixShadow: this.config.gallery_matrix_box_shadow,
-          displayMode: this._getModeSelectorStyle(),
-          showTitles: this.config.preview_show_titles,
-          visibleModes: JSON.stringify(
-            this.config.custom_visible_modes === true
-              ? this.config.visible_modes || null
-              : null,
-          ),
-          buttonShape: resolveSelectorButtonShape(this.config),
-          itemsPerPage: this.config.items_per_page || 0,
-          selectorPage: this._selectorPage || 0,
-          wheelHeight: this.config.wheel_height,
-          wheelNavPosition: this.config.wheel_nav_position,
-        })
+        text: previewData.text,
+        angle: Math.round(previewData.angle * 10) / 10, // Round to 1 decimal
+        bgColor: this.config.gallery_background_color,
+        pixelStyle: this.config.gallery_pixel_style,
+        pixelGap:
+          this.config.gallery_spacing_mode ||
+          this.config.gallery_pixel_spacing,
+        previewSize: this.config.gallery_preview_size,
+        ignoreBlack: this.config.gallery_ignore_black_pixels,
+        matrixShadow: this.config.gallery_matrix_box_shadow,
+        displayMode: this._getModeSelectorStyle(),
+        showTitles: this.config.preview_show_titles,
+        visibleModes: JSON.stringify(
+          this.config.custom_visible_modes === true
+            ? this.config.visible_modes || null
+            : null,
+        ),
+        buttonShape: resolveSelectorButtonShape(this.config),
+        itemsPerPage: this.config.items_per_page || 0,
+        selectorPage: this._selectorPage || 0,
+        wheelHeight: this.config.wheel_height,
+        wheelNavPosition: this.config.wheel_nav_position,
+      })
       : null;
+  }
 
-    // Only re-render if data actually changed
+  _getCachedPreviewGrid() {
+    // Only re-render if the preview data or settings actually changed
+    const currentHash = this._previewDataHash();
     if (currentHash !== this._lastPreviewDataHash) {
       this._lastPreviewDataHash = currentHash;
       this._cachedPreviewHtml = this._renderPreviewGrid();
-      // htmlLength: this._cachedPreviewHtml?.length,
-      // containsWheelDisplay: this._cachedPreviewHtml?.includes(
-      // 'class="wheel-display"'
-      // ),
-      // });
-    } else {
     }
-
     return this._cachedPreviewHtml || this._renderPreviewGrid();
   }
 

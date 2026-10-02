@@ -28,6 +28,7 @@ class TransitionMixin:
         The layout is left as is: apply() writes the target frame back once
         the transition ends.
         """
+        frame = self._lamp_frame(frame)
         if len(frame) == len(self._layout.device_layout):
             raw_rgb_data = encode_rgb_frame(frame)
         else:

@@ -14,7 +14,7 @@ import {
 import {
   fireEvent,
   sharedEditorStyles,
-  renderEditorSection,
+  EditorSectionsMixin,
   renderModeSettingsSection,
   renderSelectorShapeRows,
 } from "./editor_ui_utils.js";
@@ -30,7 +30,7 @@ import {
 import { GRADIENT_MODES } from "./yeelight-cube-gradient-card.js";
 import { defineOnce } from "./card-registration.js";
 
-class YeelightCubeGradientCardEditor extends LitElement {
+class YeelightCubeGradientCardEditor extends EditorSectionsMixin(LitElement) {
   static get properties() {
     return {
       _config: { type: Object },
@@ -291,20 +291,6 @@ class YeelightCubeGradientCardEditor extends LitElement {
     }
 
     return "compass"; // default fallback
-  }
-
-  _toggleSection(id) {
-    this._open = { ...this._open, [id]: !this._open[id] };
-  }
-
-  _section(id, title, content) {
-    return renderEditorSection(
-      id,
-      title,
-      !!this._open[id],
-      () => this._toggleSection(id),
-      content,
-    );
   }
 
   static get styles() {

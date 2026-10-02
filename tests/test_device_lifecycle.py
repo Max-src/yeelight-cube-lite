@@ -1,3 +1,4 @@
+import ipaddress
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -82,7 +83,8 @@ class DeviceLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_manual_setup_checks_existing_ip_before_creating_entry(self):
         step = _load_standalone_functions(
-            (ROOT / "config_flow.py").read_text(encoding="utf-8"), {"async_step_user"}, CONSTANTS)["async_step_user"]
+            (ROOT / "config_flow.py").read_text(encoding="utf-8"), {"async_step_user"},
+            {**CONSTANTS, "ipaddress": ipaddress})["async_step_user"]
         flow = SimpleNamespace(_async_abort_entries_match=Mock(side_effect=ValueError("already_configured")),
                                async_set_unique_id=AsyncMock(), async_create_entry=Mock())
         with self.assertRaisesRegex(ValueError, "already_configured"):
@@ -150,6 +152,30 @@ class DeviceLifecycleTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("title", changes)
             self.assertNotIn("options", changes)
         flow.async_step_discovery_confirm.assert_not_awaited()
+
+    async def test_manual_setup_validates_and_normalises_the_ip(self):
+        step = _load_standalone_functions(
+            (ROOT / "config_flow.py").read_text(encoding="utf-8"),
+            {"async_step_user"},
+            {**CONSTANTS, "ipaddress": ipaddress},
+        )["async_step_user"]
+        flow = SimpleNamespace(
+            _async_abort_entries_match=Mock(), async_set_unique_id=AsyncMock(),
+            _abort_if_unique_id_configured=Mock(), _get_schema=lambda: None,
+            async_create_entry=lambda **kwargs: {"type": "entry", **kwargs},
+            async_show_form=lambda **kwargs: {"type": "form", **kwargs},
+        )
+        ip_key = CONSTANTS["CONF_IP"]
+        for bad in ("1.2", "::", "224.0.0.1", "abc", "256.1.1.1", ""):
+            with self.subTest(ip=bad):
+                result = await step(flow, {ip_key: bad})
+                self.assertEqual(result["type"], "form")
+                self.assertEqual(result["errors"], {ip_key: "invalid_ip"})
+        flow.async_set_unique_id.assert_not_awaited()
+        result = await step(flow, {ip_key: " 192.168.4.139 "})
+        self.assertEqual(result["type"], "entry")
+        self.assertEqual(result["data"], {ip_key: "192.168.4.139"})
+        flow.async_set_unique_id.assert_awaited_once_with("192.168.4.139")
 
     def init_helpers(self, names, **namespace):
         source = (ROOT / "__init__.py").read_text(encoding="utf-8")

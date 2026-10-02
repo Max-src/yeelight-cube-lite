@@ -241,11 +241,54 @@ class CubeMatrix:
         """The lamp answers again: drop the persistent socket and reset the
         failure count, backoff and unreachable flag."""
         self.close_fast_socket()
+        self._reset_backoff()
+        self._connection_healthy = True
+        self._last_reconnect_attempt = 0
+
+    def _connect_timeout(self) -> float:
+        """TCP connect timeout: longer while recovering from failures, as the
+        Cube can need 1-3s to accept a connection after a failed attempt."""
+        if self._device_unreachable or self._consecutive_failures > 0:
+            return RECOVERY_CONNECT_TIMEOUT
+        return CONNECT_TIMEOUT
+
+    def _count_failure(self) -> None:
+        """Count a failed command (also for the 60s health window)."""
+        self._consecutive_failures += 1
+        self._failed_commands_window.append(time.time())
+
+    def _connection_failed(self, first_cooldown: float | None = None) -> float | None:
+        """A connect or send failed: count it and start the reconnect cooldown
+        now. ``first_cooldown`` replaces the cooldown on a first failure.
+
+        Every MAX_CONSECUTIVE_FAILURES failures the cooldown doubles (up to
+        RECONNECT_COOLDOWN_MAX) and the lamp is flagged unreachable; the
+        cooldown it had before is then returned, otherwise None.
+        """
+        self._count_failure()
+        self._last_reconnect_attempt = time.time()
+        if first_cooldown is not None and self._consecutive_failures == 1:
+            self._reconnect_cooldown = first_cooldown
+        if self._consecutive_failures % MAX_CONSECUTIVE_FAILURES:
+            return None
+        previous = self._reconnect_cooldown
+        self._reconnect_cooldown = min(previous * 2, RECONNECT_COOLDOWN_MAX)
+        self._device_unreachable = True
+        # Count again from 1, so the next escalation takes another
+        # MAX_CONSECUTIVE_FAILURES failures (one "capped" log per tier, not
+        # one per failure).
+        self._consecutive_failures = 1
+        return previous
+
+    def _reset_backoff(self) -> tuple[int, float, bool]:
+        """A command got through: clear the failure count, the backoff and the
+        unreachable flag. Returns the (failures, cooldown, unreachable) it
+        had, for logging."""
+        previous = (self._consecutive_failures, self._reconnect_cooldown, self._device_unreachable)
         self._consecutive_failures = 0
         self._device_unreachable = False
-        self._connection_healthy = True
         self._reconnect_cooldown = RECONNECT_COOLDOWN_INITIAL
-        self._last_reconnect_attempt = 0
+        return previous
 
     async def probe(self, timeout: float = CONNECT_TIMEOUT) -> bool:
         """Whether the lamp accepts a TCP connection within ``timeout``.
@@ -766,15 +809,7 @@ class CubeMatrix:
             def _open_and_send():
                 """Blocking: open a new socket, send, return the socket."""
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                # Use longer timeout when recovering from failure — lamp may be
-                # slow to accept TCP after reboot.  Normal ops stay at 0.5s.
-                # Use longer timeout after ANY failure — not just when device is
-                # marked unreachable.  The Cube sometimes needs 1-3s to accept
-                # a new TCP connection after a failed attempt (its TCP stack is
-                # still cleaning up).  0.5s is fine for normal operation but
-                # causes cascading failures when recovering.
-                connect_timeout = RECOVERY_CONNECT_TIMEOUT if (self._device_unreachable or self._consecutive_failures > 0) else CONNECT_TIMEOUT
-                sock.settimeout(connect_timeout)  # 0.5s normal, 3s recovery
+                sock.settimeout(self._connect_timeout())
                 sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 # SO_LINGER with 0 timeout: on close(), send RST instead of
                 # going through FIN → TIME_WAIT.  Prevents TIME_WAIT exhaustion
@@ -830,7 +865,7 @@ class CubeMatrix:
                         # stack needs time to clean up the closed socket.  Without
                         # this, the immediate reconnect hits a Cube that's still
                         # processing the old connection's close and times out.
-                        connect_timeout = RECOVERY_CONNECT_TIMEOUT if (self._device_unreachable or self._consecutive_failures > 0) else CONNECT_TIMEOUT
+                        connect_timeout = self._connect_timeout()
                         _LOGGER.debug(
                             "[FAST #%s] Existing socket broken (%s: %s) "
                             "— waiting 100ms then reconnecting "
@@ -859,7 +894,7 @@ class CubeMatrix:
                             )
                 else:
                     # No socket yet — open a fresh one and keep it
-                    connect_timeout = RECOVERY_CONNECT_TIMEOUT if (self._device_unreachable or self._consecutive_failures > 0) else CONNECT_TIMEOUT
+                    connect_timeout = self._connect_timeout()
                     _LOGGER.debug(
                         "[FAST #%s] Opening new socket for %s "
                         "(connect_timeout=%ss, failures=%s, "
@@ -877,18 +912,13 @@ class CubeMatrix:
                     self._fx_activated_on_socket = True
                 
                 # Reset failure tracking — device is alive
-                prev_failures = self._consecutive_failures
-                self._consecutive_failures = 0
+                prev_failures, _, was_unreachable = self._reset_backoff()
                 self._last_success_time = time.time()
-                if self._device_unreachable:
+                if was_unreachable:
                     _LOGGER.debug(
                         "[FAST #%s] ✓ RECONNECTED (%s) after %s failures!", cmd_id, command, prev_failures
                     )
-                    self._device_unreachable = False
-                    self._reconnect_cooldown = RECONNECT_COOLDOWN_INITIAL
-                elif self._reconnect_cooldown != RECONNECT_COOLDOWN_INITIAL:
-                    self._reconnect_cooldown = RECONNECT_COOLDOWN_INITIAL
-                
+
                 self._connection_healthy = True
                 self._last_reconnect_attempt = 0
                 
@@ -904,43 +934,29 @@ class CubeMatrix:
             except (socket.error, socket.timeout, OSError, ConnectionRefusedError, TimeoutError) as e:
                 # Connection failed entirely — close the socket so next attempt opens fresh
                 self.close_fast_socket()
-                
-                self._consecutive_failures += 1
-                self._failed_commands_window.append(time.time())
-                self._last_reconnect_attempt = time.time()
-                connect_timeout_used = RECOVERY_CONNECT_TIMEOUT if (self._device_unreachable or self._consecutive_failures > 1) else CONNECT_TIMEOUT
+                connect_timeout_used = self._connect_timeout()
+                failures = self._consecutive_failures + 1
                 _LOGGER.warning(
                     "[FAST #%s] ✗ %s failed: %s: %s "
                     "(connect_timeout=%ss, failures=%s, "
                     "total_cmds_sent=%s)",
                     cmd_id, command, type(e).__name__, e, connect_timeout_used,
-                    self._consecutive_failures, self._total_commands_sent
+                    failures, self._total_commands_sent
                 )
-                
+
                 # Smarter initial cooldown: if the device was working recently
                 # (within 60s), this is likely a transient glitch — use a shorter
                 # initial cooldown (2s) for faster recovery.  For devices that
                 # have been down a while, keep the normal 5s initial cooldown.
                 time_since_success = time.time() - self._last_success_time if self._last_success_time > 0 else 999
-                if self._consecutive_failures == 1 and time_since_success < 60:
-                    # First failure after recent success → transient-friendly cooldown
-                    self._reconnect_cooldown = 2.0
+                recently_online = time_since_success < 60
+                if failures == 1 and recently_online:
                     _LOGGER.debug(
                         "[FAST #%s] Using short cooldown (2s) — device was online "
                         "%.0fs ago",
                         cmd_id, time_since_success
                     )
-                
-                # Exponential backoff
-                if self._consecutive_failures >= MAX_CONSECUTIVE_FAILURES and \
-                   self._consecutive_failures % MAX_CONSECUTIVE_FAILURES == 0:
-                    old_cooldown = self._reconnect_cooldown
-                    self._reconnect_cooldown = min(
-                        self._reconnect_cooldown * 2,
-                        RECONNECT_COOLDOWN_MAX
-                    )
-                    self._device_unreachable = True
-                    self._consecutive_failures = 1
+                self._connection_failed(first_cooldown=2.0 if recently_online else None)
 
                 raise CubeConnectionError(
                     f"Could not send {command}: {type(e).__name__}: {e}"
@@ -1076,23 +1092,18 @@ class CubeMatrix:
                 self._last_command_time = time.time()
                 
                 # Connection succeeded — reset exponential backoff
-                prev_failures = self._consecutive_failures
-                prev_cooldown = self._reconnect_cooldown
-                self._consecutive_failures = 0
-                if self._device_unreachable:
+                prev_failures, prev_cooldown, was_unreachable = self._reset_backoff()
+                if was_unreachable:
                     _LOGGER.debug(
                         "[COMMAND #%s] ✓ RECONNECTED after %s failures! "
                         "Resetting backoff %.0fs → %ss",
                         cmd_id, prev_failures, prev_cooldown,
                         RECONNECT_COOLDOWN_INITIAL
                     )
-                    self._device_unreachable = False
-                    self._reconnect_cooldown = RECONNECT_COOLDOWN_INITIAL
-                elif self._reconnect_cooldown != RECONNECT_COOLDOWN_INITIAL:
+                elif prev_cooldown != RECONNECT_COOLDOWN_INITIAL:
                     _LOGGER.debug(
                         "[COMMAND #%s] ✓ SUCCESS — resetting cooldown %.0fs → %ss", cmd_id, prev_cooldown, RECONNECT_COOLDOWN_INITIAL
                     )
-                    self._reconnect_cooldown = RECONNECT_COOLDOWN_INITIAL
                 else:
                     _LOGGER.debug("[COMMAND #%s] ✓ SUCCESS (%s)", cmd_id, command)
                 
@@ -1104,8 +1115,7 @@ class CubeMatrix:
                 error_message = error_dict.get('message', str(e))
                 
                 if error_code == -1:  # Quota exceeded
-                    self._consecutive_failures += 1
-                    self._failed_commands_window.append(time.time())
+                    self._count_failure()
                     backoff_time = self._reconnect_cooldown * QUOTA_BACKOFF_MULTIPLIER
                     _LOGGER.warning("[COMMAND #%s] QUOTA EXCEEDED - backing off %.1fs", cmd_id, backoff_time)
                     await asyncio.sleep(backoff_time)
@@ -1115,19 +1125,16 @@ class CubeMatrix:
                     # "Bulb closed the connection" = recv() failed AFTER send() succeeded.
                     # The command WAS sent and processed, the Cube just doesn't keep
                     # the TCP connection open. This is EXPECTED and counts as success.
-                    prev_failures = self._consecutive_failures
-                    prev_cooldown = self._reconnect_cooldown
                     self._last_command_time = time.time()
-                    self._consecutive_failures = 0
                     # Reset backoff — device is alive
-                    if self._device_unreachable:
+                    prev_failures, prev_cooldown, was_unreachable = self._reset_backoff()
+                    if was_unreachable:
                         _LOGGER.debug(
                             "[COMMAND #%s] ✓ RECONNECTED (closed conn) after %s failures! "
                             "Resetting backoff %.0fs → %ss",
                             cmd_id, prev_failures, prev_cooldown,
                             RECONNECT_COOLDOWN_INITIAL
                         )
-                        self._device_unreachable = False
                     elif prev_failures > 0:
                         _LOGGER.debug(
                             "[COMMAND #%s] ✓ OK (closed conn, %s was sent) — "
@@ -1136,7 +1143,6 @@ class CubeMatrix:
                         )
                     else:
                         _LOGGER.debug("[COMMAND #%s] ✓ OK (closed conn, %s was sent)", cmd_id, command)
-                    self._reconnect_cooldown = RECONNECT_COOLDOWN_INITIAL
                     # CRITICAL: Reset _last_reconnect_attempt so subsequent commands
                     # in the same apply() call aren't blocked by the cooldown.
                     # The Cube closes TCP after EVERY command in direct mode — this is
@@ -1156,26 +1162,18 @@ class CubeMatrix:
                     # CubeConnectionError here so callers can handle it by type.
                     if not isinstance(e, CubeConnectionError):
                         e = CubeConnectionError(error_message)
-                    self._consecutive_failures += 1
-                    self._failed_commands_window.append(time.time())
-                    self._last_reconnect_attempt = time.time()  # Start cooldown from NOW
-                    
-                    # Exponential backoff: double cooldown every MAX_CONSECUTIVE_FAILURES
-                    if self._consecutive_failures >= MAX_CONSECUTIVE_FAILURES and \
-                       self._consecutive_failures % MAX_CONSECUTIVE_FAILURES == 0:
-                        old_cooldown = self._reconnect_cooldown
-                        self._reconnect_cooldown = min(
-                            self._reconnect_cooldown * 2,
-                            RECONNECT_COOLDOWN_MAX
-                        )
-                        self._device_unreachable = True
+                    failures = self._consecutive_failures + 1
+                    # Starts the cooldown from now; doubles it every
+                    # MAX_CONSECUTIVE_FAILURES failures.
+                    old_cooldown = self._connection_failed()
+                    if old_cooldown is not None:
                         if self._reconnect_cooldown != old_cooldown:
                             _LOGGER.warning(
                                 "[COMMAND #%s] ✗ SOCKET ERROR (%s) [%s] — "
                                 "backoff increased: %.0fs → %.0fs "
                                 "(failures=%s, unreachable=True)",
                                 cmd_id, command, self._ip, old_cooldown,
-                                self._reconnect_cooldown, self._consecutive_failures
+                                self._reconnect_cooldown, failures
                             )
                         else:
                             _LOGGER.warning(
@@ -1183,13 +1181,8 @@ class CubeMatrix:
                                 "backoff CAPPED at %.0fs "
                                 "(failures=%s, unreachable=True)",
                                 cmd_id, command, self._ip, self._reconnect_cooldown,
-                                self._consecutive_failures
+                                failures
                             )
-                        # Reset counter to 1 so the next backoff check only triggers
-                        # after MAX_CONSECUTIVE_FAILURES more failures (not immediately).
-                        # This keeps logs clean: at the 15s tier we get 4 normal failures
-                        # then 1 "CAPPED" instead of "CAPPED" on every attempt.
-                        self._consecutive_failures = 1
                     else:
                         next_escalation = (
                             (self._consecutive_failures // MAX_CONSECUTIVE_FAILURES + 1)
@@ -1207,8 +1200,7 @@ class CubeMatrix:
                     raise e
                     
                 elif error_code == 6:  # Illegal request — device is busy/overwhelmed
-                    self._consecutive_failures += 1
-                    self._failed_commands_window.append(time.time())
+                    self._count_failure()
                     _LOGGER.warning(
                         "[COMMAND #%s] ✗ ILLEGAL REQUEST (%s) — "
                         "error code 6, backing off %ss "
@@ -1219,8 +1211,7 @@ class CubeMatrix:
                     raise e
                     
                 else:
-                    self._consecutive_failures += 1
-                    self._failed_commands_window.append(time.time())
+                    self._count_failure()
                     _LOGGER.warning(
                         "[COMMAND #%s] ✗ BULB ERROR (%s): code=%s, "
                         "msg='%s' [%s]",
@@ -1230,8 +1221,7 @@ class CubeMatrix:
                     
             except AttributeError as e:
                 error_msg = str(e)
-                self._consecutive_failures += 1
-                self._failed_commands_window.append(time.time())
+                self._count_failure()
                 if "'NoneType' object has no attribute" in error_msg:
                     # The library's socket vanished mid-command.
                     _LOGGER.debug(
@@ -1249,8 +1239,7 @@ class CubeMatrix:
                 
             except Exception as e:
                 error_msg = str(e)
-                self._consecutive_failures += 1
-                self._failed_commands_window.append(time.time())
+                self._count_failure()
                 _LOGGER.error(
                     "[COMMAND #%s] ✗ UNEXPECTED (%s): %s: %s "
                     "[%s]",

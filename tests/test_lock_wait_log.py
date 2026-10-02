@@ -7,7 +7,9 @@ from unittest.mock import Mock
 from tests.test_native_features import LIGHT_SOURCE, _load_standalone_functions
 
 
-class LockWaitLogTests(unittest.IsolatedAsyncioTestCase):
+class LampTestCase(unittest.IsolatedAsyncioTestCase):
+    """A lamp with the real _execute_hardware_op and a fake connection."""
+
     def setUp(self):
         self.logger = Mock()
         bulb_exception = type("BulbException", (Exception,), {})
@@ -39,12 +41,16 @@ class LockWaitLogTests(unittest.IsolatedAsyncioTestCase):
             _ip="192.168.4.104", _is_on=True, _fx_mode_is_direct=True,
             _hard_timeout_times=[], _hardware_failure_retryable=False,
             _connection_error=False, _display_retry_count=0,
-            _retry_display_task=None,
+            _retry_display_task=None, _coalesced_op_generation=0,
             _cube_matrix=SimpleNamespace(
-                state_summary=lambda: "", summary="", record_success=Mock(), record_failure=Mock()
+                state_summary=lambda: "", summary="", record_success=Mock(), record_failure=Mock(),
+                close_fast_socket=Mock(),
             ),
         )
+        self.lamp._maybe_schedule_retry = Mock()
 
+
+class LockWaitLogTests(LampTestCase):
     async def _run_two(self, hold):
         async def slow():
             await asyncio.sleep(hold)
@@ -74,6 +80,96 @@ class LockWaitLogTests(unittest.IsolatedAsyncioTestCase):
         await self._run_two(0.05)
         self.logger.warning.assert_called_once()
         self.assertIn("waited", self.logger.warning.call_args.args[0])
+
+
+class CoalescedRedrawTests(LampTestCase):
+    """Queued full redraws: only the newest waiting one reaches the lamp."""
+
+    async def _queue_behind_running(self, ops):
+        """Start a running redraw, then queue ``ops`` (name, coalesce) behind it.
+        Returns the names that ran, in order, and each queued op's result."""
+        ran = []
+
+        def record(name, hold=0.0):
+            async def run():
+                ran.append(name)
+                await asyncio.sleep(hold)
+            return run
+
+        running = asyncio.ensure_future(self.lamp._execute_hardware_op(
+            record("running", 0.05), "display:running", coalesce=True))
+        await asyncio.sleep(0)  # it now holds the lamp
+        queued = []
+        for name, coalesce in ops:
+            queued.append(asyncio.ensure_future(self.lamp._execute_hardware_op(
+                record(name), f"display:{name}", coalesce=coalesce)))
+            await asyncio.sleep(0)
+        results = await asyncio.gather(*queued)
+        self.assertTrue(await running)
+        return ran, results
+
+    async def test_only_the_newest_queued_redraw_runs(self):
+        ran, results = await self._queue_behind_running(
+            [("first", True), ("second", True), ("third", True)])
+        self.assertEqual(["running", "third"], ran)
+        # skipped redraws report success: the newest one draws the same state
+        self.assertEqual([True, True, True], results)
+        self.assertEqual({}, self.namespace["_DEVICE_LOCK_HOLDERS"])
+        self.lamp._cube_matrix.record_success.assert_called()
+
+    async def test_other_operations_are_never_skipped(self):
+        ran, _ = await self._queue_behind_running(
+            [("brightness", False), ("redraw", True), ("turn_off", False)])
+        self.assertEqual(["running", "brightness", "redraw", "turn_off"], ran)
+
+    async def test_a_rejected_newer_redraw_does_not_drop_the_waiting_one(self):
+        ran = []
+
+        async def hold():
+            await asyncio.sleep(0.05)
+
+        async def waiting():
+            ran.append("waiting")
+
+        running = asyncio.ensure_future(
+            self.lamp._execute_hardware_op(hold, "display:running", coalesce=True))
+        await asyncio.sleep(0)
+        queued = asyncio.ensure_future(
+            self.lamp._execute_hardware_op(waiting, "display:waiting", coalesce=True))
+        await asyncio.sleep(0)
+        # The circuit breaker rejects the next redraw before it is queued.
+        self.lamp._hard_timeout_times = [time.time(), time.time()]
+        self.assertFalse(await self.lamp._execute_hardware_op(
+            Mock(), "display:rejected", coalesce=True))
+        self.lamp._hard_timeout_times = []
+        await asyncio.gather(running, queued)
+        self.assertEqual(["waiting"], ran)
+
+
+class HardTimeoutTests(LampTestCase):
+    """Only the operation guard's own timeout is a hard timeout."""
+
+    async def test_a_socket_timeout_is_a_connection_failure(self):
+        async def refused():
+            raise TimeoutError("timed out")  # socket.timeout is TimeoutError
+
+        self.assertFalse(await self.lamp._execute_hardware_op(refused, "display:pixel_art"))
+        self.assertEqual([], self.lamp._hard_timeout_times)
+        self.lamp._cube_matrix.close_fast_socket.assert_not_called()
+        self.lamp._cube_matrix.record_failure.assert_called_once()
+        self.lamp._maybe_schedule_retry.assert_called_once()
+        self.logger.error.assert_not_called()
+
+    async def test_an_operation_overrunning_the_guard_is_a_hard_timeout(self):
+        async def hangs():
+            await asyncio.sleep(1)
+
+        self.assertFalse(await self.lamp._execute_hardware_op(
+            hangs, "display:pixel_art", timeout_override=0.02))
+        self.assertEqual(1, len(self.lamp._hard_timeout_times))
+        self.lamp._cube_matrix.close_fast_socket.assert_called_once()
+        self.assertIn("HARD TIMEOUT", self.logger.error.call_args.args[0])
+        self.assertEqual({}, self.namespace["_DEVICE_LOCK_HOLDERS"])
 
 
 if __name__ == "__main__":

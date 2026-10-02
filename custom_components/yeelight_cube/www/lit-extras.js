@@ -1,30 +1,7 @@
-// Lit helpers the bundled lib/lit-all.js does not export: the `nothing`
-// sentinel, the `svg` tag, an `unsafeSVG` directive, and templateToString()
-// (serialises a template to an escaped HTML string).
-import { unsafeHTML } from "./lib/lit-all.js";
-
-// Lit's `nothing` sentinel is a registered symbol (same trick as
-// action-button-ui.js).
-export const nothing = Symbol.for("lit-nothing");
-
-// `svg` tag: identical to lit-html's own (SVG_RESULT = 2).  Needed for
-// sub-templates rendered INSIDE an <svg> element so they are created in the
-// SVG namespace.
-export const svg = (strings, ...values) => ({ _$litType$: 2, strings, values });
-
-// `unsafeSVG`: lit-html's UnsafeSVGDirective is UnsafeHTMLDirective with an
-// SVG result type.  Used only for the SVG fragments produced by the shared
-// angle-wheel-utils helpers (gradient <stop>s, shape masks).
-export const UnsafeHTMLDirective = unsafeHTML("")._$litDirective$;
-
-export class UnsafeSVGDirective extends UnsafeHTMLDirective {}
-UnsafeSVGDirective.directiveName = "unsafeSVG";
-UnsafeSVGDirective.resultType = 2;
-
-export const unsafeSVG = (value) => ({
-  _$litDirective$: UnsafeSVGDirective,
-  values: [value],
-});
+// templateToString(): serialises a Lit template to an escaped HTML string, for
+// the gradient card's string-returning compatibility API. It reads Lit's
+// template-result fields (_$litType$, _$litDirective$) to do so.
+import { nothing } from "./lib/lit-all.js";
 
 export const _escapeMarkup = (value) =>
   String(value)
