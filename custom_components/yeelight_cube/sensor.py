@@ -308,6 +308,12 @@ class YeelightCubePowerSensor(CubeDeviceEntity, SensorEntity):
     def native_value(self):
         return self._light_entity.estimated_power
 
+    @property
+    def extra_state_attributes(self):
+        # "frames sent", "simulated preview" (clock, native effects, Music
+        # Flow: averaged over 30 s), "off" or "unreachable"
+        return {"source": self._light_entity.power_estimate_source}
+
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         self._light_entity._power_sensor = self

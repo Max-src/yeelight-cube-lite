@@ -273,6 +273,21 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
             result.append((r, g, b))
         return result
 
+    def simulated_firmware_frame(self) -> list[tuple[int, int, int]] | None:
+        """The simulated frame the lamp's firmware is drawing right now
+        (Music Flow, clock, native effect), at full intensity, before the
+        preview's brightness boost; None outside those modes. Used for the
+        Estimated power sensor."""
+        le = self._light_entity
+        if getattr(le, "_music_flow_enabled", False):
+            return self._get_music_flow_preview()
+        mode = getattr(le, "_mode", None)
+        if mode == MODE_CLOCK:
+            return self._get_clock_preview()
+        if mode == MODE_NATIVE_EFFECT:
+            return self._get_native_effect_preview()
+        return None
+
     def _get_native_effect_preview(self) -> list[tuple[int, int, int]]:
         """Render a local approximation of the active firmware animation."""
         le = self._light_entity

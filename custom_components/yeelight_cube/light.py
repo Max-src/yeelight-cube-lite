@@ -2,10 +2,13 @@ import logging
 import asyncio
 import base64
 import time
+from collections import deque
+from datetime import timedelta
 import voluptuous as vol # type: ignore
 from homeassistant.components.light import LightEntity, ColorMode # type: ignore
 from homeassistant.helpers.restore_state import RestoreEntity # type: ignore
 from homeassistant.core import HomeAssistant, callback # type: ignore
+from homeassistant.helpers.event import async_track_time_interval # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 from homeassistant.config_entries import ConfigEntry # type: ignore
 from homeassistant.helpers import config_validation as cv # type: ignore
@@ -65,6 +68,11 @@ _LOGGER.debug("Yeelight Cube Lite light.py module loaded")
 
 # Timing constants
 APPLY_POST_DELAY = 0.0        # No post-delay needed -- send_command_fast doesn't wait for responses
+# Estimated power in firmware modes (clock, native effects, Music Flow): the
+# simulated frame is sampled every FIRMWARE_POWER_INTERVAL seconds and the
+# sensor shows the average of the last FIRMWARE_POWER_SAMPLES (30 s).
+FIRMWARE_POWER_INTERVAL = 5
+FIRMWARE_POWER_SAMPLES = 6
 FX_MODE_STALENESS_TIMEOUT = 90.0  # Seconds -- re-send activate_fx_mode when _last_fx_mode_time
                                   # (set by activate_fx_mode and by every full frame drawn in
                                   # apply()) is older than this. An idle Cube can leave direct
@@ -532,6 +540,12 @@ class YeelightCubeLight(
         self._last_frame_power = None
         self._power_sensor = None
         self._published_power = None
+        # Firmware modes (clock, native effect, Music Flow): estimates of the
+        # simulated preview frame, sampled every FIRMWARE_POWER_INTERVAL and
+        # averaged; cleared when what the firmware draws changes.
+        self._firmware_power_samples = deque(maxlen=FIRMWARE_POWER_SAMPLES)
+        self._firmware_power_key = None
+        self._firmware_power_unsub = None
         # Bumped by each queued redraw; an older one still waiting for the
         # lamp is skipped (_execute_hardware_op, coalesce=True).
         self._coalesced_op_generation = 0
@@ -580,12 +594,12 @@ class YeelightCubeLight(
             for entity in self._control_entities:
                 if entity.hass is not None:
                     entity.async_write_ha_state()
-        power = self.estimated_power
-        if power != self._published_power:
-            self._published_power = power
-            sensor = self._power_sensor
-            if sensor is not None and sensor.hass is not None:
-                sensor.async_write_ha_state()
+        if (
+            self.firmware_draws_matrix
+            and self._firmware_power_state() != self._firmware_power_key
+        ):
+            self._sample_firmware_power()  # what the firmware draws changed
+        self._publish_power()
 
     @property
     def estimated_power(self) -> float | None:
@@ -597,9 +611,68 @@ class YeelightCubeLight(
             return 0.0
         if not self._is_on:
             return BASE_W
-        if self.firmware_draws_matrix or self._last_frame_power is None:
+        if self.firmware_draws_matrix:
+            samples = self._firmware_power_samples
+            return round(sum(samples) / len(samples), 1) if samples else None
+        if self._last_frame_power is None:
             return None
-        return round(self._last_frame_power, 2)
+        return round(self._last_frame_power, 1)
+
+    @property
+    def power_estimate_source(self) -> str:
+        """What the Estimated power sensor is based on right now."""
+        if not self.available:
+            return "unreachable"
+        if not self._is_on:
+            return "off"
+        if self.firmware_draws_matrix:
+            return "simulated preview"
+        return "frames sent"
+
+    def _firmware_power_state(self) -> tuple:
+        """What the firmware draws: a change starts a new average."""
+        return (
+            self._mode, self._music_flow_enabled, self._music_flow_effect,
+            self._native_effect, self._native_effect_color_mode,
+            str(self._native_effect_color), self._native_effect_speed,
+            self._native_clock_style, self._native_clock_color_mode,
+            self._native_clock_color, self._brightness, self._display_frozen,
+        )
+
+    @callback
+    def _sample_firmware_power(self, _now=None) -> None:
+        """While the firmware draws the matrix, estimate the draw of the
+        simulated frame its camera preview shows (lamp_power.py), averaged
+        over the last samples. Runs every FIRMWARE_POWER_INTERVAL, and at
+        once when what the firmware draws changes."""
+        if not (self.available and self._is_on and self.firmware_draws_matrix):
+            self._firmware_power_samples.clear()
+            self._firmware_power_key = None
+            return
+        state = self._firmware_power_state()
+        if state != self._firmware_power_key:
+            self._firmware_power_samples.clear()
+            self._firmware_power_key = state
+        camera = next(
+            (cam for cam in self._camera_entities if getattr(cam, "hass", None)), None
+        )
+        frame = camera.simulated_firmware_frame() if camera is not None else None
+        if not frame:
+            return
+        # The firmware modes send the brightness as is (_set_native_mode_brightness).
+        hardware = max(1, min(100, round(self._brightness * 100 / 255)))
+        self._firmware_power_samples.append(estimated_power(frame, hardware))
+        self._publish_power()
+
+    @callback
+    def _publish_power(self) -> None:
+        """Write the Estimated power sensor when its value changed."""
+        power = self.estimated_power
+        if power != self._published_power:
+            self._published_power = power
+            sensor = self._power_sensor
+            if sensor is not None and sensor.hass is not None:
+                sensor.async_write_ha_state()
 
     def _notify_camera_preview(self) -> None:
         """Schedule every camera entity to re-render its preview.
@@ -1007,6 +1080,12 @@ class YeelightCubeLight(
         self._health_check_task = self._create_tracked_task(
             self._periodic_health_check(), name=f"yeelight_cube_health_check_{self._ip}"
         )
+        # Estimated power in firmware modes: a cheap periodic sample of the
+        # simulated preview frame (one 100-pixel estimate per interval).
+        self._firmware_power_unsub = async_track_time_interval(
+            self.hass, self._sample_firmware_power,
+            timedelta(seconds=FIRMWARE_POWER_INTERVAL),
+        )
         
         # Register entity by entity_id now that it's available
         # Remove the temporary IP-based registration first to avoid duplicates
@@ -1058,6 +1137,9 @@ class YeelightCubeLight(
     async def async_will_remove_from_hass(self):
         """Clean up when entity is removed"""
         self.stop_scroll_timer()
+        if self._firmware_power_unsub is not None:
+            self._firmware_power_unsub()
+            self._firmware_power_unsub = None
 
         # Stop any server-side rotation loop owned by this entity. Its saved
         # state is kept: a restart or reload resumes it.

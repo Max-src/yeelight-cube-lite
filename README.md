@@ -743,7 +743,7 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | :-- | :-- | :-- |
 | **Matrix Preview (Round)** | Camera | Local matrix preview with round pixels; Music Flow uses a static effect illustration |
 | **Matrix Preview (Square)** | Camera | Local matrix preview with square pixels; Music Flow uses a static effect illustration |
-| **Estimated power** | Sensor | Estimated power draw in W of the frame shown; 0 W while the lamp is not reachable, unknown in Clock, Native Effects and Music Flow. See [Power Supply](#power-supply) |
+| **Estimated power** | Sensor | Estimated power draw of the lamp in W. See [Power Supply](#power-supply) |
 
 > [!TIP]
 > Use these camera entities with a "Picture Entity" card for quick previews. For more responsive previews, use the custom [Preview Card](#preview-card).
@@ -773,7 +773,7 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Matrix: Transition Effect** | Select | None or one of the 23 [transition animations](#transition-effects) |
 | **Transition Steps** | Number | Animation steps (1–10) |
 | **Transition Duration** | Number | Transition time (0.2–10 s) |
-| **Power limit** | Number | Dim bright frames so the lamp draws at most this many watts (0.4–7 W in 0.1 W steps, 7 W = off). See [Power Supply](#power-supply) |
+| **Power limit** | Number | Dim bright pictures to keep the lamp under this many watts (7 W = off). See [Power Supply](#power-supply) |
 
 #### Diagnostic
 
@@ -1257,84 +1257,30 @@ Configure via the **Transition Effect**, **Transition Steps**, and **Transition 
 
 ## Power Supply
 
-The LED panel uses most of a lamp's power, and how much depends on what it
-shows. The figures below come from a USB power meter on one lamp (5 V, read
-in 0.1 A steps, so about ±0.25 W):
+A lamp draws about **0.4 W** with a dark panel and up to about **6 W** with a
+bright, busy picture. Brightness and how many pixels are lit matter most; the
+color matters little.
 
-| One lamp, 100% brightness | Measured |
-| :-- | :-- |
-| Lamp on, all pixels black | 0.4 W |
-| 25 / 50 / 100 white pixels | 2.5–3.0 / 4.5 / 6.1 W |
-| 50 pure red, 50 pure green, or 50 pure blue pixels | 3.0 W each |
-| 100 pure red pixels | 5.0 W |
-| A bright pixel art filling the panel (94 pale pink pixels) | 6.0 W |
-| The same art at 1% brightness | 0.4 W |
+**Estimated power.** Each lamp has an **Estimated power** sensor that
+estimates what it draws right now, based on a model measured on real lamps.
+It covers everything: pixel art, text and gradients, and also Clock, Native
+Effects and Music Flow through their simulated previews. Off, it reads
+0.4 W; when Home Assistant can't reach the lamp, 0 W. Add an Integral helper
+to it for an energy (kWh) estimate.
 
-What this shows:
+**Weak or shared power supplies.** If the supply can't keep up, the lamp
+freezes on a bright picture or drops off the network until it is
+power-cycled. Quick picture changes make this more likely, because each
+change briefly draws extra. Two lamps on one port need room for that: in
+testing, two lamps froze on a 15 W port and worked on 24 W. Plan about 12 W
+of port per lamp.
 
-- **Each lit pixel costs about the same whatever its color**: 50 red, 50
-  green and 50 blue pixels all draw 3 W. Mixing channels adds less: 50 white
-  pixels draw 4.5 W, not 9 W.
-- **The draw levels off around 6 W**: the lamp limits itself, so a full-white
-  panel draws 6.1 W, barely more than a busy pixel art.
-- **The electronics take about 0.4 W**, lit or not.
-- **Brightness scales the panel's draw**, not the electronics'.
-
-The integration estimates a frame's draw with a model fitted to these
-readings (within about 0.2 W of them):
-
-> power ≈ 0.4 W + 7.2 W × (1 − e<sup>−x / 7.2 W</sup>), where x = 42 mW per lit
-> pixel (by its brightest channel) + 28 mW per full channel, × brightness
-
-The **Estimated power** sensor of each lamp shows this for the frame on the
-lamp. It reads 0.4 W while the lamp is off, 0 W while Home Assistant cannot
-reach it (most often because it is unplugged; a lamp that lost its Wi-Fi
-but still has power keeps drawing), and *unknown* in Clock, Native Effects
-and Music Flow, which the lamp's firmware draws without Home Assistant
-seeing the pixels. As a power sensor it can feed an Integral helper
-for an energy (kWh) estimate.
-
-**When the supply is too weak**, the lamp doesn't switch off. Its voltage
-sags, and:
-
-- a mild sag: the lamp **stops showing new frames** and stays on the bright one.
-  Home Assistant still reports every frame as sent and the lamp stays
-  reachable, so nothing looks wrong except the picture;
-- a deeper sag: the lamp **drops off the network**. Home Assistant marks it
-  unavailable until it is power-cycled.
-
-Changing frames quickly (clicking through pixel art) makes it more likely:
-the switch from one frame to the next briefly draws more. Two lamps on one
-port share that port's budget: in our test, two lamps on a port limited to
-15 W froze on a bright pixel art at full brightness (about 6 W each, plus the
-switching peaks), while 24 W worked.
-
-**Recommendations**
-
-- Give each lamp its own power port or adapter. A shared port needs room for
-  the switching peaks, not just the steady draw: two lamps froze on a 15 W
-  port although they average about 6 W each, and worked on 24 W. Plan about
-  12 W of port per lamp.
-- On a limited supply, set **Power limit** (a Configuration entity of each
-  lamp, 0.4–7 W in 0.1 W steps). 7 W means no limit: no frame draws more than
-  about 6.3 W. 0.4 W is the electronics alone, so every frame is black.
-  Frames that would draw more are dimmed just enough to stay under it, so
-  colors and shading are kept and only bright frames get darker. Sparse or
-  dim frames are left alone. The limit also removes the peaks: the frame is
-  dimmed before it reaches the lamp, so the lamp never draws more than the
-  limit, even for an instant.
-- Tested with two lamps on a 15 W port: **5 W each** never froze, even when
-  switching quickly to the brightest pixel art; **6 W each** still froze
-  after a few tries. Keep the lamps' limits together at about two thirds of
-  the port's rating (here 10 W of 15 W).
-- The limit applies to everything the integration draws: pixel art, text,
-  gradients, drawings and transitions. Clock, Native Effects and Music Flow are
-  drawn by the lamp's firmware and are not limited; lower the brightness for
-  those instead.
-- To see each frame's estimate, enable debug logging for
-  `custom_components.yeelight_cube`: every frame is logged as
-  `[APPLY] … Sending update_leds: … power=N.NW`, with `(limited from N.NW)`
-  when the limit dimmed it.
+**Power limit.** On a limited supply, set each lamp's **Power limit**
+(Configuration, 0.4–7 W; 7 W = no limit). Bright pictures are dimmed just
+enough to stay under it, keeping their colors; dim pictures are untouched.
+Two lamps on a 15 W port run reliably at 5 W each. The limit applies to
+everything the integration draws; Clock, Native Effects and Music Flow are
+drawn by the lamp itself, so lower their brightness instead.
 
 ---
 
@@ -1346,7 +1292,7 @@ switching peaks), while 24 W worked.
 | **Device not found** | Ensure the lamp is on the same network. Check IP in the Yeelight Station app. Auto-discovery via Zeroconf is also available |
 | **Conflicts with Yeelight integration** | This integration automatically suppresses built-in Yeelight discovery for Cube devices |
 | **Lamp stuck / unresponsive** | Press the **Force Refresh** button entity, or use the refresh button on the Preview card |
-| **Lamp freezes on a bright picture, or drops off the network when showing bright content** | The power supply is too weak for that frame, especially with two lamps on one port. Use a stronger supply or set the **Power limit**. See [Power Supply](#power-supply) |
+| **Lamp freezes on a bright picture or drops off the network** | The power supply is too weak, especially with two lamps on one port. Use a stronger supply or set the **Power limit**. See [Power Supply](#power-supply) |
 | **Colors look off** | Color accuracy correction is built-in and applied automatically |
 | **Music Flow does not react to sound** | Music Flow uses the microphone inside the lamp, not a Home Assistant microphone. Play audio near the lamp and try another Music Flow Effect |
 | **Changing content stops Music Flow** | This is expected. Selecting Matrix, Clock, Native Effect, text, or pixel art exits Music Flow and applies the requested content |
