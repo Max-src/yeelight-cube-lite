@@ -101,6 +101,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
             _native_effect_color_mode="bw", _native_effect_color=None, hass=None,
             _cube_matrix=SimpleNamespace(close_fast_socket=Mock(), send_raw_command=AsyncMock()),
             _set_native_mode_brightness=AsyncMock(), _notify_camera_preview=Mock(),
+            _leave_direct_mode=AsyncMock(),
         )
         for effect, mode in (("Starry sky", "bw"), ("Rainbow", "red_blue"), ("Ocean Waves", "red_blue"), ("Starry sky", "normal")):
             target._native_effect = effect

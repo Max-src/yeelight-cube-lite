@@ -888,7 +888,7 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
             "_apply_display_mode_internal", "_activate_native_clock",
             "_resolve_native_clock_color", "_set_native_mode_brightness",
             "_native_clock_data_bytes", "stop_scroll_timer",
-            "_activate_native_effect",
+            "_activate_native_effect", "_leave_direct_mode",
         }
         source = "\n".join(
             (ROOT / filename).read_text(encoding="utf-8")

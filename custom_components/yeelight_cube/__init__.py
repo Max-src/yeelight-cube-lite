@@ -56,6 +56,47 @@ mimetypes.add_type("application/json", ".json")
 mimetypes.add_type("application/json", ".map")
 
 
+def _lovelace_resource_collection(hass: HomeAssistant):
+    """The Lovelace resource collection: hass.data["lovelace"].resources in
+    current Home Assistant, hass.data["lovelace_resources"] in older ones."""
+    lovelace = hass.data.get("lovelace")
+    collection = getattr(lovelace, "resources", None)
+    if collection is None and isinstance(lovelace, dict):
+        collection = lovelace.get("resources")
+    return collection if collection is not None else hass.data.get("lovelace_resources")
+
+
+async def _async_register_frontend_cards(hass: HomeAssistant) -> None:
+    """Make the cards load on every dashboard: register them as Lovelace
+    resources, which Home Assistant stores and serves with each dashboard
+    from the start, like HACS plugins. Only when resources can't be managed
+    (YAML mode) are they injected with add_extra_js_url instead.
+
+    Runs in async_setup, before any lamp is set up: a page served while the
+    lamps are still connecting after a restart must already load the cards.
+    """
+    www_dir = os.path.join(os.path.dirname(__file__), "www")
+    # Only files present on disk: some cards (e.g. the internal-only
+    # calibration card) are left out of the public repo.
+    card_files = [
+        cf for cf in FRONTEND_CARD_FILES if os.path.isfile(os.path.join(www_dir, cf))
+    ]
+    if await _async_register_lovelace_resources(hass, card_files, FRONTEND_URL_BASE):
+        return
+    try:
+        from homeassistant.components.frontend import add_extra_js_url  # type: ignore
+
+        for card_file in card_files:
+            add_extra_js_url(hass, f"{FRONTEND_URL_BASE}/{card_file}")
+    except Exception:  # noqa: BLE001
+        # Without either mechanism the cards cannot load at all.
+        _LOGGER.warning(
+            "Could not load the Lovelace cards automatically. Add them "
+            "manually: Settings -> Dashboards -> Resources",
+            exc_info=True,
+        )
+
+
 async def _async_register_lovelace_resources(
     hass: HomeAssistant, card_files: list, url_base: str
 ) -> bool:
@@ -77,14 +118,20 @@ async def _async_register_lovelace_resources(
     to add_extra_js_url).
     """
     try:
-        # The Lovelace resource collection is stored here by HA core
-        resource_collection = hass.data.get("lovelace_resources")
-        if resource_collection is None:
+        resource_collection = _lovelace_resource_collection(hass)
+        if resource_collection is None or not hasattr(
+            resource_collection, "async_create_item"
+        ):
+            # No collection, or YAML-mode resources (read-only).
             _LOGGER.debug(
-                "Lovelace resources collection not available yet -- "
+                "Lovelace resource collection not available -- "
                 "falling back to add_extra_js_url"
             )
             return False
+        # The storage collection loads lazily: read it before looking for
+        # existing entries, or they would look missing.
+        if hasattr(resource_collection, "async_get_info"):
+            await resource_collection.async_get_info()
 
         # Build a lookup of existing resources by their base URL (ignoring any
         # query string) so we can migrate older entries that still carry a ?v=.
@@ -262,6 +309,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             "Ensure the www folder was copied to the component directory.",
             www_path,
         )
+
+    await _async_register_frontend_cards(hass)
 
     # Schedule an SSDP scan for CubeLite devices after HA is fully started.
     # This creates discovery flows so CubeLite devices show up in the
@@ -537,40 +586,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.info("[pixelart-migration] Migrating %s pixel arts to grouped format — saving to disk.", len(_migrated_pixel_arts))
             await async_save_data(hass)
         
-        # Register cards as Lovelace resources (same mechanism as HACS plugins).
-        # This is more reliable than add_extra_js_url because HA loads these
-        # resources the same way as Mushroom, card-mod, and other HACS cards.
-        #
-        # Only register cards whose JS file actually exists on disk. Some cards
-        # (e.g. the internal-only calibration card) are excluded from the public
-        # repo via .gitignore, so on production installs the file is absent and
-        # we simply skip registering a dangling resource.
-        _www_dir = os.path.join(os.path.dirname(__file__), "www")
-        _available_card_files = [
-            cf for cf in FRONTEND_CARD_FILES
-            if os.path.isfile(os.path.join(_www_dir, cf))
-        ]
-        _resources_registered = await _async_register_lovelace_resources(
-            hass, _available_card_files, FRONTEND_URL_BASE
-        )
-
-        # Fallback ONLY when the Lovelace resource collection was unavailable
-        # (e.g. a YAML-mode dashboard).  add_extra_js_url injects the script
-        # into every HA frontend page, so when the resource registration above
-        # already handled things we skip it to avoid a redundant double-load.
-        if not _resources_registered:
-            try:
-                from homeassistant.components.frontend import add_extra_js_url  # type: ignore
-                for card_file in _available_card_files:
-                    add_extra_js_url(hass, f"{FRONTEND_URL_BASE}/{card_file}")
-            except Exception:  # noqa: BLE001
-                # Without either mechanism the cards cannot load at all.
-                _LOGGER.warning(
-                    "Could not load the Lovelace cards automatically. Add them "
-                    "manually: Settings -> Dashboards -> Resources",
-                    exc_info=True,
-                )
-
         _LOGGER.debug("Yeelight Cube Lite: Storage, conflict prevention, and services initialized")
     
     # Register this device as managed by our component (for all entries)

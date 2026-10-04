@@ -143,7 +143,7 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         try:
             async def _do_send():
                 if close_socket:
-                    target._cube_matrix.close_fast_socket()
+                    await target._leave_direct_mode()
                 # The firmware clock (mode 40) is order-sensitive: sending
                 # set_bright BEFORE set_fx_effect can CANCEL the clock
                 # activation (see _activate_native_clock). So for clock we send

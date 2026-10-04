@@ -2387,9 +2387,18 @@ class YeelightCubeLight(
             _TRANSITION_ANIMATE_TYPES = {
                 'text_change', 'color_change', 'pixel_art',
             }
+            # _last_sent_colors is whatever direct-mode frame was on the panel
+            # BEFORE it last left for a firmware renderer (clock / native
+            # effect / Music Flow) -- the firmware draws those itself, so it
+            # was never updated in the meantime and does NOT reflect what the
+            # lamp is actually showing now.  Animating from it would morph
+            # from that stale, no-longer-true frame instead of cutting
+            # straight to the new one -- visible as the previous direct-mode
+            # content (e.g. an old pixel art) briefly reappearing.
             if (self._transition_type != "none"
                     and self._last_sent_colors is not None
                     and not self._transition_active
+                    and not leaving_native_fw_mode
                     and self._current_update_type in _TRANSITION_ANIMATE_TYPES):
                 target_colors = frame
                 # Only animate when content actually changed

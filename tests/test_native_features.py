@@ -266,7 +266,7 @@ class NativeFeatureTests(unittest.TestCase):
         # have no mixer effect to protect and stay unaffected (except B&W).
         helpers = _load_standalone_functions(
             LIGHT_SOURCE,
-            {"_activate_native_clock", "_resolve_native_clock_color"},
+            {"_activate_native_clock", "_resolve_native_clock_color", "_leave_direct_mode"},
             {
                 "asyncio": asyncio,
                 "base64": base64,
@@ -296,7 +296,7 @@ class NativeFeatureTests(unittest.TestCase):
                 self.params = params
 
         def make_device(style_id, color_mode):
-            return types.SimpleNamespace(
+            device = types.SimpleNamespace(
                 _native_clock_timezone_hours=lambda: 0,
                 _native_clock_style=style_id,
                 _native_clock_data_bytes=lambda: b"",
@@ -315,6 +315,8 @@ class NativeFeatureTests(unittest.TestCase):
                 hass=None,
                 _ip="test",
             )
+            device._leave_direct_mode = types.MethodType(helpers["_leave_direct_mode"], device)
+            return device
 
         activate = helpers["_activate_native_clock"]
 
@@ -554,7 +556,7 @@ class NativeFeatureTests(unittest.TestCase):
     def test_turning_music_flow_off_restores_display_and_prior_power(self):
         helpers = _load_standalone_functions(
             LIGHT_SOURCE,
-            {"_build_music_flow_payload", "async_set_music_flow"},
+            {"_build_music_flow_payload", "async_set_music_flow", "_leave_direct_mode"},
             {
                 "asyncio": asyncio,
                 "time": time,
@@ -612,6 +614,8 @@ class NativeFeatureTests(unittest.TestCase):
         device._execute_hardware_op = execute
         device._apply_display_mode_internal = apply_display
         device._persist_music_flow_runtime_state = persist_music_flow
+        device._fx_mode_is_direct = getattr(device, "_fx_mode_is_direct", False)
+        device._leave_direct_mode = types.MethodType(helpers["_leave_direct_mode"], device)
         set_music_flow = types.MethodType(helpers["async_set_music_flow"], device)
 
         asyncio.run(set_music_flow(False))
@@ -638,7 +642,7 @@ class NativeFeatureTests(unittest.TestCase):
     def test_music_flow_stop_finalizes_state_when_display_restore_fails(self):
         helpers = _load_standalone_functions(
             LIGHT_SOURCE,
-            {"_build_music_flow_payload", "async_set_music_flow"},
+            {"_build_music_flow_payload", "async_set_music_flow", "_leave_direct_mode"},
             {
                 "asyncio": asyncio,
                 "time": time,
@@ -695,6 +699,8 @@ class NativeFeatureTests(unittest.TestCase):
         device._execute_hardware_op = execute
         device._apply_display_mode_internal = apply_display
         device._persist_music_flow_runtime_state = persist_music_flow
+        device._fx_mode_is_direct = getattr(device, "_fx_mode_is_direct", False)
+        device._leave_direct_mode = types.MethodType(helpers["_leave_direct_mode"], device)
         set_music_flow = types.MethodType(helpers["async_set_music_flow"], device)
 
         with self.assertRaisesRegex(RuntimeError, "could not complete"):
@@ -2724,6 +2730,24 @@ class NativeFeatureTests(unittest.TestCase):
                 self.assertIn(pixel["position"], range(100))
                 self.assertEqual(3, len(pixel["color"]))
                 self.assertTrue(all(channel in range(256) for channel in pixel["color"]))
+
+    def test_transition_is_skipped_when_leaving_a_firmware_native_mode(self):
+        # _last_sent_colors is the direct-mode frame shown BEFORE the panel
+        # last left for the firmware clock/native effect/Music Flow renderer,
+        # which draws itself without updating it. Animating a transition from
+        # it after returning to direct mode would morph from that stale,
+        # no-longer-true frame -- visibly re-showing old content (e.g. a
+        # previous pixel art) before the real target frame takes over.
+        apply_source = _function_source(LIGHT_SOURCE, "apply")
+        leaving_index = apply_source.index("leaving_native_fw_mode = ")
+        transition_if_index = apply_source.index(
+            "if (self._transition_type != \"none\""
+        )
+        self.assertLess(leaving_index, transition_if_index)
+        condition = apply_source[
+            transition_if_index: apply_source.index(":", transition_if_index)
+        ]
+        self.assertIn("not leaving_native_fw_mode", condition)
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ import logging
 import time
 from .native_effect_preview import effect_supports_color_mode, effect_supports_color_override
 from .color_utils import rgb_to_argb
-from .cube_matrix import CubeConnectionError
+from .cube_matrix import CubeConnectionError, encode_rgb_frame
 
 from homeassistant.exceptions import HomeAssistantError  # type: ignore
 from homeassistant.util import dt as dt_util  # type: ignore
@@ -93,6 +93,26 @@ def _parse_music_flow_config(value) -> tuple[bool | None, int | None]:
 
 class NativeModesMixin:
     """Activate and configure the firmware Clock and native animations."""
+
+    async def _leave_direct_mode(self) -> None:
+        """Prepare to hand the panel to the firmware (clock, native effect,
+        Music Flow): blank the direct-mode frame and close the drawing socket.
+
+        The lamp keeps the last direct-mode frame and shows it again the
+        moment direct mode is re-activated, about 200 ms before the next frame
+        can arrive (activate_fx_mode needs its settle time). Without this,
+        going back from a clock or effect to a drawing briefly shows the
+        previous drawing. A black frame makes that moment dark instead, and
+        transitions start from it.
+        """
+        if self._fx_mode_is_direct:
+            blank = [(0, 0, 0)] * len(self._layout.device_layout)
+            try:
+                await self._cube_matrix.draw_matrices_fast(encode_rgb_frame(blank))
+            except Exception as err:  # noqa: BLE001 -- best effort, the switch goes on
+                _LOGGER.debug("[%s] Could not blank the direct-mode frame: %s", self._ip, err)
+            self._last_sent_colors = blank
+        self._cube_matrix.close_fast_socket()
 
     async def _set_native_mode_brightness(self) -> None:
         """Apply HA brightness directly while a firmware-native mode is active."""
@@ -227,7 +247,7 @@ class NativeModesMixin:
             effect_config,
         ]
 
-        self._cube_matrix.close_fast_socket()
+        await self._leave_direct_mode()
         # Keep this as the first fresh-socket command. Cube Lite can drop the
         # clock activation when set_bright opens and resets a socket just before
         # set_fx_effect; brightness remains adjustable after activation.
@@ -312,7 +332,7 @@ class NativeModesMixin:
             NATIVE_EFFECT_APPLY,
             effect_config,
         ]
-        self._cube_matrix.close_fast_socket()
+        await self._leave_direct_mode()
         await self._set_native_mode_brightness()
         await asyncio.sleep(0.1)
         await self._cube_matrix.send_raw_command("set_fx_effect", params)
@@ -341,7 +361,7 @@ class NativeModesMixin:
             previous_power = self._is_on
             payload = _build_music_flow_payload(enabled, self._music_flow_effect)
 
-            self._cube_matrix.close_fast_socket()
+            await self._leave_direct_mode()
             try:
                 result = await self._cube_matrix.send_command_with_recovery(
                     "set_ps",
