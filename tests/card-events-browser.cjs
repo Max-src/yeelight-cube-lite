@@ -390,6 +390,136 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
       );
     }
 
+    // --- Item labels: a card renames items for display only ------------------
+    await page.evaluate(() =>
+      mount("yeelight-cube-clock-card", {
+        entity: "light.a",
+        show_gallery: true,
+        show_search: true,
+        style_selector_style: "filled",
+        item_labels: { Rainbow: "Arc-en-ciel" },
+      }),
+    );
+    const clockLabels = () =>
+      page.evaluate(() => ({
+        button: card.shadowRoot.querySelector('yc-collection-gallery [data-mode="Rainbow"]')?.textContent.trim(),
+        active: card.shadowRoot.querySelector(".active-label")?.textContent.trim(),
+      }));
+    assert.deepEqual(await clockLabels(), { button: "Arc-en-ciel", active: "Arc-en-ciel" });
+    const search = page.locator("yeelight-cube-clock-card .yc-gallery-search");
+    for (const query of ["arc-en", "rainbow"]) {
+      await search.fill(query);
+      assert.ok(
+        await page.locator('yeelight-cube-clock-card yc-collection-gallery [data-mode="Rainbow"]').count(),
+        `clock search "${query}" finds the renamed style`,
+      );
+    }
+    await page.locator('yeelight-cube-clock-card yc-collection-gallery [data-mode="Rainbow"]').click();
+    assert.match(
+      JSON.stringify(await waitForCall("set_clock_style", "renamed style pick")),
+      /Rainbow/,
+      "a renamed style is still applied by its key",
+    );
+    await page.evaluate(() =>
+      mount("yeelight-cube-native-effects-card", {
+        entity: "light.a",
+        show_preview: true,
+        item_labels: { Rainbow: "Arc" },
+      }),
+    );
+    assert.equal(
+      await page.evaluate(() => card.shadowRoot.querySelector(".current-heading h3")?.textContent.trim()),
+      "Arc",
+      "native: current effect heading uses the label",
+    );
+    // Previous / Next step through what the gallery's search shows.
+    assert.deepEqual(
+      await page.evaluate(async () => {
+        await card.updateComplete;
+        const keys = () => card._controls.adapter.navigationItems().map((item) => item.key);
+        const search = card.shadowRoot.querySelector(".yc-gallery-search");
+        const typed = async (text) => {
+          search.value = text;
+          search.dispatchEvent(new Event("input"));
+          await card.updateComplete;
+          return keys();
+        };
+        return { label: await typed("arc"), none: await typed("zzz"), all: await typed("") };
+      }),
+      { label: ["Rainbow"], none: [], all: ["Rainbow"] },
+      "native: Previous / Next follow the search (labels included)",
+    );
+    await page.evaluate(() =>
+      mount("yeelight-cube-gradient-card", {
+        entity: "light.a",
+        show_active_mode_label: true,
+        style_selector_style: "filled",
+        item_labels: { "Angle Gradient": "Diagonal" },
+      }),
+    );
+    await page.waitForTimeout(150);
+    assert.deepEqual(
+      await page.evaluate(() => ({
+        chip: card.shadowRoot.querySelector(".gc-aml-text")?.textContent.trim(),
+        button: card.shadowRoot.querySelector('yc-collection-gallery [data-mode="Angle Gradient"]')?.textContent.trim(),
+      })),
+      { chip: "Diagonal", button: "Diagonal" },
+      "gradient: label in the active-mode chip and the selector",
+    );
+    // The editor renames in its visible-modes list.
+    const renamed = await page.evaluate(async () => {
+      const editor = await customElements.get("yeelight-cube-gradient-card").getConfigElement();
+      editor.hass = hass;
+      editor.setConfig({ type: "custom:yeelight-cube-gradient-card", entity: "light.a" });
+      document.querySelector("main").replaceChildren(editor);
+      await editor.updateComplete;
+      for (const section of editor.shadowRoot.querySelectorAll(".editor-card-header")) {
+        section.click();
+        await editor.updateComplete;
+      }
+      const changes = [];
+      editor.addEventListener("config-changed", (event) => changes.push(event.detail.config));
+      const field = editor.shadowRoot.querySelector(".orderable-list-rename");
+      field.value = "Plain";
+      field.dispatchEvent(new Event("change"));
+      await editor.updateComplete;
+      const set = changes.at(-1)?.item_labels;
+      const input = editor.shadowRoot.querySelector(".orderable-list-rename");
+      input.value = "";
+      input.dispatchEvent(new Event("change"));
+      const cleared = "item_labels" in (changes.at(-1) || {});
+      // Every mode is listed (no toggle); moving one makes the list the
+      // card's own, and "Show all modes" goes back (names are kept).
+      const rows = editor.shadowRoot.querySelectorAll(".orderable-list-rename").length;
+      field.value = "Plain";
+      field.dispatchEvent(new Event("change"));
+      await editor.updateComplete;
+      editor.shadowRoot.querySelector('.orderable-list-row button[title="Move down"]').click();
+      await editor.updateComplete;
+      const custom = changes.at(-1);
+      [...editor.shadowRoot.querySelectorAll(".orderable-reset-btn")]
+        .find((button) => button.textContent.includes("Show all modes"))
+        .click();
+      await editor.updateComplete;
+      const reset = changes.at(-1);
+      return {
+        placeholder: field.placeholder,
+        set,
+        cleared,
+        rows,
+        custom: [custom.custom_visible_modes, custom.visible_modes.slice(0, 2)],
+        reset: [reset.custom_visible_modes, reset.visible_modes, reset.item_labels],
+      };
+    });
+    assert.deepEqual(renamed, {
+      placeholder: "Solid Color",
+      set: { "Solid Color": "Plain" },
+      cleared: false,
+      rows: 9,
+      custom: [true, ["Letter Gradient", "Solid Color"]],
+      reset: [undefined, undefined, { "Solid Color": "Plain" }],
+    });
+
     // --- Hostile names: saved names are shown as text, never run as markup ----
     // Palettes, pixel arts and clock presets are shared data any HA user (or
     // an imported file) can name. Every display mode must keep them inert.

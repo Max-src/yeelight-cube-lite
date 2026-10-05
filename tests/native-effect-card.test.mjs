@@ -708,6 +708,10 @@ test("native editor sections follow the card and use shared conditional controls
     _cardFrameSettings(options) {
       records.frame = options;
     },
+    // The shared Items block (editor_ui_utils): the effect list.
+    _galleryItemsSettings(options) {
+      records.list = options;
+    },
   };
   render.call(editor);
   assert.deepEqual(records.sections, [
@@ -729,6 +733,7 @@ test("native editor sections follow the card and use shared conditional controls
     lamps: "multiple",
   });
   assert.deepEqual(records.list.items, ["Rainbow"]);
+  assert.equal(records.list.noun, "effect");
   assert.equal(records.sliders, 1);
   assert.equal(records.matrices, undefined);
   assert.match(source, /yeelight-preview-appearance-editor\s+profile="native"/);

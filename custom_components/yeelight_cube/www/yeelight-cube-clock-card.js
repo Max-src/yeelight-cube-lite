@@ -84,6 +84,7 @@ import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { ClockPreviewMixin } from "./clock-card-preview.js";
 import { CLOCK_CARD_CSS } from "./clock-card-styles.js";
 import { rgbToHex } from "./color-utils.js";
+import { itemLabel, itemMatchesQuery } from "./card-config.js";
 
 const CONTENT_OPTIONS = [
   { value: "time", label: "Time", icon: "mdi:clock-outline" },
@@ -523,13 +524,14 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     return visible;
   }
 
+  // The styles the gallery's search shows (its labels or built-in names).
   _shownStyles() {
     const query =
       this.config.show_search === false
         ? ""
         : (this._searchQuery || "").trim().toLowerCase();
     return this._availableStyles().filter((style) =>
-      style.name.toLowerCase().includes(query),
+      itemMatchesQuery(this.config, clockPresetKey(style), style.name, query),
     );
   }
 
@@ -1017,7 +1019,11 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
         : "";
 
     return html`${!offline && config.show_active_label !== false
-        ? html`<div class="active-label">${current?.name || ""}</div>`
+        ? html`<div class="active-label">
+            ${current
+              ? itemLabel(config, clockPresetKey(current), current.name)
+              : ""}
+          </div>`
         : ""}${offline ? lampUnavailableLine() : ""}${config.show_current_preview !== false
         ? this._renderCurrentPreview(current)
         : ""}

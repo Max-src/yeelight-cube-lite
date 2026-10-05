@@ -12,6 +12,7 @@ import {
   sharedRotationInterval,
   saveSharedRotationInterval,
 } from "./shared-lamp-settings.js";
+import { itemLabel, itemMatchesQuery } from "./card-config.js";
 
 /** Native-effect domain bridge, including manual Apply and capability gates.
  * Shared controllers own commands/selection; this module maps catalogues,
@@ -25,9 +26,26 @@ export function createNativeCardAdapter(card) {
     items: () =>
       nativeEffectItems(card._attrs(), {
         show_experimental: !!card._attrs().extended_effects_enabled,
-      }).map((item) => ({ key: item.name, title: item.name })),
+      }).map((item) => ({
+        key: item.name,
+        title: itemLabel(card.config, item.name, item.name),
+      })),
+    // Previous / Next step through what the gallery shows (its search).
     navigationItems: () =>
-      card._items().map((item) => ({ key: item.name, title: item.name })),
+      card
+        ._items()
+        .filter((item) =>
+          itemMatchesQuery(
+            card.config,
+            item.name,
+            item.name,
+            card.config.show_search === false ? "" : card._searchQuery,
+          ),
+        )
+        .map((item) => ({
+          key: item.name,
+          title: itemLabel(card.config, item.name, item.name),
+        })),
     current: () => card._effect()?.name,
     available: (name) => card._effectAvailable(name),
     ready: () => card._rotationTargetsReady(),

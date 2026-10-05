@@ -242,7 +242,7 @@ server-side favourites rotation that continues after you close the dashboard.
 | Feature | Description |
 | :-- | :-- |
 | **Clock preview** | Live time/date preview using the lamp's native font, with configurable pixels, spacing, background, shadow and size |
-| **Style browser** | Search clock styles using text, grid, list, strip, carousel, wheel or album layouts, with pagination and favourite markers |
+| **Style browser** | Search clock styles using text, grid, list, strip, carousel, wheel or album layouts, with pagination and favourite markers. The editor's **Styles** list picks, orders and renames them for the card |
 | **Color modes** | Choose supported palettes or custom RGB; save reusable color modes and clock presets |
 | **Sliders** | Brightness and animation speed with selectable slider styles, labels and values |
 | **Content & format** | Switch time/date, 12/24-hour format and colon blinking |
@@ -341,7 +341,7 @@ available where supported. Experimental effects require the lamp's
 | Feature | Description |
 | :-- | :-- |
 | **Live previews** | Preview firmware animations with configurable pixels, spacing, background, shadow and size |
-| **Effect browser** | Search effects using text, grid, list, strip, carousel, wheel or album layouts, with pagination and availability badges |
+| **Effect browser** | Search effects using text, grid, list, strip, carousel, wheel or album layouts, with pagination and availability badges. The editor's **Effects** list picks, orders and renames them for the card |
 | **Color modes** | Apply supported palette modes or custom RGB; favourites remember the chosen colors |
 | **Sliders** | Brightness and effect speed with selectable slider styles; speed is shown for effects that support it |
 | **Orientation & actions** | Device orientation, previous, next, random, freeze, refresh and power controls |
@@ -608,7 +608,7 @@ Select and configure gradient/color modes. Adjust gradient direction with an ang
 | Feature | Description |
 | :-- | :-- |
 | **Multi-entity support** | Control multiple lamps at the same time |
-| **Unified mode selector** | The same gallery as the Clock and Native Effects cards: 3 lightweight **text** styles (Filled, Dropdown, Chips with live gradient swatches) or 6 **live preview** styles (List, Grid, Strip, Carousel, Wheel, Album) that render a mini matrix of every mode with your current text, colors, and angle — click to apply. Optional text search |
+| **Unified mode selector** | The same gallery as the Clock and Native Effects cards: 3 lightweight **text** styles (Filled, Dropdown, Chips with live gradient swatches) or 6 **live preview** styles (List, Grid, Strip, Carousel, Wheel, Album) that render a mini matrix of every mode with your current text, colors, and angle — click to apply. Optional text search; the editor's **Modes** list picks, orders and renames them for the card |
 | **Shared appearance axes** | **Shape** (Square / Rounded / Round) and **Size** apply consistently to every selector style — same design language as the other cards |
 | **Selection feedback** | The chosen item pulses while the command is in flight and settles once the lamp confirms |
 | **Active mode label** | Optional chip showing the currently active mode by name (handy when titles are hidden) |

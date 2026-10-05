@@ -109,3 +109,16 @@ test("an older clock config reads into the shared appearance names", async () =>
   for (const key of ["clock_preview_appearance", "clock_preview_overrides", "clock_appearance_presets"])
     assert.equal(key in config, false, key);
 });
+
+test("item labels rename items on one card without changing their key", async () => {
+  const { itemLabel, withItemLabel } = await import(
+    "../custom_components/yeelight_cube/www/card-config.js"
+  );
+  const config = withItemLabel({ title: "Clock" }, "Rainbow", "  Arc-en-ciel ");
+  assert.deepEqual(config, { title: "Clock", item_labels: { Rainbow: "Arc-en-ciel" } });
+  assert.equal(itemLabel(config, "Rainbow", "Rainbow"), "Arc-en-ciel");
+  assert.equal(itemLabel(config, "Mint", "Mint"), "Mint");
+  assert.equal(itemLabel({ item_labels: { Mint: "   " } }, "Mint", "Mint"), "Mint");
+  // Clearing the last label drops the option.
+  assert.deepEqual(withItemLabel(config, "Rainbow", ""), { title: "Clock" });
+});

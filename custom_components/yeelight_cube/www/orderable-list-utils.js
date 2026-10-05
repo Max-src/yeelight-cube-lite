@@ -81,6 +81,18 @@ export const orderableListStyles = css`
     user-select: none;
     padding: 0 2px;
   }
+  /* Inline rename: a text field per row (the editor's input style); a
+     renamed row also shows its built-in name. */
+  .orderable-list-rename {
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .orderable-list-builtin {
+    display: block;
+    margin-top: 2px;
+    font-size: 0.8em;
+    color: var(--secondary-text-color, #666);
+  }
   .orderable-list-name {
     flex: 1;
     font-size: 0.92em;
@@ -144,6 +156,10 @@ export const orderableListStyles = css`
  * @param {Function} [opts.onReset]   - () => void; shows a reset button when set
  * @param {string} [opts.addPlaceholder="Add an item…"]
  * @param {string} [opts.resetLabel="Reset to defaults"]
+ * @param {Function} [opts.onRename] - (name, label) => void; each row's name
+ *   becomes a field showing `labels[name]` (empty: the built-in name, shown
+ *   as its placeholder). Used for the cards' item_labels.
+ * @param {Object} [opts.labels] - the current labels, by item name
  */
 export function renderOrderableList({
   items,
@@ -157,6 +173,8 @@ export function renderOrderableList({
   displayItems = items,
   canReorder = true,
   indicatorsFor = () => [],
+  onRename,
+  labels = {},
 }) {
   canReorder =
     canReorder &&
@@ -250,7 +268,21 @@ export function renderOrderableList({
           ▼
         </button>
         <div class="orderable-list-content">
-          <span class="orderable-list-name">${labelFor(name)}</span>
+          ${onRename
+            ? html`<input
+                class="orderable-list-rename"
+                type="text"
+                aria-label="Name of ${labelFor(name)} on this card"
+                title="Built-in name: ${labelFor(name)}. Rename on this card (empty: built-in name)."
+                placeholder=${labelFor(name)}
+                .value=${labels[name] || ""}
+                @change=${(event) => onRename(name, event.target.value)}
+              />${labels[name]
+                ? html`<span class="orderable-list-builtin"
+                    >${labelFor(name)}</span
+                  >`
+                : ""}`
+            : html`<span class="orderable-list-name">${labelFor(name)}</span>`}
           ${indicatorsTemplate(indicatorsFor(name))}
         </div>
         <button class="remove" title="Remove" @click="${() => onRemove(idx)}">

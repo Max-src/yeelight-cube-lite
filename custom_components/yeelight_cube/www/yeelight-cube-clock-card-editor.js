@@ -285,26 +285,7 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
               ? renderModeSettingsSection(
                   "Browser Settings",
                   html`
-                    ${createToggleRow(
-                      "Customize visible styles",
-                      "custom_visible_styles",
-                      config.custom_visible_styles === true,
-                      (e) => this._onToggle(e, "custom_visible_styles"),
-                    )}
-                    ${config.custom_visible_styles === true
-                      ? renderModeSettingsSection(
-                          "Visible Styles",
-                          html`
-                            <div
-                              class="hint"
-                              style="font-size:0.9em;color:var(--secondary-text-color,#666);margin-bottom:4px;"
-                            >
-                              Styles shown in the selector, in this order.
-                            </div>
-                            ${this._renderVisibleStyleList()}
-                          `,
-                        )
-                      : ""}
+                    ${this._renderVisibleStyleList()}
                     ${renderStyleSelectorSettings(config, change, {
                       allowOriginal: true,
                       memory: (this._galleryMemory ||= {}),
@@ -366,36 +347,33 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
   }
 
   _renderVisibleStyleList() {
-    const list = this._visibleStyleList();
     const allStyles = clockStylesWithPresets(
       getClockStyles(true),
       clockPresetLibrary(this._hass),
     );
-    const allNames = allStyles.map(clockPresetKey);
     const labels = new Map(
       allStyles.map((style) => [
         clockPresetKey(style),
         style.name + (style.presetId ? " (Custom)" : ""),
       ]),
     );
-    return renderOrderableList({
+    return this._galleryItemsSettings({
+      noun: "style",
+      items: this._visibleStyleList(),
+      all: allStyles.map(clockPresetKey),
       labelFor: (key) => labels.get(key) || key,
-      items: list,
-      available: allNames.filter((name) => !list.includes(name)),
-      onUpdate: (l) => {
-        this._config = clockStyleVisibilityConfig(this._config, allStyles, l);
-        this.requestUpdate();
-        this._fireConfigChanged();
+      onList: (keys) => {
+        this._config = {
+          ...clockStyleVisibilityConfig(this._config, allStyles, keys),
+          custom_visible_styles: true,
+        };
       },
       onReset: () => {
         this._config = { ...this._config };
+        delete this._config.custom_visible_styles;
         delete this._config.visible_styles;
         delete this._config.hidden_clock_styles;
-        this.requestUpdate();
-        this._fireConfigChanged();
       },
-      addPlaceholder: "Add a style…",
-      resetLabel: "Reset to all styles",
     });
   }
 

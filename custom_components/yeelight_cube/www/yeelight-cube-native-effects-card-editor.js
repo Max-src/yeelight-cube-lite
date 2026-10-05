@@ -272,6 +272,22 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
             ? renderModeSettingsSection(
                 "Browser Settings",
                 html`
+                  ${this._galleryItemsSettings({
+                    noun: "effect",
+                    items: visible,
+                    all: names,
+                    labelFor: (name) =>
+                      names.includes(name)
+                        ? name
+                        : `${name} (currently unavailable)`,
+                    onList: (items) => {
+                      this._config = { ...this._config, visible_effects: items };
+                    },
+                    onReset: () => {
+                      this._config = { ...this._config };
+                      delete this._config.visible_effects;
+                    },
+                  })}
                   ${renderStyleSelectorSettings(
                     config,
                     change,
@@ -282,17 +298,6 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
                       renderAppearance: () => this._renderAppearance("gallery"),
                     },
                   )}
-                  ${renderOrderableList({
-                    items: visible,
-                    labelFor: (name) =>
-                      names.includes(name)
-                        ? name
-                        : `${name} (currently unavailable)`,
-                    available: names.filter((name) => !visible.includes(name)),
-                    onUpdate: (items) => this._change("visible_effects", items),
-                    onReset: () => this._change("visible_effects", undefined),
-                    addPlaceholder: "Add effect",
-                  })}
                 `,
               )
             : ""}

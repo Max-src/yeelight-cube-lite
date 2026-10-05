@@ -20,7 +20,7 @@ import {
   lampNotFoundNotice,
   NOTICE,
 } from "./card-shell.js";
-import { normalizeCardOptions } from "./card-config.js";
+import { normalizeCardOptions, itemLabel } from "./card-config.js";
 import { AngleControlMixin } from "./gradient-angle-control.js";
 import { ModeSelectorMixin } from "./gradient-mode-selector.js";
 import { GRADIENT_CARD_CSS } from "./gradient-card-styles.js";
@@ -827,7 +827,7 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
                 ? html`<div style="display:flex;justify-content:${_alignToJustify(labelAlign)};width:100%;">
                      <div class="gc-active-mode-label" id="gc-active-mode-label" title="Currently active mode" style="margin:0;">
                        <span class="gc-aml-dot"></span>
-                       <span class="gc-aml-text">${colorMode}</span>
+                       <span class="gc-aml-text">${itemLabel(this.config, colorMode, colorMode)}</span>
                      </div>
                    </div>`
                 : nothing
@@ -990,7 +990,8 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
     const text = this.shadowRoot?.querySelector(
       "#gc-active-mode-label .gc-aml-text",
     );
-    const mode = this._getCurrentMode() || "—";
+    const current = this._getCurrentMode();
+    const mode = current ? itemLabel(this.config, current, current) : "—";
     if (text && text.textContent !== mode) text.textContent = mode;
   }
 

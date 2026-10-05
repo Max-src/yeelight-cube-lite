@@ -20,6 +20,8 @@
  *   ></yc-collection-gallery>`
  *
  * Items: `dataMode` is the key, `name` is searched and listed (dropdown),
+ * and the card's `item_labels` rename items for display (itemLabel; search
+ * matches the label and the built-in name),
  * `title` captions the previews, `label` is an optional shorter button text
  * (filled, chips), `swatch` a CSS background shown by chips, `colorData` the
  * 100-pixel preview frame.
@@ -86,6 +88,7 @@ import {
 import { escapeHtml } from "./html-escape-utils.js";
 import { defineOnce } from "./card-registration.js";
 import { actionButtonStyles } from "./action-button-utils.js";
+import { itemLabel, itemMatchesQuery } from "./card-config.js";
 
 // Class prefix of the album markup (album-view-coverflow.js).
 const ALBUM = "collection";
@@ -190,7 +193,21 @@ class YcCollectionGallery extends LitElement {
   get visibleItems() {
     const query =
       this.config.show_search === false ? "" : this.query.trim().toLowerCase();
-    return this.items.filter((item) => item.name.toLowerCase().includes(query));
+    return this.items
+      .map((item) => {
+        const label = itemLabel(this.config, item.dataMode, null);
+        return label
+          ? { ...item, name: label, title: label, label, builtinName: item.name }
+          : item;
+      })
+      .filter((item) =>
+        itemMatchesQuery(
+          this.config,
+          item.dataMode,
+          item.builtinName || item.name,
+          query,
+        ),
+      );
   }
 
   get activeKey() {

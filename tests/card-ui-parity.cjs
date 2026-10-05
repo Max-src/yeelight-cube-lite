@@ -3801,9 +3801,10 @@ const server = http.createServer(async (request, response) => {
         editor._open = { effects: true };
         editor.requestUpdate();
         await editor.updateComplete;
-        const unavailable = editor.shadowRoot.textContent.includes(
-          "Twinkle (currently unavailable)",
-        );
+        // Rows are rename fields: the built-in label is their placeholder.
+        const unavailable = [
+          ...editor.shadowRoot.querySelectorAll(".orderable-list-rename"),
+        ].some((field) => field.placeholder === "Twinkle (currently unavailable)");
         editor._change("show_experimental", true);
         editor.hass = {
           ...editor.hass,

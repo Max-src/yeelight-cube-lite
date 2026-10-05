@@ -12,6 +12,7 @@ import {
 } from "./shared-lamp-settings.js";
 import { renderClockFrame, flipMatrixVertical } from "./clock-preview-utils.js";
 import { effectSupportsFreeze } from "./native-effect-preview.js";
+import { itemLabel } from "./card-config.js";
 
 /** Clock domain bridge. Preset-owned RGB stays distinct from free overrides.
  * No DOM bindings or queue state belong here; callbacks use the card's domain
@@ -25,12 +26,12 @@ export function createClockCardAdapter(card) {
     items: () =>
       card._controlStyles().map((style) => ({
         key: clockPresetKey(style),
-        title: style.name,
+        title: itemLabel(card.config, clockPresetKey(style), style.name),
       })),
     navigationItems: () =>
       card._shownStyles().map((style) => ({
         key: clockPresetKey(style),
-        title: style.name,
+        title: itemLabel(card.config, clockPresetKey(style), style.name),
       })),
     current: () => clockPresetKey(card._currentStyle()),
     available: (name) =>

@@ -23,7 +23,6 @@ import {
   createSliderRow,
 } from "./form-row-utils.js";
 import {
-  renderOrderableList,
   orderableListStyles,
 } from "./orderable-list-utils.js";
 import { GRADIENT_MODES } from "./yeelight-cube-gradient-card.js";
@@ -146,30 +145,35 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
     super.disconnectedCallback();
   }
 
-  // Ordered list of modes shown in the selector (all modes when unset).
+  // The modes the card shows, in order (the card's own rule, see
+  // YeelightCubeGradientCard._orderedModes: its list only when customised).
   _visibleModeList() {
     const list = this._config?.visible_modes;
-    return Array.isArray(list) && list.length ? list : [...GRADIENT_MODES];
+    return this._config?.custom_visible_modes === true &&
+      Array.isArray(list) &&
+      list.length
+      ? list.filter((mode) => GRADIENT_MODES.includes(mode))
+      : [...GRADIENT_MODES];
   }
 
   _renderVisibleModeList() {
-    const list = this._visibleModeList();
-    return renderOrderableList({
-      items: list,
-      available: GRADIENT_MODES.filter((n) => !list.includes(n)),
-      onUpdate: (l) => {
-        this._config = { ...this._config, visible_modes: l };
-        this._fireConfigChanged();
-        this.requestUpdate();
+    return this._galleryItemsSettings({
+      noun: "mode",
+      items: this._visibleModeList(),
+      all: [...GRADIENT_MODES],
+      labelFor: (mode) => mode,
+      onList: (modes) => {
+        this._config = {
+          ...this._config,
+          custom_visible_modes: true,
+          visible_modes: modes,
+        };
       },
       onReset: () => {
         this._config = { ...this._config };
+        delete this._config.custom_visible_modes;
         delete this._config.visible_modes;
-        this._fireConfigChanged();
-        this.requestUpdate();
       },
-      addPlaceholder: "Add a mode…",
-      resetLabel: "Reset to all modes",
     });
   }
 
@@ -387,32 +391,7 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
               </label>
             </div>
 
-            ${createToggleRow(
-              "Customize visible modes",
-              "custom_visible_modes",
-              cfg.custom_visible_modes === true,
-              (e) => {
-                this._config = {
-                  ...this._config,
-                  custom_visible_modes: e.target.checked,
-                };
-                this._fireConfigChanged();
-                this.requestUpdate();
-              },
-            )}
-            ${cfg.custom_visible_modes === true
-              ? renderModeSettingsSection(
-                  "Visible Modes",
-                  html`
-                    <div
-                      style="font-size:0.9em;color:var(--secondary-text-color,#666);margin-bottom:4px;"
-                    >
-                      Modes shown in the selector, in this order.
-                    </div>
-                    ${this._renderVisibleModeList()}
-                  `,
-                )
-              : ""}
+            ${this._renderVisibleModeList()}
             <!-- The shared gallery settings (the same as the Clock and
                  Native Effects editors). -->
             ${renderStyleSelectorSettings(cfg, (key, value) => this._setOption(key, value), {

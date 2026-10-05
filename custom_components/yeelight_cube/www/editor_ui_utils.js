@@ -12,6 +12,8 @@ import {
   createButtonGroupChangeHandler,
 } from "./button-group-utils.js";
 import { createToggleRow, createSliderRow } from "./form-row-utils.js";
+import { renderOrderableList } from "./orderable-list-utils.js";
+import { withItemLabel } from "./card-config.js";
 import { normalizeButtonShape } from "./carousel-utils.js";
 
 /**
@@ -288,6 +290,64 @@ export const YeelightEditorMixin = (Base) =>
       this._config = config;
       this.requestUpdate();
       this._fireConfigChanged();
+    }
+
+    /**
+     * The items of the card's gallery: which ones, in which order, and their
+     * names on this card (item_labels). The same in every editor with a
+     * gallery: every item is listed (names can always be edited); reordering,
+     * adding or removing makes the list the card's own, and Reset shows every
+     * item again (names are kept).
+     *
+     * @param {Object} options
+     * @param {string} options.noun - what the items are ("style", "mode", ...)
+     * @param {string[]} options.items - the keys the card shows, in order
+     * @param {string[]} options.all - every key the card could show
+     * @param {Function} options.labelFor - (key) => its built-in label
+     * @param {Function} options.onList - (keys) => store the card's own list
+     * @param {Function} options.onReset - () => back to every item
+     * @param {Function} [options.indicatorsFor] - (key) => row badges
+     */
+    _galleryItemsSettings({
+      noun,
+      items,
+      all,
+      labelFor,
+      onList,
+      onReset,
+      indicatorsFor,
+    }) {
+      return renderModeSettingsSection(
+        `${noun.charAt(0).toUpperCase()}${noun.slice(1)}s`,
+        html`<div class="hint">
+            Shown in this order. Edit a name to rename it on this card; Reset
+            shows every ${noun} again.
+          </div>
+          ${renderOrderableList({
+            items,
+            available: all.filter((key) => !items.includes(key)),
+            labelFor,
+            indicatorsFor,
+            labels: this._config?.item_labels || {},
+            onRename: (key, label) => {
+              this._config = withItemLabel(this._config, key, label);
+              this.requestUpdate();
+              this._fireConfigChanged();
+            },
+            onUpdate: (keys) => {
+              onList(keys);
+              this.requestUpdate();
+              this._fireConfigChanged();
+            },
+            onReset: () => {
+              onReset();
+              this.requestUpdate();
+              this._fireConfigChanged();
+            },
+            addPlaceholder: `Add a ${noun}…`,
+            resetLabel: `Show all ${noun}s`,
+          })}`,
+      );
     }
 
     /**

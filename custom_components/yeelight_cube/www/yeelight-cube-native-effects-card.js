@@ -68,6 +68,7 @@ import {
   paintCellBackground,
 } from "./matrix-animator.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
+import { itemLabel } from "./card-config.js";
 
 /** Native host: catalogue/color policy and frame painting. Adapter mapping is
  * in native-card-adapter; shared controllers own commands and selection, and
@@ -795,7 +796,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
         ${this.config.show_preview && effect
           ? html`<section class="current yc-stack yc-controls">
               <div class="current-heading">
-                <h3>${effect.name}</h3>
+                <h3>${itemLabel(this.config, effect.name, effect.name)}</h3>
                 <span class="state-label"
                   >${attrs.content_mode === "Native Effect" &&
                   attrs.native_effect === effect.name &&
@@ -869,6 +870,10 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       .disabled=${this._busy}
       searchLabel="Search native effects"
       .onSelect=${(name) => this._controls.choose(name)}
+      .onQuery=${(query) => {
+        this._searchQuery = query;
+        this._controls?.notify();
+      }}
       @gallery-updated=${() => this._refreshPreviews()}
     ></yc-collection-gallery>`;
   }

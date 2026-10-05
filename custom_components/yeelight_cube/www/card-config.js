@@ -10,7 +10,8 @@
  *   preview_overrides / appearance_presets (preview-appearance.js),
  *   show_gallery, style_selector_style, preview_show_titles,
  *   show_brightness and the slider_* appearance of the lamp sliders,
- *   show_lamp_status (the shared card header, card-shell.js).
+ *   show_lamp_status (the shared card header, card-shell.js),
+ *   item_labels (display names of a gallery's items, see itemLabel).
  *
  * A card's older names are aliases: normalizeCardOptions() moves them to the
  * shared name (an explicitly set shared name wins), so existing dashboards keep
@@ -109,5 +110,37 @@ export function normalizeCardOptions(config, card) {
     delete result[legacy];
   }
   for (const key of retired) delete result[key];
+  return result;
+}
+
+/**
+ * The name a card shows for an item: the card's own label for it
+ * (`item_labels: {key: "My name"}`), else its built-in name. A label only
+ * changes what this card displays: the item keeps its key, so favourites,
+ * rotations and the lamp commands are unaffected.
+ */
+export function itemLabel(config, key, name) {
+  const label = config?.item_labels?.[key];
+  return typeof label === "string" && label.trim() ? label.trim() : name;
+}
+
+/** Whether an item matches a gallery search: its label on this card or its
+ * built-in name contains `query` (case-insensitive; empty matches all). */
+export function itemMatchesQuery(config, key, name, query) {
+  const text = (query || "").trim().toLowerCase();
+  if (!text) return true;
+  return [name, itemLabel(config, key, name)].some((value) =>
+    String(value).toLowerCase().includes(text),
+  );
+}
+
+/** `config` with the label of `key` set (an empty label removes it). */
+export function withItemLabel(config, key, label) {
+  const labels = { ...(config?.item_labels || {}) };
+  const text = typeof label === "string" ? label.trim() : "";
+  if (text) labels[key] = text;
+  else delete labels[key];
+  const result = { ...config, item_labels: labels };
+  if (!Object.keys(labels).length) delete result.item_labels;
   return result;
 }
