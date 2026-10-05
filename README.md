@@ -230,6 +230,7 @@ server-side favourites rotation that continues after you close the dashboard.
   <tr>
     <td valign="top"><img src="images/Cards/generated/clock-mobile.png" alt="Clock - Narrow dashboard column" width="280"><br>Narrow dashboard column</td>
     <td valign="top"><img src="images/Cards/generated/clock-offline.png" alt="Clock - Local previews while the lamp is unavailable" width="280"><br>Local previews while the lamp is unavailable</td>
+    <td valign="top"><img src="images/Cards/generated/clock-frame.png" alt="Clock - Card title, lamp status and no card background" width="280"><br>Card title, lamp status and no card background</td>
   </tr>
 </table>
 <!-- card-docs:clock:variations:end -->
@@ -328,6 +329,7 @@ available where supported. Experimental effects require the lamp's
   <tr>
     <td valign="top"><img src="images/Cards/generated/native-effects-mobile.png" alt="Native Effects - Narrow dashboard column" width="280"><br>Narrow dashboard column</td>
     <td valign="top"><img src="images/Cards/generated/native-effects-offline.png" alt="Native Effects - Local previews while the lamp is unavailable" width="280"><br>Local previews while the lamp is unavailable</td>
+    <td valign="top"><img src="images/Cards/generated/native-effects-frame.png" alt="Native Effects - Card title, lamp status and no card background" width="280"><br>Card title, lamp status and no card background</td>
   </tr>
 </table>
 <!-- card-docs:native-effects:variations:end -->
@@ -432,6 +434,7 @@ A live dashboard card that mirrors the lamp's current state with real-time matri
   <tr>
     <td valign="top"><img src="images/Cards/generated/lamp-preview-overview.png" alt="Preview - Light theme with brightness and color adjustments" width="280"><br>Light theme with brightness and color adjustments</td>
     <td valign="top"><img src="images/Cards/generated/lamp-preview-dark.png" alt="Preview - Dark theme with round pixels" width="280"><br>Dark theme with round pixels</td>
+    <td valign="top"><img src="images/Cards/generated/lamp-preview-frame.png" alt="Preview - Card title, lamp status and no card background" width="280"><br>Card title, lamp status and no card background</td>
   </tr>
 </table>
 <!-- card-docs:lamp-preview:variations:end -->
