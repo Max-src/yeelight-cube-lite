@@ -536,11 +536,24 @@ test("shared selectors bind text, preview and carousel navigation without duplic
   item.onclick = undefined;
   bindStyleSelectorEvents(root, { ...options, style: "preview-wheel" });
   assert.equal(item.onclick, undefined);
-  for (const file of [
-    "yeelight-cube-clock-card.js",
-    "yeelight-cube-native-effects-card.js",
-  ])
-    assert.match(sourceFor(file), /style-browser-ui.js/);
+  // Every card declares the shared gallery the same way (collection-gallery.js):
+  // the same core bindings; cards with favourites and animated previews also
+  // pass the mode-controls model and repaint on gallery-updated.
+  const core = [".config", ".items", ".active", ".disabled", "searchLabel", ".onSelect"];
+  for (const [file, extra] of [
+    ["yeelight-cube-clock-card.js", [".model", "@gallery-updated"]],
+    ["yeelight-cube-native-effects-card.js", [".model", "@gallery-updated"]],
+    ["gradient-mode-selector.js", []],
+  ]) {
+    const source = sourceFor(file);
+    assert.match(source, /collection-gallery\.js/);
+    const tag = source.match(/<yc-collection-gallery([\s\S]*?)><\/yc-collection-gallery>/);
+    assert.ok(tag, `${file}: <yc-collection-gallery> in its template`);
+    const bound = [...tag[1].matchAll(/^\s*([.@?]?[A-Za-z-]+)=/gm)].map((m) => m[1]);
+    for (const name of [...core, ...extra])
+      assert.ok(bound.includes(name), `${file}: ${name}`);
+    assert.doesNotMatch(source, /createElement\("yc-collection-gallery"\)/);
+  }
 });
 
 test("named effects exclude raw experimental mode numbers even when explicitly visible", () => {
@@ -720,7 +733,10 @@ test("native editor sections follow the card and use shared conditional controls
   assert.equal(records.matrices, undefined);
   assert.match(source, /yeelight-preview-appearance-editor\s+profile="native"/);
   assert.equal(records.selector, true);
-  assert.equal(records.selectorConfig.style_selector_style, "preview-grid");
+  // The editor passes its config as is: the shared settings resolve the
+  // default layout exactly like the gallery (gallerySelectorStyle).
+  assert.equal(records.selectorConfig, editor._config);
+  assert.match(sourceFor("style-selector-ui.js"), /gallerySelectorStyle\(config\)/);
   assert.equal(records.selectorConfig.items_per_page, undefined);
   assert.equal(records.orientation, true);
   Object.keys(records).forEach((key) => delete records[key]);

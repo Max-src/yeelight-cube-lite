@@ -427,7 +427,7 @@ const server = http.createServer(async (request, response) => {
     const browserState = (id) =>
       page.evaluate((id) => {
         const card = document.querySelector(id);
-        const browser = card.shadowRoot.querySelector("yeelight-style-browser");
+        const browser = card.shadowRoot.querySelector("yc-collection-gallery");
         const colors = card.shadowRoot.querySelector("yeelight-color-mode");
         return {
           page: browser.page,
@@ -459,7 +459,7 @@ const server = http.createServer(async (request, response) => {
     );
     await waitFor(
       () =>
-        document.querySelector("#one").shadowRoot.querySelector("yeelight-style-browser")
+        document.querySelector("#one").shadowRoot.querySelector("yc-collection-gallery")
           .activeKey === "Tide",
       null,
       "rotation step highlighted",
@@ -488,7 +488,7 @@ const server = http.createServer(async (request, response) => {
     );
     await waitFor(
       () =>
-        document.querySelector("#two").shadowRoot.querySelector("yeelight-style-browser")
+        document.querySelector("#two").shadowRoot.querySelector("yc-collection-gallery")
           .activeKey === "Tide",
       null,
       "after stop, dashboard two follows again",

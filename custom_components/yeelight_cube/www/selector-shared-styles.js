@@ -12,13 +12,16 @@
 // and the shape/columns overrides for the preview shell; the preview styles
 // themselves render through gallery-display-utils / carousel-utils.
 
-export const TEXT_SELECTOR_STYLES = ["filled", "dropdown"];
+// The gallery layouts (collection-gallery.js): the one list every card,
+// editor and config resolver reads.
+export const TEXT_SELECTOR_STYLES = ["filled", "dropdown", "chips"];
 export const PREVIEW_SELECTOR_STYLES = [
   "preview-list",
   "preview-grid",
   "preview-strip",
   "preview-carousel",
   "preview-wheel",
+  "preview-album",
 ];
 
 /**
@@ -51,33 +54,48 @@ export function selectorShapeToCarouselButtonShape(shape) {
 }
 
 export const selectorSharedStyles = `
-  /* Clock/Native text selector buttons render through the shared
-     action-button system (action-button-utils.js) so they match the
-     color-mode buttons. The gradient card still uses the legacy filled
-     buttons below. */
+  /* Text selectors (collection-gallery.js): "filled" renders through the
+     shared action-button system (action-button-utils.js) so it matches the
+     color-mode buttons; "dropdown" and "chips" are styled here. */
 
-  /* Legacy filled style — still used by the gradient card's color-mode
-     selector. Soft pill background, no border; solid primary when active. */
-  .mode-btn-filled {
-    padding: 6px 14px;
-    border: none;
-    background: var(--secondary-background-color, #e7ecf0);
-    border-radius: 8px;
-    cursor: pointer;
-    font-size: 0.85em;
-    font-weight: 500;
+  /* Chips: a pill per item with its swatch (a gradient, a palette, ...). */
+  .gc-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .mode-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px 4px 5px;
+    border: 1px solid var(--divider-color, #d0d7de);
+    border-radius: 999px;
+    background: var(--card-background-color, #fff);
     color: var(--primary-text-color, #24292f);
-    transition: all 0.2s ease;
-    min-width: 60px;
+    font: inherit;
+    font-size: 0.85em;
+    cursor: pointer;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
   }
-
-  .mode-btn-filled:hover {
-    background: var(--disabled-text-color, #d0d7de);
+  .mode-chip:hover {
+    border-color: color-mix(in srgb, var(--primary-color, #03a9f4) 55%, transparent);
   }
-
-  .mode-btn-filled.active {
-    background: var(--primary-color, #0969da);
-    color: var(--text-primary-color, #fff);
+  .mode-chip.active {
+    border-color: var(--primary-color, #03a9f4);
+    box-shadow: inset 0 0 0 1px var(--primary-color, #03a9f4);
+    font-weight: 600;
+  }
+  .mode-chip-swatch {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+  }
+  .mode-chip[data-favourite="true"] .mode-chip-label::before {
+    content: "★ ";
+    color: var(--warning-color, #f0a202);
   }
 
   /* Dropdown style */
@@ -141,14 +159,18 @@ export const selectorSharedStyles = `
     font-size: calc(1em * var(--gc-sel-scale, 1));
   }
   .gc-selector[data-shape="square"] .shared-action-button,
-  .gc-selector[data-shape="square"] .mode-btn-filled,
   .gc-selector[data-shape="square"] .mode-select,
   .gc-selector[data-shape="square"] .mode-chip,
   .gc-selector[data-shape="square"] .mode-chip-swatch {
     border-radius: 0 !important;
   }
+  .gc-selector[data-shape="rounded"] .mode-chip {
+    border-radius: 8px;
+  }
+  .gc-selector[data-shape="rounded"] .mode-chip-swatch {
+    border-radius: 4px;
+  }
   .gc-selector[data-shape="round"] .shared-action-button,
-  .gc-selector[data-shape="round"] .mode-btn-filled,
   .gc-selector[data-shape="round"] .mode-select {
     border-radius: 999px !important;
   }

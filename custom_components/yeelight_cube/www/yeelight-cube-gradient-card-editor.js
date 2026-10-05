@@ -14,9 +14,9 @@ import {
   sharedEditorStyles,
   YeelightEditorMixin,
   renderModeSettingsSection,
-  renderSelectorShapeRows,
 } from "./editor_ui_utils.js";
 import { normalizeCardOptions } from "./card-config.js";
+import { renderStyleSelectorSettings } from "./style-selector-ui.js";
 import {
   formRowStyles,
   createToggleRow,
@@ -41,10 +41,6 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
     super();
     this._config = {};
     this._open = {};
-    // Remember the last style chosen within each family so toggling the
-    // Selector Type back and forth restores the user's previous pick.
-    this._lastTextStyle = "filled";
-    this._lastPreviewStyle = "preview-list";
   }
 
   setConfig(config) {
@@ -141,13 +137,6 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
     }
     if (this._config.panel_toggle_style === "segmented") {
       this._config.panel_toggle_style = "tabs";
-    }
-    // Seed the per-family style memory from the loaded config
-    const _style = this._config.style_selector_style || "preview-list";
-    if (_style.startsWith("preview-")) {
-      this._lastPreviewStyle = _style;
-    } else {
-      this._lastTextStyle = _style;
     }
     // Force a re-render after config is set to avoid template errors
     this.requestUpdate();
@@ -398,53 +387,6 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
               </label>
             </div>
 
-            <!-- Selector Type: pick the family first, then only that family's
-                 style picker + settings are shown, so the visible options
-                 always match the active selector. -->
-            <div class="form-row">
-              <label>Selector Type</label>
-              ${createButtonGroup(
-                [
-                  {
-                    value: "text",
-                    label: "Text",
-                    title: "Lightweight buttons — no preview computation",
-                  },
-                  {
-                    value: "preview",
-                    label: "Live Preview",
-                    title:
-                      "Live mini-matrix of every mode with your text, colors and angle",
-                  },
-                ],
-                (cfg.style_selector_style || "preview-list").startsWith(
-                  "preview-",
-                )
-                  ? "preview"
-                  : "text",
-                createButtonGroupChangeHandler("__selector_type", (value) => {
-                  const current = this._config.style_selector_style || "";
-                  const isPreview = current.startsWith("preview-");
-                  // Only switch style when crossing families; preserve the
-                  // last-chosen style within a family where possible.
-                  if (value === "preview" && !isPreview) {
-                    this._config = {
-                      ...this._config,
-                      style_selector_style:
-                        this._lastPreviewStyle || "preview-list",
-                    };
-                    this._fireConfigChanged();
-                  } else if (value === "text" && isPreview) {
-                    this._config = {
-                      ...this._config,
-                      style_selector_style: this._lastTextStyle || "filled",
-                    };
-                    this._fireConfigChanged();
-                  }
-                }),
-              )}
-            </div>
-
             ${createToggleRow(
               "Customize visible modes",
               "custom_visible_modes",
@@ -471,245 +413,15 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
                   `,
                 )
               : ""}
-            ${!(cfg.style_selector_style || "preview-list").startsWith(
-              "preview-",
-            )
-              ? html`
-                  <div class="form-row">
-                    <label>Text Style</label>
-                    ${createButtonGroup(
-                      [
-                        { value: "filled", label: "Filled" },
-                        { value: "dropdown", label: "Dropdown" },
-                        {
-                          value: "chips",
-                          label: "Chips",
-                          title:
-                            "Chips with a live gradient swatch per mode (follows colors + angle)",
-                        },
-                      ],
-                      cfg.style_selector_style || "filled",
-                      createButtonGroupChangeHandler(
-                        "style_selector_style",
-                        (value) => {
-                          this._lastTextStyle = value;
-                          this._config = {
-                            ...this._config,
-                            style_selector_style: value,
-                          };
-                          this._fireConfigChanged();
-                        },
-                      ),
-                    )}
-                  </div>
-                `
-              : html`
-                  <div class="form-row">
-                    <label>Preview Style</label>
-                    ${createButtonGroup(
-                      [
-                        {
-                          value: "preview-list",
-                          label: "List",
-                          title: "Responsive list of live mode previews",
-                        },
-                        {
-                          value: "preview-grid",
-                          label: "Grid",
-                          title: "Fixed two-column grid of live mode previews",
-                        },
-                        {
-                          value: "preview-strip",
-                          label: "Strip",
-                          title: "Horizontal scrollable strip of mini previews",
-                        },
-                        {
-                          value: "preview-carousel",
-                          label: "Carousel",
-                          title:
-                            "One preview at a time with arrows, dots and swipe navigation",
-                        },
-                        {
-                          value: "preview-wheel",
-                          label: "Wheel",
-                          title: "iOS-style rotating picker with live previews",
-                        },
-                      ],
-                      cfg.style_selector_style || "preview-list",
-                      createButtonGroupChangeHandler(
-                        "style_selector_style",
-                        (value) => {
-                          this._lastPreviewStyle = value;
-                          this._config = {
-                            ...this._config,
-                            style_selector_style: value,
-                          };
-                          this._fireConfigChanged();
-                        },
-                      ),
-                    )}
-                  </div>
-                `}
-
-            <!-- Mode-specific settings: shown immediately after the style
-                 picker so the conditional block sits right next to the option
-                 that triggers it. -->
-            ${(cfg.style_selector_style || "preview-list").startsWith("preview-")
-              ? cfg.style_selector_style === "preview-wheel"
-                ? renderModeSettingsSection(
-                    "Wheel Mode Settings",
-                    html`
-                      <div class="form-row">
-                        <label>Wheel Navigation Position</label>
-                        ${createButtonGroup(
-                          [
-                            {
-                              value: "none",
-                              label: "None",
-                              title: "Hide navigation buttons",
-                            },
-                            {
-                              value: "bottom",
-                              label: "Bottom",
-                              title: "Buttons at bottom center",
-                            },
-                            {
-                              value: "sides",
-                              label: "Sides",
-                              title: "Buttons on left/right of center item",
-                            },
-                          ],
-                          cfg.wheel_nav_position || "bottom",
-                          createButtonGroupChangeHandler(
-                            "wheel_nav_position",
-                            (value) => {
-                              this._config = {
-                                ...this._config,
-                                wheel_nav_position: value,
-                              };
-                              this._fireConfigChanged();
-                            },
-                          ),
-                        )}
-                      </div>
-                      <div class="form-row">
-                        <label>Wheel Height</label>
-                        <div
-                          style="display: flex; align-items: center; gap: 8px;"
-                        >
-                          <input
-                            id="wheel_height"
-                            type="range"
-                            min="65"
-                            max="400"
-                            step="10"
-                            .value="${cfg.wheel_height || 300}"
-                            @input="${this._valueChanged}"
-                            style="flex: 1;"
-                          />
-                          <span
-                            style="min-width: 45px; text-align: right; font-size: 0.9em; color: var(--secondary-text-color, #666);"
-                          >
-                            ${cfg.wheel_height || 300}px
-                          </span>
-                        </div>
-                      </div>
-                      ${createToggleRow(
-                        "Highlight Active Mode",
-                        "highlight_active_mode",
-                        cfg.highlight_active_mode !== false,
-                        (e) => this._valueChanged(e),
-                      )}
-                    `,
-                  )
-                : cfg.style_selector_style === "preview-carousel"
-                  ? renderModeSettingsSection(
-                      "Carousel Mode Settings",
-                      html`
-                        ${createToggleRow(
-                          "Wrap Navigation (Infinite Loop)",
-                          "gallery_wrap_navigation",
-                          cfg.gallery_wrap_navigation === true,
-                          (e) => this._valueChanged(e),
-                        )}
-                      `,
-                    )
-                  : cfg.style_selector_style === "preview-strip"
-                    ? renderModeSettingsSection(
-                        "Strip Mode Settings",
-                        html`
-                          ${createToggleRow(
-                            "Highlight Active Mode",
-                            "highlight_active_mode",
-                            cfg.highlight_active_mode !== false,
-                            (e) => this._valueChanged(e),
-                          )}
-                        `,
-                      )
-                    : renderModeSettingsSection(
-                        cfg.style_selector_style === "preview-grid"
-                          ? "Grid Mode Settings"
-                          : "List Mode Settings",
-                        html`
-                          ${createToggleRow(
-                            "Highlight Active Mode",
-                            "highlight_active_mode",
-                            cfg.highlight_active_mode !== false,
-                            (e) => this._valueChanged(e),
-                          )}
-                          ${createSliderRow(
-                            "Items Per Page (0 = no pagination)",
-                            cfg.items_per_page || 0,
-                            { min: 0, max: 9, step: 1 },
-                            (e) => {
-                              this._config = {
-                                ...this._config,
-                                items_per_page: parseInt(e.target.value, 10),
-                              };
-                              this._fireConfigChanged();
-                            },
-                          )}
-                        `,
-                      )
-              : ""}
-
-            <!-- Shared appearance axes: apply to EVERY selector style -->
-            ${renderSelectorShapeRows(
-              cfg,
-              (key, value) => {
-                this._config = { ...this._config, [key]: value };
-                this._fireConfigChanged();
-              },
-              {
-                showButtonShape:
-                  cfg.style_selector_style === "preview-carousel" ||
-                  cfg.style_selector_style === "preview-wheel",
-              },
-            )}
-            ${createSliderRow(
-              "Size",
-              cfg.gallery_preview_size || 50,
-              { min: 50, max: 100, step: 1 },
-              (e) => {
-                this._config = {
-                  ...this._config,
-                  gallery_preview_size: e.target.value,
-                };
-                this._fireConfigChanged();
-              },
-              "%",
-            )}
-            ${this._renderAppearance("gallery")}
-            ${(cfg.style_selector_style || "preview-list").startsWith("preview-")
-              ? html`
-                  ${createToggleRow(
-                    "Show Titles",
-                    "preview_show_titles",
-                    cfg.preview_show_titles !== false,
-                    (e) => this._valueChanged(e),
-                  )}
-                `
-              : ""}
+            <!-- The shared gallery settings (the same as the Clock and
+                 Native Effects editors). -->
+            ${renderStyleSelectorSettings(cfg, (key, value) => this._setOption(key, value), {
+              allowChips: true,
+              noun: "Mode",
+              memory: (this._galleryMemory ||= {}),
+              defaultSize: 50,
+              renderAppearance: () => this._renderAppearance("gallery"),
+            })}
         `)}
 
         ${this._section("panel", "Apply to Whole Panel", html`

@@ -10,7 +10,7 @@ import { LitElement, html, css, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
 import { ModeControlsController } from "./mode-controls-controller.js";
 import { PreviewVisibility } from "./preview-visibility.js";
 import { SUPERSEDED } from "./card-command-controller.js";
-import "./style-browser-ui.js";
+import { collectionGalleryStyles } from "./collection-gallery.js";
 import "./color-mode-ui.js";
 import { colorModeSelectorStyles } from "./color-mode-selector-utils.js";
 import { cardLayoutStyles } from "./card-layout-utils.js";
@@ -41,7 +41,6 @@ import {
   renderMatrixPreview,
   markFavouriteModes,
 } from "./gallery-display-utils.js";
-import { styleSelectorStyles } from "./style-selector-utils.js";
 import { BLACK_THRESHOLD } from "./matrix-const.js";
 import { actionButtonStyles } from "./action-button-utils.js";
 import {
@@ -63,7 +62,6 @@ import {
   NOTICE,
 } from "./card-shell.js";
 import { LampSliders } from "./lamp-sliders.js";
-import { paginationStyles } from "./pagination-utils.js";
 import {
   createRafLoop,
   createVisibilityTracker,
@@ -73,7 +71,7 @@ import { defineOnce, registerCustomCard } from "./card-registration.js";
 
 /** Native host: catalogue/color policy and frame painting. Adapter mapping is
  * in native-card-adapter; shared controllers own commands and selection, and
- * style-browser-ui/color-mode-ui own their DOM, subscriptions and bindings.
+ * collection-gallery/color-mode-ui own their DOM, subscriptions and bindings.
  */
 class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
   static editor = [
@@ -278,7 +276,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
   }
   async getUpdateComplete() {
     const complete = await super.getUpdateComplete();
-    await this.shadowRoot.querySelector("yeelight-style-browser")
+    await this.shadowRoot.querySelector("yc-collection-gallery")
       ?.updateComplete;
     await this.shadowRoot.querySelector("yeelight-color-mode")?.updateComplete;
     return complete;
@@ -843,29 +841,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
             </section>`
           : ""}
         ${this.config.show_gallery && Array.isArray(attrs.native_effect_catalog)
-          ? html`<section class="browser">
-              <yeelight-style-browser
-                .config=${this.config}
-                .active=${this._controls.displayed("key", effect?.name)}
-                .model=${this._controls}
-                .disabled=${this._busy}
-                .items=${all.map((item) => ({
-                  ...item,
-                  dataMode: item.name,
-                  title: item.name,
-                  badge: this._effectBadge(item),
-                  colorData: nativeEffectFrame(item, this._attrs(), 0),
-                  favourite: this._controls.hasFavourite(
-                    item.name,
-                    this._colorModeKey(),
-                  ),
-                }))}
-                searchLabel="Search native effects"
-                searchClass="search"
-                .onSelect=${(name) => this._controls.choose(name)}
-                @browser-updated=${() => this._refreshPreviews()}
-              ></yeelight-style-browser>
-            </section>`
+          ? this._gallery(effect, all)
           : ""}
         <yeelight-mode-controls
           area="collections"
@@ -875,11 +851,30 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     );
   }
 
+  // The shared gallery (collection-gallery.js), used exactly like the Clock
+  // card's.
+  _gallery(effect, all) {
+    return html`<yc-collection-gallery
+      .config=${this.config}
+      .items=${all.map((item) => ({
+        ...item,
+        dataMode: item.name,
+        title: item.name,
+        badge: this._effectBadge(item),
+        colorData: nativeEffectFrame(item, this._attrs(), 0),
+        favourite: this._controls.hasFavourite(item.name, this._colorModeKey()),
+      }))}
+      .active=${this._controls.displayed("key", effect?.name)}
+      .model=${this._controls}
+      .disabled=${this._busy}
+      searchLabel="Search native effects"
+      .onSelect=${(name) => this._controls.choose(name)}
+      @gallery-updated=${() => this._refreshPreviews()}
+    ></yc-collection-gallery>`;
+  }
+
   updated() {
     this._controls.update();
-    this.dataset.highlightActive = String(
-      this.config.highlight_active_mode !== false,
-    );
     this.dataset.favStars = String(this.config.favourites_show_stars !== false);
     this._refreshPreviews();
   }
@@ -976,8 +971,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     unsafeCSS(colorPickerStyles),
     unsafeCSS(actionButtonStyles),
     unsafeCSS(sliderControlStyles),
-    unsafeCSS(styleSelectorStyles),
-    unsafeCSS(paginationStyles),
+    unsafeCSS(collectionGalleryStyles),
     unsafeCSS(colorModeSelectorStyles),
     css`
       :host {
@@ -1012,17 +1006,6 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       }
       .effect-matrix {
         min-width: 0;
-      }
-      .search {
-        box-sizing: border-box;
-        width: 100%;
-        min-width: 0;
-        border: 1px solid var(--divider-color, #ddd);
-        border-radius: 6px;
-        padding: 10px;
-        font: inherit;
-        color: inherit;
-        background: var(--card-background-color, #fff);
       }
       .error {
         color: var(--error-color, #db4437);

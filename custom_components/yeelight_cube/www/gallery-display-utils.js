@@ -141,6 +141,55 @@ function getWheelModeConfig(wheelDisplayStyle, userPreviewSize) {
 // ============================================================================
 
 /**
+ * One matrix cell's color and shadow: black pixels may be left out
+ * (ignoreBlackPixels) and lose their shadow. Shared by renderMatrixPreview
+ * (markup) and paintMatrixPreview (in place) so both always agree.
+ */
+function matrixCellLook(color, options) {
+  let css;
+  let isBlack;
+  if (Array.isArray(color)) {
+    isBlack =
+      color[0] <= BLACK_THRESHOLD &&
+      color[1] <= BLACK_THRESHOLD &&
+      color[2] <= BLACK_THRESHOLD;
+    css = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
+  } else {
+    const hex = (color || "#000000").replace(/^#/, "");
+    isBlack =
+      parseInt(hex.substring(0, 2), 16) <= BLACK_THRESHOLD &&
+      parseInt(hex.substring(2, 4), 16) <= BLACK_THRESHOLD &&
+      parseInt(hex.substring(4, 6), 16) <= BLACK_THRESHOLD;
+    css = color || "#000000";
+  }
+  const ignored = options.ignoreBlackPixels && isBlack;
+  const length = (value) =>
+    options.proportionalSpacing !== false ? previewLength(value) : `${value}px`;
+  return {
+    background: ignored ? "transparent" : css,
+    shadow: !ignored && options.pixelBoxShadow ? `0 0 ${length(2)} #0008` : "",
+  };
+}
+
+/**
+ * Repaint a rendered matrix preview (`.gallery-matrix-preview`) with new
+ * colors, keeping its DOM: content-only updates (new text, colors, angle)
+ * then never rebuild a gallery. `options` are renderMatrixPreview's.
+ * Returns false when the matrix does not have one cell per color.
+ */
+export function paintMatrixPreview(matrix, colorData, options = {}) {
+  const cells = matrix?.children;
+  if (!cells || !colorData || cells.length !== colorData.length) return false;
+  for (let index = 0; index < cells.length; index++) {
+    const look = matrixCellLook(colorData[index], options);
+    const style = cells[index].style;
+    if (style.background !== look.background) style.background = look.background;
+    if (style.boxShadow !== look.shadow) style.boxShadow = look.shadow;
+  }
+  return true;
+}
+
+/**
  * Render a matrix preview (5x20 LED grid)
  * @param {Array} colorData - Flattened array of 100 colors (5 rows x 20 cols)
  * @param {Object} options - Display options
@@ -165,10 +214,6 @@ export function renderMatrixPreview(colorData, options = {}) {
 
   const matrixShadowStyle = matrixBoxShadow
     ? `box-shadow: 0 ${length(2)} ${length(8)} rgba(0,0,0,0.5);`
-    : "";
-
-  const pixelShadowStyle = pixelBoxShadow
-    ? `box-shadow: 0 0 ${length(2)} #0008;`
     : "";
 
   const borderRadius =
@@ -196,37 +241,12 @@ export function renderMatrixPreview(colorData, options = {}) {
       ${matrixShadowStyle}
     ">${colorData
       .map((color) => {
-        // Handle both RGB arrays and hex strings
-        let bgColor;
-        let isBlack = false;
-
-        if (Array.isArray(color)) {
-          // RGB array format [r, g, b]
-          isBlack =
-            color[0] <= BLACK_THRESHOLD &&
-            color[1] <= BLACK_THRESHOLD &&
-            color[2] <= BLACK_THRESHOLD;
-          bgColor = `rgb(${color[0]}, ${color[1]}, ${color[2]})`;
-        } else {
-          // Hex string format "#RRGGBB"
-          const hex = (color || "#000000").replace(/^#/, "");
-          const r = parseInt(hex.substring(0, 2), 16);
-          const g = parseInt(hex.substring(2, 4), 16);
-          const b = parseInt(hex.substring(4, 6), 16);
-          isBlack =
-            r <= BLACK_THRESHOLD &&
-            g <= BLACK_THRESHOLD &&
-            b <= BLACK_THRESHOLD;
-          bgColor = color || "#000000";
-        }
-
-        const shouldIgnore = ignoreBlackPixels && isBlack;
-
+        const look = matrixCellLook(color, options);
         return `<div style="
             aspect-ratio: 1 / 1;
-            background: ${shouldIgnore ? "transparent" : bgColor};
+            background: ${look.background};
             border-radius: ${borderRadius};
-            ${shouldIgnore ? "" : pixelShadowStyle}
+            ${look.shadow ? `box-shadow: ${look.shadow};` : ""}
           "></div>`;
       })
       .join("")}
@@ -1243,8 +1263,9 @@ export const galleryDisplayStyles = `
     background: var(--card-background-color, #fff) !important;
   }
 
-  /* Wheel centered border - only when highlight_active_mode is ON */
-  :host([data-highlight-active="true"]) .wheel-item[data-wheel-centered="true"] {
+  /* Wheel centered border - only when highlight_active_mode is ON (set by
+     collection-gallery.js on itself) */
+  [data-highlight-active="true"] .wheel-item[data-wheel-centered="true"] {
     border-color: rgba(9, 105, 218, 0.7) !important;
     border-width: 2px !important;
   }

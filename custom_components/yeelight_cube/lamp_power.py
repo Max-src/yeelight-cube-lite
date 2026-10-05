@@ -54,3 +54,26 @@ def limit_frame_power(frame, max_watts: float, hardware_brightness: float = 100)
     # Both terms of the drive scale with the pixel values, and rounding down
     # keeps the result within the limit.
     return [tuple(int(channel * factor) for channel in rgb[:3]) for rgb in frame]
+
+
+class EnergyMeter:
+    """Energy used, in kWh, from the estimated power over time.
+
+    Each power reading holds until the next one (the Estimated power sensor
+    only changes when what the lamp shows changes), so the energy of a span is
+    the reading at its start times its length. A span with an unknown reading
+    adds nothing. ``now`` is a monotonic clock in seconds.
+    """
+
+    def __init__(self, total_kwh: float = 0.0):
+        self.total_kwh = total_kwh
+        self._power = None
+        self._since = None
+
+    def update(self, now: float, power: float | None) -> float:
+        """Count the energy since the last update, then hold ``power``."""
+        if self._power is not None and self._since is not None and now > self._since:
+            self.total_kwh += self._power * (now - self._since) / 3_600_000
+        self._power = power
+        self._since = now
+        return self.total_kwh

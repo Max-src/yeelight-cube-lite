@@ -406,20 +406,29 @@ export function renderClockSharedAppearance(config, change, editor) {
   </div>`;
 }
 
-export function renderClockSectionAppearance(config, change, section, editor) {
+// `size: false` leaves out the Size row (the gallery's settings own it).
+export function renderClockSectionAppearance(
+  config,
+  change,
+  section,
+  editor,
+  { size = true } = {},
+) {
   const sizeKey = {
     lamp: "lamp_preview_size",
     gallery: "preview_size",
     favourites: "effect_preview_size",
   }[section];
   return html`<div class="clock-appearance" data-appearance=${section}>
-    ${createSliderRow(
-      "Size",
-      config[sizeKey] ?? (section === "favourites" ? 100 : 55),
-      { min: 30, max: 100, step: 5 },
-      (event) => change(sizeKey, Number(event.target.value)),
-      "%",
-    )}
+    ${size
+      ? createSliderRow(
+          "Size",
+          config[sizeKey] ?? (section === "favourites" ? 100 : 55),
+          { min: 30, max: 100, step: 5 },
+          (event) => change(sizeKey, Number(event.target.value)),
+          "%",
+        )
+      : ""}
     ${renderSectionAppearance(config, change, section, editor)}
   </div>`;
 }

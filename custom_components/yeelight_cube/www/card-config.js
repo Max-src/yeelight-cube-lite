@@ -15,7 +15,8 @@
  * A card's older names are aliases: normalizeCardOptions() moves them to the
  * shared name (an explicitly set shared name wins), so existing dashboards keep
  * working, and an editor saves only shared names. Cards and their editors call
- * it first in setConfig().
+ * it first in setConfig(). An older option whose values also changed has a
+ * migration (OPTION_MIGRATIONS) instead.
  */
 
 export const OPTION_ALIASES = Object.freeze({
@@ -61,22 +62,47 @@ export const OPTION_ALIASES = Object.freeze({
   },
 });
 
+/**
+ * Older options whose values changed when they joined the shared vocabulary:
+ * (config) => the options to set. Run by normalizeCardOptions; the older key
+ * is dropped afterwards (RETIRED_OPTIONS).
+ */
+export const OPTION_MIGRATIONS = Object.freeze({
+  gradient: (config) => ({
+    // The gallery's Size: gallery_preview_size (50%, or pixels when above
+    // 100) becomes preview_size (% of 450 px, the same scale).
+    ...(config.preview_size === undefined && {
+      preview_size: gradientPreviewSize(config.gallery_preview_size),
+    }),
+    // The mode selector never had a search box: keep it off until chosen.
+    ...(config.show_search === undefined && { show_search: false }),
+  }),
+});
+
+function gradientPreviewSize(value) {
+  const size = Number(value) || 50;
+  return size > 100 ? Math.round(size / 4.5) : size;
+}
+
 /** Options a card no longer uses: dropped from its config. */
 export const RETIRED_OPTIONS = Object.freeze({
   // Written by older Draw stubs/editors; nothing ever read it.
   draw: ["pixel_art_delete_button_style"],
+  gradient: ["gallery_preview_size"],
 });
 
 export function normalizeCardOptions(config, card) {
   if (!config || typeof config !== "object") return config;
   const aliases = OPTION_ALIASES[card] || {};
   const retired = RETIRED_OPTIONS[card] || [];
+  const migrated = OPTION_MIGRATIONS[card]?.(config) || {};
   if (
+    !Object.keys(migrated).length &&
     !retired.some((key) => key in config) &&
     !Object.keys(aliases).some((key) => key in config)
   )
     return config;
-  const result = { ...config };
+  const result = { ...config, ...migrated };
   for (const [legacy, name] of Object.entries(aliases)) {
     if (!(legacy in result)) continue;
     if (result[name] === undefined) result[name] = result[legacy];

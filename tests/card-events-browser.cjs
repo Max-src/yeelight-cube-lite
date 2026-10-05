@@ -368,6 +368,28 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
       throw new Error("gradient: angle capsule not rendered");
     }
 
+    // --- Gradient modes through the shared gallery (text layouts) ------------
+    for (const style of ["filled", "chips", "dropdown"]) {
+      await page.evaluate(
+        ({ tag, style }) => mount(tag, { entity: "light.a", style_selector_style: style }),
+        { tag: gradient, style },
+      );
+      await page.waitForTimeout(150);
+      const gallery = page.locator(`${gradient} yc-collection-gallery`);
+      assert.equal(
+        await gallery.locator(".yc-gallery-search").count(),
+        0,
+        `gradient ${style}: no search box unless enabled`,
+      );
+      if (style === "dropdown")
+        await gallery.locator("select.mode-select").selectOption("Radial Gradient");
+      else await gallery.locator('[data-mode="Radial Gradient"]').click();
+      assert.equal(
+        (await waitForCall("set_mode", `gradient ${style} pick`)).mode,
+        "Radial Gradient",
+      );
+    }
+
     // --- Hostile names: saved names are shown as text, never run as markup ----
     // Palettes, pixel arts and clock presets are shared data any HA user (or
     // an imported file) can name. Every display mode must keep them inert.
@@ -451,6 +473,78 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
       }),
     );
     await checkInert("clock presets");
+
+    // --- The shared gallery's album (Clock; Native uses the same element) ----
+    await page.evaluate(() =>
+      mount("yeelight-cube-clock-card", {
+        entity: "light.a",
+        show_gallery: true,
+        style_selector_style: "preview-album",
+      }),
+    );
+    const album = () =>
+      page.evaluate(() => {
+        const items = [...card.shadowRoot.querySelectorAll(".collection-album-item")];
+        const centre = items.find((item) => item.classList.contains("active"));
+        return {
+          count: items.length,
+          centre: centre?.querySelector("[data-mode]")?.dataset.mode,
+          painted: !!centre?.querySelector(".gallery-matrix-preview > div"),
+        };
+      });
+    const start = await album();
+    assert.ok(start.count > 2, "album: every clock style");
+    assert.equal(start.centre, "Rainbow", "album: opens on the active style");
+    assert.ok(start.painted, "album: live matrix preview");
+    // The arrows only browse; clicking the centred card applies it.
+    await page.locator("yeelight-cube-clock-card .album-nav-next").click();
+    const next = await album();
+    assert.notEqual(next.centre, "Rainbow");
+    assert.equal(await page.evaluate(() => calls.length), 0, "album: browsing applies nothing");
+    await page.locator("yeelight-cube-clock-card .collection-album-item.active").click();
+    const applied = await waitForCall("set_clock_style", "album pick");
+    assert.match(JSON.stringify(applied), new RegExp(next.centre));
+    // A rotation step (the lamp reports another style) turns the album to it.
+    await page.evaluate(async () => {
+      const light = hass.states["light.a"];
+      hass = { ...hass, states: { ...hass.states, "light.a": { ...light, attributes: { ...light.attributes, clock_style: "White", clock_style_id: 4 } } } };
+      card.hass = hass;
+      await card.updateComplete;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+    assert.equal((await album()).centre, "White", "album: follows the active style");
+    // Item shape, button shape and wrap navigation reach the album.
+    await page.evaluate(() =>
+      mount("yeelight-cube-clock-card", {
+        entity: "light.a",
+        show_gallery: true,
+        style_selector_style: "preview-album",
+        selector_shape: "square",
+        selector_button_shape: "square",
+        gallery_wrap_navigation: true,
+      }),
+    );
+    assert.deepEqual(
+      await page.evaluate(() => ({
+        card: getComputedStyle(card.shadowRoot.querySelector(".collection-album-item")).borderTopLeftRadius,
+        arrow: getComputedStyle(card.shadowRoot.querySelector(".album-nav-prev")).borderTopLeftRadius,
+      })),
+      { card: "0px", arrow: "0px" },
+      "album: item and button shapes",
+    );
+    const firstIndex = await page.evaluate(() =>
+      [...card.shadowRoot.querySelectorAll(".collection-album-item")].findIndex((item) => item.classList.contains("active")),
+    );
+    for (let i = 0; i <= firstIndex; i++)
+      await page.locator("yeelight-cube-clock-card .album-nav-prev").click();
+    assert.equal(
+      await page.evaluate(() => {
+        const items = [...card.shadowRoot.querySelectorAll(".collection-album-item")];
+        return items.at(-1).classList.contains("active");
+      }),
+      true,
+      "album: wrap navigation goes from the first item to the last",
+    );
 
     // --- Album settings reach the shared, static album CSS ------------------
     // (album-view-coverflow.js: CSS variables set by renderAlbumView).
@@ -606,7 +700,7 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
 
     assert.deepEqual(errors, []);
     console.log(
-      `PASS delegated events: ${SLIDER_STYLES.length} slider styles, orientation x2, clock/native sliders, draw gallery, gradient capsule (strict CSP, no inline handlers); hostile names inert in 4 palette + 4 pixel-art modes and clock presets`,
+      `PASS delegated events: ${SLIDER_STYLES.length} slider styles, orientation x2, clock/native sliders, draw gallery, gradient capsule and mode gallery (strict CSP, no inline handlers); hostile names inert in 4 palette + 4 pixel-art modes and clock presets`,
     );
     console.log(
       "PASS shared card frame on all 7 cards and editors: title, lamp status, plain background, no-lamp / not-found notices, same editor settings",

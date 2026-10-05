@@ -272,26 +272,14 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
             ? renderModeSettingsSection(
                 "Browser Settings",
                 html`
-                  ${this._toggle("Text Search", "show_search")}
                   ${renderStyleSelectorSettings(
-                    {
-                      ...config,
-                      style_selector_style:
-                        config.style_selector_style ||
-                        (config.effect_view ? "original" : "preview-grid"),
-                    },
+                    config,
                     change,
                     {
                       allowOriginal: true,
-                      renderAppearance: () =>
-                        html`${createSliderRow(
-                          "Size",
-                          config.preview_size ?? 55,
-                          { min: 30, max: 100, step: 5 },
-                          (event) =>
-                            change("preview_size", Number(event.target.value)),
-                          "%",
-                        )}${this._renderAppearance("gallery")}`,
+                      noun: "Effect",
+                      memory: (this._galleryMemory ||= {}),
+                      renderAppearance: () => this._renderAppearance("gallery"),
                     },
                   )}
                   ${renderOrderableList({

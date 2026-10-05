@@ -1,9 +1,6 @@
 // Stylesheet of the gradient card (adopted once per shadow root by LitElement).
 import { cardLayoutStyles } from "./card-layout-utils.js";
-import { selectorSharedStyles } from "./selector-shared-styles.js";
-import { paginationStyles } from "./pagination-utils.js";
-import { galleryDisplayStyles } from "./gallery-display-utils.js";
-import { carouselStyles } from "./carousel-utils.js";
+import { collectionGalleryStyles } from "./collection-gallery.js";
 import { getCapsuleCSS } from "./capsule-slider-utils.js";
 
 // Card stylesheet (static; adopted once per shadow root by LitElement).
@@ -863,10 +860,8 @@ export const GRADIENT_CARD_CSS = `
           background: var(--secondary-background-color, #f6f8fa);
         }
 
-        /* Text selectors (filled/dropdown/chips), hover ring, shape/size axes
-           and pending pulse — shared with the clock card. */
-        ${selectorSharedStyles}
-        ${paginationStyles}
+        /* The mode selector: the shared gallery (collection-gallery.js). */
+        ${collectionGalleryStyles}
 
         .panel-toggle input[type="checkbox"] {
           margin: 0;
@@ -877,45 +872,6 @@ export const GRADIENT_CARD_CSS = `
           cursor: pointer;
         }
 
-        /* Preview section styles */
-        .preview-toggle-btn {
-          width: 100%;
-          padding: 10px 16px;
-          background: linear-gradient(135deg, var(--primary-color) 0%, var(--accent-color, #764ba2) 100%);
-          color: var(--text-primary-color, #fff);
-          border: none;
-          border-radius: 6px;
-          cursor: pointer;
-          font-size: 14px;
-          font-weight: 500;
-          transition: all 0.2s;
-          box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
-        }
-
-        .preview-toggle-btn:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-        }
-
-        .preview-toggle-btn:active {
-          transform: translateY(0);
-        }
-
-        .preview-item {
-          border: 2px solid transparent;
-        }
-
-        .preview-item:hover {
-          border-color: rgba(102, 126, 234, 0.5);
-        }
-
-        .preview-title {
-          color: var(--text-primary-color, #fff);
-          text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-        }
-
-        /* Gallery display styles from shared utility */
-        ${galleryDisplayStyles}
 
         /* ── Active-mode label chip ──────────────────────────── */
         .gc-active-mode-label {
@@ -942,23 +898,6 @@ export const GRADIENT_CARD_CSS = `
           background: var(--primary-color, #0969da);
         }
 
-        /* Gradient carousel: transparent wrapper — item handles its own background */
-        .gc-preview-shell .carousel-content-card {
-          background: transparent !important;
-          box-shadow: none !important;
-          padding: 0 !important;
-        }
-
-        /* Shared carousel component styles (carousel-utils) */
-        ${carouselStyles}
-
-        /* Wheel navigation button styles */
-        .wheel-nav-down:hover,
-        .wheel-nav-up:hover {
-          background: var(--card-background-color, white) !important;
-          box-shadow: 0 6px 16px rgba(0,0,0,0.2) !important;
-          color: var(--primary-text-color, #000) !important;
-        }
 
         /* ===== Capsule angle slider (shared util) ===== */
         ${getCapsuleCSS()}

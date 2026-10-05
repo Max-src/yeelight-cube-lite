@@ -1,14 +1,20 @@
+import time
+from datetime import timedelta
+
 from homeassistant.components.sensor import (  # type: ignore
+    RestoreSensor,
     SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
 )
-from homeassistant.const import UnitOfPower  # type: ignore
+from homeassistant.const import UnitOfEnergy, UnitOfPower  # type: ignore
+from homeassistant.helpers.event import async_track_time_interval  # type: ignore
 from homeassistant.helpers.entity import Entity # type: ignore
 from homeassistant.config_entries import ConfigEntry # type: ignore
 from .layout import FONT_MAPS, FONT_METRICS
 from .const import DOMAIN, CONF_IP, CONF_DEVICE_ID
 from .entity import CubeDeviceEntity
+from .lamp_power import EnergyMeter
 
 class YeelightCubeBaseSensor(Entity):
     """Base class for Yeelight Cube Lite sensors."""
@@ -324,6 +330,63 @@ class YeelightCubePowerSensor(CubeDeviceEntity, SensorEntity):
         await super().async_will_remove_from_hass()
 
 
+class YeelightCubeEnergySensor(CubeDeviceEntity, RestoreSensor):
+    """Estimated energy used by the lamp, in kWh: the Estimated power sensor
+    integrated over time (lamp_power.EnergyMeter). Add it to Home Assistant's
+    Energy dashboard as an individual device. The total survives restarts;
+    like the power estimate, it is an estimate, not a measurement."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
+    _attr_translation_key = "estimated_energy"
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_suggested_display_precision = 3
+
+    # The total also advances while the power stays the same.
+    UPDATE_INTERVAL = timedelta(minutes=1)
+
+    def __init__(self, light_entity):
+        self._light_entity = light_entity
+        self._attr_unique_id = f"{light_entity._attr_unique_id}_estimated_energy"
+        self._attr_icon = "mdi:lightning-bolt-outline"
+        self._meter = EnergyMeter()
+        self._unsub_interval = None
+
+    @property
+    def native_value(self):
+        return round(self._meter.total_kwh, 6)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last = await self.async_get_last_sensor_data()
+        if last is not None and isinstance(last.native_value, (int, float)):
+            self._meter.total_kwh = float(last.native_value)
+        self._meter.update(time.monotonic(), self._light_entity.estimated_power)
+        self._light_entity._energy_sensor = self
+        self._unsub_interval = async_track_time_interval(
+            self.hass, self._tick, self.UPDATE_INTERVAL
+        )
+
+    async def async_will_remove_from_hass(self) -> None:
+        if self._unsub_interval is not None:
+            self._unsub_interval()
+            self._unsub_interval = None
+        if self._light_entity._energy_sensor is self:
+            self._light_entity._energy_sensor = None
+        await super().async_will_remove_from_hass()
+
+    def power_changed(self, power) -> None:
+        """The estimated power changed: count the energy at the old one."""
+        self._meter.update(time.monotonic(), power)
+        if self.hass is not None:
+            self.async_write_ha_state()
+
+    def _tick(self, _now=None) -> None:
+        self.power_changed(self._light_entity.estimated_power)
+
+
 def _create_and_register_sensors(hass, async_add_entities, owner_entry_id):
     """Create global sensors and register them under the given entry's platform.
 
@@ -376,10 +439,15 @@ async def async_setup_entry(hass, entry, async_add_entities):
     ip_sensor = YeelightCubeIPSensor(hass, entry)
     async_add_entities([ip_sensor], update_before_add=True)
 
-    # --- Per-device estimated power ---
+    # --- Per-device estimated power and energy ---
     light_entity = hass.data[DOMAIN].get(entry.entry_id, {}).get("light")
     if light_entity is not None:
-        async_add_entities([YeelightCubePowerSensor(light_entity)])
+        async_add_entities(
+            [
+                YeelightCubePowerSensor(light_entity),
+                YeelightCubeEnergySensor(light_entity),
+            ]
+        )
     _LOGGER.debug("Created IP address sensor for entry %s", entry.entry_id)
 
     # --- Global sensors (created only once, shared across all devices) ---

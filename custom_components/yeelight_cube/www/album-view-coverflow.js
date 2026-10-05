@@ -14,7 +14,8 @@
  * Usage:
  * 1. Import renderAlbumView() and setupAlbumNavigation()
  * 2. Call renderAlbumView() to generate HTML
- * 3. Call setupAlbumNavigation() to attach event listeners
+ * 3. Call setupAlbumNavigation() once per album node to attach event
+ *    listeners; it resolves to { goTo(index) } to turn the album later
  *
  * Styles: albumStyles(classPrefix) is static (include it in the card's static
  * styles); the configurable values (card width from card_size, corner radius
@@ -22,6 +23,10 @@
  * renderAlbumView() sets on the album wrapper (albumStyleVars).
  *
  * Configuration:
+ * - album_nav_shape: the arrows' shape, in the carousel vocabulary
+ *   (circle by default; square, rect)
+ * - wrap_navigation (setupAlbumNavigation): the arrows and swipes go from
+ *   the last item to the first and back
  * - Uses centralized getDeleteButtonConfig() for button styling
  * - Every card uses config.remove_button_style (older Draw configs:
  *   pixel_art_remove_button_style, see card-config.js)
@@ -30,6 +35,7 @@
  */
 
 import { getDeleteButtonConfig } from "./delete-button-styles.js";
+import { normalizeButtonShape } from "./carousel-utils.js";
 
 /**
  * The album's configurable values as CSS variables (inline style of the
@@ -253,6 +259,15 @@ export function albumStyles(classPrefix = "album") {
       transform: translateY(-50%) scale(0.95);
     }
     
+    .album-nav-btn.nav-btn-rect,
+    .album-nav-btn.nav-btn-rounded {
+      border-radius: 8px;
+    }
+
+    .album-nav-btn.nav-btn-square {
+      border-radius: 0;
+    }
+
     .album-nav-prev {
       left: 20px;
     }
@@ -288,11 +303,14 @@ export function renderAlbumView(
 
   // Build button CSS classes
   const deleteBtnClass = `${btnCfg.classes} ${btnCfg.posClass} ${btnCfg.sideClass}`;
+  const navClass = `album-nav-btn nav-btn-${normalizeButtonShape(
+    config.album_nav_shape || "circle",
+  )}`;
 
   return `
     <div class="${classPrefix}-album-wrapper${btnCfg.inside ? " delete-inside" : ""}" style="${albumStyleVars(config)}">
-      <button class="album-nav-btn album-nav-prev" id="${classPrefix}-album-nav-prev" title="Previous">‹</button>
-      <button class="album-nav-btn album-nav-next" id="${classPrefix}-album-nav-next" title="Next">›</button>
+      <button class="${navClass} album-nav-prev" id="${classPrefix}-album-nav-prev" title="Previous">‹</button>
+      <button class="${navClass} album-nav-next" id="${classPrefix}-album-nav-next" title="Next">›</button>
       <div class="${classPrefix}-album-container" id="${classPrefix}-album-container">
         ${items
           .map((item, idx) => {
@@ -353,6 +371,13 @@ export async function setupAlbumNavigation(
 
   // Coverflow update function
   const enable3D = config.album_3d_effect !== false;
+  const wrap = config.wrap_navigation === true;
+  // The item `step` places away, past the ends only when wrapping.
+  const stepTo = (step) => {
+    const next = currentIndex + step;
+    if (next >= 0 && next < items.length) return next;
+    return wrap && items.length > 1 ? (next + items.length) % items.length : currentIndex;
+  };
 
   const updateCoverflow = (skipAnimation = false) => {
     // Temporarily disable transitions if requested
@@ -446,11 +471,9 @@ export async function setupAlbumNavigation(
         const touch = e.changedTouches[0];
         const dx = touch.clientX - swipeStartX;
         if (Math.abs(dx) > 50) {
-          if (dx < 0 && currentIndex < items.length - 1) {
-            currentIndex++;
-            updateCoverflow();
-          } else if (dx > 0 && currentIndex > 0) {
-            currentIndex--;
+          const next = stepTo(dx < 0 ? 1 : -1);
+          if (next !== currentIndex) {
+            currentIndex = next;
             updateCoverflow();
           }
         }
@@ -515,22 +538,15 @@ export async function setupAlbumNavigation(
   });
 
   // Store named handler references for cleanup on re-init
-  const prevClickHandler = prevBtn
-    ? () => {
-        if (currentIndex > 0) {
-          currentIndex--;
-          updateCoverflow();
-        }
-      }
-    : null;
-  const nextClickHandler = nextBtn
-    ? () => {
-        if (currentIndex < items.length - 1) {
-          currentIndex++;
-          updateCoverflow();
-        }
-      }
-    : null;
+  const step = (delta) => () => {
+    const next = stepTo(delta);
+    if (next !== currentIndex) {
+      currentIndex = next;
+      updateCoverflow();
+    }
+  };
+  const prevClickHandler = prevBtn ? step(-1) : null;
+  const nextClickHandler = nextBtn ? step(1) : null;
 
   // Replace anonymous listeners with named references we can remove
   if (prevBtn) {
@@ -557,4 +573,15 @@ export async function setupAlbumNavigation(
   // Initial render (skip animation if this is a re-setup after deletion)
   const isReSetup = context._coverflowCleanup !== undefined;
   updateCoverflow(isReSetup);
+
+  // Lets the caller turn the album to an item (e.g. the newly active one)
+  // without binding it again.
+  return {
+    goTo(index) {
+      const next = Math.max(0, Math.min(index, items.length - 1));
+      if (next === currentIndex) return;
+      currentIndex = next;
+      updateCoverflow();
+    },
+  };
 }

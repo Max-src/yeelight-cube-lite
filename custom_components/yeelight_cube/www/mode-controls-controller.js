@@ -435,7 +435,7 @@ export class ModeControlsController {
     this.listeners.forEach((listener) => listener());
   }
 
-  // Flat list of everything the listeners (mode-controls-ui, style-browser-ui
+  // Flat list of everything the listeners (mode-controls-ui, collection-gallery
   // and the cards' favourite-star markers) render from. `update()` runs on
   // every Home Assistant state push, so it compares this cheap snapshot and
   // only notifies when something visible actually changed. Returns null when

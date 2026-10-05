@@ -328,7 +328,7 @@ window.cardDocs = {
     if (
       !card.shadowRoot
         .querySelector(
-          ".original-gallery, yeelight-style-browser, .gc-selector",
+          ".original-gallery, yc-collection-gallery, .gc-selector",
         )
         ?.getBoundingClientRect().height
     )

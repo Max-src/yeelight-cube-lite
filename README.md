@@ -30,7 +30,7 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a
 | **Colors & gradients** | Gradient support across multiple modes |
 | **Color effects** | Hue shift, saturation, vibrance, tint, glow, contrast, invert, grayscale |
 | **Transitions** | 23 animated transition effects |
-| **Multi-lamp** | Control multiple lamps independently |
+| **Multi-lamp** | Control multiple lamps together or independently |
 | **Auto-discovery** | Zeroconf (mDNS) auto-detection on your network |
 | **Local-only** | All communication stays on your LAN, no cloud dependency |
 
@@ -242,7 +242,7 @@ server-side favourites rotation that continues after you close the dashboard.
 | Feature | Description |
 | :-- | :-- |
 | **Clock preview** | Live time/date preview using the lamp's native font, with configurable pixels, spacing, background, shadow and size |
-| **Style browser** | Search clock styles using text, grid, list, strip, carousel or wheel layouts, with pagination and favourite markers |
+| **Style browser** | Search clock styles using text, grid, list, strip, carousel, wheel or album layouts, with pagination and favourite markers |
 | **Color modes** | Choose supported palettes or custom RGB; save reusable color modes and clock presets |
 | **Sliders** | Brightness and animation speed with selectable slider styles, labels and values |
 | **Content & format** | Switch time/date, 12/24-hour format and colon blinking |
@@ -341,7 +341,7 @@ available where supported. Experimental effects require the lamp's
 | Feature | Description |
 | :-- | :-- |
 | **Live previews** | Preview firmware animations with configurable pixels, spacing, background, shadow and size |
-| **Effect browser** | Search effects using text, grid, list, strip, carousel or wheel layouts, with pagination and availability badges |
+| **Effect browser** | Search effects using text, grid, list, strip, carousel, wheel or album layouts, with pagination and availability badges |
 | **Color modes** | Apply supported palette modes or custom RGB; favourites remember the chosen colors |
 | **Sliders** | Brightness and effect speed with selectable slider styles; speed is shown for effects that support it |
 | **Orientation & actions** | Device orientation, previous, next, random, freeze, refresh and power controls |
@@ -608,7 +608,7 @@ Select and configure gradient/color modes. Adjust gradient direction with an ang
 | Feature | Description |
 | :-- | :-- |
 | **Multi-entity support** | Control multiple lamps at the same time |
-| **Unified mode selector** | One selector, 7 presentation styles: 3 lightweight **text** styles (Filled, Dropdown, Chips with live gradient swatches) or 4 **live preview** styles (List, Grid, Carousel with arrows/dots/swipe, Wheel) that render a mini matrix of every mode with your current text, colors, and angle — click to apply |
+| **Unified mode selector** | The same gallery as the Clock and Native Effects cards: 3 lightweight **text** styles (Filled, Dropdown, Chips with live gradient swatches) or 6 **live preview** styles (List, Grid, Strip, Carousel, Wheel, Album) that render a mini matrix of every mode with your current text, colors, and angle — click to apply. Optional text search |
 | **Shared appearance axes** | **Shape** (Square / Rounded / Round) and **Size** apply consistently to every selector style — same design language as the other cards |
 | **Selection feedback** | The chosen item pulses while the command is in flight and settles once the lamp confirms |
 | **Active mode label** | Optional chip showing the currently active mode by name (handy when titles are hidden) |
@@ -747,6 +747,7 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Matrix Preview (Round)** | Camera | Local matrix preview with round pixels; Music Flow uses a static effect illustration |
 | **Matrix Preview (Square)** | Camera | Local matrix preview with square pixels; Music Flow uses a static effect illustration |
 | **Estimated power** | Sensor | Estimated power draw of the lamp in W. See [Power Supply](#power-supply) |
+| **Estimated energy** | Sensor | Estimated energy used by the lamp in kWh, for the Energy dashboard. See [Power Supply](#power-supply) |
 
 > [!TIP]
 > Use these camera entities with a "Picture Entity" card for quick previews. For more responsive previews, use the custom [Preview Card](#preview-card).
@@ -1045,7 +1046,7 @@ because the firmware does not provide live frame readback.
 
 The **Native Effects Card** shares its capsule sliders and Text / Live Preview
 selectors with the Clock Card. Text offers filled buttons or dropdowns; Live
-Preview offers lists, grids, strips, carousels and wheels. **Original** offers
+Preview offers lists, grids, strips, carousels, wheels and a 3D album. **Original** offers
 grid and list layouts with capability badges.
 Browsing offers text search without filter or sort controls; raw numeric
 experimental modes are hidden.
@@ -1268,8 +1269,9 @@ color matters little.
 estimates what it draws right now, based on a model measured on real lamps.
 It covers everything: pixel art, text and gradients, and also Clock, Native
 Effects and Music Flow through their simulated previews. Off, it reads
-0.4 W; when Home Assistant can't reach the lamp, 0 W. Add an Integral helper
-to it for an energy (kWh) estimate.
+0.4 W; when Home Assistant can't reach the lamp, 0 W. Its **Estimated
+energy** sensor adds this up in kWh and can be added to the **Energy
+dashboard** under *Individual devices*.
 
 **Weak or shared power supplies.** If the supply can't keep up, the lamp
 freezes on a bright picture or drops off the network until it is

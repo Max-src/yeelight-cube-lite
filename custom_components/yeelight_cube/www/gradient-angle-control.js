@@ -1434,7 +1434,7 @@ export const AngleControlMixin = (Base) => class extends Base {
     }
 
     // Update gradient buttons during dragging for immediate visual feedback
-    this._updateGradientButtons(angle);
+    this._refreshGallery(angle);
 
     this._debouncedApplyAngle(angle);
   }
@@ -1490,7 +1490,7 @@ export const AngleControlMixin = (Base) => class extends Base {
     );
 
     // Update gradient buttons for immediate visual feedback
-    this._updateGradientButtons(angle);
+    this._refreshGallery(angle);
 
     this._debouncedApplyAngle(angle);
   }

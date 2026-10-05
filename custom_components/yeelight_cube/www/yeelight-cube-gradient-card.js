@@ -174,16 +174,6 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
         ),
       onExpire: () => this._renderCard(),
     });
-    // Passive delegated swipe listeners for the carousel preview (stable
-    // objects so Lit never re-binds them across renders).
-    this._previewTouchStartListener = {
-      handleEvent: (e) => this._onPreviewTouchStart(e),
-      passive: true,
-    };
-    this._previewTouchEndListener = {
-      handleEvent: (e) => this._onPreviewTouchEnd(e),
-      passive: true,
-    };
     // Document-level drag handlers (attached only for an active rotary drag,
     // tracked in _rotaryDocListeners so they can never leak or stack).
     this._onDocMouseMove = (e) => {
@@ -240,20 +230,12 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
     this._draggingRotary = false;
     this._usingSlider = false;
     this._processingModeChange = false;
-    this._dropdownOpen = false; // Prevent re-render when dropdown is open
     this._lastModeChangeTime = 0; // Track when mode was last changed
     this._optimisticMode = null; // Store the optimistic mode selection
     this._renderScheduled = false;
     this._pendingHassRender = false; // Track if a render was blocked by interaction flags
     this._interactionSafetyTimer = null; // Safety timer to flush pending renders
     this._previewEventListenerRegistered = false; // Track event listener for global preview cache
-    this._cachedPreviewHtml = null; // Cache rendered preview HTML
-    this._lastPreviewDataHash = null; // Track if preview data changed
-    this._lastWheelMode = null; // Track wheel mode to prevent unnecessary syncs
-    this._wheelCenterIndex = 0; // Track center item in wheel mode
-    this._wheelNavigationController = null; // Controller for wheel navigation
-    // All preview data is now stored in window._yeelightPreviewCaches (see top of file)
-    // This ensures preview data persists across card destruction/recreation.
   }
 
   // --- Mode Visibility helpers (config-based) ---
@@ -294,31 +276,9 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
 
   connectedCallback() {
     super.connectedCallback();
-    // Re-establish preview event subscription lost during disconnection.
-    // disconnectedCallback unsubscribes, but the persistent _previewElement
-    // survives, so the creation-time setTimeout that calls
-    // _setupPreviewEventListener never runs again.  Re-subscribe here.
+    // Re-establish the preview event subscription dropped on disconnect.
     if (!this._previewEventListenerRegistered && this._hass) {
       this._setupPreviewEventListener();
-    }
-
-    // After reconnection, the wheel controller was destroyed in disconnectedCallback.
-    // We must re-initialize it once the DOM is ready again.
-    if (
-      this._isPreviewSelectorActive?.() &&
-      this._getDisplayMode?.() === "wheel" &&
-      !this._wheelNavigationController
-    ) {
-      // Reset _lastWheelMode so that the next set hass() triggers a sync
-      this._lastWheelMode = null;
-      // Defer re-init until the preview element is re-attached in the next render
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          if (!this._wheelNavigationController && this._previewElement) {
-            this._setupWheelNavigation();
-          }
-        });
-      });
     }
   }
 
@@ -332,11 +292,6 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
     }
     this._angleCommands.reset();
     this._previewContext = (this._previewContext || 0) + 1;
-    // Clean up wheel navigation controller
-    if (this._wheelNavigationController) {
-      this._wheelNavigationController.destroy();
-      this._wheelNavigationController = null;
-    }
     // Unsubscribe from preview events
     if (this._unsubscribePreviewEvents) {
       this._unsubscribePreviewEvents();
@@ -369,10 +324,6 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
       clearTimeout(this._optimisticModeTimeout);
       this._optimisticModeTimeout = null;
     }
-    if (this._carouselNavTimer) {
-      clearTimeout(this._carouselNavTimer);
-      this._carouselNavTimer = null;
-    }
 
     // Reset interaction flags and cleanup safety timer
     this._pendingHassRender = false;
@@ -401,50 +352,9 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
     this._unsubscribePreviewEvents = null;
     this._previewEventListenerRegistered = false;
     this._previewContext = (this._previewContext || 0) + 1;
-    // Check if wheel-affecting settings changed
-    // Skip change detection on first init — this.config is undefined so every
-    // comparison fires as "changed", causing a wasteful teardown/rebuild cycle
-    // that races with preview loading and leaves a no-op wheel controller.
-
-    // Structural changes require full preview element rebuild.
-    // Compare the RESOLVED selector styles so legacy-key changes and
-    // text↔preview switches are detected uniformly.
-    const wheelStructureChanged = this.config
-      ? resolveModeSelectorStyle(this.config) !==
-          resolveModeSelectorStyle(config) ||
-        this.config.wheel_nav_position !== config?.wheel_nav_position ||
-        this.config.preview_show_titles !== config?.preview_show_titles
-      : false;
-
-    // Height-only changes can be handled with an in-place content refresh
-    // (avoids destroy/recreate race condition when slider is dragged rapidly)
-    const wheelHeightChanged = this.config
-      ? this.config.wheel_height !== config?.wheel_height
-      : false;
-
-    if (wheelStructureChanged) {
-      // Full rebuild: display mode, nav position, or titles changed
-      if (this._wheelNavigationController) {
-        this._wheelNavigationController.destroy();
-        this._wheelNavigationController = null;
-      }
-      this._lastPreviewDataHash = null;
-      this._cachedPreviewHtml = null;
-      // Re-anchor the carousel on the active mode after a style switch
-      this._carouselIndex = null;
-      if (this._previewElement) {
-        this._previewElement = null;
-      }
-    } else if (wheelHeightChanged) {
-      // Height-only change: keep preview element alive, refresh content in-place
-      if (this._wheelNavigationController) {
-        this._wheelNavigationController.destroy();
-        this._wheelNavigationController = null;
-      }
-      this._lastPreviewDataHash = null;
-      this._cachedPreviewHtml = null;
-      this._pendingWheelHeightUpdate = true;
-    }
+    // One resolved layout for the card, its gallery and its editor (older
+    // configs used other keys, see resolveModeSelectorStyle).
+    config = { ...config, style_selector_style: resolveModeSelectorStyle(config) };
 
     this.config = config;
     this._setupPreviewEventListener();
@@ -483,7 +393,7 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
       preview_show_titles: false,
       gallery_pixel_style: "circle",
       gallery_ignore_black_pixels: true,
-      gallery_preview_size: "64",
+      preview_size: 64,
       gallery_spacing_mode: "normal",
       rectangle_shape: "rectangle",
       show_selector_dot: true,
@@ -524,9 +434,7 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
         seenState === this._seenStateObj &&
         this._optimisticMode == null &&
         this._optimisticPanelMode === undefined &&
-        this._optimisticFillCols === undefined &&
-        (this._getDisplayMode() !== "wheel" ||
-          this._lastWheelMode === seenState.attributes?.mode)
+        this._optimisticFillCols === undefined
       ) {
         return;
       }
@@ -699,50 +607,10 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
     this._seenEntityId = _primaryEntityId;
     this._seenStateObj = entity;
 
-    // Re-initialize wheel center ONLY if mode attribute actually changed
-    if (this._getDisplayMode() === "wheel" && entity) {
-      const currentMode = entity.attributes?.mode;
-
-      // Only sync if:
-      // 1. Mode actually changed from last known value
-      // 2. Not in optimistic mode (we're already showing the right mode)
-      // 3. First initialization (no last mode tracked)
-      const modeChanged = this._lastWheelMode !== currentMode;
-      const isFirstInit = this._lastWheelMode === null;
-
-      if (modeChanged && !this._optimisticMode) {
-        this._lastWheelMode = currentMode;
-        setTimeout(
-          () => {
-            this._syncWheelToCurrentMode();
-            this._markActiveMode();
-          },
-          isFirstInit ? 100 : 0,
-        );
-      } else if (modeChanged && this._optimisticMode) {
-        // Mode changed but we're in optimistic mode - still sync wheel position
-        // (e.g. mode changed via color-mode selector buttons, not the wheel itself)
-        this._lastWheelMode = currentMode;
-        setTimeout(() => {
-          this._syncWheelToCurrentMode();
-          this._markActiveMode();
-        }, 0);
-      } else if (!modeChanged) {
-        // Mode didn't change - this is just a color/angle/sensor update
-        // DO NOT sync wheel - this prevents the blink you're seeing
-        // `[Wheel Sync] Sensor update detected but mode unchanged ('${currentMode}'), skipping wheel sync`
-        // );
-      }
-    }
-
-    // For non-wheel display modes: detect external mode changes and update highlight
-    if (this._getDisplayMode() !== "wheel" && entity && oldEntity) {
-      const currentMode = entity.attributes?.mode;
-      const prevMode = oldEntity.attributes?.mode;
-      if (prevMode !== currentMode) {
-        this._markActiveMode();
-      }
-    }
+    // The gallery follows the lamp's mode (another dashboard, an
+    // automation, the confirmed echo of a pick).
+    if (entity?.attributes?.mode !== oldEntity?.attributes?.mode)
+      this._refreshGallery();
 
     // Skip render if entity didn't change
     if (!entityChanged) {
@@ -751,13 +619,11 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
 
     // Always allow render for button updates unless:
     // 1. Actively dragging rotary controls or angle slider
-    // 2. Dropdown is open
-    // 3. Recently changed mode (prevent sensor updates from overriding optimistic UI)
+    // 2. Recently changed mode (prevent sensor updates from overriding optimistic UI)
     if (
       !this._draggingRotary &&
       !this._isDragging &&
       !this._usingSlider &&
-      !this._dropdownOpen &&
       !this._typingAngle &&
       timeSinceLastModeChange > ignoreUpdateWindow
     ) {
@@ -784,7 +650,6 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
       this._draggingRotary ||
       this._isDragging ||
       this._usingSlider ||
-      this._dropdownOpen ||
       this._typingAngle
     )
       return; // Another flag still active
@@ -812,7 +677,6 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
         !this._draggingRotary &&
         !this._isDragging &&
         !this._usingSlider &&
-        !this._dropdownOpen &&
         !this._typingAngle
       ) {
         clearInterval(this._interactionSafetyTimer);
@@ -875,21 +739,6 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
       return;
     }
     this._skeletonKey = structuralKey;
-
-    // For text-style selectors tear down the preview machinery (wheel
-    // controller, cached preview HTML); the Lit template drops the host.
-    if (!this._isPreviewSelectorActive()) {
-      if (this._wheelNavigationController) {
-        this._wheelNavigationController.destroy();
-        this._wheelNavigationController = null;
-      }
-      if (this._previewElement) {
-        this._previewElement = null;
-        this._cachedPreviewHtml = null;
-        this._lastPreviewDataHash = null;
-      }
-    }
-
     this._rebuildPending = true;
     this.requestUpdate();
   }
@@ -904,14 +753,9 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
     const stateObj = hass.states[this._getPrimaryEntity()];
     if (!stateObj) return nothing;
 
-    const textColors = this._pendingColors ||
-      stateObj.attributes.text_colors || [[255, 255, 255]];
     const currentAngle = this._displayAngle(stateObj);
 
-    // Unified mode selector (replaces the old separate color-mode selector +
-    // always-on preview section — they served the same purpose).
-    const selectorStyle = this._getModeSelectorStyle();
-    const isPreviewSelector = PREVIEW_SELECTOR_STYLES.includes(selectorStyle);
+    // The mode selector: the shared gallery (text or preview styles).
     const showModeSelector =
       this.config.show_mode_selector !== undefined
         ? this.config.show_mode_selector !== false
@@ -975,8 +819,8 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
         ${
           showModeSelector || showPanelToggle
             ? html`
-        <!-- Runtime Controls: unified mode selector -->
-        <div class="runtime-controls" ?hidden=${!(showActiveModeLabel || (showModeSelector && !isPreviewSelector))}>
+        <!-- Runtime Controls: the active-mode label -->
+        <div class="runtime-controls" ?hidden=${!showActiveModeLabel}>
           <div class="control-section yc-stack yc-controls">
             ${
               showActiveModeLabel
@@ -988,21 +832,9 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
                    </div>`
                 : nothing
             }
-            ${
-              showModeSelector && !isPreviewSelector
-                ? this.generateColorModeSelector(
-                    colorMode,
-                    selectorStyle,
-                    textColors,
-                    this._draggingRotary && this._pendingAngle !== undefined
-                      ? this._pendingAngle
-                      : currentAngle,
-                  )
-                : nothing
-            }
           </div>
         </div>
-        ${showModeSelector && isPreviewSelector ? this._previewHostTemplate() : nothing}
+        ${showModeSelector ? this._galleryTemplate() : nothing}
         <div id="preview-anchor" style="display:none;"></div>
         ${
           showPanelToggle
@@ -1065,22 +897,6 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
     return cardShell(this, html`<div class="card-content">${cardContent}</div>`);
   }
 
-  /**
-   * Lit-rendered persistent host for the preview-style mode selector.  Its
-   * `.preview-grid-container` content is shared-renderer HTML (gallery /
-   * carousel / wheel / pagination) that the card updates in place
-   * (surgical per-item swaps, wheel controller), so Lit renders the
-   * container without child bindings and all item interactions are
-   * delegated from the host.
-   */
-  _previewHostTemplate() {
-    return html`<div class="yc-stack yc-controls" id="gc-preview-host"
-      @click=${this._onPreviewClick}
-      @touchstart=${this._previewTouchStartListener}
-      @touchend=${this._previewTouchEndListener}
-    ><div id="preview-section-container"><div class="preview-section yc-stack yc-controls"><div class="preview-grid-container" style="max-width: 100%; overflow: visible;"></div></div></div></div>`;
-  }
-
   updated(changedProperties) {
     super.updated(changedProperties);
     if (!this._rebuildPending || this._missingLamp != null) return;
@@ -1096,86 +912,8 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
     if (!root || !stateObj) return;
     const currentAngle = this._displayAngle(stateObj);
 
-    const host = root.getElementById("gc-preview-host");
-    if (host) {
-      if (host !== this._previewElement) {
-        // New host (first render, preview-structure change reset by
-        // setConfig, or recovery from the error state): fill it from the
-        // global preview cache and (re)load previews.
-        if (this._wheelNavigationController) {
-          this._wheelNavigationController.destroy();
-          this._wheelNavigationController = null;
-        }
-        this._previewElement = host;
-        const container = host.querySelector(".preview-grid-container");
-        container.innerHTML = this._getCachedPreviewGrid();
-
-        setTimeout(() => {
-          if (!this._previewEventListenerRegistered) {
-            this._setupPreviewEventListener();
-          }
-          // Only load previews if we don't have recent data in global cache
-          const cache = this._previewCache();
-          const timeSinceLastRequest = Date.now() - cache.timestamp;
-          const hasRecentData = cache.data && timeSinceLastRequest < 5000; // 5 seconds
-
-          if (!hasRecentData) {
-            this._loadPreviews();
-          } else {
-            // Immediately render with cached data
-            this._updatePreviewSection();
-          }
-        }, 100);
-      }
-
-      // Refresh preview content from latest global cache.  This catches
-      // updates whose event-based _updatePreviewSection() ran before the
-      // host existed.
-      this._updatePreviewSection();
-
-      // Handle pending wheel height update (host kept alive, container
-      // content needs refresh with new height)
-      if (this._pendingWheelHeightUpdate) {
-        this._pendingWheelHeightUpdate = false;
-        const container = host.querySelector(".preview-grid-container");
-        if (container) {
-          const newPreviewHtml = this._renderPreviewGrid();
-          // Always keep overflow visible — hover highlights (border +
-          // translate/scale transforms) were clipped by overflow:hidden.
-          container.style.overflow = "visible";
-          container.innerHTML = newPreviewHtml;
-          this._cachedPreviewHtml = newPreviewHtml;
-          // Sync the preview-data hash so _getCachedPreviewGrid won't
-          // regenerate with stale values on the next call
-          this._lastPreviewDataHash = this._previewDataHash();
-          // Use immediate mode for wheel re-init (skip double-rAF delay)
-          this._wheelReInitializing = true;
-          // Re-initialise the wheel controller for the new content
-          this._attachPreviewEventListeners();
-        }
-      }
-
-      // Safety net: ensure the wheel controller is alive in wheel display
-      // mode (fixes disconnect/reconnect)
-      if (
-        this._getDisplayMode() === "wheel" &&
-        !this._wheelNavigationController
-      ) {
-        const wheelExists = host.querySelector(
-          ".wheel-item[data-mode], .wheel-compact-item[data-mode]",
-        );
-        if (wheelExists) {
-          requestAnimationFrame(() => {
-            if (!this._wheelNavigationController) {
-              this._setupWheelNavigation();
-            }
-          });
-        }
-      }
-    }
-
-    // Update active-mode highlight on the preview items
-    this._markActiveMode();
+    // Preview styles need the backend previews (shared cache).
+    this._ensurePreviews();
 
     // Re-apply every dynamic value in place: Lit only patches bindings whose
     // template value changed, so DOM state written by the in-place sync
@@ -1191,9 +929,6 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
   _syncDynamicUI(stateObj, currentAngle) {
     const root = this.shadowRoot;
     if (!root) return;
-
-    // 1. Text-style selector: active button / dropdown value
-    this._syncTextSelector();
 
     // 2. Panel toggle state (checkbox + card-style active class)
     const applyToPanel =
@@ -1244,114 +979,22 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
     this._syncAngleValueDisplay(currentAngle);
     const angleSlider = root.getElementById("angleslider");
     if (angleSlider) angleSlider.value = Math.round(currentAngle);
-    this._updateGradientButtons(currentAngle);
 
-    // 5. Preview section: highlight + content refresh from cache.
-    //    _updatePreviewSection string-compares against the last HTML we set,
-    //    so this is a no-op unless preview data actually changed.
-    this._markActiveMode();
-    this._updatePreviewSection();
+    // 5. Mode selector (the gallery) and the active-mode label.
+    this._refreshGallery(currentAngle);
+    this._syncActiveModeLabel();
   }
 
-  /**
-   * Sync the text-style mode selector (active classes / dropdown value)
-   * to the current mode without rebuilding DOM.
-   */
-  _syncTextSelector() {
-    const root = this.shadowRoot;
-    if (!root) return;
-    const mode = this._getCurrentMode() || "Solid Color";
-    root.querySelectorAll(".mode-btn-filled, .mode-chip").forEach((btn) => {
-      btn.classList.toggle("active", btn.dataset.mode === mode);
-    });
-    const dropdown = root.querySelector(".mode-select");
-    if (dropdown && !this._dropdownOpen && dropdown.value !== mode) {
-      dropdown.value = mode;
-    }
+  // The active-mode label chip shows the lamp's (or the picked) mode.
+  _syncActiveModeLabel() {
+    const text = this.shadowRoot?.querySelector(
+      "#gc-active-mode-label .gc-aml-text",
+    );
+    const mode = this._getCurrentMode() || "—";
+    if (text && text.textContent !== mode) text.textContent = mode;
   }
 
   // ── Declarative event handlers (bound in the Lit templates) ─────────────
-
-  /** Text selector (filled buttons / chips) click. */
-  _onModeButtonClick(e) {
-    const root = this.shadowRoot;
-    if (!root) return;
-    const target = e.currentTarget;
-    // Use currentTarget to get the button, not the clicked child element
-    const mode = target.dataset.mode;
-    if (!this._hass || !this._getPrimaryEntity() || this._processingModeChange)
-      return;
-
-    const modeSelectors = [
-      ...root.querySelectorAll(".mode-btn-filled"),
-      ...root.querySelectorAll(".mode-chip"),
-    ];
-
-    // OPTIMISTIC UI UPDATE - immediately show selection
-    modeSelectors.forEach((button) => {
-      button.classList.remove("active");
-    });
-    target.classList.add("active");
-
-    // Disable all mode selectors during processing (but keep visual feedback)
-    modeSelectors.forEach((button) => {
-      button.style.pointerEvents = "none";
-      if (!button.classList.contains("active")) {
-        button.style.opacity = "0.6";
-      }
-    });
-
-    // Also disable dropdown if present
-    const dropdown = root.querySelector(".mode-select");
-    if (dropdown) {
-      dropdown.style.pointerEvents = "none";
-      dropdown.style.opacity = "0.6";
-    }
-
-    this._selectMode(mode).finally(() => {
-      // Re-enable all mode selectors
-      modeSelectors.forEach((button) => {
-        button.style.pointerEvents = "";
-        button.style.opacity = "";
-      });
-
-      // Re-enable dropdown if present
-      const dropdown = root.querySelector(".mode-select");
-      if (dropdown) {
-        dropdown.style.pointerEvents = "";
-        dropdown.style.opacity = "";
-      }
-    });
-  }
-
-  // Dropdown selector: prevent re-render while the dropdown is open
-  _onModeDropdownFocus() {
-    this._dropdownOpen = true;
-  }
-
-  _onModeDropdownBlur() {
-    this._dropdownOpen = false;
-    this._flushPendingRender();
-  }
-
-  _onModeDropdownChange(e) {
-    const modeDropdown = e.currentTarget;
-    this._dropdownOpen = false; // Close flag when selection made
-    this._flushPendingRender();
-    const mode = e.target.value;
-    if (!this._hass || this._processingModeChange) return;
-
-    if (!this._getPrimaryEntity()) return;
-
-    // Disable dropdown during processing, re-enable after
-    modeDropdown.style.pointerEvents = "none";
-    modeDropdown.style.opacity = "0.6";
-
-    this._selectMode(mode).finally(() => {
-      modeDropdown.style.pointerEvents = "";
-      modeDropdown.style.opacity = "";
-    });
-  }
 
   /** "Apply to Whole Panel" checkbox change (every toggle style). */
   _onPanelCheckboxChange(e) {
@@ -1515,88 +1158,6 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
     }
   }
 
-  /**
-   * Delegated click handler on the Lit-rendered preview host.  The preview
-   * content itself is shared-renderer HTML (gallery / carousel / wheel /
-   * pagination) that is swapped in place, so a single listener on the
-   * persistent host replaces the per-item listeners (nothing can stack).
-   */
-  _onPreviewClick(e) {
-    const host = e.currentTarget;
-    const t = e.target;
-    if (!t?.closest) return;
-    const within = (el) => el && host.contains(el);
-
-    // Carousel: prev/next buttons, indicator dots and the displayed item
-    if (this._getDisplayMode() === "carousel") {
-      const nav = t.closest('[data-action="navigate"]');
-      if (within(nav)) {
-        e.stopPropagation();
-        const dir = parseInt(nav.dataset.direction, 10);
-        this._gcCarouselNavigate(dir || 1);
-        return;
-      }
-      const dot = t.closest('[data-action="set-index"]');
-      if (within(dot)) {
-        e.stopPropagation();
-        const idx = parseInt(dot.dataset.index, 10);
-        this._gcCarouselSetIndex(idx || 0);
-        return;
-      }
-      const selectItem = t.closest('[data-action="select-mode"]');
-      if (within(selectItem)) {
-        e.stopPropagation();
-        const mode = selectItem.dataset.mode;
-        if (mode) this._selectMode(mode);
-        return;
-      }
-    }
-
-    // Preview item clicks - apply the selected mode
-    const item = t.closest(".gallery-item[data-mode]");
-    if (within(item)) {
-      const mode = item.dataset.mode;
-      if (mode) this._selectMode(mode);
-      return;
-    }
-
-    // Pagination (list / grid modes)
-    const pageBtn = t.closest("[data-pagination-page], [data-pagination-action]");
-    if (within(pageBtn)) {
-      const directPage = pageBtn.dataset.paginationPage;
-      const action = pageBtn.dataset.paginationAction;
-      let pageOrAction;
-      if (directPage !== undefined) pageOrAction = parseInt(directPage, 10);
-      else if (action === "prev" || action === "next") pageOrAction = action;
-      else return;
-      const cur = this._selectorPage || 0;
-      this._selectorPage =
-        pageOrAction === "prev"
-          ? Math.max(0, cur - 1)
-          : pageOrAction === "next"
-            ? cur + 1
-            : pageOrAction;
-      this._lastPreviewDataHash = null; // Force preview re-render
-      this._updatePreviewSection();
-    }
-  }
-
-  // Carousel swipe gesture (delegated, passive listeners — see constructor)
-  _onPreviewTouchStart(e) {
-    if (this._getDisplayMode() !== "carousel") return;
-    if (!e.target?.closest?.(".gc-preview-shell")) return;
-    this._swipeStartX = e.touches[0].clientX;
-  }
-
-  _onPreviewTouchEnd(e) {
-    if (this._getDisplayMode() !== "carousel") return;
-    if (!e.target?.closest?.(".gc-preview-shell")) return;
-    const dx = e.changedTouches[0].clientX - (this._swipeStartX || 0);
-    if (Math.abs(dx) > 40) {
-      this._gcCarouselNavigate(dx < 0 ? 1 : -1);
-    }
-  }
-
   _renderPanelToggle(applyToWholePanel, style, shape = "round") {
     // Use optimistic value if set
     if (this._optimisticPanelMode !== undefined) {
@@ -1716,20 +1277,6 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
   }
 
   /**
-   * Return the normalised preview display mode derived from the unified
-   * selector style: list / compact / carousel / wheel.
-   * (preview-grid renders through the list renderer with a fixed column
-   * override — see the [data-columns] CSS.)
-   */
-  _getDisplayMode() {
-    const style = this._getModeSelectorStyle();
-    if (style === "preview-wheel") return "wheel";
-    if (style === "preview-carousel") return "carousel";
-    if (style === "preview-strip") return "strip";
-    return "list";
-  }
-
-  /**
    * Return the current gradient mode, preferring the optimistic (pending) mode.
    * Falls back to the entity's reported mode, or null.
    */
@@ -1750,9 +1297,8 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
 
     this._optimisticMode = mode;
     this._lastModeChangeTime = Date.now();
-    this._markActiveMode();
-    // In-flight feedback: pulse the selected item until the backend confirms
-    this._setPendingPulse(mode);
+    this._refreshGallery();
+    this._syncActiveModeLabel();
 
     // Read the panel setting from the checkbox when rendered; when the panel
     // toggle is hidden (show_panel_toggle=false) fall back to the entity's
@@ -1788,17 +1334,10 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
         this._optimisticModeTimeout = null;
         if (this._optimisticMode) {
           this._optimisticMode = null;
-          if (this.isConnected) this._markActiveMode();
+          if (this.isConnected) this._renderCard();
         }
       }, 5000);
-      // For wheel mode, sync wheel position to the new mode and update highlight
-      if (this._getDisplayMode() === "wheel") {
-        this._lastWheelMode = mode;
-        this._syncWheelToCurrentMode();
-        this._markActiveMode();
-      } else {
-        this._renderCard();
-      }
+      this._renderCard();
     } catch (error) {
       console.error("Error changing mode:", error);
       this._optimisticMode = null;
@@ -1806,14 +1345,10 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
         clearTimeout(this._optimisticModeTimeout);
         this._optimisticModeTimeout = null;
       }
-      if (this._getDisplayMode() === "wheel") {
-        this._syncWheelToCurrentMode();
-        this._markActiveMode();
-      } else {
-        this._renderCard();
-      }
+      this._renderCard();
     } finally {
       this._processingModeChange = false;
+      this._refreshGallery();
     }
   }
 

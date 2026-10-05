@@ -18,7 +18,7 @@ import {
 //
 // Ownership: clock-card-adapter maps the domain; card-command-controller owns
 // transport; mode-controls-controller owns selection/favourites/rotation;
-// style-browser-ui and color-mode-ui own interactive DOM. This host retains
+// collection-gallery and color-mode-ui own interactive DOM. This host retains
 // Clock format/preset policy and frame painting. The card is a LitElement that
 // renders its shadow root from Lit templates into one persistent <ha-card>.
 
@@ -37,7 +37,7 @@ import {
 } from "./card-shell.js";
 import { LampSliders } from "./lamp-sliders.js";
 import { LitElement, html, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
-import "./style-browser-ui.js";
+import "./collection-gallery.js";
 import "./color-mode-ui.js";
 import { matchingColorOption } from "./color-mode-selector-utils.js";
 import "./mode-controls-ui.js";
@@ -882,13 +882,6 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     return this._command("turn_on", { brightness }, "light");
   }
 
-  // ── Preview-selector interaction (wheel / carousel / active marking) ──────
-  _markActive() {
-    this.dataset.highlightActive = String(
-      this.config.highlight_active_mode !== false,
-    );
-  }
-
   // ── Rendering ─────────────────────────────────────────────────────────────
   //
   // Lit renders the whole shadow root from `_template()` into one persistent
@@ -924,7 +917,6 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
   updated() {
     if (!this._mainRendered) return;
     this._controls?.update();
-    this._markActive();
     this.dataset.favStars = String(this.config.favourites_show_stars !== false);
     markFavouriteModes(
       this.shadowRoot,
@@ -964,8 +956,8 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       button.focus({ preventScroll: true });
   }
 
-  _onBrowserUpdated() {
-    this._markActive();
+  // The gallery re-rendered its items: mark, observe and paint them.
+  _onGalleryUpdated() {
     this._setupObserver();
     this._paintVisible();
   }
@@ -978,12 +970,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     this._mainRendered = true;
     return cardShell(
       this,
-      html`<div
-        class="clock-body yc-stack"
-        @browser-updated=${this._onBrowserUpdated}
-      >
-        ${body}
-      </div>`,
+      html`<div class="clock-body yc-stack">${body}</div>`,
     );
   }
 
@@ -1042,7 +1029,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
         ? this._renderColorMode(a)
         : ""}
       ${config.show_gallery !== false
-        ? this._galleryBrowser(offline, current, revealKey)
+        ? this._gallery(offline, current, revealKey)
         : ""}
       <yeelight-mode-controls
         area="collections"
@@ -1050,29 +1037,27 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       ></yeelight-mode-controls>`;
   }
 
-  // The browser owns its own query/page/wheel state, so one instance is kept
-  // for the card's lifetime (it survives the gallery being hidden and shown).
-  _galleryBrowser(offline, current, revealKey) {
-    this._browser ||= document.createElement("yeelight-style-browser");
-    this._browser.config = this.config;
-    this._browser.items = this._previewItems();
-    // While a rotation runs with "Highlight the playing clock mode" off, the
-    // list keeps the selection from before it started (see displayed()).
-    this._browser.active = offline
-      ? null
-      : this._controls.displayed("key", clockPresetKey(current));
-    this._browser.model = this._controls;
-    this._browser.disabled = this._commands.busy;
-    this._browser.searchLabel = "Search clock modes";
-    this._browser.searchClass = "clock-search";
-    this._browser.heading = "Clock style";
-    this._browser.onSelect = (name) => this._controls.choose(name);
-    this._browser.onQuery = (query) => {
-      this._searchQuery = query;
-    };
-    if (revealKey)
-      this._browser.updateComplete.then(() => this._browser.reveal(revealKey));
-    return this._browser;
+  // The shared gallery (collection-gallery.js), used exactly like the Native
+  // Effects card's. While a rotation runs with "Highlight the playing clock
+  // mode" off, it keeps the selection from before it started (displayed()).
+  _gallery(offline, current, revealKey) {
+    return html`<yc-collection-gallery
+      .config=${this.config}
+      .items=${this._previewItems()}
+      .active=${offline
+        ? null
+        : this._controls.displayed("key", clockPresetKey(current))}
+      .model=${this._controls}
+      .disabled=${this._commands.busy}
+      .revealKey=${revealKey}
+      heading="Clock style"
+      searchLabel="Search clock modes"
+      .onSelect=${(name) => this._controls.choose(name)}
+      .onQuery=${(query) => {
+        this._searchQuery = query;
+      }}
+      @gallery-updated=${this._onGalleryUpdated}
+    ></yc-collection-gallery>`;
   }
 
   async getUpdateComplete() {
@@ -1081,7 +1066,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       ? await super.getUpdateComplete()
       : !this.isUpdatePending;
     await Promise.all([
-      this._browser?.updateComplete,
+      this.shadowRoot?.querySelector("yc-collection-gallery")?.updateComplete,
       this.shadowRoot?.querySelector("ha-card")?.updateComplete,
       this.shadowRoot?.querySelector("yeelight-color-mode")?.updateComplete,
     ]);

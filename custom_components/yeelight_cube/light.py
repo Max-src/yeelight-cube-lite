@@ -539,6 +539,8 @@ class YeelightCubeLight(
         # Estimated draw of the last frame sent (None until one is sent).
         self._last_frame_power = None
         self._power_sensor = None
+        # Estimated energy (kWh): told every power change (_publish_power).
+        self._energy_sensor = None
         self._published_power = None
         # Firmware modes (clock, native effect, Music Flow): estimates of the
         # simulated preview frame, sampled every FIRMWARE_POWER_INTERVAL and
@@ -666,13 +668,16 @@ class YeelightCubeLight(
 
     @callback
     def _publish_power(self) -> None:
-        """Write the Estimated power sensor when its value changed."""
+        """Write the Estimated power sensor when its value changed, and
+        let the Estimated energy sensor count the energy until then."""
         power = self.estimated_power
         if power != self._published_power:
             self._published_power = power
             sensor = self._power_sensor
             if sensor is not None and sensor.hass is not None:
                 sensor.async_write_ha_state()
+            if self._energy_sensor is not None:
+                self._energy_sensor.power_changed(power)
 
     def _notify_camera_preview(self) -> None:
         """Schedule every camera entity to re-render its preview.

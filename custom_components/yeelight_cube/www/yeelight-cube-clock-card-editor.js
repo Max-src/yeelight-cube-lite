@@ -286,12 +286,6 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
                   "Browser Settings",
                   html`
                     ${createToggleRow(
-                      "Text Search",
-                      "show_search",
-                      config.show_search !== false,
-                      (event) => this._onToggle(event, "show_search"),
-                    )}
-                    ${createToggleRow(
                       "Customize visible styles",
                       "custom_visible_styles",
                       config.custom_visible_styles === true,
@@ -313,12 +307,14 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
                       : ""}
                     ${renderStyleSelectorSettings(config, change, {
                       allowOriginal: true,
+                      memory: (this._galleryMemory ||= {}),
                       renderAppearance: () =>
                         renderClockSectionAppearance(
                           config,
                           change,
                           "gallery",
                           this,
+                          { size: false },
                         ),
                     })}
                   `,

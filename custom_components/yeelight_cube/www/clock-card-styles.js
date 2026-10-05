@@ -2,10 +2,7 @@
 import { cardLayoutStyles } from "./card-layout-utils.js";
 import { actionButtonStyles } from "./action-button-utils.js";
 import { colorPickerStyles } from "./color-picker-utils.js";
-import { selectorSharedStyles } from "./selector-shared-styles.js";
-import { paginationStyles } from "./pagination-utils.js";
-import { galleryDisplayStyles } from "./gallery-display-utils.js";
-import { carouselStyles } from "./carousel-utils.js";
+import { collectionGalleryStyles } from "./collection-gallery.js";
 import { sliderControlStyles } from "./slider-control-utils.js";
 import { colorModeSelectorStyles } from "./color-mode-selector-utils.js";
 
@@ -55,12 +52,8 @@ export const CLOCK_CARD_CSS = `
       .clock-color-control:has(yeelight-clock-preset-manager[editing]) .clock-color-save { flex: 1 1 100%; }
       .clock-color-control:has(yeelight-clock-preset-manager[editing]) .clock-color-save yeelight-clock-preset-manager { width: 100%; }
 
-      /* Shared design language: text selectors + shape/size axes */
-      ${selectorSharedStyles}
-      ${paginationStyles}
-      /* Shared preview renderers (gallery list/grid/wheel + carousel) */
-      ${galleryDisplayStyles}
-      ${carouselStyles}
+      /* The shared gallery: selectors, previews, carousel, album, paging */
+      ${collectionGalleryStyles}
       /* Shared multi-style value slider (same control as brightness) */
       ${sliderControlStyles}
 

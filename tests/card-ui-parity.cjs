@@ -397,18 +397,18 @@ const server = http.createServer(async (request, response) => {
         document.removeEventListener("keydown", listener);
       window.freshLeaked = leaked;
       // Focus immediately, before ha-card's async first update resolves.
-      const input = card.shadowRoot.querySelector(".clock-search");
+      const input = card.shadowRoot.querySelector(".yc-gallery-search");
       input.focus();
       return { focusedBeforeSlot: card.shadowRoot.activeElement === input };
     });
     const fresh = page.locator(
-      "yeelight-cube-clock-card:last-of-type input.clock-search",
+      "yeelight-cube-clock-card:last-of-type input.yc-gallery-search",
     );
     await fresh.click();
     await fresh.pressSequentially("tide", { delay: 25 });
     assert.deepEqual(
       await page.evaluate(() => {
-        const input = freshClock.shadowRoot.querySelector(".clock-search");
+        const input = freshClock.shadowRoot.querySelector(".yc-gallery-search");
         const result = {
           value: input.value,
           focused: freshClock.shadowRoot.activeElement === input,
@@ -449,13 +449,13 @@ const server = http.createServer(async (request, response) => {
         });
         clock.hass = hass;
         await clock.updateComplete;
-        window.searchNode = clock.shadowRoot.querySelector(".clock-search");
+        window.searchNode = clock.shadowRoot.querySelector(".yc-gallery-search");
         window.escapedSearchKeys = [];
         window.searchListener = (event) => escapedSearchKeys.push(event.key);
         document.addEventListener("keydown", searchListener);
       });
       const search = page.locator(
-        "yeelight-cube-clock-card input.clock-search",
+        "yeelight-cube-clock-card input.yc-gallery-search",
       );
       await search.click();
       await search.fill("");
@@ -463,7 +463,7 @@ const server = http.createServer(async (request, response) => {
       assert.deepEqual(
         await page.evaluate(() => ({
           value: searchNode.value,
-          same: searchNode === clock.shadowRoot.querySelector(".clock-search"),
+          same: searchNode === clock.shadowRoot.querySelector(".yc-gallery-search"),
           focused: clock.shadowRoot.activeElement === searchNode,
           names: clock._shownStyles().map((style) => style.name),
           escaped: escapedSearchKeys,
@@ -515,7 +515,7 @@ const server = http.createServer(async (request, response) => {
         });
         clock.hass = hass;
         await clock.updateComplete;
-        const input = clock.shadowRoot.querySelector(".clock-search");
+        const input = clock.shadowRoot.querySelector(".yc-gallery-search");
         input.focus();
         input.value = "rain";
         input.dispatchEvent(new Event("input", { bubbles: true }));
@@ -735,7 +735,7 @@ const server = http.createServer(async (request, response) => {
         card.hass = hass;
         document.querySelector("main").append(card);
         await card.updateComplete;
-        const browser = card.shadowRoot.querySelector("yeelight-style-browser");
+        const browser = card.shadowRoot.querySelector("yc-collection-gallery");
         browser.querySelector('[data-pagination-action="next"]').click();
         await browser.updateComplete;
         const advanced = browser.page === 1;
@@ -1092,7 +1092,7 @@ const server = http.createServer(async (request, response) => {
           "complete offline catalogue",
         );
         check(
-          cold.shadowRoot.querySelector("yeelight-style-browser"),
+          cold.shadowRoot.querySelector("yc-collection-gallery"),
           "offline browser",
         );
         check(
@@ -1407,17 +1407,40 @@ const server = http.createServer(async (request, response) => {
       );
       const updates = [0, 0];
       gradients.forEach((card, index) => {
-        const update = card._updatePreviewSection.bind(card);
-        card._updatePreviewSection = () => {
+        const update = card._refreshGallery.bind(card);
+        card._refreshGallery = (...args) => {
           updates[index]++;
-          update();
+          update(...args);
         };
       });
+      const itemNodes = (card) => [
+        ...card.shadowRoot.querySelectorAll("yc-collection-gallery [data-mode]"),
+      ];
+      const before = gradients.map(itemNodes);
       const green = Array.from({ length: 100 }, () => [0, 255, 0]);
       listeners.forEach((callback) => callback({ data: preview(green) }));
       check(
         updates.every((count) => count === 1),
         "Every Gradient view must refresh",
+      );
+      await frames();
+      check(
+        gradients.every(
+          (card, index) =>
+            before[index].length > 0 &&
+            itemNodes(card).every((node, i) => node === before[index][i]),
+        ),
+        "New Gradient previews repaint in place (no rebuilt items)",
+      );
+      check(
+        gradients.every((card) =>
+          itemNodes(card).every(
+            (node) =>
+              node.querySelector(".gallery-matrix-preview > div").style
+                .background === "rgb(0, 255, 0)",
+          ),
+        ),
+        "Repainted Gradient previews show the new colors",
       );
       check(
         gradients.every(
@@ -3036,18 +3059,28 @@ const server = http.createServer(async (request, response) => {
           host.remove();
         }
         if (profile === "gradient") {
-          let renders = 0;
-          card._previewCache = () => ({ data: { text: "Test", angle: 0 } });
-          card._renderPreviewGrid = () => `render-${++renders}`;
-          card._getCachedPreviewGrid();
-          const before = renders;
-          card.config.gallery_matrix_box_shadow =
-            !card.config.gallery_matrix_box_shadow;
-          card._getCachedPreviewGrid();
+          // A shadow-only setting change re-renders the gallery's previews.
+          const gallery = document.createElement("yc-collection-gallery");
+          const items = [
+            {
+              dataMode: "Solid Color",
+              name: "Solid Color",
+              title: "Solid",
+              colorData: Array.from({ length: 100 }, () => [255, 0, 0]),
+            },
+          ];
+          document.body.append(gallery);
+          gallery.config = { style_selector_style: "preview-list", show_search: false };
+          gallery.items = items;
+          await gallery.updateComplete;
+          const before = gallery.innerHTML;
+          gallery.config = { ...gallery.config, gallery_matrix_box_shadow: true };
+          await gallery.updateComplete;
           check(
-            renders === before + 1,
-            "Gradient shadow-only update invalidates preview cache",
+            gallery.innerHTML !== before,
+            "Gradient shadow-only update re-renders the previews",
           );
+          gallery.remove();
         }
         editor.style.cssText =
           "display:block;width:400px;max-width:100%;margin:16px auto;";

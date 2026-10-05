@@ -68,11 +68,29 @@ test("older option names move to the shared vocabulary", async () => {
       { mode_selector_style: "filled", style_selector_style: "preview-grid" },
       "gradient",
     ),
-    { style_selector_style: "preview-grid" },
+    { style_selector_style: "preview-grid", preview_size: 50, show_search: false },
   );
   const clean = { style_selector_style: "dropdown" };
-  assert.equal(normalizeCardOptions(clean, "gradient"), clean);
   assert.equal(normalizeCardOptions(clean, "clock"), clean);
+  const gradient = { ...clean, preview_size: 64, show_search: true };
+  assert.equal(normalizeCardOptions(gradient, "gradient"), gradient);
+});
+
+test("the gradient's older gallery size joins the shared Size option", async () => {
+  const { normalizeCardOptions } = await import(
+    "../custom_components/yeelight_cube/www/card-config.js"
+  );
+  const size = (gallery_preview_size) =>
+    normalizeCardOptions({ gallery_preview_size }, "gradient");
+  // The same % scale (of 450 px); pixel values above 100 from older configs.
+  assert.deepEqual(size("64"), { preview_size: 64, show_search: false });
+  assert.deepEqual(size(270), { preview_size: 60, show_search: false });
+  assert.equal(size(undefined).preview_size, 50);
+  // An explicit shared value wins and the older key is dropped.
+  assert.deepEqual(
+    normalizeCardOptions({ gallery_preview_size: 80, preview_size: 40 }, "gradient"),
+    { preview_size: 40, show_search: false },
+  );
 });
 
 test("an older clock config reads into the shared appearance names", async () => {

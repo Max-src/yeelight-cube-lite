@@ -7,11 +7,19 @@ import {
   BG_COLOR_CHOICES,
   SPACING_CHOICES,
 } from "./editor_ui_utils.js";
-import { selectorItemsPerPage } from "./style-selector-utils.js";
+import {
+  selectorItemsPerPage,
+  gallerySelectorStyle,
+} from "./style-selector-utils.js";
 const TEXT_STYLE_CHOICES = [
   { value: "filled", label: "Filled" },
   { value: "dropdown", label: "Dropdown" },
 ];
+const CHIPS_CHOICE = {
+  value: "chips",
+  label: "Chips",
+  title: "A pill per item with its color swatch",
+};
 
 const PREVIEW_STYLE_CHOICES = [
   {
@@ -39,24 +47,81 @@ const PREVIEW_STYLE_CHOICES = [
     label: "Wheel",
     title: "iOS-style rotating picker with live previews",
   },
+  {
+    value: "preview-album",
+    label: "Album",
+    title: "3D coverflow of live previews; click the centred one to apply it",
+  },
 ];
 
+/**
+ * The settings of the shared gallery (collection-gallery.js), the same in
+ * every card editor that has one.
+ *
+ * @param {Object} config - the edited config
+ * @param {Function} onChange - (key, value) => void
+ * @param {Object} [options]
+ * @param {boolean} [options.allowOriginal] - offer the Original layout
+ * @param {boolean} [options.allowChips] - offer Chips (items have swatches)
+ * @param {string} [options.noun] - what the items are ("Style", "Mode", ...)
+ * @param {Object} [options.memory] - an object the editor keeps: switching
+ *   Selector Type back restores the style last picked in that family
+ * @param {number} [options.defaultSize] - the card's preview_size default
+ * @param {Function} [options.renderAppearance] - (config, onChange) => the
+ *   card's matrix appearance rows (previews and Original only)
+ *
+ * Size (preview_size) is shown for every layout: it scales the previews and
+ * the text buttons alike.
+ */
 export function renderStyleSelectorSettings(
   config,
   onChange,
   {
     allowOriginal = false,
+    allowChips = false,
+    noun = "Style",
+    memory = {},
+    defaultSize = 55,
     renderAppearance = renderGalleryMatrixSettings,
   } = {},
 ) {
-  const style = config.style_selector_style || "preview-grid";
+  const style = gallerySelectorStyle(config);
+  const sizeRow = () =>
+    createSliderRow(
+      "Size",
+      config.preview_size ?? defaultSize,
+      { min: 30, max: 100, step: 5 },
+      (event) => onChange("preview_size", Number(event.target.value)),
+      "%",
+    );
+  const textChoices = allowChips
+    ? [...TEXT_STYLE_CHOICES, CHIPS_CHOICE]
+    : TEXT_STYLE_CHOICES;
+  const highlightRow = () =>
+    createToggleRow(
+      `Highlight Active ${noun}`,
+      "highlight_active_mode",
+      config.highlight_active_mode !== false,
+      (event) => onChange("highlight_active_mode", event.target.checked),
+    );
   const family =
     style === "original"
       ? "original"
       : style.startsWith("preview-")
         ? "preview"
         : "text";
-  return html` <div class="form-row">
+  memory[family] = style;
+  const pick = (value) => {
+    memory[family] = value;
+    onChange("style_selector_style", value);
+  };
+  return html`${createToggleRow(
+      "Text Search",
+      "show_search",
+      config.show_search !== false,
+      (event) => onChange("show_search", event.target.checked),
+    )}
+    <div class="form-row">
       <label>Selector Type</label>
       ${createButtonGroup(
         [
@@ -73,37 +138,41 @@ export function renderStyleSelectorSettings(
           ...(allowOriginal ? [{ value: "original", label: "Original" }] : []),
         ],
         family,
-        (event) =>
+        (event) => {
+          const next = event.currentTarget.dataset.value;
           onChange(
             "style_selector_style",
-            { text: "filled", preview: "preview-grid", original: "original" }[
-              event.currentTarget.dataset.value
-            ],
-          ),
+            memory[next] ||
+              { text: "filled", preview: "preview-grid", original: "original" }[
+                next
+              ],
+          );
+        },
       )}
     </div>
     ${family === "original"
-      ? renderOriginalSelectorSettings(config, onChange, renderAppearance)
+      ? renderOriginalSelectorSettings(
+          config,
+          onChange,
+          renderAppearance,
+          noun,
+          sizeRow,
+        )
       : family === "text"
         ? html`
             <div class="form-row">
               <label>Text Style</label>
-              ${createButtonGroup(TEXT_STYLE_CHOICES, style, (event) =>
-                onChange(
-                  "style_selector_style",
-                  event.currentTarget.dataset.value,
-                ),
+              ${createButtonGroup(textChoices, style, (event) =>
+                pick(event.currentTarget.dataset.value),
               )}
             </div>
+            ${sizeRow()}
           `
         : html`
             <div class="form-row">
               <label>Preview Style</label>
               ${createButtonGroup(PREVIEW_STYLE_CHOICES, style, (event) =>
-                onChange(
-                  "style_selector_style",
-                  event.currentTarget.dataset.value,
-                ),
+                pick(event.currentTarget.dataset.value),
               )}
             </div>
             ${style === "preview-wheel"
@@ -134,13 +203,7 @@ export function renderStyleSelectorSettings(
                         onChange("wheel_height", Number(event.target.value)),
                       "px",
                     )}
-                    ${createToggleRow(
-                      "Highlight Active Style",
-                      "highlight_active_mode",
-                      config.highlight_active_mode !== false,
-                      (event) =>
-                        onChange("highlight_active_mode", event.target.checked),
-                    )}
+                    ${highlightRow()}
                   `,
                 )
               : ""}
@@ -156,16 +219,32 @@ export function renderStyleSelectorSettings(
                   ),
                 )
               : ""}
+            ${style === "preview-album"
+              ? renderModeSettingsSection(
+                  "Album Mode Settings",
+                  html`
+                    ${createToggleRow(
+                      "3D Effect",
+                      "album_3d_effect",
+                      config.album_3d_effect !== false,
+                      (event) =>
+                        onChange("album_3d_effect", event.target.checked),
+                    )}
+                    ${createToggleRow(
+                      "Wrap Navigation (Infinite Loop)",
+                      "gallery_wrap_navigation",
+                      config.gallery_wrap_navigation === true,
+                      (event) =>
+                        onChange("gallery_wrap_navigation", event.target.checked),
+                    )}
+                    ${highlightRow()}
+                  `,
+                )
+              : ""}
             ${style === "preview-strip"
               ? renderModeSettingsSection(
                   "Strip Mode Settings",
-                  createToggleRow(
-                    "Highlight Active Style",
-                    "highlight_active_mode",
-                    config.highlight_active_mode !== false,
-                    (event) =>
-                      onChange("highlight_active_mode", event.target.checked),
-                  ),
+                  highlightRow(),
                 )
               : ""}
             ${style === "preview-list" || style === "preview-grid"
@@ -174,13 +253,7 @@ export function renderStyleSelectorSettings(
                     ? "Grid Mode Settings"
                     : "List Mode Settings",
                   html`
-                    ${createToggleRow(
-                      "Highlight Active Style",
-                      "highlight_active_mode",
-                      config.highlight_active_mode !== false,
-                      (event) =>
-                        onChange("highlight_active_mode", event.target.checked),
-                    )}
+                    ${highlightRow()}
                     ${createSliderRow(
                       "Items Per Page (0 = no pagination)",
                       selectorItemsPerPage(config),
@@ -192,17 +265,20 @@ export function renderStyleSelectorSettings(
                 )
               : ""}
             ${createToggleRow(
-              "Show Style Titles",
+              `Show ${noun} Titles`,
               "preview_show_titles",
               config.preview_show_titles !== false,
               (event) => onChange("preview_show_titles", event.target.checked),
             )}
-            ${renderAppearance(config, onChange)}
+            ${sizeRow()}${renderAppearance(config, onChange)}
           `}
-    ${!["original", "preview-list", "preview-grid"].includes(style)
+    ${style !== "original"
       ? renderSelectorShapeRows(config, onChange, {
-          showButtonShape:
-            style === "preview-carousel" || style === "preview-wheel",
+          showButtonShape: [
+            "preview-carousel",
+            "preview-wheel",
+            "preview-album",
+          ].includes(style),
         })
       : ""}`;
 }
@@ -212,13 +288,6 @@ export function renderStyleSelectorSettings(
 // the same way everywhere.
 function renderGalleryMatrixSettings(config, onChange) {
   return html`
-    ${createSliderRow(
-      "Size",
-      config.preview_size ?? 55,
-      { min: 30, max: 100, step: 5 },
-      (event) => onChange("preview_size", Number(event.target.value)),
-      "%",
-    )}
     <div class="form-row">
       <label>Preview Background Color</label>
       ${createButtonGroup(
@@ -280,6 +349,8 @@ function renderOriginalSelectorSettings(
   config,
   onChange,
   renderAppearance = renderGalleryMatrixSettings,
+  noun = "Style",
+  sizeRow = () => "",
 ) {
   const view = config.effect_view === "list" ? "list" : "grid";
   return html`
@@ -298,7 +369,7 @@ function renderOriginalSelectorSettings(
       view === "list" ? "List Mode Settings" : "Grid Mode Settings",
       html`
         ${createToggleRow(
-          "Highlight Active Style",
+          `Highlight Active ${noun}`,
           "highlight_active_mode",
           config.highlight_active_mode !== false,
           (event) => onChange("highlight_active_mode", event.target.checked),
@@ -320,7 +391,7 @@ function renderOriginalSelectorSettings(
           config.show_badges !== false,
           (event) => onChange("show_badges", event.target.checked),
         )}
-        ${renderAppearance(config, onChange)}
+        ${sizeRow()}${renderAppearance(config, onChange)}
       `,
     )}
   `;

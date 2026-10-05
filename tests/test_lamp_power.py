@@ -168,3 +168,21 @@ class LampPowerTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class EnergyMeterTests(unittest.TestCase):
+    def test_each_power_reading_holds_until_the_next(self):
+        meter = lamp_power.EnergyMeter()
+        meter.update(0, 6.0)            # 6 W for 30 minutes
+        meter.update(1800, 0.4)         # then 0.4 W for 30 minutes
+        total = meter.update(3600, 0.4)
+        self.assertAlmostEqual(total, (6.0 * 0.5 + 0.4 * 0.5) / 1000, places=9)
+
+    def test_unknown_power_adds_nothing_and_the_total_never_drops(self):
+        meter = lamp_power.EnergyMeter(total_kwh=1.5)  # restored after a restart
+        meter.update(0, None)           # firmware mode, no estimate yet
+        self.assertEqual(meter.update(600, 3.0), 1.5)
+        self.assertAlmostEqual(meter.update(1200, 3.0), 1.5 + 3.0 * 600 / 3_600_000)
+        # A clock that did not advance (or went back) counts nothing.
+        before = meter.total_kwh
+        self.assertEqual(meter.update(1100, 3.0), before)

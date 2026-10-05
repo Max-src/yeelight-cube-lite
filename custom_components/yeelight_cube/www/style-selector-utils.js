@@ -16,6 +16,15 @@ import {
 export const styleSelectorStyles =
   selectorSharedStyles + galleryDisplayStyles + carouselStyles;
 
+/** The gallery layout of a card config (older Original configs only set
+ * effect_view). The gallery and its editor settings both read it. */
+export function gallerySelectorStyle(config) {
+  return (
+    config?.style_selector_style ||
+    (config?.effect_view ? "original" : "preview-grid")
+  );
+}
+
 /** One page-size value for every selector. 0 and missing both mean no paging. */
 export function selectorItemsPerPage(config) {
   const value = parseInt(config?.items_per_page, 10);
@@ -41,7 +50,7 @@ export function bindStyleSelectorEvents(
 ) {
   root
     .querySelectorAll(
-      ".gc-selector .shared-action-button[data-mode], .gc-preview-shell .gallery-item[data-mode]",
+      ".gc-selector .shared-action-button[data-mode], .gc-selector .mode-chip[data-mode], .gc-preview-shell .gallery-item[data-mode]",
     )
     .forEach((node) => {
       if (style !== "preview-wheel")
@@ -90,7 +99,7 @@ export function renderTextStyleSelector(config, items, sel, active) {
     0.8,
     Math.min(1.4, (Number(config.preview_size) || 55) / 50),
   );
-  const selAttrs = `data-shape="${shape}" style="display: flex; flex-wrap: wrap; gap: 6px;"`;
+  const selAttrs = `data-shape="${shape}" style="display: flex; flex-wrap: wrap; gap: 6px; --gc-sel-scale:${scale};"`;
 
   if (sel === "dropdown") {
     return `
@@ -109,9 +118,28 @@ export function renderTextStyleSelector(config, items, sel, active) {
         </div>`;
   }
 
+  // "chips": a pill per item with its swatch (item.swatch, a CSS background:
+  // a gradient, a palette, ...) before its label.
+  if (sel === "chips") {
+    return `
+      <div class="gc-selector gc-chips" data-shape="${shape}" style="--gc-sel-scale:${scale};" role="radiogroup">
+        ${styles
+          .map((s) => {
+            const selected = active === s.dataMode;
+            return `<button type="button" class="mode-chip${selected ? " active" : ""}"
+                data-mode="${escapeHtml(s.dataMode)}" role="radio"
+                aria-checked="${selected}" title="${escapeHtml(s.name)}">
+              <span class="mode-chip-swatch" style="background:${escapeHtml(s.swatch || "var(--secondary-background-color, #e7ecf0)")}"></span>
+              <span class="mode-chip-label">${escapeHtml(s.label || s.name)}</span>
+            </button>`;
+          })
+          .join("")}
+      </div>`;
+  }
+
   // "filled" (default text style) — rendered through the shared action-button
   // system (text-only, no icons) so these buttons match the color-mode buttons
-  // on every card.
+  // on every card. item.label is the optional short button text.
   return `
       <div class="gc-selector" ${selAttrs}>
         ${styles
@@ -121,7 +149,7 @@ export function renderTextStyleSelector(config, items, sel, active) {
               // Unset falls back to DEFAULT_BUTTON_STYLE in the shared model.
               buttonStyle: config.buttons_style,
               contentMode: "text",
-              label: s.name,
+              label: s.label || s.name,
               title: s.name,
               selected: active === s.dataMode,
               role: "radio",
@@ -167,7 +195,7 @@ export function renderPreviewStyleSelector(config, items, sel, active, state) {
     }
     state.index = Math.max(0, Math.min(state.index, items.length - 1));
     return `
-        <div class="gc-preview-shell" ${shellAttrs} style="margin-top:12px;border-radius:8px;">
+        <div class="gc-preview-shell" ${shellAttrs} style="border-radius:8px;">
           ${renderCarouselString({
             items,
             currentIndex: state.index,
@@ -239,7 +267,7 @@ export function renderPreviewStyleSelector(config, items, sel, active, state) {
   });
 
   return `
-      <div class="gc-preview-shell" ${shellAttrs} style="margin-top: 12px; border-radius: 8px;">
+      <div class="gc-preview-shell" ${shellAttrs} style="border-radius: 8px;">
         ${galleryHtml}
         ${paginationHtml}
       </div>`;
