@@ -957,7 +957,8 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
         await light.start_effect_rotation(["Rainbow", "White"], 10, "clock")
         first, options = commands.get_nowait()
         self.assertEqual(first[1], light._native_clock_style)
-        self.assertEqual(options, {"abortive_close": False})
+        # The lamp's answer is checked, so a refused step is not taken for shown.
+        self.assertEqual(options, {"abortive_close": False, "check_reply": True})
         self.assertTrue(light._rotation_active)
         light.skip_effect_rotation()
         second, _ = await asyncio.wait_for(commands.get(), 2)
@@ -1002,6 +1003,70 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
                 setattr(light, attribute, attribute == "_calibration_lock")
             with patch.object(asyncio, "sleep", side_effect=changed):
                 self.assertFalse(await light._wait_rotation_retry(5))
+
+    async def test_a_refused_step_is_retried_then_reported_never_taken_for_shown(self):
+        # The lamp answers "client quota exceeded" to the clock activation:
+        # the same item is retried and, if the lamp keeps refusing, the
+        # rotation stops with a visible reason instead of silently running on.
+        quota = BULB_EXCEPTION({"code": -1, "message": "client quota exceeded"})
+
+        light = self.make_transport_light()
+        light._wait_rotation_retry = AsyncMock(return_value=True)
+        light._execute_hardware_op = self.real_hardware_op(light, quota)
+        refused = []
+
+        async def refuse_twice(command, params, **kwargs):
+            if command == "set_fx_effect":
+                refused.append(params[1])
+                if len(refused) < 3:
+                    raise quota
+
+        light._cube_matrix.send_raw_command.side_effect = refuse_twice
+        await light.start_effect_rotation(["Rainbow", "White"], 60, "clock")
+        self.assertEqual(len(refused), 3)
+        self.assertEqual(len(set(refused)), 1)  # the same item, retried
+        self.assertTrue(light._rotation_active)
+        self.assertIsNone(light._rotation_error)
+        light.stop_effect_rotation()
+
+        light = self.make_transport_light()
+        light._wait_rotation_retry = AsyncMock(return_value=True)
+        light._execute_hardware_op = self.real_hardware_op(light, quota)
+
+        async def always_refuse(command, params, **kwargs):
+            if command == "set_fx_effect":
+                raise quota
+
+        light._cube_matrix.send_raw_command.side_effect = always_refuse
+        with self.assertRaisesRegex(ValueError, "too many commands"):
+            await light.start_effect_rotation(["Rainbow", "White"], 60, "clock")
+        self.assertFalse(light._rotation_active)
+        self.assertIn("too many commands", light._rotation_error)
+
+    def real_hardware_op(self, light, quota_error):
+        """The real _execute_hardware_op, bound to ``light``."""
+        namespace = {
+            "asyncio": asyncio,
+            "time": time,
+            "_LOGGER": Mock(),
+            "APPLY_HARD_TIMEOUT": 5.0,
+            "CIRCUIT_BREAKER_WINDOW": 30.0,
+            "LOCK_WAIT_WARNING_MS": 3000,
+            "BulbException": BULB_EXCEPTION,
+            "CubeConnectionError": CUBE_CONNECTION_ERROR,
+            "_DEVICE_LOCKS": {},
+            "_DEVICE_LOCK_HOLDERS": {},
+            "is_quota_error": lambda err: err is quota_error,
+        }
+        fns = _load_standalone_functions(
+            LIGHT_SOURCE, {"_execute_hardware_op", "_get_device_lock"}, namespace
+        )
+        light._coalesced_op_generation = 0
+        light._display_retry_count = 0
+        light._retry_display_task = None
+        light._connection_error = False
+        light._hardware_operation_phase = None
+        return lambda func, name, **kw: fns["_execute_hardware_op"](light, func, name, **kw)
 
     async def test_native_start_reaches_protocol_transport(self):
         light = self.make_transport_light()

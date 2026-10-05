@@ -292,7 +292,9 @@ class NativeFeatureTests(unittest.TestCase):
             def close_fast_socket(self):
                 return None
 
-            async def send_raw_command(self, command, params, abortive_close=False):
+            async def send_raw_command(
+                self, command, params, abortive_close=False, check_reply=False
+            ):
                 self.params = params
 
         def make_device(style_id, color_mode):

@@ -20,6 +20,7 @@ from .cube_matrix import (
     CubeConnectionError,
     RECONNECT_COOLDOWN_INITIAL,
     RECOVERY_CONNECT_TIMEOUT,
+    is_quota_error,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -236,7 +237,15 @@ class ConnectionMixin:
             error_dict = e.args[0] if e.args and isinstance(e.args[0], dict) else {}
             error_message = error_dict.get('message', str(e))
             self._connection_error = True
-            self._last_connection_error = f"BulbException: {error_message}"
+            if is_quota_error(e):
+                # Its rate limit passes after a moment: retry (a rotation
+                # step waits and tries the same item again).
+                self._hardware_failure_retryable = True
+                self._last_connection_error = (
+                    "The lamp refused the command: too many commands in a short time"
+                )
+            else:
+                self._last_connection_error = f"BulbException: {error_message}"
             _LOGGER.warning(
                 "[OP #%s] [%s] BulbException: %s", op_id, self._ip, error_message
             )

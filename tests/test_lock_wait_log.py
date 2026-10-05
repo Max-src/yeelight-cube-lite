@@ -4,7 +4,9 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-from tests.test_native_features import LIGHT_SOURCE, _load_standalone_functions
+from tests.test_native_features import ROOT, LIGHT_SOURCE, _load_standalone_functions
+
+CUBE_MATRIX_SOURCE = (ROOT / "cube_matrix.py").read_text(encoding="utf-8")
 
 
 class LampTestCase(unittest.IsolatedAsyncioTestCase):
@@ -25,6 +27,11 @@ class LampTestCase(unittest.IsolatedAsyncioTestCase):
             "_DEVICE_LOCKS": {},
             "_DEVICE_LOCK_HOLDERS": {},
         }
+        self.namespace.update(
+            _load_standalone_functions(
+                CUBE_MATRIX_SOURCE, {"is_quota_error"}, {"BulbException": bulb_exception}
+            )
+        )
         fns = _load_standalone_functions(
             LIGHT_SOURCE,
             {"_execute_hardware_op", "_get_device_lock"},
@@ -174,3 +181,76 @@ class HardTimeoutTests(LampTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RefusedCommandTests(LampTestCase):
+    async def test_a_rate_limited_command_is_retryable_with_a_readable_reason(self):
+        refused = self.namespace["BulbException"](
+            {"code": -1, "message": "client quota exceeded"}
+        )
+
+        async def send():
+            raise refused
+
+        self.assertFalse(await self.lamp._execute_hardware_op(send, "rotation:clock"))
+        self.assertTrue(self.lamp._hardware_failure_retryable)
+        self.assertIn("too many commands", self.lamp._last_connection_error)
+
+    async def test_another_refusal_is_not_retried(self):
+        refused = self.namespace["BulbException"](
+            {"code": -5000, "message": "general error"}
+        )
+
+        async def send():
+            raise refused
+
+        self.assertFalse(await self.lamp._execute_hardware_op(send, "rotation:clock"))
+        self.assertFalse(self.lamp._hardware_failure_retryable)
+        self.assertEqual("BulbException: general error", self.lamp._last_connection_error)
+
+
+class RawReplyTests(unittest.TestCase):
+    """The lamp's answer to a checked raw command, over a real local socket."""
+
+    def setUp(self):
+        import json
+        import socket
+
+        self.socket = socket
+        self.reply_error = _load_standalone_functions(
+            CUBE_MATRIX_SOURCE,
+            {"_raw_reply_error"},
+            {"socket": socket, "json": json, "time": time, "RAW_REPLY_TIMEOUT": 0.3},
+        )["_raw_reply_error"]
+
+    def answer(self, payload, close=True):
+        """The error read from a lamp that sends ``payload`` (then closes)."""
+        server = self.socket.socket()
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        client = self.socket.create_connection(server.getsockname())
+        lamp, _ = server.accept()
+        try:
+            if payload:
+                lamp.sendall(payload)
+            if close:
+                lamp.close()
+            return self.reply_error(client)
+        finally:
+            client.close()
+            lamp.close()
+            server.close()
+
+    def test_an_error_answer_is_reported(self):
+        self.assertEqual(
+            {"code": -1, "message": "client quota exceeded"},
+            self.answer(
+                b'{"method":"props","params":{"power":"on"}}\r\n'
+                b'{"id":1,"error":{"code":-1,"message":"client quota exceeded"}}\r\n'
+            ),
+        )
+
+    def test_ok_silence_and_a_closed_connection_count_as_sent(self):
+        self.assertIsNone(self.answer(b'{"id":1,"result":["ok"]}\r\n'))
+        self.assertIsNone(self.answer(b""))  # closed without answering
+        self.assertIsNone(self.answer(b"", close=False))  # no answer in time

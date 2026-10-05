@@ -253,8 +253,10 @@ class NativeModesMixin:
         # set_fx_effect; brightness remains adjustable after activation.
         self._hardware_operation_phase = "clock:set_fx_effect"
         await asyncio.sleep(0.1)
+        # The lamp's answer is checked: a refused activation (rate limit)
+        # fails here instead of leaving HA believing the clock changed.
         await self._cube_matrix.send_raw_command(
-            "set_fx_effect", params, abortive_close=False
+            "set_fx_effect", params, abortive_close=False, check_reply=True
         )
         # Applying brightness before set_fx_effect can cancel clock activation,
         # but the firmware accepts it once the native renderer is running.
@@ -335,7 +337,10 @@ class NativeModesMixin:
         await self._leave_direct_mode()
         await self._set_native_mode_brightness()
         await asyncio.sleep(0.1)
-        await self._cube_matrix.send_raw_command("set_fx_effect", params)
+        # Checked like the clock activation (see _activate_native_clock).
+        await self._cube_matrix.send_raw_command(
+            "set_fx_effect", params, check_reply=True
+        )
         self._is_on = True
         self._fx_mode_is_direct = False
         self._in_native_fw_mode = True   # Lamp is now in firmware-native animation mode

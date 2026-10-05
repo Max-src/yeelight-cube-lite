@@ -1507,6 +1507,39 @@ const server = http.createServer(async (request, response) => {
         ),
         "Lamp adjustment must not cross reconfiguration",
       );
+      // Slider namespaces are a contract (www/lamp-sliders.js): every card's
+      // lamp sliders render with data-sl-ns="brightness", and Clock / Native
+      // Effects add "speed"; Lamp Preview has brightness only. The screenshot
+      // capture (tests/card-docs-browser.js) also queries sliders by these
+      // names, but only runs with a real HA -- assert them here too so a
+      // renamed/removed namespace fails `npm run check` (no HA) as well,
+      // instead of only in the screenshot CI job. Mount in a throwaway
+      // container so these probes stay out of the shared `cards` checks.
+      const sliderNamespaces = {
+        clock: ["brightness", "speed"],
+        "native-effects": ["brightness", "speed"],
+        "lamp-preview": ["brightness"],
+      };
+      const sliderProbe = document.createElement("div");
+      section.append(sliderProbe);
+      for (const [name, namespaces] of Object.entries(sliderNamespaces)) {
+        const sliderCard = document.createElement(`yeelight-cube-${name}-card`);
+        sliderCard.setConfig({
+          ...config,
+          show_brightness: true,
+          show_brightness_slider: true,
+        });
+        sliderCard.hass = state;
+        sliderProbe.append(sliderCard);
+        await sliderCard.updateComplete;
+        await frames();
+        for (const ns of namespaces)
+          check(
+            sliderCard.shadowRoot.querySelector(`[data-sl-ns="${ns}"]`),
+            `${name}: lamp slider must render with data-sl-ns="${ns}"`,
+          );
+      }
+      sliderProbe.remove();
       gradients[0].remove();
       section.append(gradients[0]);
       await frames();
@@ -2492,9 +2525,10 @@ const server = http.createServer(async (request, response) => {
       .click();
     const customId = await appearancePage.evaluate(
       () =>
-        appearancePreview.editor.getConfig().appearance_presets.find(
-          (preset) => preset.name === "Night display",
-        ).id,
+        appearancePreview.editor
+          .getConfig()
+          .appearance_presets.find((preset) => preset.name === "Night display")
+          .id,
     );
     await presetName.fill("Evening clock");
     await manager
@@ -3164,7 +3198,9 @@ const server = http.createServer(async (request, response) => {
             // transitions: measure the settled state.
             await Promise.all(
               [clock, native].flatMap((card) =>
-                card.shadowRoot.getAnimations().map((animation) => animation.finished),
+                card.shadowRoot
+                  .getAnimations()
+                  .map((animation) => animation.finished),
               ),
             );
             return { clock: snapshot(clock), native: snapshot(native) };

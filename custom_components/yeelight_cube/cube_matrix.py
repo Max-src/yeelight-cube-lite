@@ -89,6 +89,42 @@ def is_quota_error(err: BaseException) -> bool:
     )
 
 
+RAW_REPLY_TIMEOUT = 0.5  # seconds to wait for the answer to a checked command
+
+
+def _raw_reply_error(sock: socket.socket) -> dict | None:
+    """The error the lamp answered to command id 1 on ``sock``, if any.
+
+    Reads until the reply line arrives, the lamp closes the connection or
+    RAW_REPLY_TIMEOUT passes. Notifications ("props" pushes) are skipped.
+    No answer is not an error: the Cube often closes without replying.
+    """
+    sock.settimeout(RAW_REPLY_TIMEOUT)
+    buffer = b""
+    deadline = time.monotonic() + RAW_REPLY_TIMEOUT
+    while time.monotonic() < deadline:
+        try:
+            data = sock.recv(4096)
+        except (socket.timeout, OSError):
+            return None
+        if not data:
+            return None
+        buffer += data
+        *lines, buffer = buffer.split(b"\n")
+        for line in lines:
+            try:
+                message = json.loads(line.decode("utf8", "replace"))
+            except ValueError:
+                continue
+            if not isinstance(message, dict) or message.get("id") != 1:
+                continue
+            error = message.get("error")
+            if error is None:
+                return None
+            return error if isinstance(error, dict) else {"message": str(error)}
+    return None
+
+
 class CubeMatrix:
     """Handles communication with the Yeelight Cube Lite device."""
     def __init__(self, ip: str, port: int):
@@ -575,18 +611,26 @@ class CubeMatrix:
         params: list = None,
         timeout: float = 1.5,
         abortive_close: bool = True,
+        check_reply: bool = False,
     ):
         """Send a single command on a FRESH TCP connection (bypasses send_command_fast).
-        
+
         Opens a new socket, sends the command, and normally closes with RST.
         One-shot mode changes can request a graceful FIN so the device has a
         chance to consume the command before the connection is discarded.
         No rate limiting, no persistent socket, no recovery logic.
         Used by force_refresh to mirror the working yeelight_matrix library
         approach: fresh TCP per command.
-        
+
         Default timeout is 1.5s — LAN connects take <10ms, so 1.5s is
         generous while avoiding 3s+ waits on unreachable devices.
+
+        ``check_reply`` waits briefly (RAW_REPLY_TIMEOUT) for the lamp's answer
+        on the same connection and raises BulbException when the lamp refused
+        the command (e.g. its rate limit: "client quota exceeded"). Without
+        it a refused command looks sent and the caller believes the lamp
+        changed. No answer or a closed connection still counts as sent: the
+        Cube often closes without replying.
         """
         if params is None:
             params = []
@@ -604,6 +648,10 @@ class CubeMatrix:
                     "(%s bytes)",
                     self._ip, command, len(request)
                 )
+                if check_reply:
+                    error = _raw_reply_error(sock)
+                    if error is not None:
+                        raise BulbException(error)
             finally:
                 try:
                     if abortive_close:

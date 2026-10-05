@@ -17,6 +17,13 @@
  *
  * Used the same way by every card with lamp sliders (Clock, Native Effects,
  * Lamp Preview); store it as `this._lampSliders`.
+ *
+ * The namespace names "brightness" and "speed" are a stable contract: they are
+ * the `data-sl-ns` values in the rendered markup, and tests query sliders by
+ * them (tests/card-docs-browser.js, tests/card-ui-parity.cjs). Lamp Preview
+ * has "brightness" only. Renaming one, or adding/removing a card's slider,
+ * means updating those tests too -- otherwise the screenshot CI breaks with
+ * "Missing slider: <card>/<ns>".
  */
 import {
   brightnessRawToPct,
