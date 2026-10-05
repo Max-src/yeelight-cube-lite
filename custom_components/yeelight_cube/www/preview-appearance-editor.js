@@ -187,7 +187,7 @@ function renderPresetManager(config, change, editor, presets) {
   const remove = () => {
     const next = saved.filter((preset) => preset.id !== editing.id);
     clear();
-    change("clock_appearance_presets", next);
+    change("appearance_presets", next);
   };
   return html`<details class="appearance-details" data-preset-manager>
     <summary>Manage presets</summary>
@@ -247,12 +247,12 @@ function renderPresetManager(config, change, editor, presets) {
           next.push({
             id,
             name: name.trim(),
-            appearance: { ...config.clock_preview_appearance },
+            appearance: { ...config.preview_appearance },
           });
           editor._appearanceEditingPreset = id;
           editor._appearancePresetName = name.trim();
           editor._appearanceDeleteId = null;
-          change("clock_appearance_presets", next);
+          change("appearance_presets", next);
         }}
       >
         <ha-icon icon="mdi:content-save-outline"></ha-icon>${editing
@@ -309,7 +309,7 @@ function renderPresetManager(config, change, editor, presets) {
 }
 
 export function renderClockSharedAppearance(config, change, editor) {
-  const shared = config.clock_preview_appearance;
+  const shared = config.preview_appearance;
   const presets = clockAppearancePresets(config);
   const matches = presets.filter((preset) =>
     Object.keys(shared).every(
@@ -319,7 +319,7 @@ export function renderClockSharedAppearance(config, change, editor) {
   const selected =
     matches.find((preset) => preset.id === editor._appearanceSelectedPreset) ||
     matches[0];
-  const overrides = config.clock_preview_overrides || {};
+  const overrides = config.preview_overrides || {};
   const customSections = Object.keys(overrides).filter(
     (section) => Object.keys(overrides[section]).length,
   );
@@ -342,7 +342,7 @@ export function renderClockSharedAppearance(config, change, editor) {
             aria-pressed=${String(selected?.id === preset.id)}
             @click=${() => {
               editor._appearanceSelectedPreset = preset.id;
-              change("clock_preview_appearance", { ...preset.appearance });
+              change("preview_appearance", { ...preset.appearance });
             }}
           >
             ${sample(preset.appearance)}<span>${preset.name}</span>
@@ -354,7 +354,7 @@ export function renderClockSharedAppearance(config, change, editor) {
       ${fields(
         shared,
         (field, value) =>
-          change("clock_preview_appearance", { ...shared, [field]: value }),
+          change("preview_appearance", { ...shared, [field]: value }),
         undefined,
         undefined,
         {
@@ -362,7 +362,7 @@ export function renderClockSharedAppearance(config, change, editor) {
           labels: editor.appearanceSectionLabels,
           resetField: (field) =>
             change(
-              "clock_preview_overrides",
+              "preview_overrides",
               Object.fromEntries(
                 Object.entries(overrides).map(([section, values]) => [
                   section,
@@ -396,7 +396,7 @@ export function renderClockSharedAppearance(config, change, editor) {
             class="appearance-link"
             @click=${() => {
               editor._appearanceCustom = {};
-              change("clock_preview_overrides", {});
+              change("preview_overrides", {});
             }}
           >
             Use card default everywhere
@@ -425,13 +425,13 @@ export function renderClockSectionAppearance(config, change, section, editor) {
 }
 
 function renderSectionAppearance(config, change, section, editor) {
-  const overrides = config.clock_preview_overrides?.[section] || {};
+  const overrides = config.preview_overrides?.[section] || {};
   const custom =
     Object.keys(overrides).length > 0 || editor._appearanceCustom?.[section];
-  const values = { ...config.clock_preview_appearance, ...overrides };
+  const values = { ...config.preview_appearance, ...overrides };
   const setOverrides = (next) =>
-    change("clock_preview_overrides", {
-      ...config.clock_preview_overrides,
+    change("preview_overrides", {
+      ...config.preview_overrides,
       [section]: next,
     });
   return html`<div class="clock-appearance">
@@ -722,12 +722,7 @@ export class PreviewAppearanceEditor extends LitElement {
       ]),
     );
     const change = (key, value) => {
-      const keys = {
-        clock_preview_appearance: "preview_appearance",
-        clock_preview_overrides: "preview_overrides",
-        clock_appearance_presets: "appearance_presets",
-      };
-      this.config = { ...config, [keys[key] || key]: value };
+      this.config = { ...config, [key]: value };
       this.dispatchEvent(
         new CustomEvent("appearance-changed", {
           detail: { config: this.config },
@@ -737,18 +732,12 @@ export class PreviewAppearanceEditor extends LitElement {
       );
       this.requestUpdate();
     };
-    const virtual = {
-      ...config,
-      clock_preview_appearance: config.preview_appearance,
-      clock_preview_overrides: config.preview_overrides,
-      clock_appearance_presets: config.appearance_presets,
-    };
     if (this.section === "shared") {
-      return renderClockSharedAppearance(virtual, change, this);
+      return renderClockSharedAppearance(config, change, this);
     }
     if (definitions[this.section]) {
       return html`<div data-appearance=${this.section}>
-        ${renderSectionAppearance(virtual, change, this.section, this)}
+        ${renderSectionAppearance(config, change, this.section, this)}
       </div>`;
     }
     return html``;

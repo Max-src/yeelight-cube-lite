@@ -13,17 +13,7 @@ import { colorModeSelectorStyles } from "./color-mode-selector-utils.js";
 export const CLOCK_CARD_CSS = `
       ${cardLayoutStyles}
       :host { display: block; --action-row-icon-align: flex-start; }
-      .loading, .empty { padding: 16px; color: var(--secondary-text-color, #888); }
-      /* ha-card supplies the native background, border and radius when
-         "Show Card Background" is on; the plain .no-bg variant drops them. */
-      ha-card.clock-card { padding: 14px; }
-      .clock-card.no-bg {
-        background: transparent;
-        box-shadow: none;
-        border: none;
-        padding: 8px 0;
-      }
-      .card-title { font-size: 1.15em; font-weight: 600; }
+      /* The frame, its header and padding come from the shared card shell. */
       .active-label { font-size: 0.9em; color: var(--secondary-text-color, #9aa); }
       /* The Content and Format sections sit side by side when the card is
          wide enough, and wrap to their own rows otherwise. */

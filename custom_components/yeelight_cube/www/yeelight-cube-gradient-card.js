@@ -2,11 +2,7 @@
 
 import { resolvePreviewAppearance } from "./preview-appearance.js";
 
-import { getTargetEntities } from "./service-call-utils.js";
-import {
-  CardCommandController,
-  SUPERSEDED,
-} from "./card-command-controller.js";
+import { SUPERSEDED } from "./card-command-controller.js";
 
 import { AngleCommandController } from "./angle-wheel-utils.js";
 
@@ -17,7 +13,14 @@ import {
 
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { createSliderDraft } from "./slider-control-utils.js";
-import { bindHostEvents } from "./host-events.js";
+import { YeelightCardMixin, cubeLampEntities } from "./card-base.js";
+import {
+  cardNotice,
+  cardShell,
+  lampNotFoundNotice,
+  NOTICE,
+} from "./card-shell.js";
+import { normalizeCardOptions } from "./card-config.js";
 import { AngleControlMixin } from "./gradient-angle-control.js";
 import { ModeSelectorMixin } from "./gradient-mode-selector.js";
 import { GRADIENT_CARD_CSS } from "./gradient-card-styles.js";
@@ -82,7 +85,7 @@ export const GRADIENT_MODES = [
 // Historically the card had TWO ways to pick a gradient mode: a text-style
 // selector (buttons/pills/dropdown/…) AND a clickable preview gallery.  They
 // served the exact same purpose, so they are now ONE selector with a single
-// `mode_selector_style` config key covering every presentation:
+// `style_selector_style` config key covering every presentation:
 //   Text styles:    "filled" | "dropdown" | "chips"
 //   Preview styles: "preview-list" | "preview-grid" | "preview-strip" |
 //                   "preview-carousel" | "preview-wheel"
@@ -123,7 +126,7 @@ const LEGACY_TEXT_STYLE_MAP = {
  */
 function resolveModeSelectorStyle(cfg) {
   if (!cfg) return "preview-list";
-  const explicit = cfg.mode_selector_style;
+  const explicit = cfg.style_selector_style;
   if (explicit && LEGACY_TEXT_STYLE_MAP[explicit]) {
     return LEGACY_TEXT_STYLE_MAP[explicit];
   }
@@ -137,7 +140,16 @@ function resolveModeSelectorStyle(cfg) {
   return LEGACY_PREVIEW_STYLE_MAP[cfg.preview_display_mode] || "preview-list";
 }
 
-class YeelightCubeGradientCard extends ModeSelectorMixin(AngleControlMixin(LitElement)) {
+class YeelightCubeGradientCard extends ModeSelectorMixin(
+  AngleControlMixin(YeelightCardMixin(LitElement)),
+) {
+  static editor = [
+    "yeelight-cube-gradient-card-editor",
+    "./yeelight-cube-gradient-card-editor.js",
+  ];
+  // The angle capsule names its handlers in data-on-* attributes.
+  static hostEvents = (name) => CAPSULE_HANDLERS.has(name);
+
   // No reactive properties: rendering is driven explicitly by _renderCard()
   // (set hass fast path / skeleton key), which calls requestUpdate() only
   // when the card structure changes and syncs dynamic values in place
@@ -147,8 +159,7 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(AngleControlMixin(LitEl
   constructor() {
     super();
     // Every service call of this card (except the debounced angle, see
-    // _angleCommands) goes through one ordered queue.
-    this._commands = new CardCommandController();
+    // _angleCommands) goes through the card's queue (this._commands).
     // The angle the user is setting, kept until the lamp reports it back so
     // re-renders during/after a drag never snap the controls to the old angle.
     this._angleDraft = createSliderDraft({
@@ -283,8 +294,6 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(AngleControlMixin(LitEl
 
   connectedCallback() {
     super.connectedCallback();
-    // The angle capsule names its handlers in data-on-* attributes.
-    bindHostEvents(this, (name) => CAPSULE_HANDLERS.has(name));
     // Re-establish preview event subscription lost during disconnection.
     // disconnectedCallback unsubscribes, but the persistent _previewElement
     // survives, so the creation-time setTimeout that calls
@@ -379,7 +388,7 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(AngleControlMixin(LitEl
   }
 
   setConfig(config) {
-    config = resolvePreviewAppearance(config, "gradient");
+    config = resolvePreviewAppearance(normalizeCardOptions(config, "gradient"), "gradient");
     this._angleCommands.reset();
     this._commands?.reset();
     this._pendingAngle = null;
@@ -451,23 +460,14 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(AngleControlMixin(LitEl
     }
   }
 
-  static async getConfigElement() {
-    if (!customElements.get("yeelight-cube-gradient-card-editor")) {
-      await import("./yeelight-cube-gradient-card-editor.js");
-    }
-    return document.createElement("yeelight-cube-gradient-card-editor");
-  }
   static getStubConfig(hass) {
-    const allEntities = Object.keys(hass?.states || {}).filter(
-      (e) =>
-        e.startsWith("light.yeelight_cube") || e.startsWith("light.cubelite_"),
-    );
+    const allEntities = cubeLampEntities(hass);
     const firstEntity = allEntities[0] || "";
     return {
       type: "custom:yeelight-cube-gradient-card",
       entity: firstEntity,
       target_entities: allEntities.length > 0 ? allEntities : [],
-      mode_selector_style: "preview-wheel",
+      style_selector_style: "preview-wheel",
       selector_shape: "rounded",
       show_mode_selector: true,
       show_panel_toggle: true,
@@ -845,16 +845,13 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(AngleControlMixin(LitEl
     const stateObj = primaryEntity ? hass.states[primaryEntity] : null;
 
     if (!primaryEntity || !stateObj) {
-      const entityCount = (this.config.target_entities || []).length;
-      this._errorMessage =
-        entityCount === 0
-          ? "No entities configured"
-          : `Primary entity (${String(primaryEntity)}) not found`;
+      // The lamp that is missing ("" when none is configured).
+      this._missingLamp = primaryEntity || "";
       this._skeletonKey = null; // force full rebuild when the entity recovers
       this.requestUpdate();
       return;
     }
-    this._errorMessage = null;
+    this._missingLamp = null;
     const textColors = this._pendingColors ||
       stateObj.attributes.text_colors || [[255, 255, 255]];
 
@@ -898,9 +895,10 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(AngleControlMixin(LitEl
   }
 
   render() {
-    if (this._errorMessage != null) {
-      return html`<ha-card><div style="padding: 16px;">${this._errorMessage}</div></ha-card>`;
-    }
+    if (this._missingLamp != null)
+      return this._missingLamp
+        ? lampNotFoundNotice(this, this._missingLamp)
+        : cardNotice(this, NOTICE.noLamp);
     const hass = this._hass;
     if (!hass || !this.config || this._skeletonKey == null) return nothing;
     const stateObj = hass.states[this._getPrimaryEntity()];
@@ -910,7 +908,6 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(AngleControlMixin(LitEl
       stateObj.attributes.text_colors || [[255, 255, 255]];
     const currentAngle = this._displayAngle(stateObj);
 
-    const showCard = this.config.show_card_background !== false;
     // Unified mode selector (replaces the old separate color-mode selector +
     // always-on preview section — they served the same purpose).
     const selectorStyle = this._getModeSelectorStyle();
@@ -928,9 +925,6 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(AngleControlMixin(LitEl
         : this.config.show_color_mode_selector !== false;
     const showAngleSection = this.config.show_angle_section !== false;
     const showAngleSlider = this.config.show_angle_slider !== false;
-
-    const cardTitle =
-      typeof this.config.title === "string" ? this.config.title.trim() : "";
 
     // Get current lamp state for runtime controls
     const colorMode = this._getCurrentMode() || "Solid Color";
@@ -959,8 +953,7 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(AngleControlMixin(LitEl
     const showActiveModeLabel = this.config.show_active_mode_label === true;
 
     const cardContent = html`
-      <div class="yc-stack" style="padding:16px;">
-        ${!showCard && cardTitle ? html`<div style="font-weight:600;font-size:1.1em;">${cardTitle}</div>` : nothing}
+      <div class="yc-stack">
         ${
           rotaryInHeader && showAngleSection
             ? html`
@@ -1069,9 +1062,7 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(AngleControlMixin(LitEl
       </div>
     `;
 
-    return showCard
-      ? html`<ha-card header=${cardTitle || nothing}><div class="card-content">${cardContent}</div></ha-card>`
-      : html`<div class="card-content">${cardContent}</div>`;
+    return cardShell(this, html`<div class="card-content">${cardContent}</div>`);
   }
 
   /**
@@ -1092,7 +1083,7 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(AngleControlMixin(LitEl
 
   updated(changedProperties) {
     super.updated(changedProperties);
-    if (!this._rebuildPending || this._errorMessage != null) return;
+    if (!this._rebuildPending || this._missingLamp != null) return;
     if (!this.shadowRoot?.querySelector(".card-content")) return;
     this._rebuildPending = false;
     this._afterRebuild();
@@ -1438,7 +1429,7 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(AngleControlMixin(LitEl
 
     // Resolve the full list of target entities (same list used by
     // callServiceOnTargetEntities).
-    const allTargets = getTargetEntities(this.config);
+    const allTargets = this._targets;
 
     if (cols > 0) {
       // Save each entity's current text before filling.

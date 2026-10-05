@@ -21,6 +21,21 @@ export function getTargetEntities(config = {}) {
 }
 
 /**
+ * `config` controlling the lamps in `value` (one id or a list): sets
+ * target_entities and keeps `entity` on the first lamp for single-lamp code
+ * and older configs; drops `entity` when no lamp is left (cards fall back to
+ * it when target_entities is empty, so a stale one would keep controlling the
+ * old lamp).
+ */
+export function withTargetEntities(config, value) {
+  const targets = (Array.isArray(value) ? value : [value]).filter(Boolean);
+  const next = { ...config, target_entities: targets };
+  if (targets.length) next.entity = targets[0];
+  else delete next.entity;
+  return next;
+}
+
+/**
  * Call a Home Assistant service on every configured target entity.
  *
  * When multiple entities are targeted, they are sent as a list inside ONE

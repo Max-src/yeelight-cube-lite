@@ -43,7 +43,7 @@
  * Accepts ANY card's config object and returns a consistent bag of values.
  *
  * Config key lookup order (first found wins):
- *   style  → remove_button_style | pixel_art_remove_button_style
+ *   style  → remove_button_style (| older Draw pixel_art_remove_button_style)
  *   shape  → delete_button_shape
  *   inside → delete_button_inside
  *   left   → delete_button_left

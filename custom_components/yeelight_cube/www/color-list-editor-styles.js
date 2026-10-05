@@ -30,13 +30,6 @@ export const COLOR_LIST_EDITOR_STYLES = css`
           max-width: 100%;
           overflow: hidden;
         }
-        .card-title {
-          font-size: 1.3em;
-          font-weight: bold;
-          margin-bottom: 18px;
-          margin-top: 2px;
-          color: var(--primary-text-color, #222);
-        }
         
         /* Header rotary styling - smaller and compact */
         .header-rotary {

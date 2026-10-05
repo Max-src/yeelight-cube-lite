@@ -1,4 +1,6 @@
-// Stylesheet text of the palette card.
+// Stylesheet of the palette card (static). Config values are CSS variables:
+// --card-size-multiplier / --rounded-cards-radius on the card body
+// (paletteStyleVars), the album's from renderAlbumView (album-view-coverflow).
 import { cardLayoutStyles } from "./card-layout-utils.js";
 import { compactModeStyles } from "./compact-mode-styles.js";
 import {
@@ -8,11 +10,26 @@ import {
 import { exportImportButtonStyles } from "./action-button-utils.js";
 import { carouselStyles } from "./carousel-utils.js";
 import { gridModeStyles } from "./grid-mode-utils.js";
-import { getAlbumStyles } from "./album-view-coverflow.js";
+import { albumStyles } from "./album-view-coverflow.js";
 import { paginationStyles } from "./pagination-utils.js";
 
-export function buildPaletteCardStyles(config, allowTitleEdit) {
-  return `
+/** The radius (px) of the "Rounded cards" option. */
+function roundedCardsRadius(value) {
+  if (value === undefined || value === true || value === "round") return 16;
+  if (value === false || value === "square") return 0;
+  if (value === "rounded") return 4;
+  return typeof value === "number" ? value : parseInt(value, 10) || 16;
+}
+
+/** The palette card's config values as CSS variables (body inline style). */
+export function paletteStyleVars(config = {}) {
+  return (
+    `--card-size-multiplier:${(config.card_size || 50) / 100};` +
+    `--rounded-cards-radius:${roundedCardsRadius(config.rounded_cards)}px;`
+  );
+}
+
+export const PALETTE_CARD_CSS = `
       ${cardLayoutStyles}
       /* Shared Compact Mode Styles */
       ${compactModeStyles}
@@ -31,22 +48,11 @@ export function buildPaletteCardStyles(config, allowTitleEdit) {
       ${gridModeStyles}
 
       :host {
-        --card-size-multiplier: ${(config.card_size || 50) / 100};
-        --rounded-cards-radius: ${(() => {
-          const v = config.rounded_cards;
-          if (v === undefined || v === true || v === "round") return 16;
-          if (v === false || v === "square") return 0;
-          if (v === "rounded") return 4;
-          return typeof v === "number" ? v : parseInt(v, 10) || 16;
-        })()}px;
         overflow: visible !important;
       }
       ha-card {
         overflow: visible !important;
       }
-      .card-title { font-size: 1.3em; font-weight: bold; margin-bottom: 18px; margin-top: 2px; color: var(--primary-text-color, #222); cursor: ${
-        allowTitleEdit ? "pointer" : "default"
-      }; }
       .palette-row {
         display: flex;
         flex-direction: column;
@@ -465,26 +471,8 @@ export function buildPaletteCardStyles(config, allowTitleEdit) {
       }
 
       /* Album Mode - Cover Flow Style - Use shared styles */
-      ${getAlbumStyles(config, "palettes")}
+      ${albumStyles("palettes")}
 
-      /* Album card size — driven by the "Display Card Size" slider, aligned
-       * with the pixel-art album feature. getAlbumStyles() (shared module)
-       * already scales the width, but this rule is emitted from the palette
-       * card's own (always-fresh) style block so the slider takes effect
-       * immediately and independently of the shared module's cache state.
-       * Width scales from the 240px baseline (100%), clamped 30–200%;
-       * margin-left is half the width to keep the card centred in the
-       * coverflow. Same formula as the pixel-art album. */
-      .palettes-album-item {
-        width: ${Math.round(
-          (240 * Math.max(30, Math.min(200, config.card_size || 50))) /
-            100,
-        )}px !important;
-        margin-left: -${Math.round(
-          (120 * Math.max(30, Math.min(200, config.card_size || 50))) /
-            100,
-        )}px !important;
-      }
 
       /* Additional palette-specific album styles */
       .palettes-album-item .album-gradient {
@@ -493,40 +481,14 @@ export function buildPaletteCardStyles(config, allowTitleEdit) {
         position: relative;
         transition: height 0.2s ease;
         flex-shrink: 1;
-        border-radius: ${(() => {
-          const v = config.rounded_cards;
-          const r =
-            v === undefined || v === true || v === "round"
-              ? 16
-              : v === false || v === "square"
-                ? 0
-                : v === "rounded"
-                  ? 4
-                  : typeof v === "number"
-                    ? v
-                    : parseInt(v, 10) || 16;
-          return `${r}px ${r}px 0 0`;
-        })()};
+        border-radius: var(--yc-album-radius, 16px) var(--yc-album-radius, 16px) 0 0;
         overflow: hidden;
       }
       .palettes-album-item .album-content {
         padding: max(4px, 5%) max(4px, 4%);
         min-height: 40px;
         background: var(--card-background-color, white);
-        border-radius: ${(() => {
-          const v = config.rounded_cards;
-          const r =
-            v === undefined || v === true || v === "round"
-              ? 16
-              : v === false || v === "square"
-                ? 0
-                : v === "rounded"
-                  ? 4
-                  : typeof v === "number"
-                    ? v
-                    : parseInt(v, 10) || 16;
-          return `0 0 ${r}px ${r}px`;
-        })()};
+        border-radius: 0 0 var(--yc-album-radius, 16px) var(--yc-album-radius, 16px);
         transition: padding 0.2s ease;
         flex: 1;
         display: flex;
@@ -726,5 +688,4 @@ export function buildPaletteCardStyles(config, allowTitleEdit) {
       .item-card-border .palettes-album-item {
         border: 1px solid var(--divider-color, rgba(255,255,255,0.15));
       }
-  `;
-}
+`;

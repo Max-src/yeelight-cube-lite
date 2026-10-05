@@ -10,13 +10,11 @@ import {
   buttonGroupStyles,
 } from "./button-group-utils.js";
 import {
-  createYeelightCubeEntityPicker,
   entitySelectorStyles,
 } from "./entity-selector-utils.js";
 import {
   sharedEditorStyles,
-  fireEvent,
-  EditorSectionsMixin,
+  YeelightEditorMixin,
   renderModeSettingsSection,
 } from "./editor_ui_utils.js";
 import {
@@ -26,11 +24,11 @@ import {
 } from "./form-row-utils.js";
 import { renderLightSliderSettings } from "./slider-control-utils.js";
 import { resolveCapsuleThickness } from "./capsule-slider-utils.js";
-import { BRIGHTNESS_SLIDER_KEYS } from "./yeelight-cube-lamp-preview-card.js";
+import { normalizeCardOptions } from "./card-config.js";
 import { defineOnce } from "./card-registration.js";
 
 // Editor class for the Yeelight Cube Lite Lamp Preview Card
-class YeelightCubeLampPreviewCardEditor extends EditorSectionsMixin(LitElement) {
+class YeelightCubeLampPreviewCardEditor extends YeelightEditorMixin(LitElement) {
   static get properties() {
     return {
       _config: { type: Object },
@@ -56,61 +54,18 @@ class YeelightCubeLampPreviewCardEditor extends EditorSectionsMixin(LitElement) 
       matrix_box_shadow: true, // Keep matrix box shadow enabled
       matrix_pixel_style: "square", // Default pixel style
       buttons_style: "classic", // New: default style for all buttons
-      show_brightness_slider: true, // Show brightness slider by default
-      brightness_slider_style: "slider", // Default brightness slider style
+      show_brightness: true, // Show brightness slider by default
+      slider_style: "slider", // Default brightness slider style
       brightness_slider_appearance: "default", // Legacy slider appearance (migrated to thickness)
-      brightness_slider_thickness: 6, // Track thickness in px (2-20, replaces appearance)
-      brightness_theme: "subtle", // Default brightness theme (matches section_style naming)
+      slider_thickness: 6, // Track thickness in px (2-20, replaces appearance)
+      slider_theme: "subtle", // Default brightness theme (matches section_style naming)
       show_brightness_label: true, // Show "Brightness" label above slider
-      ...lampActionConfig(config),
+      ...lampActionConfig(normalizeCardOptions(config, "lamp-preview")),
     };
   }
 
   getConfig() {
     return this._config;
-  }
-
-  static getConfigElement() {
-    return document.createElement("yeelight-cube-lamp-preview-card-editor");
-  }
-
-  _valueChanged(ev) {
-    const target = ev.target;
-    if (!target) return;
-    let key = target.id || target.name;
-    let value;
-    if (target.type === "checkbox") {
-      value = target.checked;
-    } else if (target.type === "number" || target.type === "range") {
-      value = Number(target.value);
-    } else if (target.tagName === "SELECT") {
-      value =
-        target.value === "false"
-          ? false
-          : target.value === "true"
-            ? true
-            : target.value;
-    } else {
-      value = target.value;
-    }
-    if (key === "title" && value === "") value = undefined;
-    this._config = { ...this._config, [key]: value };
-    this._fireConfigChanged();
-  }
-
-  _entityChanged = (ev) => {
-    this._config = { ...this._config, entity: ev.target.value };
-    this._fireConfigChanged();
-  };
-
-  _fireConfigChanged() {
-    this.dispatchEvent(
-      new CustomEvent("config-changed", {
-        detail: { config: this._config },
-        bubbles: true,
-        composed: true,
-      }),
-    );
   }
 
   // Alias kept for callers (e.g. docs fixtures) that open the shared
@@ -167,31 +122,10 @@ class YeelightCubeLampPreviewCardEditor extends EditorSectionsMixin(LitElement) 
       <div class="editor-root">
         <!-- Global Settings -->
         ${this._section("global", "Global Settings", html`
-            <div class="form-row">
-              <label>Card Title (optional)</label>
-              <input
-                id="title"
-                type="text"
-                placeholder="Lamp"
-                .value="${cfg.title ?? cfg.card_title ?? ""}"
-                @input="${this._valueChanged}"
-              />
-            </div>
-            <div class="form-row">
-              <label>Light Entity</label>
-              ${createYeelightCubeEntityPicker(
-                this.hass,
-                cfg.entity ? [cfg.entity] : [],
-                this._entityChanged,
-                "single",
-              )}
-            </div>
-            ${createToggleRow(
-              "Show Card Background",
-              "show_card_background",
-              cfg.show_card_background !== false,
-              (e) => this._onToggleChange(e),
-            )}
+            ${this._cardFrameSettings({
+              placeholder: "Lamp",
+              lamps: "single",
+            })}
         `)}
 
         <!-- Lamp Preview -->
@@ -248,8 +182,8 @@ class YeelightCubeLampPreviewCardEditor extends EditorSectionsMixin(LitElement) 
         ${this._section("brightnessSettings", "Brightness Settings", html`
             ${createToggleRow(
               "Show Brightness Slider",
-              "show_brightness_slider",
-              cfg.show_brightness_slider === true,
+              "show_brightness",
+              cfg.show_brightness === true,
               (e) => this._onToggleChange(e),
             )}
             ${renderLightSliderSettings(
@@ -260,19 +194,18 @@ class YeelightCubeLampPreviewCardEditor extends EditorSectionsMixin(LitElement) 
                 this.requestUpdate();
               },
               {
-                keys: BRIGHTNESS_SLIDER_KEYS,
                 showValueToggle: {
                   label: "Show Brightness Percentage",
-                  key: BRIGHTNESS_SLIDER_KEYS.showValue,
+                  key: "slider_show_value",
                 },
                 icons: {
                   leftLabel: "Show Moon Icon (🌙)",
                   rightLabel: "Show Sun Icon (☀️)",
                 },
                 // Only this card lets the user pick the slider color.
-                matrixColorKey: BRIGHTNESS_SLIDER_KEYS.color,
+                matrixColorKey: "slider_color",
                 thickness: resolveCapsuleThickness(
-                  cfg.brightness_slider_thickness,
+                  cfg.slider_thickness,
                   cfg.brightness_slider_appearance,
                   6,
                 ),

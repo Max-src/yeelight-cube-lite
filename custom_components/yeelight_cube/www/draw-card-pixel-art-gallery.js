@@ -8,7 +8,7 @@ import { renderGalleryMode, galleryModeStyles } from "./gallery-mode-utils.js";
 import { escapeHtml } from "./html-escape-utils.js";
 import {
   renderAlbumView,
-  getAlbumStyles,
+  albumStyles,
   setupAlbumNavigation,
 } from "./album-view-coverflow.js";
 import { listModeStyles } from "./list-mode-utils.js";
@@ -65,7 +65,7 @@ export const PixelArtGalleryMixin = (Base) => class extends Base {
     const allowDelete = btnCfg.allowDelete;
     const bgColor = cfg.pixel_art_background_color || "transparent";
     const autoApplyToLamp = cfg.pixel_art_auto_apply_to_lamp === true;
-    const showTitles = cfg.pixel_art_show_titles !== false; // Default to true
+    const showTitles = cfg.preview_show_titles !== false; // Default to true
     const allowRename = cfg.pixel_art_allow_rename === true; // Default to false
 
     if (!this._galleryCarouselIndex) this._galleryCarouselIndex = 0;
@@ -435,8 +435,9 @@ export const PixelArtGalleryMixin = (Base) => class extends Base {
     const albumConfig = {
       ...cfg,
       show_remove_button: allowDelete,
-      card_size: cfg.pixel_art_preview_size || 50,
-      pixel_art_remove_button_style: btnCfg.style,
+      // The album card width (240px at 100%) follows the preview size.
+      card_size: cfg.pixel_art_preview_size || 100,
+      remove_button_style: btnCfg.style,
       delete_button_shape: btnCfg.shape,
       delete_button_inside: btnCfg.inside,
       delete_button_left: btnCfg.left,
@@ -485,26 +486,7 @@ export const PixelArtGalleryMixin = (Base) => class extends Base {
     // Return unsafeHTML wrapped content
     return html`
       <style>
-        ${getAlbumStyles(
-          albumConfig,
-          "pixelarts",
-        )}
-
-        /* Album card size — driven by the "gallery preview size" slider.
-         * getAlbumStyles() (shared module) already scales the width, but this
-         * rule is emitted from the draw card's own (always-fresh) style block so
-         * the slider takes effect immediately and independently of the shared
-         * module's cache state. Width scales from the 240px baseline (100%),
-         * clamped 30–200%; margin-left is half the width to keep the card
-         * centred in the coverflow. */
-        .pixelarts-album-item {
-          width: ${Math.round(
-            (240 * Math.max(30, Math.min(200, previewSizePercent))) / 100,
-          )}px !important;
-          margin-left: -${Math.round(
-            (120 * Math.max(30, Math.min(200, previewSizePercent))) / 100,
-          )}px !important;
-        }
+        ${albumStyles("pixelarts")}
 
         /* Pixelart-specific album styles */
         .pixelarts-album-item .album-content-container {

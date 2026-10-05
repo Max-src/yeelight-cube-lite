@@ -83,6 +83,7 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         "draw",
         "gradient",
         "palette",
+        "color-list-editor",
       ])
         await import(`${base}yeelight-cube-${name}-card.js`);
       window.calls = [];
@@ -228,7 +229,7 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         const value = page.locator(`${lamp} .brightness-capsule-input[type="number"]`);
         await value.click();
         assert.equal(
-          await page.evaluate(() => card._slTyping),
+          await page.evaluate(() => card._slBrightnessTyping),
           true,
           "capsule: typing flag on focus",
         );
@@ -236,9 +237,36 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         await value.press("Enter");
         const data = await waitForCall("turn_on", "capsule typed value");
         assert.equal(data.brightness, 102); // 40% on the 3-255 curve
-        assert.equal(await page.evaluate(() => card._slTyping), false);
+        assert.equal(await page.evaluate(() => card._slBrightnessTyping), false);
       }
     }
+
+    // --- Lamp Preview: a dragged brightness holds until the lamp reports it ---
+    await page.evaluate((tag) =>
+      mount(tag, {
+        entity: "light.a",
+        show_brightness: true,
+        slider_style: "slider",
+        show_device_orientation: false,
+      }), lamp);
+    await page.locator(`${lamp} input.brightness-slider`).first().fill("40");
+    assert.equal((await waitForCall("turn_on", "preview drag")).brightness, 102);
+    const shown = () =>
+      page.evaluate(() => +card.shadowRoot.querySelector("input.brightness-slider").value);
+    const push = (brightness) =>
+      page.evaluate(async (brightness) => {
+        const light = hass.states["light.a"];
+        hass = { ...hass, states: { ...hass.states, "light.a": { ...light, attributes: { ...light.attributes, brightness } } } };
+        card.hass = hass;
+        await new Promise((resolve) => setTimeout(resolve, 400)); // render debounce
+      }, brightness);
+    await push(128); // an older state arriving after the commit
+    assert.equal(await shown(), 40, "preview: older lamp state must not jump the slider back");
+    await push(102); // the lamp reports the new value: the draft is dropped
+    assert.equal(await page.evaluate(() => card._lampSliders.value("brightness")), null);
+    assert.equal(await shown(), 40);
+    await push(26); // later changes (another card, automation) show again
+    assert.equal(await shown(), 10);
 
     // --- Orientation: Lamp Preview and Native (inside the mode controls) -----
     await page.evaluate((tag) =>
@@ -424,9 +452,164 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     );
     await checkInert("clock presets");
 
+    // --- Album settings reach the shared, static album CSS ------------------
+    // (album-view-coverflow.js: CSS variables set by renderAlbumView).
+    const albumLook = (tag, config, prefix) =>
+      page.evaluate(
+        async ({ tag, config, prefix }) => {
+          await mount(tag, config);
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          const root = card.shadowRoot;
+          const item = getComputedStyle(root.querySelector(`.${prefix}-album-item`));
+          const box = getComputedStyle(root.querySelector(`.${prefix}-album-container`));
+          return {
+            width: item.width,
+            radius: item.borderTopLeftRadius,
+            padding: box.padding,
+            perspective: box.perspective,
+          };
+        },
+        { tag, config, prefix },
+      );
+    const tuned = {
+      rounded_cards: "square",
+      delete_button_inside: true,
+      album_3d_effect: false,
+      remove_button_style: "red",
+    };
+    const tunedLook = { width: "360px", radius: "0px", padding: "12px 0px", perspective: "none" };
+    assert.deepEqual(
+      await albumLook("yeelight-cube-palette-card", { entity: "light.a", palette_sensor: "sensor.pal", display_mode: "album" }, "palettes"),
+      { width: "120px", radius: "16px", padding: "28px 14px", perspective: "1200px" },
+      "palette album defaults",
+    );
+    assert.deepEqual(
+      await albumLook("yeelight-cube-palette-card", { entity: "light.a", palette_sensor: "sensor.pal", display_mode: "album", card_size: 150, ...tuned }, "palettes"),
+      tunedLook,
+      "palette album settings",
+    );
+    assert.deepEqual(
+      await albumLook("yeelight-cube-draw-card", { entity: "light.a", pixelart_sensor: "sensor.pixel", pixel_art_gallery_mode: "album" }, "pixelarts"),
+      { width: "240px", radius: "16px", padding: "28px 14px", perspective: "1200px" },
+      "pixel-art album defaults",
+    );
+    assert.deepEqual(
+      await albumLook("yeelight-cube-draw-card", { entity: "light.a", pixelart_sensor: "sensor.pixel", pixel_art_gallery_mode: "album", pixel_art_preview_size: 150, ...tuned }, "pixelarts"),
+      tunedLook,
+      "pixel-art album settings",
+    );
+
+    // --- The shared card frame (card-shell.js) on every card and editor ----
+    const CARDS = {
+      clock: {},
+      "native-effects": {},
+      "lamp-preview": {},
+      draw: { pixelart_sensor: "sensor.pixel" },
+      gradient: {},
+      palette: { palette_sensor: "sensor.pixel" },
+      "color-list-editor": {},
+    };
+    for (const [name, extra] of Object.entries(CARDS)) {
+      const tag = `yeelight-cube-${name}-card`;
+      const frame = (config) =>
+        page.evaluate(
+          async ({ tag, config }) => {
+            await mount(tag, config);
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            await card.updateComplete;
+            const root = card.shadowRoot;
+            return {
+              cards: root.querySelectorAll("ha-card").length,
+              plain: !!root.querySelector("ha-card.yc-card.yc-card-plain"),
+              title: root.querySelector(".yc-card-title")?.textContent.trim() ?? null,
+              status: root.querySelector(".yc-card-status")?.textContent.trim() ?? null,
+              notice: root.querySelector(".yc-card-notice")?.textContent.trim() ?? null,
+              muted: root.querySelector(".yc-card-muted")?.textContent.trim() ?? null,
+            };
+          },
+          { tag, config },
+        );
+      const lamp = { entity: "light.a", target_entities: ["light.a"], ...extra };
+      assert.deepEqual(
+        await frame({ ...lamp, title: "Desk", show_lamp_status: true }),
+        { cards: 1, plain: false, title: "Desk", status: "Custom Draw", notice: null, muted: null },
+        `${name}: shared header`,
+      );
+      assert.deepEqual(
+        await frame({ ...lamp, show_card_background: false }),
+        { cards: 1, plain: true, title: null, status: null, notice: null, muted: null },
+        `${name}: no header without title/status, plain frame`,
+      );
+      if (name !== "draw" && name !== "palette")
+        assert.equal(
+          (await frame({ ...extra })).notice,
+          "Select a Yeelight Cube lamp in the card editor.",
+          `${name}: shared no-lamp notice`,
+        );
+      const gone = { ...extra, entity: "light.gone", target_entities: ["light.gone"] };
+      if (name === "clock" || name === "native-effects")
+        // These stay usable (browse and preview) with the shared line.
+        assert.equal((await frame(gone)).muted, "Lamp unavailable", `${name}: unavailable line`);
+      else if (name !== "draw" && name !== "palette")
+        assert.match(
+          (await frame(gone)).notice ?? "",
+          /Lamp not found: light\.gone/,
+          `${name}: shared lamp-not-found notice`,
+        );
+
+      // Its editor: the same settings, in the same order, reporting the
+      // same option names.
+      const editor = await page.evaluate(
+        async ({ tag, lamp }) => {
+          // The way Home Assistant opens it (loads the editor module).
+          const editor = await customElements.get(tag).getConfigElement();
+          editor.hass = hass;
+          editor.setConfig({ type: `custom:${tag}`, ...lamp });
+          document.querySelector("main").replaceChildren(editor);
+          await editor.updateComplete;
+          const root = editor.shadowRoot;
+          const ids = [...root.querySelectorAll("#title, #show_card_background, #show_lamp_status")]
+            .map((el) => el.id);
+          const changes = [];
+          editor.addEventListener("config-changed", (event) =>
+            changes.push(event.detail.config),
+          );
+          const title = root.querySelector("#title");
+          title.value = "Kitchen";
+          title.dispatchEvent(new Event("input"));
+          await editor.updateComplete;
+          const status = root.querySelector("#show_lamp_status");
+          status.checked = true;
+          status.dispatchEvent(new Event("change"));
+          await editor.updateComplete;
+          const last = changes.at(-1) || {};
+          return {
+            ids,
+            title: last.title,
+            status: last.show_lamp_status,
+            lamps: last.target_entities,
+          };
+        },
+        { tag, lamp },
+      );
+      assert.deepEqual(
+        editor,
+        {
+          ids: ["title", "show_card_background", "show_lamp_status"],
+          title: "Kitchen",
+          status: true,
+          lamps: ["light.a"],
+        },
+        `${name}: shared card-frame settings in the editor`,
+      );
+    }
+
     assert.deepEqual(errors, []);
     console.log(
       `PASS delegated events: ${SLIDER_STYLES.length} slider styles, orientation x2, clock/native sliders, draw gallery, gradient capsule (strict CSP, no inline handlers); hostile names inert in 4 palette + 4 pixel-art modes and clock presets`,
+    );
+    console.log(
+      "PASS shared card frame on all 7 cards and editors: title, lamp status, plain background, no-lamp / not-found notices, same editor settings",
     );
   } finally {
     await browser.close();

@@ -74,3 +74,24 @@ test("gallery generation rejects missing images and broken markers", () => {
     /Reversed/,
   );
 });
+
+test("a check accepts new scenarios that are not captured yet", () => {
+  const source = `${start}
+${end}`;
+  const pending = [];
+  // Not captured yet: left out of the gallery and reported.
+  assert.equal(
+    updateGalleries(source, catalogue, () => false, { pending }),
+    `${start}
+<table>
+</table>
+${end}`,
+  );
+  assert.deepEqual(pending, ["images/Cards/generated/clock-dark.png"]);
+  // A scenario already in the README whose image disappeared is stale.
+  const captured = updateGalleries(source, catalogue, () => true);
+  assert.notEqual(
+    updateGalleries(captured, catalogue, () => false, { pending: [] }),
+    captured,
+  );
+});

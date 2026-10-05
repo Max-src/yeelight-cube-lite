@@ -1,14 +1,15 @@
-// Stylesheet text of the lamp preview card for a given matrix pixel style.
+// Stylesheet of the lamp preview card (static). The config-dependent dot
+// shape and shadow come from --lamp-dot-radius / --lamp-dot-shadow, set on
+// the matrix grid (lamp-preview-matrix.js, _matrixGeometry).
 import { exportImportButtonStyles } from "./action-button-utils.js";
 import { cardLayoutStyles } from "./card-layout-utils.js";
-import { previewLength } from "./preview-appearance.js";
 import { orientationControlStyles } from "./orientation-control-utils.js";
 import { sliderControlStyles } from "./slider-control-utils.js";
 
-export function buildLampPreviewStyles(pixelStyle, lampDotShadow) {
-  const totalRows = 5;
-  const totalCols = 20;
-  return `
+const totalRows = 5;
+const totalCols = 20;
+
+export const LAMP_PREVIEW_CSS = `
       /* Inject centralized button styles */
       ${exportImportButtonStyles}
       ${cardLayoutStyles}
@@ -16,9 +17,13 @@ export function buildLampPreviewStyles(pixelStyle, lampDotShadow) {
       .yeelight-cube-lamp-preview-container {
         width: 100%;
         max-width: 100%;
+        /* Clips wide content, but not the matrix shadow: the card body's
+           padding (16px) is room for it. Browsers without clip margins
+           fall back to hidden. */
         overflow: hidden;
+        overflow: clip;
+        overflow-clip-margin: 16px;
         min-height: 0;
-        padding: 12px;
       }
       .lamp-preview-css {
         width: 100%;
@@ -43,9 +48,9 @@ export function buildLampPreviewStyles(pixelStyle, lampDotShadow) {
       .lamp-dot {
         width: 100%;
         height: 100%;
-        border-radius: ${pixelStyle === "circle" ? "50%" : pixelStyle === "rounded" ? "20%" : "0px"};
+        border-radius: var(--lamp-dot-radius, 0px);
         margin: auto;
-        box-shadow: ${lampDotShadow ? `0 0 ${previewLength(2)} #0008` : "none"};
+        box-shadow: var(--lamp-dot-shadow, none);
         transition: background 0.2s, border 0.2s;
         aspect-ratio: 1 / 1;
         border: none;
@@ -1392,5 +1397,4 @@ export function buildLampPreviewStyles(pixelStyle, lampDotShadow) {
           width: 100%;
         }
       }
-  `;
-}
+`;

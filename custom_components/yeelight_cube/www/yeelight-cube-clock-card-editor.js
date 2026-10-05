@@ -25,13 +25,12 @@ import {
 
 import {
   sharedEditorStyles,
-  EditorSectionsMixin,
+  YeelightEditorMixin,
   renderModeSettingsSection,
   renderExperimentalAvailability,
 } from "./editor_ui_utils.js";
 import { createButtonGroup, buttonGroupStyles } from "./button-group-utils.js";
 import { createToggleRow } from "./form-row-utils.js";
-import { createYeelightCubeEntityPicker } from "./entity-selector-utils.js";
 import { getClockStyles, CLOCK_COLOR_MODES } from "./clock-preview-utils.js";
 import {
   renderLightSliderSettings,
@@ -48,18 +47,16 @@ import {
   saveEditorRotationInterval,
 } from "./shared-lamp-settings.js";
 
-class YeelightCubeClockCardEditor extends EditorSectionsMixin(LitElement) {
+class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
   static get properties() {
     return {
-      localTitle: { type: String },
       _open: { state: true },
     };
   }
 
   constructor() {
     super();
-    this.config = {};
-    this.localTitle = "";
+    this._config = {};
     this._hass = null;
     // Foldable sections follow the card's top→bottom element order.
     this._open = { general: true };
@@ -90,8 +87,7 @@ class YeelightCubeClockCardEditor extends EditorSectionsMixin(LitElement) {
         cfg[K[f]] = cfg[oldK[f]];
       }
     }
-    this.config = normalizeClockAppearance(cfg);
-    this.localTitle = config.title || "";
+    this._config = normalizeClockAppearance(cfg);
     this.requestUpdate();
   }
 
@@ -119,7 +115,7 @@ class YeelightCubeClockCardEditor extends EditorSectionsMixin(LitElement) {
     const config = normalizeClockAppearance({
       buttons_style: "modern",
       buttons_content_mode: "icon_text",
-      ...this.config,
+      ...this._config,
     });
     const selectedEntities = getTargetEntities(config);
     // Several changes from one control (e.g. the interval rows and their
@@ -127,9 +123,9 @@ class YeelightCubeClockCardEditor extends EditorSectionsMixin(LitElement) {
     let next = config;
     const change = (key, value) => {
       next = { ...next, [key]: value };
-      this.config = next;
+      this._config = next;
       this.requestUpdate();
-      this._fire();
+      this._fireConfigChanged();
     };
     const modes = clockStylesWithPresets(
       getClockStyles(true),
@@ -144,42 +140,15 @@ class YeelightCubeClockCardEditor extends EditorSectionsMixin(LitElement) {
           "general",
           "Global Settings",
           html`
-            <div class="form-row">
-              <label>Card Title (optional)</label>
-              <input
-                type="text"
-                id="title"
-                .value="${this.localTitle}"
-                placeholder="Clock"
-                @input="${this._onTitleInput}"
-              />
-            </div>
-            <div class="form-row">
-              <label>Target Entities</label>
-              <div
-                class="hint"
-                style="font-size:0.9em;color:var(--secondary-text-color,#666);margin-bottom:8px;"
-              >
-                Choose the Yeelight Cube Lite light(s) this card controls.
-              </div>
-              ${createYeelightCubeEntityPicker(
-                this._hass,
-                selectedEntities,
-                (e) => this._onEntityChange(e),
-                "multiple",
-              )}
-            </div>
+            ${this._cardFrameSettings({
+              placeholder: "Clock",
+              lamps: "multiple",
+            })}
             ${createToggleRow(
               "Show active-style label",
               "show_active_label",
               config.show_active_label !== false,
               (e) => this._onToggle(e, "show_active_label"),
-            )}
-            ${createToggleRow(
-              "Show card background",
-              "show_card_background",
-              config.show_card_background !== false,
-              (e) => this._onToggle(e, "show_card_background"),
             )}
           `,
         )}
@@ -228,9 +197,9 @@ class YeelightCubeClockCardEditor extends EditorSectionsMixin(LitElement) {
               (e) => this._onToggle(e, "show_animation_speed"),
             )}
             ${renderLightSliderSettings(config, (key, value) => {
-              this.config = { ...this.config, [key]: value };
+              this._config = { ...this._config, [key]: value };
               this.requestUpdate();
-              this._fire();
+              this._fireConfigChanged();
             })}
           `,
         )}
@@ -283,9 +252,9 @@ class YeelightCubeClockCardEditor extends EditorSectionsMixin(LitElement) {
             ${renderModeSettingsSection(
               "Control buttons",
               renderActionButtonSettings(config, (key, value) => {
-                this.config = { ...this.config, [key]: value };
+                this._config = { ...this._config, [key]: value };
                 this.requestUpdate();
-                this._fire();
+                this._fireConfigChanged();
               }),
             )}
           `,
@@ -397,7 +366,7 @@ class YeelightCubeClockCardEditor extends EditorSectionsMixin(LitElement) {
       getClockStyles(true),
       clockPresetLibrary(this._hass),
     );
-    return visibleClockStyles(all, this.config).map(clockPresetKey);
+    return visibleClockStyles(all, this._config).map(clockPresetKey);
   }
 
   _renderVisibleStyleList() {
@@ -418,16 +387,16 @@ class YeelightCubeClockCardEditor extends EditorSectionsMixin(LitElement) {
       items: list,
       available: allNames.filter((name) => !list.includes(name)),
       onUpdate: (l) => {
-        this.config = clockStyleVisibilityConfig(this.config, allStyles, l);
+        this._config = clockStyleVisibilityConfig(this._config, allStyles, l);
         this.requestUpdate();
-        this._fire();
+        this._fireConfigChanged();
       },
       onReset: () => {
-        this.config = { ...this.config };
-        delete this.config.visible_styles;
-        delete this.config.hidden_clock_styles;
+        this._config = { ...this._config };
+        delete this._config.visible_styles;
+        delete this._config.hidden_clock_styles;
         this.requestUpdate();
-        this._fire();
+        this._fireConfigChanged();
       },
       addPlaceholder: "Add a style…",
       resetLabel: "Reset to all styles",
@@ -440,7 +409,7 @@ class YeelightCubeClockCardEditor extends EditorSectionsMixin(LitElement) {
     const visible = clockColorModeOptions(
       CLOCK_COLOR_MODES,
       presets,
-      this.config,
+      this._config,
     ).map((mode) => mode.value);
     const labels = new Map(all.map((mode) => [mode.value, mode.label]));
     return renderOrderableList({
@@ -450,68 +419,42 @@ class YeelightCubeClockCardEditor extends EditorSectionsMixin(LitElement) {
         .map((mode) => mode.value)
         .filter((key) => !visible.includes(key)),
       onUpdate: (items) => {
-        this.config = clockColorModeVisibilityConfig(this.config, all, items);
+        this._config = clockColorModeVisibilityConfig(this._config, all, items);
         this.requestUpdate();
-        this._fire();
+        this._fireConfigChanged();
       },
       onReset: () => {
-        this.config = { ...this.config };
-        delete this.config.visible_color_modes;
-        delete this.config.hidden_color_modes;
+        this._config = { ...this._config };
+        delete this._config.visible_color_modes;
+        delete this._config.hidden_color_modes;
         this.requestUpdate();
-        this._fire();
+        this._fireConfigChanged();
       },
       addPlaceholder: "Show a color mode...",
       resetLabel: "Reset to all color modes",
     });
   }
 
-  _onTitleInput(e) {
-    this.localTitle = e.target.value;
-    this.config = { ...this.config, title: this.localTitle || undefined };
-    this._fire();
-  }
-
-  _onEntityChange(e) {
-    const value = Array.isArray(e.target.value)
-      ? e.target.value
-      : [e.target.value];
-    this.config = { ...this.config, target_entities: value };
-    // Keep a single `entity` in sync for stub/simple configs.
-    this.config.entity = value[0] || undefined;
-    this.requestUpdate();
-    this._fire();
-  }
-
   _onButtonGroup(key, e) {
     const value = e?.target?.dataset?.value;
     if (!value) return;
-    this.config = { ...this.config, [key]: value };
+    this._config = { ...this._config, [key]: value };
     this.requestUpdate();
-    this._fire();
+    this._fireConfigChanged();
   }
 
   _onToggle(e, key) {
-    this.config = { ...this.config, [key]: e.target.checked };
+    this._config = { ...this._config, [key]: e.target.checked };
     this.requestUpdate();
-    this._fire();
+    this._fireConfigChanged();
   }
 
   _onSlider(key, e) {
-    this.config = { ...this.config, [key]: parseInt(e.target.value, 10) };
+    this._config = { ...this._config, [key]: parseInt(e.target.value, 10) };
     this.requestUpdate();
-    this._fire();
+    this._fireConfigChanged();
   }
 
-  _fire() {
-    this.dispatchEvent(
-      new CustomEvent("config-changed", {
-        detail: { config: this.config },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
 }
 
 defineOnce("yeelight-cube-clock-card-editor", YeelightCubeClockCardEditor);

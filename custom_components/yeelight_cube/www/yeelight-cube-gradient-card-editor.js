@@ -7,17 +7,16 @@ import {
 } from "./button-group-utils.js";
 import {
   createEntitySelector,
-  getLightEntities,
   entitySelectorStyles,
-  createYeelightCubeEntityPicker,
 } from "./entity-selector-utils.js";
 import {
   fireEvent,
   sharedEditorStyles,
-  EditorSectionsMixin,
+  YeelightEditorMixin,
   renderModeSettingsSection,
   renderSelectorShapeRows,
 } from "./editor_ui_utils.js";
+import { normalizeCardOptions } from "./card-config.js";
 import {
   formRowStyles,
   createToggleRow,
@@ -30,7 +29,7 @@ import {
 import { GRADIENT_MODES } from "./yeelight-cube-gradient-card.js";
 import { defineOnce } from "./card-registration.js";
 
-class YeelightCubeGradientCardEditor extends EditorSectionsMixin(LitElement) {
+class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
   static get properties() {
     return {
       _config: { type: Object },
@@ -49,7 +48,7 @@ class YeelightCubeGradientCardEditor extends EditorSectionsMixin(LitElement) {
   }
 
   setConfig(config) {
-    this._config = { ...config };
+    this._config = { ...normalizeCardOptions(config, "gradient") };
     // Migrate deprecated rotary styles to new combined modes
     if (this._config.rotary_unified_style === "arrow_window") {
       this._config.rotary_unified_style = "wheel";
@@ -96,9 +95,9 @@ class YeelightCubeGradientCardEditor extends EditorSectionsMixin(LitElement) {
     // --- Unified mode selector migration -----------------------------------
     // The old separate "color mode selector" (text buttons) and "gradient
     // preview" (clickable previews) are now ONE selector with a single
-    // mode_selector_style key.  Legacy configs always showed the preview
+    // style_selector_style key.  Legacy configs always showed the preview
     // section, so they migrate to the matching preview style.
-    if (!this._config.mode_selector_style) {
+    if (!this._config.style_selector_style) {
       const legacyMap = {
         inline: "preview-list",
         grid: "preview-list",
@@ -107,7 +106,7 @@ class YeelightCubeGradientCardEditor extends EditorSectionsMixin(LitElement) {
         compact: "preview-row",
         wheel: "preview-wheel",
       };
-      this._config.mode_selector_style =
+      this._config.style_selector_style =
         legacyMap[this._config.preview_display_mode] || "preview-list";
     }
     // Legacy show_color_mode_selector=false hid the panel toggle too (it
@@ -126,15 +125,15 @@ class YeelightCubeGradientCardEditor extends EditorSectionsMixin(LitElement) {
     // merged into the single "filled" style.
     if (
       ["buttons", "pills", "compact", "colorized"].includes(
-        this._config.mode_selector_style,
+        this._config.style_selector_style,
       )
     ) {
-      this._config.mode_selector_style = "filled";
+      this._config.style_selector_style = "filled";
     }
     delete this._config.button_text_color;
     // Migrate removed "preview-row" style to "preview-list"
-    if (this._config.mode_selector_style === "preview-row") {
-      this._config.mode_selector_style = "preview-list";
+    if (this._config.style_selector_style === "preview-row") {
+      this._config.style_selector_style = "preview-list";
     }
     // Migrate legacy panel toggle styles
     if (this._config.panel_toggle_style === "default") {
@@ -144,7 +143,7 @@ class YeelightCubeGradientCardEditor extends EditorSectionsMixin(LitElement) {
       this._config.panel_toggle_style = "tabs";
     }
     // Seed the per-family style memory from the loaded config
-    const _style = this._config.mode_selector_style || "preview-list";
+    const _style = this._config.style_selector_style || "preview-list";
     if (_style.startsWith("preview-")) {
       this._lastPreviewStyle = _style;
     } else {
@@ -189,10 +188,6 @@ class YeelightCubeGradientCardEditor extends EditorSectionsMixin(LitElement) {
     return this._config;
   }
 
-  static getConfigElement() {
-    return document.createElement("yeelight-cube-gradient-card-editor");
-  }
-
   _valueChanged(ev) {
     const target = ev.target;
     if (!target) return;
@@ -204,37 +199,6 @@ class YeelightCubeGradientCardEditor extends EditorSectionsMixin(LitElement) {
     this._config = { ...this._config, [key]: value };
 
     this._fireConfigChanged();
-  }
-
-  _entityChanged = (ev) => {
-    this._config = { ...this._config, entity: ev.target.value };
-    this._fireConfigChanged();
-  };
-
-  _renderEntityPicker() {
-    const selectedCount = (this._config.target_entities || []).length;
-    const message =
-      selectedCount > 0
-        ? `${selectedCount} entities selected for gradient operations`
-        : "No entities selected for gradient operations";
-
-    // Create wrapper callback that handles the array from entity picker
-    const handleEntityChange = (event) => {
-      const newSelectedEntities = event.target.value; // This is an array
-
-      // Update config directly with the new array
-      this._config = { ...this._config, target_entities: newSelectedEntities };
-
-      this._fireConfigChanged();
-      this.requestUpdate();
-    };
-
-    return createYeelightCubeEntityPicker(
-      this.hass,
-      this._config.target_entities || [],
-      handleEntityChange,
-      message,
-    );
   }
 
   _colorInfoChanged(ev) {
@@ -374,32 +338,10 @@ class YeelightCubeGradientCardEditor extends EditorSectionsMixin(LitElement) {
           this._renderAppearance("shared"),
         )}
         ${this._section("global", "Global Settings", html`
-            <div class="form-row">
-              <label>Card Title (optional)</label>
-              <input
-                id="title"
-                type="text"
-                .value="${cfg.title || ""}"
-                placeholder="Gradient"
-                @input="${this._valueChanged}"
-              />
-            </div>
-            <div class="form-row">
-              <label>Light Entities</label>
-              ${this._renderEntityPicker()}
-            </div>
-            <div class="toggle-row">
-              <label class="toggle-label">Show Card Background</label>
-              <label class="toggle-switch">
-                <input
-                  id="show_card_background"
-                  type="checkbox"
-                  .checked="${cfg.show_card_background !== false}"
-                  @change="${this._valueChanged}"
-                />
-                <span class="toggle-slider"></span>
-              </label>
-            </div>
+            ${this._cardFrameSettings({
+              placeholder: "Gradient",
+              lamps: "multiple",
+            })}
         `)}
 
         ${this._section("label", "Active Mode Label", html`
@@ -475,27 +417,27 @@ class YeelightCubeGradientCardEditor extends EditorSectionsMixin(LitElement) {
                       "Live mini-matrix of every mode with your text, colors and angle",
                   },
                 ],
-                (cfg.mode_selector_style || "preview-list").startsWith(
+                (cfg.style_selector_style || "preview-list").startsWith(
                   "preview-",
                 )
                   ? "preview"
                   : "text",
                 createButtonGroupChangeHandler("__selector_type", (value) => {
-                  const current = this._config.mode_selector_style || "";
+                  const current = this._config.style_selector_style || "";
                   const isPreview = current.startsWith("preview-");
                   // Only switch style when crossing families; preserve the
                   // last-chosen style within a family where possible.
                   if (value === "preview" && !isPreview) {
                     this._config = {
                       ...this._config,
-                      mode_selector_style:
+                      style_selector_style:
                         this._lastPreviewStyle || "preview-list",
                     };
                     this._fireConfigChanged();
                   } else if (value === "text" && isPreview) {
                     this._config = {
                       ...this._config,
-                      mode_selector_style: this._lastTextStyle || "filled",
+                      style_selector_style: this._lastTextStyle || "filled",
                     };
                     this._fireConfigChanged();
                   }
@@ -529,7 +471,7 @@ class YeelightCubeGradientCardEditor extends EditorSectionsMixin(LitElement) {
                   `,
                 )
               : ""}
-            ${!(cfg.mode_selector_style || "preview-list").startsWith(
+            ${!(cfg.style_selector_style || "preview-list").startsWith(
               "preview-",
             )
               ? html`
@@ -546,14 +488,14 @@ class YeelightCubeGradientCardEditor extends EditorSectionsMixin(LitElement) {
                             "Chips with a live gradient swatch per mode (follows colors + angle)",
                         },
                       ],
-                      cfg.mode_selector_style || "filled",
+                      cfg.style_selector_style || "filled",
                       createButtonGroupChangeHandler(
-                        "mode_selector_style",
+                        "style_selector_style",
                         (value) => {
                           this._lastTextStyle = value;
                           this._config = {
                             ...this._config,
-                            mode_selector_style: value,
+                            style_selector_style: value,
                           };
                           this._fireConfigChanged();
                         },
@@ -593,14 +535,14 @@ class YeelightCubeGradientCardEditor extends EditorSectionsMixin(LitElement) {
                           title: "iOS-style rotating picker with live previews",
                         },
                       ],
-                      cfg.mode_selector_style || "preview-list",
+                      cfg.style_selector_style || "preview-list",
                       createButtonGroupChangeHandler(
-                        "mode_selector_style",
+                        "style_selector_style",
                         (value) => {
                           this._lastPreviewStyle = value;
                           this._config = {
                             ...this._config,
-                            mode_selector_style: value,
+                            style_selector_style: value,
                           };
                           this._fireConfigChanged();
                         },
@@ -612,8 +554,8 @@ class YeelightCubeGradientCardEditor extends EditorSectionsMixin(LitElement) {
             <!-- Mode-specific settings: shown immediately after the style
                  picker so the conditional block sits right next to the option
                  that triggers it. -->
-            ${(cfg.mode_selector_style || "preview-list").startsWith("preview-")
-              ? cfg.mode_selector_style === "preview-wheel"
+            ${(cfg.style_selector_style || "preview-list").startsWith("preview-")
+              ? cfg.style_selector_style === "preview-wheel"
                 ? renderModeSettingsSection(
                     "Wheel Mode Settings",
                     html`
@@ -680,7 +622,7 @@ class YeelightCubeGradientCardEditor extends EditorSectionsMixin(LitElement) {
                       )}
                     `,
                   )
-                : cfg.mode_selector_style === "preview-carousel"
+                : cfg.style_selector_style === "preview-carousel"
                   ? renderModeSettingsSection(
                       "Carousel Mode Settings",
                       html`
@@ -692,7 +634,7 @@ class YeelightCubeGradientCardEditor extends EditorSectionsMixin(LitElement) {
                         )}
                       `,
                     )
-                  : cfg.mode_selector_style === "preview-strip"
+                  : cfg.style_selector_style === "preview-strip"
                     ? renderModeSettingsSection(
                         "Strip Mode Settings",
                         html`
@@ -705,7 +647,7 @@ class YeelightCubeGradientCardEditor extends EditorSectionsMixin(LitElement) {
                         `,
                       )
                     : renderModeSettingsSection(
-                        cfg.mode_selector_style === "preview-grid"
+                        cfg.style_selector_style === "preview-grid"
                           ? "Grid Mode Settings"
                           : "List Mode Settings",
                         html`
@@ -740,8 +682,8 @@ class YeelightCubeGradientCardEditor extends EditorSectionsMixin(LitElement) {
               },
               {
                 showButtonShape:
-                  cfg.mode_selector_style === "preview-carousel" ||
-                  cfg.mode_selector_style === "preview-wheel",
+                  cfg.style_selector_style === "preview-carousel" ||
+                  cfg.style_selector_style === "preview-wheel",
               },
             )}
             ${createSliderRow(
@@ -758,7 +700,7 @@ class YeelightCubeGradientCardEditor extends EditorSectionsMixin(LitElement) {
               "%",
             )}
             ${this._renderAppearance("gallery")}
-            ${(cfg.mode_selector_style || "preview-list").startsWith("preview-")
+            ${(cfg.style_selector_style || "preview-list").startsWith("preview-")
               ? html`
                   ${createToggleRow(
                     "Show Titles",

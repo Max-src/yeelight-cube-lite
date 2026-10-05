@@ -1,6 +1,11 @@
 // Shared UI utilities for Home Assistant card editors
 // Provides consistent form elements and styles
 
+import {
+  getTargetEntities,
+  withTargetEntities,
+} from "./service-call-utils.js";
+import { createYeelightCubeEntityPicker } from "./entity-selector-utils.js";
 import { html, css } from "./lib/lit-all.js";
 import {
   createButtonGroup,
@@ -250,6 +255,101 @@ export const EditorSectionsMixin = (Base) =>
   };
 
 /**
+ * The shared base of the card editors: collapsible sections
+ * (EditorSectionsMixin), the edited config in `this._config`, and the Home
+ * Assistant editor contract. Editors may override _fireConfigChanged() to
+ * add to the config they report (e.g. its `type`).
+ */
+export const YeelightEditorMixin = (Base) =>
+  class extends EditorSectionsMixin(Base) {
+    getConfig() {
+      return this._config;
+    }
+
+    /** Report the edited config: a bubbling, composed config-changed from
+     * this element, after which Home Assistant calls setConfig() on the
+     * edited card's preview only. */
+    _fireConfigChanged(config = this._config) {
+      fireEvent(this, "config-changed", { config });
+    }
+
+    /** The lamp picker changed: the card now controls `value`. */
+    _setTargets(value) {
+      this._config = withTargetEntities(this._config, value);
+      this.requestUpdate();
+      this._fireConfigChanged();
+    }
+
+    /** Set one option (undefined removes it) and report the config. */
+    _setOption(key, value) {
+      const config = { ...this._config };
+      if (value === undefined) delete config[key];
+      else config[key] = value;
+      this._config = config;
+      this.requestUpdate();
+      this._fireConfigChanged();
+    }
+
+    /**
+     * The settings of the shared card frame (card-shell.js), first in every
+     * card editor's Global Settings and in this order: title, lamps, card
+     * background, lamp status (offered when the card controls lamps).
+     *
+     * @param {Object} options
+     * @param {string} options.placeholder - the title field's placeholder
+     * @param {"multiple"|"single"} [options.lamps] - the lamp picker's mode;
+     *   omitted for a card without lamps
+     * @param {string} [options.lampsHint] - what the chosen lamps are for
+     */
+    _cardFrameSettings({ placeholder, lamps, lampsHint = "" }) {
+      const config = this._config || {};
+      return html`
+        <div class="form-row">
+          <label for="title">Card Title (optional)</label>
+          <input
+            type="text"
+            id="title"
+            .value=${config.title ?? ""}
+            placeholder=${placeholder}
+            @input=${(event) =>
+              this._setOption("title", event.target.value || undefined)}
+          />
+        </div>
+        ${lamps
+          ? html`<div class="form-row">
+              <label>${lamps === "single" ? "Lamp" : "Lamps"}</label>
+              ${lampsHint
+                ? html`<div class="hint">${lampsHint}</div>`
+                : ""}
+              ${createYeelightCubeEntityPicker(
+                this._hass ?? this.hass,
+                getTargetEntities(config),
+                (event) => this._setTargets(event.target.value),
+                lamps,
+              )}
+            </div>`
+          : ""}
+        ${createToggleRow(
+          "Show card background",
+          "show_card_background",
+          config.show_card_background !== false,
+          (event) =>
+            this._setOption("show_card_background", event.target.checked),
+        )}
+        ${lamps
+          ? createToggleRow(
+              "Show lamp status",
+              "show_lamp_status",
+              config.show_lamp_status === true,
+              (event) =>
+                this._setOption("show_lamp_status", event.target.checked),
+            )
+          : ""}
+      `;
+    }
+  };
+
+/**
  * Unified CSS styles for all editor cards.
  * Matches the color list editor card editor (the reference).
  * All editors should import this for consistent appearance.
@@ -268,6 +368,12 @@ export const sharedEditorStyles = css`
   }
   .experimental-availability p {
     margin: 6px 0 0;
+  }
+  /* What a setting is for, under its label (e.g. the lamp picker's). */
+  .hint {
+    font-size: 0.9em;
+    color: var(--secondary-text-color, #666);
+    margin-bottom: 8px;
   }
   /* Base editor layout */
   .editor-root {
@@ -557,7 +663,7 @@ export function renderCarouselNavSettings(config, options) {
  * @param {Object} config - The editor's current config object
  * @param {Object} options
  * @param {string} [options.styleKey="remove_button_style"] - Config key that
- *   stores the delete-button style (draw card uses "pixel_art_remove_button_style")
+ *   stores the delete-button style (remove_button_style)
  * @param {(key: string, value: *) => void} options.commit - Persists a config
  *   change using the host editor's own update mechanism. Values are already
  *   converted (booleans for inside/left) so the callback only needs to store

@@ -24,6 +24,13 @@ import {
   formatRotationInterval,
 } from "../custom_components/yeelight_cube/www/mode-controls-controller.js";
 import { readFileSync } from "node:fs";
+import { YeelightCardMixin } from "../custom_components/yeelight_cube/www/card-base.js";
+import { withTargetEntities } from "../custom_components/yeelight_cube/www/service-call-utils.js";
+
+// Fake cards built from object literals get the shared card-base helpers
+// (_targets, _inputsChanged, ...) like the real card.
+const CardBase = YeelightCardMixin(class { connectedCallback() {} });
+const asCard = (fake) => Object.setPrototypeOf(fake, CardBase.prototype);
 import {
   nativeEffectItems,
   nativePreviewCatalogue,
@@ -210,7 +217,7 @@ test("native unsaved color survives stale state echoes and unrelated updates", (
     `return function(hass) {${body}}`,
   )(getTargetEntities, previewOnly);
   const draft = [18, 52, 86];
-  const card = {
+  const card = asCard({
     config: { entity: "light.a", show_color_modes: true },
     _hass: { states: { "light.a": { state: "on", attributes: {} } } },
     _attrs() {
@@ -225,7 +232,7 @@ test("native unsaved color survives stale state echoes and unrelated updates", (
         native_effect_color_mode: "normal",
       },
     },
-  };
+  });
   for (const color of [null, [1, 2, 3], draft]) {
     update.call(card, {
       states: {
@@ -359,14 +366,14 @@ test("shared slider conversions agree across cards and fix the speed 20/19 misma
     /valueMode: config\.slider_show_raw_value \? "raw" : "percent"/,
   );
   // The Lamp Preview gets the raw toggle (and the rest) from the shared
-  // lamp-slider config and editor block, with its own key names.
+  // lamp-slider config and editor block, with the same slider_* names.
   assert.match(
     sourceFor("yeelight-cube-lamp-preview-card.js"),
-    /lightSliderConfig\(this\.config, "brightness", BRIGHTNESS_SLIDER_KEYS,/,
+    /lightSliderConfig\(this\.config, "brightness", sliderKeys\("slider"\),/,
   );
-  assert.match(
+  assert.doesNotMatch(
     sourceFor("yeelight-cube-lamp-preview-card-editor.js"),
-    /renderLightSliderSettings\([\s\S]*?keys: BRIGHTNESS_SLIDER_KEYS/,
+    /BRIGHTNESS_SLIDER_KEYS|keys: /,
   );
 });
 
@@ -389,7 +396,7 @@ test("removed saved looks are ignored without losing favourites", () => {
 });
 
 test("rotation retains only effects available on every target", () => {
-  const card = {
+  const card = asCard({
     config: { target_entities: ["light.first", "light.second"] },
     _collections: { favourites: ["Rainbow", "Streamer"] },
     _hass: {
@@ -415,7 +422,7 @@ test("rotation retains only effects available on every target", () => {
     _attrs() {
       return { native_effect_catalog: nativePreviewCatalogue };
     },
-  };
+  });
   const controls = new ModeControlsController({
     kind: "native",
     available: (name) => card._effectAvailable(name),
@@ -682,6 +689,12 @@ test("native editor sections follow the card and use shared conditional controls
     _change(key, value) {
       this._config = { ...this._config, [key]: value };
     },
+    _setTargets(value) {
+      this._config = withTargetEntities(this._config, value);
+    },
+    _cardFrameSettings(options) {
+      records.frame = options;
+    },
   };
   render.call(editor);
   assert.deepEqual(records.sections, [
@@ -697,8 +710,11 @@ test("native editor sections follow the card and use shared conditional controls
     "favourites",
     "rotation",
   ]);
-  assert.equal(records.picker[3], "multiple");
-  assert.deepEqual(records.picker[1], ["light.first", "light.second"]);
+  // Title, lamps, background and lamp status: the shared card-frame settings.
+  assert.deepEqual(records.frame, {
+    placeholder: "Native Effects",
+    lamps: "multiple",
+  });
   assert.deepEqual(records.list.items, ["Rainbow"]);
   assert.equal(records.sliders, 1);
   assert.equal(records.matrices, undefined);
@@ -707,8 +723,6 @@ test("native editor sections follow the card and use shared conditional controls
   assert.equal(records.selectorConfig.style_selector_style, "preview-grid");
   assert.equal(records.selectorConfig.items_per_page, undefined);
   assert.equal(records.orientation, true);
-  records.picker[2]({ target: { value: ["light.second"] } });
-  assert.deepEqual(editor._config.target_entities, ["light.second"]);
   Object.keys(records).forEach((key) => delete records[key]);
   editor._config = {
     ...editor._config,
@@ -723,12 +737,14 @@ test("native editor sections follow the card and use shared conditional controls
   for (const key of ["matrices", "buttons", "sliders", "orientation", "list"])
     assert.equal(records[key], undefined);
   assert.doesNotMatch(source, /<details|<summary/);
-  // Every editor builds its collapsible sections through the shared mixin.
-  for (const card of ["clock", "native-effects", "lamp-preview"])
+  // Every editor builds on the shared editor base (collapsible sections,
+  // config-changed, the lamp picker).
+  for (const card of ["clock", "native-effects", "lamp-preview", "draw", "gradient", "palette", "color-list-editor"])
     assert.match(
       sourceFor(`yeelight-cube-${card}-card-editor.js`),
-      /extends EditorSectionsMixin\(LitElement\)/,
+      /extends YeelightEditorMixin\(LitElement\)/,
     );
+  assert.match(sourceFor("editor_ui_utils.js"), /class extends EditorSectionsMixin\(Base\)/);
   assert.match(sourceFor("editor_ui_utils.js"), /renderEditorSection\(\s*id/);
   assert.match(
     sourceFor("yeelight-cube-lamp-preview-card-editor.js"),
@@ -814,13 +830,13 @@ test("multi-target configuration reads the first light and accepts legacy entity
   );
   const first = { attributes: { native_effect: "Rainbow" } };
   const second = { attributes: { native_effect: "Ocean Waves" } };
-  const card = {
+  const card = asCard({
     _context: 0,
     _commands: new CardCommandController(),
     _stopRotation() {},
     _controls: { configure() {} },
     _hass: { states: { "light.first": first, "light.second": second } },
-  };
+  });
   setConfig.call(card, { target_entities: ["light.first", "light.second"] });
   assert.equal(card._state, first);
   setConfig.call(card, { entity: "light.second" });

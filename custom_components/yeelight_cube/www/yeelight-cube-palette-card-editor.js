@@ -3,8 +3,7 @@ import { LitElement, html, css } from "./lib/lit-all.js";
 
 import {
   sharedEditorStyles,
-  fireEvent,
-  EditorSectionsMixin,
+  YeelightEditorMixin,
   renderModeSettingsSection,
   roundedCardsToSliderValue,
   renderDeleteButtonSettings,
@@ -19,21 +18,18 @@ import {
 
 import { createToggleRow, createSliderRow } from "./form-row-utils.js";
 
-import { createYeelightCubeEntityPicker } from "./entity-selector-utils.js";
 import { defineOnce } from "./card-registration.js";
 
-class YeelightCubePaletteCardEditor extends EditorSectionsMixin(LitElement) {
+class YeelightCubePaletteCardEditor extends YeelightEditorMixin(LitElement) {
   static get properties() {
     return {
-      localTitle: { type: String },
       _open: { state: true },
     };
   }
 
   constructor() {
     super();
-    this.config = {};
-    this.localTitle = "";
+    this._config = {};
     this._hass = null;
     this._open = {};
   }
@@ -43,8 +39,7 @@ class YeelightCubePaletteCardEditor extends EditorSectionsMixin(LitElement) {
   }
 
   setConfig(config) {
-    this.config = { ...config };
-    this.localTitle = config.title || "";
+    this._config = { ...config };
     this.requestUpdate();
   }
 
@@ -93,7 +88,7 @@ class YeelightCubePaletteCardEditor extends EditorSectionsMixin(LitElement) {
       >
         Loading...
       </div>`;
-    const config = this.config || {};
+    const config = this._config || {};
     const sensors = Object.keys(this._hass.states || {}).filter((eid) =>
       eid.startsWith("sensor."),
     );
@@ -101,37 +96,12 @@ class YeelightCubePaletteCardEditor extends EditorSectionsMixin(LitElement) {
     return html`
       <div class="editor-root">
         ${this._section("global", "Global Settings", html`
-            <div class="form-row">
-              <label>Card Title (optional)</label>
-              <input
-                type="text"
-                id="title"
-                .value="${this.localTitle}"
-                placeholder="Palettes"
-                @input="${this._onTitleInput}"
-              />
-            </div>
-            <div class="form-row">
-              <label>Target Entities (optional)</label>
-              <div
-                style="font-size: 0.9em; color: var(--secondary-text-color, #666); margin-bottom: 8px;"
-              >
-                Select which Yeelight Cube Lite lights should receive palette
-                applications. Leave empty to affect all lights.
-              </div>
-              ${createYeelightCubeEntityPicker(
-                this._hass,
-                this.config.target_entities || [],
-                (e) => this._onEntityChange(e),
-                "multiple",
-              )}
-            </div>
-            ${createToggleRow(
-              "Show Card Background",
-              "show_card_background",
-              config.show_card_background !== false,
-              (e) => this._onSwitchChange(e, "show_card_background"),
-            )}
+            ${this._cardFrameSettings({
+              placeholder: "Palettes",
+              lamps: "multiple",
+              lampsHint:
+                "Optional: the lamps that receive applied palettes. Leave empty to affect all lights.",
+            })}
         `)}
 
         ${this._section("palettes", "Palettes List", html`
@@ -160,8 +130,8 @@ class YeelightCubePaletteCardEditor extends EditorSectionsMixin(LitElement) {
                     shapeKey: "palette_carousel_button_shape",
                     shapeDefault: "square",
                     onShapeChange: (value) => {
-                      this.config = {
-                        ...this.config,
+                      this._config = {
+                        ...this._config,
                         palette_carousel_button_shape: value,
                       };
                       this.requestUpdate();
@@ -274,7 +244,7 @@ class YeelightCubePaletteCardEditor extends EditorSectionsMixin(LitElement) {
             ${renderDeleteButtonSettings(config, {
               styleKey: "remove_button_style",
               commit: (key, value) => {
-                this.config = { ...this.config, [key]: value };
+                this._config = { ...this._config, [key]: value };
                 this.requestUpdate();
                 this._fireConfigChanged();
               },
@@ -303,55 +273,31 @@ class YeelightCubePaletteCardEditor extends EditorSectionsMixin(LitElement) {
     `;
   }
 
-  _onTitleInput(e) {
-    this.localTitle = e.target.value;
-    this.config = { ...this.config, title: this.localTitle || undefined };
-    this._fireConfigChanged();
-  }
-
-  _onEntityChange(e) {
-    const newEntities = Array.isArray(e.target.value)
-      ? e.target.value
-      : [e.target.value];
-    this.config = { ...this.config, target_entities: newEntities };
-    this.requestUpdate();
-    this._fireConfigChanged();
-  }
-
   _onButtonGroupChange(key, value) {
     // Convert boolean-backed button groups from string to boolean
     if (key === "delete_button_left") value = value === "left";
     else if (key === "delete_button_inside") value = value === "inside";
     // New object: never mutate a config already dispatched to HA; also
     // forces re-render of conditional sections (like album settings).
-    this.config = { ...this.config, [key]: value };
+    this._config = { ...this._config, [key]: value };
     this.requestUpdate();
     this._fireConfigChanged();
   }
 
   _onSwitchChange(e, key) {
     // Immediately update the UI before firing config change
-    this.config = { ...this.config, [key]: e.target.checked };
+    this._config = { ...this._config, [key]: e.target.checked };
     this.requestUpdate();
     this._fireConfigChanged();
   }
 
   _onSliderChange(key, e) {
     const value = parseInt(e.target.value);
-    this.config = { ...this.config, [key]: value };
+    this._config = { ...this._config, [key]: value };
     this.requestUpdate();
     this._fireConfigChanged();
   }
 
-  _fireConfigChanged() {
-    this.dispatchEvent(
-      new CustomEvent("config-changed", {
-        detail: { config: this.config },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
 }
 
 defineOnce("yeelight-cube-palette-card-editor", YeelightCubePaletteCardEditor);

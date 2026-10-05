@@ -49,6 +49,14 @@
             "offline": {
                 "title": "Local previews while the lamp is unavailable",
                 "offline": true
+            },
+            "frame": {
+                "title": "Card title, lamp status and no card background",
+                "config": {
+                    "title": "Living room",
+                    "show_lamp_status": true,
+                    "show_card_background": false
+                }
             }
         },
         "editors": {
@@ -114,6 +122,14 @@
             "offline": {
                 "title": "Local previews while the lamp is unavailable",
                 "offline": true
+            },
+            "frame": {
+                "title": "Card title, lamp status and no card background",
+                "config": {
+                    "title": "Living room",
+                    "show_lamp_status": true,
+                    "show_card_background": false
+                }
             }
         },
         "editors": {
@@ -156,6 +172,14 @@
                         "shadow": false,
                         "ignoreBlack": false
                     }
+                }
+            },
+            "frame": {
+                "title": "Card title, lamp status and no card background",
+                "config": {
+                    "title": "Living room",
+                    "show_lamp_status": true,
+                    "show_card_background": false
                 }
             }
         },

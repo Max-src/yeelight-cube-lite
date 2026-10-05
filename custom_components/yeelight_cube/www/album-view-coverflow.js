@@ -16,19 +16,28 @@
  * 2. Call renderAlbumView() to generate HTML
  * 3. Call setupAlbumNavigation() to attach event listeners
  *
+ * Styles: albumStyles(classPrefix) is static (include it in the card's static
+ * styles); the configurable values (card width from card_size, corner radius
+ * from rounded_cards, 3D effect, delete-button room) are CSS variables that
+ * renderAlbumView() sets on the album wrapper (albumStyleVars).
+ *
  * Configuration:
  * - Uses centralized getDeleteButtonConfig() for button styling
- * - Palette cards use: config.remove_button_style
- * - Draw cards use: config.pixel_art_remove_button_style
+ * - Every card uses config.remove_button_style (older Draw configs:
+ *   pixel_art_remove_button_style, see card-config.js)
  *
  * Pure JavaScript - no external dependencies
  */
 
 import { getDeleteButtonConfig } from "./delete-button-styles.js";
 
-export function getAlbumStyles(config = {}, classPrefix = "album") {
-  const btnCfg = getDeleteButtonConfig(config);
-  const isInside = btnCfg.inside;
+/**
+ * The album's configurable values as CSS variables (inline style of the
+ * album wrapper): --yc-album-width, --yc-album-radius, --yc-album-pad,
+ * --yc-album-perspective.
+ */
+export function albumStyleVars(config = {}) {
+  const isInside = getDeleteButtonConfig(config).inside;
   // Normalize shape: backward compat for boolean + legacy album_card_rounded + numeric slider
   const rawShape =
     config.rounded_cards !== undefined
@@ -54,8 +63,16 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
     Math.min(200, Number(config.card_size) || 100),
   );
   const albumCardWidth = Math.round((240 * albumSizePct) / 100);
-  const albumCardHalf = albumCardWidth / 2;
+  return [
+    `--yc-album-width:${albumCardWidth}px`,
+    `--yc-album-radius:${borderRadius}`,
+    `--yc-album-pad:${isInside ? "12px 0" : "28px 14px"}`,
+    `--yc-album-perspective:${enable3D ? "1200px" : "none"}`,
+  ].join(";");
+}
 
+/** The album CSS for items of `classPrefix` (static; see albumStyleVars). */
+export function albumStyles(classPrefix = "album") {
   return `
     .${classPrefix}-album-wrapper {
       position: relative;
@@ -66,28 +83,28 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
     .${classPrefix}-album-container {
       min-height: 200px;
       max-height: 500px;
-      padding: ${isInside ? "12px" : "28px"} ${isInside ? "0" : "14px"};
+      padding: var(--yc-album-pad, 28px 14px);
       position: relative;
       display: flex;
       align-items: center;
       justify-content: center;
-      perspective: ${enable3D ? "1200px" : "none"};
+      perspective: var(--yc-album-perspective, 1200px);
       perspective-origin: center center;
       overflow: hidden;
     }
     
     .${classPrefix}-album-item {
-      width: ${albumCardWidth}px;
+      width: var(--yc-album-width, 240px);
       max-height: 420px;
       cursor: pointer;
       background: var(--card-background-color, white);
-      border-radius: ${borderRadius};
+      border-radius: var(--yc-album-radius, 16px);
       box-shadow: 0 8px 24px rgba(0,0,0,0.2);
       overflow: visible;
       position: absolute;
       left: 50%;
       top: 50%;
-      margin-left: -${albumCardHalf}px;
+      margin-left: calc(var(--yc-album-width, 240px) / -2);
       transform: translateY(-50%);
       transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
       transform-style: preserve-3d;
@@ -100,7 +117,7 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      border-radius: ${borderRadius};
+      border-radius: var(--yc-album-radius, 16px);
     }
     
     .album-gradient {
@@ -190,24 +207,19 @@ export function getAlbumStyles(config = {}, classPrefix = "album") {
       opacity: 1;
     }
     
-    ${
-      isInside
-        ? `
     /* VISUAL TUNING - Album view specific size adjustments (not duplicates) */
-    /* Red/black buttons: 26px (smaller than default 28px) for tighter spacing in album cards */
-    .${classPrefix}-album-item .delete-btn-cross.red-style,
-    .${classPrefix}-album-item .album-remove-btn.red-style {
+    /* Delete buttons inside the cards: red/black buttons 26px (smaller than
+       the default 28px) for tighter spacing in album cards */
+    .delete-inside .${classPrefix}-album-item .delete-btn-cross.red-style,
+    .delete-inside .${classPrefix}-album-item .album-remove-btn.red-style {
       width: 26px !important;
       height: 26px !important;
     }
-    
-    .${classPrefix}-album-item .delete-btn-cross.black-style,
-    .${classPrefix}-album-item .album-remove-btn.black-style {
+
+    .delete-inside .${classPrefix}-album-item .delete-btn-cross.black-style,
+    .delete-inside .${classPrefix}-album-item .album-remove-btn.black-style {
       width: 26px !important;
       height: 26px !important;
-    }
-    `
-        : ""
     }
     
     .album-nav-btn {
@@ -278,7 +290,7 @@ export function renderAlbumView(
   const deleteBtnClass = `${btnCfg.classes} ${btnCfg.posClass} ${btnCfg.sideClass}`;
 
   return `
-    <div class="${classPrefix}-album-wrapper">
+    <div class="${classPrefix}-album-wrapper${btnCfg.inside ? " delete-inside" : ""}" style="${albumStyleVars(config)}">
       <button class="album-nav-btn album-nav-prev" id="${classPrefix}-album-nav-prev" title="Previous">‹</button>
       <button class="album-nav-btn album-nav-next" id="${classPrefix}-album-nav-next" title="Next">›</button>
       <div class="${classPrefix}-album-container" id="${classPrefix}-album-container">

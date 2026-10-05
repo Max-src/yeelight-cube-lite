@@ -18,6 +18,11 @@ An editor entry is either its caption (`"general": "Global Settings"`) or
 with a non-default option, such as `show_device_orientation: true`. Every
 foldable editor section of the three cards is registered.
 
+A new scenario has no screenshot until the Documentation Screenshots workflow
+captures it, so `npm run docs:check` (and `npm run check`) lists it as
+"pending capture" instead of failing. A scenario already in the README whose
+image is missing still fails.
+
 The other cards' historical images and Preview's extra layout examples are
 still manual. To migrate another card, register its scenarios, load its actual
 module and supply representative synthetic state in
@@ -33,8 +38,12 @@ and components; the integration supplies the native font maps. Only lamp state
 and favourites are synthetic. Fixture service/API calls are blocked. Dashboard,
 lamp and profile settings are not saved; theme changes are in-memory only.
 
-Each image is captured twice in fresh Chromium processes. Decoded RGBA pixels
-must match exactly. Checks also cover card bounds, lower-image content, overflow,
+Each image is captured in fresh Chromium processes until two captures match
+exactly (decoded RGBA pixels): normally twice. When the first two differ, a
+third capture decides, so a single odd capture is outvoted and logged as a
+warning; three different captures fail the run. Their captures and a diff
+image (changed pixels in magenta) go to `test-results/card-docs/`, which CI
+uploads as the `card-documentation-diagnostics` artifact. Checks also cover card bounds, lower-image content, overflow,
 preview frames and required controls. Clock time and preview phase are fixed;
 CSS transitions are disabled. Software rendering, greyscale text smoothing and
 sRGB avoid compositor variation. Compare images using the same OS, HA and pinned

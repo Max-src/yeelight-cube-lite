@@ -1,4 +1,10 @@
-import { LitElement, html, unsafeHTML, nothing } from "./lib/lit-all.js";
+import {
+  LitElement,
+  html,
+  unsafeHTML,
+  unsafeCSS,
+  nothing,
+} from "./lib/lit-all.js";
 
 import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
 
@@ -7,7 +13,8 @@ import { getDeleteButtonConfig } from "./delete-button-styles.js";
 import { setupAlbumNavigation } from "./album-view-coverflow.js";
 import { attachCarouselSwipe } from "./carousel-utils.js";
 
-import { CardCommandController } from "./card-command-controller.js";
+import { YeelightCardMixin, cubeLampEntities } from "./card-base.js";
+import { cardNotice, cardShell, isActivationKey } from "./card-shell.js";
 import { CollectionState } from "./collection-state.js";
 import { notify, notifyUnreported } from "./notify-utils.js";
 import {
@@ -17,18 +24,17 @@ import {
 import { renderPagination } from "./pagination-utils.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { PaletteGalleryMixin } from "./palette-card-gallery.js";
-import { buildPaletteCardStyles } from "./palette-card-styles.js";
-import { findCollectionSensor } from "./sensor-lookup.js";
+import { PALETTE_CARD_CSS, paletteStyleVars } from "./palette-card-styles.js";
 
-const isActivationKey = (event) =>
-  event.key === "Enter" || event.key === " " || event.key === "Spacebar";
+class YeelightCubePaletteCard extends PaletteGalleryMixin(YeelightCardMixin(LitElement)) {
+  static editor = ["yeelight-cube-palette-card-editor", "./yeelight-cube-palette-card-editor.js"];
+  // Static: the config-dependent values are CSS variables (paletteStyleVars).
+  static styles = unsafeCSS(PALETTE_CARD_CSS);
 
-class YeelightCubePaletteCard extends PaletteGalleryMixin(LitElement) {
   constructor() {
     super();
-    // Every lamp/sensor call of this card goes through one ordered queue
-    // (palette collection edits use _collection).
-    this._commands = new CardCommandController();
+    // Every lamp/sensor call of this card goes through the card's queue
+    // (this._commands; palette collection edits use _collection).
     this._hass = null;
     this.config = {};
     this._importStatus = { active: false, success: false };
@@ -148,30 +154,14 @@ class YeelightCubePaletteCard extends PaletteGalleryMixin(LitElement) {
     };
 
     // Auto-resolve palette_sensor if not explicitly configured
-    if (!this.config.palette_sensor && this._hass) {
-      const autoSensor = findCollectionSensor(this._hass, "color_palettes");
-      if (autoSensor) {
-        this.config = { ...this.config, palette_sensor: autoSensor };
-      }
-    }
+    this._autoResolveSensor("palette_sensor", "color_palettes", this._hass);
 
     this._configGeneration++;
     this.requestUpdate();
   }
 
-  static async getConfigElement() {
-    if (!customElements.get("yeelight-cube-palette-card-editor")) {
-      await import("./yeelight-cube-palette-card-editor.js");
-    }
-    return document.createElement("yeelight-cube-palette-card-editor");
-  }
   static getStubConfig(hass) {
-    const firstEntity =
-      Object.keys(hass?.states || {}).find(
-        (e) =>
-          e.startsWith("light.yeelight_cube") ||
-          e.startsWith("light.cubelite_"),
-      ) || "";
+    const firstEntity = cubeLampEntities(hass)[0] || "";
     return {
       type: "custom:yeelight-cube-palette-card",
       target_entities: firstEntity ? [firstEntity] : [],
@@ -218,12 +208,7 @@ class YeelightCubePaletteCard extends PaletteGalleryMixin(LitElement) {
     this._hass = hass;
 
     // Auto-resolve palette_sensor on first hass set (setConfig may run before hass is available)
-    if (this.config && !this.config.palette_sensor && hass) {
-      const autoSensor = findCollectionSensor(hass, "color_palettes", this);
-      if (autoSensor) {
-        this.config = { ...this.config, palette_sensor: autoSensor };
-      }
-    }
+    this._autoResolveSensor("palette_sensor", "color_palettes", hass, this);
 
     const entityId = this.config?.palette_sensor;
     if (!entityId || !hass) return;
@@ -308,16 +293,14 @@ class YeelightCubePaletteCard extends PaletteGalleryMixin(LitElement) {
       return nothing;
     }
     const stateObj = hass.states[entityId];
-    if (!stateObj) {
-      return html`<ha-card>Palette sensor not found</ha-card>`;
-    }
+    if (!stateObj)
+      return cardNotice(this, `Palette sensor not found: ${entityId}`);
 
     const palettes =
       this._localPalettes !== undefined
         ? this._localPalettes
         : this._sensorPalettes();
 
-    const showCard = this.config.show_card_background !== false;
     const btnCfg = getDeleteButtonConfig(this.config);
     const showRemove = btnCfg.allowDelete;
     const removeBtnClass = btnCfg.classes;
@@ -327,8 +310,6 @@ class YeelightCubePaletteCard extends PaletteGalleryMixin(LitElement) {
     const showColorCount = this.config.show_color_count !== false;
     const allowTitleEdit = this._allowTitleEdit();
 
-    const cardTitle =
-      typeof this.config.title === "string" ? this.config.title : "";
     const displayMode = this.config.display_mode || "list";
     const borderMode = this.config.item_card_border || "auto";
     const isDark =
@@ -380,6 +361,7 @@ class YeelightCubePaletteCard extends PaletteGalleryMixin(LitElement) {
 
     const body = html`<div
       class="card-content yc-stack${showItemBorder ? " item-card-border" : ""}"
+      style=${paletteStyleVars(this.config)}
       @click=${this._contentClick}
       @keydown=${this._onContentKeydown}
     >
@@ -390,45 +372,13 @@ class YeelightCubePaletteCard extends PaletteGalleryMixin(LitElement) {
     </div>`;
 
     return html`
-      <style>
-        ${this._styles(allowTitleEdit)}
-      </style>
-      ${showCard
-        ? html`<ha-card header=${cardTitle || nothing}>${body}</ha-card>`
-        : html`<div class="yc-stack">
-            ${cardTitle
-              ? html`<div
-                  id="card-title"
-                  style="font-weight:600;font-size:1.1em;padding:16px 16px 0;${allowTitleEdit
-                    ? "cursor:pointer;"
-                    : ""}"
-                  role=${allowTitleEdit ? "button" : nothing}
-                  tabindex=${allowTitleEdit ? "0" : nothing}
-                  @click=${allowTitleEdit
-                    ? (event) => this._editCardTitle(event.currentTarget)
-                    : nothing}
-                  @keydown=${allowTitleEdit ? this._onContentKeydown : nothing}
-                >
-                  ${cardTitle}
-                </div>`
-              : nothing}${body}
-          </div>`}
+      ${cardShell(this, body, {
+        // "Allow title edit" renames the card title too (until reloaded).
+        onTitleClick: allowTitleEdit
+          ? (title) => this._editCardTitle(title)
+          : undefined,
+      })}
     `;
-  }
-
-  // The card CSS (about 700 lines) depends only on the config and whether
-  // titles are editable: built once per change, not on every render.
-  _styles(allowTitleEdit) {
-    const cache = this._stylesCache;
-    if (
-      cache &&
-      cache.config === this.config &&
-      cache.allowTitleEdit === allowTitleEdit
-    )
-      return cache.text;
-    const text = buildPaletteCardStyles(this.config, allowTitleEdit);
-    this._stylesCache = { config: this.config, allowTitleEdit, text };
-    return text;
   }
 
   updated() {
@@ -441,7 +391,6 @@ class YeelightCubePaletteCard extends PaletteGalleryMixin(LitElement) {
       this._navigatePaletteCarousel(direction, this._paletteItems().length),
     );
     this._setupAlbum();
-    this._bindCardHeaderEdit();
   }
 
   // Markup produced as HTML strings by shared helpers cannot carry Lit
@@ -527,23 +476,6 @@ class YeelightCubePaletteCard extends PaletteGalleryMixin(LitElement) {
       // Config for 3D mode detection
       this.config,
     );
-  }
-
-  // <ha-card>'s header lives in its own shadow root, so it cannot be bound
-  // from this template; bind once per header node.
-  _bindCardHeaderEdit() {
-    if (!this._allowTitleEdit()) return;
-    const haCard = this.renderRoot.querySelector("ha-card");
-    if (!haCard) return;
-    Promise.resolve(haCard.updateComplete).then(() => {
-      const header = haCard.shadowRoot?.querySelector(".card-header");
-      if (!header || header._yeelightTitleEdit) return;
-      header._yeelightTitleEdit = true;
-      header.style.cursor = "pointer";
-      header.addEventListener("click", () => {
-        if (this._allowTitleEdit()) this._editCardTitle(header);
-      });
-    });
   }
 
   _editCardTitle(titleElem) {

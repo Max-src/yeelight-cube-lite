@@ -1518,14 +1518,6 @@ export const drawCardStyles = css`
     opacity: 1 !important;
     overflow: visible !important;
   }
-  .card-title {
-    font-size: 1.3em;
-    font-weight: bold;
-    margin-bottom: 18px;
-    margin-top: 2px;
-    color: var(--primary-text-color, #222);
-  }
-
   /* Pixel Art Gallery Styles */
   .pixelart-gallery {
     width: 100%;

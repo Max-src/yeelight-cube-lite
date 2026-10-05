@@ -423,17 +423,19 @@ const server = http.createServer(async (request, response) => {
       { value: "tide", focused: true, leaked: [], shellReused: true },
       "first keystrokes on a freshly created card keep focus",
     );
-    // Toggling the card background swaps the wrapper element type; that is
-    // the ONLY case the shell may be recreated, and it must not throw.
+    // Toggling the card background only switches the shared frame's look
+    // (card-shell.js) and must not throw.
     await page.evaluate(() => {
       clock.setConfig({ ...baseConfig, show_card_background: false });
       clock.hass = hass;
-      if (!clock.shadowRoot.querySelector("ha-card.no-bg"))
-        throw Error("no-bg shell appearance not applied");
+      if (!clock.shadowRoot.querySelector("ha-card.yc-card-plain"))
+        throw Error("plain card frame not applied");
       clock.setConfig({ ...baseConfig, show_card_background: true });
       clock.hass = hass;
-      if (!clock.shadowRoot.querySelector("ha-card.clock-card"))
-        throw Error("ha-card shell not restored");
+      if (
+        !clock.shadowRoot.querySelector("ha-card.yc-card:not(.yc-card-plain)")
+      )
+        throw Error("card background not restored");
     });
     for (const width of [390, 1400]) {
       await page.setViewportSize({ width, height: 1000 });
@@ -2214,7 +2216,7 @@ const server = http.createServer(async (request, response) => {
     const inherited = await appearancePage.evaluate(() => {
       const { card } = appearancePreview;
       return {
-        overrides: lastAppearanceConfig.clock_preview_overrides,
+        overrides: lastAppearanceConfig.preview_overrides,
         backgrounds: [
           card.config.lamp_matrix_background,
           card.config.gallery_background_color,
@@ -2349,7 +2351,7 @@ const server = http.createServer(async (request, response) => {
       const { editor } = appearancePreview;
       editor.setConfig({
         ...appearancePreview.config,
-        clock_preview_appearance: undefined,
+        preview_appearance: undefined,
         lamp_pixel_style: "circle",
         gallery_background_color: "white",
         effect_spacing_mode: "none",
@@ -2361,7 +2363,7 @@ const server = http.createServer(async (request, response) => {
       .click();
     assert.deepEqual(
       await appearancePage.evaluate(
-        () => lastAppearanceConfig.clock_preview_overrides,
+        () => lastAppearanceConfig.preview_overrides,
       ),
       {},
     );
@@ -2370,11 +2372,11 @@ const server = http.createServer(async (request, response) => {
       const custom = {
         ...config,
         lamp_preview_size: 80,
-        clock_preview_appearance: {
-          ...config.clock_preview_appearance,
+        preview_appearance: {
+          ...config.preview_appearance,
           pixels: "square",
         },
-        clock_preview_overrides: {
+        preview_overrides: {
           lamp: { pixels: "circle", shadow: true },
           gallery: { pixels: "circle", background: "white" },
           favourites: { pixels: "rounded" },
@@ -2409,7 +2411,7 @@ const server = http.createServer(async (request, response) => {
     );
     assert.deepEqual(
       await appearancePage.evaluate(
-        () => lastAppearanceConfig.clock_preview_overrides,
+        () => lastAppearanceConfig.preview_overrides,
       ),
       {
         lamp: { shadow: true },
@@ -2466,7 +2468,7 @@ const server = http.createServer(async (request, response) => {
       .click();
     assert.deepEqual(
       await appearancePage.evaluate(
-        () => appearancePreview.editor.config.clock_preview_appearance,
+        () => appearancePreview.editor.getConfig().preview_appearance,
       ),
       {
         background: "white",
@@ -2490,7 +2492,7 @@ const server = http.createServer(async (request, response) => {
       .click();
     const customId = await appearancePage.evaluate(
       () =>
-        appearancePreview.editor.config.clock_appearance_presets.find(
+        appearancePreview.editor.getConfig().appearance_presets.find(
           (preset) => preset.name === "Night display",
         ).id,
     );
@@ -2541,7 +2543,7 @@ const server = http.createServer(async (request, response) => {
       .click();
     assert.deepEqual(
       await appearancePage.evaluate(
-        () => appearancePreview.editor.config.clock_preview_appearance,
+        () => appearancePreview.editor.getConfig().preview_appearance,
       ),
       {
         background: "black",
@@ -2570,7 +2572,7 @@ const server = http.createServer(async (request, response) => {
     );
     assert.deepEqual(
       await appearancePage.evaluate(
-        () => lastAppearanceConfig.clock_appearance_presets,
+        () => lastAppearanceConfig.appearance_presets,
       ),
       [],
     );
@@ -3944,7 +3946,7 @@ const server = http.createServer(async (request, response) => {
         unit?.value === "hours";
       unit.value = "days";
       unit.dispatchEvent(new Event("change"));
-      results.editorSaves = editor.config.rotation_interval === 172800;
+      results.editorSaves = editor.getConfig().rotation_interval === 172800;
       editor.remove();
       return results;
     });

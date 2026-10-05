@@ -219,9 +219,8 @@ export function clockAppearancePresets(config) {
       builtin: true,
     }),
   );
-  const saved = Array.isArray(config.clock_appearance_presets)
-    ? config.clock_appearance_presets
-    : [];
+  const stored = config.appearance_presets ?? config.clock_appearance_presets;
+  const saved = Array.isArray(stored) ? stored : [];
   const seen = new Set();
   for (const preset of saved) {
     if (
@@ -247,31 +246,21 @@ export function clockAppearancePresets(config) {
   return presets;
 }
 
+// The clock card stores its appearance like every other card
+// (preview_appearance / preview_overrides / appearance_presets); its older
+// clock_* names are still read by normalizePreviewAppearance.
 export function normalizeClockAppearance(config) {
-  return clockConfigAliases(normalizePreviewAppearance(config, "clock"));
-}
-
-function clockConfigAliases(config) {
-  const { preview_appearance, preview_overrides, appearance_presets, ...rest } =
-    config;
-  return {
-    ...rest,
-    clock_preview_appearance: preview_appearance,
-    clock_preview_overrides: preview_overrides,
-    ...(appearance_presets !== undefined
-      ? { clock_appearance_presets: appearance_presets }
-      : {}),
-  };
+  return normalizePreviewAppearance(config, "clock");
 }
 
 export function clockSectionAppearance(config, section) {
   const normalized = normalizeClockAppearance(config);
   return {
-    ...normalized.clock_preview_appearance,
-    ...normalized.clock_preview_overrides[section],
+    ...normalized.preview_appearance,
+    ...normalized.preview_overrides[section],
   };
 }
 
 export function resolveClockAppearance(config) {
-  return clockConfigAliases(resolvePreviewAppearance(config, "clock"));
+  return resolvePreviewAppearance(config, "clock");
 }

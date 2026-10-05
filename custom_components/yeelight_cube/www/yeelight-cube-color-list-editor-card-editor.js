@@ -6,9 +6,6 @@ import {
   buttonGroupStyles,
 } from "./button-group-utils.js";
 import {
-  getLightEntities,
-  createYeelightCubeEntityPicker,
-  getYeelightCubeEntities,
   entitySelectorStyles,
 } from "./entity-selector-utils.js";
 import {
@@ -18,14 +15,14 @@ import {
 } from "./form-row-utils.js";
 import {
   fireEvent,
-  EditorSectionsMixin,
+  YeelightEditorMixin,
   renderModeSettingsSection,
   roundedCardsToSliderValue,
   renderDeleteButtonSettings,
 } from "./editor_ui_utils.js";
 import { defineOnce } from "./card-registration.js";
 
-class YeelightCubeColorListEditorCardEditor extends EditorSectionsMixin(LitElement) {
+class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitElement) {
   static get properties() {
     return {
       _config: { type: Object },
@@ -44,49 +41,6 @@ class YeelightCubeColorListEditorCardEditor extends EditorSectionsMixin(LitEleme
     // Force a re-render after config is set to avoid template errors
     this.requestUpdate();
   }
-
-  getConfig() {
-    return this._config;
-  }
-
-  static getConfigElement() {
-    return document.createElement(
-      "yeelight-cube-color-list-editor-card-editor",
-    );
-  }
-
-  _valueChanged(ev) {
-    const target = ev.target;
-    if (!target) return;
-    let key = target.id || target.name;
-    let value = target.type === "checkbox" ? target.checked : target.value;
-
-    if (key === "title" && value === "") value = undefined;
-
-    this._config = { ...this._config, [key]: value };
-
-    this._fireConfigChanged();
-  }
-
-  _entityChanged = (ev) => {
-    // Handle multi-entity selection
-    if (Array.isArray(ev.target.value)) {
-      this._config = {
-        ...this._config,
-        target_entities: ev.target.value,
-        // Keep the first entity as the main entity for backward compatibility
-        entity: ev.target.value.length > 0 ? ev.target.value[0] : "",
-      };
-    } else {
-      // Single entity selection (fallback)
-      this._config = {
-        ...this._config,
-        entity: ev.target.value,
-        target_entities: ev.target.value ? [ev.target.value] : [],
-      };
-    }
-    this._fireConfigChanged();
-  };
 
   _fireConfigChanged() {
     const config = {
@@ -164,38 +118,10 @@ class YeelightCubeColorListEditorCardEditor extends EditorSectionsMixin(LitEleme
     return html`
       <div class="editor-root">
         ${this._section("global", "Global Settings", html`
-            <div class="form-row">
-              <label>Card Title (optional)</label>
-              <input
-                id="title"
-                type="text"
-                .value="${cfg.title || ""}"
-                placeholder="Colors"
-                @input="${this._valueChanged}"
-              />
-            </div>
-            <div class="form-row">
-              <label>Entities</label>
-              ${createYeelightCubeEntityPicker(
-                this.hass,
-                cfg.target_entities || (cfg.entity ? [cfg.entity] : []),
-                this._entityChanged,
-                "multiple",
-              )}
-            </div>
-
-            ${createToggleRow(
-              "Show Card Background",
-              "show_card_background",
-              cfg.show_card_background !== false,
-              (e) => {
-                this._config = {
-                  ...this._config,
-                  show_card_background: e.target.checked,
-                };
-                this._fireConfigChanged();
-              },
-            )}
+            ${this._cardFrameSettings({
+              placeholder: "Colors",
+              lamps: "multiple",
+            })}
         `)}
 
         ${this._section("colorlist", "Color List Settings", html`

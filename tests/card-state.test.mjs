@@ -8,6 +8,12 @@ import {
   SUPERSEDED,
 } from "../custom_components/yeelight_cube/www/card-command-controller.js";
 import { CollectionState } from "../custom_components/yeelight_cube/www/collection-state.js";
+import { YeelightCardMixin } from "../custom_components/yeelight_cube/www/card-base.js";
+import { normalizeCardOptions } from "../custom_components/yeelight_cube/www/card-config.js";
+
+// Fake cards built from object literals get the shared card-base helpers.
+const CardBase = YeelightCardMixin(class { connectedCallback() {} });
+const asCard = (fake) => Object.setPrototypeOf(fake, CardBase.prototype);
 import { AngleCommandController } from "../custom_components/yeelight_cube/www/angle-wheel-utils.js";
 
 test("angle commands coalesce unsent values and preserve target snapshots", async () => {
@@ -259,7 +265,7 @@ test("Draw overlays only its pending collection and accepts unrelated HA updates
       "light.a": { state, attributes: {} },
     },
   });
-  const card = {
+  const card = asCard({
     config: { pixelart_sensor: "sensor.art", palette_sensor: "sensor.palette" },
     entity: "light.a",
     _hass: makeHass(original, "off"),
@@ -269,7 +275,7 @@ test("Draw overlays only its pending collection and accepts unrelated HA updates
     },
     _lastPixelArtCount: 2,
     _lastPixelArtHash: "old",
-  };
+  });
   card._pixelArtCollection.record(pending);
   const incoming = makeHass(original, "on");
   setter.call(card, incoming);
@@ -293,6 +299,7 @@ test("lamp adjustment timers and stale failures cannot cross configuration conte
   const scope = {
     resolvePreviewAppearance,
     lampActionConfig,
+    normalizeCardOptions,
     setTimeout(callback) {
       timers.set(++serial, callback);
       return serial;

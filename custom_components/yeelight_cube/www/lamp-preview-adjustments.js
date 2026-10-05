@@ -17,9 +17,6 @@ export const AdjustmentControlsMixin = (Base) => class extends Base {
       return;
     }
 
-    // Mark as dragging to prevent re-render from hass updates
-    this._isDragging = true;
-
     // Optimistic update: store locally and update label only
     this._localEffects[effectName] = newValue;
     this._resetPending?.delete(effectName);
@@ -64,8 +61,6 @@ export const AdjustmentControlsMixin = (Base) => class extends Base {
     this._effectDebounceTimer = setTimeout(async () => {
       if (context !== this._effectContext) return;
       this._effectDebounceTimer = null;
-      // User stopped dragging
-      this._isDragging = false;
 
       try {
         // Get all current effect values
@@ -79,9 +74,6 @@ export const AdjustmentControlsMixin = (Base) => class extends Base {
             stateObj?.attributes?.[EFFECT_ATTR_MAP[name]] ??
             EFFECT_DEFAULTS[name];
         }
-
-        // Track when we make the service call
-        this._lastServiceCallTime = Date.now();
 
         await this._commands.call(
           hass,

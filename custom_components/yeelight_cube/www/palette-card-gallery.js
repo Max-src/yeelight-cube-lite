@@ -289,6 +289,9 @@ export const PaletteGalleryMixin = (Base) => class extends Base {
     const albumConfig = {
       ...this.config,
       show_remove_button: showRemove,
+      // The album card width (240px at 100%) follows the card size, whose
+      // default on this card is 50%.
+      card_size: this.config.card_size || 50,
     };
 
     const renderTitle = (palette, idx) =>

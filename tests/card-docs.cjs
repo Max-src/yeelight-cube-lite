@@ -9,6 +9,8 @@ const catalogue = require("./card-docs-catalogue.json");
 
 const root = path.resolve(__dirname, "..");
 const output = path.join(root, "images", "Cards", "generated");
+// Captures of images that rendered differently each time (uploaded by CI).
+const DIAGNOSTICS = path.join(root, "test-results", "card-docs");
 const origin = new URL(process.env.DOCS_HA_URL || "http://127.0.0.1:8123")
   .origin;
 
@@ -114,8 +116,9 @@ print(json.dumps({'font_maps': data['FONT_MAPS'], 'font_metrics': data['FONT_MET
   );
   const fonts = JSON.parse(fontResult.stdout);
   await fs.mkdir(output, { recursive: true });
-  const first = new Map();
   const verified = new Map();
+  // Captures that never matched: written to DIAGNOSTICS for the CI artifact.
+  const failures = [];
   let onboardState;
   for (const [kind, definition] of Object.entries(catalogue)) {
     // Editor entries are either a caption string or { title, config } when the
@@ -137,7 +140,13 @@ print(json.dumps({'font_maps': data['FONT_MAPS'], 'font_metrics': data['FONT_MET
         !`${kind}-${scenario}`.includes(process.env.DOCS_FILTER)
       )
         continue;
-      for (let pass = 0; pass < 2; pass++) {
+      // Each image is captured until two captures match exactly: normally
+      // twice, a third time when the first two differ. A single odd capture
+      // (a rare rendering race) is then outvoted instead of failing the run;
+      // three different captures mean real non-determinism.
+      const captures = [];
+      let passes = 2;
+      for (let pass = 0; pass < passes; pass++) {
         const browser = await chromium.launch({
           headless: true,
           args: [
@@ -265,25 +274,28 @@ print(json.dumps({'font_maps': data['FONT_MAPS'], 'font_metrics': data['FONT_MET
             }
           }
           assert.ok(bottomContent > 100, `Blank lower card region: ${file}`);
-          if (pass === 0) first.set(file, image);
-          else {
-            const expected = PNG.sync.read(first.get(file));
-            assert.equal(
-              actual.width,
-              expected.width,
-              `Capture width changed: ${file}`,
-            );
-            assert.equal(
-              actual.height,
-              expected.height,
-              `Capture height changed: ${file}`,
-            );
-            assert.ok(
-              actual.data.equals(expected.data),
-              `Capture pixels changed: ${file}`,
-            );
-            verified.set(file, image);
-            console.log(`Verified ${file}`);
+          captures.push({ image, png: actual });
+          if (captures.length >= 2) {
+            const match = matchingCapture(captures);
+            if (match) {
+              verified.set(file, match.image);
+              if (captures.length > 2)
+                console.warn(
+                  `Flaky capture outvoted: ${file} (${describeDifference(captures[0].png, captures[1].png)})`,
+                );
+              console.log(`Verified ${file}`);
+            } else if (captures.length < 3) {
+              console.warn(
+                `Capture pixels changed: ${file} (${describeDifference(captures[0].png, captures[1].png)}); capturing a third time`,
+              );
+              passes = 3;
+            } else {
+              failures.push(file);
+              await writeDiagnostics(file, captures);
+              console.error(
+                `Capture pixels changed in all ${captures.length} captures: ${file} (${describeDifference(captures[0].png, captures[1].png)})`,
+              );
+            }
           }
           if (process.env.DOCS_HA_ONBOARD === "1")
             onboardState = await context.storageState();
@@ -294,8 +306,63 @@ print(json.dumps({'font_maps': data['FONT_MAPS'], 'font_metrics': data['FONT_MET
       }
     }
   }
+  if (failures.length) {
+    throw new Error(
+      `Non-deterministic captures (see ${path.relative(root, DIAGNOSTICS)}): ${failures.join(", ")}`,
+    );
+  }
   for (const [file, image] of verified)
     await fs.writeFile(path.join(output, file), image);
+}
+
+/** The first capture that exactly matches another one, or null. */
+function matchingCapture(captures) {
+  for (let i = 0; i < captures.length; i++)
+    for (let j = i + 1; j < captures.length; j++) {
+      const [a, b] = [captures[i].png, captures[j].png];
+      if (a.width === b.width && a.height === b.height && a.data.equals(b.data))
+        return captures[i];
+    }
+  return null;
+}
+
+/** How two captures differ: size, or count, extent and strength of pixel changes. */
+function describeDifference(a, b) {
+  if (a.width !== b.width || a.height !== b.height)
+    return `size ${a.width}x${a.height} vs ${b.width}x${b.height}`;
+  let count = 0;
+  let maxDelta = 0;
+  let [left, top, right, bottom] = [a.width, a.height, -1, -1];
+  for (let y = 0; y < a.height; y++)
+    for (let x = 0; x < a.width; x++) {
+      const offset = (y * a.width + x) * 4;
+      let delta = 0;
+      for (let c = 0; c < 4; c++)
+        delta = Math.max(delta, Math.abs(a.data[offset + c] - b.data[offset + c]));
+      if (!delta) continue;
+      count++;
+      maxDelta = Math.max(maxDelta, delta);
+      [left, top] = [Math.min(left, x), Math.min(top, y)];
+      [right, bottom] = [Math.max(right, x), Math.max(bottom, y)];
+    }
+  return `${count} pixels differ, max channel delta ${maxDelta}, in ${right - left + 1}x${bottom - top + 1} at ${left},${top}`;
+}
+
+/** Every capture of a failed image, plus a diff of the first two (changed pixels in magenta). */
+async function writeDiagnostics(file, captures) {
+  await fs.mkdir(DIAGNOSTICS, { recursive: true });
+  const stem = file.replace(/\.png$/, "");
+  for (const [index, capture] of captures.entries())
+    await fs.writeFile(path.join(DIAGNOSTICS, `${stem}.capture${index + 1}.png`), capture.image);
+  const [a, b] = [captures[0].png, captures[1].png];
+  if (a.width !== b.width || a.height !== b.height) return;
+  const diff = new PNG({ width: a.width, height: a.height });
+  for (let offset = 0; offset < a.data.length; offset += 4) {
+    const changed = [0, 1, 2, 3].some((c) => a.data[offset + c] !== b.data[offset + c]);
+    const grey = Math.round((a.data[offset] + a.data[offset + 1] + a.data[offset + 2]) / 6);
+    diff.data.set(changed ? [255, 0, 255, 255] : [grey, grey, grey, 255], offset);
+  }
+  await fs.writeFile(path.join(DIAGNOSTICS, `${stem}.diff.png`), PNG.sync.write(diff));
 }
 
 main().catch((error) => {

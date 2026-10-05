@@ -9,10 +9,7 @@ import { createNativeCardAdapter } from "./native-card-adapter.js";
 import { LitElement, html, css, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
 import { ModeControlsController } from "./mode-controls-controller.js";
 import { PreviewVisibility } from "./preview-visibility.js";
-import {
-  CardCommandController,
-  SUPERSEDED,
-} from "./card-command-controller.js";
+import { SUPERSEDED } from "./card-command-controller.js";
 import "./style-browser-ui.js";
 import "./color-mode-ui.js";
 import { colorModeSelectorStyles } from "./color-mode-selector-utils.js";
@@ -49,32 +46,43 @@ import { BLACK_THRESHOLD } from "./matrix-const.js";
 import { actionButtonStyles } from "./action-button-utils.js";
 import {
   renderSliderGroup,
-  createSliderHandlers,
   sliderControlStyles,
   lightSliderConfig,
   brightnessPctToRaw,
   brightnessRawToPct,
   speedPctToRaw,
   speedRawToPct,
-  createSliderDraft,
   stableSliderMarkup,
   isSliderHandler,
 } from "./slider-control-utils.js";
-import { bindHostEvents } from "./host-events.js";
+import { YeelightCardMixin, cubeLampEntities } from "./card-base.js";
+import {
+  cardNotice,
+  cardShell,
+  lampUnavailableLine,
+  NOTICE,
+} from "./card-shell.js";
+import { LampSliders } from "./lamp-sliders.js";
 import { paginationStyles } from "./pagination-utils.js";
 import {
   createRafLoop,
   createVisibilityTracker,
   paintCellBackground,
 } from "./matrix-animator.js";
-import { getTargetEntities } from "./service-call-utils.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 
 /** Native host: catalogue/color policy and frame painting. Adapter mapping is
  * in native-card-adapter; shared controllers own commands and selection, and
  * style-browser-ui/color-mode-ui own their DOM, subscriptions and bindings.
  */
-class YeelightCubeNativeEffectsCard extends LitElement {
+class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
+  static editor = [
+    "yeelight-cube-native-effects-card-editor",
+    "./yeelight-cube-native-effects-card-editor.js",
+  ];
+  // Slider markup names its handlers in data-on-* attributes.
+  static hostEvents = isSliderHandler;
+
   static properties = {
     config: { state: true },
     _state: { state: true },
@@ -89,11 +97,6 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     super();
     this.config = {};
     this._elapsed = 0;
-    this._commands = new CardCommandController(() => {
-      this._busy = this._commands.busy;
-      this._error = this._commands.error;
-      this._controls?.notify();
-    });
     this._frames = [];
     this._controls = new ModeControlsController(createNativeCardAdapter(this));
     this._onFavouritesChanged = () =>
@@ -118,73 +121,55 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       },
       { minIntervalMs: 100 },
     );
-    // Dragged slider values survive until the lamp reports them back, so a
-    // slow drag or an in-between state update never jumps the slider back.
-    this._sliderDrafts = {};
-    for (const ns of ["speed", "brightness"]) {
-      this._sliderDrafts[ns] = createSliderDraft({
-        isDragging: () => this._anySliderDragging,
-        onExpire: () => this.requestUpdate(),
-      });
-      Object.assign(
-        this,
-        createSliderHandlers({
-          host: this,
-          ns,
-          getConfig: () => this._sliderConfig(ns),
-          onLive: (value) => {
-            this._sliderDrafts[ns].live(value);
-            this._paint();
-          },
-          onDragEnd: () => this.requestUpdate(),
-          onCommit: (value) => {
-            this._stopRotation();
-            this._sliderDrafts[ns].commit(value);
-            if (ns === "speed")
-              this._command("set_native_effect", {
-                speed: speedPctToRaw(value),
-                activate: false,
-              });
-            else
-              // Raw brightness on the shared curve, like the other cards.
-              this._command(
-                "turn_on",
-                { brightness: brightnessPctToRaw(value) },
-                "light",
-              );
-          },
+    // Dragged values survive until the lamp reports them back
+    // (lamp-sliders.js); a slider change stops a running rotation first.
+    const slider = (ns, commit) => ({
+      config: () => this._sliderConfig(ns),
+      live: () => this._paint(),
+      beforeCommit: () => this._stopRotation(),
+      commit,
+    });
+    this._lampSliders = new LampSliders(this, {
+      speed: slider("speed", (value) =>
+        this._command("set_native_effect", {
+          speed: speedPctToRaw(value),
+          activate: false,
         }),
-      );
-    }
+      ),
+      // Raw brightness on the shared curve, like the other cards.
+      brightness: slider("brightness", (value) =>
+        this._command(
+          "turn_on",
+          { brightness: brightnessPctToRaw(value) },
+          "light",
+        ),
+      ),
+    });
   }
 
-  static async getConfigElement() {
-    await import("./yeelight-cube-native-effects-card-editor.js");
-    return document.createElement("yeelight-cube-native-effects-card-editor");
+  _commandsChanged() {
+    this._busy = this._commands.busy;
+    this._error = this._commands.error;
+    this._controls?.notify();
   }
 
   static getStubConfig(hass) {
     return {
-      entity: Object.keys(hass?.states || {}).find(
-        (id) =>
-          id.startsWith("light.") && hass.states[id].attributes.native_effect,
-      ),
+      entity: cubeLampEntities(hass)[0],
     };
   }
 
   get _speedDraft() {
-    return this._sliderDrafts?.speed.value ?? null;
+    return this._lampSliders?.value("speed") ?? null;
   }
   set _speedDraft(value) {
-    if (value == null) this._sliderDrafts?.speed.clear();
-    else this._sliderDrafts?.speed.live(value);
+    this._lampSliders?.setDraft("speed", value);
   }
   get _brightnessDraft() {
-    return this._sliderDrafts?.brightness.value ?? null;
+    return this._lampSliders?.value("brightness") ?? null;
   }
   set _brightnessDraft(value) {
-    if (value == null) this._sliderDrafts?.brightness.clear();
-    else this._sliderDrafts?.brightness.live(value);
+    this._lampSliders?.setDraft("brightness", value);
   }
 
   setConfig(config) {
@@ -212,10 +197,10 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       ...resolvePreviewAppearance(config, "native"),
     };
     this._selected = null;
-    this._state = this._hass?.states?.[getTargetEntities(config || {})[0]];
+    this._state = this._hass?.states?.[this._targets[0]];
     this._controls.configure(
       nativeEffectPreviewConfig(this.config),
-      getTargetEntities(this.config),
+      this._targets,
     );
   }
 
@@ -234,7 +219,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
       this._hassInputsChanged?.(hass) !== false
     )
       this.requestUpdate();
-    const state = hass?.states?.[getTargetEntities(this.config || {})[0]];
+    const state = hass?.states?.[this._targets[0]];
     if (state !== this._state) {
       if (
         state?.attributes.native_effect !==
@@ -249,13 +234,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
 
   // Drop dragged slider values once the lamp reports (about) them.
   _settleSliderDrafts(state) {
-    const attrs = state?.attributes || {};
-    this._sliderDrafts.brightness.settle(
-      brightnessRawToPct(attrs.brightness || 3),
-    );
-    this._sliderDrafts.speed.settle(
-      speedRawToPct(attrs.native_effect_speed || 50),
-    );
+    this._lampSliders.settle(state?.attributes || {});
   }
 
   // Rotation status and color modes read every target lamp (not just the
@@ -263,28 +242,17 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   // registry. Home Assistant hands out a new hass on every state push anywhere,
   // so re-render only when one of those inputs was replaced.
   _hassInputsChanged(hass) {
-    const inputs = [
+    return this._inputsChanged([
       this.config,
-      ...getTargetEntities(this.config || {}).map(
-        (entity) => hass?.states?.[entity],
-      ),
+      ...this._targets.map((entity) => hass?.states?.[entity]),
       ...(this.config?.show_color_modes
         ? [clockPresetLibrary(hass), hass?.services]
         : []),
-    ];
-    const last = this._lastHassInputs;
-    this._lastHassInputs = inputs;
-    return (
-      !last ||
-      last.length !== inputs.length ||
-      inputs.some((value, index) => value !== last[index])
-    );
+    ]);
   }
 
   connectedCallback() {
     super.connectedCallback();
-    // Slider markup names its handlers in data-on-* attributes.
-    bindHostEvents(this, isSliderHandler);
     this._controls.listeners.add(this._onFavouritesChanged);
     this._visibility = createVisibilityTracker(this);
     this._visibility.connect();
@@ -299,6 +267,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
     this._controls.disconnect();
     this._commands.reset();
     this._loop.stop();
+    this._lampSliders.destroy();
     this._visibility?.disconnect();
     this._previewVisibility?.disconnect();
     this._frames = [];
@@ -609,7 +578,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   _effectAvailable(effect) {
     if (previewOnly(this))
       return nativePreviewCatalogue.some((item) => item.name === effect);
-    return getTargetEntities(this.config).every((entity) => {
+    return this._targets.every((entity) => {
       const state = this._hass?.states[entity];
       return (
         state &&
@@ -622,7 +591,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   }
 
   _rotationTargetsReady() {
-    return getTargetEntities(this.config).every(
+    return this._targets.every(
       (entity) => this._hass?.states[entity]?.state === "on",
     );
   }
@@ -633,7 +602,7 @@ class YeelightCubeNativeEffectsCard extends LitElement {
 
   _supportsCustomColor() {
     if (previewOnly(this)) return true;
-    return getTargetEntities(this.config).every((entity) =>
+    return this._targets.every((entity) =>
       Object.hasOwn(
         this._hass?.states[entity]?.attributes || {},
         "native_effect_color",
@@ -806,30 +775,16 @@ class YeelightCubeNativeEffectsCard extends LitElement {
   }
 
   render() {
-    if (!getTargetEntities(this.config || {}).length)
-      return html`<ha-card
-        ><div class="body" role="status">
-          Select an available Yeelight Cube lamp.
-        </div></ha-card
-      >`;
+    if (!this._targets.length) return cardNotice(this, NOTICE.noLamp);
     const attrs = this._attrs();
     const effect = this._effect();
     const all = this._items();
     const offline = previewOnly(this);
-    return html`<ha-card
-      class=${this.config.show_card_background === false ? "transparent" : ""}
-    >
-      <div class="body yc-stack">
-        <header>
-          <h2>${this.config.title || "Native Effects"}</h2>
-          <span class="state-label"
-            >${this._state?.state === "on"
-              ? attrs.content_mode
-              : this._state?.state || "unavailable"}</span
-          >
-        </header>
+    return cardShell(
+      this,
+      html`<div class="body yc-stack">
         ${offline
-          ? html`<div role="status" class="muted">Lamp unavailable</div>`
+          ? lampUnavailableLine()
           : !Array.isArray(attrs.native_effect_catalog)
             ? html`<div role="alert" class="error">
                 Native-effect catalogue unavailable. Reload the updated
@@ -916,7 +871,8 @@ class YeelightCubeNativeEffectsCard extends LitElement {
           area="collections"
           .model=${this._controls}
         ></yeelight-mode-controls></div
-    ></ha-card>`;
+      >`,
+    );
   }
 
   updated() {
@@ -1033,26 +989,11 @@ class YeelightCubeNativeEffectsCard extends LitElement {
         color: var(--primary-text-color, #222);
         overflow: hidden;
       }
-      ha-card.transparent {
-        background: transparent;
-        border: none;
-        box-shadow: none;
-      }
-      .body {
-        padding: 16px;
-      }
-      header,
       .current-heading {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 12px;
-      }
-      h2 {
-        font-size: 20px;
-        font-weight: 500;
-        margin: 0;
-        overflow-wrap: anywhere;
       }
       h3 {
         font-size: 16px;

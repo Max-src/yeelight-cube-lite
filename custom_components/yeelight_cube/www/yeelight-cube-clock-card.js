@@ -28,7 +28,14 @@ import {
   DEFAULT_BUTTON_CONTENT_MODE,
 } from "./action-button-utils.js";
 import { ModeControlsController } from "./mode-controls-controller.js";
-import { CardCommandController } from "./card-command-controller.js";
+import { YeelightCardMixin, cubeLampEntities } from "./card-base.js";
+import {
+  cardNotice,
+  cardShell,
+  lampUnavailableLine,
+  NOTICE,
+} from "./card-shell.js";
+import { LampSliders } from "./lamp-sliders.js";
 import { LitElement, html, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
 import "./style-browser-ui.js";
 import "./color-mode-ui.js";
@@ -49,13 +56,10 @@ import {
   matchingClockColorPreset,
 } from "./clock-preset-utils.js";
 import { closeColorPicker, openRgbColorPicker } from "./color-picker-utils.js";
-import { getTargetEntities } from "./service-call-utils.js";
 import { markFavouriteModes } from "./gallery-display-utils.js";
 import {
   renderSliderGroup,
   lightSliderConfig,
-  createSliderHandlers,
-  createSliderDraft,
   stableSliderMarkup,
   sliderKeys,
   brightnessPctToRaw,
@@ -64,7 +68,6 @@ import {
   speedRawToPct,
   isSliderHandler,
 } from "./slider-control-utils.js";
-import { bindHostEvents } from "./host-events.js";
 import { TEXT_SELECTOR_STYLES, PREVIEW_SELECTOR_STYLES } from "./selector-shared-styles.js";
 import {
   CLOCK_COLOR_MODES,
@@ -93,78 +96,53 @@ export {
   COLOR_PRESET_SHAPE_CHOICES,
 } from "./color-mode-selector-utils.js";
 
-class YeelightCubeClockCard extends ClockPreviewMixin(LitElement) {
+class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitElement)) {
+  static editor = ["yeelight-cube-clock-card-editor", "./yeelight-cube-clock-card-editor.js"];
+  // Slider markup names its handlers in data-on-* attributes.
+  static hostEvents = isSliderHandler;
+
   constructor() {
     super();
     this._hass = null;
     this.config = {};
-    this._commands = new CardCommandController(() => {
-      if (this._controls) {
-        this._controls.error = this._commands.error;
-        this._controls.notify();
-      }
-    });
     this._phaseAccum = 0;
     this._lastPhaseTs = null;
     this._animLoop = null;
     this._visible = new Set();
     this._visibility = null;
     this._stateSignature = null;
-    // Dragged slider values (in slider %) survive until the lamp reports them
-    // back, so a slow drag or an in-between update never jumps them back.
-    this._sliderDrafts = {
-      speed: createSliderDraft({
-        isDragging: () => this._anySliderDragging,
-        onExpire: () => this.requestUpdate(),
-      }),
-      brightness: createSliderDraft({
-        isDragging: () => this._anySliderDragging,
-        onExpire: () => this.requestUpdate(),
-      }),
-    };
-    // Two independent sliders on one host (shared appearance config), wired
-    // through the shared module with distinct namespaces so their handlers and
-    // DOM don't collide.
+    // Two independent sliders on one host (shared appearance config) with
+    // distinct namespaces so their handlers and DOM don't collide. Dragged
+    // values survive until the lamp reports them back (lamp-sliders.js).
     this._sliderKeys = sliderKeys("slider");
-    Object.assign(
-      this,
-      createSliderHandlers({
-        host: this,
-        ns: "speed",
-        getConfig: () => this._speedGc(),
-        onCommit: (pct) => {
-          this._sliderDrafts.speed.commit(pct);
-          this._applySpeed(speedPctToRaw(pct));
-        },
-        onLive: (pct) => this._sliderDrafts.speed.live(pct),
-        onDragEnd: () => this.requestUpdate(),
-      }),
-    );
-    Object.assign(
-      this,
-      createSliderHandlers({
-        host: this,
-        ns: "brightness",
-        getConfig: () => this._brightnessGc(),
-        onCommit: (pct) => {
-          this._sliderDrafts.brightness.commit(pct);
-          this._applyBrightness(brightnessPctToRaw(pct));
-        },
-        onLive: (pct) => this._sliderDrafts.brightness.live(pct),
-        onDragEnd: () => this.requestUpdate(),
-      }),
-    );
+    this._lampSliders = new LampSliders(this, {
+      speed: {
+        config: () => this._speedGc(),
+        commit: (pct) => this._applySpeed(speedPctToRaw(pct)),
+      },
+      brightness: {
+        config: () => this._brightnessGc(),
+        commit: (pct) => this._applyBrightness(brightnessPctToRaw(pct)),
+      },
+    });
+  }
+
+  _commandsChanged() {
+    if (this._controls) {
+      this._controls.error = this._commands.error;
+      this._controls.notify();
+    }
   }
 
   // Live speed as a raw device value (1-255), or null when not overridden.
   get _speedPreview() {
-    const pct = this._sliderDrafts?.speed.value;
+    const pct = this._lampSliders?.value("speed");
     return pct == null ? null : speedPctToRaw(pct);
   }
 
   // Live brightness in slider %, or null when not overridden.
   get _brightnessPreview() {
-    return this._sliderDrafts?.brightness.value ?? null;
+    return this._lampSliders?.value("brightness") ?? null;
   }
 
   // Both sliders share the appearance config (slider_*); only color + icons
@@ -195,7 +173,6 @@ class YeelightCubeClockCard extends ClockPreviewMixin(LitElement) {
       }
     }
     this.config = {
-      title: "Clock",
       show_card_background: true,
       buttons_style: DEFAULT_BUTTON_STYLE,
       buttons_content_mode: DEFAULT_BUTTON_CONTENT_MODE,
@@ -259,7 +236,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(LitElement) {
     }
     delete this.config.show_save_preset_button;
     this._controls ||= new ModeControlsController(createClockCardAdapter(this));
-    this._controls.configure(this.config, getTargetEntities(this.config));
+    this._controls.configure(this.config, this._targets);
     // Keep the grid/list star badges in sync whenever favourites change
     // (controller.notify fires on every state update — marking is cheap).
     this._markFavouritesListener ||= () =>
@@ -274,26 +251,15 @@ class YeelightCubeClockCard extends ClockPreviewMixin(LitElement) {
     this.render();
   }
 
-  static async getConfigElement() {
-    if (!customElements.get("yeelight-cube-clock-card-editor")) {
-      await import("./yeelight-cube-clock-card-editor.js");
-    }
-    return document.createElement("yeelight-cube-clock-card-editor");
-  }
-
   static getStubConfig(hass) {
-    const allEntities = Object.keys(hass?.states || {}).filter(
-      (e) =>
-        e.startsWith("light.yeelight_cube") || e.startsWith("light.cubelite_"),
-    );
+    const allEntities = cubeLampEntities(hass);
     return {
       // Default to controlling ALL Cube lamps (like the gradient card), so a
       // freshly-added card applies changes to every lamp until narrowed down.
       entity: allEntities[0] || "",
       target_entities: allEntities,
-      title: "Clock",
       style_selector_style: "preview-grid",
-      clock_preview_appearance: { ...APPEARANCE_PRESETS.classic },
+      preview_appearance: { ...APPEARANCE_PRESETS.classic },
     };
   }
 
@@ -328,13 +294,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(LitElement) {
     this._ensureRenderRoot();
     // Once the lamp reports (about) the dragged values, drop the overrides so
     // the sliders and previews follow the real values again.
-    const sliderAttrs = this._attrs();
-    this._sliderDrafts.brightness.settle(
-      brightnessRawToPct(Number(sliderAttrs.brightness) || 3),
-    );
-    this._sliderDrafts.speed.settle(
-      speedRawToPct(Number(sliderAttrs.native_effect_speed) || 50),
-    );
+    this._lampSliders.settle(this._attrs());
     // Only rebuild the DOM when a relevant attribute changes; the animation
     // loop repaints the previews in place so live updates stay cheap.
     const sig = this._computeStateSignature();
@@ -363,23 +323,17 @@ class YeelightCubeClockCard extends ClockPreviewMixin(LitElement) {
       clockPresetLibrary(hass),
       this._nativeFontState(states),
       primary ? states?.[primary] : undefined,
-      ...getTargetEntities(this.config).map((entity) => states?.[entity]),
+      ...this._targets.map((entity) => states?.[entity]),
     ];
-    const last = this._lastHassInputs;
-    this._lastHassInputs = inputs;
     return (
-      !!last &&
+      !this._inputsChanged(inputs) &&
       this.hasUpdated &&
-      this._stateSignature !== null &&
-      last.length === inputs.length &&
-      inputs.every((value, index) => value === last[index])
+      this._stateSignature !== null
     );
   }
 
   connectedCallback() {
     super.connectedCallback();
-    // Slider markup names its handlers in data-on-* attributes.
-    bindHostEvents(this, isSliderHandler);
     this._controls?.listeners.add(this._markFavouritesListener);
     this._startAnimation();
   }
@@ -391,8 +345,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(LitElement) {
     this._controls?.disconnect();
     closeColorPicker(this);
     this._stopAnimation();
-    this._slSpeedDestroy?.();
-    this._slBrightnessDestroy?.();
+    this._lampSliders.destroy();
   }
 
   // ── Selector helpers (shared design language with the gradient card) ──────
@@ -1019,26 +972,19 @@ class YeelightCubeClockCard extends ClockPreviewMixin(LitElement) {
 
   _template() {
     this._mainRendered = false;
-    let content;
-    let background;
-    if (!this._hass) {
-      content = html`<div class="loading">Loading…</div>`;
-      background = false;
-    } else if (!this._primaryEntity()) {
-      content = html`<div class="empty">
-        Configure a Yeelight Cube Lite light entity in the card editor.
-      </div>`;
-      background = true;
-    } else {
-      content = this._mainTemplate();
-      background = this.config.show_card_background !== false;
-      this._mainRendered = true;
-    }
-    return html`<ha-card
-      class=${background ? "clock-card yc-stack" : "clock-card no-bg yc-stack"}
-      @browser-updated=${this._onBrowserUpdated}
-      >${content}</ha-card
-    >`;
+    if (!this._hass) return cardNotice(this, NOTICE.loading);
+    if (!this._primaryEntity()) return cardNotice(this, NOTICE.noLamp);
+    const body = this._mainTemplate();
+    this._mainRendered = true;
+    return cardShell(
+      this,
+      html`<div
+        class="clock-body yc-stack"
+        @browser-updated=${this._onBrowserUpdated}
+      >
+        ${body}
+      </div>`,
+    );
   }
 
   _mainTemplate() {
@@ -1083,13 +1029,9 @@ class YeelightCubeClockCard extends ClockPreviewMixin(LitElement) {
         ? this._renderSliders(a)
         : "";
 
-    return html`${config.title
-        ? html`<div class="card-title">${config.title}</div>`
-        : ""}${!offline && config.show_active_label !== false
+    return html`${!offline && config.show_active_label !== false
         ? html`<div class="active-label">${current?.name || ""}</div>`
-        : ""}${offline
-        ? html`<div class="muted" role="status">Lamp unavailable</div>`
-        : ""}${config.show_current_preview !== false
+        : ""}${offline ? lampUnavailableLine() : ""}${config.show_current_preview !== false
         ? this._renderCurrentPreview(current)
         : ""}
       <yeelight-mode-controls
@@ -1347,7 +1289,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(LitElement) {
       controls.push({
         label: "Animation speed",
         gc: { ...this._speedGc(), rawValue: this._speedPreview ?? raw },
-        value: this._sliderDrafts.speed.value ?? speedRawToPct(raw),
+        value: this._lampSliders.value("speed") ?? speedRawToPct(raw),
         ns: "speed",
       });
     }

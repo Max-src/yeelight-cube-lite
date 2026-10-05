@@ -3,13 +3,14 @@ import { renderActionButtonSettings } from "./action-button-ui.js";
 import { LitElement, html, css } from "./lib/lit-all.js";
 import {
   sharedEditorStyles,
-  EditorSectionsMixin,
+  YeelightEditorMixin,
   renderModeSettingsSection,
   renderModeInfoMessage,
   roundedCardsToSliderValue,
   renderDeleteButtonSettings,
   renderCarouselNavSettings,
 } from "./editor_ui_utils.js";
+import { normalizeCardOptions } from "./card-config.js";
 import {
   createButtonGroup,
   createButtonGroupChangeHandler,
@@ -21,7 +22,6 @@ import {
   createSliderRow,
   createButtonGroupRow,
 } from "./form-row-utils.js";
-import { createYeelightCubeEntityPicker } from "./entity-selector-utils.js";
 import {
   DEFAULT_TOOL_ORDER,
   DEFAULT_ACTION_ORDER,
@@ -34,12 +34,11 @@ import {
 } from "./draw_card_const.js";
 import { defineOnce } from "./card-registration.js";
 
-class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
+class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
   static get properties() {
     return {
       hass: { type: Object },
-      config: { type: Object },
-      localTitle: { type: String },
+      _config: { type: Object },
       _open: { state: true },
     };
   }
@@ -116,8 +115,7 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
 
   constructor() {
     super();
-    this.config = {};
-    this.localTitle = "";
+    this._config = {};
     this.hass = null;
     this._open = {};
 
@@ -130,13 +128,13 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
     super.disconnectedCallback();
 
     // Auto-disable "Tool Visibility Mode" when editor is closed
-    if (this.config && this.config.edit_drawing_tools) {
-      this.config = { ...this.config, edit_drawing_tools: false };
+    if (this._config && this._config.edit_drawing_tools) {
+      this._config = { ...this._config, edit_drawing_tools: false };
 
       // Fire a final config update to save the disabled state
       this.dispatchEvent(
         new CustomEvent("config-changed", {
-          detail: { config: this.config },
+          detail: { config: this._config },
           bubbles: true,
           composed: true,
         }),
@@ -180,11 +178,11 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
 
     // Default visibility settings
     const showSections = {
-      colors: this.config.show_colors_section !== false,
-      tools: this.config.show_tools_section !== false,
-      matrix: this.config.show_matrix_section !== false,
-      actions: this.config.show_actions_section !== false,
-      pixelart: this.config.show_pixelart_section !== false,
+      colors: this._config.show_colors_section !== false,
+      tools: this._config.show_tools_section !== false,
+      matrix: this._config.show_matrix_section !== false,
+      actions: this._config.show_actions_section !== false,
+      pixelart: this._config.show_pixelart_section !== false,
     };
 
     // Fixed section order
@@ -236,7 +234,7 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
   }
 
   _resetToolOrder() {
-    this.config = { ...this.config, tools_order: [...DEFAULT_TOOL_ORDER] };
+    this._config = { ...this._config, tools_order: [...DEFAULT_TOOL_ORDER] };
     this._fireConfigChanged();
   }
 
@@ -320,80 +318,77 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
   }
 
   _onSectionVisibilityChange(sectionId, visible) {
-    this.config = { ...this.config, [`show_${sectionId}_section`]: visible };
+    this._config = { ...this._config, [`show_${sectionId}_section`]: visible };
     this._fireConfigChanged();
   }
 
   // Simple drag methods are implemented above in _initSimpleDrag()
 
   setConfig(config) {
-    this.config = { ...config };
-    this.localTitle = config.title || "";
-    if (!this.config.pixel_spacing_mode)
-      this.config.pixel_spacing_mode = "normal";
-    if (!this.config.matrix_bg) this.config.matrix_bg = "black";
-    if (typeof this.config.matrix_box_shadow !== "boolean")
-      this.config.matrix_box_shadow = true;
-    if (!this.config.pixel_art_spacing_mode)
-      this.config.pixel_art_spacing_mode = "normal";
-    if (typeof this.config.pixel_art_show_titles !== "boolean")
-      this.config.pixel_art_show_titles = true;
-    if (typeof this.config.pixel_art_allow_rename !== "boolean")
-      this.config.pixel_art_allow_rename = false;
-    if (!this.config.matrix_size) this.config.matrix_size = 100;
-    if (!this.config.button_shape) this.config.button_shape = "rect";
-    if (!this.config.actions_buttons_style)
-      this.config.actions_buttons_style = "modern";
-    if (!this.config.actions_content_mode)
-      this.config.actions_content_mode = "icon";
-    if (!this.config.tool_buttons_style)
-      this.config.tool_buttons_style = "modern";
-    if (!this.config.tool_content_mode) this.config.tool_content_mode = "icon";
-    if (!this.config.paint_button_shape)
-      this.config.paint_button_shape = "rect";
-    if (!this.config.swatch_shape) this.config.swatch_shape = "round";
-    if (!this.config.expand_btn_style) this.config.expand_btn_style = "pill";
-    if (typeof this.config.pixel_art_preview_size !== "number")
-      this.config.pixel_art_preview_size = 100;
+    this._config = { ...normalizeCardOptions(config, "draw") };
+    if (!this._config.pixel_spacing_mode)
+      this._config.pixel_spacing_mode = "normal";
+    if (!this._config.matrix_bg) this._config.matrix_bg = "black";
+    if (typeof this._config.matrix_box_shadow !== "boolean")
+      this._config.matrix_box_shadow = true;
+    if (!this._config.pixel_art_spacing_mode)
+      this._config.pixel_art_spacing_mode = "normal";
+    if (typeof this._config.preview_show_titles !== "boolean")
+      this._config.preview_show_titles = true;
+    if (typeof this._config.pixel_art_allow_rename !== "boolean")
+      this._config.pixel_art_allow_rename = false;
+    if (!this._config.matrix_size) this._config.matrix_size = 100;
+    if (!this._config.button_shape) this._config.button_shape = "rect";
+    if (!this._config.actions_buttons_style)
+      this._config.actions_buttons_style = "modern";
+    if (!this._config.actions_content_mode)
+      this._config.actions_content_mode = "icon";
+    if (!this._config.tool_buttons_style)
+      this._config.tool_buttons_style = "modern";
+    if (!this._config.tool_content_mode) this._config.tool_content_mode = "icon";
+    if (!this._config.paint_button_shape)
+      this._config.paint_button_shape = "rect";
+    if (!this._config.swatch_shape) this._config.swatch_shape = "round";
+    if (!this._config.expand_btn_style) this._config.expand_btn_style = "pill";
+    if (typeof this._config.pixel_art_preview_size !== "number")
+      this._config.pixel_art_preview_size = 100;
 
     // Ensure tools_order exists with default value
-    if (!this.config.tools_order) {
-      this.config.tools_order = [...DEFAULT_TOOL_ORDER];
+    if (!this._config.tools_order) {
+      this._config.tools_order = [...DEFAULT_TOOL_ORDER];
     }
 
     // Default section visibility
-    if (typeof this.config.show_colors_section !== "boolean")
-      this.config.show_colors_section = true;
-    if (typeof this.config.show_tools_section !== "boolean")
-      this.config.show_tools_section = true;
-    if (typeof this.config.show_matrix_section !== "boolean")
-      this.config.show_matrix_section = true;
-    if (typeof this.config.show_actions_section !== "boolean")
-      this.config.show_actions_section = true;
-    if (typeof this.config.show_pixelart_section !== "boolean")
-      this.config.show_pixelart_section = true;
+    if (typeof this._config.show_colors_section !== "boolean")
+      this._config.show_colors_section = true;
+    if (typeof this._config.show_tools_section !== "boolean")
+      this._config.show_tools_section = true;
+    if (typeof this._config.show_matrix_section !== "boolean")
+      this._config.show_matrix_section = true;
+    if (typeof this._config.show_actions_section !== "boolean")
+      this._config.show_actions_section = true;
+    if (typeof this._config.show_pixelart_section !== "boolean")
+      this._config.show_pixelart_section = true;
 
     // Default boolean settings that use "!== false" pattern
-    if (typeof this.config.show_card_background !== "boolean")
-      this.config.show_card_background = true;
-    if (typeof this.config.show_recent_colors !== "boolean")
-      this.config.show_recent_colors = true;
-    if (typeof this.config.show_lamp_palette !== "boolean")
-      this.config.show_lamp_palette = true;
-    if (typeof this.config.show_lamp_colors !== "boolean")
-      this.config.show_lamp_colors = true;
-    if (typeof this.config.show_image_palette !== "boolean")
-      this.config.show_image_palette = true;
-    if (typeof this.config.show_pixelart_gallery !== "boolean")
-      this.config.show_pixelart_gallery = true;
-    if (!this.config.pixel_art_delete_button_style)
-      this.config.pixel_art_delete_button_style = "text";
-    if (typeof this.config.show_pixelart_export_button !== "boolean")
-      this.config.show_pixelart_export_button = true;
-    if (typeof this.config.show_pixelart_import_button !== "boolean")
-      this.config.show_pixelart_import_button = true;
-    if (!this.config.pixelart_buttons_content_mode)
-      this.config.pixelart_buttons_content_mode = "icon_text";
+    if (typeof this._config.show_card_background !== "boolean")
+      this._config.show_card_background = true;
+    if (typeof this._config.show_recent_colors !== "boolean")
+      this._config.show_recent_colors = true;
+    if (typeof this._config.show_lamp_palette !== "boolean")
+      this._config.show_lamp_palette = true;
+    if (typeof this._config.show_lamp_colors !== "boolean")
+      this._config.show_lamp_colors = true;
+    if (typeof this._config.show_image_palette !== "boolean")
+      this._config.show_image_palette = true;
+    if (typeof this._config.show_gallery !== "boolean")
+      this._config.show_gallery = true;
+    if (typeof this._config.show_pixelart_export_button !== "boolean")
+      this._config.show_pixelart_export_button = true;
+    if (typeof this._config.show_pixelart_import_button !== "boolean")
+      this._config.show_pixelart_import_button = true;
+    if (!this._config.pixelart_buttons_content_mode)
+      this._config.pixelart_buttons_content_mode = "icon_text";
   }
 
   set hass(hass) {
@@ -406,31 +401,10 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
     return html`
       <div class="editor-root">
         ${this._section("global", "Global Settings", html`
-            <div class="form-row">
-              <label>Card Title (optional)</label>
-              <input
-                type="text"
-                id="title"
-                .value="${this.localTitle}"
-                placeholder="Draw"
-                @input="${this._onTitleInput}"
-              />
-            </div>
-            <div class="form-row">
-              <label>Light Entities</label>
-              ${createYeelightCubeEntityPicker(
-                this._hass,
-                this.config.target_entities || [],
-                (e) => this._onEntityChange(e),
-                "multiple",
-              )}
-            </div>
-            ${createToggleRow(
-              "Show Card Background",
-              "show_card_background",
-              this.config.show_card_background !== false,
-              (e) => this._onSwitchChange(e, "show_card_background"),
-            )}
+            ${this._cardFrameSettings({
+              placeholder: "Draw",
+              lamps: "multiple",
+            })}
         `)}
 
         <!-- Layout Section -->
@@ -441,25 +415,25 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
             ${createToggleRow(
               "Show Recent Colors",
               "show_recent_colors",
-              this.config.show_recent_colors !== false,
+              this._config.show_recent_colors !== false,
               (e) => this._onSwitchChange(e, "show_recent_colors"),
             )}
             ${createToggleRow(
               "Show Lamp Palette Colors",
               "show_lamp_palette",
-              this.config.show_lamp_palette !== false,
+              this._config.show_lamp_palette !== false,
               (e) => this._onSwitchChange(e, "show_lamp_palette"),
             )}
             ${createToggleRow(
               "Show Lamp Colors",
               "show_lamp_colors",
-              this.config.show_lamp_colors !== false,
+              this._config.show_lamp_colors !== false,
               (e) => this._onSwitchChange(e, "show_lamp_colors"),
             )}
             ${createToggleRow(
               "Show Drawing Colors",
               "show_image_palette",
-              this.config.show_image_palette !== false,
+              this._config.show_image_palette !== false,
               (e) => this._onSwitchChange(e, "show_image_palette"),
             )}
             ${createButtonGroupRow(
@@ -472,21 +446,21 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
                   { value: "dropdown", label: "Dropdown" },
                   { value: "preview-hover", label: "Preview Hover" },
                 ],
-                this.config.palette_card_mode || "side",
+                this._config.palette_card_mode || "side",
                 createButtonGroupChangeHandler("palette_card_mode", (value) => {
-                  this.config = { ...this.config, palette_card_mode: value };
+                  this._config = { ...this._config, palette_card_mode: value };
                   this._fireConfigChanged();
                 }),
               ),
             )}
-            ${(this.config.palette_card_mode || "side") === "carousel"
+            ${(this._config.palette_card_mode || "side") === "carousel"
               ? renderModeSettingsSection(
                   "Carousel Mode Settings",
-                  renderCarouselNavSettings(this.config, {
+                  renderCarouselNavSettings(this._config, {
                     shapeKey: "palette_carousel_button_shape",
                     shapeDefault: "rect",
                     onShapeChange: (value) => {
-                      this.config = { ...this.config, palette_carousel_button_shape: value };
+                      this._config = { ...this._config, palette_carousel_button_shape: value };
                       this._fireConfigChanged();
                     },
                     wrapKey: "palette_carousel_wrap_navigation",
@@ -497,23 +471,23 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
                       ),
                     extra: createSliderRow(
                       "Card Roundness",
-                      roundedCardsToSliderValue(this.config.rounded_cards),
+                      roundedCardsToSliderValue(this._config.rounded_cards),
                       { min: 0, max: 28, step: 1 },
                       (e) => {
-                        this.config = { ...this.config, rounded_cards: parseInt(e.target.value) };
+                        this._config = { ...this._config, rounded_cards: parseInt(e.target.value) };
                         this._fireConfigChanged();
                       },
                       "px",
                     ),
                   }),
                 )
-              : (this.config.palette_card_mode || "side") === "side"
+              : (this._config.palette_card_mode || "side") === "side"
                 ? renderModeSettingsSection(
                     "Side-by-Side Settings",
                     html`
                       ${createSliderRow(
                         "Card Width",
-                        this.config.side_card_width || 100,
+                        this._config.side_card_width || 100,
                         { min: 30, max: 100, step: 1 },
                         this._onSideCardWidthChange.bind(this),
                         "%",
@@ -525,11 +499,11 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
                             { value: "off", label: "Off" },
                             { value: "on", label: "On" },
                           ],
-                          this.config.side_click_zoom || "off",
+                          this._config.side_click_zoom || "off",
                           createButtonGroupChangeHandler(
                             "side_click_zoom",
                             (value) => {
-                              this.config = { ...this.config, side_click_zoom: value };
+                              this._config = { ...this._config, side_click_zoom: value };
                               this._fireConfigChanged();
                             },
                           ),
@@ -537,10 +511,10 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
                       )}
                       ${createSliderRow(
                         "Card Roundness",
-                        roundedCardsToSliderValue(this.config.rounded_cards),
+                        roundedCardsToSliderValue(this._config.rounded_cards),
                         { min: 0, max: 28, step: 1 },
                         (e) => {
-                          this.config = { ...this.config, rounded_cards: parseInt(e.target.value) };
+                          this._config = { ...this._config, rounded_cards: parseInt(e.target.value) };
                           this._fireConfigChanged();
                         },
                         "px",
@@ -549,7 +523,7 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
                   )
                 : ""}
             ${(() => {
-              const dm = this.config.palette_display_mode || "row";
+              const dm = this._config.palette_display_mode || "row";
               const swatchSubModes = [
                 "row",
                 "grid",
@@ -579,12 +553,12 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
                       (value) => {
                         if (value === "swatches") {
                           // Keep current sub-mode if already a swatch, else default to row
-                          this.config = {
-                            ...this.config,
+                          this._config = {
+                            ...this._config,
                             palette_display_mode: isSwatches ? dm : "row",
                           };
                         } else {
-                          this.config = { ...this.config, palette_display_mode: value };
+                          this._config = { ...this._config, palette_display_mode: value };
                         }
                         this._fireConfigChanged();
                       },
@@ -611,7 +585,7 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
                             createButtonGroupChangeHandler(
                               "palette_display_mode",
                               (value) => {
-                                this.config = { ...this.config, palette_display_mode: value };
+                                this._config = { ...this._config, palette_display_mode: value };
                                 this._fireConfigChanged();
                               },
                             ),
@@ -625,11 +599,11 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
                               { value: "rounded", label: "Rounded" },
                               { value: "round", label: "Circle" },
                             ],
-                            this.config.swatch_shape || "round",
+                            this._config.swatch_shape || "round",
                             createButtonGroupChangeHandler(
                               "swatch_shape",
                               (value) => {
-                                this.config = { ...this.config, swatch_shape: value };
+                                this._config = { ...this._config, swatch_shape: value };
                                 this._fireConfigChanged();
                               },
                             ),
@@ -644,11 +618,11 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
                                   { value: "chevron", label: "Chevron" },
                                   { value: "dots", label: "Dots" },
                                 ],
-                                this.config.expand_btn_style || "pill",
+                                this._config.expand_btn_style || "pill",
                                 createButtonGroupChangeHandler(
                                   "expand_btn_style",
                                   (value) => {
-                                    this.config = { ...this.config, expand_btn_style: value };
+                                    this._config = { ...this._config, expand_btn_style: value };
                                     this._fireConfigChanged();
                                   },
                                 ),
@@ -668,11 +642,11 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
                               { value: "rounded", label: "Rounded" },
                               { value: "round", label: "Circle" },
                             ],
-                            this.config.swatch_shape || "round",
+                            this._config.swatch_shape || "round",
                             createButtonGroupChangeHandler(
                               "swatch_shape",
                               (value) => {
-                                this.config = { ...this.config, swatch_shape: value };
+                                this._config = { ...this._config, swatch_shape: value };
                                 this._fireConfigChanged();
                               },
                             ),
@@ -681,7 +655,7 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
                         ${createToggleRow(
                           "Free Pick (Interpolate Any Color)",
                           "gradient_free_pick",
-                          this.config.gradient_free_pick === true,
+                          this._config.gradient_free_pick === true,
                           (e) => this._onSwitchChange(e, "gradient_free_pick"),
                         )}`,
                       )
@@ -703,11 +677,11 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
                                   label: "Diagonal \u2571",
                                 },
                               ],
-                              this.config.blinds_direction || "rows",
+                              this._config.blinds_direction || "rows",
                               createButtonGroupChangeHandler(
                                 "blinds_direction",
                                 (value) => {
-                                  this.config = { ...this.config, blinds_direction: value };
+                                  this._config = { ...this._config, blinds_direction: value };
                                   this._fireConfigChanged();
                                 },
                               ),
@@ -725,11 +699,11 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
                   { value: "hex", label: "Hex Code" },
                   { value: "name", label: "Color Name" },
                 ],
-                this.config.color_info_display || "none",
+                this._config.color_info_display || "none",
                 createButtonGroupChangeHandler(
                   "color_info_display",
                   (value) => {
-                    this.config = { ...this.config, color_info_display: value };
+                    this._config = { ...this._config, color_info_display: value };
                     this._fireConfigChanged();
                   },
                 ),
@@ -743,11 +717,11 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
                   { value: "auto", label: "Auto" },
                   { value: "always", label: "Always" },
                 ],
-                this.config.colors_card_border || "auto",
+                this._config.colors_card_border || "auto",
                 createButtonGroupChangeHandler(
                   "colors_card_border",
                   (value) => {
-                    this.config = { ...this.config, colors_card_border: value };
+                    this._config = { ...this._config, colors_card_border: value };
                     this._fireConfigChanged();
                   },
                 ),
@@ -778,8 +752,8 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
                   <input
                     type="checkbox"
                     id="edit_drawing_tools"
-                    .checked="${this.config.edit_drawing_tools ??
-                    this.config.allow_visual_tool_reordering ??
+                    .checked="${this._config.edit_drawing_tools ??
+                    this._config.allow_visual_tool_reordering ??
                     false}"
                     @change="${(e) =>
                       this._onSwitchChange(e, "edit_drawing_tools")}"
@@ -808,17 +782,17 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
                     { value: "rect", label: "Rounded" },
                     { value: "square", label: "Square" },
                   ],
-                  this.config.button_shape || "rect",
+                  this._config.button_shape || "rect",
                   createButtonGroupChangeHandler("button_shape", (value) => {
-                    this.config = { ...this.config, button_shape: value };
+                    this._config = { ...this._config, button_shape: value };
                     this._fireConfigChanged();
                   }),
                 )}
               </div>
               ${renderActionButtonSettings(
-                this.config,
+                this._config,
                 (key, value) => {
-                  this.config = { ...this.config, [key]: value };
+                  this._config = { ...this._config, [key]: value };
                   this._fireConfigChanged();
                 },
                 {
@@ -839,7 +813,7 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
         ${this._section("matrix", "Drawing Matrix Section", html`
             ${createSliderRow(
               "Matrix Size",
-              this.config.matrix_size || 100,
+              this._config.matrix_size || 100,
               {
                 min: 50,
                 max: 100,
@@ -873,7 +847,7 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
                   <input
                     type="checkbox"
                     id="edit_action_buttons"
-                    .checked="${this.config.edit_action_buttons ?? false}"
+                    .checked="${this._config.edit_action_buttons ?? false}"
                     @change="${(e) =>
                       this._onSwitchChange(e, "edit_action_buttons")}"
                   />
@@ -894,9 +868,9 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
               style="margin-top:16px;border-top:1px solid var(--divider-color, #e0e0e0);padding-top:16px;"
             >
               ${renderActionButtonSettings(
-                this.config,
+                this._config,
                 (key, value) => {
-                  this.config = { ...this.config, [key]: value };
+                  this._config = { ...this._config, [key]: value };
                   this._fireConfigChanged();
                 },
                 {
@@ -913,7 +887,7 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
             ${createToggleRow(
               "Apply to lamp automatically",
               "pixel_art_auto_apply_to_lamp",
-              this.config.pixel_art_auto_apply_to_lamp === true,
+              this._config.pixel_art_auto_apply_to_lamp === true,
               (e) => this._onSwitchChange(e, "pixel_art_auto_apply_to_lamp"),
             )}
 
@@ -927,11 +901,11 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
                   { value: "carousel", label: "Carousel" },
                   { value: "album", label: "Album" },
                 ],
-                this.config.pixel_art_gallery_mode || "gallery",
+                this._config.pixel_art_gallery_mode || "gallery",
                 createButtonGroupChangeHandler(
                   "pixel_art_gallery_mode",
                   (value) => {
-                    this.config = { ...this.config, pixel_art_gallery_mode: value };
+                    this._config = { ...this._config, pixel_art_gallery_mode: value };
                     this._fireConfigChanged();
                     this.requestUpdate();
                   },
@@ -940,26 +914,26 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
             </div>
 
             <!-- 3. Conditional mode settings (right after Display Mode) -->
-            ${this.config.pixel_art_gallery_mode === "album"
+            ${this._config.pixel_art_gallery_mode === "album"
               ? renderModeSettingsSection(
                   "Album Mode Settings",
                   html`
                     ${createToggleRow(
                       "3D Effect (Perspective)",
                       "album_3d_effect",
-                      this.config.album_3d_effect !== false,
+                      this._config.album_3d_effect !== false,
                       (e) => this._onSwitchChange(e, "album_3d_effect"),
                     )}
                   `,
                 )
-              : this.config.pixel_art_gallery_mode === "carousel"
+              : this._config.pixel_art_gallery_mode === "carousel"
                 ? renderModeSettingsSection(
                     "Carousel Mode Settings",
-                    renderCarouselNavSettings(this.config, {
+                    renderCarouselNavSettings(this._config, {
                       shapeKey: "carousel_button_shape",
                       shapeDefault: "rect",
                       onShapeChange: (value) => {
-                        this.config = { ...this.config, carousel_button_shape: value };
+                        this._config = { ...this._config, carousel_button_shape: value };
                         this._fireConfigChanged();
                       },
                       wrapKey: "carousel_wrap_navigation",
@@ -967,27 +941,27 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
                         this._onSwitchChange(e, "carousel_wrap_navigation"),
                     }),
                   )
-                : this.config.pixel_art_gallery_mode === "compact"
+                : this._config.pixel_art_gallery_mode === "compact"
                   ? renderModeSettingsSection(
                       "Compact Mode Settings",
                       html`
                         ${createToggleRow(
                           "Show Pixel Art Preview",
                           "compact_show_preview",
-                          this.config.compact_show_preview !== false,
+                          this._config.compact_show_preview !== false,
                           (e) =>
                             this._onSwitchChange(e, "compact_show_preview"),
                         )}
                       `,
                     )
                   : renderModeSettingsSection(
-                      this.config.pixel_art_gallery_mode === "list"
+                      this._config.pixel_art_gallery_mode === "list"
                         ? "List Mode Settings"
                         : "Grid Mode Settings",
                       html`
                         ${createSliderRow(
                           "Items Per Page",
-                          this.config.pixel_art_items_per_page || 12,
+                          this._config.pixel_art_items_per_page || 12,
                           { min: 1, max: 50, step: 1 },
                           this._onItemsPerPageChange.bind(this),
                         )}
@@ -997,10 +971,10 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
             <!-- 4. Card container settings -->
             ${createSliderRow(
               "Card Roundness",
-              roundedCardsToSliderValue(this.config.rounded_cards),
+              roundedCardsToSliderValue(this._config.rounded_cards),
               { min: 0, max: 28, step: 1 },
               (e) => {
-                this.config = { ...this.config, rounded_cards: parseInt(e.target.value) };
+                this._config = { ...this._config, rounded_cards: parseInt(e.target.value) };
                 this._fireConfigChanged();
               },
               "px",
@@ -1013,9 +987,9 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
                   { value: "auto", label: "Auto" },
                   { value: "always", label: "Always" },
                 ],
-                this.config.item_card_border || "auto",
+                this._config.item_card_border || "auto",
                 createButtonGroupChangeHandler("item_card_border", (value) => {
-                  this.config = { ...this.config, item_card_border: value };
+                  this._config = { ...this._config, item_card_border: value };
                   this._fireConfigChanged();
                 }),
               )}
@@ -1024,7 +998,7 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
             <!-- 5. Gallery appearance -->
             ${createSliderRow(
               "Gallery Preview Size",
-              this.config.pixel_art_preview_size || 100,
+              this._config.pixel_art_preview_size || 100,
               { min: 50, max: 100, step: 1 },
               this._onPixelArtPreviewSizeChange.bind(this),
               "%",
@@ -1034,24 +1008,24 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
             <!-- 7. Content & Labels -->
             ${createToggleRow(
               "Show Pixel Art Titles",
-              "pixel_art_show_titles",
-              this.config.pixel_art_show_titles !== false,
-              (e) => this._onSwitchChange(e, "pixel_art_show_titles"),
+              "preview_show_titles",
+              this._config.preview_show_titles !== false,
+              (e) => this._onSwitchChange(e, "preview_show_titles"),
             )}
-            ${this.config.pixel_art_show_titles !== false
+            ${this._config.preview_show_titles !== false
               ? createToggleRow(
                   "Allow Rename Pixel Art",
                   "pixel_art_allow_rename",
-                  this.config.pixel_art_allow_rename === true,
+                  this._config.pixel_art_allow_rename === true,
                   (e) => this._onSwitchChange(e, "pixel_art_allow_rename"),
                 )
               : ""}
 
             <!-- 8. Delete button settings (last - buttons on cards) -->
-            ${renderDeleteButtonSettings(this.config, {
-              styleKey: "pixel_art_remove_button_style",
+            ${renderDeleteButtonSettings(this._config, {
+              styleKey: "remove_button_style",
               commit: (key, value) => {
-                this.config = { ...this.config, [key]: value };
+                this._config = { ...this._config, [key]: value };
                 this._fireConfigChanged();
                 this.requestUpdate();
               },
@@ -1063,19 +1037,19 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
             ${createToggleRow(
               "Show Export Button",
               "show_pixelart_export_button",
-              this.config.show_pixelart_export_button !== false,
+              this._config.show_pixelart_export_button !== false,
               (e) => this._onSwitchChange(e, "show_pixelart_export_button"),
             )}
             ${createToggleRow(
               "Show Import Button",
               "show_pixelart_import_button",
-              this.config.show_pixelart_import_button !== false,
+              this._config.show_pixelart_import_button !== false,
               (e) => this._onSwitchChange(e, "show_pixelart_import_button"),
             )}
             ${renderActionButtonSettings(
-              this.config,
+              this._config,
               (key, value) => {
-                this.config = { ...this.config, [key]: value };
+                this._config = { ...this._config, [key]: value };
                 this._fireConfigChanged();
               },
               {
@@ -1088,12 +1062,6 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
     `;
   }
 
-  _onTitleInput(e) {
-    this.localTitle = e.target.value;
-    this.config = { ...this.config, title: this.localTitle || undefined };
-    this._fireConfigChanged();
-  }
-
   // New centralized slider handlers
 
   _renderAppearance(section) {
@@ -1101,21 +1069,21 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
       profile="draw"
       section=${section}
       .owner=${this}
-      .config=${this.config}
+      .config=${this._config}
       @appearance-changed=${(event) => {
-        this.config = event.detail.config;
+        this._config = event.detail.config;
         this._fireConfigChanged();
       }}
     ></yeelight-preview-appearance-editor>`;
   }
 
   _onMatrixSizeChange(e) {
-    this.config = { ...this.config, matrix_size: e.target.value };
+    this._config = { ...this._config, matrix_size: e.target.value };
     this._fireConfigChanged();
   }
 
   _onItemsPerPageChange(e) {
-    this.config = { ...this.config, pixel_art_items_per_page: parseInt(e.target.value, 10) };
+    this._config = { ...this._config, pixel_art_items_per_page: parseInt(e.target.value, 10) };
     this._fireConfigChanged();
   }
 
@@ -1124,7 +1092,7 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
     this._pendingPreviewSize = newSize;
 
     // Update config immediately for slider position
-    this.config = { ...this.config, pixel_art_preview_size: newSize };
+    this._config = { ...this._config, pixel_art_preview_size: newSize };
 
     // Throttle the expensive config-changed event using requestAnimationFrame
     if (!this._previewSizeUpdateScheduled) {
@@ -1133,7 +1101,7 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
         this._previewSizeUpdateScheduled = false;
         // Use the most recent value
         if (this._pendingPreviewSize !== null) {
-          this.config = { ...this.config, pixel_art_preview_size: this._pendingPreviewSize };
+          this._config = { ...this._config, pixel_art_preview_size: this._pendingPreviewSize };
           this._pendingPreviewSize = null;
           this._fireConfigChanged();
         }
@@ -1142,51 +1110,25 @@ class YeelightCubeDrawCardEditor extends EditorSectionsMixin(LitElement) {
   }
 
   _onSwitchChange(e, key) {
-    this.config = { ...this.config, [key]: e.target.checked };
+    this._config = { ...this._config, [key]: e.target.checked };
     this._fireConfigChanged();
 
     // Trigger re-render for settings that affect other setting visibility
-    if (key === "pixel_art_show_titles") {
+    if (key === "preview_show_titles") {
       this.requestUpdate();
     }
   }
 
-  _fireConfigChanged() {
-    // Standard HA editor contract: bubble a composed config-changed from this
-    // element; HA then calls setConfig() on the edited card's preview only.
-    // (No window broadcast: that pushed this card's config into every draw
-    // card on the dashboard.)
-    this.dispatchEvent(
-      new CustomEvent("config-changed", {
-        detail: { config: this.config },
-        bubbles: true,
-        composed: true,
-      }),
-    );
-  }
 
   _onMatrixSizeSliderChange(e) {
     const val = Number(e.target.value);
-    this.config = { ...this.config, matrix_size: val };
+    this._config = { ...this._config, matrix_size: val };
     this._fireConfigChanged();
   }
 
   _onSideCardWidthChange(e) {
     const val = Number(e.target.value);
-    this.config = { ...this.config, side_card_width: val };
-    this._fireConfigChanged();
-  }
-
-  _onEntityChange(e) {
-    const newEntities = Array.isArray(e.target.value)
-      ? e.target.value
-      : [e.target.value];
-    this.config = {
-      ...this.config,
-      target_entities: newEntities,
-      // Keep the first entity as the main entity for backward compatibility
-      entity: newEntities.length > 0 ? newEntities[0] : "",
-    };
+    this._config = { ...this._config, side_card_width: val };
     this._fireConfigChanged();
   }
 }

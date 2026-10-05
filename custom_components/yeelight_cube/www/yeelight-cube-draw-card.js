@@ -12,7 +12,6 @@ import { drawCardStyles } from "./draw_card_styles.js";
 import { getExportImportButtonClass } from "./action-button-utils.js";
 import { renderActionButtonContent } from "./action-button-ui.js";
 
-import { bindHostEvents } from "./host-events.js";
 
 // Host methods the pixel-art gallery markup may call (see bindHostEvents).
 const GALLERY_HANDLERS = new Set([
@@ -52,24 +51,28 @@ import {
 import { StorageUtils } from "./draw_card_storage.js";
 
 import { notifyUnreported } from "./notify-utils.js";
-import { CardCommandController } from "./card-command-controller.js";
+import { YeelightCardMixin, cubeLampEntities } from "./card-base.js";
+import {
+  cardShell,
+} from "./card-shell.js";
+import { normalizeCardOptions } from "./card-config.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { PaletteCardsMixin } from "./draw-card-palette-cards.js";
 import { PixelArtGalleryMixin } from "./draw-card-pixel-art-gallery.js";
 import { PixelArtActionsMixin } from "./draw-card-pixel-art-actions.js";
 import { expandPixelArt } from "./pixel-art-utils.js";
-import { findCollectionSensor } from "./sensor-lookup.js";
 
 const MAX_IMAGE_PALETTE_COLORS = 15;
 
-class YeelightCubeDrawCard extends PixelArtActionsMixin(PixelArtGalleryMixin(PaletteCardsMixin(LitElement))) {
+class YeelightCubeDrawCard extends PixelArtActionsMixin(
+  PixelArtGalleryMixin(PaletteCardsMixin(YeelightCardMixin(LitElement))),
+) {
+  static editor = ["yeelight-cube-draw-card-editor", "./yeelight-cube-draw-card-editor.js"];
+  // The pixel-art gallery names its handlers in data-on-* attributes.
+  static hostEvents = (name) => GALLERY_HANDLERS.has(name);
+
   static getStubConfig(hass) {
-    const firstEntity =
-      Object.keys(hass?.states || {}).find(
-        (e) =>
-          e.startsWith("light.yeelight_cube") ||
-          e.startsWith("light.cubelite_"),
-      ) || "";
+    const firstEntity = cubeLampEntities(hass)[0] || "";
     return {
       type: "custom:yeelight-cube-draw-card",
       entity: firstEntity,
@@ -78,7 +81,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(PixelArtGalleryMixin(Pal
       matrix_bg: "black",
       matrix_box_shadow: true,
       pixel_art_spacing_mode: "normal",
-      pixel_art_show_titles: true,
+      preview_show_titles: true,
       pixel_art_allow_rename: false,
       matrix_size: 100,
       button_shape: "circle",
@@ -109,8 +112,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(PixelArtGalleryMixin(Pal
       show_lamp_palette: true,
       show_lamp_colors: true,
       show_image_palette: true,
-      show_pixelart_gallery: true,
-      pixel_art_delete_button_style: "text",
+      show_gallery: true,
       show_pixelart_export_button: true,
       show_pixelart_import_button: true,
       pixelart_buttons_content_mode: "icon_text",
@@ -123,7 +125,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(PixelArtGalleryMixin(Pal
       palette_display_mode: "row",
       color_info_display: "name",
       matrix_pixel_style: "circle",
-      pixel_art_remove_button_style: "black",
+      remove_button_style: "black",
       delete_button_inside: true,
       pixelart_content_mode: "icon",
       pixel_art_pixel_style: "circle",
@@ -353,8 +355,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(PixelArtGalleryMixin(Pal
 
   constructor() {
     super();
-    // Every service call of this card goes through one ordered queue.
-    this._commands = new CardCommandController();
     this._onToolVisibilityReset = this._onToolVisibilityReset.bind(this);
     this._onActionOrderReset = this._onActionOrderReset.bind(this);
     this._onActionVisibilityReset = this._onActionVisibilityReset.bind(this);
@@ -405,8 +405,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(PixelArtGalleryMixin(Pal
 
   connectedCallback() {
     super.connectedCallback();
-    // The pixel-art gallery names its handlers in data-on-* attributes.
-    bindHostEvents(this, (name) => GALLERY_HANDLERS.has(name));
     // No window "config-changed" listener: HA delivers editor changes through
     // setConfig() on the edited card only; a window bus leaked one card's
     // config (entity, sensors, tools) into every draw card on the dashboard.
@@ -435,18 +433,10 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(PixelArtGalleryMixin(Pal
 
     // Auto-resolve sensors on first hass set (setConfig may run before hass is available)
     if (this.config && hass) {
-      if (!this.config.pixelart_sensor) {
-        const autoSensor = findCollectionSensor(hass, "pixel_art", this);
-        if (autoSensor) {
-          this.config = { ...this.config, pixelart_sensor: autoSensor };
-        }
-      }
+      this._autoResolveSensor("pixelart_sensor", "pixel_art", hass, this);
       if (!this.config.palette_sensor) {
-        const autoSensor = findCollectionSensor(hass, "color_palettes", this);
-        if (autoSensor) {
-          this.config = { ...this.config, palette_sensor: autoSensor };
-          this.paletteSensor = autoSensor;
-        }
+        this._autoResolveSensor("palette_sensor", "color_palettes", hass, this);
+        if (this.config.palette_sensor) this.paletteSensor = this.config.palette_sensor;
       }
     }
 
@@ -669,15 +659,8 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(PixelArtGalleryMixin(Pal
     return this.matrix.filter((c) => c && c.toLowerCase() !== "#000000").length;
   }
 
-  static async getConfigElement() {
-    if (!customElements.get("yeelight-cube-draw-card-editor")) {
-      await import("./yeelight-cube-draw-card-editor.js");
-    }
-    return document.createElement("yeelight-cube-draw-card-editor");
-  }
-
   setConfig(config) {
-    config = resolvePreviewAppearance(config, "draw");
+    config = resolvePreviewAppearance(normalizeCardOptions(config, "draw"), "draw");
     this._collectionContext = (this._collectionContext || 0) + 1;
     this._fetchingPixelArts = false;
     this._pixelArtCollection?.reset();
@@ -685,21 +668,9 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(PixelArtGalleryMixin(Pal
     // Create a mutable copy of the config to allow adding new properties
     this.config = { ...config };
 
-    // Auto-resolve pixelart_sensor if not explicitly configured
-    if (!this.config.pixelart_sensor && this._hass) {
-      const autoSensor = findCollectionSensor(this._hass, "pixel_art");
-      if (autoSensor) {
-        this.config.pixelart_sensor = autoSensor;
-      }
-    }
-
-    // Auto-resolve palette_sensor if not explicitly configured
-    if (!this.config.palette_sensor && this._hass) {
-      const autoSensor = findCollectionSensor(this._hass, "color_palettes");
-      if (autoSensor) {
-        this.config.palette_sensor = autoSensor;
-      }
-    }
+    // Auto-resolve the sensors when not configured explicitly.
+    this._autoResolveSensor("pixelart_sensor", "pixel_art", this._hass);
+    this._autoResolveSensor("palette_sensor", "color_palettes", this._hass);
 
     // Ensure tools_order exists with default value
     if (!this.config.tools_order) {
@@ -1089,7 +1060,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(PixelArtGalleryMixin(Pal
     } else if (cfg.matrix_size === "medium") {
       matrixWidth = "85%";
     }
-    const cardTitle = typeof cfg.title === "string" ? cfg.title : "";
     const showColorPicker = cfg.show_color_picker !== false;
     const showRecentColors = cfg.show_recent_colors !== false;
     const showLampPalette = cfg.show_lamp_palette !== false;
@@ -1097,12 +1067,11 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(PixelArtGalleryMixin(Pal
     const showImagePalette = cfg.show_image_palette !== false;
     const showEraserTool = cfg.show_eraser_tool !== false;
     const showFillTool = cfg.show_fill_tool !== false;
-    const showCard = cfg.show_card_background !== false;
     const showSend = cfg.show_send_button !== false;
     const showClear = cfg.show_clear_button !== false;
     const showSave = cfg.show_save_button !== false;
     const showUpload = cfg.show_upload_image_button !== false;
-    const showPixelArtGallery = cfg.show_pixelart_gallery !== false;
+    const showPixelArtGallery = cfg.show_gallery !== false;
     const matrixPixelStyle = cfg.matrix_pixel_style || "square";
     const paintShape = cfg.button_shape || "rect";
     const paintContent = cfg.paint_button_content || "icon";
@@ -1115,12 +1084,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(PixelArtGalleryMixin(Pal
     const showPixelArtSection = cfg.show_pixelart_section !== false;
 
     const content = html`
-      <div class="yc-stack" style="padding:18px 12px;margin:0 auto;">
-        ${!showCard && cardTitle
-          ? html`<div style="font-weight:600;font-size:1.1em;">
-              ${cardTitle}
-            </div>`
-          : ""}
+      <div class="yc-stack" style="margin:0 auto;">
         <div class="draw-container yc-stack">
           ${showColors
             ? this._renderColorsSection(
@@ -1151,11 +1115,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(PixelArtGalleryMixin(Pal
         </div>
       </div>
     `;
-    return showCard
-      ? cardTitle
-        ? html`<ha-card header="${cardTitle}">${content}</ha-card>`
-        : html`<ha-card>${content}</ha-card>`
-      : content;
+    return cardShell(this, content);
   }
 
   _selectTool(tool) {

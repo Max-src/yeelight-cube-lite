@@ -17,50 +17,33 @@ import {
 } from "./capsule-slider-utils.js";
 import {
   renderSliderGroup,
-  createSliderHandlers,
   lightSliderConfig,
+  sliderKeys,
   brightnessPctToRaw,
   brightnessRawToPct,
   isSliderHandler,
 } from "./slider-control-utils.js";
-import { bindHostEvents } from "./host-events.js";
+import { YeelightCardMixin, cubeLampEntities } from "./card-base.js";
+import {
+  cardNotice,
+  cardShell,
+  lampNotFoundNotice,
+  NOTICE,
+} from "./card-shell.js";
+import { normalizeCardOptions } from "./card-config.js";
+import { LampSliders } from "./lamp-sliders.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
-import { LitElement, html, unsafeHTML, nothing } from "./lib/lit-all.js";
-import { buildLampPreviewStyles } from "./lamp-preview-styles.js";
+import {
+  LitElement,
+  html,
+  unsafeHTML,
+  unsafeCSS,
+  nothing,
+} from "./lib/lit-all.js";
+import { LAMP_PREVIEW_CSS } from "./lamp-preview-styles.js";
 import { AdjustmentControlsMixin } from "./lamp-preview-adjustments.js";
 import { MatrixPreviewMixin } from "./lamp-preview-matrix.js";
 
-// Non-uniform legacy brightness config keys mapped to the shared slider's
-// generic key names. Exported so the card editor renders the exact same
-// controls without a config migration. One source of truth for both.
-export const BRIGHTNESS_SLIDER_KEYS = {
-  style: "brightness_slider_style",
-  width: "brightness_slider_width",
-  theme: "brightness_theme",
-  thickness: "brightness_slider_thickness",
-  color: "brightness_matrix_color",
-  showValue: "show_brightness_percentage",
-  variant: "brightness_slider_variant",
-  barFill: "brightness_bar_fill",
-  wheelStep: "brightness_wheel_step",
-  wheelStyle: "brightness_wheel_style",
-  wheelLabels: "brightness_wheel_labels",
-  matrixCols: "brightness_matrix_cols",
-  matrixRows: "brightness_matrix_rows",
-  matrixDir: "brightness_matrix_direction",
-  matrixPixelStyle: "brightness_matrix_pixel_style",
-  matrixColor: "brightness_matrix_color",
-  rotaryStyle: "brightness_rotary_style",
-  stepButtons: "brightness_step_buttons",
-  stepSize: "brightness_step_size",
-  stepPosition: "brightness_step_position",
-  valueDisplay: "brightness_value_display",
-  valueSide: "brightness_value_side",
-  snap: "brightness_snap_to_positions",
-  capsuleVariant: "brightness_capsule_variant",
-  iconLeftShow: "show_capsule_moon_icon",
-  iconRightShow: "show_capsule_sun_icon",
-};
 
 // ================================================
 
@@ -74,20 +57,20 @@ export const BRIGHTNESS_SLIDER_KEYS = {
 // - The 20x5 .lamp-dot nodes carry no reactive bindings: their colors are only
 //   ever painted directly (change-only) by _paintDots, from the static preview
 //   and the native-effect / clock animation loops.
-class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(AdjustmentControlsMixin(LitElement)) {
-  static async getConfigElement() {
-    if (!customElements.get("yeelight-cube-lamp-preview-card-editor")) {
-      await import("./yeelight-cube-lamp-preview-card-editor.js");
-    }
-    return document.createElement("yeelight-cube-lamp-preview-card-editor");
-  }
+class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
+  AdjustmentControlsMixin(YeelightCardMixin(LitElement)),
+) {
+  // Static: the config-dependent values are CSS variables (_matrixGeometry).
+  static styles = unsafeCSS(LAMP_PREVIEW_CSS);
+  static editor = [
+    "yeelight-cube-lamp-preview-card-editor",
+    "./yeelight-cube-lamp-preview-card-editor.js",
+  ];
+  // Slider markup names its handlers in data-on-* attributes.
+  static hostEvents = isSliderHandler;
+
   static getStubConfig(hass) {
-    const firstEntity =
-      Object.keys(hass?.states || {}).find(
-        (e) =>
-          e.startsWith("light.yeelight_cube") ||
-          e.startsWith("light.cubelite_"),
-      ) || "";
+    const firstEntity = cubeLampEntities(hass)[0] || "";
     return {
       type: "custom:yeelight-cube-lamp-preview-card",
       entity: firstEntity,
@@ -101,16 +84,16 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(AdjustmentControlsM
       matrix_pixel_style: "circle",
       show_force_refresh_button: false,
       buttons_style: "gradient",
-      show_brightness_slider: true,
-      brightness_slider_style: "capsule",
+      show_brightness: true,
+      slider_style: "capsule",
       brightness_slider_appearance: "default",
-      brightness_slider_thickness: 6,
-      brightness_theme: "subtle",
+      slider_thickness: 6,
+      slider_theme: "subtle",
       show_brightness_label: false,
       brightness_label_mode: "text",
-      brightness_value_display: "none",
+      slider_value_display: "none",
       show_power_toggle: false,
-      show_capsule_moon_icon: true,
+      slider_show_icon_left: true,
       show_adjustment_controls: true,
       adjustments_layout: "categories",
       reset_button_mode: "changed",
@@ -121,10 +104,9 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(AdjustmentControlsM
     super();
     this.config = {};
     this._hass = null;
-    // Lamp calls (brightness, adjustments, resets, orientation) share one
-    // ordered queue. The action row has its own, so a slider commit never
-    // shows the actions as busy.
-    this._commands = new CardCommandController();
+    // Lamp calls (brightness, adjustments, resets, orientation) share the
+    // card's queue (this._commands). The action row has its own, so a slider
+    // commit never shows the actions as busy.
     this._actionCommands = new CardCommandController(() => {
       if (!this._actions) return;
       this._actions.error = this._actionCommands.error;
@@ -152,8 +134,6 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(AdjustmentControlsM
       command,
       refresh: () => command("force_refresh"),
     });
-    this._brightnessDebounceTimer = null;
-    this._realBrightnessDebounceTimer = null;
     this._effectDebounceTimer = null;
     this._renderDebounceTimer = null; // Debounce rendering to avoid flicker
     this._renderScheduled = false;
@@ -168,21 +148,13 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(AdjustmentControlsM
     this._lampDots = null;
 
     // Local state for optimistic UI updates
-    this._localBrightness = null;
     this._localEffects = {}; // Store all effect values locally
 
     // Track if user is actively dragging to prevent re-render
-    this._isDragging = false;
     this._anySliderDragging = false; // Track if ANY slider is being dragged
-    this._typingBrightness = false; // Track if user is typing in brightness input
-    this._userSetBrightness = null; // Cache user-set brightness during drag/update cycle
-    this._userBrightnessTimeout = null; // Timer to clear cached brightness
     this._lastRenderedBrightness = null; // Track last rendered brightness to detect oscillations
     this._brightnessOscillationCount = 0; // Count rapid brightness changes
     this._oscillationResetTimeout = null; // Timer to reset oscillation counter
-
-    // Track the last service call timestamp to avoid clearing local state too early
-    this._lastServiceCallTime = 0;
 
     // Track expanded sections
     this._expandedSections = {
@@ -225,79 +197,70 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(AdjustmentControlsM
     // the entity reports it, then the local override is dropped.
     this._resetPending = new Set();
 
-    // Wire the shared multi-style slider (render + CSS + interactions) for the
-    // brightness control. The handlers are assigned onto this element as
-    // _slChange/_slWheel/..., named by the markup in data-on-* attributes.
-    // Works in 1-100 display space; onCommit maps that to HA brightness 3-255.
-    Object.assign(
+    // The brightness slider, through the shared lamp-slider controller like
+    // the Clock and Native Effects sliders (lamp-sliders.js). Its markup is
+    // patched in place on smart updates rather than re-rendered by Lit, so the
+    // controller re-syncs it through _refresh().
+    this._lampSliders = new LampSliders(
       this,
-      createSliderHandlers({
-        host: this,
-        getConfig: () => this._brightnessGc(),
-        onCommit: (pct) => {
-          if (!this._hass || !this.config || !this.config.entity) return;
-          const safeBrightness = brightnessPctToRaw(pct);
-          this._commands
-            .call(
-              this._hass,
-              "light",
-              "turn_on",
-              { entity_id: this.config.entity, brightness: safeBrightness },
-              // A drag commits every few hundred ms and each call waits for
-              // the lamp: while one is sent, only the latest value waits.
-              { coalesce: "brightness" },
-            )
-            .catch((error) => {
-              this._refresh();
-              const errorMsg = error?.message || String(error);
-              if (errorMsg.includes("NoneType") || errorMsg.includes("close")) {
-                console.warn("Lamp connection temporarily unavailable");
-              } else if (errorMsg.includes("quota exceeded")) {
-                console.warn("Device rate limit - brightness update queued");
-              } else {
-                console.error("Error setting brightness:", error);
-              }
-            });
+      {
+        brightness: {
+          config: () => this._brightnessGc(),
+          commit: (pct) => this._sendBrightness(pct),
         },
-        onLive: (pct) => {
-          // Optimistic cache so render() doesn't jump during drag/render storms.
-          this._userSetBrightness = pct;
-          this._isDragging = true;
-          if (this._userBrightnessTimeout)
-            clearTimeout(this._userBrightnessTimeout);
-          this._userBrightnessTimeout = setTimeout(() => {
-            this._userSetBrightness = null;
-            // Let the next hass update re-sync the slider to the entity value
-            // even if the entity state object has not changed since.
-            this._renderIncomplete = true;
-          }, 3000);
-        },
-      }),
+      },
+      { refresh: () => this._refresh() },
     );
   }
 
-  // Non-uniform legacy brightness config keys mapped to the shared slider's
-  // generic key names (module-level BRIGHTNESS_SLIDER_KEYS is the single
-  // source of truth, shared with the editor).
+  // Send a brightness (slider %) to the lamp on the shared 3-255 curve.
+  _sendBrightness(pct) {
+    if (!this._hass || !this.config || !this.config.entity) return;
+    this._commands
+      .call(
+        this._hass,
+        "light",
+        "turn_on",
+        { entity_id: this.config.entity, brightness: brightnessPctToRaw(pct) },
+        // A drag commits every few hundred ms and each call waits for the
+        // lamp: while one is sent, only the latest value waits.
+        { coalesce: "brightness" },
+      )
+      .catch((error) => {
+        // Show the lamp's real value again.
+        this._lampSliders.setDraft("brightness", null);
+        this._refresh();
+        const errorMsg = error?.message || String(error);
+        if (errorMsg.includes("NoneType") || errorMsg.includes("close")) {
+          console.warn("Lamp connection temporarily unavailable");
+        } else if (errorMsg.includes("quota exceeded")) {
+          console.warn("Device rate limit - brightness update queued");
+        } else {
+          console.error("Error setting brightness:", error);
+        }
+      });
+  }
 
   // Build the generic slider render config from the brightness config, applying
   // the same legacy theme/thickness migrations the card used before.
   _brightnessGc() {
     // The shared lamp-slider config (units, raw range, icons: same as the
     // Clock and Native Effects cards), with this card's own additions.
-    return lightSliderConfig(this.config, "brightness", BRIGHTNESS_SLIDER_KEYS, {
+    // The slider_* options are the shared ones (older brightness_* names are
+    // aliases, see card-config.js).
+    return lightSliderConfig(this.config, "brightness", sliderKeys("slider"), {
       // Older theme names and the old "thick"/"thin" appearance still work.
       theme: resolveCapsuleTheme(
-        this.config.brightness_theme,
+        this.config.slider_theme,
         this.config.capsule_theme,
       ),
       thickness: resolveCapsuleThickness(
-        this.config.brightness_slider_thickness,
+        this.config.slider_thickness,
         this.config.brightness_slider_appearance,
         6,
       ),
       // Only this card lets the user pick the slider color.
-      color: this.config.brightness_matrix_color || "#ff9800",
+      color: this.config.slider_color || "#ff9800",
       rawValue:
         this._hass?.states?.[this.config?.entity]?.attributes?.brightness,
     });
@@ -310,7 +273,6 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(AdjustmentControlsM
     this._effectDebounceTimer = null;
     this._localEffects = {};
     this._resetPending = new Set();
-    this._isDragging = false;
     this._orientationContext = (this._orientationContext || 0) + 1;
     this._orientationPending = null;
     this._orientationError = null;
@@ -325,12 +287,12 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(AdjustmentControlsM
       matrix_box_shadow: true, // Keep matrix box shadow enabled
       matrix_pixel_style: "square", // Default pixel style
       buttons_style: "classic", // Style for all buttons (power toggle, force refresh)
-      show_brightness_slider: true, // NEW: Show brightness slider by default
-      show_brightness_percentage: true, // NEW: Show brightness percentage value
-      brightness_slider_style: "slider", // NEW: Style for brightness slider (slider, bar, rotary)
-      brightness_slider_width: 100,
+      show_brightness: true, // Show the brightness slider
+      slider_show_value: true, // Show the brightness percentage
+      slider_style: "slider", // Brightness slider style (slider, bar, rotary...)
+      slider_width: 100,
       brightness_slider_appearance: "default", // Legacy: Appearance for slider mode (migrated to thickness)
-      brightness_slider_thickness: 6, // Track thickness in px (2-20, replaces appearance)
+      slider_thickness: 6, // Track thickness in px (2-20, replaces appearance)
       brightness_label_mode: "text", // NEW: Brightness label mode (none, text, icon, icon_text)
       brightness_max: 500, // NEW: Maximum brightness value (default 500 to test beyond 255)
       show_device_orientation: true, // Show the 4-way device orientation control
@@ -338,18 +300,16 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(AdjustmentControlsM
       hide_black_dots: false, // NEW: Ignore black pixels on preview (default: false = OFF)
       show_lamp_preview: true, // NEW: Show lamp matrix preview by default
       show_adjustment_controls: false, // Deprecated: Use light brightness control instead
-      ...resolvePreviewAppearance(lampActionConfig(config), "lamp"),
+      ...resolvePreviewAppearance(
+        lampActionConfig(normalizeCardOptions(config, "lamp-preview")),
+        "lamp",
+      ),
     };
     this._actionCommands.reset();
     this._actions.configure(
       this.config,
       this.config.entity ? [this.config.entity] : [],
     );
-    // Support legacy config migrations
-    if (config.reconnect_button_style && !config.buttons_style) {
-      this.config.buttons_style = config.reconnect_button_style;
-    }
-
     // Force full re-render when config changes
     this._isInitialRenderComplete = false;
 
@@ -468,10 +428,8 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(AdjustmentControlsM
     }
   }
 
-  // Brightness slider interaction handlers now live in the shared
-  // ./slider-control-utils.js module and are assigned onto this element via
-  // createSliderHandlers() in the constructor (as _slChange, _slWheel, etc.).
-  // _startDrag / _endDrag stay here because the effect sliders reference them.
+  // The brightness slider's handlers come from the shared lamp-slider
+  // controller (constructor). _startDrag / _endDrag serve the effect sliders.
 
   // Track when user starts dragging any slider
   _startDrag() {
@@ -496,7 +454,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(AdjustmentControlsM
     // update re-renders even when the entity state object is unchanged.
     this._renderIncomplete = true;
     // Skip re-rendering if user is dragging a slider or typing in brightness input
-    if (this._anySliderDragging || this._typingBrightness || this._slTyping) {
+    if (this._anySliderDragging || this._slBrightnessTyping) {
       return;
     }
 
@@ -517,6 +475,8 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(AdjustmentControlsM
     }
     this._missingEntity = null;
     this._pruneResetEffects(stateObj);
+    // Drop the dragged brightness once the lamp reports it.
+    this._lampSliders.settle(stateObj.attributes);
     let matrixColors = stateObj.attributes.matrix_colors;
 
     if (!matrixColors?.length) {
@@ -565,17 +525,16 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(AdjustmentControlsM
     // and controlled by just GAMMA (curve shape) and BOOST (floor height).
     const gridColors = this._matrixColorsToGridColors(matrixColors, stateObj);
 
-    // Use user-set brightness if available (prevents jumping during render storms)
-    const displayBrightness =
-      this._userSetBrightness !== null
-        ? this._userSetBrightness
-        : sliderBrightness;
+    // The dragged value until the lamp reports it (prevents jumping during
+    // render storms), else the lamp's.
+    const draftBrightness = this._lampSliders.value("brightness");
+    const displayBrightness = draftBrightness ?? sliderBrightness;
 
     // Detect brightness oscillation (HA sending alternating old/new values)
     if (
       this._lastRenderedBrightness !== null &&
       this._lastRenderedBrightness !== sliderBrightness &&
-      this._userSetBrightness === null
+      draftBrightness === null
     ) {
       this._brightnessOscillationCount++;
 
@@ -628,9 +587,13 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(AdjustmentControlsM
       // slider markup is only rebuilt here; smart updates patch it in place.
       this._sliderMarkup =
         this.config.show_lamp_control !== false &&
-        this.config.show_brightness_slider === true
+        this.config.show_brightness === true
           ? renderSliderGroup([
-              { gc: this._brightnessGc(), value: displayBrightness },
+              {
+                gc: this._brightnessGc(),
+                value: displayBrightness,
+                ns: "brightness",
+              },
             ])
           : "";
       // Fresh .lamp-dot nodes (keyed by generation), painted in updated().
@@ -735,7 +698,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(AdjustmentControlsM
       brightnessSlider.value = brightness;
       // Per-style visuals (bar/wheel/matrix/rotary/capsule/slider) are handled
       // by the shared slider-control module.
-      this._slUpdateVisuals?.(brightness);
+      this._slBrightnessUpdateVisuals?.(brightness);
     }
   }
 
@@ -905,21 +868,12 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(AdjustmentControlsM
   render() {
     const entityId = this.config?.entity;
     const hass = this._hass;
-    // Nothing to show yet (or any more): keep whatever was rendered last.
-    if (!hass || !entityId) return this._lastTemplate ?? nothing;
+    if (!entityId) return cardNotice(this, NOTICE.noLamp);
+    // No hass yet (or a moment without it): keep what was rendered last.
+    if (!hass) return this._lastTemplate ?? nothing;
     const stateObj = hass.states[entityId];
-    if (!stateObj) {
-      return html`<ha-card>
-        <div style="padding: 16px;">
-          <h3>${`Entity not found: ${entityId}`}</h3>
-          <p>Please check your configuration and ensure the entity exists.</p>
-        </div>
-      </ha-card>`;
-    }
+    if (!stateObj) return lampNotFoundNotice(this, entityId);
 
-    const showCard = this.config.show_card_background !== false;
-    const cardTitle = this.config.title || this.config.card_title || "";
-    const usingFallbackMatrix = !stateObj.attributes.matrix_colors;
     const content = html`${this.config.show_lamp_preview !== false
       ? this._matrixTemplate(stateObj)
       : nothing}${this.config.show_lamp_control !== false
@@ -928,61 +882,25 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(AdjustmentControlsM
       ? this._adjustmentControlsTemplate(this._currentEffects(stateObj))
       : nothing}`;
 
-    this._lastTemplate = html`<style>
-        ${this._stylesText()}
-      </style>
-      ${showCard
-        ? html`<ha-card
-            header=${cardTitle
-              ? `${cardTitle}${usingFallbackMatrix ? " (No Matrix Data)" : ""}`
-              : nothing}
-          >
-            <div style="display: flex; width: 100%;">
-              <div class="yeelight-cube-lamp-preview-container yc-stack">
-                ${content}
-              </div>
-            </div>
-          </ha-card>`
-        : html`<div style="display: flex; width: 100%;">
-            <div class="yeelight-cube-lamp-preview-container yc-stack">
-              ${cardTitle
-                ? html`<div style="font-weight:600;font-size:1.1em;">
-                    ${cardTitle}
-                  </div>`
-                : nothing}
-              ${content}
-            </div>
-          </div>`}`;
+    this._lastTemplate = html`${cardShell(
+        this,
+        html`<div style="display: flex; width: 100%;">
+          <div class="yeelight-cube-lamp-preview-container yc-stack">
+            ${content}
+          </div>
+        </div>`,
+      )}`;
     return this._lastTemplate;
   }
 
   // The card stylesheet wrapped in a <style> element, as an HTML string (for
   // callers that embed a static snapshot next to _generateMatrixHtml).
   _getStyles() {
-    return `<style>${this._stylesText()}</style>`;
-  }
-
-  // The card CSS. Only the pixel shape and dot shadow depend on the config, so
-  // the text is memoised on those and Lit only rewrites it when they change.
-  _stylesText() {
-    const pixelStyle = this.config.matrix_pixel_style || "square";
-    // Resolve pixel spacing mode for CSS styles
-    const spacingMode =
-      this.config.matrix_spacing_mode ||
-      (this.config.matrix_pixel_spacing === false ? "none" : "normal");
-    const lampDotShadow = spacingMode === "subtle" || spacingMode === "normal";
-    const key = `${pixelStyle}|${lampDotShadow}`;
-    if (this._stylesKey !== key) {
-      this._stylesKey = key;
-      this._stylesCache = buildLampPreviewStyles(pixelStyle, lampDotShadow);
-    }
-    return this._stylesCache;
+    return `<style>${LAMP_PREVIEW_CSS}</style>`;
   }
 
   connectedCallback() {
     super.connectedCallback();
-    // Slider markup names its handlers in data-on-* attributes.
-    bindHostEvents(this, isSliderHandler);
     // Reattached after a disconnect (dashboard edit mode, view switch): the
     // animation loops were stopped, so run a full update to restart them.
     if (this._wasDisconnected) {
@@ -1004,17 +922,13 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(AdjustmentControlsM
     this._effectContext = (this._effectContext || 0) + 1;
     this._localEffects = {};
     this._resetPending = new Set();
-    this._isDragging = false;
     this._orientationContext = (this._orientationContext || 0) + 1;
     this._orientationPending = null;
     clearTimeout(this._orientationTimer);
     // Clear all stored debounce/timeout timers
-    clearTimeout(this._brightnessDebounceTimer);
-    clearTimeout(this._realBrightnessDebounceTimer);
     clearTimeout(this._effectDebounceTimer);
     clearTimeout(this._renderDebounceTimer);
     clearTimeout(this._oscillationResetTimeout);
-    clearTimeout(this._userBrightnessTimeout);
 
     // Stop the client-side animation loops if running.
     this._stopNativeAnimation();
@@ -1026,30 +940,16 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(AdjustmentControlsM
     }
     this._lampDots = null;
 
-    this._brightnessDebounceTimer = null;
-    this._realBrightnessDebounceTimer = null;
     this._effectDebounceTimer = null;
     this._renderDebounceTimer = null;
     this._oscillationResetTimeout = null;
-    this._userBrightnessTimeout = null;
 
-    // Clean up document-level drag listeners if disconnected mid-drag
-    if (this._dragCleanup) {
-      document.removeEventListener("mousemove", this._dragCleanup.handleMove);
-      document.removeEventListener("mouseup", this._dragCleanup.handleEnd);
-      document.removeEventListener("touchmove", this._dragCleanup.handleMove);
-      document.removeEventListener("touchend", this._dragCleanup.handleEnd);
-      this._dragCleanup = null;
-    }
-
-    // Tear down the shared slider handlers (clears their internal timers/listeners).
-    this._slDestroy?.();
+    // Detach a slider drag still in progress (and its timers).
+    this._lampSliders.destroy();
 
     // Reset drag/interaction flags
     this._renderScheduled = false;
-    this._isDragging = false;
     this._anySliderDragging = false;
-    this._rotaryDragging = false;
   }
 
   getCardSize() {

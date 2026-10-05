@@ -54,3 +54,6 @@ yeelight-cube-fx-decoder-card.js
 yeelight-cube-font-editor-card.js
 yeelight-cube-effect-orientation-card.js
 yeelight-cube-control-card-poc.js
+
+# Screenshot-run diagnostics (tests/card-docs.cjs)
+test-results/

@@ -3,14 +3,12 @@ import "./preview-appearance-editor.js";
 import { normalizePreviewAppearance } from "./preview-appearance.js";
 import {
   sharedEditorStyles,
-  EditorSectionsMixin,
+  YeelightEditorMixin,
   renderModeSettingsSection,
   renderMatrixAppearanceSettings,
   renderExperimentalAvailability,
-  fireEvent,
 } from "./editor_ui_utils.js";
 import {
-  createYeelightCubeEntityPicker,
   entitySelectorStyles,
 } from "./entity-selector-utils.js";
 import { createToggleRow, createSliderRow } from "./form-row-utils.js";
@@ -46,7 +44,7 @@ import {
 } from "./mode-controls-settings.js";
 import { defineOnce } from "./card-registration.js";
 
-class YeelightCubeNativeEffectsCardEditor extends EditorSectionsMixin(LitElement) {
+class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement) {
   static properties = {
     _config: { state: true },
     hass: { attribute: false },
@@ -69,7 +67,7 @@ class YeelightCubeNativeEffectsCardEditor extends EditorSectionsMixin(LitElement
       delete this._config.orientation_half_turn;
       delete this._config.orientation_directions;
     }
-    fireEvent(this, "config-changed", { config: this._config });
+    this._fireConfigChanged();
   }
   _toggle(label, key, fallback = true) {
     return createToggleRow(label, key, this._config[key] ?? fallback, (event) =>
@@ -84,7 +82,7 @@ class YeelightCubeNativeEffectsCardEditor extends EditorSectionsMixin(LitElement
       .config=${this._config}
       @appearance-changed=${(event) => {
         this._config = event.detail.config;
-        fireEvent(this, "config-changed", { config: this._config });
+        this._fireConfigChanged();
       }}
     ></yeelight-preview-appearance-editor>`;
   }
@@ -114,14 +112,14 @@ class YeelightCubeNativeEffectsCardEditor extends EditorSectionsMixin(LitElement
         .filter((key) => !visible.includes(key)),
       onUpdate: (items) => {
         this._config = clockColorModeVisibilityConfig(this._config, all, items);
-        fireEvent(this, "config-changed", { config: this._config });
+        this._fireConfigChanged();
       },
       onReset: () => {
         const config = { ...this._config };
         delete config.visible_color_modes;
         delete config.hidden_color_modes;
         this._config = config;
-        fireEvent(this, "config-changed", { config: this._config });
+        this._fireConfigChanged();
       },
       addPlaceholder: "Show a color mode...",
       resetLabel: "Reset to all color modes",
@@ -154,25 +152,10 @@ class YeelightCubeNativeEffectsCardEditor extends EditorSectionsMixin(LitElement
         "general",
         "Global Settings",
         html`
-          <div class="form-row">
-            <label>Card Title (optional)</label
-            ><input
-              type="text"
-              aria-label="Title"
-              .value=${config.title || ""}
-              @change=${(event) => this._change("title", event.target.value)}
-            />
-          </div>
-          <div class="form-row">
-            <label>Target Entities</label>
-            ${createYeelightCubeEntityPicker(
-              this.hass,
-              targets,
-              (event) => this._change("target_entities", event.target.value),
-              "multiple",
-            )}
-          </div>
-          ${this._toggle("Card Background", "show_card_background")}
+          ${this._cardFrameSettings({
+            placeholder: "Native Effects",
+            lamps: "multiple",
+          })}
         `,
       )}
       ${this._section(

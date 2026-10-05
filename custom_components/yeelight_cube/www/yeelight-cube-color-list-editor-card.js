@@ -9,13 +9,18 @@ import {
 } from "./color-picker-utils.js";
 import { getDeleteButtonClass, getButtonPositionStyles } from "./delete-button-styles.js";
 
-import { CardCommandController } from "./card-command-controller.js";
+import { YeelightCardMixin, cubeLampEntities } from "./card-base.js";
+import {
+  cardNotice,
+  cardShell,
+  lampNotFoundNotice,
+  NOTICE,
+} from "./card-shell.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { ColorListLayoutsMixin } from "./color-list-layouts.js";
 import { ColorListDragMixin } from "./color-list-drag.js";
 import { ColorInfoMixin } from "./color-list-color-info.js";
 import { COLOR_LIST_EDITOR_STYLES } from "./color-list-editor-styles.js";
-import { findCollectionSensor } from "./sensor-lookup.js";
 
 // Global storage for pending (optimistic) colors per entity (shared across all
 // card instances).  Entries are { colors, ts }.  The cache only exists to
@@ -30,7 +35,13 @@ const PENDING_COLORS_GRACE_MS = 2000;
 const PICKER_TRIGGERS =
   '.row-item[data-color-row="true"], .card-color-bar.clickable, .tile-color-preview, .chip-color-swatch, .compact-swatch, .color-grid-swatch';
 
-class YeelightCubeColorListEditorCard extends ColorInfoMixin(ColorListDragMixin(ColorListLayoutsMixin(LitElement))) {
+class YeelightCubeColorListEditorCard extends ColorInfoMixin(
+  ColorListDragMixin(ColorListLayoutsMixin(YeelightCardMixin(LitElement))),
+) {
+  static editor = [
+    "yeelight-cube-color-list-editor-card-editor",
+    "./yeelight-cube-color-list-editor-card-editor.js",
+  ];
   static styles = COLOR_LIST_EDITOR_STYLES;
 
   constructor() {
@@ -85,30 +96,12 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(ColorListDragMixin(
     this.config = config;
 
     // Auto-resolve palette_sensor if not explicitly configured
-    if (!this.config.palette_sensor && this._hass) {
-      const autoSensor = findCollectionSensor(this._hass, "color_palettes");
-      if (autoSensor) {
-        this.config = { ...this.config, palette_sensor: autoSensor };
-      }
-    }
+    this._autoResolveSensor("palette_sensor", "color_palettes", this._hass);
     this.requestUpdate();
   }
 
-  static async getConfigElement() {
-    if (!customElements.get("yeelight-cube-color-list-editor-card-editor")) {
-      await import("./yeelight-cube-color-list-editor-card-editor.js");
-    }
-    return document.createElement(
-      "yeelight-cube-color-list-editor-card-editor",
-    );
-  }
   static getStubConfig(hass) {
-    const firstEntity =
-      Object.keys(hass?.states || {}).find(
-        (e) =>
-          e.startsWith("light.yeelight_cube") ||
-          e.startsWith("light.cubelite_"),
-      ) || "";
+    const firstEntity = cubeLampEntities(hass)[0] || "";
     return {
       type: "custom:yeelight-cube-color-list-editor-card",
       target_entities: firstEntity ? [firstEntity] : [],
@@ -126,12 +119,7 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(ColorListDragMixin(
     this._hass = hass;
 
     // Auto-resolve palette_sensor on first hass set (setConfig may run before hass is available)
-    if (this.config && !this.config.palette_sensor && hass) {
-      const autoSensor = findCollectionSensor(hass, "color_palettes", this);
-      if (autoSensor) {
-        this.config = { ...this.config, palette_sensor: autoSensor };
-      }
-    }
+    this._autoResolveSensor("palette_sensor", "color_palettes", hass, this);
 
     // If this is the first time hass is set, flush any pending service calls
     if (!oldHass && hass && this._pendingServiceCalls.length > 0) {
@@ -254,7 +242,7 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(ColorListDragMixin(
   // (card-command-controller): results from a previous configuration are
   // dropped. Created on first use.
   _cardCommands() {
-    return (this._commands ||= new CardCommandController());
+    return this._commands;
   }
 
   // One call for all target lamps (the backend runs them in parallel).
@@ -273,19 +261,10 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(ColorListDragMixin(
     // _getPrimaryEntity() skips stale entity IDs that no longer exist.
     const entityId = this.config ? this._getPrimaryEntity() : null;
     const hass = this._hass;
-    if (!hass || !entityId) return nothing;
+    if (!hass) return nothing;
+    if (!entityId) return cardNotice(this, NOTICE.noLamp);
     const stateObj = hass.states[entityId];
-    if (!stateObj) {
-      return html`<ha-card
-        ><div style="padding:16px;color:var(--error-color,#db4437)">
-          Entity not found: ${entityId}<br /><small
-            style="color:var(--secondary-text-color)"
-            >Check the card configuration — the selected entity may have been
-            removed or renamed.</small
-          >
-        </div></ha-card
-      >`;
-    }
+    if (!stateObj) return lampNotFoundNotice(this, entityId);
 
     // Get colors from sensor
     const sensorColors = stateObj.attributes.text_colors || [[255, 255, 255]];
@@ -304,12 +283,10 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(ColorListDragMixin(
     this._renderedColors = textColors;
 
     const config = this.config;
-    const showCard = config.show_card_background !== false;
     const showSavePalette = config.show_save_palette !== false;
     const showAddColorButton = config.show_add_color_button !== false;
     const showRandomizeButton = config.show_randomize_button !== false;
     const showColorSection = config.show_color_section !== false;
-    const cardTitle = typeof config.title === "string" ? config.title : "";
 
     // Remove button styling configuration
     const removeButtonStyle = config.remove_button_style || "default";
@@ -333,13 +310,8 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(ColorListDragMixin(
     const content = html`
       <div
         class="yc-stack"
-        style="padding:16px; box-sizing: border-box; max-width: 100%;"
+        style="box-sizing: border-box; max-width: 100%;"
       >
-        ${!showCard && cardTitle
-          ? html`<div style="font-weight:600;font-size:1.1em;">
-              ${cardTitle}
-            </div>`
-          : ""}
         ${showColorSection
           ? html`
               ${repeat(
@@ -357,11 +329,10 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(ColorListDragMixin(
       </div>
     `;
     const radius = `--rounded-cards-radius: ${this._getCardBorderRadius()}px;`;
-    return showCard
-      ? html`<ha-card header=${cardTitle || nothing}
-          ><div class="card-content" style=${radius}>${content}</div></ha-card
-        >`
-      : html`<div class="card-content" style=${radius}>${content}</div>`;
+    return cardShell(
+      this,
+      html`<div class="card-content" style=${radius}>${content}</div>`,
+    );
   }
 
   updated() {

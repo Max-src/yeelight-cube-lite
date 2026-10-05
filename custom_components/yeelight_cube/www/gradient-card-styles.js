@@ -9,13 +9,6 @@ import { getCapsuleCSS } from "./capsule-slider-utils.js";
 // Card stylesheet (static; adopted once per shadow root by LitElement).
 export const GRADIENT_CARD_CSS = `
         ${cardLayoutStyles}
-        .card-title {
-          font-size: 1.3em;
-          font-weight: bold;
-          margin-bottom: 18px;
-          margin-top: 2px;
-          color: var(--primary-text-color, #222);
-        }
         
         /* Header rotary styling - sized for 88px height */
         .header-rotary {

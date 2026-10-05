@@ -334,6 +334,7 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
       this.config.matrix_spacing_mode ||
       (this.config.matrix_pixel_spacing === false ? "none" : "normal");
     const pixelGap = spacingMode === "normal" ? 4 : 0;
+    const pixelStyle = this.config.matrix_pixel_style || "square";
     const alignClass =
       this.config.align === "left"
         ? "align-left"
@@ -350,6 +351,9 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
       alignClass,
       outerStyle: `container-type:inline-size;max-width:100%;width:${layout.tall ? `${(85 * sizePct) / 100}px` : `${sizePct}%`};margin-inline:${this.config.align === "left" ? "0 auto" : this.config.align === "right" ? "auto 0" : "auto"};`,
       gridStyle:
+        // Pixel shape and dot shadow, read by .lamp-dot (lamp-preview-styles.js).
+        `--lamp-dot-radius:${pixelStyle === "circle" ? "50%" : pixelStyle === "rounded" ? "20%" : "0px"};` +
+        `--lamp-dot-shadow:${spacingMode === "subtle" || spacingMode === "normal" ? `0 0 ${previewLength(2)} #0008` : "none"};` +
         `width:100%;aspect-ratio:auto;padding:${previewLength(8)};border-radius:${previewLength(12)};` +
         `background: ${matrixBackground}; ` +
         `gap: ${previewLength(pixelGap)}; ` +
