@@ -38,12 +38,21 @@ and components; the integration supplies the native font maps. Only lamp state
 and favourites are synthetic. Fixture service/API calls are blocked. Dashboard,
 lamp and profile settings are not saved; theme changes are in-memory only.
 
-Each image is captured in fresh Chromium processes until two captures match
-exactly (decoded RGBA pixels): normally twice. When the first two differ, a
-third capture decides, so a single odd capture is outvoted and logged as a
-warning; three different captures fail the run. Their captures and a diff
-image (changed pixels in magenta) go to `test-results/card-docs/`, which CI
-uploads as the `card-documentation-diagnostics` artifact. Checks also cover card bounds, lower-image content, overflow,
+Each image is captured in fresh Chromium processes until two captures match:
+normally twice. When the first two differ, a third capture decides, so a
+single odd capture is outvoted and logged as a warning; three different
+captures fail the run. Their captures and a diff image (magenta: real change,
+yellow: rendering noise) go to `test-results/card-docs/`, which CI uploads as
+the `card-documentation-diagnostics` artifact.
+
+"Match" is defined in `tests/card-docs-compare.cjs`: same size, no pixel
+channel more than 24 levels apart, and at most 0.5% of pixels different at
+all. It is deliberately not byte-exact: Chromium's software rasterizer is not
+bit-exact between processes for anti-aliased edges at fractional sizes, and an
+exact compare failed CI on a different random image almost every run. Animation
+phases, missing icons/fonts and layout shifts still fail. A newly verified
+image that matches the committed one is not rewritten, so the publish job
+never commits rendering noise. Checks also cover card bounds, lower-image content, overflow,
 preview frames and required controls. Clock time and preview phase are fixed;
 CSS transitions are disabled. Software rendering, greyscale text smoothing and
 sRGB avoid compositor variation. Compare images using the same OS, HA and pinned

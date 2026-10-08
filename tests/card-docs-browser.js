@@ -253,10 +253,10 @@ window.cardDocs = {
     );
   },
 
-  // Freeze every real-time animation loop before the pixel-for-pixel capture:
-  // each scenario is rendered twice and the captures are diffed byte-for-byte
-  // (card-docs.cjs), so a loop left running makes them differ and CI fails
-  // with "Capture pixels changed". See stopAnimationLoops() above for why this
+  // Freeze every real-time animation loop before the capture: each scenario
+  // is rendered at least twice and the captures are compared (card-docs.cjs,
+  // card-docs-compare.cjs), so a loop left running makes them differ and CI
+  // fails with "Capture pixels changed". See stopAnimationLoops() above for why this
   // must stay a generic sweep, not a list of property names.
   async settle() {
     const card = this.card;
@@ -327,9 +327,7 @@ window.cardDocs = {
       throw Error("Missing colors");
     if (
       !card.shadowRoot
-        .querySelector(
-          ".original-gallery, yc-collection-gallery, .gc-selector",
-        )
+        .querySelector(".original-gallery, yc-collection-gallery, .gc-selector")
         ?.getBoundingClientRect().height
     )
       throw Error("Missing gallery");

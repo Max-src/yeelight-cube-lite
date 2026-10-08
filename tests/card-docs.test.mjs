@@ -32,7 +32,10 @@ test("editor entries accept a caption string or a { title, config } object", () 
     editors,
     () => true,
   );
-  assert.match(after, /clock-editor-general\.png" alt="Clock - Global Settings"/);
+  assert.match(
+    after,
+    /clock-editor-general\.png" alt="Clock - Global Settings"/,
+  );
   assert.match(
     after,
     /clock-editor-orientation\.png" alt="Clock - Device Orientation"/,
@@ -94,4 +97,68 @@ ${end}`,
     updateGalleries(captured, catalogue, () => false, { pending: [] }),
     captured,
   );
+});
+
+// Capture comparison (card-docs-compare.cjs). A 448x340 grey image with a
+// "glyph" block, like the editor captures. Assertions compare booleans or
+// identities only: printing two capture buffers exhausts the heap.
+const {
+  imagesMatch,
+  matchingCapture,
+  CHANNEL_TOLERANCE,
+} = require("./card-docs-compare.cjs");
+function capture(edit = () => {}) {
+  const [width, height] = [448, 340];
+  const data = Buffer.alloc(width * height * 4, 200);
+  const png = { width, height, data };
+  const set = (x, y, rgb) => data.set([...rgb, 255], (y * width + x) * 4);
+  const shift = (x, y, delta) => {
+    const offset = (y * width + x) * 4;
+    for (let c = 0; c < 3; c++) data[offset + c] += delta;
+  };
+  for (let y = 100; y < 180; y++)
+    for (let x = 160; x < 230; x++) set(x, y, [60, 60, 60]);
+  edit(set, png, shift);
+  return png;
+}
+
+test("captures differing only by anti-aliasing noise match", () => {
+  // The real CI failure: one glyph edge column moved by up to 8 levels.
+  const noisy = capture((_, __, shift) => {
+    for (let y = 100; y < 180; y += 3) shift(229, y, 8);
+  });
+  assert.equal(imagesMatch(capture(), noisy), true);
+  assert.equal(imagesMatch(capture(), capture()), true);
+});
+
+test("real content changes do not match", () => {
+  // An animation at another phase: a whole block in another colour.
+  const recoloured = capture((set) => {
+    for (let y = 100; y < 120; y++)
+      for (let x = 160; x < 230; x++) set(x, y, [0, 180, 160]);
+  });
+  assert.equal(imagesMatch(capture(), recoloured), false);
+  // One pixel past the tolerance (a missing icon dot) is enough.
+  const dot = capture((_, __, shift) =>
+    shift(10, 10, -(CHANNEL_TOLERANCE + 1)),
+  );
+  assert.equal(imagesMatch(capture(), dot), false);
+  // A subtle change everywhere (a fade or colour tweak) is not noise.
+  const faded = capture((_, png) => {
+    for (let i = 0; i < png.data.length; i += 4) png.data[i] -= 4;
+  });
+  assert.equal(imagesMatch(capture(), faded), false);
+  // A layout change.
+  const shorter = { ...capture(), height: 339 };
+  assert.equal(imagesMatch(capture(), shorter), false);
+});
+
+test("two of three captures decide; three different captures fail", () => {
+  const odd = { png: capture((set) => set(20, 20, [0, 0, 0])) };
+  const a = { png: capture() };
+  const b = { png: capture((_, __, shift) => shift(229, 117, 5)) };
+  assert.equal(matchingCapture([a, odd, b]) === a, true);
+  const other = { png: capture((set) => set(30, 30, [0, 0, 0])) };
+  const third = { png: capture((set) => set(40, 40, [0, 0, 0])) };
+  assert.equal(matchingCapture([odd, other, third]), null);
 });
