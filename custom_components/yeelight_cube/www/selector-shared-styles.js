@@ -1,13 +1,14 @@
 // ============================================================================
-//  Shared mode-selector design language (gradient card + clock card)
+//  The shared gallery's selector design language (collection-gallery.js:
+//  Clock, Native Effects, Gradient, Palettes, Draw)
 // ============================================================================
 //
 // The unified selector has two families sharing one config key:
 //   Text styles:    "filled" | "dropdown" | "chips"
-//   Preview styles: "preview-list" | "preview-grid" |
-//                   "preview-carousel" | "preview-wheel"
+//   Preview styles: "preview-list" | "preview-grid" | "preview-strip" |
+//                   "preview-carousel" | "preview-wheel" | "preview-album"
 // plus two appearance axes applied across every style: a shape
-// (square/rounded/round, via data-shape attributes) and a size scale
+// (square/rounded/round/custom, via data-shape attributes) and a size scale
 // (--gc-sel-scale custom property).  The CSS below styles the text selectors
 // and the shape/columns overrides for the preview shell; the preview styles
 // themselves render through gallery-display-utils / carousel-utils.
@@ -30,10 +31,20 @@ export const PREVIEW_SELECTOR_STYLES = [
  *   "square"  → 0 radius
  *   "rounded" → subtle radius (default, current look)
  *   "round"   → pill / fully rounded
+ *   "custom"  → item_radius px (selectorItemRadius), drawn through the
+ *               --yc-item-radius variable the gallery sets on itself
  */
 export function resolveSelectorShape(cfg) {
   const v = cfg?.selector_shape;
-  return v === "square" || v === "round" ? v : "rounded";
+  return v === "square" || v === "round" || v === "custom" ? v : "rounded";
+}
+
+/** The item corner radius (px) of a config's selector shape. */
+export function selectorItemRadius(cfg) {
+  const shape = resolveSelectorShape(cfg);
+  if (shape !== "custom") return { square: 0, rounded: 8, round: 18 }[shape];
+  const value = Number(cfg?.item_radius);
+  return Number.isFinite(value) ? Math.max(0, Math.min(28, value)) : 12;
 }
 
 /**
@@ -45,7 +56,9 @@ export function resolveSelectorShape(cfg) {
 export function resolveSelectorButtonShape(cfg) {
   const v = cfg?.selector_button_shape;
   if (v === "square" || v === "round" || v === "rounded") return v;
-  return resolveSelectorShape(cfg);
+  const shape = resolveSelectorShape(cfg);
+  // Buttons have no custom radius: a custom item shape keeps rounded ones.
+  return shape === "custom" ? "rounded" : shape;
 }
 
 /** Map a selector shape to the carousel nav-button shape for visual parity. */
@@ -92,6 +105,24 @@ export const selectorSharedStyles = `
     flex-shrink: 0;
     border-radius: 50%;
     box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+  }
+  /* Micro-matrix swatch: the item's preview at chip size, kept crisp
+     (square pixels, no shadows, whatever the gallery appearance). */
+  .mode-chip-swatch.mode-chip-matrix {
+    width: auto;
+    height: auto;
+    border-radius: 3px;
+    box-shadow: none;
+    overflow: hidden;
+    display: inline-flex;
+    background: #000;
+  }
+  .mode-chip-matrix .gallery-matrix-preview {
+    border-radius: 0 !important;
+  }
+  .mode-chip-matrix .gallery-matrix-preview > div {
+    border-radius: 0 !important;
+    box-shadow: none !important;
   }
   .mode-chip[data-favourite="true"] .mode-chip-label::before {
     content: "★ ";
@@ -193,6 +224,17 @@ export const selectorSharedStyles = `
   .gc-preview-shell[data-shape="round"] .wheel-item,
   .gc-preview-shell[data-shape="round"] .wheel-compact-item {
     border-radius: 18px !important;
+  }
+
+  /* "custom" shape: the gallery's item_radius (--yc-item-radius). */
+  .gc-selector[data-shape="custom"] .shared-action-button,
+  .gc-selector[data-shape="custom"] .mode-select,
+  .gc-selector[data-shape="custom"] .mode-chip,
+  .gc-preview-shell[data-shape="custom"] .gallery-item,
+  .gc-preview-shell[data-shape="custom"] .gallery-item:hover,
+  .gc-preview-shell[data-shape="custom"] .wheel-item,
+  .gc-preview-shell[data-shape="custom"] .wheel-compact-item {
+    border-radius: var(--yc-item-radius, 8px) !important;
   }
 
   /* preview-grid style: fixed 2-column layout over the list renderer */

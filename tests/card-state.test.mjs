@@ -85,16 +85,17 @@ test("Palette rename completion never mutates an HA item at a stale index", asyn
     },
     render() {},
     _paletteItems: cardMethod("yeelight-cube-palette-card", "_paletteItems"),
+    _sensorPalettes() {
+      return this._hass.states["sensor.palette"].attributes.palettes_v2;
+    },
     _mutatePalettes: cardMethod(
       "yeelight-cube-palette-card",
       "_mutatePalettes",
       { CollectionState },
     ),
   };
-  const rename = cardMethod("yeelight-cube-palette-card", "_renamePalette", {
-    prompt: () => "Renamed A",
-  });
-  const result = rename.call(card, 0, "A", null);
+  const rename = cardMethod("yeelight-cube-palette-card", "_renamePalette");
+  const result = rename.call(card, 0, "Renamed A");
   await Promise.resolve();
   palettes.reverse();
   finish();
@@ -533,29 +534,6 @@ test("queued slider commits only send the latest value while one is in flight", 
     true,
   ]);
   assert.deepEqual(sent, [10, 40]);
-});
-
-test("the gallery renders a delegated delete button without inline handlers", async () => {
-  const { renderGalleryMode } = await import(
-    "../custom_components/yeelight_cube/www/gallery-mode-utils.js"
-  );
-  const items = [{ name: "A" }, { name: "B" }];
-  const delegated = renderGalleryMode(items, () => "", { showDelete: true });
-  assert.equal(delegated.match(/<button /g)?.length, 2);
-  assert.doesNotMatch(delegated, /onclick=/);
-  const named = renderGalleryMode(items, () => "", {
-    showDelete: true,
-    onDeleteClick: "handleGridDelete",
-  });
-  assert.match(
-    named,
-    /data-on-click="handleGridDelete" data-args='\["\$event",1\]'/,
-  );
-  assert.doesNotMatch(named, /onclick=/);
-  assert.doesNotMatch(
-    renderGalleryMode(items, () => "", { showDelete: false }),
-    /<button /,
-  );
 });
 
 test("an emptied target list falls back to the single entity", async () => {

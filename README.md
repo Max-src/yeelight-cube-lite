@@ -242,7 +242,7 @@ server-side favourites rotation that continues after you close the dashboard.
 | Feature | Description |
 | :-- | :-- |
 | **Clock preview** | Live time/date preview using the lamp's native font, with configurable pixels, spacing, background, shadow and size |
-| **Style browser** | Search clock styles using text, grid, list, strip, carousel, wheel or album layouts, with pagination and favourite markers. The editor's **Styles** list picks, orders and renames them for the card |
+| **Style browser** | Search clock styles using text (buttons, dropdown, or chips with a live mini preview), grid, list, strip, carousel, wheel or album layouts, with pagination and favourite markers. The editor's **Styles** list picks, orders and renames them for the card. Your custom styles can be renamed and deleted (with confirmation) from the gallery |
 | **Color modes** | Choose supported palettes or custom RGB; save reusable color modes and clock presets |
 | **Sliders** | Brightness and animation speed with selectable slider styles, labels and values |
 | **Content & format** | Switch time/date, 12/24-hour format and colon blinking |
@@ -341,7 +341,7 @@ available where supported. Experimental effects require the lamp's
 | Feature | Description |
 | :-- | :-- |
 | **Live previews** | Preview firmware animations with configurable pixels, spacing, background, shadow and size |
-| **Effect browser** | Search effects using text, grid, list, strip, carousel, wheel or album layouts, with pagination and availability badges. The editor's **Effects** list picks, orders and renames them for the card |
+| **Effect browser** | Search effects using text (buttons, dropdown, or chips with a live mini preview), grid, list, strip, carousel, wheel or album layouts, with pagination and availability badges. The editor's **Effects** list picks, orders and renames them for the card |
 | **Color modes** | Apply supported palette modes or custom RGB; favourites remember the chosen colors |
 | **Sliders** | Brightness and effect speed with selectable slider styles; speed is shown for effects that support it |
 | **Orientation & actions** | Device orientation, previous, next, random, freeze, refresh and power controls |
@@ -563,8 +563,9 @@ Manage color palettes. Apply a palette to lamps with one click. Multiple display
 | Feature | Description |
 | :-- | :-- |
 | **Multi-entity support** | Control multiple lamps at the same time |
-| **Browse & apply** | Multiple display modes, configurable swatch styles, one-click apply |
-| **Manage** | Rename and delete palettes |
+| **Browse & apply** | The shared gallery: List, Grid, Strip, Carousel, Wheel or Album previews, or Filled, Dropdown or Chips buttons, with optional search; five swatch styles (round, square, gradient bar, gradient background, stripes) and the color count; one-click (or keyboard) apply; in the carousel and wheel the arrows only browse, a click applies |
+| **Manage** | Rename (Allow Rename) and delete palettes from the gallery; a delete always asks for confirmation |
+| **Arrange** | Reorder your palettes in the card editor (drag or ▲ ▼); the order is saved for every card, lamp and the Matrix: Palette select |
 | **Import/Export** | Load and save full palette collections |
 
 <details>
@@ -666,7 +667,7 @@ The pixel art editor. Paint on a 20×5 interactive matrix, save designs to a per
 | **Drawing tools** | Individually toggleable with multiple styles |
 | **Drawing matrix** | Interactive 20×5 matrix |
 | **Action buttons** | Apply to lamp, upload from image, save, or clear |
-| **Pixel art gallery** | Manage and apply pixel arts |
+| **Pixel art gallery** | The shared gallery: Grid, List, Strip, Carousel, Wheel or Album previews, or Filled, Dropdown or Chips buttons, with optional search. A pick (a click; carousel and wheel arrows only browse) loads the pixel art into the drawing (and sends it to the lamp with "Apply to lamp automatically"). Rename (Allow Rename) and delete them from the gallery (a delete always asks for confirmation); reorder them in the card editor's Arrange list (saved for every card and the Matrix: Pixel Art select) |
 | **Import/Export** | Import and export collections as JSON |
 
 <details>

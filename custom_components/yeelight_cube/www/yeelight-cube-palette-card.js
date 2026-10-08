@@ -1,34 +1,33 @@
-import {
-  LitElement,
-  html,
-  unsafeHTML,
-  unsafeCSS,
-  nothing,
-} from "./lib/lit-all.js";
-
-import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
-
-import { getDeleteButtonConfig } from "./delete-button-styles.js";
-
-import { setupAlbumNavigation } from "./album-view-coverflow.js";
-import { attachCarouselSwipe } from "./carousel-utils.js";
+import { LitElement, html, unsafeCSS, nothing } from "./lib/lit-all.js";
 
 import { YeelightCardMixin, cubeLampEntities } from "./card-base.js";
-import { cardNotice, cardShell, isActivationKey } from "./card-shell.js";
+import { cardNotice, cardShell } from "./card-shell.js";
 import { CollectionState } from "./collection-state.js";
 import { notify, notifyUnreported } from "./notify-utils.js";
 import {
   normalizeImportedPalettes,
   MAX_PALETTE_IMPORT_BYTES,
 } from "./palette-data-utils.js";
-import { renderPagination } from "./pagination-utils.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
-import { PaletteGalleryMixin } from "./palette-card-gallery.js";
-import { PALETTE_CARD_CSS, paletteStyleVars } from "./palette-card-styles.js";
+import { normalizeCardOptions } from "./card-config.js";
+import { collectionItems } from "./user-collections.js";
+import "./collection-gallery.js";
+import {
+  colorCountLabel,
+  paletteGradient,
+  palettePreviewHtml,
+} from "./palette-preview.js";
+import { renderExportImportRow } from "./action-button-ui.js";
+import { PALETTE_CARD_CSS } from "./palette-card-styles.js";
 
-class YeelightCubePaletteCard extends PaletteGalleryMixin(YeelightCardMixin(LitElement)) {
+// A palette's gallery key: its index in the sensor's list. Commands also
+// send the name seen at that index (expected_name), so the backend refuses
+// them if another client changed the list meanwhile.
+const paletteKey = (idx) => `palette:${idx}`;
+const paletteIndex = (key) => Number(String(key).slice("palette:".length));
+
+class YeelightCubePaletteCard extends YeelightCardMixin(LitElement) {
   static editor = ["yeelight-cube-palette-card-editor", "./yeelight-cube-palette-card-editor.js"];
-  // Static: the config-dependent values are CSS variables (paletteStyleVars).
   static styles = unsafeCSS(PALETTE_CARD_CSS);
 
   constructor() {
@@ -38,109 +37,6 @@ class YeelightCubePaletteCard extends PaletteGalleryMixin(YeelightCardMixin(LitE
     this._hass = null;
     this.config = {};
     this._importStatus = { active: false, success: false };
-    this._deletionInProgress = false; // Prevent re-render during album deletion
-    this._currentPalettePage = 0; // Pagination state
-    // Bumped by setConfig so the album markup (whose listeners are bound by
-    // the shared coverflow helper) is recreated, never re-bound, on changes.
-    this._configGeneration = 0;
-    // Capture-phase delegated click handler for markup produced as HTML
-    // strings by shared helpers (gallery, carousel, album, pagination).
-    this._contentClick = {
-      handleEvent: (event) => this._onContentClick(event),
-      capture: true,
-    };
-  }
-
-  // Swatches as an HTML string, for the shared helpers that take strings
-  // (album, carousel). Colors come from rgbToCss, which only emits rgb().
-  _renderPaletteColors(colors, style = "square", idx) {
-    switch (style) {
-      case "round":
-        return colors
-          .map(
-            (color) =>
-              `<span class="palette-color round-swatch" style="background:${rgbToCss(
-                color,
-              )};"></span>`,
-          )
-          .join("");
-
-      case "gradient":
-        const gradientColors = colors
-          .map((color) => rgbToCss(color))
-          .join(", ");
-        return `<div class="gradient-bar" style="background: linear-gradient(to right, ${gradientColors});"></div>`;
-
-      case "stripes":
-        return `<div class="stripes-bar" style="background: linear-gradient(to right, ${this._stripeGradient(
-          colors,
-        )});"></div>`;
-
-      case "gradient-bg":
-        // Return a special marker that signals the row should have gradient background
-        return `<div class="gradient-bg-marker" data-gradient="${colors
-          .map((color) => rgbToCss(color))
-          .join(", ")}"></div>`;
-
-      case "square":
-      default:
-        return colors
-          .map(
-            (color) =>
-              `<span class="palette-color square-swatch" style="background:${rgbToCss(
-                color,
-              )};"></span>`,
-          )
-          .join("");
-    }
-  }
-
-  // Same swatches as a Lit template, for the card's own list markup.
-  _paletteColorsTemplate(colors, style = "square") {
-    switch (style) {
-      case "round":
-      case "square":
-      default: {
-        const swatch = style === "round" ? "round-swatch" : "square-swatch";
-        return colors.map(
-          (color) =>
-            html`<span
-              class="palette-color ${swatch}"
-              style="background:${rgbToCss(color)};"
-            ></span>`,
-        );
-      }
-      case "gradient":
-        return html`<div
-          class="gradient-bar"
-          style="background: linear-gradient(to right, ${colors
-            .map((color) => rgbToCss(color))
-            .join(", ")});"
-        ></div>`;
-      case "stripes":
-        return html`<div
-          class="stripes-bar"
-          style="background: linear-gradient(to right, ${this._stripeGradient(
-            colors,
-          )});"
-        ></div>`;
-      case "gradient-bg":
-        return html`<div
-          class="gradient-bg-marker"
-          data-gradient=${colors.map((color) => rgbToCss(color)).join(", ")}
-        ></div>`;
-    }
-  }
-
-  _stripeGradient(colors) {
-    const stripePercent = 100 / colors.length;
-    return colors
-      .map((color, i) => {
-        const start = i * stripePercent;
-        const end = (i + 1) * stripePercent;
-        return `${rgbToCss(color)} ${start}% ${end}%`;
-      })
-      .join(", ");
   }
 
   setConfig(config) {
@@ -148,15 +44,10 @@ class YeelightCubePaletteCard extends PaletteGalleryMixin(YeelightCardMixin(LitE
     this._commands?.reset();
     // target_entities is not defaulted: `entity` covers single-lamp configs
     // (getTargetEntities falls back to it when the list is missing or empty).
-    this.config = {
-      palette_sensor: config.palette_sensor,
-      ...config,
-    };
+    this.config = { ...normalizeCardOptions(config, "palette") };
 
     // Auto-resolve palette_sensor if not explicitly configured
     this._autoResolveSensor("palette_sensor", "color_palettes", this._hass);
-
-    this._configGeneration++;
     this.requestUpdate();
   }
 
@@ -165,12 +56,17 @@ class YeelightCubePaletteCard extends PaletteGalleryMixin(YeelightCardMixin(LitE
     return {
       type: "custom:yeelight-cube-palette-card",
       target_entities: firstEntity ? [firstEntity] : [],
+      style_selector_style: "preview-album",
       swatch_style: "gradient-bg",
-      display_mode: "album",
-      remove_button_style: "none",
       show_color_count: false,
+      show_search: false,
+      selector_shape: "custom",
+      item_radius: 16,
+      gallery_background_color: "transparent",
+      item_card_border: "always",
+      remove_button_style: "none",
       buttons_style: "gradient",
-      card_size: 50,
+      preview_size: 50,
       items_per_page: 12,
       delete_button_inside: false,
     };
@@ -189,17 +85,16 @@ class YeelightCubePaletteCard extends PaletteGalleryMixin(YeelightCardMixin(LitE
    * the websocket only sends scalar attribute updates (count, hash) but NOT the full
    * array data (palettes_v2). This causes stale data issues.
    *
-   * DELETION FLOW:
-   * 1. User clicks delete → _deletePalette() filters array client-side → renders immediately
-   * 2. CollectionState stores the optimistic array and its timestamp
-   * 3. Backend service deletes item → fires event → sensor updates count/hash
-   * 4. Websocket sends: {count: 16, hash: <new>} but palettes_v2: <stale 17-item array>
-   * 5. This setter confirms the full array before retiring the overlay
+   * EDIT FLOW (delete, rename, import):
+   * 1. The edit records the expected list in CollectionState (optimistic)
+   * 2. The card renders it immediately
+   * 3. Backend service persists the edit → the sensor updates count/hash
+   * 4. Websocket may send the new count/hash before the full array
+   * 5. This setter keeps the optimistic list until the full array matches
    *
    * CACHE MANAGEMENT:
    * - Cache cleared when the full sensor array matches the optimistic snapshot
    * - Cache expires after 5 seconds (navigated away and back)
-   * - HA state remains available while the collection overlay is active
    *
    * The card has no reactive properties: updates are requested explicitly here
    * so unrelated hass updates (other entities) never re-render it.
@@ -217,74 +112,63 @@ class YeelightCubePaletteCard extends PaletteGalleryMixin(YeelightCardMixin(LitE
     // the hash also changes on renames and reorders, so the card refreshes for
     // every kind of palette change -- not just additions/deletions.
     const stateObj = hass.states[entityId];
-    const sensorArr = Array.isArray(stateObj?.attributes?.palettes_v2)
-      ? stateObj.attributes.palettes_v2
-      : Array.isArray(stateObj?.attributes?.palettes)
-        ? stateObj.attributes.palettes
-        : [];
+    const sensorArr = this._sensorPalettes();
     const sensorCount = stateObj?.attributes?.count ?? sensorArr.length;
     const currHash =
       stateObj?.attributes?.content_hash ?? `count:${sensorCount}`;
     const prevHash = this._lastPaletteHash;
-    const isFirstLoad = prevHash === undefined;
 
-    // While an optimistic local cache is active (just after a delete), keep
-    // showing the correctly-filtered local list until the sensor has fully
-    // caught up. Confirmation requires the full authoritative array to match.
-    // The websocket can deliver an updated `count`
-    // a beat before the full `palettes_v2` array converges, so checking both
-    // avoids briefly re-rendering the stale (pre-delete) array -- which would
-    // make the just-deleted item flash back into the list.
+    // While an optimistic list is shown, keep it until the sensor's full
+    // array has caught up (its count can arrive a beat before the array,
+    // which would briefly bring a deleted palette back).
     if (this._localPalettes !== undefined) {
       this._collection.observe(sensorArr, sensorCount);
       if (this._localPalettes === undefined) {
         this._lastPaletteHash = currHash;
-        if (!this._deletionInProgress) {
-          this.requestUpdate();
-        }
+        this.requestUpdate();
       }
-      // Otherwise keep displaying the optimistic list -- do not render the
-      // sensor data yet, it is still mid-update.
       return;
     }
 
-    // Block re-render during album deletion (after cache check)
-    if (this._deletionInProgress) {
-      return;
-    }
-
-    if (prevHash !== currHash || isFirstLoad) {
+    if (prevHash !== currHash || prevHash === undefined) {
       this._lastPaletteHash = currHash;
       this.requestUpdate();
     }
   }
 
+  // The stored palettes (user-collections.js: the one reader of them).
   _sensorPalettes() {
-    const attributes =
-      this._hass?.states?.[this.config.palette_sensor]?.attributes;
-    return Array.isArray(attributes?.palettes_v2)
-      ? attributes.palettes_v2
-      : Array.isArray(attributes?.palettes)
-        ? attributes.palettes
-        : [];
+    return collectionItems(this._hass, this.config, "palettes").items;
   }
 
-  _allowTitleEdit() {
-    return (
-      this.config.show_palette_title !== false &&
-      this.config.allow_title_edit === true
-    );
+  // The palettes as gallery items: a preview in the card's swatch style,
+  // the blend as chip swatch, the color count under the preview. Every
+  // palette is the user's own (renamed and deleted for real).
+  _galleryItems(palettes) {
+    const style = this.config.swatch_style || "square";
+    const showCount = this.config.show_color_count !== false;
+    return palettes.map((palette, idx) => {
+      const colors = Array.isArray(palette.colors) ? palette.colors : [];
+      const name = palette.name || `Palette ${idx + 1}`;
+      return {
+        dataMode: paletteKey(idx),
+        name,
+        title: name,
+        swatch: paletteGradient(colors),
+        previewHtml: palettePreviewHtml(colors, style),
+        meta: showCount ? colorCountLabel(colors) : undefined,
+        editable: true,
+      };
+    });
   }
 
   /**
    * Render the palette card
    *
    * DATA SOURCE:
-   * Renders from the optimistic local cache (`_localPalettes`) while a deletion
+   * Renders from the optimistic local cache (`_localPalettes`) while an edit
    * is being confirmed, otherwise straight from the sensor's authoritative
-   * `palettes_v2` array. The cache lifecycle (creation on delete, clearing once
-   * the sensor array has converged) is handled in the `hass` setter, so render()
-   * just trusts whichever source is current.
+   * `palettes_v2` array (see the `hass` setter).
    */
   render() {
     const hass = this._hass;
@@ -296,186 +180,31 @@ class YeelightCubePaletteCard extends PaletteGalleryMixin(YeelightCardMixin(LitE
     if (!stateObj)
       return cardNotice(this, `Palette sensor not found: ${entityId}`);
 
-    const palettes =
-      this._localPalettes !== undefined
-        ? this._localPalettes
-        : this._sensorPalettes();
-
-    const btnCfg = getDeleteButtonConfig(this.config);
-    const showRemove = btnCfg.allowDelete;
-    const removeBtnClass = btnCfg.classes;
-    const showExport = this.config.show_export_button !== false;
-    const showImport = this.config.show_import_button !== false;
-    const showPaletteTitle = this.config.show_palette_title !== false;
-    const showColorCount = this.config.show_color_count !== false;
-    const allowTitleEdit = this._allowTitleEdit();
-
-    const displayMode = this.config.display_mode || "list";
-    const borderMode = this.config.item_card_border || "auto";
-    const isDark =
-      this._hass?.themes?.darkMode ??
-      window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ??
-      false;
-    const showItemBorder =
-      borderMode === "always" || (borderMode === "auto" && isDark);
-
-    let content;
-    if (palettes.length === 0) {
-      content = html`<div
-        style="padding:16px;color:var(--secondary-text-color, #888);"
-      >
-        No palettes found. Add palettes to see them here.
-      </div>`;
-    } else {
-      // Pagination: slice palettes for list/gallery modes
-      const itemsPerPage = parseInt(this.config.items_per_page) || 0;
-      const usePagination =
-        itemsPerPage > 0 &&
-        (displayMode === "list" || displayMode === "gallery");
-      let displayPalettes = palettes;
-      let paginationHtml = "";
-      if (usePagination) {
-        const result = renderPagination({
-          items: palettes,
-          currentPage: this._currentPalettePage,
-          itemsPerPage,
-        });
-        displayPalettes = result.items;
-        paginationHtml = result.html;
-        this._currentPalettePage = result.currentPage;
-      }
-      content = html`${this._renderPalettes(displayPalettes, displayMode, {
-        showRemove,
-        showPaletteTitle,
-        allowTitleEdit,
-        showColorCount,
-        removeBtnClass,
-        posClass: btnCfg.posClass,
-        sideClass: btnCfg.sideClass,
-        swatchStyle: this.config.swatch_style || "square",
-        globalOffset: usePagination
-          ? this._currentPalettePage * itemsPerPage
-          : 0,
-      })}${paginationHtml ? unsafeHTML(paginationHtml) : nothing}`;
-    }
-
-    const body = html`<div
-      class="card-content yc-stack${showItemBorder ? " item-card-border" : ""}"
-      style=${paletteStyleVars(this.config)}
-      @click=${this._contentClick}
-      @keydown=${this._onContentKeydown}
-    >
-      ${content}${this._renderPaletteExportImportButtons(
-        showExport,
-        showImport,
+    const body = html`<div class="card-content yc-stack">
+      <yc-collection-gallery
+        .config=${this.config}
+        .items=${this._galleryItems(this._paletteItems())}
+        searchLabel="Search palettes"
+        actionLabel="Apply to the lamps"
+        .navigateSelects=${false}
+        emptyLabel="No palettes found. Add palettes to see them here."
+        .onSelect=${(key) => this._applyPalette(paletteIndex(key))}
+        .onRename=${(key, name) => this._renamePalette(paletteIndex(key), name)}
+        .onDelete=${(key) => this._deletePalette(paletteIndex(key))}
+      ></yc-collection-gallery>
+      ${this._renderPaletteExportImportButtons(
+        this.config.show_export_button !== false,
+        this.config.show_import_button !== false,
       )}
     </div>`;
 
-    return html`
-      ${cardShell(this, body, {
-        // "Allow title edit" renames the card title too (until reloaded).
-        onTitleClick: allowTitleEdit
+    return cardShell(this, body, {
+      // "Allow Rename" renames the card title too (until reloaded).
+      onTitleClick:
+        this.config.allow_rename === true
           ? (title) => this._editCardTitle(title)
           : undefined,
-      })}
-    `;
-  }
-
-  updated() {
-    const root = this.renderRoot;
-    const content = root.querySelector(".card-content");
-    if (!content) return;
-    this._enhanceGeneratedMarkup(content);
-    // Guarded by the shared helper (one binding per carousel wrapper node).
-    attachCarouselSwipe(content, "palette-carousel", (direction) =>
-      this._navigatePaletteCarousel(direction, this._paletteItems().length),
-    );
-    this._setupAlbum();
-  }
-
-  // Markup produced as HTML strings by shared helpers cannot carry Lit
-  // bindings; give its clickable parts keyboard/screen-reader semantics here.
-  // Idempotent, so it is safe to run after every update.
-  _enhanceGeneratedMarkup(content) {
-    const items = this._paletteItems();
-    const nameOf = (el) => {
-      const idx = Number(el.closest("[data-idx]")?.dataset.idx);
-      return items[idx]?.name || `Palette ${idx + 1}`;
-    };
-    const makeButton = (el, label) => {
-      el.setAttribute("role", "button");
-      el.tabIndex = 0;
-      el.setAttribute("aria-label", label);
-    };
-    content
-      .querySelectorAll(".gallery-item-image, .palette-item-carousel")
-      .forEach((el) => makeButton(el, `Apply palette ${nameOf(el)}`));
-    content
-      .querySelectorAll(".palettes-album-item")
-      .forEach((el) => makeButton(el, `Palette ${nameOf(el)}`));
-    const allowTitleEdit = this._allowTitleEdit();
-    content
-      .querySelectorAll(
-        ".gallery-item-title, .palette-item-carousel .palette-title, .album-title .title-text",
-      )
-      .forEach((el) => {
-        if (allowTitleEdit) makeButton(el, `Rename palette ${nameOf(el)}`);
-        else {
-          el.removeAttribute("role");
-          el.removeAttribute("tabindex");
-          el.removeAttribute("aria-label");
-        }
-      });
-    content.querySelectorAll(".carousel-dot").forEach((el) => {
-      makeButton(el, el.getAttribute("title") || "Go to palette");
     });
-    // Icon-only buttons (delete crosses, carousel/album/pagination arrows).
-    content.querySelectorAll("button:not([aria-label])").forEach((button) => {
-      const title = button.getAttribute("title");
-      if (title && button.textContent.trim().length <= 1)
-        button.setAttribute("aria-label", title);
-    });
-  }
-
-  // The album DOM comes from unsafeHTML, whose nodes persist while the markup
-  // is unchanged; the shared coverflow helper binds listeners on those nodes,
-  // so bind once per container node to avoid stacking handlers.
-  _setupAlbum() {
-    const root = this.renderRoot;
-    const albumContainer = root.getElementById("palettes-album-container");
-    if (!albumContainer || albumContainer === this._boundAlbumContainer) return;
-    this._boundAlbumContainer = albumContainer;
-    setupAlbumNavigation(
-      root,
-      "palettes",
-      // On item click - apply palette to lamps (via shared sequential utility)
-      async (idx) => {
-        await this._applyPalette(idx);
-      },
-      // On item remove - the helper already animated the item out of the DOM
-      (idx) => {
-        this._deletionInProgress = true;
-        const palettes = this._paletteItems();
-        if (!palettes[idx]) return;
-        this._mutatePalettes(
-          palettes.filter((_, index) => index !== idx),
-          "remove_palette",
-          { idx, expected_name: palettes[idx].name },
-          false,
-        ).then((success) => {
-          if (!success) return;
-          clearTimeout(this._albumDeletionTimer);
-          this._albumDeletionTimer = setTimeout(() => {
-            this._deletionInProgress = false;
-            this.requestUpdate();
-          }, 1500);
-        });
-      },
-      // Context object to store state
-      this,
-      // Config for 3D mode detection
-      this.config,
-    );
   }
 
   _editCardTitle(titleElem) {
@@ -484,119 +213,30 @@ class YeelightCubePaletteCard extends PaletteGalleryMixin(YeelightCardMixin(LitE
       titleElem.textContent.trim(),
     );
     if (newTitle !== null && newTitle.trim() !== "") {
-      this.config.title = newTitle.trim();
+      this.config = { ...this.config, title: newTitle.trim() };
       this.requestUpdate();
     }
   }
 
-  // Enter/Space activate any non-native element exposed as a button.
-  _onContentKeydown(event) {
-    const target = event.target;
-    if (
-      !isActivationKey(event) ||
-      target?.getAttribute?.("role") !== "button" ||
-      target.localName === "button"
-    )
-      return;
-    event.preventDefault();
-    target.click();
-  }
-
-  // Capture-phase delegation for markup generated as HTML strings. Runs before
-  // the album helper's per-item listeners, so title renames can stop the click
-  // from also selecting/applying the item.
-  _onContentClick(event) {
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    const indexOf = (el) => parseInt(el.closest("[data-idx]")?.dataset.idx);
-
-    const page = target.closest(
-      "[data-pagination-page], [data-pagination-action]",
-    );
-    if (page) {
-      const action = page.dataset.paginationAction;
-      if (action === "prev") {
-        this._currentPalettePage = Math.max(0, this._currentPalettePage - 1);
-      } else if (action === "next") {
-        this._currentPalettePage += 1;
-      } else {
-        this._currentPalettePage = parseInt(page.dataset.paginationPage, 10);
-      }
-      this.requestUpdate();
-      return;
-    }
-
-    const carouselBtn = target.closest(
-      '[data-carousel-id="palette-carousel"][data-action]',
-    );
-    if (carouselBtn) {
-      if (carouselBtn.dataset.action === "navigate") {
-        this._navigatePaletteCarousel(
-          parseInt(carouselBtn.dataset.direction),
-          this._paletteItems().length,
-        );
-      } else if (carouselBtn.dataset.action === "set-index") {
-        this._setPaletteCarouselIndex(parseInt(carouselBtn.dataset.index));
-      }
-      return;
-    }
-
-    if (this._allowTitleEdit()) {
-      const title = target.closest(
-        ".gallery-item-title, .palette-item-carousel .palette-title, .album-title .title-text",
-      );
-      if (title) {
-        event.stopPropagation();
-        this._renamePalette(indexOf(title), title.textContent.trim(), title);
-        return;
-      }
-    }
-
-    const remove = target.closest(
-      ".gallery-item button, .palette-item-carousel .palette-remove-btn",
-    );
-    if (remove) {
-      event.stopPropagation();
-      this._deletePalette(indexOf(remove));
-      return;
-    }
-
-    const item = target.closest(".gallery-item-image, .palette-item-carousel");
-    if (item && !target.closest("button")) {
-      this._applyPalette(indexOf(item));
-    }
-  }
-
-  // Simple method to delete a palette
   /**
-   * Delete a palette with client-side caching for instant UI updates
+   * Palette edits update the card at once (optimistic), then persist:
    *
-   * CLIENT-SIDE DELETION ARCHITECTURE:
-   * 1. Filter palette array immediately (optimistic update)
-   * 2. Store filtered array in CollectionState with timestamp
-   * 3. Render immediately with cached data (instant UI feedback)
-   * 4. Call backend service to persist deletion
-   * 5. Wait for the full sensor array to match
-   * 6. Clear cache and let sensor data take over
+   * CLIENT-SIDE EDIT ARCHITECTURE:
+   * 1. Compute the expected palette list immediately (optimistic update)
+   * 2. Store it in CollectionState with a timestamp; render it
+   * 3. Call the backend service to persist the edit
+   * 4. Wait for the full sensor array to match, then let sensor data take over
    *
    * ERROR HANDLING:
-   * - If backend fails, clear cache and re-render with sensor data
-   * - If cache expires (5s) without sensor catching up, clear and re-render
-   * - Prevents UI from being stuck in incorrect state
+   * - If backend fails, roll back and re-render with sensor data
+   * - If the cache expires (5s) without the sensor catching up, it is dropped
    */
   get _localPalettes() {
     return this._collection?.pending?.items;
   }
 
   _paletteItems() {
-    const attributes =
-      this._hass?.states?.[this.config.palette_sensor]?.attributes;
-    return (
-      this._localPalettes ??
-      attributes?.palettes_v2 ??
-      attributes?.palettes ??
-      []
-    );
+    return this._localPalettes ?? this._sensorPalettes();
   }
 
   _notify(message) {
@@ -630,8 +270,9 @@ class YeelightCubePaletteCard extends PaletteGalleryMixin(YeelightCardMixin(LitE
     );
   }
 
-  // `requestUpdate` is optional-called so this method also runs on plain
-  // objects (tests extract it with only a `render` stub).
+  // Resolves true once persisted, false when refused or failed (rolled back
+  // and reported). `requestUpdate` is optional-called so this method also
+  // runs on plain objects (tests extract it with only a `render` stub).
   async _mutatePalettes(items, service, data, render = true) {
     const collection = (this._collection ||= new CollectionState());
     const operation = collection.record(items);
@@ -643,7 +284,6 @@ class YeelightCubePaletteCard extends PaletteGalleryMixin(YeelightCardMixin(LitE
       return true;
     } catch (error) {
       if (collection.rollback(operation)) {
-        this._deletionInProgress = false;
         this.requestUpdate?.();
         // Service failures were already toasted by HA; only the locally
         // detected "collection changed" conflict (or other local errors) is.
@@ -655,12 +295,12 @@ class YeelightCubePaletteCard extends PaletteGalleryMixin(YeelightCardMixin(LitE
 
   _deletePalette(idx) {
     const palettes = this._paletteItems();
-    if (!palettes[idx]) return;
-    const updatedPalettes = palettes.filter((_, i) => i !== idx);
-    return this._mutatePalettes(updatedPalettes, "remove_palette", {
-      idx,
-      expected_name: palettes[idx].name,
-    });
+    if (!palettes[idx]) return false;
+    return this._mutatePalettes(
+      palettes.filter((_, i) => i !== idx),
+      "remove_palette",
+      { idx, expected_name: palettes[idx].name },
+    );
   }
 
   // One call for all target lamps (the backend runs them in parallel), through
@@ -677,14 +317,11 @@ class YeelightCubePaletteCard extends PaletteGalleryMixin(YeelightCardMixin(LitE
     );
   }
 
-  // Prompt for a new palette name and persist it via the backend. Shared by
-  // every display mode's title click handler.
-  _renamePalette(idx, currentName, titleEl) {
-    const newName = prompt("Enter new palette name:", currentName);
-    if (newName === null || newName.trim() === "") return;
+  // Rename the palette at `idx` (the gallery's rename bar gives the name).
+  _renamePalette(idx, newName) {
+    const name = String(newName ?? "").trim();
     const palettes = this._paletteItems();
-    if (!palettes[idx]) return;
-    const name = newName.trim();
+    if (!name || !palettes[idx]) return false;
     return this._mutatePalettes(
       palettes.map((palette, index) =>
         index === idx ? { ...palette, name } : palette,
@@ -773,6 +410,21 @@ class YeelightCubePaletteCard extends PaletteGalleryMixin(YeelightCardMixin(LitE
     input.click();
   }
 
+  // The export / import row (shared: renderExportImportRow).
+  _renderPaletteExportImportButtons(showExport, showImport) {
+    const status = this._importStatus;
+    return renderExportImportRow({
+      noun: "palettes",
+      showExport,
+      showImport,
+      buttonStyle: this.config.buttons_style || "modern",
+      contentMode: this.config.buttons_content_mode || "icon_text",
+      importStatus: status.active ? (status.success ? "success" : "error") : null,
+      onExport: () => this._exportPalettes(),
+      onImport: () => this._importPalettes(),
+    });
+  }
+
   connectedCallback() {
     super.connectedCallback();
     // State was reset on disconnect; show current data when re-attached.
@@ -781,13 +433,8 @@ class YeelightCubePaletteCard extends PaletteGalleryMixin(YeelightCardMixin(LitE
 
   disconnectedCallback() {
     super.disconnectedCallback();
-    clearTimeout(this._albumDeletionTimer);
     clearTimeout(this._importStatusTimer);
-
-    // Reset interaction flags
-    this._deletionInProgress = false;
     this._importStatus = { active: false, success: false };
-
     // Clear local palette cache
     this._collection?.reset();
   }

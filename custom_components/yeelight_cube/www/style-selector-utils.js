@@ -2,6 +2,7 @@ import { escapeHtml } from "./html-escape-utils.js";
 import {
   renderGalleryDisplay,
   renderMatrixPreview,
+  renderItemPreview,
   galleryDisplayStyles,
 } from "./gallery-display-utils.js";
 import { renderCarouselString, carouselStyles } from "./carousel-utils.js";
@@ -92,6 +93,35 @@ export function selectorDisplayMode(style) {
     }[style] || "list"
   );
 }
+/**
+ * A chip's swatch, chosen per item so it means something for every kind:
+ * - item.swatch, a CSS background the card computes (a gradient mode's own
+ *   gradient, a palette's colors);
+ * - else a micro-matrix of the item's preview frame (item.colorData: clock
+ *   styles show their digits, pixel arts their picture). Cards that animate
+ *   their previews (Clock, Native Effects) animate it too: it is a
+ *   `.gallery-matrix-preview` inside the `[data-mode]` chip;
+ * - else a neutral dot.
+ */
+export function chipSwatch(item) {
+  if (item.swatch)
+    return `<span class="mode-chip-swatch" style="background:${escapeHtml(item.swatch)}"></span>`;
+  if (item.colorData)
+    return `<span class="mode-chip-swatch mode-chip-matrix">${renderMatrixPreview(
+      item.colorData,
+      {
+        rows: 5,
+        cols: 20,
+        bgColor: "#000000",
+        pixelStyle: "square",
+        pixelGap: 0,
+        previewSize: 44,
+        proportionalSpacing: false,
+      },
+    )}</span>`;
+  return `<span class="mode-chip-swatch"></span>`;
+}
+
 export function renderTextStyleSelector(config, items, sel, active) {
   const styles = items;
   const shape = resolveSelectorShape(config);
@@ -105,7 +135,15 @@ export function renderTextStyleSelector(config, items, sel, active) {
     return `
         <div class="gc-selector" data-shape="${shape}" style="--gc-sel-scale:${scale};">
           <select class="mode-select" data-mode-select="true">
-            ${styles.some((style) => style.dataMode === active) ? "" : '<option value="" disabled selected>Current style outside this list</option>'}
+            ${
+              styles.some((style) => style.dataMode === active)
+                ? ""
+                : // No active item (palettes, pixel arts): a prompt; an
+                  // active one hidden by the search or the list: said so.
+                  `<option value="" disabled selected>${
+                    active == null ? "Choose…" : "Current choice not in this list"
+                  }</option>`
+            }
             ${styles
               .map(
                 (s) =>
@@ -118,8 +156,7 @@ export function renderTextStyleSelector(config, items, sel, active) {
         </div>`;
   }
 
-  // "chips": a pill per item with its swatch (item.swatch, a CSS background:
-  // a gradient, a palette, ...) before its label.
+  // "chips": a pill per item with its swatch before its label (chipSwatch).
   if (sel === "chips") {
     return `
       <div class="gc-selector gc-chips" data-shape="${shape}" style="--gc-sel-scale:${scale};" role="radiogroup">
@@ -129,7 +166,7 @@ export function renderTextStyleSelector(config, items, sel, active) {
             return `<button type="button" class="mode-chip${selected ? " active" : ""}"
                 data-mode="${escapeHtml(s.dataMode)}" role="radio"
                 aria-checked="${selected}" title="${escapeHtml(s.name)}">
-              <span class="mode-chip-swatch" style="background:${escapeHtml(s.swatch || "var(--secondary-background-color, #e7ecf0)")}"></span>
+              ${chipSwatch(s)}
               <span class="mode-chip-label">${escapeHtml(s.label || s.name)}</span>
             </button>`;
           })
@@ -212,7 +249,7 @@ export function renderPreviewStyleSelector(config, items, sel, active, state) {
                           gap:6px;padding:10px;border-radius:8px;background:${bgName === "transparent" ? "transparent" : rendererBg};
                           max-width:100%;box-sizing:border-box;transition:all 0.2s ease;">
                 <div style="width:100%;max-width:${previewSize}px;">
-                  ${renderMatrixPreview(it.colorData, {
+                  ${renderItemPreview(it, {
                     rows: 5,
                     cols: 20,
                     bgColor: rendererBg,
@@ -227,6 +264,7 @@ export function renderPreviewStyleSelector(config, items, sel, active, state) {
                   })}
                 </div>
                 ${showTitles ? `<div class="gallery-item-title" style="font-size:13px;font-weight:500;${bgName === "black" ? "color:#fff;" : "color:var(--primary-text-color);"}">${escapeHtml(it.title)}</div>` : ""}
+                ${it.metadata ? `<div class="gallery-item-metadata">${it.metadata}</div>` : ""}
               </div>`,
           })}
         </div>`;

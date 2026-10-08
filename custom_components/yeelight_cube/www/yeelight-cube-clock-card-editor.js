@@ -288,6 +288,8 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
                     ${this._renderVisibleStyleList()}
                     ${renderStyleSelectorSettings(config, change, {
                       allowOriginal: true,
+                      allowChips: true,
+                      manage: "custom styles",
                       memory: (this._galleryMemory ||= {}),
                       renderAppearance: () =>
                         renderClockSectionAppearance(

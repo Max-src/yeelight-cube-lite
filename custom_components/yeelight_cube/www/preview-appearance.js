@@ -108,13 +108,15 @@ export const APPEARANCE_PROFILES = {
       },
       { shadow: true },
     ),
+    // The pixel-art gallery: the shared gallery's appearance keys
+    // (formerly pixel_art_*, card-config.js aliases them).
     art: section(
       "Pixel Art",
       {
-        background: "pixel_art_background_color",
-        pixels: "pixel_art_pixel_style",
-        spacing: "pixel_art_spacing_mode",
-        shadow: "pixel_art_matrix_box_shadow",
+        background: "gallery_background_color",
+        pixels: "gallery_pixel_style",
+        spacing: "gallery_spacing_mode",
+        shadow: "gallery_matrix_box_shadow",
         ignoreBlack: "gallery_ignore_black_pixels",
       },
       { background: "transparent" },

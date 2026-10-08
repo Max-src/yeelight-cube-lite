@@ -192,6 +192,24 @@ def _locate_item(items, idx, expected_name, label):
     return item
 
 
+def _move_item(items, from_idx, to_idx, expected_name, label):
+    """Move ``items[from_idx]`` to ``to_idx`` in place; False when already there.
+
+    The one reorder of the user collections (palettes, pixel arts): a card
+    moves a single item, so items other clients added meanwhile are kept,
+    and ``expected_name`` refuses a move whose index went stale.
+    """
+    _locate_item(items, from_idx, expected_name, label)
+    if not (isinstance(to_idx, int) and 0 <= to_idx < len(items)):
+        raise HomeAssistantError(
+            f"{label} position {to_idx} is out of range. Refresh and try again."
+        )
+    if from_idx == to_idx:
+        return False
+    items.insert(to_idx, items.pop(from_idx))
+    return True
+
+
 def make_admin_only(hass: HomeAssistant):
     """Build the ``_admin_only`` handler decorator for ``hass``."""
 

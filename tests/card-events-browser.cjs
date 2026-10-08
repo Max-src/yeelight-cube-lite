@@ -311,7 +311,7 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
       await waitForCall("turn_on", `${tag} brightness step`);
     }
 
-    // --- Draw pixel-art gallery ------------------------------------------------
+    // --- Draw pixel-art gallery: the shared gallery ---------------------------
     const draw = "yeelight-cube-draw-card";
     await page.evaluate(
       (tag) =>
@@ -320,28 +320,108 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
           pixelart_sensor: "sensor.pixel",
           pixel_art_gallery_mode: "gallery",
           pixel_art_allow_rename: true,
-          show_pixel_art_gallery: true,
+          pixel_art_auto_apply_to_lamp: true,
         }),
       draw,
     );
-    const drawCalls = await page.evaluate(() => {
-      const seen = [];
-      for (const name of ["handleGridItemClick", "handleGridTitleClick", "handleGridDelete"])
-        card[name] = (event, idx) => seen.push([name, event.type, idx]);
-      window.drawSeen = seen;
-      return card.shadowRoot.querySelectorAll(".gallery-item").length;
+    const drawView = await page.evaluate(() => {
+      window.drawSeen = [];
+      card._handlePixelArtCanvasClick = async (idx, lamp) => drawSeen.push(["load", idx, lamp]);
+      card._renamePixelArt = async (idx, name) => (drawSeen.push(["rename", idx, name]), true);
+      card._deletePixelArt = async (idx) => (drawSeen.push(["delete", idx]), true);
+      const items = card.shadowRoot.querySelectorAll('yc-collection-gallery .gallery-item[data-mode^="art:"]');
+      const cells = items[0]?.querySelector(".gallery-matrix-preview")?.children || [];
+      return {
+        items: items.length,
+        grid: !!card.shadowRoot.querySelector('yc-collection-gallery .gc-preview-shell[data-columns="2"]'),
+        // Heart's pixel 3 is on the lamp's bottom row: shown on the
+        // preview's last row (cell 83), as in the drawing.
+        bottom: cells[83]?.style.background,
+        top: cells[3]?.style.background,
+        label: items[1]?.getAttribute("aria-label"),
+      };
     });
-    assert.ok(drawCalls >= 2, "draw: gallery items rendered");
-    await page.locator(`${draw} .gallery-item-image`).nth(1).click();
-    await page.locator(`${draw} .gallery-item-title`).nth(1).click();
-    await page.locator(`${draw} .gallery-item button`).nth(1).click();
-    // Each click reaches exactly its own handler once (title and delete stop
-    // the event, as their inline handlers did).
+    assert.deepEqual(drawView, {
+      items: 2,
+      grid: true,
+      bottom: "rgb(255, 0, 0)",
+      top: "rgb(0, 0, 0)",
+      label: "Star: Load into the drawing and the lamp",
+    }, "draw: the former gallery mode, previews as drawn, what a pick does");
+    const star = `${draw} yc-collection-gallery .gallery-item[data-mode="art:1"]`;
+    await page.locator(star).click();
+    await page.locator(`${star} .yc-item-rename`).click();
+    const drawField = page.locator(`${draw} .yc-item-manage input`);
+    assert.equal(await drawField.inputValue(), "Star");
+    await drawField.fill("Moon");
+    await drawField.press("Enter");
+    await page.waitForTimeout(50);
+    await page.locator(`${star} .yc-item-delete`).click();
+    await page.waitForTimeout(50);
+    assert.deepEqual(await page.evaluate(() => drawSeen.slice()), [["load", 1, true], ["rename", 1, "Moon"]],
+      "draw: a delete waits for its confirmation");
+    await page.locator(`${draw} .yc-item-manage button:has-text("Delete")`).click();
+    await page.waitForTimeout(50);
+    // Each action reaches its own handler once (managing never loads).
     assert.deepEqual(await page.evaluate(() => drawSeen), [
-      ["handleGridItemClick", "click", 1],
-      ["handleGridTitleClick", "click", 1],
-      ["handleGridDelete", "click", 1],
+      ["load", 1, true],
+      ["rename", 1, "Moon"],
+      ["delete", 1],
     ]);
+    assert.deepEqual(
+      await page.evaluate(() =>
+        [...card.shadowRoot.querySelectorAll(".action-row button[data-action]")].map(
+          (button) => button.title,
+        ),
+      ),
+      ["Export pixel arts to a JSON file", "Import pixel arts from a JSON file"],
+      "draw: the shared export / import row",
+    );
+    // Browsing never replaces the drawing: carousel and wheel moves only
+    // browse (navigateSelects false), a click on the item loads it.
+    for (const style of ["preview-carousel", "preview-wheel"]) {
+      const browsed = await page.evaluate(async (style) => {
+        await mount("yeelight-cube-draw-card", {
+          entity: "light.a",
+          pixelart_sensor: "sensor.pixel",
+          style_selector_style: style,
+        });
+        await new Promise((resolve) => setTimeout(resolve, 150));
+        const seen = [];
+        card._handlePixelArtCanvasClick = async (idx) => seen.push(idx);
+        const gallery = card.shadowRoot.querySelector("yc-collection-gallery");
+        const next = gallery.querySelector(
+          '[data-action="navigate"][data-direction="1"], .wheel-nav-buttons [data-wheel-nav="down"]',
+        );
+        next.click();
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        const afterMove = seen.length;
+        const shown =
+          gallery.querySelector(".cc-carousel-item[data-mode]")?.dataset.mode ??
+          gallery.querySelector('.wheel-item[data-wheel-centered="true"]')?.dataset.mode;
+        gallery.querySelector(`[data-mode="${shown}"]`).click();
+        await new Promise((resolve) => setTimeout(resolve, 100));
+        return { afterMove, shown, seen };
+      }, style);
+      assert.deepEqual(
+        browsed,
+        { afterMove: 0, shown: "art:1", seen: [1] },
+        `draw ${style}: moves browse, a click loads`,
+      );
+    }
+    // Drawing re-renders the card, never the gallery (memoized items).
+    assert.equal(
+      await page.evaluate(async () => {
+        const gallery = card.shadowRoot.querySelector("yc-collection-gallery");
+        const node = gallery.querySelector(".gallery-item");
+        card.selectedColor = "#00ff00";
+        card.requestUpdate();
+        await card.updateComplete;
+        return gallery.querySelector(".gallery-item") === node;
+      }),
+      true,
+      "draw: a card update keeps the gallery's DOM",
+    );
 
     // --- Gradient angle capsule -------------------------------------------------
     const gradient = "yeelight-cube-gradient-card";
@@ -389,6 +469,39 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         "Radial Gradient",
       );
     }
+
+    // --- Chip swatches: a meaningful swatch for every kind of item ------------
+    const chips = async (tag, config, paintedBy) => {
+      await page.evaluate(
+        ({ tag, config }) => mount(tag, { entity: "light.a", style_selector_style: "chips", ...config }),
+        { tag, config },
+      );
+      await page.waitForTimeout(200);
+      return page.evaluate((paintedBy) => {
+        const chip = card.shadowRoot.querySelector("yc-collection-gallery .mode-chip[data-mode]");
+        const matrix = chip?.querySelector(".mode-chip-matrix .gallery-matrix-preview");
+        const animated =
+          paintedBy === "clock"
+            ? [...(card._visible || [])].includes(chip)
+            : paintedBy === "native"
+              ? (card._frames || []).some((frame) => frame.node === chip)
+              : null;
+        return {
+          cells: matrix?.children.length ?? 0,
+          swatch: chip?.querySelector(".mode-chip-swatch")?.style.background || "",
+          animated,
+        };
+      }, paintedBy);
+    };
+    const clockChip = await chips("yeelight-cube-clock-card", { show_gallery: true }, "clock");
+    assert.equal(clockChip.cells, 100, "clock chips: micro-matrix of the style");
+    assert.equal(clockChip.animated, true, "clock chips: animated by the card");
+    const nativeChip = await chips("yeelight-cube-native-effects-card", { show_gallery: true }, "native");
+    assert.equal(nativeChip.cells, 100, "native chips: micro-matrix of the effect");
+    assert.equal(nativeChip.animated, true, "native chips: animated by the card");
+    const gradientChip = await chips("yeelight-cube-gradient-card", {}, null);
+    assert.equal(gradientChip.cells, 0, "gradient chips: no matrix");
+    assert.ok(gradientChip.swatch, "gradient chips: the mode's own gradient");
 
     // --- Item labels: a card renames items for display only ------------------
     await page.evaluate(() =>
@@ -676,6 +789,351 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
       "album: wrap navigation goes from the first item to the last",
     );
 
+    // --- User-owned items: rename and delete in the gallery --------------------
+    await page.evaluate(() => {
+      window.savedPresets = hass.states["sensor.presets"];
+      hass.states = {
+        ...hass.states,
+        "sensor.presets": {
+          state: "1",
+          attributes: {
+            clock_presets: [{ id: "mine", name: "Mine", kind: "style", color: [10, 200, 30] }],
+          },
+        },
+      };
+    });
+    const clockGrid = (extra) =>
+      page.evaluate(
+        (extra) =>
+          mount("yeelight-cube-clock-card", {
+            entity: "light.a",
+            show_gallery: true,
+            show_search: false,
+            style_selector_style: "preview-grid",
+            ...extra,
+          }),
+        extra,
+      );
+    await clockGrid({ allow_rename: true });
+    const controls = await page.evaluate(() => {
+      const of = (key) =>
+        card.shadowRoot.querySelector(`yc-collection-gallery .gallery-item[data-mode="${key}"]`);
+      const count = (node) => ({
+        remove: node?.querySelectorAll(".yc-item-delete").length,
+        rename: node?.querySelectorAll(".yc-item-rename").length,
+      });
+      return { mine: count(of("custom:mine")), builtin: count(of("Rainbow")) };
+    });
+    assert.deepEqual(controls, {
+      mine: { remove: 1, rename: 1 },
+      builtin: { remove: 0, rename: 0 },
+    }, "only user-owned items get rename / delete");
+    const mine = 'yeelight-cube-clock-card yc-collection-gallery .gallery-item[data-mode="custom:mine"]';
+    // Delete asks first and never selects the item.
+    await page.locator(`${mine} .yc-item-delete`).click();
+    await page.waitForTimeout(100);
+    assert.equal(await page.evaluate(() => calls.length), 0, "delete: nothing before confirming");
+    const bar = page.locator("yeelight-cube-clock-card .yc-item-manage");
+    assert.match(await bar.innerText(), /Delete .Mine.\?/);
+    await bar.locator('button:has-text("Delete")').click();
+    assert.deepEqual(
+      await waitForCall("delete_clock_preset", "confirmed delete"),
+      { preset_id: "mine" },
+    );
+    await page.waitForTimeout(100);
+    assert.equal(await bar.count(), 0, "the bar closes once deleted");
+    // Rename through the same bar.
+    await page.evaluate(() => (calls.length = 0));
+    await page.locator(`${mine} .yc-item-rename`).click();
+    const field = page.locator("yeelight-cube-clock-card .yc-item-manage input");
+    assert.equal(await field.inputValue(), "Mine");
+    await field.fill("Ours");
+    await field.press("Enter");
+    assert.deepEqual(
+      await waitForCall("save_clock_preset", "rename"),
+      { preset_id: "mine", name: "Ours", color: [10, 200, 30], kind: "style" },
+    );
+    assert.equal(
+      await page.evaluate(() => calls.some((call) => call.service === "set_clock_style")),
+      false,
+      "managing an item never applies it",
+    );
+    // The shared delete-button settings: "none" hides it; rename stays off by default.
+    await clockGrid({ remove_button_style: "none" });
+    assert.deepEqual(
+      await page.evaluate(() => {
+        const node = card.shadowRoot.querySelector(
+          'yc-collection-gallery .gallery-item[data-mode="custom:mine"]',
+        );
+        return [node.querySelectorAll(".yc-item-delete").length, node.querySelectorAll(".yc-item-rename").length];
+      }),
+      [0, 0],
+    );
+    await page.evaluate(() => {
+      hass.states = { ...hass.states, "sensor.presets": window.savedPresets };
+    });
+
+    // --- Palette card: the shared gallery with the card's own previews -------
+    await page.evaluate(() => {
+      window.savedPalettes = hass.states["sensor.pal"];
+      hass.states = {
+        ...hass.states,
+        "sensor.pal": {
+          state: "2",
+          attributes: {
+            palettes_v2: [
+              { name: "Warm", colors: [[255, 0, 0], [255, 160, 0]] },
+              { name: "Sea", colors: [[0, 0, 255]] },
+            ],
+          },
+        },
+      };
+      calls.length = 0;
+    });
+    const paletteCard = (extra) =>
+      page.evaluate(
+        (extra) =>
+          mount("yeelight-cube-palette-card", {
+            entity: "light.a",
+            palette_sensor: "sensor.pal",
+            ...extra,
+          }),
+        extra,
+      );
+    const paletteView = () =>
+      page.evaluate(() => {
+        const gallery = card.shadowRoot.querySelector("yc-collection-gallery");
+        return {
+          previews: gallery.querySelectorAll("[data-mode] .yc-palette-preview").length,
+          dots: gallery.querySelectorAll(".yc-palette-dot").length,
+          meta: [...gallery.querySelectorAll(".gallery-item-metadata")].map((node) =>
+            node.textContent.trim(),
+          ),
+          grid: !!gallery.querySelector('.gc-preview-shell[data-columns="2"]'),
+          border: gallery.dataset.itemBorder,
+          radius: gallery.style.getPropertyValue("--yc-item-radius"),
+          empty: gallery.querySelector(".yc-gallery-empty")?.textContent.trim() || "",
+        };
+      });
+    // Every preview layout shows the palettes' own swatches.
+    for (const [style, shown] of [
+      ["preview-list", 2],
+      ["preview-grid", 2],
+      ["preview-strip", 2],
+      ["preview-carousel", 1],
+      ["preview-wheel", 2],
+      ["preview-album", 2],
+    ]) {
+      await paletteCard({ style_selector_style: style, swatch_style: "square" });
+      const look = await paletteView();
+      assert.equal(look.previews, shown, `palette ${style}: previews`);
+      assert.ok(look.dots >= shown, `palette ${style}: one swatch per color`);
+    }
+    // Former options: "gallery" display is the two-column grid; the color
+    // count is the item's meta line; the former look (16 px cards with a
+    // border) is kept.
+    await paletteCard({ display_mode: "gallery", swatch_style: "gradient" });
+    assert.deepEqual(await paletteView(), {
+      previews: 2,
+      dots: 0,
+      meta: ["2 colors", "1 color"],
+      grid: true,
+      border: "true",
+      radius: "16px",
+      empty: "",
+    });
+    await paletteCard({ show_color_count: false, item_card_border: "none", rounded_cards: 4 });
+    const plain = await paletteView();
+    assert.deepEqual([plain.meta, plain.border, plain.radius], [[], "false", "4px"]);
+    // Chips show each palette's blend.
+    await paletteCard({ style_selector_style: "chips" });
+    assert.match(
+      await page.evaluate(() =>
+        card.shadowRoot.querySelector('.mode-chip[data-mode="palette:0"] .mode-chip-swatch').style.background,
+      ),
+      /linear-gradient/,
+      "palette chips: the palette's colors",
+    );
+    // Items are keyboard buttons: Enter applies the palette.
+    await paletteCard({ style_selector_style: "preview-list" });
+    const sea = 'yeelight-cube-palette-card yc-collection-gallery .gallery-item[data-mode="palette:1"]';
+    assert.deepEqual(
+      await page.locator(sea).evaluate((node) => [node.getAttribute("role"), node.tabIndex, node.getAttribute("aria-label")]),
+      ["button", 0, "Sea: Apply to the lamps"],
+    );
+    await page.locator(sea).focus();
+    await page.keyboard.press("Enter");
+    assert.deepEqual(await waitForCall("load_palette", "keyboard pick"), { entity_id: "light.a", idx: 1, expected_name: "Sea" });
+    // Rename and delete through the shared bar (never by a single tap).
+    await page.evaluate(() => (calls.length = 0));
+    await paletteCard({ style_selector_style: "preview-list", allow_rename: true });
+    const warm = 'yeelight-cube-palette-card yc-collection-gallery .gallery-item[data-mode="palette:0"]';
+    await page.locator(`${warm} .yc-item-rename`).click();
+    const paletteField = page.locator("yeelight-cube-palette-card .yc-item-manage input");
+    assert.equal(await paletteField.inputValue(), "Warm");
+    await paletteField.fill("Hot");
+    await paletteField.press("Enter");
+    assert.deepEqual(
+      await waitForCall("rename_palette", "palette rename"),
+      { idx: 0, name: "Hot", expected_name: "Warm" },
+    );
+    await page.locator(`${sea} .yc-item-delete`).click();
+    await page.waitForTimeout(100);
+    assert.equal(
+      await page.evaluate(() => calls.some((call) => call.service === "remove_palette")),
+      false,
+      "palette delete: nothing before confirming",
+    );
+    await page.locator('yeelight-cube-palette-card .yc-item-manage button:has-text("Delete")').click();
+    assert.deepEqual(
+      await waitForCall("remove_palette", "palette delete"),
+      { idx: 1, expected_name: "Sea" },
+    );
+    assert.equal(
+      await page.evaluate(() => calls.some((call) => call.service === "load_palette")),
+      false,
+      "managing a palette never applies it",
+    );
+    // The shared export / import row (Palette here, Draw below: the same).
+    assert.deepEqual(
+      await page.evaluate(() =>
+        [...card.shadowRoot.querySelectorAll(".action-row button[data-action]")].map(
+          (button) => [button.dataset.action, button.title],
+        ),
+      ),
+      [
+        ["export", "Export palettes to a JSON file"],
+        ["import", "Import palettes from a JSON file"],
+      ],
+    );
+    // No palettes: the card says so.
+    await page.evaluate(() => {
+      hass.states = { ...hass.states, "sensor.pal": { state: "0", attributes: { palettes_v2: [] } } };
+    });
+    await paletteCard({});
+    assert.match((await paletteView()).empty, /No palettes found/);
+    await page.evaluate(() => {
+      hass.states = { ...hass.states, "sensor.pal": window.savedPalettes };
+    });
+
+    // --- Narrow cards: nothing wider than the card; arrows keep their tint ---
+    // (a theme's --card-background-color can differ from the card's own).
+    const narrow = await page.evaluate(async () => {
+      const main = document.querySelector("main");
+      const saved = main.style.cssText;
+      main.style.cssText = "width:320px;--card-background-color:#1b2a4e";
+      const results = {};
+      for (const [tag, extra] of [
+        ["yeelight-cube-palette-card", { palette_sensor: "sensor.pal" }],
+        ["yeelight-cube-draw-card", { pixelart_sensor: "sensor.pixel" }],
+      ])
+        for (const style of ["preview-grid", "preview-album", "preview-carousel", "preview-wheel", "dropdown"]) {
+          await mount(tag, { entity: "light.a", ...extra, style_selector_style: style, preview_size: 100 });
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          const width = card.getBoundingClientRect().width;
+          const gallery = card.shadowRoot.querySelector("yc-collection-gallery");
+          const arrow = gallery.querySelector(".carousel-nav-btn, .album-nav-btn, .wheel-nav-buttons button");
+          results[`${tag.split("-")[2]} ${style}`] = {
+            wide: [...gallery.querySelectorAll(".gallery-item, .collection-album-item, .wheel-item")]
+              .filter((node) => node.getBoundingClientRect().width > width + 1).length,
+            arrow: arrow ? getComputedStyle(arrow).backgroundColor : "",
+            prompt: gallery.querySelector(".mode-select option[disabled]")?.textContent || "",
+          };
+        }
+      main.style.cssText = saved;
+      return results;
+    });
+    for (const [view, look] of Object.entries(narrow)) {
+      assert.equal(look.wide, 0, `${view}: an item wider than the card`);
+      if (/carousel|album|wheel/.test(view)) {
+        assert.ok(look.arrow, `${view}: arrows`);
+        assert.notEqual(look.arrow, "rgb(27, 42, 78)", `${view}: arrows take the theme's card color`);
+      }
+      if (view.endsWith("dropdown")) assert.equal(look.prompt, "Choose…", `${view}: prompt`);
+    }
+
+    // --- Arrange: the user collections' order, one block in every editor -----
+    await page.evaluate(() => {
+      window.savedCollections = [hass.states["sensor.pal"], hass.states["sensor.pixel"]];
+      hass.states = {
+        ...hass.states,
+        "sensor.pal": {
+          state: "3",
+          attributes: {
+            count: 3,
+            palettes_v2: [
+              { name: "Warm", colors: [[255, 0, 0], [255, 160, 0]] },
+              { name: "Sea", colors: [[0, 0, 255]] },
+              { name: "<b>Bold</b>", colors: [[0, 255, 0]] },
+            ],
+          },
+        },
+        "sensor.pixel": {
+          state: "2",
+          attributes: {
+            count: 2,
+            pixel_arts: [
+              { name: "Heart", pixels: [{ position: 3, color: [255, 0, 0] }] },
+              { name: "Star", pixels: [{ position: [7, 8], color: [255, 255, 0] }] },
+            ],
+          },
+        },
+      };
+    });
+    const arrange = (tag, config) =>
+      page.evaluate(
+        async ({ tag, config }) => {
+          calls.length = 0;
+          const editor = await customElements.get(tag).getConfigElement();
+          editor.hass = hass;
+          editor.setConfig({ type: `custom:${tag}`, entity: "light.a", ...config });
+          document.querySelector("main").replaceChildren(editor);
+          await editor.updateComplete;
+          for (const section of editor.shadowRoot.querySelectorAll(".editor-card-header")) {
+            section.click();
+            await editor.updateComplete;
+          }
+          const rows = () =>
+            [...editor.shadowRoot.querySelectorAll(".orderable-list-row")].filter((row) =>
+              row.querySelector(".collection-thumb"),
+            );
+          const names = () => rows().map((row) => row.querySelector(".orderable-list-name").textContent.trim());
+          const before = names();
+          const list = rows()[0].parentElement;
+          const shape = {
+            remove: rows().some((row) => row.querySelector("button.remove")),
+            add: list.nextElementSibling?.classList.contains("orderable-add-row") ?? false,
+            matrix: rows()[0].querySelector(".collection-thumb .gallery-matrix-preview")?.children.length ?? 0,
+            injected: !!editor.shadowRoot.querySelector(".orderable-list-row b"),
+            // Every row shown (the editor scrolls, not the list).
+            full: getComputedStyle(list).maxHeight === "none",
+          };
+          rows()[0].querySelector('button[title="Move down"]').click();
+          await editor.updateComplete;
+          return { before, after: names(), shape, calls: calls.map(({ service, data }) => ({ service, data })) };
+        },
+        { tag, config },
+      );
+    const paletteArrange = await arrange("yeelight-cube-palette-card", { palette_sensor: "sensor.pal" });
+    assert.deepEqual(paletteArrange.before, ["Warm", "Sea", "<b>Bold</b>"], "palettes listed in stored order");
+    assert.deepEqual(paletteArrange.shape, { remove: false, add: false, matrix: 0, injected: false, full: true }, "arrange: order only, names as text, every row shown");
+    assert.deepEqual(paletteArrange.after, ["Sea", "Warm", "<b>Bold</b>"], "the move shows at once");
+    assert.deepEqual(paletteArrange.calls, [
+      // ▼ swaps two neighbours: one move (the same result either way).
+      { service: "move_palette", data: { from_idx: 1, to_idx: 0, expected_name: "Sea" } },
+    ]);
+    const pixelArrange = await arrange("yeelight-cube-draw-card", { pixelart_sensor: "sensor.pixel" });
+    assert.deepEqual(pixelArrange.before, ["Heart", "Star"], "pixel arts listed in stored order");
+    assert.equal(pixelArrange.shape.matrix, 100, "pixel-art rows show their picture");
+    assert.deepEqual(pixelArrange.after, ["Star", "Heart"]);
+    assert.deepEqual(pixelArrange.calls, [
+      { service: "move_pixel_art", data: { from_idx: 1, to_idx: 0, expected_name: "Star" } },
+    ]);
+    await page.evaluate(() => {
+      const [pal, pixel] = window.savedCollections;
+      hass.states = { ...hass.states, "sensor.pal": pal, "sensor.pixel": pixel };
+    });
+
     // --- Album settings reach the shared, static album CSS ------------------
     // (album-view-coverflow.js: CSS variables set by renderAlbumView).
     const albumLook = (tag, config, prefix) =>
@@ -701,25 +1159,30 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
       album_3d_effect: false,
       remove_button_style: "red",
     };
-    const tunedLook = { width: "360px", radius: "0px", padding: "12px 0px", perspective: "none" };
     assert.deepEqual(
-      await albumLook("yeelight-cube-palette-card", { entity: "light.a", palette_sensor: "sensor.pal", display_mode: "album" }, "palettes"),
-      { width: "120px", radius: "16px", padding: "28px 14px", perspective: "1200px" },
+      await albumLook("yeelight-cube-palette-card", { entity: "light.a", palette_sensor: "sensor.pal", display_mode: "album" }, "collection"),
+      // The shared album at the palette's default Size (50%) and its former
+      // 16 px card roundness (custom item radius).
+      { width: "218px", radius: "16px", padding: "28px 14px", perspective: "1200px" },
       "palette album defaults",
     );
     assert.deepEqual(
-      await albumLook("yeelight-cube-palette-card", { entity: "light.a", palette_sensor: "sensor.pal", display_mode: "album", card_size: 150, ...tuned }, "palettes"),
-      tunedLook,
+      // Former palette options, migrated to the shared gallery's (the Size
+      // stays within its 30-100% range; delete buttons sit on the items).
+      await albumLook("yeelight-cube-palette-card", { entity: "light.a", palette_sensor: "sensor.pal", display_mode: "album", card_size: 150, ...tuned }, "collection"),
+      { width: "437px", radius: "0px", padding: "28px 14px", perspective: "none" },
       "palette album settings",
     );
     assert.deepEqual(
-      await albumLook("yeelight-cube-draw-card", { entity: "light.a", pixelart_sensor: "sensor.pixel", pixel_art_gallery_mode: "album" }, "pixelarts"),
+      await albumLook("yeelight-cube-draw-card", { entity: "light.a", pixelart_sensor: "sensor.pixel", pixel_art_gallery_mode: "album" }, "collection"),
       { width: "240px", radius: "16px", padding: "28px 14px", perspective: "1200px" },
       "pixel-art album defaults",
     );
     assert.deepEqual(
-      await albumLook("yeelight-cube-draw-card", { entity: "light.a", pixelart_sensor: "sensor.pixel", pixel_art_gallery_mode: "album", pixel_art_preview_size: 150, ...tuned }, "pixelarts"),
-      tunedLook,
+      // The former album size (240 px at 100%; 150 -> 82% of the shared
+      // Size), delete buttons on the items.
+      await albumLook("yeelight-cube-draw-card", { entity: "light.a", pixelart_sensor: "sensor.pixel", pixel_art_gallery_mode: "album", pixel_art_preview_size: 150, ...tuned }, "collection"),
+      { width: "362px", radius: "0px", padding: "28px 14px", perspective: "none" },
       "pixel-art album settings",
     );
 
@@ -834,6 +1297,15 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     );
     console.log(
       "PASS shared card frame on all 7 cards and editors: title, lamp status, plain background, no-lamp / not-found notices, same editor settings",
+    );
+    console.log(
+      "PASS palette card on the shared gallery: its swatches in 6 layouts and chips, color count, former options migrated, keyboard picks, rename / confirmed delete, empty notice",
+    );
+    console.log(
+      "PASS Draw card on the shared gallery: former options, previews as drawn, load (and lamp) / rename / confirmed delete, carousel and wheel moves only browse, memoized items, shared export / import row; narrow cards never overflow and arrows keep their tint",
+    );
+    console.log(
+      "PASS Arrange (Palette and Draw editors): stored order with thumbnails, order only, one guarded move per change shown at once",
     );
   } finally {
     await browser.close();

@@ -32,6 +32,7 @@ export const ModeSelectorMixin = (Base) => class extends Base {
       .active=${this._getCurrentMode()}
       .disabled=${this._processingModeChange}
       searchLabel="Search modes"
+      actionLabel="Show on the lamp"
       .onSelect=${(mode) => this._selectMode(mode)}
     ></yc-collection-gallery>`;
   }

@@ -579,8 +579,9 @@ data:
 ### `move_pixel_art`
 
 Move one saved pixel art to a new position. The Draw Card uses this for
-drag-and-drop reordering, so pixel arts other clients added in the meantime are
-kept (unlike `update_pixel_arts` with `replace: true`).
+drag-and-drop reordering and its editor's Arrange list, so pixel arts other
+clients added in the meantime are kept (unlike `update_pixel_arts` with
+`replace: true`).
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
@@ -805,6 +806,27 @@ Delete a saved palette.
 action: yeelight_cube.remove_palette
 data:
   idx: 0
+```
+
+---
+
+### `move_palette`
+
+Move one saved palette to a new position. The Palettes Card editor's Arrange
+list uses this, so palettes other clients added in the meantime are kept.
+
+| Field | Required | Description |
+| :-- | :-- | :-- |
+| `from_idx` | Yes | Current 0-based index of the palette |
+| `to_idx` | Yes | New 0-based index |
+| `expected_name` | No | Name expected at `from_idx`; the move fails if the list changed |
+
+```yaml
+action: yeelight_cube.move_palette
+data:
+  from_idx: 3
+  to_idx: 0
+  expected_name: "Sunset"
 ```
 
 ---
@@ -1784,7 +1806,7 @@ result through an event on the HA event bus.
 | **Text** | `set_custom_text`, `set_text_colors` | Display text with colors |
 | **Drawing** | `apply_custom_pixels`, `save_pixel_art`, `apply_pixel_art`, `move_pixel_art` | Create and manage pixel art |
 | **Gradients** | `set_mode`, `set_solid_color`, `set_angle`, `set_full_panel` | Control display modes |
-| **Palettes** | `save_palette`, `load_palette`, `add_palettes`, `set_palettes` | Manage color collections |
+| **Palettes** | `save_palette`, `load_palette`, `move_palette`, `add_palettes`, `set_palettes` | Manage color collections |
 | **Text Settings** | `set_font`, `set_alignment`, `set_orientation` | Text formatting |
 | **Color Effects** | `set_preview_adjustments`, `set_color_accuracy` | Real-time color adjustments |
 | **State** | `save_state`, `restore_state` | Snapshot & restore what's displayed |

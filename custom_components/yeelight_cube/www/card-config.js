@@ -25,9 +25,23 @@ export const OPTION_ALIASES = Object.freeze({
     show_pixelart_gallery: "show_gallery",
     pixel_art_show_titles: "preview_show_titles",
     pixel_art_remove_button_style: "remove_button_style",
+    // The pixel-art gallery, before the shared gallery: its appearance is
+    // the gallery_* appearance (the "Pixel Art" section of the editor).
+    pixel_art_background_color: "gallery_background_color",
+    pixel_art_pixel_style: "gallery_pixel_style",
+    pixel_art_spacing_mode: "gallery_spacing_mode",
+    pixel_art_matrix_box_shadow: "gallery_matrix_box_shadow",
+    pixel_art_allow_rename: "allow_rename",
+    carousel_wrap_navigation: "gallery_wrap_navigation",
   },
   gradient: {
     mode_selector_style: "style_selector_style",
+  },
+  // The palette card's own gallery settings, before the shared gallery.
+  palette: {
+    show_palette_title: "preview_show_titles",
+    allow_title_edit: "allow_rename",
+    palette_carousel_wrap_navigation: "gallery_wrap_navigation",
   },
   // The Lamp Preview's brightness slider: same slider_* appearance options as
   // the Clock and Native Effects sliders (sliderKeys("slider")).
@@ -78,7 +92,101 @@ export const OPTION_MIGRATIONS = Object.freeze({
     // The mode selector never had a search box: keep it off until chosen.
     ...(config.show_search === undefined && { show_search: false }),
   }),
+  // The Draw pixel-art gallery before the shared gallery: its display
+  // mode, page size (12), preview size (100%), card roundness (kept: the
+  // Draw palette cards use it too), border (auto) and no search box.
+  draw: (config) => ({
+    ...(config.style_selector_style === undefined && {
+      style_selector_style:
+        DRAW_LAYOUTS[config.pixel_art_gallery_mode] || "preview-grid",
+    }),
+    ...(config.items_per_page === undefined && {
+      items_per_page: Number(config.pixel_art_items_per_page) || 12,
+    }),
+    ...(config.preview_size === undefined && {
+      preview_size: drawPreviewSize(config),
+    }),
+    ...(config.selector_shape === undefined && {
+      selector_shape: "custom",
+      item_radius: config.item_radius ?? roundedCardsRadius(config.rounded_cards),
+    }),
+    ...(config.selector_button_shape === undefined &&
+      config.carousel_button_shape !== undefined && {
+        selector_button_shape:
+          { square: "square", rect: "rounded", rounded: "rounded" }[
+            config.carousel_button_shape
+          ] || "round",
+      }),
+    ...(config.item_card_border === undefined && { item_card_border: "auto" }),
+    ...(config.show_search === undefined && { show_search: false }),
+  }),
+  // The palette card's look before the shared gallery: its display mode,
+  // its card roundness (16 px by default), items on the card's own
+  // background with a border, no search box.
+  palette: (config) => ({
+    ...(config.style_selector_style === undefined && {
+      style_selector_style:
+        PALETTE_LAYOUTS[config.display_mode] || "preview-list",
+    }),
+    // Display Card Size (50% by default) is the gallery's Size.
+    ...(config.preview_size === undefined && {
+      preview_size: Number(config.card_size) || 50,
+    }),
+    ...(config.selector_shape === undefined && {
+      selector_shape: "custom",
+      item_radius: config.item_radius ?? roundedCardsRadius(config.rounded_cards),
+    }),
+    ...(config.selector_button_shape === undefined &&
+      config.palette_carousel_button_shape !== undefined && {
+        selector_button_shape:
+          { square: "square", rect: "rounded", rounded: "rounded" }[
+            config.palette_carousel_button_shape
+          ] || "round",
+      }),
+    ...(config.gallery_background_color === undefined && {
+      gallery_background_color: "transparent",
+    }),
+    ...(config.item_card_border === undefined && { item_card_border: "always" }),
+    ...(config.show_search === undefined && { show_search: false }),
+  }),
 });
+
+// Draw's former preview size (50-100%, 100 by default) as the shared Size:
+// the same in every layout but the album, whose cards were 240 px at 100%
+// (the shared album's 55%).
+function drawPreviewSize(config) {
+  const size = Number(config.pixel_art_preview_size) || 100;
+  return config.pixel_art_gallery_mode === "album"
+    ? Math.max(30, Math.round(size * 0.55))
+    : size;
+}
+
+const DRAW_LAYOUTS = {
+  gallery: "preview-grid",
+  list: "preview-list",
+  carousel: "preview-carousel",
+  album: "preview-album",
+  // The former compact list (with drag reordering, now Arrange).
+  compact: "preview-strip",
+};
+
+const PALETTE_LAYOUTS = {
+  list: "preview-list",
+  gallery: "preview-grid",
+  carousel: "preview-carousel",
+  album: "preview-album",
+  timeline: "preview-album",
+};
+
+/** The px radius of a rounded_cards value ("Card Roundness" of the Draw,
+ * Color List and former Palette cards; legacy true/false/"round"/"rounded"/
+ * "square" values included). */
+export function roundedCardsRadius(value) {
+  if (value === undefined || value === true || value === "round") return 16;
+  if (value === false || value === "square") return 0;
+  if (value === "rounded") return 4;
+  return typeof value === "number" ? value : parseInt(value, 10) || 16;
+}
 
 function gradientPreviewSize(value) {
   const size = Number(value) || 50;
@@ -88,8 +196,23 @@ function gradientPreviewSize(value) {
 /** Options a card no longer uses: dropped from its config. */
 export const RETIRED_OPTIONS = Object.freeze({
   // Written by older Draw stubs/editors; nothing ever read it.
-  draw: ["pixel_art_delete_button_style"],
+  draw: [
+    "pixel_art_delete_button_style",
+    "pixel_art_gallery_mode",
+    "pixel_art_items_per_page",
+    "pixel_art_preview_size",
+    "carousel_button_shape",
+    "compact_show_preview",
+  ],
   gradient: ["gallery_preview_size"],
+  palette: [
+    "display_mode",
+    "rounded_cards",
+    "palette_carousel_button_shape",
+    "card_size",
+    // Swatch size of the former gallery mode: swatches follow Size now.
+    "swatch_size",
+  ],
 });
 
 export function normalizeCardOptions(config, card) {

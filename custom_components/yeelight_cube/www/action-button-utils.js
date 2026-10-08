@@ -9,23 +9,9 @@
  * - Status indicators for import success/error states
  * - Consistent styling and behavior across all cards
  *
- * Usage:
- *   1. Import utilities:
- *      import { exportImportButtonStyles, renderExportImportButtons, getExportImportButtonClass } from './action-button-utils.js';
- *
- *   2. Include styles in your card's CSS:
- *      ${exportImportButtonStyles}
- *
- *   3. Render buttons:
- *      const buttonsHTML = renderExportImportButtons({
- *        showExport: true,
- *        showImport: true,
- *        buttonStyle: 'modern',
- *        contentMode: 'icon_text',
- *        importStatus: { showing: true, type: 'success' },
- *        onExportClick: () => { ... },
- *        onImportChange: (file) => { ... }
- *      });
+ * Usage: include exportImportButtonStyles (or actionButtonStyles) in the
+ * card's CSS; render buttons with action-button-ui.js (renderActionButton,
+ * and renderExportImportRow for a collection's export / import row).
  */
 
 /**

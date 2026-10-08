@@ -1,4 +1,5 @@
 import "./preview-appearance-editor.js";
+import { orderableListStyles } from "./orderable-list-utils.js";
 import { renderActionButtonSettings } from "./action-button-ui.js";
 import { LitElement, html, css } from "./lib/lit-all.js";
 import {
@@ -7,10 +8,10 @@ import {
   renderModeSettingsSection,
   renderModeInfoMessage,
   roundedCardsToSliderValue,
-  renderDeleteButtonSettings,
   renderCarouselNavSettings,
 } from "./editor_ui_utils.js";
 import { normalizeCardOptions } from "./card-config.js";
+import { renderStyleSelectorSettings } from "./style-selector-ui.js";
 import {
   createButtonGroup,
   createButtonGroupChangeHandler,
@@ -48,6 +49,7 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
       sharedEditorStyles,
       buttonGroupStyles,
       formRowStyles,
+      orderableListStyles,
       css`
         /* Layout Section Styles (draw card editor specific) */
         .layout-sections {
@@ -331,12 +333,8 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
     if (!this._config.matrix_bg) this._config.matrix_bg = "black";
     if (typeof this._config.matrix_box_shadow !== "boolean")
       this._config.matrix_box_shadow = true;
-    if (!this._config.pixel_art_spacing_mode)
-      this._config.pixel_art_spacing_mode = "normal";
     if (typeof this._config.preview_show_titles !== "boolean")
       this._config.preview_show_titles = true;
-    if (typeof this._config.pixel_art_allow_rename !== "boolean")
-      this._config.pixel_art_allow_rename = false;
     if (!this._config.matrix_size) this._config.matrix_size = 100;
     if (!this._config.button_shape) this._config.button_shape = "rect";
     if (!this._config.actions_buttons_style)
@@ -350,8 +348,6 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
       this._config.paint_button_shape = "rect";
     if (!this._config.swatch_shape) this._config.swatch_shape = "round";
     if (!this._config.expand_btn_style) this._config.expand_btn_style = "pill";
-    if (typeof this._config.pixel_art_preview_size !== "number")
-      this._config.pixel_art_preview_size = 100;
 
     // Ensure tools_order exists with default value
     if (!this._config.tools_order) {
@@ -891,145 +887,24 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
               (e) => this._onSwitchChange(e, "pixel_art_auto_apply_to_lamp"),
             )}
 
-            <!-- 2. Display Mode (container layout) -->
-            <div class="form-row">
-              <label>Display Mode</label>
-              ${createButtonGroup(
-                [
-                  { value: "gallery", label: "Gallery" },
-                  { value: "list", label: "List" },
-                  { value: "carousel", label: "Carousel" },
-                  { value: "album", label: "Album" },
-                ],
-                this._config.pixel_art_gallery_mode || "gallery",
-                createButtonGroupChangeHandler(
-                  "pixel_art_gallery_mode",
-                  (value) => {
-                    this._config = { ...this._config, pixel_art_gallery_mode: value };
-                    this._fireConfigChanged();
-                    this.requestUpdate();
-                  },
-                ),
-              )}
-            </div>
-
-            <!-- 3. Conditional mode settings (right after Display Mode) -->
-            ${this._config.pixel_art_gallery_mode === "album"
-              ? renderModeSettingsSection(
-                  "Album Mode Settings",
-                  html`
-                    ${createToggleRow(
-                      "3D Effect (Perspective)",
-                      "album_3d_effect",
-                      this._config.album_3d_effect !== false,
-                      (e) => this._onSwitchChange(e, "album_3d_effect"),
-                    )}
-                  `,
-                )
-              : this._config.pixel_art_gallery_mode === "carousel"
-                ? renderModeSettingsSection(
-                    "Carousel Mode Settings",
-                    renderCarouselNavSettings(this._config, {
-                      shapeKey: "carousel_button_shape",
-                      shapeDefault: "rect",
-                      onShapeChange: (value) => {
-                        this._config = { ...this._config, carousel_button_shape: value };
-                        this._fireConfigChanged();
-                      },
-                      wrapKey: "carousel_wrap_navigation",
-                      onWrapChange: (e) =>
-                        this._onSwitchChange(e, "carousel_wrap_navigation"),
-                    }),
-                  )
-                : this._config.pixel_art_gallery_mode === "compact"
-                  ? renderModeSettingsSection(
-                      "Compact Mode Settings",
-                      html`
-                        ${createToggleRow(
-                          "Show Pixel Art Preview",
-                          "compact_show_preview",
-                          this._config.compact_show_preview !== false,
-                          (e) =>
-                            this._onSwitchChange(e, "compact_show_preview"),
-                        )}
-                      `,
-                    )
-                  : renderModeSettingsSection(
-                      this._config.pixel_art_gallery_mode === "list"
-                        ? "List Mode Settings"
-                        : "Grid Mode Settings",
-                      html`
-                        ${createSliderRow(
-                          "Items Per Page",
-                          this._config.pixel_art_items_per_page || 12,
-                          { min: 1, max: 50, step: 1 },
-                          this._onItemsPerPageChange.bind(this),
-                        )}
-                      `,
-                    )}
-
-            <!-- 4. Card container settings -->
-            ${createSliderRow(
-              "Card Roundness",
-              roundedCardsToSliderValue(this._config.rounded_cards),
-              { min: 0, max: 28, step: 1 },
-              (e) => {
-                this._config = { ...this._config, rounded_cards: parseInt(e.target.value) };
-                this._fireConfigChanged();
+            <!-- 2. The shared gallery settings (the same as every card with a
+                 gallery); the pixel-art previews use the "Pixel Art"
+                 appearance. -->
+            ${renderStyleSelectorSettings(
+              this._config,
+              (key, value) => this._setOption(key, value),
+              {
+                allowChips: true,
+                noun: "Pixel Art",
+                manage: "pixel arts",
+                defaultSize: 100,
+                // A pixel art is loaded into the drawing, never "active".
+                hasActive: false,
+                memory: (this._galleryMemory ||= {}),
+                renderAppearance: () => this._renderAppearance("art"),
               },
-              "px",
             )}
-            <div class="form-row">
-              <label>Item Card Border</label>
-              ${createButtonGroup(
-                [
-                  { value: "none", label: "None" },
-                  { value: "auto", label: "Auto" },
-                  { value: "always", label: "Always" },
-                ],
-                this._config.item_card_border || "auto",
-                createButtonGroupChangeHandler("item_card_border", (value) => {
-                  this._config = { ...this._config, item_card_border: value };
-                  this._fireConfigChanged();
-                }),
-              )}
-            </div>
-
-            <!-- 5. Gallery appearance -->
-            ${createSliderRow(
-              "Gallery Preview Size",
-              this._config.pixel_art_preview_size || 100,
-              { min: 50, max: 100, step: 1 },
-              this._onPixelArtPreviewSizeChange.bind(this),
-              "%",
-            )}
-            ${this._renderAppearance("art")}
-
-            <!-- 7. Content & Labels -->
-            ${createToggleRow(
-              "Show Pixel Art Titles",
-              "preview_show_titles",
-              this._config.preview_show_titles !== false,
-              (e) => this._onSwitchChange(e, "preview_show_titles"),
-            )}
-            ${this._config.preview_show_titles !== false
-              ? createToggleRow(
-                  "Allow Rename Pixel Art",
-                  "pixel_art_allow_rename",
-                  this._config.pixel_art_allow_rename === true,
-                  (e) => this._onSwitchChange(e, "pixel_art_allow_rename"),
-                )
-              : ""}
-
-            <!-- 8. Delete button settings (last - buttons on cards) -->
-            ${renderDeleteButtonSettings(this._config, {
-              styleKey: "remove_button_style",
-              commit: (key, value) => {
-                this._config = { ...this._config, [key]: value };
-                this._fireConfigChanged();
-                this.requestUpdate();
-              },
-            })}
+            ${this._arrangeSettings("pixel_arts")}
         `)}
 
         <!-- Import/Export Actions Section -->
@@ -1080,33 +955,6 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
   _onMatrixSizeChange(e) {
     this._config = { ...this._config, matrix_size: e.target.value };
     this._fireConfigChanged();
-  }
-
-  _onItemsPerPageChange(e) {
-    this._config = { ...this._config, pixel_art_items_per_page: parseInt(e.target.value, 10) };
-    this._fireConfigChanged();
-  }
-
-  _onPixelArtPreviewSizeChange(e) {
-    const newSize = Number(e.target.value);
-    this._pendingPreviewSize = newSize;
-
-    // Update config immediately for slider position
-    this._config = { ...this._config, pixel_art_preview_size: newSize };
-
-    // Throttle the expensive config-changed event using requestAnimationFrame
-    if (!this._previewSizeUpdateScheduled) {
-      this._previewSizeUpdateScheduled = true;
-      requestAnimationFrame(() => {
-        this._previewSizeUpdateScheduled = false;
-        // Use the most recent value
-        if (this._pendingPreviewSize !== null) {
-          this._config = { ...this._config, pixel_art_preview_size: this._pendingPreviewSize };
-          this._pendingPreviewSize = null;
-          this._fireConfigChanged();
-        }
-      });
-    }
   }
 
   _onSwitchChange(e, key) {

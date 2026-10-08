@@ -378,40 +378,6 @@ export function clockStyleIndicators(style, display, mode, override = null) {
   });
 }
 
-export function clockStyleBrowserOptions(mode, override = null) {
-  const state = (style) => clockStyleColorModeState(style, mode, override);
-  return {
-    filters: [
-      { value: "all", label: "All", test: () => true },
-      {
-        value: "responds",
-        label: "Responding",
-        test: (style) => mode === "normal" || state(style) === "responds",
-      },
-      {
-        value: "unchanged",
-        label: "Unchanged",
-        test: (style) => mode === "normal" || state(style) === "unchanged",
-      },
-    ],
-    sorts: [
-      { value: "manual", label: "Your order" },
-      {
-        value: "name",
-        label: "Name",
-        compare: (first, second) => first.name.localeCompare(second.name),
-      },
-      {
-        value: "responds",
-        label: "Responding first",
-        compare: (first, second) =>
-          Number(state(second) === "responds") -
-          Number(state(first) === "responds"),
-      },
-    ],
-  };
-}
-
 // Resolve the firmware mixer for a set of light attributes (or a style object).
 export function clockStyleMixer(attrs) {
   const id = attrs.clock_style_id;

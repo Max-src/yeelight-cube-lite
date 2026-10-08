@@ -3,24 +3,16 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { renderPagination } from "../custom_components/yeelight_cube/www/pagination-utils.js";
 import {
-  browseItems,
   renderItemIndicators,
-  renderItemBrowserToolbar,
-  bindItemBrowser,
 } from "../custom_components/yeelight_cube/www/item-browser-utils.js";
 import {
   getClockStyles,
   clockStyleColorModeState,
   clockStyleRespondsToCustomColor,
   clockStyleIndicators,
-  clockStyleBrowserOptions,
 } from "../custom_components/yeelight_cube/www/clock-preview-utils.js";
 import { clockStylesWithPresets } from "../custom_components/yeelight_cube/www/clock-preset-utils.js";
-import {
-  renderGalleryDisplay,
-  renderGridMode,
-  renderInlineMode,
-} from "../custom_components/yeelight_cube/www/gallery-display-utils.js";
+import { renderGalleryDisplay } from "../custom_components/yeelight_cube/www/gallery-display-utils.js";
 
 const styles = clockStylesWithPresets(getClockStyles(true), [
   { id: "amber", name: "Amber", color: [255, 120, 0] },
@@ -185,40 +177,6 @@ test("clock responses distinguish palettes, B&W, solids, presets and unknowns", 
   );
 });
 
-test("browsing is stable, leaves saved order untouched and Normal never restricts", () => {
-  const source = Object.freeze([
-    style("Red"),
-    style("Rainbow"),
-    style("Spectrum"),
-    style("White"),
-  ]);
-  const options = clockStyleBrowserOptions("red_blue");
-  assert.deepEqual(
-    browseItems(source, { ...options, filter: "responds" }).map(
-      (item) => item.name,
-    ),
-    ["Rainbow", "Spectrum"],
-  );
-  assert.deepEqual(
-    browseItems(source, { ...options, sort: "responds" }).map(
-      (item) => item.name,
-    ),
-    ["Rainbow", "Spectrum", "Red", "White"],
-  );
-  assert.deepEqual(
-    browseItems(source, {
-      ...clockStyleBrowserOptions("normal"),
-      filter: "responds",
-    }),
-    source,
-  );
-  assert.deepEqual(
-    browseItems(source, { filter: "future", sort: "future" }),
-    source,
-  );
-  assert.deepEqual(browseItems([], options), []);
-});
-
 test("shared controls escape content and expose accessible labels", () => {
   const html = renderItemIndicators([
     { label: "<img src=x>", description: '" unsafe', state: "responds" },
@@ -226,7 +184,6 @@ test("shared controls escape content and expose accessible labels", () => {
   assert.ok(!html.includes("<img"));
   assert.ok(html.includes('tabindex="0"'));
   assert.ok(html.includes('aria-label="&quot; unsafe"'));
-  assert.ok(renderItemBrowserToolbar({ count: 0, total: 5 }).includes("0 / 5"));
 });
 
 test("all shared gallery layouts render structured indicators independently of titles", () => {
@@ -238,7 +195,7 @@ test("all shared gallery layouts render structured indicators independently of t
       indicators: clockStyleIndicators(style("Rainbow"), "all", "normal"),
     },
   ];
-  for (const mode of ["list", "grid", "strip", "compact", "wheel"]) {
+  for (const mode of ["list", "strip", "wheel"]) {
     const html = renderGalleryDisplay(items, mode, {
       showTitles: false,
       rows: 5,
@@ -246,47 +203,5 @@ test("all shared gallery layouts render structured indicators independently of t
     });
     assert.equal((html.match(/class="item-indicator"/g) || []).length, 5, mode);
   }
-  for (const render of [renderGridMode, renderInlineMode])
-    assert.ok(render(items).includes('class="item-indicators"'));
 });
 
-test("rebinding shared controls replaces callbacks instead of duplicating actions", () => {
-  const select = new EventTarget();
-  select.value = "enabled";
-  const root = {
-    querySelectorAll: (selector) =>
-      selector === "[data-browser-filter]" ? [select] : [],
-  };
-  const calls = [];
-  bindItemBrowser(root, { onFilter: () => calls.push("stale") });
-  bindItemBrowser(root, { onFilter: (value) => calls.push(value) });
-  select.dispatchEvent(new Event("change"));
-  assert.deepEqual(calls, ["enabled"]);
-});
-
-test("shared browsing accepts non-clock predicates and sort definitions", () => {
-  const items = [
-    { id: "first", brightness: 20 },
-    { id: "second", brightness: 80 },
-    { id: "third", brightness: 60 },
-  ];
-  const result = browseItems(items, {
-    filter: "bright",
-    sort: "brightness",
-    filters: [{ value: "bright", test: (item) => item.brightness >= 50 }],
-    sorts: [
-      {
-        value: "brightness",
-        compare: (first, second) => first.brightness - second.brightness,
-      },
-    ],
-  });
-  assert.deepEqual(
-    result.map((item) => item.id),
-    ["third", "second"],
-  );
-  assert.deepEqual(
-    items.map((item) => item.id),
-    ["first", "second", "third"],
-  );
-});

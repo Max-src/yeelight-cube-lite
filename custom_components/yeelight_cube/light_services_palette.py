@@ -1,4 +1,4 @@
-"""Color palette actions: load, save, rename, remove and bulk set/add.
+"""Color palette actions: load, save, rename, move, remove and bulk set/add.
 
 Registered by :func:`light_services.async_setup_light_services`.
 """
@@ -23,6 +23,7 @@ from .light_services_common import (
     _resolve_entity,
     _resolve_entities,
     _locate_item,
+    _move_item,
     make_fire_and_forget,
 )
 
@@ -287,6 +288,36 @@ def async_register_palette_services(hass: HomeAssistant) -> None:
             vol.Required("name"): NAME_SCHEMA,
             vol.Optional("expected_name"): vol.Any(None, cv.string),
         })
+    )
+
+    async def handle_move_palette(service_call):
+        """Move one saved palette, keeping palettes other clients added meanwhile."""
+        palettes = hass.data.get(DOMAIN, {}).get("palettes_v2", [])
+        if not _move_item(
+            palettes,
+            service_call.data["from_idx"],
+            service_call.data["to_idx"],
+            service_call.data.get("expected_name"),
+            "Palette",
+        ):
+            return
+        # The same refresh as a removal: lamp states, the palette sensor
+        # and the palette select follow the new order.
+        for entity in _ENTITY_REGISTRY.values():
+            if entity.hass is not None:
+                entity.async_write_ha_state()
+        hass.bus.async_fire(f"{DOMAIN}_palettes_updated", {"count": len(palettes)})
+        await async_save_data(hass)
+
+    hass.services.async_register(
+        DOMAIN,
+        "move_palette",
+        handle_move_palette,
+        schema=vol.Schema({
+            vol.Required("from_idx"): vol.All(int, vol.Range(min=0)),
+            vol.Required("to_idx"): vol.All(int, vol.Range(min=0)),
+            vol.Optional("expected_name"): vol.Any(None, cv.string),
+        }),
     )
 
     async def handle_remove_palette(service_call):

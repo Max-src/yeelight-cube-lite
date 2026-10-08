@@ -61,6 +61,14 @@ test("older option names move to the shared vocabulary", async () => {
     preview_show_titles: false,
     remove_button_style: "black",
     title: "Draw",
+    // The former pixel-art gallery defaults, as shared gallery options.
+    style_selector_style: "preview-grid",
+    items_per_page: 12,
+    preview_size: 100,
+    selector_shape: "custom",
+    item_radius: 16,
+    item_card_border: "auto",
+    show_search: false,
   });
   // An explicitly set shared name wins over a leftover older one.
   assert.deepEqual(
@@ -74,6 +82,64 @@ test("older option names move to the shared vocabulary", async () => {
   assert.equal(normalizeCardOptions(clean, "clock"), clean);
   const gradient = { ...clean, preview_size: 64, show_search: true };
   assert.equal(normalizeCardOptions(gradient, "gradient"), gradient);
+});
+
+test("the Draw pixel-art gallery's options join the shared gallery's", async () => {
+  const { normalizeCardOptions } = await import(
+    "../custom_components/yeelight_cube/www/card-config.js"
+  );
+  const draw = normalizeCardOptions(
+    {
+      pixel_art_gallery_mode: "compact",
+      pixel_art_items_per_page: 5,
+      pixel_art_preview_size: 70,
+      rounded_cards: "square",
+      carousel_button_shape: "circle",
+      carousel_wrap_navigation: true,
+      pixel_art_allow_rename: true,
+      pixel_art_background_color: "white",
+      pixel_art_pixel_style: "circle",
+      pixel_art_spacing_mode: "none",
+      pixel_art_matrix_box_shadow: true,
+      item_card_border: "none",
+      compact_show_preview: false,
+    },
+    "draw",
+  );
+  assert.deepEqual(draw, {
+    style_selector_style: "preview-strip",
+    items_per_page: 5,
+    preview_size: 70,
+    selector_shape: "custom",
+    item_radius: 0,
+    // Kept: the Draw palette cards use it too.
+    rounded_cards: "square",
+    selector_button_shape: "round",
+    gallery_wrap_navigation: true,
+    allow_rename: true,
+    gallery_background_color: "white",
+    gallery_pixel_style: "circle",
+    gallery_spacing_mode: "none",
+    gallery_matrix_box_shadow: true,
+    item_card_border: "none",
+    show_search: false,
+  });
+  // The former album was 240 px at 100%: the shared album's 55%.
+  assert.equal(
+    normalizeCardOptions({ pixel_art_gallery_mode: "album" }, "draw").preview_size,
+    55,
+  );
+  for (const [mode, style] of [
+    ["gallery", "preview-grid"],
+    ["list", "preview-list"],
+    ["carousel", "preview-carousel"],
+    ["album", "preview-album"],
+  ])
+    assert.equal(
+      normalizeCardOptions({ pixel_art_gallery_mode: mode }, "draw")
+        .style_selector_style,
+      style,
+    );
 });
 
 test("the gradient's older gallery size joins the shared Size option", async () => {

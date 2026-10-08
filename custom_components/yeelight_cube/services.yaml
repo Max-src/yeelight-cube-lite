@@ -861,7 +861,7 @@ get_pixel_art:
 
 move_pixel_art:
   name: Move Pixel Art
-  description: Move one saved pixel art to another position (used by the Draw card gallery reorder).
+  description: Move one saved pixel art to another position (used by the Draw card gallery reorder and its editor's Arrange list).
   fields:
     from_idx:
       description: Current index of the pixel art (0-based)
@@ -951,6 +951,33 @@ remove_palette:
         number:
           min: 0
           mode: box
+
+move_palette:
+  name: Move Palette
+  description: Move one saved palette to another position (used by the Palettes card editor's Arrange list).
+  fields:
+    from_idx:
+      description: Current index of the palette (0-based)
+      example: 3
+      required: true
+      selector:
+        number:
+          min: 0
+          mode: box
+    to_idx:
+      description: New index for the palette (0-based)
+      example: 0
+      required: true
+      selector:
+        number:
+          min: 0
+          mode: box
+    expected_name:
+      description: Name of the palette expected at from_idx; the move is rejected if the list changed.
+      example: "Sunset"
+      required: false
+      selector:
+        text:
 
 rename_palette:
   name: Rename Palette

@@ -76,7 +76,11 @@ export const ClockPreviewMixin = (Base) => class extends Base {
     const tiles = this.shadowRoot
       ? [
           ...this.shadowRoot.querySelectorAll("[data-clock-preview]"),
-          ...this.shadowRoot.querySelectorAll(".gc-preview-shell [data-mode]"),
+          // Every item preview of the gallery: preview layouts and chip
+          // swatches (items without a matrix are skipped when painted).
+          ...this.shadowRoot.querySelectorAll(
+            "yc-collection-gallery .reference-selector [data-mode]",
+          ),
           ...this.shadowRoot.querySelectorAll(
             ".original-gallery .original-item",
           ),

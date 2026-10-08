@@ -4,13 +4,15 @@
 //
 // One editor control for "pick which items to show, in which order": used by
 // the clock card's quick schemes + visible styles and the gradient card's
-// visible modes. Plain editor UI — no overlays on the dashboard-rendered card.
+// visible modes; and, order only (no add / remove), for the Arrange block of
+// the user collections (palettes, pixel arts). Plain editor UI — no overlays
+// on the dashboard-rendered card.
 //
 // The control is stateless: drag state travels in the DataTransfer payload and
 // row highlight classes are cleaned up via DOM traversal, so any number of
 // lists can coexist in one editor.
 
-import { html, css, unsafeCSS } from "./lib/lit-all.js";
+import { html, css, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
 import {
   itemIndicatorModel,
   itemBrowserStyles,
@@ -57,6 +59,11 @@ export const orderableListStyles = css`
     overflow-x: hidden;
     padding-right: 4px;
   }
+  /* fullHeight: every row shown (the editor scrolls, not the list). */
+  .orderable-list.orderable-list-full {
+    max-height: none;
+    overflow-y: visible;
+  }
   .orderable-list-row {
     display: flex;
     align-items: center;
@@ -72,6 +79,20 @@ export const orderableListStyles = css`
   .orderable-list-row.drag-over {
     border-color: var(--primary-color, #03a9f4);
     box-shadow: inset 0 0 0 1px var(--primary-color, #03a9f4);
+  }
+  /* Row thumbnail (thumbFor): a palette's blend, a pixel art's picture. */
+  .collection-thumb {
+    flex-shrink: 0;
+    width: 44px;
+    height: 14px;
+    border-radius: 3px;
+    overflow: hidden;
+    display: inline-flex;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.15);
+  }
+  .collection-thumb-matrix {
+    height: auto;
+    background: #000;
   }
   .orderable-drag-handle {
     cursor: grab;
@@ -160,6 +181,12 @@ export const orderableListStyles = css`
  *   becomes a field showing `labels[name]` (empty: the built-in name, shown
  *   as its placeholder). Used for the cards' item_labels.
  * @param {Object} [opts.labels] - the current labels, by item name
+ * @param {boolean} [opts.addable=true] - show the "Add" picker
+ * @param {boolean} [opts.removable=true] - show each row's remove button
+ * @param {Function} [opts.thumbFor] - (name) => a small preview (trusted
+ *   HTML) shown before the row's name
+ * @param {boolean} [opts.fullHeight=false] - show every row instead of a
+ *   scrolling box (lists whose whole order matters: Arrange)
  */
 export function renderOrderableList({
   items,
@@ -175,6 +202,10 @@ export function renderOrderableList({
   indicatorsFor = () => [],
   onRename,
   labels = {},
+  addable = true,
+  removable = true,
+  thumbFor,
+  fullHeight = false,
 }) {
   canReorder =
     canReorder &&
@@ -267,6 +298,7 @@ export function renderOrderableList({
         >
           ▼
         </button>
+        ${thumbFor ? unsafeHTML(thumbFor(name)) : ""}
         <div class="orderable-list-content">
           ${onRename
             ? html`<input
@@ -285,29 +317,41 @@ export function renderOrderableList({
             : html`<span class="orderable-list-name">${labelFor(name)}</span>`}
           ${indicatorsTemplate(indicatorsFor(name))}
         </div>
-        <button class="remove" title="Remove" @click="${() => onRemove(idx)}">
-          ✕
-        </button>
+        ${removable
+          ? html`<button
+              class="remove"
+              title="Remove"
+              @click="${() => onRemove(idx)}"
+            >
+              ✕
+            </button>`
+          : ""}
       </div>
     `;
   });
 
   return html`
-    <div class="orderable-list">${rows}</div>
-    <div class="orderable-add-row">
-      <select @change="${onAdd}">
-        <option value="">${addPlaceholder}</option>
-        ${available.map(
-          (n) => html`<option value="${n}">${optionLabelFor(n)}</option>`,
-        )}
-      </select>
-      ${onReset
-        ? html`
-            <button class="orderable-reset-btn" @click="${onReset}">
-              ${resetLabel}
-            </button>
-          `
-        : ""}
+    <div class="orderable-list${fullHeight ? " orderable-list-full" : ""}">
+      ${rows}
     </div>
+    ${addable || onReset
+      ? html`<div class="orderable-add-row">
+          ${addable
+            ? html`<select @change="${onAdd}">
+                <option value="">${addPlaceholder}</option>
+                ${available.map(
+                  (n) => html`<option value="${n}">${optionLabelFor(n)}</option>`,
+                )}
+              </select>`
+            : ""}
+          ${onReset
+            ? html`
+                <button class="orderable-reset-btn" @click="${onReset}">
+                  ${resetLabel}
+                </button>
+              `
+            : ""}
+        </div>`
+      : ""}
   `;
 }

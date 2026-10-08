@@ -1,5 +1,6 @@
 // Pixel-art helpers shared by the draw card and its gallery / actions mixins:
-// expanding stored (grouped) pixel arts and describing a single reorder move.
+// expanding stored (grouped) pixel arts and their matrix colors. (A single
+// reorder move: singleMove in user-collections.js.)
 
 /**
  * Expand a pixel art's pixels array to flat [{position, color}] format.
@@ -37,22 +38,24 @@ export function expandPixelArt(art) {
 }
 
 /**
- * When `newOrder` (new position -> old index) is the identity with one item
- * moved, return that move as a `move_pixel_art` payload; otherwise null.
+ * Where a stored pixel lands on screen: positions count rows from the
+ * lamp's bottom row (0-19 is the bottom), the matrix previews and the
+ * drawing grid from the top. The one conversion of every pixel-art view.
  */
-export function singleMove(newOrder, items) {
-  let start = 0;
-  let end = newOrder.length - 1;
-  while (start <= end && newOrder[start] === start) start++;
-  while (end >= start && newOrder[end] === end) end--;
-  if (start >= end) return null;
-  let from;
-  let to;
-  if (newOrder[start] === end) [from, to] = [end, start];
-  else if (newOrder[end] === start) [from, to] = [start, end];
-  else return null;
-  const moved = items.slice();
-  moved.splice(to, 0, moved.splice(from, 1)[0]);
-  if (moved.some((item, index) => item !== items[newOrder[index]])) return null;
-  return { from_idx: from, to_idx: to, expected_name: items[from]?.name };
+export function pixelArtDisplayIndex(position) {
+  const row = Math.floor(position / 20);
+  return (4 - row) * 20 + (position % 20);
+}
+
+/**
+ * A pixel art as the 100 colors of the 20x5 matrix, top row first (unset
+ * pixels black): the colorData of matrix previews (gallery, Arrange).
+ */
+export function pixelArtColorData(art) {
+  const colors = Array.from({ length: 100 }, () => [0, 0, 0]);
+  for (const { position, color } of expandPixelArt(art)) {
+    if (Number.isInteger(position) && position >= 0 && position < 100 && Array.isArray(color))
+      colors[pixelArtDisplayIndex(position)] = color;
+  }
+  return colors;
 }

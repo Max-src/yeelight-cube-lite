@@ -49,8 +49,14 @@ test("all appearance profiles share migration, sparse overrides and independent 
     "none",
   );
   assert.equal(
-    resolvePreviewAppearance({}, "draw").pixel_art_background_color,
+    resolvePreviewAppearance({}, "draw").gallery_background_color,
     "transparent",
+  );
+  // A former pixel_art_pixel_spacing: false still means no spacing.
+  assert.equal(
+    resolvePreviewAppearance({ pixel_art_pixel_spacing: false }, "draw")
+      .gallery_spacing_mode,
+    "none",
   );
 });
 import test from "node:test";

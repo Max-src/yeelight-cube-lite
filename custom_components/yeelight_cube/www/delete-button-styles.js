@@ -290,16 +290,6 @@ export const deleteButtonStyles = `
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18) !important;
     transform: scale(1.1);
   }
-
-  /* ── Compact mode positioning (draw-card / palette-card) ── */
-  .pixelart-compact-item .delete-btn-cross,
-  .palette-compact-item .delete-btn-cross {
-    transition: opacity 0.15s, background 0.15s;
-    flex-shrink: 0;
-    position: absolute;
-    top: 8px;
-    right: 8px;
-  }
 `;
 
 /* ─────────────────────────────────────────────────────────────────────────────

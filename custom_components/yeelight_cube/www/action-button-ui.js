@@ -6,12 +6,59 @@ import {
   actionButtonContentChoices,
   resolveActionButtonOptions,
   getActionRowClass,
+  getExportImportButtonClass,
   actionButtonGroupModel,
   handleActionButtonGroupEvent,
 } from "./action-button-utils.js";
 
 export function renderActionRow(content, options = {}) {
   return html`<div class=${getActionRowClass(options)}>${content}</div>`;
+}
+
+/**
+ * The export / import row of a card's own collection (palettes, pixel
+ * arts): the same buttons, tooltips and import status on every card. ""
+ * when both buttons are hidden (the row then takes no room).
+ *
+ * @param {Object} options
+ * @param {string} options.noun - what is exported ("palettes", "pixel arts")
+ * @param {boolean} [options.showExport=true]
+ * @param {boolean} [options.showImport=true]
+ * @param {string} [options.buttonStyle="modern"]
+ * @param {string} [options.contentMode="icon_text"] - icon with the icon style
+ * @param {"success"|"error"|null} [options.importStatus] - the last import
+ * @param {Function} options.onExport
+ * @param {Function} options.onImport
+ */
+export function renderExportImportRow({
+  noun,
+  showExport = true,
+  showImport = true,
+  buttonStyle = "modern",
+  contentMode = "icon_text",
+  importStatus = null,
+  onExport,
+  onImport,
+}) {
+  if (!showExport && !showImport) return "";
+  const mode = buttonStyle === "icon" ? "icon" : contentMode;
+  const button = (action, icon, label, title, onClick, status = null) => html`<button
+    class=${getExportImportButtonClass(action, buttonStyle)}
+    data-action=${action}
+    title=${title}
+    aria-label=${title}
+    @click=${onClick}
+  >
+    ${renderActionButtonContent(icon, label, mode, !!status, status)}
+  </button>`;
+  return html`<div class=${getActionRowClass({ buttonStyle, contentMode: mode })}>
+    ${showExport
+      ? button("export", "mdi:download", "Export", `Export ${noun} to a JSON file`, onExport)
+      : nothing}
+    ${showImport
+      ? button("import", "mdi:upload", "Import", `Import ${noun} from a JSON file`, onImport, importStatus)
+      : nothing}
+  </div>`;
 }
 
 /**

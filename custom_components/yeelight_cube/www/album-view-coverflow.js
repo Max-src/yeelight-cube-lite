@@ -1,15 +1,10 @@
 /**
  * Album View with Coverflow Effect
  *
- * This module provides a carousel/album view with 3D coverflow effect for displaying
- * palettes and pixel arts. It's used by both the palette card and draw card.
- *
- * Key Features:
- * - 3D coverflow carousel with smooth transitions
- * - Supports both palette items and pixel art items
- * - Configurable delete/remove buttons
- * - Touch and keyboard navigation support
- * - Position persistence across re-renders
+ * The Album layout of the shared gallery (collection-gallery.js): a 3D
+ * coverflow of the items, with arrows, swipes and a click on the centred
+ * item to pick it. Items' rename / delete controls are the gallery's
+ * (shown on the centred item only, see collectionGalleryStyles).
  *
  * Usage:
  * 1. Import renderAlbumView() and setupAlbumNavigation()
@@ -19,23 +14,20 @@
  *
  * Styles: albumStyles(classPrefix) is static (include it in the card's static
  * styles); the configurable values (card width from card_size, corner radius
- * from rounded_cards, 3D effect, delete-button room) are CSS variables that
- * renderAlbumView() sets on the album wrapper (albumStyleVars).
+ * from rounded_cards, 3D effect) are CSS variables that renderAlbumView()
+ * sets on the album wrapper (albumStyleVars).
  *
  * Configuration:
  * - album_nav_shape: the arrows' shape, in the carousel vocabulary
  *   (circle by default; square, rect)
  * - wrap_navigation (setupAlbumNavigation): the arrows and swipes go from
  *   the last item to the first and back
- * - Uses centralized getDeleteButtonConfig() for button styling
- * - Every card uses config.remove_button_style (older Draw configs:
- *   pixel_art_remove_button_style, see card-config.js)
  *
  * Pure JavaScript - no external dependencies
  */
 
-import { getDeleteButtonConfig } from "./delete-button-styles.js";
 import { normalizeButtonShape } from "./carousel-utils.js";
+import { roundedCardsRadius } from "./card-config.js";
 
 /**
  * The album's configurable values as CSS variables (inline style of the
@@ -43,37 +35,18 @@ import { normalizeButtonShape } from "./carousel-utils.js";
  * --yc-album-perspective.
  */
 export function albumStyleVars(config = {}) {
-  const isInside = getDeleteButtonConfig(config).inside;
-  // Normalize shape: backward compat for boolean + legacy album_card_rounded + numeric slider
-  const rawShape =
-    config.rounded_cards !== undefined
-      ? config.rounded_cards
-      : config.album_card_rounded !== false;
-  const enable3D = config.album_3d_effect !== false;
-  const borderRadius = (() => {
-    const v = rawShape;
-    if (v === undefined || v === true || v === "round") return "16px";
-    if (v === false || v === "square") return "0";
-    if (v === "rounded") return "4px";
-    return typeof v === "number" ? `${v}px` : "16px";
-  })();
-
-  // Album card width scales with the card_size slider (a percentage where
-  // 100 = the historical 240px baseline).  Previously the width was hardcoded
-  // to 240px, so the preview-size slider had no effect in album mode.  Callers
-  // pass their size value as `card_size` (the draw card forwards the pixel-art
-  // preview size; the palette card forwards its own card size).  Clamp to a
-  // sane range so the coverflow never collapses or overflows its container.
+  // Card width: `card_size` % of the 240px baseline (the gallery derives it
+  // from its Size), within 30-200% so the coverflow never collapses.
   const albumSizePct = Math.max(
     30,
     Math.min(200, Number(config.card_size) || 100),
   );
-  const albumCardWidth = Math.round((240 * albumSizePct) / 100);
   return [
-    `--yc-album-width:${albumCardWidth}px`,
-    `--yc-album-radius:${borderRadius}`,
-    `--yc-album-pad:${isInside ? "12px 0" : "28px 14px"}`,
-    `--yc-album-perspective:${enable3D ? "1200px" : "none"}`,
+    `--yc-album-width:${Math.round((240 * albumSizePct) / 100)}px`,
+    `--yc-album-radius:${roundedCardsRadius(config.rounded_cards)}px`,
+    // Room above the cards for the items' outside delete buttons.
+    "--yc-album-pad:28px 14px",
+    `--yc-album-perspective:${config.album_3d_effect !== false ? "1200px" : "none"}`,
   ].join(";");
 }
 
@@ -100,7 +73,10 @@ export function albumStyles(classPrefix = "album") {
     }
     
     .${classPrefix}-album-item {
-      width: var(--yc-album-width, 240px);
+      /* The configured width, kept clear of the arrows (2 x 20px + 48px)
+         on narrow cards; 140px at least. */
+      --yc-album-card: max(140px, min(var(--yc-album-width, 240px), 100% - 136px));
+      width: var(--yc-album-card);
       max-height: 420px;
       cursor: pointer;
       background: var(--card-background-color, white);
@@ -110,7 +86,7 @@ export function albumStyles(classPrefix = "album") {
       position: absolute;
       left: 50%;
       top: 50%;
-      margin-left: calc(var(--yc-album-width, 240px) / -2);
+      margin-left: calc(var(--yc-album-card) / -2);
       transform: translateY(-50%);
       transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
       transform-style: preserve-3d;
@@ -152,80 +128,6 @@ export function albumStyles(classPrefix = "album") {
     .album-meta {
       font-size: 0.75em;
       color: var(--secondary-text-color, #666);
-    }
-    
-    /* Album delete button positioning - uses centralized CSS classes for appearance */
-    .${classPrefix}-album-item .delete-btn-cross,
-    .${classPrefix}-album-item .album-remove-btn {
-      position: absolute;
-      top: -8px;
-      right: -8px;
-      z-index: 15;
-      transition: opacity 0.3s ease;
-      cursor: pointer;
-    }
-    .${classPrefix}-album-item .btn-pos-inside {
-      top: 6px !important;
-      right: 6px !important;
-    }
-    .${classPrefix}-album-item .btn-side-left {
-      right: auto !important;
-      left: -8px;
-    }
-    .${classPrefix}-album-item .btn-pos-inside.btn-side-left {
-      left: 6px !important;
-    }
-    .${classPrefix}-album-item .dot-style:not(.btn-pos-inside) {
-      top: -4px;
-      right: -4px;
-    }
-    .${classPrefix}-album-item .dot-style.btn-pos-inside {
-      top: 4px !important;
-      right: 4px !important;
-    }
-    .${classPrefix}-album-item .dot-style.btn-side-left:not(.btn-pos-inside) {
-      right: auto !important;
-      left: -4px;
-    }
-    .${classPrefix}-album-item .dot-style.btn-pos-inside.btn-side-left {
-      left: 4px !important;
-    }
-
-    /* 
-     * Album Mode Button Visibility Rules
-     * 
-     * In album/carousel mode, delete buttons have special visibility logic:
-     * 1. Non-active (side) cards: buttons always hidden
-     * 2. Active (center) card: buttons always visible
-     * 
-     * The !important flags ensure these rules override base button styles
-     */
-
-    /* Rule 1: Hide buttons on all non-active (side) cards */
-    .${classPrefix}-album-item:not(.active) .delete-btn-cross,
-    .${classPrefix}-album-item:not(.active) .album-remove-btn {
-      opacity: 0 !important;
-      pointer-events: none !important;
-    }
-    
-    .${classPrefix}-album-item .delete-btn-cross:hover,
-    .${classPrefix}-album-item .album-remove-btn:hover {
-      opacity: 1;
-    }
-    
-    /* VISUAL TUNING - Album view specific size adjustments (not duplicates) */
-    /* Delete buttons inside the cards: red/black buttons 26px (smaller than
-       the default 28px) for tighter spacing in album cards */
-    .delete-inside .${classPrefix}-album-item .delete-btn-cross.red-style,
-    .delete-inside .${classPrefix}-album-item .album-remove-btn.red-style {
-      width: 26px !important;
-      height: 26px !important;
-    }
-
-    .delete-inside .${classPrefix}-album-item .delete-btn-cross.black-style,
-    .delete-inside .${classPrefix}-album-item .album-remove-btn.black-style {
-      width: 26px !important;
-      height: 26px !important;
     }
     
     .album-nav-btn {
@@ -287,9 +189,6 @@ export function albumStyles(classPrefix = "album") {
  * @param {string} classPrefix - CSS class prefix ("palettes" or "pixelarts")
  * @returns {string} HTML string for the album view
  *
- * Button Visibility Logic:
- * - If setting is "none", no delete button is rendered
- * - Album mode only shows buttons on the active (centered) card
  */
 export function renderAlbumView(
   items,
@@ -297,18 +196,12 @@ export function renderAlbumView(
   config = {},
   classPrefix = "album",
 ) {
-  // Determine button style using centralized config
-  const btnCfg = getDeleteButtonConfig(config);
-  const showRemove = btnCfg.allowDelete;
-
-  // Build button CSS classes
-  const deleteBtnClass = `${btnCfg.classes} ${btnCfg.posClass} ${btnCfg.sideClass}`;
   const navClass = `album-nav-btn nav-btn-${normalizeButtonShape(
     config.album_nav_shape || "circle",
   )}`;
 
   return `
-    <div class="${classPrefix}-album-wrapper${btnCfg.inside ? " delete-inside" : ""}" style="${albumStyleVars(config)}">
+    <div class="${classPrefix}-album-wrapper" style="${albumStyleVars(config)}">
       <button class="${navClass} album-nav-prev" id="${classPrefix}-album-nav-prev" title="Previous">‹</button>
       <button class="${navClass} album-nav-next" id="${classPrefix}-album-nav-next" title="Next">›</button>
       <div class="${classPrefix}-album-container" id="${classPrefix}-album-container">
@@ -317,11 +210,6 @@ export function renderAlbumView(
             const itemContent = renderItemContent(item, idx, config);
             return `
             <div class="${classPrefix}-album-item" data-idx="${idx}">
-              ${
-                showRemove
-                  ? `<button class="${deleteBtnClass} album-remove-btn" data-idx="${idx}" title="Remove">×</button>`
-                  : ""
-              }
               <div class="album-card">
                 ${itemContent}
               </div>
@@ -338,7 +226,6 @@ export async function setupAlbumNavigation(
   shadowRoot,
   classPrefix,
   onItemClick,
-  onItemRemove,
   context,
   config = {},
 ) {
@@ -438,7 +325,7 @@ export async function setupAlbumNavigation(
       "touchstart",
       (e) => {
         // Ignore if touching a button or delete control
-        if (e.target.closest("button, .album-remove-btn")) return;
+        if (e.target.closest("button, .yc-item-action")) return;
         const touch = e.touches[0];
         swipeStartX = touch.clientX;
         swipeStartY = touch.clientY;
@@ -487,53 +374,12 @@ export async function setupAlbumNavigation(
   // Item clicks
   items.forEach((item, idx) => {
     item.addEventListener("click", (e) => {
-      if (e.target.closest(".album-remove-btn")) return;
-
       if (idx === currentIndex) {
         onItemClick(idx);
       } else {
         currentIndex = idx;
         updateCoverflow();
       }
-    });
-  });
-
-  // Delete buttons
-  container.querySelectorAll(".album-remove-btn").forEach((btn) => {
-    btn.addEventListener("click", async (e) => {
-      e.stopPropagation();
-
-      const dataIdx = parseInt(btn.dataset.idx, 10);
-      if (isNaN(dataIdx)) return;
-
-      const item = btn.closest(`.${classPrefix}-album-item`);
-      if (!item) return;
-
-      // Animate item removal (fade out + scale down)
-      item.style.transition = "opacity 0.3s, transform 0.3s";
-      item.style.opacity = "0";
-      item.style.transform += " scale(0.5)";
-      await new Promise((resolve) => setTimeout(resolve, 300));
-
-      // Adjust current index if needed
-      if (dataIdx < currentIndex) {
-        currentIndex--;
-      } else if (dataIdx === currentIndex && currentIndex > 0) {
-        currentIndex--;
-      }
-
-      // Remove from DOM
-      item.remove();
-      const itemIndex = items.findIndex((i) => i === item);
-      if (itemIndex !== -1) items.splice(itemIndex, 1);
-
-      // Update coverflow position
-      currentIndex = Math.max(0, Math.min(currentIndex, items.length - 1));
-      context._currentAlbumIndex = currentIndex;
-      updateCoverflow();
-
-      // Call backend to delete (will update sensor → trigger parent re-render → album re-setup)
-      onItemRemove(dataIdx);
     });
   });
 

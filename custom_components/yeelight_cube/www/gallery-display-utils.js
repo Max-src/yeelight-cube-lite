@@ -8,8 +8,11 @@ import {
 } from "./item-browser-utils.js";
 
 /**
- * Shared utility for rendering gallery/preview display modes
- * Used by draw card (pixel arts), gradient card (gradient previews), and color list card
+ * The preview layouts of the shared gallery (collection-gallery.js): list
+ * (renderGalleryMode), strip, wheel, plus the item previews (live matrix or
+ * a card's own markup), the Original browser and the favourite markers.
+ * Every gallery card renders through them: Clock, Native Effects, Gradient,
+ * Palettes, Draw.
  */
 
 /**
@@ -256,6 +259,21 @@ export function renderMatrixPreview(colorData, options = {}) {
 }
 
 /**
+ * An item's preview in every gallery layout: the card's own markup when it
+ * has one (item.previewHtml: a palette's swatches; trusted, escaped by the
+ * card) at the layout's preview width, else the live matrix of
+ * item.colorData. The markup sits in an inline-size container, so cards
+ * size it with cqw units and it scales with the gallery's Size like a matrix.
+ */
+export function renderItemPreview(item, options = {}) {
+  if (item?.previewHtml == null) return renderMatrixPreview(item?.colorData, options);
+  const width = options.forceAspectRatio
+    ? "100%"
+    : `${options.previewSize ?? 200}px`;
+  return `<div class="gallery-item-preview" style="container-type:inline-size;width:${width};max-width:100%;">${item.previewHtml}</div>`;
+}
+
+/**
  * Render items in gallery mode (responsive grid)
  * @param {Array} items - Array of item objects with { title, colorData, metadata, onClick }
  * @param {Object} options - Display options
@@ -333,7 +351,7 @@ export function renderGalleryMode(items, options = {}) {
                  : ""
              }
           <div style="display: flex; justify-content: center;">
-            ${renderMatrixPreview(item.colorData, {
+            ${renderItemPreview(item, {
               previewSize,
               bgColor,
               ...matrixOptions,
@@ -359,129 +377,14 @@ export function renderGalleryMode(items, options = {}) {
 }
 
 /**
- * Render items in grid mode (fixed columns, uniform sizing)
- * @param {Array} items - Array of item objects
- * @param {Object} options - Display options
- * @returns {string} HTML string
- */
-export function renderGridMode(items, options = {}) {
-  items = sanitizeItems(items);
-  const {
-    columns = 3,
-    previewSize = 200,
-    showCards = true,
-    showTitles = true,
-    onClickEnabled = true,
-    forceAspectRatio = false,
-    currentMode = null,
-    highlightActive = false,
-    bgColor = "#000000",
-    ...matrixOptions
-  } = options;
-
-  const cardClass = showCards ? "gallery-item-card" : "gallery-item-plain";
-  const cursorStyle = onClickEnabled ? "cursor: pointer;" : "";
-  const itemBg =
-    bgColor ||
-    (showCards ? "var(--card-background-color, #fff)" : "transparent");
-  const titleColor =
-    bgColor === "#000000"
-      ? "color: #fff;"
-      : "color: var(--primary-text-color);";
-  const isBgTransparent = bgColor === "transparent";
-
-  return `
-    <div class="gallery-display-grid" style="
-      display: grid;
-      grid-template-columns: repeat(${columns}, 1fr);
-      gap: 10px;
-      max-width: 100%;
-      box-sizing: border-box;
-      padding: 4px;
-    ">
-      ${items
-        .map((item, idx) => {
-          const isActive =
-            highlightActive && currentMode && item.dataMode === currentMode;
-          return `
-        <div class="gallery-item ${cardClass}" 
-             data-idx="${idx}"
-             ${item.dataMode ? `data-mode="${item.dataMode}"` : ""}
-             ${isActive ? 'data-active-mode="true"' : ""}
-             ${isBgTransparent ? 'data-bg-transparent="true"' : ""}
-             ${item.title ? `title="${item.title}"` : ""}
-             style="
-               ${cursorStyle}
-               padding: ${showCards ? "10px" : "6px"};
-               border-radius: 8px;
-               background: ${itemBg};
-               border: ${
-                 showCards ? "1px solid var(--divider-color, #e0e0e0)" : "none"
-               };
-               transition: all 0.2s ease;
-               max-width: 100%;
-               box-sizing: border-box;
-               overflow: hidden;
-             ">${
-               showTitles && item.title
-                 ? `<div class="gallery-item-title" style="
-                 font-size: ${getTitleFontSize(previewSize)}px;
-                 text-align: center;
-                 margin-bottom: 4px;
-                 white-space: nowrap;
-                 overflow: hidden;
-                 text-overflow: ellipsis;
-                 font-weight: 500;
-                 ${titleColor}
-               ">${item.title}</div>`
-                 : ""
-             }
-          <div style="display: flex; justify-content: center;">
-            ${renderMatrixPreview(item.colorData, {
-              previewSize,
-              bgColor,
-              ...matrixOptions,
-              forceAspectRatio,
-            })}
-          </div>
-          ${
-            item.metadata
-              ? `<div class="gallery-item-metadata" style="
-                 font-size: ${getMetadataFontSize(previewSize)}px;
-                 text-align: center;
-                 margin-top: 3px;
-                 color: var(--secondary-text-color, #666);
-               ">${item.metadata}</div>`
-              : ""
-          }
-          ${renderItemIndicators(item.indicators)}
-        </div>
-      `;
-        })
-        .join("")}
-    </div>
-  `;
-}
-
-/**
- * Render items in compact mode (horizontal inline list)
- * @param {Array} items - Array of item objects
- * @param {Object} options - Display options
- * @returns {string} HTML string
- */
-export function renderCompactMode(items, options = {}) {
-  return renderCompactFlavor(items, options, /*strip=*/ false);
-}
-
-/**
  * Render items in strip mode: one horizontally SCROLLABLE row of mini
- * previews (never wraps). Same item markup as compact mode — only the
- * container behaviour differs.
+ * previews (never wraps).
  */
 export function renderStripMode(items, options = {}) {
   return renderCompactFlavor(items, options, /*strip=*/ true);
 }
 
+// The strip's items (gallery-compact-item; `strip` false: a wrapping row).
 function renderCompactFlavor(items, options = {}, strip = false) {
   items = sanitizeItems(items);
   const {
@@ -556,7 +459,7 @@ function renderCompactFlavor(items, options = {}, strip = false) {
                transition: all 0.2s ease;
                max-width: 100%;
                box-sizing: border-box;
-             ">${renderMatrixPreview(item.colorData, {
+             ">${renderItemPreview(item, {
                previewSize,
                bgColor,
                ...matrixOptions,
@@ -579,75 +482,6 @@ function renderCompactFlavor(items, options = {}, strip = false) {
         </div>
       `;
         })
-        .join("")}
-    </div>
-  `;
-}
-
-/**
- * Render items in inline mode (simple 2-column grid, original gradient card style)
- * @param {Array} items - Array of item objects
- * @param {Object} options - Display options
- * @returns {string} HTML string
- */
-export function renderInlineMode(items, options = {}) {
-  items = sanitizeItems(items);
-  const {
-    columns = 2,
-    previewSize = 200,
-    showTitles = true,
-    onClickEnabled = true,
-    ...matrixOptions
-  } = options;
-
-  const cursorStyle = onClickEnabled ? "cursor: pointer;" : "";
-
-  return `
-    <div class="gallery-display-inline" style="
-      display: grid;
-      grid-template-columns: repeat(${columns}, 1fr);
-      gap: 12px;
-      max-width: 100%;
-      box-sizing: border-box;
-    ">
-      ${items
-        .map(
-          (item, idx) => `
-        <div class="gallery-item" 
-             data-idx="${idx}"
-             ${item.dataMode ? `data-mode="${item.dataMode}"` : ""}
-             ${item.title ? `title="${item.title}"` : ""}
-             style="
-               ${cursorStyle}
-               padding: 8px;
-               border-radius: 4px;
-               background: rgba(255,255,255,0.05);
-               transition: all 0.2s;
-               max-width: 100%;
-               box-sizing: border-box;
-               overflow: hidden;
-             ">${
-               showTitles && item.title
-                 ? `<div class="gallery-item-title" style="
-                 font-size: ${getTitleFontSize(previewSize)}px;
-                 text-align: center;
-                 margin-bottom: 4px;
-                 white-space: nowrap;
-                 overflow: hidden;
-                 text-overflow: ellipsis;
-               ">${item.title}</div>`
-                 : ""
-             }
-          <div style="display: flex; justify-content: center;">
-            ${renderMatrixPreview(item.colorData, {
-              ...matrixOptions,
-              forceAspectRatio: true,
-            })}
-          </div>
-          ${renderItemIndicators(item.indicators)}
-        </div>
-      `,
-        )
         .join("")}
     </div>
   `;
@@ -857,7 +691,7 @@ function renderWheelItems(
           align-items: center; 
           ${config.isCompact ? "width: 100%; height: 100%;" : "flex: 1;"}
         ">
-          ${renderMatrixPreview(item.colorData, {
+          ${renderItemPreview(item, {
             previewSize: config.previewSize,
             bgColor,
             ...matrixOptions,
@@ -1052,32 +886,14 @@ export function markFavouriteModes(
 }
 
 /**
- * Main render function - dispatches to appropriate mode renderer
- * @param {Array} items - Array of item objects
- * @param {string} displayMode - "list", "gallery" (legacy alias for list), "grid", "compact", "inline" (legacy alias for grid), or "wheel"
- * @param {Object} options - Display options
+ * The markup of `items` in a preview layout: "list" (also the 2-column
+ * grid, styled by the shell), "strip" or "wheel" (selectorDisplayMode).
  * @returns {string} HTML string
  */
-export function renderGalleryDisplay(
-  items,
-  displayMode = "list",
-  options = {},
-) {
-  switch (displayMode) {
-    case "list":
-    case "gallery": // Legacy alias used by draw-card / palette-card
-    case "grid": // Removed mode – falls back to list
-    case "inline": // Legacy alias for "grid"
-      return renderGalleryMode(items, options);
-    case "compact":
-      return renderCompactMode(items, options);
-    case "strip":
-      return renderStripMode(items, options);
-    case "wheel":
-      return renderWheelMode(items, options);
-    default:
-      return renderGalleryMode(items, options);
-  }
+export function renderGalleryDisplay(items, displayMode = "list", options = {}) {
+  if (displayMode === "strip") return renderStripMode(items, options);
+  if (displayMode === "wheel") return renderWheelMode(items, options);
+  return renderGalleryMode(items, options);
 }
 
 /**
@@ -1154,10 +970,6 @@ export const galleryDisplayStyles = `
   }
   .gallery-display-strip::-webkit-scrollbar-track {
     background: transparent;
-  }
-
-  .gallery-display-inline .gallery-item:hover {
-    background: rgba(255,255,255,0.1);
   }
 
   .gallery-matrix-preview {

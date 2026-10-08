@@ -59,28 +59,4 @@ export const CLOCK_CARD_CSS = `
 
       ${colorModeSelectorStyles}
 
-      /* ── Carousel: match the gradient card exactly ──────────────────
-         Transparent wrapper (each item paints its own background), keep the
-         subtle nav-button hover (not a solid blue fill), and never let a
-         preview grow wider than the card. */
-      .gc-preview-shell .carousel-content-card {
-        background: transparent !important;
-        box-shadow: none !important;
-        padding: 0 !important;
-      }
-      .gc-preview-shell .carousel-nav-btn:hover:not(:disabled) {
-        background: color-mix(
-          in srgb,
-          var(--primary-color, #1976d2) 30%,
-          var(--card-background-color, #fff)
-        );
-      }
-      .gc-preview-shell .gallery-matrix-preview { max-width: 100% !important; }
-
-      /* Active-style highlight: clearly visible on any background color. */
-      .gc-preview-shell .gallery-item[data-active-mode="true"] {
-        outline: 2px solid var(--primary-color, #03a9f4) !important;
-        outline-offset: -2px;
-        box-shadow: 0 0 8px rgba(3, 169, 244, 0.5) !important;
-      }
     `;

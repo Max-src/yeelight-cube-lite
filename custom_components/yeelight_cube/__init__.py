@@ -198,7 +198,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     #
     # IMPORTANT — caching:
     # The card files import their dependencies with un-versioned relative URLs
-    # (e.g. `import { x } from "./gallery-mode-utils.js"`).  aiohttp's plain
+    # (e.g. `import { x } from "./gallery-display-utils.js"`).  aiohttp's plain
     # static serving sends no Cache-Control, so browsers apply *heuristic*
     # freshness (≈10% of the file's age) and keep serving a stale dependency
     # for minutes after a deploy.  A freshly-deployed card that imports a NEW

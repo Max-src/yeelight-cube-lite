@@ -8,6 +8,7 @@ from homeassistant.components.sensor import (  # type: ignore
     SensorStateClass,
 )
 from homeassistant.const import UnitOfEnergy, UnitOfPower  # type: ignore
+from homeassistant.core import callback  # type: ignore
 from homeassistant.helpers.event import async_track_time_interval  # type: ignore
 from homeassistant.helpers.entity import Entity # type: ignore
 from homeassistant.config_entries import ConfigEntry # type: ignore
@@ -377,12 +378,15 @@ class YeelightCubeEnergySensor(CubeDeviceEntity, RestoreSensor):
             self._light_entity._energy_sensor = None
         await super().async_will_remove_from_hass()
 
+    @callback
     def power_changed(self, power) -> None:
         """The estimated power changed: count the energy at the old one."""
         self._meter.update(time.monotonic(), power)
         if self.hass is not None:
             self.async_write_ha_state()
 
+    # Without @callback, HA runs a plain timer function in a worker thread.
+    @callback
     def _tick(self, _now=None) -> None:
         self.power_changed(self._light_entity.estimated_power)
 

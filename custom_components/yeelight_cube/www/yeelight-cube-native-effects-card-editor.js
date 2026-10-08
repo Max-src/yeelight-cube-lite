@@ -293,6 +293,7 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
                     change,
                     {
                       allowOriginal: true,
+                      allowChips: true,
                       noun: "Effect",
                       memory: (this._galleryMemory ||= {}),
                       renderAppearance: () => this._renderAppearance("gallery"),

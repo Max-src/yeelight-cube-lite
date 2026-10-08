@@ -869,6 +869,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       .model=${this._controls}
       .disabled=${this._busy}
       searchLabel="Search native effects"
+      actionLabel="Play on the lamp"
       .onSelect=${(name) => this._controls.choose(name)}
       .onQuery=${(query) => {
         this._searchQuery = query;

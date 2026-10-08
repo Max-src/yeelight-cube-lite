@@ -1472,10 +1472,7 @@ const server = http.createServer(async (request, response) => {
         display_mode: "list",
         allow_title_edit: true,
       });
-      const savedPrompt = window.prompt;
-      window.prompt = () => "Renamed A";
-      const rename = palette._renamePalette(0, "A", null);
-      window.prompt = savedPrompt;
+      const rename = palette._renamePalette(0, "Renamed A");
       await Promise.resolve();
       const original = state.states["sensor.palette"].attributes.palettes_v2;
       state.states["sensor.palette"].attributes.palettes_v2 =
@@ -3038,21 +3035,39 @@ const server = http.createServer(async (request, response) => {
             `${profile}: proportional ${preset} geometry`,
           );
           if (profile === "draw") {
-            for (const mode of ["gallery", "list", "carousel", "album"]) {
-              host.content = card._renderPixelArtByMode(
-                [{ name: "Sample", pixels }],
-                mode,
-                false,
-                appearance.background,
-                false,
-              );
+            // The pixel-art gallery (the shared gallery) in every layout,
+            // in the preset's appearance.
+            for (const style of [
+              "preview-grid",
+              "preview-list",
+              "preview-strip",
+              "preview-carousel",
+              "preview-wheel",
+              "preview-album",
+            ]) {
+              host.content = html`<yc-collection-gallery
+                .config=${{ ...card.config, style_selector_style: style }}
+                .items=${card._pixelArtGalleryItems([{ name: "Sample", pixels }])}
+              ></yc-collection-gallery>`;
               host.requestUpdate();
               await host.updateComplete;
+              await root.querySelector("yc-collection-gallery")?.updateComplete;
               await frame();
+              const matrix = root.querySelector(
+                "yc-collection-gallery .gallery-matrix-preview",
+              );
               check(
-                root.querySelector(".gallery-matrix-preview")?.children
-                  .length === 100,
-                `Draw ${mode}: shared matrix`,
+                matrix?.children.length === 100,
+                `Draw ${style}: shared matrix`,
+              );
+              check(
+                getComputedStyle(matrix.children[1]).borderRadius ===
+                  (appearance.pixels === "circle"
+                    ? "50%"
+                    : appearance.pixels === "rounded"
+                      ? "20%"
+                      : "0px"),
+                `Draw ${style}: ${preset} pixels`,
               );
             }
           }
@@ -4282,7 +4297,8 @@ const server = http.createServer(async (request, response) => {
     );
     const modeCleanup = await page.evaluate(async () => {
       const results = {};
-      // Clock editor: Text Style only offers Filled + Dropdown (no Chips).
+      // Clock editor: Text Style offers Filled, Dropdown and Chips (with a
+      // micro-matrix swatch of each style).
       const clockEditor = document.createElement(
         "yeelight-cube-clock-card-editor",
       );
@@ -4294,7 +4310,7 @@ const server = http.createServer(async (request, response) => {
       clockEditor.hass = window.hass;
       document.body.append(clockEditor);
       await clockEditor.updateComplete;
-      results.clockNoChips = !clockEditor.shadowRoot.querySelector(
+      results.clockChips = !!clockEditor.shadowRoot.querySelector(
         '[data-value="chips"]',
       );
       results.clockHasOriginal = !!clockEditor.shadowRoot.querySelector(
@@ -4325,13 +4341,13 @@ const server = http.createServer(async (request, response) => {
       return results;
     });
     assert.deepEqual(modeCleanup, {
-      clockNoChips: true,
+      clockChips: true,
       clockHasOriginal: true,
       nativeDisplay: true,
     });
     assert.deepEqual(errors, []);
     console.log(
-      "PASS mode cleanup: Text = Filled/Dropdown, Original = Grid/List (shared, no Chips/Buttons/Dropdown)",
+      "PASS mode cleanup: Text = Filled/Dropdown/Chips, Original = Grid/List (shared, no Buttons/Dropdown)",
     );
 
     const originalGallery = await page.evaluate(async () => {

@@ -13,7 +13,15 @@ import {
 } from "./button-group-utils.js";
 import { createToggleRow, createSliderRow } from "./form-row-utils.js";
 import { renderOrderableList } from "./orderable-list-utils.js";
-import { withItemLabel } from "./card-config.js";
+import { CollectionState } from "./collection-state.js";
+import { notifyUnreported } from "./notify-utils.js";
+import {
+  USER_COLLECTIONS,
+  collectionItems,
+  collectionThumbnail,
+  singleMove,
+} from "./user-collections.js";
+import { withItemLabel, roundedCardsRadius } from "./card-config.js";
 import { normalizeButtonShape } from "./carousel-utils.js";
 
 /**
@@ -154,19 +162,31 @@ export function renderMatrixAppearanceSettings(
  *    shown only when `showButtonShape` — i.e. the active style has buttons)
  * One definition so both editors stay identical in naming, order and keys.
  */
+// Item Shape (and Button Shape for layouts with arrows) of the shared
+// gallery; "Custom" sets the item corner radius in px (item_radius).
 export function renderSelectorShapeRows(cfg, onChange, options = {}) {
   const { showButtonShape = false } = options;
+  const shape = cfg.selector_shape || "rounded";
   return html`
     <div class="form-row">
       <label>Item Shape</label>
       ${createButtonGroup(
-        SHAPE_OPTIONS,
-        cfg.selector_shape || "rounded",
+        [...SHAPE_OPTIONS, { value: "custom", label: "Custom" }],
+        shape,
         createButtonGroupChangeHandler("selector_shape", (value) =>
           onChange("selector_shape", value),
         ),
       )}
     </div>
+    ${shape === "custom"
+      ? createSliderRow(
+          "Item Radius",
+          cfg.item_radius ?? 12,
+          { min: 0, max: 28, step: 1 },
+          (event) => onChange("item_radius", Number(event.target.value)),
+          "px",
+        )
+      : ""}
     ${showButtonShape
       ? html`
           <div class="form-row">
@@ -348,6 +368,67 @@ export const YeelightEditorMixin = (Base) =>
             resetLabel: `Show all ${noun}s`,
           })}`,
       );
+    }
+
+    /**
+     * Arrange: the order of one of the user's collections (`kind`:
+     * "palettes", "pixel_arts"; user-collections.js), the same block in
+     * every editor of a card showing it. The order is the backend's, shared
+     * by every card and lamp: dragging a row or ▲ / ▼ moves one item
+     * (move_palette / move_pixel_art, with the name expected at its index,
+     * so a list another client changed is refused, never scrambled). The new
+     * order shows at once and holds until the sensor confirms it.
+     * Nothing is added or removed here: palettes and pixel arts are created,
+     * renamed and deleted on the cards.
+     */
+    _arrangeSettings(kind) {
+      const { noun } = USER_COLLECTIONS[kind];
+      const state = ((this._arrangeStates ||= {})[kind] ||=
+        new CollectionState());
+      const stored = collectionItems(this._hass, this._config, kind);
+      const items = state.observe(stored.items, stored.count);
+      return renderModeSettingsSection(
+        `Arrange ${noun}s`,
+        html`<div class="hint">
+            The order of your ${noun}s on every card and lamp. Drag a ${noun}
+            or use ▲ ▼: each move is saved at once.
+          </div>
+          ${items.length
+            ? renderOrderableList({
+                items: items.map((_, index) => String(index)),
+                available: [],
+                addable: false,
+                removable: false,
+                fullHeight: true,
+                labelFor: (key) => items[key]?.name || `${noun} ${+key + 1}`,
+                thumbFor: (key) => collectionThumbnail(kind, items[key]),
+                onUpdate: (keys) =>
+                  this._moveCollectionItem(kind, keys.map(Number), items),
+              })
+            : html`<div class="hint">No ${noun}s yet.</div>`}`,
+      );
+    }
+
+    // One move of the Arrange block: shown at once, then saved; rolled back
+    // (and reported) when refused.
+    async _moveCollectionItem(kind, newOrder, items) {
+      const move = singleMove(newOrder, items);
+      if (!move) return false;
+      const { noun, moveService } = USER_COLLECTIONS[kind];
+      const state = this._arrangeStates[kind];
+      const operation = state.record(newOrder.map((index) => items[index]));
+      this.requestUpdate();
+      try {
+        if (!(await state.execute(this._hass, moveService, move)))
+          throw new Error(`The ${noun} list changed. Please retry.`);
+        return true;
+      } catch (error) {
+        if (state.rollback(operation)) {
+          this.requestUpdate();
+          notifyUnreported(this, error);
+        }
+        return false;
+      }
     }
 
     /**
@@ -662,10 +743,7 @@ export function renderModeInfoMessage(message) {
  * @returns {number} Slider value in pixels (0-28)
  */
 export function roundedCardsToSliderValue(v) {
-  if (v === undefined || v === true || v === "round") return 16;
-  if (v === false || v === "square") return 0;
-  if (v === "rounded") return 4;
-  return typeof v === "number" ? v : parseInt(v, 10) || 16;
+  return roundedCardsRadius(v);
 }
 
 /**

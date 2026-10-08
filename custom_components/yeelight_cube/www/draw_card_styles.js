@@ -1,7 +1,6 @@
 // Removed duplicate string export. Swatch shape styles merged below.
 // CSS styles for Yeelight Cube Lite Draw Card
 import { css, unsafeCSS } from "./lib/lit-all.js";
-import { compactModeStyles } from "./compact-mode-styles.js";
 import { cardLayoutStyles, cardSpacing } from "./card-layout-utils.js";
 import { compactLayoutStyles } from "./compact-layout-utils.js";
 import {
@@ -10,6 +9,7 @@ import {
 } from "./delete-button-styles.js";
 import { exportImportButtonStyles } from "./action-button-utils.js";
 import { carouselStyles } from "./carousel-utils.js";
+import { collectionGalleryStyles } from "./collection-gallery.js";
 
 export const drawCardStyles = css`
   ${unsafeCSS(cardLayoutStyles)}
@@ -21,8 +21,6 @@ export const drawCardStyles = css`
     overflow: visible !important;
   }
 
-  /* Shared Compact Mode Styles */
-  ${unsafeCSS(compactModeStyles)}
 
   /* Shared Compact Layout Styles */
   ${unsafeCSS(compactLayoutStyles)}
@@ -38,6 +36,9 @@ export const drawCardStyles = css`
 
   /* Shared Carousel Styles */
   ${unsafeCSS(carouselStyles)}
+
+  /* The pixel-art gallery: the shared gallery (collection-gallery.js). */
+  ${unsafeCSS(collectionGalleryStyles)}
 
   .palette-fold {
     position: relative;
@@ -547,23 +548,6 @@ export const drawCardStyles = css`
     color: var(--text-primary-color, #fff) !important;
   }
 
-  /* Pagination button sizing adjustments */
-  .pagination-container .draw-btn {
-    min-width: 40px;
-    padding: 8px 12px;
-    font-size: 0.9em;
-  }
-
-  .pagination-container .draw-btn.save {
-    min-width: 40px;
-    padding: 8px;
-  }
-
-  .pagination-container .draw-btn ha-icon {
-    width: 18px;
-    height: 18px;
-  }
-
   /* Button shape styles for paint buttons (legacy) */
   .paint-btn-circle {
     border-radius: 50% !important;
@@ -694,15 +678,6 @@ export const drawCardStyles = css`
     padding: 4px 6px;
     min-width: 44px;
     text-align: center;
-  }
-
-  /* Pagination container styling */
-  .pagination-container {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    flex-wrap: wrap;
   }
 
   .actions {
@@ -1518,22 +1493,6 @@ export const drawCardStyles = css`
     opacity: 1 !important;
     overflow: visible !important;
   }
-  /* Pixel Art Gallery Styles */
-  .pixelart-gallery {
-    width: 100%;
-  }
-
-  /* Item card border for dark mode visibility (pixel arts) */
-  .item-card-border .gallery-item {
-    border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.15));
-  }
-  .item-card-border .carousel-content-card {
-    border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.15));
-  }
-  .item-card-border .pixelarts-album-item {
-    border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.15));
-  }
-
   /* Carousel wrapper: must fill full width */
   .palette-colors-carousel-wrapper {
     width: 100%;
@@ -1563,301 +1522,11 @@ export const drawCardStyles = css`
     box-shadow: inset 0 0 0 1px var(--divider-color, rgba(128, 128, 128, 0.35));
   }
 
-  .pixelart-gallery-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 12px;
-    font-weight: 500;
-    font-size: 0.95em;
-    color: var(--primary-text-color, #212121);
-  }
-
-  .pixelart-count {
-    background: var(--primary-color, #03a9f4);
-    color: var(--text-primary-color, #fff);
-    padding: 2px 8px;
-    border-radius: 12px;
-    font-size: 0.8em;
-    font-weight: 500;
-  }
-
   .pixelart-gallery-message {
     text-align: center;
     color: var(--secondary-text-color, #727272);
     font-style: italic;
     padding: 24px 12px;
-  }
-
-  /* Gallery Container Styles */
-  .pixelart-gallery-plain {
-    background: transparent;
-    border: none;
-    padding: 0;
-    box-shadow: none;
-  }
-
-  /* Individual item plain styling */
-  .pixelart-item.pixelart-item-plain,
-  .pixelart-gallery-plain .pixelart-item.pixelart-item-plain {
-    background: transparent !important;
-    border: none !important;
-    padding: 0 !important;
-  }
-
-  .pixelart-item.pixelart-item-plain:hover,
-  .pixelart-gallery-plain .pixelart-item.pixelart-item-plain:hover {
-    transform: none !important;
-    box-shadow: none !important;
-  }
-
-  .pixelart-item-list.pixelart-item-plain,
-  .pixelart-gallery-plain .pixelart-item-list.pixelart-item-plain {
-    width: calc(var(--pixelart-size-percent, 100%) * 0.5) !important;
-  }
-
-  /* Pixel Art Preview Styles - Match Matrix Exactly */
-  .pixelart-preview {
-    cursor: pointer;
-    border-radius: 6px;
-    overflow: hidden;
-    background: var(--pixelart-bg-color, transparent);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    padding: 2px;
-    width: 100%;
-    height: auto;
-  }
-
-  .pixelart-matrix {
-    display: grid;
-    grid-template-columns: repeat(20, 1fr);
-    gap: var(--pixelart-gap, 2px);
-    background-color: var(--pixelart-bg-color, transparent);
-    border-radius: 4px;
-    width: 100%;
-    min-height: 25px;
-  }
-
-  .pixelart-pixel {
-    width: 100%;
-    aspect-ratio: 1 / 1;
-    background: #000000;
-    border: none;
-    transition: background 0.1s;
-    box-sizing: border-box;
-    display: block;
-  }
-
-  .pixelart-pixel.round,
-  .pixelart-pixel.circle {
-    border-radius: 50%;
-  }
-
-  .pixelart-pixel.rounded {
-    border-radius: 20%;
-  }
-
-  .pixelart-pixel.square {
-    border-radius: 0;
-  }
-
-  .pixelart-pixel.active {
-    /* No border for active, just keep the color */
-  }
-
-  /* Pixel Art Preview Sizes for Different Modes */
-  .pixelart-item-grid .pixelart-preview {
-    width: 100%;
-    transition: all 0.3s ease;
-    background: var(--pixelart-bg-color, transparent);
-  }
-
-  /* Grid item names and buttons - simple responsive scaling */
-  .pixelart-item-grid .pixelart-name-grid {
-    text-align: center;
-    font-size: 0.85em;
-    line-height: 1.2;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .pixelart-item-grid .pixelart-buttons-grid {
-    width: 100%;
-    display: flex;
-    justify-content: center;
-    gap: 6px;
-    margin-top: 4px;
-  }
-
-  .pixelart-item-grid .pixelart-buttons-grid .pixelart-btn {
-    font-size: 0.75em;
-    padding: 4px 8px;
-  }
-
-  .pixelart-item-list .pixelart-preview {
-    width: calc(var(--pixelart-size-percent, 100%) * 1);
-    height: auto;
-    flex-grow: 1;
-  }
-
-  /* List mode name and button styling - Simple */
-  .pixelart-item-list .pixelart-name-list {
-    text-align: center;
-    font-size: 0.9em;
-  }
-
-  .pixelart-item-list .pixelart-buttons-list {
-    display: flex;
-    gap: 6px;
-    flex-shrink: 0;
-  }
-
-  .pixelart-item-list .pixelart-buttons-list .pixelart-btn {
-    font-size: 0.75em;
-    padding: 4px 8px;
-    white-space: nowrap;
-  }
-
-  .pixel-btn-cross-container {
-    position: absolute;
-    top: 0;
-    right: 0;
-    z-index: 10;
-    pointer-events: none;
-  }
-
-  .pixel-btn-cross-container button {
-    pointer-events: auto;
-  }
-
-  .pixelart-item-carousel .pixelart-preview {
-    width: var(--pixelart-size-percent, 100%);
-    max-width: none;
-  }
-
-  /* Gallery Grid Mode - Simple Container-Based Responsive Grid */
-  .pixelart-gallery-grid {
-    display: grid;
-    gap: 12px;
-    align-items: start;
-    transition:
-      grid-template-columns 0.3s ease,
-      gap 0.3s ease;
-
-    /* Container cards sized directly by preview size value */
-    grid-template-columns: repeat(
-      auto-fit,
-      minmax(calc(var(--preview-size-value, 100) * 2px + 60px), 1fr)
-    );
-  }
-
-  /* Grid item containers - simple and clean */
-  .pixelart-item-grid {
-    position: relative;
-    transition: all 0.3s ease;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    width: 100%;
-    box-sizing: border-box;
-    padding: 3px;
-  }
-
-  /* Preview fills its container naturally */
-  .pixelart-item-grid .pixelart-preview {
-    width: 100%;
-    transition: all 0.3s ease;
-  }
-
-  /* Gallery List Mode */
-  .pixelart-gallery-list {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  /* Gallery Compact Mode - List with Dividers */
-  .pixelart-gallery-compact {
-    display: grid;
-    grid-template-columns: repeat(
-      auto-fill,
-      minmax(calc(280px * var(--preview-size-percent, 100%) / 100), 1fr)
-    );
-    gap: 0;
-    margin-bottom: 16px;
-  }
-
-  .pixelart-compact-item {
-    background: transparent;
-    border: 1px solid var(--divider-color, #e1e4e8);
-    padding: calc(12px * var(--preview-size-percent, 100%) / 100)
-      calc(10px * var(--preview-size-percent, 100%) / 100);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    position: relative;
-    cursor: pointer;
-    transition:
-      background 0.15s ease,
-      padding 0.2s ease;
-    box-sizing: border-box;
-  }
-
-  .pixelart-compact-item:hover {
-    background: var(--secondary-background-color, #f6f8fa);
-  }
-
-  .pixelart-compact-item .compact-content {
-    display: flex;
-    gap: calc(12px * var(--preview-size-percent, 100%) / 100);
-    align-items: center;
-    flex: 1;
-    width: 100%;
-  }
-
-  .pixelart-compact-item .compact-preview {
-    flex-shrink: 0;
-  }
-
-  .pixelart-compact-item .compact-info {
-    display: flex;
-    flex-direction: column;
-    gap: calc(6px * var(--preview-size-percent, 100%) / 100);
-    flex: 1;
-    min-width: 0;
-  }
-
-  .pixelart-compact-item .compact-header {
-    display: flex;
-    align-items: baseline;
-    gap: calc(8px * var(--preview-size-percent, 100%) / 100);
-    width: 100%;
-  }
-
-  .pixelart-compact-item .compact-title {
-    font-weight: 500;
-    color: var(--primary-text-color, #24292f);
-    font-size: calc(0.95em * var(--preview-size-percent, 100%) / 100);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    width: fit-content;
-    margin: 0 auto;
-  }
-
-  .pixelart-compact-item .compact-meta {
-    font-size: calc(0.8em * var(--preview-size-percent, 100%) / 100);
-    color: var(--secondary-text-color, #57606a);
-    white-space: nowrap;
-  }
-
-  /* Gallery Carousel Mode */
-  .pixelart-gallery-carousel {
-    display: flex;
-    align-items: center;
   }
 
   .carousel-content {
@@ -1868,180 +1537,8 @@ export const drawCardStyles = css`
     overflow: visible;
   }
 
-  .carousel-slide-container {
-    width: 100%;
-    display: flex;
-    justify-content: center;
-    margin: 0 0 10px;
-  }
-
   /* Carousel dot styles: shared carouselStyles (imported above) is the
      source of truth. No local overrides needed here. */
-
-  /* Pixel Art Item Base Styles */
-  .pixelart-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    border-radius: 8px;
-
-    transition: all 0.2s ease;
-  }
-
-  /*  .pixelart-item:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    transform: translateY(-2px);
-  } */
-
-  /* Grid Mode Items */
-
-  /* List Mode Items - Simple and Clean */
-  .pixelart-item-list {
-    display: flex;
-    flex-direction: column;
-    padding: 8px 12px;
-    align-items: center;
-    justify-content: center;
-    position: relative;
-    transition: all 0.2s ease;
-    width: calc(var(--preview-size-percent, 100%) * 2.5px + 100px);
-    max-width: 100%;
-    margin: 0 auto;
-  }
-
-  .pixelart-item-list .pixelart-preview {
-    flex: 0 0 auto;
-    flex-grow: 2;
-  }
-
-  /* List content wrapper for proper centering */
-  .pixelart-list-content-wrapper {
-    display: flex;
-    flex-direction: row;
-    gap: 12px;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-  }
-
-  /* Carousel Mode Items */
-  .pixelart-item-carousel {
-    border: none;
-    background: transparent;
-    width: 100%;
-    padding: 0 8px;
-    margin: 0 6px;
-  }
-
-  .pixelart-item-carousel:hover {
-    transform: none;
-    box-shadow: none;
-  }
-
-  /* Canvas Styles */
-  .pixelart-canvas {
-    display: block;
-    border-radius: 6px;
-    transition: transform 0.2s ease;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    border: 1px solid var(--divider-color, #e0e0e0);
-  }
-
-  .pixelart-item:hover .pixelart-canvas {
-    transform: scale(1.02);
-  }
-
-  .pixelart-canvas-grid {
-    width: 100%;
-    max-width: 200px;
-    height: auto;
-    margin-bottom: 12px;
-  }
-
-  .pixelart-canvas-list {
-    width: 120px;
-    height: auto;
-    flex-shrink: 0;
-  }
-
-  .pixelart-canvas-carousel {
-    width: 100%;
-    max-width: 300px;
-    height: auto;
-    margin-bottom: 16px;
-  }
-
-  /* Name Styles */
-  .pixelart-name {
-    font-weight: 500;
-    color: var(--primary-text-color, #212121);
-    text-align: center;
-    font-size: 0.9em;
-  }
-
-  .pixelart-name.clickable {
-    cursor: pointer;
-    transition: color 0.2s ease;
-  }
-
-  .pixelart-name.clickable:hover {
-    color: var(--primary-color, #03a9f4);
-    text-decoration: underline;
-  }
-
-  .pixelart-name-list {
-    flex-grow: 1;
-    text-align: left;
-    margin-bottom: 0;
-    font-size: 0.95em;
-  }
-
-  .pixelart-name-carousel {
-    font-size: 1.1em;
-    font-weight: 600;
-  }
-
-  /* Button Styles */
-  .pixelart-buttons {
-    display: flex;
-    justify-content: center;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-
-  .pixelart-buttons-list {
-    flex-shrink: 0;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .pixelart-buttons-carousel {
-    gap: 12px;
-  }
-
-  .pixelart-btn {
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-weight: 500;
-    font-size: 0.8em;
-    padding: 6px 12px;
-    transition: all 0.2s ease;
-    background: var(--primary-color, #03a9f4);
-    color: var(--text-primary-color, #fff);
-  }
-
-  .pixelart-btn:hover {
-    background: var(--primary-color-dark, #0288d1);
-  }
-
-  .pixelart-btn.delete-btn {
-    background: var(--error-color, #f44336);
-  }
-
-  .pixelart-btn.delete-btn:hover {
-    background: var(--error-color-dark, #d32f2f);
-  }
 
   /* ====================================================================
      COMPACT MODE & DELETE BUTTONS - CENTRALIZED
@@ -2054,183 +1551,6 @@ export const drawCardStyles = css`
      Both are imported and included via drawCardStyles.
      DO NOT add duplicate definitions here.
      ==================================================================== */
-
-  /* Title row with cross (for grid, carousel) */
-  .pixelart-title-row {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    margin-bottom: 8px;
-    gap: 8px;
-  }
-
-  /* Carousel delete button — visual chrome only.
-   * Size, flex-centering and the × cross are owned by the shared
-   * .delete-btn-cross base (delete-button-styles.js) so this button stays
-   * pixel-identical to the palette card's carousel delete button in every
-   * position (inside/outside).  Overriding width/height/font-size here caused
-   * the cross to render off-centre when switched to "inside", so those are
-   * intentionally NOT set. */
-  .pixelart-delete-title-row {
-    background: var(--card-background-color, rgba(255, 255, 255, 0.9));
-    flex-shrink: 0;
-  }
-
-  .pixelart-delete-title-row:hover {
-    background: var(--card-background-color, rgba(255, 255, 255, 1));
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-    transform: scale(1.05);
-  }
-
-  /* List mode overlay cross (top-right of preview).
-   * Size, shape and the centered × cross are owned entirely by the shared
-   * .delete-btn-cross base (delete-button-styles.js); this rule only nudges the
-   * corner position.  Do NOT set width/height/font-size here — earlier versions
-   * used calc() that multiplied px by a percentage (invalid CSS), which the
-   * browser dropped, collapsing the button to 0px and throwing the absolutely
-   * positioned cross into the corner. */
-  .pixelart-preview .pixelart-delete-overlay-list {
-    position: absolute !important;
-    top: 6px !important;
-    right: 6px !important;
-    z-index: 10;
-    transition: all 0.2s ease;
-  }
-
-  .pixelart-preview .pixelart-delete-overlay-list:hover {
-    transform: scale(1.1);
-  }
-
-  /* Grid mode overlay cross (top-right of preview when no title).
-   * As above: size/shape/cross come from the shared .delete-btn-cross base so
-   * the × stays perfectly centred in every position and size. */
-  .pixelart-delete-overlay-grid {
-    position: absolute;
-    top: 4px;
-    right: 4px;
-    z-index: 10;
-    background: var(--card-background-color, rgba(255, 255, 255, 0.9));
-    transition: all 0.2s ease;
-  }
-
-  .pixelart-delete-overlay-grid:hover {
-    background: var(--card-background-color, rgba(255, 255, 255, 1));
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-    transform: scale(1.05);
-  }
-
-  /* Ensure items are positioned relative for overlay buttons */
-  .pixelart-item-list,
-  .pixelart-item-grid,
-  .pixelart-item-carousel {
-    position: relative;
-  }
-
-  /* Remove old overlay styles */
-  .pixelart-delete-overlay {
-    position: absolute;
-    top: 4px;
-    right: 4px;
-    z-index: 10;
-    background: var(--card-background-color, rgba(255, 255, 255, 0.9));
-    border-radius: 50%;
-    width: 24px;
-    height: 24px;
-    padding: 0;
-    font-size: 1em;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .pixelart-delete-overlay:hover {
-    background: var(--card-background-color, rgba(255, 255, 255, 1));
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-    transform: scale(1.05);
-  }
-
-  /* Ensure preview container is positioned relative for overlay */
-  .pixelart-preview {
-    position: relative;
-  }
-
-  /* List mode button adjustments */
-  .pixelart-buttons-list .pixelart-btn {
-    font-size: 0.75em;
-    padding: 4px 8px;
-    min-width: 60px;
-  }
-
-  /* Carousel mode button adjustments */
-  .pixelart-buttons-carousel .pixelart-btn {
-    font-size: 0.9em;
-    padding: 8px 16px;
-  }
-
-  .apply-pixelart-btn {
-    background: var(--primary-color, #03a9f4);
-    color: var(--text-primary-color, #fff);
-  }
-
-  .apply-pixelart-btn:hover {
-    background: var(--dark-primary-color, #0288d1);
-    transform: translateY(-1px);
-  }
-
-  .apply-to-matrix-btn {
-    background: var(--accent-color, #ff9800);
-    color: var(--text-primary-color, #fff);
-  }
-
-  .apply-to-matrix-btn:hover {
-    background: color-mix(in srgb, var(--accent-color, #ff9800) 85%, black);
-    transform: translateY(-1px);
-  }
-
-  .delete-pixelart-btn {
-    background: var(--error-color, #f44336);
-    color: var(--text-primary-color, #fff);
-  }
-
-  .delete-pixelart-btn:hover {
-    background: color-mix(in srgb, var(--error-color, #f44336) 85%, black);
-    transform: translateY(-1px);
-  }
-
-  /* ==============================================
-     PAGINATION STYLES
-     ============================================== */
-
-  .pagination-container {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    border-radius: 8px;
-  }
-
-  /* Pages Mode */
-  .pagination-container.pages {
-    gap: 8px;
-  }
-
-  /* Responsive adjustments */
-  @media (max-width: 600px) {
-    .pagination-container.pages {
-      gap: 4px;
-    }
-
-    .pagination-container .draw-btn {
-      padding: 6px 8px;
-      font-size: 0.85em;
-      min-width: 32px;
-    }
-
-    .pagination-container .draw-btn.save {
-      padding: 6px;
-    }
-  }
 
   /* Tool Reordering Styles */
   .toolbar-container {

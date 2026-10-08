@@ -2,23 +2,14 @@ import {
   resolvePreviewAppearance,
   previewLength,
 } from "./preview-appearance.js";
-import { renderMatrixPreview } from "./gallery-display-utils.js";
-import { getActionRowClass } from "./action-button-utils.js";
 import { LitElement, html } from "./lib/lit-all.js";
 
 import { parseConfig } from "./draw_card_state.js";
 import { drawCardStyles } from "./draw_card_styles.js";
 
-import { getExportImportButtonClass } from "./action-button-utils.js";
-import { renderActionButtonContent } from "./action-button-ui.js";
+import { renderExportImportRow } from "./action-button-ui.js";
 
 
-// Host methods the pixel-art gallery markup may call (see bindHostEvents).
-const GALLERY_HANDLERS = new Set([
-  "handleGridItemClick",
-  "handleGridDelete",
-  "handleGridTitleClick",
-]);
 import { savePalette } from "./draw_card_palette.js";
 import { ToolManager, ActionManager } from "./draw_card_tools.js";
 import { MatrixOperations1D } from "./draw_card_matrix_1d.js";
@@ -36,8 +27,6 @@ import {
 } from "./draw_card_events.js";
 import {
   normalizeHex,
-  rgbArrayToHex,
-  createEmptyMatrix,
   extractDiversePaletteWithWeights,
 } from "./draw_utils.js";
 import {
@@ -58,18 +47,22 @@ import {
 import { normalizeCardOptions } from "./card-config.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { PaletteCardsMixin } from "./draw-card-palette-cards.js";
-import { PixelArtGalleryMixin } from "./draw-card-pixel-art-gallery.js";
 import { PixelArtActionsMixin } from "./draw-card-pixel-art-actions.js";
-import { expandPixelArt } from "./pixel-art-utils.js";
+import { pixelArtColorData } from "./pixel-art-utils.js";
+import "./collection-gallery.js";
 
 const MAX_IMAGE_PALETTE_COLORS = 15;
 
+// A pixel art's gallery key: its index in the stored list. Commands also
+// send the name seen at that index (expected_name), so the backend refuses
+// them if another client changed the list meanwhile.
+const artKey = (idx) => `art:${idx}`;
+const artIndex = (key) => Number(String(key).slice("art:".length));
+
 class YeelightCubeDrawCard extends PixelArtActionsMixin(
-  PixelArtGalleryMixin(PaletteCardsMixin(YeelightCardMixin(LitElement))),
+  PaletteCardsMixin(YeelightCardMixin(LitElement)),
 ) {
   static editor = ["yeelight-cube-draw-card-editor", "./yeelight-cube-draw-card-editor.js"];
-  // The pixel-art gallery names its handlers in data-on-* attributes.
-  static hostEvents = (name) => GALLERY_HANDLERS.has(name);
 
   static getStubConfig(hass) {
     const firstEntity = cubeLampEntities(hass)[0] || "";
@@ -80,9 +73,9 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
       pixel_spacing_mode: "normal",
       matrix_bg: "black",
       matrix_box_shadow: true,
-      pixel_art_spacing_mode: "normal",
+      gallery_spacing_mode: "normal",
       preview_show_titles: true,
-      pixel_art_allow_rename: false,
+      allow_rename: false,
       matrix_size: 100,
       button_shape: "circle",
       actions_buttons_style: "gradient",
@@ -92,7 +85,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
       paint_button_shape: "rect",
       swatch_shape: "round",
       expand_btn_mode: "label",
-      pixel_art_preview_size: 82,
+      preview_size: 82,
       tools_order: [
         "colorPicker",
         "eyedropper",
@@ -117,9 +110,13 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
       show_pixelart_import_button: true,
       pixelart_buttons_content_mode: "icon_text",
       palette_card_mode: "tabs",
-      pixel_art_items_per_page: 3,
-      pixel_art_gallery_mode: "carousel",
-      pixel_art_background_color: "black",
+      items_per_page: 3,
+      style_selector_style: "preview-carousel",
+      show_search: false,
+      selector_shape: "custom",
+      item_radius: 16,
+      item_card_border: "auto",
+      gallery_background_color: "black",
       pixelart_buttons_style: "icon",
       expand_btn_style: "pill",
       palette_display_mode: "row",
@@ -128,7 +125,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
       remove_button_style: "black",
       delete_button_inside: true,
       pixelart_content_mode: "icon",
-      pixel_art_pixel_style: "circle",
+      gallery_pixel_style: "circle",
     };
   }
 
@@ -159,12 +156,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
   };
 
   firstUpdated() {
-    // Setup album navigation on first render if in album mode
-    const cfg = this.config || {};
-    if (cfg.pixel_art_gallery_mode === "album") {
-      setTimeout(() => this._setupPixelArtAlbumNavigation(), 0);
-    }
-
     // Drag-to-scroll is now setup in _setupPaletteRowDragScroll(), called from updated()
     this._setupPaletteRowDragScroll();
   }
@@ -280,25 +271,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
   updated(changedProperties) {
     super.updated(changedProperties);
 
-    const cfg = this.config || {};
-
-    // Re-setup album navigation when config changes or sensor updates (in album mode)
-    if (
-      cfg.pixel_art_gallery_mode === "album" &&
-      (changedProperties.has("config") || changedProperties.has("hass"))
-    ) {
-      // Use setTimeout to ensure DOM is fully rendered
-      setTimeout(() => this._setupPixelArtAlbumNavigation(), 0);
-    }
-
-    // Setup drag-and-drop for compact mode pixel arts
-    if (
-      cfg.pixel_art_gallery_mode === "compact" &&
-      (changedProperties.has("config") || changedProperties.has("hass"))
-    ) {
-      setTimeout(() => this._setupPixelArtCompactDragDrop(), 0);
-    }
-
     // Re-setup drag-to-scroll only when config/hass changes (avoids querySelectorAll
     // on every render cycle including rapid hover animation re-renders — issue #8).
     if (changedProperties.has("config") || changedProperties.has("hass")) {
@@ -366,11 +338,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     this.toolManager = new ToolManager(this);
     this.actionManager = new ActionManager(this);
     this.matrixOperations = new MatrixOperations1D(this);
-
-    // Pagination state
-    this._currentPage = 0;
-    this._loadedItems = 0;
-    this._totalPages = 0;
 
     this.selectedColor = "#ff0000";
     this.isDrawing = false;
@@ -830,53 +797,53 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     // Delegated to ToolManager
   }
 
-  /** Matrix HTML for one pixel art, cached per art object and config. */
-  _pixelArtHTML(art) {
-    if (!art || typeof art !== "object")
-      return this._pixelArtMatrix(this._convertPixelArtToDisplayMatrix(art));
-    const cfg = this.config;
-    const cache = (this._pixelArtHTMLCache ||= new WeakMap());
-    const hit = cache.get(art);
-    if (hit && hit.cfg === cfg) return hit.html;
-    const html = this._pixelArtMatrix(this._convertPixelArtToDisplayMatrix(art));
-    cache.set(art, { cfg, html });
-    return html;
-  }
-
   /**
-   * Return the cached HTML string for `slot` when the rendered items (by
-   * identity) and deps are unchanged, so unrelated re-renders reuse the same
-   * string (and unsafeHTML keeps its DOM); otherwise build and cache it.
+   * The pixel-art gallery: the shared gallery (collection-gallery.js) with
+   * the stored pixel arts (with this card's pending edits). Picking one
+   * loads it into the drawing, and sends it to the lamp too with "Apply to
+   * lamp automatically".
    */
-  _memoPixelArtHTML(slot, items, deps, build) {
-    const memo = (this._pixelArtHTMLMemo ||= {});
-    const prev = memo[slot];
-    if (
-      prev &&
-      prev.items.length === items.length &&
-      prev.items.every((item, i) => item === items[i]) &&
-      prev.deps.every((dep, i) => dep === deps[i])
-    )
-      return prev.html;
-    const html = build();
-    memo[slot] = { items: items.slice(), deps, html };
-    return html;
+  _renderPixelArtGallery() {
+    const cfg = this.config || {};
+    const state = this._pixelArtState(cfg.pixelart_sensor);
+    if (!this.hass || !cfg.pixelart_sensor || !state)
+      return html`<div class="pixelart-gallery-message">
+        Pixel art sensor not found or not configured.
+      </div>`;
+    const autoApply = cfg.pixel_art_auto_apply_to_lamp === true;
+    return html`<yc-collection-gallery
+      .config=${cfg}
+      .items=${this._pixelArtGalleryItems(
+        this._applyPendingRenames(state.attributes.pixel_arts || []),
+      )}
+      searchLabel="Search pixel arts"
+      emptyLabel="No pixel art saved yet."
+      .navigateSelects=${false}
+      actionLabel=${autoApply ? "Load into the drawing and the lamp" : "Load into the drawing"}
+      .onSelect=${(key) =>
+        this._handlePixelArtCanvasClick(artIndex(key), autoApply)}
+      .onRename=${(key, name) => this._renamePixelArt(artIndex(key), name)}
+      .onDelete=${(key) => this._deletePixelArt(artIndex(key))}
+    ></yc-collection-gallery>`;
   }
 
-  _pixelArtMatrix(pixelMatrix) {
-    const cfg = this.config;
-    const spacing = cfg.pixel_art_spacing_mode || "normal";
-    return renderMatrixPreview(pixelMatrix, {
-      rows: GRID_ROWS,
-      cols: GRID_COLS,
-      forceAspectRatio: true,
-      bgColor: cfg.pixel_art_background_color || "transparent",
-      pixelStyle: cfg.pixel_art_pixel_style || "square",
-      pixelGap: spacing === "normal" ? 3 : 0,
-      pixelBoxShadow: spacing !== "none",
-      matrixBoxShadow: cfg.pixel_art_matrix_box_shadow === true,
-      ignoreBlackPixels: cfg.gallery_ignore_black_pixels === true,
-    });
+  // The pixel arts as gallery items, memoized by the list shown: the card
+  // re-renders on every stroke, the gallery only when the arts change.
+  _pixelArtGalleryItems(arts) {
+    if (this._galleryItemsSource !== arts) {
+      this._galleryItemsSource = arts;
+      this._galleryItemsCache = arts.map((art, idx) => {
+        const name = art?.name || "Unnamed";
+        return {
+          dataMode: artKey(idx),
+          name,
+          title: name,
+          colorData: pixelArtColorData(art),
+          editable: true,
+        };
+      });
+    }
+    return this._galleryItemsCache;
   }
 
   _renderMatrixSection(
@@ -977,60 +944,19 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     return galleryContent;
   }
 
+  // The export / import row (shared: renderExportImportRow).
   _renderPixelArtExportImportButtons(showExportBtn, showImportBtn) {
     const cfg = this.config || {};
-    const buttonStyle = cfg.pixelart_buttons_style || "modern";
-
-    // Use icon mode for icon style, otherwise respect config (default icon_text)
-    const contentMode =
-      buttonStyle === "icon"
-        ? "icon"
-        : cfg.pixelart_content_mode || "icon_text";
-
-    // Get button classes using centralized utility
-    const exportBtnClass = getExportImportButtonClass("export", buttonStyle);
-    const importBtnClass = getExportImportButtonClass("import", buttonStyle);
-
-    // Check import status
-    const isImportStatus = this._importStatus?.showing === true;
-    const statusType = isImportStatus ? this._importStatus.type : null;
-
-    return html`
-      <div class=${getActionRowClass({ buttonStyle, contentMode })}>
-        ${showExportBtn
-          ? html`
-              <button
-                class="${exportBtnClass}"
-                @click="${() => this._exportPixelArts()}"
-                title="Export all pixel arts as JSON file"
-              >
-                ${renderActionButtonContent(
-                  "mdi:download",
-                  "Export",
-                  contentMode,
-                )}
-              </button>
-            `
-          : ""}
-        ${showImportBtn
-          ? html`
-              <button
-                class="${importBtnClass}"
-                @click="${() => this._triggerImportFile()}"
-                title="Import pixel arts from JSON file"
-              >
-                ${renderActionButtonContent(
-                  "mdi:upload",
-                  "Import",
-                  contentMode,
-                  isImportStatus,
-                  statusType,
-                )}
-              </button>
-            `
-          : ""}
-      </div>
-    `;
+    return renderExportImportRow({
+      noun: "pixel arts",
+      showExport: showExportBtn,
+      showImport: showImportBtn,
+      buttonStyle: cfg.pixelart_buttons_style || "modern",
+      contentMode: cfg.pixelart_content_mode || "icon_text",
+      importStatus: this._importStatus?.showing ? this._importStatus.type : null,
+      onExport: () => this._exportPixelArts(),
+      onImport: () => this._triggerImportFile(),
+    });
   }
 
   render() {
@@ -1403,39 +1329,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
       img.src = event.target.result;
     };
     reader.readAsDataURL(file);
-  }
-
-  _convertPixelArtToDisplayMatrix(art) {
-    if (!art.pixels || !Array.isArray(art.pixels)) return createEmptyMatrix();
-
-    const matrix = createEmptyMatrix();
-
-    for (const px of expandPixelArt(art)) {
-      const lampPos = px.position; // This is 0-99 (20x5 grid)
-      const color = px.color;
-
-      if (
-        lampPos >= 0 &&
-        lampPos < MATRIX_SIZE &&
-        Array.isArray(color) &&
-        color.length >= 3
-      ) {
-        // Convert lamp position to display matrix position
-        // Lamp grid: 20x5 (positions 0-99), Y-axis flipped
-        const lampRow = GRID_ROWS - 1 - Math.floor(lampPos / GRID_COLS); // 4-0 (flipped Y-axis)
-        const lampCol = lampPos % GRID_COLS; // 0-19 (20 columns)
-
-        // Display matrix position (20x5 grid for preview)
-        const displayPos = lampRow * GRID_COLS + lampCol;
-
-        if (displayPos >= 0 && displayPos < MATRIX_SIZE) {
-          const hex = rgbArrayToHex(color);
-          matrix[displayPos] = hex;
-        }
-      }
-    }
-
-    return matrix;
   }
 
   _renderActions() {

@@ -1,11 +1,13 @@
-// Pixel-art collection actions of the draw card: apply, rename, delete, reorder,
-// import/export, and refreshing the shared list from the backend (with the
-// optimistic overlays kept until it confirms). Mixed into YeelightCubeDrawCard.
+// Pixel-art collection actions of the draw card, called by its gallery
+// (collection-gallery.js): load, rename, delete; import/export, and
+// refreshing the shared list from the backend (with the optimistic overlays
+// kept until it confirms). Reordering is the editor's Arrange list.
+// Mixed into YeelightCubeDrawCard.
 import { CollectionState } from "./collection-state.js";
 import { notifyUnreported } from "./notify-utils.js";
 import { createEmptyMatrix } from "./draw_utils.js";
-import { expandPixelArt } from "./pixel-art-utils.js";
-import { MATRIX_SIZE, GRID_COLS, GRID_ROWS } from "./draw_card_const.js";
+import { expandPixelArt, pixelArtDisplayIndex } from "./pixel-art-utils.js";
+import { MATRIX_SIZE } from "./draw_card_const.js";
 import { StorageUtils } from "./draw_card_storage.js";
 
 export const PixelArtActionsMixin = (Base) => class extends Base {
@@ -17,82 +19,6 @@ export const PixelArtActionsMixin = (Base) => class extends Base {
     const collection = (this._pixelArtCollection ||= new CollectionState());
     if (items) collection.record(items);
     else collection.reset();
-  }
-
-  get _pendingReorderTs() {
-    return this._pixelArtCollection?.pending?.timestamp;
-  }
-
-  set _pendingReorderTs(timestamp) {
-    if (this._pixelArtCollection?.pending)
-      this._pixelArtCollection.pending.timestamp = timestamp;
-  }
-
-  _saveReorderedPixelArts(pixelArts, move = null) {
-    const cfg = this.config || {};
-    const pixelartSensor = cfg.pixelart_sensor;
-
-    if (!this.hass || !pixelartSensor) return;
-
-    // A drag moves one item: ask the server to move just that item so pixel
-    // arts added by other clients in the meantime are kept. Only fall back to
-    // replacing the whole collection when the order changed in another way.
-    const collection = (this._pixelArtCollection ||= new CollectionState());
-    const operation = collection.pending;
-    return collection
-      .execute(
-        this.hass,
-        move ? "move_pixel_art" : "update_pixel_arts",
-        move || { pixel_arts: pixelArts, replace: true },
-      )
-      .then((success) => {
-        if (!success)
-          throw new Error("The pixel-art collection changed. Please retry.");
-        this._isDragging = false;
-      })
-      .catch((error) => {
-        console.error("[PixelArt] Failed to save reordered pixel arts:", error);
-        this._isDragging = false;
-        if (collection.rollback(operation)) this.requestUpdate();
-      });
-  }
-
-  // Grid mode event handlers
-  handleGridItemClick(event, idx) {
-    const context = this._gridContext || {};
-    const globalIdx = (context.globalOffset || 0) + idx;
-    this._handlePixelArtCanvasClick(globalIdx, context.autoApplyToLamp);
-  }
-
-  handleGridDelete(event, idx) {
-    const context = this._gridContext || {};
-    const globalIdx = (context.globalOffset || 0) + idx;
-
-    // Create a proper fake event with the button as target
-    const button = event.target.closest("button");
-    if (!button) return;
-
-    // Create a fake button element with the index in dataset
-    const fakeButton = {
-      classList: button.classList,
-      dataset: { index: globalIdx, action: "remove" },
-      closest: (selector) => {
-        if (selector === "button") return fakeButton;
-        return null;
-      },
-    };
-
-    this._handleGalleryClick({
-      target: fakeButton,
-      preventDefault: () => {},
-      stopPropagation: () => {},
-    });
-  }
-
-  handleGridTitleClick(event, idx) {
-    const context = this._gridContext || {};
-    const globalIdx = (context.globalOffset || 0) + idx;
-    this._handleRenameClick(event, globalIdx);
   }
 
   async _handlePixelArtCanvasClick(idx, autoApplyToLamp) {
@@ -115,130 +41,24 @@ export const PixelArtActionsMixin = (Base) => class extends Base {
     }
   }
 
-  _handleGalleryClick(e) {
-    // Check if click is on a clickable title element (for rename)
-    const titleElement = e.target.closest(".pixelart-name.clickable");
-
-    if (titleElement && titleElement.dataset.index !== undefined) {
-      const idx = parseInt(titleElement.dataset.index);
-      if (!isNaN(idx) && idx >= 0) {
-        this._handleRenameClick(e, idx);
-        return;
-      }
-    }
-
-    // Check for button clicks
-    e.preventDefault();
-    e.stopPropagation();
-
-    const target = e.target.closest("button");
-    if (!target) return;
-
-    // Ignore navigation buttons and carousel indicators (they have their own handlers)
-    if (
-      target.classList.contains("carousel-nav") ||
-      target.classList.contains("carousel-dot") ||
-      target.classList.contains("carousel-indicator") ||
-      target.classList.contains("mode-btn")
-    ) {
-      return;
-    }
-
-    // Get index from button's data attributes OR from parent .compact-item
-    // For compact mode with drag-and-drop, data-idx is only on the parent element
-    let index = null;
-
-    if (target.dataset.index !== undefined) {
-      index = parseInt(target.dataset.index);
-    } else if (target.dataset.idx !== undefined) {
-      index = parseInt(target.dataset.idx);
-    } else {
-      // Check parent .compact-item for data-idx (used in compact mode after drag-and-drop)
-      const compactItem = target.closest(".compact-item");
-      if (compactItem && compactItem.dataset.idx !== undefined) {
-        index = parseInt(compactItem.dataset.idx);
-      }
-    }
-
-    // Buttons without an index (pagination, ...) have their own handlers;
-    // their clicks only bubble through here.
-    if (index === null || isNaN(index)) return;
-
-    if (target.classList.contains("apply-btn")) {
-      this._applyPixelArt(index);
-    } else if (target.classList.contains("apply-matrix-btn")) {
-      this._applyPixelArtToMatrix(index);
-    } else if (
-      target.classList.contains("delete-btn") ||
-      target.classList.contains("delete-btn-cross") ||
-      target.dataset.action === "remove"
-    ) {
-      // INSTANT UI UPDATE: Remove the DOM element immediately for instant visual feedback
-      const compactItem = target.closest(".compact-item");
-      if (compactItem) {
-        compactItem.style.transition = "opacity 0.2s, transform 0.2s";
-        compactItem.style.opacity = "0";
-        compactItem.style.transform = "scale(0.8)";
-        setTimeout(() => compactItem.remove(), 200);
-      }
-
-      this._deletePixelArt(index);
-    } else if (target.classList.contains("mode-btn")) {
-      const mode = target.dataset.mode;
-      if (mode) {
-        this.galleryMode = mode;
-        this.requestUpdate();
-      }
-    }
-  }
-
+  // The list shown: the stored one with this card's pending edits.
   _applyPendingRenames(pixelArts) {
     return this._pendingReorderedPixelArts ?? pixelArts;
   }
 
-  async _handleRenameClick(e, idx) {
-    e.preventDefault();
-    e.stopPropagation();
-
-    // Get sensor entity from config
+  // Rename pixel art `idx` (the gallery's rename bar gives the name).
+  // Resolves true once saved, false when refused or failed (rolled back).
+  async _renamePixelArt(idx, newName) {
+    const name = String(newName ?? "").trim();
     const sensorEntityId = this.config.pixelart_sensor;
-    if (!sensorEntityId || !this.hass) {
-      console.error("[Rename] No sensor entity configured");
-      return;
-    }
-
-    const stateObj = this._pixelArtState(sensorEntityId);
-    if (!stateObj) {
-      console.error("[Rename] Sensor entity not found:", sensorEntityId);
-      return;
-    }
-
-    // Get current pixel arts from sensor
+    const stateObj = sensorEntityId && this._pixelArtState(sensorEntityId);
+    if (!name || !stateObj) return false;
     const pixelArts =
       this._pendingReorderedPixelArts ?? stateObj.attributes.pixel_arts ?? [];
-
-    if (idx < 0 || idx >= pixelArts.length) {
-      console.error(
-        "[Rename] Invalid index:",
-        idx,
-        "length:",
-        pixelArts.length,
-      );
-      return;
-    }
-
     const currentArt = pixelArts[idx];
-    const currentName = currentArt.name || "Unnamed";
+    if (!currentArt) return false;
 
-    // Show prompt for new name
-    const newName = prompt(`Rename pixel art:`, currentName);
-
-    // If user cancelled or entered empty name, don't change
-    if (newName === null || newName.trim() === "") {
-      return;
-    }
-
-    const renamed = { ...currentArt, name: newName.trim() };
+    const renamed = { ...currentArt, name };
     this._pendingReorderedPixelArts = pixelArts.map((art, index) =>
       index === idx ? renamed : art,
     );
@@ -252,12 +72,12 @@ export const PixelArtActionsMixin = (Base) => class extends Base {
     try {
       const success = await collection.execute(this.hass, "rename_pixel_art", {
         idx: idx,
-        name: newName.trim(),
+        name,
         expected_name: currentArt.name,
       });
       if (!success)
         throw new Error("The pixel-art collection changed. Please retry.");
-      if (context !== this._collectionContext) return;
+      if (context !== this._collectionContext) return true;
 
       // Trigger sensor update
       await this._refreshEntity(sensorEntityId);
@@ -266,14 +86,15 @@ export const PixelArtActionsMixin = (Base) => class extends Base {
       // cache the pre-rename array, leaving _hass stale until a full reload.
       // Force a fresh fetch (retrying until the server echoes the new name) so
       // the overlay can retire cleanly and pagination re-renders show the truth.
-      if (context !== this._collectionContext) return;
+      if (context !== this._collectionContext) return true;
       await this._forceRefreshPixelArts(sensorEntityId, renamed);
-      if (context !== this._collectionContext) return;
+      if (context !== this._collectionContext) return true;
 
       // Trigger UI update
       window.dispatchEvent(new Event("pixelart-saved"));
+      return true;
     } catch (error) {
-      if (!collection.rollback(operation)) return;
+      if (!collection.rollback(operation)) return false;
       console.error("[Rename] Failed to rename pixel art:", error);
       // HA already toasted service failures; only report local ones
       // (e.g. the collection-changed conflict thrown above).
@@ -282,42 +103,8 @@ export const PixelArtActionsMixin = (Base) => class extends Base {
       // Drop the overlay so the UI falls back to the real (unchanged) name.
       this.pixelArtVersion = (this.pixelArtVersion || 0) + 1;
       this.requestUpdate();
+      return false;
     }
-  }
-
-  async _applyPixelArt(idx) {
-    const cfg = this.config || {};
-    const pixelartSensor = cfg.pixelart_sensor;
-
-    if (!this.hass || !pixelartSensor) {
-      console.error(
-        "[draw-card] Cannot apply pixel art: missing hass or pixelart_sensor",
-      );
-      return;
-    }
-
-    // Debounce: if user clicks multiple pixel arts rapidly, only send the last one.
-    // This prevents overwhelming the lamp with back-to-back TCP connections.
-    if (this._applyPixelArtTimer) {
-      clearTimeout(this._applyPixelArtTimer);
-    }
-    this._applyPixelArtTimer = setTimeout(async () => {
-      this._applyPixelArtTimer = null;
-      try {
-        const shown =
-          this._pendingReorderedPixelArts ??
-          this._pixelArtState(pixelartSensor)?.attributes?.pixel_arts ??
-          [];
-        await this.callServiceOnTargetEntities("apply_pixel_art", {
-          idx,
-          expected_name: shown[idx]?.name,
-        });
-        await this._refreshEntity(pixelartSensor);
-        window.dispatchEvent(new Event("pixelart-saved"));
-      } catch (err) {
-        this._reportFailure(err, "Failed to apply the pixel art.");
-      }
-    }, 300);
   }
 
   /** Load pixel art ``idx`` into the drawing matrix. Returns true if it was
@@ -361,8 +148,8 @@ export const PixelArtActionsMixin = (Base) => class extends Base {
       // Start with black matrix (same as image upload)
       this.matrix = createEmptyMatrix();
 
-      // Apply pixel art with row flipping to match preview display
-      // Preview uses: row = (GRID_ROWS-1) - Math.floor(pos / GRID_COLS) to flip rows vertically
+      // Stored rows count from the lamp's bottom row, the drawing's from
+      // the top: the same placement as every preview (pixelArtDisplayIndex).
       for (const px of expandPixelArt(pixelArt)) {
         const position = px.position;
         const color = px.color;
@@ -381,13 +168,7 @@ export const PixelArtActionsMixin = (Base) => class extends Base {
             .toString(16)
             .slice(1)}`;
 
-          // Apply with row flipping to match preview display
-          // Original position: row = Math.floor(position / GRID_COLS), col = position % GRID_COLS
-          // Flipped row: flippedRow = (GRID_ROWS-1) - row (same as preview rendering)
-          const originalRow = Math.floor(position / GRID_COLS); // 0-4
-          const col = position % GRID_COLS; // 0-19
-          const flippedRow = GRID_ROWS - 1 - originalRow; // Flip vertically
-          const matrixPosition = flippedRow * GRID_COLS + col;
+          const matrixPosition = pixelArtDisplayIndex(position);
 
           if (matrixPosition >= 0 && matrixPosition < MATRIX_SIZE) {
             this.matrix[matrixPosition] = hex;
@@ -414,10 +195,6 @@ export const PixelArtActionsMixin = (Base) => class extends Base {
     }
   }
 
-  /**
-   * Delete a pixel art by calling the backend service.
-   * Backend updates sensor → websocket pushes update → card re-renders → album re-initializes.
-   */
   /**
    * Fetch fresh pixel_arts from the REST API and patch _hass directly.
    * This bypasses the websocket limitation where HA doesn't resend large attribute
@@ -517,13 +294,15 @@ export const PixelArtActionsMixin = (Base) => class extends Base {
     }
   }
 
+  // Delete pixel art `idx` (confirmed in the gallery's bar), shown at once.
+  // Resolves true once deleted, false when refused or failed (rolled back).
   async _deletePixelArt(idx) {
     // Get current sensor state
     const cfg = this.config || {};
     const pixelartSensor = cfg.pixelart_sensor;
     if (!this.hass || !pixelartSensor || !this._pixelArtState(pixelartSensor)) {
       console.error("[Delete] No sensor found");
-      return;
+      return false;
     }
 
     const stateObj = this._pixelArtState(pixelartSensor);
@@ -533,11 +312,9 @@ export const PixelArtActionsMixin = (Base) => class extends Base {
     const pixelArts =
       this._pendingReorderedPixelArts || stateObj.attributes.pixel_arts || [];
 
-    if (pixelArts[idx]) {
-      // pixel art exists, proceed
-    } else {
+    if (!pixelArts[idx]) {
       console.error("[Delete] No pixel art found at index:", idx);
-      return;
+      return false;
     }
 
     // OPTIMISTIC UPDATE: Remove from local state immediately for instant UI feedback
@@ -572,6 +349,7 @@ export const PixelArtActionsMixin = (Base) => class extends Base {
       ) {
         throw new Error("The pixel-art collection changed. Please retry.");
       }
+      return true;
     } catch (err) {
       console.error("[PIXELART-DELETE] Error calling backend:", err);
       if (collection.rollback(operation)) {
@@ -580,6 +358,7 @@ export const PixelArtActionsMixin = (Base) => class extends Base {
         this.requestUpdate();
         this._fetchFreshPixelArts(pixelartSensor);
       }
+      return false;
     }
   }
 

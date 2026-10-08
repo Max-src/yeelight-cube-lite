@@ -1058,12 +1058,46 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       .revealKey=${revealKey}
       heading="Clock style"
       searchLabel="Search clock modes"
+      actionLabel="Show on the lamp"
       .onSelect=${(name) => this._controls.choose(name)}
       .onQuery=${(query) => {
         this._searchQuery = query;
       }}
+      .onRename=${(key, name) => this._renamePreset(key, name)}
+      .onDelete=${(key) => this._deletePreset(key)}
       @gallery-updated=${this._onGalleryUpdated}
     ></yc-collection-gallery>`;
+  }
+
+  // A custom clock style of the gallery (key custom:<id>), or undefined.
+  _presetOf(key) {
+    const id = String(key).startsWith("custom:") ? key.slice(7) : null;
+    return clockPresetLibrary(this._hass).find(
+      (preset) => preset.id === id && (preset.kind || "style") === "style",
+    );
+  }
+
+  // Custom clock styles are shared presets: renamed and deleted for every
+  // card (save_clock_preset / delete_clock_preset).
+  async _renamePreset(key, name) {
+    const preset = this._presetOf(key);
+    if (!preset) return false;
+    await this._hass.callService("yeelight_cube", "save_clock_preset", {
+      preset_id: preset.id,
+      name,
+      color: preset.color,
+      kind: "style",
+    });
+    return true;
+  }
+
+  async _deletePreset(key) {
+    const preset = this._presetOf(key);
+    if (!preset) return false;
+    await this._hass.callService("yeelight_cube", "delete_clock_preset", {
+      preset_id: preset.id,
+    });
+    return true;
   }
 
   async getUpdateComplete() {
@@ -1111,6 +1145,8 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
         renderClockFrame(this._previewAttrs(s), fontMap, metrics, phase),
       ),
       dataMode: clockPresetKey(s),
+      // Custom styles are the user's own: renamed and deleted in the gallery.
+      editable: !!s.presetId,
       badge: this._clockStyleBadge(s),
       favourite: this._controls?.hasFavourite(
         clockPresetKey(s),

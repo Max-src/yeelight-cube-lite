@@ -8,7 +8,6 @@ import logging
 import voluptuous as vol  # type: ignore
 from homeassistant.components import websocket_api  # type: ignore
 from homeassistant.core import HomeAssistant, SupportsResponse  # type: ignore
-from homeassistant.exceptions import HomeAssistantError  # type: ignore
 from homeassistant.helpers import config_validation as cv  # type: ignore
 
 from . import async_save_data
@@ -24,6 +23,7 @@ from .light_services_common import (
     _check_collection_size,
     _resolve_entities,
     _locate_item,
+    _move_item,
     make_fire_and_forget,
 )
 
@@ -179,18 +179,14 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
     async def handle_move_pixel_art(service_call):
         """Move one saved pixel art, keeping items other clients added meanwhile."""
         pixel_arts = hass.data.get(DOMAIN, {}).get("pixel_arts", [])
-        from_idx = service_call.data["from_idx"]
-        to_idx = service_call.data["to_idx"]
-        _locate_item(
-            pixel_arts, from_idx, service_call.data.get("expected_name"), "Pixel art"
-        )
-        if not 0 <= to_idx < len(pixel_arts):
-            raise HomeAssistantError(
-                f"Pixel art position {to_idx} is out of range. Refresh and try again."
-            )
-        if from_idx == to_idx:
+        if not _move_item(
+            pixel_arts,
+            service_call.data["from_idx"],
+            service_call.data["to_idx"],
+            service_call.data.get("expected_name"),
+            "Pixel art",
+        ):
             return
-        pixel_arts.insert(to_idx, pixel_arts.pop(from_idx))
         hass.bus.async_fire(f"{DOMAIN}_pixel_arts_updated", {"count": len(pixel_arts)})
         await async_save_data(hass)
 

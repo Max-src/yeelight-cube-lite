@@ -4,6 +4,7 @@ import { createToggleRow, createSliderRow } from "./form-row-utils.js";
 import {
   renderModeSettingsSection,
   renderSelectorShapeRows,
+  renderDeleteButtonSettings,
   BG_COLOR_CHOICES,
   SPACING_CHOICES,
 } from "./editor_ui_utils.js";
@@ -64,11 +65,18 @@ const PREVIEW_STYLE_CHOICES = [
  * @param {boolean} [options.allowOriginal] - offer the Original layout
  * @param {boolean} [options.allowChips] - offer Chips (items have swatches)
  * @param {string} [options.noun] - what the items are ("Style", "Mode", ...)
+ * @param {string} [options.manage] - the user's own items, when the card
+ *   has some ("custom styles", "palettes", ...): offers renaming and the
+ *   delete button (its style, shape and position) for them
  * @param {Object} [options.memory] - an object the editor keeps: switching
  *   Selector Type back restores the style last picked in that family
  * @param {number} [options.defaultSize] - the card's preview_size default
+ * @param {boolean} [options.hasActive] - false when no item is ever the
+ *   active one (palettes): no Highlight Active row
  * @param {Function} [options.renderAppearance] - (config, onChange) => the
- *   card's matrix appearance rows (previews and Original only)
+ *   card's appearance rows (previews and Original only); default: the
+ *   matrix rows. Cards whose items are not matrices (palettes) render
+ *   renderGalleryBackgroundRow and their own preview rows instead.
  *
  * Size (preview_size) is shown for every layout: it scales the previews and
  * the text buttons alike.
@@ -81,7 +89,9 @@ export function renderStyleSelectorSettings(
     allowChips = false,
     noun = "Style",
     memory = {},
+    manage = "",
     defaultSize = 55,
+    hasActive = true,
     renderAppearance = renderGalleryMatrixSettings,
   } = {},
 ) {
@@ -98,12 +108,14 @@ export function renderStyleSelectorSettings(
     ? [...TEXT_STYLE_CHOICES, CHIPS_CHOICE]
     : TEXT_STYLE_CHOICES;
   const highlightRow = () =>
-    createToggleRow(
-      `Highlight Active ${noun}`,
-      "highlight_active_mode",
-      config.highlight_active_mode !== false,
-      (event) => onChange("highlight_active_mode", event.target.checked),
-    );
+    hasActive
+      ? createToggleRow(
+          `Highlight Active ${noun}`,
+          "highlight_active_mode",
+          config.highlight_active_mode !== false,
+          (event) => onChange("highlight_active_mode", event.target.checked),
+        )
+      : "";
   const family =
     style === "original"
       ? "original"
@@ -241,7 +253,7 @@ export function renderStyleSelectorSettings(
                   `,
                 )
               : ""}
-            ${style === "preview-strip"
+            ${style === "preview-strip" && hasActive
               ? renderModeSettingsSection(
                   "Strip Mode Settings",
                   highlightRow(),
@@ -272,6 +284,27 @@ export function renderStyleSelectorSettings(
             )}
             ${sizeRow()}${renderAppearance(config, onChange)}
           `}
+    ${manage
+      ? renderModeSettingsSection(
+          `Your ${manage}`,
+          html`
+            <div class="hint">
+              Rename or delete your ${manage} from the gallery's cards (list,
+              grid, strip, carousel, album, Original). A delete always asks
+              for confirmation.
+            </div>
+            ${createToggleRow(
+              "Allow Rename",
+              "allow_rename",
+              config.allow_rename === true,
+              (event) => onChange("allow_rename", event.target.checked),
+            )}
+            ${renderDeleteButtonSettings(config, {
+              commit: (key, value) => onChange(key, value),
+            })}
+          `,
+        )
+      : ""}
     ${style !== "original"
       ? renderSelectorShapeRows(config, onChange, {
           showButtonShape: [
@@ -280,7 +313,39 @@ export function renderStyleSelectorSettings(
             "preview-album",
           ].includes(style),
         })
-      : ""}`;
+      : ""}
+    ${family !== "text" ? renderItemBorderRow(config, onChange) : ""}`;
+}
+
+// A border around every item (item_card_border): never, only with a dark
+// theme (where items can melt into the card), or always.
+function renderItemBorderRow(config, onChange) {
+  return html`<div class="form-row">
+    <label>Item Border</label>
+    ${createButtonGroup(
+      [
+        { value: "none", label: "None" },
+        { value: "auto", label: "Dark Theme", title: "Only with a dark theme" },
+        { value: "always", label: "Always" },
+      ],
+      config.item_card_border || "none",
+      (event) => onChange("item_card_border", event.currentTarget.dataset.value),
+    )}
+  </div>`;
+}
+
+/** The items' background (gallery_background_color), for the appearance
+ * rows of every card, matrix previews or not (renderAppearance). */
+export function renderGalleryBackgroundRow(config, onChange) {
+  return html`<div class="form-row">
+    <label>Preview Background Color</label>
+    ${createButtonGroup(
+      BG_COLOR_CHOICES,
+      config.gallery_background_color || "black",
+      (event) =>
+        onChange("gallery_background_color", event.currentTarget.dataset.value),
+    )}
+  </div>`;
 }
 
 // Shared gallery matrix appearance controls. Live Preview and Original use the
@@ -288,18 +353,7 @@ export function renderStyleSelectorSettings(
 // the same way everywhere.
 function renderGalleryMatrixSettings(config, onChange) {
   return html`
-    <div class="form-row">
-      <label>Preview Background Color</label>
-      ${createButtonGroup(
-        BG_COLOR_CHOICES,
-        config.gallery_background_color || "black",
-        (event) =>
-          onChange(
-            "gallery_background_color",
-            event.currentTarget.dataset.value,
-          ),
-      )}
-    </div>
+    ${renderGalleryBackgroundRow(config, onChange)}
     ${(config.gallery_background_color || "black") !== "black"
       ? renderModeSettingsSection(
           "Background Settings",

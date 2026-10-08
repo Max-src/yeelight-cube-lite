@@ -4,7 +4,6 @@ import { cardLayoutStyles } from "./card-layout-utils.js";
 import { exportImportButtonStyles } from "./action-button-utils.js";
 import { compactLayoutStyles } from "./compact-layout-utils.js";
 import { deleteButtonStyles } from "./delete-button-styles.js";
-import { compactModeStyles } from "./compact-mode-styles.js";
 
 // Card stylesheet (static; adopted once per shadow root by LitElement).
 export const COLOR_LIST_EDITOR_STYLES = css`
@@ -1440,8 +1439,4 @@ export const COLOR_LIST_EDITOR_STYLES = css`
 
         /* Shared Delete Button Styles */
         ${unsafeCSS(deleteButtonStyles)}
-
-        /* Shared Compact Mode Styles */
-        ${unsafeCSS(compactModeStyles)}
-
   `;

@@ -669,7 +669,7 @@
         },
         "move_pixel_art": {
             "name": "Move Pixel Art",
-            "description": "Move one saved pixel art to another position (used by the Draw card gallery reorder).",
+            "description": "Move one saved pixel art to another position (used by the Draw card gallery reorder and its editor's Arrange list).",
             "fields": {
                 "from_idx": {
                     "name": "From position",
@@ -728,6 +728,24 @@
                 "idx": {
                     "name": "Position",
                     "description": "Index of the palette to remove (0-based)"
+                }
+            }
+        },
+        "move_palette": {
+            "name": "Move Palette",
+            "description": "Move one saved palette to another position (used by the Palettes card editor's Arrange list).",
+            "fields": {
+                "from_idx": {
+                    "name": "From position",
+                    "description": "Current index of the palette (0-based)"
+                },
+                "to_idx": {
+                    "name": "To position",
+                    "description": "New index for the palette (0-based)"
+                },
+                "expected_name": {
+                    "name": "Expected name",
+                    "description": "Name of the palette expected at from_idx; the move is rejected if the list changed."
                 }
             }
         },
