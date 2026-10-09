@@ -111,7 +111,6 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
 
     # --- Pixel Art Service Handlers ---
     async def handle_save_pixel_art(service_call):
-        import datetime
         name = service_call.data.get("name")
         pixels = service_call.data.get("pixels")
         if not isinstance(pixels, list):

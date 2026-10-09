@@ -14,6 +14,12 @@ DOMAIN = CONSTANTS["DOMAIN"]
 
 
 BULB_EXCEPTION = type("BulbException", (Exception,), {})
+
+# Tests asserting the exact commands of a start use the longest interval:
+# a rotation shows the next item at once when its first step crosses a grid
+# boundary (the shared catch-up), which with a short interval happened in
+# about 1 run in 70 (asyncio debug mode makes a step take ~0.2 s).
+STEADY_INTERVAL = 604800
 CUBE_CONNECTION_ERROR = type("CubeConnectionError", (BULB_EXCEPTION,), {})
 
 
@@ -38,6 +44,8 @@ def _rotation_helpers():
             "_apply_rotation_native",
             "_apply_rotation_clock",
             "_rotation_current_name",
+            "_hold_rotation_for_resume",
+            "_rotation_peer",
             "_save_rotation_state",
             "_device_store",
             "_restore_rotation_settings",
@@ -67,6 +75,8 @@ def _rotation_helpers():
             "MAX_ROTATION_INTERVAL": 604800,
             "_ROTATION_RESUME_TIMELINES": {},
             "ROTATION_RESUME_TIMELINE_TTL": 300.0,
+            "_ROTATING_LAMPS": {},
+            "ROTATION_RESUME_BACKOFF": (30.0, 60.0, 120.0, 300.0),
         },
     )
 
@@ -335,7 +345,10 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(light._rotation_waiting_for_reconnect)
             light._create_tracked_task.assert_not_called()
 
-    async def test_failed_reconnect_apply_keeps_error_without_restarting_forever(self):
+    async def test_failed_reconnect_apply_backs_off_and_never_drops_the_lamp(self):
+        # A lamp that answers but keeps failing its resumed step stays in its
+        # rotation: it waits a growing back-off (never hammered by every
+        # health cycle), then resumes on the group's schedule.
         light = make_light(self.helpers)
         light._rotation_items = [{"name": "Rainbow"}, {"name": "Streamer"}]
         light._rotation_index = 0
@@ -347,10 +360,125 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(await light._rotation_started)
         self.assertEqual(light._apply_rotation_item.await_count, 3)
         self.assertEqual(light._rotation_error, "Still failing")
-        self.assertFalse(light._rotation_waiting_for_reconnect)
+        self.assertFalse(light._rotation_active)
+        self.assertTrue(light._rotation_resume_pending)
+        self.assertTrue(light._rotation_waiting_for_reconnect)
+        self.assertGreaterEqual(light._rotation_retry_at - time.time(), 25)
+        # Within the back-off: not retried.
         await self.health_cycle(light)
         self.assertEqual(light._apply_rotation_item.await_count, 3)
         self.assertFalse(light._rotation_active)
+        # Its back-off over, it resumes and shows what the group shows now.
+        light._rotation_retry_at = time.time() - 1
+        light._rotation_timeline = {"tick": 0, "index": 0}
+        light._rotation_interval = 10**9
+        light._apply_rotation_item = AsyncMock(return_value=True)
+        await self.health_cycle(light)
+        self.assertTrue(await light._rotation_started)
+        self.assertTrue(light._rotation_active)
+        light._apply_rotation_item.assert_awaited_once_with({"name": "Rainbow"})
+        self.assertFalse(light._rotation_waiting_for_reconnect)
+        self.assertIsNone(light._rotation_error)
+        light.stop_effect_rotation()
+
+    async def test_a_lamp_failing_a_step_pauses_then_rejoins_its_group(self):
+        # Two lamps rotate together; one refuses a later step (lamp still
+        # reachable, e.g. its rate limit). It no longer drops out for good:
+        # it waits a back-off while the other keeps rotating, then shows the
+        # item the group shows.
+        timeline = {}
+        lamps = []
+        for ip in ("192.168.4.101", "192.168.4.102"):
+            lamp = make_light(self.helpers, kind="clock")
+            lamp._ip = ip
+            lamp._mode = "Clock"
+            await lamp.start_effect_rotation(
+                ["Rainbow", "White", "Yellow"], 10**6, "clock",
+                timeline=timeline, group=["light.a", "light.b"],
+            )
+            lamps.append(lamp)
+        healthy, failing = lamps
+        self.assertEqual(healthy._rotation_index, failing._rotation_index)
+        failing._apply_rotation_item = AsyncMock(return_value=False)
+        failing._last_connection_error = "BulbException: refused"
+        failing._rotation_wake.set()  # its next step (same item, same grid)
+        for _ in range(20):
+            await asyncio.sleep(0)
+        self.assertFalse(failing._rotation_active)
+        self.assertTrue(failing._rotation_resume_pending)
+        self.assertTrue(failing._rotation_waiting_for_reconnect)
+        self.assertEqual(failing._rotation_error, "BulbException: refused")
+        self.assertGreaterEqual(failing._rotation_retry_at - time.time(), 25)
+        self.assertTrue(healthy._rotation_active)
+        # Still backing off: the health check leaves it waiting.
+        self.assertTrue(failing._resume_rotation_after_reconnect())
+        self.assertFalse(failing._rotation_active)
+        # Back-off over: it resumes on the group's current item.
+        failing._rotation_retry_at = time.time() - 1
+        failing._apply_rotation_item = AsyncMock(return_value=True)
+        self.assertTrue(failing._resume_rotation_after_reconnect())
+        self.assertTrue(await failing._rotation_started)
+        self.assertEqual(failing._rotation_index, healthy._rotation_index)
+        self.assertIsNone(failing._rotation_error)
+        self.assertFalse(failing._rotation_waiting_for_reconnect)
+        for lamp in lamps:
+            lamp.stop_effect_rotation()
+
+    async def test_a_first_step_overrunning_its_boundary_catches_up_at_once(self):
+        # Why short-interval starts made exact-command tests flaky: a step
+        # that crosses a grid boundary is followed at once by the item now
+        # due (the lamps share the grid). Deterministic here: the first step
+        # takes a whole tick.
+        light = make_light(self.helpers)
+        loop = asyncio.get_running_loop()
+        real_time = loop.time
+        offset = [0.0]
+        loop.time = lambda: real_time() + offset[0]
+        try:
+            shown = []
+
+            async def apply(item):
+                shown.append(item["name"])
+                if len(shown) == 1:
+                    offset[0] += 10  # the first step overruns its tick
+                return True
+
+            light._apply_rotation_item = apply
+            await light.start_effect_rotation(["Rainbow", "Streamer"], 10)
+            for _ in range(20):
+                await asyncio.sleep(0)
+            self.assertEqual(shown, ["Streamer", "Rainbow"])
+        finally:
+            light.stop_effect_rotation()
+            loop.time = real_time
+
+    async def test_a_lamp_restarted_alone_joins_the_running_rotation(self):
+        # The card's Retry (or a manual start) starts one lamp alone: it
+        # shows what the running lamp shows, on its grid, in its group.
+        running = make_light(self.helpers, kind="clock")
+        running.entity_id = "light.a"
+        running._mode = "Clock"
+        await running.start_effect_rotation(["Rainbow", "White", "Yellow"], 10**6, "clock")
+        running.skip_effect_rotation()  # it moved on since it started
+        for _ in range(20):
+            await asyncio.sleep(0)
+        alone = make_light(self.helpers, kind="clock")
+        alone.entity_id = "light.b"
+        alone._mode = "Clock"
+        alone._native_clock_style = 4  # showing something else
+        await alone.start_effect_rotation(["Rainbow", "White", "Yellow"], 10**6, "clock")
+        self.assertEqual(alone._rotation_timeline, running._rotation_timeline)
+        self.assertEqual(alone._rotation_index, running._rotation_index)
+        self.assertEqual(alone._rotation_group, ["light.a", "light.b"])
+        self.assertEqual(running._rotation_group, ["light.a", "light.b"])
+        # A different rotation (other modes) keeps its own schedule.
+        other = make_light(self.helpers, kind="clock")
+        other.entity_id = "light.c"
+        other._mode = "Clock"
+        await other.start_effect_rotation(["Rainbow", "White"], 10**6, "clock")
+        self.assertIsNone(other._rotation_group)
+        for lamp in (running, alone, other):
+            lamp.stop_effect_rotation()
 
     async def test_content_change_cancels_pending_reconnect(self):
         light = make_light(self.helpers)
@@ -954,7 +1082,7 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
                 commands.put_nowait((params, kwargs))
 
         light._cube_matrix.send_raw_command.side_effect = send
-        await light.start_effect_rotation(["Rainbow", "White"], 10, "clock")
+        await light.start_effect_rotation(["Rainbow", "White"], STEADY_INTERVAL, "clock")
         first, options = commands.get_nowait()
         self.assertEqual(first[1], light._native_clock_style)
         # The lamp's answer is checked, so a refused step is not taken for shown.
@@ -968,6 +1096,7 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
         third, _ = await asyncio.wait_for(commands.get(), 2)
         self.assertNotEqual(first[1], second[1])
         self.assertEqual(first[1], third[1])
+        light.stop_effect_rotation()
 
     async def test_transport_failure_reaches_start_caller(self):
         light = self.make_transport_light()
@@ -989,11 +1118,12 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
                 if len(sent) == 1:
                     raise OSError("connection refused")
         light._cube_matrix.send_raw_command.side_effect = send
-        await light.start_effect_rotation(["Rainbow", "White"], 60, "clock")
+        await light.start_effect_rotation(["Rainbow", "White"], STEADY_INTERVAL, "clock")
         self.assertEqual(len(sent), 2)
         self.assertEqual(sent[0], sent[1])
         self.assertTrue(light._rotation_active)
         self.assertIsNone(light._rotation_error)
+        light.stop_effect_rotation()
 
     async def test_backoff_stops_when_lamp_turns_off_or_locks(self):
         for attribute in ("_is_on", "_calibration_lock"):
@@ -1070,11 +1200,12 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_native_start_reaches_protocol_transport(self):
         light = self.make_transport_light()
-        await light.start_effect_rotation(["Rainbow", "Streamer"], 10, "native")
+        await light.start_effect_rotation(["Rainbow", "Streamer"], STEADY_INTERVAL, "native")
         commands = light._cube_matrix.send_raw_command.await_args_list
         self.assertEqual([call.args[0] for call in commands], ["set_bright", "set_fx_effect"])
         self.assertEqual(commands[-1].args[1][0], ALL_NATIVE_EFFECTS["Streamer"]["effect_id"])
         self.assertTrue(light._rotation_active)
+        light.stop_effect_rotation()
 
     async def test_hard_timeout_marks_retryable_and_success_clears_classification(self):
         light = self.make_transport_light()

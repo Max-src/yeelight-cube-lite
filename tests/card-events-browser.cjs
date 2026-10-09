@@ -377,6 +377,34 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
       ["Export pixel arts to a JSON file", "Import pixel arts from a JSON file"],
       "draw: the shared export / import row",
     );
+    // The pixel art on the canvas is the active one (highlighted); drawing
+    // over it makes the canvas its own again.
+    assert.deepEqual(
+      await page.evaluate(async () => {
+        await mount("yeelight-cube-draw-card", {
+          entity: "light.a",
+          pixelart_sensor: "sensor.pixel",
+          style_selector_style: "preview-grid",
+        });
+        const gallery = card.shadowRoot.querySelector("yc-collection-gallery");
+        const active = async () => {
+          await card.updateComplete;
+          await gallery.updateComplete;
+          return [...gallery.querySelectorAll('[data-active-mode="true"]')].map((node) => node.dataset.mode);
+        };
+        await card._applyPixelArtToMatrix(1);
+        const loaded = await active();
+        card.matrix = card.matrix.map((color, index) => (index === 0 ? "#123456" : color));
+        card.requestUpdate();
+        const drawn = await active();
+        // The canvas is saved in the browser: leave it blank for later tests.
+        card.matrix = card.matrix.map(() => "#000000");
+        card.constructor.getStorageUtils().saveMatrix(card.matrix);
+        return { loaded, drawn };
+      }),
+      { loaded: ["art:1"], drawn: [] },
+      "draw: the pixel art on the canvas is active",
+    );
     // Browsing never replaces the drawing: carousel and wheel moves only
     // browse (navigateSelects false), a click on the item loads it.
     for (const style of ["preview-carousel", "preview-wheel"]) {
@@ -421,6 +449,26 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
       }),
       true,
       "draw: a card update keeps the gallery's DOM",
+    );
+    // New callbacks (cards pass new arrow functions on every render) never
+    // update the gallery, and the newest one is the one called.
+    assert.deepEqual(
+      await page.evaluate(async () => {
+        const gallery = card.shadowRoot.querySelector("yc-collection-gallery");
+        let updates = 0;
+        gallery.addEventListener("gallery-updated", () => updates++);
+        card.selectedColor = "#0000ff";
+        card.requestUpdate();
+        await card.updateComplete;
+        await gallery.updateComplete;
+        const called = [];
+        gallery.onSelect = (key) => called.push(key);
+        await gallery.updateComplete;
+        gallery.querySelector('[data-mode="art:0"]').click();
+        return { updates, called };
+      }),
+      { updates: 0, called: ["art:0"] },
+      "gallery callbacks: no re-render, the latest called",
     );
 
     // --- Gradient angle capsule -------------------------------------------------
@@ -1006,6 +1054,47 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         ["import", "Import palettes from a JSON file"],
       ],
     );
+    // The palette the lamp shows is the active one (highlighted), following
+    // the lamp; A → Z order (gallery_sort) sorts by the name shown.
+    const paletteActive = await page.evaluate(async () => {
+      await mount("yeelight-cube-palette-card", {
+        entity: "light.a",
+        palette_sensor: "sensor.pal",
+        style_selector_style: "preview-list",
+      });
+      const shown = () =>
+        [...card.shadowRoot.querySelectorAll('yc-collection-gallery [data-active-mode="true"]')].map(
+          (node) => node.dataset.mode,
+        );
+      const lamp = hass.states["light.a"];
+      const showColors = async (text_colors) => {
+        hass.states = { ...hass.states, "light.a": { ...lamp, attributes: { ...lamp.attributes, text_colors } } };
+        card.hass = hass;
+        await card.updateComplete;
+        await card.shadowRoot.querySelector("yc-collection-gallery").updateComplete;
+      };
+      await showColors([[0, 0, 255]]);
+      const sea = shown();
+      await showColors([[255, 0, 0], [255, 160, 0]]);
+      const warm = shown();
+      await showColors([[1, 2, 3]]);
+      const none = shown();
+      hass.states = { ...hass.states, "light.a": lamp };
+      card.setConfig({ ...card.config, gallery_sort: "name" });
+      card.hass = hass;
+      await card.updateComplete;
+      await card.shadowRoot.querySelector("yc-collection-gallery").updateComplete;
+      const order = [...card.shadowRoot.querySelectorAll("yc-collection-gallery .gallery-item[data-mode]")].map(
+        (node) => node.getAttribute("aria-label").split(":")[0],
+      );
+      return { sea, warm, none, order };
+    });
+    assert.deepEqual(paletteActive, {
+      sea: ["palette:1"],
+      warm: ["palette:0"],
+      none: [],
+      order: ["Sea", "Warm"],
+    });
     // No palettes: the card says so.
     await page.evaluate(() => {
       hass.states = { ...hass.states, "sensor.pal": { state: "0", attributes: { palettes_v2: [] } } };
@@ -1038,6 +1127,7 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
               .filter((node) => node.getBoundingClientRect().width > width + 1).length,
             arrow: arrow ? getComputedStyle(arrow).backgroundColor : "",
             prompt: gallery.querySelector(".mode-select option[disabled]")?.textContent || "",
+            selected: gallery.querySelector(".mode-select")?.value || "",
           };
         }
       main.style.cssText = saved;
@@ -1049,7 +1139,12 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         assert.ok(look.arrow, `${view}: arrows`);
         assert.notEqual(look.arrow, "rgb(27, 42, 78)", `${view}: arrows take the theme's card color`);
       }
-      if (view.endsWith("dropdown")) assert.equal(look.prompt, "Choose…", `${view}: prompt`);
+      // Palette: the lamp shows the first palette's colors (the active one,
+      // selected); Draw: the canvas holds no pixel art (a prompt).
+      if (view === "palette dropdown")
+        assert.deepEqual([look.prompt, look.selected], ["", "palette:0"], view);
+      if (view === "draw dropdown")
+        assert.deepEqual([look.prompt, look.selected], ["Choose…", ""], view);
     }
 
     // --- Arrange: the user collections' order, one block in every editor -----
@@ -1108,7 +1203,7 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
             // Every row shown (the editor scrolls, not the list).
             full: getComputedStyle(list).maxHeight === "none",
           };
-          rows()[0].querySelector('button[title="Move down"]').click();
+          rows()[0].querySelector(`button[title="${config.button || "Move down"}"]`).click();
           await editor.updateComplete;
           return { before, after: names(), shape, calls: calls.map(({ service, data }) => ({ service, data })) };
         },
@@ -1121,6 +1216,15 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     assert.deepEqual(paletteArrange.calls, [
       // ▼ swaps two neighbours: one move (the same result either way).
       { service: "move_palette", data: { from_idx: 1, to_idx: 0, expected_name: "Sea" } },
+    ]);
+    // ⤓ moves an item to the bottom in one guarded move.
+    const toBottom = await arrange("yeelight-cube-palette-card", {
+      palette_sensor: "sensor.pal",
+      button: "Move to the bottom",
+    });
+    assert.deepEqual(toBottom.after, ["Sea", "<b>Bold</b>", "Warm"]);
+    assert.deepEqual(toBottom.calls, [
+      { service: "move_palette", data: { from_idx: 0, to_idx: 2, expected_name: "Warm" } },
     ]);
     const pixelArrange = await arrange("yeelight-cube-draw-card", { pixelart_sensor: "sensor.pixel" });
     assert.deepEqual(pixelArrange.before, ["Heart", "Star"], "pixel arts listed in stored order");
@@ -1299,13 +1403,13 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
       "PASS shared card frame on all 7 cards and editors: title, lamp status, plain background, no-lamp / not-found notices, same editor settings",
     );
     console.log(
-      "PASS palette card on the shared gallery: its swatches in 6 layouts and chips, color count, former options migrated, keyboard picks, rename / confirmed delete, empty notice",
+      "PASS palette card on the shared gallery: its swatches in 6 layouts and chips, color count, former options migrated, keyboard picks, rename / confirmed delete, the palette the lamp shows active, A → Z order, empty notice",
     );
     console.log(
       "PASS Draw card on the shared gallery: former options, previews as drawn, load (and lamp) / rename / confirmed delete, carousel and wheel moves only browse, memoized items, shared export / import row; narrow cards never overflow and arrows keep their tint",
     );
     console.log(
-      "PASS Arrange (Palette and Draw editors): stored order with thumbnails, order only, one guarded move per change shown at once",
+      "PASS Arrange (Palette and Draw editors): stored order with thumbnails, order only, one guarded move per change (▲ ▼ ⤒ ⤓, drag) shown at once",
     );
   } finally {
     await browser.close();

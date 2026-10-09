@@ -42,7 +42,8 @@ generate_fontmap.py
 # Source font files (bitmap font maps are pre-generated in layout.py)
 *.ttf
 
-# Unused cards kept for reference (match anywhere in the tree)
+# Unused cards kept for reference, outside the component (archive/unused-cards;
+# match anywhere in the tree so they are never committed)
 unused-cards/
 yeelight-cube-lettermap-card.js
 yeelight-cube-angle-gradient-card.js

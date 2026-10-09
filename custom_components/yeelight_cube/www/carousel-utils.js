@@ -1,38 +1,18 @@
 /**
- * Carousel Utilities - Reusable carousel rendering and navigation
- *
- * Extracted from yeelight-cube-draw-card.js to allow carousel functionality
- * to be reused across different modes and contexts.
+ * The carousel shared by every card: one model (carouselModel), one swipe
+ * (carouselSwipe) and one look (carouselStyles), in two templates: a Lit
+ * one (renderCarousel: items that are Lit templates, the Draw card's color
+ * groups) and an HTML-string one (renderCarouselString: the shared
+ * gallery's Carousel layout).
  */
 
 import { html } from "./lib/lit-all.js";
 import { escapeHtml } from "./html-escape-utils.js";
+import { normalizeButtonShape, roundedCardsRadius } from "./card-config.js";
 
-/**
- * Normalize a navigation-button shape value to the canonical vocabulary
- * shared across all cards: `square` | `rounded` | `round`.
- *
- * Legacy values are still accepted so existing dashboards keep working:
- *   - "circle" -> "round"   (fully circular, border-radius 50%)
- *   - "rect"   -> "rounded" (soft corners, border-radius 8px)
- *
- * @param {string} shape - Raw shape value (canonical or legacy)
- * @returns {string} Canonical shape value
- */
-export function normalizeButtonShape(shape) {
-  switch (shape) {
-    case "circle":
-      return "round";
-    case "rect":
-      return "rounded";
-    case "round":
-    case "rounded":
-    case "square":
-      return shape;
-    default:
-      return "rounded";
-  }
-}
+// The shared button-shape vocabulary (card-config.js), re-exported for the
+// carousels' callers.
+export { normalizeButtonShape };
 
 /**
  * Calculate which indicator dots to show with ellipsis for large item counts
@@ -113,159 +93,121 @@ function getVisibleDots(totalItems, currentIndex, maxVisible = 11) {
 }
 
 /**
- * Renders a carousel wrapper with navigation and indicators
- * Delegates item rendering to the provided renderItem function
+ * Everything both carousel renderers show, from one place: the item shown,
+ * the arrows' shape and disabled state, the dots and the card's radius.
+ */
+function carouselModel({
+  items = [],
+  currentIndex = 0,
+  buttonShape = "rect",
+  wrapNavigation = false,
+  roundedCards = true,
+}) {
+  const validIndex = Math.max(0, Math.min(currentIndex, items.length - 1));
+  return {
+    validIndex,
+    navShape: normalizeButtonShape(buttonShape),
+    // The carousel card's corners: 12px by default (legacy true / "round"),
+    // else the rounded_cards value.
+    radius:
+      roundedCards === undefined || roundedCards === true || roundedCards === "round"
+        ? 12
+        : roundedCardsRadius(roundedCards),
+    prevDisabled: validIndex === 0 && !wrapNavigation,
+    nextDisabled: validIndex === items.length - 1 && !wrapNavigation,
+    dots: getVisibleDots(items.length, validIndex),
+    dotTitle: (index) => items[index]?.name || `Item ${index + 1}`,
+  };
+}
+
+/**
+ * A touchstart handler that turns a horizontal swipe into a step:
+ * `onNavigate(1)` (to the left: next) or `onNavigate(-1)`. Vertical moves
+ * still scroll the page, small moves are taps. Used by every carousel.
+ */
+export function carouselSwipe(onNavigate) {
+  return (event) => {
+    const start = event.touches[0];
+    const startX = start.clientX;
+    const startY = start.clientY;
+    let swiping = false;
+    const surface = event.currentTarget;
+    const move = (moveEvent) => {
+      const touch = moveEvent.touches[0];
+      if (!touch) return;
+      const dx = touch.clientX - startX;
+      if (Math.abs(dx) > 20 && Math.abs(dx) > Math.abs(touch.clientY - startY) * 1.5) {
+        swiping = true;
+        moveEvent.preventDefault();
+      }
+    };
+    const end = (endEvent) => {
+      surface.removeEventListener("touchmove", move);
+      surface.removeEventListener("touchend", end);
+      surface.removeEventListener("touchcancel", end);
+      if (swiping && endEvent.type === "touchend") {
+        const dx = endEvent.changedTouches[0].clientX - startX;
+        if (Math.abs(dx) > 50) onNavigate(dx < 0 ? 1 : -1);
+      }
+    };
+    surface.addEventListener("touchmove", move, { passive: false });
+    surface.addEventListener("touchend", end, { passive: true });
+    surface.addEventListener("touchcancel", end, { passive: true });
+  };
+}
+
+/**
+ * A carousel as a Lit template (cards whose items are Lit templates: the
+ * Draw card's color groups). The same markup, model and swipe as
+ * renderCarouselString (the shared gallery's carousel).
  *
- * @param {Object} options - Configuration options
- * @param {Array} options.items - Array of items to display
- * @param {number} options.currentIndex - Current carousel index (0-based)
- * @param {number} options.slideDirection - Direction of last slide (-1 = left, 1 = right, 0 = none)
- * @param {Function} options.onNavigate - Callback (direction, maxLength) when navigation is triggered
- * @param {Function} options.onSetIndex - Callback (index) when indicator is clicked
- * @param {Function} options.renderItem - Function to render the current item (receives: item, index)
- * @param {string} options.buttonShape - Button shape for navigation ('rect', 'circle', etc.)
- * @param {boolean} options.showAsCard - Whether to show content in a card container (default: false)
- * @param {boolean} options.wrapNavigation - Whether to wrap around at first/last items (default: false)
- * @returns {TemplateResult} LitElement HTML template
+ * @param {Object} options
+ * @param {Array} options.items - the items
+ * @param {number} options.currentIndex - the item shown (0-based)
+ * @param {Function} options.onNavigate - (direction, count) => step
+ * @param {Function} options.onSetIndex - (index) => show that item (dots)
+ * @param {Function} options.renderItem - (item, index) => its template
+ * @param {string} [options.buttonShape="rect"] - arrows: square, rounded, round
+ * @param {boolean} [options.showAsCard=false] - the item in a card
+ * @param {boolean} [options.wrapNavigation=false] - past the ends
+ * @param {*} [options.roundedCards] - the card's corners (rounded_cards)
  */
 export function renderCarousel(options) {
-  const {
-    items = [],
-    currentIndex = 0,
-    slideDirection = 0,
-    onNavigate,
-    onSetIndex,
-    renderItem,
-    buttonShape = "rect",
-    showAsCard = false,
-    wrapNavigation = false,
-    roundedCards = true,
-  } = options;
-
-  // Canonicalize the nav-button shape (accepts legacy circle/rect too)
-  const navShape = normalizeButtonShape(buttonShape);
-
-  // Normalize rounded_cards to px value
-  const cardBorderRadius = (() => {
-    const v = roundedCards;
-    if (v === undefined || v === true || v === "round") return "12px";
-    if (v === false || v === "square") return "0";
-    if (v === "rounded") return "4px";
-    return typeof v === "number" ? `${v}px` : "12px";
-  })();
-
-  if (!items || items.length === 0) {
-    return html`<div class="no-pixel-arts">No items available</div>`;
-  }
-
-  const validIndex = Math.max(0, Math.min(currentIndex, items.length - 1));
-
-  // Touch swipe state (closures)
-  let _swipeStartX = 0;
-  let _swipeStartY = 0;
-  let _swiping = false;
-
-  const _onTouchStart = (e) => {
-    const touch = e.touches[0];
-    _swipeStartX = touch.clientX;
-    _swipeStartY = touch.clientY;
-    _swiping = false;
-
-    const wrapper = e.currentTarget;
-
-    const _moveHandler = (ev) => {
-      if (!ev.touches[0]) return;
-      const dx = ev.touches[0].clientX - _swipeStartX;
-      const dy = Math.abs(ev.touches[0].clientY - _swipeStartY);
-      if (Math.abs(dx) > 20 && Math.abs(dx) > dy * 1.5) {
-        _swiping = true;
-        ev.preventDefault();
-      }
-    };
-
-    const _cleanup = (ev) => {
-      wrapper.removeEventListener("touchmove", _moveHandler);
-      wrapper.removeEventListener("touchend", _cleanup);
-      wrapper.removeEventListener("touchcancel", _cleanup);
-
-      if (_swiping && ev.type === "touchend") {
-        const touch = ev.changedTouches[0];
-        const dx = touch.clientX - _swipeStartX;
-        if (Math.abs(dx) > 50) {
-          onNavigate && onNavigate(dx < 0 ? 1 : -1, items.length);
-        }
-      }
-      _swiping = false;
-    };
-
-    wrapper.addEventListener("touchmove", _moveHandler, { passive: false });
-    wrapper.addEventListener("touchend", _cleanup, { passive: true });
-    wrapper.addEventListener("touchcancel", _cleanup, { passive: true });
-  };
-
+  const { items = [], onNavigate, onSetIndex, renderItem, showAsCard = false } = options;
+  if (!items.length) return html`<div class="no-items">No items available</div>`;
+  const model = carouselModel(options);
+  const step = (direction) => onNavigate?.(direction, items.length);
+  const arrow = (direction, disabled) => html`<button
+    class="carousel-nav-btn carousel-nav-external nav-btn-${model.navShape} ${disabled ? "disabled" : ""}"
+    title=${direction < 0 ? "Previous" : "Next"}
+    ?disabled=${disabled}
+    @click=${() => step(direction)}
+  >
+    <ha-icon icon=${direction < 0 ? "mdi:chevron-left" : "mdi:chevron-right"}></ha-icon>
+  </button>`;
   return html`
-    <div class="carousel-wrapper" @touchstart=${_onTouchStart}>
-      <div
-        class="pixelart-gallery-carousel ${showAsCard
-          ? "carousel-with-card"
-          : ""}"
-      >
-        <button
-          class="carousel-nav-btn carousel-nav-external nav-btn-${navShape} ${validIndex ===
-            0 && !wrapNavigation
-            ? "disabled"
-            : ""}"
-          title="Previous"
-          @click=${() => onNavigate && onNavigate(-1, items.length)}
-          ?disabled=${validIndex === 0 && !wrapNavigation}
-          style="     width: 38px !important;
-                      max-width: 38px !important;
-                      min-width: 38px !important;
-                      height: 38px;
-                      padding: 0;"
-        >
-          <ha-icon icon="mdi:chevron-left"></ha-icon>
-        </button>
+    <div class="carousel-wrapper" @touchstart=${carouselSwipe(step)}>
+      <div class="pixelart-gallery-carousel ${showAsCard ? "carousel-with-card" : ""}">
+        ${arrow(-1, model.prevDisabled)}
         <div
           class="carousel-content ${showAsCard ? "carousel-content-card" : ""}"
-          style="${showAsCard ? `border-radius: ${cardBorderRadius};` : ""}"
+          style=${showAsCard ? `border-radius: ${model.radius}px;` : ""}
         >
-          ${renderItem ? renderItem(items[validIndex], validIndex) : ""}
+          ${renderItem ? renderItem(items[model.validIndex], model.validIndex) : ""}
         </div>
-        <button
-          class="carousel-nav-btn carousel-nav-external nav-btn-${navShape} ${validIndex ===
-            items.length - 1 && !wrapNavigation
-            ? "disabled"
-            : ""}"
-          title="Next"
-          @click=${() => onNavigate && onNavigate(1, items.length)}
-          ?disabled=${validIndex === items.length - 1 && !wrapNavigation}
-          style="     width: 38px !important;
-                      max-width: 38px !important;
-                      min-width: 38px !important;
-                      height: 38px;
-                      padding: 0;"
-        >
-          <ha-icon icon="mdi:chevron-right"></ha-icon>
-        </button>
+        ${arrow(1, model.nextDisabled)}
       </div>
-      ${html`
-        <div class="carousel-indicators carousel-indicators-outside">
-          ${getVisibleDots(items.length, validIndex).map((dot) =>
-            dot.isEllipsis
-              ? html`<span class="carousel-dot-ellipsis">⋯</span>`
-              : html`
-                  <span
-                    class="carousel-dot ${dot.index === validIndex
-                      ? "active"
-                      : ""}"
-                    title="${items[dot.index]?.name || `Item ${dot.index + 1}`}"
-                    @click=${() => onSetIndex && onSetIndex(dot.index)}
-                  ></span>
-                `,
-          )}
-        </div>
-      `}
+      <div class="carousel-indicators carousel-indicators-outside">
+        ${model.dots.map((dot) =>
+          dot.isEllipsis
+            ? html`<span class="carousel-dot-ellipsis">⋯</span>`
+            : html`<span
+                class="carousel-dot ${dot.index === model.validIndex ? "active" : ""}"
+                title=${model.dotTitle(dot.index)}
+                @click=${() => onSetIndex?.(dot.index)}
+              ></span>`,
+        )}
+      </div>
     </div>
   `;
 }
@@ -385,6 +327,15 @@ export const carouselStyles = `
   }
 
   /* External navigation buttons (card mode) */
+  /* The arrows beside the item (both carousel templates). */
+  .carousel-nav-external {
+    width: 38px !important;
+    max-width: 38px !important;
+    min-width: 38px !important;
+    height: 38px;
+    padding: 0;
+  }
+
   .carousel-with-card .carousel-nav-external {
     position: relative;
     top: auto;
@@ -458,120 +409,53 @@ export const carouselStyles = `
 `;
 
 /**
- * Renders a carousel as a string (for vanilla JS/innerHTML use cases)
- * This is an alternative to renderCarousel() for components that don't use LitElement
+ * A carousel as an HTML string (the shared gallery's carousel; its clicks
+ * are delegated: data-action="navigate" / "set-index", bindStyleSelectorEvents,
+ * and its swipe is carouselSwipe). Same markup and model as renderCarousel.
  *
- * @param {Object} options - Configuration options (same as renderCarousel)
- * @param {Array} options.items - Array of items to display
- * @param {number} options.currentIndex - Current carousel index (0-based)
- * @param {Function} options.onNavigateAttr - HTML attribute for navigation (e.g., 'onclick' or 'data-action')
- * @param {Function} options.renderItemString - Function to render item as HTML string (receives: item, index)
- * @param {string} options.buttonShape - Button shape for navigation ('rect', 'circle', etc.)
- * @param {boolean} options.showAsCard - Whether to show content in a card container (default: false)
- * @param {boolean} options.wrapNavigation - Whether to wrap around at first/last items (default: false)
- * @param {string} options.carouselId - Unique ID for this carousel instance (required for event handling)
+ * @param {Object} options - renderCarousel's, with:
+ * @param {Function} options.renderItemString - (item, index) => its HTML
+ * @param {string} [options.carouselId="carousel"] - names this carousel's
+ *   buttons (data-carousel-id)
  * @returns {string} HTML string
  */
 export function renderCarouselString(options) {
-  const {
-    items = [],
-    currentIndex = 0,
-    renderItemString,
-    buttonShape = "rect",
-    showAsCard = false,
-    wrapNavigation = false,
-    carouselId = "carousel",
-    containerGradient = null,
-    roundedCards = true,
-  } = options;
-
-  // Canonicalize the nav-button shape (accepts legacy circle/rect too)
-  const navShape = normalizeButtonShape(buttonShape);
-
-  // Normalize rounded_cards to px value
-  const cardBorderRadius = (() => {
-    const v = roundedCards;
-    if (v === undefined || v === true || v === "round") return "12px";
-    if (v === false || v === "square") return "0";
-    if (v === "rounded") return "4px";
-    return typeof v === "number" ? `${v}px` : "12px";
-  })();
-
-  if (!items || items.length === 0) {
-    return `<div class="no-items">No items available</div>`;
-  }
-
-  const validIndex = Math.max(0, Math.min(currentIndex, items.length - 1));
-  const visibleDots = getVisibleDots(items.length, validIndex);
-
-  const leftDisabled = validIndex === 0 && !wrapNavigation;
-  const rightDisabled = validIndex === items.length - 1 && !wrapNavigation;
-
-  const indicatorsHtml = visibleDots
-    .map((dot) => {
-      if (dot.isEllipsis) {
-        return `<span class="carousel-dot-ellipsis">⋯</span>`;
-      }
-      const isActive = dot.index === validIndex;
-      const itemName = items[dot.index]?.name || `Item ${dot.index + 1}`;
-      return `<span 
-        class="carousel-dot ${isActive ? "active" : ""}" 
-        title="${escapeHtml(itemName)}"
+  const { items = [], renderItemString, showAsCard = false, carouselId = "carousel" } = options;
+  if (!items.length) return `<div class="no-items">No items available</div>`;
+  const model = carouselModel(options);
+  const arrow = (direction, disabled) => `<button
+      class="carousel-nav-btn carousel-nav-external nav-btn-${model.navShape} ${disabled ? "disabled" : ""}"
+      title="${direction < 0 ? "Previous" : "Next"}"
+      data-carousel-id="${carouselId}"
+      data-action="navigate"
+      data-direction="${direction}"
+      ${disabled ? "disabled" : ""}
+    ><ha-icon icon="${direction < 0 ? "mdi:chevron-left" : "mdi:chevron-right"}"></ha-icon></button>`;
+  const dots = model.dots
+    .map((dot) =>
+      dot.isEllipsis
+        ? `<span class="carousel-dot-ellipsis">⋯</span>`
+        : `<span
+        class="carousel-dot ${dot.index === model.validIndex ? "active" : ""}"
+        title="${escapeHtml(model.dotTitle(dot.index))}"
         data-carousel-id="${carouselId}"
         data-action="set-index"
         data-index="${dot.index}"
-      ></span>`;
-    })
+      ></span>`,
+    )
     .join("");
-
-  const content = renderItemString
-    ? renderItemString(items[validIndex], validIndex)
-    : "";
-
   return `
     <div class="carousel-wrapper">
-      <div class="pixelart-gallery-carousel ${
-        showAsCard ? "carousel-with-card" : ""
-      }">
-        <button
-          class="carousel-nav-btn carousel-nav-external nav-btn-${navShape} ${
-            leftDisabled ? "disabled" : ""
-          }"
-          title="Previous"
-          data-carousel-id="${carouselId}"
-          data-action="navigate"
-          data-direction="-1"
-          ${leftDisabled ? "disabled" : ""}
-          style="width: 38px !important; max-width: 38px !important; min-width: 38px !important; height: 38px; padding: 0;"
-        >
-          <ha-icon icon="mdi:chevron-left"></ha-icon>
-        </button>
-        <div class="carousel-content ${
-          showAsCard ? "carousel-content-card" : ""
-        }${containerGradient ? " gradient-bg-mode" : ""}" ${(() => {
-          const styles = [];
-          if (showAsCard) styles.push(`border-radius: ${cardBorderRadius}`);
-          if (containerGradient)
-            styles.push(`--carousel-gradient-bg: ${containerGradient}`);
-          return styles.length ? `style="${styles.join("; ")};"` : "";
-        })()}>
-          ${content}
+      <div class="pixelart-gallery-carousel ${showAsCard ? "carousel-with-card" : ""}">
+        ${arrow(-1, model.prevDisabled)}
+        <div class="carousel-content ${showAsCard ? "carousel-content-card" : ""}"${
+          showAsCard ? ` style="border-radius: ${model.radius}px;"` : ""
+        }>
+          ${renderItemString ? renderItemString(items[model.validIndex], model.validIndex) : ""}
         </div>
-        <button
-          class="carousel-nav-btn carousel-nav-external nav-btn-${navShape} ${
-            rightDisabled ? "disabled" : ""
-          }"
-          title="Next"
-          data-carousel-id="${carouselId}"
-          data-action="navigate"
-          data-direction="1"
-          ${rightDisabled ? "disabled" : ""}
-          style="width: 38px !important; max-width: 38px !important; min-width: 38px !important; height: 38px; padding: 0;"
-        >
-          <ha-icon icon="mdi:chevron-right"></ha-icon>
-        </button>
+        ${arrow(1, model.nextDisabled)}
       </div>
-      ${`<div class="carousel-indicators carousel-indicators-outside">${indicatorsHtml}</div>`}
+      <div class="carousel-indicators carousel-indicators-outside">${dots}</div>
     </div>
   `;
 }

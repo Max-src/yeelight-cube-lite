@@ -100,7 +100,6 @@ class ColorPipelineMixin:
         5. Brightness/Darkness - Applied separately in apply() as final step
         """
         r, g, b = rgb_color
-        original_rgb = (r, g, b)  # Store original for logging
         is_black = r == 0 and g == 0 and b == 0
         
         # If the pixel is black (background/off), don't apply any effects

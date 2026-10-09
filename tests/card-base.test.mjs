@@ -112,8 +112,8 @@ test("the Draw pixel-art gallery's options join the shared gallery's", async () 
     preview_size: 70,
     selector_shape: "custom",
     item_radius: 0,
-    // Kept: the Draw palette cards use it too.
-    rounded_cards: "square",
+    // The colour section's corners: its own option now (colors_ prefix).
+    colors_item_radius: 0,
     selector_button_shape: "round",
     gallery_wrap_navigation: true,
     allow_rename: true,
@@ -124,6 +124,39 @@ test("the Draw pixel-art gallery's options join the shared gallery's", async () 
     item_card_border: "none",
     show_search: false,
   });
+  // The colour section (palette cards): the gallery's names, colors_
+  // prefixed; a legacy "round" corner keeps each mode's own default.
+  assert.deepEqual(
+    normalizeCardOptions(
+      {
+        palette_carousel_button_shape: "circle",
+        palette_carousel_wrap_navigation: true,
+        rounded_cards: 6,
+        style_selector_style: "preview-grid",
+        items_per_page: 12,
+        preview_size: 100,
+        selector_shape: "rounded",
+        item_card_border: "auto",
+        show_search: false,
+      },
+      "draw",
+    ),
+    {
+      style_selector_style: "preview-grid",
+      items_per_page: 12,
+      preview_size: 100,
+      selector_shape: "rounded",
+      item_card_border: "auto",
+      show_search: false,
+      colors_button_shape: "round",
+      colors_wrap_navigation: true,
+      colors_item_radius: 6,
+    },
+  );
+  assert.equal(
+    "colors_item_radius" in normalizeCardOptions({ rounded_cards: "round" }, "draw"),
+    false,
+  );
   // The former album was 240 px at 100%: the shared album's 55%.
   assert.equal(
     normalizeCardOptions({ pixel_art_gallery_mode: "album" }, "draw").preview_size,

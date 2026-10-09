@@ -242,7 +242,7 @@ server-side favourites rotation that continues after you close the dashboard.
 | Feature | Description |
 | :-- | :-- |
 | **Clock preview** | Live time/date preview using the lamp's native font, with configurable pixels, spacing, background, shadow and size |
-| **Style browser** | Search clock styles using text (buttons, dropdown, or chips with a live mini preview), grid, list, strip, carousel, wheel or album layouts, with pagination and favourite markers. The editor's **Styles** list picks, orders and renames them for the card. Your custom styles can be renamed and deleted (with confirmation) from the gallery |
+| **Style browser** | Search clock styles using text (buttons, dropdown, or chips with a live mini preview), grid, list, strip, carousel, wheel or album layouts, with pagination and favourite markers. The editor's **Styles** list picks, orders and renames them for the card (or show them A → Z). Your custom styles can be renamed and deleted (with confirmation) from the gallery |
 | **Color modes** | Choose supported palettes or custom RGB; save reusable color modes and clock presets |
 | **Sliders** | Brightness and animation speed with selectable slider styles, labels and values |
 | **Content & format** | Switch time/date, 12/24-hour format and colon blinking |
@@ -341,7 +341,7 @@ available where supported. Experimental effects require the lamp's
 | Feature | Description |
 | :-- | :-- |
 | **Live previews** | Preview firmware animations with configurable pixels, spacing, background, shadow and size |
-| **Effect browser** | Search effects using text (buttons, dropdown, or chips with a live mini preview), grid, list, strip, carousel, wheel or album layouts, with pagination and availability badges. The editor's **Effects** list picks, orders and renames them for the card |
+| **Effect browser** | Search effects using text (buttons, dropdown, or chips with a live mini preview), grid, list, strip, carousel, wheel or album layouts, with pagination and availability badges. The editor's **Effects** list picks, orders and renames them for the card (or show them A → Z) |
 | **Color modes** | Apply supported palette modes or custom RGB; favourites remember the chosen colors |
 | **Sliders** | Brightness and effect speed with selectable slider styles; speed is shown for effects that support it |
 | **Orientation & actions** | Device orientation, previous, next, random, freeze, refresh and power controls |
@@ -546,15 +546,10 @@ Manage color palettes. Apply a palette to lamps with one click. Multiple display
 <details>
 <summary>View card variations</summary>
 
+<!-- card-docs:palette:variations:start -->
 <table>
-  <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Palettes-Card-Variation-1.png" alt="Palettes card variation 1"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Palettes-Card-Variation-2.png" alt="Palettes card variation 2"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Palettes-Card-Variation-3.png" alt="Palettes card variation 3"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Palettes-Card-Variation-4.png" alt="Palettes card variation 4">
-    <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Palettes-Card-Variation-5.png" alt="Palettes card variation 5"></td>
-  </tr>
 </table>
+<!-- card-docs:palette:variations:end -->
 
 </details>
 
@@ -563,7 +558,7 @@ Manage color palettes. Apply a palette to lamps with one click. Multiple display
 | Feature | Description |
 | :-- | :-- |
 | **Multi-entity support** | Control multiple lamps at the same time |
-| **Browse & apply** | The shared gallery: List, Grid, Strip, Carousel, Wheel or Album previews, or Filled, Dropdown or Chips buttons, with optional search; five swatch styles (round, square, gradient bar, gradient background, stripes) and the color count; one-click (or keyboard) apply; in the carousel and wheel the arrows only browse, a click applies |
+| **Browse & apply** | The shared gallery: List, Grid, Strip, Carousel, Wheel or Album previews, or Filled, Dropdown or Chips buttons, with optional search; five swatch styles (round, square, gradient bar, gradient background, stripes) and the color count; one-click (or keyboard) apply; in the carousel and wheel the arrows only browse, a click applies. The palette the lamps show is highlighted; your order or A → Z |
 | **Manage** | Rename (Allow Rename) and delete palettes from the gallery; a delete always asks for confirmation |
 | **Arrange** | Reorder your palettes in the card editor (drag or ▲ ▼); the order is saved for every card, lamp and the Matrix: Palette select |
 | **Import/Export** | Load and save full palette collections |
@@ -571,13 +566,10 @@ Manage color palettes. Apply a palette to lamps with one click. Multiple display
 <details>
 <summary>View editor sections</summary>
 
+<!-- card-docs:palette:editors:start -->
 <table>
-  <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Palettes-Card-Editor-1.png" alt="Palettes card editor - Global Settings"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Palettes-Card-Editor-2.png" alt="Palettes card editor - Palettes List"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Palettes-Card-Editor-3.png" alt="Palettes card editor - Import/Export Actions"></td>
-  </tr>
 </table>
+<!-- card-docs:palette:editors:end -->
 
 </details>
 
@@ -609,7 +601,7 @@ Select and configure gradient/color modes. Adjust gradient direction with an ang
 | Feature | Description |
 | :-- | :-- |
 | **Multi-entity support** | Control multiple lamps at the same time |
-| **Unified mode selector** | The same gallery as the Clock and Native Effects cards: 3 lightweight **text** styles (Filled, Dropdown, Chips with live gradient swatches) or 6 **live preview** styles (List, Grid, Strip, Carousel, Wheel, Album) that render a mini matrix of every mode with your current text, colors, and angle — click to apply. Optional text search; the editor's **Modes** list picks, orders and renames them for the card |
+| **Unified mode selector** | The same gallery as the Clock and Native Effects cards: 3 lightweight **text** styles (Filled, Dropdown, Chips with live gradient swatches) or 6 **live preview** styles (List, Grid, Strip, Carousel, Wheel, Album) that render a mini matrix of every mode with your current text, colors, and angle — click to apply. Optional text search; the editor's **Modes** list picks, orders and renames them for the card (or show them A → Z) |
 | **Shared appearance axes** | **Shape** (Square / Rounded / Round) and **Size** apply consistently to every selector style — same design language as the other cards |
 | **Selection feedback** | The chosen item pulses while the command is in flight and settles once the lamp confirms |
 | **Active mode label** | Optional chip showing the currently active mode by name (handy when titles are hidden) |
@@ -647,14 +639,10 @@ The pixel art editor. Paint on a 20×5 interactive matrix, save designs to a per
 <details>
 <summary>View card variations</summary>
 
+<!-- card-docs:draw:variations:start -->
 <table>
-  <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Variation-1.png" alt="Draw card variation 1"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Variation-2.png" alt="Draw card variation 2"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Variation-3.png" alt="Draw card variation 3"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Variation-4.png" alt="Draw card variation 4"></td>
-  </tr>
 </table>
+<!-- card-docs:draw:variations:end -->
 
 </details>
 
@@ -667,24 +655,16 @@ The pixel art editor. Paint on a 20×5 interactive matrix, save designs to a per
 | **Drawing tools** | Individually toggleable with multiple styles |
 | **Drawing matrix** | Interactive 20×5 matrix |
 | **Action buttons** | Apply to lamp, upload from image, save, or clear |
-| **Pixel art gallery** | The shared gallery: Grid, List, Strip, Carousel, Wheel or Album previews, or Filled, Dropdown or Chips buttons, with optional search. A pick (a click; carousel and wheel arrows only browse) loads the pixel art into the drawing (and sends it to the lamp with "Apply to lamp automatically"). Rename (Allow Rename) and delete them from the gallery (a delete always asks for confirmation); reorder them in the card editor's Arrange list (saved for every card and the Matrix: Pixel Art select) |
+| **Pixel art gallery** | The shared gallery: Grid, List, Strip, Carousel, Wheel or Album previews, or Filled, Dropdown or Chips buttons, with optional search. A pick (a click; carousel and wheel arrows only browse) loads the pixel art into the drawing (and sends it to the lamp with "Apply to lamp automatically"); the pixel art on the canvas is highlighted; your order or A → Z. Rename (Allow Rename) and delete them from the gallery (a delete always asks for confirmation); reorder them in the card editor's Arrange list (saved for every card and the Matrix: Pixel Art select) |
 | **Import/Export** | Import and export collections as JSON |
 
 <details>
 <summary>View editor sections</summary>
 
+<!-- card-docs:draw:editors:start -->
 <table>
-  <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Editor-1.png" alt="Draw card editor - Global Settings"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Editor-2.png" alt="Draw card editor - Layout"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Editor-3.png" alt="Draw card editor - Color Section"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Editor-4.png" alt="Draw card editor - Drawing Tools"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Editor-5.png" alt="Draw card editor - Drawing Matrix Section"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Editor-6.png" alt="Draw card editor - Action Buttons"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Editor-7.png" alt="Draw card editor - Pixel Art Section"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Draw-Card-Editor-8.png" alt="Draw card editor - Import/Export Actions"></td>
-  </tr>
 </table>
+<!-- card-docs:draw:editors:end -->
 
 A **Preview Appearance** section (the shared matrix look, see
 [Shared Preview Appearance](SERVICES.md#shared-preview-appearance)) sits
@@ -1049,7 +1029,7 @@ The **Native Effects Card** shares its capsule sliders and Text / Live Preview
 selectors with the Clock Card. Text offers filled buttons or dropdowns; Live
 Preview offers lists, grids, strips, carousels, wheels and a 3D album. **Original** offers
 grid and list layouts with capability badges.
-Browsing offers text search without filter or sort controls; raw numeric
+Browsing offers text search and your order or A → Z (no filters); raw numeric
 experimental modes are hidden.
 
 Set `target_entities` to control several lamps together (`entity` remains

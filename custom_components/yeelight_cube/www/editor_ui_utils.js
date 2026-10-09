@@ -13,11 +13,10 @@ import {
 } from "./button-group-utils.js";
 import { createToggleRow, createSliderRow } from "./form-row-utils.js";
 import { renderOrderableList } from "./orderable-list-utils.js";
-import { CollectionState } from "./collection-state.js";
 import { notifyUnreported } from "./notify-utils.js";
 import {
   USER_COLLECTIONS,
-  collectionItems,
+  CollectionStore,
   collectionThumbnail,
   singleMove,
 } from "./user-collections.js";
@@ -326,7 +325,6 @@ export const YeelightEditorMixin = (Base) =>
      * @param {Function} options.labelFor - (key) => its built-in label
      * @param {Function} options.onList - (keys) => store the card's own list
      * @param {Function} options.onReset - () => back to every item
-     * @param {Function} [options.indicatorsFor] - (key) => row badges
      */
     _galleryItemsSettings({
       noun,
@@ -335,7 +333,6 @@ export const YeelightEditorMixin = (Base) =>
       labelFor,
       onList,
       onReset,
-      indicatorsFor,
     }) {
       return renderModeSettingsSection(
         `${noun.charAt(0).toUpperCase()}${noun.slice(1)}s`,
@@ -347,7 +344,6 @@ export const YeelightEditorMixin = (Base) =>
             items,
             available: all.filter((key) => !items.includes(key)),
             labelFor,
-            indicatorsFor,
             labels: this._config?.item_labels || {},
             onRename: (key, label) => {
               this._config = withItemLabel(this._config, key, label);
@@ -383,15 +379,20 @@ export const YeelightEditorMixin = (Base) =>
      */
     _arrangeSettings(kind) {
       const { noun } = USER_COLLECTIONS[kind];
-      const state = ((this._arrangeStates ||= {})[kind] ||=
-        new CollectionState());
-      const stored = collectionItems(this._hass, this._config, kind);
-      const items = state.observe(stored.items, stored.count);
+      // The cards' collection store: the freshest array, a move shown at
+      // once until the backend confirms it.
+      const store = ((this._arrangeStores ||= {})[kind] ||= new CollectionStore(
+        kind,
+        { onChange: () => this.requestUpdate() },
+      ));
+      store.update(this._hass, this._config);
+      const items = store.items(this._hass, this._config);
       return renderModeSettingsSection(
         `Arrange ${noun}s`,
         html`<div class="hint">
-            The order of your ${noun}s on every card and lamp. Drag a ${noun}
-            or use ▲ ▼: each move is saved at once.
+            The order of your ${noun}s on every card and lamp. Drag a ${noun},
+            or use ▲ ▼ (one step) and ⤒ ⤓ (to the top or the bottom): each
+            move is saved at once.
           </div>
           ${items.length
             ? renderOrderableList({
@@ -414,21 +415,13 @@ export const YeelightEditorMixin = (Base) =>
     async _moveCollectionItem(kind, newOrder, items) {
       const move = singleMove(newOrder, items);
       if (!move) return false;
-      const { noun, moveService } = USER_COLLECTIONS[kind];
-      const state = this._arrangeStates[kind];
-      const operation = state.record(newOrder.map((index) => items[index]));
-      this.requestUpdate();
-      try {
-        if (!(await state.execute(this._hass, moveService, move)))
-          throw new Error(`The ${noun} list changed. Please retry.`);
-        return true;
-      } catch (error) {
-        if (state.rollback(operation)) {
-          this.requestUpdate();
-          notifyUnreported(this, error);
-        }
-        return false;
-      }
+      return this._arrangeStores[kind].edit(
+        this._hass,
+        newOrder.map((index) => items[index]),
+        USER_COLLECTIONS[kind].moveService,
+        move,
+        { onError: (error) => notifyUnreported(this, error) },
+      );
     }
 
     /**

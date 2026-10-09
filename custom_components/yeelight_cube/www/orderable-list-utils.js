@@ -2,7 +2,8 @@
 //  Shared orderable item list (drag & drop / move / add / remove / reset)
 // ============================================================================
 //
-// One editor control for "pick which items to show, in which order": used by
+// One editor control for "pick which items to show, in which order" (drag,
+// ▲ ▼ one step, ⤒ ⤓ to the top or the bottom): used by
 // the clock card's quick schemes + visible styles and the gradient card's
 // visible modes; and, order only (no add / remove), for the Arrange block of
 // the user collections (palettes, pixel arts). Plain editor UI — no overlays
@@ -12,39 +13,11 @@
 // row highlight classes are cleaned up via DOM traversal, so any number of
 // lists can coexist in one editor.
 
-import { html, css, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
-import {
-  itemIndicatorModel,
-  itemBrowserStyles,
-} from "./item-browser-utils.js";
-
-// Indicator badges as a Lit template (names/descriptions bound as text).
-function indicatorsTemplate(indicators = []) {
-  if (!indicators.length) return "";
-  return html`<span class="item-indicators"
-    >${indicators.map(itemIndicatorModel).map(
-      (badge) =>
-        html`<span
-          class="item-indicator"
-          data-state=${badge.state}
-          tabindex="0"
-          role="img"
-          aria-label=${badge.description ?? ""}
-          ><ha-icon icon=${badge.icon}></ha-icon
-          ><span class="item-indicator-label">${badge.label}</span></span
-        >`,
-    )}</span
-  >`;
-}
-
+import { html, css, unsafeHTML } from "./lib/lit-all.js";
 export const orderableListStyles = css`
-  ${unsafeCSS(itemBrowserStyles)}
   .orderable-list-content {
     flex: 1;
     min-width: 0;
-  }
-  .orderable-list-content .item-indicators {
-    justify-content: flex-start;
   }
   .orderable-list-content .orderable-list-name {
     display: block;
@@ -199,7 +172,6 @@ export function renderOrderableList({
   optionLabelFor = labelFor,
   displayItems = items,
   canReorder = true,
-  indicatorsFor = () => [],
   onRename,
   labels = {},
   addable = true,
@@ -256,6 +228,13 @@ export function renderOrderableList({
     [list[idx], list[target]] = [list[target], list[idx]];
     onUpdate(list);
   };
+  // To the top or the bottom in one step (long lists: Arrange, Styles).
+  const onMoveTo = (idx, target) => {
+    if (!canReorder || idx === target) return;
+    const list = [...items];
+    list.splice(target, 0, list.splice(idx, 1)[0]);
+    onUpdate(list);
+  };
   const onRemove = (idx) => {
     onUpdate(items.filter((_, i) => i !== idx));
   };
@@ -285,7 +264,16 @@ export function renderOrderableList({
             >`
           : ""}
         <button
+          title="Move to the top"
+          aria-label="Move to the top"
+          ?disabled="${!canReorder || idx === 0}"
+          @click="${() => onMoveTo(idx, 0)}"
+        >
+          ⤒
+        </button>
+        <button
           title="Move up"
+          aria-label="Move up"
           ?disabled="${!canReorder || idx === 0}"
           @click="${() => onMove(idx, -1)}"
         >
@@ -293,10 +281,19 @@ export function renderOrderableList({
         </button>
         <button
           title="Move down"
+          aria-label="Move down"
           ?disabled="${!canReorder || idx === items.length - 1}"
           @click="${() => onMove(idx, 1)}"
         >
           ▼
+        </button>
+        <button
+          title="Move to the bottom"
+          aria-label="Move to the bottom"
+          ?disabled="${!canReorder || idx === items.length - 1}"
+          @click="${() => onMoveTo(idx, items.length - 1)}"
+        >
+          ⤓
         </button>
         ${thumbFor ? unsafeHTML(thumbFor(name)) : ""}
         <div class="orderable-list-content">
@@ -315,7 +312,6 @@ export function renderOrderableList({
                   >`
                 : ""}`
             : html`<span class="orderable-list-name">${labelFor(name)}</span>`}
-          ${indicatorsTemplate(indicatorsFor(name))}
         </div>
         ${removable
           ? html`<button

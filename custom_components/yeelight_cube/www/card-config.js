@@ -33,6 +33,8 @@ export const OPTION_ALIASES = Object.freeze({
     pixel_art_matrix_box_shadow: "gallery_matrix_box_shadow",
     pixel_art_allow_rename: "allow_rename",
     carousel_wrap_navigation: "gallery_wrap_navigation",
+    // The colour section (palette cards): the gallery's names, colors_ prefixed.
+    palette_carousel_wrap_navigation: "colors_wrap_navigation",
   },
   gradient: {
     mode_selector_style: "style_selector_style",
@@ -119,6 +121,19 @@ export const OPTION_MIGRATIONS = Object.freeze({
       }),
     ...(config.item_card_border === undefined && { item_card_border: "auto" }),
     ...(config.show_search === undefined && { show_search: false }),
+    // The colour section's arrows in the shared shape names, and its card
+    // corners (formerly rounded_cards, shared with the side-by-side mode):
+    // a legacy "round" / true keeps each mode's default (unset).
+    ...(config.colors_button_shape === undefined &&
+      config.palette_carousel_button_shape !== undefined && {
+        colors_button_shape: normalizeButtonShape(config.palette_carousel_button_shape),
+      }),
+    ...(config.colors_item_radius === undefined &&
+      config.rounded_cards !== undefined &&
+      config.rounded_cards !== true &&
+      config.rounded_cards !== "round" && {
+        colors_item_radius: roundedCardsRadius(config.rounded_cards),
+      }),
   }),
   // The palette card's look before the shared gallery: its display mode,
   // its card roundness (16 px by default), items on the card's own
@@ -178,6 +193,17 @@ const PALETTE_LAYOUTS = {
   timeline: "preview-album",
 };
 
+/**
+ * A button shape in the shared vocabulary: square, rounded or round
+ * (legacy: circle -> round, rect -> rounded; anything else -> rounded).
+ * The carousels (carousel-utils.js) and the option migrations use it.
+ */
+export function normalizeButtonShape(shape) {
+  if (shape === "circle") return "round";
+  if (shape === "rect") return "rounded";
+  return ["round", "rounded", "square"].includes(shape) ? shape : "rounded";
+}
+
 /** The px radius of a rounded_cards value ("Card Roundness" of the Draw,
  * Color List and former Palette cards; legacy true/false/"round"/"rounded"/
  * "square" values included). */
@@ -203,6 +229,8 @@ export const RETIRED_OPTIONS = Object.freeze({
     "pixel_art_preview_size",
     "carousel_button_shape",
     "compact_show_preview",
+    "palette_carousel_button_shape",
+    "rounded_cards",
   ],
   gradient: ["gallery_preview_size"],
   palette: [
@@ -245,6 +273,23 @@ export function normalizeCardOptions(config, card) {
 export function itemLabel(config, key, name) {
   const label = config?.item_labels?.[key];
   return typeof label === "string" && label.trim() ? label.trim() : name;
+}
+
+/**
+ * The order a gallery shows its items in (gallery_sort): the card's own
+ * order (default), or "name": A → Z by the name shown (`nameOf(item)`: its
+ * label on this card), numbers in order ("Art 2" before "Art 10"). Used by
+ * the gallery and by the Previous / Next buttons, which step through the
+ * items in the order shown. Keys are unchanged (favourites, rotations).
+ */
+export function sortGalleryItems(config, items, nameOf) {
+  if (config?.gallery_sort !== "name") return items;
+  return [...items].sort((first, second) =>
+    String(nameOf(first) ?? "").localeCompare(String(nameOf(second) ?? ""), undefined, {
+      numeric: true,
+      sensitivity: "base",
+    }),
+  );
 }
 
 /** Whether an item matches a gallery search: its label on this card or its

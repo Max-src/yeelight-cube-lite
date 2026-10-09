@@ -496,16 +496,31 @@ test("shared selectors bind text, preview and carousel navigation without duplic
   const body = sourceFor("style-selector-utils.js").match(
     /export function bindStyleSelectorEvents\(\s*root,\s*\{ select, navigate, setIndex, style \},?\s*\) \{([\s\S]*?)\n\}/,
   )[1];
+  // The shared swipe (carousel-utils.js imports Lit, so it is read here).
+  const carouselSwipe = new Function(
+    `return ${sourceFor("carousel-utils.js").match(/export (function carouselSwipe[\s\S]*?\n\})/)[1]}`,
+  )();
   const bindStyleSelectorEvents = new Function(
+    "carouselSwipe",
     "root",
     "{ select, navigate, setIndex, style }",
     body,
-  );
+  ).bind(null, carouselSwipe);
   const item = { dataset: { mode: "Rainbow" } };
   const arrow = { dataset: { direction: "-1" } };
   const dot = { dataset: { index: "2" } };
   const dropdown = {};
-  const shell = {};
+  const listeners = {};
+  const shell = {
+    addEventListener: (type, listener) => (listeners[type] = listener),
+    removeEventListener: () => {},
+  };
+  // A swipe through the shared carousel swipe (carouselSwipe).
+  const swipe = (toX, toY) => {
+    shell.ontouchstart({ touches: [{ clientX: 100, clientY: 0 }], currentTarget: shell });
+    listeners.touchmove({ touches: [{ clientX: toX, clientY: toY }], preventDefault() {} });
+    listeners.touchend({ type: "touchend", changedTouches: [{ clientX: toX }] });
+  };
   const root = {
     querySelectorAll: (selector) =>
       selector.includes('data-action="navigate"')
@@ -529,9 +544,8 @@ test("shared selectors bind text, preview and carousel navigation without duplic
   dropdown.onchange({ target: { value: "Streamer" } });
   arrow.onclick({ stopPropagation() {} });
   dot.onclick({ stopPropagation() {} });
-  shell.ontouchstart({ touches: [{ clientX: 100 }] });
-  shell.ontouchend({ changedTouches: [{ clientX: 20 }] });
-  shell.ontouchend({ changedTouches: [{ clientX: 200 }] });
+  swipe(20, 0); // to the left: next
+  swipe(40, 90); // mostly vertical: the page scrolls, no step
   assert.deepEqual(calls, ["Rainbow", "Streamer", -1, 2, 1]);
   item.onclick = undefined;
   bindStyleSelectorEvents(root, { ...options, style: "preview-wheel" });

@@ -2,10 +2,6 @@ import { BLACK_THRESHOLD } from "./matrix-const.js";
 import { previewLength } from "./preview-appearance.js";
 import { escapeHtml } from "./html-escape-utils.js";
 import { favouriteId, normalizeFavourite } from "./mode-controls-controller.js";
-import {
-  renderItemIndicators,
-  itemBrowserStyles,
-} from "./item-browser-utils.js";
 
 /**
  * The preview layouts of the shared gallery (collection-gallery.js): list
@@ -367,7 +363,6 @@ export function renderGalleryMode(items, options = {}) {
                ">${item.metadata}</div>`
               : ""
           }
-          ${renderItemIndicators(item.indicators)}
         </div>
       `;
         })
@@ -451,7 +446,6 @@ function renderCompactFlavor(items, options = {}, strip = false) {
                align-items: center;
                gap: 4px;
                ${strip ? "flex: 0 0 auto;" : ""}
-               ${item.indicators?.length ? `width:${previewSize + 16}px;` : ""}
                padding: ${showCards ? "6px" : "2px"};
                border-radius: ${showCards ? "6px" : "4px"};
                background: ${itemBg};
@@ -478,7 +472,6 @@ function renderCompactFlavor(items, options = {}, strip = false) {
                ">${item.title}</div>`
               : ""
           }
-          ${renderItemIndicators(item.indicators)}
         </div>
       `;
         })
@@ -506,7 +499,6 @@ export function renderWheelMode(items, options = {}) {
   // Get mode-specific configuration (showTitle is derived from wheelDisplayStyle)
   const userPreviewSize = matrixOptions.previewSize;
   const config = getWheelModeConfig(wheelDisplayStyle, userPreviewSize);
-  if (items.some((item) => item.indicators?.length)) config.itemHeight += 38;
   const halfVisible = Math.floor(WHEEL_MODE.DEFAULT_VISIBLE_ITEMS / 2);
   const cursorStyle = onClickEnabled ? "cursor: pointer;" : "";
   // Scale outer/inner max-widths based on preview size
@@ -697,7 +689,6 @@ function renderWheelItems(
             ...matrixOptions,
           })}
         </div>
-        ${renderItemIndicators(item.indicators)}
       </div>
     `;
     })
@@ -944,7 +935,6 @@ export function bindOriginalGallery(root, { select }) {
  * CSS styles for gallery display (to be imported into card styles)
  */
 export const galleryDisplayStyles = `
-  ${itemBrowserStyles}
   .gallery-item-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);

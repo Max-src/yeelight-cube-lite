@@ -474,80 +474,6 @@ export const drawCardStyles = css`
     box-shadow: 0 1px 4px #0004;
     transition: border 0.1s;
   }
-  .draw-btn {
-    background: color-mix(
-      in srgb,
-      var(--primary-color, #1976d2) 15%,
-      var(--card-background-color, #fff)
-    );
-    color: var(--primary-color, #0077cc);
-    border: none;
-    border-radius: 8px;
-    padding: 10px 0;
-    cursor: pointer;
-    font-size: 1em;
-    font-weight: 500;
-    min-width: 120px;
-    transition: background 0.2s;
-    box-shadow: 0 1px 4px #0003;
-    text-align: center;
-  }
-  .draw-btn:hover {
-    background: color-mix(
-      in srgb,
-      var(--primary-color, #1976d2) 30%,
-      var(--card-background-color, #fff)
-    );
-  }
-  .draw-btn.clear {
-    background: color-mix(
-      in srgb,
-      var(--error-color, #db4437) 15%,
-      var(--card-background-color, #fff)
-    );
-    color: var(--error-color, #db4437);
-  }
-  .draw-btn.clear:hover {
-    background: color-mix(
-      in srgb,
-      var(--error-color, #db4437) 25%,
-      var(--card-background-color, #fff)
-    );
-  }
-  .draw-btn.save {
-    background: color-mix(
-      in srgb,
-      var(--primary-color, #1976d2) 15%,
-      var(--card-background-color, #fff)
-    );
-    color: var(--primary-color, #0077cc);
-    box-shadow: none;
-  }
-  .draw-btn.save:hover {
-    background: color-mix(
-      in srgb,
-      var(--primary-color, #1976d2) 30%,
-      var(--card-background-color, #fff)
-    );
-  }
-  .draw-btn:disabled,
-  .draw-btn.disabled {
-    background: var(--disabled-text-color, #bdbdbd) !important;
-    color: var(--text-primary-color, #fff) !important;
-    cursor: not-allowed !important;
-    opacity: 0.6;
-  }
-  .draw-btn:disabled:hover,
-  .draw-btn.disabled:hover {
-    background: var(--disabled-text-color, #bdbdbd) !important;
-  }
-
-  /* Draw button active state for pagination */
-  .draw-btn.active {
-    background: var(--primary-color, #0077cc) !important;
-    color: var(--text-primary-color, #fff) !important;
-  }
-
   /* Button shape styles for paint buttons (legacy) */
   .paint-btn-circle {
     border-radius: 50% !important;
@@ -618,7 +544,7 @@ export const drawCardStyles = css`
     height: 48px !important;
   }
 
-  /* Color picker base - no draw-btn dependency */
+  /* Color picker base */
   .color-picker-btn {
     border: none;
     cursor: pointer;

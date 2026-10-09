@@ -483,9 +483,15 @@ class ConnectionMixin:
                 # - retry counter hit the limit (retries exhausted)
                 # - consecutive failures > 0 (early detection before unreachable)
                 # - display retries in progress (parallel recovery path)
+                # A paused rotation is due once its back-off has passed (at
+                # once when the lamp was unreachable).
+                rotation_due = self._rotation_waiting_for_reconnect and (
+                    self._rotation_retry_at is None
+                    or time.time() >= self._rotation_retry_at
+                )
                 is_stuck = (
                     self._cube_matrix.is_unreachable or
-                    self._rotation_waiting_for_reconnect or
+                    rotation_due or
                     self._display_retry_count >= self.MAX_DISPLAY_RETRIES or
                     self._cube_matrix.consecutive_failures > 0 or
                     self._display_retry_count > 0
@@ -520,6 +526,8 @@ class ConnectionMixin:
                     became_unreachable = self._cube_matrix.mark_unreachable()
                     if self._rotation_resume_pending:
                         self._rotation_waiting_for_reconnect = True
+                        # Unreachable now: resume as soon as it answers.
+                        self._rotation_retry_at = None
                     if self.hass is not None and (
                         became_unreachable or self._rotation_waiting_for_reconnect
                     ):
@@ -545,7 +553,13 @@ class ConnectionMixin:
                     continue
                 
                 # Device is back! Reset everything and trigger a fresh display.
-                _LOGGER.warning(
+                # (Only a paused rotation due again, on a lamp that never
+                # stopped answering: said so instead.)
+                (_LOGGER.info if not (
+                    self._cube_matrix.is_unreachable
+                    or self._cube_matrix.consecutive_failures
+                    or self._display_retry_count
+                ) else _LOGGER.warning)(
                     "[HEALTH] [%s] [OK] Device is BACK ONLINE! "
                     "Resetting failures (%s -> 0), "
                     "retries (%s -> 0), "

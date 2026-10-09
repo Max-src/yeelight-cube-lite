@@ -309,13 +309,8 @@ export const PaletteCardsMixin = (Base) => class extends Base {
           }, 350);
         });
       };
-      const paletteCardRadius = (() => {
-        const v = cfg.rounded_cards;
-        if (v === undefined || v === true || v === "round") return "16px";
-        if (v === false || v === "square") return "0px";
-        if (v === "rounded") return "4px";
-        return typeof v === "number" ? `${v}px` : `${parseInt(v, 10) || 16}px`;
-      })();
+      // The colour cards' corners (colors_item_radius; 16px by default).
+      const paletteCardRadius = `${cfg.colors_item_radius ?? 16}px`;
       return html`<div
         class="palette-row${isZoomMode ? " zoom-mode" : ""}${colorsBorderClass}"
         style="--side-card-width:${sideW}%;--palette-card-radius:${paletteCardRadius}"
@@ -352,18 +347,16 @@ export const PaletteCardsMixin = (Base) => class extends Base {
     }
     // Carousel mode
     if (mode === "carousel") {
-      const carouselButtonShape = cfg.palette_carousel_button_shape || "rect";
+      const carouselButtonShape = cfg.colors_button_shape || "rounded";
       if (this._colorCarouselIndex === undefined) this._colorCarouselIndex = 0;
-      if (this._colorCarouselSlideDirection === undefined)
-        this._colorCarouselSlideDirection = 0;
       const carouselResult = renderCarousel({
         items: cards,
         currentIndex: this._colorCarouselIndex,
-        slideDirection: this._colorCarouselSlideDirection,
         buttonShape: carouselButtonShape,
         showAsCard: true,
-        wrapNavigation: cfg.palette_carousel_wrap_navigation === true,
-        roundedCards: cfg.rounded_cards,
+        wrapNavigation: cfg.colors_wrap_navigation === true,
+        // 12px by default in the carousel.
+        roundedCards: cfg.colors_item_radius,
         onNavigate: (direction, maxLength) => {
           this._navigateColorCarousel(direction, maxLength);
         },
@@ -652,7 +645,7 @@ export const PaletteCardsMixin = (Base) => class extends Base {
   _navigateColorCarousel(direction, maxLength) {
     const current = this._colorCarouselIndex || 0;
     const cfg = this.config || {};
-    const wrapNavigation = cfg.palette_carousel_wrap_navigation === true;
+    const wrapNavigation = cfg.colors_wrap_navigation === true;
 
     let newIndex = current + direction;
 
@@ -667,7 +660,6 @@ export const PaletteCardsMixin = (Base) => class extends Base {
     }
 
     if (newIndex !== current) {
-      this._colorCarouselSlideDirection = direction;
       this._colorCarouselIndex = newIndex;
       this.requestUpdate();
     }
@@ -676,7 +668,6 @@ export const PaletteCardsMixin = (Base) => class extends Base {
   _setColorCarouselIndex(index) {
     const current = this._colorCarouselIndex || 0;
     if (index !== current) {
-      this._colorCarouselSlideDirection = index > current ? 1 : -1;
       this._colorCarouselIndex = index;
       this.requestUpdate();
     }

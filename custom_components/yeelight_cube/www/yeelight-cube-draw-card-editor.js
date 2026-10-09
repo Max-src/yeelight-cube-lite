@@ -7,7 +7,6 @@ import {
   YeelightEditorMixin,
   renderModeSettingsSection,
   renderModeInfoMessage,
-  roundedCardsToSliderValue,
   renderCarouselNavSettings,
 } from "./editor_ui_utils.js";
 import { normalizeCardOptions } from "./card-config.js";
@@ -453,28 +452,14 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
               ? renderModeSettingsSection(
                   "Carousel Mode Settings",
                   renderCarouselNavSettings(this._config, {
-                    shapeKey: "palette_carousel_button_shape",
-                    shapeDefault: "rect",
-                    onShapeChange: (value) => {
-                      this._config = { ...this._config, palette_carousel_button_shape: value };
-                      this._fireConfigChanged();
-                    },
-                    wrapKey: "palette_carousel_wrap_navigation",
+                    shapeKey: "colors_button_shape",
+                    shapeDefault: "rounded",
+                    onShapeChange: (value) =>
+                      this._setOption("colors_button_shape", value),
+                    wrapKey: "colors_wrap_navigation",
                     onWrapChange: (e) =>
-                      this._onSwitchChange(
-                        e,
-                        "palette_carousel_wrap_navigation",
-                      ),
-                    extra: createSliderRow(
-                      "Card Roundness",
-                      roundedCardsToSliderValue(this._config.rounded_cards),
-                      { min: 0, max: 28, step: 1 },
-                      (e) => {
-                        this._config = { ...this._config, rounded_cards: parseInt(e.target.value) };
-                        this._fireConfigChanged();
-                      },
-                      "px",
-                    ),
+                      this._onSwitchChange(e, "colors_wrap_navigation"),
+                    extra: this._colorsRadiusRow(12),
                   }),
                 )
               : (this._config.palette_card_mode || "side") === "side"
@@ -505,16 +490,7 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
                           ),
                         ),
                       )}
-                      ${createSliderRow(
-                        "Card Roundness",
-                        roundedCardsToSliderValue(this._config.rounded_cards),
-                        { min: 0, max: 28, step: 1 },
-                        (e) => {
-                          this._config = { ...this._config, rounded_cards: parseInt(e.target.value) };
-                          this._fireConfigChanged();
-                        },
-                        "px",
-                      )}
+                      ${this._colorsRadiusRow(16)}
                     `,
                   )
                 : ""}
@@ -898,8 +874,6 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
                 noun: "Pixel Art",
                 manage: "pixel arts",
                 defaultSize: 100,
-                // A pixel art is loaded into the drawing, never "active".
-                hasActive: false,
                 memory: (this._galleryMemory ||= {}),
                 renderAppearance: () => this._renderAppearance("art"),
               },
@@ -938,6 +912,18 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
   }
 
   // New centralized slider handlers
+
+  // The colour cards' corners (colors_item_radius), shared by the
+  // side-by-side and carousel modes; `fallback` is the mode's default.
+  _colorsRadiusRow(fallback) {
+    return createSliderRow(
+      "Card Roundness",
+      this._config.colors_item_radius ?? fallback,
+      { min: 0, max: 28, step: 1 },
+      (e) => this._setOption("colors_item_radius", parseInt(e.target.value, 10)),
+      "px",
+    );
+  }
 
   _renderAppearance(section) {
     return html`<yeelight-preview-appearance-editor

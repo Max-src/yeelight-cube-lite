@@ -8,6 +8,7 @@ import {
   SUPERSEDED,
 } from "../custom_components/yeelight_cube/www/card-command-controller.js";
 import { CollectionState } from "../custom_components/yeelight_cube/www/collection-state.js";
+import { CollectionStore } from "../custom_components/yeelight_cube/www/user-collections.js";
 import { YeelightCardMixin } from "../custom_components/yeelight_cube/www/card-base.js";
 import { normalizeCardOptions } from "../custom_components/yeelight_cube/www/card-config.js";
 
@@ -83,16 +84,10 @@ test("Palette rename completion never mutates an HA item at a stale index", asyn
           finish = resolve;
         }),
     },
-    render() {},
+    _store: new CollectionStore("palettes"),
+    _notifyUnreported() {},
     _paletteItems: cardMethod("yeelight-cube-palette-card", "_paletteItems"),
-    _sensorPalettes() {
-      return this._hass.states["sensor.palette"].attributes.palettes_v2;
-    },
-    _mutatePalettes: cardMethod(
-      "yeelight-cube-palette-card",
-      "_mutatePalettes",
-      { CollectionState },
-    ),
+    _mutatePalettes: cardMethod("yeelight-cube-palette-card", "_mutatePalettes"),
   };
   const rename = cardMethod("yeelight-cube-palette-card", "_renamePalette");
   const result = rename.call(card, 0, "Renamed A");
@@ -105,7 +100,7 @@ test("Palette rename completion never mutates an HA item at a stale index", asyn
     ["B", "A"],
   );
   assert.deepEqual(
-    card._collection.pending.items.map((item) => item.name),
+    card._store.pending.pending.items.map((item) => item.name),
     ["Renamed A", "B"],
   );
 });
@@ -254,7 +249,7 @@ function cardMethod(file, name, scope = {}, setter = false) {
     : object[name];
 }
 
-test("Draw overlays only its pending collection and accepts unrelated HA updates", () => {
+test("Draw shows only its pending edit and accepts unrelated HA updates", () => {
   const setter = cardMethod("yeelight-cube-draw-card", "hass", {}, true);
   const original = [{ name: "A" }, { name: "B" }];
   const pending = original.toReversed();
@@ -266,32 +261,29 @@ test("Draw overlays only its pending collection and accepts unrelated HA updates
       "light.a": { state, attributes: {} },
     },
   });
+  const renders = [];
   const card = asCard({
     config: { pixelart_sensor: "sensor.art", palette_sensor: "sensor.palette" },
     entity: "light.a",
-    _hass: makeHass(original, "off"),
-    _pixelArtCollection: new CollectionState(),
-    get _pendingReorderedPixelArts() {
-      return this._pixelArtCollection.pending?.items ?? null;
-    },
-    _lastPixelArtCount: 2,
-    _lastPixelArtHash: "old",
+    _pixelArtStore: new CollectionStore("pixel_arts"),
+    _schedulePixelArtRender: () => renders.push("pixel arts"),
+    _pixelArts: cardMethod("yeelight-cube-draw-card", "_pixelArts"),
   });
-  card._pixelArtCollection.record(pending);
+  setter.call(card, makeHass(original, "off"));
+  card._pixelArtStore.pending.record(pending);
   const incoming = makeHass(original, "on");
   setter.call(card, incoming);
+  // HA's state is taken as it is (never copied), the edit shown on top.
+  assert.equal(card._hass, incoming);
   assert.equal(card._hass.states["light.a"].state, "on");
-  assert.deepEqual(
-    card._hass.states["sensor.art"].attributes.pixel_arts,
-    pending,
-  );
-  assert.deepEqual(
-    incoming.states["sensor.art"].attributes.pixel_arts,
-    original,
-  );
+  assert.deepEqual(card._pixelArts(), pending);
+  assert.deepEqual(incoming.states["sensor.art"].attributes.pixel_arts, original);
+  // The backend confirms the edit: HA's array is shown again.
   setter.call(card, makeHass(pending, "off"));
-  assert.equal(card._pendingReorderedPixelArts, null);
+  assert.equal(card._pixelArtStore.pending.pending, null);
+  assert.deepEqual(card._pixelArts(), pending);
   assert.equal(card._hass.states["light.a"].state, "off");
+  assert.ok(renders.length >= 2);
 });
 
 test("lamp adjustment timers and stale failures cannot cross configuration contexts", async () => {
@@ -399,7 +391,7 @@ test("collection commands serialize snapshots and cancel dependent work after fa
   assert.equal(await third, true);
 });
 
-test("Draw ignores a collection fetch completed after reconfiguration", async () => {
+test("a collection fetch completed after reconfiguration is dropped", async () => {
   let finish;
   const hass = {
     callApi: () =>
@@ -407,20 +399,14 @@ test("Draw ignores a collection fetch completed after reconfiguration", async ()
         finish = resolve;
       }),
   };
-  const card = {
-    _hass: hass,
-    _collectionContext: 1,
-    requestUpdate() {
-      assert.fail("stale fetch rendered");
-    },
-  };
-  const fetch = cardMethod("draw-card-pixel-art-actions", "_fetchFreshPixelArts");
-  const result = fetch.call(card, "sensor.old");
-  card._collectionContext++;
+  const store = new CollectionStore("pixel_arts", {
+    onChange: () => assert.fail("stale fetch rendered"),
+  });
+  const result = store.fetch(hass, "sensor.old");
+  store.reset();
   finish({ attributes: { pixel_arts: [{ name: "Old" }] } });
-  await result;
-  assert.equal(card._hass, hass);
-  assert.equal(card._freshPixelArts, undefined);
+  assert.equal(await result, false);
+  assert.equal(store.fresh, null);
 });
 
 test("card commands keep lamp and non-lamp calls in order, and report failures", async () => {

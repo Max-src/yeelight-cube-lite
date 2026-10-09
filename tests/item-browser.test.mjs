@@ -3,16 +3,11 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { renderPagination } from "../custom_components/yeelight_cube/www/pagination-utils.js";
 import {
-  renderItemIndicators,
-} from "../custom_components/yeelight_cube/www/item-browser-utils.js";
-import {
   getClockStyles,
   clockStyleColorModeState,
   clockStyleRespondsToCustomColor,
-  clockStyleIndicators,
 } from "../custom_components/yeelight_cube/www/clock-preview-utils.js";
 import { clockStylesWithPresets } from "../custom_components/yeelight_cube/www/clock-preset-utils.js";
-import { renderGalleryDisplay } from "../custom_components/yeelight_cube/www/gallery-display-utils.js";
 
 const styles = clockStylesWithPresets(getClockStyles(true), [
   { id: "amber", name: "Amber", color: [255, 120, 0] },
@@ -167,41 +162,5 @@ test("clock responses distinguish palettes, B&W, solids, presets and unknowns", 
   );
   assert.equal(clockStyleColorModeState({ name: "Unknown" }, "bw"), "unknown");
   assert.equal(clockStyleColorModeState(style("Rainbow"), "future"), "unknown");
-  assert.deepEqual(
-    clockStyleIndicators(style("Rainbow"), "selected", "normal"),
-    [],
-  );
-  assert.equal(
-    clockStyleIndicators(style("Rainbow"), "all", "normal").length,
-    5,
-  );
-});
-
-test("shared controls escape content and expose accessible labels", () => {
-  const html = renderItemIndicators([
-    { label: "<img src=x>", description: '" unsafe', state: "responds" },
-  ]);
-  assert.ok(!html.includes("<img"));
-  assert.ok(html.includes('tabindex="0"'));
-  assert.ok(html.includes('aria-label="&quot; unsafe"'));
-});
-
-test("all shared gallery layouts render structured indicators independently of titles", () => {
-  const items = [
-    {
-      title: "Rainbow",
-      dataMode: "Rainbow",
-      colorData: Array.from({ length: 100 }, () => [255, 0, 0]),
-      indicators: clockStyleIndicators(style("Rainbow"), "all", "normal"),
-    },
-  ];
-  for (const mode of ["list", "strip", "wheel"]) {
-    const html = renderGalleryDisplay(items, mode, {
-      showTitles: false,
-      rows: 5,
-      cols: 20,
-    });
-    assert.equal((html.match(/class="item-indicator"/g) || []).length, 5, mode);
-  }
 });
 

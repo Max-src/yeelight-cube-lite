@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 const {
   USER_COLLECTIONS,
+  CollectionStore,
   collectionItems,
   collectionThumbnail,
   singleMove,
@@ -85,4 +86,69 @@ test("thumbnails: a palette's blend, a pixel art's picture", () => {
 
 test("pixel-art positions: lamp rows from the bottom, previews from the top", () => {
   assert.deepEqual([0, 19, 20, 99].map(pixelArtDisplayIndex), [80, 99, 60, 19]);
+});
+
+// A Home Assistant whose sensor state and REST answers the test controls.
+function storeHass(attributes, rest = []) {
+  return {
+    states: { "sensor.pal": { state: "1", attributes } },
+    callApi: async () => ({ attributes: rest.shift() ?? attributes }),
+    callService: async () => {},
+  };
+}
+
+test("the store fetches a new content's array before showing it", async () => {
+  const config = { palette_sensor: "sensor.pal" };
+  // The state announces new content but still carries the old array.
+  const hass = storeHass(
+    { count: 1, content_hash: "new", palettes_v2: [{ name: "Old" }] },
+    [{ count: 1, content_hash: "new", palettes_v2: [{ name: "New" }] }],
+  );
+  const renders = [];
+  const store = new CollectionStore("palettes", { onChange: () => renders.push(1) });
+  assert.equal(store.update(hass, config), true);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(store.items(hass, config), [{ name: "New" }]);
+  assert.equal(renders.length, 1);
+  // The same content again: nothing to do.
+  assert.equal(store.update(hass, config), false);
+});
+
+test("the store waits for the content it expects, then a sensor without hash", async () => {
+  const config = { palette_sensor: "sensor.pal" };
+  const hass = storeHass({ count: 1, content_hash: "a", palettes_v2: [{ name: "A" }] }, [
+    { count: 1, content_hash: "a", palettes_v2: [{ name: "A" }] },
+    { count: 1, content_hash: "b", palettes_v2: [{ name: "B" }] },
+  ]);
+  const store = new CollectionStore("palettes");
+  store.update(hass, config);
+  const fetched = await store.fetch(hass, "sensor.pal", (items) => items[0].name === "B");
+  assert.equal(fetched, true);
+  assert.deepEqual(store.items(hass, config), [{ name: "B" }]);
+  // Without content_hash, contents are told apart by their count.
+  const plain = storeHass({ count: 2, palettes_v2: [{ name: "X" }, { name: "Y" }] });
+  const counted = new CollectionStore("palettes");
+  counted.update(plain, config);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(counted.lastHash, "count:2");
+  assert.deepEqual(counted.items(plain, config).map((item) => item.name), ["X", "Y"]);
+});
+
+test("the store shows an edit at once and rolls back a refused one", async () => {
+  const config = { palette_sensor: "sensor.pal" };
+  const hass = storeHass({ count: 2, content_hash: "h", palettes_v2: [{ name: "A" }, { name: "B" }] });
+  const store = new CollectionStore("palettes");
+  store.update(hass, config);
+  let fail;
+  hass.callService = () => new Promise((_, reject) => (fail = reject));
+  const errors = [];
+  const saving = store.edit(hass, [{ name: "B" }], "remove_palette", { idx: 0 }, {
+    onError: (error) => errors.push(error.message),
+  });
+  assert.deepEqual(store.items(hass, config), [{ name: "B" }]);
+  await Promise.resolve();
+  fail(new Error("refused"));
+  assert.equal(await saving, false);
+  assert.deepEqual(store.items(hass, config).map((item) => item.name), ["A", "B"]);
+  assert.deepEqual(errors, ["refused"]);
 });

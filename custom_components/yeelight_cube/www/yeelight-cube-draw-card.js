@@ -27,6 +27,7 @@ import {
 } from "./draw_card_events.js";
 import {
   normalizeHex,
+  rgbArrayToHex,
   extractDiversePaletteWithWeights,
 } from "./draw_utils.js";
 import {
@@ -36,6 +37,7 @@ import {
   EVT_TOOL_VISIBILITY_RESET,
   EVT_ACTION_ORDER_RESET,
   EVT_ACTION_VISIBILITY_RESET,
+  OFF_COLOR,
 } from "./draw_card_const.js";
 import { StorageUtils } from "./draw_card_storage.js";
 
@@ -49,6 +51,7 @@ import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { PaletteCardsMixin } from "./draw-card-palette-cards.js";
 import { PixelArtActionsMixin } from "./draw-card-pixel-art-actions.js";
 import { pixelArtColorData } from "./pixel-art-utils.js";
+import { CollectionStore } from "./user-collections.js";
 import "./collection-gallery.js";
 
 const MAX_IMAGE_PALETTE_COLORS = 15;
@@ -367,7 +370,33 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     this.lastHoveredIdx = null;
     this.colorPickerMode = false;
     this.pixelArtVersion = 0;
-    this._lastPixelArtState = null;
+    // The pixel arts: read and edited through the shared collection store
+    // (kept fresh, this card's edits shown until confirmed).
+    this._pixelArtStore = new CollectionStore("pixel_arts", {
+      onChange: () => this._schedulePixelArtRender(),
+    });
+  }
+
+  // One re-render per frame for pixel-art changes (a fetch landing, an edit).
+  _schedulePixelArtRender() {
+    if (this._renderScheduled) return;
+    this._renderScheduled = true;
+    requestAnimationFrame(() => {
+      this._renderScheduled = false;
+      this.pixelArtVersion = (this.pixelArtVersion || 0) + 1;
+      this.requestUpdate("hass");
+    });
+  }
+
+  // The pixel arts shown: this card's pending edit, else the freshest array.
+  _pixelArts() {
+    return this._pixelArtStore.items(this._hass, this.config);
+  }
+
+  // The pixel-art sensor's state (undefined while it does not exist).
+  _pixelArtSensorState() {
+    const sensor = this.config?.pixelart_sensor;
+    return sensor ? this._hass?.states?.[sensor] : undefined;
   }
 
   connectedCallback() {
@@ -407,89 +436,11 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
       }
     }
 
-    const pixelartSensor = this.config?.pixelart_sensor;
-    if (!pixelartSensor || !hass) {
-      this._hass = hass;
-      this._pixelArtOverlay = null;
-      return;
-    }
-
-    // Check if we have an optimistically updated state that websocket might overwrite
-    const incomingStateObj = hass.states[pixelartSensor];
-    const incomingPixelArts = incomingStateObj?.attributes?.pixel_arts || [];
-
-    this._pixelArtCollection?.observe(
-      incomingPixelArts,
-      incomingStateObj?.attributes?.count,
-    );
     this._hass = hass;
-    // A new hass replaces the previous snapshot, so any fresh/optimistic
-    // overlay from the last one is dropped (re-applied below when still valid).
-    this._pixelArtOverlay = null;
-    if (this._pendingReorderedPixelArts && incomingStateObj) {
-      this._hass = {
-        ...hass,
-        states: {
-          ...hass.states,
-          [pixelartSensor]: {
-            ...incomingStateObj,
-            attributes: {
-              ...incomingStateObj.attributes,
-              pixel_arts: this._pendingReorderedPixelArts,
-            },
-          },
-        },
-      };
-    }
-
-    // Check if pixel art sensor changed using COUNT or content_hash
-    // (count alone won't detect renames since the list size stays the same)
-    const stateObj = this._hass.states[pixelartSensor];
-    if (!stateObj) return; // Sensor entity not (yet) available
-    const prevCount = this._lastPixelArtCount;
-    const currCount = stateObj?.attributes?.count;
-    const prevHash = this._lastPixelArtHash;
-    const currHash = stateObj?.attributes?.content_hash;
-
-    // The global hass may carry a STALE pixel_arts array: HA doesn't push large
-    // attributes over the state feed — only scalars like content_hash/count. So
-    // `this._hass = hass` above can silently revert the gallery to pre-rename
-    // data on any unrelated state change. If we've already fetched the array for
-    // this exact content_hash, re-inject it to keep the fresh names. The
-    // overlay is read through _pixelArtState() so we never copy hass.states.
-    if (
-      !this._pendingReorderedPixelArts &&
-      this._freshPixelArts &&
-      this._freshPixelArtsHash != null &&
-      currHash === this._freshPixelArtsHash &&
-      stateObj.attributes?.pixel_arts !== this._freshPixelArts
-    ) {
-      this._pixelArtOverlay = {
-        sensorId: pixelartSensor,
-        attributes: { pixel_arts: this._freshPixelArts },
-      };
-    }
-
-    if (prevCount !== currCount || prevHash !== currHash) {
-      this._lastPixelArtCount = currCount;
-      this._lastPixelArtHash = currHash;
-
-      // HA websocket does NOT resend large attribute arrays (pixel_arts) on updates —
-      // only scalars like count/content_hash arrive. Fetch fresh data via REST API
-      // so the gallery always shows up-to-date names even for renames from outside the card.
-      this._fetchFreshPixelArts(pixelartSensor);
-
-      if (!this._renderScheduled) {
-        this._renderScheduled = true;
-        requestAnimationFrame(() => {
-          this._renderScheduled = false;
-          // Force complete re-render
-          this.pixelArtVersion = (this.pixelArtVersion || 0) + 1;
-          // Force LitElement to re-render AND trigger updated() callback
-          this.requestUpdate("hass", oldHass);
-        });
-      }
-    }
+    if (!hass) return;
+    // The pixel arts (a new content, a fetch, a confirmed edit).
+    if (this.config?.pixelart_sensor && this._pixelArtStore.update(hass, this.config))
+      this._schedulePixelArtRender();
 
     // Re-render only when something this card displays from the light changed:
     // text_colors (Lamp Palette), matrix_colors (Lamp Colors) and the theme
@@ -533,31 +484,9 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     return this._hass;
   }
 
-  /**
-   * The effective pixel-art sensor state: the hass state with the card's
-   * fresh (REST-fetched) or optimistic pixel_arts overlay applied. The merged
-   * object is cached per underlying state object, so repeated reads return the
-   * same reference and no hass.states copy is ever made.
-   */
-  _pixelArtState(sensorId = this.config?.pixelart_sensor) {
-    const raw = sensorId ? this._hass?.states?.[sensorId] : undefined;
-    const overlay = this._pixelArtOverlay;
-    if (!raw || !overlay || overlay.sensorId !== sensorId) return raw;
-    if (overlay.base !== raw) {
-      overlay.base = raw;
-      overlay.state = {
-        ...raw,
-        attributes: { ...raw.attributes, ...overlay.attributes },
-      };
-    }
-    return overlay.state;
-  }
-
   disconnectedCallback() {
     super.disconnectedCallback();
-    this._collectionContext = (this._collectionContext || 0) + 1;
-    this._pixelArtCollection?.reset();
-    this._fetchingPixelArts = false;
+    this._pixelArtStore.reset();
     window.removeEventListener(
       EVT_TOOL_VISIBILITY_RESET,
       this._onToolVisibilityReset,
@@ -628,9 +557,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
 
   setConfig(config) {
     config = resolvePreviewAppearance(normalizeCardOptions(config, "draw"), "draw");
-    this._collectionContext = (this._collectionContext || 0) + 1;
-    this._fetchingPixelArts = false;
-    this._pixelArtCollection?.reset();
+    this._pixelArtStore.reset();
     this._commands?.reset();
     // Create a mutable copy of the config to allow adding new properties
     this.config = { ...config };
@@ -805,17 +732,15 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
    */
   _renderPixelArtGallery() {
     const cfg = this.config || {};
-    const state = this._pixelArtState(cfg.pixelart_sensor);
-    if (!this.hass || !cfg.pixelart_sensor || !state)
+    if (!this.hass || !this._pixelArtSensorState())
       return html`<div class="pixelart-gallery-message">
         Pixel art sensor not found or not configured.
       </div>`;
     const autoApply = cfg.pixel_art_auto_apply_to_lamp === true;
     return html`<yc-collection-gallery
       .config=${cfg}
-      .items=${this._pixelArtGalleryItems(
-        this._applyPendingRenames(state.attributes.pixel_arts || []),
-      )}
+      .items=${this._pixelArtGalleryItems(this._pixelArts())}
+      .active=${this._activePixelArtKey()}
       searchLabel="Search pixel arts"
       emptyLabel="No pixel art saved yet."
       .navigateSelects=${false}
@@ -832,18 +757,25 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
   _pixelArtGalleryItems(arts) {
     if (this._galleryItemsSource !== arts) {
       this._galleryItemsSource = arts;
+      // Each art's picture as a key, to find the one on the canvas.
+      this._artByPicture = new Map();
       this._galleryItemsCache = arts.map((art, idx) => {
         const name = art?.name || "Unnamed";
-        return {
-          dataMode: artKey(idx),
-          name,
-          title: name,
-          colorData: pixelArtColorData(art),
-          editable: true,
-        };
+        const colorData = pixelArtColorData(art);
+        const picture = colorData.map((color) => rgbArrayToHex(color)).join(",");
+        if (!this._artByPicture.has(picture)) this._artByPicture.set(picture, artKey(idx));
+        return { dataMode: artKey(idx), name, title: name, colorData, editable: true };
       });
     }
     return this._galleryItemsCache;
+  }
+
+  // The pixel art on the canvas (the drawing is exactly that art), if any.
+  _activePixelArtKey() {
+    const picture = this.matrix
+      .map((color) => (color || OFF_COLOR).toLowerCase())
+      .join(",");
+    return this._artByPicture?.get(picture) ?? null;
   }
 
   _renderMatrixSection(

@@ -415,7 +415,6 @@ def async_register_display_services(hass: HomeAssistant) -> None:
     # The rest of the service handlers (palette, etc.) should also be registered after light_entity is created
     async def handle_set_orientation(service_call):
         orientation = service_call.data.get("orientation")
-        entity_id = service_call.data.get("entity_id")
         
         target_entity = _resolve_entity(service_call, "SET_ORIENTATION")
         if not target_entity:
@@ -459,7 +458,6 @@ def async_register_display_services(hass: HomeAssistant) -> None:
 
     async def handle_set_font(service_call):
         font = service_call.data.get("font")
-        entity_id = service_call.data.get("entity_id")
         from .layout import FONT_MAPS
         if font not in FONT_MAPS:
             _LOGGER.error("Invalid font for set_font: %s", font)
@@ -490,7 +488,6 @@ def async_register_display_services(hass: HomeAssistant) -> None:
 
     async def handle_set_alignment(service_call):
         alignment = service_call.data.get("alignment")
-        entity_id = service_call.data.get("entity_id")
         if alignment not in ("left", "center", "right"):
             _LOGGER.error("Invalid alignment value for set_alignment: %s", alignment)
             return
@@ -631,6 +628,19 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         targets = _resolve_entities(service_call, "SET_TEXT_COLORS")
         if not targets:
             return
+
+        if save_as_palette:
+            # The documented option: also keep these colors as a saved
+            # palette, through save_palette (its limit and naming apply).
+            await hass.services.async_call(
+                DOMAIN,
+                "save_palette",
+                {
+                    "palette": [list(color) for color in converted_colors],
+                    "entity_id": targets[0].entity_id,
+                },
+                blocking=True,
+            )
 
         async def _apply_one(target_entity):
             if not target_entity._is_on and not target_entity._should_auto_turn_on():

@@ -47,7 +47,8 @@
  *   preview:  preview-list, preview-grid, preview-strip, preview-carousel,
  *             preview-wheel, preview-album
  *   original: original (grid or list with `effect_view`, capability badges)
- * Shared options: show_search, items_per_page (list, grid, original),
+ * Shared options: show_search, gallery_sort (the card's order or A → Z,
+ * sortGalleryItems), items_per_page (list, grid, original),
  * preview_show_titles, highlight_active_mode, gallery_wrap_navigation,
  * wheel_nav_position / wheel_height, album_3d_effect, preview_size,
  * selector_shape (square, rounded, round, or custom with item_radius px) /
@@ -126,7 +127,7 @@ import { isActivationKey } from "./card-shell.js";
 import { escapeHtml } from "./html-escape-utils.js";
 import { defineOnce } from "./card-registration.js";
 import { actionButtonStyles } from "./action-button-utils.js";
-import { itemLabel, itemMatchesQuery } from "./card-config.js";
+import { itemLabel, itemMatchesQuery, sortGalleryItems } from "./card-config.js";
 
 // Class prefix of the album markup (album-view-coverflow.js).
 const ALBUM = "collection";
@@ -332,10 +333,13 @@ class YcCollectionGallery extends LitElement {
     emptyLabel: {},
     actionLabel: {},
     navigateSelects: { type: Boolean },
-    onSelect: { attribute: false },
-    onQuery: { attribute: false },
-    onRename: { attribute: false },
-    onDelete: { attribute: false },
+    // Callbacks are kept but never re-render the gallery: cards pass new
+    // arrow functions on every render (Draw: every stroke), and they are
+    // only called on a user action.
+    onSelect: { attribute: false, hasChanged: () => false },
+    onQuery: { attribute: false, hasChanged: () => false },
+    onRename: { attribute: false, hasChanged: () => false },
+    onDelete: { attribute: false, hasChanged: () => false },
     query: { state: true },
     _manage: { state: true },
     page: { state: true },
@@ -394,7 +398,7 @@ class YcCollectionGallery extends LitElement {
   get visibleItems() {
     const query =
       this.config.show_search === false ? "" : this.query.trim().toLowerCase();
-    return this.items
+    const shown = this.items
       .map((item) => {
         const label = itemLabel(this.config, item.dataMode, null);
         // meta is plain text; the layouts insert `metadata` as markup.
@@ -411,6 +415,7 @@ class YcCollectionGallery extends LitElement {
           query,
         ),
       );
+    return sortGalleryItems(this.config, shown, (item) => item.name);
   }
 
   get activeKey() {
@@ -597,33 +602,29 @@ class YcCollectionGallery extends LitElement {
     const style = this.selectorStyle;
     const pagination = selectorPagination(this.config, items, style, this.page);
     this.page = pagination.currentPage;
-    // The carousel layout settles its index while rendering.
-    this._renderedIndex = undefined;
-    let markup = this._markup(items, style, active, pagination);
-    if (this._renderedIndex !== undefined) this.index = this._renderedIndex;
-    // Same items with blank previews: equal means only preview colors
-    // changed, which are repainted in place (updated) instead of rebuilt.
-    const blank = items.map((item) => ({
-      ...item,
-      colorData: item.colorData?.map(() => "#000000"),
-    }));
-    const structure = this._markup(
-      blank,
+    // Everything the markup shows but the preview colors: unchanged, only
+    // colors changed (live previews, an angle being dragged), which are
+    // repainted in place (updated) without building any markup.
+    const structure = JSON.stringify([
       style,
       active,
-      selectorPagination(this.config, blank, style, this.page),
-    );
-    if (
-      this._shownMarkup &&
-      structure === this._shownStructure &&
-      markup !== this._shownMarkup
-    ) {
-      this._repaint = items;
-      markup = this._shownMarkup;
+      this.page,
+      this.index,
+      this.config,
+      items.map(({ colorData, ...item }) => [item, colorData?.length ?? -1]),
+    ]);
+    let markup = this._shownMarkup;
+    if (markup !== undefined && structure === this._shownStructure) {
+      if (items !== this._shownItems) this._repaint = items;
     } else {
+      // The carousel layout settles its index while rendering.
+      this._renderedIndex = undefined;
+      markup = this._markup(items, style, active, pagination);
+      if (this._renderedIndex !== undefined) this.index = this._renderedIndex;
       this._shownStructure = structure;
       this._shownMarkup = markup;
     }
+    this._shownItems = items;
     const label = this.searchLabel || "Search";
     return html`${this.config.show_search !== false
         ? html`<input

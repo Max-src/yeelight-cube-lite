@@ -60,3 +60,47 @@ class CollectionMoveTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SaveAsPaletteTests(unittest.IsolatedAsyncioTestCase):
+    """set_text_colors' documented save_as_palette option saves the colors."""
+
+    async def run_set_text_colors(self, data):
+        import asyncio
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, Mock
+
+        hass = SimpleNamespace(
+            services=SimpleNamespace(async_call=AsyncMock()),
+            async_create_task=lambda coro: coro.close(),
+        )
+        lamp = SimpleNamespace(entity_id="light.a")
+        handler = _load_standalone_functions(
+            (ROOT / "light_services_display.py").read_text(encoding="utf-8"),
+            {"handle_set_text_colors"},
+            {
+                "hass": hass,
+                "DOMAIN": "yeelight_cube",
+                "asyncio": asyncio,
+                "_LOGGER": Mock(),
+                "_resolve_entities": lambda call, name: [lamp],
+                "async_save_data": AsyncMock(),
+            },
+        )["handle_set_text_colors"]
+        await handler(SimpleNamespace(data=data))
+        return hass.services.async_call
+
+    async def test_saves_the_colors_as_a_palette_when_asked(self):
+        call = await self.run_set_text_colors(
+            {"text_colors": [[255, 0, 0], [0, 0, 255]], "save_as_palette": True}
+        )
+        call.assert_awaited_once_with(
+            "yeelight_cube",
+            "save_palette",
+            {"palette": [[255, 0, 0], [0, 0, 255]], "entity_id": "light.a"},
+            blocking=True,
+        )
+
+    async def test_saves_nothing_by_default(self):
+        call = await self.run_set_text_colors({"text_colors": [[255, 0, 0]]})
+        call.assert_not_awaited()

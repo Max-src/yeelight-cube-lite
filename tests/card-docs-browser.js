@@ -28,6 +28,25 @@ function stopAnimationLoops(root) {
   }
 }
 
+// The cards of the user's own collections (palettes, pixel arts): no lamp
+// sliders, color modes or favourites; their gallery is checked instead.
+const COLLECTION_CARDS = ["palette", "draw"];
+
+// Synthetic collections for them (sensors the fixture provides).
+const DOC_PALETTES = [
+  { name: "Sunset", colors: [[255, 94, 77], [255, 154, 0], [255, 206, 84]] },
+  { name: "Ocean", colors: [[0, 119, 182], [0, 180, 216], [144, 224, 239]] },
+  { name: "Forest", colors: [[34, 87, 46], [76, 149, 108], [183, 228, 199]] },
+  { name: "Neon", colors: [[255, 0, 110], [131, 56, 236], [58, 134, 255], [6, 214, 160]] },
+];
+// Positions count rows from the lamp's bottom row (pixel-art-utils.js).
+const DOC_PIXEL_ARTS = [
+  { name: "Heart", pixels: [{ color: [230, 57, 70], position: [24, 25, 43, 44, 45, 46, 62, 63, 64, 65, 66, 67, 82, 83, 86, 87] }] },
+  { name: "Star", pixels: [{ color: [255, 209, 102], position: [9, 10, 28, 29, 30, 31, 47, 48, 49, 50, 51, 52, 69, 70, 89, 90] }] },
+  { name: "Wave", pixels: [{ color: [17, 138, 178], position: [0, 21, 42, 63, 84, 65, 46, 27, 8, 29, 50, 71, 92, 73, 54, 35, 16, 37, 58, 79] }] },
+  { name: "Leaf", pixels: [{ color: [6, 214, 160], position: [5, 25, 26, 45, 46, 47, 65, 66, 85, 4, 24] }] },
+];
+
 window.cardDocs = {
   async prepare(fonts) {
     const host = document.querySelector("home-assistant");
@@ -47,7 +66,7 @@ window.cardDocs = {
       throw Error("Production native clock font sensor is required");
     const base = "/yeelight_cube/";
     await Promise.all(
-      ["clock", "native-effects", "lamp-preview"].map(
+      ["clock", "native-effects", "lamp-preview", ...COLLECTION_CARDS].map(
         (kind) => import(`${base}yeelight-cube-${kind}-card.js`),
       ),
     );
@@ -94,11 +113,12 @@ window.cardDocs = {
       entity: "light.documentation_only",
       target_entities: ["light.documentation_only"],
       title:
-        kind === "lamp-preview"
-          ? "Lamp Preview"
-          : clock
-            ? "Clock"
-            : "Native Effects",
+        {
+          "lamp-preview": "Lamp Preview",
+          clock: "Clock",
+          palette: "Palettes",
+          draw: "Draw",
+        }[kind] || "Native Effects",
       show_current_preview: true,
       show_preview: true,
       show_color_modes: true,
@@ -138,6 +158,12 @@ window.cardDocs = {
             show_device_orientation: true,
           }
         : {}),
+      ...(COLLECTION_CARDS.includes(kind)
+        ? {
+            palette_sensor: "sensor.documentation_palettes",
+            pixelart_sensor: "sensor.documentation_pixel_arts",
+          }
+        : {}),
       ...options.config,
     };
     card.setConfig(config);
@@ -156,6 +182,22 @@ window.cardDocs = {
       connection: undefined,
       states: {
         "sensor.documentation_font": { state: "ready", attributes: this.fonts },
+        "sensor.documentation_palettes": {
+          state: String(DOC_PALETTES.length),
+          attributes: {
+            count: DOC_PALETTES.length,
+            content_hash: "documentation",
+            palettes_v2: DOC_PALETTES,
+          },
+        },
+        "sensor.documentation_pixel_arts": {
+          state: String(DOC_PIXEL_ARTS.length),
+          attributes: {
+            count: DOC_PIXEL_ARTS.length,
+            content_hash: "documentation",
+            pixel_arts: DOC_PIXEL_ARTS,
+          },
+        },
         "light.documentation_only": {
           state: options.offline ? "unavailable" : "on",
           attributes: options.offline
@@ -196,7 +238,10 @@ window.cardDocs = {
         },
       },
     };
-    if (kind !== "lamp-preview") card._controls.favourites = favourites;
+    if (card._controls) card._controls.favourites = favourites;
+    // Draw: a drawing on the canvas (the first pixel art, highlighted in
+    // its gallery as the one being drawn).
+    if (kind === "draw" && !options.section) await card._applyPixelArtToMatrix(0);
     if (options.section) {
       await import(`/yeelight_cube/yeelight-cube-${kind}-card-editor.js`);
       const editor = document.createElement(
@@ -261,7 +306,13 @@ window.cardDocs = {
   async settle() {
     const card = this.card;
     stopAnimationLoops(card);
-    if (this.options.section || this.kind === "lamp-preview") {
+    // Editors, Lamp Preview and the collection cards have no animated
+    // previews to freeze.
+    const plain =
+      this.options.section ||
+      this.kind === "lamp-preview" ||
+      COLLECTION_CARDS.includes(this.kind);
+    if (plain) {
       await card.updateComplete;
     } else if (card._paintPreview) {
       card._phaseAccum = 1.2;
@@ -305,7 +356,11 @@ window.cardDocs = {
       // the screenshot capture (needs a real HA), so a stale value here fails
       // CI but passes `npm run check` without DOCS_HA_URL.
       const namespaces =
-        this.kind === "lamp-preview" ? ["brightness"] : ["brightness", "speed"];
+        this.kind === "lamp-preview"
+          ? ["brightness"]
+          : COLLECTION_CARDS.includes(this.kind)
+            ? []
+            : ["brightness", "speed"];
       for (const namespace of namespaces) {
         const slider = card.shadowRoot.querySelector(
           `[data-sl-ns="${namespace}"]`,
@@ -314,7 +369,13 @@ window.cardDocs = {
           throw Error(`Missing slider: ${this.kind}/${namespace}`);
       }
     }
-    if (this.options.section || this.kind === "lamp-preview") {
+    if (plain) {
+      if (
+        !this.options.section &&
+        COLLECTION_CARDS.includes(this.kind) &&
+        !card.shadowRoot.querySelector("yc-collection-gallery [data-mode]")
+      )
+        throw Error(`Missing gallery items: ${this.kind}`);
       if (this.container.scrollWidth > this.container.clientWidth)
         throw Error("Horizontal overflow");
       return;

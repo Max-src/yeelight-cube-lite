@@ -110,8 +110,6 @@ class YeelightCubePaletteCardEditor extends YeelightEditorMixin(LitElement) {
                 noun: "Palette",
                 manage: "palettes",
                 defaultSize: 50,
-                // A palette is applied, never "active" on the lamp.
-                hasActive: false,
                 memory: (this._galleryMemory ||= {}),
                 renderAppearance: (cfg, onChange) =>
                   this._renderPaletteAppearance(cfg, onChange),

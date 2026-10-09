@@ -44,6 +44,53 @@ _ROTATION_RESUME_TIMELINES: dict = {}
 
 ROTATION_RESUME_TIMELINE_TTL = 300.0  # seconds a late lamp can still join
 
+# Lamps whose rotation loop runs: a lamp starting the same rotation alone
+# (the card's Retry, a manual start) joins their schedule.
+_ROTATING_LAMPS: dict = {}  # id(lamp) -> lamp
+
+# Seconds before a lamp that answers but failed a step (a refusal, e.g. its
+# rate limit) tries again: growing, then every 5 minutes. A lamp that was
+# unreachable resumes as soon as it answers.
+ROTATION_RESUME_BACKOFF = (30.0, 60.0, 120.0, 300.0)
+
+
+def _hold_rotation_for_resume(light) -> bool:
+    """Keep a failed rotation due on ``light`` instead of dropping it.
+
+    The health check resumes it (``_resume_rotation_after_reconnect``) once
+    the lamp answers, after a growing delay while it answers but refuses,
+    and it then shows the group's current item. False when the lamp should
+    not rotate any more (off, calibrating, stopped).
+    """
+    if not (light._rotation_active and light._is_on and not light._calibration_lock):
+        return False
+    failures = getattr(light, "_rotation_resume_failures", 0)
+    light._rotation_resume_pending = True
+    light._rotation_waiting_for_reconnect = True
+    light._rotation_retry_at = (
+        None if light._cube_matrix.is_unreachable
+        else time.time() + ROTATION_RESUME_BACKOFF[min(failures, len(ROTATION_RESUME_BACKOFF) - 1)]
+    )
+    light._rotation_resume_failures = failures + 1
+    return True
+
+
+def _rotation_peer(light, kind, interval, items):
+    """A lamp already running this rotation (same kind, interval and modes),
+    whose schedule ``light`` can join; None if there is none."""
+    names = [item["name"] for item in items]
+    for other in list(_ROTATING_LAMPS.values()):
+        if (
+            other is not light
+            and other._rotation_active
+            and other._rotation_timeline is not None
+            and other._rotation_kind == kind
+            and other._rotation_interval == interval
+            and [item["name"] for item in other._rotation_items] == names
+        ):
+            return other
+    return None
+
 
 class RotationMixin:
     """Server-side effect / clock rotation, favourites and their persistence."""
@@ -323,12 +370,29 @@ class RotationMixin:
         names = [item["name"] for item in items]
         self._rotation_index = names.index(current) if current in names else -1
         if timeline is None:
-            timeline = {}
+            # Started alone (the card's Retry, a manual start) while other
+            # lamps run this rotation: show what they show, on their grid.
+            peer = _rotation_peer(self, self._rotation_kind, self._rotation_interval, items)
+            if peer is not None:
+                timeline = dict(peer._rotation_timeline)
+                me = getattr(self, "entity_id", None)
+                joined = sorted(
+                    (set(peer._rotation_group or [getattr(peer, "entity_id", None)]) | {me})
+                    - {None}
+                )
+                if len(joined) > 1:
+                    self._rotation_group = joined
+                    peer._rotation_group = joined
+                    peer._save_rotation_state()
+            else:
+                timeline = {}
         timeline.setdefault("tick", int(asyncio.get_running_loop().time() // self._rotation_interval))
         timeline.setdefault("index", self._rotation_index + 1)
         self._rotation_timeline = dict(timeline)
         self._rotation_retime = False
         self._rotation_active = True
+        self._rotation_resume_failures = 0
+        _ROTATING_LAMPS[id(self)] = self
         # Starting sets the interval every dashboard uses for this kind, and
         # saves the rotation so a restart resumes it.
         self._rotation_intervals = {
@@ -361,6 +425,8 @@ class RotationMixin:
         self._rotation_error = None
         self._rotation_retry_attempt = 0
         self._rotation_retry_at = None
+        self._rotation_resume_failures = 0
+        _ROTATING_LAMPS.pop(id(self), None)
         if self._rotation_task and not self._rotation_task.done():
             self._rotation_task.cancel()
         self._rotation_task = None
@@ -384,6 +450,9 @@ class RotationMixin:
             return False
         if self._rotation_active:
             return True
+        if self._rotation_retry_at is not None and time.time() < self._rotation_retry_at:
+            # Still backing off after a refused step: resumed later.
+            return True
         self._rotation_resume_pending = False
         self._rotation_waiting_for_reconnect = False
         self._rotation_retry_attempt = 0
@@ -391,6 +460,7 @@ class RotationMixin:
         self._rotation_index -= 1
         self._rotation_retime = False
         self._rotation_active = True
+        _ROTATING_LAMPS[id(self)] = self
         self._rotation_wake = asyncio.Event()
         self._rotation_started = asyncio.get_running_loop().create_future()
         self._rotation_task = self._create_tracked_task(
@@ -452,10 +522,28 @@ class RotationMixin:
                         self._last_connection_error or
                         f"Display update failed for {name}"
                     )
-                    _LOGGER.warning("[ROTATION] [%s] Stopped: %s", self._ip, self._rotation_error)
+                    # Once running (a step shown, or resumed after a pause),
+                    # any failed step keeps the lamp in its rotation; a new
+                    # start's first failure is reported to the starter.
+                    if (
+                        not ok
+                        and (started.done() or getattr(self, "_rotation_resume_failures", 0))
+                        and not self._rotation_resume_pending
+                    ):
+                        _hold_rotation_for_resume(self)
+                    if self._rotation_resume_pending:
+                        _LOGGER.warning(
+                            "[ROTATION] [%s] Paused: %s -- resuming on the shared schedule %s",
+                            self._ip, self._rotation_error,
+                            "when the lamp answers" if self._rotation_retry_at is None
+                            else f"in {self._rotation_retry_at - time.time():.0f}s",
+                        )
+                    else:
+                        _LOGGER.warning("[ROTATION] [%s] Stopped: %s", self._ip, self._rotation_error)
                     break
                 if not started.done():
                     started.set_result(True)
+                self._rotation_resume_failures = 0
                 if self.hass is not None:
                     self.async_write_ha_state()
                 if (
@@ -498,7 +586,10 @@ class RotationMixin:
             if self._rotation_task is task:
                 self._rotation_active = False
                 self._rotation_task = None
-                self._rotation_retry_at = None
+                _ROTATING_LAMPS.pop(id(self), None)
+                # A paused rotation keeps the time it resumes at.
+                if not self._rotation_resume_pending:
+                    self._rotation_retry_at = None
                 # Ended by itself (failure, lamp off): forget it unless it is
                 # waiting to resume. Cancelled (shutdown): keep it saved.
                 if not cancelled:
@@ -543,14 +634,12 @@ class RotationMixin:
                 return True
             self._rotation_error = self._last_connection_error or f"Display update failed for {item['name']}"
             if not self._hardware_failure_retryable or attempt == 2:
-                self._rotation_resume_pending = bool(
-                    self._hardware_failure_retryable and self._rotation_active
-                    and self._is_on and not self._calibration_lock
-                )
-                self._rotation_waiting_for_reconnect = bool(
-                    self._rotation_resume_pending
-                    and self._cube_matrix.is_unreachable
-                )
+                self._rotation_resume_pending = False
+                self._rotation_waiting_for_reconnect = False
+                if self._hardware_failure_retryable:
+                    # The lamp may answer later: resumed by the health check
+                    # (at once after an outage, after a back-off otherwise).
+                    _hold_rotation_for_resume(self)
                 return False
             delay = (5.0, 15.0)[attempt]
             recent = [stamp for stamp in self._hard_timeout_times if time.time() - stamp < CIRCUIT_BREAKER_WINDOW]

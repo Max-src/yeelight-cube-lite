@@ -210,7 +210,6 @@ class YeelightCubeLight(
         return self._font
 
     async def set_font(self, font: str):
-        from .layout import FONT_MAPS
         if font not in FONT_MAPS:
             _LOGGER.error("Invalid font: %s. Available: %s", font, list(FONT_MAPS.keys()))
             return
@@ -385,6 +384,8 @@ class YeelightCubeLight(
         self._rotation_group = None
         self._rotation_retry_attempt = 0
         self._rotation_retry_at = None
+        # Failed resumes in a row (back-off of a lamp that refuses steps).
+        self._rotation_resume_failures = 0
 
         # Apply timing (for queue processor stats, not cooldown-gating)
         self._last_apply_time = 0
@@ -2755,4 +2756,4 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
 # Service registration lives in light_services.py; re-exported here so
 # `from .light import async_setup_light_services` keeps working. Imported at
 # the very bottom so light_services can import back from a fully-defined light.
-from .light_services import async_setup_light_services  # noqa: E402
+from .light_services import async_setup_light_services  # noqa: E402,F401 -- re-export used by __init__.py

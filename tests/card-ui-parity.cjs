@@ -1500,8 +1500,9 @@ const server = http.createServer(async (request, response) => {
           hoverDraw.getBoundingClientRect().width,
         `Draw hover preview exceeds card width: ${hoverPreview.getBoundingClientRect().width} > ${hoverDraw.getBoundingClientRect().width}`,
       );
-      draw._pendingReorderedPixelArts =
-        state.states["sensor.art"].attributes.pixel_arts.toReversed();
+      draw._pixelArtStore.pending.record(
+        state.states["sensor.art"].attributes.pixel_arts.toReversed(),
+      );
       draw.hass = {
         ...state,
         states: {
@@ -1514,7 +1515,7 @@ const server = http.createServer(async (request, response) => {
         "Draw must accept unrelated HA state",
       );
       check(
-        draw.hass.states["sensor.art"].attributes.pixel_arts[0].name === "B",
+        draw._pixelArts()[0].name === "B",
         "Draw must retain its pending order",
       );
       const lamp = await create("lamp-preview");

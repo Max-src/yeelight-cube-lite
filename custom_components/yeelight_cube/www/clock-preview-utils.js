@@ -350,34 +350,6 @@ export function clockStyleRespondsToCustomColor(style) {
   return effect ? effectSupportsColorOverride(effect) : false;
 }
 
-export function clockStyleIndicators(style, display, mode, override = null) {
-  if (display !== "all" && (display !== "selected" || mode === "normal"))
-    return [];
-  return CLOCK_COLOR_MODES.filter(
-    (option) =>
-      option.value !== "normal" && (display === "all" || option.value === mode),
-  ).map((option) => {
-    const state = clockStyleColorModeState(style, option.value, override);
-    return {
-      label: option.label,
-      shortLabel: {
-        bw: "B&W",
-        red_blue: "Vi",
-        white_orange: "RO",
-        blue_yellow: "Tr",
-        purple_orange: "VG",
-      }[option.value],
-      state,
-      description:
-        state === "responds"
-          ? `Responds to ${option.label}`
-          : state === "unchanged"
-            ? `Unchanged by ${option.label}`
-            : `${option.label}: response unknown`,
-    };
-  });
-}
-
 // Resolve the firmware mixer for a set of light attributes (or a style object).
 export function clockStyleMixer(attrs) {
   const id = attrs.clock_style_id;

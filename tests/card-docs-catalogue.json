@@ -197,5 +197,94 @@
             "brightnessSettings": "Brightness Settings",
             "colorAdjustments": "Color Adjustments"
         }
+    },
+    "palette": {
+        "title": "Palettes",
+        "variations": {
+            "overview": {
+                "title": "Album of palettes with gradient backgrounds",
+                "config": {
+                    "style_selector_style": "preview-album",
+                    "swatch_style": "gradient-bg"
+                }
+            },
+            "list": {
+                "title": "List with color swatches and their count",
+                "config": {
+                    "style_selector_style": "preview-list",
+                    "swatch_style": "square",
+                    "show_color_count": true
+                }
+            },
+            "dark": {
+                "title": "Dark theme: grid with color stripes",
+                "dark": true,
+                "config": {
+                    "style_selector_style": "preview-grid",
+                    "swatch_style": "stripes"
+                }
+            }
+        },
+        "editors": {
+            "global": "Global Settings",
+            "palettes": "Palettes",
+            "importExport": "Import/Export Actions"
+        }
+    },
+    "draw": {
+        "title": "Draw",
+        "variations": {
+            "overview": {
+                "title": "Colors, tools, a drawing and the pixel-art carousel",
+                "config": {
+                    "style_selector_style": "preview-carousel",
+                    "preview_appearance": {
+                        "background": "black",
+                        "pixels": "square",
+                        "spacing": "normal",
+                        "shadow": false,
+                        "ignoreBlack": false
+                    }
+                }
+            },
+            "grid": {
+                "title": "Pixel-art grid: the art being drawn is highlighted",
+                "config": {
+                    "style_selector_style": "preview-grid",
+                    "preview_appearance": {
+                        "background": "black",
+                        "pixels": "square",
+                        "spacing": "normal",
+                        "shadow": false,
+                        "ignoreBlack": false
+                    }
+                }
+            },
+            "dark": {
+                "title": "Dark theme: round pixels and pixel-art chips",
+                "dark": true,
+                "config": {
+                    "style_selector_style": "chips",
+                    "preview_appearance": {
+                        "background": "black",
+                        "pixels": "circle",
+                        "spacing": "normal",
+                        "shadow": false,
+                        "ignoreBlack": false
+                    }
+                }
+            }
+        },
+        "editors": {
+            "global": "Global Settings",
+            "layout": "Layout",
+            "colors": "Colors Section",
+            "tools": "Drawing Tools",
+            "preview_appearance": "Preview Appearance",
+            "matrix": "Drawing Matrix Section",
+            "actions": "Action Buttons",
+            "pixelart": "Pixel Art Section",
+            "importExport": "Import/Export Actions"
+        }
     }
 }

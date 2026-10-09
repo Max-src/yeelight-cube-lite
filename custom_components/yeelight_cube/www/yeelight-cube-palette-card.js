@@ -2,7 +2,6 @@ import { LitElement, html, unsafeCSS, nothing } from "./lib/lit-all.js";
 
 import { YeelightCardMixin, cubeLampEntities } from "./card-base.js";
 import { cardNotice, cardShell } from "./card-shell.js";
-import { CollectionState } from "./collection-state.js";
 import { notify, notifyUnreported } from "./notify-utils.js";
 import {
   normalizeImportedPalettes,
@@ -10,7 +9,8 @@ import {
 } from "./palette-data-utils.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { normalizeCardOptions } from "./card-config.js";
-import { collectionItems } from "./user-collections.js";
+import { CollectionStore } from "./user-collections.js";
+import { getTargetEntities } from "./service-call-utils.js";
 import "./collection-gallery.js";
 import {
   colorCountLabel,
@@ -33,14 +33,18 @@ class YeelightCubePaletteCard extends YeelightCardMixin(LitElement) {
   constructor() {
     super();
     // Every lamp/sensor call of this card goes through the card's queue
-    // (this._commands; palette collection edits use _collection).
+    // (this._commands); the palettes are read and edited through the
+    // shared collection store (kept fresh, edits shown at once).
     this._hass = null;
     this.config = {};
+    this._store = new CollectionStore("palettes", {
+      onChange: () => this.requestUpdate(),
+    });
     this._importStatus = { active: false, success: false };
   }
 
   setConfig(config) {
-    this._collection?.reset();
+    this._store.reset();
     this._commands?.reset();
     // target_entities is not defaulted: `entity` covers single-lamp configs
     // (getTargetEntities falls back to it when the list is missing or empty).
@@ -77,68 +81,39 @@ class YeelightCubePaletteCard extends YeelightCardMixin(LitElement) {
   }
 
   /**
-   * Handle Home Assistant state changes
-   *
-   * CRITICAL ARCHITECTURE NOTE:
-   * This setter is called whenever Home Assistant sends a state update via websocket.
-   * However, HA has a limitation: when sensor attribute arrays are large (>100 items),
-   * the websocket only sends scalar attribute updates (count, hash) but NOT the full
-   * array data (palettes_v2). This causes stale data issues.
-   *
-   * EDIT FLOW (delete, rename, import):
-   * 1. The edit records the expected list in CollectionState (optimistic)
-   * 2. The card renders it immediately
-   * 3. Backend service persists the edit → the sensor updates count/hash
-   * 4. Websocket may send the new count/hash before the full array
-   * 5. This setter keeps the optimistic list until the full array matches
-   *
-   * CACHE MANAGEMENT:
-   * - Cache cleared when the full sensor array matches the optimistic snapshot
-   * - Cache expires after 5 seconds (navigated away and back)
-   *
-   * The card has no reactive properties: updates are requested explicitly here
-   * so unrelated hass updates (other entities) never re-render it.
+   * Home Assistant state: the palettes come from the shared collection
+   * store, which keeps them fresh and shows this card's edits until the
+   * backend confirms them (user-collections.js). The card has no reactive
+   * properties: it re-renders only when what it shows changed, never for
+   * unrelated entities.
    */
   set hass(hass) {
     this._hass = hass;
-
     // Auto-resolve palette_sensor on first hass set (setConfig may run before hass is available)
     this._autoResolveSensor("palette_sensor", "color_palettes", hass, this);
-
-    const entityId = this.config?.palette_sensor;
-    if (!entityId || !hass) return;
-
-    // Detect changes using the sensor's content_hash. Unlike a plain count,
-    // the hash also changes on renames and reorders, so the card refreshes for
-    // every kind of palette change -- not just additions/deletions.
-    const stateObj = hass.states[entityId];
-    const sensorArr = this._sensorPalettes();
-    const sensorCount = stateObj?.attributes?.count ?? sensorArr.length;
-    const currHash =
-      stateObj?.attributes?.content_hash ?? `count:${sensorCount}`;
-    const prevHash = this._lastPaletteHash;
-
-    // While an optimistic list is shown, keep it until the sensor's full
-    // array has caught up (its count can arrive a beat before the array,
-    // which would briefly bring a deleted palette back).
-    if (this._localPalettes !== undefined) {
-      this._collection.observe(sensorArr, sensorCount);
-      if (this._localPalettes === undefined) {
-        this._lastPaletteHash = currHash;
-        this.requestUpdate();
-      }
-      return;
-    }
-
-    if (prevHash !== currHash || prevHash === undefined) {
-      this._lastPaletteHash = currHash;
-      this.requestUpdate();
-    }
+    if (!hass) return;
+    // The lamps' colors decide the active palette (_activePaletteKey).
+    const textColors = this._lampTextColors();
+    const lampChanged = textColors !== this._lastTextColors;
+    this._lastTextColors = textColors;
+    if (this._store.update(hass, this.config) || lampChanged) this.requestUpdate();
   }
 
-  // The stored palettes (user-collections.js: the one reader of them).
-  _sensorPalettes() {
-    return collectionItems(this._hass, this.config, "palettes").items;
+  // The first target lamp's text colors (applying a palette sets them).
+  _lampTextColors() {
+    const entity = getTargetEntities(this.config)[0];
+    return this._hass?.states?.[entity]?.attributes?.text_colors;
+  }
+
+  // The palette the lamps show: the one whose colors are their text colors.
+  _activePaletteKey(palettes) {
+    const colors = this._lampTextColors();
+    if (!Array.isArray(colors) || !colors.length) return null;
+    const rgb = (list) =>
+      JSON.stringify(list.map((color) => (Array.isArray(color) ? color.slice(0, 3).map(Number) : color)));
+    const shown = rgb(colors);
+    const index = palettes.findIndex((palette) => rgb(palette.colors || []) === shown);
+    return index < 0 ? null : paletteKey(index);
   }
 
   // The palettes as gallery items: a preview in the card's swatch style,
@@ -162,14 +137,11 @@ class YeelightCubePaletteCard extends YeelightCardMixin(LitElement) {
     });
   }
 
-  /**
-   * Render the palette card
-   *
-   * DATA SOURCE:
-   * Renders from the optimistic local cache (`_localPalettes`) while an edit
-   * is being confirmed, otherwise straight from the sensor's authoritative
-   * `palettes_v2` array (see the `hass` setter).
-   */
+  // The palettes shown: this card's pending edit, else the freshest array.
+  _paletteItems() {
+    return this._store.items(this._hass, this.config);
+  }
+
   render() {
     const hass = this._hass;
     const entityId = this.config.palette_sensor;
@@ -180,10 +152,12 @@ class YeelightCubePaletteCard extends YeelightCardMixin(LitElement) {
     if (!stateObj)
       return cardNotice(this, `Palette sensor not found: ${entityId}`);
 
+    const palettes = this._paletteItems();
     const body = html`<div class="card-content yc-stack">
       <yc-collection-gallery
         .config=${this.config}
-        .items=${this._galleryItems(this._paletteItems())}
+        .items=${this._galleryItems(palettes)}
+        .active=${this._activePaletteKey(palettes)}
         searchLabel="Search palettes"
         actionLabel="Apply to the lamps"
         .navigateSelects=${false}
@@ -198,45 +172,7 @@ class YeelightCubePaletteCard extends YeelightCardMixin(LitElement) {
       )}
     </div>`;
 
-    return cardShell(this, body, {
-      // "Allow Rename" renames the card title too (until reloaded).
-      onTitleClick:
-        this.config.allow_rename === true
-          ? (title) => this._editCardTitle(title)
-          : undefined,
-    });
-  }
-
-  _editCardTitle(titleElem) {
-    const newTitle = prompt(
-      "Enter new card title:",
-      titleElem.textContent.trim(),
-    );
-    if (newTitle !== null && newTitle.trim() !== "") {
-      this.config = { ...this.config, title: newTitle.trim() };
-      this.requestUpdate();
-    }
-  }
-
-  /**
-   * Palette edits update the card at once (optimistic), then persist:
-   *
-   * CLIENT-SIDE EDIT ARCHITECTURE:
-   * 1. Compute the expected palette list immediately (optimistic update)
-   * 2. Store it in CollectionState with a timestamp; render it
-   * 3. Call the backend service to persist the edit
-   * 4. Wait for the full sensor array to match, then let sensor data take over
-   *
-   * ERROR HANDLING:
-   * - If backend fails, roll back and re-render with sensor data
-   * - If the cache expires (5s) without the sensor catching up, it is dropped
-   */
-  get _localPalettes() {
-    return this._collection?.pending?.items;
-  }
-
-  _paletteItems() {
-    return this._localPalettes ?? this._sensorPalettes();
+    return cardShell(this, body);
   }
 
   _notify(message) {
@@ -270,27 +206,13 @@ class YeelightCubePaletteCard extends YeelightCardMixin(LitElement) {
     );
   }
 
-  // Resolves true once persisted, false when refused or failed (rolled back
-  // and reported). `requestUpdate` is optional-called so this method also
-  // runs on plain objects (tests extract it with only a `render` stub).
-  async _mutatePalettes(items, service, data, render = true) {
-    const collection = (this._collection ||= new CollectionState());
-    const operation = collection.record(items);
-    if (render) this.requestUpdate?.();
-    try {
-      if (!(await collection.execute(this._hass, service, data))) {
-        throw new Error("The palette collection changed. Please retry.");
-      }
-      return true;
-    } catch (error) {
-      if (collection.rollback(operation)) {
-        this.requestUpdate?.();
-        // Service failures were already toasted by HA; only the locally
-        // detected "collection changed" conflict (or other local errors) is.
-        this._notifyUnreported(error);
-      }
-      return false;
-    }
+  // An edit of the palettes: shown at once, then saved. Resolves true once
+  // saved, false when refused or failed (rolled back; service failures were
+  // already shown by HA, only a local conflict is reported here).
+  _mutatePalettes(items, service, data) {
+    return this._store.edit(this._hass, items, service, data, {
+      onError: (error) => this._notifyUnreported(error),
+    });
   }
 
   _deletePalette(idx) {
@@ -334,7 +256,7 @@ class YeelightCubePaletteCard extends YeelightCardMixin(LitElement) {
   _exportPalettes() {
     const dataStr =
       "data:text/json;charset=utf-8," +
-      encodeURIComponent(JSON.stringify(this._sensorPalettes(), null, 2));
+      encodeURIComponent(JSON.stringify(this._paletteItems(), null, 2));
     const a = document.createElement("a");
     a.setAttribute("href", dataStr);
     a.setAttribute("download", "palettes.json");
@@ -435,8 +357,8 @@ class YeelightCubePaletteCard extends YeelightCardMixin(LitElement) {
     super.disconnectedCallback();
     clearTimeout(this._importStatusTimer);
     this._importStatus = { active: false, success: false };
-    // Clear local palette cache
-    this._collection?.reset();
+    // Late results of this connection are dropped.
+    this._store.reset();
   }
 }
 defineOnce("yeelight-cube-palette-card", YeelightCubePaletteCard);

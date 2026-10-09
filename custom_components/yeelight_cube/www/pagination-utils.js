@@ -8,13 +8,12 @@
  */
 
 // ─── CSS ────────────────────────────────────────────────────────────────────
-// Matches the Draw Card's pagination appearance exactly (draw_card_styles.js).
-// Uses the `.pagination-container` and `.draw-btn` class names so the look
-// is 1‑for‑1 identical regardless of which card renders them.
+// The page buttons of the shared gallery (and any paged list): the
+// `.pagination-container` / `.yc-page-btn` classes, the same on every card.
 
 export const paginationStyles = `
   /* Pagination button base */
-  .draw-btn {
+  .yc-page-btn {
     background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
     color: var(--primary-color, #0077cc);
     border: none;
@@ -28,29 +27,29 @@ export const paginationStyles = `
     box-shadow: 0 1px 4px #0003;
     text-align: center;
   }
-  .draw-btn:hover {
+  .yc-page-btn:hover {
     background: color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
   }
-  .draw-btn.save {
+  .yc-page-btn.save {
     background: color-mix(in srgb, var(--primary-color, #1976d2) 15%, var(--card-background-color, #fff));
     color: var(--primary-color, #0077cc);
     box-shadow: none;
   }
-  .draw-btn.save:hover {
+  .yc-page-btn.save:hover {
     background: color-mix(in srgb, var(--primary-color, #1976d2) 30%, var(--card-background-color, #fff));
   }
-  .draw-btn:disabled,
-  .draw-btn.disabled {
+  .yc-page-btn:disabled,
+  .yc-page-btn.disabled {
     background: var(--disabled-text-color, #bdbdbd) !important;
     color: var(--text-primary-color, #fff) !important;
     cursor: not-allowed !important;
     opacity: 0.6;
   }
-  .draw-btn:disabled:hover,
-  .draw-btn.disabled:hover {
+  .yc-page-btn:disabled:hover,
+  .yc-page-btn.disabled:hover {
     background: var(--disabled-text-color, #bdbdbd) !important;
   }
-  .draw-btn.active {
+  .yc-page-btn.active {
     background: var(--primary-color, #0077cc) !important;
     color: var(--text-primary-color, #fff) !important;
   }
@@ -70,16 +69,16 @@ export const paginationStyles = `
   }
 
   /* Sizing overrides inside pagination */
-  .pagination-container .draw-btn {
+  .pagination-container .yc-page-btn {
     min-width: 40px;
     padding: 8px 12px;
     font-size: 0.9em;
   }
-  .pagination-container .draw-btn.save {
+  .pagination-container .yc-page-btn.save {
     min-width: 40px;
     padding: 8px;
   }
-  .pagination-container .draw-btn ha-icon {
+  .pagination-container .yc-page-btn ha-icon {
     width: 18px;
     height: 18px;
   }
@@ -89,12 +88,12 @@ export const paginationStyles = `
     .pagination-container.pages {
       gap: 4px;
     }
-    .pagination-container .draw-btn {
+    .pagination-container .yc-page-btn {
       padding: 6px 8px;
       font-size: 0.85em;
       min-width: 32px;
     }
-    .pagination-container .draw-btn.save {
+    .pagination-container .yc-page-btn.save {
       padding: 6px;
     }
   }
@@ -134,16 +133,16 @@ export function renderPagination({
 
     let pageButtons = "";
     for (let p = startPage; p < endPage; p++) {
-      pageButtons += `<button class="draw-btn save${p === safePage ? " active" : ""}" data-pagination-page="${p}" title="Page ${p + 1}" style="min-width:29px;height:29px;">${p + 1}</button>`;
+      pageButtons += `<button class="yc-page-btn save${p === safePage ? " active" : ""}" data-pagination-page="${p}" title="Page ${p + 1}" style="min-width:29px;height:29px;">${p + 1}</button>`;
     }
 
     html = `
       <div class="pagination-container pages">
-        <button class="draw-btn save${safePage === 0 ? " disabled" : ""}" data-pagination-action="prev" title="Previous page"${safePage === 0 ? " disabled" : ""}>
+        <button class="yc-page-btn save${safePage === 0 ? " disabled" : ""}" data-pagination-action="prev" title="Previous page"${safePage === 0 ? " disabled" : ""}>
           <ha-icon icon="mdi:chevron-left"></ha-icon>
         </button>
         ${pageButtons}
-        <button class="draw-btn save${safePage >= totalPages - 1 ? " disabled" : ""}" data-pagination-action="next" title="Next page"${safePage >= totalPages - 1 ? " disabled" : ""}>
+        <button class="yc-page-btn save${safePage >= totalPages - 1 ? " disabled" : ""}" data-pagination-action="next" title="Next page"${safePage >= totalPages - 1 ? " disabled" : ""}>
           <ha-icon icon="mdi:chevron-right"></ha-icon>
         </button>
       </div>

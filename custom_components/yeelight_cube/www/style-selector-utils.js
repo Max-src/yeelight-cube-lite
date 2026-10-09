@@ -5,7 +5,11 @@ import {
   renderItemPreview,
   galleryDisplayStyles,
 } from "./gallery-display-utils.js";
-import { renderCarouselString, carouselStyles } from "./carousel-utils.js";
+import {
+  renderCarouselString,
+  carouselSwipe,
+  carouselStyles,
+} from "./carousel-utils.js";
 import { renderPagination } from "./pagination-utils.js";
 import { renderActionButtonHTML } from "./action-button-utils.js";
 import {
@@ -71,18 +75,11 @@ export function bindStyleSelectorEvents(
       setIndex(Number(node.dataset.index) || 0);
     };
   });
+  // The carousel's swipe (carouselSwipe: horizontal swipes step, vertical
+  // moves still scroll the page).
   const shell = root.querySelector(".gc-preview-shell");
-  if (shell && style === "preview-carousel") {
-    let start = null;
-    shell.ontouchstart = (event) => {
-      start = event.touches[0].clientX;
-    };
-    shell.ontouchend = (event) => {
-      const delta = event.changedTouches[0].clientX - start;
-      if (start != null && Math.abs(delta) > 40) navigate(delta < 0 ? 1 : -1);
-      start = null;
-    };
-  }
+  if (shell && style === "preview-carousel")
+    shell.ontouchstart = carouselSwipe((direction) => navigate(direction));
 }
 export function selectorDisplayMode(style) {
   return (

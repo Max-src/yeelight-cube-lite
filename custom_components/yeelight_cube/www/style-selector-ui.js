@@ -71,8 +71,6 @@ const PREVIEW_STYLE_CHOICES = [
  * @param {Object} [options.memory] - an object the editor keeps: switching
  *   Selector Type back restores the style last picked in that family
  * @param {number} [options.defaultSize] - the card's preview_size default
- * @param {boolean} [options.hasActive] - false when no item is ever the
- *   active one (palettes): no Highlight Active row
  * @param {Function} [options.renderAppearance] - (config, onChange) => the
  *   card's appearance rows (previews and Original only); default: the
  *   matrix rows. Cards whose items are not matrices (palettes) render
@@ -91,7 +89,6 @@ export function renderStyleSelectorSettings(
     memory = {},
     manage = "",
     defaultSize = 55,
-    hasActive = true,
     renderAppearance = renderGalleryMatrixSettings,
   } = {},
 ) {
@@ -108,14 +105,12 @@ export function renderStyleSelectorSettings(
     ? [...TEXT_STYLE_CHOICES, CHIPS_CHOICE]
     : TEXT_STYLE_CHOICES;
   const highlightRow = () =>
-    hasActive
-      ? createToggleRow(
-          `Highlight Active ${noun}`,
-          "highlight_active_mode",
-          config.highlight_active_mode !== false,
-          (event) => onChange("highlight_active_mode", event.target.checked),
-        )
-      : "";
+    createToggleRow(
+      `Highlight Active ${noun}`,
+      "highlight_active_mode",
+      config.highlight_active_mode !== false,
+      (event) => onChange("highlight_active_mode", event.target.checked),
+    );
   const family =
     style === "original"
       ? "original"
@@ -133,6 +128,17 @@ export function renderStyleSelectorSettings(
       config.show_search !== false,
       (event) => onChange("show_search", event.target.checked),
     )}
+    <div class="form-row">
+      <label>Order</label>
+      ${createButtonGroup(
+        [
+          { value: "manual", label: "Your order", title: "The card's own order (its list, or Arrange)" },
+          { value: "name", label: "A → Z", title: "By the name shown" },
+        ],
+        config.gallery_sort === "name" ? "name" : "manual",
+        (event) => onChange("gallery_sort", event.currentTarget.dataset.value),
+      )}
+    </div>
     <div class="form-row">
       <label>Selector Type</label>
       ${createButtonGroup(
@@ -253,7 +259,7 @@ export function renderStyleSelectorSettings(
                   `,
                 )
               : ""}
-            ${style === "preview-strip" && hasActive
+            ${style === "preview-strip"
               ? renderModeSettingsSection(
                   "Strip Mode Settings",
                   highlightRow(),
