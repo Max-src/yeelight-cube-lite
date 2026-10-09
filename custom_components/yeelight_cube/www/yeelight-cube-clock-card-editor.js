@@ -148,7 +148,7 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
               "Show active-style label",
               "show_active_label",
               config.show_active_label !== false,
-              (e) => this._onToggle(e, "show_active_label"),
+              (e) => this._onSwitchChange(e, "show_active_label"),
             )}
           `,
         )}
@@ -165,7 +165,7 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
               "Show Lamp Preview",
               "show_current_preview",
               config.show_current_preview !== false,
-              (e) => this._onToggle(e, "show_current_preview"),
+              (e) => this._onSwitchChange(e, "show_current_preview"),
             )}
             ${config.show_current_preview !== false
               ? renderModeSettingsSection(
@@ -188,19 +188,16 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
               "Show brightness slider",
               "show_brightness",
               config.show_brightness === true,
-              (e) => this._onToggle(e, "show_brightness"),
+              (e) => this._onSwitchChange(e, "show_brightness"),
             )}
             ${createToggleRow(
               "Show animation speed slider",
               "show_animation_speed",
               config.show_animation_speed !== false,
-              (e) => this._onToggle(e, "show_animation_speed"),
+              (e) => this._onSwitchChange(e, "show_animation_speed"),
             )}
-            ${renderLightSliderSettings(config, (key, value) => {
-              this._config = { ...this._config, [key]: value };
-              this.requestUpdate();
-              this._fireConfigChanged();
-            })}
+            ${renderLightSliderSettings(config, (key, value) =>
+              this._setOption(key, value))}
           `,
         )}
         ${this._section(
@@ -211,19 +208,19 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
               "Show content toggle",
               "show_content_toggle",
               config.show_content_toggle !== false,
-              (e) => this._onToggle(e, "show_content_toggle"),
+              (e) => this._onSwitchChange(e, "show_content_toggle"),
             )}
             ${createToggleRow(
               "Show format toggles",
               "show_format_toggles",
               config.show_format_toggles !== false,
-              (e) => this._onToggle(e, "show_format_toggles"),
+              (e) => this._onSwitchChange(e, "show_format_toggles"),
             )}
             ${createToggleRow(
               "Show color modes",
               "show_color_modes",
               !!config.show_color_modes,
-              (e) => this._onToggle(e, "show_color_modes"),
+              (e) => this._onSwitchChange(e, "show_color_modes"),
             )}
             ${config.show_color_modes
               ? renderModeSettingsSection(
@@ -234,13 +231,13 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
                       "Show 'save color mode' button",
                       "show_save_color_mode_button",
                       config.show_save_color_mode_button !== false,
-                      (e) => this._onToggle(e, "show_save_color_mode_button"),
+                      (e) => this._onSwitchChange(e, "show_save_color_mode_button"),
                     )}
                     ${createToggleRow(
                       "Show 'save clock style' button",
                       "show_save_clock_style_button",
                       config.show_save_clock_style_button !== false,
-                      (e) => this._onToggle(e, "show_save_clock_style_button"),
+                      (e) => this._onSwitchChange(e, "show_save_clock_style_button"),
                     )}
                     ${renderModeSettingsSection(
                       "Visible color modes",
@@ -251,11 +248,8 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
               : ""}
             ${renderModeSettingsSection(
               "Control buttons",
-              renderActionButtonSettings(config, (key, value) => {
-                this._config = { ...this._config, [key]: value };
-                this.requestUpdate();
-                this._fireConfigChanged();
-              }),
+              renderActionButtonSettings(config, (key, value) =>
+              this._setOption(key, value)),
             )}
           `,
         )}
@@ -279,7 +273,7 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
               "Show Effect Browser",
               "show_gallery",
               config.show_gallery !== false,
-              (event) => this._onToggle(event, "show_gallery"),
+              (event) => this._onSwitchChange(event, "show_gallery"),
             )}
             ${config.show_gallery !== false
               ? renderModeSettingsSection(
@@ -411,25 +405,6 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
     });
   }
 
-  _onButtonGroup(key, e) {
-    const value = e?.target?.dataset?.value;
-    if (!value) return;
-    this._config = { ...this._config, [key]: value };
-    this.requestUpdate();
-    this._fireConfigChanged();
-  }
-
-  _onToggle(e, key) {
-    this._config = { ...this._config, [key]: e.target.checked };
-    this.requestUpdate();
-    this._fireConfigChanged();
-  }
-
-  _onSlider(key, e) {
-    this._config = { ...this._config, [key]: parseInt(e.target.value, 10) };
-    this.requestUpdate();
-    this._fireConfigChanged();
-  }
 
 }
 

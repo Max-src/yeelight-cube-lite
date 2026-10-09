@@ -237,10 +237,10 @@ export function renderPreviewStyleSelector(config, items, sel, active, state) {
               resolveSelectorButtonShape(config),
             ),
             showAsCard: true,
-            carouselId: "cc-clock-carousel",
+            carouselId: "gallery-carousel",
             wrapNavigation: config.gallery_wrap_navigation === true,
             renderItemString: (it) => `
-              <div class="gallery-item cc-carousel-item" data-mode="${escapeHtml(it.dataMode)}"
+              <div class="gallery-item yc-carousel-item" data-mode="${escapeHtml(it.dataMode)}"
                    data-action="select-mode"
                    style="cursor:pointer;display:flex;flex-direction:column;align-items:center;
                           gap:6px;padding:10px;border-radius:8px;background:${bgName === "transparent" ? "transparent" : rendererBg};

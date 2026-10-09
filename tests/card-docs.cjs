@@ -78,6 +78,61 @@ async function onboard(context) {
   );
 }
 
+// Failures that make every capture impossible (HA onboarding): fail the run.
+class SetupError extends Error {}
+
+// The viewport grows to fit the capture: editor panels get taller as card
+// features are added, and a fixed height failed the run each time one
+// outgrew it (clock-editor-previews reached 1912 of 2000 px).
+const VIEWPORT_MARGIN = 64;
+const MAX_VIEWPORT_HEIGHT = 16000;
+async function fitViewport(page, selector) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const clip = await page.locator(selector).boundingBox();
+    const viewport = page.viewportSize();
+    if (!clip) return;
+    const height = Math.ceil(clip.y + clip.height) + VIEWPORT_MARGIN;
+    if (height <= viewport.height) return;
+    await page.setViewportSize({
+      width: viewport.width,
+      height: Math.min(height, MAX_VIEWPORT_HEIGHT),
+    });
+    await page.evaluate(() => window.cardDocs.settle());
+  }
+}
+
+/**
+ * The run's result: the job fails only when nothing could be captured (HA or
+ * the runner is broken). An image that fails on its own keeps its committed
+ * version and is reported as a warning, so one image never blocks the
+ * others or turns a code commit red; the cards themselves are tested by the
+ * HA-free Tests workflow.
+ */
+function runOutcome(verifiedCount, failures) {
+  const warnings = failures.map(
+    ({ file, reason }) =>
+      `::warning title=Documentation screenshot kept from the last run::${file}: ${reason}`,
+  );
+  const summary = [
+    `### Documentation screenshots`,
+    ``,
+    `${verifiedCount} verified, ${failures.length} kept from the last run.`,
+    ...(failures.length
+      ? [
+          ``,
+          `| Image | Why it was not updated |`,
+          `| :-- | :-- |`,
+          ...failures.map(
+            ({ file, reason }) => `| ${file} | ${reason.replaceAll("|", "\\|")} |`,
+          ),
+          ``,
+          `Captures and diffs: the \`card-documentation-diagnostics\` artifact.`,
+        ]
+      : []),
+  ].join("\n");
+  return { ok: verifiedCount > 0 || !failures.length, warnings, summary };
+}
+
 // Wait until every ha-icon has drawn. Polls from Node in real time because the
 // page's own timers are frozen by page.clock during capture.
 async function waitForIcons(page, file) {
@@ -149,10 +204,12 @@ print(json.dumps({'font_maps': data['FONT_MAPS'], 'font_metrics': data['FONT_MET
       // Each image is captured until two captures match (card-docs-compare.cjs:
       // equal up to anti-aliasing noise): normally twice, a third time when
       // the first two differ. A single odd capture (a rare rendering race) is
-      // then outvoted instead of failing the run; three different captures
-      // mean real non-determinism.
+      // then outvoted; three different captures mean real non-determinism.
+      // Any failure of this image skips it only (see runOutcome).
+      const file = `${kind}-${scenario}.png`;
       const captures = [];
       let passes = 2;
+      try {
       for (let pass = 0; pass < passes; pass++) {
         const browser = await chromium.launch({
           headless: true,
@@ -173,7 +230,9 @@ print(json.dumps({'font_maps': data['FONT_MAPS'], 'font_metrics': data['FONT_MET
             reducedMotion: "reduce",
           });
           if (process.env.DOCS_HA_ONBOARD === "1" && !onboardState)
-            await onboard(context);
+            await onboard(context).catch((error) => {
+              throw new SetupError(error.message);
+            });
           await context.route("**/yeelight_cube/**", async (route) => {
             const relative = decodeURIComponent(
               new URL(route.request().url()).pathname,
@@ -227,11 +286,11 @@ print(json.dumps({'font_maps': data['FONT_MAPS'], 'font_metrics': data['FONT_MET
           );
           await page.clock.runFor(1200);
           await page.evaluate(() => window.cardDocs.settle());
-          const file = `${kind}-${scenario}.png`;
           await waitForIcons(page, file);
           const selector = await page.evaluate(
             () => window.cardDocs.captureSelector,
           );
+          await fitViewport(page, selector);
           let clip = await page.locator(selector).boundingBox();
           await page.screenshot({ clip, ...screenshotOptions });
           await page.evaluate(() => window.cardDocs.settle());
@@ -297,10 +356,9 @@ print(json.dumps({'font_maps': data['FONT_MAPS'], 'font_metrics': data['FONT_MET
               );
               passes = 3;
             } else {
-              failures.push(file);
               await writeDiagnostics(file, captures);
-              console.error(
-                `Capture pixels changed in all ${captures.length} captures: ${file} (${describeDifference(captures[0].png, captures[1].png)})`,
+              throw new Error(
+                `Rendered differently in all ${captures.length} captures (${describeDifference(captures[0].png, captures[1].png)})`,
               );
             }
           }
@@ -311,13 +369,25 @@ print(json.dumps({'font_maps': data['FONT_MAPS'], 'font_metrics': data['FONT_MET
           await browser.close();
         }
       }
+      } catch (error) {
+        if (error instanceof SetupError) throw error;
+        const reason = String(error.message).split("\n")[0];
+        failures.push({ file, reason });
+        console.warn(`Kept the committed ${file}: ${reason}`);
+        // Nothing works at all (HA down, runner broken): stop early.
+        if (!verified.size && failures.length >= 3) break;
+      }
     }
+    if (!verified.size && failures.length >= 3) break;
   }
-  if (failures.length) {
+  const outcome = runOutcome(verified.size, failures);
+  outcome.warnings.forEach((line) => console.log(line));
+  if (process.env.GITHUB_STEP_SUMMARY)
+    await fs.appendFile(process.env.GITHUB_STEP_SUMMARY, `${outcome.summary}\n`);
+  if (!outcome.ok)
     throw new Error(
-      `Non-deterministic captures (see ${path.relative(root, DIAGNOSTICS)}): ${failures.join(", ")}`,
+      `No documentation screenshot could be captured: ${failures[0].reason}`,
     );
-  }
   let kept = 0;
   for (const [file, image] of verified) {
     const target = path.join(output, file);
@@ -373,7 +443,10 @@ async function writeDiagnostics(file, captures) {
   );
 }
 
-main().catch((error) => {
-  console.error(error.message);
-  process.exitCode = 1;
-});
+if (require.main === module)
+  main().catch((error) => {
+    console.error(error.message);
+    process.exitCode = 1;
+  });
+
+module.exports = { fitViewport, runOutcome };

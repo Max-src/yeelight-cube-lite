@@ -235,8 +235,7 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
   }
 
   _resetToolOrder() {
-    this._config = { ...this._config, tools_order: [...DEFAULT_TOOL_ORDER] };
-    this._fireConfigChanged();
+    this._setOption("tools_order", [...DEFAULT_TOOL_ORDER]);
   }
 
   _resetToolVisibility() {
@@ -319,8 +318,7 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
   }
 
   _onSectionVisibilityChange(sectionId, visible) {
-    this._config = { ...this._config, [`show_${sectionId}_section`]: visible };
-    this._fireConfigChanged();
+    this._setOption(`show_${sectionId}_section`, visible);
   }
 
   // Simple drag methods are implemented above in _initSimpleDrag()
@@ -442,10 +440,7 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
                   { value: "preview-hover", label: "Preview Hover" },
                 ],
                 this._config.palette_card_mode || "side",
-                createButtonGroupChangeHandler("palette_card_mode", (value) => {
-                  this._config = { ...this._config, palette_card_mode: value };
-                  this._fireConfigChanged();
-                }),
+                createButtonGroupChangeHandler("palette_card_mode", (value) => this._setOption("palette_card_mode", value)),
               ),
             )}
             ${(this._config.palette_card_mode || "side") === "carousel"
@@ -483,10 +478,7 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
                           this._config.side_click_zoom || "off",
                           createButtonGroupChangeHandler(
                             "side_click_zoom",
-                            (value) => {
-                              this._config = { ...this._config, side_click_zoom: value };
-                              this._fireConfigChanged();
-                            },
+                            (value) => this._setOption("side_click_zoom", value),
                           ),
                         ),
                       )}
@@ -523,16 +515,11 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
                     createButtonGroupChangeHandler(
                       "palette_display_mode",
                       (value) => {
-                        if (value === "swatches") {
-                          // Keep current sub-mode if already a swatch, else default to row
-                          this._config = {
-                            ...this._config,
-                            palette_display_mode: isSwatches ? dm : "row",
-                          };
-                        } else {
-                          this._config = { ...this._config, palette_display_mode: value };
-                        }
-                        this._fireConfigChanged();
+                        // Swatches keeps the current swatch sub-mode, else row.
+                        this._setOption(
+                          "palette_display_mode",
+                          value !== "swatches" ? value : isSwatches ? dm : "row",
+                        );
                       },
                     ),
                   ),
@@ -556,10 +543,7 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
                             dm,
                             createButtonGroupChangeHandler(
                               "palette_display_mode",
-                              (value) => {
-                                this._config = { ...this._config, palette_display_mode: value };
-                                this._fireConfigChanged();
-                              },
+                              (value) => this._setOption("palette_display_mode", value),
                             ),
                           ),
                         )}
@@ -574,10 +558,7 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
                             this._config.swatch_shape || "round",
                             createButtonGroupChangeHandler(
                               "swatch_shape",
-                              (value) => {
-                                this._config = { ...this._config, swatch_shape: value };
-                                this._fireConfigChanged();
-                              },
+                              (value) => this._setOption("swatch_shape", value),
                             ),
                           ),
                         )}
@@ -593,10 +574,7 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
                                 this._config.expand_btn_style || "pill",
                                 createButtonGroupChangeHandler(
                                   "expand_btn_style",
-                                  (value) => {
-                                    this._config = { ...this._config, expand_btn_style: value };
-                                    this._fireConfigChanged();
-                                  },
+                                  (value) => this._setOption("expand_btn_style", value),
                                 ),
                               ),
                             )
@@ -617,10 +595,7 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
                             this._config.swatch_shape || "round",
                             createButtonGroupChangeHandler(
                               "swatch_shape",
-                              (value) => {
-                                this._config = { ...this._config, swatch_shape: value };
-                                this._fireConfigChanged();
-                              },
+                              (value) => this._setOption("swatch_shape", value),
                             ),
                           ),
                         )}
@@ -652,10 +627,7 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
                               this._config.blinds_direction || "rows",
                               createButtonGroupChangeHandler(
                                 "blinds_direction",
-                                (value) => {
-                                  this._config = { ...this._config, blinds_direction: value };
-                                  this._fireConfigChanged();
-                                },
+                                (value) => this._setOption("blinds_direction", value),
                               ),
                             ),
                           ),
@@ -674,10 +646,7 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
                 this._config.color_info_display || "none",
                 createButtonGroupChangeHandler(
                   "color_info_display",
-                  (value) => {
-                    this._config = { ...this._config, color_info_display: value };
-                    this._fireConfigChanged();
-                  },
+                  (value) => this._setOption("color_info_display", value),
                 ),
               ),
             )}
@@ -692,10 +661,7 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
                 this._config.colors_card_border || "auto",
                 createButtonGroupChangeHandler(
                   "colors_card_border",
-                  (value) => {
-                    this._config = { ...this._config, colors_card_border: value };
-                    this._fireConfigChanged();
-                  },
+                  (value) => this._setOption("colors_card_border", value),
                 ),
               ),
             )}
@@ -755,18 +721,12 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
                     { value: "square", label: "Square" },
                   ],
                   this._config.button_shape || "rect",
-                  createButtonGroupChangeHandler("button_shape", (value) => {
-                    this._config = { ...this._config, button_shape: value };
-                    this._fireConfigChanged();
-                  }),
+                  createButtonGroupChangeHandler("button_shape", (value) => this._setOption("button_shape", value)),
                 )}
               </div>
               ${renderActionButtonSettings(
                 this._config,
-                (key, value) => {
-                  this._config = { ...this._config, [key]: value };
-                  this._fireConfigChanged();
-                },
+                (key, value) => this._setOption(key, value),
                 {
                   styleKey: "tool_buttons_style",
                   contentKey: "tool_content_mode",
@@ -841,10 +801,7 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
             >
               ${renderActionButtonSettings(
                 this._config,
-                (key, value) => {
-                  this._config = { ...this._config, [key]: value };
-                  this._fireConfigChanged();
-                },
+                (key, value) => this._setOption(key, value),
                 {
                   styleKey: "actions_buttons_style",
                   contentKey: "actions_content_mode",
@@ -897,10 +854,7 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
             )}
             ${renderActionButtonSettings(
               this._config,
-              (key, value) => {
-                this._config = { ...this._config, [key]: value };
-                this._fireConfigChanged();
-              },
+              (key, value) => this._setOption(key, value),
               {
                 styleKey: "pixelart_buttons_style",
                 contentKey: "pixelart_content_mode",
@@ -938,32 +892,12 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
     ></yeelight-preview-appearance-editor>`;
   }
 
-  _onMatrixSizeChange(e) {
-    this._config = { ...this._config, matrix_size: e.target.value };
-    this._fireConfigChanged();
-  }
-
-  _onSwitchChange(e, key) {
-    this._config = { ...this._config, [key]: e.target.checked };
-    this._fireConfigChanged();
-
-    // Trigger re-render for settings that affect other setting visibility
-    if (key === "preview_show_titles") {
-      this.requestUpdate();
-    }
-  }
-
-
   _onMatrixSizeSliderChange(e) {
-    const val = Number(e.target.value);
-    this._config = { ...this._config, matrix_size: val };
-    this._fireConfigChanged();
+    this._setOption("matrix_size", Number(e.target.value));
   }
 
   _onSideCardWidthChange(e) {
-    const val = Number(e.target.value);
-    this._config = { ...this._config, side_card_width: val };
-    this._fireConfigChanged();
+    this._setOption("side_card_width", Number(e.target.value));
   }
 }
 

@@ -189,30 +189,7 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
 
     if (key === "title" && value === "") value = undefined;
 
-    this._config = { ...this._config, [key]: value };
-
-    this._fireConfigChanged();
-  }
-
-  _colorInfoChanged(ev) {
-    const target = ev.target;
-    if (!target) return;
-
-    // Update config with new color info display option
-    this._config = { ...this._config, color_info_display: target.value };
-    this._fireConfigChanged();
-  }
-
-  _handleColorInfoChange(ev) {
-    const target = ev.target;
-    if (!target || !target.dataset.value) return;
-
-    // Update config with new color info display option
-    this._config = {
-      ...this._config,
-      color_info_display: target.dataset.value,
-    };
-    this._fireConfigChanged();
+    this._setOption(key, value);
   }
 
   _fireConfigChanged() {

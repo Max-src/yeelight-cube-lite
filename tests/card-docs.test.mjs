@@ -162,3 +162,42 @@ test("two of three captures decide; three different captures fail", () => {
   const third = { png: capture((set) => set(40, 40, [0, 0, 0])) };
   assert.equal(matchingCapture([odd, other, third]), null);
 });
+
+// The runner (card-docs.cjs): only what can be tested without Home Assistant.
+const { fitViewport, runOutcome } = require("./card-docs.cjs");
+
+test("the viewport grows to fit a panel taller than it", async () => {
+  // The CI failure: clock-editor-previews grew to 1912 px in a 2000 px viewport.
+  let viewport = { width: 1280, height: 2000 };
+  const box = { x: 0, y: 120, width: 432, height: 2400 };
+  const page = {
+    locator: () => ({ boundingBox: async () => box }),
+    viewportSize: () => viewport,
+    setViewportSize: async (size) => {
+      viewport = size;
+    },
+    evaluate: async () => {},
+  };
+  await fitViewport(page, "#card-docs");
+  assert.equal(viewport.width, 1280);
+  assert.ok(viewport.height >= box.y + box.height);
+  // A panel that fits leaves the viewport as it is.
+  const before = viewport;
+  await fitViewport(page, "#card-docs");
+  assert.equal(viewport, before);
+});
+
+test("one image failing keeps the run green; nothing captured fails it", () => {
+  const failures = [
+    { file: "clock-editor-previews.png", reason: "Rendered | differently" },
+  ];
+  const partial = runOutcome(40, failures);
+  assert.equal(partial.ok, true);
+  assert.equal(partial.warnings.length, 1);
+  assert.match(partial.warnings[0], /^::warning .*clock-editor-previews\.png/);
+  assert.match(partial.summary, /40 verified, 1 kept from the last run/);
+  assert.match(partial.summary, /Rendered \\\| differently/);
+  assert.equal(runOutcome(0, failures).ok, false);
+  assert.equal(runOutcome(40, []).ok, true);
+  assert.equal(runOutcome(40, []).warnings.length, 0);
+});

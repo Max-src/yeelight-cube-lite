@@ -57,20 +57,11 @@ const WHEEL_MODE = {
   DEFAULT_VISIBLE_ITEMS: 5,
   DEFAULT_WHEEL_HEIGHT: 300,
 
-  // Button styling
+  // Nav buttons: the default shape (the rest of their look and the
+  // animations are in galleryDisplayStyles).
   BUTTON: {
-    SIZE: "48px",
-    FONT_SIZE: "2em",
     BORDER_RADIUS: "50%",
-    BACKGROUND: "var(--card-background-color, #FFF)",
-    BORDER: "1px solid var(--divider-color, rgba(0,0,0,0.1))",
-    BOX_SHADOW: "0 4px 12px rgba(0,0,0,0.15)",
-    GAP: "18px",
   },
-
-  // Animation
-  TRANSITION: "all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
-  CONTAINER_TRANSITION: "transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)",
 };
 
 /**
@@ -300,15 +291,7 @@ export function renderGalleryMode(items, options = {}) {
   const isBgTransparent = bgColor === "transparent";
 
   return `
-    <div class="gallery-display-grid" style="
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(min(${previewSize + 60}px, 100%), 1fr));
-      gap: 12px;
-      align-items: start;
-      max-width: 100%;
-      box-sizing: border-box;
-      padding: 4px;
-    ">
+    <div class="gallery-display-grid" style="grid-template-columns: repeat(auto-fit, minmax(min(${previewSize + 60}px, 100%), 1fr));">
       ${items
         .map((item, idx) => {
           const isActive =
@@ -320,33 +303,12 @@ export function renderGalleryMode(items, options = {}) {
              ${isActive ? 'data-active-mode="true"' : ""}
              ${isBgTransparent ? 'data-bg-transparent="true"' : ""}
              ${item.title ? `title="${item.title}"` : ""}
-             style="
-               ${cursorStyle}
-               padding: ${showCards ? "12px" : "6px"};
-               border-radius: 8px;
-               background: ${itemBg};
-               border: ${
-                 showCards ? "1px solid var(--divider-color, #e0e0e0)" : "none"
-               };
-               transition: all 0.2s ease;
-               max-width: 100%;
-               box-sizing: border-box;
-               overflow: hidden;
-             ">${
+             style="${cursorStyle} background: ${itemBg};">${
                showTitles && item.title
-                 ? `<div class="gallery-item-title" style="
-                 font-size: ${getTitleFontSize(previewSize)}px;
-                 text-align: center;
-                 margin-bottom: 6px;
-                 white-space: nowrap;
-                 overflow: hidden;
-                 text-overflow: ellipsis;
-                 font-weight: 500;
-                 ${titleColor}
-               ">${item.title}</div>`
+                 ? `<div class="gallery-item-title" style="font-size: ${getTitleFontSize(previewSize)}px; ${titleColor}">${item.title}</div>`
                  : ""
              }
-          <div style="display: flex; justify-content: center;">
+          <div class="gallery-item-body">
             ${renderItemPreview(item, {
               previewSize,
               bgColor,
@@ -355,12 +317,7 @@ export function renderGalleryMode(items, options = {}) {
           </div>
           ${
             item.metadata
-              ? `<div class="gallery-item-metadata" style="
-                 font-size: ${getMetadataFontSize(previewSize)}px;
-                 text-align: center;
-                 margin-top: 4px;
-                 color: var(--secondary-text-color, #666);
-               ">${item.metadata}</div>`
+              ? `<div class="gallery-item-metadata" style="font-size: ${getMetadataFontSize(previewSize)}px;">${item.metadata}</div>`
               : ""
           }
         </div>
@@ -403,31 +360,10 @@ function renderCompactFlavor(items, options = {}, strip = false) {
       : "color: var(--primary-text-color);";
   const isBgTransparent = bgColor === "transparent";
 
-  // Strip: single non-wrapping scrollable row; compact: centered wrapping row.
-  const containerStyle = strip
-    ? `
-      display: flex;
-      flex-wrap: nowrap;
-      overflow-x: auto;
-      gap: 8px;
-      align-items: flex-start;
-      max-width: 100%;
-      box-sizing: border-box;
-      padding: 4px 4px 8px 4px;
-    `
-    : `
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      align-items: center;
-      justify-content: center;
-      max-width: 100%;
-      box-sizing: border-box;
-      padding: 4px;
-    `;
-
+  // Strip: single non-wrapping scrollable row; compact: centered wrapping row
+  // (galleryDisplayStyles).
   return `
-    <div class="${strip ? "gallery-display-strip" : "gallery-display-compact"}" style="${containerStyle}">
+    <div class="${strip ? "gallery-display-strip" : "gallery-display-compact"}">
       ${items
         .map((item, idx) => {
           const isActive =
@@ -439,37 +375,14 @@ function renderCompactFlavor(items, options = {}, strip = false) {
              ${isActive ? 'data-active-mode="true"' : ""}
              ${isBgTransparent ? 'data-bg-transparent="true"' : ""}
              ${item.title ? `title="${item.title}"` : ""}
-             style="
-               ${cursorStyle}
-               display: inline-flex;
-               flex-direction: column;
-               align-items: center;
-               gap: 4px;
-               ${strip ? "flex: 0 0 auto;" : ""}
-               padding: ${showCards ? "6px" : "2px"};
-               border-radius: ${showCards ? "6px" : "4px"};
-               background: ${itemBg};
-               border: ${showCards ? "1px solid var(--divider-color, #e0e0e0)" : "none"};
-               transition: all 0.2s ease;
-               max-width: 100%;
-               box-sizing: border-box;
-             ">${renderItemPreview(item, {
+             style="${cursorStyle} border-radius: ${showCards ? "6px" : "4px"}; background: ${itemBg};">${renderItemPreview(item, {
                previewSize,
                bgColor,
                ...matrixOptions,
              })}
           ${
             showTitles && item.title
-              ? `<div class="gallery-item-title" style="
-                 font-size: ${getTitleFontSize(previewSize)}px;
-                 text-align: center;
-                 max-width: ${previewSize}px;
-                 white-space: nowrap;
-                 overflow: hidden;
-                 text-overflow: ellipsis;
-                 font-weight: 500;
-                 ${titleColor}
-               ">${item.title}</div>`
+              ? `<div class="gallery-item-title" style="font-size: ${getTitleFontSize(previewSize)}px; max-width: ${previewSize}px; ${titleColor}">${item.title}</div>`
               : ""
           }
         </div>
@@ -523,52 +436,16 @@ export function renderWheelMode(items, options = {}) {
   const initialOffset = initialBaseOffset + initialCenterIndex * itemStep;
 
   return `
-    <div class="wheel-display" ${matrixOptions.bgColor === "transparent" ? 'data-bg-transparent="true"' : ""} style="
-      position: relative;
-      width: 100%;
-      max-width: ${outerMaxWidth}px;
-      margin: 0 auto;
-      height: ${wheelHeight}px;
-      overflow: visible;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: flex-start;
-      box-sizing: border-box;
-    ">
+    <div class="wheel-display" ${matrixOptions.bgColor === "transparent" ? 'data-bg-transparent="true"' : ""} style="max-width: ${outerMaxWidth}px; height: ${wheelHeight}px;">
       <!-- Inner clipping viewport - clips top/bottom overflow only -->
-      <div class="wheel-clip-viewport" style="
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        overflow: hidden;
-        pointer-events: none;
-        padding: 0;
-      ">
+      <div class="wheel-clip-viewport">
         <!-- Scrollable wheel container -->
         <div class="wheel-scroll-container" data-wheel-scroll="true"
           data-wheel-item-height="${config.itemHeight}"
           data-wheel-item-step="${itemStep}"
           data-wheel-container-height="${wheelHeight}"
           data-wheel-padding-top="${paddingTop}"
-          style="
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 0px;
-          padding: ${paddingTop}px 0;
-          transition: ${WHEEL_MODE.CONTAINER_TRANSITION};
-          transform: translateY(-${initialOffset}px);
-          width: 100%;
-          max-width: 100%;
-          box-sizing: border-box;
-          pointer-events: auto;
-          max-width: ${cardMaxWidth}px;
-          margin: 0 auto;
-          cursor: grab;
-        ">
+          style="padding: ${paddingTop}px 0; transform: translateY(-${initialOffset}px); max-width: ${cardMaxWidth}px;">
           ${renderWheelItems(items, config, cursorStyle, matrixOptions, initialCenterIndex)}
         </div>
       </div>
@@ -655,34 +532,16 @@ function renderWheelItems(
              background: ${itemBg};
              border: ${borderStyle};
              ${backdropBlur}
-             transition: ${WHEEL_MODE.TRANSITION};
              opacity: ${initStyle.opacity};
              transform: scale(${initStyle.scale}) rotateX(${initStyle.rotateX}deg);
              z-index: ${initStyle.zIndex};
-             transform-origin: center center;
-             max-width: 90%;
-             width: 100%;
              min-height: ${config.itemHeight}px;
              height: ${config.itemHeight}px;
-             box-sizing: border-box;
-             overflow: hidden;
              box-shadow: ${isBgBlack ? "0 1px 4px rgba(255,255,255,0.08)" : "0 1px 3px rgba(0,0,0,0.1)"};
-             backface-visibility: hidden;
-             -webkit-backface-visibility: hidden;
-             position: relative;
-             flex-shrink: 0;
-             display: flex;
-             flex-direction: column;
-             justify-content: center;
              margin-top: ${idx === 0 ? "0" : `-${Math.round(config.itemHeight * 0.35)}px`};
            ">
         ${renderWheelItemTitle(item.title, config, titleColor)}
-        <div style="
-          display: flex; 
-          justify-content: center; 
-          align-items: center; 
-          ${config.isCompact ? "width: 100%; height: 100%;" : "flex: 1;"}
-        ">
+        <div class="wheel-item-body">
           ${renderItemPreview(item, {
             previewSize: config.previewSize,
             bgColor,
@@ -705,37 +564,12 @@ function renderWheelItemTitle(title, config, titleColor = "") {
   if (config.showTitle) {
     // Default mode: always visible title
     return `
-      <div class="wheel-item-title" style="
-        font-size: ${config.titleFontSize};
-        text-align: center;
-        margin-bottom: ${config.titleMargin};
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        font-weight: 600;
-        ${titleColor}
-      ">${title}</div>
+      <div class="wheel-item-title" style="font-size: ${config.titleFontSize}; margin-bottom: ${config.titleMargin}; ${titleColor}">${title}</div>
     `;
   } else {
     // Compact mode: hover-only tooltip
     return `
-      <div class="wheel-item-title-hover" style="
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: rgba(0, 0, 0, 0.8);
-        color: var(--text-primary-color, #fff);
-        padding: 8px 16px;
-        border-radius: 6px;
-        font-size: 14px;
-        font-weight: 600;
-        white-space: nowrap;
-        pointer-events: none;
-        opacity: 0;
-        transition: opacity 0.2s;
-        z-index: 1000;
-      ">${title}</div>
+      <div class="wheel-item-title-hover">${title}</div>
     `;
   }
 }
@@ -750,90 +584,18 @@ function renderWheelNavButtons(options) {
   }
 
   const isSideLayout = options.wheelNavPosition === "sides";
-  const { BUTTON } = WHEEL_MODE;
 
   // Nav-button shape (shared selector appearance axis); default keeps the
-  // historical circular look when no shape is passed.
+  // historical circular look when no shape is passed. Layout and look:
+  // galleryDisplayStyles (data-wheel-nav-layout).
   const navRadius =
     { square: "0", rounded: "8px", round: "50%" }[options.navButtonShape] ||
-    BUTTON.BORDER_RADIUS;
-
-  const containerStyle = isSideLayout
-    ? `
-      top: 50%;
-      transform: translateY(-50%);
-      display: flex;
-      justify-content: space-between;
-      width: calc(100% + 24px);
-      left: -12px;
-    `
-    : `
-      bottom: 14px;
-      left: 50%;
-      transform: translateX(-50%);
-      display: flex;
-      gap: ${BUTTON.GAP};
-    `;
-
-  const buttonRotation = isSideLayout ? "" : "transform: rotate(-90deg);";
+    WHEEL_MODE.BUTTON.BORDER_RADIUS;
 
   return `
-    <div class="wheel-nav-buttons" 
-         data-wheel-nav-layout="${options.wheelNavPosition || "bottom"}" 
-         style="
-           position: absolute;
-           ${containerStyle}
-           z-index: 10;
-           pointer-events: none;
-         ">
-      <button class="wheel-nav-down" 
-              data-wheel-nav="${isSideLayout ? "up" : "down"}" 
-              title="Previous"
-              style="
-                background: ${BUTTON.BACKGROUND};
-                border: ${BUTTON.BORDER};
-                border-radius: ${navRadius};
-                width: ${BUTTON.SIZE};
-                height: ${BUTTON.SIZE};
-                cursor: pointer;
-                font-size: ${BUTTON.FONT_SIZE};
-                color: var(--primary-text-color, #333);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                transition: all 0.2s;
-                box-shadow: ${BUTTON.BOX_SHADOW};
-                pointer-events: auto;
-                user-select: none;
-                margin: 0;
-                padding: 0 2px 6px 0;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                ${buttonRotation}
-              ">‹</button>
-      <button class="wheel-nav-up" 
-              data-wheel-nav="${isSideLayout ? "down" : "up"}" 
-              title="Next"
-              style="
-                background: ${BUTTON.BACKGROUND};
-                border: ${BUTTON.BORDER};
-                border-radius: ${navRadius};
-                width: ${BUTTON.SIZE};
-                height: ${BUTTON.SIZE};
-                cursor: pointer;
-                font-size: ${BUTTON.FONT_SIZE};
-                color: var(--primary-text-color, #333);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                transition: all 0.2s;
-                box-shadow: ${BUTTON.BOX_SHADOW};
-                pointer-events: auto;
-                user-select: none;
-                margin: 0;
-                padding: 0 0 6px 2px;
-                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                ${buttonRotation}
-              ">›</button>
+    <div class="wheel-nav-buttons" data-wheel-nav-layout="${options.wheelNavPosition || "bottom"}">
+      <button class="wheel-nav-down" data-wheel-nav="${isSideLayout ? "up" : "down"}" title="Previous" style="border-radius: ${navRadius};">‹</button>
+      <button class="wheel-nav-up" data-wheel-nav="${isSideLayout ? "down" : "up"}" title="Next" style="border-radius: ${navRadius};">›</button>
     </div>
   `;
 }
@@ -935,10 +697,96 @@ export function bindOriginalGallery(root, { select }) {
  * CSS styles for gallery display (to be imported into card styles)
  */
 export const galleryDisplayStyles = `
+  /* List / grid (renderGalleryMode); the columns and per-render colors and
+     font sizes are inline. */
+  .gallery-display-grid {
+    display: grid;
+    gap: 12px;
+    align-items: start;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 4px;
+  }
+  .gallery-display-grid > .gallery-item {
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid var(--divider-color, #e0e0e0);
+    transition: all 0.2s ease;
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+  }
+  .gallery-display-grid > .gallery-item-plain {
+    padding: 6px;
+    border: none;
+  }
+  .gallery-display-grid .gallery-item-title {
+    text-align: center;
+    margin-bottom: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 500;
+  }
+  .gallery-item-body {
+    display: flex;
+    justify-content: center;
+  }
+  .gallery-display-grid .gallery-item-metadata {
+    text-align: center;
+    margin-top: 4px;
+    color: var(--secondary-text-color, #666);
+  }
+
   .gallery-item-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-    border-color: var(--primary-color, #03a9f4);
+  }
+
+  /* Strip (one scrollable row) and compact (a centred wrapping row). */
+  .gallery-display-strip,
+  .gallery-display-compact {
+    display: flex;
+    gap: 8px;
+    max-width: 100%;
+    box-sizing: border-box;
+    padding: 4px;
+  }
+  .gallery-display-strip {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    align-items: flex-start;
+    padding-bottom: 8px;
+  }
+  .gallery-display-compact {
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+  }
+  .gallery-compact-item {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 6px;
+    border: 1px solid var(--divider-color, #e0e0e0);
+    transition: all 0.2s ease;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .gallery-display-strip > .gallery-compact-item {
+    flex: 0 0 auto;
+  }
+  .gallery-compact-item.gallery-compact-plain {
+    padding: 2px;
+    border: none;
+  }
+  .gallery-compact-item .gallery-item-title {
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 500;
   }
 
   .gallery-compact-item:hover {
@@ -1051,6 +899,135 @@ export const galleryDisplayStyles = `
   
   .wheel-display {
     user-select: none;
+    position: relative;
+    width: 100%;
+    margin: 0 auto;
+    overflow: visible;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
+    box-sizing: border-box;
+  }
+  .wheel-clip-viewport {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    padding: 0;
+  }
+  /* The scrolled column: its offset (transform) and the items' opacity,
+     transform and z-index are inline, written by wheel-navigation-utils.js. */
+  .wheel-scroll-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    width: 100%;
+    box-sizing: border-box;
+    pointer-events: auto;
+    margin: 0 auto;
+    cursor: grab;
+  }
+  .wheel-item {
+    transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    transform-origin: center center;
+    max-width: 90%;
+    width: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    position: relative;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .wheel-item-body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    flex: 1;
+  }
+  .wheel-item[data-wheel-compact-item="true"] > .wheel-item-body {
+    flex: initial;
+    width: 100%;
+    height: 100%;
+  }
+  .wheel-item-title {
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 600;
+  }
+  /* Compact wheel: the title shows on hover (wheel-navigation-utils.js). */
+  .wheel-item-title-hover {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: var(--text-primary-color, #fff);
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    white-space: nowrap;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+    z-index: 1000;
+  }
+  /* Nav buttons: under the wheel (rotated arrows), or on its sides. */
+  .wheel-nav-buttons {
+    position: absolute;
+    bottom: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 18px;
+    z-index: 10;
+    pointer-events: none;
+  }
+  .wheel-nav-buttons[data-wheel-nav-layout="sides"] {
+    top: 50%;
+    bottom: auto;
+    left: -12px;
+    transform: translateY(-50%);
+    justify-content: space-between;
+    width: calc(100% + 24px);
+    gap: 0;
+  }
+  .wheel-nav-buttons button {
+    background: var(--card-background-color, #fff);
+    border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.1));
+    width: 48px;
+    height: 48px;
+    cursor: pointer;
+    font-size: 2em;
+    color: var(--primary-text-color, #333);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    pointer-events: auto;
+    user-select: none;
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .wheel-nav-buttons .wheel-nav-down {
+    padding: 0 2px 6px 0;
+  }
+  .wheel-nav-buttons .wheel-nav-up {
+    padding: 0 0 6px 2px;
+  }
+  /* Under the wheel the arrows point up and down, whatever the hover. */
+  .wheel-nav-buttons:not([data-wheel-nav-layout="sides"]) button {
+    transform: rotate(-90deg);
   }
 
   .wheel-item[data-wheel-centered="true"] {

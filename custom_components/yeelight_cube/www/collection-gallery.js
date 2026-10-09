@@ -165,7 +165,7 @@ export const collectionGalleryStyles = `
   .gc-preview-shell .carousel-content {
     align-items: stretch;
   }
-  .gc-preview-shell .cc-carousel-item {
+  .gc-preview-shell .yc-carousel-item {
     width: 100%;
   }
   /* No preview is ever wider than the card (narrow cards, large Size). */

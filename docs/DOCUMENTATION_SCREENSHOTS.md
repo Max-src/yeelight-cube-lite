@@ -40,17 +40,26 @@ lamp and profile settings are not saved; theme changes are in-memory only.
 
 Each image is captured in fresh Chromium processes until two captures match:
 normally twice. When the first two differ, a third capture decides, so a
-single odd capture is outvoted and logged as a warning; three different
-captures fail the run. Their captures and a diff image (magenta: real change,
-yellow: rendering noise) go to `test-results/card-docs/`, which CI uploads as
-the `card-documentation-diagnostics` artifact.
+single odd capture is outvoted and logged as a warning. The viewport grows to
+fit the capture, so panels can get taller as features are added.
+
+**One image never fails the run.** An image that cannot be verified (three
+different captures, a missing control, a blank region, ...) keeps its last
+committed version; the run lists it as a warning on its summary page with the
+reason, and every other image is still verified and published. Its captures
+and a diff image (magenta: real change, yellow: rendering noise) go to
+`test-results/card-docs/`, which CI uploads as the
+`card-documentation-diagnostics` artifact. The job only fails when nothing can
+be captured (Home Assistant does not start or onboard, the runner is broken).
+Card correctness is the HA-free Tests workflow's job, not this one's: the
+screenshots are documentation.
 
 "Match" is defined in `tests/card-docs-compare.cjs`: same size, no pixel
 channel more than 24 levels apart, and at most 0.5% of pixels different at
 all. It is deliberately not byte-exact: Chromium's software rasterizer is not
 bit-exact between processes for anti-aliased edges at fractional sizes, and an
 exact compare failed CI on a different random image almost every run. Animation
-phases, missing icons/fonts and layout shifts still fail. A newly verified
+phases, missing icons/fonts and layout shifts are still detected. A newly verified
 image that matches the committed one is not rewritten, so the publish job
 never commits rendering noise. Checks also cover card bounds, lower-image content, overflow,
 preview frames and required controls. Clock time and preview phase are fixed;

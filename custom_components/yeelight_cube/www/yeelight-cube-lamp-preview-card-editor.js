@@ -86,19 +86,9 @@ class YeelightCubeLampPreviewCardEditor extends YeelightEditorMixin(LitElement) 
     orderableListStyles,
   ];
 
-  _orientationChanged(key, value) {
-    this._config = { ...this._config, [key]: value };
-    if (key === "orientation_buttons") {
-      delete this._config.orientation_layout;
-      delete this._config.orientation_half_turn;
-      delete this._config.orientation_directions;
-    }
-    this._fireConfigChanged();
-  }
-
   _renderOrientationSettings() {
     return renderOrientationSettings(this._config, (key, value) =>
-      this._orientationChanged(key, value),
+      this._setOption(key, value),
     );
   }
 
@@ -139,7 +129,7 @@ class YeelightCubeLampPreviewCardEditor extends YeelightEditorMixin(LitElement) 
               "Show Lamp Preview",
               "show_lamp_preview",
               cfg.show_lamp_preview !== false,
-              (e) => this._onToggleChange(e),
+              (e) => this._onSwitchChange(e, e.target.id),
             )}
             ${createSliderRow(
               "Matrix Size",
@@ -156,10 +146,7 @@ class YeelightCubeLampPreviewCardEditor extends YeelightEditorMixin(LitElement) 
             ${renderModeControlSettings(
               "actions",
               cfg,
-              (key, value) => {
-                this._config = { ...this._config, [key]: value };
-                this._fireConfigChanged();
-              },
+              (key, value) => this._setOption(key, value),
               [],
               "lamp",
             )}
@@ -171,7 +158,7 @@ class YeelightCubeLampPreviewCardEditor extends YeelightEditorMixin(LitElement) 
               "Show Device Orientation Control",
               "show_device_orientation",
               cfg.show_device_orientation !== false,
-              (e) => this._onToggleChange(e),
+              (e) => this._onSwitchChange(e, e.target.id),
             )}
             ${cfg.show_device_orientation !== false
               ? this._renderOrientationSettings()
@@ -184,15 +171,11 @@ class YeelightCubeLampPreviewCardEditor extends YeelightEditorMixin(LitElement) 
               "Show Brightness Slider",
               "show_brightness",
               cfg.show_brightness === true,
-              (e) => this._onToggleChange(e),
+              (e) => this._onSwitchChange(e, e.target.id),
             )}
             ${renderLightSliderSettings(
               cfg,
-              (key, value) => {
-                this._config = { ...this._config, [key]: value };
-                this._fireConfigChanged();
-                this.requestUpdate();
-              },
+              (key, value) => this._setOption(key, value),
               {
                 showValueToggle: {
                   label: "Show Brightness Percentage",
@@ -219,7 +202,7 @@ class YeelightCubeLampPreviewCardEditor extends YeelightEditorMixin(LitElement) 
               "Show Adjustment Controls",
               "show_adjustment_controls",
               cfg.show_adjustment_controls ?? false,
-              (e) => this._onToggleChange(e),
+              (e) => this._onSwitchChange(e, e.target.id),
             )}
             ${cfg.show_adjustment_controls
               ? renderModeSettingsSection(
@@ -279,7 +262,7 @@ class YeelightCubeLampPreviewCardEditor extends YeelightEditorMixin(LitElement) 
                       "Show Change Indicator",
                       "show_change_indicators",
                       cfg.show_change_indicators ?? true,
-                      (e) => this._onToggleChange(e),
+                      (e) => this._onSwitchChange(e, e.target.id),
                     )}
                     <div class="form-row">
                       <label>Reset Button Visibility</label>
@@ -314,16 +297,8 @@ class YeelightCubeLampPreviewCardEditor extends YeelightEditorMixin(LitElement) 
     `;
   }
 
-  _onToggleChange(e) {
-    const key = e.target.id;
-    this._config = { ...this._config, [key]: e.target.checked };
-    this._fireConfigChanged();
-    this.requestUpdate();
-  }
-
   _onSliderChange(key, e) {
-    this._config = { ...this._config, [key]: Number(e.target.value) };
-    this._fireConfigChanged();
+    this._setOption(key, Number(e.target.value));
   }
 }
 

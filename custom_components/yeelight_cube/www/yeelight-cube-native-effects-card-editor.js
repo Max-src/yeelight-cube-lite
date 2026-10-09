@@ -61,13 +61,7 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
     );
   }
   _change(key, value) {
-    this._config = { ...this._config, [key]: value };
-    if (key === "orientation_buttons") {
-      delete this._config.orientation_layout;
-      delete this._config.orientation_half_turn;
-      delete this._config.orientation_directions;
-    }
-    this._fireConfigChanged();
+    this._setOption(key, value);
   }
   _toggle(label, key, fallback = true) {
     return createToggleRow(label, key, this._config[key] ?? fallback, (event) =>

@@ -58,6 +58,14 @@ import { renderModeSettingsSection } from "./editor_ui_utils.js";
 
 export function renderOrientationSettings(config, onChange) {
   const options = orientationOptions(config);
+  // orientation_buttons replaces the legacy direction options: they go with
+  // the first edit (onChange(key, undefined) removes an option).
+  const setButtons = (buttons) => {
+    onChange("orientation_buttons", buttons);
+    ["orientation_layout", "orientation_half_turn", "orientation_directions"]
+      .filter((key) => config[key] !== undefined)
+      .forEach((key) => onChange(key, undefined));
+  };
   const choices = (label, key, items, value) =>
     html` <div class="form-row">
       <label>${label}</label>
@@ -92,8 +100,8 @@ export function renderOrientationSettings(config, onChange) {
       labelFor: (value) =>
         ORIENTATION_CHOICES.find((choice) => choice.value === value)?.label ||
         value,
-      onUpdate: (buttons) => onChange("orientation_buttons", buttons),
-      onReset: () => onChange("orientation_buttons", [...ORIENTATION_ORDER]),
+      onUpdate: setButtons,
+      onReset: () => setButtons([...ORIENTATION_ORDER]),
       addPlaceholder: "Add button",
     })}
   `;

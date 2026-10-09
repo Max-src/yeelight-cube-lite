@@ -171,18 +171,7 @@ class YeelightCubePaletteCardEditor extends YeelightEditorMixin(LitElement) {
     // Convert boolean-backed button groups from string to boolean
     if (key === "delete_button_left") value = value === "left";
     else if (key === "delete_button_inside") value = value === "inside";
-    // New object: never mutate a config already dispatched to HA; also
-    // forces re-render of conditional sections (like album settings).
-    this._config = { ...this._config, [key]: value };
-    this.requestUpdate();
-    this._fireConfigChanged();
-  }
-
-  _onSwitchChange(e, key) {
-    // Immediately update the UI before firing config change
-    this._config = { ...this._config, [key]: e.target.checked };
-    this.requestUpdate();
-    this._fireConfigChanged();
+    this._setOption(key, value);
   }
 
 

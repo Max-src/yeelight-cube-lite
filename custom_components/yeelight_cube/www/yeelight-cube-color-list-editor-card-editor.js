@@ -344,10 +344,7 @@ class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitEleme
             <!-- Delete button settings last (button lives on the cards) -->
             ${renderDeleteButtonSettings(cfg, {
               styleKey: "remove_button_style",
-              commit: (key, value) => {
-                this._config = { ...this._config, [key]: value };
-                this._fireConfigChanged();
-              },
+              commit: (key, value) => this._setOption(key, value),
             })}
         `)}
 
@@ -381,18 +378,11 @@ class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitEleme
               "Show Save Palette Button",
               "show_save_palette",
               cfg.show_save_palette !== false,
-              (e) => {
-                this._config = {
-                  ...this._config,
-                  show_save_palette: e.target.checked,
-                };
-                this._fireConfigChanged();
-              },
+              (e) => this._onSwitchChange(e, "show_save_palette"),
             )}
-            ${renderActionButtonSettings(cfg, (key, value) => {
-              this._config = { ...this._config, [key]: value };
-              this._fireConfigChanged();
-            })}
+            ${renderActionButtonSettings(cfg, (key, value) =>
+              this._setOption(key, value),
+            )}
         `)}
       </div>
     `;

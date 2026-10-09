@@ -187,7 +187,7 @@ export function renderCarousel(options) {
   </button>`;
   return html`
     <div class="carousel-wrapper" @touchstart=${carouselSwipe(step)}>
-      <div class="pixelart-gallery-carousel ${showAsCard ? "carousel-with-card" : ""}">
+      <div class="yc-carousel ${showAsCard ? "carousel-with-card" : ""}">
         ${arrow(-1, model.prevDisabled)}
         <div
           class="carousel-content ${showAsCard ? "carousel-content-card" : ""}"
@@ -274,7 +274,7 @@ export const carouselStyles = `
   }
 
   /* Carousel Container */
-  .pixelart-gallery-carousel {
+  .yc-carousel {
     position: relative;
     width: 100%;
     /* min-height: 400px; */
@@ -446,7 +446,7 @@ export function renderCarouselString(options) {
     .join("");
   return `
     <div class="carousel-wrapper">
-      <div class="pixelart-gallery-carousel ${showAsCard ? "carousel-with-card" : ""}">
+      <div class="yc-carousel ${showAsCard ? "carousel-with-card" : ""}">
         ${arrow(-1, model.prevDisabled)}
         <div class="carousel-content ${showAsCard ? "carousel-content-card" : ""}"${
           showAsCard ? ` style="border-radius: ${model.radius}px;"` : ""

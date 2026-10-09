@@ -66,9 +66,10 @@ jobs:
         env:
           DOCS_HA_URL: http://127.0.0.1:8123
           DOCS_HA_ONBOARD: "1"
-      # Captures that rendered differently each time, with a diff image.
+      # Captures of images kept from the last run (they rendered differently
+      # each time), with a diff image. Listed in the run summary.
       - uses: actions/upload-artifact@v4
-        if: failure()
+        if: always()
         with:
           name: card-documentation-diagnostics
           path: test-results/card-docs/

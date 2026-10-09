@@ -311,6 +311,11 @@ export const YeelightEditorMixin = (Base) =>
       this._fireConfigChanged();
     }
 
+    /** A toggle row's change: `key` takes the switch's state. */
+    _onSwitchChange(event, key) {
+      this._setOption(key, event.target.checked);
+    }
+
     /**
      * The items of the card's gallery: which ones, in which order, and their
      * names on this card (item_labels). The same in every editor with a

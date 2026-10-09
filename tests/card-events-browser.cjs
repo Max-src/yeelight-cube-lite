@@ -425,7 +425,7 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         await new Promise((resolve) => setTimeout(resolve, 400));
         const afterMove = seen.length;
         const shown =
-          gallery.querySelector(".cc-carousel-item[data-mode]")?.dataset.mode ??
+          gallery.querySelector(".yc-carousel-item[data-mode]")?.dataset.mode ??
           gallery.querySelector('.wheel-item[data-wheel-centered="true"]')?.dataset.mode;
         gallery.querySelector(`[data-mode="${shown}"]`).click();
         await new Promise((resolve) => setTimeout(resolve, 100));
