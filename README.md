@@ -548,6 +548,11 @@ Manage color palettes. Apply a palette to lamps with one click. Multiple display
 
 <!-- card-docs:palette:variations:start -->
 <table>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/palette-overview.png" alt="Palettes - Album of palettes with gradient backgrounds" width="280"><br>Album of palettes with gradient backgrounds</td>
+    <td valign="top"><img src="images/Cards/generated/palette-list.png" alt="Palettes - List with color swatches and their count" width="280"><br>List with color swatches and their count</td>
+    <td valign="top"><img src="images/Cards/generated/palette-dark.png" alt="Palettes - Dark theme: grid with color stripes" width="280"><br>Dark theme: grid with color stripes</td>
+  </tr>
 </table>
 <!-- card-docs:palette:variations:end -->
 
@@ -568,6 +573,11 @@ Manage color palettes. Apply a palette to lamps with one click. Multiple display
 
 <!-- card-docs:palette:editors:start -->
 <table>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/palette-editor-global.png" alt="Palettes - Global Settings" width="220"><br>Global Settings</td>
+    <td valign="top"><img src="images/Cards/generated/palette-editor-palettes.png" alt="Palettes - Palettes" width="220"><br>Palettes</td>
+    <td valign="top"><img src="images/Cards/generated/palette-editor-importExport.png" alt="Palettes - Import/Export Actions" width="220"><br>Import/Export Actions</td>
+  </tr>
 </table>
 <!-- card-docs:palette:editors:end -->
 
@@ -641,6 +651,11 @@ The pixel art editor. Paint on a 20×5 interactive matrix, save designs to a per
 
 <!-- card-docs:draw:variations:start -->
 <table>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/draw-overview.png" alt="Draw - Colors, tools, a drawing and the pixel-art carousel" width="280"><br>Colors, tools, a drawing and the pixel-art carousel</td>
+    <td valign="top"><img src="images/Cards/generated/draw-grid.png" alt="Draw - Pixel-art grid: the art being drawn is highlighted" width="280"><br>Pixel-art grid: the art being drawn is highlighted</td>
+    <td valign="top"><img src="images/Cards/generated/draw-dark.png" alt="Draw - Dark theme: round pixels and pixel-art chips" width="280"><br>Dark theme: round pixels and pixel-art chips</td>
+  </tr>
 </table>
 <!-- card-docs:draw:variations:end -->
 
@@ -663,6 +678,21 @@ The pixel art editor. Paint on a 20×5 interactive matrix, save designs to a per
 
 <!-- card-docs:draw:editors:start -->
 <table>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/draw-editor-global.png" alt="Draw - Global Settings" width="220"><br>Global Settings</td>
+    <td valign="top"><img src="images/Cards/generated/draw-editor-layout.png" alt="Draw - Layout" width="220"><br>Layout</td>
+    <td valign="top"><img src="images/Cards/generated/draw-editor-colors.png" alt="Draw - Colors Section" width="220"><br>Colors Section</td>
+  </tr>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/draw-editor-tools.png" alt="Draw - Drawing Tools" width="220"><br>Drawing Tools</td>
+    <td valign="top"><img src="images/Cards/generated/draw-editor-preview_appearance.png" alt="Draw - Preview Appearance" width="220"><br>Preview Appearance</td>
+    <td valign="top"><img src="images/Cards/generated/draw-editor-matrix.png" alt="Draw - Drawing Matrix Section" width="220"><br>Drawing Matrix Section</td>
+  </tr>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/draw-editor-actions.png" alt="Draw - Action Buttons" width="220"><br>Action Buttons</td>
+    <td valign="top"><img src="images/Cards/generated/draw-editor-pixelart.png" alt="Draw - Pixel Art Section" width="220"><br>Pixel Art Section</td>
+    <td valign="top"><img src="images/Cards/generated/draw-editor-importExport.png" alt="Draw - Import/Export Actions" width="220"><br>Import/Export Actions</td>
+  </tr>
 </table>
 <!-- card-docs:draw:editors:end -->
 
