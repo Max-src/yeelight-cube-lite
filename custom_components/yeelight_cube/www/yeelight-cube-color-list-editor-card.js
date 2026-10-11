@@ -60,30 +60,13 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
     this._editing = null; // { idx, value } of the focused hex input
     this._pendingHassRender = false; // A render was held back by a guard
     this._interactionSafetyTimer = null; // Safety timer to flush held renders
-    this._drag = null; // Active drag session state
-    this._dragCleanup = null; // Tears down drag artefacts outside the card
+    this._dragSession = null; // The active drag (reorder-drag.js)
     this._listKey = 0; // Bumped after a drag so Lit rebuilds the moved DOM
     this._renderedColors = [];
     this._fanHover = { wrapper: null, justCollapsed: false };
     this._pickerBoundList = null;
     // Listener objects carry their own options (Lit re-binds them only if the
     // object identity changes, so they are created once).
-    this._touchStartListener = {
-      handleEvent: (event) => this._onTouchStart(event),
-      passive: true,
-    };
-    this._touchMoveListener = {
-      handleEvent: (event) => this._onTouchMove(event),
-      passive: false,
-    };
-    this._touchEndListener = {
-      handleEvent: (event) => this._onTouchEnd(event, false),
-      passive: true,
-    };
-    this._touchCancelListener = {
-      handleEvent: (event) => this._onTouchEnd(event, true),
-      passive: true,
-    };
     this._fanTouchListener = {
       handleEvent: (event) => this._onFanTouch(event),
       passive: true,
@@ -352,21 +335,12 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
       <div
         id="color-list"
         class="layout-${config.list_layout ||
-        "list"} item-card-border surface-${config.card_surface_effect ||
+        "compact"}${this._dragKind() ? " can-drag" : ""} item-card-border surface-${config.card_surface_effect ||
         "none"} shadow-${config.card_shadow_style ||
         "soft"} hover-${config.card_hover_effect || "lift"}"
         style="--card-size-multiplier: ${(config.card_size || 70) / 100};"
         @click=${this._onListClick}
-        @mousedown=${this._onListMouseDown}
-        @mouseup=${this._onListMouseUp}
-        @dragstart=${this._onDragStart}
-        @dragover=${this._onDragOver}
-        @dragend=${this._onDragEnd}
-        @drop=${this._onDrop}
-        @touchstart=${this._touchStartListener}
-        @touchmove=${this._touchMoveListener}
-        @touchend=${this._touchEndListener}
-        @touchcancel=${this._touchCancelListener}
+        @pointerdown=${this._onListPointerDown}
       >
         ${this._renderItems(textColors, options)}
       </div>
@@ -715,11 +689,9 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
     this._commands?.reset();
     this._pendingServiceCalls = [];
 
-    // Tear down anything a drag placed outside the card (touch ghost) if
-    // disconnected mid-drag; the drag's DOM is rebuilt on the next render.
-    this._endDragSession();
-    if (this._drag) this._listKey++;
-    this._drag = null;
+    // A drag in progress ends with the card (its DOM is rebuilt on the
+    // next render).
+    this._dragSession?.cancel();
 
     this._cleanupColorPicker(true);
 

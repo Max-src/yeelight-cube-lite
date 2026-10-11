@@ -33,8 +33,13 @@ export const OPTION_ALIASES = Object.freeze({
     pixel_art_matrix_box_shadow: "gallery_matrix_box_shadow",
     pixel_art_allow_rename: "allow_rename",
     carousel_wrap_navigation: "gallery_wrap_navigation",
-    // The colour section (palette cards): the gallery's names, colors_ prefixed.
+    // The color section (palette cards): the gallery's names, colors_ prefixed.
     palette_carousel_wrap_navigation: "colors_wrap_navigation",
+    // Its swatches: the shared swatches' names (swatch-settings-ui.js).
+    palette_display_mode: "swatch_layout",
+    expand_btn_style: "swatch_expand_style",
+    blinds_direction: "swatch_blinds_direction",
+    gradient_free_pick: "swatch_free_pick",
   },
   gradient: {
     mode_selector_style: "style_selector_style",
@@ -121,7 +126,7 @@ export const OPTION_MIGRATIONS = Object.freeze({
       }),
     ...(config.item_card_border === undefined && { item_card_border: "auto" }),
     ...(config.show_search === undefined && { show_search: false }),
-    // The colour section's arrows in the shared shape names, and its card
+    // The color section's arrows in the shared shape names, and its card
     // corners (formerly rounded_cards, shared with the side-by-side mode):
     // a legacy "round" / true keeps each mode's default (unset).
     ...(config.colors_button_shape === undefined &&
@@ -163,8 +168,29 @@ export const OPTION_MIGRATIONS = Object.freeze({
     }),
     ...(config.item_card_border === undefined && { item_card_border: "always" }),
     ...(config.show_search === undefined && { show_search: false }),
+    // Its swatch style is the shared swatches' layout and shape: "square"
+    // swatches had rounded corners.
+    ...(config.swatch_layout === undefined &&
+      config.swatch_style !== undefined &&
+      PALETTE_SWATCH_STYLES[config.swatch_style] && {
+        swatch_layout: PALETTE_SWATCH_STYLES[config.swatch_style][0],
+        ...(config.swatch_shape === undefined &&
+          PALETTE_SWATCH_STYLES[config.swatch_style][1] && {
+            swatch_shape: PALETTE_SWATCH_STYLES[config.swatch_style][1],
+          }),
+      }),
   }),
 });
+
+// The palette card's swatch_style as [swatch_layout, swatch_shape].
+const PALETTE_SWATCH_STYLES = {
+  square: ["row", "rounded"],
+  round: ["row", "round"],
+  gradient: ["gradient"],
+  "gradient-bar": ["gradient"],
+  "gradient-bg": ["fill"],
+  stripes: ["stripes"],
+};
 
 // Draw's former preview size (50-100%, 100 by default) as the shared Size:
 // the same in every layout but the album, whose cards were 240 px at 100%
@@ -240,6 +266,7 @@ export const RETIRED_OPTIONS = Object.freeze({
     "card_size",
     // Swatch size of the former gallery mode: swatches follow Size now.
     "swatch_size",
+    "swatch_style",
   ],
 });
 

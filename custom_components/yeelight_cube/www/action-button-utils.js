@@ -308,7 +308,7 @@ export function renderButtonContent(
   }
 
   const visual = swatch
-    ? `<span class="btn-swatch${swatchShape === "square" ? " btn-swatch-square" : swatchShape === "circle" || swatchShape === "round" ? " btn-swatch-round" : ""}" style="background:${escapeHtml(swatch)}"></span>`
+    ? `<span class="btn-swatch${swatchShape === "square" ? " btn-swatch-square" : swatchShape === "round" ? " btn-swatch-round" : ""}" style="background:${escapeHtml(swatch)}"></span>`
     : `<ha-icon icon="${escapeHtml(icon)}"></ha-icon>`;
   switch (contentMode) {
     case "icon":

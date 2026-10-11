@@ -19,7 +19,7 @@ import {
   renderOrderableList,
   orderableListStyles,
 } from "./orderable-list-utils.js";
-import { renderMatrixPreview } from "./gallery-display-utils.js";
+import { matrixPreviewStyles, renderMatrixPreview } from "./gallery-display-utils.js";
 import {
   favouriteId,
   nextRotationMode,
@@ -657,6 +657,7 @@ class YeelightModeControls extends LitElement {
     unsafeCSS(cardLayoutStyles),
     unsafeCSS(actionButtonStyles),
     unsafeCSS(orientationControlStyles),
+    unsafeCSS(matrixPreviewStyles),
     orderableListStyles,
     css`
       :host {

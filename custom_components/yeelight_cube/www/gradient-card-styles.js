@@ -165,33 +165,6 @@ export const GRADIENT_CARD_CSS = `
         .remove-btn { background: color-mix(in srgb, var(--error-color, #db4437) 15%, var(--card-background-color, #fff)); border: none; border-radius: 6px; color: var(--error-color, #db4437); padding: 6px 18px; cursor: pointer; font-size: 1em; font-weight: 500; margin-left: 0; transition: background 0.2s; }
         .remove-btn:hover { background: color-mix(in srgb, var(--error-color, #db4437) 25%, var(--card-background-color, #fff)); }
         
-        /* Red cross style remove button */
-        .color-btn-cross.remove-btn-cross {
-          position: absolute;
-          top: 8px;
-          right: 8px;
-          background: none;
-          border: none;
-          color: var(--error-color, #db4437);
-          cursor: pointer;
-          padding: 4px;
-          border-radius: 4px;
-          transition: all 0.2s ease;
-          min-width: auto;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 16px;
-          font-weight: bold;
-          z-index: 2;
-        }
-        
-        .color-btn-cross.remove-btn-cross:hover {
-          background: rgba(187, 0, 0, 0.1);
-          color: var(--error-color, #d32f2f);
-          transform: scale(1.1);
-        }
-        
         /* Make color-row relative for absolute positioning of cross */
         .color-row {
           position: relative;
@@ -302,14 +275,6 @@ export const GRADIENT_CARD_CSS = `
           border-radius: 4px;
           padding: 4px 6px;
           text-align: center;
-        }
-        .angle-text {
-          font-size: 14px;
-          font-weight: 600;
-          color: var(--primary-text-color, #333);
-          min-width: 40px;
-          text-align: center;
-          user-select: none;
         }
 
         /* Compass center angle display */

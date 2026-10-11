@@ -1,4 +1,4 @@
-// Stylesheet of the colour list editor card.
+// Stylesheet of the color list editor card.
 import { css, unsafeCSS } from "./lib/lit-all.js";
 import { cardLayoutStyles } from "./card-layout-utils.js";
 import { exportImportButtonStyles } from "./action-button-utils.js";
@@ -236,11 +236,7 @@ export const COLOR_LIST_EDITOR_STYLES = css`
           cursor: grab;
         }
         .color-grid-item.dragging {
-          opacity: 0.3;
           cursor: grabbing;
-        }
-        .color-grid-item.grid-drag-over {
-          transform: scale(0.95);
         }
         .layout-grid.dragging-active .grid-remove-btn {
           opacity: 0 !important;
@@ -324,12 +320,6 @@ export const COLOR_LIST_EDITOR_STYLES = css`
           cursor: pointer;
           pointer-events: none;
         }
-        .compact-hex-display {
-          font-family: monospace;
-          font-size: calc(0.9em * var(--card-size-multiplier, 0.7));
-          color: var(--primary-text-color, #212529);
-          font-weight: 600;
-        }
         .compact-color-name {
           font-size: calc(0.75em * var(--card-size-multiplier, 0.7));
           color: var(--secondary-text-color, #6c757d);
@@ -378,9 +368,7 @@ export const COLOR_LIST_EDITOR_STYLES = css`
           transform: translateY(-2px);
           box-shadow: 0 4px 12px rgba(0,0,0,0.25);
         }
-        .chip-item.dragging {
-          opacity: 0.5;
-        }
+
         .chip-color-swatch {
           position: relative;
           width: calc(34.29px * var(--card-size-multiplier, 0.7));
@@ -488,9 +476,7 @@ export const COLOR_LIST_EDITOR_STYLES = css`
           box-shadow: 0 4px 16px rgba(0,0,0,0.15);
           transform: translateY(-2px);
         }
-        .tile-item.dragging {
-          opacity: 0.5;
-        }
+
         .tile-drag-area {
           font-size: calc(28.57px * var(--card-size-multiplier, 0.7));
           color: var(--disabled-text-color, #adb5bd);
@@ -520,7 +506,7 @@ export const COLOR_LIST_EDITOR_STYLES = css`
           flex-direction: column;
           gap: 4px;
         }
-        .tile-hex-display, .tile-hex-input {
+        .tile-hex-input {
           font-family: monospace;
           font-size: 1em;
           font-weight: 600;
@@ -606,8 +592,18 @@ export const COLOR_LIST_EDITOR_STYLES = css`
           transform: translateX(4px);
           box-shadow: 0 4px 16px rgba(0,0,0,0.25);
         }
-        .row-item.dragging {
-          opacity: 0.5;
+        /* A dragged item (reorder-drag.js): lifted, under the pointer.
+           Items take touches for dragging (touch-action) when the list
+           can be reordered. */
+        #color-list.can-drag :is(.compact-item, .chip-item, .tile-item, .row-item, .color-grid-item, .card-wrapper) {
+          touch-action: none;
+        }
+        :is(.compact-item, .chip-item, .tile-item, .row-item, .color-grid-item).dragging {
+          position: relative;
+          scale: 1.04;
+          opacity: 0.95;
+          box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
+          cursor: grabbing;
         }
         .row-item:active {
           cursor: grabbing;
@@ -639,7 +635,7 @@ export const COLOR_LIST_EDITOR_STYLES = css`
           line-height: 1;
           flex-shrink: 0;
         }
-        .row-hex-display, .row-hex-input {
+        .row-hex-input {
           font-family: monospace;
           font-size: 1em;
           font-weight: 600;
@@ -893,15 +889,6 @@ export const COLOR_LIST_EDITOR_STYLES = css`
           padding: 10px;
         }
         
-        .card-wrapper.card-entering {
-          animation: cardAppear 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
-        }
-        
-        .card-wrapper.card-removing {
-          animation: cardDisappear 0.3s ease-out forwards;
-          pointer-events: none;
-        }
-        
         .card-item { 
           position: relative;
           width: calc(171.43px * var(--card-size-multiplier, 0.7)); 
@@ -945,32 +932,6 @@ export const COLOR_LIST_EDITOR_STYLES = css`
           z-index: 200 !important;
         }
         /* Legacy — kept as fallback if dragging class ends up on card-item */
-        .card-item.dragging {
-          opacity: 0;
-          visibility: hidden;
-          cursor: grabbing;
-          z-index: 1000;
-          transition: none;
-        }
-        .card-item.touch-dragging {
-          position: fixed;
-          opacity: 0.9;
-          cursor: grabbing;
-          transform: scale(1.15) rotate(8deg);
-          z-index: 10000;
-          pointer-events: none;
-          transition: none;
-        }
-        .card-wrapper.touch-dragging-placeholder {
-          opacity: 0;
-        }
-        .card-wrapper.touch-dragging-placeholder .card-item {
-          opacity: 0;
-          visibility: hidden;
-        }
-        .card-wrapper.drag-placeholder {
-          opacity: 0.3;
-        }
         .card-face {
           width: 100%;
           height: 100%;
@@ -1008,22 +969,7 @@ export const COLOR_LIST_EDITOR_STYLES = css`
           align-items: center;
           border-top: 1px solid var(--divider-color, rgba(0,0,0,0.05));
         }
-        .card-swatch {
-          width: 40px;
-          height: 40px;
-          border-radius: 4px;
-          box-shadow: 0 2px 6px rgba(0,0,0,0.15);
-          flex-shrink: 0;
-        }
-        .card-picker {
-          width: 40px;
-          height: 40px;
-          border-radius: 4px;
-          border: none;
-          cursor: pointer;
-          flex-shrink: 0;
-        }
-        .card-hex, .card-hex-display {
+        .card-hex {
           width: 100%;
           background: transparent;
           padding: 4px 6px;
@@ -1070,8 +1016,7 @@ export const COLOR_LIST_EDITOR_STYLES = css`
         
         /* Hide remove button during drag */
         .dragging-active .card-remove,
-        .card-wrapper.dragging .card-remove,
-        .card-wrapper.touch-dragging-placeholder .card-remove {
+        .card-wrapper.dragging .card-remove {
           opacity: 0 !important;
           pointer-events: none;
         }
@@ -1080,12 +1025,6 @@ export const COLOR_LIST_EDITOR_STYLES = css`
         .angle-section {
           margin-top: 16px;
           padding-top: 16px;
-        }
-        .angle-section.with-separator {
-          border-top: 1px solid var(--divider-color, #e6e6e6);
-        }
-        .angle-section.no-separator {
-          border-top: none;
         }
         .angle-title {
           font-size: 1.1em;
@@ -1178,16 +1117,6 @@ export const COLOR_LIST_EDITOR_STYLES = css`
           -ms-user-select: none;
         }
 
-        .wheel-angle {
-          font-size: 14px;
-          font-weight: 500;
-          color: var(--primary-text-color, #333);
-          background: var(--card-background-color, rgba(255,255,255,0.9));
-          border-radius: 4px;
-          padding: 2px 6px;
-          border: 1px solid var(--divider-color, #ddd);
-        }
-
         /* Rectangle Style */
         .rect-container {
           display: flex;
@@ -1207,16 +1136,6 @@ export const COLOR_LIST_EDITOR_STYLES = css`
 
         .rect-selector:hover {
           r: 5;
-        }
-
-        .rect-angle {
-          font-size: 14px;
-          font-weight: 500;
-          color: var(--primary-text-color, #333);
-          background: var(--card-background-color, rgba(255,255,255,0.9));
-          border-radius: 4px;
-          padding: 2px 6px;
-          border: 1px solid var(--divider-color, #ddd);
         }
 
         /* Runtime Controls */
@@ -1282,48 +1201,6 @@ export const COLOR_LIST_EDITOR_STYLES = css`
           background: var(--primary-color, #0969da);
           color: var(--text-primary-color, #fff);
           border-color: var(--primary-color, #0969da);
-        }
-
-        /* Colorized style */
-        .mode-btn-colorized {
-          padding: 8px 12px;
-          border: 2px solid transparent;
-          border-radius: 8px;
-          cursor: pointer;
-          font-size: 0.85em;
-          font-weight: 600;
-          transition: all 0.3s ease;
-          min-width: 70px;
-          position: relative;
-          overflow: hidden;
-        }
-
-        .mode-btn-colorized:hover {
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-          border-color: rgba(255,255,255,0.3);
-        }
-
-        .mode-btn-colorized.active {
-          transform: scale(1.05);
-          box-shadow: 0 6px 20px rgba(0,0,0,0.25);
-          border-color: var(--card-background-color, white);
-        }
-
-        .mode-btn-colorized::before {
-          content: '';
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(255,255,255,0.1);
-          opacity: 0;
-          transition: opacity 0.3s ease;
-        }
-
-        .mode-btn-colorized:hover::before {
-          opacity: 1;
         }
 
         /* Dropdown style */

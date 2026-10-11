@@ -226,11 +226,7 @@ class YeelightCubeLampPreviewCardEditor extends YeelightEditorMixin(LitElement) 
                         createButtonGroupChangeHandler(
                           "adjustments_layout",
                           (value) => {
-                            this._config = {
-                              ...this._config,
-                              adjustments_layout: value,
-                            };
-                            this._fireConfigChanged();
+                            this._setOption("adjustments_layout", value);
                           },
                         ),
                       )}
@@ -249,11 +245,7 @@ class YeelightCubeLampPreviewCardEditor extends YeelightEditorMixin(LitElement) 
                         createButtonGroupChangeHandler(
                           "section_style",
                           (value) => {
-                            this._config = {
-                              ...this._config,
-                              section_style: value,
-                            };
-                            this._fireConfigChanged();
+                            this._setOption("section_style", value);
                           },
                         ),
                       )}
@@ -280,11 +272,7 @@ class YeelightCubeLampPreviewCardEditor extends YeelightEditorMixin(LitElement) 
                         createButtonGroupChangeHandler(
                           "reset_button_mode",
                           (value) => {
-                            this._config = {
-                              ...this._config,
-                              reset_button_mode: value,
-                            };
-                            this._fireConfigChanged();
+                            this._setOption("reset_button_mode", value);
                           },
                         ),
                       )}

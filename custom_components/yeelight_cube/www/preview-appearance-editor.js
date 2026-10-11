@@ -1,7 +1,7 @@
-import { LitElement, html, css, unsafeHTML } from "./lib/lit-all.js";
+import { LitElement, html, css, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
 import { sharedEditorStyles } from "./editor_ui_utils.js";
 import { createSliderRow, formRowStyles } from "./form-row-utils.js";
-import { renderMatrixPreview } from "./gallery-display-utils.js";
+import { matrixPreviewStyles, renderMatrixPreview } from "./gallery-display-utils.js";
 import { renderClockFrame, flipMatrixVertical } from "./clock-preview-utils.js";
 import {
   clockAppearancePresets,
@@ -698,6 +698,7 @@ export class PreviewAppearanceEditor extends LitElement {
   static styles = [
     sharedEditorStyles,
     clockAppearanceEditorStyles,
+    unsafeCSS(matrixPreviewStyles),
     css`
       :host {
         display: block;

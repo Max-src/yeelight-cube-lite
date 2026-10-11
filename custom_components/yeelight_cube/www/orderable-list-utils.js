@@ -9,12 +9,16 @@
 // the user collections (palettes, pixel arts). Plain editor UI — no overlays
 // on the dashboard-rendered card.
 //
-// The control is stateless: drag state travels in the DataTransfer payload and
-// row highlight classes are cleaned up via DOM traversal, so any number of
-// lists can coexist in one editor.
+// The control is stateless: a drag (reorder-drag.js, mouse anywhere on a row,
+// a finger on its ⋮⋮ handle so the editor still scrolls) reports the new
+// order and the host re-renders it, so any number of lists can coexist in
+// one editor.
 
-import { html, css, unsafeHTML } from "./lib/lit-all.js";
+import { html, css, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
+import { matrixPreviewStyles } from "./gallery-display-utils.js";
+import { startReorderDrag } from "./reorder-drag.js";
 export const orderableListStyles = css`
+  ${unsafeCSS(matrixPreviewStyles)}
   .orderable-list-content {
     flex: 1;
     min-width: 0;
@@ -46,12 +50,16 @@ export const orderableListStyles = css`
     border-radius: 8px;
     padding: 6px 8px;
   }
+  /* The dragged row: lifted, following the pointer. */
   .orderable-list-row.dragging {
-    opacity: 0.5;
-  }
-  .orderable-list-row.drag-over {
+    position: relative;
     border-color: var(--primary-color, #03a9f4);
-    box-shadow: inset 0 0 0 1px var(--primary-color, #03a9f4);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+    opacity: 0.95;
+    cursor: grabbing;
+  }
+  .orderable-list.dragging-active {
+    user-select: none;
   }
   /* Row thumbnail (thumbFor): a palette's blend, a pixel art's picture. */
   .collection-thumb {
@@ -69,6 +77,7 @@ export const orderableListStyles = css`
   }
   .orderable-drag-handle {
     cursor: grab;
+    touch-action: none;
     color: var(--secondary-text-color, #999);
     font-size: 1em;
     line-height: 1;
@@ -183,42 +192,19 @@ export function renderOrderableList({
     canReorder &&
     displayItems.length === items.length &&
     displayItems.every((name, index) => name === items[index]);
-  const onDragStart = (e, idx) => {
-    if (!canReorder) {
-      e.preventDefault();
-      return;
-    }
-    e.dataTransfer.effectAllowed = "move";
-    // Firefox needs data set for the drag to start; the payload also carries
-    // the source index so no host state is required.
-    try {
-      e.dataTransfer.setData("text/plain", String(idx));
-    } catch (_) {}
-    e.currentTarget.classList.add("dragging");
-  };
-  const onDragOver = (e) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    e.currentTarget.classList.add("drag-over");
-  };
-  const onDragLeave = (e) => {
-    e.currentTarget.classList.remove("drag-over");
-  };
-  const onDrop = (e, targetIdx) => {
-    e.preventDefault();
-    if (!canReorder) return;
-    e.currentTarget.classList.remove("drag-over");
-    const from = parseInt(e.dataTransfer.getData("text/plain"), 10);
-    if (isNaN(from) || from === targetIdx) return;
-    const list = [...items];
-    const [moved] = list.splice(from, 1);
-    list.splice(targetIdx, 0, moved);
-    onUpdate(list);
-  };
-  const onDragEnd = (e) => {
-    e.currentTarget.parentElement
-      ?.querySelectorAll(".orderable-list-row")
-      .forEach((r) => r.classList.remove("dragging", "drag-over"));
+  // Drag a row to its place: one change, the new order.
+  const onPointerDown = (e) => {
+    if (!canReorder || e.target.closest("button, input, select, textarea")) return;
+    if (e.pointerType !== "mouse" && !e.target.closest(".orderable-drag-handle")) return;
+    const row = e.currentTarget;
+    if (e.pointerType === "mouse") e.preventDefault(); // no text selection
+    startReorderDrag(e, {
+      item: row,
+      items: () => [...row.parentElement.children].filter((el) =>
+        el.classList.contains("orderable-list-row"),
+      ),
+      onDrop: (order) => onUpdate(order.map((index) => items[index])),
+    });
   };
   const onMove = (idx, delta) => {
     if (!canReorder) return;
@@ -250,13 +236,8 @@ export function renderOrderableList({
     return html`
       <div
         class="orderable-list-row"
-        draggable="${canReorder ? "true" : "false"}"
         data-idx="${idx}"
-        @dragstart="${(e) => onDragStart(e, idx)}"
-        @dragover="${onDragOver}"
-        @dragleave="${onDragLeave}"
-        @drop="${(e) => onDrop(e, idx)}"
-        @dragend="${onDragEnd}"
+        @pointerdown="${onPointerDown}"
       >
         ${canReorder
           ? html`<span class="orderable-drag-handle" title="Drag to reorder"

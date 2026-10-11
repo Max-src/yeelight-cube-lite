@@ -121,8 +121,8 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
       item_card_border: "auto",
       gallery_background_color: "black",
       pixelart_buttons_style: "icon",
-      expand_btn_style: "pill",
-      palette_display_mode: "row",
+      swatch_expand_style: "pill",
+      swatch_layout: "row",
       color_info_display: "name",
       matrix_pixel_style: "circle",
       remove_button_style: "black",
@@ -257,18 +257,12 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
   }
 
   /**
-   * Enable drag-to-scroll for .palette-row and .palette-row-scroll containers.
-   * Safe to call repeatedly — skips already-attached elements.
+   * Enable drag-to-scroll for the side-by-side .palette-row (the swatches'
+   * scroll layout drags itself). Safe to call repeatedly — skips
+   * already-attached elements.
    */
   _setupPaletteRowDragScroll() {
-    // Top-level side-by-side container
-    const paletteRow = this.shadowRoot?.querySelector(".palette-row");
-    this._attachDragScroll(paletteRow);
-
-    // Individual color swatch scroll rows inside palette cards
-    const scrollRows =
-      this.shadowRoot?.querySelectorAll(".palette-row-scroll") || [];
-    scrollRows.forEach((row) => this._attachDragScroll(row));
+    this._attachDragScroll(this.shadowRoot?.querySelector(".palette-row"));
   }
 
   updated(changedProperties) {
@@ -286,10 +280,8 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
 
   // ─── Preview-hover measurement ─────────────────────────────────────────
   //
-  // Each palette custom element (PaletteBase subclass) fires
-  // "palette-element-rendered" (bubbling) at the END of its rAF-deferred
-  // _doRender(), i.e. after its innerHTML has settled and the browser has
-  // resolved layout for that element.  We listen for this event on the
+  // Each section's swatches (<yc-swatches>) fire "yc-swatches-rendered"
+  // (bubbling) after each render, once their DOM has settled.  We listen for this event on the
   // .palette-preview-hover container and use it as the authoritative
   // trigger to measure collapsed card heights.
   //
@@ -504,12 +496,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     document.removeEventListener("mousedown", this._handleTabsOutsideClick);
     document.removeEventListener("mousedown", this._handleFloatingOutsideClick);
 
-    // Clean up drag utility
-    if (this._toolDragUtil) {
-      this._toolDragUtil.destroy();
-      this._toolDragUtil = null;
-    }
-
     // Clear pending timers
     if (this._applyPixelArtTimer) {
       clearTimeout(this._applyPixelArtTimer);
@@ -701,27 +687,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
 
   _handleToolClick(tool) {
     this.toolManager.handleToolClick(tool);
-  }
-
-  // ULTRA-SIMPLE inline drag implementation
-  _startToolDrag(e, tool, index) {
-    this.toolManager.startToolDrag(e, tool, index);
-  }
-
-  _createDragVisuals() {
-    // Delegated to ToolManager
-  }
-
-  _updateDragPosition(e) {
-    // Delegated to ToolManager
-  }
-
-  _finishDrag() {
-    // Delegated to ToolManager
-  }
-
-  _cleanupDrag() {
-    // Delegated to ToolManager
   }
 
   /**

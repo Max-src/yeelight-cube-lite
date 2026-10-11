@@ -1,7 +1,7 @@
-// Colour conversions shared by the cards.
+// Color conversions shared by the cards.
 
 /**
- * "#rrggbb" (lowercase) for an [r, g, b] colour. Channels are rounded and
+ * "#rrggbb" (lowercase) for an [r, g, b] color. Channels are rounded and
  * clamped to 0-255; anything that is not such an array gives `fallback`.
  */
 export function rgbToHex(rgb, fallback = "#000000") {

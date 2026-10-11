@@ -1,4 +1,4 @@
-// Matrix preview of the lamp preview card: lamp colours, clock and native
+// Matrix preview of the lamp preview card: lamp colors, clock and native
 // effect animations, painting the dots and the oriented matrix geometry.
 // Mixed into YeelightCubeLampPreviewCard.
 import { previewBrightnessScale, BLACK_THRESHOLD } from "./matrix-const.js";

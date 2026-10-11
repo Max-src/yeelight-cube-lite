@@ -4,7 +4,8 @@ import { LitElement, html, css } from "./lib/lit-all.js";
 import { sharedEditorStyles, YeelightEditorMixin } from "./editor_ui_utils.js";
 import { orderableListStyles } from "./orderable-list-utils.js";
 
-import { createButtonGroup, buttonGroupStyles } from "./button-group-utils.js";
+import { buttonGroupStyles } from "./button-group-utils.js";
+import { renderSwatchSettings } from "./swatch-settings-ui.js";
 
 import { createToggleRow } from "./form-row-utils.js";
 import { normalizeCardOptions } from "./card-config.js";
@@ -144,20 +145,9 @@ class YeelightCubePaletteCardEditor extends YeelightEditorMixin(LitElement) {
   _renderPaletteAppearance(config, onChange) {
     return html`
       ${renderGalleryBackgroundRow(config, onChange)}
-      <div class="form-row">
-        <label>Swatch Style</label>
-        ${createButtonGroup(
-          [
-            { value: "round", label: "Round" },
-            { value: "square", label: "Square" },
-            { value: "gradient", label: "Gradient Bar" },
-            { value: "gradient-bg", label: "Gradient Background" },
-            { value: "stripes", label: "Color Stripes" },
-          ],
-          config.swatch_style || "square",
-          (event) => onChange("swatch_style", event.currentTarget.dataset.value),
-        )}
-      </div>
+      ${renderSwatchSettings(config, onChange, {
+        defaults: { layout: "row", shape: "rounded" },
+      })}
       ${createToggleRow(
         "Show Color Count",
         "show_color_count",

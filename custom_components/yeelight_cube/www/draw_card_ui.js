@@ -2,14 +2,6 @@
 import { html } from "./lib/lit-all.js";
 import { isBlackPixel } from "./draw_utils.js";
 
-export function renderColorSwatch(color, onClick) {
-  return html`<div
-    class="color-swatch"
-    style="background:${color}"
-    @click="${onClick}"
-  ></div>`;
-}
-
 export function renderMatrixPixel(
   idx,
   color,

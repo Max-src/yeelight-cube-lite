@@ -39,14 +39,6 @@ export const drawCardStyles = css`
 
   /* The pixel-art gallery: the shared gallery (collection-gallery.js). */
   ${unsafeCSS(collectionGalleryStyles)}
-
-  .palette-fold {
-    position: relative;
-    width: 100%;
-    min-height: 64px;
-    height: 64px;
-    overflow: visible;
-  }
   .palette-group-card.fold {
     position: relative;
     min-height: 48px;
@@ -65,82 +57,9 @@ export const drawCardStyles = css`
     position: relative;
     display: inline-block;
   }
-  .palette-group-card.fold .palette-fold-content {
-    position: absolute;
-    left: 0;
-    top: 48px;
-    width: 100%;
-    z-index: 10;
-    background: var(--card-background-color, #fff);
-    box-shadow: 0 4px 24px #0002;
-    border-radius: 12px;
-    padding: 12px 0 12px 0;
-    min-height: 48px;
-    max-height: 120px;
-    overflow-x: auto;
-    overflow-y: hidden;
-    display: flex;
-    align-items: center;
-  }
-  .palette-group-card.fold .palette-fold-content::-webkit-scrollbar {
-    height: 8px;
-    background: var(--secondary-background-color, #eee);
-    border-radius: 8px;
-  }
-  .palette-group-card.fold .palette-fold-content::-webkit-scrollbar-thumb {
-    background: var(--divider-color, #ccc);
-    border-radius: 8px;
-  }
-  .color-swatch.round {
-    border-radius: 50%;
-    width: 28px;
-    height: 28px;
-    margin: 0 4px;
-    box-shadow: 0 1px 4px #0002;
-    border: 2px solid var(--card-background-color, #fff);
-    cursor: pointer;
-    transition:
-      box-shadow 0.2s,
-      border 0.2s;
-    display: inline-block;
-  }
-  .color-swatch.rounded {
-    border-radius: 6px;
-    width: 28px;
-    height: 28px;
-    margin: 0 4px;
-    box-shadow: 0 1px 4px #0002;
-    border: 2px solid var(--card-background-color, #fff);
-    cursor: pointer;
-    transition:
-      box-shadow 0.2s,
-      border 0.2s;
-    display: inline-block;
-  }
-  .color-swatch.square {
-    border-radius: 0 !important;
-    width: 28px;
-    height: 28px;
-    margin: 0 4px;
-    box-shadow: 0 1px 4px #0002;
-    border: 2px solid var(--card-background-color, #fff);
-    cursor: pointer;
-    transition:
-      box-shadow 0.2s,
-      border 0.2s;
-    display: inline-block;
-  }
   /* Palette card container modes */
   .palette-tabs {
     width: 100%;
-  }
-  .palette-stack {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    align-items: center;
-    width: 100%;
-    margin-bottom: 8px;
   }
   /* Palette card container modes */
   .palette-tabs {
@@ -304,51 +223,10 @@ export const drawCardStyles = css`
   .palette-preview-hover[data-display-mode="gradient"] .palette-mini-empty {
     padding: 4px;
   }
-  .mini-empty-title {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--primary-text-color, #333);
-    opacity: 0.6;
-    white-space: nowrap;
-  }
   .mini-empty-hint {
     font-size: 11px;
     color: var(--secondary-text-color, #888);
     opacity: 0.45;
-  }
-
-  /* Paint button shape variants */
-  .paint-btn-rect {
-    border-radius: 8px;
-    min-width: 48px;
-    min-height: 40px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-    padding: 0 12px;
-  }
-  .paint-btn-circle {
-    border-radius: 50%;
-    min-width: 44px !important;
-    max-width: 44px !important;
-    min-height: 44px;
-    width: 44px;
-    height: 44px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-    padding: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .paint-btn-square {
-    border-radius: 0;
-    min-width: 48px;
-    min-height: 48px;
-    width: 48px;
-    height: 48px;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
-    padding: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
   }
   input.color-picker-btn[type="color"] {
     border: none;
@@ -360,44 +238,6 @@ export const drawCardStyles = css`
     background: transparent !important;
     /* Let shape classes control size, border-radius, shadow, etc. */
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12) !important;
-  }
-  input.color-picker-btn.paint-btn-rect[type="color"] {
-    border-radius: 8px !important;
-    width: 48px !important;
-    height: 48px !important;
-    min-height: 48px !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12) !important;
-    padding: 0 !important;
-    display: block !important;
-    align-items: stretch !important;
-    justify-content: stretch !important;
-  }
-  input.color-picker-btn.paint-btn-circle[type="color"] {
-    border-radius: 50% !important;
-    min-width: 44px !important;
-    max-width: 44px !important;
-    min-height: 44px !important;
-    width: 44px !important;
-    height: 44px !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12) !important;
-    padding: 0 !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    overflow: hidden !important;
-  }
-  input.color-picker-btn.paint-btn-square[type="color"] {
-    border-radius: 0 !important;
-    min-width: 48px !important;
-    min-height: 48px !important;
-    width: 48px !important;
-    height: 48px !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12) !important;
-    padding: 0 !important;
-    display: flex !important;
-    align-items: center !important;
-    justify-content: center !important;
-    overflow: hidden !important;
   }
   input.color-picker-btn[type="color"]::-webkit-color-swatch-wrapper {
     padding: 0;
@@ -458,41 +298,6 @@ export const drawCardStyles = css`
   }
   .pixel.active {
     /* No border for active, just keep the color */
-  }
-  .color-picker {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    justify-content: center;
-  }
-  .color-swatch {
-    width: 24px;
-    height: 24px;
-    border: 2px solid #fff8;
-    cursor: pointer;
-    margin: 2px;
-    box-shadow: 0 1px 4px #0004;
-    transition: border 0.1s;
-  }
-  /* Button shape styles for paint buttons (legacy) */
-  .paint-btn-circle {
-    border-radius: 50% !important;
-    min-width: 44px !important;
-    max-width: 44px !important;
-    width: 44px;
-    height: 44px;
-    padding: 0 !important;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .paint-btn-rect {
-    border-radius: 8px !important;
-  }
-
-  .paint-btn-square {
-    border-radius: 0 !important;
   }
 
   /* Tool shape modifiers for new btn-style system */
@@ -714,16 +519,7 @@ export const drawCardStyles = css`
     max-width: 100%;
     box-sizing: border-box;
   }
-  .palette-group-card .palette-expandable,
-  .palette-group-card .palette-grid,
-  .palette-group-card .palette-scroll-wrapper,
-  .palette-group-card .palette-gradient-bar-wrapper,
-  .palette-group-card palette-fan,
-  .palette-group-card palette-wave,
-  .palette-group-card palette-spiral,
-  .palette-group-card palette-honeycomb,
-  .palette-group-card palette-blinds,
-  .palette-group-card palette-treemap {
+  .palette-group-card yc-swatches {
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
@@ -752,12 +548,6 @@ export const drawCardStyles = css`
   .palette-row::-webkit-scrollbar {
     display: none; /* Chrome, Safari, Opera */
   }
-  .palette-section {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 120px;
-  }
   .upload-label {
     display: inline-flex;
     align-items: center;
@@ -770,22 +560,6 @@ export const drawCardStyles = css`
   .upload-label input[type="file"] {
     display: none;
   }
-  .color-section {
-    width: 100%;
-  }
-  .color-section-title {
-    font-size: 1.1em;
-    font-weight: 600;
-    margin-bottom: 8px;
-    color: var(--primary-text-color, #222);
-    text-align: center;
-  }
-  .color-section-list {
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-    justify-content: center;
-  }
   .selected {
     background: color-mix(
       in srgb,
@@ -793,16 +567,6 @@ export const drawCardStyles = css`
       var(--card-background-color, #fff)
     ) !important;
     border: 2px solid var(--primary-color, #00ff99) !important;
-  }
-  .paint-btn-circle.selected {
-    border: none !important;
-    outline: 2.5px solid var(--primary-color, #00ff99);
-    outline-offset: 2px;
-  }
-  /* Palette card container modes */
-  .palette-stack {
-    align-items: center;
-    width: 100%;
   }
   .palette-tab-bar {
     display: flex;
@@ -859,14 +623,6 @@ export const drawCardStyles = css`
     display: flex;
     justify-content: center;
     position: relative;
-  }
-  .palette-fold {
-    display: flex;
-    flex-direction: row;
-    gap: 10px;
-    align-items: center;
-    width: 100%;
-    margin-bottom: 8px;
   }
   .palette-group-title[style*="cursor:pointer"] {
     user-select: none;
@@ -958,442 +714,6 @@ export const drawCardStyles = css`
     left: 0;
   }
 
-  /* Palette display mode styles */
-  .palette-grid {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    align-items: center;
-    width: 100%;
-    margin: 0 auto;
-  }
-  .palette-grid-row {
-    display: flex;
-    flex-direction: row;
-    gap: 6px;
-    justify-content: center;
-    flex-wrap: wrap;
-    width: 100%;
-  }
-  .palette-grid-row .color-swatch {
-    flex: 0 0 auto;
-  }
-  .palette-row-scroll {
-    display: flex;
-    flex-direction: row;
-    overflow-x: auto;
-    width: auto;
-    max-width: 100%;
-    align-items: center;
-    scrollbar-width: thin;
-    scrollbar-color: color-mix(
-        in srgb,
-        var(--primary-color, #1976d2) 30%,
-        var(--card-background-color, #fff)
-      )
-      var(--card-background-color, #fff);
-    height: 100%;
-    cursor: grab;
-    user-select: none;
-    -webkit-user-select: none;
-  }
-  .palette-row-scroll * {
-    user-select: none;
-    -webkit-user-select: none;
-  }
-  .palette-row-scroll .color-swatch {
-    flex: 0 0 auto;
-    width: 24px;
-    height: 24px;
-    border: 2px solid #fff8;
-    cursor: pointer;
-    margin: 2px;
-    box-shadow: 0 1px 4px #0004;
-    transition: border 0.1s;
-  }
-  .palette-row-scroll::-webkit-scrollbar {
-    height: 6px;
-    background: var(--card-background-color, #fff);
-  }
-  .palette-row-scroll::-webkit-scrollbar-thumb {
-    background: color-mix(
-      in srgb,
-      var(--primary-color, #1976d2) 30%,
-      var(--card-background-color, #fff)
-    );
-    border-radius: 3px;
-  }
-  .palette-row-scroll > :first-child {
-    margin: 0 2px 0 2px;
-  }
-  .palette-row-scroll > :last-child {
-    margin: 0 2px 0 2px;
-  }
-  /* ====== Expandable palette container ====== */
-  .palette-expandable {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    flex-wrap: wrap !important;
-    white-space: nowrap !important;
-    overflow-x: hidden;
-    position: relative;
-  }
-  .palette-expandable .color-swatch {
-    flex: 0 0 auto;
-  }
-
-  /* --- Expand button: shared base --- */
-  .palette-expandable .expand-btn {
-    flex: 0 0 auto;
-    margin-left: 6px;
-    border: none;
-    cursor: pointer;
-    transition: all 0.2s;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    line-height: 1;
-    vertical-align: middle;
-  }
-
-  /* --- Pill style: "+N" badge --- */
-  .palette-expandable .expand-pill {
-    background: color-mix(
-      in srgb,
-      var(--primary-color, #1976d2) 14%,
-      var(--card-background-color, #fff)
-    );
-    color: var(--primary-color, #0077cc);
-    font-size: 0.72em;
-    font-weight: 600;
-    padding: 4px 10px;
-    border-radius: 50px;
-    box-shadow: 0 1px 4px #0002;
-    min-width: 28px;
-    height: 24px;
-    letter-spacing: 0.02em;
-  }
-  .palette-expandable .expand-pill:hover {
-    background: color-mix(
-      in srgb,
-      var(--primary-color, #1976d2) 28%,
-      var(--card-background-color, #fff)
-    );
-    box-shadow: 0 2px 8px #0003;
-  }
-  .palette-expandable .expand-pill.expanded {
-    font-size: 1em;
-    padding: 4px 10px;
-    min-width: 24px;
-    height: 24px;
-  }
-
-  /* --- Chevron style: carousel-matching arrow --- */
-  .palette-expandable .expand-chevron {
-    background: color-mix(
-      in srgb,
-      var(--primary-color, #1976d2) 15%,
-      var(--card-background-color, #fff)
-    );
-    color: var(--primary-color, #0077cc);
-    border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.1));
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
-    width: 28px;
-    height: 28px;
-    padding: 0;
-  }
-  .palette-expandable .expand-chevron:hover {
-    background: color-mix(
-      in srgb,
-      var(--primary-color, #1976d2) 30%,
-      var(--card-background-color, #fff)
-    );
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  }
-  .palette-expandable .expand-chevron svg {
-    display: block;
-  }
-
-  /* --- Dots style: subtle ellipsis --- */
-  .palette-expandable .expand-dots {
-    background: color-mix(
-      in srgb,
-      var(--primary-color, #1976d2) 10%,
-      var(--card-background-color, #fff)
-    );
-    color: var(--primary-color, #0077cc);
-    font-size: 1.1em;
-    font-weight: 700;
-    letter-spacing: 2px;
-    padding: 2px 10px;
-    border-radius: 50px;
-    box-shadow: 0 1px 3px #0001;
-    min-width: 28px;
-    height: 24px;
-    opacity: 0.75;
-  }
-  .palette-expandable .expand-dots:hover {
-    opacity: 1;
-    background: color-mix(
-      in srgb,
-      var(--primary-color, #1976d2) 22%,
-      var(--card-background-color, #fff)
-    );
-    box-shadow: 0 2px 6px #0002;
-  }
-
-  /* --- Fade style: gradient mask over trailing edge --- */
-  .palette-expandable.palette-fade-active {
-    flex-wrap: nowrap !important;
-    overflow: hidden;
-    mask-image: linear-gradient(to right, black 60%, transparent 100%);
-    -webkit-mask-image: linear-gradient(to right, black 60%, transparent 100%);
-  }
-  .palette-expandable .expand-fade-zone {
-    position: absolute;
-    right: 0;
-    top: 0;
-    bottom: 0;
-    width: 60px;
-    background: transparent;
-    cursor: pointer;
-    z-index: 4;
-  }
-
-  /* ====== Scroll mode: horizontal ribbon with nav arrows ====== */
-  .palette-scroll-wrapper {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    width: 100%;
-  }
-  .palette-scroll-arrow {
-    flex: 0 0 auto;
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    background: color-mix(
-      in srgb,
-      var(--primary-color, #1976d2) 15%,
-      var(--card-background-color, #fff)
-    );
-    color: var(--primary-color, #0077cc);
-    border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.1));
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s;
-  }
-  .palette-scroll-arrow:hover {
-    background: color-mix(
-      in srgb,
-      var(--primary-color, #1976d2) 30%,
-      var(--card-background-color, #fff)
-    );
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  }
-  .palette-scroll-arrow svg {
-    display: block;
-  }
-  .palette-scroll-track {
-    flex: 1 1 auto;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    overflow-x: auto;
-    overflow-y: hidden;
-    gap: 2px;
-    scrollbar-width: none;
-    cursor: grab;
-    user-select: none;
-    -webkit-user-select: none;
-    scroll-behavior: smooth;
-    padding: 4px 0;
-  }
-  .palette-scroll-track::-webkit-scrollbar {
-    height: 0;
-    display: none;
-  }
-  .palette-scroll-track.dragging {
-    cursor: grabbing;
-    scroll-behavior: auto;
-  }
-  .palette-scroll-track .color-swatch {
-    flex: 0 0 auto;
-  }
-
-  /* ====== Gradient bar mode ====== */
-  .palette-gradient-bar-wrapper {
-    position: relative;
-    width: 100%;
-    padding: 4px 8px;
-    box-sizing: border-box;
-  }
-  .palette-gradient-bar {
-    height: 28px;
-    border-radius: 14px;
-    cursor: pointer;
-    box-shadow:
-      0 2px 8px #0002,
-      inset 0 1px 2px #fff4;
-    transition: box-shadow 0.2s;
-    position: relative;
-  }
-  .palette-gradient-bar:hover {
-    box-shadow:
-      0 3px 12px #0003,
-      inset 0 1px 2px #fff4;
-  }
-  .palette-gradient-ticks {
-    position: relative;
-    width: 100%;
-    height: 14px;
-    margin-top: 4px;
-  }
-  .palette-gradient-tick {
-    position: absolute;
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    transform: translateX(-50%);
-  }
-  .palette-gradient-tick.square {
-    border-radius: 2px;
-  }
-  .palette-gradient-tick.rounded {
-    border-radius: 4px;
-  }
-  .palette-gradient-tick.square,
-  .palette-gradient-tick.rounded,
-  .palette-gradient-tick.round {
-    border: 2px solid var(--card-background-color, #fff);
-    box-shadow: 0 1px 3px #0003;
-    cursor: pointer;
-    transition:
-      transform 0.15s,
-      box-shadow 0.15s;
-  }
-  .palette-gradient-tick:hover {
-    transform: translateX(-50%) scale(1.3);
-    box-shadow: 0 2px 6px #0004;
-  }
-
-  /* ====== Fan / arc mode ====== */
-  .palette-fan-container {
-    overflow: hidden;
-    margin: 0 auto;
-  }
-  .palette-fan-swatch {
-    position: absolute !important;
-    margin: 0 !important;
-    box-sizing: border-box;
-    transition:
-      transform 0.2s,
-      opacity 0.2s,
-      box-shadow 0.2s;
-    transform-origin: center bottom;
-    z-index: 2;
-  }
-  .palette-fan-swatch:hover {
-    z-index: 10 !important;
-    transform: rotate(var(--fan-angle, 0deg)) scale(1.25) !important;
-    opacity: 1 !important;
-    box-shadow: 0 3px 12px #0004 !important;
-  }
-
-  /* ====== Wave mode ====== */
-  .palette-wave-container {
-    scrollbar-width: none;
-  }
-  .palette-wave-container::-webkit-scrollbar {
-    display: none;
-  }
-  .palette-wave-swatch {
-    position: absolute !important;
-    margin: 0 !important;
-    box-sizing: border-box;
-    transition:
-      transform 0.2s,
-      box-shadow 0.2s;
-    z-index: 2;
-  }
-  .palette-wave-swatch:hover {
-    z-index: 10 !important;
-    transform: scale(1.3) !important;
-    box-shadow: 0 3px 12px #0004 !important;
-  }
-
-  /* ====== Spiral mode ====== */
-  .palette-spiral-container {
-    overflow: visible;
-  }
-  .palette-spiral-swatch {
-    position: absolute !important;
-    margin: 0 !important;
-    box-sizing: border-box;
-    transition:
-      transform 0.2s,
-      box-shadow 0.2s;
-    z-index: 2;
-  }
-  .palette-spiral-swatch:hover {
-    z-index: 10 !important;
-    transform: scale(1.35) !important;
-    box-shadow: 0 4px 14px #0005 !important;
-  }
-
-  /* ---- Honeycomb mode ---- */
-  .palette-honeycomb-container {
-    overflow: visible;
-  }
-  .palette-hex-swatch {
-    position: absolute;
-    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
-    cursor: pointer;
-    transition:
-      transform 0.2s ease,
-      filter 0.2s ease;
-    box-shadow: none;
-  }
-  .palette-hex-swatch:hover {
-    transform: scale(1.2);
-    filter: brightness(1.2);
-    z-index: 20 !important;
-  }
-
-  /* ---- Blinds mode ---- */
-  .palette-blinds-inner {
-    transform-origin: center center;
-  }
-  .palette-blind-strip {
-    cursor: pointer;
-    transition:
-      flex 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-      filter 0.2s;
-    min-height: 0;
-    min-width: 0;
-  }
-
-  /* ---- Treemap mode ---- */
-  .palette-treemap-cell {
-    position: absolute;
-    cursor: pointer;
-    border: 0.5px solid rgba(255, 255, 255, 0.08);
-    overflow: hidden;
-    z-index: 1;
-    transition:
-      transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1),
-      z-index 0s;
-    transform-origin: center center;
-  }
-  .palette-treemap-cell:hover {
-    transform: scale(1.12);
-    z-index: 10;
-  }
-
   .palette-preview-hover.expanded-mode {
     overflow: hidden !important;
     scrollbar-width: none !important;
@@ -1404,20 +724,6 @@ export const drawCardStyles = css`
   }
   .palette-preview-hover::-webkit-scrollbar {
     display: none !important;
-  }
-  .palette-preview-hover-expand {
-    /* Remove transition for instant open/close */
-    transition: none !important;
-    max-height: none !important;
-    opacity: 1 !important;
-    overflow: visible !important;
-  }
-  .palette-expandable-content {
-    /* Remove transition for instant open/close */
-    transition: none !important;
-    max-height: none !important;
-    opacity: 1 !important;
-    overflow: visible !important;
   }
   /* Carousel wrapper: must fill full width */
   .palette-colors-carousel-wrapper {
@@ -1519,138 +825,5 @@ export const drawCardStyles = css`
     font-weight: 600;
   }
 
-  .tool-item.tool-placeholder {
-    background: var(--secondary-background-color, #e1e5e9);
-    border: 2px dashed var(--primary-color, #0077cc) !important;
-    border-radius: 6px;
-    opacity: 0.5;
-    min-height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
   /* Drag reordering styles */
-  .dragging {
-    opacity: 0.9;
-    transform: scale(1.04);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-    z-index: 1000;
-    transition: none !important;
-  }
-
-  .animating {
-    transition: transform 0.2s ease;
-  }
-
-  .tool-order-handle,
-  .layout-section-handle {
-    cursor: grab;
-    padding: 4px;
-    margin: 0 4px;
-    border-radius: 4px;
-    user-select: none;
-    color: var(--secondary-text-color, #666);
-    font-size: 16px;
-  }
-
-  .tool-order-handle:hover,
-  .layout-section-handle:hover {
-    background: var(--secondary-background-color, #f0f0f0);
-    color: var(--primary-text-color, #333);
-  }
-
-  .tool-order-handle:active,
-  .layout-section-handle:active {
-    cursor: grabbing;
-  }
-
-  .layout-section-handle::after {
-    content: "☰";
-  }
-
-  /* Tool drag handles for main card */
-  .tool-drag-handle {
-    cursor: grab;
-    user-select: none;
-    color: var(--secondary-text-color, #666);
-    font-size: 8px;
-    position: absolute;
-    top: 2px;
-    right: 2px;
-    z-index: 10;
-    line-height: 1;
-    width: 12px;
-    height: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 2px;
-    background: var(--card-background-color, rgba(255, 255, 255, 0.8));
-  }
-
-  .tool-drag-handle:hover {
-    background: var(--card-background-color, rgba(255, 255, 255, 0.95));
-    color: var(--primary-text-color, #333);
-  }
-
-  .tool-drag-handle:active {
-    cursor: grabbing;
-  }
-
-  /* Tool order section styling to match layout section */
-  .tool-order-list {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  .tool-order-item {
-    display: flex;
-    align-items: center;
-    padding: 12px;
-    background: var(--secondary-background-color, #f8f9fa);
-    border: 1px solid var(--divider-color, #e0e4e7);
-    border-radius: 8px;
-    transition: all 0.2s ease;
-    cursor: default;
-  }
-
-  .tool-order-item:hover {
-    background: var(--secondary-background-color, #f0f2f5);
-    border-color: var(--divider-color, #d1d6db);
-  }
-
-  .tool-order-item.dragging {
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-    background: color-mix(
-      in srgb,
-      var(--accent-color, #ff9800) 12%,
-      var(--card-background-color, #fff)
-    );
-    transform: scale(1.04);
-    z-index: 1000;
-  }
-
-  .tool-order-icon {
-    font-size: 18px;
-    margin-right: 10px;
-    width: 20px;
-    text-align: center;
-  }
-
-  .tool-order-info {
-    flex: 1;
-  }
-
-  .tool-order-info > div:first-child {
-    font-weight: 600;
-    color: var(--primary-text-color, #333);
-    margin-bottom: 2px;
-  }
-
-  .tool-order-info > div:last-child {
-    font-size: 0.85em;
-    color: var(--secondary-text-color, #666);
-  }
 `;

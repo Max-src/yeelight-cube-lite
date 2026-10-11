@@ -2,9 +2,9 @@
 // palette) in their side, carousel, tabs and floating layouts, the color
 // carousel and the palette-preview hover measurement. Mixed into
 // YeelightCubeDrawCard.
-import { renderPaletteSection } from "./draw_card_palette_ui.js";
 import { handleColorSelect } from "./draw_card_handlers.js";
 import { html } from "./lib/lit-all.js";
+import "./yc-swatches.js";
 import { renderCarousel } from "./carousel-utils.js";
 
 export const PaletteCardsMixin = (Base) => class extends Base {
@@ -19,7 +19,7 @@ export const PaletteCardsMixin = (Base) => class extends Base {
       // Container gone — clean up any lingering state.
       if (this._previewEl && this._previewRenderedListener) {
         this._previewEl.removeEventListener(
-          "palette-element-rendered",
+          "yc-swatches-rendered",
           this._previewRenderedListener,
         );
       }
@@ -48,7 +48,7 @@ export const PaletteCardsMixin = (Base) => class extends Base {
     // ── Full setup (first time, or structural change) ─────────────────────
     if (this._previewEl && this._previewRenderedListener) {
       this._previewEl.removeEventListener(
-        "palette-element-rendered",
+        "yc-swatches-rendered",
         this._previewRenderedListener,
       );
     }
@@ -115,7 +115,7 @@ export const PaletteCardsMixin = (Base) => class extends Base {
           if (card.style.maxHeight) card.style.removeProperty("max-height");
         } else if (uniformPx && card.style.maxHeight !== uniformPx) {
           // Only write when the value actually changes — avoids forced style
-          // recalculations on every palette-element-rendered event.
+          // recalculations on every yc-swatches-rendered event.
           card.style.maxHeight = uniformPx;
         }
       });
@@ -134,7 +134,7 @@ export const PaletteCardsMixin = (Base) => class extends Base {
     // can trigger the final measurement after the animation completes.
     this._previewScheduleApply = scheduleApply;
 
-    // ── palette-element-rendered — fires after each palette finishes render ─
+    // ── yc-swatches-rendered — fires after each section's swatches render ─
     // Fix #7: skip events that bubble from a card that is currently mid-collapse.
     // Those cards have their max-height pinned by handleCollapse; calling
     // applyHeights() from inside the collapse animation could overwrite that pin
@@ -149,7 +149,7 @@ export const PaletteCardsMixin = (Base) => class extends Base {
       scheduleApply();
     };
     el.addEventListener(
-      "palette-element-rendered",
+      "yc-swatches-rendered",
       this._previewRenderedListener,
     );
 
@@ -168,99 +168,38 @@ export const PaletteCardsMixin = (Base) => class extends Base {
     showImagePalette,
   ) {
     const mode = cfg.palette_card_mode || "side";
-    const buttonShape = cfg.button_shape || "rect";
+    // Every section's colors: the shared swatches, picking the draw color.
+    const layout = cfg.swatch_layout || "row";
+    const swatches = (palette, weights) => html`<yc-swatches
+      .colors=${palette}
+      .weights=${weights ? palette.map((color) => weights.get(color)) : undefined}
+      .active=${this.selectedColor}
+      .onSelect=${(color) => handleColorSelect(this, color)}
+      selectable
+      layout=${layout}
+      shape=${cfg.swatch_shape || "round"}
+      info=${cfg.color_info_display || "none"}
+      order=${layout === "gradient" || layout === "fill" ? "smooth" : "given"}
+      ?free-pick=${cfg.swatch_free_pick === true}
+      direction=${cfg.swatch_blinds_direction || "rows"}
+      expand-style=${cfg.swatch_expand_style || "pill"}
+      button-shape=${cfg.colors_button_shape || "rounded"}
+      style="--yc-swatch-size:${Number(cfg.colors_size) || 28}px"
+    ></yc-swatches>`;
     const cards = [];
-    const expandStyle = cfg.expand_btn_style || "pill";
-    const blindsDir = cfg.blinds_direction || "rows";
-    const colorInfo = cfg.color_info_display || "none";
-    const gradientFreePick = cfg.gradient_free_pick === true;
-    if (showRecentColors) {
-      const palette = this.recentColors || [];
-      cards.push({
-        key: "recent",
-        title: "Recent Colors",
-        palette,
-        weights: null,
-        content: renderPaletteSection(
-          palette,
-          "recent",
-          (color) => handleColorSelect(this, color),
-          cfg.palette_display_mode || "row",
-          cfg.swatch_shape || "round",
-          expandStyle,
-          buttonShape,
-          blindsDir,
-          null,
-          colorInfo,
-          gradientFreePick,
-        ),
-      });
-    }
-    if (showLampPalette) {
-      const palette = this.getLampGradientColors() || [];
-      cards.push({
-        key: "lamp",
-        title: "Lamp Palette",
-        palette,
-        weights: null,
-        content: renderPaletteSection(
-          palette,
-          "lamp",
-          (color) => handleColorSelect(this, color),
-          cfg.palette_display_mode || "row",
-          cfg.swatch_shape || "round",
-          expandStyle,
-          buttonShape,
-          blindsDir,
-          null,
-          colorInfo,
-          gradientFreePick,
-        ),
-      });
-    }
+    const section = (key, title, palette, weights = null) =>
+      cards.push({ key, title, palette, weights, content: swatches(palette, weights) });
+    if (showRecentColors)
+      section("recent", "Recent Colors", this.recentColors || []);
+    if (showLampPalette)
+      section("lamp", "Lamp Palette", this.getLampGradientColors() || []);
     if (showLampColors) {
       const { palette, weights } = this._getLampMatrixColors();
-      cards.push({
-        key: "lampcolors",
-        title: "Lamp Colors",
-        palette,
-        weights,
-        content: renderPaletteSection(
-          palette,
-          "lampcolors",
-          (color) => handleColorSelect(this, color),
-          cfg.palette_display_mode || "row",
-          cfg.swatch_shape || "round",
-          expandStyle,
-          buttonShape,
-          blindsDir,
-          weights,
-          colorInfo,
-          gradientFreePick,
-        ),
-      });
+      section("lampcolors", "Lamp Colors", palette, weights);
     }
     if (showImagePalette) {
       const { palette, weights } = this._getCurrentColors();
-      cards.push({
-        key: "image",
-        title: "Drawing Colors",
-        palette,
-        weights,
-        content: renderPaletteSection(
-          palette,
-          "image",
-          (color) => handleColorSelect(this, color),
-          cfg.palette_display_mode || "row",
-          cfg.swatch_shape || "round",
-          expandStyle,
-          buttonShape,
-          blindsDir,
-          weights,
-          colorInfo,
-          gradientFreePick,
-        ),
-      });
+      section("image", "Drawing Colors", palette, weights);
     }
 
     if (!cards.length) return html``;
@@ -309,7 +248,7 @@ export const PaletteCardsMixin = (Base) => class extends Base {
           }, 350);
         });
       };
-      // The colour cards' corners (colors_item_radius; 16px by default).
+      // The color cards' corners (colors_item_radius; 16px by default).
       const paletteCardRadius = `${cfg.colors_item_radius ?? 16}px`;
       return html`<div
         class="palette-row${isZoomMode ? " zoom-mode" : ""}${colorsBorderClass}"
@@ -463,7 +402,7 @@ export const PaletteCardsMixin = (Base) => class extends Base {
           No palette colors available
         </div>`;
       }
-      const displayMode = cfg.palette_display_mode || "row";
+      const displayMode = layout;
       const expandedKey = Object.keys(this._previewStates).find(
         (k) => this._previewStates[k],
       );

@@ -1,4 +1,4 @@
-// Small helpers shared by the colour list editor card and its mixins.
+// Small helpers shared by the color list editor card and its mixins.
 
 // Item selectors of the list layouts that reorder by moving their own items.
 export const ITEM_DRAG_SELECTORS = {

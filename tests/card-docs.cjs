@@ -123,7 +123,8 @@ function runOutcome(verifiedCount, failures) {
           `| Image | Why it was not updated |`,
           `| :-- | :-- |`,
           ...failures.map(
-            ({ file, reason }) => `| ${file} | ${reason.replaceAll("|", "\\|")} |`,
+            ({ file, reason }) =>
+              `| ${file} | ${reason.replaceAll("|", "\\|")} |`,
           ),
           ``,
           `Captures and diffs: the \`card-documentation-diagnostics\` artifact.`,
@@ -210,165 +211,172 @@ print(json.dumps({'font_maps': data['FONT_MAPS'], 'font_metrics': data['FONT_MET
       const captures = [];
       let passes = 2;
       try {
-      for (let pass = 0; pass < passes; pass++) {
-        const browser = await chromium.launch({
-          headless: true,
-          args: [
-            "--disable-gpu",
-            "--disable-lcd-text",
-            "--force-color-profile=srgb",
-          ],
-        });
-        try {
-          const context = await browser.newContext({
-            storageState: onboardState || process.env.DOCS_HA_STORAGE_STATE,
-            viewport: { width: 1280, height: 2000 },
-            deviceScaleFactor: 1,
-            locale: "en-GB",
-            timezoneId: "UTC",
-            colorScheme: options.dark ? "dark" : "light",
-            reducedMotion: "reduce",
+        for (let pass = 0; pass < passes; pass++) {
+          const browser = await chromium.launch({
+            headless: true,
+            args: [
+              "--disable-gpu",
+              "--disable-lcd-text",
+              "--force-color-profile=srgb",
+            ],
           });
-          if (process.env.DOCS_HA_ONBOARD === "1" && !onboardState)
-            await onboard(context).catch((error) => {
-              throw new SetupError(error.message);
+          try {
+            const context = await browser.newContext({
+              storageState: onboardState || process.env.DOCS_HA_STORAGE_STATE,
+              viewport: { width: 1280, height: 2000 },
+              deviceScaleFactor: 1,
+              locale: "en-GB",
+              timezoneId: "UTC",
+              colorScheme: options.dark ? "dark" : "light",
+              reducedMotion: "reduce",
             });
-          await context.route("**/yeelight_cube/**", async (route) => {
-            const relative = decodeURIComponent(
-              new URL(route.request().url()).pathname,
-            ).replace(/^\/yeelight_cube\//, "");
-            const base = path.join(
-              root,
-              "custom_components",
-              "yeelight_cube",
-              "www",
-            );
-            const file = path.resolve(base, relative);
-            if (!file.startsWith(base + path.sep)) return route.abort();
-            await route.fulfill({
-              path: file,
-              contentType: file.endsWith(".js") ? "text/javascript" : undefined,
+            if (process.env.DOCS_HA_ONBOARD === "1" && !onboardState)
+              await onboard(context).catch((error) => {
+                throw new SetupError(error.message);
+              });
+            await context.route("**/yeelight_cube/**", async (route) => {
+              const relative = decodeURIComponent(
+                new URL(route.request().url()).pathname,
+              ).replace(/^\/yeelight_cube\//, "");
+              const base = path.join(
+                root,
+                "custom_components",
+                "yeelight_cube",
+                "www",
+              );
+              const file = path.resolve(base, relative);
+              if (!file.startsWith(base + path.sep)) return route.abort();
+              await route.fulfill({
+                path: file,
+                contentType: file.endsWith(".js")
+                  ? "text/javascript"
+                  : undefined,
+              });
             });
-          });
-          const page = await context.newPage();
-          await page.goto(`${origin}/lovelace/0`);
-          await page.waitForFunction(
-            () => document.querySelector("home-assistant")?.hass?.connected,
-          );
-          await page.waitForFunction(
-            () => typeof window.loadCardHelpers === "function",
-          );
-          await page.evaluate(async () => {
-            const helpers = await window.loadCardHelpers();
-            helpers.createCardElement({ type: "markdown", content: "" });
-            await Promise.all(
-              ["ha-card", "ha-icon"].map((tag) =>
-                customElements.whenDefined(tag),
-              ),
+            const page = await context.newPage();
+            await page.goto(`${origin}/lovelace/0`);
+            await page.waitForFunction(
+              () => document.querySelector("home-assistant")?.hass?.connected,
             );
-          });
-          await page.addScriptTag({
-            path: path.join(__dirname, "card-docs-browser.js"),
-          });
-          await page.evaluate((fonts) => window.cardDocs.prepare(fonts), fonts);
-          await page.clock.install({ time: new Date("2026-01-15T10:07:00Z") });
-          await page.clock.pauseAt(new Date("2026-01-15T10:08:00Z"));
-          const screenshotOptions = {
-            animations: "disabled",
-            scale: "css",
-            style:
-              "* { transition: none !important; animation: none !important; caret-color: transparent !important; }",
-          };
-          await page.evaluate(
-            ({ kind, scenario, options }) =>
-              window.cardDocs.render(kind, scenario, options),
-            { kind, scenario, options },
-          );
-          await page.clock.runFor(1200);
-          await page.evaluate(() => window.cardDocs.settle());
-          await waitForIcons(page, file);
-          const selector = await page.evaluate(
-            () => window.cardDocs.captureSelector,
-          );
-          await fitViewport(page, selector);
-          let clip = await page.locator(selector).boundingBox();
-          await page.screenshot({ clip, ...screenshotOptions });
-          await page.evaluate(() => window.cardDocs.settle());
-          await waitForIcons(page, file);
-          clip = await page.locator(selector).boundingBox();
-          assert.ok(
-            clip && clip.width > 0 && clip.height > 0,
-            "Capture container is empty",
-          );
-          const viewport = page.viewportSize();
-          assert.ok(
-            clip.x >= 0 &&
-              clip.y >= 0 &&
-              clip.x + clip.width <= viewport.width &&
-              clip.y + clip.height <= viewport.height,
-            `Card extends outside viewport: ${file}`,
-          );
-          const image = await page.screenshot({ clip, ...screenshotOptions });
-          const actual = PNG.sync.read(image);
-          assert.equal(
-            actual.width,
-            options.section ? Math.floor(clip.width) : options.width || 448,
-            `Unexpected pixel scale: ${file}`,
-          );
-          assert.ok(
-            Math.abs(actual.height - clip.height) <= 1,
-            `Incomplete capture: ${file}`,
-          );
-          let bottomContent = 0;
-          const background = actual.data.subarray(0, 3);
-          for (
-            let row = Math.max(0, actual.height - 100);
-            row < actual.height - 10;
-            row++
-          ) {
-            for (let column = 20; column < actual.width - 20; column++) {
-              const offset = (row * actual.width + column) * 4;
-              if (
-                actual.data
-                  .subarray(offset, offset + 3)
-                  .some(
-                    (channel, index) =>
-                      Math.abs(channel - background[index]) > 40,
-                  )
-              )
-                bottomContent++;
+            await page.waitForFunction(
+              () => typeof window.loadCardHelpers === "function",
+            );
+            await page.evaluate(async () => {
+              const helpers = await window.loadCardHelpers();
+              helpers.createCardElement({ type: "markdown", content: "" });
+              await Promise.all(
+                ["ha-card", "ha-icon"].map((tag) =>
+                  customElements.whenDefined(tag),
+                ),
+              );
+            });
+            await page.addScriptTag({
+              path: path.join(__dirname, "card-docs-browser.js"),
+            });
+            await page.evaluate(
+              (fonts) => window.cardDocs.prepare(fonts),
+              fonts,
+            );
+            await page.clock.install({
+              time: new Date("2026-01-15T10:07:00Z"),
+            });
+            await page.clock.pauseAt(new Date("2026-01-15T10:08:00Z"));
+            const screenshotOptions = {
+              animations: "disabled",
+              scale: "css",
+              style:
+                "* { transition: none !important; animation: none !important; caret-color: transparent !important; }",
+            };
+            await page.evaluate(
+              ({ kind, scenario, options }) =>
+                window.cardDocs.render(kind, scenario, options),
+              { kind, scenario, options },
+            );
+            await page.clock.runFor(1200);
+            await page.evaluate(() => window.cardDocs.settle());
+            await waitForIcons(page, file);
+            const selector = await page.evaluate(
+              () => window.cardDocs.captureSelector,
+            );
+            await fitViewport(page, selector);
+            let clip = await page.locator(selector).boundingBox();
+            await page.screenshot({ clip, ...screenshotOptions });
+            await page.evaluate(() => window.cardDocs.settle());
+            await waitForIcons(page, file);
+            clip = await page.locator(selector).boundingBox();
+            assert.ok(
+              clip && clip.width > 0 && clip.height > 0,
+              "Capture container is empty",
+            );
+            const viewport = page.viewportSize();
+            assert.ok(
+              clip.x >= 0 &&
+                clip.y >= 0 &&
+                clip.x + clip.width <= viewport.width &&
+                clip.y + clip.height <= viewport.height,
+              `Card extends outside viewport: ${file}`,
+            );
+            const image = await page.screenshot({ clip, ...screenshotOptions });
+            const actual = PNG.sync.read(image);
+            assert.equal(
+              actual.width,
+              options.section ? Math.floor(clip.width) : options.width || 448,
+              `Unexpected pixel scale: ${file}`,
+            );
+            assert.ok(
+              Math.abs(actual.height - clip.height) <= 1,
+              `Incomplete capture: ${file}`,
+            );
+            let bottomContent = 0;
+            const background = actual.data.subarray(0, 3);
+            for (
+              let row = Math.max(0, actual.height - 100);
+              row < actual.height - 10;
+              row++
+            ) {
+              for (let column = 20; column < actual.width - 20; column++) {
+                const offset = (row * actual.width + column) * 4;
+                if (
+                  actual.data
+                    .subarray(offset, offset + 3)
+                    .some(
+                      (channel, index) =>
+                        Math.abs(channel - background[index]) > 40,
+                    )
+                )
+                  bottomContent++;
+              }
             }
-          }
-          assert.ok(bottomContent > 100, `Blank lower card region: ${file}`);
-          captures.push({ image, png: actual });
-          if (captures.length >= 2) {
-            const match = matchingCapture(captures);
-            if (match) {
-              verified.set(file, match.image);
-              if (captures.length > 2)
+            assert.ok(bottomContent > 100, `Blank lower card region: ${file}`);
+            captures.push({ image, png: actual });
+            if (captures.length >= 2) {
+              const match = matchingCapture(captures);
+              if (match) {
+                verified.set(file, match.image);
+                if (captures.length > 2)
+                  console.warn(
+                    `Flaky capture outvoted: ${file} (${describeDifference(captures[0].png, captures[1].png)})`,
+                  );
+                console.log(`Verified ${file}`);
+              } else if (captures.length < 3) {
                 console.warn(
-                  `Flaky capture outvoted: ${file} (${describeDifference(captures[0].png, captures[1].png)})`,
+                  `Capture pixels changed: ${file} (${describeDifference(captures[0].png, captures[1].png)}); capturing a third time`,
                 );
-              console.log(`Verified ${file}`);
-            } else if (captures.length < 3) {
-              console.warn(
-                `Capture pixels changed: ${file} (${describeDifference(captures[0].png, captures[1].png)}); capturing a third time`,
-              );
-              passes = 3;
-            } else {
-              await writeDiagnostics(file, captures);
-              throw new Error(
-                `Rendered differently in all ${captures.length} captures (${describeDifference(captures[0].png, captures[1].png)})`,
-              );
+                passes = 3;
+              } else {
+                await writeDiagnostics(file, captures);
+                throw new Error(
+                  `Rendered differently in all ${captures.length} captures (${describeDifference(captures[0].png, captures[1].png)})`,
+                );
+              }
             }
+            if (process.env.DOCS_HA_ONBOARD === "1")
+              onboardState = await context.storageState();
+            await context.close();
+          } finally {
+            await browser.close();
           }
-          if (process.env.DOCS_HA_ONBOARD === "1")
-            onboardState = await context.storageState();
-          await context.close();
-        } finally {
-          await browser.close();
         }
-      }
       } catch (error) {
         if (error instanceof SetupError) throw error;
         const reason = String(error.message).split("\n")[0];
@@ -383,7 +391,10 @@ print(json.dumps({'font_maps': data['FONT_MAPS'], 'font_metrics': data['FONT_MET
   const outcome = runOutcome(verified.size, failures);
   outcome.warnings.forEach((line) => console.log(line));
   if (process.env.GITHUB_STEP_SUMMARY)
-    await fs.appendFile(process.env.GITHUB_STEP_SUMMARY, `${outcome.summary}\n`);
+    await fs.appendFile(
+      process.env.GITHUB_STEP_SUMMARY,
+      `${outcome.summary}\n`,
+    );
   if (!outcome.ok)
     throw new Error(
       `No documentation screenshot could be captured: ${failures[0].reason}`,

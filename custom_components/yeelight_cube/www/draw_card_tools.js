@@ -14,6 +14,18 @@ import {
 } from "./draw_card_const.js";
 import { StorageUtils } from "./draw_card_storage.js";
 
+/**
+ * The tools in the card's order (tools_order): every known tool once, the
+ * stored ones first (a tool added since keeps its default place at the end).
+ */
+export function toolsOrder(config) {
+  const stored = Array.isArray(config?.tools_order) ? config.tools_order : [];
+  const known = stored.filter((tool, index) =>
+    DEFAULT_TOOL_ORDER.includes(tool) && stored.indexOf(tool) === index,
+  );
+  return [...known, ...DEFAULT_TOOL_ORDER.filter((tool) => !known.includes(tool))];
+}
+
 export class ToolManager {
   constructor(card) {
     this.card = card;
@@ -48,7 +60,7 @@ export class ToolManager {
 
   // Get tools order from config or use default
   getToolsOrder(config) {
-    return config.tools_order || [...DEFAULT_TOOL_ORDER];
+    return toolsOrder(config);
   }
 
   // Get default tools order
@@ -263,154 +275,6 @@ export class ToolManager {
         </div>
       </div>
     `;
-  }
-
-  // Tool drag functionality
-  startToolDrag(e, tool, index) {
-    e.preventDefault();
-    e.stopPropagation();
-
-    const toolItem = e.target.closest(".tool-item");
-    const toolbar = this.card.shadowRoot.querySelector(".toolbar");
-    if (!toolItem || !toolbar) return;
-
-    // Get initial tool order for debugging
-    const initialOrder = Array.from(toolbar.querySelectorAll(".tool-item")).map(
-      (item) => item.dataset.tool,
-    );
-
-    this.dragState = {
-      tool,
-      index,
-      toolItem,
-      toolbar,
-      startX: e.clientX,
-      startY: e.clientY,
-      isDragging: false,
-      initialOrder: [...initialOrder], // Store for comparison
-    };
-
-    document.addEventListener("mousemove", this.handleDragMove);
-    document.addEventListener("mouseup", this.handleDragEnd);
-  }
-
-  handleDragMove = (e) => {
-    if (!this.dragState) return;
-
-    const deltaX = Math.abs(e.clientX - this.dragState.startX);
-    const deltaY = Math.abs(e.clientY - this.dragState.startY);
-
-    if (!this.dragState.isDragging && (deltaX > 5 || deltaY > 5)) {
-      this.dragState.isDragging = true;
-      this.createDragVisuals();
-    }
-
-    if (this.dragState.isDragging) {
-      this.updateDragPosition(e);
-    }
-  };
-
-  handleDragEnd = (e) => {
-    if (!this.dragState) return;
-
-    if (this.dragState.isDragging) {
-      this.finishDrag();
-    }
-
-    this.cleanupDrag();
-  };
-
-  createDragVisuals() {
-    const { toolItem } = this.dragState;
-
-    // Create placeholder
-    this.dragState.placeholder = document.createElement("div");
-    this.dragState.placeholder.style.cssText = `
-      width: ${toolItem.offsetWidth}px;
-      height: ${toolItem.offsetHeight}px;
-      background: var(--secondary-background-color, #f0f0f0);
-      border: 2px dashed var(--secondary-text-color, #999);
-      opacity: 0.5;
-      margin: ${getComputedStyle(toolItem).margin};
-    `;
-
-    toolItem.parentNode.insertBefore(
-      this.dragState.placeholder,
-      toolItem.nextSibling,
-    );
-
-    // Style dragged element
-    toolItem.style.cssText += `
-      position: fixed;
-      z-index: 9999;
-      pointer-events: none;
-      transform: scale(1.05) rotate(2deg);
-      box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-      opacity: 0.9;
-    `;
-  }
-
-  updateDragPosition(e) {
-    const { toolItem } = this.dragState;
-    toolItem.style.left = e.clientX - 30 + "px";
-    toolItem.style.top = e.clientY - 20 + "px";
-
-    // Find drop position
-    const items = Array.from(
-      this.dragState.toolbar.querySelectorAll(".tool-item"),
-    ).filter((item) => item !== toolItem);
-
-    for (const item of items) {
-      const rect = item.getBoundingClientRect();
-      if (e.clientX >= rect.left && e.clientX <= rect.right) {
-        const insertBefore = e.clientX < rect.left + rect.width / 2;
-        if (insertBefore) {
-          this.dragState.toolbar.insertBefore(this.dragState.placeholder, item);
-        } else {
-          this.dragState.toolbar.insertBefore(
-            this.dragState.placeholder,
-            item.nextSibling,
-          );
-        }
-        break;
-      }
-    }
-  }
-
-  finishDrag() {
-    const { toolItem, placeholder, toolbar, initialOrder, tool, index } =
-      this.dragState;
-
-    // Move to final position
-    toolbar.insertBefore(toolItem, placeholder);
-
-    // Get new order
-    const newOrder = Array.from(toolbar.querySelectorAll(".tool-item")).map(
-      (item) => item.dataset.tool,
-    );
-
-    // Find new index of the dragged tool
-    const newIndex = newOrder.indexOf(tool);
-
-    // Update this card's own config (local only; never broadcast to other cards)
-    this.card._updateConfig({ tools_order: newOrder });
-
-    // Clean up placeholder
-    if (placeholder && placeholder.parentNode) {
-      placeholder.parentNode.removeChild(placeholder);
-    }
-
-    // Reset styles
-    toolItem.style.cssText = toolItem.style.cssText.replace(
-      /position: fixed.*?opacity: 0.9;/s,
-      "",
-    );
-  }
-
-  cleanupDrag() {
-    document.removeEventListener("mousemove", this.handleDragMove);
-    document.removeEventListener("mouseup", this.handleDragEnd);
-    this.dragState = null;
   }
 }
 

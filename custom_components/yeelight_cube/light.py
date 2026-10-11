@@ -150,7 +150,7 @@ _DEVICE_ORIENTATION_TO_EFFECT_DIR = DEVICE_ORIENTATION_TO_EFFECT_DIR
 #     the frame sender (apply()) and its brightness fast path, scroll timer,
 #     physical-button presets and linked-entity sync.
 #
-#   light_color.py      (ColorPipelineMixin)  — colour adjustment/correction/
+#   light_color.py      (ColorPipelineMixin)  — color adjustment/correction/
 #                        accuracy maths + the brightness curve.
 #   light_transitions.py(TransitionMixin)     — frame-by-frame transition anims.
 #   light_native.py     (NativeModesMixin)    — firmware Clock + native-effect

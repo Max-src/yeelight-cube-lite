@@ -218,26 +218,10 @@ export function renderMatrixPreview(colorData, options = {}) {
 
   return `
     ${proportionalSpacing ? `<div style="container-type:inline-size;max-width:100%;${sizeStyle}">` : ""}
-    <div class="gallery-matrix-preview" style="
-      display: grid;
-      grid-template-columns: repeat(${cols}, 1fr);
-      gap: ${length(pixelGap)};
-      background: ${bgColor};
-      padding: ${length(pixelGap * 2)};
-      border-radius: ${length(4)};
-      max-width: 100%;
-      box-sizing: border-box;
-      ${proportionalSpacing ? "width:100%;" : sizeStyle}
-      ${matrixShadowStyle}
-    ">${colorData
+    <div class="gallery-matrix-preview" style="grid-template-columns:repeat(${cols},1fr);gap:${length(pixelGap)};background:${bgColor};padding:${length(pixelGap * 2)};border-radius:${length(4)};--yc-px-radius:${borderRadius};${proportionalSpacing ? "width:100%;" : sizeStyle}${matrixShadowStyle}">${colorData
       .map((color) => {
         const look = matrixCellLook(color, options);
-        return `<div style="
-            aspect-ratio: 1 / 1;
-            background: ${look.background};
-            border-radius: ${borderRadius};
-            ${look.shadow ? `box-shadow: ${look.shadow};` : ""}
-          "></div>`;
+        return `<div style="background:${look.background};${look.shadow ? `box-shadow:${look.shadow};` : ""}"></div>`;
       })
       .join("")}
     </div>
@@ -694,9 +678,26 @@ export function bindOriginalGallery(root, { select }) {
 }
 
 /**
+ * The fixed look of a matrix preview (renderMatrixPreview): every root that
+ * shows one includes it (galleryDisplayStyles does). Each cell keeps only
+ * its color and shadow inline, which the animations repaint.
+ */
+export const matrixPreviewStyles = `
+  .gallery-matrix-preview {
+    display: grid;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  .gallery-matrix-preview > div {
+    aspect-ratio: 1 / 1;
+    border-radius: var(--yc-px-radius, 0);
+  }
+`;
+
+/**
  * CSS styles for gallery display (to be imported into card styles)
  */
-export const galleryDisplayStyles = `
+export const galleryDisplayStyles = matrixPreviewStyles + `
   /* List / grid (renderGalleryMode); the columns and per-render colors and
      font sizes are inline. */
   .gallery-display-grid {

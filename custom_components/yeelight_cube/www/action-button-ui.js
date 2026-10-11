@@ -84,7 +84,7 @@ export function renderActionButtonContent(
   const shape =
     swatchShape === "square"
       ? " btn-swatch-square"
-      : swatchShape === "circle" || swatchShape === "round"
+      : swatchShape === "round"
         ? " btn-swatch-round"
         : "";
   const visual = swatch

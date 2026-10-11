@@ -1,4 +1,4 @@
-// Colour adjustment controls of the lamp preview card: applying and resetting
+// Color adjustment controls of the lamp preview card: applying and resetting
 // effects, change tracking, and the compact / tabbed / grouped / radial /
 // categories layouts. Mixed into YeelightCubeLampPreviewCard.
 import {

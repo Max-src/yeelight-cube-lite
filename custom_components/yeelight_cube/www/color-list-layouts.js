@@ -1,5 +1,5 @@
-// Colour list layouts of the colour list editor card (compact, chips, tiles,
-// rows, grid, cards) and the per-colour controls. Mixed into
+// Color list layouts of the color list editor card (compact, chips, tiles,
+// rows, grid, cards) and the per-color controls. Mixed into
 // YeelightCubeColorListEditorCard.
 import { html, nothing } from "./lib/lit-all.js";
 import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
@@ -72,7 +72,6 @@ export const ColorListLayoutsMixin = (Base) => class extends Base {
       return html`<div
         class="compact-item"
         data-idx=${idx}
-        draggable=${options.allowDragDrop ? "true" : nothing}
       >
         <div
           class="compact-swatch"
@@ -115,7 +114,6 @@ export const ColorListLayoutsMixin = (Base) => class extends Base {
         return html`<div
           class="chip-item"
           data-idx=${idx}
-          draggable=${options.allowDragDrop ? "true" : nothing}
           style="background: ${rgbToCss(color)}; color: ${contrast};"
         >
           ${options.enableColorPicker
@@ -159,7 +157,6 @@ export const ColorListLayoutsMixin = (Base) => class extends Base {
       return html`<div
         class="tile-item"
         data-idx=${idx}
-        draggable=${options.allowDragDrop ? "true" : nothing}
       >
         ${options.allowDragDrop
           ? html`<div class="tile-drag-area" title="Drag to reorder">⋮⋮</div>`
@@ -200,7 +197,6 @@ export const ColorListLayoutsMixin = (Base) => class extends Base {
       return html`<div
         class="row-item"
         data-idx=${idx}
-        draggable=${options.allowDragDrop ? "true" : nothing}
         style="background: linear-gradient(135deg, ${rgbToCss(
           color,
         )} 0%, ${this.adjustColorBrightness(
@@ -251,7 +247,6 @@ export const ColorListLayoutsMixin = (Base) => class extends Base {
       return html`<div
         class="color-grid-item"
         data-idx=${idx}
-        draggable=${options.allowDragDrop ? "true" : nothing}
       >
         <div
           class="color-grid-swatch"
@@ -394,7 +389,6 @@ export const ColorListLayoutsMixin = (Base) => class extends Base {
       <div
         class="card-item"
         data-idx=${idx}
-        draggable=${options.allowDragDrop ? "true" : nothing}
         style="--card-color: ${cssColor}; transform: ${layout.transform}; z-index: ${layout.zIndex};"
       >
         <div class="card-face">

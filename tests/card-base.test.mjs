@@ -112,7 +112,7 @@ test("the Draw pixel-art gallery's options join the shared gallery's", async () 
     preview_size: 70,
     selector_shape: "custom",
     item_radius: 0,
-    // The colour section's corners: its own option now (colors_ prefix).
+    // The color section's corners: its own option now (colors_ prefix).
     colors_item_radius: 0,
     selector_button_shape: "round",
     gallery_wrap_navigation: true,
@@ -124,7 +124,7 @@ test("the Draw pixel-art gallery's options join the shared gallery's", async () 
     item_card_border: "none",
     show_search: false,
   });
-  // The colour section (palette cards): the gallery's names, colors_
+  // The color section (palette cards): the gallery's names, colors_
   // prefixed; a legacy "round" corner keeps each mode's own default.
   assert.deepEqual(
     normalizeCardOptions(

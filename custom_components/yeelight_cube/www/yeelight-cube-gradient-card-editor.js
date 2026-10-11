@@ -341,11 +341,7 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
                       createButtonGroupChangeHandler(
                         "active_mode_label_align",
                         (value) => {
-                          this._config = {
-                            ...this._config,
-                            active_mode_label_align: value,
-                          };
-                          this._fireConfigChanged();
+                          this._setOption("active_mode_label_align", value);
                         },
                       ),
                     )}
@@ -409,11 +405,7 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
                       createButtonGroupChangeHandler(
                         "panel_toggle_style",
                         (value) => {
-                          this._config = {
-                            ...this._config,
-                            panel_toggle_style: value,
-                          };
-                          this._fireConfigChanged();
+                          this._setOption("panel_toggle_style", value);
                         },
                       ),
                     )}
@@ -430,11 +422,7 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
                       createButtonGroupChangeHandler(
                         "panel_toggle_shape",
                         (value) => {
-                          this._config = {
-                            ...this._config,
-                            panel_toggle_shape: value,
-                          };
-                          this._fireConfigChanged();
+                          this._setOption("panel_toggle_shape", value);
                         },
                       ),
                     )}
@@ -455,11 +443,7 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
                               createButtonGroupChangeHandler(
                                 "panel_toggle_align",
                                 (value) => {
-                                  this._config = {
-                                    ...this._config,
-                                    panel_toggle_align: value,
-                                  };
-                                  this._fireConfigChanged();
+                                  this._setOption("panel_toggle_align", value);
                                 },
                               ),
                             )}
@@ -498,11 +482,7 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
                 createButtonGroupChangeHandler(
                   "angle_value_display",
                   (value) => {
-                    this._config = {
-                      ...this._config,
-                      angle_value_display: value,
-                    };
-                    this._fireConfigChanged();
+                    this._setOption("angle_value_display", value);
                   },
                 ),
               )}
@@ -543,11 +523,7 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
                     createButtonGroupChangeHandler(
                       "rotary_unified_style",
                       (value) => {
-                        this._config = {
-                          ...this._config,
-                          rotary_unified_style: value,
-                        };
-                        this._fireConfigChanged();
+                        this._setOption("rotary_unified_style", value);
                       },
                     ),
                   )}
@@ -612,11 +588,7 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
                           createButtonGroupChangeHandler(
                             "rectangle_shape",
                             (value) => {
-                              this._config = {
-                                ...this._config,
-                                rectangle_shape: value,
-                              };
-                              this._fireConfigChanged();
+                              this._setOption("rectangle_shape", value);
                             },
                           ),
                         )}
@@ -780,11 +752,7 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
                           createButtonGroupChangeHandler(
                             "compass_shape",
                             (value) => {
-                              this._config = {
-                                ...this._config,
-                                compass_shape: value,
-                              };
-                              this._fireConfigChanged();
+                              this._setOption("compass_shape", value);
                             },
                           ),
                         )}
@@ -815,11 +783,7 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
                           createButtonGroupChangeHandler(
                             "compass_labels_mode",
                             (value) => {
-                              this._config = {
-                                ...this._config,
-                                compass_labels_mode: value,
-                              };
-                              this._fireConfigChanged();
+                              this._setOption("compass_labels_mode", value);
                             },
                           ),
                         )}
@@ -849,11 +813,7 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
                       cfg.rotary_size || 80,
                       { min: 30, max: 100, step: 5 },
                       (e) => {
-                        this._config = {
-                          ...this._config,
-                          rotary_size: e.target.value,
-                        };
-                        this._fireConfigChanged();
+                        this._setOption("rotary_size", e.target.value);
                       },
                       "%",
                     )}
@@ -896,11 +856,7 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
                           createButtonGroupChangeHandler(
                             "capsule_theme",
                             (value) => {
-                              this._config = {
-                                ...this._config,
-                                capsule_theme: value,
-                              };
-                              this._fireConfigChanged();
+                              this._setOption("capsule_theme", value);
                             },
                           ),
                         )}
@@ -952,11 +908,7 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
                               createButtonGroupChangeHandler(
                                 "capsule_angle_value_side",
                                 (value) => {
-                                  this._config = {
-                                    ...this._config,
-                                    capsule_angle_value_side: value,
-                                  };
-                                  this._fireConfigChanged();
+                                  this._setOption("capsule_angle_value_side", value);
                                 },
                               ),
                             )}

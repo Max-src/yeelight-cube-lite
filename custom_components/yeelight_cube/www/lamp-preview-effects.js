@@ -1,4 +1,4 @@
-// Colour adjustment effects of the lamp preview card: the effects and
+// Color adjustment effects of the lamp preview card: the effects and
 // sections registry, their state attributes and default values.
 
 // Clock-face preview (mixer tables, glyph font and renderClockFrame) now lives

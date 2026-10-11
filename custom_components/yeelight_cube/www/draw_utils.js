@@ -83,7 +83,7 @@ export function normalizeHex(hex) {
 
 export { rgbToHex };
 
-// Hex -> [r, g, b]; black for an invalid value (the drawing always needs a colour).
+// Hex -> [r, g, b]; black for an invalid value (the drawing always needs a color).
 export function hexToRgb(hex) {
   return parseHex(hex) ?? [0, 0, 0];
 }

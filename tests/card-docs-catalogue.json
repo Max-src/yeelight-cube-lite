@@ -205,14 +205,14 @@
                 "title": "Album of palettes with gradient backgrounds",
                 "config": {
                     "style_selector_style": "preview-album",
-                    "swatch_style": "gradient-bg"
+                    "swatch_layout": "fill"
                 }
             },
             "list": {
                 "title": "List with color swatches and their count",
                 "config": {
                     "style_selector_style": "preview-list",
-                    "swatch_style": "square",
+                    "swatch_layout": "row",
                     "show_color_count": true
                 }
             },
@@ -221,7 +221,7 @@
                 "dark": true,
                 "config": {
                     "style_selector_style": "preview-grid",
-                    "swatch_style": "stripes"
+                    "swatch_layout": "stripes"
                 }
             }
         },

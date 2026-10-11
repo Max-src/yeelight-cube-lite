@@ -12,7 +12,7 @@
  *
  * Real non-determinism -- an animation caught at another phase, a missing
  * icon, an unloaded font, a layout shift -- changes pixels by far more than
- * the tolerance, or a subtle change (a colour tweak, a fade) touches far more
+ * the tolerance, or a subtle change (a color tweak, a fade) touches far more
  * pixels than edge noise, so it still fails. If a capture fails with only
  * small deltas, do not raise the limits blindly: look at the diagnostics diff
  * first.

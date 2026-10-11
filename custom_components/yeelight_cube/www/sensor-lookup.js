@@ -1,4 +1,4 @@
-// Find the integration's collection sensors (pixel arts, colour palettes) for
+// Find the integration's collection sensors (pixel arts, color palettes) for
 // cards configured without an explicit sensor.
 
 // After a failed lookup, the next scan of every entity waits this long, so a

@@ -2,6 +2,7 @@
 import {
   COLOR_PRESET_STYLE_CHOICES,
   COLOR_PRESET_SHAPE_CHOICES,
+  colorPresetShape,
 } from "./color-mode-selector-utils.js";
 
 import { html } from "./lib/lit-all.js";
@@ -66,12 +67,14 @@ export function renderColorModeSettings(config, change) {
     </div>
     ${["filled", "swatch", "name"].includes(config.color_preset_style)
       ? ""
-      : choices(
-          "Swatch shape",
-          "color_preset_shape",
-          COLOR_PRESET_SHAPE_CHOICES.map((option) => option.value),
-          "rounded",
-        )}`;
+      : html`<div class="form-row">
+          <label>Swatch shape</label>${createButtonGroup(
+            COLOR_PRESET_SHAPE_CHOICES,
+            colorPresetShape(config),
+            (event) =>
+              change("color_preset_shape", event.currentTarget.dataset.value),
+          )}
+        </div>`}`;
 }
 
 // `rotation` (rotation area): { interval: the lamp's shared interval in

@@ -12,6 +12,7 @@ import { normalizeCardOptions } from "./card-config.js";
 import { CollectionStore } from "./user-collections.js";
 import { getTargetEntities } from "./service-call-utils.js";
 import "./collection-gallery.js";
+import "./yc-swatches.js";
 import {
   colorCountLabel,
   paletteGradient,
@@ -61,7 +62,7 @@ class YeelightCubePaletteCard extends YeelightCardMixin(LitElement) {
       type: "custom:yeelight-cube-palette-card",
       target_entities: firstEntity ? [firstEntity] : [],
       style_selector_style: "preview-album",
-      swatch_style: "gradient-bg",
+      swatch_layout: "fill",
       show_color_count: false,
       show_search: false,
       selector_shape: "custom",
@@ -116,11 +117,16 @@ class YeelightCubePaletteCard extends YeelightCardMixin(LitElement) {
     return index < 0 ? null : paletteKey(index);
   }
 
-  // The palettes as gallery items: a preview in the card's swatch style,
-  // the blend as chip swatch, the color count under the preview. Every
-  // palette is the user's own (renamed and deleted for real).
+  // The palettes as gallery items: a preview in the card's swatch layout
+  // and shape (rounded swatches in a row by default), the blend as chip
+  // swatch, the color count under the preview. Every palette is the user's
+  // own (renamed and deleted for real).
   _galleryItems(palettes) {
-    const style = this.config.swatch_style || "square";
+    const look = {
+      layout: this.config.swatch_layout,
+      shape: this.config.swatch_shape,
+      direction: this.config.swatch_blinds_direction,
+    };
     const showCount = this.config.show_color_count !== false;
     return palettes.map((palette, idx) => {
       const colors = Array.isArray(palette.colors) ? palette.colors : [];
@@ -130,7 +136,7 @@ class YeelightCubePaletteCard extends YeelightCardMixin(LitElement) {
         name,
         title: name,
         swatch: paletteGradient(colors),
-        previewHtml: palettePreviewHtml(colors, style),
+        previewHtml: palettePreviewHtml(colors, look),
         meta: showCount ? colorCountLabel(colors) : undefined,
         editable: true,
       };

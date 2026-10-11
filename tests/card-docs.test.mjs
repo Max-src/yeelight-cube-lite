@@ -132,18 +132,18 @@ test("captures differing only by anti-aliasing noise match", () => {
 });
 
 test("real content changes do not match", () => {
-  // An animation at another phase: a whole block in another colour.
-  const recoloured = capture((set) => {
+  // An animation at another phase: a whole block in another color.
+  const recolored = capture((set) => {
     for (let y = 100; y < 120; y++)
       for (let x = 160; x < 230; x++) set(x, y, [0, 180, 160]);
   });
-  assert.equal(imagesMatch(capture(), recoloured), false);
+  assert.equal(imagesMatch(capture(), recolored), false);
   // One pixel past the tolerance (a missing icon dot) is enough.
   const dot = capture((_, __, shift) =>
     shift(10, 10, -(CHANNEL_TOLERANCE + 1)),
   );
   assert.equal(imagesMatch(capture(), dot), false);
-  // A subtle change everywhere (a fade or colour tweak) is not noise.
+  // A subtle change everywhere (a fade or color tweak) is not noise.
   const faded = capture((_, png) => {
     for (let i = 0; i < png.data.length; i += 4) png.data[i] -= 4;
   });

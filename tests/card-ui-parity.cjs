@@ -2371,13 +2371,16 @@ const server = http.createServer(async (request, response) => {
       const favouriteView = [
         ...card.shadowRoot.querySelectorAll("yeelight-mode-controls"),
       ].find((view) => view.shadowRoot.querySelector("[data-preview]"));
+      // The cells' shape is shared CSS (matrixPreviewStyles): read it as
+      // rendered.
+      const shape = (cell) => cell && getComputedStyle(cell).borderTopLeftRadius;
       return [
-        card.shadowRoot.querySelector(
+        shape(card.shadowRoot.querySelector(
           ".gc-preview-shell .gallery-matrix-preview > div",
-        )?.style.borderRadius,
-        favouriteView.shadowRoot.querySelector(
+        )),
+        shape(favouriteView.shadowRoot.querySelector(
           "[data-preview] .gallery-matrix-preview > div",
-        )?.style.borderRadius,
+        )),
       ];
     });
     assert.deepEqual(renderedShapes, ["50%", "50%"]);
@@ -2970,8 +2973,11 @@ const server = http.createServer(async (request, response) => {
             );
           }
           const host = document.createElement("appearance-render-fixture");
-          host.cardStyles =
-            profile === "draw" ? card.constructor.styles.cssText : "";
+          // The card's own stylesheet where its markup relies on it (Draw;
+          // Native's matrix: the shared matrixPreviewStyles).
+          host.cardStyles = ["draw", "native"].includes(profile)
+            ? [card.constructor.styles].flat().map((sheet) => sheet.cssText).join(" ")
+            : "";
           host.style.display = "block";
           area.append(host);
           await host.updateComplete;

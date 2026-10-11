@@ -130,11 +130,7 @@ class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitEleme
               "show_color_section",
               cfg.show_color_section !== false,
               (e) => {
-                this._config = {
-                  ...this._config,
-                  show_color_section: e.target.checked,
-                };
-                this._fireConfigChanged();
+                this._setOption("show_color_section", e.target.checked);
               },
             )}
             ${createToggleRow(
@@ -142,11 +138,7 @@ class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitEleme
               "enable_color_picker",
               cfg.enable_color_picker !== false,
               (e) => {
-                this._config = {
-                  ...this._config,
-                  enable_color_picker: e.target.checked,
-                };
-                this._fireConfigChanged();
+                this._setOption("enable_color_picker", e.target.checked);
               },
             )}
             ${createToggleRow(
@@ -154,11 +146,7 @@ class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitEleme
               "show_hex_input",
               cfg.show_hex_input !== false,
               (e) => {
-                this._config = {
-                  ...this._config,
-                  show_hex_input: e.target.checked,
-                };
-                this._fireConfigChanged();
+                this._setOption("show_hex_input", e.target.checked);
               },
             )}
             ${createToggleRow(
@@ -166,11 +154,7 @@ class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitEleme
               "allow_drag_drop",
               cfg.allow_drag_drop !== false,
               (e) => {
-                this._config = {
-                  ...this._config,
-                  allow_drag_drop: e.target.checked,
-                };
-                this._fireConfigChanged();
+                this._setOption("allow_drag_drop", e.target.checked);
               },
             )}
             <!-- Card/Layout settings first (containers before content on them) -->
@@ -186,11 +170,7 @@ class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitEleme
                 createButtonGroupChangeHandler(
                   "color_info_display",
                   (value) => {
-                    this._config = {
-                      ...this._config,
-                      color_info_display: value,
-                    };
-                    this._fireConfigChanged();
+                    this._setOption("color_info_display", value);
                   },
                 ),
               )}
@@ -199,19 +179,16 @@ class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitEleme
               <label>Colors Layout Mode</label>
               ${createButtonGroup(
                 [
+                  { value: "compact", label: "Compact", icon: "≡" },
                   { value: "chips", label: "Chips", icon: "◐" },
                   { value: "tiles", label: "Tiles", icon: "▢" },
                   { value: "rows", label: "Rows", icon: "▬" },
                   { value: "grid", label: "Grid", icon: "▦" },
                   { value: "cards", label: "Cards", icon: "🂠" },
                 ],
-                cfg.list_layout || "chips",
+                cfg.list_layout || "compact",
                 createButtonGroupChangeHandler("list_layout", (value) => {
-                  this._config = {
-                    ...this._config,
-                    list_layout: value,
-                  };
-                  this._fireConfigChanged();
+                  this._setOption("list_layout", value);
                 }),
               )}
             </div>
@@ -233,11 +210,7 @@ class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitEleme
                         createButtonGroupChangeHandler(
                           "card_arrangement",
                           (value) => {
-                            this._config = {
-                              ...this._config,
-                              card_arrangement: value,
-                            };
-                            this._fireConfigChanged();
+                            this._setOption("card_arrangement", value);
                           },
                         ),
                       )}
@@ -255,11 +228,7 @@ class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitEleme
                         createButtonGroupChangeHandler(
                           "card_surface_effect",
                           (value) => {
-                            this._config = {
-                              ...this._config,
-                              card_surface_effect: value,
-                            };
-                            this._fireConfigChanged();
+                            this._setOption("card_surface_effect", value);
                           },
                         ),
                       )}
@@ -277,11 +246,7 @@ class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitEleme
                         createButtonGroupChangeHandler(
                           "card_shadow_style",
                           (value) => {
-                            this._config = {
-                              ...this._config,
-                              card_shadow_style: value,
-                            };
-                            this._fireConfigChanged();
+                            this._setOption("card_shadow_style", value);
                           },
                         ),
                       )}
@@ -299,11 +264,7 @@ class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitEleme
                         createButtonGroupChangeHandler(
                           "card_hover_effect",
                           (value) => {
-                            this._config = {
-                              ...this._config,
-                              card_hover_effect: value,
-                            };
-                            this._fireConfigChanged();
+                            this._setOption("card_hover_effect", value);
                           },
                         ),
                       )}
@@ -316,11 +277,7 @@ class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitEleme
               roundedCardsToSliderValue(cfg.rounded_cards),
               { min: 0, max: 28, step: 1 },
               (e) => {
-                this._config = {
-                  ...this._config,
-                  rounded_cards: parseInt(e.target.value),
-                };
-                this._fireConfigChanged();
+                this._setOption("rounded_cards", parseInt(e.target.value));
               },
               "px",
             )}
@@ -332,11 +289,7 @@ class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitEleme
                   cfg.card_size || 70,
                   { min: 50, max: 100, step: 5 },
                   (e) => {
-                    this._config = {
-                      ...this._config,
-                      card_size: parseInt(e.target.value),
-                    };
-                    this._fireConfigChanged();
+                    this._setOption("card_size", parseInt(e.target.value));
                   },
                   "%",
                 )
@@ -355,11 +308,7 @@ class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitEleme
               "show_add_color_button",
               cfg.show_add_color_button !== false,
               (e) => {
-                this._config = {
-                  ...this._config,
-                  show_add_color_button: e.target.checked,
-                };
-                this._fireConfigChanged();
+                this._setOption("show_add_color_button", e.target.checked);
               },
             )}
             ${createToggleRow(
@@ -367,11 +316,7 @@ class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitEleme
               "show_randomize_button",
               cfg.show_randomize_button !== false,
               (e) => {
-                this._config = {
-                  ...this._config,
-                  show_randomize_button: e.target.checked,
-                };
-                this._fireConfigChanged();
+                this._setOption("show_randomize_button", e.target.checked);
               },
             )}
             ${createToggleRow(

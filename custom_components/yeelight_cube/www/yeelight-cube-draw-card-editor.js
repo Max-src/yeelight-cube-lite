@@ -1,5 +1,6 @@
 import "./preview-appearance-editor.js";
-import { orderableListStyles } from "./orderable-list-utils.js";
+import { orderableListStyles, renderOrderableList } from "./orderable-list-utils.js";
+import { toolsOrder } from "./draw_card_tools.js";
 import { renderActionButtonSettings } from "./action-button-ui.js";
 import { LitElement, html, css } from "./lib/lit-all.js";
 import {
@@ -11,6 +12,7 @@ import {
 } from "./editor_ui_utils.js";
 import { normalizeCardOptions } from "./card-config.js";
 import { renderStyleSelectorSettings } from "./style-selector-ui.js";
+import { renderSwatchSettings } from "./swatch-settings-ui.js";
 import {
   createButtonGroup,
   createButtonGroupChangeHandler,
@@ -23,6 +25,7 @@ import {
   createButtonGroupRow,
 } from "./form-row-utils.js";
 import {
+  TOOL_CONFIG,
   DEFAULT_TOOL_ORDER,
   DEFAULT_ACTION_ORDER,
   LS_TOOL_VISIBILITY,
@@ -321,7 +324,6 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
     this._setOption(`show_${sectionId}_section`, visible);
   }
 
-  // Simple drag methods are implemented above in _initSimpleDrag()
 
   setConfig(config) {
     this._config = { ...normalizeCardOptions(config, "draw") };
@@ -344,7 +346,7 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
     if (!this._config.paint_button_shape)
       this._config.paint_button_shape = "rect";
     if (!this._config.swatch_shape) this._config.swatch_shape = "round";
-    if (!this._config.expand_btn_style) this._config.expand_btn_style = "pill";
+    if (!this._config.swatch_expand_style) this._config.swatch_expand_style = "pill";
 
     // Ensure tools_order exists with default value
     if (!this._config.tools_order) {
@@ -486,169 +488,14 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
                     `,
                   )
                 : ""}
-            ${(() => {
-              const dm = this._config.palette_display_mode || "row";
-              const swatchSubModes = [
-                "row",
-                "grid",
-                "expand",
-                "scroll",
-                "fan",
-                "wave",
-                "spiral",
-              ];
-              const isSwatches = swatchSubModes.includes(dm);
-              // Derive top-level bucket
-              const topLevel = isSwatches ? "swatches" : dm;
-              return html`
-                ${createButtonGroupRow(
-                  "Colors Display Mode",
-                  createButtonGroup(
-                    [
-                      { value: "swatches", label: "Color Swatches" },
-                      { value: "gradient", label: "Gradient" },
-                      { value: "honeycomb", label: "Honeycomb" },
-                      { value: "blinds", label: "Blinds" },
-                      { value: "treemap", label: "Treemap" },
-                    ],
-                    topLevel,
-                    createButtonGroupChangeHandler(
-                      "palette_display_mode",
-                      (value) => {
-                        // Swatches keeps the current swatch sub-mode, else row.
-                        this._setOption(
-                          "palette_display_mode",
-                          value !== "swatches" ? value : isSwatches ? dm : "row",
-                        );
-                      },
-                    ),
-                  ),
-                )}
-                ${topLevel === "swatches"
-                  ? renderModeSettingsSection(
-                      "Color Swatches Settings",
-                      html`
-                        ${createButtonGroupRow(
-                          "Layout",
-                          createButtonGroup(
-                            [
-                              { value: "row", label: "Row" },
-                              { value: "grid", label: "Grid" },
-                              { value: "expand", label: "Expandable" },
-                              { value: "scroll", label: "Scroll" },
-                              { value: "fan", label: "Fan" },
-                              { value: "wave", label: "Wave" },
-                              { value: "spiral", label: "Spiral" },
-                            ],
-                            dm,
-                            createButtonGroupChangeHandler(
-                              "palette_display_mode",
-                              (value) => this._setOption("palette_display_mode", value),
-                            ),
-                          ),
-                        )}
-                        ${createButtonGroupRow(
-                          "Swatch Shape",
-                          createButtonGroup(
-                            [
-                              { value: "square", label: "Square" },
-                              { value: "rounded", label: "Rounded" },
-                              { value: "round", label: "Circle" },
-                            ],
-                            this._config.swatch_shape || "round",
-                            createButtonGroupChangeHandler(
-                              "swatch_shape",
-                              (value) => this._setOption("swatch_shape", value),
-                            ),
-                          ),
-                        )}
-                        ${dm === "expand"
-                          ? createButtonGroupRow(
-                              "Expand Button Style",
-                              createButtonGroup(
-                                [
-                                  { value: "pill", label: "Pill (+N)" },
-                                  { value: "chevron", label: "Chevron" },
-                                  { value: "dots", label: "Dots" },
-                                ],
-                                this._config.expand_btn_style || "pill",
-                                createButtonGroupChangeHandler(
-                                  "expand_btn_style",
-                                  (value) => this._setOption("expand_btn_style", value),
-                                ),
-                              ),
-                            )
-                          : ""}
-                      `,
-                    )
-                  : topLevel === "gradient"
-                    ? renderModeSettingsSection(
-                        "Gradient Settings",
-                        html`${createButtonGroupRow(
-                          "Swatch Shape",
-                          createButtonGroup(
-                            [
-                              { value: "square", label: "Square" },
-                              { value: "rounded", label: "Rounded" },
-                              { value: "round", label: "Circle" },
-                            ],
-                            this._config.swatch_shape || "round",
-                            createButtonGroupChangeHandler(
-                              "swatch_shape",
-                              (value) => this._setOption("swatch_shape", value),
-                            ),
-                          ),
-                        )}
-                        ${createToggleRow(
-                          "Free Pick (Interpolate Any Color)",
-                          "gradient_free_pick",
-                          this._config.gradient_free_pick === true,
-                          (e) => this._onSwitchChange(e, "gradient_free_pick"),
-                        )}`,
-                      )
-                    : topLevel === "blinds"
-                      ? renderModeSettingsSection(
-                          "Blinds Settings",
-                          createButtonGroupRow(
-                            "Blinds Direction",
-                            createButtonGroup(
-                              [
-                                { value: "rows", label: "Horizontal" },
-                                { value: "columns", label: "Vertical" },
-                                {
-                                  value: "diagonal-right",
-                                  label: "Diagonal \u2572",
-                                },
-                                {
-                                  value: "diagonal-left",
-                                  label: "Diagonal \u2571",
-                                },
-                              ],
-                              this._config.blinds_direction || "rows",
-                              createButtonGroupChangeHandler(
-                                "blinds_direction",
-                                (value) => this._setOption("blinds_direction", value),
-                              ),
-                            ),
-                          ),
-                        )
-                      : ""}
-              `;
-            })()}
-            ${createButtonGroupRow(
-              "Color Info Display",
-              createButtonGroup(
-                [
-                  { value: "none", label: "None" },
-                  { value: "hex", label: "Hex Code" },
-                  { value: "name", label: "Color Name" },
-                ],
-                this._config.color_info_display || "none",
-                createButtonGroupChangeHandler(
-                  "color_info_display",
-                  (value) => this._setOption("color_info_display", value),
-                ),
-              ),
+            ${renderSwatchSettings(
+              this._config,
+              (key, value) => this._setOption(key, value),
+              {
+                defaults: { layout: "row", shape: "round" },
+                selectable: true,
+                sizeKey: "colors_size",
+              },
             )}
             ${createButtonGroupRow(
               "Colors Card Border",
@@ -707,6 +554,19 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
               tool. Toggle tool visibility by clicking the eye icon (👁) above
               each tool.
             </div>
+
+            <!-- The tools' order (drag, or the arrows) -->
+            <div class="form-row"><label>Tools Order</label></div>
+            ${renderOrderableList({
+              items: toolsOrder(this._config),
+              available: [],
+              addable: false,
+              removable: false,
+              labelFor: (tool) => TOOL_CONFIG[tool]?.label || tool,
+              onUpdate: (list) => this._setOption("tools_order", list),
+              onReset: () => this._resetToolOrder(),
+              resetLabel: "Reset order",
+            })}
 
             <!-- Tool button appearance settings -->
             <div
@@ -867,7 +727,7 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
 
   // New centralized slider handlers
 
-  // The colour cards' corners (colors_item_radius), shared by the
+  // The color cards' corners (colors_item_radius), shared by the
   // side-by-side and carousel modes; `fallback` is the mode's default.
   _colorsRadiusRow(fallback) {
     return createSliderRow(

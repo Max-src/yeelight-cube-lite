@@ -12,11 +12,21 @@ export const COLOR_PRESET_STYLE_CHOICES = [
   { value: "name", label: "Name only" },
 ];
 
+// The shared shape names (square, rounded, round), like every other shape
+// option of the cards.
 export const COLOR_PRESET_SHAPE_CHOICES = [
   { value: "square", label: "Square" },
   { value: "rounded", label: "Rounded" },
-  { value: "circle", label: "Circle" },
+  { value: "round", label: "Circle" },
 ];
+
+/** The custom color modes' swatch shape (color_preset_shape): rounded by
+ * default; "circle" is the older name of round. */
+export function colorPresetShape(config) {
+  const shape =
+    config?.color_preset_shape === "circle" ? "round" : config?.color_preset_shape;
+  return ["square", "rounded", "round"].includes(shape) ? shape : "rounded";
+}
 
 export const colorModeSelectorStyles = `
   .unified-color-modes { display:flex; flex-wrap:wrap; align-items:center; gap:${cardSpacing.control}; }
@@ -79,11 +89,7 @@ export function colorModeSelectorModel(
     config.color_preset_style === "swatch"
       ? "filled"
       : config.color_preset_style || "label";
-  const presetShape = ["square", "rounded", "circle"].includes(
-    config.color_preset_shape,
-  )
-    ? config.color_preset_shape
-    : "rounded";
+  const presetShape = colorPresetShape(config);
   const hex = (color) =>
     `#${color.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
   if (config.color_mode_selector === "dropdown")
