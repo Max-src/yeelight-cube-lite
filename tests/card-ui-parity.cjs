@@ -1493,7 +1493,7 @@ const server = http.createServer(async (request, response) => {
       hoverDraw.id = "draw-hover-regression";
       for (let frame = 0; frame < 10; frame++) await frames();
       const hoverPreview = hoverDraw.shadowRoot.querySelector(
-        ".palette-preview-hover",
+        "yc-preview-hover",
       );
       check(
         hoverPreview.getBoundingClientRect().width <=
@@ -1631,10 +1631,14 @@ const server = http.createServer(async (request, response) => {
       const hoverCard = page.locator("#draw-hover-regression");
       for (const expanded of [true, false, true, false]) {
         if (expanded) {
-          await hoverCard
-            .locator(".palette-preview-card:not(.empty)")
-            .first()
-            .hover();
+          // The opening panel covers its preview: move the mouse there
+          // (a hover action would wait for the preview to stay on top).
+          const preview = hoverCard
+            .locator("yc-preview-hover .preview:not(.empty)")
+            .first();
+          await preview.scrollIntoViewIfNeeded();
+          const box = await preview.boundingBox();
+          await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
         } else {
           await page.mouse.move(0, 0);
         }
@@ -1642,24 +1646,25 @@ const server = http.createServer(async (request, response) => {
           const root = document.querySelector(
             "#draw-hover-regression",
           ).shadowRoot;
-          const preview = root.querySelector(".palette-preview-hover");
-          const body = preview.querySelector(
-            ".palette-preview-card:not(.empty) .palette-preview-body",
-          );
+          // <yc-preview-hover>: its previews and the open one, in place.
+          const preview = root.querySelector("yc-preview-hover").shadowRoot;
+          const body = preview.querySelector(".preview:not(.empty) .preview-content");
           const scale = new DOMMatrixReadOnly(getComputedStyle(body).transform)
             .a;
-          const expected = expanded ? 1 : 1 / preview.children.length;
+          // The previews keep their scale; the open section is a panel.
+          const expected = 1 / preview.querySelectorAll(".preview").length;
           return (
-            preview.classList.contains("expanded-mode") === expanded &&
+            preview.querySelector(".stack").classList.contains("covered") === expanded &&
+            !!preview.querySelector(".panel") === expanded &&
             Math.abs(scale - expected) < 0.001 &&
             preview
-              .getAnimations({ subtree: true })
+              .getAnimations()
               .every((animation) => animation.playState !== "running")
           );
         }, expanded);
         const geometry = await hoverCard.evaluate((card) => {
           const preview = card.shadowRoot.querySelector(
-            ".palette-preview-hover",
+            "yc-preview-hover",
           );
           return {
             width: preview.getBoundingClientRect().width,

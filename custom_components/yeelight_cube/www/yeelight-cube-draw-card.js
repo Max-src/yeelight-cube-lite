@@ -273,40 +273,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     if (changedProperties.has("config") || changedProperties.has("hass")) {
       setTimeout(() => this._setupPaletteRowDragScroll(), 0);
     }
-
-    // Trigger preview-hover height measurement after each render
-    this._schedulePreviewHoverMeasure();
-  }
-
-  // ─── Preview-hover measurement ─────────────────────────────────────────
-  //
-  // Each section's swatches (<yc-swatches>) fire "yc-swatches-rendered"
-  // (bubbling) after each render, once their DOM has settled.  We listen for this event on the
-  // .palette-preview-hover container and use it as the authoritative
-  // trigger to measure collapsed card heights.
-  //
-  // Additional triggers:
-  //   • _schedulePreviewHoverMeasure() — called from Lit's updated() for
-  //     cases where no custom-element re-render happens (e.g. empty cards,
-  //     mode changes that don't touch palette content).
-  //   • A 600ms fallback timeout — catches any edge case.
-  //
-  // All triggers are debounced through a single rAF so rapid successive
-  // events coalesce into one measurement per frame.
-  //
-  // applyHeights():
-  //   Reads each non-empty body's scrollHeight (layout height, unaffected by
-  //   CSS transforms), picks the tallest one as uniformH = ceil(max / nCards),
-  //   and sets that same max-height on EVERY collapsed card so they are all
-  //   the same height regardless of palette size or color-info display mode.
-
-  _schedulePreviewHoverMeasure() {
-    if (this._previewMeasurePending) return;
-    this._previewMeasurePending = true;
-    requestAnimationFrame(() => {
-      this._previewMeasurePending = false;
-      this._setupPreviewHoverMeasurement();
-    });
   }
 
   static properties = {
@@ -500,15 +466,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     if (this._applyPixelArtTimer) {
       clearTimeout(this._applyPixelArtTimer);
       this._applyPixelArtTimer = null;
-    }
-    if (this._previewCollapseTimer) {
-      clearTimeout(this._previewCollapseTimer);
-      this._previewCollapseTimer = null;
-    }
-    // Clear all per-card collapse timers (issue #3 fix)
-    if (this._previewCollapseTimers) {
-      this._previewCollapseTimers.forEach((id) => clearTimeout(id));
-      this._previewCollapseTimers.clear();
     }
   }
 

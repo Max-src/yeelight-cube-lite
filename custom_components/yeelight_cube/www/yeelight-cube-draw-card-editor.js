@@ -487,7 +487,17 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
                       ${this._colorsRadiusRow(16)}
                     `,
                   )
-                : ""}
+                : this._config.palette_card_mode === "preview-hover"
+                  ? renderModeSettingsSection(
+                      "Preview Hover Settings",
+                      createToggleRow(
+                        "Open as overlay",
+                        "colors_preview_overlay",
+                        this._config.colors_preview_overlay === true,
+                        (e) => this._onSwitchChange(e, "colors_preview_overlay"),
+                      ),
+                    )
+                  : ""}
             ${renderSwatchSettings(
               this._config,
               (key, value) => this._setOption(key, value),

@@ -70,164 +70,6 @@ export const drawCardStyles = css`
     pointer-events: none;
     transform: translateX(-50%) scale(0.95);
   }
-  /* Preview-hover mode */
-  .palette-preview-hover {
-    display: flex;
-    flex-direction: row;
-    align-items: flex-start;
-    width: 100%;
-    gap: 8px;
-    overflow: hidden;
-    /* Smooth gap transition when entering/leaving expanded-mode (issue #6) */
-    transition: gap 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  .palette-preview-card {
-    flex: 0 0 auto;
-    min-width: 0;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    padding: 0;
-    cursor: pointer;
-    position: relative;
-    /* max-height managed by JS to match scaled visual content */
-    transition:
-      flex 0.4s cubic-bezier(0.4, 0, 0.2, 1),
-      max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1),
-      opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1),
-      padding 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  /* Collapsed: share space equally */
-  .palette-preview-hover:not(.expanded-mode) .palette-preview-card {
-    flex: 1 1 0;
-  }
-  .palette-preview-card:not(.expanded):hover {
-    /* Fix #13: fallback for browsers without color-mix() (older WebKit / HA webviews) */
-    background: var(--secondary-background-color, #f0f4fa);
-    background: color-mix(
-      in srgb,
-      var(--primary-color, #0077cc) 5%,
-      var(--card-background-color, #fff)
-    );
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  }
-  /* When expanded mode is on, non-expanded cards shrink to zero */
-  .palette-preview-hover.expanded-mode .palette-preview-card:not(.expanded) {
-    flex: 0 0 0px;
-    max-height: 0;
-    opacity: 0;
-    padding: 0;
-    overflow: hidden;
-    pointer-events: none;
-  }
-  .palette-preview-hover.expanded-mode {
-    gap: 0; /* transitions smoothly via .palette-preview-hover transition: gap rule */
-    overflow: hidden !important;
-    scrollbar-width: none !important;
-  }
-  .palette-preview-hover:not(.expanded-mode) .palette-preview-card.empty {
-    opacity: 1;
-  }
-  /* Expanded card takes full width.
-     max-height is set via inline style by applyHeights() after the palette has
-     re-rendered at the expanded container width, giving the true content height.
-     The CSS fallback (2000px) is only active on the very first RAF before
-     applyHeights() runs. */
-  .palette-preview-card.expanded {
-    flex: 1 0 100%;
-    max-height: var(--card-open-h, 2000px);
-    z-index: 10;
-    overflow: hidden;
-    padding: 0;
-  }
-  /* Body wraps palette content — fixed pixel width from JS (--container-w) ensures
-     content always renders at full container width. No transform transition —
-     the body snaps instantly to its scaled state; only max-height animates. */
-  .palette-preview-body {
-    pointer-events: none;
-    width: var(--container-w, 300px);
-    transform: scale(calc(1 / var(--n-cards, 3)));
-    transform-origin: top left;
-    box-sizing: border-box;
-    /* Animate scale when expanding/collapsing so the content doesn't jump.
-       The background:transparent inline style (set by handleCollapse) hides the
-       gap between the shrinking body and the card bottom during the animation. */
-    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  .palette-preview-card.expanded .palette-preview-body {
-    pointer-events: auto;
-    /* width stays var(--container-w) — JS updates it to outerW when expanded
-       so the body fills the card. Removing width:100% prevents the expand-flash
-       where 100% was resolving to the card's narrow transitioning width. */
-    transform: scale(1);
-    padding: 0 10px 6px 8px;
-  }
-  /* Empty card: no pointer events since there's nothing to interact with */
-  .palette-preview-card.empty {
-    cursor: default;
-  }
-  /* Title bar — always rendered, animates in/out via max-height + opacity */
-  .palette-preview-card-title {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--secondary-text-color, #888);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    flex-shrink: 0;
-    /* Collapsed: hidden with no space */
-    max-height: 0;
-    opacity: 0;
-    padding: 0 10px;
-    transition:
-      max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1),
-      opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1),
-      padding 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  /* Expanded: full height and visible */
-  .palette-preview-card.expanded .palette-preview-card-title {
-    max-height: 2em;
-    opacity: 1;
-    padding: 8px 10px 6px;
-  }
-  /* Empty preview card placeholder */
-  .palette-mini-empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    flex: 1;
-    min-height: 0;
-    margin: 1px;
-    padding: 4px;
-    /* inset box-shadow instead of border so it never overflows its box */
-    box-shadow: inset 0 0 0 2px var(--divider-color, rgba(180, 180, 180, 0.5));
-    border-radius: 6px;
-    background: color-mix(
-      in srgb,
-      var(--primary-text-color, #333) 3%,
-      transparent
-    );
-  }
-  .palette-preview-hover[data-display-mode="treemap"] .palette-mini-empty {
-    padding: 16px;
-  }
-  .palette-preview-hover[data-display-mode="blinds"] .palette-mini-empty {
-    padding: 15px;
-  }
-  .palette-preview-hover[data-display-mode="honeycomb"] .palette-mini-empty {
-    padding: 10px;
-  }
-  .palette-preview-hover[data-display-mode="gradient"] .palette-mini-empty {
-    padding: 4px;
-  }
-  .mini-empty-hint {
-    font-size: 11px;
-    color: var(--secondary-text-color, #888);
-    opacity: 0.45;
-  }
   input.color-picker-btn[type="color"] {
     border: none;
     cursor: pointer;
@@ -714,17 +556,6 @@ export const drawCardStyles = css`
     left: 0;
   }
 
-  .palette-preview-hover.expanded-mode {
-    overflow: hidden !important;
-    scrollbar-width: none !important;
-  }
-  .palette-preview-hover {
-    scrollbar-width: none;
-    overflow: hidden;
-  }
-  .palette-preview-hover::-webkit-scrollbar {
-    display: none !important;
-  }
   /* Carousel wrapper: must fill full width */
   .palette-colors-carousel-wrapper {
     width: 100%;
@@ -749,9 +580,6 @@ export const drawCardStyles = css`
     border-radius: 8px;
     padding: 8px;
     box-sizing: border-box;
-  }
-  .palette-colors-card-border .palette-preview-card.expanded {
-    box-shadow: inset 0 0 0 1px var(--divider-color, rgba(128, 128, 128, 0.35));
   }
 
   .pixelart-gallery-message {

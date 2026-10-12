@@ -30,9 +30,6 @@
  * layout follows the size: the swatches themselves, the bars' and areas'
  * height (gradient, stripes, fill, blinds, treemap), the drawn layouts'
  * width (fan, wave, spiral, honeycomb).
- *
- * After each render the element fires "yc-swatches-rendered" (bubbling), for
- * hosts that measure their content.
  */
 import { LitElement, css, html, nothing } from "./lib/lit-all.js";
 import { defineOnce } from "./card-registration.js";
@@ -140,9 +137,6 @@ class YcSwatches extends LitElement {
     const label = `${this._entries.length} ${this._entries.length === 1 ? "color" : "colors"}`;
     this.setAttribute("role", this.selectable ? "group" : "img");
     this.setAttribute("aria-label", label);
-    this.dispatchEvent(
-      new CustomEvent("yc-swatches-rendered", { bubbles: true, composed: true }),
-    );
   }
 
   render() {
