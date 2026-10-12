@@ -43,8 +43,18 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
   });
   const errors = [];
   try {
-    const page = await browser.newPage({ viewport: { width: 900, height: 900 } });
+    const page = await browser.newPage({
+      viewport: { width: 900, height: 900 },
+    });
     page.on("pageerror", (error) => errors.push(error.message));
+    // CPU_THROTTLE=4 runs the page 4x slower, like a CI runner: timing bugs
+    // that only show there reproduce locally.
+    if (Number(process.env.CPU_THROTTLE) > 1)
+      await (
+        await page.context().newCDPSession(page)
+      ).send("Emulation.setCPUThrottlingRate", {
+        rate: Number(process.env.CPU_THROTTLE),
+      });
     // A strict CSP: inline handlers would be refused (and reported).
     await page.route("**/events.html", (route) =>
       route.fulfill({
@@ -105,15 +115,24 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
               clock_color_mode: "normal",
               gradient_angle: 90,
               mode: "Angle Gradient",
-              text_colors: [[255, 0, 0], [0, 0, 255]],
+              text_colors: [
+                [255, 0, 0],
+                [0, 0, 255],
+              ],
             },
           },
           "sensor.pixel": {
             state: "1",
             attributes: {
               pixel_arts: [
-                { name: "Heart", pixels: [{ position: 3, color: [255, 0, 0] }] },
-                { name: "Star", pixels: [{ position: 7, color: [255, 255, 0] }] },
+                {
+                  name: "Heart",
+                  pixels: [{ position: 3, color: [255, 0, 0] }],
+                },
+                {
+                  name: "Star",
+                  pixels: [{ position: 7, color: [255, 255, 0] }],
+                },
               ],
             },
           },
@@ -169,7 +188,10 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         { tag: lamp, style },
       );
       // Step button (click, with a numeric argument).
-      await page.locator(`${lamp} .rotary-step-btn[title^="Increase"]`).first().click();
+      await page
+        .locator(`${lamp} .rotary-step-btn[title^="Increase"]`)
+        .first()
+        .click();
       await waitForCall("turn_on", `${style} step button`);
       await reset();
 
@@ -199,7 +221,9 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
             "bar: idle stripes restored on release",
           );
       } else if (style === "wheel") {
-        await page.locator(`${lamp} .brightness-wheel-tick[data-value="30"]`).click();
+        await page
+          .locator(`${lamp} .brightness-wheel-tick[data-value="30"]`)
+          .click();
         const data = await waitForCall("turn_on", "wheel tick");
         assert.equal(data.brightness, 77); // 30% on the 3-255 curve
         await reset();
@@ -212,12 +236,14 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         await waitForCall("turn_on", "matrix press");
       } else if (style === "rotary") {
         const before = await page.evaluate(
-          () => +card.shadowRoot.querySelector(".brightness-slider-rotary").value,
+          () =>
+            +card.shadowRoot.querySelector(".brightness-slider-rotary").value,
         );
         await page.locator(`${lamp} .brightness-rotary-wrapper`).hover();
         await page.mouse.wheel(0, -100);
         const after = await page.evaluate(
-          () => +card.shadowRoot.querySelector(".brightness-slider-rotary").value,
+          () =>
+            +card.shadowRoot.querySelector(".brightness-slider-rotary").value,
         );
         // One notch is one step (inline handlers stepped twice: dial + container).
         assert.equal(after - before, 5, "rotary: one wheel notch = +5");
@@ -226,7 +252,9 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         await page.locator(`${lamp} .brightness-rotary-container`).click();
         await waitForCall("turn_on", "rotary press");
       } else if (style === "capsule") {
-        const value = page.locator(`${lamp} .brightness-capsule-input[type="number"]`);
+        const value = page.locator(
+          `${lamp} .brightness-capsule-input[type="number"]`,
+        );
         await value.click();
         assert.equal(
           await page.evaluate(() => card._slBrightnessTyping),
@@ -237,43 +265,73 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         await value.press("Enter");
         const data = await waitForCall("turn_on", "capsule typed value");
         assert.equal(data.brightness, 102); // 40% on the 3-255 curve
-        assert.equal(await page.evaluate(() => card._slBrightnessTyping), false);
+        assert.equal(
+          await page.evaluate(() => card._slBrightnessTyping),
+          false,
+        );
       }
     }
 
     // --- Lamp Preview: a dragged brightness holds until the lamp reports it ---
-    await page.evaluate((tag) =>
-      mount(tag, {
-        entity: "light.a",
-        show_brightness: true,
-        slider_style: "slider",
-        show_device_orientation: false,
-      }), lamp);
+    await page.evaluate(
+      (tag) =>
+        mount(tag, {
+          entity: "light.a",
+          show_brightness: true,
+          slider_style: "slider",
+          show_device_orientation: false,
+        }),
+      lamp,
+    );
     await page.locator(`${lamp} input.brightness-slider`).first().fill("40");
-    assert.equal((await waitForCall("turn_on", "preview drag")).brightness, 102);
+    assert.equal(
+      (await waitForCall("turn_on", "preview drag")).brightness,
+      102,
+    );
     const shown = () =>
-      page.evaluate(() => +card.shadowRoot.querySelector("input.brightness-slider").value);
+      page.evaluate(
+        () => +card.shadowRoot.querySelector("input.brightness-slider").value,
+      );
     const push = (brightness) =>
       page.evaluate(async (brightness) => {
         const light = hass.states["light.a"];
-        hass = { ...hass, states: { ...hass.states, "light.a": { ...light, attributes: { ...light.attributes, brightness } } } };
+        hass = {
+          ...hass,
+          states: {
+            ...hass.states,
+            "light.a": {
+              ...light,
+              attributes: { ...light.attributes, brightness },
+            },
+          },
+        };
         card.hass = hass;
         await new Promise((resolve) => setTimeout(resolve, 400)); // render debounce
       }, brightness);
     await push(128); // an older state arriving after the commit
-    assert.equal(await shown(), 40, "preview: older lamp state must not jump the slider back");
+    assert.equal(
+      await shown(),
+      40,
+      "preview: older lamp state must not jump the slider back",
+    );
     await push(102); // the lamp reports the new value: the draft is dropped
-    assert.equal(await page.evaluate(() => card._lampSliders.value("brightness")), null);
+    assert.equal(
+      await page.evaluate(() => card._lampSliders.value("brightness")),
+      null,
+    );
     assert.equal(await shown(), 40);
     await push(26); // later changes (another card, automation) show again
     assert.equal(await shown(), 10);
 
     // --- Orientation: Lamp Preview and Native (inside the mode controls) -----
-    await page.evaluate((tag) =>
-      mount(tag, { entity: "light.a", show_device_orientation: true }), lamp);
+    await page.evaluate(
+      (tag) => mount(tag, { entity: "light.a", show_device_orientation: true }),
+      lamp,
+    );
     await page.locator(`${lamp} .orient-btn[data-value="down"]`).click();
     assert.equal(
-      (await waitForCall("set_device_orientation", "lamp orientation")).orientation,
+      (await waitForCall("set_device_orientation", "lamp orientation"))
+        .orientation,
       "down",
     );
     for (const tag of ["yeelight-cube-native-effects-card"]) {
@@ -286,7 +344,10 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
           }),
         tag,
       );
-      await page.locator(`${tag} .orient-btn[data-value="left"]`).first().click();
+      await page
+        .locator(`${tag} .orient-btn[data-value="left"]`)
+        .first()
+        .click();
       assert.equal(
         (await waitForCall("set_device_orientation", `${tag} orientation`))
           .orientation,
@@ -295,7 +356,10 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     }
 
     // --- Native / Clock brightness sliders -------------------------------------
-    for (const tag of ["yeelight-cube-clock-card", "yeelight-cube-native-effects-card"]) {
+    for (const tag of [
+      "yeelight-cube-clock-card",
+      "yeelight-cube-native-effects-card",
+    ]) {
       await page.evaluate(
         (tag) =>
           mount(tag, {
@@ -306,7 +370,9 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
           }),
         tag,
       );
-      const step = page.locator(`${tag} .rotary-step-btn[title^="Increase"]`).first();
+      const step = page
+        .locator(`${tag} .rotary-step-btn[title^="Increase"]`)
+        .first();
       await step.click();
       await waitForCall("turn_on", `${tag} brightness step`);
     }
@@ -326,14 +392,26 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     );
     const drawView = await page.evaluate(() => {
       window.drawSeen = [];
-      card._handlePixelArtCanvasClick = async (idx, lamp) => drawSeen.push(["load", idx, lamp]);
-      card._renamePixelArt = async (idx, name) => (drawSeen.push(["rename", idx, name]), true);
-      card._deletePixelArt = async (idx) => (drawSeen.push(["delete", idx]), true);
-      const items = card.shadowRoot.querySelectorAll('yc-collection-gallery .gallery-item[data-mode^="art:"]');
-      const cells = items[0]?.querySelector(".gallery-matrix-preview")?.children || [];
+      card._handlePixelArtCanvasClick = async (idx, lamp) =>
+        drawSeen.push(["load", idx, lamp]);
+      card._renamePixelArt = async (idx, name) => (
+        drawSeen.push(["rename", idx, name]),
+        true
+      );
+      card._deletePixelArt = async (idx) => (
+        drawSeen.push(["delete", idx]),
+        true
+      );
+      const items = card.shadowRoot.querySelectorAll(
+        'yc-collection-gallery .gallery-item[data-mode^="art:"]',
+      );
+      const cells =
+        items[0]?.querySelector(".gallery-matrix-preview")?.children || [];
       return {
         items: items.length,
-        grid: !!card.shadowRoot.querySelector('yc-collection-gallery .gc-preview-shell[data-columns="2"]'),
+        grid: !!card.shadowRoot.querySelector(
+          'yc-collection-gallery .gc-preview-shell[data-columns="2"]',
+        ),
         // Heart's pixel 3 is on the lamp's bottom row: shown on the
         // preview's last row (cell 83), as in the drawing.
         bottom: cells[83]?.style.background,
@@ -341,13 +419,17 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         label: items[1]?.getAttribute("aria-label"),
       };
     });
-    assert.deepEqual(drawView, {
-      items: 2,
-      grid: true,
-      bottom: "rgb(255, 0, 0)",
-      top: "rgb(0, 0, 0)",
-      label: "Star: Load into the drawing and the lamp",
-    }, "draw: the former gallery mode, previews as drawn, what a pick does");
+    assert.deepEqual(
+      drawView,
+      {
+        items: 2,
+        grid: true,
+        bottom: "rgb(255, 0, 0)",
+        top: "rgb(0, 0, 0)",
+        label: "Star: Load into the drawing and the lamp",
+      },
+      "draw: the former gallery mode, previews as drawn, what a pick does",
+    );
     const star = `${draw} yc-collection-gallery .gallery-item[data-mode="art:1"]`;
     await page.locator(star).click();
     await page.locator(`${star} .yc-item-rename`).click();
@@ -358,9 +440,17 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     await page.waitForTimeout(50);
     await page.locator(`${star} .yc-item-delete`).click();
     await page.waitForTimeout(50);
-    assert.deepEqual(await page.evaluate(() => drawSeen.slice()), [["load", 1, true], ["rename", 1, "Moon"]],
-      "draw: a delete waits for its confirmation");
-    await page.locator(`${draw} .yc-item-manage button:has-text("Delete")`).click();
+    assert.deepEqual(
+      await page.evaluate(() => drawSeen.slice()),
+      [
+        ["load", 1, true],
+        ["rename", 1, "Moon"],
+      ],
+      "draw: a delete waits for its confirmation",
+    );
+    await page
+      .locator(`${draw} .yc-item-manage button:has-text("Delete")`)
+      .click();
     await page.waitForTimeout(50);
     // Each action reaches its own handler once (managing never loads).
     assert.deepEqual(await page.evaluate(() => drawSeen), [
@@ -370,11 +460,16 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     ]);
     assert.deepEqual(
       await page.evaluate(() =>
-        [...card.shadowRoot.querySelectorAll(".action-row button[data-action]")].map(
-          (button) => button.title,
-        ),
+        [
+          ...card.shadowRoot.querySelectorAll(
+            ".action-row button[data-action]",
+          ),
+        ].map((button) => button.title),
       ),
-      ["Export pixel arts to a JSON file", "Import pixel arts from a JSON file"],
+      [
+        "Export pixel arts to a JSON file",
+        "Import pixel arts from a JSON file",
+      ],
       "draw: the shared export / import row",
     );
     // The pixel art on the canvas is the active one (highlighted); drawing
@@ -390,11 +485,15 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         const active = async () => {
           await card.updateComplete;
           await gallery.updateComplete;
-          return [...gallery.querySelectorAll('[data-active-mode="true"]')].map((node) => node.dataset.mode);
+          return [...gallery.querySelectorAll('[data-active-mode="true"]')].map(
+            (node) => node.dataset.mode,
+          );
         };
         await card._applyPixelArtToMatrix(1);
         const loaded = await active();
-        card.matrix = card.matrix.map((color, index) => (index === 0 ? "#123456" : color));
+        card.matrix = card.matrix.map((color, index) =>
+          index === 0 ? "#123456" : color,
+        );
         card.requestUpdate();
         const drawn = await active();
         // The canvas is saved in the browser: leave it blank for later tests.
@@ -426,7 +525,8 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         const afterMove = seen.length;
         const shown =
           gallery.querySelector(".yc-carousel-item[data-mode]")?.dataset.mode ??
-          gallery.querySelector('.wheel-item[data-wheel-centered="true"]')?.dataset.mode;
+          gallery.querySelector('.wheel-item[data-wheel-centered="true"]')
+            ?.dataset.mode;
         gallery.querySelector(`[data-mode="${shown}"]`).click();
         await new Promise((resolve) => setTimeout(resolve, 100));
         return { afterMove, shown, seen };
@@ -482,7 +582,9 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         }),
       gradient,
     );
-    const capsule = page.locator(`${gradient} .angle-capsule-host input.capsule-input`);
+    const capsule = page.locator(
+      `${gradient} .angle-capsule-host input.capsule-input`,
+    );
     if (await capsule.count()) {
       const box = await capsule.boundingBox();
       await page.mouse.move(box.x + box.width * 0.2, box.y + box.height / 2);
@@ -499,7 +601,8 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     // --- Gradient modes through the shared gallery (text layouts) ------------
     for (const style of ["filled", "chips", "dropdown"]) {
       await page.evaluate(
-        ({ tag, style }) => mount(tag, { entity: "light.a", style_selector_style: style }),
+        ({ tag, style }) =>
+          mount(tag, { entity: "light.a", style_selector_style: style }),
         { tag: gradient, style },
       );
       await page.waitForTimeout(150);
@@ -510,7 +613,9 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         `gradient ${style}: no search box unless enabled`,
       );
       if (style === "dropdown")
-        await gallery.locator("select.mode-select").selectOption("Radial Gradient");
+        await gallery
+          .locator("select.mode-select")
+          .selectOption("Radial Gradient");
       else await gallery.locator('[data-mode="Radial Gradient"]').click();
       assert.equal(
         (await waitForCall("set_mode", `gradient ${style} pick`)).mode,
@@ -521,13 +626,22 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     // --- Chip swatches: a meaningful swatch for every kind of item ------------
     const chips = async (tag, config, paintedBy) => {
       await page.evaluate(
-        ({ tag, config }) => mount(tag, { entity: "light.a", style_selector_style: "chips", ...config }),
+        ({ tag, config }) =>
+          mount(tag, {
+            entity: "light.a",
+            style_selector_style: "chips",
+            ...config,
+          }),
         { tag, config },
       );
       await page.waitForTimeout(200);
       return page.evaluate((paintedBy) => {
-        const chip = card.shadowRoot.querySelector("yc-collection-gallery .mode-chip[data-mode]");
-        const matrix = chip?.querySelector(".mode-chip-matrix .gallery-matrix-preview");
+        const chip = card.shadowRoot.querySelector(
+          "yc-collection-gallery .mode-chip[data-mode]",
+        );
+        const matrix = chip?.querySelector(
+          ".mode-chip-matrix .gallery-matrix-preview",
+        );
         const animated =
           paintedBy === "clock"
             ? [...(card._visible || [])].includes(chip)
@@ -536,17 +650,38 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
               : null;
         return {
           cells: matrix?.children.length ?? 0,
-          swatch: chip?.querySelector(".mode-chip-swatch")?.style.background || "",
+          swatch:
+            chip?.querySelector(".mode-chip-swatch")?.style.background || "",
           animated,
         };
       }, paintedBy);
     };
-    const clockChip = await chips("yeelight-cube-clock-card", { show_gallery: true }, "clock");
-    assert.equal(clockChip.cells, 100, "clock chips: micro-matrix of the style");
+    const clockChip = await chips(
+      "yeelight-cube-clock-card",
+      { show_gallery: true },
+      "clock",
+    );
+    assert.equal(
+      clockChip.cells,
+      100,
+      "clock chips: micro-matrix of the style",
+    );
     assert.equal(clockChip.animated, true, "clock chips: animated by the card");
-    const nativeChip = await chips("yeelight-cube-native-effects-card", { show_gallery: true }, "native");
-    assert.equal(nativeChip.cells, 100, "native chips: micro-matrix of the effect");
-    assert.equal(nativeChip.animated, true, "native chips: animated by the card");
+    const nativeChip = await chips(
+      "yeelight-cube-native-effects-card",
+      { show_gallery: true },
+      "native",
+    );
+    assert.equal(
+      nativeChip.cells,
+      100,
+      "native chips: micro-matrix of the effect",
+    );
+    assert.equal(
+      nativeChip.animated,
+      true,
+      "native chips: animated by the card",
+    );
     const gradientChip = await chips("yeelight-cube-gradient-card", {}, null);
     assert.equal(gradientChip.cells, 0, "gradient chips: no matrix");
     assert.ok(gradientChip.swatch, "gradient chips: the mode's own gradient");
@@ -563,21 +698,38 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     );
     const clockLabels = () =>
       page.evaluate(() => ({
-        button: card.shadowRoot.querySelector('yc-collection-gallery [data-mode="Rainbow"]')?.textContent.trim(),
-        active: card.shadowRoot.querySelector(".active-label")?.textContent.trim(),
+        button: card.shadowRoot
+          .querySelector('yc-collection-gallery [data-mode="Rainbow"]')
+          ?.textContent.trim(),
+        active: card.shadowRoot
+          .querySelector(".active-label")
+          ?.textContent.trim(),
       }));
-    assert.deepEqual(await clockLabels(), { button: "Arc-en-ciel", active: "Arc-en-ciel" });
+    assert.deepEqual(await clockLabels(), {
+      button: "Arc-en-ciel",
+      active: "Arc-en-ciel",
+    });
     const search = page.locator("yeelight-cube-clock-card .yc-gallery-search");
     for (const query of ["arc-en", "rainbow"]) {
       await search.fill(query);
       assert.ok(
-        await page.locator('yeelight-cube-clock-card yc-collection-gallery [data-mode="Rainbow"]').count(),
+        await page
+          .locator(
+            'yeelight-cube-clock-card yc-collection-gallery [data-mode="Rainbow"]',
+          )
+          .count(),
         `clock search "${query}" finds the renamed style`,
       );
     }
-    await page.locator('yeelight-cube-clock-card yc-collection-gallery [data-mode="Rainbow"]').click();
+    await page
+      .locator(
+        'yeelight-cube-clock-card yc-collection-gallery [data-mode="Rainbow"]',
+      )
+      .click();
     assert.match(
-      JSON.stringify(await waitForCall("set_clock_style", "renamed style pick")),
+      JSON.stringify(
+        await waitForCall("set_clock_style", "renamed style pick"),
+      ),
       /Rainbow/,
       "a renamed style is still applied by its key",
     );
@@ -589,7 +741,11 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
       }),
     );
     assert.equal(
-      await page.evaluate(() => card.shadowRoot.querySelector(".current-heading h3")?.textContent.trim()),
+      await page.evaluate(() =>
+        card.shadowRoot
+          .querySelector(".current-heading h3")
+          ?.textContent.trim(),
+      ),
       "Arc",
       "native: current effect heading uses the label",
     );
@@ -597,7 +753,8 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     assert.deepEqual(
       await page.evaluate(async () => {
         await card.updateComplete;
-        const keys = () => card._controls.adapter.navigationItems().map((item) => item.key);
+        const keys = () =>
+          card._controls.adapter.navigationItems().map((item) => item.key);
         const search = card.shadowRoot.querySelector(".yc-gallery-search");
         const typed = async (text) => {
           search.value = text;
@@ -605,7 +762,11 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
           await card.updateComplete;
           return keys();
         };
-        return { label: await typed("arc"), none: await typed("zzz"), all: await typed("") };
+        return {
+          label: await typed("arc"),
+          none: await typed("zzz"),
+          all: await typed(""),
+        };
       }),
       { label: ["Rainbow"], none: [], all: ["Rainbow"] },
       "native: Previous / Next follow the search (labels included)",
@@ -622,24 +783,35 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     assert.deepEqual(
       await page.evaluate(() => ({
         chip: card.shadowRoot.querySelector(".gc-aml-text")?.textContent.trim(),
-        button: card.shadowRoot.querySelector('yc-collection-gallery [data-mode="Angle Gradient"]')?.textContent.trim(),
+        button: card.shadowRoot
+          .querySelector('yc-collection-gallery [data-mode="Angle Gradient"]')
+          ?.textContent.trim(),
       })),
       { chip: "Diagonal", button: "Diagonal" },
       "gradient: label in the active-mode chip and the selector",
     );
     // The editor renames in its visible-modes list.
     const renamed = await page.evaluate(async () => {
-      const editor = await customElements.get("yeelight-cube-gradient-card").getConfigElement();
+      const editor = await customElements
+        .get("yeelight-cube-gradient-card")
+        .getConfigElement();
       editor.hass = hass;
-      editor.setConfig({ type: "custom:yeelight-cube-gradient-card", entity: "light.a" });
+      editor.setConfig({
+        type: "custom:yeelight-cube-gradient-card",
+        entity: "light.a",
+      });
       document.querySelector("main").replaceChildren(editor);
       await editor.updateComplete;
-      for (const section of editor.shadowRoot.querySelectorAll(".editor-card-header")) {
+      for (const section of editor.shadowRoot.querySelectorAll(
+        ".editor-card-header",
+      )) {
         section.click();
         await editor.updateComplete;
       }
       const changes = [];
-      editor.addEventListener("config-changed", (event) => changes.push(event.detail.config));
+      editor.addEventListener("config-changed", (event) =>
+        changes.push(event.detail.config),
+      );
       const field = editor.shadowRoot.querySelector(".orderable-list-rename");
       field.value = "Plain";
       field.dispatchEvent(new Event("change"));
@@ -651,11 +823,15 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
       const cleared = "item_labels" in (changes.at(-1) || {});
       // Every mode is listed (no toggle); moving one makes the list the
       // card's own, and "Show all modes" goes back (names are kept).
-      const rows = editor.shadowRoot.querySelectorAll(".orderable-list-rename").length;
+      const rows = editor.shadowRoot.querySelectorAll(
+        ".orderable-list-rename",
+      ).length;
       field.value = "Plain";
       field.dispatchEvent(new Event("change"));
       await editor.updateComplete;
-      editor.shadowRoot.querySelector('.orderable-list-row button[title="Move down"]').click();
+      editor.shadowRoot
+        .querySelector('.orderable-list-row button[title="Move down"]')
+        .click();
       await editor.updateComplete;
       const custom = changes.at(-1);
       [...editor.shadowRoot.querySelectorAll(".orderable-reset-btn")]
@@ -669,7 +845,11 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         cleared,
         rows,
         custom: [custom.custom_visible_modes, custom.visible_modes.slice(0, 2)],
-        reset: [reset.custom_visible_modes, reset.visible_modes, reset.item_labels],
+        reset: [
+          reset.custom_visible_modes,
+          reset.visible_modes,
+          reset.item_labels,
+        ],
       };
     });
     assert.deepEqual(renamed, {
@@ -702,7 +882,13 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         state: "2",
         attributes: {
           palettes_v2: [
-            { name: EVIL, colors: [[255, 0, 0], [0, 0, 255]] },
+            {
+              name: EVIL,
+              colors: [
+                [255, 0, 0],
+                [0, 0, 255],
+              ],
+            },
             { name: "Plain", colors: [[0, 255, 0]] },
           ],
         },
@@ -775,7 +961,9 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     );
     const album = () =>
       page.evaluate(() => {
-        const items = [...card.shadowRoot.querySelectorAll(".collection-album-item")];
+        const items = [
+          ...card.shadowRoot.querySelectorAll(".collection-album-item"),
+        ];
         const centre = items.find((item) => item.classList.contains("active"));
         return {
           count: items.length,
@@ -791,19 +979,42 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     await page.locator("yeelight-cube-clock-card .album-nav-next").click();
     const next = await album();
     assert.notEqual(next.centre, "Rainbow");
-    assert.equal(await page.evaluate(() => calls.length), 0, "album: browsing applies nothing");
-    await page.locator("yeelight-cube-clock-card .collection-album-item.active").click();
+    assert.equal(
+      await page.evaluate(() => calls.length),
+      0,
+      "album: browsing applies nothing",
+    );
+    await page
+      .locator("yeelight-cube-clock-card .collection-album-item.active")
+      .click();
     const applied = await waitForCall("set_clock_style", "album pick");
     assert.match(JSON.stringify(applied), new RegExp(next.centre));
     // A rotation step (the lamp reports another style) turns the album to it.
     await page.evaluate(async () => {
       const light = hass.states["light.a"];
-      hass = { ...hass, states: { ...hass.states, "light.a": { ...light, attributes: { ...light.attributes, clock_style: "White", clock_style_id: 4 } } } };
+      hass = {
+        ...hass,
+        states: {
+          ...hass.states,
+          "light.a": {
+            ...light,
+            attributes: {
+              ...light.attributes,
+              clock_style: "White",
+              clock_style_id: 4,
+            },
+          },
+        },
+      };
       card.hass = hass;
       await card.updateComplete;
       await new Promise((resolve) => setTimeout(resolve, 100));
     });
-    assert.equal((await album()).centre, "White", "album: follows the active style");
+    assert.equal(
+      (await album()).centre,
+      "White",
+      "album: follows the active style",
+    );
     // Item shape, button shape and wrap navigation reach the album.
     await page.evaluate(() =>
       mount("yeelight-cube-clock-card", {
@@ -817,20 +1028,28 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     );
     assert.deepEqual(
       await page.evaluate(() => ({
-        card: getComputedStyle(card.shadowRoot.querySelector(".collection-album-item")).borderTopLeftRadius,
-        arrow: getComputedStyle(card.shadowRoot.querySelector(".album-nav-prev")).borderTopLeftRadius,
+        card: getComputedStyle(
+          card.shadowRoot.querySelector(".collection-album-item"),
+        ).borderTopLeftRadius,
+        arrow: getComputedStyle(
+          card.shadowRoot.querySelector(".album-nav-prev"),
+        ).borderTopLeftRadius,
       })),
       { card: "0px", arrow: "0px" },
       "album: item and button shapes",
     );
     const firstIndex = await page.evaluate(() =>
-      [...card.shadowRoot.querySelectorAll(".collection-album-item")].findIndex((item) => item.classList.contains("active")),
+      [...card.shadowRoot.querySelectorAll(".collection-album-item")].findIndex(
+        (item) => item.classList.contains("active"),
+      ),
     );
     for (let i = 0; i <= firstIndex; i++)
       await page.locator("yeelight-cube-clock-card .album-nav-prev").click();
     assert.equal(
       await page.evaluate(() => {
-        const items = [...card.shadowRoot.querySelectorAll(".collection-album-item")];
+        const items = [
+          ...card.shadowRoot.querySelectorAll(".collection-album-item"),
+        ];
         return items.at(-1).classList.contains("active");
       }),
       true,
@@ -845,7 +1064,9 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         "sensor.presets": {
           state: "1",
           attributes: {
-            clock_presets: [{ id: "mine", name: "Mine", kind: "style", color: [10, 200, 30] }],
+            clock_presets: [
+              { id: "mine", name: "Mine", kind: "style", color: [10, 200, 30] },
+            ],
           },
         },
       };
@@ -865,22 +1086,33 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     await clockGrid({ allow_rename: true });
     const controls = await page.evaluate(() => {
       const of = (key) =>
-        card.shadowRoot.querySelector(`yc-collection-gallery .gallery-item[data-mode="${key}"]`);
+        card.shadowRoot.querySelector(
+          `yc-collection-gallery .gallery-item[data-mode="${key}"]`,
+        );
       const count = (node) => ({
         remove: node?.querySelectorAll(".yc-item-delete").length,
         rename: node?.querySelectorAll(".yc-item-rename").length,
       });
       return { mine: count(of("custom:mine")), builtin: count(of("Rainbow")) };
     });
-    assert.deepEqual(controls, {
-      mine: { remove: 1, rename: 1 },
-      builtin: { remove: 0, rename: 0 },
-    }, "only user-owned items get rename / delete");
-    const mine = 'yeelight-cube-clock-card yc-collection-gallery .gallery-item[data-mode="custom:mine"]';
+    assert.deepEqual(
+      controls,
+      {
+        mine: { remove: 1, rename: 1 },
+        builtin: { remove: 0, rename: 0 },
+      },
+      "only user-owned items get rename / delete",
+    );
+    const mine =
+      'yeelight-cube-clock-card yc-collection-gallery .gallery-item[data-mode="custom:mine"]';
     // Delete asks first and never selects the item.
     await page.locator(`${mine} .yc-item-delete`).click();
     await page.waitForTimeout(100);
-    assert.equal(await page.evaluate(() => calls.length), 0, "delete: nothing before confirming");
+    assert.equal(
+      await page.evaluate(() => calls.length),
+      0,
+      "delete: nothing before confirming",
+    );
     const bar = page.locator("yeelight-cube-clock-card .yc-item-manage");
     assert.match(await bar.innerText(), /Delete .Mine.\?/);
     await bar.locator('button:has-text("Delete")').click();
@@ -893,16 +1125,22 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     // Rename through the same bar.
     await page.evaluate(() => (calls.length = 0));
     await page.locator(`${mine} .yc-item-rename`).click();
-    const field = page.locator("yeelight-cube-clock-card .yc-item-manage input");
+    const field = page.locator(
+      "yeelight-cube-clock-card .yc-item-manage input",
+    );
     assert.equal(await field.inputValue(), "Mine");
     await field.fill("Ours");
     await field.press("Enter");
-    assert.deepEqual(
-      await waitForCall("save_clock_preset", "rename"),
-      { preset_id: "mine", name: "Ours", color: [10, 200, 30], kind: "style" },
-    );
+    assert.deepEqual(await waitForCall("save_clock_preset", "rename"), {
+      preset_id: "mine",
+      name: "Ours",
+      color: [10, 200, 30],
+      kind: "style",
+    });
     assert.equal(
-      await page.evaluate(() => calls.some((call) => call.service === "set_clock_style")),
+      await page.evaluate(() =>
+        calls.some((call) => call.service === "set_clock_style"),
+      ),
       false,
       "managing an item never applies it",
     );
@@ -913,7 +1151,10 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         const node = card.shadowRoot.querySelector(
           'yc-collection-gallery .gallery-item[data-mode="custom:mine"]',
         );
-        return [node.querySelectorAll(".yc-item-delete").length, node.querySelectorAll(".yc-item-rename").length];
+        return [
+          node.querySelectorAll(".yc-item-delete").length,
+          node.querySelectorAll(".yc-item-rename").length,
+        ];
       }),
       [0, 0],
     );
@@ -930,7 +1171,13 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
           state: "2",
           attributes: {
             palettes_v2: [
-              { name: "Warm", colors: [[255, 0, 0], [255, 160, 0]] },
+              {
+                name: "Warm",
+                colors: [
+                  [255, 0, 0],
+                  [255, 160, 0],
+                ],
+              },
               { name: "Sea", colors: [[0, 0, 255]] },
             ],
           },
@@ -952,18 +1199,23 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
       page.evaluate(() => {
         const gallery = card.shadowRoot.querySelector("yc-collection-gallery");
         return {
-          previews: gallery.querySelectorAll("[data-mode] yc-swatches.yc-palette-preview").length,
+          previews: gallery.querySelectorAll(
+            "[data-mode] yc-swatches.yc-palette-preview",
+          ).length,
           dots: [...gallery.querySelectorAll("yc-swatches")].reduce(
-            (sum, swatches) => sum + swatches.shadowRoot.querySelectorAll(".sw").length,
+            (sum, swatches) =>
+              sum + swatches.shadowRoot.querySelectorAll(".sw").length,
             0,
           ),
-          meta: [...gallery.querySelectorAll(".gallery-item-metadata")].map((node) =>
-            node.textContent.trim(),
+          meta: [...gallery.querySelectorAll(".gallery-item-metadata")].map(
+            (node) => node.textContent.trim(),
           ),
           grid: !!gallery.querySelector('.gc-preview-shell[data-columns="2"]'),
           border: gallery.dataset.itemBorder,
           radius: gallery.style.getPropertyValue("--yc-item-radius"),
-          empty: gallery.querySelector(".yc-gallery-empty")?.textContent.trim() || "",
+          empty:
+            gallery.querySelector(".yc-gallery-empty")?.textContent.trim() ||
+            "",
         };
       });
     // Every preview layout shows the palettes' own swatches.
@@ -975,7 +1227,10 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
       ["preview-wheel", 2],
       ["preview-album", 2],
     ]) {
-      await paletteCard({ style_selector_style: style, swatch_style: "square" });
+      await paletteCard({
+        style_selector_style: style,
+        swatch_style: "square",
+      });
       const look = await paletteView();
       assert.equal(look.previews, shown, `palette ${style}: previews`);
       assert.ok(look.dots >= shown, `palette ${style}: one swatch per color`);
@@ -993,64 +1248,102 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
       radius: "16px",
       empty: "",
     });
-    await paletteCard({ show_color_count: false, item_card_border: "none", rounded_cards: 4 });
+    await paletteCard({
+      show_color_count: false,
+      item_card_border: "none",
+      rounded_cards: 4,
+    });
     const plain = await paletteView();
-    assert.deepEqual([plain.meta, plain.border, plain.radius], [[], "false", "4px"]);
+    assert.deepEqual(
+      [plain.meta, plain.border, plain.radius],
+      [[], "false", "4px"],
+    );
     // Chips show each palette's blend.
     await paletteCard({ style_selector_style: "chips" });
     assert.match(
-      await page.evaluate(() =>
-        card.shadowRoot.querySelector('.mode-chip[data-mode="palette:0"] .mode-chip-swatch').style.background,
+      await page.evaluate(
+        () =>
+          card.shadowRoot.querySelector(
+            '.mode-chip[data-mode="palette:0"] .mode-chip-swatch',
+          ).style.background,
       ),
       /linear-gradient/,
       "palette chips: the palette's colors",
     );
     // Items are keyboard buttons: Enter applies the palette.
     await paletteCard({ style_selector_style: "preview-list" });
-    const sea = 'yeelight-cube-palette-card yc-collection-gallery .gallery-item[data-mode="palette:1"]';
+    const sea =
+      'yeelight-cube-palette-card yc-collection-gallery .gallery-item[data-mode="palette:1"]';
     assert.deepEqual(
-      await page.locator(sea).evaluate((node) => [node.getAttribute("role"), node.tabIndex, node.getAttribute("aria-label")]),
+      await page
+        .locator(sea)
+        .evaluate((node) => [
+          node.getAttribute("role"),
+          node.tabIndex,
+          node.getAttribute("aria-label"),
+        ]),
       ["button", 0, "Sea: Apply to the lamps"],
     );
     await page.locator(sea).focus();
     await page.keyboard.press("Enter");
-    assert.deepEqual(await waitForCall("load_palette", "keyboard pick"), { entity_id: "light.a", idx: 1, expected_name: "Sea" });
+    assert.deepEqual(await waitForCall("load_palette", "keyboard pick"), {
+      entity_id: "light.a",
+      idx: 1,
+      expected_name: "Sea",
+    });
     // Rename and delete through the shared bar (never by a single tap).
     await page.evaluate(() => (calls.length = 0));
-    await paletteCard({ style_selector_style: "preview-list", allow_rename: true });
-    const warm = 'yeelight-cube-palette-card yc-collection-gallery .gallery-item[data-mode="palette:0"]';
+    await paletteCard({
+      style_selector_style: "preview-list",
+      allow_rename: true,
+    });
+    const warm =
+      'yeelight-cube-palette-card yc-collection-gallery .gallery-item[data-mode="palette:0"]';
     await page.locator(`${warm} .yc-item-rename`).click();
-    const paletteField = page.locator("yeelight-cube-palette-card .yc-item-manage input");
+    const paletteField = page.locator(
+      "yeelight-cube-palette-card .yc-item-manage input",
+    );
     assert.equal(await paletteField.inputValue(), "Warm");
     await paletteField.fill("Hot");
     await paletteField.press("Enter");
-    assert.deepEqual(
-      await waitForCall("rename_palette", "palette rename"),
-      { idx: 0, name: "Hot", expected_name: "Warm" },
-    );
+    assert.deepEqual(await waitForCall("rename_palette", "palette rename"), {
+      idx: 0,
+      name: "Hot",
+      expected_name: "Warm",
+    });
     await page.locator(`${sea} .yc-item-delete`).click();
     await page.waitForTimeout(100);
     assert.equal(
-      await page.evaluate(() => calls.some((call) => call.service === "remove_palette")),
+      await page.evaluate(() =>
+        calls.some((call) => call.service === "remove_palette"),
+      ),
       false,
       "palette delete: nothing before confirming",
     );
-    await page.locator('yeelight-cube-palette-card .yc-item-manage button:has-text("Delete")').click();
-    assert.deepEqual(
-      await waitForCall("remove_palette", "palette delete"),
-      { idx: 1, expected_name: "Sea" },
-    );
+    await page
+      .locator(
+        'yeelight-cube-palette-card .yc-item-manage button:has-text("Delete")',
+      )
+      .click();
+    assert.deepEqual(await waitForCall("remove_palette", "palette delete"), {
+      idx: 1,
+      expected_name: "Sea",
+    });
     assert.equal(
-      await page.evaluate(() => calls.some((call) => call.service === "load_palette")),
+      await page.evaluate(() =>
+        calls.some((call) => call.service === "load_palette"),
+      ),
       false,
       "managing a palette never applies it",
     );
     // The shared export / import row (Palette here, Draw below: the same).
     assert.deepEqual(
       await page.evaluate(() =>
-        [...card.shadowRoot.querySelectorAll(".action-row button[data-action]")].map(
-          (button) => [button.dataset.action, button.title],
-        ),
+        [
+          ...card.shadowRoot.querySelectorAll(
+            ".action-row button[data-action]",
+          ),
+        ].map((button) => [button.dataset.action, button.title]),
       ),
       [
         ["export", "Export palettes to a JSON file"],
@@ -1066,19 +1359,31 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         style_selector_style: "preview-list",
       });
       const shown = () =>
-        [...card.shadowRoot.querySelectorAll('yc-collection-gallery [data-active-mode="true"]')].map(
-          (node) => node.dataset.mode,
-        );
+        [
+          ...card.shadowRoot.querySelectorAll(
+            'yc-collection-gallery [data-active-mode="true"]',
+          ),
+        ].map((node) => node.dataset.mode);
       const lamp = hass.states["light.a"];
       const showColors = async (text_colors) => {
-        hass.states = { ...hass.states, "light.a": { ...lamp, attributes: { ...lamp.attributes, text_colors } } };
+        hass.states = {
+          ...hass.states,
+          "light.a": {
+            ...lamp,
+            attributes: { ...lamp.attributes, text_colors },
+          },
+        };
         card.hass = hass;
         await card.updateComplete;
-        await card.shadowRoot.querySelector("yc-collection-gallery").updateComplete;
+        await card.shadowRoot.querySelector("yc-collection-gallery")
+          .updateComplete;
       };
       await showColors([[0, 0, 255]]);
       const sea = shown();
-      await showColors([[255, 0, 0], [255, 160, 0]]);
+      await showColors([
+        [255, 0, 0],
+        [255, 160, 0],
+      ]);
       const warm = shown();
       await showColors([[1, 2, 3]]);
       const none = shown();
@@ -1086,10 +1391,13 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
       card.setConfig({ ...card.config, gallery_sort: "name" });
       card.hass = hass;
       await card.updateComplete;
-      await card.shadowRoot.querySelector("yc-collection-gallery").updateComplete;
-      const order = [...card.shadowRoot.querySelectorAll("yc-collection-gallery .gallery-item[data-mode]")].map(
-        (node) => node.getAttribute("aria-label").split(":")[0],
-      );
+      await card.shadowRoot.querySelector("yc-collection-gallery")
+        .updateComplete;
+      const order = [
+        ...card.shadowRoot.querySelectorAll(
+          "yc-collection-gallery .gallery-item[data-mode]",
+        ),
+      ].map((node) => node.getAttribute("aria-label").split(":")[0]);
       return { sea, warm, none, order };
     });
     assert.deepEqual(paletteActive, {
@@ -1100,7 +1408,10 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     });
     // No palettes: the card says so.
     await page.evaluate(() => {
-      hass.states = { ...hass.states, "sensor.pal": { state: "0", attributes: { palettes_v2: [] } } };
+      hass.states = {
+        ...hass.states,
+        "sensor.pal": { state: "0", attributes: { palettes_v2: [] } },
+      };
     });
     await paletteCard({});
     assert.match((await paletteView()).empty, /No palettes found/);
@@ -1115,7 +1426,9 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         const root = swatches.shadowRoot;
         return {
           count: root.querySelectorAll("[data-index]").length,
-          pressed: [...root.querySelectorAll('[aria-pressed="true"]')].map((node) => node.getAttribute("aria-label")),
+          pressed: [...root.querySelectorAll('[aria-pressed="true"]')].map(
+            (node) => node.getAttribute("aria-label"),
+          ),
           hint: root.querySelector(".hint")?.textContent.trim() ?? null,
         };
       });
@@ -1130,19 +1443,49 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
           window.countsClicks = true;
           main.addEventListener("click", () => window.bubbled++);
         }
-        swatches.addEventListener("yc-swatch-select", (event) => picked.push(event.detail));
-        Object.assign(swatches, { onSelect: (hex, index) => picked.push({ via: "onSelect", hex, index }) }, props);
+        swatches.addEventListener("yc-swatch-select", (event) =>
+          picked.push(event.detail),
+        );
+        Object.assign(
+          swatches,
+          {
+            onSelect: (hex, index) =>
+              picked.push({ via: "onSelect", hex, index }),
+          },
+          props,
+        );
         main.append(swatches);
         await swatches.updateComplete;
       }, props);
-    const eight = [[255, 0, 0], "#00ff00", "rgb(0, 0, 255)", "#ffff00", "#ff00ff", "#00ffff", "#000000", "#ffffff"];
+    const eight = [
+      [255, 0, 0],
+      "#00ff00",
+      "rgb(0, 0, 255)",
+      "#ffff00",
+      "#ff00ff",
+      "#00ffff",
+      "#000000",
+      "#ffffff",
+    ];
     // A click and a key pick the same color (hex), once each way; the
     // picking click stays inside; the active color is marked.
-    await mountSwatches({ colors: eight, selectable: true, info: "name", active: "#ff0000" });
-    assert.deepEqual(await swatchesView(), { count: 8, pressed: ["red"], hint: "" });
+    await mountSwatches({
+      colors: eight,
+      selectable: true,
+      info: "name",
+      active: "#ff0000",
+    });
+    assert.deepEqual(await swatchesView(), {
+      count: 8,
+      pressed: ["red"],
+      hint: "",
+    });
     await page.locator("main yc-swatches [data-index='2']").click();
     assert.deepEqual(await page.evaluate(() => [picked, bubbled]), [
-      [{ via: "onSelect", hex: "#0000ff", index: 2 }, { color: "#0000ff", index: 2 }],
+      [
+        { via: "onSelect", hex: "#0000ff", index: 2 },
+        { color: "#0000ff", index: 2 },
+      ],
       0,
     ]);
     assert.equal((await swatchesView()).hint, "blue");
@@ -1152,9 +1495,11 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     // One Tab stop: arrow keys, Home and End move it; Enter picks.
     const tabStops = () =>
       page.evaluate(() =>
-        [...document.querySelector("main yc-swatches").shadowRoot.querySelectorAll('[tabindex="0"]')].map(
-          (node) => node.dataset.index,
-        ),
+        [
+          ...document
+            .querySelector("main yc-swatches")
+            .shadowRoot.querySelectorAll('[tabindex="0"]'),
+        ].map((node) => node.dataset.index),
       );
     assert.deepEqual(await tabStops(), ["1"]);
     await page.keyboard.press("ArrowRight");
@@ -1175,22 +1520,56 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     assert.equal((await swatchesView()).count, 8);
     assert.equal(await page.evaluate(() => picked.length), 0);
     // Gradient: its ticks pick the stops; free pick anywhere on the bar.
-    await mountSwatches({ colors: ["#000000", "#ffffff"], selectable: true, layout: "gradient", freePick: true });
+    await mountSwatches({
+      colors: ["#000000", "#ffffff"],
+      selectable: true,
+      layout: "gradient",
+      freePick: true,
+    });
     const blend = await page.locator("main yc-swatches .bar").boundingBox();
-    await page.mouse.click(blend.x + blend.width / 2, blend.y + blend.height / 2);
-    assert.deepEqual(await page.evaluate(() => picked.at(-1)), { color: "#808080", index: -1 });
+    await page.mouse.click(
+      blend.x + blend.width / 2,
+      blend.y + blend.height / 2,
+    );
+    assert.deepEqual(await page.evaluate(() => picked.at(-1)), {
+      color: "#808080",
+      index: -1,
+    });
     // Every layout picks through its own areas (gradient and fill: ticks).
-    for (const layout of ["grid", "scroll", "fan", "wave", "spiral", "gradient", "stripes", "fill", "honeycomb", "blinds", "treemap"]) {
+    for (const layout of [
+      "grid",
+      "scroll",
+      "fan",
+      "wave",
+      "spiral",
+      "gradient",
+      "stripes",
+      "fill",
+      "honeycomb",
+      "blinds",
+      "treemap",
+    ]) {
       await mountSwatches({ colors: eight, selectable: true, layout });
-      assert.equal((await swatchesView()).count, 8, `${layout}: a button per color`);
+      assert.equal(
+        (await swatchesView()).count,
+        8,
+        `${layout}: a button per color`,
+      );
       await page.locator("main yc-swatches [data-index='3']").click();
-      assert.equal(await page.evaluate(() => picked.at(-1)?.color), "#ffff00", `${layout}: pick`);
+      assert.equal(
+        await page.evaluate(() => picked.at(-1)?.color),
+        "#ffff00",
+        `${layout}: pick`,
+      );
     }
     // A preview (not selectable): no buttons, clicks reach the host.
     await mountSwatches({ colors: eight, layout: "row" });
     assert.equal((await swatchesView()).count, 0);
     await page.locator("main yc-swatches").click();
-    assert.deepEqual(await page.evaluate(() => [picked.length, bubbled]), [0, 1]);
+    assert.deepEqual(
+      await page.evaluate(() => [picked.length, bubbled]),
+      [0, 1],
+    );
     // Draw's color sections: the shared swatches with the card's options
     // (former names included); a pick is the drawing color.
     await page.evaluate(() =>
@@ -1206,27 +1585,74 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
       }),
     );
     const drawSwatches = "yeelight-cube-draw-card yc-swatches";
-    assert.equal(await page.locator(drawSwatches).getAttribute("layout"), "honeycomb");
+    assert.equal(
+      await page.locator(drawSwatches).getAttribute("layout"),
+      "honeycomb",
+    );
     await page.locator(`${drawSwatches} [data-index='1']`).click();
     assert.equal(await page.evaluate(() => card.selectedColor), "#0000ff");
     await page.waitForFunction(
-      (selector) => document.querySelector("main").firstElementChild.shadowRoot
-        .querySelector("yc-swatches").shadowRoot.querySelector('[aria-pressed="true"]')
-        ?.getAttribute("aria-label") === "#0000ff",
+      (selector) =>
+        document
+          .querySelector("main")
+          .firstElementChild.shadowRoot.querySelector("yc-swatches")
+          .shadowRoot.querySelector('[aria-pressed="true"]')
+          ?.getAttribute("aria-label") === "#0000ff",
       drawSwatches,
     );
 
     // --- Drag to reorder: one engine (reorder-drag.js), mouse and touch ------
-    // A mouse drag from the middle of `from` to the far part of `to` (after it).
+    // Where a user grabs `item`: the point nearest its centre where a press
+    // reaches the item itself, not a control inside it (a hex field, a
+    // button), after hovering it (hover styles move things). Never the bare
+    // centre: Linux's wider monospace font put the rows' hex field there and
+    // the press started no drag (CI only).
+    const grabPoint = async (item) => {
+      const box = await item.boundingBox();
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.waitForTimeout(50);
+      const point = await item.evaluate((el) => {
+        const r = el.getBoundingClientRect();
+        const root = el.getRootNode();
+        const controls =
+          "input, button, select, textarea, [contenteditable], a";
+        let best = null;
+        for (let ix = 1; ix < 20; ix++)
+          for (let iy = 1; iy < 8; iy++) {
+            const x = r.left + (r.width * ix) / 20;
+            const y = r.top + (r.height * iy) / 8;
+            const hit = root.elementFromPoint(x, y);
+            if (
+              !hit ||
+              !(hit === el || el.contains(hit)) ||
+              hit.closest(controls)
+            )
+              continue;
+            const d = Math.hypot(
+              x - (r.left + r.width / 2),
+              y - (r.top + r.height / 2),
+            );
+            if (!best || d < best.d) best = { x, y, d };
+          }
+        return best && { x: best.x, y: best.y };
+      });
+      assert.ok(point, "drag test: no grabbable point on the item");
+      return point;
+    };
+    // A mouse drag of `from` (grabbed like a user would) to the far part of
+    // `to` (after it).
     const mouseDrag = async (from, to, side = 0.8) => {
-      const a = await from.boundingBox();
-      const b = await to.boundingBox();
-      await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+      const a = await grabPoint(from);
+      await page.mouse.move(a.x, a.y);
       await page.mouse.down();
-      await page.mouse.move(a.x + a.width / 2 + 8, a.y + a.height / 2 + 2, { steps: 2 });
-      await page.mouse.move(b.x + b.width * side, b.y + b.height * side, { steps: 10 });
+      await page.mouse.move(a.x + 8, a.y + 2, { steps: 2 });
+      const b = await to.boundingBox();
+      await page.mouse.move(b.x + b.width * side, b.y + b.height * side, {
+        steps: 10,
+      });
       await page.waitForTimeout(60);
       await page.mouse.up();
+      return a;
     };
     // A finger drag (Pointer Events of type touch) on `selector` items, from
     // `from` (or its handle) to the far part of `to`.
@@ -1236,21 +1662,33 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
           const host = document.querySelector("main").firstElementChild;
           const scope = root === "host" ? host.shadowRoot : document;
           const items = [...scope.querySelectorAll(selector)];
-          const start = handle ? items[from].querySelector(handle) : items[from];
+          const start = handle
+            ? items[from].querySelector(handle)
+            : items[from];
           const a = start.getBoundingClientRect();
           const b = items[to].getBoundingClientRect();
           const send = (type, x, y, target = window) =>
             target.dispatchEvent(
               new PointerEvent(type, {
-                pointerId: 7, pointerType: "touch", isPrimary: true, button: 0,
-                bubbles: true, composed: true, clientX: x, clientY: y,
+                pointerId: 7,
+                pointerType: "touch",
+                isPrimary: true,
+                button: 0,
+                bubbles: true,
+                composed: true,
+                clientX: x,
+                clientY: y,
               }),
             );
           const x0 = a.left + a.width / 2;
           const y0 = a.top + a.height / 2;
           send("pointerdown", x0, y0, start);
           for (let step = 1; step <= 10; step++) {
-            send("pointermove", x0, y0 + ((b.top + b.height * 0.8 - y0) * step) / 10);
+            send(
+              "pointermove",
+              x0,
+              y0 + ((b.top + b.height * 0.8 - y0) * step) / 10,
+            );
             await new Promise((resolve) => requestAnimationFrame(resolve));
           }
           send("pointerup", x0, b.top + b.height * 0.8);
@@ -1262,7 +1700,12 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     // grabs it: the item, a label, a tile's handle) after the third.
     await page.evaluate(() => {
       window.savedTextColors = hass.states["light.a"].attributes.text_colors;
-      hass.states["light.a"].attributes.text_colors = [[255, 0, 0], [0, 255, 0], [0, 0, 255], [255, 255, 0]];
+      hass.states["light.a"].attributes.text_colors = [
+        [255, 0, 0],
+        [0, 255, 0],
+        [0, 0, 255],
+        [255, 255, 0],
+      ];
     });
     const colorList = "yeelight-cube-color-list-editor-card";
     for (const [layout, selector, grab, extra = {}] of [
@@ -1271,19 +1714,35 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
       ["tiles", ".tile-item", ".tile-drag-area"],
       ["compact", ".compact-item", ".compact-color-name"],
       ["grid", ".color-grid-item", ".color-grid-info"],
-      ["cards", ".card-wrapper .card-item", ".card-item", { card_arrangement: "spread" }],
-      ["cards", ".card-wrapper .card-item", ".card-item", { card_arrangement: "hand" }],
+      [
+        "cards",
+        ".card-wrapper .card-item",
+        ".card-item",
+        { card_arrangement: "spread" },
+      ],
+      [
+        "cards",
+        ".card-wrapper .card-item",
+        ".card-item",
+        { card_arrangement: "hand" },
+      ],
     ]) {
-      await page.evaluate(
-        ({ tag, config }) => mount(tag, config),
-        { tag: colorList, config: { entity: "light.a", list_layout: layout, ...extra } },
-      );
+      await page.evaluate(({ tag, config }) => mount(tag, config), {
+        tag: colorList,
+        config: { entity: "light.a", list_layout: layout, ...extra },
+      });
       // The colors shown (the card keeps its last saved order until the
       // lamp echoes it).
       const [c0, c1, c2, c3] = await page.evaluate(() => card._renderedColors);
       const items = page.locator(`${colorList} ${selector}`);
-      await mouseDrag(page.locator(`${colorList} ${grab}`).first(), items.nth(2));
-      const saved = await waitForCall("set_text_colors", `color list ${layout} ${extra.card_arrangement || ""}`);
+      await mouseDrag(
+        page.locator(`${colorList} ${grab}`).first(),
+        items.nth(2),
+      );
+      const saved = await waitForCall(
+        "set_text_colors",
+        `color list ${layout} ${extra.card_arrangement || ""}`,
+      );
       assert.deepEqual(
         saved.text_colors,
         [c1, c2, c0, c3],
@@ -1293,21 +1752,46 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     // Fan: the cards overlap; the card under the pointer is the one dragged
     // (and the only one that moves).
     await page.evaluate(
-      ({ tag }) => mount(tag, { entity: "light.a", list_layout: "cards", card_arrangement: "fan" }),
+      ({ tag }) =>
+        mount(tag, {
+          entity: "light.a",
+          list_layout: "cards",
+          card_arrangement: "fan",
+        }),
       { tag: colorList },
     );
     const fanCards = page.locator(`${colorList} .card-wrapper .card-item`);
     const fanShown = await page.evaluate(() => card._renderedColors);
-    const fanFrom = await fanCards.nth(0).boundingBox();
-    const grabbed = await page.evaluate(
-      ({ x, y }) => Number(card.shadowRoot.elementFromPoint(x, y).closest(".card-wrapper").dataset.position),
-      { x: fanFrom.x + fanFrom.width / 2, y: fanFrom.y + fanFrom.height / 2 },
-    );
+    // The card the press actually lands on (hover re-stacks the fan).
+    await page.evaluate(() => {
+      window.pressedCard = null;
+      window.addEventListener(
+        "pointerdown",
+        (event) => {
+          const wrapper = event.composedPath()[0].closest?.(".card-wrapper");
+          window.pressedCard = wrapper
+            ? Number(wrapper.dataset.position)
+            : null;
+        },
+        { capture: true, once: true },
+      );
+    });
     await mouseDrag(fanCards.nth(0), fanCards.nth(3));
-    const fanSaved = (await waitForCall("set_text_colors", "color list fan")).text_colors;
-    const without = (list, color) => list.filter((c) => c.join() !== color.join()).map((c) => c.join());
+    const grabbed = await page.evaluate(() => window.pressedCard);
+    assert.ok(
+      Number.isInteger(grabbed),
+      "color list fan: the press landed on a card",
+    );
+    const fanSaved = (await waitForCall("set_text_colors", "color list fan"))
+      .text_colors;
+    const without = (list, color) =>
+      list.filter((c) => c.join() !== color.join()).map((c) => c.join());
     assert.notDeepEqual(fanSaved, fanShown, "color list fan: reordered");
-    assert.deepEqual(without(fanSaved, fanShown[grabbed]), without(fanShown, fanShown[grabbed]), "color list fan: only the grabbed card moved");
+    assert.deepEqual(
+      without(fanSaved, fanShown[grabbed]),
+      without(fanShown, fanShown[grabbed]),
+      "color list fan: only the grabbed card moved",
+    );
     // A finger drags too (the first color before the third, rows).
     await page.evaluate(
       ({ tag }) => mount(tag, { entity: "light.a", list_layout: "rows" }),
@@ -1321,21 +1805,43 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     );
     // A press without a move is no drag: nothing saved.
     await page.evaluate(() => (calls.length = 0));
-    await page.locator(`${colorList} .row-item`).first().dispatchEvent("pointerdown", { pointerType: "mouse", isPrimary: true, button: 0 });
+    await page
+      .locator(`${colorList} .row-item`)
+      .first()
+      .dispatchEvent("pointerdown", {
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+      });
     await page.mouse.up();
     await page.waitForTimeout(100);
-    assert.equal(await page.evaluate(() => calls.filter((c) => c.service === "set_text_colors").length), 0);
-    await page.evaluate(() => (hass.states["light.a"].attributes.text_colors = savedTextColors));
+    assert.equal(
+      await page.evaluate(
+        () => calls.filter((c) => c.service === "set_text_colors").length,
+      ),
+      0,
+    );
+    await page.evaluate(
+      () => (hass.states["light.a"].attributes.text_colors = savedTextColors),
+    );
     // Editors: the shared ordered list (here Draw's tools order) by mouse
     // anywhere on a row, by finger on its handle; buttons never drag.
     const drawEditor = () =>
       page.evaluate(async () => {
-        const editor = await customElements.get("yeelight-cube-draw-card").getConfigElement();
+        const editor = await customElements
+          .get("yeelight-cube-draw-card")
+          .getConfigElement();
         editor.hass = hass;
-        editor.setConfig({ type: "custom:yeelight-cube-draw-card", entity: "light.a" });
+        editor.setConfig({
+          type: "custom:yeelight-cube-draw-card",
+          entity: "light.a",
+        });
         document.querySelector("main").replaceChildren(editor);
         window.editorConfig = null;
-        editor.addEventListener("config-changed", (event) => (editorConfig = event.detail.config));
+        editor.addEventListener(
+          "config-changed",
+          (event) => (editorConfig = event.detail.config),
+        );
         await editor.updateComplete;
         editor._open = { tools: true };
         await editor.updateComplete;
@@ -1343,10 +1849,14 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     await drawEditor();
     const toolRows = page
       .locator("yeelight-cube-draw-card-editor .orderable-list")
-      .filter({ has: page.locator(".orderable-list-name", { hasText: /^Pencil$/ }) })
+      .filter({
+        has: page.locator(".orderable-list-name", { hasText: /^Pencil$/ }),
+      })
       .locator(".orderable-list-row");
     assert.deepEqual(
-      (await toolRows.allTextContents()).map((text) => text.replace(/[⋮⤒▲▼⤓\s]+/g, " ").trim()).slice(0, 3),
+      (await toolRows.allTextContents())
+        .map((text) => text.replace(/[⋮⤒▲▼⤓\s]+/g, " ").trim())
+        .slice(0, 3),
       ["Color", "Pick", "Pencil"],
     );
     await mouseDrag(toolRows.nth(0), toolRows.nth(2));
@@ -1358,13 +1868,25 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     await page.evaluate(() => (editorConfig = null));
     await page.evaluate(async () => {
       const editor = document.querySelector("main").firstElementChild;
-      const rows = [...editor.shadowRoot.querySelectorAll(".orderable-list-row")].filter((row) =>
-        /Pencil|Pick|Color|Eraser/.test(row.textContent) && !row.querySelector(".collection-thumb"),
+      const rows = [
+        ...editor.shadowRoot.querySelectorAll(".orderable-list-row"),
+      ].filter(
+        (row) =>
+          /Pencil|Pick|Color|Eraser/.test(row.textContent) &&
+          !row.querySelector(".collection-thumb"),
       );
-      window.toolRowIndex = [...editor.shadowRoot.querySelectorAll(".orderable-list-row")].indexOf(rows[0]);
+      window.toolRowIndex = [
+        ...editor.shadowRoot.querySelectorAll(".orderable-list-row"),
+      ].indexOf(rows[0]);
     });
     const firstToolRow = await page.evaluate(() => toolRowIndex);
-    await touchDrag("host", ".orderable-list-row", firstToolRow, firstToolRow + 2, ".orderable-drag-handle");
+    await touchDrag(
+      "host",
+      ".orderable-list-row",
+      firstToolRow,
+      firstToolRow + 2,
+      ".orderable-drag-handle",
+    );
     assert.deepEqual(
       (await page.evaluate(() => editorConfig?.tools_order))?.slice(0, 3),
       ["pencil", "colorPicker", "eyedropper"],
@@ -1387,13 +1909,16 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     // section takes (stack), the panel's box and whether its content fits.
     const sampleHover = (act) =>
       page.evaluate(async (act) => {
-        const root = card.shadowRoot.querySelector("yc-preview-hover").shadowRoot;
+        const root =
+          card.shadowRoot.querySelector("yc-preview-hover").shadowRoot;
         const frames = [];
         let sampling = true;
         const sample = () => {
           const panel = root.querySelector(".panel");
           // The content (the panel's title fades in above it).
-          const box = panel?.querySelector(".panel-content").getBoundingClientRect();
+          const box = panel
+            ?.querySelector(".panel-content")
+            .getBoundingClientRect();
           frames.push({
             stack: root.querySelector(".stack").getBoundingClientRect().height,
             panel: box && { left: box.left, top: box.top, width: box.width },
@@ -1403,47 +1928,106 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         };
         const target = root.querySelector(`.preview[data-key="${act.key}"]`);
         const preview = target.getBoundingClientRect();
-        target.dispatchEvent(new PointerEvent(act.type, { pointerType: act.pointer || "mouse", bubbles: true, composed: true }));
+        target.dispatchEvent(
+          new PointerEvent(act.type, {
+            pointerType: act.pointer || "mouse",
+            bubbles: true,
+            composed: true,
+          }),
+        );
         sample();
         await new Promise((resolve) => setTimeout(resolve, act.wait || 700));
         // A slow machine: the motion may still run; wait for its end.
-        await Promise.all(root.getAnimations().map((animation) => animation.finished.catch(() => {})));
+        await Promise.all(
+          root
+            .getAnimations()
+            .map((animation) => animation.finished.catch(() => {})),
+        );
         await new Promise((resolve) => requestAnimationFrame(resolve));
         sampling = false;
-        return { frames, preview: { left: preview.left, top: preview.top, width: preview.width } };
+        return {
+          frames,
+          preview: {
+            left: preview.left,
+            top: preview.top,
+            width: preview.width,
+          },
+        };
       }, act);
     // Wait for the component's motion to end.
     const settleHover = () =>
       page.evaluate(async () => {
-        const root = card.shadowRoot.querySelector("yc-preview-hover").shadowRoot;
+        const root =
+          card.shadowRoot.querySelector("yc-preview-hover").shadowRoot;
         await new Promise((resolve) => setTimeout(resolve, 200));
-        await Promise.all(root.getAnimations().map((animation) => animation.finished.catch(() => {})));
+        await Promise.all(
+          root
+            .getAnimations()
+            .map((animation) => animation.finished.catch(() => {})),
+        );
       });
     const hoverState = () =>
       page.evaluate(() => {
-        const root = card.shadowRoot.querySelector("yc-preview-hover").shadowRoot;
+        const root =
+          card.shadowRoot.querySelector("yc-preview-hover").shadowRoot;
         return {
-          open: root.querySelector('.preview[aria-expanded="true"]')?.dataset.key || null,
-          heights: [...root.querySelectorAll(".preview")].map((node) => Math.round(node.getBoundingClientRect().height)),
-          keys: [...root.querySelectorAll(".preview")].map((node) => node.dataset.key),
-          empty: [...root.querySelectorAll(".preview.empty")].map((node) => node.dataset.key),
-          stack: Math.round(root.querySelector(".stack").getBoundingClientRect().height),
-          panel: root.querySelector(".panel:not(.closing) .title")?.textContent.trim() || null,
-          below: Math.round(card.shadowRoot.querySelector(".palettes").nextElementSibling?.getBoundingClientRect().top ?? 0),
+          open:
+            root.querySelector('.preview[aria-expanded="true"]')?.dataset.key ||
+            null,
+          heights: [...root.querySelectorAll(".preview")].map((node) =>
+            Math.round(node.getBoundingClientRect().height),
+          ),
+          keys: [...root.querySelectorAll(".preview")].map(
+            (node) => node.dataset.key,
+          ),
+          empty: [...root.querySelectorAll(".preview.empty")].map(
+            (node) => node.dataset.key,
+          ),
+          stack: Math.round(
+            root.querySelector(".stack").getBoundingClientRect().height,
+          ),
+          panel:
+            root
+              .querySelector(".panel:not(.closing) .title")
+              ?.textContent.trim() || null,
+          below: Math.round(
+            card.shadowRoot
+              .querySelector(".palettes")
+              .nextElementSibling?.getBoundingClientRect().top ?? 0,
+          ),
         };
       });
     const steady = (values, rising) =>
-      values.every((value, i) => i === 0 || (rising ? value >= values[i - 1] - 0.5 : value <= values[i - 1] + 0.5));
-    const moving = (values) => values.filter((value, i) => i && Math.abs(value - values[i - 1]) > 0.1).length;
+      values.every(
+        (value, i) =>
+          i === 0 ||
+          (rising
+            ? value >= values[i - 1] - 0.5
+            : value <= values[i - 1] + 0.5),
+      );
+    const moving = (values) =>
+      values.filter((value, i) => i && Math.abs(value - values[i - 1]) > 0.1)
+        .length;
     // In place: every closed preview the same height (empty ones too).
     await hoverDraw(false);
     const closed = await hoverState();
-    assert.ok(closed.empty.length > 0, "preview hover: an empty section to check");
-    assert.ok(closed.heights.every((h) => h > 0 && h === closed.heights[0]), `preview hover: closed heights ${closed.heights}`);
+    assert.ok(
+      closed.empty.length > 0,
+      "preview hover: an empty section to check",
+    );
+    assert.ok(
+      closed.heights.every((h) => h > 0 && h === closed.heights[0]),
+      `preview hover: closed heights ${closed.heights}`,
+    );
     // Each section (the last one too) opens from its own preview: the
     // panel's first frame lies on it (no jump), then the room opens steadily.
-    for (const key of closed.keys.filter((key) => !closed.empty.includes(key))) {
-      const { frames, preview } = await sampleHover({ type: "pointerenter", key });
+    for (const key of closed.keys.filter(
+      (key) => !closed.empty.includes(key),
+    )) {
+      const { frames, preview } = await sampleHover({
+        type: "pointerenter",
+        key,
+      });
       const first = frames.find((frame) => frame.panel)?.panel;
       assert.ok(
         Math.abs(first.left - preview.left) < 1 &&
@@ -1452,17 +2036,40 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         `preview hover ${key}: starts on its preview (${JSON.stringify([first, preview])})`,
       );
       const room = frames.map((frame) => frame.stack);
-      assert.ok(room.at(-1) > closed.stack + 10 && steady(room, true) && moving(room) >= 5, `preview hover ${key}: opens steadily`);
-      const panelLefts = frames.filter((frame) => frame.panel).map((frame) => frame.panel.left);
-      assert.ok(steady(panelLefts, key !== closed.keys[0] ? false : true), `preview hover ${key}: one direction only`);
+      assert.ok(
+        room.at(-1) > closed.stack + 10 &&
+          steady(room, true) &&
+          moving(room) >= 5,
+        `preview hover ${key}: opens steadily`,
+      );
+      const panelLefts = frames
+        .filter((frame) => frame.panel)
+        .map((frame) => frame.panel.left);
+      assert.ok(
+        steady(panelLefts, key !== closed.keys[0] ? false : true),
+        `preview hover ${key}: one direction only`,
+      );
       assert.equal((await hoverState()).open, key);
-      const closing = (await sampleHover({ type: "pointerleave", key })).frames.map((frame) => frame.stack);
-      assert.ok(steady(closing, false) && moving(closing) >= 5, `preview hover ${key}: closes steadily`);
-      assert.equal((await hoverState()).stack, closed.stack, `preview hover ${key}: closed again`);
+      const closing = (
+        await sampleHover({ type: "pointerleave", key })
+      ).frames.map((frame) => frame.stack);
+      assert.ok(
+        steady(closing, false) && moving(closing) >= 5,
+        `preview hover ${key}: closes steadily`,
+      );
+      assert.equal(
+        (await hoverState()).stack,
+        closed.stack,
+        `preview hover ${key}: closed again`,
+      );
     }
     // The open section picks colors.
     await sampleHover({ type: "pointerenter", key: "lamp", wait: 450 });
-    await page.locator("yeelight-cube-draw-card yc-preview-hover .panel yc-swatches [data-index='1']").click();
+    await page
+      .locator(
+        "yeelight-cube-draw-card yc-preview-hover .panel yc-swatches [data-index='1']",
+      )
+      .click();
     assert.equal(await page.evaluate(() => card.selectedColor), "#0000ff");
     await sampleHover({ type: "pointerleave", key: "lamp" });
     // An empty section opens and closes without ever going blank.
@@ -1471,48 +2078,111 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
       ...(await sampleHover({ type: "pointerenter", key: emptyKey })).frames,
       ...(await sampleHover({ type: "pointerleave", key: emptyKey })).frames,
     ].map((frame) => frame.stack);
-    assert.ok(Math.min(...emptyFrames) >= closed.stack - 0.5, `preview hover: empty section never blank (${Math.min(...emptyFrames)})`);
+    assert.ok(
+      Math.min(...emptyFrames) >= closed.stack - 0.5,
+      `preview hover: empty section never blank (${Math.min(...emptyFrames)})`,
+    );
     // The open section disappears (hidden on the card): nothing stays open.
-    await sampleHover({ type: "click", key: "lamp", pointer: "touch", wait: 450 });
+    await sampleHover({
+      type: "click",
+      key: "lamp",
+      pointer: "touch",
+      wait: 450,
+    });
     assert.deepEqual(
       await page.evaluate(async () => {
         const host = card.shadowRoot.querySelector("yc-preview-hover");
-        host.sections = host.sections.filter((section) => section.key !== "lamp");
+        host.sections = host.sections.filter(
+          (section) => section.key !== "lamp",
+        );
         await host.updateComplete;
         const root = host.shadowRoot;
-        return [!!root.querySelector(".panel"), root.querySelector(".stack").classList.contains("covered")];
+        return [
+          !!root.querySelector(".panel"),
+          root.querySelector(".stack").classList.contains("covered"),
+        ];
       }),
       [false, false],
       "preview hover: a removed open section closes",
     );
     await hoverDraw(false);
     // A finger (or a click) toggles; a tap outside closes; Enter / Escape.
-    await sampleHover({ type: "click", key: "lamp", pointer: "touch", wait: 450 });
+    await sampleHover({
+      type: "click",
+      key: "lamp",
+      pointer: "touch",
+      wait: 450,
+    });
     assert.equal((await hoverState()).open, "lamp", "preview hover: tap opens");
-    await page.evaluate(() => document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, composed: true })));
+    await page.evaluate(() =>
+      document.body.dispatchEvent(
+        new PointerEvent("pointerdown", { bubbles: true, composed: true }),
+      ),
+    );
     await settleHover();
-    assert.equal((await hoverState()).open, null, "preview hover: tap outside closes");
-    await page.locator('yeelight-cube-draw-card yc-preview-hover .preview[data-key="lamp"]').focus();
+    assert.equal(
+      (await hoverState()).open,
+      null,
+      "preview hover: tap outside closes",
+    );
+    await page
+      .locator(
+        'yeelight-cube-draw-card yc-preview-hover .preview[data-key="lamp"]',
+      )
+      .focus();
     await page.keyboard.press("Enter");
-    assert.equal((await hoverState()).open, "lamp", "preview hover: Enter opens");
+    assert.equal(
+      (await hoverState()).open,
+      "lamp",
+      "preview hover: Enter opens",
+    );
     await page.keyboard.press("Escape");
     await settleHover();
-    assert.equal((await hoverState()).open, null, "preview hover: Escape closes");
+    assert.equal(
+      (await hoverState()).open,
+      null,
+      "preview hover: Escape closes",
+    );
     // Overlay: nothing moves; switching previews never cuts the content.
     await hoverDraw(true);
     const still = await hoverState();
     await sampleHover({ type: "pointerenter", key: "lamp" });
     const over = await hoverState();
-    assert.equal(over.panel, "Lamp Palette", "overlay: the panel shows the section");
-    assert.deepEqual([over.stack, over.below], [still.stack, still.below], "overlay: nothing moves");
-    for (const key of [emptyKey, "lamp", "lampcolors"].filter((key) => still.keys.includes(key))) {
-      const { frames } = await sampleHover({ type: "pointerenter", key, wait: 400 });
-      assert.ok(frames.every((frame) => frame.fits), `overlay ${key}: the content is never cut`);
+    assert.equal(
+      over.panel,
+      "Lamp Palette",
+      "overlay: the panel shows the section",
+    );
+    assert.deepEqual(
+      [over.stack, over.below],
+      [still.stack, still.below],
+      "overlay: nothing moves",
+    );
+    for (const key of [emptyKey, "lamp", "lampcolors"].filter((key) =>
+      still.keys.includes(key),
+    )) {
+      const { frames } = await sampleHover({
+        type: "pointerenter",
+        key,
+        wait: 400,
+      });
+      assert.ok(
+        frames.every((frame) => frame.fits),
+        `overlay ${key}: the content is never cut`,
+      );
     }
-    assert.notEqual((await hoverState()).panel, null, "overlay: still open while switching");
+    assert.notEqual(
+      (await hoverState()).panel,
+      null,
+      "overlay: still open while switching",
+    );
     await sampleHover({ type: "pointerleave", key: "lamp", wait: 650 });
     assert.equal(
-      await page.evaluate(() => card.shadowRoot.querySelector("yc-preview-hover").shadowRoot.querySelector(".panel")),
+      await page.evaluate(() =>
+        card.shadowRoot
+          .querySelector("yc-preview-hover")
+          .shadowRoot.querySelector(".panel"),
+      ),
       null,
       "overlay: closed (panel gone after its motion)",
     );
@@ -1528,17 +2198,38 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
         ["yeelight-cube-palette-card", { palette_sensor: "sensor.pal" }],
         ["yeelight-cube-draw-card", { pixelart_sensor: "sensor.pixel" }],
       ])
-        for (const style of ["preview-grid", "preview-album", "preview-carousel", "preview-wheel", "dropdown"]) {
-          await mount(tag, { entity: "light.a", ...extra, style_selector_style: style, preview_size: 100 });
+        for (const style of [
+          "preview-grid",
+          "preview-album",
+          "preview-carousel",
+          "preview-wheel",
+          "dropdown",
+        ]) {
+          await mount(tag, {
+            entity: "light.a",
+            ...extra,
+            style_selector_style: style,
+            preview_size: 100,
+          });
           await new Promise((resolve) => setTimeout(resolve, 100));
           const width = card.getBoundingClientRect().width;
-          const gallery = card.shadowRoot.querySelector("yc-collection-gallery");
-          const arrow = gallery.querySelector(".carousel-nav-btn, .album-nav-btn, .wheel-nav-buttons button");
+          const gallery = card.shadowRoot.querySelector(
+            "yc-collection-gallery",
+          );
+          const arrow = gallery.querySelector(
+            ".carousel-nav-btn, .album-nav-btn, .wheel-nav-buttons button",
+          );
           results[`${tag.split("-")[2]} ${style}`] = {
-            wide: [...gallery.querySelectorAll(".gallery-item, .collection-album-item, .wheel-item")]
-              .filter((node) => node.getBoundingClientRect().width > width + 1).length,
+            wide: [
+              ...gallery.querySelectorAll(
+                ".gallery-item, .collection-album-item, .wheel-item",
+              ),
+            ].filter((node) => node.getBoundingClientRect().width > width + 1)
+              .length,
             arrow: arrow ? getComputedStyle(arrow).backgroundColor : "",
-            prompt: gallery.querySelector(".mode-select option[disabled]")?.textContent || "",
+            prompt:
+              gallery.querySelector(".mode-select option[disabled]")
+                ?.textContent || "",
             selected: gallery.querySelector(".mode-select")?.value || "",
           };
         }
@@ -1549,7 +2240,11 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
       assert.equal(look.wide, 0, `${view}: an item wider than the card`);
       if (/carousel|album|wheel/.test(view)) {
         assert.ok(look.arrow, `${view}: arrows`);
-        assert.notEqual(look.arrow, "rgb(27, 42, 78)", `${view}: arrows take the theme's card color`);
+        assert.notEqual(
+          look.arrow,
+          "rgb(27, 42, 78)",
+          `${view}: arrows take the theme's card color`,
+        );
       }
       // Palette: the lamp shows the first palette's colors (the active one,
       // selected); Draw: the canvas holds no pixel art (a prompt).
@@ -1561,7 +2256,10 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
 
     // --- Arrange: the user collections' order, one block in every editor -----
     await page.evaluate(() => {
-      window.savedCollections = [hass.states["sensor.pal"], hass.states["sensor.pixel"]];
+      window.savedCollections = [
+        hass.states["sensor.pal"],
+        hass.states["sensor.pixel"],
+      ];
       hass.states = {
         ...hass.states,
         "sensor.pal": {
@@ -1569,7 +2267,13 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
           attributes: {
             count: 3,
             palettes_v2: [
-              { name: "Warm", colors: [[255, 0, 0], [255, 160, 0]] },
+              {
+                name: "Warm",
+                colors: [
+                  [255, 0, 0],
+                  [255, 160, 0],
+                ],
+              },
               { name: "Sea", colors: [[0, 0, 255]] },
               { name: "<b>Bold</b>", colors: [[0, 255, 0]] },
             ],
@@ -1581,7 +2285,10 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
             count: 2,
             pixel_arts: [
               { name: "Heart", pixels: [{ position: 3, color: [255, 0, 0] }] },
-              { name: "Star", pixels: [{ position: [7, 8], color: [255, 255, 0] }] },
+              {
+                name: "Star",
+                pixels: [{ position: [7, 8], color: [255, 255, 0] }],
+              },
             ],
           },
         },
@@ -1593,41 +2300,82 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
           calls.length = 0;
           const editor = await customElements.get(tag).getConfigElement();
           editor.hass = hass;
-          editor.setConfig({ type: `custom:${tag}`, entity: "light.a", ...config });
+          editor.setConfig({
+            type: `custom:${tag}`,
+            entity: "light.a",
+            ...config,
+          });
           document.querySelector("main").replaceChildren(editor);
           await editor.updateComplete;
-          for (const section of editor.shadowRoot.querySelectorAll(".editor-card-header")) {
+          for (const section of editor.shadowRoot.querySelectorAll(
+            ".editor-card-header",
+          )) {
             section.click();
             await editor.updateComplete;
           }
           const rows = () =>
-            [...editor.shadowRoot.querySelectorAll(".orderable-list-row")].filter((row) =>
-              row.querySelector(".collection-thumb"),
+            [
+              ...editor.shadowRoot.querySelectorAll(".orderable-list-row"),
+            ].filter((row) => row.querySelector(".collection-thumb"));
+          const names = () =>
+            rows().map((row) =>
+              row.querySelector(".orderable-list-name").textContent.trim(),
             );
-          const names = () => rows().map((row) => row.querySelector(".orderable-list-name").textContent.trim());
           const before = names();
           const list = rows()[0].parentElement;
           const shape = {
             remove: rows().some((row) => row.querySelector("button.remove")),
-            add: list.nextElementSibling?.classList.contains("orderable-add-row") ?? false,
-            matrix: rows()[0].querySelector(".collection-thumb .gallery-matrix-preview")?.children.length ?? 0,
-            injected: !!editor.shadowRoot.querySelector(".orderable-list-row b"),
+            add:
+              list.nextElementSibling?.classList.contains(
+                "orderable-add-row",
+              ) ?? false,
+            matrix:
+              rows()[0].querySelector(
+                ".collection-thumb .gallery-matrix-preview",
+              )?.children.length ?? 0,
+            injected: !!editor.shadowRoot.querySelector(
+              ".orderable-list-row b",
+            ),
             // Every row shown (the editor scrolls, not the list).
             full: getComputedStyle(list).maxHeight === "none",
           };
-          rows()[0].querySelector(`button[title="${config.button || "Move down"}"]`).click();
+          rows()[0]
+            .querySelector(`button[title="${config.button || "Move down"}"]`)
+            .click();
           await editor.updateComplete;
-          return { before, after: names(), shape, calls: calls.map(({ service, data }) => ({ service, data })) };
+          return {
+            before,
+            after: names(),
+            shape,
+            calls: calls.map(({ service, data }) => ({ service, data })),
+          };
         },
         { tag, config },
       );
-    const paletteArrange = await arrange("yeelight-cube-palette-card", { palette_sensor: "sensor.pal" });
-    assert.deepEqual(paletteArrange.before, ["Warm", "Sea", "<b>Bold</b>"], "palettes listed in stored order");
-    assert.deepEqual(paletteArrange.shape, { remove: false, add: false, matrix: 0, injected: false, full: true }, "arrange: order only, names as text, every row shown");
-    assert.deepEqual(paletteArrange.after, ["Sea", "Warm", "<b>Bold</b>"], "the move shows at once");
+    const paletteArrange = await arrange("yeelight-cube-palette-card", {
+      palette_sensor: "sensor.pal",
+    });
+    assert.deepEqual(
+      paletteArrange.before,
+      ["Warm", "Sea", "<b>Bold</b>"],
+      "palettes listed in stored order",
+    );
+    assert.deepEqual(
+      paletteArrange.shape,
+      { remove: false, add: false, matrix: 0, injected: false, full: true },
+      "arrange: order only, names as text, every row shown",
+    );
+    assert.deepEqual(
+      paletteArrange.after,
+      ["Sea", "Warm", "<b>Bold</b>"],
+      "the move shows at once",
+    );
     assert.deepEqual(paletteArrange.calls, [
       // ▼ swaps two neighbours: one move (the same result either way).
-      { service: "move_palette", data: { from_idx: 1, to_idx: 0, expected_name: "Sea" } },
+      {
+        service: "move_palette",
+        data: { from_idx: 1, to_idx: 0, expected_name: "Sea" },
+      },
     ]);
     // ⤓ moves an item to the bottom in one guarded move.
     const toBottom = await arrange("yeelight-cube-palette-card", {
@@ -1636,18 +2384,38 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     });
     assert.deepEqual(toBottom.after, ["Sea", "<b>Bold</b>", "Warm"]);
     assert.deepEqual(toBottom.calls, [
-      { service: "move_palette", data: { from_idx: 0, to_idx: 2, expected_name: "Warm" } },
+      {
+        service: "move_palette",
+        data: { from_idx: 0, to_idx: 2, expected_name: "Warm" },
+      },
     ]);
-    const pixelArrange = await arrange("yeelight-cube-draw-card", { pixelart_sensor: "sensor.pixel" });
-    assert.deepEqual(pixelArrange.before, ["Heart", "Star"], "pixel arts listed in stored order");
-    assert.equal(pixelArrange.shape.matrix, 100, "pixel-art rows show their picture");
+    const pixelArrange = await arrange("yeelight-cube-draw-card", {
+      pixelart_sensor: "sensor.pixel",
+    });
+    assert.deepEqual(
+      pixelArrange.before,
+      ["Heart", "Star"],
+      "pixel arts listed in stored order",
+    );
+    assert.equal(
+      pixelArrange.shape.matrix,
+      100,
+      "pixel-art rows show their picture",
+    );
     assert.deepEqual(pixelArrange.after, ["Star", "Heart"]);
     assert.deepEqual(pixelArrange.calls, [
-      { service: "move_pixel_art", data: { from_idx: 1, to_idx: 0, expected_name: "Star" } },
+      {
+        service: "move_pixel_art",
+        data: { from_idx: 1, to_idx: 0, expected_name: "Star" },
+      },
     ]);
     await page.evaluate(() => {
       const [pal, pixel] = window.savedCollections;
-      hass.states = { ...hass.states, "sensor.pal": pal, "sensor.pixel": pixel };
+      hass.states = {
+        ...hass.states,
+        "sensor.pal": pal,
+        "sensor.pixel": pixel,
+      };
     });
 
     // --- Album settings reach the shared, static album CSS ------------------
@@ -1658,8 +2426,12 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
           await mount(tag, config);
           await new Promise((resolve) => setTimeout(resolve, 100));
           const root = card.shadowRoot;
-          const item = getComputedStyle(root.querySelector(`.${prefix}-album-item`));
-          const box = getComputedStyle(root.querySelector(`.${prefix}-album-container`));
+          const item = getComputedStyle(
+            root.querySelector(`.${prefix}-album-item`),
+          );
+          const box = getComputedStyle(
+            root.querySelector(`.${prefix}-album-container`),
+          );
           return {
             width: item.width,
             radius: item.borderTopLeftRadius,
@@ -1676,29 +2448,85 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
       remove_button_style: "red",
     };
     assert.deepEqual(
-      await albumLook("yeelight-cube-palette-card", { entity: "light.a", palette_sensor: "sensor.pal", display_mode: "album" }, "collection"),
+      await albumLook(
+        "yeelight-cube-palette-card",
+        {
+          entity: "light.a",
+          palette_sensor: "sensor.pal",
+          display_mode: "album",
+        },
+        "collection",
+      ),
       // The shared album at the palette's default Size (50%) and its former
       // 16 px card roundness (custom item radius).
-      { width: "218px", radius: "16px", padding: "28px 14px", perspective: "1200px" },
+      {
+        width: "218px",
+        radius: "16px",
+        padding: "28px 14px",
+        perspective: "1200px",
+      },
       "palette album defaults",
     );
     assert.deepEqual(
       // Former palette options, migrated to the shared gallery's (the Size
       // stays within its 30-100% range; delete buttons sit on the items).
-      await albumLook("yeelight-cube-palette-card", { entity: "light.a", palette_sensor: "sensor.pal", display_mode: "album", card_size: 150, ...tuned }, "collection"),
-      { width: "437px", radius: "0px", padding: "28px 14px", perspective: "none" },
+      await albumLook(
+        "yeelight-cube-palette-card",
+        {
+          entity: "light.a",
+          palette_sensor: "sensor.pal",
+          display_mode: "album",
+          card_size: 150,
+          ...tuned,
+        },
+        "collection",
+      ),
+      {
+        width: "437px",
+        radius: "0px",
+        padding: "28px 14px",
+        perspective: "none",
+      },
       "palette album settings",
     );
     assert.deepEqual(
-      await albumLook("yeelight-cube-draw-card", { entity: "light.a", pixelart_sensor: "sensor.pixel", pixel_art_gallery_mode: "album" }, "collection"),
-      { width: "240px", radius: "16px", padding: "28px 14px", perspective: "1200px" },
+      await albumLook(
+        "yeelight-cube-draw-card",
+        {
+          entity: "light.a",
+          pixelart_sensor: "sensor.pixel",
+          pixel_art_gallery_mode: "album",
+        },
+        "collection",
+      ),
+      {
+        width: "240px",
+        radius: "16px",
+        padding: "28px 14px",
+        perspective: "1200px",
+      },
       "pixel-art album defaults",
     );
     assert.deepEqual(
       // The former album size (240 px at 100%; 150 -> 82% of the shared
       // Size), delete buttons on the items.
-      await albumLook("yeelight-cube-draw-card", { entity: "light.a", pixelart_sensor: "sensor.pixel", pixel_art_gallery_mode: "album", pixel_art_preview_size: 150, ...tuned }, "collection"),
-      { width: "362px", radius: "0px", padding: "28px 14px", perspective: "none" },
+      await albumLook(
+        "yeelight-cube-draw-card",
+        {
+          entity: "light.a",
+          pixelart_sensor: "sensor.pixel",
+          pixel_art_gallery_mode: "album",
+          pixel_art_preview_size: 150,
+          ...tuned,
+        },
+        "collection",
+      ),
+      {
+        width: "362px",
+        radius: "0px",
+        padding: "28px 14px",
+        perspective: "none",
+      },
       "pixel-art album settings",
     );
 
@@ -1724,23 +2552,49 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
             return {
               cards: root.querySelectorAll("ha-card").length,
               plain: !!root.querySelector("ha-card.yc-card.yc-card-plain"),
-              title: root.querySelector(".yc-card-title")?.textContent.trim() ?? null,
-              status: root.querySelector(".yc-card-status")?.textContent.trim() ?? null,
-              notice: root.querySelector(".yc-card-notice")?.textContent.trim() ?? null,
-              muted: root.querySelector(".yc-card-muted")?.textContent.trim() ?? null,
+              title:
+                root.querySelector(".yc-card-title")?.textContent.trim() ??
+                null,
+              status:
+                root.querySelector(".yc-card-status")?.textContent.trim() ??
+                null,
+              notice:
+                root.querySelector(".yc-card-notice")?.textContent.trim() ??
+                null,
+              muted:
+                root.querySelector(".yc-card-muted")?.textContent.trim() ??
+                null,
             };
           },
           { tag, config },
         );
-      const lamp = { entity: "light.a", target_entities: ["light.a"], ...extra };
+      const lamp = {
+        entity: "light.a",
+        target_entities: ["light.a"],
+        ...extra,
+      };
       assert.deepEqual(
         await frame({ ...lamp, title: "Desk", show_lamp_status: true }),
-        { cards: 1, plain: false, title: "Desk", status: "Custom Draw", notice: null, muted: null },
+        {
+          cards: 1,
+          plain: false,
+          title: "Desk",
+          status: "Custom Draw",
+          notice: null,
+          muted: null,
+        },
         `${name}: shared header`,
       );
       assert.deepEqual(
         await frame({ ...lamp, show_card_background: false }),
-        { cards: 1, plain: true, title: null, status: null, notice: null, muted: null },
+        {
+          cards: 1,
+          plain: true,
+          title: null,
+          status: null,
+          notice: null,
+          muted: null,
+        },
         `${name}: no header without title/status, plain frame`,
       );
       if (name !== "draw" && name !== "palette")
@@ -1749,10 +2603,18 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
           "Select a Yeelight Cube lamp in the card editor.",
           `${name}: shared no-lamp notice`,
         );
-      const gone = { ...extra, entity: "light.gone", target_entities: ["light.gone"] };
+      const gone = {
+        ...extra,
+        entity: "light.gone",
+        target_entities: ["light.gone"],
+      };
       if (name === "clock" || name === "native-effects")
         // These stay usable (browse and preview) with the shared line.
-        assert.equal((await frame(gone)).muted, "Lamp unavailable", `${name}: unavailable line`);
+        assert.equal(
+          (await frame(gone)).muted,
+          "Lamp unavailable",
+          `${name}: unavailable line`,
+        );
       else if (name !== "draw" && name !== "palette")
         assert.match(
           (await frame(gone)).notice ?? "",
@@ -1771,8 +2633,11 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
           document.querySelector("main").replaceChildren(editor);
           await editor.updateComplete;
           const root = editor.shadowRoot;
-          const ids = [...root.querySelectorAll("#title, #show_card_background, #show_lamp_status")]
-            .map((el) => el.id);
+          const ids = [
+            ...root.querySelectorAll(
+              "#title, #show_card_background, #show_lamp_status",
+            ),
+          ].map((el) => el.id);
           const changes = [];
           editor.addEventListener("config-changed", (event) =>
             changes.push(event.detail.config),

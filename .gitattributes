@@ -1,0 +1,2 @@
+# Shell scripts run in Linux (CI, WSL): never check them out with CRLF.
+*.sh text eol=lf
