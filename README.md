@@ -503,6 +503,11 @@ Edit the ordered list of colors used by text display on the lamp. Add, delete, d
 
 <!-- card-docs:color-list-editor:variations:start -->
 <table>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/color-list-editor-overview.png" alt="Colors - Cards with hex codes, drag to reorder" width="280"><br>Cards with hex codes, drag to reorder</td>
+    <td valign="top"><img src="images/Cards/generated/color-list-editor-tiles.png" alt="Colors - Tiles with the add / shuffle / save actions" width="280"><br>Tiles with the add / shuffle / save actions</td>
+    <td valign="top"><img src="images/Cards/generated/color-list-editor-dark.png" alt="Colors - Dark theme: compact chips" width="280"><br>Dark theme: compact chips</td>
+  </tr>
 </table>
 <!-- card-docs:color-list-editor:variations:end -->
 
@@ -523,6 +528,11 @@ Edit the ordered list of colors used by text display on the lamp. Add, delete, d
 
 <!-- card-docs:color-list-editor:editors:start -->
 <table>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/color-list-editor-editor-global.png" alt="Colors - Global Settings" width="220"><br>Global Settings</td>
+    <td valign="top"><img src="images/Cards/generated/color-list-editor-editor-colorlist.png" alt="Colors - Color List Settings" width="220"><br>Color List Settings</td>
+    <td valign="top"><img src="images/Cards/generated/color-list-editor-editor-actions.png" alt="Colors - Add/Shuffle/Save Actions" width="220"><br>Add/Shuffle/Save Actions</td>
+  </tr>
 </table>
 <!-- card-docs:color-list-editor:editors:end -->
 
@@ -589,6 +599,11 @@ Select and configure gradient/color modes. Adjust gradient direction with an ang
 
 <!-- card-docs:gradient:variations:start -->
 <table>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/gradient-overview.png" alt="Gradient - Mode buttons, active mode and a rectangle angle control" width="280"><br>Mode buttons, active mode and a rectangle angle control</td>
+    <td valign="top"><img src="images/Cards/generated/gradient-chips.png" alt="Gradient - Chips with live gradient swatches and a compass" width="280"><br>Chips with live gradient swatches and a compass</td>
+    <td valign="top"><img src="images/Cards/generated/gradient-dark.png" alt="Gradient - Dark theme: dropdown, wheel and panel tabs" width="280"><br>Dark theme: dropdown, wheel and panel tabs</td>
+  </tr>
 </table>
 <!-- card-docs:gradient:variations:end -->
 
@@ -613,6 +628,16 @@ Select and configure gradient/color modes. Adjust gradient direction with an ang
 
 <!-- card-docs:gradient:editors:start -->
 <table>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/gradient-editor-global.png" alt="Gradient - Global Settings" width="220"><br>Global Settings</td>
+    <td valign="top"><img src="images/Cards/generated/gradient-editor-preview_appearance.png" alt="Gradient - Preview Appearance" width="220"><br>Preview Appearance</td>
+    <td valign="top"><img src="images/Cards/generated/gradient-editor-label.png" alt="Gradient - Active Mode Label" width="220"><br>Active Mode Label</td>
+  </tr>
+  <tr>
+    <td valign="top"><img src="images/Cards/generated/gradient-editor-mode.png" alt="Gradient - Mode Selector" width="220"><br>Mode Selector</td>
+    <td valign="top"><img src="images/Cards/generated/gradient-editor-panel.png" alt="Gradient - Apply to Whole Panel" width="220"><br>Apply to Whole Panel</td>
+    <td valign="top"><img src="images/Cards/generated/gradient-editor-angle.png" alt="Gradient - Angle Selector" width="220"><br>Angle Selector</td>
+  </tr>
 </table>
 <!-- card-docs:gradient:editors:end -->
 
