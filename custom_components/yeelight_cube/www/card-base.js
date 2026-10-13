@@ -7,11 +7,16 @@
  * - getConfigElement(): loads the card's editor on demand (`static editor`).
  * - this._commands: the card's ordered service queue (card-command-controller);
  *   override _commandsChanged() to follow its busy/error state.
+ * - callServiceOnTargetEntities(service, data, options): one call of a
+ *   yeelight_cube service for all the card's lamps, through that queue.
  * - this._targets: the lamps the card controls (target_entities, else entity).
  * - this._showCardBackground: the shared `show_card_background` option.
- * - _inputsChanged(inputs): whether anything the card reads from `hass` was
- *   replaced since the last call (Home Assistant hands out a new hass object
- *   on every state push anywhere).
+ * - _hassChanged(hass): whether a `hass` push changes anything the card
+ *   shows (Home Assistant hands out a new hass object on every state push
+ *   anywhere). What the card reads is its _hassInputs(hass) (default: its
+ *   config and its lamps' states; a card reading less or more overrides
+ *   it), plus the header's lamp status when shown. Every card's `set hass`
+ *   starts with it.
  * - _autoResolveSensor(key, fragment, hass): fills a missing collection-sensor
  *   option (palette_sensor, pixelart_sensor) from the entities.
  * - connectedCallback(): binds delegated data-on-* handlers when the card
@@ -37,6 +42,34 @@ export function cubeLampEntities(hass) {
     .map(([id]) => id);
 }
 
+const VALUE_KEYS = new WeakMap();
+
+/**
+ * A value to compare by content: its JSON, computed once per object. Home
+ * Assistant hands out new arrays (text_colors, matrix_colors...) with every
+ * attribute change of a lamp, so equal lists get equal keys while each array
+ * is stringified only once.
+ */
+export function valueKey(value) {
+  if (value === null || typeof value !== "object") return value;
+  let key = VALUE_KEYS.get(value);
+  if (key === undefined) {
+    key = JSON.stringify(value);
+    VALUE_KEYS.set(value, key);
+  }
+  return key;
+}
+
+/**
+ * Masonry height (50 px rows) of a card whose main part is a gallery, by its
+ * layout: the list and grid stack the most, the carousel the least.
+ */
+export function galleryCardSize(style) {
+  if (style === "preview-list" || style === "preview-grid") return 8;
+  if (style === "preview-wheel") return 5;
+  return 4;
+}
+
 export const YeelightCardMixin = (Base) =>
   class extends Base {
     /** [tag, module] of the card's editor, loaded on demand. */
@@ -59,15 +92,63 @@ export const YeelightCardMixin = (Base) =>
     /** Called when the command queue's busy/error state changes. */
     _commandsChanged() {}
 
+    /** One call of `service` for all the card's lamps (the backend runs
+     * them in parallel), through the command queue. Rejects on failure
+     * (Home Assistant has shown it). */
+    callServiceOnTargetEntities(service, data = {}, options = {}) {
+      return this._commands.request(this._hass, this.config, service, data, options);
+    }
+
     get _targets() {
       return getTargetEntities(this.config || {});
+    }
+
+    /** Height in masonry dashboards, in 50 px rows (static cardSize). */
+    getCardSize() {
+      return this.constructor.cardSize ?? 4;
+    }
+
+    /**
+     * Size in Sections dashboards: Home Assistant's default (full width,
+     * the content's height), never narrower than the card's minColumns of
+     * the 12 (static minColumns).
+     */
+    getGridOptions() {
+      return {
+        columns: 12,
+        rows: "auto",
+        min_columns: this.constructor.minColumns ?? 6,
+      };
     }
 
     get _showCardBackground() {
       return this.config?.show_card_background !== false;
     }
 
-    _inputsChanged(inputs) {
+    /**
+     * What the card shows from `hass`, compared value by value (=== : Home
+     * Assistant keeps unchanged state objects and attribute values by
+     * reference) with the previous push. Narrower inputs mean fewer renders.
+     */
+    _hassInputs(hass) {
+      return [this.config, ...this._targets.map((id) => hass?.states?.[id])];
+    }
+
+    /**
+     * Whether this `hass` changes anything the card shows: its _hassInputs,
+     * and the header's lamp status (card-shell.js) when shown. It records
+     * the inputs: call it once per `set hass`.
+     */
+    _hassChanged(hass) {
+      const lamp =
+        this.config?.show_lamp_status === true
+          ? hass?.states?.[this._targets[0]]
+          : undefined;
+      const inputs = [
+        ...this._hassInputs(hass),
+        lamp?.state,
+        lamp?.attributes?.content_mode,
+      ];
       const last = this._lastHassInputs;
       this._lastHassInputs = inputs;
       return (

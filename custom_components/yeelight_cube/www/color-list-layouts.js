@@ -343,7 +343,7 @@ export const ColorListLayoutsMixin = (Base) => class extends Base {
       default: {
         // Hand: poker-hand rows. Cards per row follow the card size:
         // at 70% (default) 120px cards fit 4 per row in ~600px.
-        const cardSizePercent = this.config.card_size || 70;
+        const cardSizePercent = this.config.preview_size || 70;
         const baseCardWidth = 171.43 * (cardSizePercent / 100);
         const cardsPerRow = Math.max(
           3,

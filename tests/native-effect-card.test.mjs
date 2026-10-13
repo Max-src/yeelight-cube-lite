@@ -5,6 +5,7 @@ import {
   previewAttributes,
 } from "../custom_components/yeelight_cube/www/offline-preview-state.js";
 import { resolvePreviewAppearance } from "../custom_components/yeelight_cube/www/preview-appearance.js";
+import { CARD_NAMES } from "../custom_components/yeelight_cube/www/card-list.js";
 import {
   CardCommandController,
   SUPERSEDED,
@@ -249,7 +250,7 @@ test("native unsaved color survives stale state echoes and unrelated updates", (
 });
 
 test("light slider settings share icon toggles and non-capsule value visibility", () => {
-  const [, params, body] = sourceFor("slider-control-utils.js").match(
+  const [, params, body] = sourceFor("slider-settings-ui.js").match(
     /export function renderLightSliderSettings\(([\s\S]*?)\) \{([\s\S]*?)\n\}/,
   );
   const render = new Function(
@@ -281,7 +282,7 @@ test("light slider settings share icon toggles and non-capsule value visibility"
 });
 
 test("shared slider conversions agree across cards and fix the speed 20/19 mismatch", () => {
-  const src = sourceFor("slider-control-utils.js");
+  const src = sourceFor("slider-values.js");
   const grabFn = (sig) => {
     const match = src.match(new RegExp(`function ${sig} \\{[\\s\\S]*?\\n\\}`));
     assert.ok(match, sig);
@@ -362,7 +363,7 @@ test("shared slider conversions agree across cards and fix the speed 20/19 misma
     /speedRawToPct\(attrs\.native_effect_speed/,
   );
   assert.match(
-    src,
+    sourceFor("slider-control-utils.js"),
     /valueMode: config\.slider_show_raw_value \? "raw" : "percent"/,
   );
   // The Lamp Preview gets the raw toggle (and the rest) from the shared
@@ -774,7 +775,7 @@ test("native editor sections follow the card and use shared conditional controls
   assert.doesNotMatch(source, /<details|<summary/);
   // Every editor builds on the shared editor base (collapsible sections,
   // config-changed, the lamp picker).
-  for (const card of ["clock", "native-effects", "lamp-preview", "draw", "gradient", "palette", "color-list-editor"])
+  for (const card of CARD_NAMES)
     assert.match(
       sourceFor(`yeelight-cube-${card}-card-editor.js`),
       /extends YeelightEditorMixin\(LitElement\)/,

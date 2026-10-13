@@ -217,8 +217,7 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
   _updateMatrixColors(gridColors, stateObj) {
     const dots = this._getLampDots();
     if (dots.length !== gridColors.length) {
-      // Mismatch - need full render
-      this._isInitialRenderComplete = false;
+      // The matrix is not rendered as expected yet: update the card.
       this._refresh();
       return;
     }
@@ -228,7 +227,6 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     const orientation = stateObj?.attributes?.device_orientation || "right";
     if (this._lastPreviewOrientation !== orientation) {
       this._lastPreviewOrientation = orientation;
-      this._isInitialRenderComplete = false;
       this._refresh();
       return;
     }
@@ -363,9 +361,10 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
     };
   }
 
-  // Lit matrix preview. The dots are keyed by the full-update generation (so
-  // every full update gets fresh nodes, like the former rebuild) and carry no
-  // bindings: _paintDots and the animation loops own their colors.
+  // Lit matrix preview. The dots are keyed by the configuration generation
+  // (fresh nodes for a new look: _paintDots skips colors a dot already has)
+  // and carry no bindings: _paintDots and the animation loops own their
+  // colors.
   _matrixTemplate(stateObj) {
     const { layout, alignClass, outerStyle, gridStyle } =
       this._matrixGeometry(stateObj);

@@ -5,6 +5,7 @@ import { exportImportButtonStyles } from "./action-button-utils.js";
 import { cardLayoutStyles } from "./card-layout-utils.js";
 import { orientationControlStyles } from "./orientation-control-utils.js";
 import { sliderControlStyles } from "./slider-control-utils.js";
+import { tabBarStyles } from "./tab-bar.js";
 
 const totalRows = 5;
 const totalCols = 20;
@@ -63,28 +64,7 @@ export const LAMP_PREVIEW_CSS = `
         box-shadow: none;
         background: transparent !important;
       }
-      .button-row {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        gap: 10px;
-        padding: 10px;
-        margin: 10px 0;
-      }
       ${orientationControlStyles}
-      .button-row.two-buttons {
-        justify-content: center;
-      }
-      .button-row .power-toggle-container,
-      .button-row .force-refresh-container {
-        padding: 0;
-        margin: 0;
-      }
-      .force-refresh-container {
-        display: inline-block;
-        text-align: center;
-        padding: 10px;
-      }
       .force-refresh-btn {
         cursor: pointer;
       }
@@ -101,41 +81,11 @@ export const LAMP_PREVIEW_CSS = `
          control CSS lives in the shared ./slider-control-utils.js module so
          the clock card and this card share one source of truth. */
       ${sliderControlStyles}
+      ${tabBarStyles}
       .brightness-value {
         font-size: 12px;
         color: var(--secondary-text-color);
         margin-top: 4px;
-      }
-      .adjustment-controls {
-        width: 100%;
-        padding: 8px 10px;
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
-      }
-      .color-effects-container {
-        width: 100%;
-        padding: 8px 10px;
-        display: flex;
-        flex-direction: column;
-        gap: 8px;
-      }
-      .effect-section {
-        border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.12));
-        border-radius: 8px;
-        overflow: hidden;
-        background: var(--card-background-color, #1c1c1c);
-      }
-      .effect-section-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 12px 14px;
-        background: var(--secondary-background-color, rgba(255, 255, 255, 0.05));
-        transition: background 0.2s;
-      }
-      .effect-section-header:hover {
-        background: var(--secondary-background-color, rgba(255, 255, 255, 0.08));
       }
       .section-header-left {
         display: flex;
@@ -145,107 +95,12 @@ export const LAMP_PREVIEW_CSS = `
         cursor: pointer;
         user-select: none;
       }
-      .expand-icon {
-        font-size: 12px;
-        transition: transform 0.2s;
-        color: var(--primary-color, #03a9f4);
-      }
       .section-title {
         font-size: 0.95em;
         font-weight: 600;
         color: var(--primary-text-color);
       }
-      .reset-section-button {
-        background: transparent;
-        border: 1px solid var(--divider-color, rgba(255, 255, 255, 0.12));
-        color: var(--primary-color, #03a9f4);
-        padding: 6px 8px;
-        border-radius: 4px;
-        cursor: pointer;
-        font-size: 14px;
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        transition: all 0.2s;
-      }
-      .reset-section-button:hover {
-        background: var(--primary-color, #03a9f4);
-        color: var(--text-primary-color, white);
-        border-color: var(--primary-color, #03a9f4);
-      }
-      .reset-section-button ha-icon {
-        width: 18px;
-        height: 18px;
-      }
-      .effect-section-content {
-        padding: 12px 14px;
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        transition: max-height 0.3s ease-out;
-      }
-      .adjustment-slider-row {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-      }
-      .adjustment-label {
-        font-size: 0.9em;
-        color: var(--primary-text-color);
-        font-weight: 500;
-      }
-      .adjustment-slider {
-        width: 100%;
-        height: 6px;
-        border-radius: 3px;
-        background: linear-gradient(to right, var(--disabled-text-color, #555), var(--divider-color, #aaa));
-        outline: none;
-        -webkit-appearance: none;
-        cursor: pointer;
-      }
-      .adjustment-slider::-webkit-slider-thumb {
-        -webkit-appearance: none;
-        appearance: none;
-        width: 16px;
-        height: 16px;
-        border-radius: 50%;
-        background: var(--primary-color, #2196f3);
-        cursor: pointer;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-      }
-      .adjustment-slider::-moz-range-thumb {
-        width: 16px;
-        height: 16px;
-        border-radius: 50%;
-        background: var(--primary-color, #2196f3);
-        cursor: pointer;
-        border: none;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-      }
-      .power-toggle-container {
-        text-align: center;
-        padding: 10px;
-        margin: 10px;
-      }
       
-      .power-toggle-container button:disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-      }
-      
-      @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-      }
-      
-      .spinning {
-        animation: spin 1s linear infinite;
-      }
-
-      .button-row .power-toggle-button {
-        margin: 0;
-      }
-
       /* === CHANGE INDICATOR === */
       .change-indicator {
         display: inline-block;
@@ -436,44 +291,8 @@ export const LAMP_PREVIEW_CSS = `
         padding: 12px;
         border-radius: 8px;
       }
-      .tab-headers {
-        display: flex;
-        gap: 4px;
-        border-bottom: 2px solid var(--divider-color, rgba(255, 255, 255, 0.12));
-        justify-content: space-around;
-      }
-      .tab-header {
-        background: transparent;
-        border: none;
-        padding: 10px 16px;
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 0.9em;
-        color: var(--secondary-text-color);
-        border-bottom: 3px solid transparent;
-        transition: all 0.2s;
-        font-weight: 500;
-        position: relative; /* For absolute positioning of indicator */
-      }
-      .tab-header:hover {
-        background: var(--secondary-background-color, rgba(255, 255, 255, 0.05));
-        color: var(--primary-text-color);
-      }
-      .tab-header.active {
-        color: var(--primary-color, #03a9f4);
-        border-bottom-color: var(--primary-color, #03a9f4);
-        font-weight: 600;
-      }
-      .tab-icon {
-        font-size: 16px;
-      }
-      .tab-title {
-        font-size: 0.95em;
-      }
       /* Change indicator in tab header - positioned absolutely to not affect layout */
-      .tab-header .change-indicator {
+      .yc-tab .change-indicator {
         position: absolute;
         top: 6px;
         right: 6px;
@@ -489,20 +308,6 @@ export const LAMP_PREVIEW_CSS = `
         display: flex;
         flex-direction: column;
         gap: 12px;
-      }
-      .tabbed-content-header {
-        display: flex;
-        align-items: center;
-        border-radius: 8px;
-      }
-      .tabbed-content-title {
-        margin: 0;
-        font-size: 1.1em;
-        font-weight: 600;
-        color: var(--primary-text-color);
-        display: flex;
-        align-items: center;
-        gap: 8px;
       }
       .tabbed-reset-button {
         padding: 4px 0;
@@ -1053,10 +858,6 @@ export const LAMP_PREVIEW_CSS = `
         /* margin-bottom: 6px; */
       }
 
-      .radial-effect-row-icon {
-        display: none; /* Icons removed */
-      }
-
       .radial-effect-row-label {
         flex: 1;
         font-size: 0.95em;
@@ -1383,18 +1184,4 @@ export const LAMP_PREVIEW_CSS = `
       }
 
       /* Responsive adjustments for circular layout */
-      @media (max-width: 768px) {
-        .effects-circular-container {
-          flex-direction: column;
-          align-items: center;
-        }
-
-        .circular-wheel-container {
-          margin-bottom: 16px;
-        }
-
-        .circular-slider-panel {
-          width: 100%;
-        }
-      }
 `;

@@ -93,6 +93,15 @@ class CardResourceTests(unittest.IsolatedAsyncioTestCase):
             [call.args[1] for call in self.extra_js.call_args_list],
         )
 
+    def test_the_registered_cards_are_the_shared_list(self):
+        names = _load_standalone_functions(
+            INIT_SOURCE, {"_read_card_names"},
+            {"os": os, "re": re, "__file__": str(ROOT / "__init__.py")},
+        )["_read_card_names"]()
+        self.assertEqual(7, len(names))
+        for name in names:
+            self.assertTrue((ROOT / "www" / f"yeelight-cube-{name}-card.js").is_file(), name)
+
     def test_cards_are_registered_at_startup_not_per_lamp(self):
         setup = INIT_SOURCE[INIT_SOURCE.index("async def async_setup("):INIT_SOURCE.index("async def _async_migrate_entity_unique_ids(")]
         entry = INIT_SOURCE[INIT_SOURCE.index("async def async_setup_entry("):]

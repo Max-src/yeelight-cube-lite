@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cubeLampEntities } from "../custom_components/yeelight_cube/www/card-base.js";
+import {
+  cubeLampEntities,
+  galleryCardSize,
+  valueKey,
+  YeelightCardMixin,
+} from "../custom_components/yeelight_cube/www/card-base.js";
 import {
   getTargetEntities,
   withTargetEntities,
@@ -220,4 +225,70 @@ test("item labels rename items on one card without changing their key", async ()
   assert.equal(itemLabel({ item_labels: { Mint: "   " } }, "Mint", "Mint"), "Mint");
   // Clearing the last label drops the option.
   assert.deepEqual(withItemLabel(config, "Rainbow", ""), { title: "Clock" });
+});
+
+test("a hass push counts only when something the card shows changed", () => {
+  const Card = YeelightCardMixin(class {
+    connectedCallback() {}
+  });
+  const card = new Card();
+  card.config = { entity: "light.a" };
+  const lamp = { state: "on", attributes: { content_mode: "Clock" } };
+  const hass = (states) => ({ states: { "light.a": lamp, "sensor.other": {}, ...states } });
+  assert.equal(card._hassChanged(hass()), true, "first push");
+  // Another entity changed: nothing this card shows.
+  assert.equal(card._hassChanged(hass({ "sensor.other": { state: "1" } })), false);
+  // Its lamp changed.
+  const next = { ...lamp, attributes: { content_mode: "Clock" } };
+  assert.equal(card._hassChanged(hass({ "light.a": next })), true);
+  // A card reading only some attributes: the header's status still counts.
+  card._hassInputs = (h) => [card.config, h.states["light.a"].attributes.text_colors];
+  card.config = { entity: "light.a", show_lamp_status: true };
+  card._hassChanged(hass({ "light.a": next }));
+  // Only an attribute it does not show changed (its brightness).
+  assert.equal(
+    card._hassChanged(hass({ "light.a": { ...next, attributes: { content_mode: "Clock", brightness: 3 } } })),
+    false,
+    "an attribute the card does not show",
+  );
+  assert.equal(
+    card._hassChanged(hass({ "light.a": { state: "on", attributes: { content_mode: "Native Effect" } } })),
+    true,
+    "the header's lamp status",
+  );
+});
+
+test("value keys compare lamp lists by content, each array stringified once", () => {
+  const colors = [[255, 0, 0], [0, 0, 255]];
+  assert.equal(valueKey(colors), valueKey(structuredClone(colors)));
+  assert.notEqual(valueKey(colors), valueKey([[255, 0, 0]]));
+  assert.equal(valueKey(undefined), undefined);
+  assert.equal(valueKey(42), 42);
+  const original = JSON.stringify;
+  let calls = 0;
+  JSON.stringify = (...args) => (calls++, original(...args));
+  try {
+    const list = [[1, 2, 3]];
+    valueKey(list);
+    valueKey(list);
+    assert.equal(calls, 1);
+  } finally {
+    JSON.stringify = original;
+  }
+});
+
+test("dashboard sizes come from the card base", () => {
+  class Card extends YeelightCardMixin(class {}) {}
+  class Small extends YeelightCardMixin(class {}) {
+    static cardSize = 2;
+    static minColumns = 3;
+  }
+  assert.equal(new Card().getCardSize(), 4);
+  assert.deepEqual(new Card().getGridOptions(), { columns: 12, rows: "auto", min_columns: 6 });
+  assert.equal(new Small().getCardSize(), 2);
+  assert.equal(new Small().getGridOptions().min_columns, 3);
+  assert.deepEqual(
+    ["preview-list", "preview-grid", "preview-wheel", "preview-carousel", "filled"].map(galleryCardSize),
+    [8, 8, 5, 4, 4],
+  );
 });

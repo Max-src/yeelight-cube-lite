@@ -138,3 +138,49 @@ test("former swatch options join the shared swatch_* names", () => {
   for (const old of ["palette_display_mode", "expand_btn_style", "blinds_direction", "gradient_free_pick"])
     assert.equal(old in draw, false);
 });
+
+test("the Color List joins the shared item radius and Size", () => {
+  const config = normalizeCardOptions({ rounded_cards: "rounded", card_size: 80 }, "color-list-editor");
+  assert.equal(config.item_radius, 4);
+  assert.equal(config.preview_size, 80);
+  assert.equal("rounded_cards" in config, false);
+  assert.equal("card_size" in config, false);
+  // Unset: the default look (16 px corners) stays unset.
+  assert.equal("item_radius" in normalizeCardOptions({ rounded_cards: true }, "color-list-editor"), false);
+  assert.equal(normalizeCardOptions({ rounded_cards: 0, item_radius: 9 }, "color-list-editor").item_radius, 9);
+});
+
+test("Draw's tool buttons join the shared shape names", () => {
+  for (const [old, shape] of [["circle", "round"], ["rect", "rounded"], ["square", "square"]]) {
+    const config = normalizeCardOptions({ button_shape: old, paint_button_shape: "rect" }, "draw");
+    assert.equal(config.tool_buttons_shape, shape, old);
+    assert.equal("button_shape" in config || "paint_button_shape" in config, false);
+  }
+  assert.equal(normalizeCardOptions({ button_shape: "circle", tool_buttons_shape: "square" }, "draw").tool_buttons_shape, "square");
+});
+
+test("older Gradient options arrive in today's names, for the card and its editor", () => {
+  const config = normalizeCardOptions({
+    rotary_unified_style: "square",
+    rectangle_shape: "rectangle",
+    compass_show_labels: false,
+    preview_display_mode: "wheel",
+    show_color_mode_selector: false,
+    panel_toggle_style: "segmented",
+  }, "gradient");
+  assert.equal(config.rotary_unified_style, "rectangle");
+  assert.equal(config.rectangle_shape, "square");
+  assert.equal(config.compass_labels_mode, "none");
+  assert.equal(config.style_selector_style, "preview-wheel");
+  assert.equal(config.show_panel_toggle, false);
+  assert.equal(config.panel_toggle_style, "tabs");
+  for (const old of ["compass_show_labels", "preview_display_mode", "show_color_mode_selector"])
+    assert.equal(old in config, false);
+  // A shape chosen since is kept; merged text styles become "filled".
+  const beam = normalizeCardOptions({ rotary_unified_style: "beam", compass_shape: "star", style_selector_style: "pills" }, "gradient");
+  assert.deepEqual([beam.rotary_unified_style, beam.compass_shape, beam.style_selector_style], ["compass", "star", "filled"]);
+  assert.equal(normalizeCardOptions({ rotary_unified_style: "arrow_window" }, "gradient").wheel_show_mask, true);
+  // Today's options are left as they are.
+  const current = normalizeCardOptions({ rotary_unified_style: "compass", style_selector_style: "preview-grid" }, "gradient");
+  assert.deepEqual([current.rotary_unified_style, current.style_selector_style, "compass_shape" in current], ["compass", "preview-grid", false]);
+});

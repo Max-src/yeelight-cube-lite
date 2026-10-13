@@ -135,54 +135,18 @@ export function initializeWheelNavigation(options) {
     // This ensures navigation stays in sync with rendering
     let itemHeight = 65; // fallback default
     let itemStep = 65; // effective step = height + margin (negative margin shrinks step)
-    let heightSource = "fallback";
-
-    if (wheelItems.length > 0) {
-      const firstItem = wheelItems[0];
-
-      // Check if element is actually rendered in DOM
-      if (!firstItem.offsetParent && firstItem.offsetHeight === 0) {
-        console.warn(
-          "[Wheel Config] First wheel item not rendered yet, using fallback height",
-          {
-            isCompact,
-            itemsCount: wheelItems.length,
-            offsetParent: firstItem.offsetParent,
-            offsetHeight: firstItem.offsetHeight,
-          },
-        );
-        heightSource = "fallback-not-rendered";
-      } else {
-        // Use offsetHeight which returns the full border-box height
-        // (matching the CSS `height` with `box-sizing: border-box`).
-        // getComputedStyle().height returns content-box height which is smaller
-        // and mismatches the values used in the HTML template.
-        const borderBoxHeight = firstItem.offsetHeight;
-
-        if (borderBoxHeight && borderBoxHeight > 0) {
-          itemHeight = borderBoxHeight;
-          // Read marginTop from second item (first item has margin:0, others have negative margin for overlap)
-          let marginTop = 0;
-          if (wheelItems.length > 1) {
-            const secondStyle = window.getComputedStyle(wheelItems[1]);
-            marginTop = parseFloat(secondStyle.marginTop) || 0;
-          }
-          itemStep = borderBoxHeight + marginTop;
-          heightSource = "dom-computed";
-        } else {
-          console.warn("[Wheel Config] Invalid offsetHeight, using fallback", {
-            offsetHeight: borderBoxHeight,
-            isCompact,
-          });
-          heightSource = "fallback-invalid-height";
-        }
-      }
-    } else {
-      console.warn(
-        "[Wheel Config] No wheel items found, using fallback height",
-        { isCompact },
-      );
-      heightSource = "fallback-no-items";
+    // Laid out (not in a closed section or a hidden tab): the first item's
+    // border-box height (offsetHeight, matching the template's
+    // box-sizing: border-box), and the step to the next item, whose
+    // negative margin makes them overlap.
+    const firstItem = wheelItems[0];
+    if (firstItem?.offsetHeight > 0) {
+      itemHeight = firstItem.offsetHeight;
+      const marginTop =
+        wheelItems.length > 1
+          ? parseFloat(window.getComputedStyle(wheelItems[1]).marginTop) || 0
+          : 0;
+      itemStep = itemHeight + marginTop;
     }
 
     const paddingTop =
@@ -192,16 +156,6 @@ export function initializeWheelNavigation(options) {
     // baseOffset centers the selected item: item center = paddingTop + n*itemStep + itemHeight/2
     // We want that at containerHeight/2, so offset = paddingTop + itemHeight/2 - containerHeight/2 + n*itemStep
     const baseOffset = paddingTop + itemHeight / 2 - containerHeight / 2;
-
-    // isCompact,
-    // itemHeight,
-    // heightSource,
-    // containerHeight,
-    // paddingTop,
-    // baseOffset,
-    // itemsCount: wheelItems.length,
-    // displayStyle: config.wheel_display_style,
-    // });
 
     return { isCompact, itemHeight, itemStep, containerHeight, baseOffset };
   };
@@ -271,30 +225,11 @@ export function initializeWheelNavigation(options) {
    * Update visual state of all wheel items based on current center index
    */
   const updateWheelState = () => {
-    // centerIndex: wheelCenterIndex,
-    // itemsCount: wheelItems.length,
-    // containerExists: !!wheelContainer,
-    // });
-
-    if (!wheelContainer) {
-      console.error("[Wheel State] Container not found, cannot update state");
-      return;
-    }
-
-    if (wheelItems.length === 0) {
-      console.error("[Wheel State] No wheel items found, cannot update state");
-      return;
-    }
+    // Nothing to place yet (an empty gallery, a wheel being rebuilt).
+    if (!wheelContainer || wheelItems.length === 0) return;
 
     const { itemStep, baseOffset } = getWheelConfig();
     const offset = baseOffset + wheelCenterIndex * itemStep;
-
-    // centerIndex: wheelCenterIndex,
-    // itemHeight,
-    // baseOffset,
-    // offset,
-    // containerTransform: `translateY(-${offset}px)`,
-    // });
 
     // Move container to position centered item
     wheelContainer.style.transform = `translateY(-${offset}px)`;
@@ -315,9 +250,6 @@ export function initializeWheelNavigation(options) {
         );
       }
     });
-
-    // centeredMode: wheelItems[wheelCenterIndex]?.dataset?.mode,
-    // });
   };
 
   // ============================================================================
@@ -337,13 +269,6 @@ export function initializeWheelNavigation(options) {
     } else {
       wheelCenterIndex = Math.min(totalItems - 1, wheelCenterIndex + 1);
     }
-
-    // direction,
-    // previousIndex,
-    // newIndex: wheelCenterIndex,
-    // totalItems,
-    // moved: previousIndex !== wheelCenterIndex,
-    // });
 
     updateWheelState();
 
@@ -371,25 +296,18 @@ export function initializeWheelNavigation(options) {
    */
   const syncWheelToMode = () => {
     if (!getCurrentMode) {
-      console.warn("[Wheel Sync] No getCurrentMode callback provided");
       return;
     }
 
     const currentMode = getCurrentMode();
     if (!currentMode) {
-      console.warn(
-        "[Wheel Sync] No current mode returned from callback — wheel stays at index",
-        wheelCenterIndex,
-      );
       return;
     }
 
     // Find the index of the current mode
     let foundIndex = 0;
-    const allModes = [];
     wheelItems.forEach((item, idx) => {
       const itemMode = item.dataset.mode;
-      allModes.push(itemMode);
       if (itemMode === currentMode) {
         foundIndex = idx;
       }
@@ -553,9 +471,6 @@ export function initializeWheelNavigation(options) {
   // ============================================================================
   // INITIALIZATION - Set initial state
   // ============================================================================
-
-  // displayMode,
-  // isCompact: (config.wheel_display_style || "default") === "compact",
 
   // Initialize wheel state
   if (immediate) {

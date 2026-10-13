@@ -3,7 +3,7 @@ import { renderModeControlSettings } from "./mode-controls-settings.js";
 import { lampActionConfig } from "./mode-controls-controller.js";
 import { orderableListStyles } from "./orderable-list-utils.js";
 import { renderOrientationSettings } from "./orientation-control-ui.js";
-import { LitElement, html, css } from "./lib/lit-all.js";
+import { LitElement, html } from "./lib/lit-all.js";
 import {
   createButtonGroup,
   createButtonGroupChangeHandler,
@@ -18,11 +18,10 @@ import {
   renderModeSettingsSection,
 } from "./editor_ui_utils.js";
 import {
-  formRowStyles,
   createToggleRow,
   createSliderRow,
 } from "./form-row-utils.js";
-import { renderLightSliderSettings } from "./slider-control-utils.js";
+import { renderLightSliderSettings } from "./slider-settings-ui.js";
 import { resolveCapsuleThickness } from "./capsule-slider-utils.js";
 import { normalizeCardOptions } from "./card-config.js";
 import { defineOnce } from "./card-registration.js";
@@ -42,26 +41,10 @@ class YeelightCubeLampPreviewCardEditor extends YeelightEditorMixin(LitElement) 
     this._open = {};
   }
 
+  // Unset options keep the card's defaults (each row reads them): only what
+  // the user changes is saved.
   setConfig(config) {
-    // Apply the same defaults as the card component
-    this._config = {
-      show_card_background: true,
-      size: "medium",
-      size_pct: 100, // Default matrix size to 100%
-      align: "center",
-      matrix_spacing_mode: "normal", // Default pixel spacing mode
-      matrix_background: "black", // Black background by default
-      matrix_box_shadow: true, // Keep matrix box shadow enabled
-      matrix_pixel_style: "square", // Default pixel style
-      buttons_style: "classic", // New: default style for all buttons
-      show_brightness: true, // Show brightness slider by default
-      slider_style: "slider", // Default brightness slider style
-      brightness_slider_appearance: "default", // Legacy slider appearance (migrated to thickness)
-      slider_thickness: 6, // Track thickness in px (2-20, replaces appearance)
-      slider_theme: "subtle", // Default brightness theme (matches section_style naming)
-      show_brightness_label: true, // Show "Brightness" label above slider
-      ...lampActionConfig(normalizeCardOptions(config, "lamp-preview")),
-    };
+    this._config = lampActionConfig(normalizeCardOptions(config, "lamp-preview"));
   }
 
   getConfig() {
@@ -81,7 +64,6 @@ class YeelightCubeLampPreviewCardEditor extends YeelightEditorMixin(LitElement) 
   static styles = [
     sharedEditorStyles,
     buttonGroupStyles,
-    formRowStyles,
     entitySelectorStyles,
     orderableListStyles,
   ];
@@ -170,7 +152,7 @@ class YeelightCubeLampPreviewCardEditor extends YeelightEditorMixin(LitElement) 
             ${createToggleRow(
               "Show Brightness Slider",
               "show_brightness",
-              cfg.show_brightness === true,
+              cfg.show_brightness !== false,
               (e) => this._onSwitchChange(e, e.target.id),
             )}
             ${renderLightSliderSettings(

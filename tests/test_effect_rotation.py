@@ -1,6 +1,7 @@
 """Server-side effect/clock rotation: entity loop and service wiring."""
 import asyncio
 import base64
+import copy
 import time
 import unittest
 from types import SimpleNamespace
@@ -55,6 +56,9 @@ def _rotation_helpers():
             "async_apply_display_mode",
             "_force_refresh_impl",
             "async_force_refresh",
+            "_save_display_state",
+            "_async_resume_display_rotation",
+            "_text_waits_for_matrix",
         },
         {
             "asyncio": asyncio,
@@ -77,6 +81,7 @@ def _rotation_helpers():
             "ROTATION_RESUME_TIMELINE_TTL": 300.0,
             "_ROTATING_LAMPS": {},
             "ROTATION_RESUME_BACKOFF": (30.0, 60.0, 120.0, 300.0),
+            "copy": copy,
         },
     )
 
@@ -159,6 +164,7 @@ def make_light(helpers, kind="native", is_on=True, extended=False):
         _cube_matrix=FakeCubeMatrix(),
         _calibration_lock=False,
         _music_flow_enabled=False,
+        _display_overlay=False,
         stop_scroll_timer=Mock(),
         _execute_hardware_op=AsyncMock(return_value=True),
         _activate_native_clock=AsyncMock(),
@@ -175,7 +181,10 @@ def make_light(helpers, kind="native", is_on=True, extended=False):
           "_apply_rotation_clock", "_rotation_current_name",
           "_save_rotation_state", "_device_store",
           "_restore_rotation_settings", "_async_resume_saved_rotation",
-          "set_rotation_interval", "_retime_rotation")
+          "set_rotation_interval", "_retime_rotation",
+          "_save_display_state", "_async_resume_display_rotation",
+          "_text_waits_for_matrix")
+    light._DISPLAY_STATE_ATTRS = ("_mode",)
     return light
 
 
@@ -479,6 +488,115 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(other._rotation_group)
         for lamp in (running, alone, other):
             lamp.stop_effect_rotation()
+
+    async def test_restore_state_resumes_the_saved_rotation_with_its_group(self):
+        # An automation saves the state, shows a message (a text stops the
+        # rotation), then restores it: the rotation runs again, on the
+        # schedule of the lamp that kept rotating.
+        items = ["Rainbow", "Kaleidoscope", "Tide"]
+        bottom = make_light(self.helpers, kind="clock")
+        top = make_light(self.helpers, kind="clock")
+        await bottom.start_effect_rotation(items, STEADY_INTERVAL, "clock")
+        await top.start_effect_rotation(items, STEADY_INTERVAL, "clock")
+        top._save_display_state()
+        self.assertEqual(
+            [item["name"] for item in top._saved_display_rotation["items"]], items
+        )
+        top.stop_effect_rotation()  # the message
+        bottom.skip_effect_rotation()  # the group moved on meanwhile
+        await top._async_resume_display_rotation()
+        self.assertTrue(top._rotation_active)
+        self.assertEqual(top._rotation_kind, "clock")
+        self.assertEqual(top._rotation_interval, STEADY_INTERVAL)
+        self.assertEqual(
+            top._rotation_scheduled_index(), bottom._rotation_scheduled_index()
+        )
+        for lamp in (top, bottom):
+            lamp.stop_effect_rotation()
+
+    async def test_restore_state_starts_no_rotation_that_was_not_running(self):
+        light = make_light(self.helpers, kind="clock")
+        light._save_display_state()  # nothing rotating
+        self.assertIsNone(light._saved_display_rotation)
+        light.start_effect_rotation = AsyncMock()
+        await light._async_resume_display_rotation()
+        light.start_effect_rotation.assert_not_awaited()
+        # Saved while rotating, but the lamp was turned off since, or the
+        # rotation still runs: nothing to start.
+        light._saved_display_rotation = {"kind": "clock", "items": [], "interval": 10}
+        for is_on, active in ((False, False), (True, True)):
+            light._is_on, light._rotation_active = is_on, active
+            await light._async_resume_display_rotation()
+        light.start_effect_rotation.assert_not_awaited()
+
+    async def test_a_text_over_the_firmware_clock_is_shown_only_as_an_overlay(self):
+        # A text pushed to a lamp showing its firmware clock (a sensor value)
+        # waits for the matrix; between save_state and restore_state (the
+        # phone-battery automation) it is shown.
+        light = make_light(self.helpers, kind="clock")
+        light._mode = "Clock"
+        self.assertTrue(light._text_waits_for_matrix())
+        light._save_display_state()
+        self.assertFalse(light._text_waits_for_matrix())
+        light._mode = "Solid Color"  # set_custom_text switched to text
+        self.assertFalse(light._text_waits_for_matrix())
+
+    async def test_the_firmware_guard_lets_an_overlay_text_through(self):
+        for overlay in (False, True):
+            with self.subTest(overlay=overlay):
+                light = make_light(self.helpers)
+                light._mode = "Solid Color"
+                light._in_native_fw_mode = True  # the panel still shows the clock
+                light._display_overlay = overlay
+                light._display_retry_count = 0
+                light.MAX_DISPLAY_RETRIES = 3
+                light._custom_text = "86"
+                light._transition_type = "none"
+                await self.helpers["async_apply_display_mode"](
+                    light, update_type="text_change"
+                )
+                self.assertEqual(light._execute_hardware_op.await_count, int(overlay))
+
+    async def test_set_custom_text_keeps_the_clock_and_its_rotation(self):
+        handler = _load_standalone_functions(
+            SERVICES_SOURCE, {"handle_set_custom_text"},
+            {
+                "_LOGGER": Mock(),
+                "TEXT_RENDER_MODES": CONSTANTS["TEXT_RENDER_MODES"],
+                "_resolve_entities": lambda call, label: [light],
+                "_fire_and_forget": lambda *coros: queued.extend(coros),
+            },
+        )["handle_set_custom_text"]
+        queued = []
+        light = make_light(self.helpers, kind="clock")
+        light.entity_id = "light.top"
+        light._mode = "Clock"
+        light._rotation_active = True
+        light._should_auto_turn_on = lambda: False
+        light._text_input_entity = None
+        light._mode_select_entity = None
+        light._pixel_art_select_entity = None
+        light._custom_pixels = None
+        light.async_schedule_update_ha_state = Mock()
+        await handler(SimpleNamespace(data={"text": "21.5", "entity_id": "light.top"}))
+        for coro in queued:
+            await coro
+        self.assertEqual(light._custom_text, "21.5")
+        self.assertEqual(light._mode, "Clock")
+        self.assertTrue(light._rotation_active)
+        light.async_apply_display_mode.assert_not_awaited()
+        # As an overlay (after save_state), the text is shown.
+        light._save_display_state()
+        await handler(SimpleNamespace(data={"text": "86", "entity_id": "light.top"}))
+        for coro in queued[1:]:
+            await coro
+        self.assertEqual(light._mode, "Solid Color")
+        light.async_apply_display_mode.assert_awaited_once_with(update_type="text_change")
+
+    def test_restore_state_service_resumes_the_rotation(self):
+        handler = SERVICES_SOURCE[SERVICES_SOURCE.index("async def handle_restore_state("):]
+        handler = handler[: handler.index("hass.services.async_register(")]
+        self.assertIn("_async_resume_display_rotation()", handler)
 
     async def test_content_change_cancels_pending_reconnect(self):
         light = make_light(self.helpers)
@@ -917,7 +1035,9 @@ class EffectRotationServiceTests(unittest.IsolatedAsyncioTestCase):
         )
         for coro in queued:
             await coro
-        target.start_effect_rotation.assert_awaited_once_with(["A", "B"], 45, "clock", timeline={}, group=None)
+        # One lamp: no schedule of its own, it joins the lamps running this
+        # rotation (see test_a_lamp_restarted_alone_joins_the_running_rotation).
+        target.start_effect_rotation.assert_awaited_once_with(["A", "B"], 45, "clock", timeline=None, group=None)
 
     async def test_one_start_on_several_lamps_records_their_group(self):
         targets = [
@@ -961,7 +1081,7 @@ class EffectRotationServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(scheduled), 1)
         target.start_effect_rotation.assert_not_awaited()
         await scheduled[0]
-        target.start_effect_rotation.assert_awaited_once_with(["A", "B"], 60, "native", timeline={}, group=None)
+        target.start_effect_rotation.assert_awaited_once_with(["A", "B"], 60, "native", timeline=None, group=None)
 
     async def test_start_failure_stops_only_the_failing_target(self):
         ok = SimpleNamespace(entity_id="light.a", start_effect_rotation=AsyncMock(), stop_effect_rotation=Mock())

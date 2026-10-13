@@ -501,15 +501,10 @@ Edit the ordered list of colors used by text display on the lamp. Add, delete, d
 <details>
 <summary>View card variations</summary>
 
+<!-- card-docs:color-list-editor:variations:start -->
 <table>
-  <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Colors-Card-Variation-1.png" alt="Colors card variation 1"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Colors-Card-Variation-2.png" alt="Colors card variation 2"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Colors-Card-Variation-3.png" alt="Colors card variation 3"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Colors-Card-Variation-4.png" alt="Colors card variation 4"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Colors-Card-Variation-5.png" alt="Colors card variation 5"></td>
-  </tr>
 </table>
+<!-- card-docs:color-list-editor:variations:end -->
 
 </details>
 
@@ -518,20 +513,18 @@ Edit the ordered list of colors used by text display on the lamp. Add, delete, d
 | Feature | Description |
 | :-- | :-- |
 | **Multi-entity support** | Control multiple lamps at the same time |
-| **Color list** | Add, remove, reorder with drag-and-drop. Multiple layout modes, optional hex/name display |
+| **Color list** | Add, remove, and reorder by dragging (mouse or touch, the same drag as the Draw and Palettes editors) in six layouts: Cards, Tiles, Rows, Grid, Compact, Chips. Optional hex/name display |
+| **Shared look** | **Size** and **Item Radius** like the other cards' galleries (older `card_size` / `rounded_cards` options migrate automatically) |
 | **Color edit** | Color picker or hex input |
 | **Actions** | Add, shuffle, and save as reusable palette |
 
 <details>
 <summary>View editor sections</summary>
 
+<!-- card-docs:color-list-editor:editors:start -->
 <table>
-  <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Colors-Card-Editor-1.png" alt="Colors card editor - Global Settings"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Colors-Card-Editor-2.png" alt="Colors card editor - Color List Settings"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Colors-Card-Editor-3.png" alt="Colors card editor - Add/Shuffle/Save Actions"></td>
-  </tr>
 </table>
+<!-- card-docs:color-list-editor:editors:end -->
 
 </details>
 
@@ -594,15 +587,10 @@ Select and configure gradient/color modes. Adjust gradient direction with an ang
 <details>
 <summary>View card variations</summary>
 
+<!-- card-docs:gradient:variations:start -->
 <table>
-  <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Gradient-Card-Variation-1.png" alt="Gradient card variation 1"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Gradient-Card-Variation-2.png" alt="Gradient card variation 2"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Gradient-Card-Variation-3.png" alt="Gradient card variation 3"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Gradient-Card-Variation-4.png" alt="Gradient card variation 4"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Gradient-Card-Variation-5.png" alt="Gradient card variation 5"></td>
-  </tr>
 </table>
+<!-- card-docs:gradient:variations:end -->
 
 </details>
 
@@ -615,26 +603,21 @@ Select and configure gradient/color modes. Adjust gradient direction with an ang
 | **Shared appearance axes** | **Shape** (Square / Rounded / Round) and **Size** apply consistently to every selector style — same design language as the other cards |
 | **Selection feedback** | The chosen item pulses while the command is in flight and settles once the lamp confirms |
 | **Active mode label** | Optional chip showing the currently active mode by name (handy when titles are hidden) |
-| **Mode visibility** | Hide modes you never use via per-mode eye toggles (edit mode in the card editor) |
 | **Apply to whole panel** | Independent toggle to apply gradients to the full panel instead of just the text |
-| **Angle selector** | Slider, number input, or rotary control (rectangle, wheel, compass, mini-matrix, capsule) |
+| **Angle selector** | Slider, number input, or a rotary control: rectangle or square, wheel (optional arrow window), compass (needle, beam, arrow, star or rectangle shapes, optional snapping to N/NE/E…), mini-matrix (optionally showing the lamp's text) or capsule. A lamp update never moves the angle you are dragging |
 
-> **Upgrading from an older version?** The former "Color Mode Selector" and "Gradient Preview" sections were merged into a single **Mode Selector** — they served the same purpose. Existing configs migrate automatically to the matching preview style; pick a text style in the editor if you prefer the old compact buttons. Text styles skip the preview computation entirely, making them noticeably lighter.
+> **Upgrading from an older version?** The former "Color Mode Selector" and "Gradient Preview" sections were merged into a single **Mode Selector** — they served the same purpose. Existing configs (including the former angle styles and selector layouts) migrate automatically, in the card and in its editor; pick a text style in the editor if you prefer the old compact buttons. Text styles skip the preview computation entirely, making them noticeably lighter.
 
 <details>
 <summary>View editor sections</summary>
 
+<!-- card-docs:gradient:editors:start -->
 <table>
-  <tr>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Gradient-Card-Editor-1.png" alt="Gradient card editor - Global Settings"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Gradient-Card-Editor-2.png" alt="Gradient card editor - Mode Selector"></td>
-    <td><img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Cards/Gradient-Card-Editor-3.png" alt="Gradient card editor - Angle Selector"></td>
-  </tr>
 </table>
+<!-- card-docs:gradient:editors:end -->
 
-The editor also has **Preview Appearance** (the shared matrix look, see
-[Shared Preview Appearance](SERVICES.md#shared-preview-appearance)),
-**Active Mode Label** and **Apply to Whole Panel** sections.
+**Preview Appearance** is the shared matrix look, see
+[Shared Preview Appearance](SERVICES.md#shared-preview-appearance).
 
 </details>
 

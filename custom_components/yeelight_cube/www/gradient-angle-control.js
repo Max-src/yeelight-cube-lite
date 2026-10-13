@@ -89,8 +89,8 @@ export const AngleControlMixin = (Base) => class extends Base {
     this._angleDragStart(e, true);
   }
 
-  // Block renders while the user is focused on the angle input so DOM
-  // updates don't fight the typing.
+  // Renders wait while the user types an angle (_angleBusy) so they never
+  // fight the typing.
   _onAngleAreaFocusIn(e) {
     if (e.target?.id === "angleinput") this._typingAngle = true;
   }
@@ -186,10 +186,6 @@ export const AngleControlMixin = (Base) => class extends Base {
     if (unifiedStyle) {
       // New unified format
       switch (unifiedStyle) {
-        case "turning_rectangle":
-          return { style: "compass", shape: null };
-        case "star":
-          return { style: "compass", shape: null };
         case "wheel":
           return { style: "wheel", shape: null };
         case "rectangle":
@@ -197,22 +193,12 @@ export const AngleControlMixin = (Base) => class extends Base {
             style: this.config.rectangle_shape === "square" ? "square" : "rect",
             shape: null,
           };
-        case "square":
-          // Backward compat: old standalone square → rectangle with square shape
-          return { style: "square", shape: null };
         case "matrix_preview":
           return { style: "matrix_preview", shape: null };
         case "compass":
           return { style: "compass", shape: null };
         case "capsule":
           return { style: "capsule", shape: null };
-        // Backward compat: deprecated styles now merged into wheel/compass
-        case "arrow_window":
-          return { style: "wheel", shape: null };
-        case "arrow":
-          return { style: "compass", shape: null };
-        case "beam":
-          return { style: "compass", shape: null };
         default:
           return { style: "compass", shape: null };
       }
@@ -224,31 +210,17 @@ export const AngleControlMixin = (Base) => class extends Base {
     }
   }
 
+  // Older angle styles arrive in today's names (normalizeCardOptions).
   _getWheelShowMask() {
-    // Explicit setting takes priority
-    if (this.config.wheel_show_mask !== undefined)
-      return this.config.wheel_show_mask;
-    // Backward compat: arrow_window implies mask
-    return this.config.rotary_unified_style === "arrow_window";
+    return this.config.wheel_show_mask === true;
   }
 
   _getCompassShape() {
-    if (this.config.compass_shape) return this.config.compass_shape;
-    // Backward compat from deprecated unified styles
-    if (this.config.rotary_unified_style === "beam") return "beam";
-    if (this.config.rotary_unified_style === "arrow") return "arrow";
-    if (this.config.rotary_unified_style === "star") return "star";
-    if (this.config.rotary_unified_style === "turning_rectangle")
-      return "rectangle";
-    return "none"; // default
+    return this.config.compass_shape || "none";
   }
 
   _getCompassLabelsMode() {
-    if (this.config.compass_labels_mode) return this.config.compass_labels_mode;
-    // Backward compat: boolean compass_show_labels
-    if (this.config.compass_show_labels !== undefined)
-      return this.config.compass_show_labels ? "under" : "none";
-    return "under"; // default
+    return this.config.compass_labels_mode || "under";
   }
 
   _getRotarySize() {

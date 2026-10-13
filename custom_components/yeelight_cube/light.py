@@ -559,6 +559,11 @@ class YeelightCubeLight(
         # then restore the original.  Overwritten each time save_state runs.
         # In-memory only -- does not survive a Home Assistant restart.
         self._saved_display_state = None
+        # The rotation running when it was saved (restarted by restore_state).
+        self._saved_display_rotation = None
+        # Between save_state and restore_state: what an automation shows is
+        # deliberate (a text is shown even over the firmware clock).
+        self._display_overlay = False
         self._last_sent_colors = None            # List of 100 RGB tuples last sent to lamp
         self._current_update_type = 'display_update'  # Tracks current operation type for transition logic
         
@@ -1875,7 +1880,7 @@ class YeelightCubeLight(
         if self.hass is not None:
             self.async_schedule_update_ha_state()
         
-        if self._is_on:
+        if self._is_on and not self._text_waits_for_matrix():
             await self.async_apply_display_mode(update_type='text_change')
 
     async def async_apply_display_mode(self, update_type: str = 'display_update', bypass_lock: bool = False):
@@ -1933,6 +1938,8 @@ class YeelightCubeLight(
             and self._mode not in FIRMWARE_MODES
             and update_type in _NATIVE_COMPETING_UPDATE_TYPES
             and not bypass_lock
+            # save_state ... restore_state: the automation shows it on purpose.
+            and not self._display_overlay
         ):
             _LOGGER.debug(
                 "[DISPLAY] [%s] Update '%s' suppressed -- lamp is in a firmware-native "

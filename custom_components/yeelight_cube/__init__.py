@@ -2,6 +2,7 @@ import logging
 import os
 import asyncio
 import mimetypes
+import json
 import re
 import socket as _socket_module
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP # type: ignore
@@ -26,16 +27,21 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 STORAGE_VERSION = 1
 STORAGE_KEY = f"{DOMAIN}.storage"
 
-# Frontend card JS files to auto-register as Lovelace resources
+def _read_card_names() -> list:
+    """The cards' names, from the list shared with the frontend and the tests
+    (www/card-list.js). Read once, when Home Assistant imports the
+    integration (outside its event loop)."""
+    path = os.path.join(os.path.dirname(__file__), "www", "card-list.js")
+    with open(path, encoding="utf-8") as file:
+        source = file.read()
+    return json.loads(re.search(r"CARD_NAMES = (\[.*?\]);", source, re.S).group(1))
+
+
+# Frontend JS files to auto-register as Lovelace resources: the diagnostics
+# first, then every card.
 FRONTEND_CARD_FILES = [
     "frontend-diagnostics.js",
-    "yeelight-cube-lamp-preview-card.js",
-    "yeelight-cube-gradient-card.js",
-    "yeelight-cube-draw-card.js",
-    "yeelight-cube-palette-card.js",
-    "yeelight-cube-color-list-editor-card.js",
-    "yeelight-cube-clock-card.js",
-    "yeelight-cube-native-effects-card.js",
+    *(f"yeelight-cube-{name}-card.js" for name in _read_card_names()),
 ]
 
 FRONTEND_URL_BASE = f"/{DOMAIN}"

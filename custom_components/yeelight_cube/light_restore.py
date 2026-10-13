@@ -7,6 +7,8 @@ the save_state / restore_state actions. Mixed into YeelightCubeLight.
 import logging
 import copy
 
+from homeassistant.exceptions import HomeAssistantError  # type: ignore
+
 from .const import (
     ALL_NATIVE_EFFECTS,
     CLOCK_COLOR_MODES,
@@ -306,12 +308,27 @@ class StateRestoreMixin:
             attr: copy.deepcopy(getattr(self, attr, None))
             for attr in self._DISPLAY_STATE_ATTRS
         }
+        # Until restore_state, what is shown is a deliberate overlay (see
+        # _text_waits_for_matrix).
+        self._display_overlay = True
+        # The rotation running now: what is shown in between (a text, a
+        # pixel art...) stops it, so restore_state starts it again.
+        self._saved_display_rotation = (
+            {
+                "kind": self._rotation_kind,
+                "items": [dict(item) for item in self._rotation_items],
+                "interval": self._rotation_interval,
+            }
+            if self._rotation_active or self._rotation_resume_pending
+            else None
+        )
 
     def _restore_display_state(self):
         """Restore attributes from the saved snapshot and refresh linked
         helper entities.  Returns True if a snapshot existed, False otherwise.
         The caller is responsible for triggering the hardware re-render."""
         snapshot = self._saved_display_state
+        self._display_overlay = False
         if not snapshot:
             return False
         for attr, value in snapshot.items():
@@ -328,3 +345,37 @@ class StateRestoreMixin:
         self.stop_scroll_timer()
         self._refresh_linked_entities()
         return True
+
+    def _text_waits_for_matrix(self) -> bool:
+        """A text sent while the lamp shows its firmware clock / native effect
+        is kept for when it shows text again, without leaving that mode (an
+        automation pushing a sensor value must not take the clock over, stop
+        its rotation, or report a mode the panel does not show). Between
+        save_state and restore_state it is a deliberate overlay: shown."""
+        return self._mode in FIRMWARE_MODES and not self._display_overlay
+
+    async def _async_resume_display_rotation(self) -> None:
+        """After restore_state: start again the rotation that ran when the
+        state was saved, if it no longer runs and the lamp is on. Started
+        alone, it joins the lamps still running it (same item, same steps)."""
+        saved = getattr(self, "_saved_display_rotation", None)
+        if (
+            not saved
+            or self._rotation_active
+            or self._rotation_resume_pending
+            or not self._is_on
+        ):
+            return
+        try:
+            await self.start_effect_rotation(
+                saved["items"], saved["interval"], saved["kind"]
+            )
+            _LOGGER.info(
+                "[RESTORE_STATE] [%s] Resumed the %s rotation", self._ip, saved["kind"]
+            )
+        except HomeAssistantError as err:
+            # An unreachable lamp: the health check resumes a rotation it holds.
+            _LOGGER.warning(
+                "[RESTORE_STATE] [%s] Could not resume the %s rotation: %s",
+                self._ip, saved["kind"], err,
+            )

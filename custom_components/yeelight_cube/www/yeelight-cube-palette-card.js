@@ -9,7 +9,7 @@ import {
 } from "./palette-data-utils.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { normalizeCardOptions } from "./card-config.js";
-import { CollectionStore } from "./user-collections.js";
+import { CollectionStore, collectionSensor } from "./user-collections.js";
 import { getTargetEntities } from "./service-call-utils.js";
 import "./collection-gallery.js";
 import "./yc-swatches.js";
@@ -29,6 +29,7 @@ const paletteIndex = (key) => Number(String(key).slice("palette:".length));
 
 class YeelightCubePaletteCard extends YeelightCardMixin(LitElement) {
   static editor = ["yeelight-cube-palette-card-editor", "./yeelight-cube-palette-card-editor.js"];
+  static cardSize = 6; // Dashboard height (card-base)
   static styles = unsafeCSS(PALETTE_CARD_CSS);
 
   constructor() {
@@ -92,12 +93,16 @@ class YeelightCubePaletteCard extends YeelightCardMixin(LitElement) {
     this._hass = hass;
     // Auto-resolve palette_sensor on first hass set (setConfig may run before hass is available)
     this._autoResolveSensor("palette_sensor", "color_palettes", hass, this);
-    if (!hass) return;
-    // The lamps' colors decide the active palette (_activePaletteKey).
-    const textColors = this._lampTextColors();
-    const lampChanged = textColors !== this._lastTextColors;
-    this._lastTextColors = textColors;
-    if (this._store.update(hass, this.config) || lampChanged) this.requestUpdate();
+    if (!hass || !this._hassChanged(hass)) return;
+    this._store.update(hass, this.config);
+    this.requestUpdate();
+  }
+
+  // What the card shows from hass (card-base _hassChanged): the palettes'
+  // sensor and the lamp's colors (they decide the active palette).
+  _hassInputs(hass) {
+    const sensor = collectionSensor(hass, this.config, "palettes");
+    return [this.config, sensor ? hass?.states?.[sensor] : undefined, this._lampTextColors()];
   }
 
   // The first target lamp's text colors (applying a palette sets them).
@@ -235,16 +240,6 @@ class YeelightCubePaletteCard extends YeelightCardMixin(LitElement) {
   // the card's command queue: sent in order, results from a previous
   // configuration dropped. Rejects on failure (HA has already shown it).
   // options.coalesce: see CardCommandController.execute.
-  callServiceOnTargetEntities(service, data = {}, options = {}) {
-    return this._commands.request(
-      this._hass,
-      this.config,
-      service,
-      data,
-      options,
-    );
-  }
-
   // Rename the palette at `idx` (the gallery's rename bar gives the name).
   _renamePalette(idx, newName) {
     const name = String(newName ?? "").trim();

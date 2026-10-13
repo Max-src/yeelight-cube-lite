@@ -292,7 +292,10 @@ preview_gradient_modes:
 
 set_custom_text:
   name: Set Custom Text
-  description: Set text to display on the cube matrix. Clears any existing pixel art and resets scroll position.
+  description: >
+    Set text to display on the cube matrix.
+    Clears any existing pixel art and resets scroll position.
+    While the lamp shows its clock or a native effect, the text is kept for when it shows text again (the clock and its rotation go on); to show it over the clock, call save_state first and restore_state after.
   fields:
     text:
       description: Text to display on the cube matrix
@@ -1447,8 +1450,9 @@ save_state:
   name: Save State
   description: >
     Snapshot the lamp's current display state (text, colors, gradient mode,
-    angle, drawing/pixel art, font, alignment, orientation, brightness and all
-    color effects). Only one snapshot is kept per lamp; calling again
+    angle, drawing/pixel art, font, alignment, orientation, brightness, all
+    color effects and a running effect/clock rotation). Only one snapshot is
+    kept per lamp; calling again
     overwrites it. Pair with restore_state to show something temporarily and
     then return to what was displayed before. Note: the snapshot is held in
     memory and does not survive a Home Assistant restart.
@@ -1465,7 +1469,9 @@ restore_state:
   name: Restore State
   description: >
     Restore the display state previously captured with save_state and
-    re-render it on the lamp. Does nothing if no state was saved.
+    re-render it on the lamp. A rotation that was running when it was saved
+    starts again, in step with the lamps still running it. Does nothing if no
+    state was saved.
   fields:
     entity_id:
       description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.

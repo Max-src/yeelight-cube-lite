@@ -55,15 +55,7 @@ const server = http.createServer(async (request, response) => {
     );
     const loadCards = async () => {
       const base = "/custom_components/yeelight_cube/www/";
-      const names = [
-        "lamp-preview",
-        "gradient",
-        "draw",
-        "palette",
-        "color-list-editor",
-        "clock",
-        "native-effects",
-      ];
+      const { CARD_NAMES: names } = await import(`${base}card-list.js`);
       const results = await Promise.allSettled(
         names.map((name) => import(`${base}yeelight-cube-${name}-card.js`)),
       );
@@ -296,7 +288,8 @@ const server = http.createServer(async (request, response) => {
         }
         clock._customMode = !!draft;
         clock._customDraft = draft;
-        clock.render();
+        clock.requestUpdate();
+        await clock.updateComplete;
         native._customColorDraft = draft;
         await native.updateComplete;
         for (const card of [clock, native]) {
@@ -425,13 +418,15 @@ const server = http.createServer(async (request, response) => {
     );
     // Toggling the card background only switches the shared frame's look
     // (card-shell.js) and must not throw.
-    await page.evaluate(() => {
+    await page.evaluate(async () => {
       clock.setConfig({ ...baseConfig, show_card_background: false });
       clock.hass = hass;
+      await clock.updateComplete;
       if (!clock.shadowRoot.querySelector("ha-card.yc-card-plain"))
         throw Error("plain card frame not applied");
       clock.setConfig({ ...baseConfig, show_card_background: true });
       clock.hass = hass;
+      await clock.updateComplete;
       if (
         !clock.shadowRoot.querySelector("ha-card.yc-card:not(.yc-card-plain)")
       )
@@ -520,13 +515,14 @@ const server = http.createServer(async (request, response) => {
         input.value = "rain";
         input.dispatchEvent(new Event("input", { bubbles: true }));
         clock._revealSavedStyle = "Rainbow";
-        clock.render();
+        clock.requestUpdate();
+        await clock.updateComplete;
         // The reveal branch that previously crashed render (mangled
         // `_revealSavedStyle = null`) only runs for a SAVED style preset.
         input.value = "my sol";
         input.dispatchEvent(new Event("input", { bubbles: true }));
         clock._revealSavedStyle = "My Solid";
-        clock.render();
+        clock.requestUpdate();
         await clock.updateComplete;
         const browser = clock.shadowRoot.querySelector(".original-browser");
         return {
@@ -1701,22 +1697,15 @@ const server = http.createServer(async (request, response) => {
       const draw = otherRegressionCards.find(
         (card) => card.localName === "yeelight-cube-draw-card",
       );
+      // Every tool and action hidden (the card's config).
+      const { toolsOrder, actionsOrder } = await import(
+        "/custom_components/yeelight_cube/www/draw_card_tools.js"
+      );
       draw.setConfig({
         ...draw.config,
-        edit_action_buttons: false,
-        edit_drawing_tools: false,
+        hidden_tools: toolsOrder(draw.config),
+        hidden_actions: actionsOrder(draw.config),
       });
-      draw.actionManager.actionVisibility = Object.fromEntries(
-        draw.actionManager
-          .getActionsOrder(draw.config)
-          .map((action) => [action, false]),
-      );
-      draw.toolManager.toolVisibility = Object.fromEntries(
-        draw.toolManager
-          .getToolsOrder(draw.config)
-          .map((tool) => [tool, false]),
-      );
-      draw.requestUpdate();
       await draw.updateComplete;
       if (
         draw.shadowRoot.querySelector(".action-row-slotted, .toolbar-container")
@@ -3252,7 +3241,7 @@ const server = http.createServer(async (request, response) => {
               null,
             );
             clock._customPresetColor = color;
-            clock.render();
+            clock.requestUpdate();
             await clock.updateComplete;
             // Selection changes update the buttons in place, so their color
             // transitions: measure the settled state.
@@ -3510,7 +3499,8 @@ const server = http.createServer(async (request, response) => {
         };
         clock.setConfig({ ...baseConfig, show_actions: true });
         clock.hass = hass;
-        clock.render();
+        clock.requestUpdate();
+        await clock.updateComplete;
         const view = clock.shadowRoot.querySelector(
           'yeelight-mode-controls[area="actions"]',
         );
@@ -3986,13 +3976,13 @@ const server = http.createServer(async (request, response) => {
       document.body.append(clock);
       const clockKey = clock._controls.adapter.items()[0].key;
       clock._controls.save([clockKey]);
-      clock.render();
+      clock.requestUpdate();
       await clock.updateComplete;
       results.clockStar = !!clock.shadowRoot.querySelector(
         `[data-mode="${CSS.escape(clockKey)}"][data-favourite="true"]`,
       );
       clock._controls.save([]);
-      clock.render();
+      clock.requestUpdate();
       await clock.updateComplete;
       results.clockUnstar = !clock.shadowRoot.querySelector(
         '[data-favourite="true"]',
@@ -4082,7 +4072,7 @@ const server = http.createServer(async (request, response) => {
         document.body.append(clock);
         const key = clock._controls.adapter.items()[0].key;
         clock._controls.save([key]);
-        clock.render();
+        clock.requestUpdate();
         await clock.updateComplete;
         return { clock, key };
       };
@@ -4147,7 +4137,7 @@ const server = http.createServer(async (request, response) => {
         document.body.append(clock);
         const key = clock._controls.adapter.items()[0].key;
         clock._controls.save([key]);
-        clock.render();
+        clock.requestUpdate();
         await clock.updateComplete;
         const item = clock.shadowRoot.querySelector(
           `[data-mode="${CSS.escape(key)}"][data-favourite="true"]`,
@@ -4240,6 +4230,7 @@ const server = http.createServer(async (request, response) => {
       });
       clock.hass = window.hass;
       document.body.append(clock);
+      await clock.updateComplete;
       const container = clock.shadowRoot.querySelector(
         ".brightness-slider-container",
       );
@@ -4375,7 +4366,7 @@ const server = http.createServer(async (request, response) => {
       });
       clock.hass = window.hass;
       document.body.append(clock);
-      clock.render();
+      clock.requestUpdate();
       await clock.updateComplete;
       const gallery = clock.shadowRoot.querySelector(".original-gallery");
       const items = [...clock.shadowRoot.querySelectorAll(".original-item")];
@@ -4400,7 +4391,7 @@ const server = http.createServer(async (request, response) => {
       });
       clockList.hass = window.hass;
       document.body.append(clockList);
-      clockList.render();
+      clockList.requestUpdate();
       await clockList.updateComplete;
       results.clockListView = !!clockList.shadowRoot.querySelector(
         ".original-gallery.list",

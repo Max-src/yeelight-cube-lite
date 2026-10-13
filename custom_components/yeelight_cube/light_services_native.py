@@ -67,9 +67,11 @@ def async_register_native_services(hass: HomeAssistant) -> None:
         if not isinstance(items, (list, tuple)) or len(items) < 2:
             raise HomeAssistantError("Provide at least two modes in 'items'")
 
-        timeline = {}
         # Lamps started by one call share a schedule; the group is saved so a
-        # restart resumes them together.
+        # restart resumes them together. A lamp started alone (the card's
+        # Retry, an automation) joins the lamps already running this rotation
+        # (start_effect_rotation with no timeline).
+        timeline = {} if len(targets) > 1 else None
         group = sorted(
             entity_id
             for entity_id in (getattr(target, "entity_id", None) for target in targets)

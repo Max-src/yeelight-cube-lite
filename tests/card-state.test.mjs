@@ -130,9 +130,7 @@ test("color-save failures roll back only their own pending edit", async (context
           fail = reject;
         }),
     },
-    _cardCommands() {
-      return (this._commands ||= new CardCommandController());
-    },
+    _commands: new CardCommandController(),
     render() {},
     dispatchEvent(event) {
       notices.push(event);
@@ -250,7 +248,10 @@ function cardMethod(file, name, scope = {}, setter = false) {
 }
 
 test("Draw shows only its pending edit and accepts unrelated HA updates", () => {
-  const setter = cardMethod("yeelight-cube-draw-card", "hass", {}, true);
+  const frames = [];
+  const setter = cardMethod("yeelight-cube-draw-card", "hass", {
+    requestAnimationFrame: (callback) => frames.push(callback),
+  }, true);
   const original = [{ name: "A" }, { name: "B" }];
   const pending = original.toReversed();
   const makeHass = (arts, state) => ({
@@ -268,6 +269,7 @@ test("Draw shows only its pending edit and accepts unrelated HA updates", () => 
     _pixelArtStore: new CollectionStore("pixel_arts"),
     _schedulePixelArtRender: () => renders.push("pixel arts"),
     _pixelArts: cardMethod("yeelight-cube-draw-card", "_pixelArts"),
+    _hassInputs: cardMethod("yeelight-cube-draw-card", "_hassInputs"),
   });
   setter.call(card, makeHass(original, "off"));
   card._pixelArtStore.pending.record(pending);
@@ -300,7 +302,6 @@ test("lamp adjustment timers and stale failures cannot cross configuration conte
     clearTimeout(timer) {
       timers.delete(timer);
     },
-    requestAnimationFrame() {},
     EFFECT_NAMES: ["contrast"],
     EFFECT_ATTR_MAP: { contrast: "preview_contrast" },
     EFFECT_DEFAULTS: { contrast: 100 },
@@ -317,6 +318,7 @@ test("lamp adjustment timers and stale failures cannot cross configuration conte
   );
   const calls = [];
   let reject;
+  let refreshes = 0;
   const card = {
     shadowRoot: {},
     _actionCommands: { reset() {} },
@@ -335,8 +337,9 @@ test("lamp adjustment timers and stale failures cannot cross configuration conte
     _updateChangeIndicators() {},
     _updateCompactResetButtons() {},
     _updateSectionResetButtons() {},
-    render() {
-      assert.fail("stale failure must not render");
+    // Each configuration shows itself once; a stale failure never does.
+    _refresh() {
+      refreshes++;
     },
   };
   configure.call(card, { entity: "light.a" });
@@ -356,6 +359,7 @@ test("lamp adjustment timers and stale failures cannot cross configuration conte
   reject(Error("offline"));
   await running;
   assert.equal(card._localEffects.contrast, 90);
+  assert.equal(refreshes, 3);
 });
 
 test("collection commands serialize snapshots and cancel dependent work after failure", async () => {

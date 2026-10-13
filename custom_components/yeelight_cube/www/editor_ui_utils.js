@@ -11,7 +11,11 @@ import {
   createButtonGroup,
   createButtonGroupChangeHandler,
 } from "./button-group-utils.js";
-import { createToggleRow, createSliderRow } from "./form-row-utils.js";
+import {
+  createToggleRow,
+  createSliderRow,
+  formRowStyles,
+} from "./form-row-utils.js";
 import { renderOrderableList } from "./orderable-list-utils.js";
 import { notifyUnreported } from "./notify-utils.js";
 import {
@@ -20,7 +24,7 @@ import {
   collectionThumbnail,
   singleMove,
 } from "./user-collections.js";
-import { withItemLabel, roundedCardsRadius } from "./card-config.js";
+import { withItemLabel } from "./card-config.js";
 import { normalizeButtonShape } from "./carousel-utils.js";
 
 /**
@@ -588,58 +592,8 @@ export const sharedEditorStyles = css`
     background: var(--secondary-background-color, #f7f8fa);
   }
 
-  /* Toggle switches — horizontal row: label left, toggle right */
-  .toggle-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 16px;
-  }
-  .toggle-label {
-    font-weight: 500;
-    color: var(--primary-text-color, #333);
-    font-size: 1em;
-  }
-  .toggle-switch {
-    position: relative;
-    display: inline-block;
-    width: 44px;
-    height: 24px;
-  }
-  .toggle-switch input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-  }
-  .toggle-slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: var(--divider-color, #cfd8dc);
-    transition: 0.2s;
-    border-radius: 24px;
-  }
-  .toggle-slider:before {
-    position: absolute;
-    content: "";
-    height: 18px;
-    width: 18px;
-    left: 3px;
-    bottom: 3px;
-    background-color: var(--card-background-color, white);
-    transition: 0.2s;
-    border-radius: 50%;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
-  }
-  input:checked + .toggle-slider {
-    background-color: var(--primary-color, #1976d2);
-  }
-  input:checked + .toggle-slider:before {
-    transform: translateX(20px);
-  }
+  /* Toggle switches (createToggleRow): formRowStyles */
+  ${formRowStyles}
 
   /* Range slider styles */
   input[type="range"] {
@@ -729,19 +683,6 @@ export function renderModeInfoMessage(message) {
       ${message}
     </div>
   `;
-}
-
-/**
- * Convert the legacy `rounded_cards` config value into a 0-28 px slider value.
- * Shared across all editors so the "Card Roundness" slider behaves identically
- * everywhere and legacy values (true/false/"round"/"rounded"/"square") keep
- * working.
- *
- * @param {number|boolean|string|undefined} v - Raw rounded_cards config value
- * @returns {number} Slider value in pixels (0-28)
- */
-export function roundedCardsToSliderValue(v) {
-  return roundedCardsRadius(v);
 }
 
 /**

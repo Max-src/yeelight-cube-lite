@@ -124,20 +124,13 @@ export const StorageUtils = {
   },
 
   // Tool visibility storage (object mapping tool names to booleans)
+  // Tools / actions hidden in this browser by former versions ({name:
+  // false}); configs keep them in hidden_tools / hidden_actions now.
   loadToolVisibility() {
     return StorageManager.load(STORAGE_KEYS.TOOL_VISIBILITY, {});
   },
 
-  saveToolVisibility(visibility) {
-    return StorageManager.save(STORAGE_KEYS.TOOL_VISIBILITY, visibility);
-  },
-
-  // Action visibility storage (object mapping action names to booleans)
   loadActionVisibility() {
     return StorageManager.load(STORAGE_KEYS.ACTION_VISIBILITY, {});
-  },
-
-  saveActionVisibility(visibility) {
-    return StorageManager.save(STORAGE_KEYS.ACTION_VISIBILITY, visibility);
   },
 };

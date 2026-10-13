@@ -2,6 +2,7 @@
 // palette) in their side, carousel, tabs, dropdown and preview-hover
 // (<yc-preview-hover>) layouts, and the color carousel. Mixed into
 // YeelightCubeDrawCard.
+import { tabBar } from "./tab-bar.js";
 import { handleColorSelect } from "./draw_card_handlers.js";
 import { html } from "./lib/lit-all.js";
 import "./yc-swatches.js";
@@ -168,36 +169,24 @@ export const PaletteCardsMixin = (Base) => class extends Base {
     }
     // Tabs (segmented control)
     if (mode === "tabs") {
-      if (!this._activePaletteTab && cards.length) {
-        this._activePaletteTab = cards[0].key;
-      }
+      // The picked tab, or the first one (also when the picked section was
+      // hidden since).
+      if (!cards.some((card) => card.key === this._activePaletteTab))
+        this._activePaletteTab = cards[0]?.key;
       const activeTab = this._activePaletteTab;
       const activeCard = cards.find((c) => c.key === activeTab);
-      const activeIdx = cards.findIndex((c) => c.key === activeTab);
       return html`
         <div class="palette-tabs yc-stack yc-controls${colorsBorderClass}">
-          <div
-            class="palette-tab-bar"
-            style="--tab-count:${cards.length};--tab-active-index:${activeIdx}"
-          >
-            <div class="palette-tab-indicator"></div>
-            ${cards.map(
-              (card) => html`
-                <button
-                  class="palette-tab-btn${activeTab === card.key
-                    ? " active"
-                    : ""}"
-                  title="${card.title}"
-                  @click="${() => {
-                    this._activePaletteTab = card.key;
-                    this.requestUpdate();
-                  }}"
-                >
-                  ${card.title}
-                </button>
-              `,
-            )}
-          </div>
+          ${tabBar({
+            tabs: cards.map((card) => ({ key: card.key, label: card.title })),
+            active: activeTab,
+            label: "Colors",
+            className: "palette-tab-bar",
+            onSelect: (key) => {
+              this._activePaletteTab = key;
+              this.requestUpdate();
+            },
+          })}
           ${activeCard
             ? html`
                 <div class="palette-tab-content">

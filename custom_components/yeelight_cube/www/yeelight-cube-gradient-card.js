@@ -13,7 +13,8 @@ import {
 
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { createSliderDraft } from "./slider-control-utils.js";
-import { YeelightCardMixin, cubeLampEntities } from "./card-base.js";
+import { tabBar } from "./tab-bar.js";
+import { galleryCardSize, valueKey, YeelightCardMixin, cubeLampEntities } from "./card-base.js";
 import {
   cardNotice,
   cardShell,
@@ -96,49 +97,31 @@ export const GRADIENT_MODES = [
 // slider (`gallery_preview_size`, scales previews AND text buttons).
 // TEXT_SELECTOR_STYLES / PREVIEW_SELECTOR_STYLES / resolveSelectorShape are
 // shared with the clock card via ./selector-shared-styles.js.
-// Legacy `preview_display_mode` values → unified style
-const LEGACY_PREVIEW_STYLE_MAP = {
-  inline: "preview-list",
-  grid: "preview-list",
-  gallery: "preview-list",
-  list: "preview-list",
-  compact: "preview-list",
-  wheel: "preview-wheel",
-};
-
-// Legacy text-selector styles (buttons / pills / compact / colorized) are all
-// merged into the single "filled" style.
-const LEGACY_TEXT_STYLE_MAP = {
-  buttons: "filled",
-  pills: "filled",
-  compact: "filled",
-  colorized: "filled",
-};
-
 /**
- * Resolve the unified mode-selector style from a card config, migrating
- * legacy configs transparently.
- *
- * Legacy configs (pre-unification) ALWAYS showed the preview section — there
- * was no way to hide it — so they migrate to the matching preview style.
- * The old text selector (color_mode_style) remains available by explicitly
- * choosing a text style in the editor.
+ * The mode selector's layout: a known style, else the preview list (older
+ * layouts are migrated by normalizeCardOptions).
  */
 function resolveModeSelectorStyle(cfg) {
-  if (!cfg) return "preview-list";
-  const explicit = cfg.style_selector_style;
-  if (explicit && LEGACY_TEXT_STYLE_MAP[explicit]) {
-    return LEGACY_TEXT_STYLE_MAP[explicit];
-  }
-  if (
-    explicit &&
-    (TEXT_SELECTOR_STYLES.includes(explicit) ||
-      PREVIEW_SELECTOR_STYLES.includes(explicit))
-  ) {
-    return explicit;
-  }
-  return LEGACY_PREVIEW_STYLE_MAP[cfg.preview_display_mode] || "preview-list";
+  const style = cfg?.style_selector_style;
+  return TEXT_SELECTOR_STYLES.includes(style) ||
+    PREVIEW_SELECTOR_STYLES.includes(style)
+    ? style
+    : "preview-list";
 }
+
+// The "Apply to Whole Panel" tabs: the text's pixels or the whole panel.
+const PANEL_TABS = [
+  {
+    key: "pixels",
+    label: "Pixels",
+    icon: html`<svg width="12" height="9" viewBox="0 0 12 9" fill="currentColor" style="flex-shrink:0;opacity:0.75"><rect x="0" y="0" width="3" height="3" rx="0.5"/><rect x="4.5" y="0" width="3" height="3" rx="0.5"/><rect x="9" y="0" width="3" height="3" rx="0.5"/><rect x="0" y="5" width="3" height="3" rx="0.5"/><rect x="4.5" y="5" width="3" height="3" rx="0.5"/><rect x="9" y="5" width="3" height="3" rx="0.5"/></svg>`,
+  },
+  {
+    key: "panel",
+    label: "Panel",
+    icon: html`<svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" style="flex-shrink:0;opacity:0.85"><rect x="0" y="0" width="5" height="5" rx="1"/><rect x="7" y="0" width="5" height="5" rx="1"/><rect x="0" y="7" width="5" height="5" rx="1"/><rect x="7" y="7" width="5" height="5" rx="1"/></svg>`,
+  },
+];
 
 class YeelightCubeGradientCard extends ModeSelectorMixin(
   AngleControlMixin(YeelightCardMixin(LitElement)),
@@ -150,10 +133,9 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
   // The angle capsule names its handlers in data-on-* attributes.
   static hostEvents = (name) => CAPSULE_HANDLERS.has(name);
 
-  // No reactive properties: rendering is driven explicitly by _renderCard()
-  // (set hass fast path / skeleton key), which calls requestUpdate() only
-  // when the card structure changes and syncs dynamic values in place
-  // otherwise.
+  // No reactive properties: _renderCard() requests a Lit update when what
+  // the card shows changed (see set hass), except while an angle is dragged
+  // or typed (_angleBusy: the render waits for the end of it).
   static styles = unsafeCSS(GRADIENT_CARD_CSS);
 
   constructor() {
@@ -232,7 +214,6 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
     this._processingModeChange = false;
     this._lastModeChangeTime = 0; // Track when mode was last changed
     this._optimisticMode = null; // Store the optimistic mode selection
-    this._renderScheduled = false;
     this._pendingHassRender = false; // Track if a render was blocked by interaction flags
     this._interactionSafetyTimer = null; // Safety timer to flush pending renders
     this._previewEventListenerRegistered = false; // Track event listener for global preview cache
@@ -264,16 +245,6 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
   // the card's command queue: sent in order, results from a previous
   // configuration dropped. Rejects on failure (HA has already shown it).
   // options.coalesce: see CardCommandController.execute.
-  callServiceOnTargetEntities(serviceName, serviceData = {}, options = {}) {
-    return this._commands.request(
-      this._hass,
-      this.config,
-      serviceName,
-      serviceData,
-      options,
-    );
-  }
-
   connectedCallback() {
     super.connectedCallback();
     // Re-establish the preview event subscription dropped on disconnect.
@@ -336,6 +307,7 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
     // in-progress drag.
     this._removeRotaryDocListeners();
     this._draggingRotary = false;
+    this._isDragging = false;
   }
 
   setConfig(config) {
@@ -345,6 +317,7 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
     this._pendingAngle = null;
     this._removeRotaryDocListeners();
     this._draggingRotary = false;
+    this._isDragging = false;
     clearTimeout(this._anglePreviewReloadTimer);
     clearTimeout(this._previewRetryTimer);
     clearTimeout(this._previewReloadTimer);
@@ -358,16 +331,7 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
 
     this.config = config;
     this._setupPreviewEventListener();
-
-    // Always render when setConfig is called (config changed in editor)
-    // But we'll preserve the preview element across renders
-    if (!this._renderScheduled) {
-      this._renderScheduled = true;
-      requestAnimationFrame(() => {
-        this._renderScheduled = false;
-        this._renderCard();
-      });
-    }
+    this._renderCard();
   }
 
   static getStubConfig(hass) {
@@ -419,84 +383,56 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
       this._setupPreviewEventListener();
     }
 
-    // Fast path: HA calls this setter for every state change anywhere in the
-    // instance, but only replaces the state object of the entity that changed.
-    // If our primary entity's state object is the same reference we fully
-    // processed last time (same config, no optimistic flag waiting for a
-    // backend echo, wheel already synced to this mode), everything below would
-    // be a no-op, so skip it.
-    if (this.config && this._seenConfig === this.config) {
-      const seenId = this._getPrimaryEntity();
-      const seenState = seenId ? hass?.states?.[seenId] : undefined;
-      if (
-        seenState &&
-        seenId === this._seenEntityId &&
-        seenState === this._seenStateObj &&
-        this._optimisticMode == null &&
-        this._optimisticPanelMode === undefined &&
-        this._optimisticFillCols === undefined
-      ) {
-        return;
-      }
-    }
-
-    // Track entity state changes to auto-reload gallery previews (debounced)
-    // Only relevant when a preview-style selector is shown — text selectors
-    // never call the preview service.
-    const entityId = this._getPrimaryEntity();
+    // Nothing the card shows changed (_hassInputs) and no optimistic value
+    // waits for the lamp's echo: nothing to do.
     if (
-      hass &&
-      entityId &&
-      this._isPreviewSelectorActive() &&
-      // Same state object as the last check => all derived values are equal.
-      (!hass.states[entityId] ||
-        hass.states[entityId] !== this._lastPreviewStateObj)
-    ) {
-      const stateObj = hass.states[entityId];
-      this._lastPreviewStateObj = stateObj;
-      const currentText = stateObj?.attributes?.custom_text;
-      const currentAngle = stateObj?.attributes?.angle;
-      const currentColors = stateObj?.attributes?.text_colors;
-      const currentPanelMode = stateObj?.attributes?.full_panel || false;
-      // Only re-stringify when the array reference changed.
-      let colorsHash = this._lastPreviewColors;
-      if (
-        currentColors === undefined ||
-        currentColors !== this._lastPreviewColorsRef
-      ) {
-        colorsHash = currentColors ? JSON.stringify(currentColors) : null;
-        this._lastPreviewColorsRef = currentColors;
-      }
-      // Also watch matrix_colors: in "Panel Color Sequence" mode the palette
-      // paints the panel directly, so the rendered output (matrix_colors) can
-      // change without text_colors differing.  Watching it here keeps the
-      // preview in sync with the actual lamp output in every mode.
-      const currentMatrixColors = stateObj?.attributes?.matrix_colors;
-      let matrixColorsHash = this._lastPreviewMatrixColors;
-      if (
-        currentMatrixColors === undefined ||
-        currentMatrixColors !== this._lastPreviewMatrixColorsRef
-      ) {
-        matrixColorsHash = currentMatrixColors
-          ? JSON.stringify(currentMatrixColors)
-          : null;
-        this._lastPreviewMatrixColorsRef = currentMatrixColors;
-      }
-      if (
-        this._lastPreviewText !== currentText ||
-        this._lastPreviewAngle !== currentAngle ||
-        this._lastPreviewColors !== colorsHash ||
-        this._lastPreviewMatrixColors !== matrixColorsHash ||
-        this._lastPreviewPanelMode !== currentPanelMode
-      ) {
-        this._lastPreviewText = currentText;
-        this._lastPreviewAngle = currentAngle;
-        this._lastPreviewColors = colorsHash;
-        this._lastPreviewMatrixColors = matrixColorsHash;
-        this._lastPreviewPanelMode = currentPanelMode;
-        // Debounce preview reload to avoid flickering on rapid updates
-        // (gallery thumbnails still use the preview cache)
-        if (this._previewReloadTimer) clearTimeout(this._previewReloadTimer);
+      !this._hassChanged(hass) &&
+      this._optimisticMode == null &&
+      this._optimisticPanelMode === undefined &&
+      this._optimisticFillCols === undefined
+    )
+      return;
+    if (!this.config) return;
+    const entity = hass?.states?.[this._getPrimaryEntity()];
+    if (!entity) {
+      // No lamp (or it was removed): render() shows the notice.
+      this._renderCard();
+      return;
+    }
+    const attrs = entity.attributes;
+
+    // Optimistic values: dropped once the lamp reports them.
+    if (
+      this._optimisticPanelMode !== undefined &&
+      (attrs.full_panel || false) === this._optimisticPanelMode
+    )
+      this._optimisticPanelMode = undefined;
+    if (this._optimisticMode && attrs.mode === this._optimisticMode) {
+      this._optimisticMode = null;
+      clearTimeout(this._optimisticModeTimeout);
+      this._optimisticModeTimeout = null;
+    }
+    if (
+      this._optimisticFillCols !== undefined &&
+      (FILL_PANEL_CHAR_TO_COLS[attrs.custom_text || ""] || 0) ===
+        this._optimisticFillCols
+    )
+      this._optimisticFillCols = undefined;
+
+    // The gallery's previews follow what the lamp shows (text, angle,
+    // colors, its rendered matrix, panel mode): reloaded after 500 ms
+    // without a change. Text selectors need no previews.
+    if (this._isPreviewSelectorActive()) {
+      const previewKey = [
+        attrs.custom_text,
+        attrs.angle,
+        valueKey(attrs.text_colors),
+        valueKey(attrs.matrix_colors),
+        attrs.full_panel || false,
+      ].join("\u0000");
+      if (previewKey !== this._previewKey) {
+        this._previewKey = previewKey;
+        clearTimeout(this._previewReloadTimer);
         this._previewReloadTimer = setTimeout(() => {
           this._loadPreviews().catch((err) =>
             console.error("[Gradient Card] Error reloading previews:", err),
@@ -505,166 +441,52 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
       }
     }
 
-    // Check if we recently changed mode (within last 2 seconds)
-    const timeSinceLastModeChange = Date.now() - this._lastModeChangeTime;
-    const ignoreUpdateWindow = 2000; // Ignore sensor updates for 2 seconds after mode change
-
-    // Skip if config not set yet (hass can be set before config)
-    if (!this.config) {
-      return;
-    }
-
-    // Use the primary entity (first target_entity, or fallback to config.entity)
-    const _primaryEntityId = this._getPrimaryEntity();
-    if (!_primaryEntityId) {
-      return;
-    }
-
-    // Check if the entities we care about actually changed
-    const entity = this._hass.states[_primaryEntityId];
-    if (!entity) {
-      // Entity no longer exists in HA — force a render to show the error state
-      this._previousHass = hass;
-      this._renderCard();
-      return;
-    }
-    const oldEntity = this._previousHass
-      ? this._previousHass.states[_primaryEntityId]
-      : null;
-
-    // Only render if attributes that actually affect the card UI changed.
-    // HA keeps the same state object for entities that did not change, but
-    // replaces THIS entity's state object on ANY of its attribute updates
-    // (brightness, etc.), so `entity !== oldEntity` alone would trigger
-    // spurious full-DOM rebuilds that destroy & recreate the capsule slider,
-    // causing the visible "blink" (thumb jumps to 0 then animates back).
-    // Compare only the attributes the card actually reads during render().
-    // NOTE: when this entity's state object is replaced, its attribute arrays
-    // (text_colors/matrix_colors) are new references even if the values are
-    // unchanged, so fall back to a JSON comparison when the reference differs.
-    const entityChanged =
-      !oldEntity ||
-      (entity !== oldEntity &&
-      (() => {
-        if (entity.state !== oldEntity.state) return true;
-        const a = entity.attributes;
-        const b = oldEntity.attributes;
-        if (
-          a.angle !== b.angle ||
-          a.mode !== b.mode ||
-          a.full_panel !== b.full_panel ||
-          a.custom_text !== b.custom_text
-        )
-          return true;
-        // Deep-compare arrays only when the reference changed
-        if (
-          a.text_colors !== b.text_colors &&
-          JSON.stringify(a.text_colors) !== JSON.stringify(b.text_colors)
-        )
-          return true;
-        if (
-          a.matrix_colors !== b.matrix_colors &&
-          JSON.stringify(a.matrix_colors) !== JSON.stringify(b.matrix_colors)
-        )
-          return true;
-        return false;
-      })());
-
-    // --- Optimistic Panel Mode: clear only when backend matches ---
-    if (this._optimisticPanelMode !== undefined && entity) {
-      const backendPanelMode = entity.attributes.full_panel || false;
-      if (backendPanelMode === this._optimisticPanelMode) {
-        this._optimisticPanelMode = undefined;
-      }
-    }
-
-    // --- Optimistic Mode: clear only when backend echoes the new mode ---
-    // (prevents the highlight snapping back to the old mode between service
-    // completion and the entity state echo — see _selectMode)
-    if (this._optimisticMode && entity) {
-      if (entity.attributes.mode === this._optimisticMode) {
-        this._optimisticMode = null;
-        if (this._optimisticModeTimeout) {
-          clearTimeout(this._optimisticModeTimeout);
-          this._optimisticModeTimeout = null;
-        }
-      }
-    }
-
-    // --- Optimistic Fill Panel Cols: clear when backend custom_text matches ---
-    if (this._optimisticFillCols !== undefined && entity) {
-      const backendText = entity.attributes.custom_text || "";
-      const backendCols = FILL_PANEL_CHAR_TO_COLS[backendText] || 0;
-      if (backendCols === this._optimisticFillCols) {
-        this._optimisticFillCols = undefined;
-      }
-    }
-
-    // Store current hass for next comparison
-    this._previousHass = this._hass;
-    // Remember what was fully processed (used by the fast path above)
-    this._seenConfig = this.config;
-    this._seenEntityId = _primaryEntityId;
-    this._seenStateObj = entity;
-
-    // The gallery follows the lamp's mode (another dashboard, an
-    // automation, the confirmed echo of a pick).
-    if (entity?.attributes?.mode !== oldEntity?.attributes?.mode)
+    // The gallery follows the lamp's mode at once (another dashboard, an
+    // automation, the confirmed echo of a pick), even while a render waits.
+    if (attrs.mode !== this._lastMode) {
+      this._lastMode = attrs.mode;
       this._refreshGallery();
-
-    // Skip render if entity didn't change
-    if (!entityChanged) {
-      return;
     }
 
-    // Always allow render for button updates unless:
-    // 1. Actively dragging rotary controls or angle slider
-    // 2. Recently changed mode (prevent sensor updates from overriding optimistic UI)
-    if (
-      !this._draggingRotary &&
-      !this._isDragging &&
-      !this._usingSlider &&
-      !this._typingAngle &&
-      timeSinceLastModeChange > ignoreUpdateWindow
-    ) {
+    // Renders wait while an angle is dragged or typed, and for 2 s after a
+    // mode pick (older lamp updates must not override the picked mode).
+    if (!this._angleBusy() && Date.now() - this._lastModeChangeTime > 2000) {
       this._pendingHassRender = false;
-      if (!this._renderScheduled) {
-        this._renderScheduled = true;
-        requestAnimationFrame(() => {
-          this._renderScheduled = false;
-          this._renderCard();
-        });
-      }
+      this._renderCard();
     } else {
-      // Interaction in progress — remember that a state-driven render was blocked
       this._pendingHassRender = true;
       this._startInteractionSafety();
     }
   }
 
+  // What the card shows from the lamp, compared value by value with the last
+  // update: its state and the attributes the controls, gallery and matrix
+  // preview read (color lists by content).
+  _hassInputs(hass) {
+    const entity = hass?.states?.[this._getPrimaryEntity()];
+    const attrs = entity?.attributes || {};
+    return [
+      this.config,
+      entity?.state,
+      attrs.angle,
+      attrs.mode,
+      attrs.full_panel,
+      attrs.custom_text,
+      valueKey(attrs.text_colors),
+      valueKey(attrs.matrix_colors),
+    ];
+  }
+
   // Flush any render that was blocked while interaction flags were set.
   // Called when an interaction flag is cleared to recover missed state updates.
   _flushPendingRender() {
-    if (!this._pendingHassRender) return;
-    if (
-      this._draggingRotary ||
-      this._isDragging ||
-      this._usingSlider ||
-      this._typingAngle
-    )
-      return; // Another flag still active
+    if (!this._pendingHassRender || this._angleBusy()) return;
     this._pendingHassRender = false;
     if (this._interactionSafetyTimer) {
       clearInterval(this._interactionSafetyTimer);
       this._interactionSafetyTimer = null;
     }
-    if (!this._renderScheduled) {
-      this._renderScheduled = true;
-      requestAnimationFrame(() => {
-        this._renderScheduled = false;
-        this._renderCard();
-      });
-    }
+    this._renderCard();
   }
 
   // Safety timer: periodically check if all interaction flags have cleared
@@ -673,85 +495,45 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
   _startInteractionSafety() {
     if (this._interactionSafetyTimer) return; // Already running
     this._interactionSafetyTimer = setInterval(() => {
-      if (
-        !this._draggingRotary &&
-        !this._isDragging &&
-        !this._usingSlider &&
-        !this._typingAngle
-      ) {
-        clearInterval(this._interactionSafetyTimer);
-        this._interactionSafetyTimer = null;
-        this._flushPendingRender();
-      }
+      if (this._angleBusy()) return;
+      clearInterval(this._interactionSafetyTimer);
+      this._interactionSafetyTimer = null;
+      this._flushPendingRender();
     }, 1000);
   }
 
-  /**
-   * Imperative render entry point (called from set hass / setConfig /
-   * interaction handlers).  Chooses between the surgical in-place sync
-   * (structure unchanged) and a Lit re-render of the card skeleton.
-   */
-  _renderCard() {
-    // Only block render if actively dragging/interacting with angle controls to prevent interference
-    if (
+  /** An angle is being dragged or typed: the drag path moves the visuals. */
+  _angleBusy() {
+    return !!(
       this._draggingRotary ||
       this._isDragging ||
       this._usingSlider ||
       this._typingAngle
-    )
-      return;
+    );
+  }
 
-    const hass = this._hass;
-    if (!hass) return;
-
-    // Support both old single entity config and new multi-entity config
-    const primaryEntity = this._getPrimaryEntity();
-    const stateObj = primaryEntity ? hass.states[primaryEntity] : null;
-
-    if (!primaryEntity || !stateObj) {
-      // The lamp that is missing ("" when none is configured).
-      this._missingLamp = primaryEntity || "";
-      this._skeletonKey = null; // force full rebuild when the entity recovers
-      this.requestUpdate();
+  /**
+   * Show the current state: a Lit update, or, while an angle is dragged or
+   * typed, one when it ends (_flushPendingRender).
+   */
+  _renderCard() {
+    if (this._angleBusy()) {
+      this._pendingHassRender = true;
+      this._startInteractionSafety();
       return;
     }
-    this._missingLamp = null;
-    const textColors = this._pendingColors ||
-      stateObj.attributes.text_colors || [[255, 255, 255]];
-
-    // Current angle: the in-flight value while the lamp catches up.
-    const currentAngle = this._displayAngle(stateObj);
-
-    // ── SURGICAL RENDER FAST PATH ──────────────────────────────────────
-    // The skeleton is (re)rendered through Lit ONCE per structural
-    // configuration (config + text colors, which are baked into
-    // rotary/button gradients); afterwards every call only syncs dynamic
-    // values in place, which keeps state updates flicker-free.
-    const structuralKey = JSON.stringify({
-      cfg: this.config,
-      colors: textColors,
-    });
-    if (
-      this._skeletonKey === structuralKey &&
-      this.shadowRoot?.querySelector(".card-content")
-    ) {
-      this._syncDynamicUI(stateObj, currentAngle);
-      return;
-    }
-    this._skeletonKey = structuralKey;
-    this._rebuildPending = true;
     this.requestUpdate();
   }
 
   render() {
-    if (this._missingLamp != null)
-      return this._missingLamp
-        ? lampNotFoundNotice(this, this._missingLamp)
-        : cardNotice(this, NOTICE.noLamp);
     const hass = this._hass;
-    if (!hass || !this.config || this._skeletonKey == null) return nothing;
-    const stateObj = hass.states[this._getPrimaryEntity()];
-    if (!stateObj) return nothing;
+    if (!hass || !this.config) return nothing;
+    const primaryEntity = this._getPrimaryEntity();
+    const stateObj = primaryEntity ? hass.states[primaryEntity] : null;
+    if (!stateObj)
+      return primaryEntity
+        ? lampNotFoundNotice(this, primaryEntity)
+        : cardNotice(this, NOTICE.noLamp);
 
     const currentAngle = this._displayAngle(stateObj);
 
@@ -760,13 +542,7 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
       this.config.show_mode_selector !== undefined
         ? this.config.show_mode_selector !== false
         : true;
-    // Panel toggle is independent of the selector now.  Legacy fallback: it
-    // used to live inside the text selector block, so respect the old
-    // show_color_mode_selector=false as "hide panel toggle" for old configs.
-    const showPanelToggle =
-      this.config.show_panel_toggle !== undefined
-        ? this.config.show_panel_toggle !== false
-        : this.config.show_color_mode_selector !== false;
+    const showPanelToggle = this.config.show_panel_toggle !== false;
     const showAngleSection = this.config.show_angle_section !== false;
     const showAngleSlider = this.config.show_angle_slider !== false;
 
@@ -843,7 +619,7 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
           ${this._renderPanelToggle(applyToWholePanel, panelToggleStyle, panelToggleShape)}
           <div class="panel-toggle default" style="margin-top: 4px; display: none; align-items: center; gap: 8px;">
             <label for="fill-panel-cols" style="white-space: nowrap;">Fill Panel Test:</label>
-            <select id="fill-panel-cols" style="flex: 1; padding: 4px;" @change=${this._onFillPanelChange}>
+            <select id="fill-panel-cols" style="flex: 1; padding: 4px;" .value=${String(fillPanelCols)} @change=${this._onFillPanelChange}>
               <option value="0" ?selected=${fillPanelCols === 0}>Off</option>
               ${Array.from({ length: 20 }, (_, i) => i + 1).map(
                 (n) =>
@@ -899,100 +675,26 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
 
   updated(changedProperties) {
     super.updated(changedProperties);
-    if (!this._rebuildPending || this._missingLamp != null) return;
-    if (!this.shadowRoot?.querySelector(".card-content")) return;
-    this._rebuildPending = false;
-    this._afterRebuild();
-  }
-
-  /** Post-render work after the card skeleton was (re)rendered by Lit. */
-  _afterRebuild() {
-    const root = this.shadowRoot;
     const stateObj = this._hass?.states?.[this._getPrimaryEntity()];
-    if (!root || !stateObj) return;
-    const currentAngle = this._displayAngle(stateObj);
-
-    // Preview styles need the backend previews (shared cache).
-    this._ensurePreviews();
-
-    // Re-apply every dynamic value in place: Lit only patches bindings whose
-    // template value changed, so DOM state written by the in-place sync
-    // path (classes, input values, rotary visuals) is reconciled here.
-    this._syncDynamicUI(stateObj, currentAngle);
-  }
-
-  /**
-   * In-place update of every dynamic UI element.  Called instead of a full
-   * DOM rebuild when the structural configuration is unchanged — this is
-   * what makes state updates flicker-free.
-   */
-  _syncDynamicUI(stateObj, currentAngle) {
-    const root = this.shadowRoot;
-    if (!root) return;
-
-    // 2. Panel toggle state (checkbox + card-style active class)
-    const applyToPanel =
-      this._optimisticPanelMode !== undefined
-        ? this._optimisticPanelMode
-        : stateObj.attributes.full_panel || false;
-    const panelCheckbox = root.getElementById("apply-to-panel");
-    if (panelCheckbox && panelCheckbox.checked !== applyToPanel) {
-      panelCheckbox.checked = applyToPanel;
+    if (!stateObj) {
+      this._previewsConfig = null;
+      return;
     }
-    const cardToggle = root.querySelector(
-      ".panel-toggle.card[data-toggle-card='true']",
-    );
-    if (cardToggle) cardToggle.classList.toggle("active", applyToPanel);
-    const tabsEl = root.querySelector(".panel-toggle.tabs");
-    if (tabsEl) {
-      tabsEl.dataset.active = applyToPanel ? "1" : "0";
-      tabsEl.querySelectorAll(".tab-btn").forEach((btn) => {
-        btn.classList.toggle(
-          "active",
-          (btn.dataset.panelSeg === "true") === applyToPanel,
-        );
-      });
+    // Preview styles need the backend previews (shared cache): on a new
+    // configuration, or a lamp that is back.
+    if (this._previewsConfig !== this.config) {
+      this._previewsConfig = this.config;
+      this._ensurePreviews();
     }
-    const chipEl = root.querySelector(
-      ".panel-toggle.chip[data-chip-toggle='true']",
-    );
-    if (chipEl) chipEl.classList.toggle("active", applyToPanel);
-    const minimalEl = root.querySelector(
-      ".panel-toggle.minimal[data-minimal-toggle='true']",
-    );
-    if (minimalEl) minimalEl.classList.toggle("active", applyToPanel);
-
-    // 3. Fill-panel column selector value
-    const fillSel = root.getElementById("fill-panel-cols");
-    if (fillSel) {
-      const cols =
-        this._optimisticFillCols !== undefined
-          ? this._optimisticFillCols
-          : FILL_PANEL_CHAR_TO_COLS[stateObj.attributes.custom_text || ""] || 0;
-      if (fillSel.value !== String(cols)) fillSel.value = String(cols);
-    }
-
-    // 4. Angle visuals (rotary/capsule/slider/value displays).
-    //    render() already returns early during active drags, so this never
-    //    fights the user's pointer.
-    this._updateRotaryDisplay(currentAngle);
-    this._syncAngleValueDisplay(currentAngle);
-    const angleSlider = root.getElementById("angleslider");
-    if (angleSlider) angleSlider.value = Math.round(currentAngle);
-
-    // 5. Mode selector (the gallery) and the active-mode label.
-    this._refreshGallery(currentAngle);
-    this._syncActiveModeLabel();
-  }
-
-  // The active-mode label chip shows the lamp's (or the picked) mode.
-  _syncActiveModeLabel() {
-    const text = this.shadowRoot?.querySelector(
-      "#gc-active-mode-label .gc-aml-text",
-    );
-    const current = this._getCurrentMode();
-    const mode = current ? itemLabel(this.config, current, current) : "—";
-    if (text && text.textContent !== mode) text.textContent = mode;
+    // The drag path moves the angle visuals and sets the inputs' values
+    // itself (and an input the user changed keeps its value over its
+    // attribute): show the current angle in them after each render.
+    if (this._angleBusy()) return;
+    const angle = this._displayAngle(stateObj);
+    this._updateRotaryDisplay(angle);
+    this._syncAngleValueDisplay(angle);
+    const slider = this.shadowRoot?.getElementById("angleslider");
+    if (slider) slider.value = Math.round(angle);
   }
 
   // ── Declarative event handlers (bound in the Lit templates) ─────────────
@@ -1148,10 +850,8 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
     this._togglePanelCheckbox();
   }
 
-  // Tabs style: each segment sets an explicit value
-  _onPanelTabClick(e) {
-    e.preventDefault();
-    const targetValue = e.currentTarget.dataset.panelSeg === "true";
+  // Tabs style: each tab sets an explicit value
+  _selectPanelTab(targetValue) {
     const cb = this.shadowRoot?.getElementById("apply-to-panel");
     if (cb && cb.checked !== targetValue) {
       cb.checked = targetValue;
@@ -1164,11 +864,6 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
     if (this._optimisticPanelMode !== undefined) {
       applyToWholePanel = this._optimisticPanelMode;
     }
-
-    // Inline legacy migrations so old saved configs render correctly
-    // without requiring an editor round-trip to normalise.
-    if (style === "default") style = "minimal";
-    if (style === "segmented") style = "tabs";
 
     switch (style) {
       case "switch":
@@ -1195,17 +890,15 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
 
       case "tabs":
         return html`
-          <div class="panel-toggle tabs" data-shape=${shape} data-active=${applyToWholePanel ? "1" : "0"}>
+          <div class="panel-toggle-tabs">
             <input type="checkbox" id="apply-to-panel" style="display:none;" .checked=${applyToWholePanel} @change=${this._onPanelCheckboxChange}>
-            <div class="tabs-thumb"></div>
-            <button class="tab-btn${!applyToWholePanel ? " active" : ""}" data-panel-seg="false" @click=${this._onPanelTabClick}>
-              <svg width="12" height="9" viewBox="0 0 12 9" fill="currentColor" style="flex-shrink:0;opacity:0.75"><rect x="0" y="0" width="3" height="3" rx="0.5"/><rect x="4.5" y="0" width="3" height="3" rx="0.5"/><rect x="9" y="0" width="3" height="3" rx="0.5"/><rect x="0" y="5" width="3" height="3" rx="0.5"/><rect x="4.5" y="5" width="3" height="3" rx="0.5"/><rect x="9" y="5" width="3" height="3" rx="0.5"/></svg>
-              Pixels
-            </button>
-            <button class="tab-btn${applyToWholePanel ? " active" : ""}" data-panel-seg="true" @click=${this._onPanelTabClick}>
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" style="flex-shrink:0;opacity:0.85"><rect x="0" y="0" width="5" height="5" rx="1"/><rect x="7" y="0" width="5" height="5" rx="1"/><rect x="0" y="7" width="5" height="5" rx="1"/><rect x="7" y="7" width="5" height="5" rx="1"/></svg>
-              Panel
-            </button>
+            ${tabBar({
+              tabs: PANEL_TABS,
+              active: applyToWholePanel ? "panel" : "pixels",
+              shape,
+              label: "Apply to",
+              onSelect: (key) => this._selectPanelTab(key === "panel"),
+            })}
           </div>
         `;
 
@@ -1298,8 +991,7 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
 
     this._optimisticMode = mode;
     this._lastModeChangeTime = Date.now();
-    this._refreshGallery();
-    this._syncActiveModeLabel();
+    this.requestUpdate();
 
     // Read the panel setting from the checkbox when rendered; when the panel
     // toggle is hidden (show_panel_toggle=false) fall back to the entity's
@@ -1349,7 +1041,7 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
       this._renderCard();
     } finally {
       this._processingModeChange = false;
-      this._refreshGallery();
+      this.requestUpdate();
     }
   }
 
@@ -1370,12 +1062,7 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
   }
 
   getCardSize() {
-    // Estimate by selector presentation so masonry layout stacks sensibly
-    const style = resolveModeSelectorStyle(this.config || {});
-    if (style === "preview-list" || style === "preview-grid") return 8;
-    if (style === "preview-wheel") return 5;
-    if (style === "preview-carousel") return 4;
-    return 4;
+    return galleryCardSize(resolveModeSelectorStyle(this.config));
   }
 }
 

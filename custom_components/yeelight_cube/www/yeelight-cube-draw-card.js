@@ -9,7 +9,6 @@ import { drawCardStyles } from "./draw_card_styles.js";
 
 import { renderExportImportRow } from "./action-button-ui.js";
 
-
 import { savePalette } from "./draw_card_palette.js";
 import { ToolManager, ActionManager } from "./draw_card_tools.js";
 import { MatrixOperations1D } from "./draw_card_matrix_1d.js";
@@ -34,9 +33,6 @@ import {
   GRID_COLS,
   GRID_ROWS,
   MATRIX_SIZE,
-  EVT_TOOL_VISIBILITY_RESET,
-  EVT_ACTION_ORDER_RESET,
-  EVT_ACTION_VISIBILITY_RESET,
   OFF_COLOR,
 } from "./draw_card_const.js";
 import { StorageUtils } from "./draw_card_storage.js";
@@ -66,6 +62,8 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
   PaletteCardsMixin(YeelightCardMixin(LitElement)),
 ) {
   static editor = ["yeelight-cube-draw-card-editor", "./yeelight-cube-draw-card-editor.js"];
+  static cardSize = 10; // Dashboard height (card-base): colors, tools, matrix
+
 
   static getStubConfig(hass) {
     const firstEntity = cubeLampEntities(hass)[0] || "";
@@ -80,12 +78,11 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
       preview_show_titles: true,
       allow_rename: false,
       matrix_size: 100,
-      button_shape: "circle",
+      tool_buttons_shape: "round",
       actions_buttons_style: "gradient",
       actions_content_mode: "icon_text",
       tool_buttons_style: "icon",
       tool_content_mode: "icon",
-      paint_button_shape: "rect",
       swatch_shape: "round",
       expand_btn_mode: "label",
       preview_size: 82,
@@ -111,7 +108,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
       show_gallery: true,
       show_pixelart_export_button: true,
       show_pixelart_import_button: true,
-      pixelart_buttons_content_mode: "icon_text",
       palette_card_mode: "tabs",
       items_per_page: 3,
       style_selector_style: "preview-carousel",
@@ -139,24 +135,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
   // NOTE: connectedCallback is defined ONCE, further down in this class.
   // A second definition here previously shadowed it silently (JS keeps only
   // the last class member with a given name), so the document mousedown
-  // listeners for tabs/floating palette modes were never attached.
-
-  _handleTabsOutsideClick = (e) => {
-    if (this.config?.palette_card_mode !== "tabs") return;
-    // Early-exit when no tab is open — avoids a requestUpdate() on every global mousedown (#9)
-    if (this._activePaletteTab === null) return;
-    const tabBar = this.shadowRoot?.querySelector(".palette-tab-bar");
-    const tabContent = this.shadowRoot?.querySelector(".palette-tab-content");
-    if (!tabBar && !tabContent) return;
-    if (
-      (tabBar && tabBar.contains(e.target)) ||
-      (tabContent && tabContent.contains(e.target))
-    ) {
-      return;
-    }
-    this._activePaletteTab = null;
-    this.requestUpdate();
-  };
+  // listener for the floating palette mode was never attached.
 
   firstUpdated() {
     // Drag-to-scroll is now setup in _setupPaletteRowDragScroll(), called from updated()
@@ -288,9 +267,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
 
   constructor() {
     super();
-    this._onToolVisibilityReset = this._onToolVisibilityReset.bind(this);
-    this._onActionOrderReset = this._onActionOrderReset.bind(this);
-    this._onActionVisibilityReset = this._onActionVisibilityReset.bind(this);
     this.matrix = StorageUtils.loadMatrix();
     this._matrixHistory = [];
     this._renderScheduled = false;
@@ -362,23 +338,9 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     // No window "config-changed" listener: HA delivers editor changes through
     // setConfig() on the edited card only; a window bus leaked one card's
     // config (entity, sensors, tools) into every draw card on the dashboard.
-    //
-    // The reset events below carry no config: they announce that the editor
-    // cleared the *global* localStorage keys shared by every draw card, so
-    // every instance reloads from storage.
-    window.addEventListener(
-      EVT_TOOL_VISIBILITY_RESET,
-      this._onToolVisibilityReset,
-    );
-    window.addEventListener(EVT_ACTION_ORDER_RESET, this._onActionOrderReset);
-    window.addEventListener(
-      EVT_ACTION_VISIBILITY_RESET,
-      this._onActionVisibilityReset,
-    );
 
-    // Outside-click handlers for tabs/floating palette modes (merged from a
-    // former duplicate connectedCallback definition that never ran).
-    document.addEventListener("mousedown", this._handleTabsOutsideClick);
+    // A click outside closes the floating palette cards (the Tabs mode keeps
+    // its picked tab: it is a selector, not a popup).
     document.addEventListener("mousedown", this._handleFloatingOutsideClick);
   }
 
@@ -396,46 +358,34 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
 
     this._hass = hass;
     if (!hass) return;
-    // The pixel arts (a new content, a fetch, a confirmed edit).
+    // The pixel arts (a new content, a fetch, a confirmed edit): the store
+    // compares the sensor's hash and refreshes the gallery only.
     if (this.config?.pixelart_sensor && this._pixelArtStore.update(hass, this.config))
       this._schedulePixelArtRender();
-
-    // Re-render only when something this card displays from the light changed:
-    // text_colors (Lamp Palette), matrix_colors (Lamp Colors) and the theme
-    // (dark-mode item borders), not on every light update, which would
-    // re-render the whole gallery for unrelated changes. HA keeps unchanged
-    // attribute values by reference across pushes.
-    if (this.entity) {
-      const lightState = this._hass.states[this.entity];
-      if (lightState) {
-        const cfg = this.config || {};
-        const textColors =
-          cfg.show_lamp_palette !== false
-            ? lightState.attributes?.text_colors
-            : undefined;
-        const matrixColors =
-          cfg.show_lamp_colors !== false
-            ? lightState.attributes?.matrix_colors
-            : undefined;
-        const themes = hass.themes;
-        if (
-          textColors !== this._lastLampTextColors ||
-          matrixColors !== this._lastLampMatrixColors ||
-          themes !== this._lastLampThemes
-        ) {
-          this._lastLampTextColors = textColors;
-          this._lastLampMatrixColors = matrixColors;
-          this._lastLampThemes = themes;
-          if (!this._renderScheduled) {
-            this._renderScheduled = true;
-            requestAnimationFrame(() => {
-              this._renderScheduled = false;
-              this.requestUpdate("hass", oldHass);
-            });
-          }
-        }
-      }
+    if (!this._hassChanged(hass)) return;
+    // One render per frame for bursts of pushes.
+    if (!this._renderScheduled) {
+      this._renderScheduled = true;
+      requestAnimationFrame(() => {
+        this._renderScheduled = false;
+        this.requestUpdate("hass", oldHass);
+      });
     }
+  }
+
+  // What the card shows from hass (card-base _hassChanged): the lamp's
+  // colors (Lamp Palette, Lamp Colors) when shown and the theme (dark-mode
+  // borders); not the lamp's other attributes, which would re-render the
+  // whole card for nothing. The pixel arts follow their store (set hass).
+  _hassInputs(hass) {
+    const cfg = this.config || {};
+    const lamp = hass?.states?.[this.entity]?.attributes;
+    return [
+      this.config,
+      hass?.themes,
+      cfg.show_lamp_palette !== false ? lamp?.text_colors : undefined,
+      cfg.show_lamp_colors !== false ? lamp?.matrix_colors : undefined,
+    ];
   }
 
   get hass() {
@@ -445,21 +395,8 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
   disconnectedCallback() {
     super.disconnectedCallback();
     this._pixelArtStore.reset();
-    window.removeEventListener(
-      EVT_TOOL_VISIBILITY_RESET,
-      this._onToolVisibilityReset,
-    );
-    window.removeEventListener(
-      EVT_ACTION_ORDER_RESET,
-      this._onActionOrderReset,
-    );
-    window.removeEventListener(
-      EVT_ACTION_VISIBILITY_RESET,
-      this._onActionVisibilityReset,
-    );
 
     // Remove document-level listeners added in connectedCallback / firstUpdated
-    document.removeEventListener("mousedown", this._handleTabsOutsideClick);
     document.removeEventListener("mousedown", this._handleFloatingOutsideClick);
 
     // Clear pending timers
@@ -467,30 +404,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
       clearTimeout(this._applyPixelArtTimer);
       this._applyPixelArtTimer = null;
     }
-  }
-
-  _onToolVisibilityReset() {
-    if (this.toolManager)
-      this.toolManager.toolVisibility = this.toolManager.loadToolVisibility();
-    this.requestUpdate();
-  }
-
-  _onActionOrderReset() {
-    this.actionManager?.loadActionOrder();
-    this.requestUpdate();
-  }
-
-  _onActionVisibilityReset() {
-    this.actionManager?.loadActionVisibility();
-    this.requestUpdate();
-  }
-
-  // Card-internal config change (e.g. tools reordered by drag): update this
-  // card's own config only. Nothing is broadcast, so other draw cards on the
-  // dashboard are never affected.
-  _updateConfig(updates) {
-    this.config = { ...this.config, ...updates };
-    this.requestUpdate();
   }
 
   _matrixColorCount() {
@@ -509,73 +422,21 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     this._autoResolveSensor("pixelart_sensor", "pixel_art", this._hass);
     this._autoResolveSensor("palette_sensor", "color_palettes", this._hass);
 
-    // Ensure tools_order exists with default value
-    if (!this.config.tools_order) {
-      this.config.tools_order = [
-        "colorPicker",
-        "eyedropper",
-        "pencil",
-        "eraser",
-        "areaFill",
-        "fillAll",
-        "undo",
-      ];
-    }
-
-    // Defensive: Ensure both colorPicker and eyedropper are present if either is configured
-    // Create a new array to avoid modifying non-extensible arrays
-    const toolsArray = [...this.config.tools_order];
-    const hasColorPicker = toolsArray.includes("colorPicker");
-    const hasEyedropper = toolsArray.includes("eyedropper");
-
-    if (hasColorPicker && !hasEyedropper) {
-      // If colorPicker exists but eyedropper doesn't, add eyedropper after colorPicker
-      const colorPickerIndex = toolsArray.indexOf("colorPicker");
-      toolsArray.splice(colorPickerIndex + 1, 0, "eyedropper");
-      this.config.tools_order = toolsArray;
-    } else if (hasEyedropper && !hasColorPicker) {
-      // If eyedropper exists but colorPicker doesn't, add colorPicker before eyedropper
-      const eyedropperIndex = toolsArray.indexOf("eyedropper");
-      toolsArray.splice(eyedropperIndex, 0, "colorPicker");
-      this.config.tools_order = toolsArray;
-    }
-
-    // The pairing fix-up above only touches this card's own fresh config copy;
-    // it is intentionally not broadcast (it used to leak into other cards).
-
-    // Ensure actions_order exists with default value (check multiple possible locations)
-    const actionsConfig =
-      this.config.actions_order ||
-      this.config.actions ||
-      (this.config.button_areas && this.config.button_areas.actions);
-
-    if (
-      !actionsConfig ||
-      !Array.isArray(actionsConfig) ||
-      actionsConfig.length === 0
-    ) {
-      this.config.actions_order = ["clear", "upload", "save", "apply"];
-    } else {
-      // Normalize to use actions_order property
-      this.config.actions_order = actionsConfig;
-    }
+    // The tools' and actions' order and visibility are read where they are
+    // shown (draw_card_tools.js: toolsOrder, actionsOrder, hidden*).
 
     const parsed = parseConfig(this.config);
     this.entity = parsed.entity;
     this.paletteSensor = parsed.paletteSensor;
+    // A new config renders now (config is not a reactive property).
+    this.requestUpdate();
 
     // Do NOT reset this.matrix here!
   }
 
   // Service calls go through the card's command queue (card-command-controller):
-  // sent in order, and results from a previous configuration are dropped.
-  // They reject on failure (Home Assistant has already shown the error).
-
-  // One call for all target lamps; the backend runs them in parallel.
-  callServiceOnTargetEntities(service, data = {}, options = {}) {
-    return this._commands.request(this.hass, this.config, service, data, options);
-  }
-
+  // sent in order, and results from a previous configuration are dropped
+  // (the lamps' services: callServiceOnTargetEntities, card-base.js).
   // Pixel-art services are global: sent once, without entity_id (an invalid
   // one causes "unknown.unknown" errors).
   callGlobalService(service, data = {}) {
@@ -628,22 +489,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
 
   _renderToolsSection(cfg, paintShape, paintContent) {
     return this.toolManager.renderToolsSection(cfg, paintShape, paintContent);
-  }
-
-  _getToolSelection(tool) {
-    return this.toolManager.getToolSelection(tool);
-  }
-
-  _getToolTitle(tool) {
-    return this.toolManager.getToolTitle(tool);
-  }
-
-  _getDefaultToolsOrder() {
-    return this.toolManager.getDefaultToolsOrder();
-  }
-
-  _handleToolClick(tool) {
-    this.toolManager.handleToolClick(tool);
   }
 
   /**
@@ -853,7 +698,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     const showUpload = cfg.show_upload_image_button !== false;
     const showPixelArtGallery = cfg.show_gallery !== false;
     const matrixPixelStyle = cfg.matrix_pixel_style || "square";
-    const paintShape = cfg.button_shape || "rect";
+    const paintShape = cfg.tool_buttons_shape || "rounded";
     const paintContent = cfg.paint_button_content || "icon";
 
     // Check section visibility
@@ -1186,10 +1031,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
   }
 
   _renderActions() {
-    const cfg = this.config || {};
-    const paintShape = cfg.button_shape || "rect";
-
-    return this.actionManager.renderActionsSection(cfg, paintShape);
+    return this.actionManager.renderActionsSection(this.config || {});
   }
 }
 

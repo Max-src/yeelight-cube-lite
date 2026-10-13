@@ -38,11 +38,10 @@ export const ModeSelectorMixin = (Base) => class extends Base {
   }
 
   /**
-   * Hand the gallery the current items and active mode. This card renders
-   * its skeleton once per structure and syncs state in place
-   * (_syncDynamicUI), so state changes reach the gallery here rather than
-   * through a template re-render. `angle`: the angle being dragged (chip
-   * swatches follow it live).
+   * Hand the gallery its current items and active mode at once, without
+   * rendering the card: new previews (they arrive in the shared store, not
+   * in the card's state) and an angle being dragged (`angle`: the chip
+   * swatches follow it live while the card's renders wait).
    */
   _refreshGallery(angle) {
     const gallery = this.shadowRoot?.querySelector("yc-collection-gallery");
@@ -204,20 +203,8 @@ export const ModeSelectorMixin = (Base) => class extends Base {
 
       // New previews: the gallery repaints them in place.
       this._refreshGallery();
-
-      // Fresh preview data arrived — if text preview mode is active and we are
-      // NOT mid-drag, force the exact same path as toggling the "Show Text
-      // Preview" switch: a synchronous this._renderCard() that rebuilds the full DOM
-      // from the now-fresh cache.  Previous attempts using requestAnimationFrame
-      // were silently blocked by the _renderScheduled guard when a set-hass
-      // render was already queued.
-      if (
-        this.config?.matrix_rotary_text_preview === true &&
-        !this._draggingRotary
-      ) {
-        this._renderScheduled = false; // clear any pending guard
-        this._renderCard(); // full DOM rebuild from fresh cache
-      }
+      // The matrix angle control can show the text from the same previews.
+      if (this.config?.matrix_rotary_text_preview === true) this._renderCard();
     });
   }
 

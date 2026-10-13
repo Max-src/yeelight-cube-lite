@@ -1,8 +1,8 @@
 /**
  * Shared constants for the Yeelight Cube Lite Draw Card ecosystem.
  *
- * Centralizes grid dimensions, default orders, localStorage keys,
- * event names, and color constants used across multiple files.
+ * Centralizes grid dimensions, default orders, labels, localStorage keys
+ * and color constants used across multiple files.
  */
 
 // --- Grid / Matrix ---
@@ -34,15 +34,20 @@ export const DEFAULT_TOOL_ORDER = [
 
 export const DEFAULT_ACTION_ORDER = ["clear", "upload", "save", "apply"];
 
+// The actions' names in the editor ("spacer": an empty slot, for alignment).
+export const ACTION_LABELS = {
+  clear: "Clear",
+  upload: "Upload",
+  save: "Save",
+  apply: "Apply",
+  spacer: "Spacer (empty slot)",
+};
+
 // --- localStorage keys ---
+// Tools / actions hidden per browser by former versions: read only for
+// configs without hidden_tools / hidden_actions (draw_card_tools.js).
 export const LS_TOOL_VISIBILITY = "yeelight-tool-visibility";
 export const LS_ACTION_VISIBILITY = "yeelight-action-visibility";
-export const LS_ACTION_ORDER = "yeelight-action-order";
-
-// --- Custom event names ---
-export const EVT_TOOL_VISIBILITY_RESET = "yeelight-tool-visibility-reset";
-export const EVT_ACTION_ORDER_RESET = "yeelight-action-order-reset";
-export const EVT_ACTION_VISIBILITY_RESET = "yeelight-action-visibility-reset";
 
 // --- Tool config map (icon, label, title) ---
 export const TOOL_CONFIG = {

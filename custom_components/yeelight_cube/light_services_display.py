@@ -542,6 +542,19 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             target_entity._custom_pixels = None
             target_entity._custom_draw_active = False
             target_entity._active_pixel_art_name = None
+            if target_entity._text_waits_for_matrix():
+                # The lamp shows its firmware clock / native effect: the text
+                # is kept for when it shows text again (call save_state first
+                # to show it over the clock, restore_state to come back).
+                if target_entity._text_input_entity and getattr(target_entity._text_input_entity, 'hass', None) is not None:
+                    target_entity._text_input_entity.async_update_from_light()
+                if target_entity.hass is not None:
+                    target_entity.async_schedule_update_ha_state()
+                _LOGGER.debug(
+                    "[SET_TEXT] %s shows %s: text kept for later",
+                    target_entity.entity_id, target_entity._mode,
+                )
+                return
             # Leaving pixel-art (Custom Draw) for text: restore a valid text
             # render mode so the mode-select entity and renderer stay consistent
             # -- otherwise _mode lingers as "Custom Draw" and the text render
@@ -1091,6 +1104,8 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             if target_entity.hass is not None:
                 target_entity.async_schedule_update_ha_state()
             await target_entity.async_apply_display_mode(update_type='color_change')
+            # The rotation that ran when the state was saved runs again.
+            await target_entity._async_resume_display_rotation()
             _LOGGER.debug("[RESTORE_STATE] Restored display state for %s", target_entity.entity_id)
 
         _fire_and_forget(*[_apply_one(t) for t in targets])

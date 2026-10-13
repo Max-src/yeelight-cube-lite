@@ -31,6 +31,9 @@ function stopAnimationLoops(root) {
 // The cards of the user's own collections (palettes, pixel arts): no lamp
 // sliders, color modes or favourites; their gallery is checked instead.
 const COLLECTION_CARDS = ["palette", "draw"];
+// Cards captured as rendered, like the collection cards (no animated
+// previews or lamp sliders to check).
+const STATIC_CARDS = ["lamp-preview", "gradient", "color-list-editor", ...COLLECTION_CARDS];
 
 // Synthetic collections for them (sensors the fixture provides).
 const DOC_PALETTES = [
@@ -65,10 +68,9 @@ window.cardDocs = {
     if (!this.fonts?.font_maps?.native)
       throw Error("Production native clock font sensor is required");
     const base = "/yeelight_cube/";
+    const { CARD_NAMES } = await import(`${base}card-list.js`);
     await Promise.all(
-      ["clock", "native-effects", "lamp-preview", ...COLLECTION_CARDS].map(
-        (kind) => import(`${base}yeelight-cube-${kind}-card.js`),
-      ),
+      CARD_NAMES.map((kind) => import(`${base}yeelight-cube-${kind}-card.js`)),
     );
     this.catalogue = (
       await import(`${base}native-effect-card-utils.js`)
@@ -118,6 +120,8 @@ window.cardDocs = {
           clock: "Clock",
           palette: "Palettes",
           draw: "Draw",
+          gradient: "Gradient",
+          "color-list-editor": "Colors",
         }[kind] || "Native Effects",
       show_current_preview: true,
       show_preview: true,
@@ -204,6 +208,17 @@ window.cardDocs = {
             ? {}
             : {
                 friendly_name: "Demo lamp",
+                // Gradient and Colors: the text colors, mode and angle.
+                text_colors: [
+                  [255, 94, 77],
+                  [255, 206, 84],
+                  [6, 214, 160],
+                  [58, 134, 255],
+                ],
+                mode: "Angle Gradient",
+                angle: 45,
+                full_panel: false,
+                custom_text: "Hi",
                 content_mode:
                   clock || kind === "lamp-preview" ? "Clock" : "Native Effect",
                 brightness: 255,
@@ -306,12 +321,8 @@ window.cardDocs = {
   async settle() {
     const card = this.card;
     stopAnimationLoops(card);
-    // Editors, Lamp Preview and the collection cards have no animated
-    // previews to freeze.
-    const plain =
-      this.options.section ||
-      this.kind === "lamp-preview" ||
-      COLLECTION_CARDS.includes(this.kind);
+    // Editors and the static cards have no animated previews to freeze.
+    const plain = this.options.section || STATIC_CARDS.includes(this.kind);
     if (plain) {
       await card.updateComplete;
     } else if (card._paintPreview) {
@@ -358,7 +369,7 @@ window.cardDocs = {
       const namespaces =
         this.kind === "lamp-preview"
           ? ["brightness"]
-          : COLLECTION_CARDS.includes(this.kind)
+          : STATIC_CARDS.includes(this.kind)
             ? []
             : ["brightness", "speed"];
       for (const namespace of namespaces) {
@@ -372,8 +383,11 @@ window.cardDocs = {
     if (plain) {
       if (
         !this.options.section &&
-        COLLECTION_CARDS.includes(this.kind) &&
-        !card.shadowRoot.querySelector("yc-collection-gallery [data-mode]")
+        (COLLECTION_CARDS.includes(this.kind) || this.kind === "gradient") &&
+        // Items, or the dropdown's options.
+        !card.shadowRoot.querySelector(
+          "yc-collection-gallery [data-mode], yc-collection-gallery .mode-select option",
+        )
       )
         throw Error(`Missing gallery items: ${this.kind}`);
       if (this.container.scrollWidth > this.container.clientWidth)

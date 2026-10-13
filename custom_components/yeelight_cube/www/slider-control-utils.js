@@ -3,178 +3,71 @@
 //  Capsule)
 // ============================================================================
 //
-// Extracted from the lamp-preview card's brightness slider so the SAME control
-// (all styles, CSS and interactions) is reused by every card that needs a
-// value slider — currently the brightness control (lamp-preview card) and the
-// clock animation-speed control (clock card). One source of truth: a fix here
-// benefits every consumer.
+// The SAME control (all styles, CSS and interactions) is used by every card
+// with a lamp slider: brightness and animation speed in the Clock, Native
+// Effects and Lamp Preview cards. One source of truth: a fix here benefits
+// every consumer.
 //
-// The control works in a 1-100 display space. Consumers map that to their own
-// device range in the `onCommit(value1to100)` callback (e.g. brightness 3-255,
-// speed 1-255). `onLive(value1to100)` fires immediately for responsive
-// feedback (optimistic UI / live preview).
+// The control works in a 1-100 display space (values: slider-values.js).
+// Consumers map that to their own device range in `onCommit(value1to100)`;
+// `onLive(value1to100)` fires immediately for responsive feedback.
+//
+// This file holds what every style shares: the container, the step buttons,
+// the pointer / commit logic and the config keys. Each style's markup, visual
+// update, interactions and CSS live in its module (slider-style-*.js, see
+// SLIDER_STYLES); the editor settings in slider-settings-ui.js.
 //
 // Rendering keeps the `brightness-*` class names + `--brightness-color` /
-// `--slider-thickness` CSS vars so `sliderControlStyles` is the exact,
-// battle-tested CSS. The interaction handlers are produced by
-// `createSliderHandlers()` and assigned onto the host element; the render names
-// them in data-on-* attributes, dispatched by bindHostEvents (host-events.js)
-// with no inline script.
+// `--slider-thickness` CSS vars. The interaction handlers are produced by
+// `createSliderHandlers()` and assigned onto the host element; the markup
+// names them in data-on-* attributes, dispatched by bindHostEvents
+// (host-events.js) with no inline script.
 
 import { cardSpacing } from "./card-layout-utils.js";
 import { escapeHtml } from "./html-escape-utils.js";
-import {
-  getCapsuleCSS,
-  renderCapsuleHTML,
-  updateCapsuleVisuals,
-} from "./capsule-slider-utils.js";
-import { html } from "./lib/lit-all.js";
-import { handleColorPickerClick } from "./color-picker-utils.js";
-import {
-  createButtonGroup,
-  createButtonGroupChangeHandler,
-} from "./button-group-utils.js";
-import { createSliderRow, createToggleRow } from "./form-row-utils.js";
-import { renderModeSettingsSection } from "./editor_ui_utils.js";
 import { hostEventAttrs } from "./host-events.js";
+import {
+  BRIGHTNESS_RAW,
+  SPEED_RAW,
+  TOKEN_PATTERN,
+  formatSliderValue,
+  resolveWheelStyle,
+  sanitizeSliderGc,
+} from "./slider-values.js";
+import range from "./slider-style-range.js";
+import bar from "./slider-style-bar.js";
+import wheel from "./slider-style-wheel.js";
+import matrix from "./slider-style-matrix.js";
+import rotary from "./slider-style-rotary.js";
+import capsule from "./slider-style-capsule.js";
 
-/** Which host methods slider markup may call (see bindHostEvents). */
-export const isSliderHandler = (name) => /^_sl[A-Za-z]*$/.test(name);
+export {
+  isSliderHandler,
+  sliderPctToRaw,
+  sliderRawToPct,
+  BRIGHTNESS_RAW,
+  SPEED_RAW,
+  brightnessPctToRaw,
+  brightnessRawToPct,
+  speedPctToRaw,
+  speedRawToPct,
+  sliderRawValue,
+  sanitizeSliderGc,
+  formatSliderValue,
+} from "./slider-values.js";
 
-function resolveWheelStyle(style) {
-  return style === "bars" || style === "mesh" ? "mesh" : "ticks";
-}
-
-// ── Device value ↔ 1-100 percent ────────────────────────────────────────────
-// One linear, endpoint-exact and mutually-inverse mapping so every card turns
-// the SAME device value into the SAME percentage (e.g. speed 50 → 20% on every
-// card, not 20% on one and 19% on another). The sliders always operate in the
-// 1-100 space; these convert to/from the device's raw range (speed 1-255,
-// brightness 3-255) only for the command payload and the optional raw display.
-export function sliderPctToRaw(pct, min, max) {
-  const p = Math.max(1, Math.min(100, Number(pct) || 1));
-  return Math.max(
-    min,
-    Math.min(max, Math.round(min + ((p - 1) * (max - min)) / 99)),
-  );
-}
-
-export function sliderRawToPct(raw, min, max) {
-  const r = Math.max(min, Math.min(max, Number(raw)));
-  return Math.max(
-    1,
-    Math.min(100, Math.round(1 + ((r - min) * 99) / (max - min))),
-  );
-}
-
-// The lamp's device ranges. Cards convert through the helpers below instead of
-// retyping a range or a formula, so every card (and the raw-value display)
-// reads the same device value as the same percentage.
-export const BRIGHTNESS_RAW = Object.freeze({ min: 3, max: 255 }); // HA brightness; the Cube's floor is 3
-export const SPEED_RAW = Object.freeze({ min: 1, max: 255 });
-
-export const brightnessPctToRaw = (pct) =>
-  sliderPctToRaw(pct, BRIGHTNESS_RAW.min, BRIGHTNESS_RAW.max);
-export const brightnessRawToPct = (raw) =>
-  sliderRawToPct(raw, BRIGHTNESS_RAW.min, BRIGHTNESS_RAW.max);
-export const speedPctToRaw = (pct) =>
-  sliderPctToRaw(pct, SPEED_RAW.min, SPEED_RAW.max);
-export const speedRawToPct = (raw) =>
-  sliderRawToPct(raw, SPEED_RAW.min, SPEED_RAW.max);
-
-// True when a gc should display the device's raw value instead of a percent.
-function sliderRawMode(gc) {
-  return (
-    gc.valueMode === "raw" &&
-    Number.isFinite(gc.rawMin) &&
-    Number.isFinite(gc.rawMax)
-  );
-}
-
-// The exact device value for a 1-100 value: prefer the real device value when
-// the shown percent still represents it (so 128 reads 128, not 129, despite the
-// 100-step slider); while dragging (pct differs) fall back to the linear map.
-export function sliderRawValue(pct, gc) {
-  const derived = sliderPctToRaw(pct, gc.rawMin, gc.rawMax);
-  return Number.isFinite(gc.rawValue) &&
-    sliderRawToPct(gc.rawValue, gc.rawMin, gc.rawMax) === pct
-    ? Math.round(Math.max(gc.rawMin, Math.min(gc.rawMax, gc.rawValue)))
-    : derived;
-}
-
-// Card configuration reaches the slider markup (class names, inline styles,
-// text), and a dashboard config can come from anywhere (pasted YAML). Keep
-// every value to its expected shape so none can break out of the HTML:
-// class-name tokens, finite numbers, a CSS color, and escaped text.
-const SLIDER_TOKEN_KEYS = [
-  "style",
-  "theme",
-  "barFill",
-  "variant",
-  "wheelStyle",
-  "rotaryStyle",
-  "matrixPixelStyle",
-  "matrixDir",
-  "stepPosition",
-  "valueDisplay",
-  "valueSide",
-  "capsuleVariant",
-];
-const SLIDER_NUMBER_KEYS = [
-  "width",
-  "thickness",
-  "wheelStep",
-  "matrixCols",
-  "matrixRows",
-  "stepSize",
-];
-const SLIDER_TEXT_KEYS = ["unit", "rawUnit", "iconLeft", "iconRight"];
-const TOKEN_PATTERN = /^[a-z0-9_-]+$/i;
-// A color lands inside style="--brightness-color: …;". Rather than listing
-// every CSS color syntax (var() with fallbacks, color-mix(), oklch(), deg
-// units, ...), allow only the characters colors use: no quotes, <>, ;, :,
-// braces or backslashes means the value cannot leave the declaration, and
-// url()/expression()/image() are refused outright.
-const CSS_COLOR_PATTERN = /^[\w#(),.%\s/+-]+$/;
-const CSS_COLOR_FORBIDDEN = /(url|expression|image|element)\s*\(/i;
-
-export function sanitizeSliderGc(gc = {}) {
-  const safe = { ...gc };
-  for (const key of SLIDER_TOKEN_KEYS)
-    if (safe[key] != null && !TOKEN_PATTERN.test(String(safe[key])))
-      delete safe[key];
-  for (const key of SLIDER_NUMBER_KEYS) {
-    if (safe[key] == null) continue;
-    // An empty value means "not set" (Number("") would be 0).
-    if (String(safe[key]).trim() === "") {
-      delete safe[key];
-      continue;
-    }
-    const number = Number(safe[key]);
-    if (Number.isFinite(number)) safe[key] = number;
-    else delete safe[key];
-  }
-  if (safe.color != null) {
-    const color = String(safe.color).trim();
-    if (
-      !color ||
-      !CSS_COLOR_PATTERN.test(color) ||
-      CSS_COLOR_FORBIDDEN.test(color)
-    )
-      delete safe.color;
-    else safe.color = color;
-  }
-  for (const key of SLIDER_TEXT_KEYS)
-    if (safe[key] != null) safe[key] = escapeHtml(String(safe[key]));
-  return safe;
-}
-
-// The text shown for a 1-100 value, honouring the percent/raw display toggle.
-export function formatSliderValue(pct, gc) {
-  return sliderRawMode(gc)
-    ? `${sliderRawValue(pct, gc)}${gc.rawUnit ?? ""}`
-    : `${pct}${gc.unit ?? "%"}`;
-}
+/**
+ * The styles, by name. Each module gives:
+ * - render(c) -> { html, mirror }: its markup inside the slider container,
+ *   and what sits beside its track (mirrored by the step-button row so the
+ *   buttons line up under the track: gap, padX, left, right, trackMaxWidth);
+ * - update(view, value): its visuals for a value (drag, external updates);
+ * - handlers(tools) (optional): its own interactions;
+ * - css.
+ * Any other style name renders the plain "slider".
+ */
+const SLIDER_STYLES = { slider: range, bar, wheel, matrix, rotary, capsule };
+const styleOf = (name) => SLIDER_STYLES[name] || range;
 
 /**
  * Render the slider control for a generic config `gc` and current `value`
@@ -193,23 +86,14 @@ export function formatSliderValue(pct, gc) {
 export function renderSliderControl(gc, value, ns = "") {
   gc = sanitizeSliderGc(gc);
   ns = TOKEN_PATTERN.test(String(ns)) ? ns : "";
-  value = Math.max(1, Math.min(100, Math.round(Number(value)) || 1));
-  const style = gc.style || "slider";
+  const v = Math.max(1, Math.min(100, Math.round(Number(value)) || 1));
+  const style = SLIDER_STYLES[gc.style] ? gc.style : "slider";
   const width = Math.max(30, Math.min(100, Number(gc.width) || 100));
   const thickness = gc.thickness ?? 6;
   // Two theme states only: "flat" (plain) or "subtle" (card). Any legacy value
   // (e.g. the removed "filled") collapses to the card look.
   const theme = gc.theme === "flat" ? "flat" : "subtle";
   const color = gc.color || "#ff9800";
-  const showValue = gc.showValue !== false;
-  const v = value;
-  // Capsule exposes its non-track pill content so the step-button row can
-  // mirror it (see the shared mirror-spacer layout below).
-  let capsuleLeftContent = "";
-  let capsuleRightContent = "";
-  // Matrix caps its grid width; the step-button area mirrors that same cap so
-  // the buttons stay centred on the (left-aligned) grid rather than the row.
-  let trackMaxWidth = 0;
 
   // Namespacing lets several independent sliders live on one host: handler
   // method names are suffixed (e.g. _slSpeedChange) and DOM queries scope to
@@ -236,286 +120,53 @@ export function renderSliderControl(gc, value, ns = "") {
   });
   const idOf = (b) => (ns ? `${b}-${ns}` : b);
 
-  let html = `<div class="brightness-slider-container brightness-style-${style} brightness-theme-${theme}" data-sl-ns="${ns}" style="--slider-thickness: ${thickness}px; --brightness-color: ${color};" ${on({ wheel: "Wheel" })}>`;
+  const { html: body, mirror = {} } = SLIDER_STYLES[style].render({
+    gc,
+    v,
+    showValue: gc.showValue !== false,
+    thickness,
+    theme,
+    on,
+    drag,
+    idOf,
+  });
+  let html = `<div class="brightness-slider-container brightness-style-${style} brightness-theme-${theme}" data-sl-ns="${ns}" style="--slider-thickness: ${thickness}px; --brightness-color: ${color};" ${on({ wheel: "Wheel" })}>${body}`;
 
-  if (style === "bar") {
-    const barFill = gc.barFill || "solid";
-    const stripesClass = barFill === "stripes" ? " bar-stripes-idle" : "";
-    html += `
-      <div class="brightness-bar-wrapper brightness-bar-full">
-        <div class="brightness-bar-track bar-fill-${barFill}${stripesClass}">
-          <div class="brightness-bar-fill" style="width: ${v}%"></div>
-          <div class="brightness-bar-seams"></div>
-          <input type="range" min="1" max="100" value="${v}"
-            class="brightness-slider brightness-slider-bar"
-            ${drag} />
-        </div>
-        ${showValue ? `<div class="brightness-value-right">${formatSliderValue(v, gc)}</div>` : ""}
-      </div>`;
-  } else if (style === "wheel") {
-    const step = Math.max(1, Math.min(50, parseInt(gc.wheelStep) || 10));
-    const wheelStyle = resolveWheelStyle(gc.wheelStyle);
-    const showWheelLabels = gc.wheelLabels !== false;
-    const stops = [];
-    for (let s = step; s <= 100; s += step) stops.push(s);
-    if (stops[stops.length - 1] !== 100) stops.push(100);
-    const tickW = thickness * 5 + 20;
-    const activeIndex = stops.reduce(
-      (best, sv, i) =>
-        Math.abs(sv - v) < Math.abs(stops[best] - v) ? i : best,
-      0,
-    );
-    const shift = -(activeIndex * tickW + tickW / 2);
-    const ticks = stops
-      .map(
-        (sv, i) => `
-          <button type="button" class="brightness-wheel-tick${
-            i === activeIndex ? " active" : ""
-          }" data-value="${sv}" data-index="${i}" style="width:${tickW}px;flex:0 0 ${tickW}px;"
-            ${on({ click: "WheelTick" }, [sv])}>
-            <span class="wheel-tick-mark"></span>
-            ${showWheelLabels ? `<span class="wheel-tick-label">${sv}</span>` : ""}
-          </button>`,
-      )
-      .join("");
-    html += `
-      <div class="brightness-wheel-wrapper">
-        <div class="brightness-wheel-value">${showValue ? formatSliderValue(v, gc) : ""}</div>
-        <div class="brightness-wheel-viewport wheel-style-${wheelStyle}"
-          style="height:${thickness * 5 + 20}px;"
-          ${on({ wheel: "WheelStep", mousedown: "WheelDragStart", touchstart: "WheelDragStart" })}>
-          <div class="brightness-wheel-caret"></div>
-          <div class="brightness-wheel-fade brightness-wheel-fade-left"></div>
-          <div class="brightness-wheel-fade brightness-wheel-fade-right"></div>
-          <div class="brightness-wheel-track" style="--wheel-shift: ${shift}px; --tick-w: ${tickW}px;">
-            ${ticks}
-          </div>
-        </div>
-        <input type="range" min="${step}" max="100" step="${step}" value="${stops[activeIndex]}"
-          class="brightness-slider brightness-slider-wheel" style="display:none;"
-          ${on({ input: "Change" })} />
-      </div>`;
-  } else if (style === "matrix") {
-    const cols = Math.max(3, Math.min(20, parseInt(gc.matrixCols) || 10));
-    const rows = Math.max(1, Math.min(6, parseInt(gc.matrixRows) || 2));
-    const matrixDir = gc.matrixDir || "row";
-    const matrixPixelStyle = gc.matrixPixelStyle || "rounded";
-    const cellPx = thickness * 3 + 4;
-    const total = cols * rows;
-    trackMaxWidth = cols * (cellPx + 3) + 16;
-    const litCount = Math.max(1, Math.round((v / 100) * total));
-    let cells = "";
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        let level;
-        if (matrixDir === "col") level = c * rows + (rows - 1 - r) + 1;
-        else level = (rows - 1 - r) * cols + c + 1;
-        const lit = level <= litCount ? " lit" : "";
-        cells += `<div class="brightness-matrix-cell${lit}" data-level="${level}"></div>`;
-      }
-    }
-    html += `
-      <div class="brightness-matrix-wrapper">
-        <div class="brightness-matrix-grid pixel-shape-${matrixPixelStyle}" data-total="${total}"
-             style="box-sizing:border-box;grid-template-columns:repeat(${cols},1fr);gap:3px;max-width:${cols * (cellPx + 3) + 16}px;"
-             ${on({ mousedown: "MatrixDown", touchstart: "MatrixDown" })}>
-          ${cells}
-        </div>
-        ${showValue ? `<div class="brightness-matrix-value">${formatSliderValue(v, gc)}</div>` : ""}
-        <input type="range" min="1" max="100" value="${v}"
-          class="brightness-slider brightness-slider-matrix" style="display:none;"
-          ${on({ input: "Change" })} />
-      </div>`;
-  } else if (style === "rotary") {
-    const rotaryStyle = gc.rotaryStyle || "glow";
-    const angle = ((v - 1) / 99) * 270;
-    const radius = 40;
-    const circumference = 2 * Math.PI * radius;
-    const arcLength = (circumference * 270) / 360;
-    const progressArcLength = (angle / 270) * arcLength;
-    const knobAngle = 225 + angle;
-    const dialKnobAngleRad = (angle * Math.PI) / 180;
-    const dialKnobX = (50 + radius * Math.cos(dialKnobAngleRad)).toFixed(2);
-    const dialKnobY = (50 + radius * Math.sin(dialKnobAngleRad)).toFixed(2);
-    html += `
-      <div class="brightness-rotary-wrapper" ${on({ wheel: "Wheel" })}>
-        <div class="brightness-rotary-container rotary-style-${rotaryStyle}"
-             ${on({ mousedown: "RotaryStart", touchstart: "RotaryStart" })}
-             style="position: relative; z-index: 10; --rotary-stroke: ${thickness * 2};">
-          <svg class="brightness-rotary-svg" viewBox="0 0 100 100">
-            <defs>
-              <linearGradient id="brightnessRotaryGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stop-color="#ffcf7a" />
-                <stop offset="55%" stop-color="#ff9800" />
-                <stop offset="100%" stop-color="#ff7043" />
-              </linearGradient>
-              <linearGradient id="rotaryGlossGrad" x1="50" y1="10" x2="50" y2="90" gradientUnits="userSpaceOnUse">
-                <stop offset="0%" stop-color="rgba(255,255,255,0.65)" />
-                <stop offset="35%" stop-color="rgba(255,255,255,0.18)" />
-                <stop offset="100%" stop-color="rgba(0,0,0,0)" />
-              </linearGradient>
-            </defs>
-            <circle cx="50" cy="50" r="${radius}" class="rotary-bg" style="stroke-dasharray: ${arcLength} ${circumference};" />
-            <circle cx="50" cy="50" r="${radius}" class="rotary-progress rotary-progress-${rotaryStyle}" style="stroke-dasharray: ${progressArcLength} ${circumference};" />
-            ${rotaryStyle === "gloss" ? `<circle cx="50" cy="50" r="${radius}" class="rotary-gloss-overlay" style="stroke-dasharray: ${progressArcLength} ${circumference};" />` : ""}
-            ${rotaryStyle === "dial" && progressArcLength > 0 ? `<circle class="rotary-dial-knob" cx="${dialKnobX}" cy="${dialKnobY}" r="${thickness + 2}" />` : ""}
-          </svg>
-          ${rotaryStyle === "thick" ? `<div class="rotary-knob-arm" style="--knob-angle:${knobAngle}deg;"><div class="rotary-knob"></div></div>` : ""}
-          <div class="rotary-center-content">
-            ${showValue ? `<div class="rotary-value">${formatSliderValue(v, gc)}</div>` : ""}
-          </div>
-          <input type="range" min="1" max="100" value="${v}" class="brightness-slider brightness-slider-rotary" style="display: none;" />
-        </div>
-      </div>`;
-  } else if (style === "capsule") {
-    const bvd = gc.valueDisplay || (showValue ? "text" : "none");
-    const bvs = gc.valueSide || "under";
-    // The editable capsule input operates in the displayed units (raw when the
-    // raw toggle is on) and converts back to 1-100 in the value handlers.
-    const capRaw = sliderRawMode(gc);
-    const capMin = capRaw ? gc.rawMin : 1;
-    const capMax = capRaw ? gc.rawMax : 100;
-    const capVal = capRaw ? sliderRawValue(v, gc) : v;
-    let bLeftSlot = null;
-    let bRightSlot = null;
-    let bIconLeft = gc.iconLeft || null;
-    let bIconRight = gc.iconRight || null;
-    let bShowValue = false;
-    let bValueText = "";
-    let bUnderHtml = null;
-
-    const inputBase = `class="brightness-capsule-input" type="number" min="${capMin}" max="${capMax}" step="1" value="${capVal}" ${on({ focusin: "ValueFocus", focusout: "ValueBlur", keydown: "ValueKey", input: "ValueInput" })} data-stop="mousedown touchstart"`;
-
-    if (bvd !== "none") {
-      const isInput = bvd === "input";
-      if (bvs === "under") {
-        if (isInput) {
-          bUnderHtml = `<div class="brightness-capsule-slot capsule-value-under"><input id="${idOf("sl-value-input")}" ${inputBase} /></div>`;
-        } else {
-          bShowValue = true;
-          bValueText = formatSliderValue(v, gc);
-        }
-      } else {
-        const inputHtml = isInput
-          ? `<input id="${idOf("sl-value-input")}" ${inputBase} />`
-          : `<input id="${idOf("sl-value-text")}" class="brightness-capsule-input" type="text" value="${formatSliderValue(v, gc)}" readonly tabindex="-1" />`;
-        if (bvs === "left") {
-          const iconHtml = bIconLeft
-            ? `<div class="capsule-icon capsule-icon-left">${bIconLeft}</div>`
-            : "";
-          bLeftSlot = `<div class="brightness-capsule-slot">${inputHtml}${iconHtml}</div>`;
-          bIconLeft = null;
-        } else {
-          const iconHtml = bIconRight
-            ? `<div class="capsule-icon capsule-icon-right">${bIconRight}</div>`
-            : "";
-          bRightSlot = `<div class="brightness-capsule-slot">${iconHtml}${inputHtml}</div>`;
-          bIconRight = null;
-        }
-      }
-    }
-
-    capsuleLeftContent = bLeftSlot
-      ? bLeftSlot
-      : bIconLeft
-        ? `<div class="capsule-icon capsule-icon-left">${bIconLeft}</div>`
+  // Step buttons, below the track or on its sides.
+  const step = gc.stepButtons
+    ? Math.max(1, Math.min(25, parseInt(gc.stepSize) || 5))
+    : 0;
+  const position = gc.stepPosition || "below";
+  const stepButton = (delta, side = "") =>
+    `<button type="button" class="rotary-step-btn${side}" title="${delta < 0 ? "Decrease" : "Increase"} by ${Math.abs(delta)}%" ${on({ click: "RotaryStep" }, [delta])}>${delta < 0 ? "&#x2212;" : "&#x2b;"}</button>`;
+  if (step && position === "below") {
+    // Align the buttons under the TRACK, not the whole control, by mirroring
+    // the style's side content with an invisible spacer that reuses the exact
+    // same markup — so the button area always equals the track width
+    // regardless of value text, icons or control width.
+    const spacer = (inner) =>
+      inner
+        ? `<div class="brightness-step-spacer" aria-hidden="true">${inner}</div>`
         : "";
-    capsuleRightContent = bRightSlot
-      ? bRightSlot
-      : bIconRight
-        ? `<div class="capsule-icon capsule-icon-right">${bIconRight}</div>`
-        : "";
-
-    html += `<div class="brightness-capsule-host${gc.capsuleVariant === "thick" ? " capsule-variant-thick" : ""}">`;
-    html += renderCapsuleHTML({
-      theme,
-      thickness,
-      value: v,
-      min: 1,
-      max: 100,
-      iconLeft: bIconLeft,
-      iconRight: bIconRight,
-      leftSlotHtml: bLeftSlot,
-      rightSlotHtml: bRightSlot,
-      inputEvents: drag,
-      showValue: bShowValue,
-      valueText: bValueText,
-      underHtml: bUnderHtml,
-      trackExtraHtml: gc.snap
-        ? `<div class="capsule-snap-ticks">${[20, 40, 60, 80].map((sv) => `<div class="capsule-snap-tick" style="left:${((sv - 1) / 99) * 100}%"></div>`).join("")}</div>`
-        : "",
-    });
-    html += `</div>`;
-  } else {
-    // Default "slider" style with thin / thick variants
-    const variant = gc.variant === "thick" ? "thick" : "thin";
+    const trackMax = mirror.trackMaxWidth ? `${mirror.trackMaxWidth}px` : "none";
     html += `
-      <div class="brightness-slider-wrapper${showValue ? "" : " brightness-slider-full"}" style="--slider-pct:${v}%">
-        <input type="range" min="1" max="100" value="${v}"
-          class="brightness-slider brightness-slider-variable slider-variant-${variant}"
-          style="--slider-pct:${v}%"
-          ${drag} />
-        ${showValue ? `<span class="brightness-value-slider">${formatSliderValue(v, gc)}</span>` : ""}
-      </div>`;
-  }
-
-  // Step buttons (below / sides)
-  if (gc.stepButtons) {
-    const globalStep = Math.max(1, Math.min(25, parseInt(gc.stepSize) || 5));
-    const stepPos = gc.stepPosition || "below";
-    if (stepPos === "below") {
-      // Align the buttons under the TRACK, not the whole control, by mirroring
-      // the value/side content next to the track with an invisible spacer that
-      // reuses the exact same markup — so the button area always equals the
-      // track width regardless of value text, icons or control width.
-      let mGap = 12;
-      let mPadX = 0;
-      let mLeft = "";
-      let mRight = "";
-      if (style === "capsule") {
-        mGap = 16;
-        mPadX = 12;
-        mLeft = capsuleLeftContent;
-        mRight = capsuleRightContent;
-      } else if (showValue && style === "bar") {
-        mGap = 8;
-        mRight = `<div class="brightness-value-right">${formatSliderValue(v, gc)}</div>`;
-      } else if (showValue && style === "matrix") {
-        mRight = `<div class="brightness-matrix-value">${formatSliderValue(v, gc)}</div>`;
-      } else if (showValue && style === "slider") {
-        mRight = `<span class="brightness-value-slider">${formatSliderValue(v, gc)}</span>`;
-      }
-      const spacer = (inner) =>
-        inner
-          ? `<div class="brightness-step-spacer" aria-hidden="true">${inner}</div>`
-          : "";
-      html += `
         <div class="brightness-step-buttons brightness-step-below"
-             style="--slider-step-gap:${mGap}px;--slider-step-pad-x:${mPadX}px;--slider-step-track-max:${trackMaxWidth ? `${trackMaxWidth}px` : "none"};">
-          ${spacer(mLeft)}
+             style="--slider-step-gap:${mirror.gap ?? 12}px;--slider-step-pad-x:${mirror.padX ?? 0}px;--slider-step-track-max:${trackMax};">
+          ${spacer(mirror.left)}
           <div class="brightness-step-btn-area">
-            <button type="button" class="rotary-step-btn" title="Decrease by ${globalStep}%" ${on({ click: "RotaryStep" }, [-globalStep])}>&#x2212;</button>
-            <button type="button" class="rotary-step-btn" title="Increase by ${globalStep}%" ${on({ click: "RotaryStep" }, [globalStep])}>&#x2b;</button>
+            ${stepButton(-step)}
+            ${stepButton(step)}
           </div>
-          ${spacer(mRight)}
+          ${spacer(mirror.right)}
         </div>`;
-    }
   }
-
   html += `</div>`;
-
-  if (gc.stepButtons && (gc.stepPosition || "below") === "sides") {
-    const globalStep = Math.max(1, Math.min(25, parseInt(gc.stepSize) || 5));
-    const lastDiv = html.lastIndexOf('<div class="brightness-slider-container');
-    const closingIdx = html.lastIndexOf("</div>");
-    const inner = html.slice(lastDiv, closingIdx + 6);
-    html = html.slice(0, lastDiv);
-    html += `<div class="brightness-sides-row">
-      <button type="button" class="rotary-step-btn rotary-step-side" title="Decrease by ${globalStep}%" ${on({ click: "RotaryStep" }, [-globalStep])}>&#x2212;</button>
-      ${inner}
-      <button type="button" class="rotary-step-btn rotary-step-side" title="Increase by ${globalStep}%" ${on({ click: "RotaryStep" }, [globalStep])}>&#x2b;</button>
+  if (step && position === "sides")
+    html = `<div class="brightness-sides-row">
+      ${stepButton(-step, " rotary-step-side")}
+      ${html}
+      ${stepButton(step, " rotary-step-side")}
     </div>`;
-  }
 
   return `<div class="brightness-control-width" style="width:${width}%">${html}</div>`;
 }
@@ -611,13 +262,15 @@ export function createSliderDraft({
 
 /**
  * Keep a slider group's markup unchanged while one of the host's sliders is
- * held. The markup bakes in the current value, so re-rendering it mid-drag
- * would make Lit replace the <input> under the pointer (the value is shown by
- * the live visual updates instead). Rebuilt normally once the drag ends.
+ * held or its value typed. The markup bakes in the current value, so
+ * re-rendering it then would make Lit replace the <input> under the pointer
+ * or the cursor (the value is shown by the live visual updates instead).
+ * Rebuilt normally once the drag or the typing ends.
  */
 export function stableSliderMarkup(host, key, markup) {
   const cache = (host._stableSliderMarkup ||= {});
-  if (host._anySliderDragging && cache[key] != null) return cache[key];
+  if ((host._anySliderDragging || host._sliderTyping) && cache[key] != null)
+    return cache[key];
   cache[key] = markup;
   return markup;
 }
@@ -724,133 +377,13 @@ export function createSliderHandlers({
     document.addEventListener("touchend", end);
   };
 
-
-  const getWheelStops = () => {
-    const gc = getConfig();
-    const step = Math.max(1, Math.min(50, parseInt(gc.wheelStep) || 10));
-    const stops = [];
-    for (let v = step; v <= 100; v += step) stops.push(v);
-    if (stops[stops.length - 1] !== 100) stops.push(100);
-    return stops;
-  };
-
-  const updateWheelVisual = (value) => {
-    const gc = getConfig();
-    const stops = getWheelStops();
-    const activeIndex = stops.reduce(
-      (best, v, i) =>
-        Math.abs(v - value) < Math.abs(stops[best] - value) ? i : best,
-      0,
-    );
-    const tick = scoped()?.querySelector(".brightness-wheel-tick");
-    const tickW = tick ? tick.offsetWidth || 52 : 52;
-    const track = scoped()?.querySelector(".brightness-wheel-track");
-    if (track)
-      track.style.setProperty(
-        "--wheel-shift",
-        `${-(activeIndex * tickW + tickW / 2)}px`,
-      );
-    scoped()
-      ?.querySelectorAll(".brightness-wheel-tick")
-      .forEach((t, i) => t.classList.toggle("active", i === activeIndex));
-    const val = scoped()?.querySelector(".brightness-wheel-value");
-    if (val)
-      val.textContent =
-        gc.showValue !== false ? formatSliderValue(value, gc) : "";
-  };
-
-  const updateMatrixVisual = (value) => {
-    const gc = getConfig();
-    const grid = scoped()?.querySelector(".brightness-matrix-grid");
-    if (!grid) return;
-    const total = parseInt(grid.dataset.total) || 1;
-    const litCount = Math.max(1, Math.round((value / 100) * total));
-    grid.querySelectorAll(".brightness-matrix-cell").forEach((cell) => {
-      const level = parseInt(cell.dataset.level) || 0;
-      cell.classList.toggle("lit", level <= litCount);
-    });
-    if (gc.showValue !== false) {
-      const val = scoped()?.querySelector(".brightness-matrix-value");
-      if (val) val.textContent = formatSliderValue(value, gc);
-    }
-  };
-
-  const syncValueDisplay = (value) => {
-    const r = root();
-    if (!r) return;
-    const input = r.getElementById(idOf("sl-value-input"));
-    const text = r.getElementById(idOf("sl-value-text"));
-    const gc = getConfig();
-    const inputValue = sliderRawMode(gc) ? sliderRawValue(value, gc) : value;
-    const valueText = scoped()?.querySelector(
-      ".brightness-capsule-host .capsule-value-text",
-    );
-    if (input && !host[typingProp]) input.value = inputValue;
-    if (text) text.value = formatSliderValue(value, gc);
-    if (valueText) valueText.textContent = formatSliderValue(value, gc);
-  };
-
-  // Per-style DOM update for a value (1-100). Shared by live drag and external
-  // updates.
+  // The style's visuals for a value (1-100): live drag and external updates.
   const updateVisuals = (value) => {
     const gc = getConfig();
-    const style = gc.style || "slider";
-    const showValue = gc.showValue !== false;
-    if (style === "bar") {
-      const barFill = scoped()?.querySelector(".brightness-bar-fill");
-      if (barFill) barFill.style.width = `${value}%`;
-      if (showValue) {
-        const vr = scoped()?.querySelector(".brightness-value-right");
-        if (vr) vr.textContent = formatSliderValue(value, gc);
-      }
-    } else if (style === "wheel") {
-      updateWheelVisual(value);
-    } else if (style === "matrix") {
-      updateMatrixVisual(value);
-    } else if (style === "rotary") {
-      const angle = ((value - 1) / 99) * 270;
-      const radius = 40;
-      const circumference = 2 * Math.PI * radius;
-      const arcLength = (circumference * 270) / 360;
-      const progressArcLength = (angle / 270) * arcLength;
-      const da = `${progressArcLength} ${circumference}`;
-      scoped()
-        ?.querySelectorAll(".rotary-progress, .rotary-gloss-overlay")
-        .forEach((el) => (el.style.strokeDasharray = da));
-      const knobArm = scoped()?.querySelector(".rotary-knob-arm");
-      if (knobArm)
-        knobArm.style.setProperty("--knob-angle", `${225 + angle}deg`);
-      const dialKnob = scoped()?.querySelector(".rotary-dial-knob");
-      if (dialKnob) {
-        const rad = (angle * Math.PI) / 180;
-        dialKnob.setAttribute("cx", (50 + 40 * Math.cos(rad)).toFixed(2));
-        dialKnob.setAttribute("cy", (50 + 40 * Math.sin(rad)).toFixed(2));
-      }
-      if (showValue) {
-        const rv = scoped()?.querySelector(".rotary-value");
-        if (rv) rv.textContent = formatSliderValue(value, gc);
-      }
-    } else if (style === "capsule") {
-      const bvd = gc.valueDisplay || (showValue ? "text" : "none");
-      const bvs = gc.valueSide || "under";
-      updateCapsuleVisuals(
-        scoped(),
-        value,
-        bvd !== "none" && bvs === "under" && bvd !== "input"
-          ? formatSliderValue(value, gc)
-          : null,
-        ".brightness-capsule-host",
-      );
-      syncValueDisplay(value);
-    } else {
-      if (showValue) {
-        const vs = scoped()?.querySelector(".brightness-value-slider");
-        if (vs) vs.textContent = formatSliderValue(value, gc);
-      }
-      const thickSlider = scoped()?.querySelector(".slider-variant-thick");
-      if (thickSlider)
-        thickSlider.style.setProperty("--slider-pct", `${value}%`);
-    }
+    styleOf(gc.style || "slider").update(
+      { gc, showValue: gc.showValue !== false, scoped, root, idOf, host, typingProp },
+      value,
+    );
   };
 
   const clamp = (n) => Math.max(1, Math.min(100, n));
@@ -886,6 +419,22 @@ export function createSliderHandlers({
     commit(value);
   };
 
+  // What the style modules' own handlers use.
+  const tools = {
+    host,
+    getConfig,
+    scoped,
+    root,
+    idOf,
+    typingProp,
+    rotaryProp,
+    applyValue,
+    holdPointer,
+    releasePointer,
+    followDrag,
+    clamp,
+  };
+
   const base = {
     UpdateVisuals: updateVisuals,
 
@@ -908,6 +457,7 @@ export function createSliderHandlers({
       applyValue(event.target.value);
     },
 
+    // The mouse wheel over any style: ±5.
     Wheel(event, element) {
       event.preventDefault();
       const container = element ?? event.currentTarget;
@@ -930,6 +480,7 @@ export function createSliderHandlers({
       }
     },
 
+    // The step buttons.
     RotaryStep(delta) {
       const input =
         scoped()?.querySelector(".brightness-slider") ||
@@ -941,168 +492,11 @@ export function createSliderHandlers({
       applyValue(nv);
     },
 
-    WheelTick(value) {
-      const input = scoped()?.querySelector(".brightness-slider-wheel");
-      if (input) input.value = value;
-      applyValue(value);
-    },
-
-    WheelStep(event) {
-      event.preventDefault();
-      event.stopPropagation();
-      const input = scoped()?.querySelector(".brightness-slider-wheel");
-      if (!input) return;
-      const stops = getWheelStops();
-      const cur = parseInt(input.value) || stops[0];
-      let idx = stops.reduce(
-        (best, v, i) =>
-          Math.abs(v - cur) < Math.abs(stops[best] - cur) ? i : best,
-        0,
-      );
-      const goUp =
-        Math.abs(event.deltaY) >= Math.abs(event.deltaX)
-          ? event.deltaY < 0
-          : event.deltaX > 0;
-      idx = goUp ? Math.min(stops.length - 1, idx + 1) : Math.max(0, idx - 1);
-      const value = stops[idx];
-      input.value = value;
-      applyValue(value);
-    },
-
-    WheelDragStart(event, element) {
-      event.preventDefault();
-      const viewport = element ?? event.currentTarget;
-      const startX = event.clientX ?? event.touches?.[0]?.clientX ?? 0;
-      const stops = getWheelStops();
-      const input = viewport
-        .closest(".brightness-wheel-wrapper")
-        ?.querySelector(".brightness-slider-wheel");
-      const startValue = parseInt(input?.value) || stops[0];
-      const startIdx = stops.reduce(
-        (best, v, i) =>
-          Math.abs(v - startValue) < Math.abs(stops[best] - startValue)
-            ? i
-            : best,
-        0,
-      );
-      const tick = viewport.querySelector(".brightness-wheel-tick");
-      const tickW = tick ? tick.offsetWidth || 52 : 52;
-      holdPointer();
-      const move = (e) => {
-        const cx = e.clientX ?? e.touches?.[0]?.clientX ?? 0;
-        const steps = Math.round(-(cx - startX) / tickW);
-        const idx = Math.max(0, Math.min(stops.length - 1, startIdx + steps));
-        const value = stops[idx];
-        if (input && parseInt(input.value) !== value) {
-          input.value = value;
-          applyValue(value);
-        }
-      };
-      followDrag(move, releasePointer);
-    },
-
-    MatrixDown(event, element) {
-      event.preventDefault();
-      holdPointer();
-      const grid = element ?? event.currentTarget;
-      const total = parseInt(grid.dataset.total) || 1;
-      const input = grid.parentElement?.querySelector(
-        ".brightness-slider-matrix",
-      );
-      const applyAt = (cx, cy) => {
-        if (cx === undefined || cy === undefined) return;
-        const el = host.shadowRoot.elementFromPoint(cx, cy);
-        if (el?.classList?.contains("brightness-matrix-cell")) {
-          const level = parseInt(el.dataset.level) || 1;
-          const val = clamp(Math.round((level / total) * 100));
-          if (input) input.value = val;
-          applyValue(val);
-        }
-      };
-      applyAt(
-        event.clientX ?? event.touches?.[0]?.clientX,
-        event.clientY ?? event.touches?.[0]?.clientY,
-      );
-      let rafPending = false;
-      const move = (e) => {
-        const cx = e.clientX ?? e.touches?.[0]?.clientX;
-        const cy = e.clientY ?? e.touches?.[0]?.clientY;
-        if (cx !== undefined) {
-          e.preventDefault();
-          if (rafPending) return;
-          rafPending = true;
-          requestAnimationFrame(() => {
-            rafPending = false;
-            applyAt(cx, cy);
-          });
-        }
-      };
-      followDrag(move, releasePointer);
-    },
-
-    RotaryStart(event, element) {
-      host[rotaryProp] = true;
-      holdPointer();
-      const container = element ?? event.currentTarget;
-      const rotaryClick = (e) => {
-        const rect = container.getBoundingClientRect();
-        const cx = rect.width / 2;
-        const cy = rect.height / 2;
-        const mx = (e.clientX ?? e.touches?.[0]?.clientX) - rect.left;
-        const my = (e.clientY ?? e.touches?.[0]?.clientY) - rect.top;
-        if (isNaN(mx) || isNaN(my)) return;
-        let angle = Math.atan2(my - cy, mx - cx) * (180 / Math.PI);
-        angle = (angle + 360) % 360;
-        let adj = angle - 135;
-        if (adj < 0) adj += 360;
-        if (adj > 270) adj = adj > 315 ? 0 : 270;
-        const value = Math.round((adj / 270) * 99) + 1;
-        const input = container.querySelector(".brightness-slider-rotary");
-        if (input) input.value = value;
-        applyValue(value);
-      };
-      rotaryClick(event);
-      const move = (e) => {
-        if (!host[rotaryProp]) return;
-        e.preventDefault();
-        rotaryClick(e);
-      };
-      followDrag(move, () => {
-        host[rotaryProp] = false;
-        releasePointer();
-      });
-    },
-
-    ValueFocus() {
-      host[typingProp] = true;
-    },
-
-    ValueKey(event) {
-      if (event.key === "Enter") event.target.blur();
-    },
-
-    ValueInput(event) {
-      const gc = getConfig();
-      let val = parseInt(event.target.value);
-      if (isNaN(val)) return;
-      if (sliderRawMode(gc)) val = sliderRawToPct(val, gc.rawMin, gc.rawMax);
-      val = clamp(val);
-      updateCapsuleVisuals(scoped(), val, null, ".brightness-capsule-host");
-    },
-
-    ValueBlur(event) {
-      host[typingProp] = false;
-      const gc = getConfig();
-      let val = parseInt(event.target.value);
-      if (isNaN(val)) val = sliderRawMode(gc) ? gc.rawMin : 1;
-      else if (sliderRawMode(gc))
-        val = sliderRawToPct(val, gc.rawMin, gc.rawMax);
-      val = clamp(val);
-      event.target.value = sliderRawMode(gc)
-        ? sliderPctToRaw(val, gc.rawMin, gc.rawMax)
-        : val;
-      applyValue(val);
-    },
+    // Every style's own interactions (the config may switch styles later).
+    ...Object.values(SLIDER_STYLES).reduce(
+      (all, style) => ({ ...all, ...style.handlers?.(tools) }),
+      {},
+    ),
 
     // Called from disconnectedCallback to clean up any in-flight drag listeners.
     Destroy() {
@@ -1125,6 +519,8 @@ export function createSliderHandlers({
   return handlers;
 }
 
+// What every style shares: the layout of labelled sliders, the step buttons
+// and the two themes. Each style's own CSS is in its module.
 const sliderLayoutStyles = `
   .brightness-control-group {
     display: flex;
@@ -1196,596 +592,6 @@ const sliderLayoutStyles = `
   }
 `;
 
-const rangeSliderStyles = `
-  .brightness-slider-variable {
-    width: 100%;
-    outline: none;
-    -webkit-appearance: none;
-    cursor: pointer;
-  }
-  .brightness-slider-variable.slider-variant-thin {
-    height: var(--slider-thickness, 6px);
-    border-radius: calc(var(--slider-thickness, 6px) / 2);
-    background: linear-gradient(to right, #ff9800, var(--divider-color, #444));
-  }
-  .brightness-slider-variable.slider-variant-thin::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: calc(var(--slider-thickness, 6px) * 3.2);
-    height: calc(var(--slider-thickness, 6px) * 3.2);
-    border-radius: 50%;
-    background: var(--accent-color, #ff9800);
-    cursor: pointer;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  }
-  .brightness-slider-variable.slider-variant-thin::-moz-range-thumb {
-    width: calc(var(--slider-thickness, 6px) * 3.2);
-    height: calc(var(--slider-thickness, 6px) * 3.2);
-    border-radius: 50%;
-    background: var(--accent-color, #ff9800);
-    border: none;
-    cursor: pointer;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  }
-  .brightness-slider-variable.slider-variant-thick {
-    height: calc(var(--slider-thickness, 6px) * 4);
-    border-radius: 6px;
-    background: linear-gradient(
-      to right,
-      #ff9800 0%,
-      #ffc56b var(--slider-pct, 50%),
-      var(--divider-color, rgba(0, 0, 0, 0.14)) var(--slider-pct, 50%),
-      var(--divider-color, rgba(0, 0, 0, 0.14)) 100%
-    );
-  }
-  .brightness-slider-variable.slider-variant-thick::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: calc(var(--slider-thickness, 6px) * 3);
-    height: calc(var(--slider-thickness, 6px) * 7);
-    border-radius: 5px;
-    background: var(--card-background-color, #fff);
-    border: 2px solid var(--divider-color, #ccc);
-    cursor: pointer;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
-  }
-  .brightness-slider-variable.slider-variant-thick::-moz-range-thumb {
-    width: calc(var(--slider-thickness, 6px) * 3);
-    height: calc(var(--slider-thickness, 6px) * 7);
-    border-radius: 5px;
-    background: var(--card-background-color, #fff);
-    border: 2px solid var(--divider-color, #ccc);
-    cursor: pointer;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
-  }
-  .brightness-slider-variable:not([class*="slider-variant-"]) {
-    height: var(--slider-thickness, 6px);
-    border-radius: calc(var(--slider-thickness, 6px) / 2);
-    background: linear-gradient(
-      to right,
-      var(--disabled-text-color, #333),
-      var(--card-background-color, #fff)
-    );
-  }
-  .brightness-slider-variable:not(
-      [class*="slider-variant-"]
-    )::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: calc(var(--slider-thickness, 6px) * 3);
-    height: calc(var(--slider-thickness, 6px) * 3);
-    border-radius: 50%;
-    background: var(--accent-color, #ff9800);
-    cursor: pointer;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  }
-  .brightness-slider-variable:not([class*="slider-variant-"])::-moz-range-thumb {
-    width: calc(var(--slider-thickness, 6px) * 3);
-    height: calc(var(--slider-thickness, 6px) * 3);
-    border-radius: 50%;
-    background: var(--accent-color, #ff9800);
-    border: none;
-    cursor: pointer;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  }
-`;
-
-const barSliderStyles = `
-  .brightness-bar-wrapper.brightness-bar-full {
-    gap: 8px;
-  }
-  .brightness-bar-track {
-    position: relative;
-    flex: 1;
-    height: calc(var(--slider-thickness, 6px) * 5.5);
-    background: var(--disabled-color, rgba(255, 255, 255, 0.1));
-    border-radius: calc(var(--slider-thickness, 6px) * 2);
-    overflow: hidden;
-  }
-  .brightness-bar-fill {
-    position: absolute;
-    top: 0;
-    left: 0;
-    height: 100%;
-    background: linear-gradient(90deg, #ffa726 0%, #ffb74d 100%);
-    border-radius: 12px;
-    transition: width 0.1s ease;
-    pointer-events: none;
-  }
-  .brightness-slider-bar {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: transparent;
-    -webkit-appearance: none;
-    cursor: pointer;
-    outline: none;
-  }
-  .brightness-slider-bar::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 0;
-    height: 0;
-    opacity: 0;
-  }
-  .brightness-slider-bar::-moz-range-thumb {
-    width: 0;
-    height: 0;
-    opacity: 0;
-    border: none;
-  }
-  .brightness-bar-seams {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    display: none;
-  }
-  .bar-fill-pulse .brightness-bar-fill {
-    background: linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--brightness-color, #ff9800) 90%, #000) 0%,
-      var(--brightness-color, #ff9800) 60%,
-      color-mix(in srgb, var(--brightness-color, #ff9800) 60%, #fff) 100%
-    );
-    animation: barPulseGlow 2s ease-in-out infinite;
-  }
-  @keyframes barPulseGlow {
-    0%,
-    100% {
-      box-shadow: 0 0 6px
-        color-mix(in srgb, var(--brightness-color, #ff9800) 40%, transparent);
-      opacity: 1;
-    }
-    50% {
-      box-shadow:
-        0 0 18px
-          color-mix(in srgb, var(--brightness-color, #ff9800) 85%, transparent),
-        0 0 32px
-          color-mix(in srgb, var(--brightness-color, #ff9800) 40%, transparent);
-      opacity: 0.92;
-    }
-  }
-  .bar-fill-stripes .brightness-bar-fill {
-    background:
-      repeating-linear-gradient(
-        -45deg,
-        rgba(255, 255, 255, 0.22) 0,
-        rgba(255, 255, 255, 0.22) 8px,
-        transparent 8px,
-        transparent 16px
-      ),
-      linear-gradient(
-        90deg,
-        color-mix(in srgb, var(--brightness-color, #ff9800) 90%, #000) 0%,
-        var(--brightness-color, #ff9800) 100%
-      );
-    background-size:
-      22px 100%,
-      100% 100%;
-    animation: barStripesShift 0.8s linear infinite;
-  }
-  .bar-fill-stripes.bar-stripes-idle .brightness-bar-fill {
-    animation-play-state: paused;
-  }
-  @keyframes barStripesShift {
-    from {
-      background-position:
-        0 0,
-        0 0;
-    }
-    to {
-      background-position:
-        22px 0,
-        0 0;
-    }
-  }
-  .bar-fill-gloss .brightness-bar-fill {
-    background:
-      linear-gradient(
-        180deg,
-        rgba(255, 255, 255, 0.55) 0%,
-        rgba(255, 255, 255, 0.08) 46%,
-        rgba(0, 0, 0, 0.12) 54%,
-        rgba(0, 0, 0, 0) 100%
-      ),
-      linear-gradient(
-        90deg,
-        color-mix(in srgb, var(--brightness-color, #ff9800) 80%, #000) 0%,
-        color-mix(in srgb, var(--brightness-color, #ff9800) 70%, #fff) 100%
-      );
-    box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.5);
-  }
-`;
-
-const wheelSliderStyles = `
-  .brightness-wheel-wrapper {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    width: 100%;
-  }
-  .brightness-wheel-value {
-    font-size: 22px;
-    font-weight: 700;
-    color: var(--primary-text-color);
-    text-shadow: 0 0 10px rgba(255, 152, 0, 0.3);
-  }
-  .brightness-wheel-viewport {
-    --wheel-mark-color: var(--secondary-text-color, #888);
-    --wheel-active-color: linear-gradient(180deg, #ffcf7a, #ff8f00);
-    --wheel-active-shadow: 0 0 8px rgba(255, 152, 0, 0.7);
-    --wheel-active-height: calc(65% - 4px);
-    --wheel-active-width: 3px;
-    position: relative;
-    width: 100%;
-    min-height: 40px;
-    overflow: hidden;
-    border-radius: 12px;
-    background: color-mix(in srgb, var(--card-background-color, #fff) 84%, #000);
-    box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.28);
-    cursor: ew-resize;
-    touch-action: none;
-    user-select: none;
-  }
-  .brightness-wheel-viewport.wheel-style-mesh {
-    --wheel-mark-color: color-mix(
-      in srgb,
-      var(--brightness-color, #ff9800) 55%,
-      var(--secondary-text-color, #888)
-    );
-    --wheel-active-color: var(--brightness-color, #ff9800);
-    --wheel-active-shadow: 0 0 8px
-      color-mix(in srgb, var(--brightness-color, #ff9800) 80%, transparent);
-    --wheel-active-height: 70%;
-    --wheel-active-width: 4px;
-    background-image:
-      repeating-linear-gradient(
-        45deg,
-        rgba(0, 0, 0, 0.07) 0,
-        rgba(0, 0, 0, 0.07) 1px,
-        transparent 0,
-        transparent 50%
-      ),
-      repeating-linear-gradient(
-        -45deg,
-        rgba(0, 0, 0, 0.07) 0,
-        rgba(0, 0, 0, 0.07) 1px,
-        transparent 0,
-        transparent 50%
-      );
-    background-size: 7px 7px;
-  }
-  .brightness-wheel-track {
-    position: absolute;
-    left: 50%;
-    top: 0;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    transform: translateX(var(--wheel-shift, -26px));
-    transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
-  }
-  .brightness-wheel-tick {
-    height: 100%;
-    flex: 0 0 52px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 4px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    padding: 0;
-    opacity: 0.45;
-    transform: scale(0.82);
-    transition:
-      opacity 0.18s ease,
-      transform 0.18s ease;
-  }
-  .brightness-wheel-tick .wheel-tick-mark {
-    width: 3px;
-    height: calc(50% - 6px);
-    max-height: 22px;
-    border-radius: 3px;
-    background: var(--wheel-mark-color);
-  }
-  .brightness-wheel-tick .wheel-tick-label {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--secondary-text-color, #888);
-  }
-  .brightness-wheel-tick.active {
-    opacity: 1;
-    transform: scale(1.08);
-  }
-  .brightness-wheel-tick.active .wheel-tick-mark {
-    width: var(--wheel-active-width);
-    height: var(--wheel-active-height);
-    max-height: 28px;
-    background: var(--wheel-active-color);
-    box-shadow: var(--wheel-active-shadow);
-  }
-  .brightness-wheel-tick.active .wheel-tick-label {
-    color: var(--primary-text-color);
-  }
-  .brightness-wheel-caret {
-    position: absolute;
-    top: 0;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 2px;
-    height: 100%;
-    background: linear-gradient(
-      180deg,
-      transparent,
-      rgba(255, 152, 0, 0.85),
-      transparent
-    );
-    z-index: 3;
-    pointer-events: none;
-  }
-  .brightness-wheel-fade {
-    position: absolute;
-    top: 0;
-    width: 34px;
-    height: 100%;
-    z-index: 2;
-    pointer-events: none;
-  }
-  .brightness-wheel-fade-left {
-    left: 0;
-    background: linear-gradient(
-      90deg,
-      color-mix(in srgb, var(--card-background-color, #fff) 84%, #000),
-      transparent
-    );
-  }
-  .brightness-wheel-fade-right {
-    right: 0;
-    background: linear-gradient(
-      270deg,
-      color-mix(in srgb, var(--card-background-color, #fff) 84%, #000),
-      transparent
-    );
-  }
-`;
-
-const matrixSliderStyles = `
-  .brightness-matrix-grid {
-    flex: 1;
-    display: grid;
-    gap: 4px;
-    padding: 8px;
-    border-radius: 10px;
-    background: #101012;
-    box-shadow: inset 0 1px 4px rgba(0, 0, 0, 0.55);
-    cursor: pointer;
-    user-select: none;
-    touch-action: none;
-  }
-  .brightness-matrix-cell {
-    aspect-ratio: 1 / 1;
-    border-radius: 3px;
-    background: #2a2a2e;
-    box-shadow: inset 0 0 2px rgba(0, 0, 0, 0.6);
-    transition:
-      background 0.12s ease,
-      box-shadow 0.12s ease;
-  }
-  .brightness-matrix-cell.lit {
-    background: radial-gradient(
-      circle at 40% 35%,
-      color-mix(in srgb, var(--brightness-color, #ff9800) 15%, #fff) 0%,
-      var(--brightness-color, #ff9800) 55%,
-      color-mix(in srgb, var(--brightness-color, #ff9800) 80%, #000) 100%
-    );
-    box-shadow:
-      0 0 6px
-        color-mix(in srgb, var(--brightness-color, #ff9800) 75%, transparent),
-      inset 0 0 2px rgba(255, 255, 255, 0.4);
-  }
-  .pixel-shape-square .brightness-matrix-cell {
-    border-radius: 0;
-  }
-  .pixel-shape-rounded .brightness-matrix-cell {
-    border-radius: 3px;
-  }
-  .pixel-shape-round .brightness-matrix-cell {
-    border-radius: 50%;
-  }
-`;
-
-const rotarySliderStyles = `
-  .brightness-rotary-wrapper {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-  }
-  .brightness-rotary-container {
-    position: relative;
-    width: 100%;
-    height: auto;
-    aspect-ratio: 1;
-    box-sizing: border-box;
-    padding: 6.25%;
-    cursor: pointer;
-    user-select: none;
-    container-type: inline-size;
-  }
-  .brightness-rotary-container::before {
-    content: "";
-    position: absolute;
-    inset: 10%;
-    border-radius: 50%;
-    background: radial-gradient(
-      circle at 50% 36%,
-      color-mix(in srgb, var(--card-background-color, #fff) 86%, #000) 0%,
-      var(--card-background-color, #fff) 72%
-    );
-    box-shadow:
-      inset 0 2px 7px rgba(0, 0, 0, 0.3),
-      inset 0 -1px 3px rgba(255, 255, 255, 0.06),
-      0 6px 16px rgba(0, 0, 0, 0.18);
-    pointer-events: none;
-  }
-  .brightness-rotary-svg {
-    display: block;
-    position: relative;
-    width: 100%;
-    height: 100%;
-    transform: rotate(135deg);
-    pointer-events: none;
-    overflow: visible;
-  }
-  .rotary-bg {
-    fill: none;
-    stroke: var(--divider-color, rgba(0, 0, 0, 0.14));
-    stroke-width: var(--rotary-stroke, 12);
-    stroke-linecap: round;
-    opacity: 0.55;
-  }
-  .rotary-progress-glow {
-    fill: none;
-    stroke: url(#brightnessRotaryGrad);
-    stroke-width: var(--rotary-stroke, 12);
-    stroke-linecap: round;
-    transition: stroke-dasharray 0.1s ease;
-    filter: drop-shadow(0 0 3px rgba(255, 152, 0, 0.85))
-      drop-shadow(0 0 8px rgba(255, 145, 0, 0.5));
-  }
-  .rotary-progress-gloss {
-    fill: none;
-    stroke: url(#brightnessRotaryGrad);
-    stroke-width: var(--rotary-stroke, 12);
-    stroke-linecap: round;
-    transition: stroke-dasharray 0.1s ease;
-  }
-  .rotary-gloss-overlay {
-    fill: none;
-    stroke: url(#rotaryGlossGrad);
-    stroke-width: var(--rotary-stroke, 12);
-    stroke-linecap: round;
-    transition: stroke-dasharray 0.1s ease;
-    pointer-events: none;
-  }
-  .rotary-progress-thick {
-    fill: none;
-    stroke: #ff9800;
-    stroke-width: calc(var(--rotary-stroke, 12) * 1.4);
-    stroke-linecap: round;
-    transition: stroke-dasharray 0.1s ease;
-    opacity: 0.9;
-  }
-  .rotary-progress-dial {
-    fill: none;
-    stroke: var(--primary-color, #1976d2);
-    stroke-width: var(--rotary-stroke, 12);
-    stroke-linecap: round;
-    transition: stroke-dasharray 0.1s ease;
-  }
-  .rotary-style-dial .rotary-bg {
-    opacity: 0.15;
-  }
-  .rotary-style-dial .brightness-rotary-container::before {
-    background: none;
-    box-shadow: none;
-  }
-  .rotary-style-dial .rotary-label {
-    font-size: 14px;
-    color: var(--secondary-text-color);
-  }
-  .rotary-style-dial .rotary-value {
-    font-size: clamp(16px, 18cqi, 28px);
-    font-weight: 700;
-    text-shadow: none;
-  }
-  .rotary-dial-knob {
-    fill: var(--card-background-color, #fff);
-    stroke: var(--primary-color, #1976d2);
-    stroke-width: 3;
-    filter: drop-shadow(0 1px 4px rgba(0, 0, 0, 0.25));
-    transition:
-      cx 0.1s ease,
-      cy 0.1s ease;
-  }
-  .rotary-style-thick .brightness-rotary-container::before {
-    display: none;
-  }
-  .rotary-knob-arm {
-    position: absolute;
-    inset: 0;
-    transform: rotate(var(--knob-angle, 225deg));
-    transition: transform 0.1s ease;
-    pointer-events: none;
-    z-index: 6;
-  }
-  .rotary-knob {
-    position: absolute;
-    top: 15%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: calc(var(--rotary-stroke, 12) * 0.9px);
-    height: calc(var(--rotary-stroke, 12) * 1.9px);
-    min-width: 10px;
-    min-height: 22px;
-    border-radius: 5px;
-    background: var(--card-background-color, #fff);
-    border: 2px solid var(--divider-color, #ccc);
-    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.35);
-  }
-  .rotary-center-content {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    pointer-events: none;
-  }
-  .rotary-label {
-    font-size: 16px;
-    font-weight: 500;
-    color: var(--secondary-text-color);
-    text-align: center;
-  }
-  .rotary-value {
-    font-size: clamp(16px, 15cqi, 24px);
-    font-weight: bold;
-    color: var(--primary-text-color);
-    text-shadow: 0 0 10px rgba(255, 152, 0, 0.35);
-  }
-  .brightness-slider-rotary {
-    position: absolute;
-    opacity: 0;
-    pointer-events: none;
-  }
-`;
-
 const sliderStepButtonStyles = `
   .brightness-step-below {
     display: flex;
@@ -1852,77 +658,6 @@ const sliderStepButtonStyles = `
   }
 `;
 
-const capsuleSliderStyles = `
-  ${getCapsuleCSS()}
-  .capsule-variant-thick .capsule-track {
-    height: calc(var(--capsule-thickness, 6px) * 4);
-    border-radius: 6px;
-  }
-  .capsule-variant-thick .capsule-thumb {
-    width: calc(var(--capsule-thickness, 6px) * 3);
-    height: calc(var(--capsule-thickness, 6px) * 6.5);
-    border-radius: 5px;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
-  }
-  .brightness-capsule-host {
-    width: 100%;
-  }
-  .capsule-snap-ticks {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    z-index: 1;
-  }
-  .capsule-snap-tick {
-    position: absolute;
-    top: 50%;
-    width: 5px;
-    height: 5px;
-    transform: translate(-50%, -50%);
-    background: var(--primary-text-color, #333);
-    border-radius: 50%;
-    opacity: 0.35;
-  }
-  .brightness-capsule-slot {
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
-  }
-  .brightness-capsule-input {
-    width: 52px;
-    height: 26px;
-    border: 1px solid var(--divider-color, rgba(128, 128, 128, 0.3));
-    border-radius: 5px;
-    background: transparent;
-    color: var(--primary-text-color, #333);
-    font-size: 13px;
-    font-weight: 700;
-    text-align: center;
-    box-sizing: border-box;
-    padding: 0;
-    -moz-appearance: textfield;
-    outline: none;
-  }
-  .brightness-capsule-input::-webkit-outer-spin-button,
-  .brightness-capsule-input::-webkit-inner-spin-button {
-    -webkit-appearance: none;
-    margin: 0;
-  }
-  .brightness-capsule-input[readonly] {
-    cursor: default;
-  }
-  .capsule-value-under {
-    display: flex;
-    justify-content: center;
-    padding: 8px 0;
-  }
-`;
-
 const sliderThemeStyles = `
   .brightness-slider-container.brightness-theme-flat,
   .brightness-slider-container.brightness-style-capsule {
@@ -1963,13 +698,13 @@ const sliderThemeStyles = `
 
 export const sliderControlStyles = [
   sliderLayoutStyles,
-  rangeSliderStyles,
-  barSliderStyles,
-  wheelSliderStyles,
-  matrixSliderStyles,
-  rotarySliderStyles,
+  range.css,
+  bar.css,
+  wheel.css,
+  matrix.css,
+  rotary.css,
   sliderStepButtonStyles,
-  capsuleSliderStyles,
+  capsule.css,
   sliderThemeStyles,
 ].join("\n");
 
@@ -2066,322 +801,4 @@ export function sliderConfigToGc(config, K, overrides = {}) {
     unit: "%",
     ...overrides,
   };
-}
-
-const STYLE_CHOICES = [
-  { value: "slider", label: "Slider" },
-  { value: "bar", label: "Bar" },
-  { value: "wheel", label: "Wheel" },
-  { value: "matrix", label: "Matrix" },
-  { value: "rotary", label: "Rotary" },
-  { value: "capsule", label: "Capsule" },
-];
-
-/**
- * Render the full slider settings block (all style options + per-style
- * sub-settings) for a card editor, as a Lit template. Every conditional group
- * (per-style options, step-button options) is wrapped in the shared blue
- * "mode settings" block so conditional settings are visually grouped.
- *
- * @param {Object} config  - the editor config object
- * @param {Object} K       - key map (from sliderKeys(prefix) or custom)
- * @param {Function} onChange - (key, value) => void
- * @param {Object} [opts]   - extra, consumer-specific controls:
- *   - showValueToggle: { label, key }  top-level toggle (non-capsule styles)
- *   - matrixColorKey: string           color picker inside the Matrix block
- *   - icons: { leftLabel, rightLabel } capsule icon show/hide toggles
- *                                      (uses K.iconLeftShow / K.iconRightShow)
- *   - thickness: number                override the displayed track thickness
- */
-// Editor block for a lamp brightness/speed slider (the counterpart of
-// lightSliderConfig). `options.keys` selects a card's key map; any other
-// option (see renderSliderSettings) is added or replaces a default.
-export function renderLightSliderSettings(
-  config,
-  onChange,
-  { keys = sliderKeys("slider"), ...options } = {},
-) {
-  return renderSliderSettings(config, keys, onChange, {
-    icons: { leftLabel: "Show Left Icon", rightLabel: "Show Right Icon" },
-    showValueToggle: { label: "Show Value", key: keys.showValue },
-    rawValueToggle: {
-      label: "Show Raw Value (device units)",
-      key: "slider_show_raw_value",
-    },
-    ...options,
-  });
-}
-
-export function renderSliderSettings(config, K, onChange, opts = {}) {
-  const g = (k, d) => (config[k] !== undefined ? config[k] : d);
-  const bg = (key, choices, current, extra = "") =>
-    html`<div class="form-row">
-      <label>${extra}</label>
-      ${createButtonGroup(
-        choices,
-        current,
-        createButtonGroupChangeHandler(key, (v) => onChange(key, v)),
-      )}
-    </div>`;
-  const colorRow = (label, key, fallback) => html`
-    <div class="form-row">
-      <label>${label}</label>
-      <input
-        type="color"
-        .value="${g(key, fallback)}"
-        @click="${(event) => handleColorPickerClick(event)}"
-        @input="${(e) => onChange(key, e.target.value)}"
-        style="width:60px;height:32px;border:none;cursor:pointer;border-radius:6px;"
-      />
-    </div>
-  `;
-
-  const style = g(K.style, "slider");
-  const thickness = opts.thickness ?? g(K.thickness, 6);
-
-  // Per-style conditional options — each grouped in the shared blue block.
-  let modeSection = "";
-  if (style === "slider") {
-    modeSection = renderModeSettingsSection(
-      "Slider Settings",
-      bg(
-        K.variant,
-        [
-          { value: "thin", label: "Thin" },
-          { value: "thick", label: "Thick" },
-        ],
-        g(K.variant, "thin"),
-        html`<span>Slider Variant</span>`,
-      ),
-    );
-  } else if (style === "bar") {
-    modeSection = renderModeSettingsSection(
-      "Bar Settings",
-      bg(
-        K.barFill,
-        [
-          { value: "solid", label: "Solid" },
-          { value: "pulse", label: "Pulse" },
-          { value: "stripes", label: "Stripes" },
-          { value: "gloss", label: "Gloss" },
-        ],
-        g(K.barFill, "solid"),
-        html`<span>Bar Fill</span>`,
-      ),
-    );
-  } else if (style === "wheel") {
-    modeSection = renderModeSettingsSection(
-      "Wheel Settings",
-      html`
-        ${bg(
-          K.wheelStyle,
-          [
-            { value: "ticks", label: "Classic" },
-            { value: "mesh", label: "Mesh" },
-          ],
-          resolveWheelStyle(g(K.wheelStyle, "ticks")),
-          html`<span>Wheel Style</span>`,
-        )}
-        ${createToggleRow(
-          "Show Wheel Labels",
-          K.wheelLabels,
-          g(K.wheelLabels, true) !== false,
-          (e) => onChange(K.wheelLabels, e.target.checked),
-        )}
-        ${createSliderRow(
-          "Wheel Step",
-          g(K.wheelStep, 10),
-          { min: 5, max: 50, step: 5 },
-          (e) => onChange(K.wheelStep, parseInt(e.target.value, 10)),
-          "%",
-        )}
-      `,
-    );
-  } else if (style === "matrix") {
-    modeSection = renderModeSettingsSection(
-      "Matrix Settings",
-      html`
-        ${createSliderRow(
-          "Matrix Columns",
-          g(K.matrixCols, 10),
-          { min: 3, max: 20, step: 1 },
-          (e) => onChange(K.matrixCols, parseInt(e.target.value, 10)),
-          "",
-        )}
-        ${createSliderRow(
-          "Matrix Rows",
-          g(K.matrixRows, 2),
-          { min: 1, max: 6, step: 1 },
-          (e) => onChange(K.matrixRows, parseInt(e.target.value, 10)),
-          "",
-        )}
-        ${bg(
-          K.matrixDir,
-          [
-            { value: "row", label: "Row" },
-            { value: "col", label: "Column" },
-          ],
-          g(K.matrixDir, "row"),
-          html`<span>Fill Direction</span>`,
-        )}
-        ${bg(
-          K.matrixPixelStyle,
-          [
-            { value: "square", label: "Square" },
-            { value: "rounded", label: "Rounded" },
-            { value: "round", label: "Round" },
-          ],
-          g(K.matrixPixelStyle, "rounded"),
-          html`<span>Pixel Shape</span>`,
-        )}
-        ${opts.matrixColorKey
-          ? colorRow("Matrix Color", opts.matrixColorKey, "#ff9800")
-          : ""}
-      `,
-    );
-  } else if (style === "rotary") {
-    modeSection = renderModeSettingsSection(
-      "Rotary Settings",
-      bg(
-        K.rotaryStyle,
-        [
-          { value: "glow", label: "Glow" },
-          { value: "gloss", label: "Gloss" },
-          { value: "thick", label: "Thick" },
-          { value: "dial", label: "Dial" },
-        ],
-        g(K.rotaryStyle, "glow"),
-        html`<span>Rotary Style</span>`,
-      ),
-    );
-  } else if (style === "capsule") {
-    const valueDisplay = g(K.valueDisplay, "text");
-    modeSection = renderModeSettingsSection(
-      "Capsule Settings",
-      html`
-        ${bg(
-          K.valueDisplay,
-          [
-            { value: "none", label: "None" },
-            { value: "text", label: "Text" },
-            { value: "input", label: "Input" },
-          ],
-          valueDisplay,
-          html`<span>Value Display</span>`,
-        )}
-        ${valueDisplay !== "none"
-          ? bg(
-              K.valueSide,
-              [
-                { value: "under", label: "Under" },
-                { value: "left", label: "Left" },
-                { value: "right", label: "Right" },
-              ],
-              g(K.valueSide, "under"),
-              html`<span>Value Side</span>`,
-            )
-          : ""}
-        ${opts.icons && K.iconLeftShow
-          ? createToggleRow(
-              opts.icons.leftLabel,
-              K.iconLeftShow,
-              g(K.iconLeftShow, true) !== false,
-              (e) => onChange(K.iconLeftShow, e.target.checked),
-            )
-          : ""}
-        ${opts.icons && K.iconRightShow
-          ? createToggleRow(
-              opts.icons.rightLabel,
-              K.iconRightShow,
-              g(K.iconRightShow, true) !== false,
-              (e) => onChange(K.iconRightShow, e.target.checked),
-            )
-          : ""}
-        ${createToggleRow(
-          "Snap to Positions",
-          K.snap,
-          g(K.snap, false) === true,
-          (e) => onChange(K.snap, e.target.checked),
-        )}
-        ${bg(
-          K.capsuleVariant,
-          [
-            { value: "thin", label: "Thin" },
-            { value: "thick", label: "Thick" },
-          ],
-          g(K.capsuleVariant, "thin"),
-          html`<span>Track Style</span>`,
-        )}
-      `,
-    );
-  }
-
-  const stepButtonsOn = g(K.stepButtons, false) === true;
-
-  return html`
-    ${opts.showValueToggle && style !== "capsule"
-      ? createToggleRow(
-          opts.showValueToggle.label,
-          opts.showValueToggle.key,
-          g(opts.showValueToggle.key, true) !== false,
-          (e) => onChange(opts.showValueToggle.key, e.target.checked),
-        )
-      : ""}
-    ${opts.rawValueToggle
-      ? createToggleRow(
-          opts.rawValueToggle.label,
-          opts.rawValueToggle.key,
-          g(opts.rawValueToggle.key, false) === true,
-          (e) => onChange(opts.rawValueToggle.key, e.target.checked),
-        )
-      : ""}
-    ${bg(K.style, STYLE_CHOICES, style, html`<span>Slider Style</span>`)}
-    ${createSliderRow(
-      "Control Width",
-      g(K.width, 100),
-      { min: 30, max: 100, step: 5 },
-      (e) => onChange(K.width, parseInt(e.target.value, 10)),
-      "%",
-    )}
-    ${createToggleRow(
-      "Card background",
-      K.theme,
-      g(K.theme, "subtle") !== "flat",
-      (e) => onChange(K.theme, e.target.checked ? "subtle" : "flat"),
-    )}
-    ${modeSection}
-    ${createToggleRow("Step Buttons", K.stepButtons, stepButtonsOn, (e) =>
-      onChange(K.stepButtons, e.target.checked),
-    )}
-    ${stepButtonsOn
-      ? renderModeSettingsSection(
-          "Step Button Settings",
-          html`
-            ${createSliderRow(
-              "Step Size",
-              g(K.stepSize, 5),
-              { min: 1, max: 25, step: 1 },
-              (e) => onChange(K.stepSize, parseInt(e.target.value, 10)),
-              "%",
-            )}
-            ${bg(
-              K.stepPosition,
-              [
-                { value: "below", label: "Below" },
-                { value: "sides", label: "Sides" },
-              ],
-              g(K.stepPosition, "below"),
-              html`<span>Step Position</span>`,
-            )}
-          `,
-        )
-      : ""}
-    ${createSliderRow(
-      "Track Thickness",
-      thickness,
-      { min: 2, max: 10, step: 1 },
-      (e) => onChange(K.thickness, parseInt(e.target.value, 10)),
-      "px",
-    )}
-  `;
 }

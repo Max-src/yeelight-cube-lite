@@ -168,6 +168,8 @@ Control what text is displayed on the lamp and how it looks.
 
 Display text on the lamp.
 
+While the lamp shows its **clock or a native effect**, the text is kept for when it shows text again: the clock (and its rotation) goes on, so an automation pushing a sensor value never takes it over. To show a text **over** the clock for a moment, wrap it in [`save_state`](#save_state) / [`restore_state`](#restore_state): the text is shown, then the clock and its rotation come back (allow a few seconds between them: leaving the firmware clock and coming back to it each take about a second).
+
 | Field | Required | Description |
 | :-- | :-- | :-- |
 | `text` | Yes | Text to display on the matrix |
@@ -1396,7 +1398,7 @@ All three cards share Actions visibility, button styling and the **Actions & Ord
 
 ### `save_state`
 
-Snapshot the lamp's current display state so it can be restored later. Captures everything that determines what is shown: text, text/gradient colors, display mode, gradient angle, full-panel setting, drawing/pixel art, font, alignment, orientation, brightness and all color effects.
+Snapshot the lamp's current display state so it can be restored later. Captures everything that determines what is shown: text, text/gradient colors, display mode, gradient angle, full-panel setting, drawing/pixel art, font, alignment, orientation, brightness, all color effects and a running effect/clock rotation.
 
 Only **one** snapshot is kept per lamp — calling `save_state` again overwrites the previous one.
 
@@ -1418,6 +1420,8 @@ data:
 ### `restore_state`
 
 Restore the display state previously captured with [`save_state`](#save_state) and re-render it on the lamp. Does nothing (logs a warning) if no state was saved.
+
+A rotation that was running when the state was saved starts again (what is shown in between, such as a text, stops it), in step with the lamps still running it. It stays stopped if the lamp was turned off in the meantime.
 
 | Field | Required | Description |
 | :-- | :-- | :-- |

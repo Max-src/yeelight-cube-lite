@@ -17,13 +17,14 @@ import {
 } from "./capsule-slider-utils.js";
 import {
   renderSliderGroup,
+  stableSliderMarkup,
   lightSliderConfig,
   sliderKeys,
   brightnessPctToRaw,
   brightnessRawToPct,
   isSliderHandler,
 } from "./slider-control-utils.js";
-import { YeelightCardMixin, cubeLampEntities } from "./card-base.js";
+import { YeelightCardMixin, cubeLampEntities, valueKey } from "./card-base.js";
 import {
   cardNotice,
   cardShell,
@@ -49,17 +50,21 @@ import { MatrixPreviewMixin } from "./lamp-preview-matrix.js";
 
 // Rendering model (LitElement):
 // - render() is a pure Lit template over the card's state; every control binds
-//   its events declaratively (no inline handler strings).
-// - _refresh() keeps the historical "render" decision logic (drag / typing /
-//   oscillation guards, full vs smart update). A full update re-captures the
-//   brightness slider markup and requests a Lit update; a smart update patches
-//   the matrix dots and slider visuals in place.
+//   its events declaratively (no inline handler strings). The brightness
+//   slider is the shared markup, held while it is dragged or typed in
+//   (stableSliderMarkup, like the Clock and Native Effects cards).
+// - _refresh() requests the update, except while a slider is dragged or a
+//   value typed, or while HA sends alternating brightness values (the update
+//   is then made when that ends).
 // - The 20x5 .lamp-dot nodes carry no reactive bindings: their colors are only
-//   ever painted directly (change-only) by _paintDots, from the static preview
-//   and the native-effect / clock animation loops.
+//   ever painted directly (change-only) by _paintDots, after each update
+//   (updated) and from the native-effect / clock animation loops.
 class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
   AdjustmentControlsMixin(YeelightCardMixin(LitElement)),
 ) {
+  // Dashboard size (card-base): the matrix scales down to a quarter width.
+  static cardSize = 2;
+  static minColumns = 3;
   // Static: the config-dependent values are CSS variables (_matrixGeometry).
   static styles = unsafeCSS(LAMP_PREVIEW_CSS);
   static editor = [
@@ -75,7 +80,6 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
       type: "custom:yeelight-cube-lamp-preview-card",
       entity: firstEntity,
       show_card_background: true,
-      size: "medium",
       size_pct: 100,
       align: "center",
       matrix_spacing_mode: "normal",
@@ -86,11 +90,8 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
       buttons_style: "gradient",
       show_brightness: true,
       slider_style: "capsule",
-      brightness_slider_appearance: "default",
       slider_thickness: 6,
       slider_theme: "subtle",
-      show_brightness_label: false,
-      brightness_label_mode: "text",
       slider_value_display: "none",
       show_power_toggle: false,
       slider_show_icon_left: true,
@@ -136,7 +137,6 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     });
     this._effectDebounceTimer = null;
     this._renderDebounceTimer = null; // Debounce rendering to avoid flicker
-    this._renderScheduled = false;
     this._nativeAnimKey = null;
     this._nativeAnimStartedAt = null;
     // Animation loops + visibility (shared matrix-animator): pause when the tab
@@ -163,20 +163,8 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
       effects: false,
     };
 
-    // Track lamp on/off state to detect changes
-    this._lastKnownState = null;
-
-    // Track last brightness to detect brightness changes
-    this._lastBrightness = null;
-
-    // Track last matrix_colors to detect effect changes
-    this._lastMatrixColors = null;
-
-    // Track if initial render is complete
-    this._isInitialRenderComplete = false;
-
-    // Cache for comparing if full re-render is needed
-    this._lastRenderedConfig = null;
+    // What the last lamp update showed (see set hass).
+    this._seen = {};
 
     // Track active tab for tabbed layout
     this._activeTab = null;
@@ -185,22 +173,16 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     this._activeRadialCategory = null;
     this._selectedRadialEffect = null;
 
-    // Lit render inputs captured by _refresh(): the brightness slider markup
-    // (shared string renderer, only rebuilt on full updates so drags and typed
-    // values are never replaced mid-interaction), a generation counter that
-    // recreates the matrix dots on full updates, and the post-render work of
-    // the pending full update (static paint + animation loop start/stop).
-    this._sliderMarkup = "";
+    // The matrix dots are recreated when the generation changes (a new
+    // configuration: their look changes, see _matrixTemplate).
     this._dotGeneration = 0;
-    this._pendingFull = null;
     // Effects just reset to their default: the default is shown locally until
     // the entity reports it, then the local override is dropped.
     this._resetPending = new Set();
 
     // The brightness slider, through the shared lamp-slider controller like
-    // the Clock and Native Effects sliders (lamp-sliders.js). Its markup is
-    // patched in place on smart updates rather than re-rendered by Lit, so the
-    // controller re-syncs it through _refresh().
+    // the Clock and Native Effects sliders (lamp-sliders.js); its updates go
+    // through _refresh() and its guards.
     this._lampSliders = new LampSliders(
       this,
       {
@@ -277,71 +259,29 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     this._orientationPending = null;
     this._orientationError = null;
     clearTimeout(this._orientationTimer);
-    this.config = {
-      show_card_background: true,
-      size: "medium",
-      size_pct: 100, // Default matrix size to 100%
-      align: "center",
-      matrix_spacing_mode: "normal", // Default pixel spacing mode
-      matrix_background: "black", // Black background by default
-      matrix_box_shadow: true, // Keep matrix box shadow enabled
-      matrix_pixel_style: "square", // Default pixel style
-      buttons_style: "classic", // Style for all buttons (power toggle, force refresh)
-      show_brightness: true, // Show the brightness slider
-      slider_show_value: true, // Show the brightness percentage
-      slider_style: "slider", // Brightness slider style (slider, bar, rotary...)
-      slider_width: 100,
-      brightness_slider_appearance: "default", // Legacy: Appearance for slider mode (migrated to thickness)
-      slider_thickness: 6, // Track thickness in px (2-20, replaces appearance)
-      brightness_label_mode: "text", // NEW: Brightness label mode (none, text, icon, icon_text)
-      brightness_max: 500, // NEW: Maximum brightness value (default 500 to test beyond 255)
-      show_device_orientation: true, // Show the 4-way device orientation control
-
-      hide_black_dots: false, // NEW: Ignore black pixels on preview (default: false = OFF)
-      show_lamp_preview: true, // NEW: Show lamp matrix preview by default
-      show_adjustment_controls: false, // Deprecated: Use light brightness control instead
-      ...resolvePreviewAppearance(
-        lampActionConfig(normalizeCardOptions(config, "lamp-preview")),
-        "lamp",
-      ),
-    };
+    // Unset options keep their defaults where they are read (the shared
+    // slider config, the matrix geometry, the appearance resolver).
+    this.config = resolvePreviewAppearance(
+      lampActionConfig(normalizeCardOptions(config, "lamp-preview")),
+      "lamp",
+    );
     this._actionCommands.reset();
     this._actions.configure(
       this.config,
       this.config.entity ? [this.config.entity] : [],
     );
-    // Force full re-render when config changes
-    this._isInitialRenderComplete = false;
-
-    if (!this._renderScheduled) {
-      this._renderScheduled = true;
-      requestAnimationFrame(() => {
-        this._renderScheduled = false;
-        this._refresh();
-      });
-    }
+    // Fresh dots for the new look.
+    this._dotGeneration++;
+    this._refresh();
   }
 
   set hass(hass) {
     const prevHass = this._hass;
     this._hass = hass;
-    // HA calls this setter for every state change anywhere in the instance,
-    // but only recreates the state object of the entity that changed. If our
-    // entity's state object is the very same reference as last time (and the
-    // config is unchanged, the card has rendered, and no render was deferred
-    // by a slider drag / oscillation guard), there is nothing to do.
-    const entityStateObj = hass?.states?.[this.config?.entity];
-    if (
-      prevHass &&
-      this._isInitialRenderComplete &&
-      !this._renderIncomplete &&
-      this._seenConfig === this.config &&
-      this._seenStateObj === entityStateObj
-    ) {
-      return;
-    }
-    this._seenConfig = this.config;
-    this._seenStateObj = entityStateObj;
+    // Nothing the card shows changed (card-base _hassChanged) and no update
+    // waits (a slider drag, the oscillation guard): nothing to do.
+    const changed = this._hassChanged(hass);
+    if (prevHass && !this._renderIncomplete && !changed) return;
     if (
       this._orientationSettled &&
       this._orientationPending ===
@@ -355,77 +295,37 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     // Note: _localEffects are NOT cleared when the entity state matches; they
     // keep tracking values that differ from defaults for the change indicator
     // system. _localEffects should only be cleared by explicit reset actions.
-
-    // Check if the lamp on/off state has changed
-    const oldState = this._lastKnownState;
-    const newState = this.config?.entity
-      ? hass.states[this.config.entity]?.state
-      : null;
-    const stateChanged = oldState !== newState;
-
-    if (newState) {
-      this._lastKnownState = newState;
-    }
-
-    // Don't re-render while user is actively dragging ANY slider OR if we have pending local effects
-    // UNLESS the lamp on/off state changed (always show correct power button state)
-    const hasPendingLocalEffects = Object.keys(this._localEffects).length > 0;
-
-    // Detect brightness changes to debounce rendering
-    const currentBrightness = this.config?.entity
-      ? hass.states[this.config.entity]?.attributes?.brightness
-      : null;
-    const brightnessChanged = currentBrightness !== this._lastBrightness;
-
-    // Detect matrix_colors changes to trigger re-render (for effect updates)
-    const currentMatrixColors = this.config?.entity
-      ? hass.states[this.config.entity]?.attributes?.matrix_colors
-      : null;
-    // Reference check first; only deep-compare when the array was replaced.
-    const matrixColorsChanged =
-      currentMatrixColors !== this._lastMatrixColors &&
-      JSON.stringify(currentMatrixColors) !==
-        JSON.stringify(this._lastMatrixColors);
-
-    // Detect content-mode transitions (Matrix <-> Clock <-> Native Effect).
-    // Each mode is driven by a different client-side loop (clock animation,
-    // native-effect animation, or the static matrix). A switch changes none of
-    // state/brightness/matrix_colors, so without this we may skip render() and
-    // leave the preview frozen on the previous mode's last frame (e.g. stuck on
-    // a native effect after switching to Clock).
-    const currentContentMode = this.config?.entity
-      ? hass.states[this.config.entity]?.attributes?.content_mode
-      : null;
-    const contentModeChanged = currentContentMode !== this._lastContentMode;
-    if (currentContentMode != null) this._lastContentMode = currentContentMode;
-
-    if (brightnessChanged && currentBrightness !== null) {
-      this._lastBrightness = currentBrightness;
-
-      // Debounce rendering when brightness changes to avoid flicker
-      // Wait for both brightness AND matrix_colors updates to arrive
-      if (this._renderDebounceTimer) {
-        clearTimeout(this._renderDebounceTimer);
-      }
+    const entity = hass.states[this.config?.entity];
+    const attrs = entity?.attributes;
+    const seen = this._seen;
+    this._seen = {
+      state: entity?.state,
+      // The last known brightness (a lamp that is off reports none).
+      brightness: attrs?.brightness ?? seen.brightness,
+      matrix: valueKey(attrs?.matrix_colors),
+      // Matrix, Clock and Native Effect are drawn by different loops: a
+      // switch must update the preview even when nothing else changed.
+      contentMode: attrs?.content_mode ?? seen.contentMode,
+    };
+    // A brightness change and the matching matrix colors arrive in separate
+    // updates: one update 250 ms later shows both (no flicker).
+    if (this._seen.brightness !== seen.brightness && attrs?.brightness != null) {
+      clearTimeout(this._renderDebounceTimer);
       this._renderDebounceTimer = setTimeout(() => {
         this._renderDebounceTimer = null;
-        // Always render to update matrix colors, even if dragging
         this._refresh();
-      }, 250); // Increased from 150ms to 250ms for better performance
-    } else if (
-      !hasPendingLocalEffects ||
-      stateChanged ||
-      matrixColorsChanged ||
-      contentModeChanged
-    ) {
-      // Normal rendering for non-brightness changes
-      // Always render to update matrix - slider protection is inside _updateSliderValues
-      // Also render when matrix_colors change (effect updates from backend)
-      if (matrixColorsChanged && currentMatrixColors !== null) {
-        this._lastMatrixColors = currentMatrixColors;
-      }
-      this._refresh();
+      }, 250);
+      return;
     }
+    // While adjustments wait for the lamp's echo, only the lamp's own changes
+    // (power, matrix, content mode) update the card.
+    if (
+      !Object.keys(this._localEffects).length ||
+      this._seen.state !== seen.state ||
+      this._seen.matrix !== seen.matrix ||
+      this._seen.contentMode !== seen.contentMode
+    )
+      this._refresh();
   }
 
   // The brightness slider's handlers come from the shared lamp-slider
@@ -445,194 +345,51 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     }, 50);
   }
 
-  // Historical render entry point: decides between a full update (Lit
-  // re-render + fresh matrix dots + fresh brightness slider markup) and a smart
-  // update (dots and slider visuals patched in place).
+  // Show the lamp's current state (a Lit update, the dots painted in
+  // updated()). Waits while a slider is dragged or a value typed, and while HA
+  // sends alternating brightness values: _renderIncomplete stays set so the
+  // next hass update (or the end of the drag / burst) makes the update.
   _refresh() {
-    // Cleared at the end of _renderCard; stays set if this render bails out
-    // (slider drag, typing, brightness oscillation guard) so the next hass
-    // update re-renders even when the entity state object is unchanged.
     this._renderIncomplete = true;
-    // Skip re-rendering if user is dragging a slider or typing in brightness input
-    if (this._anySliderDragging || this._slBrightnessTyping) {
-      return;
+    if (this._anySliderDragging || this._slBrightnessTyping) return;
+    const stateObj = this._hass?.states?.[this.config?.entity];
+    if (stateObj) {
+      this._pruneResetEffects(stateObj);
+      // Drop the dragged brightness once the lamp reports it.
+      this._lampSliders.settle(stateObj.attributes);
+      if (this._brightnessOscillates(stateObj)) return;
     }
-
-    const entityId = this.config.entity;
-    const hass = this._hass;
-    if (!hass || !entityId) {
-      return;
-    }
-    const stateObj = hass.states[entityId];
-
-    if (!stateObj) {
-      // Rendered by render(); the next update with the entity is a full one
-      // because the preview container is gone.
-      this._missingEntity = entityId;
-      this._lampDots = null;
-      this.requestUpdate();
-      return;
-    }
-    this._missingEntity = null;
-    this._pruneResetEffects(stateObj);
-    // Drop the dragged brightness once the lamp reports it.
-    this._lampSliders.settle(stateObj.attributes);
-    let matrixColors = stateObj.attributes.matrix_colors;
-
-    if (!matrixColors?.length) {
-      // Blank matrix: no data yet, or the firmware draws the matrix (Clock,
-      // Native Effect, Music Flow), whose frames the backend can't read back.
-      matrixColors = getInitialMatrix(5, 20); // 5 rows x 20 cols
-    }
-
-    // Use entity state for brightness (no optimistic updates to prevent flash)
-    const entityBrightness = stateObj.attributes.brightness ?? 255;
-
-    // Entity brightness (3-255) on the slider's 1-100 scale (shared curve).
-    const sliderBrightness = brightnessRawToPct(entityBrightness);
-
-    // Get all effect values (local or entity state)
-    const effects = this._currentEffects(stateObj);
-
-    // Render the card (pass entity brightness for color calculations, slider brightness for slider display)
-    this._renderCard(
-      stateObj,
-      matrixColors,
-      entityBrightness,
-      sliderBrightness,
-      effects,
-    );
+    this._renderIncomplete = false;
+    this.requestUpdate();
   }
 
-  _renderCard(
-    stateObj,
-    matrixColors,
-    entityBrightness,
-    sliderBrightness,
-    effects,
-  ) {
-    // Apply brightness to all pixels (black pixels stay black: effects are
-    // never applied to the background).
-    //
-    // Perceptual boost: LCD screens look dimmer than LEDs at the same RGB.
-    // We compute a target "effective" brightness from the lamp brightness
-    // slider, then divide by the darken factor to get the boost multiplier.
-    //
-    //   effective = FLOOR + (1 - FLOOR) * t^GAMMA   (smooth power curve)
-    //   boost     = effective / darkenFactor
-    //
-    // This is guaranteed monotonic (power + constant floor), never flat,
-    // and controlled by just GAMMA (curve shape) and BOOST (floor height).
-    const gridColors = this._matrixColorsToGridColors(matrixColors, stateObj);
-
-    // The dragged value until the lamp reports it (prevents jumping during
-    // render storms), else the lamp's.
+  // HA can send alternating old/new brightness values in a burst: after more
+  // than 2 changes in a row the updates wait for 500 ms without one.
+  _brightnessOscillates(stateObj) {
+    const sliderBrightness = brightnessRawToPct(
+      stateObj.attributes.brightness ?? 255,
+    );
     const draftBrightness = this._lampSliders.value("brightness");
-    const displayBrightness = draftBrightness ?? sliderBrightness;
-
-    // Detect brightness oscillation (HA sending alternating old/new values)
     if (
       this._lastRenderedBrightness !== null &&
       this._lastRenderedBrightness !== sliderBrightness &&
       draftBrightness === null
     ) {
       this._brightnessOscillationCount++;
-
-      // If we detect rapid oscillations (>2 changes), skip this render entirely
       if (this._brightnessOscillationCount > 2) {
-        // Reset counter after 500ms of no oscillations
         clearTimeout(this._oscillationResetTimeout);
         this._oscillationResetTimeout = setTimeout(() => {
           this._brightnessOscillationCount = 0;
+          // The burst is over: show the last value.
+          if (this._renderIncomplete) this._refresh();
         }, 500);
-        return; // Skip this render completely
+        return true;
       }
     } else if (this._lastRenderedBrightness === sliderBrightness) {
-      // Same value - reset oscillation counter
       this._brightnessOscillationCount = 0;
     }
-
-    this._lastRenderedBrightness = displayBrightness;
-
-    // Smart update: Only rebuild DOM if not initialized or if dragging just ended
-    const needsFullRender =
-      !this._isInitialRenderComplete ||
-      // A full update is still waiting for Lit: fold this one into it so its
-      // post-render paint uses the newest colors.
-      this._pendingFull !== null ||
-      // The matrix (.lamp-preview-css) is absent when show_lamp_preview is
-      // false, so check the always-rendered container instead; otherwise a
-      // hidden preview forced a full DOM rebuild on every update.
-      !this.shadowRoot?.querySelector(
-        this.config.show_lamp_preview !== false
-          ? ".lamp-preview-css"
-          : ".yeelight-cube-lamp-preview-container",
-      );
-
-    // Firmware Native Effect and Clock modes run animations the plugin can't
-    // read back, so the static matrix_colors attribute is meaningless there.
-    // When active, we drive client-side animation loops and skip overwriting
-    // the matrix with the static (stale) colors on smart updates.
-    const isNativeAnimating =
-      this.config.show_lamp_preview !== false &&
-      stateObj.attributes.content_mode === "Native Effect" &&
-      stateObj.state === "on";
-    const isClockAnimating =
-      this.config.show_lamp_preview !== false &&
-      stateObj.attributes.content_mode === "Clock" &&
-      stateObj.state === "on";
-
-    if (needsFullRender) {
-      // Full update on first load or structural changes. The brightness
-      // slider markup is only rebuilt here; smart updates patch it in place.
-      this._sliderMarkup =
-        this.config.show_lamp_control !== false &&
-        this.config.show_brightness === true
-          ? renderSliderGroup([
-              {
-                gc: this._brightnessGc(),
-                value: displayBrightness,
-                ns: "brightness",
-              },
-            ])
-          : "";
-      // Fresh .lamp-dot nodes (keyed by generation), painted in updated().
-      this._dotGeneration++;
-      this._pendingFull = {
-        gridColors,
-        orientation: stateObj?.attributes?.device_orientation || "right",
-        isNativeAnimating,
-        isClockAnimating,
-      };
-      this._isInitialRenderComplete = true;
-      // The matrix DOM (and its .lamp-dot nodes) is rebuilt; drop the cache.
-      this._lampDots = null;
-      // Remember which orientation this DOM was built for (smart updates compare).
-      this._lastPreviewOrientation = this._pendingFull.orientation;
-      this.requestUpdate();
-      this._renderIncomplete = false;
-      return;
-    }
-
-    // Smart update: Only update matrix colors and slider values
-    // When a native animation or clock animation owns the matrix, don't
-    // clobber it with the static (stale) matrix_colors attribute. With the
-    // preview hidden there are no dots; calling _updateMatrixColors would
-    // see a dot-count mismatch and rebuild the whole card on every update.
-    if (
-      !isNativeAnimating &&
-      !isClockAnimating &&
-      this.config.show_lamp_preview !== false
-    )
-      this._updateMatrixColors(gridColors, stateObj);
-    this._updateSliderValues(displayBrightness, effects); // Use cached value to prevent jumping
-    // Effect sliders, value labels and change indicators follow the state.
-    this.requestUpdate();
-
-    this._syncActions();
-    // Start/stop the client-side animations to match current mode.
-    this._syncAnimations(isNativeAnimating, isClockAnimating, false);
-    this._renderIncomplete = false;
+    this._lastRenderedBrightness = draftBrightness ?? sliderBrightness;
+    return false;
   }
 
   // Hand the shared Actions view its model and let it re-evaluate.
@@ -646,9 +403,9 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     }
   }
 
-  // Start/stop the client-side animations to match the current mode. After a
-  // full update the dots are new: a loop that was already running paints them
-  // right away instead of waiting for its next tick.
+  // Start/stop the client-side animations to match the current mode. When the
+  // dots are new (a new configuration), a loop that was already running paints
+  // them right away instead of waiting for its next tick.
   _syncAnimations(isNativeAnimating, isClockAnimating, repaint) {
     if (isNativeAnimating) {
       const running = this._nativeLoop?.running;
@@ -662,44 +419,36 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     } else this._stopClockAnimation();
   }
 
-  // Post-render work of a full update: paint the fresh dots, wire the Actions
-  // view and (re)start the animation loop owning the matrix.
+  // After each update: paint the dots (change-only) unless an animation owns
+  // them, wire the Actions view and start/stop the animation loops.
   updated(changedProperties) {
     super.updated?.(changedProperties);
-    const pending = this._pendingFull;
-    if (!pending) return;
-    this._pendingFull = null;
-    this._lampDots = null;
-    if (
-      this.config.show_lamp_preview !== false &&
-      !pending.isNativeAnimating &&
-      !pending.isClockAnimating
-    ) {
+    const stateObj = this._hass?.states?.[this.config?.entity];
+    if (!stateObj) return;
+    const freshDots = this._paintedGeneration !== this._dotGeneration;
+    this._paintedGeneration = this._dotGeneration;
+    // Firmware Native Effect and Clock modes run animations the plugin can't
+    // read back (their matrix_colors are stale): client-side loops draw them.
+    const preview = this.config.show_lamp_preview !== false;
+    const on = stateObj.state === "on";
+    const mode = stateObj.attributes.content_mode;
+    const isNativeAnimating = preview && on && mode === "Native Effect";
+    const isClockAnimating = preview && on && mode === "Clock";
+    this._lastPreviewOrientation =
+      stateObj.attributes.device_orientation || "right";
+    if (preview && !isNativeAnimating && !isClockAnimating) {
+      // Blank matrix: no data yet, or the firmware draws the matrix (Music
+      // Flow), whose frames the backend can't read back.
+      const matrixColors = stateObj.attributes.matrix_colors?.length
+        ? stateObj.attributes.matrix_colors
+        : getInitialMatrix(5, 20);
+      const gridColors = this._matrixColorsToGridColors(matrixColors, stateObj);
       const dots = this._getLampDots();
-      if (dots.length === pending.gridColors.length)
-        this._paintDots(pending.gridColors, pending.orientation, dots);
+      if (dots.length === gridColors.length)
+        this._paintDots(gridColors, this._lastPreviewOrientation, dots);
     }
     this._syncActions();
-    this._syncAnimations(
-      pending.isNativeAnimating,
-      pending.isClockAnimating,
-      true,
-    );
-  }
-
-  // Update only the brightness slider without rebuilding DOM. Effect sliders
-  // and their labels are Lit bindings over _localEffects / the entity state.
-  _updateSliderValues(brightness, effects) {
-    // Update brightness slider and visual indicators via the shared control.
-    const brightnessSlider =
-      this.shadowRoot?.querySelector(".brightness-slider") ||
-      this.shadowRoot?.querySelector(".capsule-input");
-    if (brightnessSlider && !this._anySliderDragging) {
-      brightnessSlider.value = brightness;
-      // Per-style visuals (bar/wheel/matrix/rotary/capsule/slider) are handled
-      // by the shared slider-control module.
-      this._slBrightnessUpdateVisuals?.(brightness);
-    }
+    this._syncAnimations(isNativeAnimating, isClockAnimating, freshDots);
   }
 
   // HTML-string rendering of the same preview with its colors inline, for
@@ -851,18 +600,33 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
   }
 
   // Actions, device orientation and the brightness slider. The slider is the
-  // shared multi-style control (./slider-control-utils.js, same as the clock
-  // card), rendered from markup captured on the last full update.
+  // shared multi-style control (./slider-control-utils.js, same as the Clock
+  // and Native Effects cards), held while it is dragged or typed in.
   _lampControlsTemplate(stateObj) {
+    const slider =
+      this.config.show_brightness !== false
+        ? stableSliderMarkup(
+            this,
+            "brightness",
+            renderSliderGroup([
+              {
+                gc: this._brightnessGc(),
+                // The dragged value until the lamp reports it, else the lamp's.
+                value:
+                  this._lampSliders.value("brightness") ??
+                  brightnessRawToPct(stateObj.attributes.brightness ?? 255),
+                ns: "brightness",
+              },
+            ]),
+          )
+        : "";
     return html`<yeelight-mode-controls
         area="actions"
         .model=${this._actions}
       ></yeelight-mode-controls
       >${this.config.show_device_orientation !== false
         ? this._orientationTemplate(stateObj)
-        : nothing}${this._sliderMarkup
-        ? unsafeHTML(this._sliderMarkup)
-        : nothing}`;
+        : nothing}${slider ? unsafeHTML(slider) : nothing}`;
   }
 
   render() {
@@ -902,10 +666,9 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
   connectedCallback() {
     super.connectedCallback();
     // Reattached after a disconnect (dashboard edit mode, view switch): the
-    // animation loops were stopped, so run a full update to restart them.
+    // animation loops were stopped: an update restarts them (updated()).
     if (this._wasDisconnected) {
       this._wasDisconnected = false;
-      this._isInitialRenderComplete = false;
       this._refresh();
     }
   }
@@ -948,12 +711,9 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     this._lampSliders.destroy();
 
     // Reset drag/interaction flags
-    this._renderScheduled = false;
     this._anySliderDragging = false;
-  }
-
-  getCardSize() {
-    return 2;
+    this._sliderTyping = false;
+    this._slBrightnessTyping = false;
   }
 }
 

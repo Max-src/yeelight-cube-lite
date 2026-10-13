@@ -1,6 +1,7 @@
 // Stylesheet of the gradient card (adopted once per shadow root by LitElement).
 import { cardLayoutStyles } from "./card-layout-utils.js";
 import { collectionGalleryStyles } from "./collection-gallery.js";
+import { tabBarStyles } from "./tab-bar.js";
 import { getCapsuleCSS } from "./capsule-slider-utils.js";
 
 // Card stylesheet (static; adopted once per shadow root by LitElement).
@@ -52,139 +53,6 @@ export const GRADIENT_CARD_CSS = `
           max-width: 480px;
           margin: 0 auto;
         }
-        .color-row {
-          display: flex;
-          align-items: center;
-          margin-bottom: 10px;
-          background: var(--secondary-background-color, #fafbfc);
-          border: 1.5px solid var(--disabled-text-color, #d0d7de);
-          border-radius: 14px;
-          box-shadow: 0 2px 8px rgba(0,0,0,0.04);
-          padding: 6px 12px;
-          transition: box-shadow 0.2s, transform 0.2s cubic-bezier(.4,2,.6,1), background 0.2s;
-          position: relative;
-          width: 100%;
-          box-sizing: border-box;
-        }
-        
-        /* Full row color mode styles */
-        .color-row.full-row-color {
-          border: 2px solid rgba(255, 255, 255, 0.3);
-          box-shadow: 0 2px 8px rgba(0,0,0,0.1), inset 0 0 0 1px rgba(255, 255, 255, 0.2);
-        border: 0 !important;
-          }
-        
-        .color-row.full-row-color[data-color-row="true"] {
-          cursor: pointer;
-        }
-        
-        .color-row.full-row-color[data-color-row="true"]:hover {
-          transform: translateY(-1px);
-          box-shadow: 0 4px 12px rgba(0,0,0,0.15), inset 0 0 0 1px rgba(255, 255, 255, 0.3);
-        border: 0 !important;
-          }
-        
-        .color-row.full-row-color .color-main span,
-        .color-row.full-row-color .color-main .hex-input {
-          color: var(--text-primary-color, #fff);
-        }
-        
-        .color-row.full-row-color .hex-input {
-          background: rgba(255, 255, 255, 0.3);
-          border: 1px solid rgba(255, 255, 255, 0.4);
-        }
-        
-        .color-row.full-row-color .hex-input:focus {
-          background: rgba(255, 255, 255, 0.5) !important;
-          border-color: rgba(255, 255, 255, 0.7) !important;
-          outline: none;
-          border: 0 !important;
-        }
-        .color-main {
-          display: flex;
-          align-items: center;
-          flex: 1 1 auto;
-          min-width: 0;
-        }
-        .color-actions {
-          display: flex;
-          align-items: center;
-          gap: 20px;
-          flex: 0 0 auto;
-          justify-content: flex-end;
-        }
-        .color-row.dragging { box-shadow: 0 8px 24px rgba(0,0,0,0.18); z-index: 10; transform: scale(1.04); }
-        .color-row.animating { transition: transform 0.2s cubic-bezier(.4,2,.6,1); }
-        .color-row input[type="color"] {
-          width: 32px;
-          height: 32px;
-          border: none;
-          background: none;
-          border-radius: 8px;
-          box-shadow: 0 1px 2px rgba(0,0,0,0.06);
-          padding: 0;
-          appearance: none;
-          -webkit-appearance: none;
-          cursor: pointer;
-        }
-        .color-row input[type="color"]::-webkit-color-swatch {
-          border-radius: 8px;
-          border: none;
-          padding: 0;
-        }
-        .color-row input[type="color"]::-webkit-color-swatch-wrapper {
-          border-radius: 8px;
-          padding: 0;
-        }
-        .color-row input[type="color"]::-moz-color-swatch {
-          border-radius: 8px;
-          border: none;
-          padding: 0;
-        }
-        .color-row input[type="color"]::-moz-focus-inner {
-          border: none;
-        }
-        .color-row input[type="text"].hex-input {
-          width: 70px;
-          margin-left: 8px;
-          border: 1px solid var(--divider-color, #ccc);
-          border-radius: 6px;
-          padding: 6px 10px;
-          font-size: 1em;
-          font-family: inherit;
-          background: var(--card-background-color, #fff);
-          color: var(--primary-text-color, #222);
-          box-shadow: 0 1px 2px rgba(0,0,0,0.04);
-          transition: border 0.2s, box-shadow 0.2s;
-        }
-        .color-row input[type="text"].hex-input:focus {
-          border: 1.5px solid transparent !important;
-          outline: none;
-          box-shadow: 2px 2px 2px 2px transparent;
-        }
-        .remove-btn { background: color-mix(in srgb, var(--error-color, #db4437) 15%, var(--card-background-color, #fff)); border: none; border-radius: 6px; color: var(--error-color, #db4437); padding: 6px 18px; cursor: pointer; font-size: 1em; font-weight: 500; margin-left: 0; transition: background 0.2s; }
-        .remove-btn:hover { background: color-mix(in srgb, var(--error-color, #db4437) 25%, var(--card-background-color, #fff)); }
-        
-        /* Make color-row relative for absolute positioning of cross */
-        .color-row {
-          position: relative;
-        }
-        
-        /* Add padding when cross button is present */
-        .color-row.has-cross {
-          padding-right: 40px;
-        }
-        .drag-handle { margin-left: 0; cursor: grab; font-size: 1.5em; color: var(--secondary-text-color, #888); user-select: none; }
-        .drag-handle::after { content: "\\2630"; }
-        
-        /* Drag handle styles for Full Row Color Mode */
-        .color-row.full-row-color .drag-handle {
-          transition: background 0.2s ease;
-        }
-        
-        .color-row.full-row-color .drag-handle:hover {
-          background: rgba(255, 255, 255, 0.5) !important;
-        }
         #color-list { position: relative; }
         .action-row {
           display: flex;
@@ -221,14 +89,6 @@ export const GRADIENT_CARD_CSS = `
           width: 100%;
         }
         .save-btn:hover { background: color-mix(in srgb, var(--primary-color) 25%, var(--card-background-color, #fff)); }
-        
-        /* Angle section styles */
-        .angle-title {
-          font-size: 1.1em;
-          font-weight: 600;
-          margin-bottom: 12px;
-          color: var(--primary-text-color, #333);
-        }
         .angle-row {
           display: flex;
           align-items: center;
@@ -268,13 +128,6 @@ export const GRADIENT_CARD_CSS = `
           box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
           border: none;
           transition: all 0.2s ease;
-        }
-        .angle-input {
-          width: 60px;
-          border: 1px solid var(--divider-color, #ccc);
-          border-radius: 4px;
-          padding: 4px 6px;
-          text-align: center;
         }
 
         /* Compass center angle display */
@@ -616,64 +469,6 @@ export const GRADIENT_CARD_CSS = `
           opacity: 1;
         }
 
-        /* Tabs style — two-option sliding control: [Pixels] / [Panel] */
-        .panel-toggle.tabs {
-          position: relative;
-          display: flex;
-          gap: 0;
-          background: var(--secondary-background-color, #eef0f2);
-          border-radius: 10px;
-          padding: 3px;
-        }
-        .panel-toggle.tabs .tabs-thumb {
-          position: absolute;
-          top: 3px;
-          bottom: 3px;
-          left: 3px;
-          width: calc(50% - 3px);
-          background: var(--card-background-color, #fff);
-          border-radius: 8px;
-          box-shadow: 0 1px 4px rgba(0,0,0,0.12);
-          transition: transform 0.22s ease;
-          pointer-events: none;
-        }
-        .panel-toggle.tabs[data-active="1"] .tabs-thumb {
-          transform: translateX(100%);
-        }
-        .panel-toggle.tabs[data-shape="round"] .tabs-thumb {
-          border-radius: 999px;
-        }
-        .panel-toggle.tabs[data-shape="square"] .tabs-thumb {
-          border-radius: 0;
-        }
-        .panel-toggle.tabs .tab-btn {
-          position: relative;
-          z-index: 1;
-          flex: 1;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 6px;
-          padding: 7px 10px;
-          border: none;
-          background: transparent;
-          border-radius: 8px;
-          cursor: pointer;
-          font-size: 0.82em;
-          font-weight: 500;
-          color: var(--secondary-text-color, #888);
-          transition: color 0.2s ease;
-          white-space: nowrap;
-        }
-        .panel-toggle.tabs[data-shape="round"] .tab-btn {
-          border-radius: 999px;
-        }
-        .panel-toggle.tabs[data-shape="square"] .tab-btn {
-          border-radius: 0;
-        }
-        .panel-toggle.tabs .tab-btn.active {
-          color: var(--primary-color, #0969da);
-        }
 
         /* Chip style — single floating chip that toggles */
         .panel-toggle.chip {
@@ -789,44 +584,12 @@ export const GRADIENT_CARD_CSS = `
         .panel-toggle.card[data-shape="round"] { border-radius: 14px; }
         .panel-toggle.card[data-shape="round"] .card-indicator { border-radius: 50%; }
 
-        /* Scroll Controls */
-        .scroll-info {
-          font-family: monospace;
-          color: var(--secondary-text-color, #656d76);
-        }
-        
-        .scroll-controls input[type="range"] {
-          height: 4px;
-          background: var(--disabled-text-color, #d0d7de);
-          border-radius: 2px;
-          outline: none;
-        }
-        
-        .scroll-controls input[type="range"]::-webkit-slider-thumb {
-          appearance: none;
-          width: 16px;
-          height: 16px;
-          border-radius: 50%;
-          background: var(--primary-color, #0969da);
-          cursor: pointer;
-        }
-        
-        .control-button {
-          padding: 4px 8px;
-          border: 1px solid var(--disabled-text-color, #d0d7de);
-          background: var(--card-background-color, white);
-          border-radius: 4px;
-          cursor: pointer;
-          font-size: 0.85em;
-          transition: all 0.2s ease;
-        }
-        
-        .control-button:hover {
-          background: var(--secondary-background-color, #f6f8fa);
-        }
-
         /* The mode selector: the shared gallery (collection-gallery.js). */
         ${collectionGalleryStyles}
+        ${tabBarStyles}
+        .panel-toggle-tabs {
+          width: 100%;
+        }
 
         .panel-toggle input[type="checkbox"] {
           margin: 0;

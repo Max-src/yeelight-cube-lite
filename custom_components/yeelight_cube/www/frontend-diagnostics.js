@@ -1,14 +1,6 @@
+import { CARD_NAMES as names } from "./card-list.js";
 const STORAGE_KEY = "yeelight-cube:frontend-diagnostics";
 const LIMIT = 40;
-const names = [
-  "lamp-preview",
-  "gradient",
-  "draw",
-  "palette",
-  "color-list-editor",
-  "clock",
-  "native-effects",
-];
 const base = new URL(".", import.meta.url).pathname;
 
 function safeText(value) {

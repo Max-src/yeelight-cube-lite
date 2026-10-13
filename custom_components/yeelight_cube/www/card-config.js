@@ -50,6 +50,10 @@ export const OPTION_ALIASES = Object.freeze({
     allow_title_edit: "allow_rename",
     palette_carousel_wrap_navigation: "gallery_wrap_navigation",
   },
+  // The Color List's item size: the shared Size (%).
+  "color-list-editor": {
+    card_size: "preview_size",
+  },
   // The Lamp Preview's brightness slider: same slider_* appearance options as
   // the Clock and Native Effects sliders (sliderKeys("slider")).
   "lamp-preview": {
@@ -98,6 +102,7 @@ export const OPTION_MIGRATIONS = Object.freeze({
     }),
     // The mode selector never had a search box: keep it off until chosen.
     ...(config.show_search === undefined && { show_search: false }),
+    ...gradientLegacyOptions(config),
   }),
   // The Draw pixel-art gallery before the shared gallery: its display
   // mode, page size (12), preview size (100%), card roundness (kept: the
@@ -133,11 +138,26 @@ export const OPTION_MIGRATIONS = Object.freeze({
       config.palette_carousel_button_shape !== undefined && {
         colors_button_shape: normalizeButtonShape(config.palette_carousel_button_shape),
       }),
+    // The tool buttons' shape (button_shape) in the shared shape names.
+    ...(config.tool_buttons_shape === undefined &&
+      config.button_shape !== undefined && {
+        tool_buttons_shape: normalizeButtonShape(config.button_shape),
+      }),
     ...(config.colors_item_radius === undefined &&
       config.rounded_cards !== undefined &&
       config.rounded_cards !== true &&
       config.rounded_cards !== "round" && {
         colors_item_radius: roundedCardsRadius(config.rounded_cards),
+      }),
+  }),
+  // The Color List's card roundness is the shared item radius (a legacy
+  // "round" / true is the default 16 px: left unset).
+  "color-list-editor": (config) => ({
+    ...(config.item_radius === undefined &&
+      config.rounded_cards !== undefined &&
+      config.rounded_cards !== true &&
+      config.rounded_cards !== "round" && {
+        item_radius: roundedCardsRadius(config.rounded_cards),
       }),
   }),
   // The palette card's look before the shared gallery: its display mode,
@@ -240,6 +260,66 @@ export function roundedCardsRadius(value) {
   return typeof value === "number" ? value : parseInt(value, 10) || 16;
 }
 
+// The Gradient angle styles merged into wheel / compass / rectangle: the
+// style they became, and the shape option they set (when not chosen; the
+// former square ignored rectangle_shape, so it always sets it).
+const GRADIENT_ROTARY_STYLES = {
+  arrow_window: ["wheel", "wheel_show_mask", true],
+  beam: ["compass", "compass_shape", "beam"],
+  arrow: ["compass", "compass_shape", "arrow"],
+  star: ["compass", "compass_shape", "star"],
+  turning_rectangle: ["compass", "compass_shape", "rectangle"],
+  square: ["rectangle", "rectangle_shape", "square"],
+};
+// The mode selector's former layouts: preview_display_mode (the previews
+// were always shown) and the text styles merged into "filled".
+const GRADIENT_PREVIEW_LAYOUTS = {
+  inline: "preview-list",
+  grid: "preview-list",
+  gallery: "preview-list",
+  list: "preview-list",
+  compact: "preview-list",
+  wheel: "preview-wheel",
+};
+const GRADIENT_SELECTOR_STYLES = {
+  buttons: "filled",
+  pills: "filled",
+  compact: "filled",
+  colorized: "filled",
+  "preview-row": "preview-list",
+};
+
+/** The Gradient options older versions saved, in today's names. */
+function gradientLegacyOptions(config) {
+  const options = {};
+  const rotary = GRADIENT_ROTARY_STYLES[config.rotary_unified_style];
+  if (rotary) {
+    const [style, key, value] = rotary;
+    options.rotary_unified_style = style;
+    if (config[key] === undefined || config[key] === "" || key === "rectangle_shape")
+      options[key] = value;
+  }
+  if (!config.compass_labels_mode && config.compass_show_labels !== undefined)
+    options.compass_labels_mode = config.compass_show_labels ? "under" : "none";
+  const style = config.style_selector_style;
+  if (GRADIENT_SELECTOR_STYLES[style])
+    options.style_selector_style = GRADIENT_SELECTOR_STYLES[style];
+  else if (!style && GRADIENT_PREVIEW_LAYOUTS[config.preview_display_mode])
+    options.style_selector_style =
+      GRADIENT_PREVIEW_LAYOUTS[config.preview_display_mode];
+  // The panel toggle lived in the former text selector: hidden with it.
+  if (
+    config.show_color_mode_selector === false &&
+    config.show_panel_toggle === undefined
+  )
+    options.show_panel_toggle = false;
+  const toggle = { default: "minimal", segmented: "tabs" }[
+    config.panel_toggle_style
+  ];
+  if (toggle) options.panel_toggle_style = toggle;
+  return options;
+}
+
 function gradientPreviewSize(value) {
   const size = Number(value) || 50;
   return size > 100 ? Math.round(size / 4.5) : size;
@@ -257,8 +337,33 @@ export const RETIRED_OPTIONS = Object.freeze({
     "compact_show_preview",
     "palette_carousel_button_shape",
     "rounded_cards",
+    "button_shape",
+    // Never read.
+    "paint_button_shape",
+    "pixelart_buttons_content_mode",
+    // The on-card visibility modes: tools / actions are shown and ordered
+    // in the editor now (hidden_tools / hidden_actions).
+    "edit_drawing_tools",
+    "allow_visual_tool_reordering",
+    "edit_action_buttons",
   ],
-  gradient: ["gallery_preview_size"],
+  // Never read.
+  "lamp-preview": [
+    "size",
+    "brightness_label_mode",
+    "brightness_max",
+    "show_brightness_label",
+  ],
+  gradient: [
+    "gallery_preview_size",
+    // In today's names (gradientLegacyOptions), or never read.
+    "compass_show_labels",
+    "show_color_mode_selector",
+    "color_mode_style",
+    "preview_display_mode",
+    "button_text_color",
+  ],
+  "color-list-editor": ["rounded_cards"],
   palette: [
     "display_mode",
     "rounded_cards",

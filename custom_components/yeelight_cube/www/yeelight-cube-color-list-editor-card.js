@@ -9,7 +9,7 @@ import {
 } from "./color-picker-utils.js";
 import { getDeleteButtonClass, getButtonPositionStyles } from "./delete-button-styles.js";
 
-import { YeelightCardMixin, cubeLampEntities } from "./card-base.js";
+import { YeelightCardMixin, cubeLampEntities, valueKey } from "./card-base.js";
 import {
   cardNotice,
   cardShell,
@@ -18,6 +18,7 @@ import {
 } from "./card-shell.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { ColorListLayoutsMixin } from "./color-list-layouts.js";
+import { normalizeCardOptions } from "./card-config.js";
 import { ColorListDragMixin } from "./color-list-drag.js";
 import { ColorInfoMixin } from "./color-list-color-info.js";
 import { COLOR_LIST_EDITOR_STYLES } from "./color-list-editor-styles.js";
@@ -76,7 +77,7 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
   setConfig(config) {
     this._commands?.reset();
     this._pendingServiceCalls = [];
-    this.config = config;
+    this.config = normalizeCardOptions(config, "color-list-editor");
 
     // Auto-resolve palette_sensor if not explicitly configured
     this._autoResolveSensor("palette_sensor", "color_palettes", this._hass);
@@ -134,29 +135,10 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
       }
     }
 
-    // Only render if our entity's state actually changed
-    if (!staleCacheCleared && oldHass && this.config) {
-      const entityId = this._getPrimaryEntity();
-      if (entityId) {
-        const oldState = oldHass.states[entityId];
-        const newState = hass.states[entityId];
-
-        // Skip render if state hasn't changed. HA only replaces the state
-        // object of the entity that changed, so the common case (another
-        // entity changed) is a cheap reference hit; deep-compare only when
-        // our entity's state object was actually replaced.
-        if (
-          oldState &&
-          newState &&
-          (oldState === newState ||
-            (oldState.state === newState.state &&
-              JSON.stringify(oldState.attributes) ===
-                JSON.stringify(newState.attributes)))
-        ) {
-          return;
-        }
-      }
-    }
+    // Only render when something the card shows changed (card-base
+    // _hassChanged): not on the lamp's other attributes (matrix_colors
+    // changes every second during a clock or an effect).
+    if (!this._hassChanged(hass) && !staleCacheCleared && oldHass && this.config) return;
 
     if (this._interacting) {
       // Interaction in progress — remember that a state-driven render was held
@@ -221,24 +203,18 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
     return candidates[0] || null; // return first even if stale (so error is shown)
   }
 
+  // What the card shows from hass (card-base _hassChanged): whether its lamp
+  // exists, and its colors (by value: a lamp push replaces the array even
+  // when the colors are the same).
+  _hassInputs(hass) {
+    const entityId = this._getPrimaryEntity();
+    const state = entityId ? hass?.states?.[entityId] : undefined;
+    return [this.config, entityId, !!state, valueKey(state?.attributes?.text_colors)];
+  }
+
   // Every service call of this card goes through one ordered queue
   // (card-command-controller): results from a previous configuration are
   // dropped. Created on first use.
-  _cardCommands() {
-    return this._commands;
-  }
-
-  // One call for all target lamps (the backend runs them in parallel).
-  // Rejects on failure (HA has already shown it).
-  callServiceOnTargetEntities(service, serviceData = {}) {
-    return this._cardCommands().request(
-      this._hass,
-      this.config,
-      service,
-      serviceData,
-    );
-  }
-
   render() {
     // For multi-entity support: use the first *valid* entity as source of truth.
     // _getPrimaryEntity() skips stale entity IDs that no longer exist.
@@ -338,7 +314,7 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
         "compact"}${this._dragKind() ? " can-drag" : ""} item-card-border surface-${config.card_surface_effect ||
         "none"} shadow-${config.card_shadow_style ||
         "soft"} hover-${config.card_hover_effect || "lift"}"
-        style="--card-size-multiplier: ${(config.card_size || 70) / 100};"
+        style="--card-size-multiplier: ${(config.preview_size || 70) / 100};"
         @click=${this._onListClick}
         @pointerdown=${this._onListPointerDown}
       >
@@ -429,7 +405,7 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
       );
       return;
     }
-    const commands = this._cardCommands();
+    const commands = this._commands;
     try {
       if (
         !(await commands.call(this._hass, "yeelight_cube", "save_palette", {
@@ -543,12 +519,10 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
     );
   }
 
+  // The items' corners (item_radius, 16 px by default).
   _getCardBorderRadius() {
-    const v = this.config.rounded_cards;
-    if (v === undefined || v === true || v === "round") return 16;
-    if (v === false || v === "square") return 0;
-    if (v === "rounded") return 4;
-    return typeof v === "number" ? v : parseInt(v, 10) || 16;
+    const radius = Number(this.config.item_radius);
+    return Number.isFinite(radius) ? radius : 16;
   }
 
   _getCurrentColors() {
@@ -644,7 +618,7 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
   }
 
   async _commitColors(entityId, entry, config) {
-    const commands = this._cardCommands();
+    const commands = this._commands;
     const context = commands.context;
     const success = await commands.execute(
       this._hass,
@@ -678,10 +652,6 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
     }
     // Handle remove button locally (not in centralized utility)
     return `remove-btn btn-style-${style}`;
-  }
-
-  getCardSize() {
-    return 4;
   }
 
   disconnectedCallback() {

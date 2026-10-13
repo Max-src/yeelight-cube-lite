@@ -86,15 +86,8 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
       for (const tag of ["ha-icon", "ha-svg-icon"])
         customElements.define(tag, class extends HTMLElement {});
       const base = "/custom_components/yeelight_cube/www/";
-      for (const name of [
-        "lamp-preview",
-        "clock",
-        "native-effects",
-        "draw",
-        "gradient",
-        "palette",
-        "color-list-editor",
-      ])
+      const { CARD_NAMES } = await import(`${base}card-list.js`);
+      for (const name of CARD_NAMES)
         await import(`${base}yeelight-cube-${name}-card.js`);
       window.calls = [];
       window.hass = {
@@ -597,6 +590,121 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
     } else {
       throw new Error("gradient: angle capsule not rendered");
     }
+
+    // --- Gradient angle wheel: a lamp update never moves the dragged angle;
+    // the update it brought is shown once the drag ends ------------------------
+    await page.evaluate(
+      (tag) => {
+        const light = hass.states["light.a"];
+        hass = {
+          ...hass,
+          states: {
+            ...hass.states,
+            "light.a": { ...light, attributes: { ...light.attributes, angle: 180 } },
+          },
+        };
+        return mount(tag, {
+          entity: "light.a",
+          rotary_unified_style: "wheel",
+          angle_value_display: "text",
+        });
+      },
+      gradient,
+    );
+    const wheel = await page
+      .locator(`${gradient} #angle-preview`)
+      .boundingBox();
+    const angleText = () =>
+      page.evaluate(() => card.shadowRoot.getElementById("angletext").value);
+    assert.equal(await angleText(), "180°", "gradient wheel: the lamp's angle");
+    await page.mouse.move(wheel.x + wheel.width - 4, wheel.y + wheel.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(wheel.x + wheel.width / 2, wheel.y + 4, { steps: 4 });
+    const lampUpdate = (angle) =>
+      page.evaluate(async (angle) => {
+        const light = hass.states["light.a"];
+        hass = {
+          ...hass,
+          states: {
+            ...hass.states,
+            "light.a": { ...light, attributes: { ...light.attributes, angle } },
+          },
+        };
+        card.hass = hass;
+        await card.updateComplete;
+        return card._pendingHassRender;
+      }, angle);
+    assert.equal(await lampUpdate(270), true, "gradient wheel: render waits for the drag");
+    assert.equal(await angleText(), "90°", "gradient wheel: the dragged angle stays");
+    await page.mouse.up();
+    assert.equal(
+      await page.evaluate(async () => {
+        await card.updateComplete;
+        return card._pendingHassRender;
+      }),
+      false,
+      "gradient wheel: the waiting render runs when the drag ends",
+    );
+    // The lamp reports the dragged angle, then another one (an automation):
+    // plain updates show it.
+    await lampUpdate(90);
+    await lampUpdate(45);
+    assert.equal(await angleText(), "45°", "gradient wheel: the lamp's new angle");
+
+    // --- The shared tab bar (tab-bar.js), on the Gradient panel tabs: a click
+    // and the arrow keys pick a tab; one tab stop, the picked one selected ---
+    await page.evaluate(
+      (tag) =>
+        mount(tag, { entity: "light.a", panel_toggle_style: "tabs" }),
+      gradient,
+    );
+    const tabs = page.locator(`${gradient} .yc-tabs [role="tab"]`);
+    assert.equal(await tabs.count(), 2, "tab bar: Pixels and Panel");
+    await tabs.nth(1).click();
+    await waitForCall("set_full_panel", "tab bar: click");
+    const sent = () =>
+      page.evaluate(() =>
+        calls.filter((c) => c.service === "set_full_panel").map((c) => c.data.full_panel),
+      );
+    assert.deepEqual(await sent(), [true], "tab bar: the clicked tab's value");
+    const state = () =>
+      page.evaluate(async () => {
+        await card.updateComplete;
+        return [...card.shadowRoot.querySelectorAll('.yc-tabs [role="tab"]')].map(
+          (tab) => `${tab.getAttribute("aria-selected")}/${tab.tabIndex}`,
+        );
+      });
+    assert.deepEqual(await state(), ["false/-1", "true/0"], "tab bar: the picked tab selected, one tab stop");
+    await page.keyboard.press("ArrowLeft");
+    await page.waitForFunction(
+      () => calls.filter((c) => c.service === "set_full_panel").length === 2,
+    );
+    assert.deepEqual(await sent(), [true, false], "tab bar: arrow keys pick the next tab");
+    assert.equal(
+      await page.evaluate(() => card.shadowRoot.activeElement?.dataset.tab),
+      "pixels",
+      "tab bar: focus follows the picked tab",
+    );
+    // Draw's colors in Tabs mode: the picked tab stays while drawing (a
+    // click elsewhere in the card or the page never resets it).
+    await page.evaluate(() =>
+      mount("yeelight-cube-draw-card", {
+        entity: "light.a",
+        palette_card_mode: "tabs",
+      }),
+    );
+    const drawTabs = page.locator('yeelight-cube-draw-card .yc-tabs [role="tab"]');
+    await drawTabs.nth(1).click();
+    const picked = () =>
+      page.evaluate(async () => {
+        await card.updateComplete;
+        return card.shadowRoot.querySelector('.yc-tabs [aria-selected="true"]')?.dataset.tab;
+      });
+    const second = await picked();
+    assert.ok(second && second !== "recent", "draw tabs: a tab picked");
+    await page.locator("yeelight-cube-draw-card .tool-item").first().click();
+    await page.mouse.click(2, 2);
+    assert.equal(await picked(), second, "draw tabs: the picked tab stays");
 
     // --- Gradient modes through the shared gallery (text layouts) ------------
     for (const style of ["filled", "chips", "dropdown"]) {
@@ -1855,7 +1963,7 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
       .locator(".orderable-list-row");
     assert.deepEqual(
       (await toolRows.allTextContents())
-        .map((text) => text.replace(/[⋮⤒▲▼⤓\s]+/g, " ").trim())
+        .map((text) => text.replace(/[⋮⤒▲▼⤓✕\s]+/g, " ").trim())
         .slice(0, 3),
       ["Color", "Pick", "Pencil"],
     );
@@ -2187,6 +2295,61 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
       "overlay: closed (panel gone after its motion)",
     );
 
+    // --- Draw: the tools / actions shown and their order (card config) -------
+    const drawButtons = (config) =>
+      page.evaluate(async (config) => {
+        await mount("yeelight-cube-draw-card", { entity: "light.a", show_pixelart_gallery: false, ...config });
+        const root = card.shadowRoot;
+        return {
+          tools: [...root.querySelectorAll(".tool-item")].map((node) => node.dataset.tool),
+          actions: [...root.querySelectorAll(".action-item")].map((node) => node.dataset.action),
+        };
+      }, config);
+    assert.deepEqual(
+      await drawButtons({ hidden_tools: ["eraser", "undo"], tools_order: ["pencil", "colorPicker"], hidden_actions: ["upload"], actions_order: ["apply", null, "clear"] }),
+      {
+        tools: ["pencil", "colorPicker", "eyedropper", "areaFill", "fillAll"],
+        actions: ["apply", "spacer", "clear", "save"],
+      },
+      "draw: hidden_tools / hidden_actions and their order",
+    );
+    // A config from before those options keeps what this browser hid (read
+    // once per page: a fresh copy of the module reads it).
+    assert.deepEqual(
+      await page.evaluate(async () => {
+        localStorage.setItem("yeelight-tool-visibility", JSON.stringify({ eraser: false, pencil: true }));
+        const tools = await import("/custom_components/yeelight_cube/www/draw_card_tools.js?legacy");
+        const result = [tools.hiddenTools({}), tools.hiddenTools({ hidden_tools: [] })];
+        localStorage.removeItem("yeelight-tool-visibility");
+        return result;
+      }),
+      [["eraser"], []],
+      "draw: the former per-browser visibility, until the config has its own",
+    );
+    // The editor: the shared ordered list shows / hides and orders.
+    assert.deepEqual(
+      await page.evaluate(async () => {
+        const editor = await customElements.get("yeelight-cube-draw-card").getConfigElement();
+        editor.hass = hass;
+        editor.setConfig({ type: "custom:yeelight-cube-draw-card", entity: "light.a" });
+        document.querySelector("main").replaceChildren(editor);
+        let saved = null;
+        editor.addEventListener("config-changed", (event) => (saved = event.detail.config));
+        editor._open = { tools: true };
+        await editor.updateComplete;
+        const list = [...editor.shadowRoot.querySelectorAll(".orderable-list")].find((node) =>
+          node.textContent.includes("Pencil"),
+        );
+        // ✕ on "Pick" hides it.
+        [...list.querySelectorAll(".orderable-list-row")]
+          .find((row) => row.textContent.includes("Pick"))
+          .querySelector("button.remove")
+          .click();
+        return [saved.hidden_tools, saved.tools_order.at(-1)];
+      }),
+      [["eyedropper"], "eyedropper"],
+      "draw editor: a tool hidden from the list",
+    );
     // --- Narrow cards: nothing wider than the card; arrows keep their tint ---
     // (a theme's --card-background-color can differ from the card's own).
     const narrow = await page.evaluate(async () => {
@@ -2674,7 +2837,7 @@ const SLIDER_STYLES = ["slider", "bar", "wheel", "matrix", "rotary", "capsule"];
 
     assert.deepEqual(errors, []);
     console.log(
-      `PASS delegated events: ${SLIDER_STYLES.length} slider styles, orientation x2, clock/native sliders, draw gallery, gradient capsule and mode gallery (strict CSP, no inline handlers); hostile names inert in 4 palette + 4 pixel-art modes and clock presets`,
+      `PASS delegated events: ${SLIDER_STYLES.length} slider styles, orientation x2, clock/native sliders, draw gallery, gradient capsule, wheel drag (lamp updates wait), mode gallery and the shared tab bar (mouse, keys, Draw keeps its tab) (strict CSP, no inline handlers); hostile names inert in 4 palette + 4 pixel-art modes and clock presets`,
     );
     console.log(
       "PASS shared card frame on all 7 cards and editors: title, lamp status, plain background, no-lamp / not-found notices, same editor settings",

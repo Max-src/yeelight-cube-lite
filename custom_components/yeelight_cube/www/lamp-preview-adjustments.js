@@ -1,6 +1,7 @@
 // Color adjustment controls of the lamp preview card: applying and resetting
 // effects, change tracking, and the compact / tabbed / grouped / radial /
 // categories layouts. Mixed into YeelightCubeLampPreviewCard.
+import { tabBar } from "./tab-bar.js";
 import {
   EFFECT_NAMES,
   EFFECT_ATTR_MAP,
@@ -701,23 +702,20 @@ export const AdjustmentControlsMixin = (Base) => class extends Base {
     return html`<div
       class="effects-tabbed-container yc-stack yc-controls style-${this._sectionStyle()}"
     >
-      <div class="tab-headers">
-        ${sections.map(
-          (section) =>
-            html`<button
-              class="tab-header ${section.id === activeTab ? "active" : ""}"
-              title=${section.title}
-              @click=${() => this.switchTab(section.id)}
-            >
-              <span class="tab-icon">${section.icon}</span>
-              <span class="tab-title">${section.title}</span>
-              <span
-                class=${this._sectionIndicatorClass(section.id)}
-                data-section-id=${section.id}
-              ></span>
-            </button>`,
-        )}
-      </div>
+      ${tabBar({
+        tabs: sections.map((section) => ({
+          key: section.id,
+          label: section.title,
+          icon: section.icon,
+          extra: html`<span
+            class=${this._sectionIndicatorClass(section.id)}
+            data-section-id=${section.id}
+          ></span>`,
+        })),
+        active: activeTab,
+        label: "Adjustments",
+        onSelect: (id) => this.switchTab(id),
+      })}
       <div class="tab-content-container">
         ${sections.map(
           (section) =>

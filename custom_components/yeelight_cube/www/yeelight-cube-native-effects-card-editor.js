@@ -36,7 +36,7 @@ import {
   nativeEffectPreviewConfig,
   nativeEffectFrame,
 } from "./native-effect-card-utils.js";
-import { renderLightSliderSettings } from "./slider-control-utils.js";
+import { renderLightSliderSettings } from "./slider-settings-ui.js";
 import { renderStyleSelectorSettings } from "./style-selector-ui.js";
 import {
   renderModeControlSettings,

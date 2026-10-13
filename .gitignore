@@ -48,7 +48,10 @@ unused-cards/
 yeelight-cube-lettermap-card.js
 yeelight-cube-angle-gradient-card.js
 
-# Internal-only development cards (not shipped in the public repo)
+# Internal-only development cards (not shipped in the public repo): they live
+# in dev-cards/ at the repo root (deploy_to_homeassistant.ps1 copies them to
+# your Home Assistant); the names guard older checkouts.
+dev-cards/
 yeelight-cube-calibration-card.js
 yeelight-cube-fx-explorer-card.js
 yeelight-cube-fx-decoder-card.js

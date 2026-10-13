@@ -1,5 +1,5 @@
 import { renderActionButtonSettings } from "./action-button-ui.js";
-import { LitElement, html, css } from "./lib/lit-all.js";
+import { LitElement, html } from "./lib/lit-all.js";
 import {
   createButtonGroup,
   createButtonGroupChangeHandler,
@@ -9,7 +9,6 @@ import {
   entitySelectorStyles,
 } from "./entity-selector-utils.js";
 import {
-  formRowStyles,
   createToggleRow,
   createSliderRow,
 } from "./form-row-utils.js";
@@ -17,10 +16,11 @@ import {
   fireEvent,
   YeelightEditorMixin,
   renderModeSettingsSection,
-  roundedCardsToSliderValue,
   renderDeleteButtonSettings,
+  sharedEditorStyles,
 } from "./editor_ui_utils.js";
 import { defineOnce } from "./card-registration.js";
+import { normalizeCardOptions } from "./card-config.js";
 
 class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitElement) {
   static get properties() {
@@ -37,7 +37,7 @@ class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitEleme
   }
 
   setConfig(config) {
-    this._config = { ...config };
+    this._config = { ...normalizeCardOptions(config, "color-list-editor") };
     // Force a re-render after config is set to avoid template errors
     this.requestUpdate();
   }
@@ -51,65 +51,7 @@ class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitEleme
   }
 
   static get styles() {
-    return [
-      buttonGroupStyles,
-      entitySelectorStyles,
-      formRowStyles,
-      css`
-        .editor-root {
-          display: flex;
-          flex-direction: column;
-          gap: 18px;
-          padding: 18px 8px 8px 8px;
-        }
-        .editor-card {
-          background: var(--secondary-background-color, #f7fafd);
-          border-radius: 14px;
-          box-shadow: 0 2px 8px #0001;
-          padding: 16px 18px 12px 18px;
-          margin-bottom: 10px;
-          position: relative;
-        }
-        .editor-card-header {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          font-size: 1.15em;
-          font-weight: 600;
-          margin-bottom: 8px;
-          cursor: pointer;
-          user-select: none;
-        }
-        .editor-card-content {
-          transition:
-            max-height 0.3s,
-            opacity 0.3s;
-          overflow: hidden;
-        }
-        .editor-card-collapsed .editor-card-content {
-          max-height: 0;
-          opacity: 0;
-          pointer-events: none;
-        }
-        .editor-card:not(.editor-card-collapsed) .editor-card-content {
-          max-height: 1200px;
-          opacity: 1;
-          pointer-events: auto;
-        }
-        input[type="text"],
-        select {
-          width: 100%;
-          padding: 8px 12px;
-          font-size: 1em;
-          border-radius: 8px;
-          border: 1px solid var(--divider-color, #cfd8dc);
-          margin-top: 2px;
-          margin-bottom: 10px;
-          box-sizing: border-box;
-          background: var(--secondary-background-color, #f7f8fa);
-        }
-      `,
-    ];
+    return [sharedEditorStyles, buttonGroupStyles, entitySelectorStyles];
   }
 
   render() {
@@ -273,24 +215,20 @@ class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitEleme
                 )
               : ""}
             ${createSliderRow(
-              "Card Roundness",
-              roundedCardsToSliderValue(cfg.rounded_cards),
+              "Item Radius",
+              cfg.item_radius ?? 16,
               { min: 0, max: 28, step: 1 },
-              (e) => {
-                this._setOption("rounded_cards", parseInt(e.target.value));
-              },
+              (e) => this._setOption("item_radius", parseInt(e.target.value, 10)),
               "px",
             )}
             ${["cards", "grid", "rows", "tiles", "chips"].includes(
               cfg.list_layout,
             )
               ? createSliderRow(
-                  "Element Size",
-                  cfg.card_size || 70,
+                  "Size",
+                  cfg.preview_size || 70,
                   { min: 50, max: 100, step: 5 },
-                  (e) => {
-                    this._setOption("card_size", parseInt(e.target.value));
-                  },
+                  (e) => this._setOption("preview_size", parseInt(e.target.value, 10)),
                   "%",
                 )
               : ""}

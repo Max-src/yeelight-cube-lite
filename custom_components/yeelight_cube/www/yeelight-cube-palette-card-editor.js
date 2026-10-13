@@ -51,30 +51,9 @@ class YeelightCubePaletteCardEditor extends YeelightEditorMixin(LitElement) {
     return this._hass;
   }
 
-  shouldUpdate(changedProperties) {
-    // Always allow updates if config has changed (for display_mode changes, etc.)
-    // Only block if _hass is completely missing
+  // Nothing to edit before Home Assistant is known (render shows "Loading").
+  shouldUpdate() {
     return !!this._hass;
-  }
-
-  performUpdate() {
-    // Extra guard at performUpdate level
-    if (!this._hass || !this._hass.states) {
-      return Promise.resolve();
-    }
-    try {
-      const result = super.performUpdate();
-      // Catch async errors from the promise chain
-      if (result && typeof result.catch === "function") {
-        return result.catch((e) => {
-          return Promise.resolve();
-        });
-      }
-      return result;
-    } catch (e) {
-      // Catch synchronous errors
-      return Promise.resolve();
-    }
   }
 
   render() {

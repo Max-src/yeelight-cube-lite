@@ -28,7 +28,7 @@ import {
   DEFAULT_BUTTON_CONTENT_MODE,
 } from "./action-button-utils.js";
 import { ModeControlsController } from "./mode-controls-controller.js";
-import { YeelightCardMixin, cubeLampEntities } from "./card-base.js";
+import { galleryCardSize, YeelightCardMixin, cubeLampEntities } from "./card-base.js";
 import {
   cardNotice,
   cardShell,
@@ -249,7 +249,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       );
     this._controls.listeners.add(this._markFavouritesListener);
     this._stateSignature = null;
-    this.render();
+    this.requestUpdate();
   }
 
   static getStubConfig(hass) {
@@ -265,15 +265,11 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
   }
 
   getCardSize() {
-    const style = this._selectorStyle();
-    if (style === "preview-list" || style === "preview-grid") return 8;
-    if (style === "preview-wheel") return 5;
-    if (style === "preview-carousel") return 4;
-    return 4;
+    return galleryCardSize(this._selectorStyle());
   }
 
   set hass(hass) {
-    if (this._hassInputsUnchanged(hass)) {
+    if (!this._hassChanged(hass) && this.hasUpdated && this._stateSignature !== null) {
       // Nothing this card reads was replaced: keep the fresh hass object (for
       // service calls) but skip attribute reads, controller updates and the
       // state-signature work. Drag previews still drop once the drag ends.
@@ -292,7 +288,6 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     }
     this._controls?.update();
     this._restoreCustomColor();
-    this._ensureRenderRoot();
     // Once the lamp reports (about) the dragged values, drop the overrides so
     // the sliders and previews follow the real values again.
     this._lampSliders.settle(this._attrs());
@@ -301,7 +296,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     const sig = this._computeStateSignature();
     if (sig !== this._stateSignature) {
       this._stateSignature = sig;
-      this.render();
+      this.requestUpdate();
     }
   }
 
@@ -315,10 +310,11 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
   // its remembered sensor), the native font sensor and the service registry;
   // when all of those are the same references as the last processed update
   // (and the first render is done) the update can be skipped entirely.
-  _hassInputsUnchanged(hass) {
+  // What the clock shows from hass (card-base _hassChanged).
+  _hassInputs(hass) {
     const states = hass?.states;
     const primary = this._primaryEntity();
-    const inputs = [
+    return [
       this.config,
       hass?.services,
       clockPresetLibrary(hass),
@@ -326,11 +322,6 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       primary ? states?.[primary] : undefined,
       ...this._targets.map((entity) => states?.[entity]),
     ];
-    return (
-      !this._inputsChanged(inputs) &&
-      this.hasUpdated &&
-      this._stateSignature !== null
-    );
   }
 
   connectedCallback() {
@@ -685,7 +676,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
           : {}),
         ...(data.content ? { clock_content: data.content } : {}),
       });
-      this.render();
+      this.requestUpdate();
       return true;
     }
     return this._command(
@@ -743,7 +734,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     this._customMode = keepCustom;
     // Quick successive picks only send the latest one.
     const result = this._callSetClock(action, managed, { coalesce: "select" });
-    this.render();
+    this.requestUpdate();
     return result;
   }
 
@@ -771,7 +762,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     this._selectedStylePresetId = style.presetId || null;
     this._revealSavedStyle = null;
     this._pendingStyleColor = null;
-    this.render();
+    this.requestUpdate();
     return true;
   }
 
@@ -832,7 +823,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     }
     // The custom flag is local UI state; repaint now so the selector reflects
     // it even when the backend color (and thus the state signature) is unchanged.
-    this.render();
+    this.requestUpdate();
   }
 
   _applyColor(rgbOrClear) {
@@ -844,7 +835,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     this._pendingStyleColor = null;
     if (Array.isArray(rgbOrClear)) this._lastCustomHex = rgbToHex(rgbOrClear, "#ffee00");
     this._callSetClock({ color_mode: "normal", color: rgbOrClear });
-    this.render();
+    this.requestUpdate();
   }
 
   _applyColorPreset(id) {
@@ -863,7 +854,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     this._pendingStyleColor = null;
     this._lastCustomHex = rgbToHex(preset.color, "#ffee00");
     this._callSetClock(clockColorPresetAction(preset));
-    this.render();
+    this.requestUpdate();
   }
 
   // Which save-as buttons the inline preset manager should offer under Custom.
@@ -888,30 +879,15 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
   //
   // Lit renders the whole shadow root from `_template()` into one persistent
   // <ha-card> (HA's asynchronously slotted ha-card must survive updates).
-  // `render()` keeps its imperative meaning for domain actions and external
-  // callers: outside Lit's own update cycle it re-renders synchronously, and
-  // inside it (LitElement.update -> render) it returns the template.
+  // Changes request an update (requestUpdate): several in a row render once.
   render() {
-    if (this._litRendering) return this._template();
-    this._ensureRenderRoot();
-    this.requestUpdate();
-    this.performUpdate();
-    return undefined;
+    return this._template();
   }
 
-  _ensureRenderRoot() {
-    if (this.renderRoot === undefined)
-      this.renderRoot = this.createRenderRoot();
-  }
-
+  // The focused toggle survives a render that replaces its group.
   update(changedProperties) {
     const focus = this._captureFocus();
-    this._litRendering = true;
-    try {
-      super.update(changedProperties);
-    } finally {
-      this._litRendering = false;
-    }
+    super.update(changedProperties);
     this._restoreFocus(focus);
   }
 
@@ -1337,7 +1313,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       this._customPresetColor = [...color];
       this._customMode = true;
       this._callSetClock(clockColorPresetAction({ color }));
-      this.render();
+      this.requestUpdate();
       return;
     }
     if (kind !== "style" || !name || !Array.isArray(color)) return;
@@ -1355,7 +1331,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       color,
       activate: true,
     });
-    this.render();
+    this.requestUpdate();
   }
 
   // The trailing "+" choice opens the native picker; changes apply live.

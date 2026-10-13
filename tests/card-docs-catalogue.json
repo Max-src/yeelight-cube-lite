@@ -198,6 +198,35 @@
             "colorAdjustments": "Color Adjustments"
         }
     },
+    "color-list-editor": {
+        "title": "Colors",
+        "variations": {
+            "overview": {
+                "title": "Cards with hex codes, drag to reorder",
+                "config": {
+                    "list_layout": "cards"
+                }
+            },
+            "tiles": {
+                "title": "Tiles with the add / shuffle / save actions",
+                "config": {
+                    "list_layout": "tiles"
+                }
+            },
+            "dark": {
+                "title": "Dark theme: compact chips",
+                "dark": true,
+                "config": {
+                    "list_layout": "chips"
+                }
+            }
+        },
+        "editors": {
+            "global": "Global Settings",
+            "colorlist": "Color List Settings",
+            "actions": "Add/Shuffle/Save Actions"
+        }
+    },
     "palette": {
         "title": "Palettes",
         "variations": {
@@ -229,6 +258,44 @@
             "global": "Global Settings",
             "palettes": "Palettes",
             "importExport": "Import/Export Actions"
+        }
+    },
+    "gradient": {
+        "title": "Gradient",
+        "variations": {
+            "overview": {
+                "title": "Mode buttons, active mode and a rectangle angle control",
+                "config": {
+                    "style_selector_style": "filled",
+                    "show_active_mode_label": true,
+                    "rotary_unified_style": "rectangle"
+                }
+            },
+            "chips": {
+                "title": "Chips with live gradient swatches and a compass",
+                "config": {
+                    "style_selector_style": "chips",
+                    "rotary_unified_style": "compass",
+                    "compass_shape": "arrow"
+                }
+            },
+            "dark": {
+                "title": "Dark theme: dropdown, wheel and panel tabs",
+                "dark": true,
+                "config": {
+                    "style_selector_style": "dropdown",
+                    "rotary_unified_style": "wheel",
+                    "panel_toggle_style": "tabs"
+                }
+            }
+        },
+        "editors": {
+            "global": "Global Settings",
+            "preview_appearance": "Preview Appearance",
+            "label": "Active Mode Label",
+            "mode": "Mode Selector",
+            "panel": "Apply to Whole Panel",
+            "angle": "Angle Selector"
         }
     },
     "draw": {

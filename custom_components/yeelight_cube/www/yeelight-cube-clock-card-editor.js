@@ -32,10 +32,8 @@ import {
 import { createButtonGroup, buttonGroupStyles } from "./button-group-utils.js";
 import { createToggleRow } from "./form-row-utils.js";
 import { getClockStyles, CLOCK_COLOR_MODES } from "./clock-preview-utils.js";
-import {
-  renderLightSliderSettings,
-  sliderKeys,
-} from "./slider-control-utils.js";
+import { sliderKeys } from "./slider-control-utils.js";
+import { renderLightSliderSettings } from "./slider-settings-ui.js";
 import {
   renderOrderableList,
   orderableListStyles,

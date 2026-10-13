@@ -75,6 +75,7 @@ import { itemLabel } from "./card-config.js";
  * collection-gallery/color-mode-ui own their DOM, subscriptions and bindings.
  */
 class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
+  static cardSize = 7; // Dashboard height (card-base)
   static editor = [
     "yeelight-cube-native-effects-card-editor",
     "./yeelight-cube-native-effects-card-editor.js",
@@ -213,9 +214,13 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       this._selected = null;
     }
     this._controls.update();
+    // The rotation, the color modes and the header read more than the lamp
+    // state (followed by _state below).
     if (
-      (this.config?.show_rotation || this.config?.show_color_modes) &&
-      this._hassInputsChanged?.(hass) !== false
+      this._hassChanged(hass) &&
+      (this.config?.show_rotation ||
+        this.config?.show_color_modes ||
+        this.config?.show_lamp_status)
     )
       this.requestUpdate();
     const state = hass?.states?.[this._targets[0]];
@@ -240,14 +245,15 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
   // primary `_state`), the shared color-preset library and the service
   // registry. Home Assistant hands out a new hass on every state push anywhere,
   // so re-render only when one of those inputs was replaced.
-  _hassInputsChanged(hass) {
-    return this._inputsChanged([
+  // What the card shows from hass (card-base _hassChanged).
+  _hassInputs(hass) {
+    return [
       this.config,
       ...this._targets.map((entity) => hass?.states?.[entity]),
       ...(this.config?.show_color_modes
         ? [clockPresetLibrary(hass), hass?.services]
         : []),
-    ]);
+    ];
   }
 
   connectedCallback() {
@@ -272,9 +278,6 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     this._frames = [];
   }
 
-  getCardSize() {
-    return 7;
-  }
   async getUpdateComplete() {
     const complete = await super.getUpdateComplete();
     await this.shadowRoot.querySelector("yc-collection-gallery")

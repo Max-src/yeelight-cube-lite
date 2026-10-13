@@ -658,7 +658,7 @@ test("Custom stays selectable and built-in selections respect the active color m
     _styleList: () => styles,
     _controlStyles: () => styles,
     _callSetClock: (data) => calls.push(data),
-    render: () => renders++,
+    requestUpdate: () => renders++,
     ...cardMethods(
       [
         "_applyStyle",
@@ -912,7 +912,7 @@ test("card color actions leave Custom empty until a pick and ignore deleted pres
     _attrs: () => attrs,
     _styleList: () => [],
     _callSetClock: (data) => calls.push(data),
-    render() {},
+    requestUpdate() {},
   };
   for (const name of [
     "_applyColorMode",
@@ -986,7 +986,7 @@ test("saving a custom color as a clock style forgets it as the Custom color", ()
     _attrs: () => attrs,
     _styleList: () => styles,
     _callSetClock: (data) => calls.push(data),
-    render() {},
+    requestUpdate() {},
     ...cardMethods(
       [
         "_applyColorMode",
@@ -1058,7 +1058,7 @@ test("a just-saved style reads as Normal before the library echoes it back", () 
     _controlStyles: () =>
       clockStylesWithPresets(getClockStyles(false), presets),
     _callSetClock: (data) => calls.push(data),
-    render() {},
+    requestUpdate() {},
     ...cardMethods(
       [
         "_applyStyle",

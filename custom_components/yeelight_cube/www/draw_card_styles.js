@@ -10,6 +10,7 @@ import {
 import { exportImportButtonStyles } from "./action-button-utils.js";
 import { carouselStyles } from "./carousel-utils.js";
 import { collectionGalleryStyles } from "./collection-gallery.js";
+import { tabBarStyles } from "./tab-bar.js";
 
 export const drawCardStyles = css`
   ${unsafeCSS(cardLayoutStyles)}
@@ -39,6 +40,7 @@ export const drawCardStyles = css`
 
   /* The pixel-art gallery: the shared gallery (collection-gallery.js). */
   ${unsafeCSS(collectionGalleryStyles)}
+  ${unsafeCSS(tabBarStyles)}
   .palette-group-card.fold {
     position: relative;
     min-height: 48px;
@@ -56,10 +58,6 @@ export const drawCardStyles = css`
     box-shadow: 0 2px 8px #0001;
     position: relative;
     display: inline-block;
-  }
-  /* Palette card container modes */
-  .palette-tabs {
-    width: 100%;
   }
   /* Palette card container modes */
   .palette-tabs {
@@ -143,7 +141,7 @@ export const drawCardStyles = css`
   }
 
   /* Tool shape modifiers for new btn-style system */
-  .tool-btn.tool-shape-circle {
+  .tool-btn.tool-shape-round {
     border-radius: 50%;
     min-width: 44px;
     max-width: 44px;
@@ -152,8 +150,8 @@ export const drawCardStyles = css`
     padding: 0;
   }
 
-  /* Circle with text needs to expand into a pill shape */
-  .tool-btn.tool-shape-circle:has(.btn-text) {
+  /* Round with text expands into a pill */
+  .tool-btn.tool-shape-round:has(.btn-text) {
     max-width: none;
     width: auto;
     height: auto;
@@ -162,7 +160,7 @@ export const drawCardStyles = css`
     padding: 4px 8px;
   }
 
-  .tool-btn.tool-shape-rect {
+  .tool-btn.tool-shape-rounded {
     border-radius: 8px !important;
   }
 
@@ -171,7 +169,7 @@ export const drawCardStyles = css`
   }
 
   /* Color picker shape classes */
-  .color-picker-btn.tool-shape-circle {
+  .color-picker-btn.tool-shape-round {
     border-radius: 50% !important;
     min-width: 44px !important;
     max-width: 44px !important;
@@ -179,7 +177,7 @@ export const drawCardStyles = css`
     height: 44px !important;
   }
 
-  .color-picker-btn.tool-shape-rect {
+  .color-picker-btn.tool-shape-rounded {
     border-radius: 8px !important;
     width: 48px !important;
     height: 48px !important;
@@ -409,56 +407,6 @@ export const drawCardStyles = css`
       var(--card-background-color, #fff)
     ) !important;
     border: 2px solid var(--primary-color, #00ff99) !important;
-  }
-  .palette-tab-bar {
-    display: flex;
-    flex-direction: row;
-    gap: 0;
-    justify-content: center;
-    background: color-mix(
-      in srgb,
-      var(--primary-color, #1976d2) 8%,
-      var(--card-background-color, #fff)
-    );
-    border-radius: 10px;
-    padding: 3px;
-    position: relative;
-  }
-  .palette-tab-indicator {
-    position: absolute;
-    top: 3px;
-    bottom: 3px;
-    left: 3px;
-    width: calc((100% - 6px) / var(--tab-count, 1));
-    background: var(--card-background-color, #fff);
-    border-radius: 8px;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
-    transform: translateX(calc(var(--tab-active-index, 0) * 100%));
-    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-    pointer-events: none;
-    z-index: 0;
-  }
-  .palette-tab-btn {
-    flex: 1;
-    background: transparent;
-    border: none;
-    border-radius: 8px;
-    padding: 6px 14px;
-    font-size: 0.9em;
-    cursor: pointer;
-    font-weight: 500;
-    color: var(--secondary-text-color, #666);
-    transition: color 0.2s ease;
-    position: relative;
-    z-index: 1;
-    user-select: none;
-  }
-  .palette-tab-btn:hover:not(.active) {
-    color: var(--primary-text-color, #444);
-  }
-  .palette-tab-btn.active {
-    color: var(--primary-text-color, #222);
-    font-weight: 600;
   }
   .palette-tab-content {
     width: 100%;

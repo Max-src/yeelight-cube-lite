@@ -1,6 +1,12 @@
 import "./preview-appearance-editor.js";
 import { orderableListStyles, renderOrderableList } from "./orderable-list-utils.js";
-import { toolsOrder } from "./draw_card_tools.js";
+import {
+  toolsOrder,
+  actionsOrder,
+  hiddenTools,
+  hiddenActions,
+  actionLabel,
+} from "./draw_card_tools.js";
 import { renderActionButtonSettings } from "./action-button-ui.js";
 import { LitElement, html, css } from "./lib/lit-all.js";
 import {
@@ -19,22 +25,11 @@ import {
   buttonGroupStyles,
 } from "./button-group-utils.js";
 import {
-  formRowStyles,
   createToggleRow,
   createSliderRow,
   createButtonGroupRow,
 } from "./form-row-utils.js";
-import {
-  TOOL_CONFIG,
-  DEFAULT_TOOL_ORDER,
-  DEFAULT_ACTION_ORDER,
-  LS_TOOL_VISIBILITY,
-  LS_ACTION_VISIBILITY,
-  LS_ACTION_ORDER,
-  EVT_TOOL_VISIBILITY_RESET,
-  EVT_ACTION_ORDER_RESET,
-  EVT_ACTION_VISIBILITY_RESET,
-} from "./draw_card_const.js";
+import { TOOL_CONFIG } from "./draw_card_const.js";
 import { defineOnce } from "./card-registration.js";
 
 class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
@@ -50,7 +45,6 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
     return [
       sharedEditorStyles,
       buttonGroupStyles,
-      formRowStyles,
       orderableListStyles,
       css`
         /* Layout Section Styles (draw card editor specific) */
@@ -126,24 +120,6 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
     // Throttle state for slider updates
     this._previewSizeUpdateScheduled = false;
     this._pendingPreviewSize = null;
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-
-    // Auto-disable "Tool Visibility Mode" when editor is closed
-    if (this._config && this._config.edit_drawing_tools) {
-      this._config = { ...this._config, edit_drawing_tools: false };
-
-      // Fire a final config update to save the disabled state
-      this.dispatchEvent(
-        new CustomEvent("config-changed", {
-          detail: { config: this._config },
-          bubbles: true,
-          composed: true,
-        }),
-      );
-    }
   }
 
   // Layout management methods
@@ -237,87 +213,27 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
     `;
   }
 
-  _resetToolOrder() {
-    this._setOption("tools_order", [...DEFAULT_TOOL_ORDER]);
+  // The tools / actions shown and their order (the shared ordered list):
+  // the list is what is shown; the rest is hidden, after it in the order.
+  _setShown(orderKey, hiddenKey, all, shown) {
+    const hidden = all.filter((name) => name !== "spacer" && !shown.includes(name));
+    this._setOption(orderKey, [...shown, ...hidden]);
+    this._setOption(hiddenKey, hidden);
   }
 
-  _resetToolVisibility() {
-    // Reset all tool visibility to default (all visible)
-    // Clear the localStorage where tool visibility is actually stored
-    try {
-      localStorage.removeItem(LS_TOOL_VISIBILITY);
-
-      // Fire a custom event to notify the main card to refresh tool visibility
-      window.dispatchEvent(
-        new CustomEvent(EVT_TOOL_VISIBILITY_RESET, {
-          bubbles: true,
-          composed: true,
-        }),
-      );
-      this.requestUpdate();
-    } catch (error) {
-      console.warn("[EDITOR] Failed to reset tool visibility:", error);
-    }
-  }
-
-  _hasToolVisibilityChanges() {
-    try {
-      const stored = localStorage.getItem(LS_TOOL_VISIBILITY);
-      if (!stored) return false;
-      const parsed = JSON.parse(stored);
-      // If any tool is set to hidden, there are changes
-      return Object.values(parsed).some((v) => v === false);
-    } catch {
-      return false;
-    }
-  }
-
-  _resetActionOrder() {
-    // Reset action order to default
-    try {
-      localStorage.removeItem(LS_ACTION_ORDER);
-
-      // Fire a custom event to notify the main card to refresh action order
-      window.dispatchEvent(
-        new CustomEvent(EVT_ACTION_ORDER_RESET, {
-          bubbles: true,
-          composed: true,
-        }),
-      );
-    } catch (error) {
-      console.warn("[EDITOR] Failed to reset action order:", error);
-    }
-  }
-
-  _resetActionVisibility() {
-    // Reset all action visibility to default (all visible)
-    // Clear the localStorage where action visibility is actually stored
-    try {
-      localStorage.removeItem(LS_ACTION_VISIBILITY);
-
-      // Fire a custom event to notify the main card to refresh action visibility
-      window.dispatchEvent(
-        new CustomEvent(EVT_ACTION_VISIBILITY_RESET, {
-          bubbles: true,
-          composed: true,
-        }),
-      );
-      this.requestUpdate();
-    } catch (error) {
-      console.warn("[EDITOR] Failed to reset action visibility:", error);
-    }
-  }
-
-  _hasActionVisibilityChanges() {
-    try {
-      const stored = localStorage.getItem(LS_ACTION_VISIBILITY);
-      if (!stored) return false;
-      const parsed = JSON.parse(stored);
-      // If any action is set to hidden, there are changes
-      return Object.values(parsed).some((v) => v === false);
-    } catch {
-      return false;
-    }
+  _shownList({ orderKey, hiddenKey, all, hidden, labelFor, extra = [], noun }) {
+    return renderOrderableList({
+      items: all.filter((name) => !hidden.includes(name)),
+      available: [...all.filter((name) => hidden.includes(name)), ...extra],
+      labelFor,
+      addPlaceholder: `Show ${/^[aeiou]/.test(noun) ? "an" : "a"} ${noun}…`,
+      onUpdate: (shown) => this._setShown(orderKey, hiddenKey, all, shown),
+      onReset: () => {
+        this._setOption(orderKey, undefined);
+        this._setOption(hiddenKey, []);
+      },
+      resetLabel: `Show all ${noun}s, default order`,
+    });
   }
 
   _onSectionVisibilityChange(sectionId, visible) {
@@ -325,65 +241,16 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
   }
 
 
+  // Unset options keep their defaults (each row reads the card's default):
+  // only what the user changes is saved.
   setConfig(config) {
     this._config = { ...normalizeCardOptions(config, "draw") };
-    if (!this._config.pixel_spacing_mode)
-      this._config.pixel_spacing_mode = "normal";
-    if (!this._config.matrix_bg) this._config.matrix_bg = "black";
-    if (typeof this._config.matrix_box_shadow !== "boolean")
-      this._config.matrix_box_shadow = true;
-    if (typeof this._config.preview_show_titles !== "boolean")
-      this._config.preview_show_titles = true;
-    if (!this._config.matrix_size) this._config.matrix_size = 100;
-    if (!this._config.button_shape) this._config.button_shape = "rect";
-    if (!this._config.actions_buttons_style)
-      this._config.actions_buttons_style = "modern";
-    if (!this._config.actions_content_mode)
-      this._config.actions_content_mode = "icon";
-    if (!this._config.tool_buttons_style)
-      this._config.tool_buttons_style = "modern";
-    if (!this._config.tool_content_mode) this._config.tool_content_mode = "icon";
-    if (!this._config.paint_button_shape)
-      this._config.paint_button_shape = "rect";
-    if (!this._config.swatch_shape) this._config.swatch_shape = "round";
-    if (!this._config.swatch_expand_style) this._config.swatch_expand_style = "pill";
-
-    // Ensure tools_order exists with default value
-    if (!this._config.tools_order) {
-      this._config.tools_order = [...DEFAULT_TOOL_ORDER];
-    }
-
-    // Default section visibility
-    if (typeof this._config.show_colors_section !== "boolean")
-      this._config.show_colors_section = true;
-    if (typeof this._config.show_tools_section !== "boolean")
-      this._config.show_tools_section = true;
-    if (typeof this._config.show_matrix_section !== "boolean")
-      this._config.show_matrix_section = true;
-    if (typeof this._config.show_actions_section !== "boolean")
-      this._config.show_actions_section = true;
-    if (typeof this._config.show_pixelart_section !== "boolean")
-      this._config.show_pixelart_section = true;
-
-    // Default boolean settings that use "!== false" pattern
-    if (typeof this._config.show_card_background !== "boolean")
-      this._config.show_card_background = true;
-    if (typeof this._config.show_recent_colors !== "boolean")
-      this._config.show_recent_colors = true;
-    if (typeof this._config.show_lamp_palette !== "boolean")
-      this._config.show_lamp_palette = true;
-    if (typeof this._config.show_lamp_colors !== "boolean")
-      this._config.show_lamp_colors = true;
-    if (typeof this._config.show_image_palette !== "boolean")
-      this._config.show_image_palette = true;
-    if (typeof this._config.show_gallery !== "boolean")
-      this._config.show_gallery = true;
-    if (typeof this._config.show_pixelart_export_button !== "boolean")
-      this._config.show_pixelart_export_button = true;
-    if (typeof this._config.show_pixelart_import_button !== "boolean")
-      this._config.show_pixelart_import_button = true;
-    if (!this._config.pixelart_buttons_content_mode)
-      this._config.pixelart_buttons_content_mode = "icon_text";
+    // Tools / actions this browser hid in former versions: kept with the
+    // card's config from now on (saved with the next change).
+    if (!Array.isArray(this._config.hidden_tools) && hiddenTools(this._config).length)
+      this._config.hidden_tools = [...hiddenTools(this._config)];
+    if (!Array.isArray(this._config.hidden_actions) && hiddenActions(this._config).length)
+      this._config.hidden_actions = [...hiddenActions(this._config)];
   }
 
   set hass(hass) {
@@ -527,55 +394,16 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
         <!-- Tool Order Section -->
         <!-- Tool Settings Section -->
         ${this._section("tools", "Drawing Tools", html`
-            <!-- Tool visibility mode toggle with Reset Visibility -->
-            <div class="toggle-row">
-              <label class="toggle-label">Tool Visibility Mode</label>
-              <div style="display:flex;align-items:center;gap:8px;">
-                ${this._hasToolVisibilityChanges()
-                  ? html`
-                      <button
-                        type="button"
-                        @click="${this._resetToolVisibility}"
-                        style="padding:4px 10px;border:1px solid var(--divider-color, #ddd);border-radius:4px;background:var(--secondary-background-color, #f5f5f5);color:var(--secondary-text-color, #666);cursor:pointer;font-size:0.8em;white-space:nowrap;"
-                        title="Show all tools (reset visibility to all visible)"
-                      >
-                        👁 Reset
-                      </button>
-                    `
-                  : ""}
-                <label class="toggle-switch">
-                  <input
-                    type="checkbox"
-                    id="edit_drawing_tools"
-                    .checked="${this._config.edit_drawing_tools ??
-                    this._config.allow_visual_tool_reordering ??
-                    false}"
-                    @change="${(e) =>
-                      this._onSwitchChange(e, "edit_drawing_tools")}"
-                  />
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-            </div>
-            <div
-              style="font-size:0.85em;color:var(--secondary-text-color, #666);margin-top:4px;"
-            >
-              Enable tool editing mode: show/hide toggles appear above each
-              tool. Toggle tool visibility by clicking the eye icon (👁) above
-              each tool.
-            </div>
-
-            <!-- The tools' order (drag, or the arrows) -->
-            <div class="form-row"><label>Tools Order</label></div>
-            ${renderOrderableList({
-              items: toolsOrder(this._config),
-              available: [],
-              addable: false,
-              removable: false,
+            <!-- The tools shown and their order (drag or the arrows; ✕ hides,
+                 the menu shows again) -->
+            <div class="form-row"><label>Tools</label></div>
+            ${this._shownList({
+              orderKey: "tools_order",
+              hiddenKey: "hidden_tools",
+              all: toolsOrder(this._config),
+              hidden: hiddenTools(this._config),
               labelFor: (tool) => TOOL_CONFIG[tool]?.label || tool,
-              onUpdate: (list) => this._setOption("tools_order", list),
-              onReset: () => this._resetToolOrder(),
-              resetLabel: "Reset order",
+              noun: "tool",
             })}
 
             <!-- Tool button appearance settings -->
@@ -586,12 +414,14 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
                 <label>Button Shape</label>
                 ${createButtonGroup(
                   [
-                    { value: "circle", label: "Circle" },
-                    { value: "rect", label: "Rounded" },
+                    { value: "round", label: "Circle" },
+                    { value: "rounded", label: "Rounded" },
                     { value: "square", label: "Square" },
                   ],
-                  this._config.button_shape || "rect",
-                  createButtonGroupChangeHandler("button_shape", (value) => this._setOption("button_shape", value)),
+                  this._config.tool_buttons_shape || "rounded",
+                  createButtonGroupChangeHandler("tool_buttons_shape", (value) =>
+                    this._setOption("tool_buttons_shape", value),
+                  ),
                 )}
               </div>
               ${renderActionButtonSettings(
@@ -629,41 +459,18 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
 
         <!-- Action Buttons Section -->
         ${this._section("actions", "Action Buttons", html`
-            <!-- Action visibility mode toggle with Reset Visibility -->
-            <div class="toggle-row">
-              <label class="toggle-label">Action Visibility Mode</label>
-              <div style="display:flex;align-items:center;gap:8px;">
-                ${this._hasActionVisibilityChanges()
-                  ? html`
-                      <button
-                        type="button"
-                        @click="${this._resetActionVisibility}"
-                        style="padding:4px 10px;border:1px solid var(--divider-color, #ddd);border-radius:4px;background:var(--secondary-background-color, #f5f5f5);color:var(--secondary-text-color, #666);cursor:pointer;font-size:0.8em;white-space:nowrap;"
-                        title="Show all actions (reset visibility to all visible)"
-                      >
-                        👁 Reset
-                      </button>
-                    `
-                  : ""}
-                <label class="toggle-switch">
-                  <input
-                    type="checkbox"
-                    id="edit_action_buttons"
-                    .checked="${this._config.edit_action_buttons ?? false}"
-                    @change="${(e) =>
-                      this._onSwitchChange(e, "edit_action_buttons")}"
-                  />
-                  <span class="toggle-slider"></span>
-                </label>
-              </div>
-            </div>
-            <div
-              style="font-size:0.85em;color:var(--secondary-text-color, #666);margin-top:4px;"
-            >
-              Enable action editing mode: show/hide toggles appear above each
-              action button. Toggle action visibility by clicking the eye icon
-              (👁) above each button.
-            </div>
+            <!-- The actions shown and their order; spacers are empty slots
+                 (any number) for alignment -->
+            <div class="form-row"><label>Actions</label></div>
+            ${this._shownList({
+              orderKey: "actions_order",
+              hiddenKey: "hidden_actions",
+              all: actionsOrder(this._config),
+              hidden: hiddenActions(this._config),
+              labelFor: actionLabel,
+              extra: ["spacer"],
+              noun: "action",
+            })}
 
             <!-- Action button appearance settings -->
             <div

@@ -1,19 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-// slider-control-utils.js pulls in the bundled Lit (via the editor helpers),
-// which touches a few browser globals while loading. A minimal shim is enough:
-// the behaviour under test is plain JS and never renders.
-globalThis.window ??= globalThis;
-globalThis.HTMLElement ??= class {};
-globalThis.customElements ??= { define() {}, get() {} };
-globalThis.document ??= {
-  createComment: () => ({}),
-  createTreeWalker: () => ({}),
-  createElement: () => ({ setAttribute() {} }),
-  addEventListener() {},
-  removeEventListener() {},
-};
+// The slider core loads without a browser (no Lit, no editor helpers: the
+// editor settings live in slider-settings-ui.js), so the cards never load
+// editor code through it. The tests below stub only what they use.
 const {
   createSliderDraft,
   createSliderHandlers,
