@@ -37,10 +37,7 @@ import {
   nativeEffectAction,
   nativeEffectPreviewConfig,
 } from "./native-effect-card-utils.js";
-import {
-  renderMatrixPreview,
-  markFavouriteModes,
-} from "./gallery-display-utils.js";
+import { renderMatrixPreview } from "./gallery-display-utils.js";
 import { BLACK_THRESHOLD } from "./matrix-const.js";
 import { actionButtonStyles } from "./action-button-utils.js";
 import {
@@ -87,7 +84,6 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     config: { state: true },
     _state: { state: true },
     _selected: { state: true },
-    _busy: { state: true },
     _error: { state: true },
     _customColorDraft: { state: true },
     _pendingColorSelection: { state: true },
@@ -98,15 +94,8 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     this.config = {};
     this._elapsed = 0;
     this._frames = [];
+    // The gallery shows the favourites' stars (it follows _controls).
     this._controls = new ModeControlsController(createNativeCardAdapter(this));
-    this._onFavouritesChanged = () =>
-      markFavouriteModes(
-        this.shadowRoot,
-        this._controls.favourites,
-        this._colorModeKey(),
-        this._currentCustomColor(),
-      );
-    this._controls.listeners.add(this._onFavouritesChanged);
     this._loop = createRafLoop(
       (now) => {
         const delta = this._lastFrame
@@ -148,7 +137,6 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
   }
 
   _commandsChanged() {
-    this._busy = this._commands.busy;
     this._error = this._commands.error;
     this._controls?.notify();
   }
@@ -197,7 +185,7 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       ...resolvePreviewAppearance(config, "native"),
     };
     this._selected = null;
-    this._state = this._hass?.states?.[this._targets[0]];
+    this._state = this._hass?.states?.[this._primaryEntity()];
     this._controls.configure(
       nativeEffectPreviewConfig(this.config),
       this._targets,
@@ -223,12 +211,12 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
         this.config?.show_lamp_status)
     )
       this.requestUpdate();
-    const state = hass?.states?.[this._targets[0]];
+    const state = hass?.states?.[this._primaryEntity(hass)];
     if (state !== this._state) {
       if (
         state?.attributes.native_effect !==
           this._state?.attributes.native_effect &&
-        !this._busy
+        !this._commands.busy
       )
         this._selected = null;
       this._settleSliderDrafts?.(state);
@@ -258,7 +246,6 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
 
   connectedCallback() {
     super.connectedCallback();
-    this._controls.listeners.add(this._onFavouritesChanged);
     this._visibility = createVisibilityTracker(this);
     this._visibility.connect();
     this._loop.start();
@@ -268,7 +255,6 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
   disconnectedCallback() {
     super.disconnectedCallback();
     closeColorPicker(this);
-    this._controls.listeners.delete(this._onFavouritesChanged);
     this._controls.disconnect();
     this._commands.reset();
     this._loop.stop();
@@ -563,7 +549,10 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
           speedRawToPct(attrs.native_effect_speed || 50),
       });
     if (!controls.length) return "";
-    return html`<div class="sliders" ?inert=${this._disabled() || this._busy}>
+    // Usable while a command runs (like the Clock and Lamp Preview sliders:
+    // the shared slider draft keeps a dragged value until the lamp has it);
+    // inert only while the lamp is unavailable.
+    return html`<div class="sliders" ?inert=${this._disabled()}>
       ${unsafeHTML(
         stableSliderMarkup(this, "sliders", renderSliderGroup(controls)),
       )}
@@ -870,7 +859,6 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       }))}
       .active=${this._controls.displayed("key", effect?.name)}
       .model=${this._controls}
-      .disabled=${this._busy}
       searchLabel="Search native effects"
       actionLabel="Play on the lamp"
       .onSelect=${(name) => this._controls.choose(name)}

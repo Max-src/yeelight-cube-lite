@@ -225,7 +225,6 @@ export class MatrixOperations1D {
 
   // Update recent colors when setting pixels
   updateRecentColors() {
-    if (typeof updateRecentColors !== "function") return;
     // Already the most recent color (every cell of a stroke): nothing to do.
     const latest = this.card.recentColors?.[0];
     if (

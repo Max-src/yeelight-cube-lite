@@ -10,6 +10,9 @@
  *              else it opens in place of the previews and the content
  *              below makes room
  *   bordered   the color sections' border
+ *   contentStyles  the contents' own stylesheet (CSSResult or a list),
+ *              for contents styled by their card's classes (they render
+ *              in this component's shadow root)
  *
  * One motion in both modes: the open section is a panel whose first frame
  * lies exactly on its preview (same place, same scale) and which zooms out
@@ -35,6 +38,7 @@ class YcPreviewHover extends LitElement {
     sections: { attribute: false },
     overlay: { type: Boolean, reflect: true },
     bordered: { type: Boolean, reflect: true },
+    contentStyles: { attribute: false },
     _open: { state: true },
     _closing: { state: true },
     _width: { state: true },
@@ -158,12 +162,34 @@ class YcPreviewHover extends LitElement {
   }
 
   updated(changed) {
+    if (changed.has("contentStyles")) this._adoptContentStyles();
     for (const content of this.renderRoot.querySelectorAll(".preview-content")) {
       if (this._observed.has(content)) continue;
       this._observed.add(content);
       this._resize.observe(content);
     }
     if (changed.has("_open")) this._animate();
+  }
+
+  // This component's styles, then the contents' own (contentStyles).
+  _adoptContentStyles() {
+    const root = this.renderRoot;
+    const extra = [this.contentStyles].flat().filter(Boolean);
+    if ("adoptedStyleSheets" in root) {
+      root.adoptedStyleSheets = [
+        ...this.constructor.elementStyles,
+        ...extra,
+      ].map((style) => style.styleSheet ?? style);
+      return;
+    }
+    // Without constructable stylesheets (Lit then uses <style> elements).
+    let element = root.querySelector("style[data-content-styles]");
+    if (!element) {
+      element = document.createElement("style");
+      element.dataset.contentStyles = "";
+      root.append(element);
+    }
+    element.textContent = extra.map((style) => style.cssText ?? String(style)).join("\n");
   }
 
   // The motion of an open / close / switch. It runs before the next paint:

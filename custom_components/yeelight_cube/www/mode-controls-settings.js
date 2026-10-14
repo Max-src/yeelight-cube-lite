@@ -13,7 +13,7 @@ import { renderOrderableList } from "./orderable-list-utils.js";
 import { createToggleRow } from "./form-row-utils.js";
 import { createButtonGroup } from "./button-group-utils.js";
 import {
-  renderModeSettingsSection,
+  renderSettingsBox,
   renderMatrixAppearanceSettings,
 } from "./editor_ui_utils.js";
 import {
@@ -26,6 +26,44 @@ import {
   ACTION_BUTTON_KEYS,
   ACTION_BUTTON_LABELS,
 } from "./mode-controls-controller.js";
+import {
+  clockColorModeOptions,
+  clockColorModeVisibilityConfig,
+  clockPresetLibrary,
+} from "./clock-preset-utils.js";
+import { CLOCK_COLOR_MODES } from "./clock-preview-utils.js";
+import { VISIBILITY_KEYS, withAllItems } from "./visible-items.js";
+
+/**
+ * Visible color modes (Clock and Native Effects editors): the built-in modes
+ * and the saved color presets the card offers, in their order. `editor` is
+ * a YeelightEditorMixin editor (its config, hass and _commitConfig).
+ */
+export function renderVisibleColorModes(editor) {
+  const config = editor._config;
+  const presets = clockPresetLibrary(editor._hass ?? editor.hass);
+  const all = clockColorModeOptions(CLOCK_COLOR_MODES, presets);
+  const visible = clockColorModeOptions(CLOCK_COLOR_MODES, presets, config).map(
+    (mode) => mode.value,
+  );
+  const labels = new Map(all.map((mode) => [mode.value, mode.label]));
+  return renderSettingsBox(
+    "Visible color modes",
+    renderOrderableList({
+      labelFor: (key) => labels.get(key) || key,
+      items: visible,
+      available: all
+        .map((mode) => mode.value)
+        .filter((key) => !visible.includes(key)),
+      onUpdate: (items) =>
+        editor._commitConfig(clockColorModeVisibilityConfig(config, all, items)),
+      onReset: () =>
+        editor._commitConfig(withAllItems(config, VISIBILITY_KEYS.colorModes)),
+      addPlaceholder: "Show a color mode...",
+      resetLabel: "Reset to all color modes",
+    }),
+  );
+}
 
 export function renderColorModeSettings(config, change) {
   const choices = (label, key, values, fallback) =>
@@ -99,7 +137,7 @@ export function renderModeControlSettings(
       "Show Actions",
       "show_actions",
     )}${config.show_actions !== false
-      ? html`${renderModeSettingsSection(
+      ? html`${renderSettingsBox(
           "Button Settings",
           renderActionButtonSettings(config, change, {
             styleKey: "actions_buttons_style",
@@ -107,7 +145,7 @@ export function renderModeControlSettings(
             defaultStyle: modeActionOptions(config).buttonStyle,
             defaultContentMode: modeActionOptions(config).contentMode,
           }),
-        )}${renderModeSettingsSection(
+        )}${renderSettingsBox(
           "Actions & Order",
           renderOrderableList({
             items: actionButtonOrder(config, actionKeys),
@@ -127,7 +165,7 @@ export function renderModeControlSettings(
       "Show Device Orientation",
       "show_device_orientation",
     )}${config.show_device_orientation !== false
-      ? renderModeSettingsSection(
+      ? renderSettingsBox(
           "Orientation Settings",
           renderOrientationSettings(config, change),
         )
@@ -137,7 +175,7 @@ export function renderModeControlSettings(
       "Show favourite stars",
       "favourites_show_stars",
     )}${config.show_favourites
-      ? renderModeSettingsSection(
+      ? renderSettingsBox(
           "Favourite Controls",
           html`
             ${toggle("Animated Previews", "favourites_show_previews")}
@@ -179,7 +217,7 @@ export function renderModeControlSettings(
     "show_rotation",
     false,
   )}${config.show_rotation
-    ? renderModeSettingsSection(
+    ? renderSettingsBox(
         "Rotation Settings",
         html`
           <div class="form-row" style="align-items:flex-start;">

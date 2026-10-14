@@ -6,16 +6,12 @@ import {
   buttonGroupStyles,
 } from "./button-group-utils.js";
 import {
-  entitySelectorStyles,
-} from "./entity-selector-utils.js";
-import {
   createToggleRow,
   createSliderRow,
 } from "./form-row-utils.js";
 import {
-  fireEvent,
   YeelightEditorMixin,
-  renderModeSettingsSection,
+  renderSettingsBox,
   renderDeleteButtonSettings,
   sharedEditorStyles,
 } from "./editor_ui_utils.js";
@@ -33,7 +29,6 @@ class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitEleme
   constructor() {
     super();
     this._config = {};
-    this._open = {};
   }
 
   setConfig(config) {
@@ -43,15 +38,14 @@ class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitEleme
   }
 
   _fireConfigChanged() {
-    const config = {
+    super._fireConfigChanged({
       type: "custom:yeelight-cube-color-list-editor-card",
       ...this._config,
-    };
-    fireEvent(this, "config-changed", { config });
+    });
   }
 
   static get styles() {
-    return [sharedEditorStyles, buttonGroupStyles, entitySelectorStyles];
+    return [sharedEditorStyles, buttonGroupStyles];
   }
 
   render() {
@@ -135,7 +129,7 @@ class YeelightCubeColorListEditorCardEditor extends YeelightEditorMixin(LitEleme
               )}
             </div>
             ${cfg.list_layout === "cards"
-              ? renderModeSettingsSection(
+              ? renderSettingsBox(
                   "Card Effects",
                   html`
                     <div class="form-row">

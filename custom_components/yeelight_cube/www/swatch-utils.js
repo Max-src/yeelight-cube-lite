@@ -28,12 +28,6 @@ export const SWATCH_LAYOUT_GROUPS = Object.freeze({
 export const SWATCH_LAYOUTS = Object.freeze(
   Object.values(SWATCH_LAYOUT_GROUPS).flat(),
 );
-export const SWATCH_SHAPES = Object.freeze(["square", "rounded", "round"]);
-// The layouts drawn with one swatch per color in the chosen shape.
-export const SHAPED_LAYOUTS = Object.freeze([
-  ...SWATCH_LAYOUT_GROUPS.swatches,
-  "gradient",
-]);
 export const BLINDS_DIRECTIONS = Object.freeze([
   "rows",
   "columns",

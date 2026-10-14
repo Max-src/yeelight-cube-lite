@@ -9,7 +9,11 @@
  *   override _commandsChanged() to follow its busy/error state.
  * - callServiceOnTargetEntities(service, data, options): one call of a
  *   yeelight_cube service for all the card's lamps, through that queue.
- * - this._targets: the lamps the card controls (target_entities, else entity).
+ * - this._targets: the lamps the card controls (target_entities, else entity);
+ *   _primaryEntity(): its main lamp (the first Home Assistant knows).
+ * - this._gate: holds the card's renders while the user interacts
+ *   (render-gate.js); a held render is made by _renderHeld() (default: a Lit
+ *   update).
  * - this._showCardBackground: the shared `show_card_background` option.
  * - _hassChanged(hass): whether a `hass` push changes anything the card
  *   shows (Home Assistant hands out a new hass object on every state push
@@ -26,16 +30,19 @@ import { CardCommandController } from "./card-command-controller.js";
 import { getTargetEntities } from "./service-call-utils.js";
 import { bindHostEvents } from "./host-events.js";
 import { findCollectionSensor } from "./sensor-lookup.js";
+import { RenderGate } from "./render-gate.js";
 
 /** The Yeelight Cube lamps of this Home Assistant, in entity order: lights
- * carrying the integration's marker attribute, or (older states) a Cube
- * entity id. Used for the stub config of a newly added card. */
+ * this integration registered (the entity registry: renamed or unavailable
+ * lamps too), carrying its marker attribute, or (older states) with a Cube
+ * entity id. The stub config of a new card and the editors' lamp picker. */
 export function cubeLampEntities(hass) {
   return Object.entries(hass?.states || {})
     .filter(
       ([id, state]) =>
         id.startsWith("light.") &&
-        (state?.attributes?._yeelight_cube_component ||
+        (hass.entities?.[id]?.platform === "yeelight_cube" ||
+          state?.attributes?._yeelight_cube_component ||
           id.startsWith("light.yeelight_cube") ||
           id.startsWith("light.cubelite_")),
     )
@@ -103,6 +110,24 @@ export const YeelightCardMixin = (Base) =>
       return getTargetEntities(this.config || {});
     }
 
+    /** The card's render gate (created on first use). */
+    get _gate() {
+      return (this.__gate ||= new RenderGate(() => this._renderHeld()));
+    }
+
+    /** Make a render the gate held. */
+    _renderHeld() {
+      this.requestUpdate();
+    }
+
+    /** The card's main lamp: the first configured lamp Home Assistant
+     * knows, else the first configured (the card then says it is missing),
+     * else "". */
+    _primaryEntity(hass = this._hass) {
+      const targets = this._targets;
+      return targets.find((id) => hass?.states?.[id]) ?? targets[0] ?? "";
+    }
+
     /** Height in masonry dashboards, in 50 px rows (static cardSize). */
     getCardSize() {
       return this.constructor.cardSize ?? 4;
@@ -142,7 +167,7 @@ export const YeelightCardMixin = (Base) =>
     _hassChanged(hass) {
       const lamp =
         this.config?.show_lamp_status === true
-          ? hass?.states?.[this._targets[0]]
+          ? hass?.states?.[this._primaryEntity(hass)]
           : undefined;
       const inputs = [
         ...this._hassInputs(hass),

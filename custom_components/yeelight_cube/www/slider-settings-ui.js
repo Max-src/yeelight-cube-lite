@@ -8,7 +8,7 @@ import {
   createButtonGroupChangeHandler,
 } from "./button-group-utils.js";
 import { createSliderRow, createToggleRow } from "./form-row-utils.js";
-import { renderModeSettingsSection } from "./editor_ui_utils.js";
+import { renderSettingsBox } from "./editor_ui_utils.js";
 import { sliderKeys } from "./slider-control-utils.js";
 import { resolveWheelStyle } from "./slider-values.js";
 
@@ -57,275 +57,215 @@ export function renderLightSliderSettings(
  *   - thickness: number                override the displayed track thickness
  */
 export function renderSliderSettings(config, K, onChange, opts = {}) {
-  const g = (k, d) => (config[k] !== undefined ? config[k] : d);
-  const bg = (key, choices, current, extra = "") =>
-    html`<div class="form-row">
-      <label>${extra}</label>
-      ${createButtonGroup(
-        choices,
-        current,
-        createButtonGroupChangeHandler(key, (v) => onChange(key, v)),
-      )}
-    </div>`;
-  const colorRow = (label, key, fallback) => html`
-    <div class="form-row">
-      <label>${label}</label>
-      <input
-        type="color"
-        .value="${g(key, fallback)}"
-        @click="${(event) => handleColorPickerClick(event)}"
-        @input="${(e) => onChange(key, e.target.value)}"
-        style="width:60px;height:32px;border:none;cursor:pointer;border-radius:6px;"
-      />
-    </div>
-  `;
-
-  const style = g(K.style, "slider");
-  const thickness = opts.thickness ?? g(K.thickness, 6);
-
-  // Per-style conditional options — each grouped in the shared blue block.
-  let modeSection = "";
-  if (style === "slider") {
-    modeSection = renderModeSettingsSection(
-      "Slider Settings",
-      bg(
-        K.variant,
-        [
-          { value: "thin", label: "Thin" },
-          { value: "thick", label: "Thick" },
-        ],
-        g(K.variant, "thin"),
-        html`<span>Slider Variant</span>`,
-      ),
-    );
-  } else if (style === "bar") {
-    modeSection = renderModeSettingsSection(
-      "Bar Settings",
-      bg(
-        K.barFill,
-        [
-          { value: "solid", label: "Solid" },
-          { value: "pulse", label: "Pulse" },
-          { value: "stripes", label: "Stripes" },
-          { value: "gloss", label: "Gloss" },
-        ],
-        g(K.barFill, "solid"),
-        html`<span>Bar Fill</span>`,
-      ),
-    );
-  } else if (style === "wheel") {
-    modeSection = renderModeSettingsSection(
-      "Wheel Settings",
-      html`
-        ${bg(
-          K.wheelStyle,
-          [
-            { value: "ticks", label: "Classic" },
-            { value: "mesh", label: "Mesh" },
-          ],
-          resolveWheelStyle(g(K.wheelStyle, "ticks")),
-          html`<span>Wheel Style</span>`,
-        )}
-        ${createToggleRow(
-          "Show Wheel Labels",
-          K.wheelLabels,
-          g(K.wheelLabels, true) !== false,
-          (e) => onChange(K.wheelLabels, e.target.checked),
-        )}
-        ${createSliderRow(
-          "Wheel Step",
-          g(K.wheelStep, 10),
-          { min: 5, max: 50, step: 5 },
-          (e) => onChange(K.wheelStep, parseInt(e.target.value, 10)),
-          "%",
-        )}
-      `,
-    );
-  } else if (style === "matrix") {
-    modeSection = renderModeSettingsSection(
-      "Matrix Settings",
-      html`
-        ${createSliderRow(
-          "Matrix Columns",
-          g(K.matrixCols, 10),
-          { min: 3, max: 20, step: 1 },
-          (e) => onChange(K.matrixCols, parseInt(e.target.value, 10)),
-          "",
-        )}
-        ${createSliderRow(
-          "Matrix Rows",
-          g(K.matrixRows, 2),
-          { min: 1, max: 6, step: 1 },
-          (e) => onChange(K.matrixRows, parseInt(e.target.value, 10)),
-          "",
-        )}
-        ${bg(
-          K.matrixDir,
-          [
-            { value: "row", label: "Row" },
-            { value: "col", label: "Column" },
-          ],
-          g(K.matrixDir, "row"),
-          html`<span>Fill Direction</span>`,
-        )}
-        ${bg(
-          K.matrixPixelStyle,
-          [
-            { value: "square", label: "Square" },
-            { value: "rounded", label: "Rounded" },
-            { value: "round", label: "Round" },
-          ],
-          g(K.matrixPixelStyle, "rounded"),
-          html`<span>Pixel Shape</span>`,
-        )}
-        ${opts.matrixColorKey
-          ? colorRow("Matrix Color", opts.matrixColorKey, "#ff9800")
-          : ""}
-      `,
-    );
-  } else if (style === "rotary") {
-    modeSection = renderModeSettingsSection(
-      "Rotary Settings",
-      bg(
-        K.rotaryStyle,
-        [
-          { value: "glow", label: "Glow" },
-          { value: "gloss", label: "Gloss" },
-          { value: "thick", label: "Thick" },
-          { value: "dial", label: "Dial" },
-        ],
-        g(K.rotaryStyle, "glow"),
-        html`<span>Rotary Style</span>`,
-      ),
-    );
-  } else if (style === "capsule") {
-    const valueDisplay = g(K.valueDisplay, "text");
-    modeSection = renderModeSettingsSection(
-      "Capsule Settings",
-      html`
-        ${bg(
-          K.valueDisplay,
-          [
-            { value: "none", label: "None" },
-            { value: "text", label: "Text" },
-            { value: "input", label: "Input" },
-          ],
-          valueDisplay,
-          html`<span>Value Display</span>`,
-        )}
-        ${valueDisplay !== "none"
-          ? bg(
-              K.valueSide,
-              [
-                { value: "under", label: "Under" },
-                { value: "left", label: "Left" },
-                { value: "right", label: "Right" },
-              ],
-              g(K.valueSide, "under"),
-              html`<span>Value Side</span>`,
-            )
-          : ""}
-        ${opts.icons && K.iconLeftShow
-          ? createToggleRow(
-              opts.icons.leftLabel,
-              K.iconLeftShow,
-              g(K.iconLeftShow, true) !== false,
-              (e) => onChange(K.iconLeftShow, e.target.checked),
-            )
-          : ""}
-        ${opts.icons && K.iconRightShow
-          ? createToggleRow(
-              opts.icons.rightLabel,
-              K.iconRightShow,
-              g(K.iconRightShow, true) !== false,
-              (e) => onChange(K.iconRightShow, e.target.checked),
-            )
-          : ""}
-        ${createToggleRow(
-          "Snap to Positions",
-          K.snap,
-          g(K.snap, false) === true,
-          (e) => onChange(K.snap, e.target.checked),
-        )}
-        ${bg(
-          K.capsuleVariant,
-          [
-            { value: "thin", label: "Thin" },
-            { value: "thick", label: "Thick" },
-          ],
-          g(K.capsuleVariant, "thin"),
-          html`<span>Track Style</span>`,
-        )}
-      `,
-    );
-  }
-
-  const stepButtonsOn = g(K.stepButtons, false) === true;
-
+  const value = (key, fallback) =>
+    config[key] !== undefined ? config[key] : fallback;
+  const style = value(K.style, "slider");
+  const view = { config, K, onChange, opts, value };
+  const stepButtonsOn = value(K.stepButtons, false) === true;
+  const settings = STYLE_SETTINGS[style];
   return html`
     ${opts.showValueToggle && style !== "capsule"
-      ? createToggleRow(
-          opts.showValueToggle.label,
-          opts.showValueToggle.key,
-          g(opts.showValueToggle.key, true) !== false,
-          (e) => onChange(opts.showValueToggle.key, e.target.checked),
-        )
+      ? settingRow(view, toggle(() => opts.showValueToggle.key, opts.showValueToggle.label, true))
       : ""}
     ${opts.rawValueToggle
-      ? createToggleRow(
-          opts.rawValueToggle.label,
-          opts.rawValueToggle.key,
-          g(opts.rawValueToggle.key, false) === true,
-          (e) => onChange(opts.rawValueToggle.key, e.target.checked),
-        )
+      ? settingRow(view, toggle(() => opts.rawValueToggle.key, opts.rawValueToggle.label, false))
       : ""}
-    ${bg(K.style, STYLE_CHOICES, style, html`<span>Slider Style</span>`)}
-    ${createSliderRow(
-      "Control Width",
-      g(K.width, 100),
-      { min: 30, max: 100, step: 5 },
-      (e) => onChange(K.width, parseInt(e.target.value, 10)),
-      "%",
-    )}
+    ${settingRow(view, choice("style", "Slider Style", STYLE_CHOICES, "slider"))}
+    ${settingRow(view, range("width", "Control Width", 100, { min: 30, max: 100, step: 5 }, "%"))}
     ${createToggleRow(
       "Card background",
       K.theme,
-      g(K.theme, "subtle") !== "flat",
+      value(K.theme, "subtle") !== "flat",
       (e) => onChange(K.theme, e.target.checked ? "subtle" : "flat"),
     )}
-    ${modeSection}
-    ${createToggleRow("Step Buttons", K.stepButtons, stepButtonsOn, (e) =>
-      onChange(K.stepButtons, e.target.checked),
-    )}
+    ${settings
+      ? renderSettingsBox(
+          settings.title,
+          html`${settings.rows.map((row) => settingRow(view, row))}`,
+        )
+      : ""}
+    ${settingRow(view, toggle("stepButtons", "Step Buttons", false))}
     ${stepButtonsOn
-      ? renderModeSettingsSection(
+      ? renderSettingsBox(
           "Step Button Settings",
           html`
-            ${createSliderRow(
-              "Step Size",
-              g(K.stepSize, 5),
-              { min: 1, max: 25, step: 1 },
-              (e) => onChange(K.stepSize, parseInt(e.target.value, 10)),
-              "%",
-            )}
-            ${bg(
-              K.stepPosition,
-              [
-                { value: "below", label: "Below" },
-                { value: "sides", label: "Sides" },
-              ],
-              g(K.stepPosition, "below"),
-              html`<span>Step Position</span>`,
-            )}
+            ${settingRow(view, range("stepSize", "Step Size", 5, { min: 1, max: 25, step: 1 }, "%"))}
+            ${settingRow(view, choice("stepPosition", "Step Position", STEP_POSITIONS, "below"))}
           `,
         )
       : ""}
     ${createSliderRow(
       "Track Thickness",
-      thickness,
+      opts.thickness ?? value(K.thickness, 6),
       { min: 2, max: 10, step: 1 },
       (e) => onChange(K.thickness, parseInt(e.target.value, 10)),
       "px",
     )}
   `;
+}
+
+// ── The settings as data ──────────────────────────────────────────────────
+// A row names its option by the key map's field (K[field]), or by a function
+// of the view (an option the card passes); `when` hides it.
+
+const choice = (field, label, choices, fallback, read = (v) => v) => ({
+  kind: "choice", field, label, choices, fallback, read,
+});
+const toggle = (field, label, fallback) => ({ kind: "toggle", field, label, fallback });
+const range = (field, label, fallback, bounds, unit) => ({
+  kind: "range", field, label, fallback, bounds, unit,
+});
+const when = (shown, row) => ({ ...row, shown });
+
+const STEP_POSITIONS = [
+  { value: "below", label: "Below" },
+  { value: "sides", label: "Sides" },
+];
+
+// Each style's own settings (the blue section under the style choice).
+const STYLE_SETTINGS = {
+  slider: {
+    title: "Slider Settings",
+    rows: [
+      choice("variant", "Slider Variant", [
+        { value: "thin", label: "Thin" },
+        { value: "thick", label: "Thick" },
+      ], "thin"),
+    ],
+  },
+  bar: {
+    title: "Bar Settings",
+    rows: [
+      choice("barFill", "Bar Fill", [
+        { value: "solid", label: "Solid" },
+        { value: "pulse", label: "Pulse" },
+        { value: "stripes", label: "Stripes" },
+        { value: "gloss", label: "Gloss" },
+      ], "solid"),
+    ],
+  },
+  wheel: {
+    title: "Wheel Settings",
+    rows: [
+      choice("wheelStyle", "Wheel Style", [
+        { value: "ticks", label: "Classic" },
+        { value: "mesh", label: "Mesh" },
+      ], "ticks", resolveWheelStyle),
+      toggle("wheelLabels", "Show Wheel Labels", true),
+      range("wheelStep", "Wheel Step", 10, { min: 5, max: 50, step: 5 }, "%"),
+    ],
+  },
+  matrix: {
+    title: "Matrix Settings",
+    rows: [
+      range("matrixCols", "Matrix Columns", 10, { min: 3, max: 20, step: 1 }, ""),
+      range("matrixRows", "Matrix Rows", 2, { min: 1, max: 6, step: 1 }, ""),
+      choice("matrixDir", "Fill Direction", [
+        { value: "row", label: "Row" },
+        { value: "col", label: "Column" },
+      ], "row"),
+      choice("matrixPixelStyle", "Pixel Shape", [
+        { value: "square", label: "Square" },
+        { value: "rounded", label: "Rounded" },
+        { value: "round", label: "Round" },
+      ], "rounded"),
+      // Only the cards that let the user pick the slider color.
+      when((view) => !!view.opts.matrixColorKey, {
+        kind: "color", field: (view) => view.opts.matrixColorKey, label: "Matrix Color", fallback: "#ff9800",
+      }),
+    ],
+  },
+  rotary: {
+    title: "Rotary Settings",
+    rows: [
+      choice("rotaryStyle", "Rotary Style", [
+        { value: "glow", label: "Glow" },
+        { value: "gloss", label: "Gloss" },
+        { value: "thick", label: "Thick" },
+        { value: "dial", label: "Dial" },
+      ], "glow"),
+    ],
+  },
+  capsule: {
+    title: "Capsule Settings",
+    rows: [
+      choice("valueDisplay", "Value Display", [
+        { value: "none", label: "None" },
+        { value: "text", label: "Text" },
+        { value: "input", label: "Input" },
+      ], "text"),
+      when(
+        (view) => view.value(view.K.valueDisplay, "text") !== "none",
+        choice("valueSide", "Value Side", [
+          { value: "under", label: "Under" },
+          { value: "left", label: "Left" },
+          { value: "right", label: "Right" },
+        ], "under"),
+      ),
+      // The icons' toggles: for the cards that pass their labels.
+      when(
+        (view) => !!(view.opts.icons && view.K.iconLeftShow),
+        { kind: "toggle", field: "iconLeftShow", label: (view) => view.opts.icons.leftLabel, fallback: true },
+      ),
+      when(
+        (view) => !!(view.opts.icons && view.K.iconRightShow),
+        { kind: "toggle", field: "iconRightShow", label: (view) => view.opts.icons.rightLabel, fallback: true },
+      ),
+      toggle("snap", "Snap to Positions", false),
+      choice("capsuleVariant", "Track Style", [
+        { value: "thin", label: "Thin" },
+        { value: "thick", label: "Thick" },
+      ], "thin"),
+    ],
+  },
+};
+
+// One row: a button group, a toggle, a slider or a color picker.
+function settingRow(view, row) {
+  if (row.shown && !row.shown(view)) return "";
+  const key = typeof row.field === "function" ? row.field(view) : view.K[row.field];
+  const label = typeof row.label === "function" ? row.label(view) : row.label;
+  const current = view.value(key, row.fallback);
+  switch (row.kind) {
+    case "choice":
+      return html`<div class="form-row">
+        <label>${html`<span>${label}</span>`}</label>
+        ${createButtonGroup(
+          row.choices,
+          row.read(current),
+          createButtonGroupChangeHandler(key, (v) => view.onChange(key, v)),
+        )}
+      </div>`;
+    case "toggle":
+      // On by default: anything but false; off by default: only true.
+      return createToggleRow(
+        label,
+        key,
+        row.fallback ? current !== false : current === true,
+        (e) => view.onChange(key, e.target.checked),
+      );
+    case "range":
+      return createSliderRow(
+        label,
+        current,
+        row.bounds,
+        (e) => view.onChange(key, parseInt(e.target.value, 10)),
+        row.unit,
+      );
+    case "color":
+      return html`
+        <div class="form-row">
+          <label>${label}</label>
+          <input
+            type="color"
+            .value="${current}"
+            @click="${(event) => handleColorPickerClick(event)}"
+            @input="${(e) => view.onChange(key, e.target.value)}"
+            style="width:60px;height:32px;border:none;cursor:pointer;border-radius:6px;"
+          />
+        </div>
+      `;
+    default:
+      return "";
+  }
 }

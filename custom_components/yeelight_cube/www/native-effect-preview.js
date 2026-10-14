@@ -23,6 +23,17 @@ export const PREVIEW_ROWS = 5;
 // or the preview renders upside down. renderCarousel is the reference example.
 
 const TAU = Math.PI * 2;
+// Python's float modulo (native_effect_preview.py, the camera's renderer):
+// the exact remainder, with the divisor's sign. The usual
+// `((x % n) + n) % n` rounds once more, so the cards' frames drifted from
+// the camera's on near-ties (a Tide pixel, for one).
+function pyMod(value, divisor) {
+  const remainder = value % divisor;
+  return remainder !== 0 && remainder < 0 !== divisor < 0
+    ? remainder + divisor
+    : remainder;
+}
+
 const TIDE_HEAD_PATHS = [
   {
     positions: [
@@ -59,7 +70,7 @@ function rgb(red, green, blue, level = 1.0) {
 
 // HSV (0..1 hue/sat/val) -> [r,g,b] 0..255. Matches Python colorsys.hsv_to_rgb.
 function hsv(hue, saturation = 1.0, value = 1.0) {
-  hue = ((hue % 1.0) + 1.0) % 1.0;
+  hue = pyMod(hue, 1.0);
   const i = Math.floor(hue * 6);
   const f = hue * 6 - i;
   const p = value * (1 - saturation);
@@ -166,16 +177,14 @@ function palette(stops, position) {
 
 function tideHeadPosition(time, headIndex) {
   const path = TIDE_HEAD_PATHS[headIndex];
-  let local =
-    (((time + path.timeOffset) % path.cycleDuration) + path.cycleDuration) %
-    path.cycleDuration;
+  let local = pyMod(time + path.timeOffset, path.cycleDuration);
   for (let index = 0; index < path.durations.length; index++) {
     const duration = path.durations[index];
     if (local <= duration) {
       const start = path.positions[index];
       const end = path.positions[(index + 1) % path.positions.length];
       const unwrapped = start + (end - start) * (local / duration);
-      return ((unwrapped % PREVIEW_COLS) + PREVIEW_COLS) % PREVIEW_COLS;
+      return pyMod(unwrapped, PREVIEW_COLS);
     }
     local -= duration;
   }
@@ -302,7 +311,7 @@ function buildingBlockCells(phase, direction) {
   }
 
   const cycle = lastLanding + hold;
-  const local = ((phase % cycle) + cycle) % cycle;
+  const local = pyMod(phase, cycle);
   const grid = new Array(total).fill(null);
   for (const [lane, targetPos, eventTime] of events) {
     const spawnTime = eventTime;
@@ -419,8 +428,8 @@ function renderMagic(phase) {
     if (center < 0.0) center += 1.0;
     const scale = 0.217 / Math.max(hueSpan, 1e-6);
     hues = hues.map((hue) => {
-      const difference = ((((hue - center + 0.5) % 1.0) + 1.0) % 1.0) - 0.5;
-      return (((center + difference * scale) % 1.0) + 1.0) % 1.0;
+      const difference = (pyMod((hue - center + 0.5), 1.0)) - 0.5;
+      return pyMod((center + difference * scale), 1.0);
     });
   }
 
@@ -429,7 +438,7 @@ function renderMagic(phase) {
   if (coolCount(hues) > 88) {
     for (let step = 1; step <= 50; step++) {
       const shift = step * 0.01;
-      let shifted = hues.map((hue) => (((hue - shift) % 1.0) + 1.0) % 1.0);
+      let shifted = hues.map((hue) => pyMod((hue - shift), 1.0));
       if (coolCount(shifted) <= 88) {
         hues = shifted;
         break;
@@ -668,7 +677,7 @@ function renderKaleidoscopeRows(phase, direction, colorMode = null) {
           );
       const progress =
         ((((warped - arrow * speed * phase) / wavelength) % 1.0) + 1.0) % 1.0;
-      const rawHue = (((baseHue + progress) % 1.0) + 1.0) % 1.0;
+      const rawHue = pyMod((baseHue + progress), 1.0);
       // The firmware dwells in broad cyan fields between narrower full
       // spectrum passages instead of distributing every hue uniformly.
       const hue =
@@ -707,7 +716,7 @@ function kaleidoscopeSnakeEvents(phase) {
 
 function mirroredPathDistance(position, origin, period) {
   return Math.abs(
-    ((((position - origin + period / 2.0) % period) + period) % period) -
+    (pyMod((position - origin + period / 2.0), period)) -
       period / 2.0,
   );
 }
@@ -818,7 +827,7 @@ function renderBlueYellow(phase, direction) {
     for (let col = 0; col < PREVIEW_COLS; col++) {
       const distance = mirroredPathDistance(col + rowOffset, origin, 16.0);
       const ring =
-        (((distance - front) % ringPeriod) + ringPeriod) % ringPeriod;
+        pyMod((distance - front), ringPeriod);
       const radius = Math.min(ring, ringPeriod - ring);
       if (radius <= 0.7) {
         pixels.push(yellow);
@@ -941,7 +950,7 @@ function renderCarousel(phase, direction) {
         rowPhase * fitRow +
         rowSkew * col * fitRow +
         rowCurve * colSquared * fitRow;
-      const position = (((angle / TAU) % 1.0) + 1.0) % 1.0;
+      const position = pyMod((angle / TAU), 1.0);
       let distance;
       let hue;
       if (position < 0.2 || position > 0.8) {
@@ -1673,7 +1682,7 @@ function renderPalette(phase, direction) {
           const dy = (sampleRow - centerY) / radiusY;
           const distance = Math.hypot(dx, dy);
           const weight = envelope * Math.max(0.0, 1.0 - distance) ** 1.35;
-          const fieldHue = (((hue + dx * 0.1) % 1.0) + 1.0) % 1.0;
+          const fieldHue = pyMod((hue + dx * 0.1), 1.0);
           sineSum += weight * Math.sin(TAU * fieldHue);
           cosineSum += weight * Math.cos(TAU * fieldHue);
           levelSum += weight;
@@ -1864,7 +1873,7 @@ function renderMonochromeWaves(phase, direction) {
     for (let col = 0; col < PREVIEW_COLS; col += 1) {
       const position = monochromeWavePosition(row, col, direction);
       const wrapped =
-        ((((position - travel + period / 2) % period) + period) % period) -
+        (pyMod((position - travel + period / 2), period)) -
         period / 2;
       const distanceCubed = Math.abs(wrapped) ** 3;
       const level = clamp((255 * distanceCubed) / (distanceCubed + scale ** 3));
@@ -1999,7 +2008,7 @@ function renderColorTrails(phase, direction, colorMode = null) {
       ];
     const hueOriginRaw =
       event * 0.38196601125 + 0.08 * noiseAt(event + 3901, 23, 0);
-    const hueOrigin = ((hueOriginRaw % 1.0) + 1.0) % 1.0;
+    const hueOrigin = pyMod(hueOriginRaw, 1.0);
     for (let col = 0; col < PREVIEW_COLS; col += 1) {
       const distance = (head - col) * travel;
       if (distance < 0 || distance >= length) continue;
@@ -2054,7 +2063,7 @@ function renderSpectrumBands(direction, colorMode = null) {
 function rainbowFlowRightHue(row, col, phase) {
   const index = (PREVIEW_ROWS - 1 - row) * PREVIEW_COLS + col;
   const hue = 0.5 - index / RAINBOW_FLOW_TOTAL + phase * RAINBOW_FLOW_SPEED;
-  return ((hue % 1.0) + 1.0) % 1.0;
+  return pyMod(hue, 1.0);
 }
 
 // Down: scans top-to-bottom per column, scrolling leftward; the rainbow order
@@ -2063,7 +2072,7 @@ function rainbowFlowRightHue(row, col, phase) {
 function rainbowFlowDownHue(row, col, phase) {
   const index = (PREVIEW_COLS - 1 - col) * PREVIEW_ROWS + row;
   const hue = 0.5 - index / RAINBOW_FLOW_TOTAL + phase * RAINBOW_FLOW_SPEED;
-  return ((hue % 1.0) + 1.0) % 1.0;
+  return pyMod(hue, 1.0);
 }
 
 // Mode 4 (Rainbow Flow): a full rainbow that runs dot-by-dot along the panel
@@ -2326,7 +2335,7 @@ const COLOR_PALETTE_MODES = new Set([
 
 function paletteModeHsv(hue, saturation, value, mode, position = null) {
   if (!mode) return hsv(hue, saturation, value);
-  const normalizedHue = ((hue % 1.0) + 1.0) % 1.0;
+  const normalizedHue = pyMod(hue, 1.0);
   const palettePosition = position ?? Math.min(1.0, normalizedHue / 0.85);
   return rainbowPaletteColor(palettePosition, mode).map((channel) =>
     clamp(channel * value + 1e-9),
@@ -2488,7 +2497,7 @@ function renderNativeEffectRaw(
         // The whole panel is one uniform color that slowly morphs through
         // the spectrum as phase advances -- no spatial variation.
         color = paletteModeHsv(
-          (((phase * 0.08) % 1.0) + 1.0) % 1.0,
+          pyMod((phase * 0.08), 1.0),
           0.9,
           0.88,
           colorMode,
@@ -2503,7 +2512,7 @@ function renderNativeEffectRaw(
         const seed = noiseAt(col, row, 0);
         const seed2 = noiseAt(col, row, 999);
         const cycleRate = 0.25 + 0.3 * seed2;
-        const local = (((phase * cycleRate + seed) % 1.0) + 1.0) % 1.0;
+        const local = pyMod((phase * cycleRate + seed), 1.0);
         const rise = 0.04;
         const fade = 0.34;
         let level;
@@ -2575,7 +2584,7 @@ function renderNativeEffectRaw(
         );
         // Smoothly sweep the hue magenta -> red, then hard-jump back to magenta
         // and loop -- a sharp trailing switch instead of a smooth fade-out.
-        const s = (((ru - phase * 0.18) % 1.0) + 1.0) % 1.0;
+        const s = pyMod((ru - phase * 0.18), 1.0);
         color = colorMode
           ? rainbowPaletteColor(s, colorMode)
           : hsv(s * 0.85, 0.95, 0.95);
@@ -2698,7 +2707,7 @@ function renderNativeEffectRaw(
       } else if (effect === "Pinball") {
         // Triangle-wave bounce with constant velocity reflecting off walls.
         // Incommensurate x/y speed ratios keep the path dense and non-repeating.
-        const tri = (t) => 1.0 - Math.abs((((t % 2.0) + 2.0) % 2.0) - 1.0);
+        const tri = (t) => 1.0 - Math.abs((pyMod(t, 2.0)) - 1.0);
         // The bounce table is 2x the visible area (centred): coords span
         // [-0.5, 1.5]. Frequencies are halved vs. the visible-only version so
         // the on-screen ball speed is unchanged despite the larger table.
@@ -2859,8 +2868,8 @@ function renderNativeEffectRaw(
             const offset = Math.floor(phase * 1.5);
             const down = direction === "Down";
             const x = down
-              ? (((col + offset) % width) + width) % width
-              : (((offset - col) % width) + width) % width;
+              ? pyMod((col + offset), width)
+              : pyMod((offset - col), width);
             const gr = down ? row - 1 : 3 - row;
             const entryCol = down ? PREVIEW_COLS - 1 : 0;
             // Hardware artefact: while a character is still scrolling in, the
@@ -2868,7 +2877,7 @@ function renderNativeEffectRaw(
             // character currently leaving the opposite edge.
             if (col === entryCol && x % 5 <= 2) {
               const exitPos = down
-                ? ((offset % width) + width) % width
+                ? pyMod(offset, width)
                 : (((offset - (PREVIEW_COLS - 1)) % width) + width) % width;
               color = shades[exitPos] || [0, 0, 0];
             } else {
@@ -2877,7 +2886,7 @@ function renderNativeEffectRaw(
           }
         } else {
           const head = (phase * 0.8 + noiseAt(col, 0, 0)) % 1.0;
-          const distance = (((head - u) % 1.0) + 1.0) % 1.0;
+          const distance = pyMod((head - u), 1.0);
           const level =
             distance < 0.08 ? 1.0 : Math.max(0.04, 0.65 - distance * 1.8);
           color = rgb(25, 255, 85, level);

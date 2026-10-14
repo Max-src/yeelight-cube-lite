@@ -1,7 +1,8 @@
 /**
  * Shared Action Button Utilities
  *
- * Rendering, style variants, and content modes for actions across all cards.
+ * The button model, style variants and content modes shared by every card
+ * (action-button-ui.js renders them with Lit).
  *
  * Features:
  * - Multiple button styles: modern, classic, outline, gradient, icon, pill
@@ -100,8 +101,6 @@ export function resolveActionButtonOptions({
   };
 }
 
-import { escapeHtml } from "./html-escape-utils.js";
-
 export function getActionRowClass(options = {}) {
   return `action-row${resolveActionButtonOptions(options).contentMode === "icon" ? " icon-mode" : ""}${options.slotted ? " action-row-slotted" : ""}`;
 }
@@ -189,18 +188,6 @@ export function actionButtonModel({
   };
 }
 
-export function renderActionButtonHTML(options = {}) {
-  const model = actionButtonModel(options);
-  const state =
-    model.selected === undefined
-      ? ""
-      : ` ${model.role === "radio" ? "aria-checked" : "aria-pressed"}="${model.selected}"`;
-  const fill = model.fill
-    ? ` style="--btn-fill:${escapeHtml(model.fill)};--btn-ink:${model.ink}"`
-    : "";
-  return `<button type="${model.type}" class="${model.className}" title="${escapeHtml(model.title)}" aria-label="${escapeHtml(model.title)}" aria-busy="${model.busy}"${state}${fill}${model.role ? ' role="radio"' : ""}${model.value !== undefined ? ` data-value="${escapeHtml(String(model.value))}"` : ""}${model.dataMode !== undefined ? ` data-mode="${escapeHtml(String(model.dataMode))}"` : ""}${model.tabIndex !== undefined ? ` tabindex="${model.tabIndex === -1 ? -1 : 0}"` : ""} ${model.disabled ? "disabled" : ""}>${renderButtonContent(model.icon, model.label, model.contentMode, false, null, model.swatch, model.swatchShape)}</button>`;
-}
-
 export function actionButtonGroupModel({
   items,
   value,
@@ -220,12 +207,6 @@ export function actionButtonGroupModel({
     role: multiple ? undefined : "radio",
     tabIndex: multiple || item === focusItem ? 0 : -1,
   }));
-}
-
-export function bindActionButtonGroup(group, onChange) {
-  if (!group) return;
-  group.onclick = (event) => handleActionButtonGroupEvent(event, onChange);
-  group.onkeydown = (event) => handleActionButtonGroupEvent(event, onChange);
 }
 
 export function handleActionButtonGroupEvent(event, onChange) {
@@ -270,54 +251,6 @@ export function handleActionButtonGroupEvent(event, onChange) {
     });
     buttons[next].focus();
     activate(buttons[next]);
-  }
-}
-
-/**
- * Render button content based on content mode
- * @param {string} icon - Material Design Icon name (e.g., 'mdi:download')
- * @param {string} text - Button text
- * @param {string} contentMode - 'icon', 'text', or 'icon_text'
- * @param {boolean} isStatus - Whether this is a status message
- * @param {string} statusType - 'success' or 'error'
- * @returns {string} HTML string for button content
- */
-export function renderButtonContent(
-  icon,
-  text,
-  contentMode = "icon_text",
-  isStatus = false,
-  statusType = null,
-  swatch = null,
-  swatchShape = null,
-) {
-  if (isStatus) {
-    const statusIcon =
-      statusType === "success" ? "mdi:check" : "mdi:alert-circle";
-    const statusText = statusType === "success" ? "Success!" : "Error!";
-
-    switch (contentMode) {
-      case "icon":
-        return `<ha-icon icon="${statusIcon}"></ha-icon>`;
-      case "text":
-        return statusText;
-      case "icon_text":
-      default:
-        return `<ha-icon icon="${statusIcon}"></ha-icon><span class="btn-text">${statusText}</span>`;
-    }
-  }
-
-  const visual = swatch
-    ? `<span class="btn-swatch${swatchShape === "square" ? " btn-swatch-square" : swatchShape === "round" ? " btn-swatch-round" : ""}" style="background:${escapeHtml(swatch)}"></span>`
-    : `<ha-icon icon="${escapeHtml(icon)}"></ha-icon>`;
-  switch (contentMode) {
-    case "icon":
-      return visual;
-    case "text":
-      return escapeHtml(text);
-    case "icon_text":
-    default:
-      return `${visual}<span class="btn-text">${escapeHtml(text)}</span>`;
   }
 }
 

@@ -9,7 +9,6 @@ import {
 import { CardCommandController } from "./card-command-controller.js";
 import { orientationOptions, nextOrientation, orientationControlModel } from "./orientation-control-utils.js";
 import { renderOrientationControls } from "./orientation-control-ui.js";
-import { getInitialMatrix } from "./draw_card_state.js";
 
 import {
   resolveCapsuleTheme,
@@ -29,8 +28,10 @@ import {
   cardNotice,
   cardShell,
   lampNotFoundNotice,
+  lampUnavailableLine,
   NOTICE,
 } from "./card-shell.js";
+import { previewOnly } from "./offline-preview-state.js";
 import { normalizeCardOptions } from "./card-config.js";
 import { LampSliders } from "./lamp-sliders.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
@@ -53,9 +54,9 @@ import { MatrixPreviewMixin } from "./lamp-preview-matrix.js";
 //   its events declaratively (no inline handler strings). The brightness
 //   slider is the shared markup, held while it is dragged or typed in
 //   (stableSliderMarkup, like the Clock and Native Effects cards).
-// - _refresh() requests the update, except while a slider is dragged or a
-//   value typed, or while HA sends alternating brightness values (the update
-//   is then made when that ends).
+// - _refresh() requests the update, except while a slider is dragged (the
+//   card's render gate: the update is made at the release) or a value typed,
+//   or while HA sends alternating brightness values (made when that ends).
 // - The 20x5 .lamp-dot nodes carry no reactive bindings: their colors are only
 //   ever painted directly (change-only) by _paintDots, after each update
 //   (updated) and from the native-effect / clock animation loops.
@@ -126,11 +127,11 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
       actionKeys: ["refresh", "power"],
       items: () => [],
       current: () => null,
-      on: () => this._hass?.states?.[this.config.entity]?.state === "on",
+      on: () => this._hass?.states?.[this._primaryEntity()]?.state === "on",
       disabled: () =>
         this._actionCommands.busy ||
         !["on", "off"].includes(
-          this._hass?.states?.[this.config.entity]?.state,
+          this._hass?.states?.[this._primaryEntity()]?.state,
         ),
       command,
       refresh: () => command("force_refresh"),
@@ -150,28 +151,8 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     // Local state for optimistic UI updates
     this._localEffects = {}; // Store all effect values locally
 
-    // Track if user is actively dragging to prevent re-render
-    this._anySliderDragging = false; // Track if ANY slider is being dragged
-    this._lastRenderedBrightness = null; // Track last rendered brightness to detect oscillations
-    this._brightnessOscillationCount = 0; // Count rapid brightness changes
-    this._oscillationResetTimeout = null; // Timer to reset oscillation counter
-
-    // Track expanded sections
-    this._expandedSections = {
-      tone: false,
-      color: false,
-      effects: false,
-    };
-
     // What the last lamp update showed (see set hass).
     this._seen = {};
-
-    // Track active tab for tabbed layout
-    this._activeTab = null;
-
-    // Track selected category and effect for radial layout
-    this._activeRadialCategory = null;
-    this._selectedRadialEffect = null;
 
     // The matrix dots are recreated when the generation changes (a new
     // configuration: their look changes, see _matrixTemplate).
@@ -197,13 +178,13 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
 
   // Send a brightness (slider %) to the lamp on the shared 3-255 curve.
   _sendBrightness(pct) {
-    if (!this._hass || !this.config || !this.config.entity) return;
+    if (!this._hass || !this.config || !this._primaryEntity()) return;
     this._commands
       .call(
         this._hass,
         "light",
         "turn_on",
-        { entity_id: this.config.entity, brightness: brightnessPctToRaw(pct) },
+        { entity_id: this._primaryEntity(), brightness: brightnessPctToRaw(pct) },
         // A drag commits every few hundred ms and each call waits for the
         // lamp: while one is sent, only the latest value waits.
         { coalesce: "brightness" },
@@ -244,7 +225,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
       // Only this card lets the user pick the slider color.
       color: this.config.slider_color || "#ff9800",
       rawValue:
-        this._hass?.states?.[this.config?.entity]?.attributes?.brightness,
+        this._hass?.states?.[this._primaryEntity()]?.attributes?.brightness,
     });
   }
 
@@ -268,7 +249,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     this._actionCommands.reset();
     this._actions.configure(
       this.config,
-      this.config.entity ? [this.config.entity] : [],
+      [this._primaryEntity()].filter(Boolean),
     );
     // Fresh dots for the new look.
     this._dotGeneration++;
@@ -279,13 +260,13 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     const prevHass = this._hass;
     this._hass = hass;
     // Nothing the card shows changed (card-base _hassChanged) and no update
-    // waits (a slider drag, the oscillation guard): nothing to do.
+    // waits (a slider drag): nothing to do.
     const changed = this._hassChanged(hass);
     if (prevHass && !this._renderIncomplete && !changed) return;
     if (
       this._orientationSettled &&
       this._orientationPending ===
-        hass.states[this.config?.entity]?.attributes?.device_orientation
+        hass.states[this._primaryEntity(hass)]?.attributes?.device_orientation
     ) {
       this._orientationPending = null;
       clearTimeout(this._orientationTimer);
@@ -295,7 +276,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     // Note: _localEffects are NOT cleared when the entity state matches; they
     // keep tracking values that differ from defaults for the change indicator
     // system. _localEffects should only be cleared by explicit reset actions.
-    const entity = hass.states[this.config?.entity];
+    const entity = hass.states[this._primaryEntity(hass)];
     const attrs = entity?.attributes;
     const seen = this._seen;
     this._seen = {
@@ -331,65 +312,41 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
   // The brightness slider's handlers come from the shared lamp-slider
   // controller (constructor). _startDrag / _endDrag serve the effect sliders.
 
-  // Track when user starts dragging any slider
+  // An effect slider held: the lamp's updates wait until 50 ms after its
+  // release (its last value is sent first), then show at once.
   _startDrag() {
-    this._anySliderDragging = true;
+    this._gate.hold("effect-slider");
   }
 
-  // Track when user stops dragging any slider
   _endDrag() {
-    // Use setTimeout to ensure the final value is processed before allowing re-render
-    setTimeout(() => {
-      this._anySliderDragging = false;
-      // Don't force render here - let the hass setter handle it naturally
-    }, 50);
+    this._gate.hold("effect-slider", 50);
+  }
+
+  // A render the gate held (a slider released): the lamp's current state.
+  _renderHeld() {
+    this._refresh();
   }
 
   // Show the lamp's current state (a Lit update, the dots painted in
-  // updated()). Waits while a slider is dragged or a value typed, and while HA
-  // sends alternating brightness values: _renderIncomplete stays set so the
-  // next hass update (or the end of the drag / burst) makes the update.
+  // updated()). Waits while a slider is dragged or a value typed:
+  // _renderIncomplete stays set so the next hass update (or the end of the
+  // drag) makes the update. A brightness the lamp hasn't confirmed yet stays
+  // on the slider (the shared slider draft, lamp-sliders.js).
   _refresh() {
     this._renderIncomplete = true;
-    if (this._anySliderDragging || this._slBrightnessTyping) return;
-    const stateObj = this._hass?.states?.[this.config?.entity];
+    if (this._slBrightnessTyping) return;
+    if (this._gate.held()) {
+      this._gate.request();
+      return;
+    }
+    const stateObj = this._hass?.states?.[this._primaryEntity()];
     if (stateObj) {
       this._pruneResetEffects(stateObj);
       // Drop the dragged brightness once the lamp reports it.
       this._lampSliders.settle(stateObj.attributes);
-      if (this._brightnessOscillates(stateObj)) return;
     }
     this._renderIncomplete = false;
     this.requestUpdate();
-  }
-
-  // HA can send alternating old/new brightness values in a burst: after more
-  // than 2 changes in a row the updates wait for 500 ms without one.
-  _brightnessOscillates(stateObj) {
-    const sliderBrightness = brightnessRawToPct(
-      stateObj.attributes.brightness ?? 255,
-    );
-    const draftBrightness = this._lampSliders.value("brightness");
-    if (
-      this._lastRenderedBrightness !== null &&
-      this._lastRenderedBrightness !== sliderBrightness &&
-      draftBrightness === null
-    ) {
-      this._brightnessOscillationCount++;
-      if (this._brightnessOscillationCount > 2) {
-        clearTimeout(this._oscillationResetTimeout);
-        this._oscillationResetTimeout = setTimeout(() => {
-          this._brightnessOscillationCount = 0;
-          // The burst is over: show the last value.
-          if (this._renderIncomplete) this._refresh();
-        }, 500);
-        return true;
-      }
-    } else if (this._lastRenderedBrightness === sliderBrightness) {
-      this._brightnessOscillationCount = 0;
-    }
-    this._lastRenderedBrightness = draftBrightness ?? sliderBrightness;
-    return false;
   }
 
   // Hand the shared Actions view its model and let it re-evaluate.
@@ -423,7 +380,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
   // them, wire the Actions view and start/stop the animation loops.
   updated(changedProperties) {
     super.updated?.(changedProperties);
-    const stateObj = this._hass?.states?.[this.config?.entity];
+    const stateObj = this._hass?.states?.[this._primaryEntity()];
     if (!stateObj) return;
     const freshDots = this._paintedGeneration !== this._dotGeneration;
     this._paintedGeneration = this._dotGeneration;
@@ -441,7 +398,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
       // Flow), whose frames the backend can't read back.
       const matrixColors = stateObj.attributes.matrix_colors?.length
         ? stateObj.attributes.matrix_colors
-        : getInitialMatrix(5, 20);
+        : Array(100).fill(null);
       const gridColors = this._matrixColorsToGridColors(matrixColors, stateObj);
       const dots = this._getLampDots();
       if (dots.length === gridColors.length)
@@ -508,7 +465,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     const container = this.shadowRoot?.querySelector(".orientation-controls");
     if (!container) return;
     if (
-      this._orientationKey(this._hass?.states[this.config?.entity]) ===
+      this._orientationKey(this._hass?.states[this._primaryEntity()]) ===
       this._renderedOrientationKey
     )
       return;
@@ -534,7 +491,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     const options = orientationOptions(this.config);
     const current =
       this._orientationPending ||
-      this._hass?.states[this.config?.entity]?.attributes?.device_orientation ||
+      this._hass?.states[this._primaryEntity()]?.attributes?.device_orientation ||
       "right";
     const step = { clockwise: 1, counterclockwise: -1, "half-turn": 2 }[value];
     const target = step
@@ -545,7 +502,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
 
   async handleOrientationSelect(orientation) {
     const hass = this._hass;
-    const entity = this.config?.entity;
+    const entity = this._primaryEntity();
     const state = hass?.states[entity];
     if (
       !state ||
@@ -630,7 +587,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
   }
 
   render() {
-    const entityId = this.config?.entity;
+    const entityId = this._primaryEntity();
     const hass = this._hass;
     if (!entityId) return cardNotice(this, NOTICE.noLamp);
     // No hass yet (or a moment without it): keep what was rendered last.
@@ -638,7 +595,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     const stateObj = hass.states[entityId];
     if (!stateObj) return lampNotFoundNotice(this, entityId);
 
-    const content = html`${this.config.show_lamp_preview !== false
+    const content = html`${previewOnly(this) ? lampUnavailableLine() : nothing}${this.config.show_lamp_preview !== false
       ? this._matrixTemplate(stateObj)
       : nothing}${this.config.show_lamp_control !== false
       ? this._lampControlsTemplate(stateObj)
@@ -680,7 +637,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     this._commands.reset();
     this._actions.configure(
       this.config,
-      this.config.entity ? [this.config.entity] : [],
+      [this._primaryEntity()].filter(Boolean),
     );
     this._effectContext = (this._effectContext || 0) + 1;
     this._localEffects = {};
@@ -691,7 +648,6 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     // Clear all stored debounce/timeout timers
     clearTimeout(this._effectDebounceTimer);
     clearTimeout(this._renderDebounceTimer);
-    clearTimeout(this._oscillationResetTimeout);
 
     // Stop the client-side animation loops if running.
     this._stopNativeAnimation();
@@ -705,13 +661,12 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
 
     this._effectDebounceTimer = null;
     this._renderDebounceTimer = null;
-    this._oscillationResetTimeout = null;
 
     // Detach a slider drag still in progress (and its timers).
     this._lampSliders.destroy();
 
-    // Reset drag/interaction flags
-    this._anySliderDragging = false;
+    // Reset drag/interaction state
+    this._gate.clear();
     this._sliderTyping = false;
     this._slBrightnessTyping = false;
   }

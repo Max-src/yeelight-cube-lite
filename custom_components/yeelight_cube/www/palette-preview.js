@@ -3,7 +3,7 @@
  * and as a chip swatch (`swatch`). Palettes are lists of colors, not
  * matrices: the preview is the shared swatches (<yc-swatches>,
  * yc-swatches.js) in the card's swatch_layout / swatch_shape, sized in cqw
- * (the gallery's inline-size container, renderItemPreview) so it follows
+ * (the gallery's inline-size container, itemPreviewTemplate) so it follows
  * the gallery's Size in every layout. Cards showing these previews define
  * yc-swatches and include palettePreviewStyles.
  */

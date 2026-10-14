@@ -8,6 +8,7 @@ import {
 import {
   renderModeControlSettings,
   renderColorModeSettings,
+  renderVisibleColorModes,
 } from "./mode-controls-settings.js";
 import { LitElement, html } from "./lib/lit-all.js";
 import "./clock-preset-manager.js";
@@ -19,25 +20,21 @@ import {
   clockStylesWithPresets,
   visibleClockStyles,
   clockStyleVisibilityConfig,
-  clockColorModeOptions,
-  clockColorModeVisibilityConfig,
 } from "./clock-preset-utils.js";
+import { VISIBILITY_KEYS, withAllItems } from "./visible-items.js";
 
 import {
   sharedEditorStyles,
   YeelightEditorMixin,
-  renderModeSettingsSection,
+  renderSettingsBox,
   renderExperimentalAvailability,
 } from "./editor_ui_utils.js";
-import { createButtonGroup, buttonGroupStyles } from "./button-group-utils.js";
+import { buttonGroupStyles } from "./button-group-utils.js";
 import { createToggleRow } from "./form-row-utils.js";
-import { getClockStyles, CLOCK_COLOR_MODES } from "./clock-preview-utils.js";
-import { sliderKeys } from "./slider-control-utils.js";
+import { getClockStyles } from "./clock-preview-utils.js";
+import { normalizeCardOptions } from "./card-config.js";
 import { renderLightSliderSettings } from "./slider-settings-ui.js";
-import {
-  renderOrderableList,
-  orderableListStyles,
-} from "./orderable-list-utils.js";
+import { orderableListStyles } from "./orderable-list-utils.js";
 import { defineOnce } from "./card-registration.js";
 import { getTargetEntities } from "./service-call-utils.js";
 import {
@@ -52,12 +49,14 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
     };
   }
 
+  // Foldable sections follow the card's top→bottom element order; the
+  // first, Global Settings, opens with the editor.
+  static openSection = "general";
+
   constructor() {
     super();
     this._config = {};
     this._hass = null;
-    // Foldable sections follow the card's top→bottom element order.
-    this._open = { general: true };
   }
 
   static get styles() {
@@ -70,21 +69,13 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
   }
 
   setConfig(config) {
-    const cfg = independentActionConfig(config, {
+    // The card's option names (card-config: the older speed_* slider ones).
+    const cfg = independentActionConfig(normalizeCardOptions(config, "clock"), {
       buttons_style: "modern",
       buttons_content_mode: "icon_text",
     });
     if (cfg.show_color_override) cfg.show_color_modes = true;
     delete cfg.show_color_override;
-    // Mirror the card's legacy speed_* → shared slider_* migration so existing
-    // customizations show up in the editor controls.
-    const K = sliderKeys("slider");
-    const oldK = sliderKeys("speed");
-    for (const f of Object.keys(K)) {
-      if (cfg[K[f]] === undefined && cfg[oldK[f]] !== undefined) {
-        cfg[K[f]] = cfg[oldK[f]];
-      }
-    }
     this._config = normalizeClockAppearance(cfg);
     this.requestUpdate();
   }
@@ -121,9 +112,7 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
     let next = config;
     const change = (key, value) => {
       next = { ...next, [key]: value };
-      this._config = next;
-      this.requestUpdate();
-      this._fireConfigChanged();
+      this._commitConfig(next);
     };
     const modes = clockStylesWithPresets(
       getClockStyles(true),
@@ -166,7 +155,7 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
               (e) => this._onSwitchChange(e, "show_current_preview"),
             )}
             ${config.show_current_preview !== false
-              ? renderModeSettingsSection(
+              ? renderSettingsBox(
                   "Preview Settings",
                   renderClockSectionAppearance(config, change, "lamp", this),
                 )
@@ -221,7 +210,7 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
               (e) => this._onSwitchChange(e, "show_color_modes"),
             )}
             ${config.show_color_modes
-              ? renderModeSettingsSection(
+              ? renderSettingsBox(
                   "Color mode style",
                   html`
                     ${renderColorModeSettings(config, change)}
@@ -237,14 +226,11 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
                       config.show_save_clock_style_button !== false,
                       (e) => this._onSwitchChange(e, "show_save_clock_style_button"),
                     )}
-                    ${renderModeSettingsSection(
-                      "Visible color modes",
-                      this._renderVisibleColorModeList(),
-                    )}
+                    ${renderVisibleColorModes(this)}
                   `,
                 )
               : ""}
-            ${renderModeSettingsSection(
+            ${renderSettingsBox(
               "Control buttons",
               renderActionButtonSettings(config, (key, value) =>
               this._setOption(key, value)),
@@ -274,7 +260,7 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
               (event) => this._onSwitchChange(event, "show_gallery"),
             )}
             ${config.show_gallery !== false
-              ? renderModeSettingsSection(
+              ? renderSettingsBox(
                   "Browser Settings",
                   html`
                     ${this._renderVisibleStyleList()}
@@ -356,52 +342,13 @@ class YeelightCubeClockCardEditor extends YeelightEditorMixin(LitElement) {
       items: this._visibleStyleList(),
       all: allStyles.map(clockPresetKey),
       labelFor: (key) => labels.get(key) || key,
-      onList: (keys) => {
-        this._config = {
-          ...clockStyleVisibilityConfig(this._config, allStyles, keys),
-          custom_visible_styles: true,
-        };
-      },
-      onReset: () => {
-        this._config = { ...this._config };
-        delete this._config.custom_visible_styles;
-        delete this._config.visible_styles;
-        delete this._config.hidden_clock_styles;
-      },
+      onList: (keys) =>
+        clockStyleVisibilityConfig(this._config, allStyles, keys),
+      onReset: () => withAllItems(this._config, VISIBILITY_KEYS.clockStyles),
     });
   }
 
-  _renderVisibleColorModeList() {
-    const presets = clockPresetLibrary(this._hass);
-    const all = clockColorModeOptions(CLOCK_COLOR_MODES, presets);
-    const visible = clockColorModeOptions(
-      CLOCK_COLOR_MODES,
-      presets,
-      this._config,
-    ).map((mode) => mode.value);
-    const labels = new Map(all.map((mode) => [mode.value, mode.label]));
-    return renderOrderableList({
-      labelFor: (key) => labels.get(key) || key,
-      items: visible,
-      available: all
-        .map((mode) => mode.value)
-        .filter((key) => !visible.includes(key)),
-      onUpdate: (items) => {
-        this._config = clockColorModeVisibilityConfig(this._config, all, items);
-        this.requestUpdate();
-        this._fireConfigChanged();
-      },
-      onReset: () => {
-        this._config = { ...this._config };
-        delete this._config.visible_color_modes;
-        delete this._config.hidden_color_modes;
-        this.requestUpdate();
-        this._fireConfigChanged();
-      },
-      addPlaceholder: "Show a color mode...",
-      resetLabel: "Reset to all color modes",
-    });
-  }
+
 
 
 }

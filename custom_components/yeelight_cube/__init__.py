@@ -4,7 +4,6 @@ import asyncio
 import mimetypes
 import json
 import re
-import socket as _socket_module
 from homeassistant.const import EVENT_HOMEASSISTANT_STOP # type: ignore
 from homeassistant.core import HomeAssistant, callback as ha_callback # type: ignore
 from homeassistant.config_entries import ConfigEntry # type: ignore
@@ -373,7 +372,7 @@ _ENTITY_SUFFIXES_BY_PLATFORM: list[tuple[str, str]] = [
     ("number", "_transition_duration"),
     ("number", "_native_effect_speed"),
     ("number", "_scroll_speed"),
-    # Preview adjustment numbers (keys from PREVIEW_ADJUSTMENT_SPECS)
+    # Preview adjustment numbers (keys from number.PREVIEW_ADJUSTMENTS)
     ("number", "_hue_shift"),
     ("number", "_temperature"),
     ("number", "_saturation"),
@@ -634,21 +633,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # ConfigEntryNotReady MUST be raised here (component-level setup) for
     # HA's automatic retry with exponential back-off to work.
     probe_timeout = 3.0  # Generous timeout — device may still be booting
-
-    def _tcp_probe(host, p, timeout):
-        """Synchronous TCP probe — runs in executor thread."""
-        s = _socket_module.socket(_socket_module.AF_INET, _socket_module.SOCK_STREAM)
-        try:
-            s.settimeout(timeout)
-            s.connect((host, p))
-        finally:
-            s.close()
+    from .cube_matrix import check_tcp
 
     try:
         _LOGGER.debug("[SETUP] Probing %s:%s (timeout=%ss)", ip_address, port, probe_timeout)
-        await hass.async_add_executor_job(_tcp_probe, ip_address, port, probe_timeout)
+        await check_tcp(ip_address, port, probe_timeout)
         _LOGGER.debug("[SETUP] Probe OK — %s:%s is reachable", ip_address, port)
-    except (OSError, ConnectionRefusedError, TimeoutError) as err:
+    except OSError as err:
         _LOGGER.warning(
             "[SETUP] Device at %s:%s is not reachable: %s. "
             "Scanning network for CubeLite devices...",

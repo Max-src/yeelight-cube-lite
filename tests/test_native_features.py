@@ -204,6 +204,44 @@ class NativeFeatureTests(unittest.TestCase):
             with self.subTest(case=case):
                 self.assertEqual(expected, actual)
 
+    @unittest.skipUnless(shutil.which("node"), "Node is required for renderer parity")
+    def test_every_native_effect_matches_between_camera_and_card(self):
+        # The camera entity (Python) and the Lamp Preview / Native Effects
+        # cards (JavaScript) draw the same frames: every effect of the
+        # catalogue, in every direction, oriented like the lamp, with a
+        # custom color and each palette mode it supports.
+        supports = NATIVE_PREVIEW["effect_supports_color_mode"]
+        modes = ("bw", "red_blue", "white_orange", "blue_yellow", "purple_orange")
+        cases = [
+            [effect, phase, direction, override, mode]
+            for effect in sorted(CONSTANTS["ALL_NATIVE_EFFECTS"])
+            for phase in (0, 0.37, 1, 2.5, 7.25, 31.6)
+            for direction in ("Up", "Down", "Left", "Right")
+            for override, mode in (
+                (None, None),
+                ([180, 20, 60], None),
+                *((None, mode) for mode in modes if supports(effect, mode)),
+            )
+        ]
+        module_uri = (ROOT / "www" / "native-effect-preview.js").as_uri()
+        script = (
+            f"import {{renderNativeEffectOriented}} from {json.dumps(module_uri)};"
+            "import {readFileSync} from 'node:fs';"
+            "const cases = JSON.parse(readFileSync(0, 'utf8'));"
+            "process.stdout.write(JSON.stringify(cases.map(args => renderNativeEffectOriented(...args))));"
+        )
+        result = subprocess.run(
+            [shutil.which("node"), "--input-type=module", "-e", script],
+            input=json.dumps(cases), text=True, capture_output=True, check=True,
+        )
+        render = NATIVE_PREVIEW["render_native_effect_oriented"]
+        mismatched = []
+        for case, actual in zip(cases, json.loads(result.stdout), strict=True):
+            expected = [list(pixel) for pixel in render(*case)]
+            if expected != actual:
+                mismatched.append(case)
+        self.assertEqual([], mismatched[:20], f"{len(mismatched)} of {len(cases)} frames differ")
+
     def test_clock_palette_geometry_and_anchors(self):
         render = NATIVE_PREVIEW["render_native_effect"]
         palette = NATIVE_PREVIEW["_rainbow_palette_color"]
@@ -527,7 +565,11 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertEqual([("turn_on", {"brightness": 96, "_was_on": True})], events)
 
     def test_palette_selection_uses_guarded_display_state_machine(self):
-        function = _function_source(SELECT_SOURCE, "async_select_option")
+        palette_class = SELECT_SOURCE[
+            SELECT_SOURCE.index("class YeelightCubePaletteSelect") :
+        ]
+        palette_class = palette_class[: palette_class.index("\nclass ", 1)]
+        function = _function_source(palette_class, "async_select_option")
         palette_branch = function[
             function.index("[PALETTE SELECT]") :
         ]
@@ -607,8 +649,8 @@ class NativeFeatureTests(unittest.TestCase):
             await func()
             return True
 
-        async def apply_display(skip_post_delay=False):
-            applied.append(skip_post_delay)
+        async def apply_display():
+            applied.append("display")
 
         async def persist_music_flow():
             return None
@@ -622,7 +664,7 @@ class NativeFeatureTests(unittest.TestCase):
 
         asyncio.run(set_music_flow(False))
         self.assertFalse(device._music_flow_enabled)
-        self.assertEqual([True], applied)
+        self.assertEqual(["display"], applied)
         self.assertEqual("set_ps", device._cube_matrix.commands[0][0])
         self.assertEqual(
             {"on": 0},
@@ -692,7 +734,7 @@ class NativeFeatureTests(unittest.TestCase):
                 return False
             return True
 
-        async def apply_display(skip_post_delay=False):
+        async def apply_display():
             raise RuntimeError("restore failed")
 
         async def persist_music_flow():

@@ -1,6 +1,11 @@
 """Number platform for Yeelight Cube Lite - provides numeric slider controls."""
 
+from __future__ import annotations
+
+from dataclasses import dataclass
 import logging
+from typing import Awaitable, Callable
+
 from homeassistant.components.number import NumberEntity, NumberMode  # type: ignore
 from homeassistant.config_entries import ConfigEntry  # type: ignore
 from homeassistant.core import HomeAssistant, callback  # type: ignore
@@ -14,6 +19,181 @@ from .lamp_power import BASE_W, NO_LIMIT_W
 _LOGGER = logging.getLogger(__name__)
 
 
+class CubeNumber(CubeControlEntity, NumberEntity):
+    """A slider of one lamp. The light keeps it in ``_slot`` and pushes every
+    change made elsewhere through async_update_from_light, so it never
+    polls. ``name`` (the older entities) is shown after the lamp's name; the
+    others name themselves with a translation key."""
+
+    _attr_should_poll = False
+    _attr_mode = NumberMode.SLIDER
+    _slot = None
+
+    def __init__(
+        self, light_entity, config_entry: ConfigEntry, unique_suffix: str,
+        icon: str, low: float, high: float, step: float,
+        unit: str | None = None, name: str | None = None,
+    ):
+        self._light_entity = light_entity
+        self._config_entry = config_entry
+        self._attr_unique_id = f"{light_entity._attr_unique_id}_{unique_suffix}"
+        self._attr_icon = icon
+        self._attr_native_min_value = float(low)
+        self._attr_native_max_value = float(high)
+        self._attr_native_step = float(step)
+        self._attr_native_unit_of_measurement = unit
+        if name:
+            self._attr_name = f"{light_entity._attr_name} {name}"
+
+    @callback
+    def async_update_from_light(self):
+        if self.hass is not None:
+            self.async_write_ha_state()
+
+    def _write_states(self):
+        """Publish this slider and the lamp."""
+        if self.hass is not None:
+            self.async_write_ha_state()
+        if self._light_entity.hass is not None:
+            self._light_entity.async_write_ha_state()
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        if self._slot:
+            setattr(self._light_entity, self._slot, self)
+        self.async_update_from_light()
+
+
+async def _restart_scroll(light) -> None:
+    """A new interval takes effect at once while the text scrolls."""
+    if light._is_scrolling:
+        light.start_scroll_timer()
+
+
+async def _redraw_with_power_limit(light) -> None:
+    """Redraw so the new limit shows at once. Only frames the integration
+    draws are limited: firmware modes (clock, native effects, Music Flow)
+    are left running. A user change, unlike a background "display_update":
+    never suppressed, and not animated."""
+    if light._is_on and not light.firmware_draws_matrix:
+        await light.async_apply_display_mode(update_type="power_limit")
+
+
+async def _redraw_in_background(light) -> None:
+    """Re-render (the lamp's adjustments) without holding up the slider."""
+    light.hass.async_create_task(light.async_apply_display_mode())
+
+
+@dataclass(frozen=True)
+class SettingNumber:
+    """One lamp setting as a slider: the light's ``attr``, kept within
+    ``low``..``high``, rounded to ``digits`` (None: whole numbers); ``after``
+    (light) runs once it changed."""
+
+    unique_suffix: str
+    icon: str
+    attr: str
+    low: float
+    high: float
+    step: float
+    default: float
+    unit: str | None = None
+    digits: int | None = None
+    name: str | None = None
+    translation_key: str | None = None
+    category: EntityCategory | None = None
+    slot: str | None = None
+    after: Callable[[object], Awaitable[None]] | None = None
+
+
+SETTING_NUMBERS = (
+    SettingNumber(
+        "transition_steps", "mdi:animation", "_transition_steps", 1, 10, 1, 5,
+        unit="steps", name="Transition Steps", category=EntityCategory.CONFIG,
+        slot="_transition_steps_entity",
+    ),
+    SettingNumber(
+        "transition_duration", "mdi:timer-outline", "_transition_duration", 0.2, 10.0, 0.1, 1.0,
+        unit="s", digits=1, name="Transition Duration", category=EntityCategory.CONFIG,
+        slot="_transition_duration_entity",
+    ),
+    SettingNumber(
+        "scroll_speed", "mdi:timer-play-outline", "_scroll_speed", 0.05, 2.0, 0.05, 0.2,
+        unit="s", digits=2, translation_key="scroll_speed", category=EntityCategory.CONFIG,
+        slot="_scroll_speed_entity", after=_restart_scroll,
+    ),
+    # Frames the integration draws are dimmed so the lamp's estimated draw
+    # stays under this many watts (7 W = no limit; the lamp never draws more
+    # than about 6.3 W). The minimum is the electronics' own 0.4 W, where
+    # every frame is black. For lamps on a weak or shared power supply; see
+    # "Power Supply" in the README.
+    SettingNumber(
+        "power_limit", "mdi:flash-alert-outline", "_power_limit", BASE_W, NO_LIMIT_W, 0.1, NO_LIMIT_W,
+        unit="W", digits=1, translation_key="power_limit", category=EntityCategory.CONFIG,
+        after=_redraw_with_power_limit,
+    ),
+)
+
+
+def _preview_adjustment(key, name, icon, low, high, default, unit):
+    """One of the lamp's color adjustments (light._preview_<key>)."""
+    return SettingNumber(
+        key, icon, f"_preview_{key}", low, high, 1, default, unit=unit, name=name,
+        category=EntityCategory.CONFIG, after=_redraw_in_background,
+    )
+
+
+# The lamp's color adjustments (their keys are also the unique id suffixes).
+PREVIEW_ADJUSTMENTS = (
+    _preview_adjustment("hue_shift", "Color: Hue Shift", "mdi:palette-outline", -180, 180, 0, "°"),
+    _preview_adjustment("temperature", "Color: Temperature", "mdi:thermometer", -100, 100, 0, None),
+    _preview_adjustment("saturation", "Intensity: Saturation", "mdi:invert-colors", 0, 200, 100, "%"),
+    _preview_adjustment("vibrance", "Intensity: Vibrance", "mdi:auto-fix", 0, 200, 100, "%"),
+    _preview_adjustment("contrast", "Tone: Contrast", "mdi:contrast-circle", 0, 200, 100, "%"),
+    _preview_adjustment("glow", "Tone: Glow", "mdi:white-balance-sunny", 0, 100, 0, "%"),
+    _preview_adjustment("grayscale", "Effects: Grayscale", "mdi:image-filter-black-white", 0, 100, 0, "%"),
+    _preview_adjustment("invert", "Effects: Invert", "mdi:invert-colors-off", 0, 100, 0, "%"),
+    _preview_adjustment("tint_hue", "Effects: Tint Hue", "mdi:format-color-fill", 0, 360, 0, "°"),
+    _preview_adjustment("tint_strength", "Effects: Tint Strength", "mdi:opacity", 0, 100, 0, "%"),
+)
+
+
+class CubeSettingNumber(CubeNumber):
+    """A slider of one lamp setting (SETTING_NUMBERS, PREVIEW_ADJUSTMENTS)."""
+
+    def __init__(self, light_entity, config_entry: ConfigEntry, spec: SettingNumber):
+        super().__init__(
+            light_entity, config_entry, spec.unique_suffix, spec.icon,
+            spec.low, spec.high, spec.step, spec.unit, spec.name,
+        )
+        self._spec = spec
+        self._slot = spec.slot
+        if spec.translation_key:
+            self._attr_has_entity_name = True
+            self._attr_translation_key = spec.translation_key
+        if spec.category:
+            self._attr_entity_category = spec.category
+
+    @property
+    def native_value(self) -> float:
+        spec = self._spec
+        return float(getattr(self._light_entity, spec.attr, spec.default))
+
+    async def async_set_native_value(self, value: float) -> None:
+        spec = self._spec
+        value = int(value) if spec.digits is None else round(value, spec.digits)
+        setattr(self._light_entity, spec.attr, max(spec.low, min(spec.high, value)))
+        self._write_states()
+        if spec.after:
+            await spec.after(self._light_entity)
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        if self._spec in PREVIEW_ADJUSTMENTS:
+            # The adjustments service updates them all at once.
+            self._light_entity._preview_number_entities[self._spec.unique_suffix] = self
+
+
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> bool:
@@ -25,124 +205,28 @@ async def async_setup_entry(
     if not light_entity:
         return False
 
-    entities = [
+    async_add_entities([
         YeelightCubeGradientAngleNumber(light_entity, entry),
-        YeelightCubeTransitionStepsNumber(light_entity, entry),
-        YeelightCubeTransitionDurationNumber(light_entity, entry),
         YeelightCubeNativeEffectSpeedNumber(light_entity, entry),
-        YeelightCubeScrollSpeedNumber(light_entity, entry),
-        YeelightCubePowerLimitNumber(light_entity, entry),
-    ]
-
-    # Add all preview adjustment sliders
-    for spec in PREVIEW_ADJUSTMENT_SPECS:
-        entities.append(YeelightCubePreviewAdjustmentNumber(light_entity, entry, spec))
-
-    async_add_entities(entities)
+        *(
+            CubeSettingNumber(light_entity, entry, spec)
+            for spec in (*SETTING_NUMBERS, *PREVIEW_ADJUSTMENTS)
+        ),
+    ])
     return True
 
 
-# --- Preview adjustment slider specifications ---
-# Each tuple: (key, name_suffix, icon, min, max, step, default, unit, attr_name)
-PREVIEW_ADJUSTMENT_SPECS = [
-    {
-        "key": "hue_shift",
-        "name": "Color: Hue Shift",
-        "icon": "mdi:palette-outline",
-        "min": -180, "max": 180, "step": 1, "default": 0,
-        "unit": "°",
-        "attr": "_preview_hue_shift",
-    },
-    {
-        "key": "temperature",
-        "name": "Color: Temperature",
-        "icon": "mdi:thermometer",
-        "min": -100, "max": 100, "step": 1, "default": 0,
-        "unit": None,
-        "attr": "_preview_temperature",
-    },
-    {
-        "key": "saturation",
-        "name": "Intensity: Saturation",
-        "icon": "mdi:invert-colors",
-        "min": 0, "max": 200, "step": 1, "default": 100,
-        "unit": "%",
-        "attr": "_preview_saturation",
-    },
-    {
-        "key": "vibrance",
-        "name": "Intensity: Vibrance",
-        "icon": "mdi:auto-fix",
-        "min": 0, "max": 200, "step": 1, "default": 100,
-        "unit": "%",
-        "attr": "_preview_vibrance",
-    },
-    {
-        "key": "contrast",
-        "name": "Tone: Contrast",
-        "icon": "mdi:contrast-circle",
-        "min": 0, "max": 200, "step": 1, "default": 100,
-        "unit": "%",
-        "attr": "_preview_contrast",
-    },
-    {
-        "key": "glow",
-        "name": "Tone: Glow",
-        "icon": "mdi:white-balance-sunny",
-        "min": 0, "max": 100, "step": 1, "default": 0,
-        "unit": "%",
-        "attr": "_preview_glow",
-    },
-    {
-        "key": "grayscale",
-        "name": "Effects: Grayscale",
-        "icon": "mdi:image-filter-black-white",
-        "min": 0, "max": 100, "step": 1, "default": 0,
-        "unit": "%",
-        "attr": "_preview_grayscale",
-    },
-    {
-        "key": "invert",
-        "name": "Effects: Invert",
-        "icon": "mdi:invert-colors-off",
-        "min": 0, "max": 100, "step": 1, "default": 0,
-        "unit": "%",
-        "attr": "_preview_invert",
-    },
-    {
-        "key": "tint_hue",
-        "name": "Effects: Tint Hue",
-        "icon": "mdi:format-color-fill",
-        "min": 0, "max": 360, "step": 1, "default": 0,
-        "unit": "°",
-        "attr": "_preview_tint_hue",
-    },
-    {
-        "key": "tint_strength",
-        "name": "Effects: Tint Strength",
-        "icon": "mdi:opacity",
-        "min": 0, "max": 100, "step": 1, "default": 0,
-        "unit": "%",
-        "attr": "_preview_tint_strength",
-    },
-]
-
-
-class YeelightCubeGradientAngleNumber(CubeControlEntity, NumberEntity):
+class YeelightCubeGradientAngleNumber(CubeNumber):
     """Number entity for controlling the gradient angle (0-360°) on the Yeelight Cube Lite."""
+
+    _slot = "_angle_number_entity"
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
         """Initialize the gradient angle number entity."""
-        self._light_entity = light_entity
-        self._config_entry = config_entry
-        self._attr_name = f"{light_entity._attr_name} Matrix: Gradient Angle"
-        self._attr_unique_id = f"{light_entity._attr_unique_id}_gradient_angle"
-        self._attr_icon = "mdi:angle-acute"
-        self._attr_native_min_value = 0.0
-        self._attr_native_max_value = 360.0
-        self._attr_native_step = 1.0
-        self._attr_native_unit_of_measurement = "°"
-        self._attr_mode = NumberMode.SLIDER
+        super().__init__(
+            light_entity, config_entry, "gradient_angle", "mdi:angle-acute",
+            0, 360, 1, "°", "Matrix: Gradient Angle",
+        )
 
     @property
     def native_value(self) -> float:
@@ -160,206 +244,20 @@ class YeelightCubeGradientAngleNumber(CubeControlEntity, NumberEntity):
         """Set the gradient angle and apply to the lamp."""
         _LOGGER.debug("[ANGLE NUMBER] User set angle to %s° for %s", value, self._light_entity._ip)
 
-        # Check auto-turn-on setting
-        if not self._light_entity._is_on and not self._light_entity._should_auto_turn_on():
-            _LOGGER.debug("[ANGLE NUMBER] Lamp is off and auto-turn-on is disabled, ignoring")
-            return
-
         self._light_entity._angle = value
         await self._light_entity.async_apply_display_mode(update_type='color_change')
-
-        # Notify Home Assistant of the state change
-        if self.hass is not None:
-            self.async_write_ha_state()
-
-        # Also trigger light entity state update
-        if self._light_entity.hass is not None:
-            self._light_entity.async_write_ha_state()
-
-    @callback
-    def async_update_from_light(self):
-        """Called by external code (service handler) to sync the slider value."""
-        if self.hass is not None:
-            self.async_write_ha_state()
-
-    async def async_added_to_hass(self):
-        """Run when entity is added to hass."""
-        await super().async_added_to_hass()
-
-        # Register ourselves with the light entity so it can notify us
-        self._light_entity._angle_number_entity = self
-        _LOGGER.debug("[ANGLE NUMBER] Registered for %s, current angle=%s", self._light_entity._ip, self._light_entity._angle)
+        self._write_states()
 
 
-class YeelightCubePreviewAdjustmentNumber(CubeControlEntity, NumberEntity):
-    """Generic number entity for a single preview color-adjustment slider."""
-
-    def __init__(self, light_entity, config_entry: ConfigEntry, spec: dict):
-        """Initialize from a spec dict."""
-        self._light_entity = light_entity
-        self._config_entry = config_entry
-        self._spec = spec
-        self._attr_key = spec["attr"]  # e.g. "_preview_hue_shift"
-
-        self._attr_name = f"{light_entity._attr_name} {spec['name']}"
-        self._attr_unique_id = f"{light_entity._attr_unique_id}_{spec['key']}"
-        self._attr_icon = spec["icon"]
-        self._attr_native_min_value = float(spec["min"])
-        self._attr_native_max_value = float(spec["max"])
-        self._attr_native_step = float(spec["step"])
-        self._attr_native_unit_of_measurement = spec.get("unit")
-        self._attr_mode = NumberMode.SLIDER
-        self._attr_entity_category = EntityCategory.CONFIG
-
-    @property
-    def native_value(self) -> float:
-        """Return the current value from the light entity."""
-        return float(getattr(self._light_entity, self._attr_key, self._spec["default"]))
-
-    async def async_set_native_value(self, value: float) -> None:
-        """Set the adjustment value and re-render the lamp display."""
-        int_val = max(self._spec["min"], min(self._spec["max"], int(value)))
-        _LOGGER.debug("[%s] Set to %s for %s", self._spec['key'].upper(), int_val, self._light_entity._ip)
-
-        setattr(self._light_entity, self._attr_key, int_val)
-
-        # Send HA state update immediately for fast UI feedback
-        if self.hass is not None:
-            self.async_write_ha_state()
-        if self._light_entity.hass is not None:
-            self._light_entity.async_schedule_update_ha_state()
-
-        # Re-render display asynchronously (same pattern as the bulk service)
-        self.hass.async_create_task(self._light_entity.async_apply_display_mode())
-
-    @callback
-    def async_update_from_light(self):
-        """Called by external code (service handler) to sync after bulk update."""
-        if self.hass is not None:
-            self.async_write_ha_state()
-
-    async def async_added_to_hass(self):
-        """Run when entity is added to hass."""
-        await super().async_added_to_hass()
-
-        # Register ourselves in the light entity's dict so the service handler can notify us
-        if not hasattr(self._light_entity, '_preview_number_entities'):
-            self._light_entity._preview_number_entities = {}
-        self._light_entity._preview_number_entities[self._spec["key"]] = self
-        _LOGGER.debug("[%s] Registered for %s", self._spec['key'].upper(), self._light_entity._ip)
-
-
-# ── Transition Step Count ──────────────────────────────────────────────
-
-class YeelightCubeTransitionStepsNumber(CubeControlEntity, NumberEntity):
-    """Number entity for controlling the number of transition animation steps."""
-
-    def __init__(self, light_entity, config_entry: ConfigEntry):
-        self._light_entity = light_entity
-        self._config_entry = config_entry
-        self._attr_name = f"{light_entity._attr_name} Transition Steps"
-        self._attr_unique_id = f"{light_entity._attr_unique_id}_transition_steps"
-        self._attr_icon = "mdi:animation"
-        self._attr_native_min_value = 1.0
-        self._attr_native_max_value = 10.0
-        self._attr_native_step = 1.0
-        self._attr_native_unit_of_measurement = "steps"
-        self._attr_mode = NumberMode.SLIDER
-        self._attr_entity_category = EntityCategory.CONFIG
-
-    @property
-    def native_value(self) -> float:
-        return float(getattr(self._light_entity, '_transition_steps', 5))
-
-    async def async_set_native_value(self, value: float) -> None:
-        int_val = max(1, min(10, int(value)))
-        _LOGGER.debug("[TRANSITION STEPS] Set to %s for %s", int_val, self._light_entity._ip)
-        self._light_entity._transition_steps = int_val
-
-        if self.hass is not None:
-            self.async_write_ha_state()
-        if self._light_entity.hass is not None:
-            self._light_entity.async_write_ha_state()
-
-    @callback
-    def async_update_from_light(self):
-        if self.hass is not None:
-            self.async_write_ha_state()
-
-    async def async_added_to_hass(self):
-        await super().async_added_to_hass()
-        self._light_entity._transition_steps_entity = self
-        _LOGGER.debug(
-            "[TRANSITION STEPS] Registered for %s, "
-            "current steps=%s",
-            self._light_entity._ip, self._light_entity._transition_steps
-        )
-
-
-# ── Transition Duration ────────────────────────────────────────────────
-
-class YeelightCubeTransitionDurationNumber(CubeControlEntity, NumberEntity):
-    """Number entity for controlling the total transition animation time."""
-
-    def __init__(self, light_entity, config_entry: ConfigEntry):
-        self._light_entity = light_entity
-        self._config_entry = config_entry
-        self._attr_name = f"{light_entity._attr_name} Transition Duration"
-        self._attr_unique_id = f"{light_entity._attr_unique_id}_transition_duration"
-        self._attr_icon = "mdi:timer-outline"
-        self._attr_native_min_value = 0.2
-        self._attr_native_max_value = 10.0
-        self._attr_native_step = 0.1
-        self._attr_native_unit_of_measurement = "s"
-        self._attr_mode = NumberMode.SLIDER
-        self._attr_entity_category = EntityCategory.CONFIG
-
-    @property
-    def native_value(self) -> float:
-        return float(getattr(self._light_entity, '_transition_duration', 1.0))
-
-    async def async_set_native_value(self, value: float) -> None:
-        clamped = max(0.2, min(10.0, round(value, 1)))
-        _LOGGER.debug("[TRANSITION DURATION] Set to %ss for %s", clamped, self._light_entity._ip)
-        self._light_entity._transition_duration = clamped
-
-        if self.hass is not None:
-            self.async_write_ha_state()
-        if self._light_entity.hass is not None:
-            self._light_entity.async_write_ha_state()
-
-    @callback
-    def async_update_from_light(self):
-        if self.hass is not None:
-            self.async_write_ha_state()
-
-    async def async_added_to_hass(self):
-        await super().async_added_to_hass()
-        self._light_entity._transition_duration_entity = self
-        _LOGGER.debug(
-            "[TRANSITION DURATION] Registered for %s, "
-            "current duration=%ss",
-            self._light_entity._ip, self._light_entity._transition_duration
-        )
-
-
-class YeelightCubeNativeEffectSpeedNumber(CubeControlEntity, NumberEntity):
+class YeelightCubeNativeEffectSpeedNumber(CubeNumber):
     """Control the rate used by firmware-native animations."""
 
     _attr_has_entity_name = True
-    _attr_should_poll = False
     _attr_translation_key = "native_effect_speed"
+    _slot = "_native_effect_speed_entity"
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
-        self._light_entity = light_entity
-        self._config_entry = config_entry
-        self._attr_unique_id = f"{light_entity._attr_unique_id}_native_effect_speed"
-        self._attr_icon = "mdi:speedometer"
-        self._attr_native_min_value = 1.0
-        self._attr_native_max_value = 255.0
-        self._attr_native_step = 1.0
-        self._attr_native_unit_of_measurement = None
-        self._attr_mode = NumberMode.SLIDER
+        super().__init__(light_entity, config_entry, "native_effect_speed", "mdi:speedometer", 1, 255, 1)
 
     @property
     def available(self) -> bool:
@@ -391,84 +289,4 @@ class YeelightCubeNativeEffectSpeedNumber(CubeControlEntity, NumberEntity):
             )
         if reapply:
             await light.async_apply_display_mode(update_type="color_change")
-        self.async_write_ha_state()
-        light.async_write_ha_state()
-
-    async def async_added_to_hass(self):
-        await super().async_added_to_hass()
-        self._light_entity._native_effect_speed_entity = self
-
-
-class YeelightCubeScrollSpeedNumber(CubeControlEntity, NumberEntity):
-    """Control the matrix text scroll interval."""
-
-    _attr_has_entity_name = True
-    _attr_should_poll = False
-    _attr_translation_key = "scroll_speed"
-    _attr_entity_category = EntityCategory.CONFIG
-
-    def __init__(self, light_entity, config_entry: ConfigEntry):
-        self._light_entity = light_entity
-        self._config_entry = config_entry
-        self._attr_unique_id = f"{light_entity._attr_unique_id}_scroll_speed"
-        self._attr_icon = "mdi:timer-play-outline"
-        self._attr_native_min_value = 0.05
-        self._attr_native_max_value = 2.0
-        self._attr_native_step = 0.05
-        self._attr_native_unit_of_measurement = "s"
-        self._attr_mode = NumberMode.SLIDER
-
-    @property
-    def native_value(self) -> float:
-        return float(self._light_entity._scroll_speed)
-
-    async def async_set_native_value(self, value: float) -> None:
-        self._light_entity._scroll_speed = max(0.05, min(2.0, round(value, 2)))
-        if self._light_entity._is_scrolling:
-            self._light_entity.start_scroll_timer()
-        self.async_write_ha_state()
-        self._light_entity.async_write_ha_state()
-
-    async def async_added_to_hass(self):
-        await super().async_added_to_hass()
-        self._light_entity._scroll_speed_entity = self
-
-
-class YeelightCubePowerLimitNumber(CubeControlEntity, NumberEntity):
-    """Power limit: frames the integration draws are dimmed so the lamp's
-    estimated draw stays under this many watts (7 W = no limit; the lamp
-    never draws more than about 6.3 W). The minimum is the electronics'
-    own 0.4 W, where every frame is black. For lamps on a weak or shared
-    power supply; see "Power Supply" in the README."""
-
-    _attr_has_entity_name = True
-    _attr_should_poll = False
-    _attr_translation_key = "power_limit"
-    _attr_entity_category = EntityCategory.CONFIG
-
-    def __init__(self, light_entity, config_entry: ConfigEntry):
-        self._light_entity = light_entity
-        self._config_entry = config_entry
-        self._attr_unique_id = f"{light_entity._attr_unique_id}_power_limit"
-        self._attr_icon = "mdi:flash-alert-outline"
-        self._attr_native_min_value = BASE_W
-        self._attr_native_max_value = NO_LIMIT_W
-        self._attr_native_step = 0.1
-        self._attr_native_unit_of_measurement = "W"
-        self._attr_mode = NumberMode.SLIDER
-
-    @property
-    def native_value(self) -> float:
-        return float(self._light_entity._power_limit)
-
-    async def async_set_native_value(self, value: float) -> None:
-        light = self._light_entity
-        light._power_limit = max(BASE_W, min(NO_LIMIT_W, round(value, 1)))
-        self.async_write_ha_state()
-        light.async_write_ha_state()
-        # Redraw so the new limit shows at once. Only frames the integration
-        # draws are limited: firmware modes (clock, native effects, Music
-        # Flow) are left running. A user change, unlike a background
-        # "display_update": never suppressed, and not animated.
-        if light._is_on and not light.firmware_draws_matrix:
-            await light.async_apply_display_mode(update_type="power_limit")
+        self._write_states()

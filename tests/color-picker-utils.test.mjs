@@ -3,9 +3,8 @@ import test from "node:test";
 import {
   openColorPicker,
   closeColorPicker,
-  bindColorPicker,
   bindColorPickerTrigger,
-  renderColorPicker,
+  handleColorPickerClick,
   resolveColorPickerStyle,
 } from "../custom_components/yeelight_cube/www/color-picker-utils.js";
 
@@ -112,15 +111,8 @@ test("picker mounts in a rendered shadow root instead of an unslotted parent", (
   assert.equal(inputs[0].inTopLayer, true);
 });
 
-test("presentations share accessible native inputs and sanitize values", () => {
-  for (const style of ["swatch", "chip", "row"]) {
-    const markup = renderColorPicker("#123456", style);
-    assert.match(markup, new RegExp(`picker-style-${style}`));
-    assert.match(markup, /aria-label="Choose color"/);
-    assert.match(markup, /value="#123456"/);
-  }
+test("an unknown picker style falls back to the swatch", () => {
   assert.equal(resolveColorPickerStyle("unknown"), "swatch");
-  assert.match(renderColorPicker('" onmouseover="bad'), /value="#ffffff"/);
 });
 
 test("blur and change preserve the input for continued native picking", (context) => {
@@ -217,8 +209,9 @@ test("binding preserves existing input/change handlers and keyboard anchoring", 
   for (const type of ["input", "change"]) {
     source.addEventListener(type, () => received.push([type, source.value]));
   }
-  bindColorPicker(source, owner);
-  bindColorPicker(source, owner);
+  // Bound twice (a re-render): one picker opens.
+  for (let bind = 0; bind < 2; bind++)
+    bindColorPickerTrigger(source, (event) => handleColorPickerClick(event, owner));
   const click = new Event("click", { cancelable: true });
   source.dispatchEvent(click);
   assert.equal(inputs.length, 1);

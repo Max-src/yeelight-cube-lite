@@ -39,6 +39,14 @@ class ServiceDescriptionTests(unittest.TestCase):
     def test_every_registered_service_is_described(self):
         self.assertEqual(set(_services_yaml()), _registered_services())
 
+    def test_strings_and_english_translation_are_identical(self):
+        # Home Assistant shows translations/en.json; strings.json is its
+        # source: a text edited in one only must fail here.
+        self.assertEqual(
+            json.loads((COMPONENT / "strings.json").read_text(encoding="utf-8")),
+            json.loads((COMPONENT / "translations/en.json").read_text(encoding="utf-8")),
+        )
+
     def test_translations_cover_every_service_and_field(self):
         services = _services_yaml()
         for path in ("strings.json", "translations/en.json"):

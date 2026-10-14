@@ -45,18 +45,6 @@ export function rotationIntervalMs(config) {
   return rotationIntervalSeconds(config) * 1000;
 }
 
-// Split whole seconds into the largest unit that represents them exactly.
-export function rotationIntervalParts(seconds) {
-  seconds = Math.max(1, Math.round(Number(seconds) || 60));
-  for (const { unit, seconds: size } of [
-    ...ROTATION_INTERVAL_UNITS,
-  ].reverse()) {
-    if (seconds >= size && seconds % size === 0)
-      return { value: seconds / size, unit };
-  }
-  return { value: seconds, unit: "seconds" };
-}
-
 const unitSeconds = (unit) =>
   ROTATION_INTERVAL_UNITS.find((item) => item.unit === unit)?.seconds || 1;
 

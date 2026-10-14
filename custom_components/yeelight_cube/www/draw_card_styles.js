@@ -11,6 +11,7 @@ import { exportImportButtonStyles } from "./action-button-utils.js";
 import { carouselStyles } from "./carousel-utils.js";
 import { collectionGalleryStyles } from "./collection-gallery.js";
 import { tabBarStyles } from "./tab-bar.js";
+import { sectionLayoutStyles } from "./section-layouts.js";
 
 export const drawCardStyles = css`
   ${unsafeCSS(cardLayoutStyles)}
@@ -21,7 +22,6 @@ export const drawCardStyles = css`
   ha-card {
     overflow: visible !important;
   }
-
 
   /* Shared Compact Layout Styles */
   ${unsafeCSS(compactLayoutStyles)}
@@ -41,33 +41,9 @@ export const drawCardStyles = css`
   /* The pixel-art gallery: the shared gallery (collection-gallery.js). */
   ${unsafeCSS(collectionGalleryStyles)}
   ${unsafeCSS(tabBarStyles)}
-  .palette-group-card.fold {
-    position: relative;
-    min-height: 48px;
-    height: 48px;
-    overflow: visible;
-    background: none;
-    box-shadow: none;
-  }
-  .palette-group-card.fold .palette-group-title {
-    cursor: pointer;
-    z-index: 2;
-    background: var(--card-background-color, #fff);
-    border-radius: 12px;
-    padding: 6px 18px;
-    box-shadow: 0 2px 8px #0001;
-    position: relative;
-    display: inline-block;
-  }
-  /* Palette card container modes */
-  .palette-tabs {
-    width: 100%;
-  }
-  .palette-group-card.floating.hide {
-    opacity: 0;
-    pointer-events: none;
-    transform: translateX(-50%) scale(0.95);
-  }
+  /* The color sections' layouts (section-layouts.js). */
+  ${unsafeCSS(sectionLayoutStyles)}
+
   input.color-picker-btn[type="color"] {
     border: none;
     cursor: pointer;
@@ -268,126 +244,22 @@ export const drawCardStyles = css`
     max-width: 100%;
     box-sizing: border-box;
   }
-  .palette-group-card {
-    background: var(--card-background-color, #fff);
-    border-radius: var(--palette-card-radius, 8px);
-    box-shadow: 0 2px 8px #0002;
-    padding: 10px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    width: var(--side-card-width, 100%);
-    flex-shrink: 0;
-    box-sizing: border-box;
-    overflow: hidden;
-    white-space: normal;
-    transition:
-      width 0.3s ease,
-      min-width 0.3s ease,
-      flex 0.3s ease,
-      padding 0.3s ease,
-      opacity 0.3s ease;
-  }
-  /* Click-to-zoom: zoomed card fills row, siblings collapse */
-  .palette-row.zoom-mode .palette-group-card.zoomed {
-    flex: 1 0 100%;
+
+  /* The color sections' row (_renderColorsSection). */
+  .palettes {
     width: 100%;
-    min-width: 100%;
-    cursor: default;
-  }
-  .palette-row.zoom-mode .palette-group-card:not(.zoomed) {
-    flex: 0 0 0px;
-    width: 0;
-    min-width: 0;
-    padding: 0;
-    opacity: 0;
-    overflow: hidden;
-    pointer-events: none;
-  }
-  .palette-row.zoom-mode {
-    gap: 0;
-    overflow-x: hidden;
-    width: 100%;
-    transition: gap 0.3s ease;
-  }
-  /* Collapse button shown inside zoomed card */
-  .palette-zoom-collapse-btn {
-    align-self: flex-end;
-    background: color-mix(
-      in srgb,
-      var(--primary-color, #0077cc) 12%,
-      var(--card-background-color, #fff)
-    );
-    border: 1px solid
-      color-mix(in srgb, var(--primary-color, #0077cc) 25%, transparent);
-    border-radius: 6px;
-    padding: 4px 12px;
-    font-size: 0.82em;
-    font-weight: 500;
-    color: var(--primary-color, #0077cc);
-    cursor: pointer;
-    margin-bottom: 6px;
-    transition: background 0.2s;
-  }
-  .palette-zoom-collapse-btn:hover {
-    background: color-mix(
-      in srgb,
-      var(--primary-color, #0077cc) 22%,
-      var(--card-background-color, #fff)
-    );
-  }
-  .palette-group-title {
-    font-size: 1em;
-    font-weight: 500;
-    color: var(--primary-text-color, #444);
-    margin: 0;
-    width: auto;
-    flex: 1 1 auto;
-    text-align: left;
-    display: block;
-    align-self: center;
-  }
-  .palette-group-card .palette-card-top-row {
     display: flex;
-    align-items: center;
+    flex-wrap: wrap;
     justify-content: space-between;
-    width: 100%;
-    gap: 12px;
   }
-  /* Force all palette content inside side-by-side cards to respect the card width */
-  .palette-group-card > * {
-    max-width: 100%;
-    box-sizing: border-box;
-  }
-  .palette-group-card yc-swatches {
+
+  /* The color sections' swatches fill a side card. */
+  .ys-side-card yc-swatches {
     width: 100%;
     max-width: 100%;
     box-sizing: border-box;
   }
 
-  .palette-row {
-    display: flex;
-    flex-direction: row;
-    align-items: flex-start;
-    gap: 16px;
-    overflow-x: auto;
-    padding-bottom: 4px;
-    white-space: nowrap;
-    width: 100%;
-    max-width: 100%;
-    box-sizing: border-box;
-    scrollbar-width: none; /* Firefox */
-    -ms-overflow-style: none; /* IE 10+ */
-    cursor: grab;
-    user-select: none;
-    padding: 5px;
-  }
-  .palette-row * {
-    user-select: none;
-  }
-  .palette-row::-webkit-scrollbar {
-    display: none; /* Chrome, Safari, Opera */
-  }
   .upload-label {
     display: inline-flex;
     align-items: center;
@@ -407,127 +279,6 @@ export const drawCardStyles = css`
       var(--card-background-color, #fff)
     ) !important;
     border: 2px solid var(--primary-color, #00ff99) !important;
-  }
-  .palette-tab-content {
-    width: 100%;
-    display: flex;
-    justify-content: center;
-    position: relative;
-  }
-  .palette-group-title[style*="cursor:pointer"] {
-    user-select: none;
-    transition: color 0.2s;
-  }
-  .palette-group-title[style*="cursor:pointer"]:hover {
-    color: var(--primary-color, #0077cc);
-  }
-  .palette-dropdown-wrapper {
-    width: 100%;
-  }
-  .palette-dropdown-select {
-    padding: 8px 12px;
-    border-radius: 8px;
-    border: 1px solid var(--divider-color, #d0d7de);
-    font-size: 0.9em;
-    background: var(--card-background-color, #fff);
-    color: var(--primary-text-color, #333);
-    font-weight: 500;
-    cursor: pointer;
-    width: fit-content;
-    transition: border-color 0.2s;
-  }
-  .palette-dropdown-select:focus {
-    outline: none;
-    border-color: var(--primary-color, #0077cc);
-    box-shadow: 0 0 0 2px
-      color-mix(in srgb, var(--primary-color, #0077cc) 15%, transparent);
-  }
-  .palette-dropdown-content {
-    width: 100%;
-    display: flex;
-    justify-content: center;
-  }
-  .palette-empty-hint {
-    font-size: 0.85em;
-    color: var(--secondary-text-color, #888);
-    font-style: italic;
-    padding: 8px 0;
-    text-align: center;
-    width: 100%;
-  }
-  .palette-floating {
-    display: flex;
-    flex-direction: row;
-    gap: 10px;
-    align-items: flex-start;
-    width: 100%;
-    margin-bottom: 8px;
-    flex-wrap: wrap;
-  }
-  .palette-floating-btn {
-    background: color-mix(
-      in srgb,
-      var(--primary-color, #1976d2) 15%,
-      var(--card-background-color, #fff)
-    );
-    border-radius: 6px;
-    padding: 6px 14px;
-    font-size: 1em;
-    color: var(--primary-color, #0077cc);
-    font-weight: 500;
-    cursor: pointer;
-    margin-bottom: 6px;
-    box-shadow: 0 1px 4px #0002;
-    transition: background 0.2s;
-  }
-  .palette-floating-btn:hover {
-    background: color-mix(
-      in srgb,
-      var(--primary-color, #1976d2) 30%,
-      var(--card-background-color, #fff)
-    );
-  }
-  .palette-group-card.floating {
-    position: absolute;
-    z-index: 10;
-    min-width: 180px;
-    max-width: 220px;
-    box-shadow: 0 4px 16px #0003;
-    background: var(--card-background-color, #fff);
-    border: 1px solid
-      color-mix(
-        in srgb,
-        var(--primary-color, #1976d2) 30%,
-        var(--card-background-color, #fff)
-      );
-    margin-top: 32px;
-    left: 0;
-  }
-
-  /* Carousel wrapper: must fill full width */
-  .palette-colors-carousel-wrapper {
-    width: 100%;
-    display: block;
-  }
-
-  /* Colors section card border */
-  .palette-colors-card-border .palette-group-card {
-    border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
-  }
-  .palette-colors-card-border .carousel-content-card {
-    border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
-  }
-  .palette-colors-card-border .palette-tab-content {
-    border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
-    border-radius: 8px;
-    padding: 8px;
-    box-sizing: border-box;
-  }
-  .palette-colors-card-border .palette-dropdown-content {
-    border: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
-    border-radius: 8px;
-    padding: 8px;
-    box-sizing: border-box;
   }
 
   .pixelart-gallery-message {

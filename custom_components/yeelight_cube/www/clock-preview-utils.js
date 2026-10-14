@@ -167,7 +167,6 @@ export const CLOCK_MIXER_EFFECTS = {
   // omitted: the firmware rejects these mixer/clock combinations.
 };
 
-export const CLOCK_MIXER_EFFECT_DIRECTION = "Down";
 export const CLOCK_MIXER_EFFECT_SPEED = 50;
 
 // Built-in clock style id -> firmware mixer (mirrors NATIVE_CLOCK_STYLES 1-15).

@@ -6,28 +6,24 @@
  * item to pick it. Items' rename / delete controls are the gallery's
  * (shown on the centred item only, see collectionGalleryStyles).
  *
- * Usage:
- * 1. Import renderAlbumView() and setupAlbumNavigation()
- * 2. Call renderAlbumView() to generate HTML
- * 3. Call setupAlbumNavigation() once per album node to attach event
- *    listeners; it resolves to { goTo(index) } to turn the album later
+ * Usage: <yc-album> (below), rendered by the gallery (gallery-layouts.js
+ * albumLayout) with the items' own templates.
  *
  * Styles: albumStyles(classPrefix) is static (include it in the card's static
  * styles); the configurable values (card width from card_size, corner radius
- * from rounded_cards, 3D effect) are CSS variables that renderAlbumView()
- * sets on the album wrapper (albumStyleVars).
+ * from rounded_cards, 3D effect) are CSS variables set on the album wrapper
+ * (albumStyleVars).
  *
  * Configuration:
  * - album_nav_shape: the arrows' shape, in the carousel vocabulary
  *   (circle by default; square, rect)
- * - wrap_navigation (setupAlbumNavigation): the arrows and swipes go from
- *   the last item to the first and back
- *
- * Pure JavaScript - no external dependencies
+ * - wrap: the arrows and swipes go from the last item to the first and back
  */
 
+import { LitElement, html } from "./lib/lit-all.js";
 import { normalizeButtonShape } from "./carousel-utils.js";
 import { roundedCardsRadius } from "./card-config.js";
+import { defineOnce } from "./card-registration.js";
 
 /**
  * The album's configurable values as CSS variables (inline style of the
@@ -180,254 +176,154 @@ export function albumStyles(classPrefix = "album") {
   `;
 }
 
+/** A card's place in the coverflow, `offset` cards from the centred one. */
+export function albumItemPlace(offset, enable3D) {
+  const distance = Math.abs(offset);
+  if (offset === 0)
+    return "transform: translateY(-50%) translateX(0) translateZ(0) rotateY(0deg) scale(1); z-index: 200; opacity: 1;";
+  const translateX = (offset < 0 ? -150 : 150) * distance;
+  // 3D: turned towards the centre and pushed back; flat: only side by side.
+  const transform = enable3D
+    ? `translateY(-50%) translateX(${translateX}px) translateZ(${-100 * distance}px) rotateY(${offset < 0 ? 45 : -45}deg) scale(0.7)`
+    : `translateY(-50%) translateX(${translateX}px) scale(0.7)`;
+  return `transform: ${transform}; z-index: ${100 - distance}; opacity: ${distance > 3 ? "0" : "1"};`;
+}
+
 /**
- * Renders the HTML for an album/carousel view
+ * <yc-album>: the coverflow. Its centred card is its own state; the arrows
+ * and horizontal swipes turn it (past the ends with `wrap`), a click on a
+ * side card brings it to the centre and a click on the centred one picks it
+ * (onPick). It turns to `target` (an index) whenever that changes (the
+ * gallery's active item, a reveal) or the items do; new previews or labels
+ * of the same items keep the card being browsed.
  *
- * @param {Array} items - Array of items to display (palettes or pixel arts)
- * @param {Function} renderItemContent - Function to render each item's content
- * @param {Object} config - Configuration object containing card settings
- * @param {string} classPrefix - CSS class prefix ("palettes" or "pixelarts")
- * @returns {string} HTML string for the album view
+ *   html`<yc-album
+ *     prefix="collection" .items=${items} .target=${index}
+ *     .config=${{ card_size, album_3d_effect, rounded_cards }}
+ *     .wrap=${false} .navShape=${"round"}
+ *     .renderItem=${(item, index) => …} .onPick=${(item) => …}
+ *   ></yc-album>`
  *
+ * It renders in the host's light DOM (albumStyles) without a box of its own.
  */
-export function renderAlbumView(
-  items,
-  renderItemContent,
-  config = {},
-  classPrefix = "album",
-) {
-  const navClass = `album-nav-btn nav-btn-${normalizeButtonShape(
-    config.album_nav_shape || "circle",
-  )}`;
+class YcAlbum extends LitElement {
+  static properties = {
+    prefix: { type: String },
+    items: { attribute: false },
+    target: { attribute: false },
+    config: { attribute: false },
+    wrap: { attribute: false },
+    navShape: { attribute: false },
+    renderItem: { attribute: false },
+    onPick: { attribute: false },
+    current: { state: true },
+  };
 
-  return `
-    <div class="${classPrefix}-album-wrapper" style="${albumStyleVars(config)}">
-      <button class="${navClass} album-nav-prev" id="${classPrefix}-album-nav-prev" title="Previous">‹</button>
-      <button class="${navClass} album-nav-next" id="${classPrefix}-album-nav-next" title="Next">›</button>
-      <div class="${classPrefix}-album-container" id="${classPrefix}-album-container">
-        ${items
-          .map((item, idx) => {
-            const itemContent = renderItemContent(item, idx, config);
-            return `
-            <div class="${classPrefix}-album-item" data-idx="${idx}">
-              <div class="album-card">
-                ${itemContent}
-              </div>
-            </div>
-          `;
-          })
-          .join("")}
+  constructor() {
+    super();
+    this.prefix = "album";
+    this.items = [];
+    this.config = {};
+    this.current = 0;
+    this._swipe = null;
+    // A horizontal swipe turns the album; vertical moves scroll the page.
+    this._onTouchMove = {
+      handleEvent: (event) => {
+        const swipe = this._swipe;
+        const touch = event.touches[0];
+        if (!swipe || !touch) return;
+        const dx = touch.clientX - swipe.x;
+        if (Math.abs(dx) > 20 && Math.abs(dx) > Math.abs(touch.clientY - swipe.y) * 1.5) {
+          swipe.moved = true;
+          event.preventDefault();
+        }
+      },
+      passive: false,
+    };
+  }
+
+  createRenderRoot() {
+    return this;
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.style.display = "contents";
+  }
+
+  willUpdate(changed) {
+    const keys = this.items.map((item) => item.dataMode).join("\n");
+    if (!changed.has("target") && keys === this._keys) return;
+    this._keys = keys;
+    this.current = Math.max(0, Math.min(this.target ?? this.current, this.items.length - 1));
+  }
+
+  // The card `step` places away; past the ends only when wrapping.
+  _turn(step) {
+    const count = this.items.length;
+    let next = this.current + step;
+    if (next < 0 || next >= count) {
+      if (!this.wrap || count < 2) return;
+      next = (next + count) % count;
+    }
+    this.current = next;
+  }
+
+  _click(index) {
+    if (index === this.current) this.onPick?.(this.items[index]);
+    else this.current = index;
+  }
+
+  render() {
+    const prefix = this.prefix;
+    const enable3D = this.config.album_3d_effect !== false;
+    const navClass = `album-nav-btn nav-btn-${normalizeButtonShape(this.navShape || "circle")}`;
+    const arrow = (side, step, title, symbol) => html`<button
+      class="${navClass} album-nav-${side}"
+      id="${prefix}-album-nav-${side}"
+      title=${title}
+      aria-label=${title}
+      @click=${() => this._turn(step)}
+    >${symbol}</button>`;
+    return html`<div class="${prefix}-album-wrapper" style=${albumStyleVars(this.config)}>
+      ${arrow("prev", -1, "Previous", "‹")}${arrow("next", 1, "Next", "›")}
+      <div
+        class="${prefix}-album-container"
+        id="${prefix}-album-container"
+        @touchstart=${{
+          handleEvent: (event) => {
+            // Not from an arrow or an item's rename / delete control.
+            if (event.target.closest("button, .yc-item-action")) return;
+            const touch = event.touches[0];
+            this._swipe = { x: touch.clientX, y: touch.clientY, moved: false };
+          },
+          passive: true,
+        }}
+        @touchmove=${this._onTouchMove}
+        @touchend=${{
+          handleEvent: (event) => {
+            const swipe = this._swipe;
+            this._swipe = null;
+            if (!swipe?.moved) return;
+            const dx = event.changedTouches[0].clientX - swipe.x;
+            if (Math.abs(dx) > 50) this._turn(dx < 0 ? 1 : -1);
+          },
+          passive: true,
+        }}
+      >
+        ${this.items.map(
+          (item, index) => html`<div
+            class="${prefix}-album-item${index === this.current ? " active" : ""}"
+            data-idx=${index}
+            style=${albumItemPlace(index - this.current, enable3D)}
+            @click=${() => this._click(index)}
+          >
+            <div class="album-card">${this.renderItem(item, index)}</div>
+          </div>`,
+        )}
       </div>
-    </div>
-  `;
+    </div>`;
+  }
 }
 
-export async function setupAlbumNavigation(
-  shadowRoot,
-  classPrefix,
-  onItemClick,
-  context,
-  config = {},
-) {
-  if (!shadowRoot) return;
-
-  const container = shadowRoot.getElementById(`${classPrefix}-album-container`);
-  const prevBtn = shadowRoot.getElementById(`${classPrefix}-album-nav-prev`);
-  const nextBtn = shadowRoot.getElementById(`${classPrefix}-album-nav-next`);
-
-  if (!container) return;
-
-  // Clean up old event listeners if re-initializing
-  if (context._coverflowCleanup) {
-    context._coverflowCleanup();
-  }
-
-  // Initialize position
-  if (typeof context._currentAlbumIndex !== "number") {
-    context._currentAlbumIndex = 0;
-  }
-
-  const items = Array.from(
-    container.querySelectorAll(`.${classPrefix}-album-item`),
-  );
-  let currentIndex = context._currentAlbumIndex;
-
-  // Clamp index to valid range after re-render
-  currentIndex = Math.max(0, Math.min(currentIndex, items.length - 1));
-  context._currentAlbumIndex = currentIndex;
-
-  // Coverflow update function
-  const enable3D = config.album_3d_effect !== false;
-  const wrap = config.wrap_navigation === true;
-  // The item `step` places away, past the ends only when wrapping.
-  const stepTo = (step) => {
-    const next = currentIndex + step;
-    if (next >= 0 && next < items.length) return next;
-    return wrap && items.length > 1 ? (next + items.length) % items.length : currentIndex;
-  };
-
-  const updateCoverflow = (skipAnimation = false) => {
-    // Temporarily disable transitions if requested
-    if (skipAnimation) {
-      items.forEach((item) => (item.style.transition = "none"));
-    }
-
-    items.forEach((item, idx) => {
-      const offset = idx - currentIndex;
-      const absOffset = Math.abs(offset);
-
-      let transform = "";
-      let zIndex = 100 - absOffset;
-
-      if (offset === 0) {
-        // Active center item
-        transform =
-          "translateY(-50%) translateX(0) translateZ(0) rotateY(0deg) scale(1)";
-        zIndex = 200;
-        item.classList.add("active");
-      } else {
-        item.classList.remove("active");
-        if (enable3D) {
-          // 3D coverflow: rotateY + translateZ for depth
-          const angle = offset < 0 ? 45 : -45;
-          const translateX = (offset < 0 ? -150 : 150) * absOffset;
-          const translateZ = -100 * absOffset;
-          transform = `translateY(-50%) translateX(${translateX}px) translateZ(${translateZ}px) rotateY(${angle}deg) scale(0.7)`;
-        } else {
-          // Flat mode: no rotateY/translateZ to avoid stretching
-          const translateX = (offset < 0 ? -150 : 150) * absOffset;
-          transform = `translateY(-50%) translateX(${translateX}px) scale(0.7)`;
-        }
-      }
-
-      item.style.transform = transform;
-      item.style.zIndex = zIndex;
-      item.style.opacity = absOffset > 3 ? "0" : "1";
-    });
-
-    // Re-enable transitions after instant update
-    if (skipAnimation) {
-      // Force reflow to ensure styles are applied
-      void items[0]?.offsetHeight;
-      items.forEach((item) => (item.style.transition = ""));
-    }
-
-    context._currentAlbumIndex = currentIndex;
-  };
-
-  // Touch swipe navigation on album container
-  {
-    let swipeStartX = 0;
-    let swipeStartY = 0;
-    let swiping = false;
-
-    container.addEventListener(
-      "touchstart",
-      (e) => {
-        // Ignore if touching a button or delete control
-        if (e.target.closest("button, .yc-item-action")) return;
-        const touch = e.touches[0];
-        swipeStartX = touch.clientX;
-        swipeStartY = touch.clientY;
-        swiping = false;
-      },
-      { passive: true },
-    );
-
-    container.addEventListener(
-      "touchmove",
-      (e) => {
-        if (!e.touches[0] || swipeStartX === 0) return;
-        const dx = e.touches[0].clientX - swipeStartX;
-        const dy = Math.abs(e.touches[0].clientY - swipeStartY);
-        if (Math.abs(dx) > 20 && Math.abs(dx) > dy * 1.5) {
-          swiping = true;
-          e.preventDefault();
-        }
-      },
-      { passive: false },
-    );
-
-    container.addEventListener(
-      "touchend",
-      (e) => {
-        if (!swiping) {
-          swipeStartX = 0;
-          return;
-        }
-        const touch = e.changedTouches[0];
-        const dx = touch.clientX - swipeStartX;
-        if (Math.abs(dx) > 50) {
-          const next = stepTo(dx < 0 ? 1 : -1);
-          if (next !== currentIndex) {
-            currentIndex = next;
-            updateCoverflow();
-          }
-        }
-        swiping = false;
-        swipeStartX = 0;
-      },
-      { passive: true },
-    );
-  }
-
-  // Item clicks
-  items.forEach((item, idx) => {
-    item.addEventListener("click", (e) => {
-      if (idx === currentIndex) {
-        onItemClick(idx);
-      } else {
-        currentIndex = idx;
-        updateCoverflow();
-      }
-    });
-  });
-
-  // Store named handler references for cleanup on re-init
-  const step = (delta) => () => {
-    const next = stepTo(delta);
-    if (next !== currentIndex) {
-      currentIndex = next;
-      updateCoverflow();
-    }
-  };
-  const prevClickHandler = prevBtn ? step(-1) : null;
-  const nextClickHandler = nextBtn ? step(1) : null;
-
-  // Replace anonymous listeners with named references we can remove
-  if (prevBtn) {
-    // Remove previous handler if stored
-    if (prevBtn._coverflowHandler)
-      prevBtn.removeEventListener("click", prevBtn._coverflowHandler);
-    prevBtn.addEventListener("click", prevClickHandler);
-    prevBtn._coverflowHandler = prevClickHandler;
-  }
-  if (nextBtn) {
-    if (nextBtn._coverflowHandler)
-      nextBtn.removeEventListener("click", nextBtn._coverflowHandler);
-    nextBtn.addEventListener("click", nextClickHandler);
-    nextBtn._coverflowHandler = nextClickHandler;
-  }
-
-  context._coverflowCleanup = () => {
-    if (prevBtn && prevBtn._coverflowHandler)
-      prevBtn.removeEventListener("click", prevBtn._coverflowHandler);
-    if (nextBtn && nextBtn._coverflowHandler)
-      nextBtn.removeEventListener("click", nextBtn._coverflowHandler);
-  };
-
-  // Initial render (skip animation if this is a re-setup after deletion)
-  const isReSetup = context._coverflowCleanup !== undefined;
-  updateCoverflow(isReSetup);
-
-  // Lets the caller turn the album to an item (e.g. the newly active one)
-  // without binding it again.
-  return {
-    goTo(index) {
-      const next = Math.max(0, Math.min(index, items.length - 1));
-      if (next === currentIndex) return;
-      currentIndex = next;
-      updateCoverflow();
-    },
-  };
-}
+defineOnce("yc-album", YcAlbum);

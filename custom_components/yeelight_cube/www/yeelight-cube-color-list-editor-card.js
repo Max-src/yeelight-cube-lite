@@ -14,8 +14,10 @@ import {
   cardNotice,
   cardShell,
   lampNotFoundNotice,
+  lampUnavailableLine,
   NOTICE,
 } from "./card-shell.js";
+import { previewOnly } from "./offline-preview-state.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { ColorListLayoutsMixin } from "./color-list-layouts.js";
 import { normalizeCardOptions } from "./card-config.js";
@@ -49,18 +51,13 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
     super();
     this.config = undefined;
     this._pendingServiceCalls = []; // Queue service calls if hass not ready
-    // Interaction guards. Lit diffs the DOM, so ordinary renders no longer
-    // destroy inputs; these remain only where a render would still hurt:
-    // - _isDragging: drag reordering moves DOM nodes by hand, so every render
-    //   is held back until the drop (see shouldUpdate).
-    // - _usingColorPicker / _editingText: state-driven (hass) renders are
-    //   deferred so an open picker or a focused hex input is never clobbered.
-    this._isDragging = false;
-    this._usingColorPicker = false;
-    this._editingText = false;
+    // The render gate's holds (Lit diffs the DOM, so ordinary renders no
+    // longer destroy inputs; these remain only where a render would hurt):
+    // - "drag": drag reordering moves DOM nodes by hand, so every render is
+    //   held back until the drop (see shouldUpdate).
+    // - "picker" / "text": state-driven (hass) renders wait so an open
+    //   picker or a focused hex input is never clobbered.
     this._editing = null; // { idx, value } of the focused hex input
-    this._pendingHassRender = false; // A render was held back by a guard
-    this._interactionSafetyTimer = null; // Safety timer to flush held renders
     this._dragSession = null; // The active drag (reorder-drag.js)
     this._listKey = 0; // Bumped after a drag so Lit rebuilds the moved DOM
     this._renderedColors = [];
@@ -119,7 +116,7 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
     // external color changes (e.g. selecting a palette on another card).
     let staleCacheCleared = false;
     if (this.config) {
-      const entityId = this._getPrimaryEntity();
+      const entityId = this._primaryEntity();
       const entry = entityId ? PENDING_COLORS_STORE[entityId] : null;
       if (entry && Date.now() - entry.ts > PENDING_COLORS_GRACE_MS) {
         const backendColors =
@@ -140,76 +137,29 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
     // changes every second during a clock or an effect).
     if (!this._hassChanged(hass) && !staleCacheCleared && oldHass && this.config) return;
 
-    if (this._interacting) {
-      // Interaction in progress — remember that a state-driven render was held
-      this._pendingHassRender = true;
-      this._startInteractionSafety();
-    } else {
-      this._pendingHassRender = false;
-      this.requestUpdate();
-    }
-  }
-
-  get _interacting() {
-    return this._isDragging || this._usingColorPicker || this._editingText;
+    this._gate.request();
   }
 
   shouldUpdate() {
     // A drag moves rendered nodes by hand; rendering now would fight it.
-    if (!this._isDragging) return true;
-    this._pendingHassRender = true;
-    this._startInteractionSafety();
+    if (!this._gate.held("drag")) return true;
+    this._gate.request();
     return false;
-  }
-
-  // Flush any render that was held back while an interaction was active.
-  // Called when an interaction flag is cleared to recover missed state updates.
-  _flushPendingRender() {
-    if (!this._pendingHassRender || this._interacting) return;
-    this._pendingHassRender = false;
-    if (this._interactionSafetyTimer) {
-      clearInterval(this._interactionSafetyTimer);
-      this._interactionSafetyTimer = null;
-    }
-    this.requestUpdate();
-  }
-
-  // Safety timer: periodically check if all interaction flags have cleared
-  // and flush the pending render. Covers edge cases where flag-clearing code
-  // paths don't explicitly call _flushPendingRender().
-  _startInteractionSafety() {
-    if (this._interactionSafetyTimer) return; // Already running
-    this._interactionSafetyTimer = setInterval(() => {
-      if (!this._interacting) {
-        clearInterval(this._interactionSafetyTimer);
-        this._interactionSafetyTimer = null;
-        this._flushPendingRender();
-      }
-    }, 1000);
-  }
-
-  // Resolve the primary entity: first VALID entity from target_entities,
-  // fallback to legacy entity.  Skips entity IDs that no longer exist in
-  // hass.states (stale config entries after entity renames / IP changes).
-  _getPrimaryEntity() {
-    const candidates = [
-      ...(this.config?.target_entities || []),
-      this.config?.entity,
-    ].filter(Boolean);
-    if (!this._hass?.states) return candidates[0] || null;
-    for (const eid of candidates) {
-      if (this._hass.states[eid]) return eid;
-    }
-    return candidates[0] || null; // return first even if stale (so error is shown)
   }
 
   // What the card shows from hass (card-base _hassChanged): whether its lamp
   // exists, and its colors (by value: a lamp push replaces the array even
   // when the colors are the same).
   _hassInputs(hass) {
-    const entityId = this._getPrimaryEntity();
+    const entityId = this._primaryEntity();
     const state = entityId ? hass?.states?.[entityId] : undefined;
-    return [this.config, entityId, !!state, valueKey(state?.attributes?.text_colors)];
+    return [
+      this.config,
+      entityId,
+      !!state,
+      previewOnly({ config: this.config, _hass: hass }),
+      valueKey(state?.attributes?.text_colors),
+    ];
   }
 
   // Every service call of this card goes through one ordered queue
@@ -217,8 +167,8 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
   // dropped. Created on first use.
   render() {
     // For multi-entity support: use the first *valid* entity as source of truth.
-    // _getPrimaryEntity() skips stale entity IDs that no longer exist.
-    const entityId = this.config ? this._getPrimaryEntity() : null;
+    // _primaryEntity() skips stale entity IDs that no longer exist.
+    const entityId = this.config ? this._primaryEntity() : null;
     const hass = this._hass;
     if (!hass) return nothing;
     if (!entityId) return cardNotice(this, NOTICE.noLamp);
@@ -290,7 +240,9 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
     const radius = `--rounded-cards-radius: ${this._getCardBorderRadius()}px;`;
     return cardShell(
       this,
-      html`<div class="card-content" style=${radius}>${content}</div>`,
+      html`<div class="card-content" style=${radius}>
+        ${previewOnly(this) ? lampUnavailableLine() : nothing}${content}
+      </div>`,
     );
   }
 
@@ -398,7 +350,7 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
   async _onSavePalette() {
     if (!this._hass) return;
     const currentColors = this._getCurrentColors();
-    const primaryEntity = this._getPrimaryEntity();
+    const primaryEntity = this._primaryEntity();
     if (!primaryEntity) {
       console.error(
         "[ColorList Card] No primary entity available for save_palette",
@@ -438,7 +390,7 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
   // ----- Hex inputs -----------------------------------------------------
 
   _onHexFocus(event) {
-    this._editingText = true;
+    this._gate.hold("text");
     this._editing = {
       idx: parseInt(event.target.dataset.idx),
       value: event.target.value,
@@ -446,19 +398,18 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
   }
 
   _onHexBlur(event) {
-    this._editingText = false;
     this._editing = null;
     // An unfinished value reverts to the actual color. Lit only rewrites
     // .value when the bound value changes, so reset the live value here.
     const color = this._getCurrentColors()[parseInt(event.target.dataset.idx)];
     if (Array.isArray(color)) event.target.value = this.rgbToHex(color);
-    this._flushPendingRender();
+    this._gate.release("text");
     this.requestUpdate();
   }
 
   _onHexKeydown(event) {
     if (event.key === "Enter" || event.key === "Escape") {
-      event.target.blur(); // Clears _editingText via the blur handler
+      event.target.blur(); // Ends the "text" hold via the blur handler
     }
   }
 
@@ -527,7 +478,7 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
 
   _getCurrentColors() {
     // For multi-entity support: use first valid entity as the source of truth
-    const entityId = this._getPrimaryEntity();
+    const entityId = this._primaryEntity();
 
     if (!entityId) {
       return [[255, 255, 255]]; // Default fallback
@@ -554,8 +505,8 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
   }
 
   _openColorPickerAt(idx, currentValue, clickX, clickY) {
-    this._cleanupColorPicker(true);
-    this._usingColorPicker = true;
+    this._cleanupColorPicker();
+    this._gate.hold("picker");
     openColorPicker(this, {
       value: currentValue,
       pageX: clickX,
@@ -569,25 +520,18 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
         // Our own edits render immediately; hass renders stay deferred.
         this.saveColors(currentColors);
       },
-      onClose: () => {
-        if (!this._usingColorPicker) return;
-        this._usingColorPicker = false;
-        this._flushPendingRender();
-      },
+      onClose: () => this._gate.release("picker"),
     });
   }
 
-  _cleanupColorPicker(skipFlush) {
-    this._usingColorPicker = false;
+  _cleanupColorPicker() {
     closeColorPicker(this);
-    if (!skipFlush) {
-      this._flushPendingRender();
-    }
+    this._gate.release("picker");
   }
 
   saveColors(textColors) {
     // For multi-entity support: use first valid entity as the source of truth
-    const entityId = this._getPrimaryEntity();
+    const entityId = this._primaryEntity();
 
     if (!entityId) {
       return;
@@ -663,18 +607,10 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
     // next render).
     this._dragSession?.cancel();
 
-    this._cleanupColorPicker(true);
-
-    // Reset interaction flags
-    this._isDragging = false;
-    this._usingColorPicker = false;
-    this._editingText = false;
+    // End every hold (and the render it kept waiting), then the picker.
+    this._gate.clear();
+    closeColorPicker(this);
     this._editing = null;
-    this._pendingHassRender = false;
-    if (this._interactionSafetyTimer) {
-      clearInterval(this._interactionSafetyTimer);
-      this._interactionSafetyTimer = null;
-    }
   }
 }
 

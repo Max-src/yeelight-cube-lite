@@ -15,7 +15,6 @@ export const GRADIENT_CARD_CSS = `
         
         .header-rotary .wheel-container,
         .header-rotary .rect-container,
-        .header-rotary .default-container,
         .header-rotary .matrix-preview-container,
         .header-rotary .compass-container {
           margin: 0;
@@ -322,7 +321,7 @@ export const GRADIENT_CARD_CSS = `
         }
 
         /* Prevent text selection during dragging */
-        .color-wheel, .default-container, .rect-container, .matrix-preview-container, .compass-container {
+        .color-wheel, .rect-container, .matrix-preview-container, .compass-container {
           user-select: none;
           -webkit-user-select: none;
           -moz-user-select: none;

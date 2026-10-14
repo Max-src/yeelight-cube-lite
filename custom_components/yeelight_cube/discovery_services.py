@@ -7,7 +7,6 @@ from homeassistant.helpers.discovery_flow import async_create_flow # type: ignor
 from .const import DOMAIN
 from .conflict_prevention import get_conflict_prevention
 from .discovery import is_cube_device
-from .rediscovery_utils import force_rediscovery, trigger_manual_discovery
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -18,8 +17,6 @@ SERVICE_IS_DEVICE_MANAGED = "is_device_managed"
 SERVICE_LIST_MANAGED_DEVICES = "list_managed_devices"
 SERVICE_TEST_DEVICE_DETECTION = "test_device_detection"
 SERVICE_IGNORE_YEELIGHT_DISCOVERY = "ignore_yeelight_discovery"
-SERVICE_FORCE_REDISCOVERY = "force_rediscovery"
-SERVICE_TRIGGER_MANUAL_DISCOVERY = "trigger_manual_discovery"
 SERVICE_CREATE_CUBE_DISCOVERY = "create_cube_discovery"
 SERVICE_IGNORE_SPECIFIC_YEELIGHT = "ignore_specific_yeelight"
 
@@ -52,17 +49,6 @@ SERVICE_TEST_DEVICE_DETECTION_SCHEMA = vol.Schema({
 
 SERVICE_IGNORE_YEELIGHT_DISCOVERY_SCHEMA = vol.Schema({
     vol.Required(ATTR_IP_ADDRESS): cv.string,
-})
-
-SERVICE_FORCE_REDISCOVERY_SCHEMA = vol.Schema({
-    vol.Required(ATTR_IP_ADDRESS): cv.string,
-})
-
-SERVICE_TRIGGER_MANUAL_DISCOVERY_SCHEMA = vol.Schema({
-    vol.Required(ATTR_IP_ADDRESS): cv.string,
-    vol.Optional(ATTR_DEVICE_NAME, default=""): cv.string,
-    vol.Optional(ATTR_DEVICE_MODEL, default="cubelite"): cv.string,
-    vol.Optional(ATTR_DEVICE_ID, default=""): cv.string,
 })
 
 SERVICE_CREATE_CUBE_DISCOVERY_SCHEMA = vol.Schema({
@@ -164,31 +150,6 @@ def async_setup_services(hass: HomeAssistant):
                 "success": False,
                 "error": str(e)
             })
-    
-    async def force_rediscovery_service(call: ServiceCall):
-        """Force rediscovery by clearing caches."""
-        ip_address = call.data[ATTR_IP_ADDRESS]
-        await force_rediscovery(hass, ip_address)
-        
-        hass.bus.async_fire(f"{DOMAIN}_rediscovery_forced", {
-            "ip_address": ip_address
-        })
-    
-    async def trigger_manual_discovery_service(call: ServiceCall):
-        """Manually trigger discovery for testing."""
-        ip_address = call.data[ATTR_IP_ADDRESS]
-        device_info = {
-            "name": call.data.get(ATTR_DEVICE_NAME) or f"Test Device {ip_address}",
-            "model": call.data.get(ATTR_DEVICE_MODEL, "cubelite"),
-            "id": call.data.get(ATTR_DEVICE_ID) or "0x12345678"
-        }
-        
-        await trigger_manual_discovery(hass, ip_address, device_info)
-        
-        hass.bus.async_fire(f"{DOMAIN}_manual_discovery_triggered", {
-            "ip_address": ip_address,
-            "device_info": device_info
-        })
     
     async def create_cube_discovery(call: ServiceCall):
         """Create a discovery flow specifically for our Yeelight Cube Lite component."""
@@ -302,20 +263,6 @@ def async_setup_services(hass: HomeAssistant):
         SERVICE_IGNORE_YEELIGHT_DISCOVERY,
         ignore_yeelight_discovery,
         schema=SERVICE_IGNORE_YEELIGHT_DISCOVERY_SCHEMA,
-    )
-    
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_FORCE_REDISCOVERY,
-        force_rediscovery_service,
-        schema=SERVICE_FORCE_REDISCOVERY_SCHEMA,
-    )
-    
-    hass.services.async_register(
-        DOMAIN,
-        SERVICE_TRIGGER_MANUAL_DISCOVERY,
-        trigger_manual_discovery_service,
-        schema=SERVICE_TRIGGER_MANUAL_DISCOVERY_SCHEMA,
     )
     
     hass.services.async_register(

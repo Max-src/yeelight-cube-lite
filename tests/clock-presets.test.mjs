@@ -3,11 +3,16 @@ import { matchingColorOption } from "../custom_components/yeelight_cube/www/colo
 import assert from "node:assert/strict";
 import { colorModeSelectorModel } from "../custom_components/yeelight_cube/www/color-mode-selector-utils.js";
 import test from "node:test";
+import { createPendingValue } from "../custom_components/yeelight_cube/www/pending-value.js";
+import { normalizeCardOptions } from "../custom_components/yeelight_cube/www/card-config.js";
+import {
+  VISIBILITY_KEYS,
+  visibleItems,
+  withAllItems,
+} from "../custom_components/yeelight_cube/www/visible-items.js";
 import { readFileSync } from "node:fs";
-import { escapeHtml } from "../custom_components/yeelight_cube/www/html-escape-utils.js";
 import { PreviewVisibility } from "../custom_components/yeelight_cube/www/preview-visibility.js";
 import {
-  renderActionButtonHTML,
   actionButtonGroupModel,
 } from "../custom_components/yeelight_cube/www/action-button-utils.js";
 import {
@@ -393,57 +398,28 @@ test("Add opens the picker without sending a color-mode command", () => {
   assert.equal(opened.length, 2);
 });
 
-test("wheel template dimensions avoid forced layout and legacy markup still measures", () => {
-  const source = readFileSync(
-    new URL(
-      "../custom_components/yeelight_cube/www/wheel-navigation-utils.js",
-      import.meta.url,
-    ),
+test("the wheel places its items from its geometry, never measuring the page", () => {
+  // <yc-wheel> (wheel-picker.js) renders every item's 3D place and the
+  // column's offset from numbers: no layout read (offsetHeight, computed
+  // styles, bounding boxes), so a hidden or closed card never stalls.
+  for (const file of ["wheel-picker.js", "gallery-layouts.js"]) {
+    const source = readFileSync(
+      new URL(`../custom_components/yeelight_cube/www/${file}`, import.meta.url),
+      "utf8",
+    );
+    assert.doesNotMatch(source, /offset(Height|Width|Top|Parent)|getComputedStyle|getBoundingClientRect/, file);
+  }
+  const picker = readFileSync(
+    new URL("../custom_components/yeelight_cube/www/wheel-picker.js", import.meta.url),
     "utf8",
   );
-  const body = source.match(
-    /const getWheelConfig = \(\) => \{([\s\S]*?)\n  \};/,
-  )[1];
-  const measure = new Function(
-    "config",
-    "wheelContainer",
-    "wheelItems",
-    "window",
-    "WHEEL_CONSTANTS",
-    body,
-  );
-  const container = {
-    dataset: {
-      wheelItemHeight: "65",
-      wheelItemStep: "50",
-      wheelContainerHeight: "300",
-      wheelPaddingTop: "100",
-    },
-  };
-  const constants = { DEFAULT_CONTAINER_HEIGHT: 300, HALF_VISIBLE_ITEMS: 2 };
-  const unreadable = [
-    {
-      get offsetParent() {
-        throw new Error("Forced layout");
-      },
-    },
-  ];
-  assert.deepEqual(measure({}, container, unreadable, {}, constants), {
-    isCompact: false,
-    itemHeight: 65,
-    itemStep: 50,
-    containerHeight: 300,
-    baseOffset: -17.5,
-  });
-  const fallback = measure(
-    {},
-    { dataset: {} },
-    [{ offsetParent: {}, offsetHeight: 65 }],
-    {},
-    constants,
-  );
-  assert.equal(fallback.itemStep, 65);
-  assert.equal(fallback.baseOffset, 12.5);
+  const place = new Function(
+    `${picker.match(/export (function wheelItemPlace[\s\S]*?\n\})/)[1]}; return wheelItemPlace;`,
+  )();
+  assert.equal(place(3, 3), "opacity: 1; transform: scale(1) rotateX(0deg) translateZ(0px); z-index: 100;");
+  // Above the centre: leaning forward; below: backward; at most 50°.
+  assert.match(place(1, 3), /scale\(0\.96\) rotateX\(40deg\).*z-index: 80;/);
+  assert.match(place(9, 3), /scale\(0\.92\) rotateX\(-50deg\)/);
 });
 
 test("preview style lists reuse snapshots and invalidate on library/config changes", () => {
@@ -600,42 +576,20 @@ test("no preview observer is created while the card is off the page", () => {
   assert.equal(card._visible.size, 0);
 });
 
-test("hostile saved names remain escaped in all text selectors", () => {
-  const selectorSource = readFileSync(
+test("hostile saved names remain escaped in all gallery layouts", () => {
+  // The layouts are Lit templates: names are text bindings, escaped by Lit.
+  // The only raw markup they insert is a card's own (trusted) previewHtml.
+  // (card-events-browser.cjs renders hostile names in every layout.)
+  const source = readFileSync(
     new URL(
-      "../custom_components/yeelight_cube/www/style-selector-utils.js",
+      "../custom_components/yeelight_cube/www/gallery-layouts.js",
       import.meta.url,
     ),
     "utf8",
   );
-  const body = selectorSource.match(
-    /export function renderTextStyleSelector\(config, items, sel, active\) \{([\s\S]*?)\n\}/,
-  )[1];
-  const renderTextStyleSelector = new Function(
-    "escapeHtml",
-    "resolveSelectorShape",
-    "renderActionButtonHTML",
-    `return function(config, items, sel, active) {${body}}`,
-  )(escapeHtml, () => "rounded", renderActionButtonHTML);
-  const style = {
-    name: '\"><img src=x onerror=alert(1)>',
-    presetId: "hostile",
-  };
-  for (const selector of ["dropdown", "filled"]) {
-    const markup = renderTextStyleSelector(
-      {},
-      [
-        {
-          name: style.name,
-          dataMode: clockPresetKey(style),
-        },
-      ],
-      selector,
-      clockPresetKey(style),
-    );
-    assert.doesNotMatch(markup, /<img|<script/);
-    assert.ok(markup.includes(escapeHtml(style.name)));
-  }
+  const raw = [...source.matchAll(/unsafeHTML\(([^)]*)\)/g)].map((m) => m[1]);
+  assert.deepEqual(raw, ["item.previewHtml"]);
+  assert.doesNotMatch(source, /innerHTML/);
 });
 
 test("Custom stays selectable and built-in selections respect the active color mode", () => {
@@ -657,7 +611,9 @@ test("Custom stays selectable and built-in selections respect the active color m
     _attrs: () => attrs,
     _styleList: () => styles,
     _controlStyles: () => styles,
-    _callSetClock: (data) => calls.push(data),
+    // Like the card's (async): resolves once sent.
+    _callSetClock: async (data) => calls.push(data),
+    _pendingStyle: createPendingValue(),
     requestUpdate: () => renders++,
     ...cardMethods(
       [
@@ -844,7 +800,10 @@ test("new styles survive reload and explicit hide/reorder survives later saves",
     { id: 1, name: "Rainbow" },
   ];
   const presets = [{ id: "first", name: "Amber", color: [255, 120, 0] }];
-  let config = { custom_visible_styles: true, visible_styles: ["Rainbow"] };
+  let config = normalizeCardOptions(
+    { custom_visible_styles: true, visible_styles: ["Rainbow"] },
+    "clock",
+  );
   const styles = clockStylesWithPresets(builtins, presets);
   const keys = (items) => items.map(clockPresetKey);
   const reload = (value) => JSON.parse(JSON.stringify(value));
@@ -880,12 +839,54 @@ test("new styles survive reload and explicit hide/reorder survives later saves",
     "custom:first",
     "Rainbow",
   ]);
+  // Show all: every style again.
   assert.deepEqual(
-    keys(
-      visibleClockStyles(updated, { ...config, custom_visible_styles: false }),
-    ),
+    keys(visibleClockStyles(updated, withAllItems(config, VISIBILITY_KEYS.clockStyles))),
     keys(updated),
   );
+});
+
+test("visible items: one rule and vocabulary on every card, former names migrated", () => {
+  const keys = VISIBILITY_KEYS.gradientModes;
+  const all = ["A", "B", "C"];
+  const self = (item) => item;
+  // No list: all; a list: in its order; an empty list: none.
+  assert.deepEqual(visibleItems(all, self, {}, keys), all);
+  assert.deepEqual(visibleItems(all, self, { visible_modes: ["C", "A", "X"] }, keys), ["C", "A"]);
+  assert.deepEqual(visibleItems(all, self, { visible_modes: [] }, keys), []);
+  // Items added since: shown when the kind lets them appear.
+  const saved = { visible_modes: ["B"], hidden_modes: ["A"] };
+  assert.deepEqual(visibleItems(all, self, saved, keys), ["B"]);
+  assert.deepEqual(visibleItems(all, self, saved, keys, () => true), ["B", "C"]);
+  // Clock: the flag and the old hidden list's name.
+  assert.deepEqual(
+    normalizeCardOptions(
+      { custom_visible_styles: true, visible_styles: ["Rainbow"], hidden_clock_styles: ["custom:a"] },
+      "clock",
+    ),
+    { visible_styles: ["Rainbow"], hidden_styles: ["custom:a"] },
+  );
+  assert.deepEqual(
+    normalizeCardOptions({ custom_visible_styles: false, visible_styles: ["Rainbow"], hidden_clock_styles: [] }, "clock"),
+    {},
+  );
+  // Gradient: the flag; its empty list showed every mode.
+  const gradient = (config) => {
+    const { visible_modes, custom_visible_modes } = normalizeCardOptions(config, "gradient");
+    return { visible_modes, custom_visible_modes };
+  };
+  assert.deepEqual(gradient({ custom_visible_modes: true, visible_modes: ["Solid Color"] }), {
+    visible_modes: ["Solid Color"],
+    custom_visible_modes: undefined,
+  });
+  assert.deepEqual(gradient({ custom_visible_modes: true, visible_modes: [] }), {
+    visible_modes: undefined,
+    custom_visible_modes: undefined,
+  });
+  assert.deepEqual(gradient({ visible_modes: ["Solid Color"] }), {
+    visible_modes: undefined,
+    custom_visible_modes: undefined,
+  });
 });
 
 test("card color actions leave Custom empty until a pick and ignore deleted presets", () => {
@@ -911,7 +912,9 @@ test("card color actions leave Custom empty until a pick and ignore deleted pres
     _hass: { states: { library: { attributes: { clock_presets: presets } } } },
     _attrs: () => attrs,
     _styleList: () => [],
-    _callSetClock: (data) => calls.push(data),
+    // Like the card's (async): resolves once sent.
+    _callSetClock: async (data) => calls.push(data),
+    _pendingStyle: createPendingValue(),
     requestUpdate() {},
   };
   for (const name of [
@@ -985,7 +988,9 @@ test("saving a custom color as a clock style forgets it as the Custom color", ()
     _hass: { states: { library: { attributes: { clock_presets: presets } } } },
     _attrs: () => attrs,
     _styleList: () => styles,
-    _callSetClock: (data) => calls.push(data),
+    // Like the card's (async): resolves once sent.
+    _callSetClock: async (data) => calls.push(data),
+    _pendingStyle: createPendingValue(),
     requestUpdate() {},
     ...cardMethods(
       [
@@ -1057,7 +1062,9 @@ test("a just-saved style reads as Normal before the library echoes it back", () 
     _styleList: () => clockStylesWithPresets(getClockStyles(false), presets),
     _controlStyles: () =>
       clockStylesWithPresets(getClockStyles(false), presets),
-    _callSetClock: (data) => calls.push(data),
+    // Like the card's (async): resolves once sent.
+    _callSetClock: async (data) => calls.push(data),
+    _pendingStyle: createPendingValue(),
     requestUpdate() {},
     ...cardMethods(
       [

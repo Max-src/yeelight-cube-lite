@@ -16,7 +16,8 @@ DOMAIN = CONSTANTS["DOMAIN"]
 
 BULB_EXCEPTION = type("BulbException", (Exception,), {})
 
-# Tests asserting the exact commands of a start use the longest interval:
+# Tests asserting exact commands, counts or the item shown use the longest
+# interval (only tests about the interval itself use short ones):
 # a rotation shows the next item at once when its first step crosses a grid
 # boundary (the shared catch-up), which with a short interval happened in
 # about 1 run in 70 (asyncio debug mode makes a step take ~0.2 s).
@@ -204,7 +205,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
                 light._apply_display_mode_internal = AsyncMock()
                 await self.helpers["_force_refresh_impl"](light)
                 self.assertEqual(light.ensure_fx_ready.await_count, int(mode == "Text"))
-                light._apply_display_mode_internal.assert_awaited_once_with(skip_post_delay=True)
+                light._apply_display_mode_internal.assert_awaited_once_with()
                 self.assertTrue(light._rotation_active)
 
     async def test_refresh_keeps_off_lamp_off_and_reapplies_music_flow(self):
@@ -259,7 +260,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         light._apply_rotation_item = AsyncMock(side_effect=TimeoutError("Device timeout"))
         light._wait_rotation_retry = AsyncMock(return_value=True)
         with self.assertRaises(ValueError):
-            await light.start_effect_rotation(["Rainbow", "White"], 10, "clock")
+            await light.start_effect_rotation(["Rainbow", "White"], STEADY_INTERVAL, "clock")
         self.assertFalse(light._rotation_active)
         self.assertTrue(light._rotation_waiting_for_reconnect)
         self.assertEqual(light._apply_rotation_item.await_count, 3)
@@ -540,6 +541,10 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(light._text_waits_for_matrix())
         light._mode = "Solid Color"  # set_custom_text switched to text
         self.assertFalse(light._text_waits_for_matrix())
+        # Saved while a text shows: no firmware display to protect, no overlay
+        # (a later clock keeps its protection without restore_state).
+        light._save_display_state()
+        self.assertFalse(light._display_overlay)
 
     async def test_the_firmware_guard_lets_an_overlay_text_through(self):
         for overlay in (False, True):
@@ -556,6 +561,30 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
                     light, update_type="text_change"
                 )
                 self.assertEqual(light._execute_hardware_op.await_count, int(overlay))
+                # Used once: the next sensor text over the clock waits again.
+                self.assertFalse(light._display_overlay)
+
+    async def test_an_off_lamp_keeps_new_content_and_is_drawn_only_when_allowed(self):
+        for auto_on in (False, True):
+            with self.subTest(auto_turn_on=auto_on):
+                light = make_light(self.helpers, is_on=False)
+                light._should_auto_turn_on = lambda: auto_on
+                light._mode = "Solid Color"
+                light._in_native_fw_mode = False
+                light._display_retry_count = 0
+                light.MAX_DISPLAY_RETRIES = 3
+                light._custom_text = "21.5"
+                light._transition_type = "none"
+                await self.helpers["async_apply_display_mode"](
+                    light, update_type="text_change"
+                )
+                # Pixel data turns the lamp on: only with auto-turn-on.
+                self.assertEqual(light._execute_hardware_op.await_count, int(auto_on))
+
+    def test_the_display_snapshot_never_changes_the_power(self):
+        attrs = LIGHT_SOURCE[LIGHT_SOURCE.index("_DISPLAY_STATE_ATTRS = ("):]
+        attrs = attrs[: attrs.index(")")]
+        self.assertNotIn('"_is_on"', attrs)
 
     async def test_set_custom_text_keeps_the_clock_and_its_rotation(self):
         handler = _load_standalone_functions(
@@ -592,6 +621,14 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
             await coro
         self.assertEqual(light._mode, "Solid Color")
         light.async_apply_display_mode.assert_awaited_once_with(update_type="text_change")
+        # An off lamp (auto-turn-on disabled) keeps the text: it is stored,
+        # and the display rule decides whether it is drawn.
+        light._is_on = False
+        light._should_auto_turn_on = lambda: False
+        await handler(SimpleNamespace(data={"text": "OFF", "entity_id": "light.top"}))
+        for coro in queued[2:]:
+            await coro
+        self.assertEqual(light._custom_text, "OFF")
 
     def test_restore_state_service_resumes_the_rotation(self):
         handler = SERVICES_SOURCE[SERVICES_SOURCE.index("async def handle_restore_state("):]
@@ -623,7 +660,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.Event().wait()
         failed._apply_rotation_item = AsyncMock(side_effect=fail)
         failed._wait_rotation_retry = wait
-        starting = asyncio.create_task(failed.start_effect_rotation(["Rainbow", "White"], 10, "clock"))
+        starting = asyncio.create_task(failed.start_effect_rotation(["Rainbow", "White"], STEADY_INTERVAL, "clock"))
         await entered.wait()
         task = failed._rotation_task
         failed.stop_effect_rotation()
@@ -876,22 +913,22 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_interval_change_applies_live_without_skipping_the_current_item(self):
         light = make_light(self.helpers, kind="native")
-        await light.start_effect_rotation([{"name": "Rainbow"}, "Streamer"], 60)
+        await light.start_effect_rotation([{"name": "Rainbow"}, "Streamer"], STEADY_INTERVAL)
         index = light._rotation_index
-        light.set_rotation_interval("native", 20)
+        light.set_rotation_interval("native", STEADY_INTERVAL // 2)
         await asyncio.sleep(0.05)  # the loop wakes and re-times
-        self.assertEqual(light._rotation_interval, 20)
+        self.assertEqual(light._rotation_interval, STEADY_INTERVAL // 2)
         self.assertEqual(light._rotation_index, index)  # still the same item
-        self.assertEqual(light._rotation_intervals, {"native": 20})
+        self.assertEqual(light._rotation_intervals, {"native": STEADY_INTERVAL // 2})
         self.assertEqual(light._rotation_timeline["index"], index + 1)
         self.assertFalse(light._rotation_retime)
         self.assertEqual(
-            light.hass.data[DOMAIN]["rotation"]["entry-1"]["active"]["interval"], 20
+            light.hass.data[DOMAIN]["rotation"]["entry-1"]["active"]["interval"], STEADY_INTERVAL // 2
         )
         # Another kind only records its interval.
         light.set_rotation_interval("clock", 90)
-        self.assertEqual(light._rotation_interval, 20)
-        self.assertEqual(light._rotation_intervals, {"native": 20, "clock": 90})
+        self.assertEqual(light._rotation_interval, STEADY_INTERVAL // 2)
+        self.assertEqual(light._rotation_intervals, {"native": STEADY_INTERVAL // 2, "clock": 90})
         light.stop_effect_rotation()
 
     async def test_unchanged_rotation_state_is_not_written_again(self):
@@ -921,8 +958,8 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         for entity in group:
             lamp = make_light(self.helpers, kind="native")
             lamp.hass.data[DOMAIN]["rotation"] = {"entry-1": {
-                "intervals": {"native": 30},
-                "active": {"kind": "native", "interval": 30, "group": group,
+                "intervals": {"native": STEADY_INTERVAL},
+                "active": {"kind": "native", "interval": STEADY_INTERVAL, "group": group,
                            "items": [{"name": "Rainbow"}, {"name": "Streamer"}]},
             }}
             lamp._restore_rotation_settings()
@@ -982,15 +1019,15 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         light._execute_hardware_op.return_value = False
         light._last_connection_error = "Device timeout"
         with self.assertRaisesRegex(ValueError, "Device timeout"):
-            await light.start_effect_rotation(["Rainbow", "Streamer"], 10)
+            await light.start_effect_rotation(["Rainbow", "Streamer"], STEADY_INTERVAL)
         self.assertFalse(light._rotation_active)
         self.assertIn("Device timeout", light._rotation_error)
 
     async def test_restart_cancels_old_loop_without_stopping_new_loop(self):
         light = make_light(self.helpers)
-        await light.start_effect_rotation(["Rainbow", "Streamer"], 10)
+        await light.start_effect_rotation(["Rainbow", "Streamer"], STEADY_INTERVAL)
         previous = light._rotation_task
-        await light.start_effect_rotation(["Rainbow", "Streamer"], 20)
+        await light.start_effect_rotation(["Rainbow", "Streamer"], STEADY_INTERVAL // 2)
         self.assertTrue(previous.done())
         self.assertTrue(light._rotation_active)
         self.assertIsNot(previous, light._rotation_task)
@@ -1141,8 +1178,8 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
         source = "\n".join(
             (ROOT / filename).read_text(encoding="utf-8")
             for filename in (
-                "light.py", "light_render.py", "light_native.py",
-                "light_connection.py", "light_rotation.py",
+                "light.py", "light_display.py", "light_render.py",
+                "light_native.py", "light_connection.py", "light_rotation.py",
             )
         )
         helpers = _load_standalone_functions(source, names, {
@@ -1152,14 +1189,9 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
             "LOCK_WAIT_WARNING_MS": 3000, "_DEVICE_LOCK_HOLDERS": {},
             "BulbException": BULB_EXCEPTION,
             "CubeConnectionError": CUBE_CONNECTION_ERROR,
-            "__package__": "rotation_test",
             "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
             "effect_supports_color_override": NATIVE_PREVIEW["effect_supports_color_override"],
         })
-        module = SimpleNamespace(
-            _DEVICE_ORIENTATION_TO_EFFECT_DIR=CONSTANTS["DEVICE_ORIENTATION_TO_EFFECT_DIR"]
-        )
-        self.enterContext(patch.dict("sys.modules", {"rotation_test.light": module}))
         _bind(light, helpers, *names)
         light._calibration_lock = False
         light._music_flow_enabled = False
@@ -1223,7 +1255,7 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
         light._wait_rotation_retry = AsyncMock(return_value=True)
         light._cube_matrix.send_raw_command.side_effect = OSError("connection refused")
         with self.assertRaisesRegex(ValueError, "connection refused"):
-            await light.start_effect_rotation(["Rainbow", "White"], 10, "clock")
+            await light.start_effect_rotation(["Rainbow", "White"], STEADY_INTERVAL, "clock")
         self.assertFalse(light._rotation_active)
         self.assertEqual(light._rotation_error, "connection refused")
         self.assertEqual(light._wait_rotation_retry.await_count, 2)
@@ -1272,7 +1304,7 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
                     raise quota
 
         light._cube_matrix.send_raw_command.side_effect = refuse_twice
-        await light.start_effect_rotation(["Rainbow", "White"], 60, "clock")
+        await light.start_effect_rotation(["Rainbow", "White"], STEADY_INTERVAL, "clock")
         self.assertEqual(len(refused), 3)
         self.assertEqual(len(set(refused)), 1)  # the same item, retried
         self.assertTrue(light._rotation_active)
@@ -1289,7 +1321,7 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
 
         light._cube_matrix.send_raw_command.side_effect = always_refuse
         with self.assertRaisesRegex(ValueError, "too many commands"):
-            await light.start_effect_rotation(["Rainbow", "White"], 60, "clock")
+            await light.start_effect_rotation(["Rainbow", "White"], STEADY_INTERVAL, "clock")
         self.assertFalse(light._rotation_active)
         self.assertIn("too many commands", light._rotation_error)
 

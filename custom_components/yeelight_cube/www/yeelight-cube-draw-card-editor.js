@@ -9,26 +9,17 @@ import {
 } from "./draw_card_tools.js";
 import { renderActionButtonSettings } from "./action-button-ui.js";
 import { LitElement, html, css } from "./lib/lit-all.js";
-import {
-  sharedEditorStyles,
-  YeelightEditorMixin,
-  renderModeSettingsSection,
-  renderModeInfoMessage,
-  renderCarouselNavSettings,
-} from "./editor_ui_utils.js";
+import { sharedEditorStyles, YeelightEditorMixin } from "./editor_ui_utils.js";
 import { normalizeCardOptions } from "./card-config.js";
 import { renderStyleSelectorSettings } from "./style-selector-ui.js";
 import { renderSwatchSettings } from "./swatch-settings-ui.js";
+import { renderSectionLayoutSettings } from "./section-layout-settings.js";
 import {
   createButtonGroup,
   createButtonGroupChangeHandler,
   buttonGroupStyles,
 } from "./button-group-utils.js";
-import {
-  createToggleRow,
-  createSliderRow,
-  createButtonGroupRow,
-} from "./form-row-utils.js";
+import { createToggleRow, createSliderRow } from "./form-row-utils.js";
 import { TOOL_CONFIG } from "./draw_card_const.js";
 import { defineOnce } from "./card-registration.js";
 
@@ -115,7 +106,6 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
     super();
     this._config = {};
     this.hass = null;
-    this._open = {};
 
     // Throttle state for slider updates
     this._previewSizeUpdateScheduled = false;
@@ -217,8 +207,7 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
   // the list is what is shown; the rest is hidden, after it in the order.
   _setShown(orderKey, hiddenKey, all, shown) {
     const hidden = all.filter((name) => name !== "spacer" && !shown.includes(name));
-    this._setOption(orderKey, [...shown, ...hidden]);
-    this._setOption(hiddenKey, hidden);
+    this._setOptions({ [orderKey]: [...shown, ...hidden], [hiddenKey]: hidden });
   }
 
   _shownList({ orderKey, hiddenKey, all, hidden, labelFor, extra = [], noun }) {
@@ -228,10 +217,7 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
       labelFor,
       addPlaceholder: `Show ${/^[aeiou]/.test(noun) ? "an" : "a"} ${noun}…`,
       onUpdate: (shown) => this._setShown(orderKey, hiddenKey, all, shown),
-      onReset: () => {
-        this._setOption(orderKey, undefined);
-        this._setOption(hiddenKey, []);
-      },
+      onReset: () => this._setOptions({ [orderKey]: undefined, [hiddenKey]: [] }),
       resetLabel: `Show all ${noun}s, default order`,
     });
   }
@@ -298,73 +284,25 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
               this._config.show_image_palette !== false,
               (e) => this._onSwitchChange(e, "show_image_palette"),
             )}
-            ${createButtonGroupRow(
-              "Colors Container Mode",
-              createButtonGroup(
-                [
-                  { value: "side", label: "Side-by-Side" },
-                  { value: "carousel", label: "Carousel" },
-                  { value: "tabs", label: "Tabs" },
-                  { value: "dropdown", label: "Dropdown" },
-                  { value: "preview-hover", label: "Preview Hover" },
-                ],
-                this._config.palette_card_mode || "side",
-                createButtonGroupChangeHandler("palette_card_mode", (value) => this._setOption("palette_card_mode", value)),
-              ),
-            )}
-            ${(this._config.palette_card_mode || "side") === "carousel"
-              ? renderModeSettingsSection(
-                  "Carousel Mode Settings",
-                  renderCarouselNavSettings(this._config, {
-                    shapeKey: "colors_button_shape",
-                    shapeDefault: "rounded",
-                    onShapeChange: (value) =>
-                      this._setOption("colors_button_shape", value),
-                    wrapKey: "colors_wrap_navigation",
-                    onWrapChange: (e) =>
-                      this._onSwitchChange(e, "colors_wrap_navigation"),
-                    extra: this._colorsRadiusRow(12),
-                  }),
-                )
-              : (this._config.palette_card_mode || "side") === "side"
-                ? renderModeSettingsSection(
-                    "Side-by-Side Settings",
-                    html`
-                      ${createSliderRow(
-                        "Card Width",
-                        this._config.side_card_width || 100,
-                        { min: 30, max: 100, step: 1 },
-                        this._onSideCardWidthChange.bind(this),
-                        "%",
-                      )}
-                      ${createButtonGroupRow(
-                        "Click to Zoom",
-                        createButtonGroup(
-                          [
-                            { value: "off", label: "Off" },
-                            { value: "on", label: "On" },
-                          ],
-                          this._config.side_click_zoom || "off",
-                          createButtonGroupChangeHandler(
-                            "side_click_zoom",
-                            (value) => this._setOption("side_click_zoom", value),
-                          ),
-                        ),
-                      )}
-                      ${this._colorsRadiusRow(16)}
-                    `,
-                  )
-                : this._config.palette_card_mode === "preview-hover"
-                  ? renderModeSettingsSection(
-                      "Preview Hover Settings",
-                      createToggleRow(
-                        "Open as overlay",
-                        "colors_preview_overlay",
-                        this._config.colors_preview_overlay === true,
-                        (e) => this._onSwitchChange(e, "colors_preview_overlay"),
-                      ),
-                    )
-                  : ""}
+            ${renderSectionLayoutSettings({
+              config: this._config,
+              set: (key, value) => this._setOption(key, value),
+              keys: {
+                layout: "palette_card_mode",
+                style: "colors_section_style",
+                border: "colors_card_border",
+                width: "side_card_width",
+                zoom: "side_click_zoom",
+                radius: "colors_item_radius",
+                buttonShape: "colors_button_shape",
+                wrap: "colors_wrap_navigation",
+                overlay: "colors_preview_overlay",
+                tabIcons: "colors_tab_icons",
+                headers: "colors_compact_headers",
+              },
+              defaults: { layout: "side", border: "auto", tabIcons: false, headers: true },
+              styled: ["grouped", "compact"],
+            })}
             ${renderSwatchSettings(
               this._config,
               (key, value) => this._setOption(key, value),
@@ -373,21 +311,6 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
                 selectable: true,
                 sizeKey: "colors_size",
               },
-            )}
-            ${createButtonGroupRow(
-              "Colors Card Border",
-              createButtonGroup(
-                [
-                  { value: "none", label: "None" },
-                  { value: "auto", label: "Auto" },
-                  { value: "always", label: "Always" },
-                ],
-                this._config.colors_card_border || "auto",
-                createButtonGroupChangeHandler(
-                  "colors_card_border",
-                  (value) => this._setOption("colors_card_border", value),
-                ),
-              ),
             )}
         `)}
 
@@ -544,38 +467,12 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
 
   // New centralized slider handlers
 
-  // The color cards' corners (colors_item_radius), shared by the
-  // side-by-side and carousel modes; `fallback` is the mode's default.
-  _colorsRadiusRow(fallback) {
-    return createSliderRow(
-      "Card Roundness",
-      this._config.colors_item_radius ?? fallback,
-      { min: 0, max: 28, step: 1 },
-      (e) => this._setOption("colors_item_radius", parseInt(e.target.value, 10)),
-      "px",
-    );
-  }
-
-  _renderAppearance(section) {
-    return html`<yeelight-preview-appearance-editor
-      profile="draw"
-      section=${section}
-      .owner=${this}
-      .config=${this._config}
-      @appearance-changed=${(event) => {
-        this._config = event.detail.config;
-        this._fireConfigChanged();
-      }}
-    ></yeelight-preview-appearance-editor>`;
-  }
+  static appearanceProfile = "draw";
 
   _onMatrixSizeSliderChange(e) {
     this._setOption("matrix_size", Number(e.target.value));
   }
 
-  _onSideCardWidthChange(e) {
-    this._setOption("side_card_width", Number(e.target.value));
-  }
 }
 
 defineOnce("yeelight-cube-draw-card-editor", YeelightCubeDrawCardEditor);

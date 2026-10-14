@@ -36,6 +36,7 @@ import {
   NOTICE,
 } from "./card-shell.js";
 import { LampSliders } from "./lamp-sliders.js";
+import { createPendingValue } from "./pending-value.js";
 import { LitElement, html, unsafeCSS, unsafeHTML } from "./lib/lit-all.js";
 import "./collection-gallery.js";
 import "./color-mode-ui.js";
@@ -56,7 +57,6 @@ import {
   matchingClockColorPreset,
 } from "./clock-preset-utils.js";
 import { closeColorPicker, openRgbColorPicker } from "./color-picker-utils.js";
-import { markFavouriteModes } from "./gallery-display-utils.js";
 import {
   renderSliderGroup,
   lightSliderConfig,
@@ -84,7 +84,7 @@ import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { ClockPreviewMixin } from "./clock-card-preview.js";
 import { CLOCK_CARD_CSS } from "./clock-card-styles.js";
 import { rgbToHex } from "./color-utils.js";
-import { itemLabel, itemMatchesQuery } from "./card-config.js";
+import { itemLabel, itemMatchesQuery, normalizeCardOptions } from "./card-config.js";
 
 const CONTENT_OPTIONS = [
   { value: "time", label: "Time", icon: "mdi:clock-outline" },
@@ -106,6 +106,12 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     super();
     this._hass = null;
     this.config = {};
+    // A picked style is highlighted at once, until the lamp shows it (or for
+    // 5 s), like the Native and Gradient picks (pending-value.js).
+    this._pendingStyle = createPendingValue({
+      onExpire: () => this.isConnected && this.requestUpdate(),
+      yieldToLamp: true,
+    });
     this._phaseAccum = 0;
     this._lastPhaseTs = null;
     this._animLoop = null;
@@ -159,20 +165,12 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
   setConfig(config) {
     this._offlinePreviewDraft = null;
     this._commands.reset();
-    const cfg = independentActionConfig(config, {
+    // Older speed_* slider options in the shared slider_* names (card-config).
+    const cfg = independentActionConfig(normalizeCardOptions(config, "clock"), {
       buttons_style: DEFAULT_BUTTON_STYLE,
       buttons_content_mode: DEFAULT_BUTTON_CONTENT_MODE,
     });
     if (cfg.show_search === false) this._searchQuery = "";
-    // Migrate legacy per-speed slider appearance keys to the shared slider_*
-    // keys now driving both the brightness and speed sliders.
-    const K = sliderKeys("slider");
-    const oldK = sliderKeys("speed");
-    for (const f of Object.keys(K)) {
-      if (cfg[K[f]] === undefined && cfg[oldK[f]] !== undefined) {
-        cfg[K[f]] = cfg[oldK[f]];
-      }
-    }
     this.config = {
       show_card_background: true,
       buttons_style: DEFAULT_BUTTON_STYLE,
@@ -237,17 +235,8 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     }
     delete this.config.show_save_preset_button;
     this._controls ||= new ModeControlsController(createClockCardAdapter(this));
+    // The gallery shows the favourites' stars (it follows _controls).
     this._controls.configure(this.config, this._targets);
-    // Keep the grid/list star badges in sync whenever favourites change
-    // (controller.notify fires on every state update — marking is cheap).
-    this._markFavouritesListener ||= () =>
-      markFavouriteModes(
-        this.shadowRoot,
-        this._controls.favourites,
-        this._currentColorMode(this._attrs()),
-        this._controls.adapter.currentColor(),
-      );
-    this._controls.listeners.add(this._markFavouritesListener);
     this._stateSignature = null;
     this.requestUpdate();
   }
@@ -326,14 +315,13 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
 
   connectedCallback() {
     super.connectedCallback();
-    this._controls?.listeners.add(this._markFavouritesListener);
     this._startAnimation();
   }
 
   disconnectedCallback() {
     super.disconnectedCallback();
     this._commands.reset();
-    this._controls?.listeners.delete(this._markFavouritesListener);
+    this._pendingStyle.clear();
     this._controls?.disconnect();
     closeColorPicker(this);
     this._stopAnimation();
@@ -396,12 +384,6 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
   }
 
   // ── State helpers ─────────────────────────────────────────────────────────
-  _primaryEntity() {
-    const list = this.config.target_entities;
-    if (Array.isArray(list) && list.length) return list[0];
-    return this.config.entity || "";
-  }
-
   _stateObj() {
     const eid = this._primaryEntity();
     return eid ? this._hass?.states?.[eid] : null;
@@ -732,9 +714,19 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     this._pendingStyleColor = null;
     this._selectedStylePresetId = style.presetId || null;
     this._customMode = keepCustom;
+    // Highlighted at once; its timeout starts once it is sent.
+    const key = clockPresetKey(style);
+    this._pendingStyle.hold(key);
     // Quick successive picks only send the latest one.
     const result = this._callSetClock(action, managed, { coalesce: "select" });
     this.requestUpdate();
+    // A newer pick (still being sent) keeps its own highlight.
+    result.then((sent) => {
+      if (this._pendingStyle.value !== key) return;
+      if (sent) this._pendingStyle.set(key);
+      else this._pendingStyle.clear();
+      this.requestUpdate();
+    });
     return result;
   }
 
@@ -896,12 +888,6 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     if (!this._mainRendered) return;
     this._controls?.update();
     this.dataset.favStars = String(this.config.favourites_show_stars !== false);
-    markFavouriteModes(
-      this.shadowRoot,
-      this._controls?.favourites,
-      this._currentColorMode(this._attrs()),
-      this._controls?.adapter.currentColor(),
-    );
     this._setupObserver();
     this._paintVisible();
   }
@@ -1022,15 +1008,18 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
   // The shared gallery (collection-gallery.js), used exactly like the Native
   // Effects card's. While a rotation runs with "Highlight the playing clock
   // mode" off, it keeps the selection from before it started (displayed()).
+  // It stays live while a pick is sent: quick picks only send the latest.
   _gallery(offline, current, revealKey) {
+    // The lamp's style, or a pick it doesn't show yet.
+    const live = clockPresetKey(current);
+    this._pendingStyle.settle(live);
     return html`<yc-collection-gallery
       .config=${this.config}
       .items=${this._previewItems()}
       .active=${offline
         ? null
-        : this._controls.displayed("key", clockPresetKey(current))}
+        : this._controls.displayed("key", this._pendingStyle.value ?? live)}
       .model=${this._controls}
-      .disabled=${this._commands.busy}
       .revealKey=${revealKey}
       heading="Clock style"
       searchLabel="Search clock modes"

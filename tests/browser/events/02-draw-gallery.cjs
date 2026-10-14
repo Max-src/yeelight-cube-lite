@@ -1,0 +1,202 @@
+// Card events check (tests/card-events-browser.cjs): the Draw card's pixel-
+// art gallery (the shared gallery).
+const assert = require("node:assert/strict");
+
+module.exports = async (t) => {
+  const { page, lamp, draw } = t;
+  // --- Draw pixel-art gallery: the shared gallery ---------------------------
+  await page.evaluate(
+    (tag) =>
+      mount(tag, {
+        entity: "light.a",
+        pixelart_sensor: "sensor.pixel",
+        pixel_art_gallery_mode: "gallery",
+        pixel_art_allow_rename: true,
+        pixel_art_auto_apply_to_lamp: true,
+      }),
+    draw,
+  );
+  const drawView = await page.evaluate(() => {
+    window.drawSeen = [];
+    card._handlePixelArtCanvasClick = async (idx, lamp) =>
+      drawSeen.push(["load", idx, lamp]);
+    card._renamePixelArt = async (idx, name) => (
+      drawSeen.push(["rename", idx, name]),
+      true
+    );
+    card._deletePixelArt = async (idx) => (
+      drawSeen.push(["delete", idx]),
+      true
+    );
+    const items = card.shadowRoot.querySelectorAll(
+      'yc-collection-gallery .gallery-item[data-mode^="art:"]',
+    );
+    const cells =
+      items[0]?.querySelector(".gallery-matrix-preview")?.children || [];
+    return {
+      items: items.length,
+      grid: !!card.shadowRoot.querySelector(
+        'yc-collection-gallery .gc-preview-shell[data-columns="2"]',
+      ),
+      // Heart's pixel 3 is on the lamp's bottom row: shown on the
+      // preview's last row (cell 83), as in the drawing.
+      bottom: cells[83]?.style.background,
+      top: cells[3]?.style.background,
+      label: items[1]?.getAttribute("aria-label"),
+    };
+  });
+  assert.deepEqual(
+    drawView,
+    {
+      items: 2,
+      grid: true,
+      bottom: "rgb(255, 0, 0)",
+      top: "rgb(0, 0, 0)",
+      label: "Star: Load into the drawing and the lamp",
+    },
+    "draw: the former gallery mode, previews as drawn, what a pick does",
+  );
+  const star = `${draw} yc-collection-gallery .gallery-item[data-mode="art:1"]`;
+  await page.locator(star).click();
+  await page.locator(`${star} .yc-item-rename`).click();
+  const drawField = page.locator(`${draw} .yc-item-manage input`);
+  assert.equal(await drawField.inputValue(), "Star");
+  await drawField.fill("Moon");
+  await drawField.press("Enter");
+  await page.waitForTimeout(50);
+  await page.locator(`${star} .yc-item-delete`).click();
+  await page.waitForTimeout(50);
+  assert.deepEqual(
+    await page.evaluate(() => drawSeen.slice()),
+    [
+      ["load", 1, true],
+      ["rename", 1, "Moon"],
+    ],
+    "draw: a delete waits for its confirmation",
+  );
+  await page
+    .locator(`${draw} .yc-item-manage button:has-text("Delete")`)
+    .click();
+  await page.waitForTimeout(50);
+  // Each action reaches its own handler once (managing never loads).
+  assert.deepEqual(await page.evaluate(() => drawSeen), [
+    ["load", 1, true],
+    ["rename", 1, "Moon"],
+    ["delete", 1],
+  ]);
+  assert.deepEqual(
+    await page.evaluate(() =>
+      [
+        ...card.shadowRoot.querySelectorAll(
+          ".action-row button[data-action]",
+        ),
+      ].map((button) => button.title),
+    ),
+    [
+      "Export pixel arts to a JSON file",
+      "Import pixel arts from a JSON file",
+    ],
+    "draw: the shared export / import row",
+  );
+  // The pixel art on the canvas is the active one (highlighted); drawing
+  // over it makes the canvas its own again.
+  assert.deepEqual(
+    await page.evaluate(async () => {
+      await mount("yeelight-cube-draw-card", {
+        entity: "light.a",
+        pixelart_sensor: "sensor.pixel",
+        style_selector_style: "preview-grid",
+      });
+      const gallery = card.shadowRoot.querySelector("yc-collection-gallery");
+      const active = async () => {
+        await card.updateComplete;
+        await gallery.updateComplete;
+        return [...gallery.querySelectorAll('[data-active-mode="true"]')].map(
+          (node) => node.dataset.mode,
+        );
+      };
+      await card._applyPixelArtToMatrix(1);
+      const loaded = await active();
+      card.matrix = card.matrix.map((color, index) =>
+        index === 0 ? "#123456" : color,
+      );
+      card.requestUpdate();
+      const drawn = await active();
+      // The canvas is saved in the browser: leave it blank for later tests.
+      card.matrix = card.matrix.map(() => "#000000");
+      card.constructor.getStorageUtils().saveMatrix(card.matrix);
+      return { loaded, drawn };
+    }),
+    { loaded: ["art:1"], drawn: [] },
+    "draw: the pixel art on the canvas is active",
+  );
+  // Browsing never replaces the drawing: carousel and wheel moves only
+  // browse (navigateSelects false), a click on the item loads it.
+  for (const style of ["preview-carousel", "preview-wheel"]) {
+    const browsed = await page.evaluate(async (style) => {
+      await mount("yeelight-cube-draw-card", {
+        entity: "light.a",
+        pixelart_sensor: "sensor.pixel",
+        style_selector_style: style,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      const seen = [];
+      card._handlePixelArtCanvasClick = async (idx) => seen.push(idx);
+      const gallery = card.shadowRoot.querySelector("yc-collection-gallery");
+      const next = gallery.querySelector(
+        '[data-action="navigate"][data-direction="1"], .wheel-nav-buttons [data-wheel-nav="down"]',
+      );
+      next.click();
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      const afterMove = seen.length;
+      // A re-render (a lamp state update) keeps the item browsed to.
+      gallery.requestUpdate();
+      await gallery.updateComplete;
+      const shown =
+        gallery.querySelector(".yc-carousel-item[data-mode]")?.dataset.mode ??
+        gallery.querySelector('.wheel-item[data-wheel-centered="true"]')
+          ?.dataset.mode;
+      gallery.querySelector(`[data-mode="${shown}"]`).click();
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      return { afterMove, shown, seen };
+    }, style);
+    assert.deepEqual(
+      browsed,
+      { afterMove: 0, shown: "art:1", seen: [1] },
+      `draw ${style}: moves browse, a click loads`,
+    );
+  }
+  // Drawing re-renders the card, never the gallery (memoized items).
+  assert.equal(
+    await page.evaluate(async () => {
+      const gallery = card.shadowRoot.querySelector("yc-collection-gallery");
+      const node = gallery.querySelector(".gallery-item");
+      card.selectedColor = "#00ff00";
+      card.requestUpdate();
+      await card.updateComplete;
+      return gallery.querySelector(".gallery-item") === node;
+    }),
+    true,
+    "draw: a card update keeps the gallery's DOM",
+  );
+  // New callbacks (cards pass new arrow functions on every render) never
+  // update the gallery, and the newest one is the one called.
+  assert.deepEqual(
+    await page.evaluate(async () => {
+      const gallery = card.shadowRoot.querySelector("yc-collection-gallery");
+      let updates = 0;
+      gallery.addEventListener("gallery-updated", () => updates++);
+      card.selectedColor = "#0000ff";
+      card.requestUpdate();
+      await card.updateComplete;
+      await gallery.updateComplete;
+      const called = [];
+      gallery.onSelect = (key) => called.push(key);
+      await gallery.updateComplete;
+      gallery.querySelector('[data-mode="art:0"]').click();
+      return { updates, called };
+    }),
+    { updates: 0, called: ["art:0"] },
+    "gallery callbacks: no re-render, the latest called",
+  );
+};

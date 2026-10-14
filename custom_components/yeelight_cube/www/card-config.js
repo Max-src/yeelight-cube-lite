@@ -19,8 +19,21 @@
  * it first in setConfig(). An older option whose values also changed has a
  * migration (OPTION_MIGRATIONS) instead.
  */
+import { sliderKeys } from "./slider-control-utils.js";
 
 export const OPTION_ALIASES = Object.freeze({
+  clock: {
+    // The Clock's speed slider had its own speed_* appearance options; the
+    // shared slider_* ones now drive both its sliders.
+    ...Object.fromEntries(
+      Object.entries(sliderKeys("speed")).map(([field, key]) => [
+        key,
+        sliderKeys("slider")[field],
+      ]),
+    ),
+    // The shared visible-items vocabulary (visible-items.js).
+    hidden_clock_styles: "hidden_styles",
+  },
   draw: {
     show_pixelart_gallery: "show_gallery",
     pixel_art_show_titles: "preview_show_titles",
@@ -58,6 +71,8 @@ export const OPTION_ALIASES = Object.freeze({
   // the Clock and Native Effects sliders (sliderKeys("slider")).
   "lamp-preview": {
     card_title: "title",
+    // The adjustment categories' style (section-layouts.js).
+    grouped_section_style: "section_style",
     reconnect_button_style: "buttons_style",
     show_brightness_slider: "show_brightness",
     brightness_slider_style: "slider_style",
@@ -90,11 +105,24 @@ export const OPTION_ALIASES = Object.freeze({
 
 /**
  * Older options whose values changed when they joined the shared vocabulary:
- * (config) => the options to set. Run by normalizeCardOptions; the older key
- * is dropped afterwards (RETIRED_OPTIONS).
+ * (config) => the options to set (undefined: removed). Run by
+ * normalizeCardOptions; the older key is dropped afterwards
+ * (RETIRED_OPTIONS).
  */
 export const OPTION_MIGRATIONS = Object.freeze({
+  // The visible styles applied only with custom_visible_styles on.
+  clock: (config) =>
+    config.custom_visible_styles !== true &&
+    ("visible_styles" in config || "hidden_clock_styles" in config)
+      ? { visible_styles: undefined, hidden_clock_styles: undefined }
+      : {},
   gradient: (config) => ({
+    // The visible modes applied only with custom_visible_modes on, and an
+    // empty list showed every mode.
+    ...("visible_modes" in config &&
+      (config.custom_visible_modes !== true ||
+        !Array.isArray(config.visible_modes) ||
+        !config.visible_modes.length) && { visible_modes: undefined }),
     // The gallery's Size: gallery_preview_size (50%, or pixels when above
     // 100) becomes preview_size (% of 450 px, the same scale).
     ...(config.preview_size === undefined && {
@@ -108,6 +136,8 @@ export const OPTION_MIGRATIONS = Object.freeze({
   // mode, page size (12), preview size (100%), card roundness (kept: the
   // Draw palette cards use it too), border (auto) and no search box.
   draw: (config) => ({
+    // The former floating colors mode showed side by side.
+    ...(config.palette_card_mode === "floating" && { palette_card_mode: "side" }),
     ...(config.style_selector_style === undefined && {
       style_selector_style:
         DRAW_LAYOUTS[config.pixel_art_gallery_mode] || "preview-grid",
@@ -149,6 +179,15 @@ export const OPTION_MIGRATIONS = Object.freeze({
       config.rounded_cards !== "round" && {
         colors_item_radius: roundedCardsRadius(config.rounded_cards),
       }),
+    // The canvas size was once a word or a text number: a percentage now.
+    ...(typeof config.matrix_size === "string" && {
+      matrix_size:
+        DRAW_MATRIX_SIZES[config.matrix_size] ?? (Number(config.matrix_size) || 100),
+    }),
+  }),
+  // The Lamp Preview's former "tabbed" adjustments layout: the shared tabs.
+  "lamp-preview": (config) => ({
+    ...(config.adjustments_layout === "tabbed" && { adjustments_layout: "tabs" }),
   }),
   // The Color List's card roundness is the shared item radius (a legacy
   // "round" / true is the default 16 px: left unset).
@@ -222,6 +261,8 @@ function drawPreviewSize(config) {
     : size;
 }
 
+const DRAW_MATRIX_SIZES = { small: 70, medium: 85 };
+
 const DRAW_LAYOUTS = {
   gallery: "preview-grid",
   list: "preview-list",
@@ -292,6 +333,24 @@ const GRADIENT_SELECTOR_STYLES = {
 /** The Gradient options older versions saved, in today's names. */
 function gradientLegacyOptions(config) {
   const options = {};
+  // The oldest format (no rotary_unified_style): angle_rotary_style wheel,
+  // rect, or "default" (a gradient shape turning in a dial, also shown
+  // without any style) that became the compass with that shape.
+  let unified = config.rotary_unified_style;
+  if (!unified) {
+    const old = config.angle_rotary_style;
+    unified = old === "wheel" ? "wheel" : old === "rect" ? "rectangle" : "compass";
+    options.rotary_unified_style = unified;
+    if (unified === "compass" && !config.compass_shape)
+      options.compass_shape =
+        { arrow_classic: "arrow", star: "star" }[config.default_shape] || "rectangle";
+  }
+  // Each style had its own size before rotary_size.
+  if (config.rotary_size === undefined || config.rotary_size === "") {
+    const size = { wheel: config.wheel_size, rectangle: config.rect_size }[unified]
+      ?? (unified === "wheel" || unified === "rectangle" ? undefined : config.default_size);
+    if (size != null && size !== "") options.rotary_size = size;
+  }
   const rotary = GRADIENT_ROTARY_STYLES[config.rotary_unified_style];
   if (rotary) {
     const [style, key, value] = rotary;
@@ -354,14 +413,21 @@ export const RETIRED_OPTIONS = Object.freeze({
     "brightness_max",
     "show_brightness_label",
   ],
+  clock: ["custom_visible_styles"],
   gradient: [
     "gallery_preview_size",
+    "custom_visible_modes",
     // In today's names (gradientLegacyOptions), or never read.
     "compass_show_labels",
     "show_color_mode_selector",
     "color_mode_style",
     "preview_display_mode",
     "button_text_color",
+    "angle_rotary_style",
+    "default_shape",
+    "wheel_size",
+    "rect_size",
+    "default_size",
   ],
   "color-list-editor": ["rounded_cards"],
   palette: [
@@ -387,6 +453,8 @@ export function normalizeCardOptions(config, card) {
   )
     return config;
   const result = { ...config, ...migrated };
+  for (const [key, value] of Object.entries(migrated))
+    if (value === undefined) delete result[key];
   for (const [legacy, name] of Object.entries(aliases)) {
     if (!(legacy in result)) continue;
     if (result[name] === undefined) result[name] = result[legacy];

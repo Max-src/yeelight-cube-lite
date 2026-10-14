@@ -279,7 +279,8 @@ class StateRestoreMixin:
 
     # Display-state attributes captured by save_state / restore_state.
     # Together these fully determine what the panel is showing: content,
-    # mode, colors, layout, brightness and all color effects.
+    # mode, colors, layout, brightness and all color effects. Not the power:
+    # restoring never turns the lamp on or off (no power command is sent).
     _DISPLAY_STATE_ATTRS = (
         "_custom_text", "_text_colors", "_mode", "_matrix_mode", "_native_clock_style",
         "_native_clock_show_date", "_native_clock_content", "_native_clock_12_hour",
@@ -295,7 +296,6 @@ class StateRestoreMixin:
         "_preview_vibrance", "_preview_contrast", "_preview_glow",
         "_preview_grayscale", "_preview_invert", "_preview_tint_hue",
         "_preview_tint_strength", "_preview_darken", "_preview_brighten",
-        "_is_on",
     )
 
     def _save_display_state(self):
@@ -308,9 +308,9 @@ class StateRestoreMixin:
             attr: copy.deepcopy(getattr(self, attr, None))
             for attr in self._DISPLAY_STATE_ATTRS
         }
-        # Until restore_state, what is shown is a deliberate overlay (see
-        # _text_waits_for_matrix).
-        self._display_overlay = True
+        # Over the firmware clock / native effect, the next text is a
+        # deliberate overlay (see _text_waits_for_matrix): shown once.
+        self._display_overlay = self._mode in FIRMWARE_MODES
         # The rotation running now: what is shown in between (a text, a
         # pixel art...) stops it, so restore_state starts it again.
         self._saved_display_rotation = (
@@ -351,7 +351,10 @@ class StateRestoreMixin:
         is kept for when it shows text again, without leaving that mode (an
         automation pushing a sensor value must not take the clock over, stop
         its rotation, or report a mode the panel does not show). Between
-        save_state and restore_state it is a deliberate overlay: shown."""
+        save_state and restore_state it is a deliberate overlay: shown, once
+        (the text leaves the firmware mode, so the automation's next texts
+        show anyway; back on the clock without restore_state, sensor texts
+        wait again)."""
         return self._mode in FIRMWARE_MODES and not self._display_overlay
 
     async def _async_resume_display_rotation(self) -> None:

@@ -2,7 +2,7 @@ import { html } from "./lib/lit-all.js";
 import { createButtonGroup } from "./button-group-utils.js";
 import { createToggleRow, createSliderRow } from "./form-row-utils.js";
 import {
-  renderModeSettingsSection,
+  renderSettingsBox,
   renderSelectorShapeRows,
   renderDeleteButtonSettings,
   BG_COLOR_CHOICES,
@@ -194,7 +194,7 @@ export function renderStyleSelectorSettings(
               )}
             </div>
             ${style === "preview-wheel"
-              ? renderModeSettingsSection(
+              ? renderSettingsBox(
                   "Wheel Mode Settings",
                   html`
                     <div class="form-row">
@@ -226,7 +226,7 @@ export function renderStyleSelectorSettings(
                 )
               : ""}
             ${style === "preview-carousel"
-              ? renderModeSettingsSection(
+              ? renderSettingsBox(
                   "Carousel Mode Settings",
                   createToggleRow(
                     "Wrap Navigation (Infinite Loop)",
@@ -238,7 +238,7 @@ export function renderStyleSelectorSettings(
                 )
               : ""}
             ${style === "preview-album"
-              ? renderModeSettingsSection(
+              ? renderSettingsBox(
                   "Album Mode Settings",
                   html`
                     ${createToggleRow(
@@ -260,13 +260,13 @@ export function renderStyleSelectorSettings(
                 )
               : ""}
             ${style === "preview-strip"
-              ? renderModeSettingsSection(
+              ? renderSettingsBox(
                   "Strip Mode Settings",
                   highlightRow(),
                 )
               : ""}
             ${style === "preview-list" || style === "preview-grid"
-              ? renderModeSettingsSection(
+              ? renderSettingsBox(
                   style === "preview-grid"
                     ? "Grid Mode Settings"
                     : "List Mode Settings",
@@ -291,7 +291,7 @@ export function renderStyleSelectorSettings(
             ${sizeRow()}${renderAppearance(config, onChange)}
           `}
     ${manage
-      ? renderModeSettingsSection(
+      ? renderSettingsBox(
           `Your ${manage}`,
           html`
             <div class="hint">
@@ -361,7 +361,7 @@ function renderGalleryMatrixSettings(config, onChange) {
   return html`
     ${renderGalleryBackgroundRow(config, onChange)}
     ${(config.gallery_background_color || "black") !== "black"
-      ? renderModeSettingsSection(
+      ? renderSettingsBox(
           "Background Settings",
           createToggleRow(
             "Ignore Black Pixels",
@@ -425,7 +425,7 @@ function renderOriginalSelectorSettings(
         (event) => onChange("effect_view", event.currentTarget.dataset.value),
       )}
     </div>
-    ${renderModeSettingsSection(
+    ${renderSettingsBox(
       view === "list" ? "List Mode Settings" : "Grid Mode Settings",
       html`
         ${createToggleRow(
@@ -442,7 +442,7 @@ function renderOriginalSelectorSettings(
         )}
       `,
     )}
-    ${renderModeSettingsSection(
+    ${renderSettingsBox(
       "Gallery Appearance",
       html`
         ${createToggleRow(

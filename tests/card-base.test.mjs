@@ -27,6 +27,37 @@ test("cube lamps are found by the integration's marker, renamed or not", () => {
     "light.cubelite_192_168_4_105",
   ]);
   assert.deepEqual(cubeLampEntities(undefined), []);
+  // The entity registry knows this integration's lamps even renamed and
+  // unavailable (no attributes); another integration's "cube" light is not one.
+  assert.deepEqual(
+    cubeLampEntities({
+      states: {
+        "light.office": { state: "unavailable", attributes: {} },
+        "light.ice_cube": { state: "on", attributes: {} },
+      },
+      entities: {
+        "light.office": { platform: "yeelight_cube" },
+        "light.ice_cube": { platform: "hue" },
+      },
+    }),
+    ["light.office"],
+  );
+});
+
+test("every card's main lamp: the first one Home Assistant knows", () => {
+  const Card = YeelightCardMixin(class {});
+  const card = Object.assign(new Card(), {
+    config: { target_entities: ["light.gone", "light.b", "light.c"] },
+    _hass: { states: { "light.b": {}, "light.c": {} } },
+  });
+  assert.equal(card._primaryEntity(), "light.b");
+  // None known: the first configured (the card says it is missing).
+  assert.equal(card._primaryEntity({ states: {} }), "light.gone");
+  // An older config with only `entity`; no lamp at all.
+  card.config = { entity: "light.c" };
+  assert.equal(card._primaryEntity(), "light.c");
+  card.config = {};
+  assert.equal(card._primaryEntity(), "");
 });
 
 test("choosing lamps keeps entity on the first and never leaves a stale one", () => {
@@ -78,14 +109,28 @@ test("older option names move to the shared vocabulary", async () => {
   // An explicitly set shared name wins over a leftover older one.
   assert.deepEqual(
     normalizeCardOptions(
-      { mode_selector_style: "filled", style_selector_style: "preview-grid" },
+      {
+        mode_selector_style: "filled",
+        style_selector_style: "preview-grid",
+        rotary_unified_style: "compass",
+      },
       "gradient",
     ),
-    { style_selector_style: "preview-grid", preview_size: 50, show_search: false },
+    {
+      style_selector_style: "preview-grid",
+      rotary_unified_style: "compass",
+      preview_size: 50,
+      show_search: false,
+    },
   );
   const clean = { style_selector_style: "dropdown" };
   assert.equal(normalizeCardOptions(clean, "clock"), clean);
-  const gradient = { ...clean, preview_size: 64, show_search: true };
+  const gradient = {
+    ...clean,
+    rotary_unified_style: "compass",
+    preview_size: 64,
+    show_search: true,
+  };
   assert.equal(normalizeCardOptions(gradient, "gradient"), gradient);
 });
 
@@ -178,22 +223,51 @@ test("the Draw pixel-art gallery's options join the shared gallery's", async () 
         .style_selector_style,
       style,
     );
+  // The former floating colors mode: side by side.
+  assert.equal(
+    normalizeCardOptions({ palette_card_mode: "floating" }, "draw").palette_card_mode,
+    "side",
+  );
+  // The canvas size as a word or text number becomes a percentage.
+  for (const [size, percent] of [
+    ["small", 70],
+    ["medium", 85],
+    ["60", 60],
+    ["large", 100],
+    [65, 65],
+  ])
+    assert.equal(
+      normalizeCardOptions({ matrix_size: size }, "draw").matrix_size,
+      percent,
+    );
 });
 
 test("the gradient's older gallery size joins the shared Size option", async () => {
   const { normalizeCardOptions } = await import(
     "../custom_components/yeelight_cube/www/card-config.js"
   );
+  // (Today's angle style: only the size migrates.)
   const size = (gallery_preview_size) =>
-    normalizeCardOptions({ gallery_preview_size }, "gradient");
+    normalizeCardOptions(
+      { gallery_preview_size, rotary_unified_style: "wheel" },
+      "gradient",
+    );
+  const sized = (preview_size) => ({
+    preview_size,
+    rotary_unified_style: "wheel",
+    show_search: false,
+  });
   // The same % scale (of 450 px); pixel values above 100 from older configs.
-  assert.deepEqual(size("64"), { preview_size: 64, show_search: false });
-  assert.deepEqual(size(270), { preview_size: 60, show_search: false });
+  assert.deepEqual(size("64"), sized(64));
+  assert.deepEqual(size(270), sized(60));
   assert.equal(size(undefined).preview_size, 50);
   // An explicit shared value wins and the older key is dropped.
   assert.deepEqual(
-    normalizeCardOptions({ gallery_preview_size: 80, preview_size: 40 }, "gradient"),
-    { preview_size: 40, show_search: false },
+    normalizeCardOptions(
+      { gallery_preview_size: 80, preview_size: 40, rotary_unified_style: "wheel" },
+      "gradient",
+    ),
+    sized(40),
   );
 });
 

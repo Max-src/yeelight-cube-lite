@@ -78,7 +78,7 @@ export const ColorListDragMixin = (Base) => class extends Base {
       // The list is rendered afresh after the drop (_listKey).
       restore: false,
       onStart: () => {
-        this._isDragging = true;
+        this._gate.hold("drag");
         if (fan) this._collapseFanForDrag(container);
       },
       onMoved: () => fan && this._recalcFanRotations(container),
@@ -97,10 +97,9 @@ export const ColorListDragMixin = (Base) => class extends Base {
   // the new order saved when there is one.
   _finishDrag(newColors) {
     this._dragSession = null;
-    this._isDragging = false;
     this._listKey++;
     this._fanHover = { wrapper: null, justCollapsed: false };
-    this._pendingHassRender = false;
+    this._gate.release("drag");
     if (newColors) this.saveColors(newColors);
     else this.requestUpdate();
   }

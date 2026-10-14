@@ -184,3 +184,33 @@ test("older Gradient options arrive in today's names, for the card and its edito
   const current = normalizeCardOptions({ rotary_unified_style: "compass", style_selector_style: "preview-grid" }, "gradient");
   assert.deepEqual([current.rotary_unified_style, current.style_selector_style, "compass_shape" in current], ["compass", "preview-grid", false]);
 });
+
+test("the Clock's older speed_* slider options join the shared slider_* names", () => {
+  const config = normalizeCardOptions(
+    { speed_style: "bar", speed_width: 60, slider_width: 80 },
+    "clock",
+  );
+  assert.equal(config.slider_style, "bar");
+  assert.equal(config.slider_width, 80); // a value already set wins
+  assert.equal("speed_style" in config || "speed_width" in config, false);
+});
+
+test("the oldest Gradient angle format arrives in today's names", () => {
+  const cases = [
+    [{}, ["compass", "rectangle", undefined]], // no style: the turning shape
+    [{ angle_rotary_style: "wheel", wheel_size: 60 }, ["wheel", undefined, 60]],
+    [{ angle_rotary_style: "rect", rect_size: 50 }, ["rectangle", undefined, 50]],
+    [{ angle_rotary_style: "default", default_shape: "arrow_classic", default_size: 70 }, ["compass", "arrow", 70]],
+    [{ rotary_unified_style: "wheel", wheel_size: 40, rotary_size: 90 }, ["wheel", undefined, 90]],
+  ];
+  for (const [legacy, [style, shape, size]] of cases) {
+    const config = normalizeCardOptions(legacy, "gradient");
+    assert.deepEqual(
+      [config.rotary_unified_style, config.compass_shape, config.rotary_size],
+      [style, shape, size],
+      JSON.stringify(legacy),
+    );
+    for (const old of ["angle_rotary_style", "default_shape", "wheel_size", "rect_size", "default_size"])
+      assert.equal(old in config, false, old);
+  }
+});

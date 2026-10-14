@@ -15,7 +15,7 @@
 import { html } from "./lib/lit-all.js";
 import { createButtonGroup } from "./button-group-utils.js";
 import { createButtonGroupRow, createSliderRow, createToggleRow } from "./form-row-utils.js";
-import { renderModeSettingsSection } from "./editor_ui_utils.js";
+import { renderSettingsBox } from "./editor_ui_utils.js";
 import { swatchLayoutGroup } from "./swatch-utils.js";
 
 const GROUP_CHOICES = [
@@ -112,7 +112,7 @@ export function renderSwatchSettings(config, onChange, options = {}) {
         );
       }),
     )}
-    ${groupSettings ? renderModeSettingsSection(`${groupLabel} Settings`, groupSettings) : ""}
+    ${groupSettings ? renderSettingsBox(`${groupLabel} Settings`, groupSettings) : ""}
     ${sizeKey
       ? createSliderRow(
           "Size",

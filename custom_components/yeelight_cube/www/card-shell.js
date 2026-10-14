@@ -19,7 +19,7 @@
  * and keeps its own layout. The CSS lives in cardLayoutStyles
  * (card-layout-utils.js), which every card includes.
  *
- * `card` is a YeelightCardMixin card (config, _hass, _targets,
+ * `card` is a YeelightCardMixin card (config, _hass, _primaryEntity,
  * _showCardBackground). This module needs Lit, so card-base.js (also loaded
  * by the Node tests) does not import it.
  */
@@ -45,7 +45,7 @@ export function lampStatusText(stateObj) {
 function cardHeader(card, onTitleClick) {
   const config = card.config || {};
   const title = typeof config.title === "string" ? config.title.trim() : "";
-  const lamp = card._targets?.[0];
+  const lamp = card._primaryEntity?.();
   const status =
     lamp && config.show_lamp_status === true
       ? lampStatusText(card._hass?.states?.[lamp])

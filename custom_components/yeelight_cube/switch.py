@@ -41,7 +41,11 @@ async def async_setup_entry(
 
 
 class YeelightCubeAutoTurnOnSwitch(CubeDeviceEntity, SwitchEntity):
-    """Switch to control auto-turn-on behavior for Yeelight Cube Lite."""
+    """Whether a command sent while the lamp is off turns it on (stored in
+    the config entry's options; light._should_auto_turn_on reads it)."""
+
+    _attr_has_entity_name = True
+    _attr_should_poll = False
 
     def __init__(self, config_entry: ConfigEntry, light_data):
         """Initialize the switch."""
@@ -50,40 +54,27 @@ class YeelightCubeAutoTurnOnSwitch(CubeDeviceEntity, SwitchEntity):
         self._attr_name = "Auto Turn On"
         self._attr_unique_id = f"{config_entry.entry_id}_auto_turn_on"
         self._attr_icon = "mdi:lightbulb-auto"
-        
+
         # Get the light entity to access its state
         self._light_entity = light_data.get("light")
-        
+
         # Load saved state or default to True (current behavior)
         self._attr_is_on = config_entry.options.get("auto_turn_on", True)
 
     async def async_turn_on(self, **kwargs):
-        """Turn on auto-turn-on (enable automatic lamp activation on commands)."""
-        self._attr_is_on = True
-        
-        # Save to config entry options
-        new_options = dict(self._config_entry.options)
-        new_options["auto_turn_on"] = True
-        self.hass.config_entries.async_update_entry(
-            self._config_entry, options=new_options
-        )
-        
-        self.async_write_ha_state()
-        _LOGGER.debug("Auto-turn-on enabled: Lamp will turn on automatically when receiving commands while off")
+        self._set(True)
 
     async def async_turn_off(self, **kwargs):
-        """Turn off auto-turn-on (disable automatic lamp activation on commands)."""
-        self._attr_is_on = False
-        
-        # Save to config entry options
-        new_options = dict(self._config_entry.options)
-        new_options["auto_turn_on"] = False
+        self._set(False)
+
+    def _set(self, enabled: bool) -> None:
+        self._attr_is_on = enabled
         self.hass.config_entries.async_update_entry(
-            self._config_entry, options=new_options
+            self._config_entry,
+            options={**self._config_entry.options, "auto_turn_on": enabled},
         )
-        
         self.async_write_ha_state()
-        _LOGGER.debug("Auto-turn-on disabled: Commands will be ignored when lamp is off")
+        _LOGGER.debug("Auto-turn-on %s", "enabled" if enabled else "disabled")
 
 
 class YeelightCubeExtendedEffectsSwitch(CubeDeviceEntity, SwitchEntity):

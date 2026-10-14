@@ -10,18 +10,16 @@ import {
   buttonGroupStyles,
 } from "./button-group-utils.js";
 import {
-  entitySelectorStyles,
-} from "./entity-selector-utils.js";
-import {
   sharedEditorStyles,
   YeelightEditorMixin,
-  renderModeSettingsSection,
+  renderSettingsBox,
 } from "./editor_ui_utils.js";
 import {
   createToggleRow,
   createSliderRow,
 } from "./form-row-utils.js";
 import { renderLightSliderSettings } from "./slider-settings-ui.js";
+import { renderSectionLayoutSettings } from "./section-layout-settings.js";
 import { resolveCapsuleThickness } from "./capsule-slider-utils.js";
 import { normalizeCardOptions } from "./card-config.js";
 import { defineOnce } from "./card-registration.js";
@@ -38,7 +36,6 @@ class YeelightCubeLampPreviewCardEditor extends YeelightEditorMixin(LitElement) 
   constructor() {
     super();
     this._config = {};
-    this._open = {};
   }
 
   // Unset options keep the card's defaults (each row reads them): only what
@@ -47,24 +44,9 @@ class YeelightCubeLampPreviewCardEditor extends YeelightEditorMixin(LitElement) 
     this._config = lampActionConfig(normalizeCardOptions(config, "lamp-preview"));
   }
 
-  getConfig() {
-    return this._config;
-  }
-
-  // Alias kept for callers (e.g. docs fixtures) that open the shared
-  // appearance section directly.
-  get _appearanceOpen() {
-    return !!this._open?.preview_appearance;
-  }
-
-  set _appearanceOpen(value) {
-    this._open = { ...this._open, preview_appearance: !!value };
-  }
-
   static styles = [
     sharedEditorStyles,
     buttonGroupStyles,
-    entitySelectorStyles,
     orderableListStyles,
   ];
 
@@ -74,18 +56,7 @@ class YeelightCubeLampPreviewCardEditor extends YeelightEditorMixin(LitElement) 
     );
   }
 
-  _renderAppearance(section) {
-    return html`<yeelight-preview-appearance-editor
-      profile="lamp"
-      section=${section}
-      .owner=${this}
-      .config=${this._config}
-      @appearance-changed=${(event) => {
-        this._config = event.detail.config;
-        this._fireConfigChanged();
-      }}
-    ></yeelight-preview-appearance-editor>`;
-  }
+  static appearanceProfile = "lamp";
 
   render() {
     const cfg = this._config || {};
@@ -187,51 +158,34 @@ class YeelightCubeLampPreviewCardEditor extends YeelightEditorMixin(LitElement) 
               (e) => this._onSwitchChange(e, e.target.id),
             )}
             ${cfg.show_adjustment_controls
-              ? renderModeSettingsSection(
+              ? renderSettingsBox(
                   "Adjustment Settings",
                   html`
-                    <div class="form-row">
-                      <label>Adjustments Layout Mode</label>
-                      ${createButtonGroup(
-                        [
-                          { value: "compact", label: "Compact", icon: "☰" },
-                          { value: "tabbed", label: "Tabbed", icon: "📑" },
-                          { value: "grouped", label: "Grouped", icon: "📦" },
-                          { value: "radial", label: "Radial", icon: "⭕" },
-                          {
-                            value: "categories",
-                            label: "Categories",
-                            icon: "🏷️",
-                          },
-                        ],
-                        cfg.adjustments_layout || "grouped",
-                        createButtonGroupChangeHandler(
-                          "adjustments_layout",
-                          (value) => {
-                            this._setOption("adjustments_layout", value);
-                          },
-                        ),
-                      )}
-                    </div>
-                    <div class="form-row">
-                      <label>Section Style</label>
-                      ${createButtonGroup(
-                        [
-                          { value: "flat", label: "Flat", icon: "▬" },
-                          { value: "subtle", label: "Subtle", icon: "🔲" },
-                          { value: "filled", label: "Filled", icon: "■" },
-                        ],
-                        cfg.section_style ||
-                          cfg.grouped_section_style ||
-                          "subtle",
-                        createButtonGroupChangeHandler(
-                          "section_style",
-                          (value) => {
-                            this._setOption("section_style", value);
-                          },
-                        ),
-                      )}
-                    </div>
+                    ${renderSectionLayoutSettings({
+                      config: cfg,
+                      set: (key, value) => this._setOption(key, value),
+                      keys: {
+                        layout: "adjustments_layout",
+                        style: "section_style",
+                        border: "adjustments_card_border",
+                        width: "adjustments_side_width",
+                        zoom: "adjustments_click_zoom",
+                        radius: "adjustments_item_radius",
+                        buttonShape: "adjustments_button_shape",
+                        wrap: "adjustments_wrap_navigation",
+                        overlay: "adjustments_preview_overlay",
+                        tabIcons: "adjustments_tab_icons",
+                        headers: "adjustments_compact_headers",
+                      },
+                      defaults: {
+                        layout: "grouped",
+                        border: "none",
+                        tabIcons: true,
+                        headers: false,
+                      },
+                      // The rows' style: every layout with its own rows.
+                      styled: ["compact", "tabs", "grouped", "radial", "categories"],
+                    })}
                     ${createToggleRow(
                       "Show Change Indicator",
                       "show_change_indicators",

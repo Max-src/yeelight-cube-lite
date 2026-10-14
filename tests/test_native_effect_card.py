@@ -84,15 +84,13 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.target._native_effect_color_mode, "normal")
 
     async def test_native_palette_payload_preserves_effect_and_omits_default_color(self):
-        source = (ROOT / "light_native.py").read_text(encoding="utf-8").replace(
-            "        from .light import _DEVICE_ORIENTATION_TO_EFFECT_DIR\n", ""
-        )
+        source = (ROOT / "light_native.py").read_text(encoding="utf-8")
         activate = _load_standalone_functions(source, {"_activate_native_effect"}, {
             **CONSTANTS,
             "asyncio": SimpleNamespace(sleep=AsyncMock()),
             "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
             "effect_supports_color_override": NATIVE_PREVIEW["effect_supports_color_override"],
-            "_DEVICE_ORIENTATION_TO_EFFECT_DIR": {"right": "Right"},
+            "DEVICE_ORIENTATION_TO_EFFECT_DIR": {"right": "Right"},
         })["_activate_native_effect"]
         target = SimpleNamespace(
             _native_effect="Starry sky", _native_effect_speed=50,

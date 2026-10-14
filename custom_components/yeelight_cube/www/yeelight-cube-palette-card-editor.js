@@ -27,7 +27,6 @@ class YeelightCubePaletteCardEditor extends YeelightEditorMixin(LitElement) {
     super();
     this._config = {};
     this._hass = null;
-    this._open = {};
   }
 
   static get styles() {

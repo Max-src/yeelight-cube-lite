@@ -1,11 +1,5 @@
-import { hexToRgb as parseHex, rgbToHex } from "./color-utils.js";
-import {
-  BLACK_THRESHOLD,
-  OFF_COLOR,
-  MATRIX_SIZE,
-  GRID_COLS,
-  GRID_ROWS,
-} from "./draw_card_const.js";
+import { hexToRgb as parseHex } from "./color-utils.js";
+import { BLACK_THRESHOLD, OFF_COLOR, MATRIX_SIZE } from "./draw_card_const.js";
 
 // --- Create empty (all-black) matrix ---
 export function createEmptyMatrix() {
@@ -23,68 +17,18 @@ export function isBlackPixel(hex) {
   return r <= BLACK_THRESHOLD && g <= BLACK_THRESHOLD && b <= BLACK_THRESHOLD;
 }
 
-// --- Background color resolution ---
-// Maps a config value ("transparent", "white", "black", "#111", …) to a CSS color.
-// `fallback` controls the default value when no branch matches.
-export function resolveBgColor(bg, fallback = "transparent") {
-  const map = {
-    transparent: "transparent",
-    white: "#ffffff",
-    black: "#000000",
-    "#111": "#111",
-  };
-  return map[bg] ?? fallback;
-}
-
-export function updateRecentColors(recentColors, newColor) {
-  const normColor =
-    typeof newColor === "string" ? newColor.toLowerCase() : newColor;
-  const updated = [
-    normColor,
-    ...recentColors.filter((c) => c.toLowerCase() !== normColor),
-  ];
-  return updated.slice(0, 10);
-}
-
-// Coordinate transformation utilities
-
-export function lampToMatrixCoords(lampPos) {
-  // Transform lamp coordinates (0=bottom-left) to matrix coordinates (0=top-left)
-  const lampRow = Math.floor(lampPos / GRID_COLS);
-  const lampCol = lampPos % GRID_COLS;
-  const matrixRow = GRID_ROWS - 1 - lampRow; // Flip vertically
-  return matrixRow * GRID_COLS + lampCol;
-}
-
-export function matrixToLampCoords(matrixPos) {
-  // Transform matrix coordinates to lamp coordinates
-  const matrixRow = Math.floor(matrixPos / GRID_COLS);
-  const matrixCol = matrixPos % GRID_COLS;
-  const lampRow = GRID_ROWS - 1 - matrixRow; // Flip vertically
-  return lampRow * GRID_COLS + matrixCol;
-}
-
-// Color validation and conversion utilities
-// [r, g, b] -> "#rrggbb" (rounded and clamped; "#000000" for invalid input)
-export const rgbArrayToHex = rgbToHex;
-
-// Utility functions for Yeelight Cube Lite Draw Card
-
-// Normalize hex color to 6-digit lowercase
+// Normalize hex color to 6-digit lowercase (#abc -> #aabbcc)
 export function normalizeHex(hex) {
   if (!hex) return null;
   hex = hex.toLowerCase();
   if (hex.length === 4 && hex[0] === "#") {
     hex = "#" + hex[1] + hex[1] + hex[2] + hex[2] + hex[3] + hex[3];
   }
-  if (hex.length === 7 && hex[0] === "#") return hex;
   return hex;
 }
 
-export { rgbToHex };
-
 // Hex -> [r, g, b]; black for an invalid value (the drawing always needs a color).
-export function hexToRgb(hex) {
+export function hexToRgbOrBlack(hex) {
   return parseHex(hex) ?? [0, 0, 0];
 }
 
@@ -193,83 +137,10 @@ function kmeansRgb(data, k, maxIter = 20) {
 }
 
 /**
- * Extract a diverse color palette from an array of RGB tuples [[r,g,b], ...].
- * Uses K-means clustering for color diversity, filters black, deduplicates,
- * and returns hex strings sorted by HSV hue.
- * @param {Array} rgbPixels - Array of [r,g,b] tuples
- * @param {number} maxColors - Maximum palette size
- * @returns {string[]} Array of hex color strings
- */
-export function extractDiversePaletteFromRgb(rgbPixels, maxColors = 15) {
-  // Filter out black/near-black pixels
-  const filtered = rgbPixels.filter(
-    (rgb) =>
-      Array.isArray(rgb) &&
-      rgb.length === 3 &&
-      (rgb[0] > 5 || rgb[1] > 5 || rgb[2] > 5),
-  );
-  if (filtered.length === 0) return [];
-  // If very few unique colors, just return them
-  const uniqueMap = new Map();
-  for (const rgb of filtered) {
-    const hex =
-      "#" +
-      rgb
-        .map((x) =>
-          Math.max(0, Math.min(255, Math.round(x)))
-            .toString(16)
-            .padStart(2, "0"),
-        )
-        .join("");
-    if (!uniqueMap.has(hex)) uniqueMap.set(hex, rgb);
-  }
-  if (uniqueMap.size <= maxColors) {
-    const result = [...uniqueMap.keys()];
-    result.sort((a, b) => {
-      const ha = rgbToHsv(uniqueMap.get(a));
-      const hb = rgbToHsv(uniqueMap.get(b));
-      return ha[0] !== hb[0]
-        ? ha[0] - hb[0]
-        : ha[1] !== hb[1]
-          ? ha[1] - hb[1]
-          : hb[2] - ha[2];
-    });
-    return result;
-  }
-  // K-means for diversity
-  const { centroids } = kmeansRgb(filtered, maxColors);
-  // Deduplicate
-  const seen = new Set();
-  const palette = [];
-  for (const rgb of centroids) {
-    const hex =
-      "#" +
-      rgb
-        .map((x) => Math.max(0, Math.min(255, x)).toString(16).padStart(2, "0"))
-        .join("");
-    const lower = hex.toLowerCase();
-    if (!seen.has(lower) && (rgb[0] > 5 || rgb[1] > 5 || rgb[2] > 5)) {
-      seen.add(lower);
-      palette.push({ hex: lower, rgb });
-    }
-  }
-  // Sort by HSV hue
-  palette.sort((a, b) => {
-    const ha = rgbToHsv(a.rgb);
-    const hb = rgbToHsv(b.rgb);
-    return ha[0] !== hb[0]
-      ? ha[0] - hb[0]
-      : ha[1] !== hb[1]
-        ? ha[1] - hb[1]
-        : hb[2] - ha[2];
-  });
-  return palette.map((p) => p.hex);
-}
-
-/**
- * Same as extractDiversePaletteFromRgb but returns {palette, weights}
- * where weights is a Map<hexColor, pixelCount>.
- * Used by treemap mode to size tiles proportionally.
+ * A diverse color palette of an array of RGB tuples [[r,g,b], ...]: black
+ * filtered out, K-means clustering when there are more than maxColors,
+ * sorted by HSV hue. Returns {palette: hex strings, weights: Map<hex,
+ * pixelCount>} (the treemap sizes its tiles by weight).
  */
 export function extractDiversePaletteWithWeights(rgbPixels, maxColors = 15) {
   const filtered = rgbPixels.filter(

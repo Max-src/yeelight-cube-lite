@@ -26,6 +26,23 @@ RECOVERY_CONNECT_TIMEOUT = 1.5  # Longer timeout when recovering — LAN still c
 _RST_LINGER = struct.pack("ii", 1, 0)  # SO_LINGER value for an abortive close (RST)
 
 
+async def check_tcp(ip: str, port: int, timeout: float) -> None:
+    """Raise OSError unless the lamp accepts a TCP connection within
+    ``timeout`` (a reachability probe: setup, recovery). The socket is
+    RST-closed so it leaves no TIME_WAIT behind."""
+
+    def _connect() -> None:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.settimeout(timeout)
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, _RST_LINGER)
+            sock.connect((ip, port))
+        finally:
+            sock.close()
+
+    await asyncio.to_thread(_connect)
+
+
 class CubeConnectionError(BulbException):
     """A command did not reach the lamp: it is unreachable, the connection is
     in its reconnect cooldown, or the socket died. Worth retrying once the
@@ -327,20 +344,9 @@ class CubeMatrix:
         return previous
 
     async def probe(self, timeout: float = CONNECT_TIMEOUT) -> bool:
-        """Whether the lamp accepts a TCP connection within ``timeout``.
-        The probe socket is RST-closed so it leaves no TIME_WAIT behind."""
-
-        def _connect() -> None:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            try:
-                sock.settimeout(timeout)
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, _RST_LINGER)
-                sock.connect((self._ip, self._port))
-            finally:
-                sock.close()
-
+        """Whether the lamp accepts a TCP connection within ``timeout``."""
         try:
-            await asyncio.to_thread(_connect)
+            await check_tcp(self._ip, self._port, timeout)
         except OSError:
             return False
         return True

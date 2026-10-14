@@ -33,20 +33,6 @@ export function resolveColorPickerStyle(style) {
     : "swatch";
 }
 
-export function renderColorPicker(value, style = "swatch") {
-  const hex = /^#[0-9a-f]{6}$/i.test(value) ? value : "#ffffff";
-  const red = parseInt(hex.slice(1, 3), 16);
-  const green = parseInt(hex.slice(3, 5), 16);
-  const blue = parseInt(hex.slice(5, 7), 16);
-  const ink =
-    (red * 299 + green * 587 + blue * 114) / 1000 > 150 ? "#111" : "#fff";
-  return `<label class="shared-color-picker picker-style-${resolveColorPickerStyle(style)}" style="--picker-color:${hex};--picker-ink:${ink};" title="Choose color">
-    <input type="color" class="color-picker" value="${hex}" aria-label="Choose color" />
-    <span class="picker-swatch" aria-hidden="true"></span>
-    <span class="picker-value" aria-hidden="true">${hex.toUpperCase()}</span>
-  </label>`;
-}
-
 export const colorPickerStyles = `
   .shared-color-picker {
     position: relative;
@@ -236,12 +222,6 @@ export function openColorPicker(
     dispose();
     throw error;
   }
-}
-
-export function bindColorPicker(input, owner, callbacks = {}) {
-  bindColorPickerTrigger(input, (event) =>
-    handleColorPickerClick(event, owner, callbacks),
-  );
 }
 
 export function handleColorPickerClick(event, owner, callbacks = {}) {

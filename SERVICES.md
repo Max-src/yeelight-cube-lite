@@ -41,7 +41,7 @@ while direct service calls use `entity_id`.
 | `effect_view` | Both | `grid` or `list` for the Original browser |
 | `items_per_page` | Both | Pagination for Original and Live Preview list/grid browsers; editor range 0-16, with 0 meaning no pagination |
 | `show_badges` | Both | Capability labels in the Original browser |
-| `visible_styles` / `visible_effects` | Clock / Native Effects | Ordered browser selection of style keys / effect names (Clock also needs `custom_visible_styles: true`) |
+| `visible_styles` / `visible_effects` | Clock / Native Effects | The styles / effects shown, in order (unset: all). Set by the editor's list, with `hidden_styles` / `hidden_effects`: the items left out when it was saved. A style preset saved later shows after the list; older `custom_visible_styles` / `hidden_clock_styles` settings are read in these names |
 | `show_favourites`, `favourites_show_stars`, `favourites_show_previews` | Both | Show saved style/effect and color combinations, the gold star badges, and animated favourite previews |
 | `show_rotation` | Both | Show backend rotation status and commands |
 | `rotation_interval` | Both | Seconds between rotation steps, 1-604800, used until the lamp has its own interval (see [`set_rotation_interval`](#set_rotation_interval)); the editor stores it on the lamp too |
@@ -724,7 +724,7 @@ data:
 
 ### `preview_gradient_modes`
 
-Generate preview matrix data for the nine text/gradient modes (every Matrix mode except Panel Color Sequence and Custom Draw) using the entity's current text, colors, and angle. This service does **not** change what is displayed on the lamp — instead it fires a `yeelight_cube_gradient_preview_response` event containing rendered 20×5 pixel matrices for every mode, which the Gradient Card reads to display live mode previews without touching the lamp.
+Generate preview matrix data for the ten text/gradient modes (every Matrix mode except Custom Draw; Panel Color Sequence fills the whole panel, whatever the text) using the entity's current text, colors, and angle. This service does **not** change what is displayed on the lamp — instead it fires a `yeelight_cube_gradient_preview_response` event containing rendered 20×5 pixel matrices for every mode, which the Gradient Card reads to display live mode previews without touching the lamp.
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
@@ -1421,7 +1421,7 @@ data:
 
 Restore the display state previously captured with [`save_state`](#save_state) and re-render it on the lamp. Does nothing (logs a warning) if no state was saved.
 
-A rotation that was running when the state was saved starts again (what is shown in between, such as a text, stops it), in step with the lamps still running it. It stays stopped if the lamp was turned off in the meantime.
+A rotation that was running when the state was saved starts again (what is shown in between, such as a text, stops it), in step with the lamps still running it. Restoring never turns the lamp on or off: a lamp turned off in the meantime stays off (and its rotation stopped).
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
@@ -1609,44 +1609,6 @@ data:
 
 ---
 
-### `force_rediscovery`
-
-Force device rediscovery.
-
-| Field | Required | Description |
-| :-- | :-- | :-- |
-| `ip_address` | Yes | Device IP address |
-
-```yaml
-action: yeelight_cube.force_rediscovery
-data:
-  ip_address: "192.168.4.139"
-```
-
----
-
-### `trigger_manual_discovery`
-
-Manually trigger discovery for a device.
-
-| Field | Required | Description |
-| :-- | :-- | :-- |
-| `ip_address` | Yes | Device IP address |
-| `device_name` | No | Device name; defaults to `Test Device <ip>` |
-| `device_model` | No | Device model identifier; defaults to `cubelite` |
-| `device_id` | No | Device ID; defaults to `0x12345678` |
-
-```yaml
-action: yeelight_cube.trigger_manual_discovery
-data:
-  ip_address: "192.168.4.139"
-  device_name: "CubeLite Test"
-  device_model: "cubelite"
-  device_id: "0x12345678"
-```
-
----
-
 ### `create_cube_discovery`
 
 Create a discovery flow for a cube.
@@ -1798,7 +1760,7 @@ result through an event on the HA event bus.
 | `list_managed_devices` | Event `yeelight_cube_managed_devices_list` with `devices` (list of IP addresses) |
 | `is_device_managed` | Event `yeelight_cube_device_check_result` with `ip_address` and `is_managed` |
 | `test_device_detection` | Event `yeelight_cube_detection_test_result` with `would_be_detected` |
-| `force_rediscovery`, `trigger_manual_discovery`, `create_cube_discovery`, `ignore_yeelight_discovery`, `ignore_specific_yeelight` | Events `yeelight_cube_rediscovery_forced`, `yeelight_cube_manual_discovery_triggered`, `yeelight_cube_cube_discovery_created`, `yeelight_cube_yeelight_discovery_ignored`, `yeelight_cube_yeelight_device_ignored` |
+| `create_cube_discovery`, `ignore_yeelight_discovery`, `ignore_specific_yeelight` | Events `yeelight_cube_cube_discovery_created`, `yeelight_cube_yeelight_discovery_ignored`, `yeelight_cube_yeelight_device_ignored` |
 | `query_raw`, `get_capabilities`, `bulb_call`, `send_fx_effect` | Optional response data (debug services) |
 
 ---
@@ -1819,7 +1781,7 @@ result through an event on the HA event bus.
 | **Clock presets** | `save_clock_preset`, `delete_clock_preset` | Shared solid-color library |
 | **Rotation** | `start_effect_rotation`, `stop_effect_rotation`, `skip_effect_rotation` | Server-side effect cycling |
 | **Recovery** | `force_refresh` | Reconnect & re-send display state |
-| **Management** | `create_cube_discovery`, `test_display`, `force_rediscovery` | Device setup & diagnostics |
+| **Management** | `create_cube_discovery`, `test_display` | Device setup & diagnostics |
 
 ---
 

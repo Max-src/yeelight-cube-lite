@@ -1,141 +1,20 @@
 import { BLACK_THRESHOLD } from "./matrix-const.js";
 import { previewLength } from "./preview-appearance.js";
-import { escapeHtml } from "./html-escape-utils.js";
 import { favouriteId, normalizeFavourite } from "./mode-controls-controller.js";
 
 /**
- * The preview layouts of the shared gallery (collection-gallery.js): list
- * (renderGalleryMode), strip, wheel, plus the item previews (live matrix or
- * a card's own markup), the Original browser and the favourite markers.
- * Every gallery card renders through them: Clock, Native Effects, Gradient,
- * Palettes, Draw.
+ * Matrix previews as HTML strings (renderMatrixPreview: the cards' own
+ * previews, thumbnails, editors), their cell colors (matrixCellLook, also
+ * used by the gallery's Lit layouts, gallery-layouts.js), the favourites'
+ * keys (favouriteKeys) and the look of the shared gallery's layouts (galleryDisplayStyles).
  */
-
-/**
- * Escape user-controlled item titles before they are interpolated into
- * innerHTML strings (both as element content and title="..." attributes).
- * Pixel-art / palette names are user data — without this, a name like
- * `<img src=x onerror=...>` is stored XSS.
- */
-function sanitizeItems(items) {
-  return (items || []).map((it) =>
-    it && typeof it === "object" && it.title !== undefined && it.title !== null
-      ? { ...it, title: escapeHtml(it.title) }
-      : it,
-  );
-}
-
-// ============================================================================
-// WHEEL MODE CONSTANTS - Configuration and styling
-// ============================================================================
-// NOTE: Wheel mode is completely independent from gallery mode.
-// - Wheel uses: wheel-item, wheel-item-title, wheel-item-title-hover, wheel-display
-// - Gallery uses: gallery-item, gallery-item-title, gallery-display-*
-// Changing gallery styles/classes will NOT affect wheel mode and vice versa.
-// ============================================================================
-
-const WHEEL_MODE = {
-  // Display mode heights
-  DEFAULT_ITEM_HEIGHT: 95,
-  COMPACT_ITEM_HEIGHT: 68,
-
-  // Preview sizes (fallbacks when no user previewSize is passed)
-  DEFAULT_PREVIEW_SIZE: 200,
-  COMPACT_PREVIEW_SIZE: 200,
-
-  // Card padding
-  DEFAULT_CARD_PADDING: "8px 12px",
-  COMPACT_CARD_PADDING: "8px",
-
-  // Typography
-  DEFAULT_TITLE_FONT_SIZE: "14px",
-  COMPACT_TITLE_FONT_SIZE: "15px",
-  DEFAULT_TITLE_MARGIN: "10px",
-  COMPACT_TITLE_MARGIN: "12px",
-
-  // Layout
-  DEFAULT_VISIBLE_ITEMS: 5,
-  DEFAULT_WHEEL_HEIGHT: 300,
-
-  // Nav buttons: the default shape (the rest of their look and the
-  // animations are in galleryDisplayStyles).
-  BUTTON: {
-    BORDER_RADIUS: "50%",
-  },
-};
-
-/**
- * Compute a title font size that scales with the preview size.
- * At 200px preview -> 13px title; scales linearly, clamped to [10px, 18px].
- * @param {number} previewSize
- * @returns {number} font size in px
- */
-function getTitleFontSize(previewSize) {
-  // 13px at 200px preview, linearly scaled, min 10, max 18
-  const size = Math.round(13 * (previewSize / 200));
-  return Math.max(10, Math.min(size, 18));
-}
-
-/**
- * Compute a metadata font size that scales with the preview size.
- * At 200px preview -> 11px; clamped to [9px, 15px].
- * @param {number} previewSize
- * @returns {number} font size in px
- */
-function getMetadataFontSize(previewSize) {
-  const size = Math.round(11 * (previewSize / 200));
-  return Math.max(9, Math.min(size, 15));
-}
-
-/**
- * Get configuration for wheel mode based on display style
- * @param {string} wheelDisplayStyle - "default" or "compact"
- * @returns {Object} Configuration object with itemHeight, previewSize, padding, etc.
- */
-function getWheelModeConfig(wheelDisplayStyle, userPreviewSize) {
-  const isCompact = wheelDisplayStyle === "compact";
-  // Use user's slider value; fall back to defaults
-  const previewSize =
-    userPreviewSize ||
-    (isCompact
-      ? WHEEL_MODE.COMPACT_PREVIEW_SIZE
-      : WHEEL_MODE.DEFAULT_PREVIEW_SIZE);
-  // Scale item height to fit the preview (ratio 5:20 = 0.25, plus padding)
-  const baseItemHeight = isCompact
-    ? WHEEL_MODE.COMPACT_ITEM_HEIGHT
-    : WHEEL_MODE.DEFAULT_ITEM_HEIGHT;
-  const scaledItemHeight = Math.max(
-    baseItemHeight,
-    Math.round(previewSize * 0.25) + (isCompact ? 40 : 55),
-  );
-
-  return {
-    isCompact,
-    itemHeight: scaledItemHeight,
-    previewSize,
-    cardPadding: isCompact
-      ? WHEEL_MODE.COMPACT_CARD_PADDING
-      : WHEEL_MODE.DEFAULT_CARD_PADDING,
-    titleFontSize: isCompact
-      ? WHEEL_MODE.COMPACT_TITLE_FONT_SIZE
-      : WHEEL_MODE.DEFAULT_TITLE_FONT_SIZE,
-    titleMargin: isCompact
-      ? WHEEL_MODE.COMPACT_TITLE_MARGIN
-      : WHEEL_MODE.DEFAULT_TITLE_MARGIN,
-    showTitle: !isCompact, // Titles hidden in compact mode, shown on hover
-  };
-}
-
-// ============================================================================
-// WHEEL MODE RENDERER
-// ============================================================================
 
 /**
  * One matrix cell's color and shadow: black pixels may be left out
  * (ignoreBlackPixels) and lose their shadow. Shared by renderMatrixPreview
  * (markup) and paintMatrixPreview (in place) so both always agree.
  */
-function matrixCellLook(color, options) {
+export function matrixCellLook(color, options) {
   let css;
   let isBlack;
   if (Array.isArray(color)) {
@@ -159,24 +38,6 @@ function matrixCellLook(color, options) {
     background: ignored ? "transparent" : css,
     shadow: !ignored && options.pixelBoxShadow ? `0 0 ${length(2)} #0008` : "",
   };
-}
-
-/**
- * Repaint a rendered matrix preview (`.gallery-matrix-preview`) with new
- * colors, keeping its DOM: content-only updates (new text, colors, angle)
- * then never rebuild a gallery. `options` are renderMatrixPreview's.
- * Returns false when the matrix does not have one cell per color.
- */
-export function paintMatrixPreview(matrix, colorData, options = {}) {
-  const cells = matrix?.children;
-  if (!cells || !colorData || cells.length !== colorData.length) return false;
-  for (let index = 0; index < cells.length; index++) {
-    const look = matrixCellLook(colorData[index], options);
-    const style = cells[index].style;
-    if (style.background !== look.background) style.background = look.background;
-    if (style.boxShadow !== look.shadow) style.boxShadow = look.shadow;
-  }
-  return true;
 }
 
 /**
@@ -230,372 +91,10 @@ export function renderMatrixPreview(colorData, options = {}) {
 }
 
 /**
- * An item's preview in every gallery layout: the card's own markup when it
- * has one (item.previewHtml: a palette's swatches; trusted, escaped by the
- * card) at the layout's preview width, else the live matrix of
- * item.colorData. The markup sits in an inline-size container, so cards
- * size it with cqw units and it scales with the gallery's Size like a matrix.
+ * The keys of the favourites saved with this color mode (and color): their
+ * items show the star.
  */
-export function renderItemPreview(item, options = {}) {
-  if (item?.previewHtml == null) return renderMatrixPreview(item?.colorData, options);
-  const width = options.forceAspectRatio
-    ? "100%"
-    : `${options.previewSize ?? 200}px`;
-  return `<div class="gallery-item-preview" style="container-type:inline-size;width:${width};max-width:100%;">${item.previewHtml}</div>`;
-}
-
-/**
- * Render items in gallery mode (responsive grid)
- * @param {Array} items - Array of item objects with { title, colorData, metadata, onClick }
- * @param {Object} options - Display options
- * @returns {string} HTML string
- */
-export function renderGalleryMode(items, options = {}) {
-  items = sanitizeItems(items);
-  const {
-    previewSize = 200,
-    showCards = true,
-    showTitles = true,
-    onClickEnabled = true,
-    currentMode = null,
-    highlightActive = false,
-    bgColor = "#000000",
-    ...matrixOptions
-  } = options;
-
-  const cardClass = showCards ? "gallery-item-card" : "gallery-item-plain";
-  const cursorStyle = onClickEnabled ? "cursor: pointer;" : "";
-  const itemBg =
-    bgColor ||
-    (showCards ? "var(--card-background-color, #fff)" : "transparent");
-  const titleColor =
-    bgColor === "#000000"
-      ? "color: #fff;"
-      : "color: var(--primary-text-color);";
-  const isBgTransparent = bgColor === "transparent";
-
-  return `
-    <div class="gallery-display-grid" style="grid-template-columns: repeat(auto-fit, minmax(min(${previewSize + 60}px, 100%), 1fr));">
-      ${items
-        .map((item, idx) => {
-          const isActive =
-            highlightActive && currentMode && item.dataMode === currentMode;
-          return `
-        <div class="gallery-item ${cardClass}" 
-             data-idx="${idx}"
-             ${item.dataMode ? `data-mode="${item.dataMode}"` : ""}
-             ${isActive ? 'data-active-mode="true"' : ""}
-             ${isBgTransparent ? 'data-bg-transparent="true"' : ""}
-             ${item.title ? `title="${item.title}"` : ""}
-             style="${cursorStyle} background: ${itemBg};">${
-               showTitles && item.title
-                 ? `<div class="gallery-item-title" style="font-size: ${getTitleFontSize(previewSize)}px; ${titleColor}">${item.title}</div>`
-                 : ""
-             }
-          <div class="gallery-item-body">
-            ${renderItemPreview(item, {
-              previewSize,
-              bgColor,
-              ...matrixOptions,
-            })}
-          </div>
-          ${
-            item.metadata
-              ? `<div class="gallery-item-metadata" style="font-size: ${getMetadataFontSize(previewSize)}px;">${item.metadata}</div>`
-              : ""
-          }
-        </div>
-      `;
-        })
-        .join("")}
-    </div>
-  `;
-}
-
-/**
- * Render items in strip mode: one horizontally SCROLLABLE row of mini
- * previews (never wraps).
- */
-export function renderStripMode(items, options = {}) {
-  return renderCompactFlavor(items, options, /*strip=*/ true);
-}
-
-// The strip's items (gallery-compact-item; `strip` false: a wrapping row).
-function renderCompactFlavor(items, options = {}, strip = false) {
-  items = sanitizeItems(items);
-  const {
-    previewSize = 200,
-    showCards = true,
-    showTitles = true,
-    onClickEnabled = true,
-    currentMode = null,
-    highlightActive = false,
-    bgColor = "#000000",
-    ...matrixOptions
-  } = options;
-
-  const cursorStyle = onClickEnabled ? "cursor: pointer;" : "";
-  const itemBg =
-    bgColor ||
-    (showCards ? "var(--card-background-color, #fff)" : "transparent");
-  const titleColor =
-    bgColor === "#000000"
-      ? "color: #fff;"
-      : "color: var(--primary-text-color);";
-  const isBgTransparent = bgColor === "transparent";
-
-  // Strip: single non-wrapping scrollable row; compact: centered wrapping row
-  // (galleryDisplayStyles).
-  return `
-    <div class="${strip ? "gallery-display-strip" : "gallery-display-compact"}">
-      ${items
-        .map((item, idx) => {
-          const isActive =
-            highlightActive && currentMode && item.dataMode === currentMode;
-          return `
-        <div class="gallery-item gallery-compact-item${showCards ? "" : " gallery-compact-plain"}" 
-             data-idx="${idx}"
-             ${item.dataMode ? `data-mode="${item.dataMode}"` : ""}
-             ${isActive ? 'data-active-mode="true"' : ""}
-             ${isBgTransparent ? 'data-bg-transparent="true"' : ""}
-             ${item.title ? `title="${item.title}"` : ""}
-             style="${cursorStyle} border-radius: ${showCards ? "6px" : "4px"}; background: ${itemBg};">${renderItemPreview(item, {
-               previewSize,
-               bgColor,
-               ...matrixOptions,
-             })}
-          ${
-            showTitles && item.title
-              ? `<div class="gallery-item-title" style="font-size: ${getTitleFontSize(previewSize)}px; max-width: ${previewSize}px; ${titleColor}">${item.title}</div>`
-              : ""
-          }
-        </div>
-      `;
-        })
-        .join("")}
-    </div>
-  `;
-}
-
-/**
- * Render items in wheel mode (iOS-style picker with 3D rotation effect)
- * @param {Array} items - Array of item objects with title, colorData, dataMode
- * @param {Object} options - Display options
- * @returns {string} HTML string for wheel picker
- */
-export function renderWheelMode(items, options = {}) {
-  items = sanitizeItems(items);
-  const {
-    wheelHeight = WHEEL_MODE.DEFAULT_WHEEL_HEIGHT,
-    wheelDisplayStyle = "default",
-    onClickEnabled = true,
-    showTitles = true,
-    ...matrixOptions
-  } = options;
-
-  // Get mode-specific configuration (showTitle is derived from wheelDisplayStyle)
-  const userPreviewSize = matrixOptions.previewSize;
-  const config = getWheelModeConfig(wheelDisplayStyle, userPreviewSize);
-  const halfVisible = Math.floor(WHEEL_MODE.DEFAULT_VISIBLE_ITEMS / 2);
-  const cursorStyle = onClickEnabled ? "cursor: pointer;" : "";
-  // Scale outer/inner max-widths based on preview size
-  const outerMaxWidth = Math.max(350, config.previewSize + 150);
-  const cardMaxWidth = Math.max(250, config.previewSize + 50);
-
-  // Compute effective step size (height minus overlap margin)
-  const itemStep = Math.round(config.itemHeight * 0.65);
-
-  // Pre-compute initial translateY so the wheel starts centered on the
-  // current mode immediately, without waiting for JS initialization.
-  const paddingTop = halfVisible * itemStep;
-  let initialCenterIndex = 0;
-  if (matrixOptions.currentMode) {
-    const foundIdx = items.findIndex(
-      (item) => item.dataMode === matrixOptions.currentMode,
-    );
-    if (foundIdx >= 0) initialCenterIndex = foundIdx;
-  }
-  const initialBaseOffset =
-    paddingTop + config.itemHeight / 2 - wheelHeight / 2;
-  const initialOffset = initialBaseOffset + initialCenterIndex * itemStep;
-
-  return `
-    <div class="wheel-display" ${matrixOptions.bgColor === "transparent" ? 'data-bg-transparent="true"' : ""} style="max-width: ${outerMaxWidth}px; height: ${wheelHeight}px;">
-      <!-- Inner clipping viewport - clips top/bottom overflow only -->
-      <div class="wheel-clip-viewport">
-        <!-- Scrollable wheel container -->
-        <div class="wheel-scroll-container" data-wheel-scroll="true"
-          data-wheel-item-height="${config.itemHeight}"
-          data-wheel-item-step="${itemStep}"
-          data-wheel-container-height="${wheelHeight}"
-          data-wheel-padding-top="${paddingTop}"
-          style="padding: ${paddingTop}px 0; transform: translateY(-${initialOffset}px); max-width: ${cardMaxWidth}px;">
-          ${renderWheelItems(items, config, cursorStyle, matrixOptions, initialCenterIndex)}
-        </div>
-      </div>
-
-      ${renderWheelNavButtons(options)}
-    </div>
-  `;
-}
-
-/**
- * Compute initial visual style for a wheel item based on distance from center
- * @private
- */
-function getInitialWheelItemStyle(idx, centerIndex) {
-  const distance = Math.abs(idx - centerIndex);
-  if (distance === 0) {
-    return { opacity: 1, scale: 1, rotateX: 0, zIndex: 100 };
-  }
-  // Match WHEEL_CONSTANTS.OFF_CENTER values
-  const scale = Math.max(0.92 - 0.02 * (distance - 1), 0.8);
-  const direction = idx < centerIndex ? 1 : -1;
-  const rotateX = Math.min(distance * 20, 50) * direction;
-  const opacity = Math.max(1 - 0.15 * distance, 0.3);
-  const zIndex = 100 - distance * 10;
-  return { opacity, scale, rotateX, zIndex };
-}
-
-/**
- * Render individual wheel items
- * @private
- */
-function renderWheelItems(
-  items,
-  config,
-  cursorStyle,
-  matrixOptions,
-  initialCenterIndex = 0,
-) {
-  const {
-    currentMode = null,
-    highlightActive = false,
-    showCards = true,
-    bgColor = "#000000",
-  } = matrixOptions;
-  const isBgBlack = bgColor === "#000000";
-  const isBgTransparent = bgColor === "transparent";
-  const itemBg = isBgTransparent
-    ? "rgba(255,255,255,0.08)"
-    : bgColor ||
-      (showCards ? "var(--card-background-color, #fff)" : "transparent");
-  const titleColor = isBgBlack
-    ? "color: #fff;"
-    : "color: var(--primary-text-color);";
-  // Border: white subtle border on black bg, standard on others
-  const borderStyle = showCards
-    ? isBgBlack
-      ? "1px solid rgba(255,255,255,0.25)"
-      : "1px solid var(--divider-color, #e0e0e0)"
-    : "1px solid transparent";
-  // Backdrop blur for transparent mode so overlapping cards show layering
-  const backdropBlur = isBgTransparent
-    ? "backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);"
-    : "";
-  return items
-    .map((item, idx) => {
-      const isActive =
-        highlightActive && currentMode && item.dataMode === currentMode;
-      const initStyle = getInitialWheelItemStyle(idx, initialCenterIndex);
-      return `
-      <div class="wheel-item" 
-           data-idx="${idx}"
-           ${item.dataMode ? `data-mode="${item.dataMode}"` : ""}
-           ${isActive ? 'data-active-mode="true"' : ""}
-           ${item.title ? `title="${item.title}"` : ""}
-           ${
-             config.isCompact
-               ? `data-wheel-compact-item="true"`
-               : `data-wheel-item="true"`
-           }
-           style="
-             ${cursorStyle}
-             padding: ${showCards ? config.cardPadding : "4px"};
-             border-radius: ${showCards ? "10px" : "6px"};
-             background: ${itemBg};
-             border: ${borderStyle};
-             ${backdropBlur}
-             opacity: ${initStyle.opacity};
-             transform: scale(${initStyle.scale}) rotateX(${initStyle.rotateX}deg);
-             z-index: ${initStyle.zIndex};
-             min-height: ${config.itemHeight}px;
-             height: ${config.itemHeight}px;
-             box-shadow: ${isBgBlack ? "0 1px 4px rgba(255,255,255,0.08)" : "0 1px 3px rgba(0,0,0,0.1)"};
-             margin-top: ${idx === 0 ? "0" : `-${Math.round(config.itemHeight * 0.35)}px`};
-           ">
-        ${renderWheelItemTitle(item.title, config, titleColor)}
-        <div class="wheel-item-body">
-          ${renderItemPreview(item, {
-            previewSize: config.previewSize,
-            bgColor,
-            ...matrixOptions,
-          })}
-        </div>
-      </div>
-    `;
-    })
-    .join("");
-}
-
-/**
- * Render wheel item title (visible or hover-only based on mode)
- * @private
- */
-function renderWheelItemTitle(title, config, titleColor = "") {
-  if (!title) return "";
-
-  if (config.showTitle) {
-    // Default mode: always visible title
-    return `
-      <div class="wheel-item-title" style="font-size: ${config.titleFontSize}; margin-bottom: ${config.titleMargin}; ${titleColor}">${title}</div>
-    `;
-  } else {
-    // Compact mode: hover-only tooltip
-    return `
-      <div class="wheel-item-title-hover">${title}</div>
-    `;
-  }
-}
-
-/**
- * Render wheel navigation buttons
- * @private
- */
-function renderWheelNavButtons(options) {
-  if (options.wheelNavPosition === "none") {
-    return "";
-  }
-
-  const isSideLayout = options.wheelNavPosition === "sides";
-
-  // Nav-button shape (shared selector appearance axis); default keeps the
-  // historical circular look when no shape is passed. Layout and look:
-  // galleryDisplayStyles (data-wheel-nav-layout).
-  const navRadius =
-    { square: "0", rounded: "8px", round: "50%" }[options.navButtonShape] ||
-    WHEEL_MODE.BUTTON.BORDER_RADIUS;
-
-  return `
-    <div class="wheel-nav-buttons" data-wheel-nav-layout="${options.wheelNavPosition || "bottom"}">
-      <button class="wheel-nav-down" data-wheel-nav="${isSideLayout ? "up" : "down"}" title="Previous" style="border-radius: ${navRadius};">‹</button>
-      <button class="wheel-nav-up" data-wheel-nav="${isSideLayout ? "down" : "up"}" title="Next" style="border-radius: ${navRadius};">›</button>
-    </div>
-  `;
-}
-
-/**
- * Toggle the `data-favourite` star badge on every `[data-mode]` item in root.
- * Shared by the Clock and Native Effects cards: called after each render and
- * whenever the favourites list changes (controller notification).
- */
-export function markFavouriteModes(
-  root,
-  favourites,
-  colorMode = "normal",
-  color,
-) {
-  if (!root) return;
+export function favouriteKeys(favourites, colorMode = "normal", color) {
   const marked = new Set();
   for (const item of favourites || []) {
     const favourite = normalizeFavourite(item);
@@ -606,75 +105,7 @@ export function markFavouriteModes(
     )
       marked.add(favourite.key);
   }
-  root.querySelectorAll("[data-mode]").forEach((node) => {
-    if (marked.has(node.dataset.mode))
-      node.setAttribute("data-favourite", "true");
-    else node.removeAttribute("data-favourite");
-  });
-  root
-    .querySelectorAll("[data-mode-select] option[value]")
-    .forEach((option) => {
-      option.dataset.favouriteLabel ??= option.textContent.replace(
-        /^\u2605 /,
-        "",
-      );
-      option.textContent = `${marked.has(option.value) ? "\u2605 " : ""}${option.dataset.favouriteLabel}`;
-    });
-}
-
-/**
- * The markup of `items` in a preview layout: "list" (also the 2-column
- * grid, styled by the shell), "strip" or "wheel" (selectorDisplayMode).
- * @returns {string} HTML string
- */
-export function renderGalleryDisplay(items, displayMode = "list", options = {}) {
-  if (displayMode === "strip") return renderStripMode(items, options);
-  if (displayMode === "wheel") return renderWheelMode(items, options);
-  return renderGalleryMode(items, options);
-}
-
-/**
- * Render the shared "Original" browser gallery: a grid or list of preview
- * tiles, each with a name and an optional capability badge.  Used by both the
- * Native Effects and Clock cards so their Original browsers look and behave
- * identically.  Each card supplies its own `previewHtml` (animated matrix
- * markup) plus `title` and `badge`.
- *
- * @param {Array} items - [{ dataMode, title, badge, previewHtml }]
- * @param {Object} options - { view: "grid"|"list", showBadges, current }
- * @returns {string} HTML string
- */
-export function renderOriginalGallery(items, options = {}) {
-  const view = options.view === "list" ? "list" : "grid";
-  const showBadges = options.showBadges !== false;
-  return `<div class="original-gallery ${view}">
-    ${(items || [])
-      .map((item) => {
-        const selected =
-          options.current != null && item.dataMode === options.current;
-        const highlighted = options.highlight !== false && selected;
-        return `<button
-          class="original-item"
-          type="button"
-          data-mode="${escapeHtml(item.dataMode)}"
-          aria-label="${escapeHtml(item.title)}"
-          aria-pressed="${selected ? "true" : "false"}"
-          ${highlighted ? 'data-active-mode="true"' : ""}
-          title="${escapeHtml(item.title)}">
-          ${item.previewHtml || ""}
-          <span class="original-item-name">${escapeHtml(item.title)}</span>
-          ${showBadges && item.badge ? `<span class="original-item-badge">${escapeHtml(item.badge)}</span>` : ""}
-        </button>`;
-      })
-      .join("")}
-  </div>`;
-}
-
-/** Bind click handlers for the shared Original browser gallery. */
-export function bindOriginalGallery(root, { select }) {
-  root.querySelectorAll(".original-item[data-mode]").forEach((node) => {
-    node.onclick = () => select(node.dataset.mode);
-  });
+  return marked;
 }
 
 /**
@@ -819,7 +250,7 @@ export const galleryDisplayStyles = matrixPreviewStyles + `
   /* Favourite marker: a gold star inline with the item's title/label (the same
      presentation the text dropdowns use). Live-preview modes (list/grid/strip/
      carousel/wheel) render the star larger; Text and Original keep it at label
-     size. markFavouriteModes sets data-favourite on each [data-mode] item.
+     size. The gallery's layouts set data-favourite on each [data-mode] item.
      Hidden when the card host has data-fav-stars="false" (the editor's
      "Show favourite stars" toggle). */
   :host([data-fav-stars="false"])
@@ -918,7 +349,7 @@ export const galleryDisplayStyles = matrixPreviewStyles + `
     padding: 0;
   }
   /* The scrolled column: its offset (transform) and the items' opacity,
-     transform and z-index are inline, written by wheel-navigation-utils.js. */
+     transform and z-index are inline (wheel-picker.js <yc-wheel>). */
   .wheel-scroll-container {
     display: flex;
     flex-direction: column;
@@ -964,7 +395,10 @@ export const galleryDisplayStyles = matrixPreviewStyles + `
     text-overflow: ellipsis;
     font-weight: 600;
   }
-  /* Compact wheel: the title shows on hover (wheel-navigation-utils.js). */
+  /* Compact wheel: the title shows on hover. */
+  .wheel-item[data-wheel-compact-item="true"]:hover .wheel-item-title-hover {
+    opacity: 1;
+  }
   .wheel-item-title-hover {
     position: absolute;
     top: 50%;

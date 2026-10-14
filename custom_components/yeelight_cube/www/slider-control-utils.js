@@ -34,6 +34,7 @@ import {
   resolveWheelStyle,
   sanitizeSliderGc,
 } from "./slider-values.js";
+import { createPendingValue } from "./pending-value.js";
 import range from "./slider-style-range.js";
 import bar from "./slider-style-bar.js";
 import wheel from "./slider-style-wheel.js";
@@ -213,50 +214,21 @@ export function createSliderDraft({
   tolerance = 2,
   timeoutMs = 5000,
 } = {}) {
-  let value = null;
-  let at = 0;
-  let timer = null;
-  const clear = () => {
-    value = null;
-    clearTimeout(timer);
-    timer = null;
-  };
-  const expire = () => {
-    timer = null;
-    if (isDragging()) {
-      timer = setTimeout(expire, timeoutMs);
-      return;
-    }
-    if (value == null) return;
-    value = null;
-    onExpire?.();
-  };
+  // The shared pending value (pending-value.js), held while dragging.
+  const draft = createPendingValue({
+    matches: (statePct, pct) => Math.abs(Number(statePct) - pct) <= tolerance,
+    timeoutMs,
+    onExpire,
+    isHeld: isDragging,
+  });
   return {
     get value() {
-      return value;
+      return draft.value;
     },
-    live(pct) {
-      value = pct;
-      at = Date.now();
-    },
-    commit(pct) {
-      value = pct;
-      at = Date.now();
-      clearTimeout(timer);
-      timer = setTimeout(expire, timeoutMs);
-    },
-    settle(statePct) {
-      if (value == null || isDragging()) return false;
-      if (
-        Math.abs(Number(statePct) - value) <= tolerance ||
-        Date.now() - at > timeoutMs
-      ) {
-        clear();
-        return true;
-      }
-      return false;
-    },
-    clear,
+    live: draft.hold,
+    commit: draft.set,
+    settle: draft.settle,
+    clear: draft.clear,
   };
 }
 
@@ -269,7 +241,7 @@ export function createSliderDraft({
  */
 export function stableSliderMarkup(host, key, markup) {
   const cache = (host._stableSliderMarkup ||= {});
-  if ((host._anySliderDragging || host._sliderTyping) && cache[key] != null)
+  if ((host._gate.held("slider") || host._sliderTyping) && cache[key] != null)
     return cache[key];
   cache[key] = markup;
   return markup;
@@ -295,7 +267,8 @@ export function stableSliderMarkup(host, key, markup) {
  * @param {string}  [p.ns]           - namespace (must match renderSliderControl)
  * @param {Function} [p.onDragEnd]   - called once the pointer is released
  *
- * `host._anySliderDragging` stays true for as long as a pointer is held on any
+ * The host's render gate is held ("slider", card-base.js `_gate`) for as long
+ * as a pointer is held on any
  * of the host's sliders (released anywhere on the page), so cards can keep
  * the lamp's older state from overwriting the value under the user's finger.
  */
@@ -344,12 +317,12 @@ export function createSliderHandlers({
     }
     setTimeout(() => {
       if (pointerHeld) return;
-      host._anySliderDragging = false;
+      host._gate.release("slider");
       onDragEnd?.();
     }, 50);
   };
   const holdPointer = () => {
-    host._anySliderDragging = true;
+    host._gate.hold("slider");
     if (pointerHeld) return;
     pointerHeld = true;
     for (const type of ["mouseup", "pointerup", "touchend", "touchcancel"])
@@ -395,7 +368,7 @@ export function createSliderHandlers({
       commitTimer = null;
       pendingCommit = null;
       // Wheel/keyboard changes end here; a held pointer ends on release.
-      if (!pointerHeld) host._anySliderDragging = false;
+      if (!pointerHeld) host._gate.release("slider");
       onCommit(value);
     }, commitDelay);
   };
@@ -413,7 +386,7 @@ export function createSliderHandlers({
       }
     }
     value = clamp(value);
-    host._anySliderDragging = true;
+    host._gate.hold("slider");
     updateVisuals(value);
     if (onLive) onLive(value);
     commit(value);

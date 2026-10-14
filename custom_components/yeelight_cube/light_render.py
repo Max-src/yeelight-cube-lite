@@ -76,7 +76,7 @@ class MatrixRenderMixin:
     def _flip_positions(self, positions, total_columns=TOTAL_COLUMNS, total_rows=TOTAL_ROWS):
         return [self._flip_position(pos, total_columns, total_rows) for pos in positions]
 
-    async def _apply_display_mode_internal(self, skip_post_delay: bool = False):
+    async def _apply_display_mode_internal(self):
         """Internal method that actually applies the display mode - called by queue processor"""
         # Re-applying anything resumes the display after a freeze_display.
         self._display_frozen = False
@@ -132,12 +132,19 @@ class MatrixRenderMixin:
                 for color_hex, positions in color_groups.items():
                     self.place_pixels(color_hex, self._flip_positions(positions))
                 self._remember_drawing()
-                await self.apply(skip_post_delay=skip_post_delay)
+                await self.apply()
                 return
             # If not in custom draw mode, clear custom pixels so text/other modes work as expected
             if not self._custom_draw_active:
                 self._custom_pixels = None
-            if self._custom_text or self._full_panel:
+            if self._mode == "Panel Color Sequence":
+                # The colors fill the panel one module after another; any text
+                # or full-panel setting is kept for the text modes.
+                self._is_scrolling = False
+                self.stop_scroll_timer()
+                self._place_frame(self._panel_sequence_frame(self._text_colors))
+                await self.apply()
+            elif self._custom_text or self._full_panel:
                 # SAFETY NET: the text/gradient renderer below only handles the
                 # text render modes.  If we reach here with a non-text mode
                 # left over -- e.g. "Custom Draw" after a pixel art was cleared
@@ -184,308 +191,11 @@ class MatrixRenderMixin:
                 if not self._text_colors:
                     _LOGGER.warning("[DISPLAY] No text colors set! Using default red.")
                 
-                def get_color(idx=None, factor=None, position=None, total=None):
-                    if self._mode == "Solid Color":
-                        return [self._text_colors[0]] if self._text_colors else [(255,0,0)]
-                    elif self._mode == "Letter Gradient":
-                        n = len(effective_text)
-                        return [self.calculate_multi_gradient_color(self._text_colors, idx, n)]
-                    elif self._mode in ["Column Gradient", "Row Gradient", "Angle Gradient", "Radial Gradient", "Letter Angle Gradient", "Letter Vertical Gradient"]:
-                        return self._text_colors if self._text_colors else [(255,0,0), (0,0,255)]
-                    elif self._mode == "Text Color Sequence":
-                        return self._text_colors if self._text_colors else [(255,0,0)]
-                    else:
-                        return [self._text_colors[0]] if self._text_colors else [(255,0,0)]
+                self._place_frame(self._text_mode_frame(
+                    self._mode, effective_text, self._text_colors,
+                    self._angle, current_offset, total_text_width,
+                ))
 
-                if self._mode == "Solid Color":
-                    color = get_color()
-                    if isinstance(color, list):
-                        color = color[0]
-                    text_color_hex = rgb_to_hex(tuple(color))
-                    _LOGGER.debug("[DISPLAY] Solid color mode - color: %s, hex: %s", color, text_color_hex)
-                    self.place_letters(text_color_hex, effective_text, current_offset, flip=True)
-                elif self._mode == "Text Color Sequence":
-                    # Fully randomize: shuffle both color list and pixel positions for each letter
-                    colors = get_color()
-                    if not colors:
-                        colors = [(255,0,0)]
-                    shuffled_colors = colors[:]
-                    random.shuffle(shuffled_colors)
-                    
-                    pixel_index = 0
-                    for letter in effective_text:
-                        letter_positions = self.get_positions_for_letter(letter)
-                        positions = letter_positions[:]
-                        random.shuffle(positions)
-                        for pos in positions:
-                            adjusted_pos = pos + current_offset
-                            
-                            # Apply same bounds checking as in place_letters
-                            if 0 <= adjusted_pos < (TOTAL_COLUMNS * TOTAL_ROWS):
-                                # Calculate the virtual column this pixel would be in
-                                orig_col = pos % TOTAL_COLUMNS
-                                virtual_col = orig_col + current_offset
-                                
-                                # Only show pixels that are in the visible window (columns 0-19 of the virtual text)
-                                if 0 <= virtual_col < TOTAL_COLUMNS:
-                                    color = shuffled_colors[pixel_index % len(shuffled_colors)]
-                                    color_hex = rgb_to_hex(color)
-                                    self.place_pixels(color_hex, self._flip_positions([adjusted_pos]))
-                            pixel_index += 1
-                        current_offset += self._char_advance(letter)
-                elif self._mode == "Letter Gradient":
-                    for i, letter in enumerate(effective_text):
-                        gradient_color = get_color(i)
-                        if isinstance(gradient_color, list):
-                            gradient_color = gradient_color[0]
-                        color_hex = rgb_to_hex(tuple(gradient_color))
-                        self.place_letters_for_single_letter(color_hex, letter, i, current_offset, flip=True)
-                elif self._mode == "Column Gradient":
-                    colors = get_color()
-                    
-                    for letter in effective_text:
-                        letter_positions = self.get_positions_for_letter(letter)
-                        letter_width = self.letter_size(letter_positions)
-                        for col_index in range(letter_width):
-                            grid_col = (col_index + current_offset) % total_columns
-                            overall_col = col_index + current_offset
-                            col_color = self.calculate_multi_gradient_color(
-                                colors, overall_col, total_text_width
-                            )
-                            if isinstance(col_color, list):
-                                col_color = col_color[0]
-                            col_color_hex = rgb_to_hex(tuple(col_color))
-                            # Filter positions with bounds checking
-                            colored_positions = []
-                            for pos in letter_positions:
-                                adjusted_pos = pos + current_offset
-                                if (0 <= adjusted_pos < (TOTAL_COLUMNS * TOTAL_ROWS) and
-                                    adjusted_pos % total_columns == grid_col):
-                                    # Calculate the virtual column this pixel would be in
-                                    orig_col = pos % TOTAL_COLUMNS
-                                    virtual_col = orig_col + current_offset
-                                    # Only show pixels that are in the visible window (columns 0-19 of the virtual text)
-                                    if 0 <= virtual_col < TOTAL_COLUMNS:
-                                        colored_positions.append(adjusted_pos)
-                            
-                            if colored_positions:
-                                self.place_pixels(col_color_hex, self._flip_positions(colored_positions))
-                        current_offset += self._char_advance(letter)
-                elif self._mode == "Row Gradient":
-                    colors = get_color()
-                    total_rows = TOTAL_ROWS
-                    
-                    for letter in effective_text:
-                        letter_positions = self.get_positions_for_letter(letter)
-                        letter_width = self.letter_size(letter_positions)
-                        for row_index in range(total_rows):
-                            row_color = self.calculate_multi_gradient_color(
-                                colors, row_index, total_rows
-                            )
-                            if isinstance(row_color, list):
-                                row_color = row_color[0]
-                            row_color_hex = rgb_to_hex(tuple(row_color))
-                            # Filter positions with bounds checking
-                            row_positions = []
-                            for pos in letter_positions:
-                                if pos // total_columns == row_index:
-                                    adjusted_pos = pos + current_offset
-                                    if 0 <= adjusted_pos < (TOTAL_COLUMNS * TOTAL_ROWS):
-                                        # Calculate the virtual column this pixel would be in
-                                        orig_col = pos % TOTAL_COLUMNS
-                                        virtual_col = orig_col + current_offset
-                                        # Only show pixels that are in the visible window (columns 0-19 of the virtual text)
-                                        if 0 <= virtual_col < TOTAL_COLUMNS:
-                                            row_positions.append(adjusted_pos)
-                            
-                            if row_positions:
-                                self.place_pixels(row_color_hex, self._flip_positions(row_positions))
-                        current_offset += self._char_advance(letter)
-                elif self._mode == "Angle Gradient":
-                    colors = get_color()
-                    angle_radians = math.radians(self._angle)
-                    dx = math.cos(angle_radians)
-                    dy = math.sin(angle_radians)
-                    # Center of the display
-                    center_col = (total_columns - 1) / 2
-                    center_row = (TOTAL_ROWS - 1) / 2
-                    # Compute min/max projection for normalization
-                    corners = [(-(center_col), -(center_row)), (center_col, -(center_row)), (-(center_col), center_row), (center_col, center_row)]
-                    projections = [col * dx + row * dy for col, row in corners]
-                    min_proj = min(projections)
-                    max_proj = max(projections)
-                    proj_range = max_proj - min_proj if max_proj != min_proj else 1
-                    
-                    for letter in effective_text:
-                        letter_positions = self.get_positions_for_letter(letter)
-                        for pos in letter_positions:
-                            adjusted_pos = pos + current_offset
-                            
-                            if 0 <= adjusted_pos < (TOTAL_COLUMNS * TOTAL_ROWS):
-                                orig_col = pos % TOTAL_COLUMNS
-                                virtual_col = orig_col + current_offset
-                                
-                                if 0 <= virtual_col < TOTAL_COLUMNS:
-                                    row, col = divmod(adjusted_pos, total_columns)
-                                    centered_col = col - center_col
-                                    centered_row = row - center_row
-                                    projection = centered_col * dx + centered_row * dy
-                                    normalized_projection = (projection - min_proj) / proj_range
-                                    gradient_color = self.calculate_multi_gradient_color(
-                                        colors,
-                                        normalized_projection * (len(colors) - 1), len(colors)
-                                    )
-                                    gradient_color_hex = rgb_to_hex(tuple(min(255, max(0, v)) for v in gradient_color))
-                                    self.place_pixels(gradient_color_hex, self._flip_positions([adjusted_pos]))
-                        current_offset += self._char_advance(letter)
-                elif self._mode == "Radial Gradient":
-                    colors = get_color()
-                    # Center of the display
-                    center_col = (total_columns - 1) / 2
-                    center_row = (TOTAL_ROWS - 1) / 2
-                    # Max distance from center to a corner
-                    max_dist = math.sqrt(center_col ** 2 + center_row ** 2)
-                    
-                    for letter in effective_text:
-                        letter_positions = self.get_positions_for_letter(letter)
-                        for pos in letter_positions:
-                            adjusted_pos = pos + current_offset
-                            
-                            if 0 <= adjusted_pos < (TOTAL_COLUMNS * TOTAL_ROWS):
-                                orig_col = pos % TOTAL_COLUMNS
-                                virtual_col = orig_col + current_offset
-                                
-                                if 0 <= virtual_col < TOTAL_COLUMNS:
-                                    row, col = divmod(adjusted_pos, total_columns)
-                                    dx_ = col - center_col
-                                    dy_ = row - center_row
-                                    dist = math.sqrt(dx_ ** 2 + dy_ ** 2)
-                                    norm = dist / max_dist if max_dist > 0 else 0
-                                    gradient_color = self.calculate_multi_gradient_color(
-                                        colors,
-                                        norm * (len(colors) - 1), len(colors)
-                                    )
-                                    gradient_color_hex = rgb_to_hex(tuple(min(255, max(0, v)) for v in gradient_color))
-                                    self.place_pixels(gradient_color_hex, self._flip_positions([adjusted_pos]))
-                        current_offset += self._char_advance(letter)
-                elif self._mode == "Letter Angle Gradient":
-                    colors = get_color()
-                    angle_radians = math.radians(self._angle)
-                    dx = math.cos(angle_radians)
-                    dy = math.sin(angle_radians)
-                    
-                    for letter in effective_text:
-                        letter_positions = self.get_positions_for_letter(letter)
-                        if not letter_positions:
-                            current_offset += self._char_advance(letter)
-                            continue
-                        rows = []
-                        cols = []
-                        for pos in letter_positions:
-                            row, col = divmod(pos + current_offset, total_columns)
-                            rows.append(row)
-                            cols.append(col)
-                        # For single-column letters, use a virtual 3-column, full-height box centered on the letter's column
-                        if len(set(cols)) == 1:
-                            col = cols[0]
-                            min_row, max_row = 0, TOTAL_ROWS - 1
-                            min_col = max(0, col - 1)
-                            max_col = min(TOTAL_COLUMNS - 1, col + 1)
-                            center_row = (min_row + max_row) / 2
-                            center_col = (min_col + max_col) / 2
-                        else:
-                            min_row, max_row = min(rows), max(rows)
-                            min_col, max_col = min(cols), max(cols)
-                            center_row = (min_row + max_row) / 2
-                            center_col = (min_col + max_col) / 2
-                        # Compute min/max projection for normalization (corners of bounding box)
-                        corners = [
-                            (min_col, min_row),
-                            (max_col, min_row),
-                            (min_col, max_row),
-                            (max_col, max_row)
-                        ]
-                        projections = [(col_ - center_col) * dx + (row_ - center_row) * dy for col_, row_ in corners]
-                        min_proj = min(projections)
-                        max_proj = max(projections)
-                        proj_range = max_proj - min_proj if max_proj != min_proj else 1
-                        for pos in letter_positions:
-                            adjusted_pos = pos + current_offset
-                            
-                            if 0 <= adjusted_pos < (TOTAL_COLUMNS * TOTAL_ROWS):
-                                orig_col = pos % TOTAL_COLUMNS
-                                virtual_col = orig_col + current_offset
-                                
-                                if 0 <= virtual_col < TOTAL_COLUMNS:
-                                    row, col = divmod(adjusted_pos, total_columns)
-                                    centered_col = col - center_col
-                                    centered_row = row - center_row
-                                    projection = centered_col * dx + centered_row * dy
-                                    normalized_projection = (projection - min_proj) / proj_range
-                                    gradient_color = self.calculate_multi_gradient_color(
-                                        colors,
-                                        normalized_projection * (len(colors) - 1), len(colors)
-                                    )
-                                    gradient_color_hex = rgb_to_hex(tuple(min(255, max(0, v)) for v in gradient_color))
-                                    self.place_pixels(gradient_color_hex, self._flip_positions([adjusted_pos]))
-                        current_offset += self._char_advance(letter)
-                elif self._mode == "Letter Vertical Gradient":
-                    colors = get_color()
-                    
-                    for letter in effective_text:
-                        letter_positions = self.get_positions_for_letter(letter)
-                        letter_width = self.letter_size(letter_positions)
-                        if letter_width <= 0:
-                            continue
-                        if letter_width == 1:
-                            # Use the center of the gradient for single-column letters
-                            center_index = (len(colors) - 1) / 2
-                            gradient_color = self.calculate_multi_gradient_color(
-                                colors, center_index, len(colors)
-                            )
-                            gradient_color_hex = rgb_to_hex(tuple(min(255, max(0, val)) for val in gradient_color))
-                            # Filter positions before placing pixels
-                            valid_positions = []
-                            for pos in letter_positions:
-                                adjusted_pos = pos + current_offset
-                                if 0 <= adjusted_pos < (TOTAL_COLUMNS * TOTAL_ROWS):
-                                    orig_col = pos % TOTAL_COLUMNS
-                                    virtual_col = orig_col + current_offset
-                                    if 0 <= virtual_col < TOTAL_COLUMNS:
-                                        valid_positions.append(adjusted_pos)
-                            
-                            if valid_positions:
-                                self.place_pixels(
-                                    gradient_color_hex,
-                                    self._flip_positions(valid_positions)
-                                )
-                        else:
-                            for col_index in range(letter_width):
-                                gradient_color = self.calculate_multi_gradient_color(
-                                    colors, col_index, letter_width
-                                )
-                                gradient_color_hex = rgb_to_hex(tuple(min(255, max(0, val)) for val in gradient_color))
-                                column_positions = [
-                                    pos for pos in letter_positions
-                                    if (pos % total_columns) == col_index
-                                ]
-                                # Filter positions before placing pixels
-                                valid_positions = []
-                                for pos in column_positions:
-                                    adjusted_pos = pos + current_offset
-                                    if 0 <= adjusted_pos < (TOTAL_COLUMNS * TOTAL_ROWS):
-                                        orig_col = pos % TOTAL_COLUMNS
-                                        virtual_col = orig_col + current_offset
-                                        if 0 <= virtual_col < TOTAL_COLUMNS:
-                                            valid_positions.append(adjusted_pos)
-                                
-                                if valid_positions:
-                                    self.place_pixels(
-                                        gradient_color_hex,
-                                        self._flip_positions(valid_positions)
-                                    )
-                        current_offset += self._char_advance(letter)
-                
                 # Apply changes for text modes
                 _LOGGER.debug("[DISPLAY] Text rendering complete, about to apply() to lamp")
                 _LOGGER.debug("[DISPLAY] Current lamp state before apply - modules with colors:")
@@ -494,7 +204,7 @@ class MatrixRenderMixin:
                     _LOGGER.debug("[DISPLAY] Module %s: colors=%s", i, colors)
                 
                 # Skip post-delay when scrolling to maintain smooth animation timing
-                await self.apply(skip_post_delay=skip_post_delay or self._is_scrolling)
+                await self.apply()
                 _LOGGER.debug("[DISPLAY] Text apply() completed successfully")
                 
                 # Start scroll timer if text is longer than display and scrolling is enabled
@@ -506,30 +216,6 @@ class MatrixRenderMixin:
                     # Stop scrolling if text fits or scrolling is disabled
                     self._is_scrolling = False
                     self.stop_scroll_timer()
-            # Handle Panel Color Sequence mode (applies colors to all modules, not just text)
-            elif self._mode == "Panel Color Sequence":
-                _LOGGER.debug("[Panel Color Sequence] Applying mode with %s colors", len(self._text_colors) if self._text_colors else 0)
-                if self._text_colors:
-                    colors = self._text_colors
-                    for i, module in enumerate(self._layout.device_layout):
-                        color = colors[i % len(colors)]
-                        if isinstance(color, (list, tuple)) and len(color) == 3:
-                            color = tuple(max(0, min(255, int(c))) for c in color)
-                            hex_color = rgb_to_hex(color)
-                        else:
-                            _LOGGER.warning("[Panel Color Sequence] Invalid color format at index %s: %s, using red fallback", i, color)
-                            hex_color = '#ff0000'
-                        module.set_colors([hex_color])
-                        _LOGGER.debug("[Panel Color Sequence] Module %s: %s", i, hex_color)
-                else:
-                    # If no colors are set, use a default red color for all modules
-                    _LOGGER.warning("[Panel Color Sequence] No colors set, using red for all modules")
-                    default_color = '#ff0000'
-                    for module in self._layout.device_layout:
-                        module.set_colors([default_color])
-                _LOGGER.debug("[Panel Color Sequence] About to apply changes to lamp")
-                await self.apply(skip_post_delay=skip_post_delay)
-                _LOGGER.debug("[Panel Color Sequence] Changes applied successfully")
             else:
                 # No text, no panel mode, no pixel art, no special mode.
                 # All modules were already set to background color above.
@@ -544,7 +230,7 @@ class MatrixRenderMixin:
                     self._ip, self._custom_text, self._full_panel,
                     self._custom_draw_active, self._mode
                 )
-                await self.apply(skip_post_delay=skip_post_delay)
+                await self.apply()
         except Exception as e:
             # Connection-related errors are expected and handled by the queue processor
             # which schedules retries. Only log at DEBUG to avoid duplicate noise.
@@ -558,86 +244,176 @@ class MatrixRenderMixin:
             # socket errors from apply() never reached the queue processor.
             raise
 
-    def _filter_visible_positions(self, positions: list, offset: int) -> list:
-        """Filter pixel positions to only those visible in the display window.
-        
-        Applies bounds checking and virtual-column filtering to ensure only
-        pixels within the visible 5x20 matrix are included.
-        
-        Args:
-            positions: List of base pixel positions (from font map)
-            offset: Horizontal offset to apply to each position
-            
-        Returns:
-            List of adjusted positions that are within the visible window
-        """
-        max_pos = TOTAL_COLUMNS * TOTAL_ROWS
-        visible = []
-        for pos in positions:
-            adjusted = pos + offset
-            if 0 <= adjusted < max_pos:
-                virtual_col = (pos % TOTAL_COLUMNS) + offset
-                if 0 <= virtual_col < TOTAL_COLUMNS:
-                    visible.append(adjusted)
-        return visible
+    # The gradient modes' colors when none are set (the others: red).
+    _GRADIENT_TEXT_MODES = (
+        "Column Gradient", "Row Gradient", "Angle Gradient", "Radial Gradient",
+        "Letter Angle Gradient", "Letter Vertical Gradient",
+    )
 
-    def place_letters_for_single_letter(self, color: str, letter: str, letter_index: int, current_offset: int, flip=False):
-        space_to_add = current_offset
-        if letter_index > 0:
-            for i in range(letter_index):
-                space_to_add += self._char_advance(self._custom_text[i])
-        letter_positions = self.get_positions_for_letter(letter)
-        valid_positions = self._filter_visible_positions(letter_positions, space_to_add)
-        
-        if valid_positions:
-            if flip:
-                valid_positions = self._flip_positions(valid_positions)
-            self.place_pixels(color, valid_positions)
+    def _place_frame(self, frame):
+        """Light a frame's pixels (100 colors in panel order, None: the
+        background), turned round on a flipped lamp."""
+        by_color = {}
+        for pos, color in enumerate(frame):
+            if color is not None:
+                by_color.setdefault(rgb_to_hex(tuple(color)), []).append(pos)
+        for color_hex, positions in by_color.items():
+            self.place_pixels(color_hex, self._flip_positions(positions))
 
-    def place_letters(self, color: str, letters: str, current_offset: int, flip=False):
-        _LOGGER.debug("[PLACE_LETTERS] Starting with color: %s, letters: '%s', offset: %s, flip: %s", color, letters, current_offset, flip)
-        
-        # Calculate total text width for debugging
-        total_width = sum(self._char_advance(letter) for letter in letters) - 1
-        _LOGGER.debug("[PLACE_LETTERS] Total text width: %s columns, display width: %s", total_width, TOTAL_COLUMNS)
-        
-        space_to_add = current_offset
-        total_pixels_placed = 0
-        for i in range(len(letters)):
-            if i > 0:
-                prev_advance = self._char_advance(letters[i - 1])
-                space_to_add += prev_advance
-                _LOGGER.debug("[PLACE_LETTERS] Letter %s: added %s to offset (prev letter '%s')", i, prev_advance, letters[i - 1])
-            
-            letter_positions = self.get_positions_for_letter(letters[i])
-            _LOGGER.debug("[PLACE_LETTERS] Letter '%s' at index %s: base_positions=%s, space_to_add=%s", letters[i], i, letter_positions, space_to_add)
-            
-            # Calculate adjusted positions for this letter
-            adjusted_positions = [pos + space_to_add for pos in letter_positions]
-            _LOGGER.debug("[PLACE_LETTERS] Letter '%s': adjusted_positions=%s%s", letters[i], adjusted_positions[:5], '...' if len(adjusted_positions) > 5 else '')
-            
-            visible_positions = []
-            
-            for orig_pos in letter_positions:
-                adjusted_pos = orig_pos + space_to_add
-                
-                # Check bounds and visible window
-                if 0 <= adjusted_pos < (TOTAL_COLUMNS * TOTAL_ROWS):
-                    virtual_col = (orig_pos % TOTAL_COLUMNS) + space_to_add
-                    if 0 <= virtual_col < TOTAL_COLUMNS:
-                        visible_positions.append(adjusted_pos)
-            
-            # Only place pixels that are visible
-            if visible_positions:
-                if flip:
-                    visible_positions = self._flip_positions(visible_positions)
-                _LOGGER.debug("[PLACE_LETTERS] Letter '%s': visible_pixels=%s/%s (offset: %s)", letters[i], len(visible_positions), len(adjusted_positions), space_to_add)
-                self.place_pixels(color, visible_positions)
-                total_pixels_placed += len(visible_positions)
+    @staticmethod
+    def _panel_sequence_frame(colors):
+        """Panel Color Sequence: the colors one module after another over the
+        whole panel (red when none is set; an invalid color: red)."""
+        sequence = [
+            tuple(max(0, min(255, int(c))) for c in color)
+            if isinstance(color, (list, tuple)) and len(color) == 3
+            else (255, 0, 0)
+            for color in (colors or [(255, 0, 0)])
+        ]
+        return [
+            sequence[pos % len(sequence)]
+            for pos in range(TOTAL_COLUMNS * TOTAL_ROWS)
+        ]
+
+    def _text_mode_frame(self, mode, text, colors, angle, offset, text_width):
+        """The 100 pixels of ``text`` in a text mode, before the orientation
+        flip: an RGB tuple where the text lights, else None (the background).
+        ``offset`` is the text's first column (alignment or scroll) and
+        ``text_width`` its width in columns. The lamp
+        (_apply_display_mode_internal) and the gallery previews
+        (preview_gradient_modes) both draw from it."""
+        frame = [None] * (TOTAL_COLUMNS * TOTAL_ROWS)
+        if not colors:
+            colors = (
+                [(255, 0, 0), (0, 0, 255)]
+                if mode in self._GRADIENT_TEXT_MODES
+                else [(255, 0, 0)]
+            )
+        gradient = self.calculate_multi_gradient_color
+
+        def clamp(color):
+            return tuple(min(255, max(0, value)) for value in color)
+
+        def shown(pos, letter_offset):
+            # On the panel, and inside the visible 20 columns of the text.
+            return (
+                0 <= pos + letter_offset < len(frame)
+                and 0 <= pos % TOTAL_COLUMNS + letter_offset < TOTAL_COLUMNS
+            )
+
+        # Each letter: its glyph and the column it starts at.
+        letters = []
+        for letter in text:
+            letters.append((self.get_positions_for_letter(letter), offset))
+            offset += self._char_advance(letter)
+
+        if mode == "Text Color Sequence":
+            # The colors and each letter's pixels in a random order.
+            shuffled = colors[:]
+            random.shuffle(shuffled)
+            index = 0
+            for glyph, letter_offset in letters:
+                positions = glyph[:]
+                random.shuffle(positions)
+                for pos in positions:
+                    if shown(pos, letter_offset):
+                        frame[pos + letter_offset] = shuffled[index % len(shuffled)]
+                    index += 1
+            return frame
+
+        if mode in ("Angle Gradient", "Radial Gradient"):
+            center_col = (TOTAL_COLUMNS - 1) / 2
+            center_row = (TOTAL_ROWS - 1) / 2
+            if mode == "Angle Gradient":
+                dx = math.cos(math.radians(angle))
+                dy = math.sin(math.radians(angle))
+                projections = [
+                    col * dx + row * dy
+                    for col in (-center_col, center_col)
+                    for row in (-center_row, center_row)
+                ]
+                low = min(projections)
+                span = (max(projections) - low) or 1
+
+                def place(row, col):
+                    return ((col - center_col) * dx + (row - center_row) * dy - low) / span
             else:
-                _LOGGER.debug("[PLACE_LETTERS] Letter '%s': no visible pixels (fully scrolled off, offset: %s)", letters[i], space_to_add)
-                
-        _LOGGER.debug("[PLACE_LETTERS] Completed placing %s total pixels", total_pixels_placed)
+                farthest = math.sqrt(center_col ** 2 + center_row ** 2)
+
+                def place(row, col):
+                    distance = math.sqrt((col - center_col) ** 2 + (row - center_row) ** 2)
+                    return distance / farthest if farthest > 0 else 0
+
+            for glyph, letter_offset in letters:
+                for pos in glyph:
+                    if shown(pos, letter_offset):
+                        row, col = divmod(pos + letter_offset, TOTAL_COLUMNS)
+                        frame[pos + letter_offset] = clamp(
+                            gradient(colors, place(row, col) * (len(colors) - 1), len(colors))
+                        )
+            return frame
+
+        for index, (glyph, letter_offset) in enumerate(letters):
+            if mode == "Letter Angle Gradient":
+                if not glyph:
+                    continue
+                dx = math.cos(math.radians(angle))
+                dy = math.sin(math.radians(angle))
+                cells = [divmod(pos + letter_offset, TOTAL_COLUMNS) for pos in glyph]
+                rows = [row for row, _ in cells]
+                cols = [col for _, col in cells]
+                if len(set(cols)) == 1:
+                    # A one-column letter: a 3-column, full-height box.
+                    min_row, max_row = 0, TOTAL_ROWS - 1
+                    min_col = max(0, cols[0] - 1)
+                    max_col = min(TOTAL_COLUMNS - 1, cols[0] + 1)
+                else:
+                    min_row, max_row = min(rows), max(rows)
+                    min_col, max_col = min(cols), max(cols)
+                center_row = (min_row + max_row) / 2
+                center_col = (min_col + max_col) / 2
+                projections = [
+                    (col - center_col) * dx + (row - center_row) * dy
+                    for col in (min_col, max_col)
+                    for row in (min_row, max_row)
+                ]
+                low = min(projections)
+                span = (max(projections) - low) or 1
+                for pos in glyph:
+                    if shown(pos, letter_offset):
+                        row, col = divmod(pos + letter_offset, TOTAL_COLUMNS)
+                        position = ((col - center_col) * dx + (row - center_row) * dy - low) / span
+                        frame[pos + letter_offset] = clamp(
+                            gradient(colors, position * (len(colors) - 1), len(colors))
+                        )
+                continue
+
+            width = self.letter_size(glyph)
+            for pos in glyph:
+                if not shown(pos, letter_offset):
+                    continue
+                column = pos % TOTAL_COLUMNS
+                if mode == "Letter Gradient":
+                    color = gradient(colors, index, len(text))
+                elif mode == "Column Gradient":
+                    color = gradient(colors, column + letter_offset, text_width)
+                elif mode == "Row Gradient":
+                    color = gradient(colors, pos // TOTAL_COLUMNS, TOTAL_ROWS)
+                elif mode == "Letter Vertical Gradient":
+                    # Across the letter's columns (a one-column letter: the
+                    # middle of the gradient).
+                    color = clamp(
+                        gradient(colors, (len(colors) - 1) / 2, len(colors))
+                        if width == 1
+                        else gradient(colors, column, width)
+                    )
+                elif mode == "Solid Color":
+                    color = colors[0]
+                else:
+                    # Not a text mode (Panel Color Sequence): nothing drawn.
+                    return frame
+                frame[pos + letter_offset] = color
+        return frame
 
     def place_pixels(self, color: str, positions):
         

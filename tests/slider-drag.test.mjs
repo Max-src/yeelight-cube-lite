@@ -17,6 +17,7 @@ const {
   lightSliderConfig,
 } =
   await import("../custom_components/yeelight_cube/www/slider-control-utils.js");
+const { RenderGate } = await import("../custom_components/yeelight_cube/www/render-gate.js");
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -42,7 +43,7 @@ function stubDocument() {
 }
 
 function slider({ commitDelay = 10, onDragEnd } = {}) {
-  const host = {};
+  const host = { _gate: new RenderGate(() => {}) };
   const commits = [];
   const handlers = createSliderHandlers({
     host,
@@ -63,11 +64,11 @@ test("a slow drag stays a drag after the debounced commit fires", async () => {
     handlers._slChange({ target: { value: "40" } });
     await wait(30); // longer than the commit delay, button still held
     assert.deepEqual(commits, [40]);
-    assert.equal(host._anySliderDragging, true);
+    assert.equal(host._gate.held("slider"), true);
     assert.ok(doc.held());
     doc.release();
     await wait(70);
-    assert.equal(host._anySliderDragging, false);
+    assert.equal(host._gate.held("slider"), false);
     assert.equal(ended, 1);
     assert.deepEqual(commits, [40]); // nothing pending, nothing re-sent
   } finally {
@@ -95,10 +96,10 @@ test("a wheel change without a held pointer ends with its commit", async () => {
   try {
     const { host, commits, handlers } = slider();
     handlers._slChange({ target: { value: "55" } });
-    assert.equal(host._anySliderDragging, true);
+    assert.equal(host._gate.held("slider"), true);
     await wait(30);
     assert.deepEqual(commits, [55]);
-    assert.equal(host._anySliderDragging, false);
+    assert.equal(host._gate.held("slider"), false);
   } finally {
     doc.restore();
   }
@@ -130,12 +131,58 @@ test("an unconfirmed draft expires after its timeout", async () => {
   assert.equal(expired, 1);
 });
 
+test("a pending value (a picked mode, a switch) shows until the lamp confirms it", async () => {
+  const { createPendingValue } = await import(
+    "../custom_components/yeelight_cube/www/pending-value.js"
+  );
+  let expired = 0;
+  const pending = createPendingValue({ timeoutMs: 20, onExpire: () => expired++ });
+  // false is a value (a switch turned off), not "none".
+  pending.set(false);
+  assert.equal(pending.value, false);
+  assert.equal(pending.settle(true), false); // an older update: kept
+  assert.equal(pending.settle(false), true); // confirmed: dropped
+  assert.equal(pending.value, null);
+  // Held (not sent yet): no timeout until set().
+  pending.hold("Rainbow");
+  await wait(50);
+  assert.equal(pending.value, "Rainbow");
+  pending.set("Rainbow");
+  await wait(50);
+  assert.equal(pending.value, null);
+  assert.equal(expired, 1);
+  pending.set("Wave");
+  pending.clear();
+  await wait(50);
+  assert.equal(expired, 1); // cleared: no expiry
+});
+
+test("a sent pick yields to a new lamp value (yieldToLamp), never to an older one", async () => {
+  const { createPendingValue } = await import(
+    "../custom_components/yeelight_cube/www/pending-value.js"
+  );
+  const pending = createPendingValue({ yieldToLamp: true });
+  pending.settle("Rainbow"); // what the lamp shows
+  pending.hold("Wave"); // picked, not sent yet
+  assert.equal(pending.settle("Aurora"), false); // an earlier pick's echo: kept
+  pending.set("Wave"); // sent
+  assert.equal(pending.settle("Aurora"), false); // the same older value: kept
+  assert.equal(pending.settle("White"), true); // a new value (a rotation step): it wins
+  assert.equal(pending.value, null);
+  // Without the option, only a match (or the timeout) drops it.
+  const strict = createPendingValue();
+  strict.settle("Rainbow");
+  strict.set("Wave");
+  assert.equal(strict.settle("White"), false);
+  strict.clear();
+});
+
 test("slider markup is kept unchanged while a drag is held", () => {
-  const host = {};
+  const host = { _gate: new RenderGate(() => {}) };
   assert.equal(stableSliderMarkup(host, "s", "<a value=1>"), "<a value=1>");
-  host._anySliderDragging = true;
+  host._gate.hold("slider");
   assert.equal(stableSliderMarkup(host, "s", "<a value=9>"), "<a value=1>");
-  host._anySliderDragging = false;
+  host._gate.release("slider");
   assert.equal(stableSliderMarkup(host, "s", "<a value=9>"), "<a value=9>");
 });
 

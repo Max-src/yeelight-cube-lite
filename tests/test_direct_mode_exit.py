@@ -5,10 +5,7 @@ from unittest.mock import AsyncMock, Mock
 
 from tests.test_native_features import CONSTANTS, NATIVE_PREVIEW, ROOT, _load_standalone_functions
 
-# light_native.py without the function-local import of the light module
-SOURCE = (ROOT / "light_native.py").read_text(encoding="utf-8").replace(
-    "        from .light import _DEVICE_ORIENTATION_TO_EFFECT_DIR\n", ""
-)
+SOURCE = (ROOT / "light_native.py").read_text(encoding="utf-8")
 
 
 def encode(frame):
@@ -29,7 +26,7 @@ class DirectModeExitTests(unittest.IsolatedAsyncioTestCase):
                 "asyncio": SimpleNamespace(sleep=AsyncMock()),
                 "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
                 "effect_supports_color_override": NATIVE_PREVIEW["effect_supports_color_override"],
-                "_DEVICE_ORIENTATION_TO_EFFECT_DIR": {"right": "Right"},
+                "DEVICE_ORIENTATION_TO_EFFECT_DIR": {"right": "Right"},
             },
         )
         record = lambda name: (lambda *args, **kwargs: self.calls.append((name, args)))

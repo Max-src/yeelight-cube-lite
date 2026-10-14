@@ -1,16 +1,7 @@
 // State and config helpers for Yeelight Cube Lite Draw Card
 
-export function getInitialMatrix(rows = 5, cols = 20) {
-  return Array(rows * cols).fill(null);
-}
-
 export function parseConfig(config) {
-  // Resolve primary entity: prefer target_entities[0], fall back to legacy entity
-  const targetEntities = config.target_entities || [];
-  const primaryEntity =
-    targetEntities.length > 0 ? targetEntities[0] : config.entity || "";
   return {
-    entity: primaryEntity,
     paletteSensor: config.palette_sensor || null,
     showColorPicker: config.show_color_picker !== false,
     showRecentColors: config.show_recent_colors !== false,
@@ -29,10 +20,17 @@ export function parseConfig(config) {
   };
 }
 
-export function updateRecentColors(recentColors, selectedColor) {
-  if (!selectedColor) return recentColors;
-  // Return a NEW array — never mutate the caller's array (breaks LitElement change detection)
-  const filtered = recentColors.filter((c) => c !== selectedColor);
-  const updated = [selectedColor, ...filtered];
-  return updated.slice(0, 10);
+/** Recent colors as stored: lowercase strings, each color once (whatever
+ * its case, the first kept), at most 10. A new array (Lit sees the change). */
+export function normalizeRecentColors(colors) {
+  const seen = new Set();
+  for (const color of colors)
+    if (typeof color === "string" && color) seen.add(color.toLowerCase());
+  return [...seen].slice(0, 10);
+}
+
+/** The recent colors with `color` first. */
+export function updateRecentColors(recentColors, color) {
+  if (typeof color !== "string" || !color) return recentColors;
+  return normalizeRecentColors([color, ...recentColors]);
 }

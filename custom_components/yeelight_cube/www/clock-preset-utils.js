@@ -1,3 +1,9 @@
+import {
+  VISIBILITY_KEYS,
+  visibleItems,
+  withVisibleItems,
+} from "./visible-items.js";
+
 export function clockColorToRgb(intColor) {
   if (typeof intColor !== "number") return null;
   return [(intColor >> 16) & 0xff, (intColor >> 8) & 0xff, intColor & 0xff];
@@ -50,29 +56,23 @@ export function clockColorModeOptions(builtins, presets, config = {}) {
     })),
     { value: "__pick__", label: "Add", icon: "mdi:plus" },
   ];
-  if (!Array.isArray(config.visible_color_modes)) return all;
-  const byKey = new Map(all.map((mode) => [mode.value, mode]));
-  const ordered = [...new Set(config.visible_color_modes)];
-  const hidden = new Set(config.hidden_color_modes || []);
-  return [
-    ...ordered.map((key) => byKey.get(key)).filter(Boolean),
-    ...all.filter(
-      (mode) => !ordered.includes(mode.value) && !hidden.has(mode.value),
-    ),
-  ];
+  // A color mode added since the list was saved (a new preset) shows.
+  return visibleItems(
+    all,
+    (mode) => mode.value,
+    config,
+    VISIBILITY_KEYS.colorModes,
+    () => true,
+  );
 }
 
 export function clockColorModeVisibilityConfig(config, all, visible) {
-  return {
-    ...config,
-    visible_color_modes: [...visible],
-    hidden_color_modes: [
-      ...new Set([
-        ...(config.hidden_color_modes || []),
-        ...all.map((mode) => mode.value),
-      ]),
-    ].filter((key) => !visible.includes(key)),
-  };
+  return withVisibleItems(
+    config,
+    VISIBILITY_KEYS.colorModes,
+    all.map((mode) => mode.value),
+    visible,
+  );
 }
 
 export function clockPresetsByKind(presets, kind = "style") {
@@ -115,35 +115,24 @@ export function clockStylesWithPresets(builtins, presets) {
 }
 
 export function visibleClockStyles(styles, config) {
-  if (
-    config.custom_visible_styles !== true ||
-    !Array.isArray(config.visible_styles)
-  )
-    return styles;
-  const byKey = new Map(styles.map((style) => [clockPresetKey(style), style]));
-  const hidden = new Set(config.hidden_clock_styles || []);
-  const ordered = [...new Set(config.visible_styles)];
-  const included = new Set(ordered);
-  return [
-    ...ordered.map((key) => byKey.get(key)).filter(Boolean),
-    ...styles.filter((style) => {
-      const key = clockPresetKey(style);
-      return style.presetId && !included.has(key) && !hidden.has(key);
-    }),
-  ];
+  // A style preset saved since the list was saved shows (built-in styles
+  // only when listed).
+  return visibleItems(
+    styles,
+    clockPresetKey,
+    config,
+    VISIBILITY_KEYS.clockStyles,
+    (style) => !!style.presetId,
+  );
 }
 
 export function clockStyleVisibilityConfig(config, styles, visible) {
-  return {
-    ...config,
-    visible_styles: [...visible],
-    hidden_clock_styles: [
-      ...new Set([
-        ...(config.hidden_clock_styles || []),
-        ...styles.filter((style) => style.presetId).map(clockPresetKey),
-      ]),
-    ].filter((key) => !visible.includes(key)),
-  };
+  return withVisibleItems(
+    config,
+    VISIBILITY_KEYS.clockStyles,
+    styles.map(clockPresetKey),
+    visible,
+  );
 }
 
 export function matchingClockPreset(styles, attrs, preferredId) {

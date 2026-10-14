@@ -56,6 +56,24 @@ test("a drag over many cells writes the drawing once, after it pauses", async ()
   assert.equal(card.matrix, before);
 });
 
+test("recent colors list each color once, whatever its case", () => {
+  const card = {
+    matrix: Array(100).fill("#000000"),
+    selectedColor: "#00FF00",
+    recentColors: ["#FF0000", "#00ff00"],
+    _drawingActive: true,
+    requestUpdate() {},
+  };
+  const ops = new MatrixOperations1D(card);
+  ops.setPixel(0);
+  assert.deepEqual(card.recentColors, ["#00ff00", "#ff0000"]);
+  card.selectedColor = "#ff0000";
+  ops.setPixel(1);
+  assert.deepEqual(card.recentColors, ["#ff0000", "#00ff00"]);  // A list saved by an older version loads cleaned.
+  store.set("yeelight_cube_recent_colors", JSON.stringify(["#FF0000", "#ff0000", 7, "#00FF00"]));
+  assert.deepEqual(StorageUtils.loadRecentColors(), ["#ff0000", "#00ff00"]);
+});
+
 test("a pending drawing is written at once when flushed (page hidden/closed)", () => {
   writes.length = 0;
   StorageUtils.saveMatrix(Array(100).fill("#00ff00"));

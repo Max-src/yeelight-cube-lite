@@ -7,6 +7,7 @@ import {
   LS_TOOL_VISIBILITY,
   LS_ACTION_VISIBILITY,
 } from "./draw_card_const.js";
+import { normalizeRecentColors } from "./draw_card_state.js";
 
 const STORAGE_KEYS = {
   MATRIX: "yeelight_cube_matrix",
@@ -102,9 +103,12 @@ export const StorageUtils = {
   },
 
   // Recent colors storage (array of hex strings)
+  // Lists saved by older versions may hold one color in two cases.
   loadRecentColors() {
-    return StorageManager.load(STORAGE_KEYS.RECENT_COLORS, [], (data) =>
-      Array.isArray(data),
+    return normalizeRecentColors(
+      StorageManager.load(STORAGE_KEYS.RECENT_COLORS, [], (data) =>
+        Array.isArray(data),
+      ),
     );
   },
 

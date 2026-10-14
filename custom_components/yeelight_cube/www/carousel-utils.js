@@ -1,13 +1,11 @@
 /**
  * The carousel shared by every card: one model (carouselModel), one swipe
- * (carouselSwipe) and one look (carouselStyles), in two templates: a Lit
- * one (renderCarousel: items that are Lit templates, the Draw card's color
- * groups) and an HTML-string one (renderCarouselString: the shared
- * gallery's Carousel layout).
+ * (carouselSwipe) and one look (carouselStyles), as a Lit template
+ * (renderCarousel): the shared gallery's Carousel layout and the Draw
+ * card's color groups.
  */
 
 import { html } from "./lib/lit-all.js";
-import { escapeHtml } from "./html-escape-utils.js";
 import { normalizeButtonShape, roundedCardsRadius } from "./card-config.js";
 
 // The shared button-shape vocabulary (card-config.js), re-exported for the
@@ -157,9 +155,9 @@ export function carouselSwipe(onNavigate) {
 }
 
 /**
- * A carousel as a Lit template (cards whose items are Lit templates: the
- * Draw card's color groups). The same markup, model and swipe as
- * renderCarouselString (the shared gallery's carousel).
+ * A carousel as a Lit template (the shared gallery's Carousel layout, the
+ * Draw card's color groups). Its arrows and dots also carry data-action /
+ * data-direction / data-index (tests and docs find them by these).
  *
  * @param {Object} options
  * @param {Array} options.items - the items
@@ -180,6 +178,9 @@ export function renderCarousel(options) {
   const arrow = (direction, disabled) => html`<button
     class="carousel-nav-btn carousel-nav-external nav-btn-${model.navShape} ${disabled ? "disabled" : ""}"
     title=${direction < 0 ? "Previous" : "Next"}
+    aria-label=${direction < 0 ? "Previous" : "Next"}
+    data-action="navigate"
+    data-direction=${direction}
     ?disabled=${disabled}
     @click=${() => step(direction)}
   >
@@ -204,6 +205,8 @@ export function renderCarousel(options) {
             : html`<span
                 class="carousel-dot ${dot.index === model.validIndex ? "active" : ""}"
                 title=${model.dotTitle(dot.index)}
+                data-action="set-index"
+                data-index=${dot.index}
                 @click=${() => onSetIndex?.(dot.index)}
               ></span>`,
         )}
@@ -407,56 +410,3 @@ export const carouselStyles = `
     user-select: none;
   }
 `;
-
-/**
- * A carousel as an HTML string (the shared gallery's carousel; its clicks
- * are delegated: data-action="navigate" / "set-index", bindStyleSelectorEvents,
- * and its swipe is carouselSwipe). Same markup and model as renderCarousel.
- *
- * @param {Object} options - renderCarousel's, with:
- * @param {Function} options.renderItemString - (item, index) => its HTML
- * @param {string} [options.carouselId="carousel"] - names this carousel's
- *   buttons (data-carousel-id)
- * @returns {string} HTML string
- */
-export function renderCarouselString(options) {
-  const { items = [], renderItemString, showAsCard = false, carouselId = "carousel" } = options;
-  if (!items.length) return `<div class="no-items">No items available</div>`;
-  const model = carouselModel(options);
-  const arrow = (direction, disabled) => `<button
-      class="carousel-nav-btn carousel-nav-external nav-btn-${model.navShape} ${disabled ? "disabled" : ""}"
-      title="${direction < 0 ? "Previous" : "Next"}"
-      data-carousel-id="${carouselId}"
-      data-action="navigate"
-      data-direction="${direction}"
-      ${disabled ? "disabled" : ""}
-    ><ha-icon icon="${direction < 0 ? "mdi:chevron-left" : "mdi:chevron-right"}"></ha-icon></button>`;
-  const dots = model.dots
-    .map((dot) =>
-      dot.isEllipsis
-        ? `<span class="carousel-dot-ellipsis">⋯</span>`
-        : `<span
-        class="carousel-dot ${dot.index === model.validIndex ? "active" : ""}"
-        title="${escapeHtml(model.dotTitle(dot.index))}"
-        data-carousel-id="${carouselId}"
-        data-action="set-index"
-        data-index="${dot.index}"
-      ></span>`,
-    )
-    .join("");
-  return `
-    <div class="carousel-wrapper">
-      <div class="yc-carousel ${showAsCard ? "carousel-with-card" : ""}">
-        ${arrow(-1, model.prevDisabled)}
-        <div class="carousel-content ${showAsCard ? "carousel-content-card" : ""}"${
-          showAsCard ? ` style="border-radius: ${model.radius}px;"` : ""
-        }>
-          ${renderItemString ? renderItemString(items[model.validIndex], model.validIndex) : ""}
-        </div>
-        ${arrow(1, model.nextDisabled)}
-      </div>
-      <div class="carousel-indicators carousel-indicators-outside">${dots}</div>
-    </div>
-  `;
-}
-

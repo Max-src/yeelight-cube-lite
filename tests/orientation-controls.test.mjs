@@ -9,6 +9,9 @@ import {
 } from "../custom_components/yeelight_cube/www/orientation-control-utils.js";
 import { actionButtonStyleChoices } from "../custom_components/yeelight_cube/www/action-button-utils.js";
 import { CardCommandController } from "../custom_components/yeelight_cube/www/card-command-controller.js";
+import { YeelightCardMixin } from "../custom_components/yeelight_cube/www/card-base.js";
+
+const CardBase = YeelightCardMixin(class {});
 
 function orientationCard(callService) {
   const source = readFileSync(
@@ -33,6 +36,7 @@ function orientationCard(callService) {
     },
     _refreshOrientationControls() {},
   };
+  Object.setPrototypeOf(card, CardBase.prototype);
   for (const name of ["handleOrientationSelect", "handleOrientationControl"]) {
     const method = source.match(
       new RegExp(`  (async )?${name}\\(([^)]*)\\) \\{([\\s\\S]*?)\\n  \\}`),

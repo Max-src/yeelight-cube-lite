@@ -2105,7 +2105,7 @@ _COLOR_PALETTE_MODES = {"red_blue", "white_orange", "blue_yellow", "purple_orang
 def _palette_mode_hsv(hue, saturation, value, mode, position=None):
     if not mode:
         return _hsv(hue, saturation, value)
-    normalized_hue = (hue % 1.0 + 1.0) % 1.0
+    normalized_hue = hue % 1.0  # Python's % is already in [0, 1)
     palette_position = min(1.0, normalized_hue / 0.85) if position is None else position
     return tuple(_clamp(channel * value + 1e-9) for channel in _rainbow_palette_color(palette_position, mode))
 
@@ -2603,7 +2603,7 @@ def _render_native_effect_raw(
                             color = cells[gr * width + x] or BLACK
                 else:
                     head = (phase * 0.8 + _noise(col, 0, 0)) % 1.0
-                    distance = ((head - u) % 1.0 + 1.0) % 1.0
+                    distance = (head - u) % 1.0
                     level = 1.0 if distance < 0.08 else max(0.04, 0.65 - distance * 1.8)
                     color = _rgb(25, 255, 85, level)
             else:

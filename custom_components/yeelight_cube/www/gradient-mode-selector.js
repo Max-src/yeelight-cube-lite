@@ -21,6 +21,7 @@ const MODE_LABELS = {
   "Letter Vertical Gradient": "Letter Vert",
   "Letter Angle Gradient": "Letter Angle",
   "Text Color Sequence": "Color Seq",
+  "Panel Color Sequence": "Panel Seq",
 };
 
 export const ModeSelectorMixin = (Base) => class extends Base {
@@ -30,7 +31,6 @@ export const ModeSelectorMixin = (Base) => class extends Base {
       .config=${this.config}
       .items=${this._galleryItems()}
       .active=${this._getCurrentMode()}
-      .disabled=${this._processingModeChange}
       searchLabel="Search modes"
       actionLabel="Show on the lamp"
       .onSelect=${(mode) => this._selectMode(mode)}
@@ -49,7 +49,6 @@ export const ModeSelectorMixin = (Base) => class extends Base {
     gallery.config = this.config;
     gallery.items = this._galleryItems(angle);
     gallery.active = this._getCurrentMode();
-    gallery.disabled = this._processingModeChange;
   }
 
   /**
@@ -69,7 +68,7 @@ export const ModeSelectorMixin = (Base) => class extends Base {
     if (!PREVIEW_SELECTOR_STYLES.includes(style)) {
       if (style !== "chips") return modes.map(item);
       const colors = this._getCurrentTextColors();
-      const stateObj = this._hass?.states?.[this._getPrimaryEntity()];
+      const stateObj = this._hass?.states?.[this._primaryEntity()];
       const current = angle ?? (stateObj ? this._displayAngle(stateObj) : 0);
       return modes.map((mode) => ({
         ...item(mode),
@@ -125,7 +124,7 @@ export const ModeSelectorMixin = (Base) => class extends Base {
       this._setupPreviewEventListener();
     }
 
-    const entityId = this._getPrimaryEntity();
+    const entityId = this._primaryEntity();
     if (!this._hass || !entityId) return;
     const context = this._previewContext;
 
@@ -180,7 +179,7 @@ export const ModeSelectorMixin = (Base) => class extends Base {
       });
     }
     return gradientPreviewStore(this._hass.connection).cache(
-      this._getPrimaryEntity(),
+      this._primaryEntity(),
     );
   }
 
@@ -198,7 +197,7 @@ export const ModeSelectorMixin = (Base) => class extends Base {
 
     this._unsubscribePreviewEvents = gradientPreviewStore(
       this._hass.connection,
-    ).subscribe(this._getPrimaryEntity(), () => {
+    ).subscribe(this._primaryEntity(), () => {
       if (!this.isConnected) return;
 
       // New previews: the gallery repaints them in place.
@@ -380,6 +379,13 @@ export const ModeSelectorMixin = (Base) => class extends Base {
 
         // Combine both to create a grid effect
         return verticalStripes;
+
+      case "Panel Color Sequence":
+        // The colors one module after another, as on the lamp: stripes in
+        // order, repeating.
+        return `repeating-linear-gradient(90deg, ${colors
+          .map((color, i) => `${rgbToCss(color)} ${i * 6}px ${(i + 1) * 6}px`)
+          .join(", ")})`;
 
       default:
         return rgbToCss(colors[0]);

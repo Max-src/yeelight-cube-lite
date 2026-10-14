@@ -224,6 +224,7 @@ test("Gradient releases subscriptions that resolve after the last view disconnec
 });
 
 import { lampActionConfig } from "../custom_components/yeelight_cube/www/mode-controls-controller.js";
+import { previewOnly } from "../custom_components/yeelight_cube/www/offline-preview-state.js";
 
 function cardMethod(file, name, scope = {}, setter = false) {
   const source = readFileSync(
@@ -269,7 +270,7 @@ test("Draw shows only its pending edit and accepts unrelated HA updates", () => 
     _pixelArtStore: new CollectionStore("pixel_arts"),
     _schedulePixelArtRender: () => renders.push("pixel arts"),
     _pixelArts: cardMethod("yeelight-cube-draw-card", "_pixelArts"),
-    _hassInputs: cardMethod("yeelight-cube-draw-card", "_hassInputs"),
+    _hassInputs: cardMethod("yeelight-cube-draw-card", "_hassInputs", { previewOnly }),
   });
   setter.call(card, makeHass(original, "off"));
   card._pixelArtStore.pending.record(pending);
@@ -319,7 +320,7 @@ test("lamp adjustment timers and stale failures cannot cross configuration conte
   const calls = [];
   let reject;
   let refreshes = 0;
-  const card = {
+  const card = asCard({
     shadowRoot: {},
     _actionCommands: { reset() {} },
     _commands: new CardCommandController(),
@@ -333,15 +334,12 @@ test("lamp adjustment timers and stale failures cannot cross configuration conte
         });
       },
     },
-    _updateEffectLabel() {},
-    _updateChangeIndicators() {},
-    _updateCompactResetButtons() {},
-    _updateSectionResetButtons() {},
     // Each configuration shows itself once; a stale failure never does.
     _refresh() {
       refreshes++;
     },
-  };
+    requestUpdate() {},
+  });
   configure.call(card, { entity: "light.a" });
   await change.call(card, "contrast", { target: { value: "75" } });
   const obsolete = timers.get(card._effectDebounceTimer);
@@ -467,7 +465,7 @@ test("a refused lamp-preview reset drops the defaults it showed", async (context
   const sendReset = cardMethod("lamp-preview-adjustments", "_sendReset");
   let fail;
   let refreshed = 0;
-  const card = {
+  const card = asCard({
     config: { entity: "light.a" },
     _effectContext: 1,
     _localEffects: { contrast: 100, saturation: 100 },
@@ -481,7 +479,7 @@ test("a refused lamp-preview reset drops the defaults it showed", async (context
     _refresh() {
       refreshed++;
     },
-  };
+  });
   const result = sendReset.call(
     card,
     { contrast: 100, saturation: 100 },

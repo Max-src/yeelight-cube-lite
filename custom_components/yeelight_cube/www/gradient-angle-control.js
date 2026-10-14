@@ -1,15 +1,13 @@
 // Angle control of the gradient card: the rotary / compass / square / matrix
-// preview / capsule templates, drag and keyboard handling, and the live visual
-// updates while the angle changes. Mixed into YeelightCubeGradientCard.
+// preview / capsule templates (rendered by <yc-angle-view>), drag and keyboard
+// handling. Mixed into YeelightCubeGradientCard.
 import { ANGLE_NO_DRAG_SELECTOR } from "./gradient-card-utils.js";
 import {
   createColorWheelSegments as _sharedCreateColorWheelSegments,
   createWheelGradientStops as _sharedCreateWheelGradientStops,
-  createShapeGradientStops as _sharedCreateShapeGradientStops,
-  generateShapeMask as _sharedGenerateShapeMask,
 } from "./angle-wheel-utils.js";
-import { templateToString } from "./lit-extras.js";
-import { html, unsafeHTML, nothing, svg, unsafeSVG } from "./lib/lit-all.js";
+import { LitElement, html, unsafeHTML, nothing, svg, unsafeSVG } from "./lib/lit-all.js";
+import { defineOnce } from "./card-registration.js";
 import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
 import { previewLength } from "./preview-appearance.js";
 import {
@@ -20,6 +18,86 @@ import {
 } from "./capsule-slider-utils.js";
 import { hostEventAttrs } from "./host-events.js";
 import { rgbToHex as _sharedRgbToHex } from "./color-utils.js";
+
+// ── Where the pointer is, as an angle ──────────────────────────────────────
+
+/** The angle of a point around the centre of `rect` (the circular styles:
+ * 0° at the right, counter-clockwise). */
+function circleAngleAt(point, rect) {
+  const angle =
+    (Math.atan2(
+      rect.top + rect.height / 2 - point.clientY,
+      point.clientX - (rect.left + rect.width / 2),
+    ) *
+      180) /
+    Math.PI;
+  return angle < 0 ? angle + 360 : angle;
+}
+
+// How far into the box (percent) a press still counts as on an edge.
+const RECT_EDGES = { right: 90, rightMaxY: 60, top: 20, left: 10, bottom: 80 };
+const SQUARE_EDGES = { right: 85, rightMaxY: 65, top: 15, left: 15, bottom: 85 };
+
+/**
+ * The angle of a point (x, y in percent of the box) on the perimeter of a
+ * w:h rectangle: 0° at the right-edge centre, counter-clockwise, the same
+ * walk as _perimeterPoint (the selector's place for an angle). A press near
+ * an edge (`edges`) maps along that edge, one inside to the nearest edge.
+ */
+function perimeterAngleAt(x, y, w, h, edges) {
+  const perimeter = 2 * (w + h);
+  // The distance walked along each edge.
+  const right = () =>
+    y <= 50 ? ((50 - y) / 50) * (h / 2) : perimeter - ((y - 50) / 50) * (h / 2);
+  const top = () => h / 2 + ((100 - x) / 100) * w;
+  const left = () => h / 2 + w + (y / 100) * h;
+  const bottom = () => h / 2 + w + h + (x / 100) * w;
+  let walked;
+  if (x >= edges.right && y <= edges.rightMaxY) walked = right();
+  else if (y <= edges.top) walked = top();
+  else if (x <= edges.left) walked = left();
+  else if (y >= edges.bottom) walked = bottom();
+  else {
+    const nearest = Math.min(100 - x, x, y, 100 - y);
+    walked =
+      nearest === 100 - x ? right() : nearest === y ? top() : nearest === x ? left() : bottom();
+  }
+  const angle = (walked / perimeter) * 360;
+  return ((angle % 360) + 360) % 360;
+}
+
+/**
+ * <yc-angle-view>: the card's angle control. The card renders it with `draw`
+ * (angle → the control's template, at the lamp's angle by default); while an
+ * angle is dragged, slid or typed the card renders nothing and sets `angle`,
+ * so only the control follows. Each card render (a new `draw`) shows the
+ * card's angle again. Light DOM: the card's CSS and delegated handlers apply.
+ */
+class YcAngleView extends LitElement {
+  static properties = {
+    draw: { attribute: false },
+    angle: { state: true },
+  };
+
+  createRenderRoot() {
+    return this;
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.style.display = "contents";
+  }
+
+  willUpdate(changed) {
+    if (changed.has("draw")) this.angle = undefined;
+  }
+
+  render() {
+    return this.draw ? this.draw(this.angle) : nothing;
+  }
+}
+
+defineOnce("yc-angle-view", YcAngleView);
 
 export const AngleControlMixin = (Base) => class extends Base {
   /**
@@ -76,7 +154,7 @@ export const AngleControlMixin = (Base) => class extends Base {
     ) {
       e.stopPropagation();
     }
-    this._draggingRotary = true;
+    this._gate.hold("angle-drag");
     this._handleRotaryDrag(touch ? e.touches[0] : e);
     this._startRotaryDocDrag(touch);
   }
@@ -89,16 +167,15 @@ export const AngleControlMixin = (Base) => class extends Base {
     this._angleDragStart(e, true);
   }
 
-  // Renders wait while the user types an angle (_angleBusy) so they never
-  // fight the typing.
+  // Renders wait while the user types an angle (the "angle-typing" hold) so
+  // they never fight the typing.
   _onAngleAreaFocusIn(e) {
-    if (e.target?.id === "angleinput") this._typingAngle = true;
+    if (e.target?.id === "angleinput") this._gate.hold("angle-typing");
   }
 
   _onAngleAreaFocusOut(e) {
     const angleInput = e.target;
     if (angleInput?.id !== "angleinput") return;
-    this._typingAngle = false;
     // Apply the final value on blur (covers Tab-out, click-away)
     let angle = parseFloat(angleInput.value);
     if (!isNaN(angle)) {
@@ -108,7 +185,7 @@ export const AngleControlMixin = (Base) => class extends Base {
       this._updateRotaryDisplay(angle);
       this._debouncedApplyAngle(angle);
     }
-    this._flushPendingRender();
+    this._gate.release("angle-typing");
   }
 
   // Live visual feedback while typing (debounced backend call).
@@ -143,18 +220,13 @@ export const AngleControlMixin = (Base) => class extends Base {
     const input = e.target;
     if (!input?.matches?.(".angle-capsule-host .capsule-input")) return;
     if (e.relatedTarget && input.contains(e.relatedTarget)) return;
-    if (this._angleHeld) return;
-    if (this._usingSlider) {
-      setTimeout(() => {
-        this._usingSlider = false;
-        this._flushPendingRender();
-      }, 200);
-    }
+    if (this._gate.held("angle-pointer")) return;
+    if (this._gate.held("angle-slider")) this._gate.hold("angle-slider", 200);
   }
 
   // Standalone angle slider
   _onAngleSliderInput(e) {
-    this._usingSlider = true; // Flag to prevent re-renders during slider use
+    this._gate.hold("angle-slider");
     let angle = parseFloat(e.currentTarget.value);
     if (isNaN(angle)) angle = 0;
     this._syncAngleValueDisplay(angle);
@@ -164,50 +236,26 @@ export const AngleControlMixin = (Base) => class extends Base {
 
   // Clear the slider flag when slider interaction ends
   _onAngleSliderRelease() {
-    setTimeout(() => {
-      this._usingSlider = false;
-      this._flushPendingRender();
-    }, 100);
+    this._gate.hold("angle-slider", 100);
   }
 
   // Safety timeout to ensure flag gets cleared
   _onAngleSliderLeave() {
-    if (this._angleHeld) return;
-    setTimeout(() => {
-      this._usingSlider = false;
-      this._flushPendingRender();
-    }, 200);
+    if (this._gate.held("angle-pointer")) return;
+    if (this._gate.held("angle-slider")) this._gate.hold("angle-slider", 200);
   }
 
+  // The angle control's drawing (older formats arrive in today's names,
+  // normalizeCardOptions): the rectangle style draws a square when asked.
   _getRotaryStyleInfo() {
-    // Handle unified rotary style with backward compatibility
-    const unifiedStyle = this.config.rotary_unified_style;
-
-    if (unifiedStyle) {
-      // New unified format
-      switch (unifiedStyle) {
-        case "wheel":
-          return { style: "wheel", shape: null };
-        case "rectangle":
-          return {
-            style: this.config.rectangle_shape === "square" ? "square" : "rect",
-            shape: null,
-          };
-        case "matrix_preview":
-          return { style: "matrix_preview", shape: null };
-        case "compass":
-          return { style: "compass", shape: null };
-        case "capsule":
-          return { style: "capsule", shape: null };
-        default:
-          return { style: "compass", shape: null };
-      }
-    } else {
-      // Backward compatibility with old format
-      const oldStyle = this.config.angle_rotary_style || "default";
-      const oldShape = this.config.default_shape || "rectangle";
-      return { style: oldStyle, shape: oldShape };
-    }
+    const style = this.config.rotary_unified_style;
+    if (style === "rectangle")
+      return { style: this.config.rectangle_shape === "square" ? "square" : "rect" };
+    return {
+      style: ["wheel", "matrix_preview", "compass", "capsule"].includes(style)
+        ? style
+        : "compass",
+    };
   }
 
   // Older angle styles arrive in today's names (normalizeCardOptions).
@@ -224,19 +272,7 @@ export const AngleControlMixin = (Base) => class extends Base {
   }
 
   _getRotarySize() {
-    // Use unified rotary_size if available, otherwise fall back to specific sizes
-    if (this.config.rotary_size) {
-      return this.config.rotary_size;
-    }
-
-    const styleInfo = this._getRotaryStyleInfo();
-    if (styleInfo.style === "wheel") {
-      return this.config.wheel_size || 80;
-    } else if (styleInfo.style === "rect") {
-      return this.config.rect_size || 80;
-    } else {
-      return this.config.default_size || 80;
-    }
+    return this.config.rotary_size || 80;
   }
 
   _debouncedApplyAngle(angle) {
@@ -262,13 +298,13 @@ export const AngleControlMixin = (Base) => class extends Base {
   // button is released anywhere on the page, not when the pointer merely
   // leaves the control (which used to let a state update snap it back).
   _holdAngleControl(onRelease) {
-    this._angleHeld = true;
+    this._gate.hold("angle-pointer");
     if (this._angleRelease) return;
     this._angleRelease = () => {
       for (const type of ["mouseup", "pointerup", "touchend", "touchcancel"])
         document.removeEventListener(type, this._angleRelease, true);
       this._angleRelease = null;
-      this._angleHeld = false;
+      this._gate.release("angle-pointer");
       onRelease();
     };
     for (const type of ["mouseup", "pointerup", "touchend", "touchcancel"])
@@ -276,7 +312,7 @@ export const AngleControlMixin = (Base) => class extends Base {
   }
 
   _onAngleSliderPress() {
-    this._usingSlider = true;
+    this._gate.hold("angle-slider");
     this._holdAngleControl(() => this._onAngleSliderRelease());
   }
 
@@ -315,25 +351,6 @@ export const AngleControlMixin = (Base) => class extends Base {
 
   _createWheelGradientStops(colors) {
     return _sharedCreateWheelGradientStops(colors);
-  }
-
-  _createShapeGradientStops(colors) {
-    return _sharedCreateShapeGradientStops(colors);
-  }
-
-  _generateShapeMask(shape, selectorRadius) {
-    return _sharedGenerateShapeMask(shape, selectorRadius);
-  }
-
-  /**
-   * String form of the angle rotary markup.  Compatibility API (used by
-   * the preview-appearance fixtures); the card itself renders
-   * _angleRotaryTemplate() through Lit.
-   */
-  _renderAngleRotary(currentAngle, isHeaderMode = false) {
-    return templateToString(
-      this._angleRotaryTemplate(currentAngle, isHeaderMode),
-    );
   }
 
   /** Resolved angle value display mode: "none" | "text" | "input". */
@@ -410,14 +427,8 @@ export const AngleControlMixin = (Base) => class extends Base {
   }
 
   /** Angle rotary control as a Lit template (every rotary style). */
-  _angleRotaryTemplate(currentAngle, isHeaderMode = false) {
-    const styleInfo = this._getRotaryStyleInfo();
-    const style = styleInfo.style;
-    // Use visual angle for immediate feedback during dragging
-    const visualAngle =
-      this._draggingRotary && this._pendingAngle !== undefined
-        ? this._pendingAngle
-        : currentAngle;
+  _angleRotaryTemplate(visualAngle, isHeaderMode = false) {
+    const style = this._getRotaryStyleInfo().style;
 
     switch (style) {
       case "wheel": {
@@ -672,12 +683,9 @@ export const AngleControlMixin = (Base) => class extends Base {
         // Read matrix rotary config (independent from gallery settings)
         const mpBgColor = this.config.matrix_rotary_bg_color || "black";
         const mpPixelStyle = this.config.matrix_rotary_pixel_style || "square";
-        // Resolve pixel spacing mode (new tri-state) with backward compat
-        const mpSpacingMode =
-          this.config.matrix_rotary_spacing_mode ||
-          (this.config.matrix_rotary_pixel_spacing === false
-            ? "none"
-            : "normal");
+        // The resolved appearance (preview-appearance.js; older settings
+        // included).
+        const mpSpacingMode = this.config.matrix_rotary_spacing_mode;
         const mpPixelGap = mpSpacingMode === "normal" ? 3 : 0;
         const mpIgnoreBlack = this.config.matrix_rotary_ignore_black === true;
         const mpMatrixBoxShadow = this.config.matrix_rotary_box_shadow === true;
@@ -698,20 +706,19 @@ export const AngleControlMixin = (Base) => class extends Base {
 
         // Text preview mode: use cached preview data from the backend
         // The backend already returns correct data (all LEDs lit when panel mode is on)
-        const mpTextPreview = this.config.matrix_rotary_text_preview === true;
-        let mpPixelDivs;
-
-        if (mpTextPreview) {
-          // Use backend preview for the current gradient mode
-          mpPixelDivs = this._renderMatrixTextPreviewPixels(
-            mpRows,
-            mpCols,
-            mpBgColor,
-            mpIgnoreBlack,
-            mpBorderRadius,
-            mpPixelShadowStyle,
-          );
-        } else {
+        // (except while dragging: the angle's gradient follows the pointer;
+        // and until that data arrives).
+        let mpPixelDivs =
+          this.config.matrix_rotary_text_preview === true && !this._gate.held("angle-drag")
+            ? this._renderMatrixTextPreviewPixels(
+                mpRows,
+                mpCols,
+                mpIgnoreBlack,
+                mpBorderRadius,
+                mpPixelShadowStyle,
+              )
+            : null;
+        if (!mpPixelDivs) {
           // Pure angle gradient computation
           mpPixelDivs = this._angleGradientPixelColors(
             mpColors,
@@ -1000,70 +1007,6 @@ export const AngleControlMixin = (Base) => class extends Base {
         return html`<div class="angle-capsule-host" style="width:${this._getRotarySize()}%;margin:0 auto;">${unsafeHTML(capsuleHTML)}</div>`;
       }
 
-      default: {
-        // Get the actual colors from the lamp (EXACT same as wheel)
-        const defaultTextColors = this._getCurrentTextColors();
-        const defaultGradientStops =
-          this._createShapeGradientStops(defaultTextColors);
-
-        const defaultSelectorRadians = (visualAngle * Math.PI) / 180;
-
-        // Make size configurable (EXACT same as wheel)
-        // In header mode, use rotary size directly (no minimum constraint)
-        const defaultSizePercent = this._getRotarySize();
-        const defaultSize = Math.min(100, defaultSizePercent);
-        const defaultRadius = (defaultSize * 45) / 100;
-        const defaultSelectorRadius = (defaultSize * 40) / 100;
-
-        // Position selector (EXACT same as wheel)
-        const defaultSelectorX =
-          50 + defaultSelectorRadius * Math.cos(defaultSelectorRadians);
-        const defaultSelectorY =
-          50 - defaultSelectorRadius * Math.sin(defaultSelectorRadians);
-
-        // Gradient rotation (EXACT same as wheel)
-        const defaultGradientAngle = -visualAngle;
-
-        // Get selected shape
-        const defaultShape = styleInfo.shape || "rectangle";
-        const shapeMask = this._generateShapeMask(
-          defaultShape,
-          defaultSelectorRadius,
-        );
-
-        // Calculate gradient area to exactly match the shape size for perfect color distribution
-        const gradientSize = defaultSelectorRadius * 2.0; // Exact match to shape boundaries
-        const gradientX = 50 - gradientSize / 2;
-        const gradientY = 50 - gradientSize / 2;
-        const svgSize = isHeaderMode ? "88px" : `${defaultSizePercent}%`;
-
-        return html`
-          <div class="default-container" style="width: 100%; display: flex; flex-direction: column; align-items: center;">
-            <svg width=${svgSize} height=${svgSize} viewBox="0 0 100 100" id="angle-preview" class="color-wheel" style="max-width: 200px; max-height: 200px;">
-              <defs>
-                <linearGradient id="defaultGradient" x1="0%" y1="50%" x2="100%" y2="50%">
-                  ${unsafeSVG(defaultGradientStops)}
-                </linearGradient>
-                <mask id="shapeMask">
-                  ${unsafeSVG(shapeMask)}
-                </mask>
-              </defs>
-              <g transform="rotate(${defaultGradientAngle} 50 50)">
-                <rect x=${gradientX} y=${gradientY} width=${gradientSize} height=${gradientSize} fill="url(#defaultGradient)" mask="url(#shapeMask)"/>
-              </g>
-              <!-- NO static frame - removed the stroke rectangle -->
-              ${
-                this.config.show_selector_dot !== false
-                  ? svg`<circle cx=${defaultSelectorX} cy=${defaultSelectorY} r="4" class="wheel-selector" fill="#fff" stroke="#333" stroke-width="2"/>`
-                  : nothing
-              }
-              <!-- Invisible circle to make entire area draggable -->
-              <circle cx="50" cy="50" r=${defaultRadius} fill="transparent" style="cursor: pointer;"/>
-              ${this._svgAngleValueTemplate(defaultRadius, visualAngle)}
-            </svg>
-          </div>
-        `;
-      }
     }
   }
 
@@ -1150,207 +1093,15 @@ export const AngleControlMixin = (Base) => class extends Base {
 
     const styleInfo = this._getRotaryStyleInfo();
     const style = styleInfo.style;
-    let angle = 0;
-
     const rect = rotaryElement.getBoundingClientRect();
-
-    switch (style) {
-      case "wheel":
-        const wheelCx = rect.left + rect.width / 2;
-        const wheelCy = rect.top + rect.height / 2;
-        const wheelX = e.clientX - wheelCx;
-        const wheelY = -(e.clientY - wheelCy); // Invert Y to match SVG coordinate system
-        // Fix: 0° should be at center-right (3 o'clock), remove the +90 offset
-        angle = (Math.atan2(wheelY, wheelX) * 180) / Math.PI;
-        if (angle < 0) angle += 360;
-        break;
-
-      case "rect":
-        const rectCx = rect.left + rect.width / 2;
-        const rectCy = rect.top + rect.height / 2;
-        const rectRelX = e.clientX - rect.left;
-        const rectRelY = e.clientY - rect.top;
-
-        // Convert click position to percentage within rectangle
-        const rectClickX = (rectRelX / rect.width) * 100;
-        const rectClickY = (rectRelY / rect.height) * 100;
-
-        // Map rectangle position to angle using SAME perimeter logic as display
-        // Rectangle has 4:1 aspect ratio
-        const rectWidth = 4;
-        const rectHeight = 1;
-        const perimeter = 2 * (rectWidth + rectHeight); // Total perimeter = 10 units
-
-        let perimeterPos = 0;
-
-        // Determine which edge and position on that edge
-        if (rectClickX >= 90 && rectClickY <= 60) {
-          // Right edge region - map Y position to perimeter
-          if (rectClickY <= 50) {
-            // Top half of right edge (0° to ~18°)
-            const progress = (50 - rectClickY) / 50;
-            perimeterPos = progress * (rectHeight / 2);
-          } else {
-            // Bottom half of right edge (~342° to 360°)
-            const progress = (rectClickY - 50) / 50;
-            perimeterPos = perimeter - progress * (rectHeight / 2);
-          }
-        } else if (rectClickY <= 20) {
-          // Top edge region - map X position to perimeter
-          const progress = (100 - rectClickX) / 100;
-          perimeterPos = rectHeight / 2 + progress * rectWidth;
-        } else if (rectClickX <= 10) {
-          // Left edge region - map Y position to perimeter
-          const progress = rectClickY / 100;
-          perimeterPos = rectHeight / 2 + rectWidth + progress * rectHeight;
-        } else if (rectClickY >= 80) {
-          // Bottom edge region - map X position to perimeter
-          const progress = rectClickX / 100;
-          perimeterPos =
-            rectHeight / 2 + rectWidth + rectHeight + progress * rectWidth;
-        } else {
-          // Inside rectangle - use distance to nearest edge to determine angle
-          const distToRight = 100 - rectClickX;
-          const distToLeft = rectClickX;
-          const distToTop = rectClickY;
-          const distToBottom = 100 - rectClickY;
-          const minDist = Math.min(
-            distToRight,
-            distToLeft,
-            distToTop,
-            distToBottom,
-          );
-
-          if (minDist === distToRight) {
-            // Closest to right edge
-            perimeterPos =
-              rectClickY <= 50
-                ? ((50 - rectClickY) / 50) * (rectHeight / 2)
-                : perimeter - ((rectClickY - 50) / 50) * (rectHeight / 2);
-          } else if (minDist === distToTop) {
-            // Closest to top edge
-            perimeterPos =
-              rectHeight / 2 + ((100 - rectClickX) / 100) * rectWidth;
-          } else if (minDist === distToLeft) {
-            // Closest to left edge
-            perimeterPos =
-              rectHeight / 2 + rectWidth + (rectClickY / 100) * rectHeight;
-          } else {
-            // Closest to bottom edge
-            perimeterPos =
-              rectHeight / 2 +
-              rectWidth +
-              rectHeight +
-              (rectClickX / 100) * rectWidth;
-          }
-        }
-
-        // Convert perimeter position to angle
-        angle = (perimeterPos / perimeter) * 360;
-        angle = ((angle % 360) + 360) % 360;
-        break;
-
-      case "square":
-        // Handle square dragging using SAME perimeter logic as display
-        const squareRelX = e.clientX - rect.left;
-        const squareRelY = e.clientY - rect.top;
-
-        // Convert click position to percentage within square
-        const squareClickX = (squareRelX / rect.width) * 100;
-        const squareClickY = (squareRelY / rect.height) * 100;
-
-        // Map square position to angle using SAME perimeter logic as display
-        // Square has 1:1 aspect ratio
-        const squareWidth = 1;
-        const squareHeight = 1;
-        const squarePerimeter = 2 * (squareWidth + squareHeight); // Total perimeter = 4 units
-
-        let squarePerimeterPos = 0;
-
-        // Determine which edge and position on that edge
-        if (squareClickX >= 85 && squareClickY <= 65) {
-          // Right edge region - map Y position to perimeter
-          if (squareClickY <= 50) {
-            // Top half of right edge (0° to 45°)
-            const progress = (50 - squareClickY) / 50;
-            squarePerimeterPos = progress * (squareHeight / 2);
-          } else {
-            // Bottom half of right edge (315° to 360°)
-            const progress = (squareClickY - 50) / 50;
-            squarePerimeterPos =
-              squarePerimeter - progress * (squareHeight / 2);
-          }
-        } else if (squareClickY <= 15) {
-          // Top edge region - map X position to perimeter
-          const progress = (100 - squareClickX) / 100;
-          squarePerimeterPos = squareHeight / 2 + progress * squareWidth;
-        } else if (squareClickX <= 15) {
-          // Left edge region - map Y position to perimeter
-          const progress = squareClickY / 100;
-          squarePerimeterPos =
-            squareHeight / 2 + squareWidth + progress * squareHeight;
-        } else if (squareClickY >= 85) {
-          // Bottom edge region - map X position to perimeter
-          const progress = squareClickX / 100;
-          squarePerimeterPos =
-            squareHeight / 2 +
-            squareWidth +
-            squareHeight +
-            progress * squareWidth;
-        } else {
-          // Inside square - use distance to nearest edge to determine angle
-          const distToRight = 100 - squareClickX;
-          const distToLeft = squareClickX;
-          const distToTop = squareClickY;
-          const distToBottom = 100 - squareClickY;
-          const minDist = Math.min(
-            distToRight,
-            distToLeft,
-            distToTop,
-            distToBottom,
-          );
-
-          if (minDist === distToRight) {
-            // Closest to right edge
-            squarePerimeterPos =
-              squareClickY <= 50
-                ? ((50 - squareClickY) / 50) * (squareHeight / 2)
-                : squarePerimeter -
-                  ((squareClickY - 50) / 50) * (squareHeight / 2);
-          } else if (minDist === distToTop) {
-            // Closest to top edge
-            squarePerimeterPos =
-              squareHeight / 2 + ((100 - squareClickX) / 100) * squareWidth;
-          } else if (minDist === distToLeft) {
-            // Closest to left edge
-            squarePerimeterPos =
-              squareHeight / 2 +
-              squareWidth +
-              (squareClickY / 100) * squareHeight;
-          } else {
-            // Closest to bottom edge
-            squarePerimeterPos =
-              squareHeight / 2 +
-              squareWidth +
-              squareHeight +
-              (squareClickX / 100) * squareWidth;
-          }
-        }
-
-        // Convert perimeter position to angle
-        angle = (squarePerimeterPos / squarePerimeter) * 360;
-        angle = ((angle % 360) + 360) % 360;
-        break;
-
-      default:
-        const defaultCx = rect.left + rect.width / 2;
-        const defaultCy = rect.top + rect.height / 2;
-        const defaultX = e.clientX - defaultCx;
-        const defaultY = defaultCy - e.clientY;
-        angle = (Math.atan2(defaultY, defaultX) * 180) / Math.PI;
-        if (angle < 0) angle += 360;
-        break;
-    }
+    const x = ((e.clientX - rect.left) / rect.width) * 100;
+    const y = ((e.clientY - rect.top) / rect.height) * 100;
+    let angle =
+      style === "rect"
+        ? perimeterAngleAt(x, y, 4, 1, RECT_EDGES)
+        : style === "square"
+          ? perimeterAngleAt(x, y, 1, 1, SQUARE_EDGES)
+          : circleAngleAt(e, rect);
 
     // Validate the calculated angle
     if (isNaN(angle) || !isFinite(angle)) {
@@ -1373,7 +1124,6 @@ export const AngleControlMixin = (Base) => class extends Base {
     }
 
     // Store the pending angle for immediate visual feedback
-    this._isDragging = true;
     this._pendingAngle = angle;
 
     // Update both input and slider if they exist
@@ -1381,29 +1131,8 @@ export const AngleControlMixin = (Base) => class extends Base {
     const angleSlider = this.shadowRoot.getElementById("angleslider");
     if (angleSlider) angleSlider.value = Math.round(angle);
 
-    // Update visual elements directly for better performance
-    if (style === "wheel") {
-      this._updateWheelVisual(angle);
-    } else if (style === "rect") {
-      this._updateRectVisual(angle);
-    } else if (style === "square") {
-      this._updateSquareVisual(angle);
-    } else if (style === "compass") {
-      this._updateCompassVisual(angle);
-    } else if (style === "matrix_preview") {
-      this._updateMatrixPreviewVisual(angle);
-    } else if (style === "capsule") {
-      const pct = (angle / 359) * 100;
-      updateCapsuleVisuals(
-        this.shadowRoot,
-        pct,
-        `${Math.round(angle)}°`,
-        ".angle-capsule-host",
-      );
-    } else if (style === "default") {
-      // Use EXACT same logic as wheel for default mode
-      this._updateWheelVisual(angle);
-    }
+    // The visuals follow at once (no render while dragging).
+    this._updateRotaryDisplay(angle);
 
     // Update gradient buttons during dragging for immediate visual feedback
     this._refreshGallery(angle);
@@ -1413,7 +1142,7 @@ export const AngleControlMixin = (Base) => class extends Base {
 
   // ── Capsule angle slider handlers ──────────────────────────
   _startCapsuleDrag() {
-    this._usingSlider = true;
+    this._gate.hold("angle-slider");
     this._holdAngleControl(() => this._endCapsuleDrag());
   }
 
@@ -1425,14 +1154,11 @@ export const AngleControlMixin = (Base) => class extends Base {
       this._lastAngleSent = this._pendingAngle;
       this._pendingAngle = null;
     }
-    setTimeout(() => {
-      this._usingSlider = false;
-      this._flushPendingRender();
-    }, 100);
+    this._gate.hold("angle-slider", 100);
   }
 
   _handleCapsuleAngleInput(event) {
-    this._usingSlider = true;
+    this._gate.hold("angle-slider");
     let angle = parseInt(event.target.value);
     if (isNaN(angle)) return;
 
@@ -1479,9 +1205,8 @@ export const AngleControlMixin = (Base) => class extends Base {
     input.value = newValue;
     // Trigger the same handler as manual drag
     this._handleCapsuleAngleInput({ target: input });
-    // Wheel events are instantaneous (no mouseup) — clear _usingSlider
-    // immediately so render() is not permanently blocked.
-    this._usingSlider = false;
+    // Wheel events are instantaneous (no mouseup): the hold ends at once.
+    this._gate.release("angle-slider");
   }
 
   // ────────────────────────────────────────────────────────────
@@ -1499,248 +1224,26 @@ export const AngleControlMixin = (Base) => class extends Base {
     if (valueText) valueText.textContent = `${rounded}°`;
   }
 
+  // The control shows `angle` at once (a drag, the slider, typing) without
+  // a card render: <yc-angle-view> re-renders alone. The capsule (the shared
+  // string markup) moves in place: re-rendering it would replace the range
+  // input being dragged.
   _updateRotaryDisplay(angle) {
-    const rotaryContainer = this.shadowRoot.querySelector(
-      ".wheel-container, .rect-container, .default-container, .matrix-preview-container, .compass-container, .angle-capsule-host",
-    );
-    if (!rotaryContainer) return;
-
-    const styleInfo = this._getRotaryStyleInfo();
-    const style = styleInfo.style;
-
-    switch (style) {
-      case "wheel":
-        this._updateWheelVisual(angle);
-        break;
-
-      case "rect":
-        this._updateRectVisual(angle);
-        break;
-
-      case "square":
-        this._updateSquareVisual(angle);
-        break;
-
-      case "compass":
-        this._updateCompassVisual(angle);
-        break;
-
-      case "matrix_preview":
-        this._updateMatrixPreviewVisual(angle);
-        break;
-
-      case "capsule": {
-        const percent = (angle / 359) * 100;
-        updateCapsuleVisuals(
-          this.shadowRoot,
-          percent,
-          `${Math.round(angle)}°`,
-          ".angle-capsule-host",
-        );
-        // Also sync the hidden range input
-        const capsuleInput = this.shadowRoot.querySelector(
-          ".angle-capsule-host .capsule-input",
-        );
-        if (capsuleInput) capsuleInput.value = Math.round(angle);
-        break;
-      }
-
-      case "default":
-        // Use EXACT same logic as wheel
-        const defaultSelectorRadians = (angle * Math.PI) / 180;
-        const defaultSizePercent = this.config.default_size || 80;
-        const defaultSize = Math.min(100, defaultSizePercent);
-        const defaultSelectorRadius = (defaultSize * 40) / 100;
-
-        const defaultSelectorX =
-          50 + defaultSelectorRadius * Math.cos(defaultSelectorRadians);
-        const defaultSelectorY =
-          50 - defaultSelectorRadius * Math.sin(defaultSelectorRadians);
-        const defaultGradientAngle = -angle;
-
-        // Update selector dot position
-        const defaultSelectorDot =
-          this.shadowRoot.querySelector(".wheel-selector");
-        if (defaultSelectorDot) {
-          defaultSelectorDot.setAttribute("cx", defaultSelectorX);
-          defaultSelectorDot.setAttribute("cy", defaultSelectorY);
-        }
-
-        // Update gradient rotation
-        const defaultGradientGroup = this.shadowRoot.querySelector(
-          "g[transform*='rotate']",
-        );
-        if (defaultGradientGroup) {
-          defaultGradientGroup.setAttribute(
-            "transform",
-            `rotate(${defaultGradientAngle} 50 50)`,
-          );
-        }
-        break;
+    if (this._getRotaryStyleInfo().style === "capsule") {
+      updateCapsuleVisuals(
+        this.shadowRoot,
+        (angle / 359) * 100,
+        `${Math.round(angle)}°`,
+        ".angle-capsule-host",
+      );
+      const capsuleInput = this.shadowRoot.querySelector(
+        ".angle-capsule-host .capsule-input",
+      );
+      if (capsuleInput) capsuleInput.value = Math.round(angle);
+      return;
     }
-  }
-
-  _updateWheelVisual(angle) {
-    const selectorRadians = (angle * Math.PI) / 180;
-
-    // Use unified sizing method
-    const sizePercent = this._getRotarySize();
-    const selectorRadius = (sizePercent * 45) / 100; // On circle border
-
-    const selectorX = 50 + selectorRadius * Math.cos(selectorRadians);
-    const selectorY = 50 - selectorRadius * Math.sin(selectorRadians);
-    const gradientAngle = -angle;
-
-    // Update selector dot position
-    const selectorDot = this.shadowRoot.querySelector(".wheel-selector");
-    if (selectorDot) {
-      selectorDot.setAttribute("cx", selectorX);
-      selectorDot.setAttribute("cy", selectorY);
-    }
-
-    // Update gradient rotation
-    const gradientGroup = this.shadowRoot.querySelector(
-      'g[transform*="rotate"]',
-    );
-    if (gradientGroup) {
-      gradientGroup.setAttribute("transform", `rotate(${gradientAngle} 50 50)`);
-    }
-
-    // Handle arrow window mask groups if present (wheel + mask mode)
-    const awRotateGroups = this.shadowRoot.querySelectorAll(".aw-rotate");
-    awRotateGroups.forEach((g) =>
-      g.setAttribute("transform", `rotate(${gradientAngle} 50 50)`),
-    );
-    const awGradGroup = this.shadowRoot.querySelector(".aw-grad-group");
-    if (awGradGroup) {
-      awGradGroup.setAttribute("transform", `rotate(${gradientAngle} 50 50)`);
-    }
-  }
-
-  _updateRectVisual(angle) {
-    // EXACT same logic as wheel for consistency
-    const normalizedAngle = ((angle % 360) + 360) % 360;
-
-    // Position on the 4:1 rectangle perimeter (same mapping as the render)
-    const { x: rectSelectorX, y: rectSelectorY } = this._perimeterPoint(
-      normalizedAngle,
-      4,
-      1,
-    );
-
-    // Gradient rotation EXACT same as wheel
-    const gradientAngle = -normalizedAngle;
-
-    // Update selector dot position using CSS positioning
-    const rectSelectorDot = this.shadowRoot.querySelector(".rect-selector");
-    if (rectSelectorDot) {
-      rectSelectorDot.style.left = `${rectSelectorX}%`;
-      rectSelectorDot.style.top = `${rectSelectorY}%`;
-    }
-
-    // Update gradient background using CSS - SAME rotation as wheel
-    const rectElement = this.shadowRoot.querySelector(".rect-gradient");
-    if (rectElement) {
-      const rectTextColors = this._getCurrentTextColors();
-      const colorStops = rectTextColors
-        .map((color) => rgbToCss(color))
-        .join(", ");
-      rectElement.style.background = `linear-gradient(${
-        90 + gradientAngle
-      }deg, ${colorStops})`;
-    }
-  }
-
-  _updateSquareVisual(angle) {
-    // EXACT same logic as rectangle but for 1:1 square
-    const normalizedAngle = ((angle % 360) + 360) % 360;
-
-    // Position on the 1:1 square perimeter (same mapping as the render)
-    const { x: squareSelectorX, y: squareSelectorY } = this._perimeterPoint(
-      normalizedAngle,
-      1,
-      1,
-    );
-
-    // Gradient rotation EXACT same as rectangle
-    const gradientAngle = -normalizedAngle;
-
-    // Update selector dot position using CSS positioning
-    const squareSelectorDot = this.shadowRoot.querySelector(".square-selector");
-    if (squareSelectorDot) {
-      squareSelectorDot.style.left = `${squareSelectorX}%`;
-      squareSelectorDot.style.top = `${squareSelectorY}%`;
-    }
-
-    // Update gradient background using CSS - SAME rotation as rectangle
-    const squareElement = this.shadowRoot.querySelector(".square-gradient");
-    if (squareElement) {
-      const squareTextColors = this._getCurrentTextColors();
-      const colorStops = squareTextColors
-        .map((color) => rgbToCss(color))
-        .join(", ");
-      squareElement.style.background = `linear-gradient(${
-        90 + gradientAngle
-      }deg, ${colorStops})`;
-    }
-
-    // Update angle display
-    const squareAngleDisplay = this.shadowRoot.querySelector(".square-angle");
-    if (squareAngleDisplay) {
-      squareAngleDisplay.textContent = `${Math.round(angle)}°`;
-    }
-  }
-
-  // Unified update for compass style (needle/beam/arrow shapes)
-  _updateCompassVisual(angle) {
-    const gradientAngle = -angle;
-    const selectorRadians = (angle * Math.PI) / 180;
-    const sizePercent = this._getRotarySize();
-    const selectorRadius = (Math.min(100, sizePercent) * 45) / 100; // On circle border
-    const selectorX = 50 + selectorRadius * Math.cos(selectorRadians);
-    const selectorY = 50 - selectorRadius * Math.sin(selectorRadians);
-
-    const dot = this.shadowRoot.querySelector(".wheel-selector");
-    if (dot) {
-      dot.setAttribute("cx", selectorX);
-      dot.setAttribute("cy", selectorY);
-    }
-
-    const compassShape = this._getCompassShape();
-
-    if (compassShape === "none") {
-      // No overlay — nothing to update beyond selector dot
-    } else if (compassShape === "beam") {
-      // Recalculate beam wedge path — origin from opposite border
-      const radius = (Math.min(100, sizePercent) * 45) / 100;
-      const beamSpread = 30;
-      const angleRad = (angle * Math.PI) / 180;
-      const originX = 50 - radius * Math.cos(angleRad);
-      const originY = 50 + radius * Math.sin(angleRad);
-      const rad1 = ((angle + beamSpread) * Math.PI) / 180;
-      const rad2 = ((angle - beamSpread) * Math.PI) / 180;
-      const bx1 = 50 + radius * Math.cos(rad1);
-      const by1 = 50 - radius * Math.sin(rad1);
-      const bx2 = 50 + radius * Math.cos(rad2);
-      const by2 = 50 - radius * Math.sin(rad2);
-      const newPath = `M ${originX} ${originY} L ${bx1} ${by1} A ${radius} ${radius} 0 0 1 ${bx2} ${by2} Z`;
-
-      const clipPath = this.shadowRoot.querySelector(".beam-wedge-path");
-      if (clipPath) clipPath.setAttribute("d", newPath);
-
-      const outline = this.shadowRoot.querySelector(".beam-outline");
-      if (outline) outline.setAttribute("d", newPath);
-
-      const gradGroup = this.shadowRoot.querySelector(".beam-grad-group");
-      if (gradGroup)
-        gradGroup.setAttribute("transform", `rotate(${gradientAngle} 50 50)`);
-    } else {
-      // Needle or Arrow — rotate all .comp-rotate groups
-      const rotGroups = this.shadowRoot.querySelectorAll(".comp-rotate");
-      rotGroups.forEach((g) => {
-        g.setAttribute("transform", `rotate(${gradientAngle} 50 50)`);
-      });
-    }
+    for (const view of this.shadowRoot.querySelectorAll("yc-angle-view"))
+      view.angle = angle;
   }
 
   /**
@@ -1751,7 +1254,7 @@ export const AngleControlMixin = (Base) => class extends Base {
    */
   _getMatrixPreviewColors(rows, cols) {
     // PRIMARY: read matrix_colors from entity state (same as lamp preview card)
-    const entityId = this._getPrimaryEntity();
+    const entityId = this._primaryEntity();
     const stateObj = entityId ? this._hass?.states?.[entityId] : null;
     const matrixColors = stateObj?.attributes?.matrix_colors;
     // While the lamp is off its matrix is black (and it is empty while the
@@ -1771,32 +1274,20 @@ export const AngleControlMixin = (Base) => class extends Base {
   }
 
   /**
-   * Render pixel divs for the matrix rotary in "text preview" mode.
-   * Reads matrix_colors directly from entity state (same approach as the
-   * lamp preview card) for instant updates when panel mode changes.
+   * Render pixel divs for the matrix rotary in "text preview" mode, or null
+   * without preview data. Reads matrix_colors directly from entity state
+   * (same approach as the lamp preview card) for instant updates when panel
+   * mode changes.
    */
   _renderMatrixTextPreviewPixels(
     rows,
     cols,
-    bgColor,
     ignoreBlack,
     borderRadius,
     pixelShadowStyle = "",
   ) {
     const previewColors = this._getMatrixPreviewColors(rows, cols);
-
-    if (!previewColors || previewColors.length < rows * cols) {
-      // Fallback: show empty grid if no preview data yet
-      const emptyBg =
-        bgColor === "transparent"
-          ? "rgba(128,128,128,0.2)"
-          : "rgba(255,255,255,0.08)";
-      return Array.from(
-        { length: rows * cols },
-        () =>
-          html`<div class="matrix-pixel" style="background:${emptyBg};border-radius:${borderRadius};aspect-ratio:1;${pixelShadowStyle}"></div>`,
-      );
-    }
+    if (!previewColors || previewColors.length < rows * cols) return null;
 
     // Flip vertically (same convention as _renderPreviewGrid)
     const divs = [];
@@ -1812,59 +1303,5 @@ export const AngleControlMixin = (Base) => class extends Base {
       }
     }
     return divs;
-  }
-
-  _updateMatrixPreviewVisual(angle) {
-    const mpRows = 5;
-    const mpCols = 20;
-    const mpIgnoreBlack = this.config.matrix_rotary_ignore_black === true;
-    const pixels = this.shadowRoot.querySelectorAll(".matrix-pixel");
-    if (!pixels.length) return;
-
-    // Text preview mode: show entity state matrix_colors (same as lamp
-    // preview card) for instant updates.  Falls back to preview cache.
-    // During active drag, fall through to gradient computation for
-    // immediate visual feedback of the angle change.
-    if (
-      this.config.matrix_rotary_text_preview === true &&
-      !this._draggingRotary
-    ) {
-      const previewColors = this._getMatrixPreviewColors(mpRows, mpCols);
-      if (previewColors && previewColors.length >= mpRows * mpCols) {
-        let idx = 0;
-        for (let row = mpRows - 1; row >= 0; row--) {
-          for (let col = 0; col < mpCols; col++) {
-            if (idx >= pixels.length) break;
-            const color = previewColors[row * mpCols + col];
-            const [r, g, b] = color;
-            const isBlack = r <= 5 && g <= 5 && b <= 5;
-            const shouldIgnore = mpIgnoreBlack && isBlack;
-            pixels[idx].style.background = shouldIgnore
-              ? "transparent"
-              : rgbToCss(color);
-            idx++;
-          }
-        }
-        return;
-      }
-      // No preview data available yet — fall through to gradient visualization
-    }
-
-    // Pure angle gradient mode
-    const colors = this._angleGradientPixelColors(
-      this._getCurrentTextColors(),
-      angle,
-      mpRows,
-      mpCols,
-    );
-    const count = Math.min(colors.length, pixels.length);
-    for (let idx = 0; idx < count; idx++) {
-      const [r, g, b] = colors[idx];
-      const isBlack = r <= 5 && g <= 5 && b <= 5;
-      const shouldIgnore = mpIgnoreBlack && isBlack;
-      pixels[idx].style.background = shouldIgnore
-        ? "transparent"
-        : rgbToCss(colors[idx]);
-    }
   }
 };

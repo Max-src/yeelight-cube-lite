@@ -54,7 +54,7 @@ export function renderOrientationControls(config, current, unavailable, onClick)
     <div class="orientation-buttons">${model.buttons.map(button)}</div>
   </div>`;
 }
-import { renderModeSettingsSection } from "./editor_ui_utils.js";
+import { renderSettingsBox } from "./editor_ui_utils.js";
 
 export function renderOrientationSettings(config, onChange) {
   const options = orientationOptions(config);
@@ -81,7 +81,7 @@ export function renderOrientationSettings(config, onChange) {
       options.style,
     )}
     ${!["original", "icon"].includes(options.style)
-      ? renderModeSettingsSection(
+      ? renderSettingsBox(
           "Button Content",
           choices(
             "Content",

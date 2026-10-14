@@ -10,7 +10,6 @@ from homeassistant.core import HomeAssistant  # type: ignore
 from homeassistant.helpers import config_validation as cv  # type: ignore
 
 from . import async_save_data
-from .color_utils import rgb_to_hex
 from .const import DOMAIN
 from .name_utils import normalize_display_name
 from .light import _ENTITY_REGISTRY, _entity_id_or_list
@@ -79,12 +78,7 @@ def async_register_palette_services(hass: HomeAssistant) -> None:
             target_entity._text_colors = [tuple(c) for c in palette["colors"]]
             if target_entity._text_colors:
                 target_entity._rgb_color = target_entity._text_colors[0]
-            if target_entity._mode == "Panel Color Sequence":
-                colors = target_entity._text_colors
-                for i, module in enumerate(target_entity._layout.device_layout):
-                    color = colors[i % len(colors)]
-                    hex_color = rgb_to_hex(tuple(color))
-                    module.set_colors([hex_color])
+            # (Panel Color Sequence included: the display render colors it.)
             await target_entity.async_apply_display_mode(update_type='pixel_art')
             # Push the updated state so consumers watching the `text_colors`
             # attribute (e.g. the gradient card's live preview) refresh

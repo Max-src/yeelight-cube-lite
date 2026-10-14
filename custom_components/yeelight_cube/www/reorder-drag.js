@@ -189,8 +189,3 @@ export function startReorderDrag(event, options) {
 function defaultPlace(item, target, after) {
   target.parentNode.insertBefore(item, after ? target.nextSibling : target);
 }
-
-/** The new order of `list` after a drag (onDrop's `order`). */
-export function reorderList(list, order) {
-  return order.map((index) => list[index]);
-}

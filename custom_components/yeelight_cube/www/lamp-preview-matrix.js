@@ -100,7 +100,7 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
   }
 
   _clockAnimInterval() {
-    const attrs = this._hass?.states?.[this.config?.entity]?.attributes;
+    const attrs = this._hass?.states?.[this._primaryEntity()]?.attributes;
     const mixer = attrs ? clockStyleMixer(attrs) : 0;
     return CLOCK_MIXER_EFFECTS[mixer] ? 100 : 500;
   }
@@ -113,7 +113,7 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
 
   _clockAnimFrame() {
     if (!this._onScreen) return;
-    const st = this._hass?.states?.[this.config?.entity];
+    const st = this._hass?.states?.[this._primaryEntity()];
     if (!st || st.state !== "on" || st.attributes.content_mode !== "Clock") {
       this._stopClockAnimation();
       return;
@@ -158,7 +158,7 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
 
   _nativeAnimFrame() {
     if (!this._onScreen) return;
-    const st = this._hass?.states?.[this.config?.entity];
+    const st = this._hass?.states?.[this._primaryEntity()];
     if (
       !st ||
       st.state !== "on" ||
@@ -327,10 +327,8 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
   _matrixGeometry(stateObj) {
     const matrixBackground = this.config.matrix_background || "black";
     const matrixBoxShadow = this.config.matrix_box_shadow !== false;
-    // Resolve pixel spacing mode (new tri-state) with backward compat for old booleans
-    const spacingMode =
-      this.config.matrix_spacing_mode ||
-      (this.config.matrix_pixel_spacing === false ? "none" : "normal");
+    // The resolved appearance (preview-appearance.js; older settings included).
+    const spacingMode = this.config.matrix_spacing_mode;
     const pixelGap = spacingMode === "normal" ? 4 : 0;
     const pixelStyle = this.config.matrix_pixel_style || "square";
     const alignClass =

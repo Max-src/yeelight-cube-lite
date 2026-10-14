@@ -7,8 +7,6 @@ Registered by :func:`light_services.async_setup_light_services`.
 import asyncio
 import base64
 import logging
-import math
-import random
 import time
 
 import voluptuous as vol  # type: ignore
@@ -48,264 +46,32 @@ def async_register_display_services(hass: HomeAssistant) -> None:
     _fire_and_forget = make_fire_and_forget(hass)
 
     def generate_preview_for_mode(light_entity, mode: str, apply_brightness: bool = True):
-        """
-        Generate a full 5x20 preview matrix for a given gradient mode.
-        Uses the entity's ACTUAL current state (text, colors, angle, background)
-        and renders EXACTLY as it would appear on the lamp.
-        
-        Args:
-            light_entity: The YeelightCubeLight entity instance
-            mode: Gradient mode name to preview
-            apply_brightness: If True, apply _apply_final_brightness (darken).
-                              If False, return raw full-brightness colors.
-        
-        Returns:
-            List of 100 RGB tuples (5 rows x 20 cols = 100 pixels)
-        """
-        # Create a 100-element array initialized with background color
-        preview_matrix = [light_entity._background_color] * 100
-        
-        # Get entity's current state
-        # When full_panel is on, use the virtual full-panel character just like
-        # the actual rendering code does -- so the preview fills all 100 LEDs.
+        """The lamp's 100 colors in ``mode`` from its current text, colors,
+        angle and background: the lamp's own text-mode frame
+        (_text_mode_frame), without the orientation flip (the cards apply
+        it). With ``apply_brightness`` the final brightness/darken too."""
+        # The full panel: one virtual character covering every pixel, as on
+        # the lamp.
         if light_entity._full_panel:
-            text = PANEL_FULL_CHAR
+            text, width, offset = PANEL_FULL_CHAR, TOTAL_COLUMNS, 0
         else:
             text = light_entity._custom_text or ""
-        colors = light_entity._text_colors or [(255, 0, 0)]
-        angle = light_entity._angle
-
-        if not text:
-            # No text - just show background
-            if apply_brightness:
-                return [light_entity._apply_final_brightness(color) for color in preview_matrix]
-            return list(preview_matrix)
-        
-        # Calculate text layout (same as actual rendering)
-        total_columns = TOTAL_COLUMNS
-        if light_entity._full_panel:
-            total_text_width = TOTAL_COLUMNS
-            current_offset = 0
+            width = sum(light_entity._char_advance(letter) for letter in text) - 1
+            offset = light_entity.calculate_text_offset(width, TOTAL_COLUMNS) if text else 0
+        if mode == "Panel Color Sequence":
+            # The whole panel, whatever the text (as on the lamp).
+            frame = light_entity._panel_sequence_frame(light_entity._text_colors)
+        elif text:
+            frame = light_entity._text_mode_frame(
+                mode, text, light_entity._text_colors, light_entity._angle, offset, width
+            )
         else:
-            total_text_width = sum(light_entity._char_advance(letter) for letter in text) - 1
-            current_offset = light_entity.calculate_text_offset(total_text_width, total_columns)
-        
-        # Render based on mode (simplified version of _apply_display_mode_internal)
-        if mode == "Solid Color":
-            color = colors[0]
-            for letter in text:
-                letter_positions = light_entity.get_positions_for_letter(letter)
-                for pos in letter_positions:
-                    adjusted_pos = pos + current_offset
-                    if 0 <= adjusted_pos < 100:
-                        orig_col = pos % TOTAL_COLUMNS
-                        virtual_col = orig_col + current_offset
-                        if 0 <= virtual_col < TOTAL_COLUMNS:
-                            preview_matrix[adjusted_pos] = color
-                current_offset += light_entity._char_advance(letter)
-        
-        elif mode == "Letter Gradient":
-            for i, letter in enumerate(text):
-                gradient_color = light_entity.calculate_multi_gradient_color(colors, i, len(text))
-                letter_positions = light_entity.get_positions_for_letter(letter)
-                for pos in letter_positions:
-                    adjusted_pos = pos + current_offset
-                    if 0 <= adjusted_pos < 100:
-                        orig_col = pos % TOTAL_COLUMNS
-                        virtual_col = orig_col + current_offset
-                        if 0 <= virtual_col < TOTAL_COLUMNS:
-                            preview_matrix[adjusted_pos] = gradient_color
-                current_offset += light_entity._char_advance(letter)
-        
-        elif mode == "Column Gradient":
-            for letter in text:
-                letter_positions = light_entity.get_positions_for_letter(letter)
-                letter_width = light_entity.letter_size(letter_positions)
-                for col_index in range(letter_width):
-                    overall_col = col_index + current_offset
-                    col_color = light_entity.calculate_multi_gradient_color(colors, overall_col, total_text_width)
-                    for pos in letter_positions:
-                        adjusted_pos = pos + current_offset
-                        if 0 <= adjusted_pos < 100:
-                            orig_col = pos % TOTAL_COLUMNS
-                            virtual_col = orig_col + current_offset
-                            if 0 <= virtual_col < TOTAL_COLUMNS and (pos % TOTAL_COLUMNS) == col_index:
-                                preview_matrix[adjusted_pos] = col_color
-                current_offset += light_entity._char_advance(letter)
-        
-        elif mode == "Row Gradient":
-            for letter in text:
-                letter_positions = light_entity.get_positions_for_letter(letter)
-                for row_index in range(TOTAL_ROWS):
-                    row_color = light_entity.calculate_multi_gradient_color(colors, row_index, TOTAL_ROWS)
-                    for pos in letter_positions:
-                        if pos // TOTAL_COLUMNS == row_index:
-                            adjusted_pos = pos + current_offset
-                            if 0 <= adjusted_pos < 100:
-                                orig_col = pos % TOTAL_COLUMNS
-                                virtual_col = orig_col + current_offset
-                                if 0 <= virtual_col < TOTAL_COLUMNS:
-                                    preview_matrix[adjusted_pos] = row_color
-                current_offset += light_entity._char_advance(letter)
-        
-        elif mode == "Angle Gradient":
-            angle_radians = math.radians(angle)
-            dx = math.cos(angle_radians)
-            dy = math.sin(angle_radians)
-            center_col = (total_columns - 1) / 2
-            center_row = (TOTAL_ROWS - 1) / 2
-            corners = [(-(center_col), -(center_row)), (center_col, -(center_row)), (-(center_col), center_row), (center_col, center_row)]
-            projections = [col * dx + row * dy for col, row in corners]
-            min_proj = min(projections)
-            max_proj = max(projections)
-            proj_range = max_proj - min_proj if max_proj != min_proj else 1
-            
-            for letter in text:
-                letter_positions = light_entity.get_positions_for_letter(letter)
-                for pos in letter_positions:
-                    adjusted_pos = pos + current_offset
-                    if 0 <= adjusted_pos < 100:
-                        orig_col = pos % TOTAL_COLUMNS
-                        virtual_col = orig_col + current_offset
-                        if 0 <= virtual_col < TOTAL_COLUMNS:
-                            row, col = divmod(adjusted_pos, total_columns)
-                            centered_col = col - center_col
-                            centered_row = row - center_row
-                            projection = centered_col * dx + centered_row * dy
-                            normalized_projection = (projection - min_proj) / proj_range
-                            gradient_color = light_entity.calculate_multi_gradient_color(colors, normalized_projection * (len(colors) - 1), len(colors))
-                            preview_matrix[adjusted_pos] = tuple(min(255, max(0, v)) for v in gradient_color)
-                current_offset += light_entity._char_advance(letter)
-        
-        elif mode == "Radial Gradient":
-            center_col = (total_columns - 1) / 2
-            center_row = (TOTAL_ROWS - 1) / 2
-            max_dist = math.sqrt(center_col ** 2 + center_row ** 2)
-            
-            for letter in text:
-                letter_positions = light_entity.get_positions_for_letter(letter)
-                for pos in letter_positions:
-                    adjusted_pos = pos + current_offset
-                    if 0 <= adjusted_pos < 100:
-                        orig_col = pos % TOTAL_COLUMNS
-                        virtual_col = orig_col + current_offset
-                        if 0 <= virtual_col < TOTAL_COLUMNS:
-                            row, col = divmod(adjusted_pos, total_columns)
-                            dx_ = col - center_col
-                            dy_ = row - center_row
-                            dist = math.sqrt(dx_ ** 2 + dy_ ** 2)
-                            norm = dist / max_dist if max_dist > 0 else 0
-                            gradient_color = light_entity.calculate_multi_gradient_color(colors, norm * (len(colors) - 1), len(colors))
-                            preview_matrix[adjusted_pos] = tuple(min(255, max(0, v)) for v in gradient_color)
-                current_offset += light_entity._char_advance(letter)
-        
-        elif mode == "Letter Angle Gradient":
-            angle_radians = math.radians(angle)
-            dx = math.cos(angle_radians)
-            dy = math.sin(angle_radians)
-            
-            for letter in text:
-                letter_positions = light_entity.get_positions_for_letter(letter)
-                if not letter_positions:
-                    current_offset += light_entity._char_advance(letter)
-                    continue
-                
-                # Calculate letter bounding box
-                rows = []
-                cols = []
-                for pos in letter_positions:
-                    row, col = divmod(pos + current_offset, total_columns)
-                    rows.append(row)
-                    cols.append(col)
-                
-                if len(set(cols)) == 1:
-                    col = cols[0]
-                    min_row, max_row = 0, TOTAL_ROWS - 1
-                    min_col = max(0, col - 1)
-                    max_col = min(TOTAL_COLUMNS - 1, col + 1)
-                    center_row = (min_row + max_row) / 2
-                    center_col = (min_col + max_col) / 2
-                else:
-                    min_row, max_row = min(rows), max(rows)
-                    min_col, max_col = min(cols), max(cols)
-                    center_row = (min_row + max_row) / 2
-                    center_col = (min_col + max_col) / 2
-                
-                corners = [(min_col, min_row), (max_col, min_row), (min_col, max_row), (max_col, max_row)]
-                projections = [(col_ - center_col) * dx + (row_ - center_row) * dy for col_, row_ in corners]
-                min_proj = min(projections)
-                max_proj = max(projections)
-                proj_range = max_proj - min_proj if max_proj != min_proj else 1
-                
-                for pos in letter_positions:
-                    adjusted_pos = pos + current_offset
-                    if 0 <= adjusted_pos < 100:
-                        orig_col = pos % TOTAL_COLUMNS
-                        virtual_col = orig_col + current_offset
-                        if 0 <= virtual_col < TOTAL_COLUMNS:
-                            row, col = divmod(adjusted_pos, total_columns)
-                            centered_col = col - center_col
-                            centered_row = row - center_row
-                            projection = centered_col * dx + centered_row * dy
-                            normalized_projection = (projection - min_proj) / proj_range
-                            gradient_color = light_entity.calculate_multi_gradient_color(colors, normalized_projection * (len(colors) - 1), len(colors))
-                            preview_matrix[adjusted_pos] = tuple(min(255, max(0, v)) for v in gradient_color)
-                current_offset += light_entity._char_advance(letter)
-        
-        elif mode == "Letter Vertical Gradient":
-            for letter in text:
-                letter_positions = light_entity.get_positions_for_letter(letter)
-                letter_width = light_entity.letter_size(letter_positions)
-                if letter_width <= 0:
-                    continue
-                
-                if letter_width == 1:
-                    center_index = (len(colors) - 1) / 2
-                    gradient_color = light_entity.calculate_multi_gradient_color(colors, center_index, len(colors))
-                    for pos in letter_positions:
-                        adjusted_pos = pos + current_offset
-                        if 0 <= adjusted_pos < 100:
-                            orig_col = pos % TOTAL_COLUMNS
-                            virtual_col = orig_col + current_offset
-                            if 0 <= virtual_col < TOTAL_COLUMNS:
-                                preview_matrix[adjusted_pos] = tuple(min(255, max(0, val)) for val in gradient_color)
-                else:
-                    for col_index in range(letter_width):
-                        gradient_color = light_entity.calculate_multi_gradient_color(colors, col_index, letter_width)
-                        for pos in letter_positions:
-                            if (pos % total_columns) == col_index:
-                                adjusted_pos = pos + current_offset
-                                if 0 <= adjusted_pos < 100:
-                                    orig_col = pos % TOTAL_COLUMNS
-                                    virtual_col = orig_col + current_offset
-                                    if 0 <= virtual_col < TOTAL_COLUMNS:
-                                        preview_matrix[adjusted_pos] = tuple(min(255, max(0, val)) for val in gradient_color)
-                current_offset += light_entity._char_advance(letter)
-        
-        elif mode == "Text Color Sequence":
-            # Random color sequence
-            shuffled_colors = colors[:]
-            random.shuffle(shuffled_colors)
-            pixel_index = 0
-            for letter in text:
-                letter_positions = light_entity.get_positions_for_letter(letter)
-                positions = letter_positions[:]
-                random.shuffle(positions)
-                for pos in positions:
-                    adjusted_pos = pos + current_offset
-                    if 0 <= adjusted_pos < 100:
-                        orig_col = pos % TOTAL_COLUMNS
-                        virtual_col = orig_col + current_offset
-                        if 0 <= virtual_col < TOTAL_COLUMNS:
-                            color = shuffled_colors[pixel_index % len(shuffled_colors)]
-                            preview_matrix[adjusted_pos] = color
-                    pixel_index += 1
-                current_offset += light_entity._char_advance(letter)
-        
-        # Apply final brightness/darkness adjustments (same as matrix_colors in extra_state_attributes)
+            frame = [None] * (TOTAL_COLUMNS * TOTAL_ROWS)
+        background = light_entity._background_color
+        colors = [background if color is None else color for color in frame]
         if apply_brightness:
-            return [light_entity._apply_final_brightness(color) for color in preview_matrix]
-        return list(preview_matrix)
+            return [light_entity._apply_final_brightness(color) for color in colors]
+        return colors
 
     async def handle_preview_gradient_modes(service_call):
         """Generate full 5x20 preview matrices for all gradient modes using entity's current state."""
@@ -325,7 +91,8 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             "Radial Gradient",
             "Letter Angle Gradient",
             "Letter Vertical Gradient",
-            "Text Color Sequence"
+            "Text Color Sequence",
+            "Panel Color Sequence",
         ]
         
         previews = {}
@@ -419,12 +186,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         target_entity = _resolve_entity(service_call, "SET_ORIENTATION")
         if not target_entity:
             return
-        
-        # Check auto-turn-on setting
-        if not target_entity._is_on and not target_entity._should_auto_turn_on():
-            _LOGGER.debug("[AUTO-TURN-ON] set_orientation command ignored - lamp is off and auto-turn-on is disabled")
-            return
-        
+
         await target_entity.set_orientation(orientation)
 
     hass.services.async_register(
@@ -466,12 +228,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         target_entity = _resolve_entity(service_call, "SET_FONT")
         if not target_entity:
             return
-        
-        # Check auto-turn-on setting
-        if not target_entity._is_on and not target_entity._should_auto_turn_on():
-            _LOGGER.debug("[AUTO-TURN-ON] set_font command ignored - lamp is off and auto-turn-on is disabled")
-            return
-        
+
         await target_entity.set_font(font)
         if target_entity._font_select_entity:
             target_entity._font_select_entity.async_update_from_light()
@@ -495,12 +252,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         target_entity = _resolve_entity(service_call, "SET_ALIGNMENT")
         if not target_entity:
             return
-        
-        # Check auto-turn-on setting
-        if not target_entity._is_on and not target_entity._should_auto_turn_on():
-            _LOGGER.debug("[AUTO-TURN-ON] set_alignment command ignored - lamp is off and auto-turn-on is disabled")
-            return
-        
+
         await target_entity.set_alignment(alignment)
         # Notify alignment select entity of the change
         if target_entity._alignment_select_entity:
@@ -534,9 +286,6 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             return
 
         async def _apply_one(target_entity):
-            if not target_entity._is_on and not target_entity._should_auto_turn_on():
-                _LOGGER.debug("[AUTO-TURN-ON] set_custom_text command ignored - lamp is off and auto-turn-on is disabled")
-                return
             _LOGGER.debug("[SET_TEXT] Setting custom text to: '%s' for entity %s", text, target_entity.entity_id)
             target_entity._custom_text = text
             target_entity._custom_pixels = None
@@ -603,9 +352,6 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             return
 
         async def _apply_one(target_entity):
-            if not target_entity._is_on and not target_entity._should_auto_turn_on():
-                _LOGGER.debug("[AUTO-TURN-ON] set_angle command ignored - lamp is off and auto-turn-on is disabled")
-                return
             target_entity._angle = angle
             # Push angle to HA state immediately so the frontend card's set hass()
             # detects the change and can reload previews without waiting for the
@@ -656,9 +402,6 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             )
 
         async def _apply_one(target_entity):
-            if not target_entity._is_on and not target_entity._should_auto_turn_on():
-                _LOGGER.debug("[AUTO-TURN-ON] Command ignored - lamp is off and auto-turn-on is disabled")
-                return
             target_entity._text_colors = converted_colors
             if target_entity._text_colors:
                 target_entity._rgb_color = target_entity._text_colors[0]
@@ -718,9 +461,6 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             raise HomeAssistantError(f"The image could not be processed: {err}") from err
 
         async def _apply_one(target_entity):
-            if not target_entity._is_on and not target_entity._should_auto_turn_on():
-                _LOGGER.debug("[AUTO-TURN-ON] display_image command ignored - lamp is off and auto-turn-on is disabled")
-                return
             target_entity._custom_pixels = custom_pixels
             target_entity._mode = "Custom Draw"
             target_entity._matrix_mode = "Custom Draw"
@@ -774,9 +514,6 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             return
 
         async def _apply_one(target_entity):
-            if not target_entity._is_on and not target_entity._should_auto_turn_on():
-                _LOGGER.debug("[AUTO-TURN-ON] set_mode command ignored - lamp is off and auto-turn-on is disabled")
-                return
             if full_panel is not None:
                 target_entity._full_panel = full_panel
                 _LOGGER.debug("[set_mode] Also setting full_panel to %s", full_panel)

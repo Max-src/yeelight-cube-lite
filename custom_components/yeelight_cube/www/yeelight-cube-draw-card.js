@@ -24,11 +24,8 @@ import {
   onMatrixMouseOver,
   onMatrixMouseLeave,
 } from "./draw_card_events.js";
-import {
-  normalizeHex,
-  rgbArrayToHex,
-  extractDiversePaletteWithWeights,
-} from "./draw_utils.js";
+import { normalizeHex, extractDiversePaletteWithWeights } from "./draw_utils.js";
+import { rgbToHex } from "./color-utils.js";
 import {
   GRID_COLS,
   GRID_ROWS,
@@ -39,9 +36,8 @@ import { StorageUtils } from "./draw_card_storage.js";
 
 import { notifyUnreported } from "./notify-utils.js";
 import { YeelightCardMixin, cubeLampEntities } from "./card-base.js";
-import {
-  cardShell,
-} from "./card-shell.js";
+import { cardShell, lampUnavailableLine } from "./card-shell.js";
+import { previewOnly } from "./offline-preview-state.js";
 import { normalizeCardOptions } from "./card-config.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { PaletteCardsMixin } from "./draw-card-palette-cards.js";
@@ -132,134 +128,11 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     return StorageUtils;
   }
 
-  // NOTE: connectedCallback is defined ONCE, further down in this class.
-  // A second definition here previously shadowed it silently (JS keeps only
-  // the last class member with a given name), so the document mousedown
-  // listener for the floating palette mode was never attached.
-
-  firstUpdated() {
-    // Drag-to-scroll is now setup in _setupPaletteRowDragScroll(), called from updated()
-    this._setupPaletteRowDragScroll();
-  }
-
-  _handleFloatingOutsideClick = (e) => {
-    if (!this.config || this.config.palette_card_mode !== "floating") return;
-    const openKeys = Object.keys(this._floatingStates || {}).filter(
-      (k) => this._floatingStates[k],
-    );
-    if (!openKeys.length) return;
-    // Use composedPath() so clicks inside shadow-DOM children of buttons/cards
-    // are correctly identified as "inside" (issue #10).
-    // Falls back to e.target for environments that don't support composedPath.
-    const composedPath = e.composedPath ? e.composedPath() : [];
-    const isInsideEl = (el) =>
-      composedPath.some(
-        (n) => n === el || (n instanceof Node && el.contains(n)),
-      );
-    const btns = this.shadowRoot.querySelectorAll(".palette-floating-btn");
-    const cards = this.shadowRoot.querySelectorAll(
-      ".palette-group-card.floating",
-    );
-    let inside = false;
-    btns.forEach((btn) => {
-      if (isInsideEl(btn)) inside = true;
-    });
-    cards.forEach((card) => {
-      if (isInsideEl(card)) inside = true;
-    });
-    if (!inside) {
-      openKeys.forEach((k) => (this._floatingStates[k] = false));
-      this.requestUpdate();
-    }
-  };
-
-  /**
-   * Attach drag-to-scroll (mouse + touch) to a single scrollable element.
-   * No-ops if already attached.
-   */
-  _attachDragScroll(el) {
-    if (!el || el._dragScrollAttached) return;
-    el._dragScrollAttached = true;
-
-    let isDown = false;
-    let startX = 0;
-    let scrollLeft = 0;
-    let hasDragged = false;
-
-    const onStart = (pageX) => {
-      isDown = true;
-      hasDragged = false;
-      el.style.cursor = "grabbing";
-      startX = pageX - el.offsetLeft;
-      scrollLeft = el.scrollLeft;
-    };
-    const onEnd = () => {
-      if (!isDown) return;
-      isDown = false;
-      el.style.cursor = "grab";
-    };
-    const onMove = (pageX, e) => {
-      if (!isDown) return;
-      const x = pageX - el.offsetLeft;
-      const dx = x - startX;
-      // Only start scrolling after a small dead-zone to avoid interfering with clicks
-      if (!hasDragged && Math.abs(dx) < 4) return;
-      hasDragged = true;
-      e.preventDefault();
-      const walk = dx * 1.2; // slight acceleration for natural feel
-      el.scrollLeft = scrollLeft - walk;
-    };
-
-    // Mouse events
-    el.addEventListener("mousedown", (e) => onStart(e.pageX));
-    el.addEventListener("mouseleave", onEnd);
-    el.addEventListener("mouseup", onEnd);
-    el.addEventListener("mousemove", (e) => onMove(e.pageX, e));
-
-    // Touch events (mobile)
-    el.addEventListener(
-      "touchstart",
-      (e) => {
-        if (e.touches.length === 1) onStart(e.touches[0].pageX);
-      },
-      { passive: true },
-    );
-    el.addEventListener("touchend", onEnd, { passive: true });
-    el.addEventListener("touchcancel", onEnd, { passive: true });
-    el.addEventListener(
-      "touchmove",
-      (e) => {
-        if (e.touches.length === 1) onMove(e.touches[0].pageX, e);
-      },
-      { passive: false },
-    );
-  }
-
-  /**
-   * Enable drag-to-scroll for the side-by-side .palette-row (the swatches'
-   * scroll layout drags itself). Safe to call repeatedly — skips
-   * already-attached elements.
-   */
-  _setupPaletteRowDragScroll() {
-    this._attachDragScroll(this.shadowRoot?.querySelector(".palette-row"));
-  }
-
-  updated(changedProperties) {
-    super.updated(changedProperties);
-
-    // Re-setup drag-to-scroll only when config/hass changes (avoids querySelectorAll
-    // on every render cycle including rapid hover animation re-renders — issue #8).
-    if (changedProperties.has("config") || changedProperties.has("hass")) {
-      setTimeout(() => this._setupPaletteRowDragScroll(), 0);
-    }
-  }
-
   static properties = {
     matrix: { type: Array },
     selectedColor: { type: String },
     isDrawing: { type: Boolean },
     hass: { type: Object },
-    entity: { type: String },
     pixelArtVersion: { type: Number },
   };
 
@@ -279,7 +152,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     this.selectedColor = "#ff0000";
     this.isDrawing = false;
     this.hass = null;
-    this.entity = "";
     this.palette = [
       "#ff0000",
       "#00ff00",
@@ -338,10 +210,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     // No window "config-changed" listener: HA delivers editor changes through
     // setConfig() on the edited card only; a window bus leaked one card's
     // config (entity, sensors, tools) into every draw card on the dashboard.
-
-    // A click outside closes the floating palette cards (the Tabs mode keeps
-    // its picked tab: it is a selector, not a popup).
-    document.addEventListener("mousedown", this._handleFloatingOutsideClick);
   }
 
   set hass(hass) {
@@ -374,15 +242,17 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
   }
 
   // What the card shows from hass (card-base _hassChanged): the lamp's
-  // colors (Lamp Palette, Lamp Colors) when shown and the theme (dark-mode
-  // borders); not the lamp's other attributes, which would re-render the
-  // whole card for nothing. The pixel arts follow their store (set hass).
+  // colors (Lamp Palette, Lamp Colors) when shown, whether it is
+  // unavailable (the shared line) and the theme (dark-mode borders); not the
+  // lamp's other attributes, which would re-render the whole card for
+  // nothing. The pixel arts follow their store (set hass).
   _hassInputs(hass) {
     const cfg = this.config || {};
-    const lamp = hass?.states?.[this.entity]?.attributes;
+    const lamp = hass?.states?.[this._primaryEntity(hass)]?.attributes;
     return [
       this.config,
       hass?.themes,
+      previewOnly({ config: cfg, _hass: hass }),
       cfg.show_lamp_palette !== false ? lamp?.text_colors : undefined,
       cfg.show_lamp_colors !== false ? lamp?.matrix_colors : undefined,
     ];
@@ -395,9 +265,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
   disconnectedCallback() {
     super.disconnectedCallback();
     this._pixelArtStore.reset();
-
-    // Remove document-level listeners added in connectedCallback / firstUpdated
-    document.removeEventListener("mousedown", this._handleFloatingOutsideClick);
 
     // Clear pending timers
     if (this._applyPixelArtTimer) {
@@ -426,7 +293,6 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     // shown (draw_card_tools.js: toolsOrder, actionsOrder, hidden*).
 
     const parsed = parseConfig(this.config);
-    this.entity = parsed.entity;
     this.paletteSensor = parsed.paletteSensor;
     // A new config renders now (config is not a reactive property).
     this.requestUpdate();
@@ -468,14 +334,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     showImagePalette,
   ) {
     return html`
-      <div
-        class="palettes"
-        style="width: 100%;
-        display: flex; 
-        flex-wrap: wrap;
-        width: 100%;
-        justify-content: space-between;"
-      >
+      <div class="palettes">
         ${this._renderPaletteCards(
           cfg,
           showRecentColors,
@@ -529,7 +388,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
       this._galleryItemsCache = arts.map((art, idx) => {
         const name = art?.name || "Unnamed";
         const colorData = pixelArtColorData(art);
-        const picture = colorData.map((color) => rgbArrayToHex(color)).join(",");
+        const picture = colorData.map((color) => rgbToHex(color)).join(",");
         if (!this._artByPicture.has(picture)) this._artByPicture.set(picture, artKey(idx));
         return { dataMode: artKey(idx), name, title: name, colorData, editable: true };
       });
@@ -553,11 +412,8 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     matrixWidth,
     matrixPixelStyle,
   ) {
-    // Resolve pixel box shadow locally (spacing mode tri-state)
-    const spacingMode =
-      cfg.pixel_spacing_mode ||
-      (cfg.pixel_spacing === false ? "none" : "normal");
-    const pixelBoxShadow = spacingMode === "subtle" || spacingMode === "normal";
+    const pixelBoxShadow =
+      cfg.pixel_spacing_mode === "subtle" || cfg.pixel_spacing_mode === "normal";
 
     return html`
       <div
@@ -660,31 +516,15 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
 
   render() {
     const cfg = this.config || {};
-    // Resolve pixel spacing mode (new tri-state) with backward compat for old booleans
-    const spacingMode =
-      cfg.pixel_spacing_mode ||
-      (cfg.pixel_spacing === false ? "none" : "normal");
-    const pixelGap = spacingMode === "normal" ? 3 : 0;
-    const pixelBoxShadow = spacingMode === "subtle" || spacingMode === "normal";
-    let matrixBg = cfg.matrix_bg || "black";
-    if (matrixBg === "transparent") matrixBg = "transparent";
+    // Older options arrive in today's values (normalizeCardOptions and
+    // resolvePreviewAppearance: pixel_spacing, matrix_size words).
+    const pixelGap = cfg.pixel_spacing_mode === "normal" ? 3 : 0;
+    const matrixBg = cfg.matrix_bg || "black";
     const matrixBoxShadow = cfg.matrix_box_shadow !== false;
     const matrixShadowStyle = matrixBoxShadow
       ? "box-shadow: 0 2px 8px #0008;"
       : "";
-    let matrixWidth = "100%";
-    if (typeof cfg.matrix_size === "number") {
-      matrixWidth = `${cfg.matrix_size}%`;
-    } else if (
-      typeof cfg.matrix_size === "string" &&
-      !isNaN(Number(cfg.matrix_size))
-    ) {
-      matrixWidth = `${Number(cfg.matrix_size)}%`;
-    } else if (cfg.matrix_size === "small") {
-      matrixWidth = "70%";
-    } else if (cfg.matrix_size === "medium") {
-      matrixWidth = "85%";
-    }
+    const matrixWidth = `${cfg.matrix_size ?? 100}%`;
     const showColorPicker = cfg.show_color_picker !== false;
     const showRecentColors = cfg.show_recent_colors !== false;
     const showLampPalette = cfg.show_lamp_palette !== false;
@@ -708,9 +548,14 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     const showActions = cfg.show_actions_section !== false;
     const showPixelArtSection = cfg.show_pixelart_section !== false;
 
+    // Drawing and saving work without the lamp: a missing or unavailable
+    // one is a line, like on the Clock and Native Effects cards.
+    const offline = this._targets.length > 0 && previewOnly(this);
+
     const content = html`
       <div class="yc-stack" style="margin:0 auto;">
         <div class="draw-container yc-stack">
+          ${offline ? lampUnavailableLine() : ""}
           ${showColors
             ? this._renderColorsSection(
                 cfg,
@@ -748,43 +593,17 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
   }
 
   _onColorPicker(e) {
-    this.selectedColor = normalizeHex(e.target.value);
-    this.requestUpdate();
+    this._selectColor(normalizeHex(e.target.value));
   }
 
-  _selectRecentColor(color) {
-    if (this.colorPickerMode) {
-      this.selectedColor = color;
-      this.requestUpdate();
-      return;
-    }
+  /** The drawing color (picked in a color section or the picker). */
+  _selectColor(color) {
     this.selectedColor = color;
-    this.requestUpdate();
-  }
-
-  _selectLampColor(color) {
-    if (this.colorPickerMode) {
-      this.selectedColor = color;
-      this.requestUpdate();
-      return;
-    }
-    this.selectedColor = color;
-    this.requestUpdate();
-  }
-
-  _selectImageColor(color) {
-    if (this.colorPickerMode) {
-      this.selectedColor = color;
-      this.requestUpdate();
-      return;
-    }
-    this.selectedColor = color;
-    this.requestUpdate();
   }
 
   getLampGradientColors() {
-    if (!this.hass || !this.entity) return [];
-    const stateObj = this.hass.states[this.entity];
+    if (!this.hass || !this._primaryEntity()) return [];
+    const stateObj = this.hass.states[this._primaryEntity()];
     if (!stateObj || !Array.isArray(stateObj.attributes.text_colors)) return [];
     // Convert [[r,g,b], ...] to hex strings
     return stateObj.attributes.text_colors.map((rgb) => {
@@ -798,8 +617,8 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
    * Uses K-means clustering for color diversity. Reads matrix_colors from the light entity.
    */
   _getLampMatrixColors() {
-    if (!this.hass || !this.entity) return { palette: [], weights: null };
-    const stateObj = this.hass.states[this.entity];
+    if (!this.hass || !this._primaryEntity()) return { palette: [], weights: null };
+    const stateObj = this.hass.states[this._primaryEntity()];
     if (!stateObj || !Array.isArray(stateObj.attributes.matrix_colors))
       return { palette: [], weights: null };
     // K-means is expensive; memoise by the attribute's reference identity.
@@ -859,7 +678,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
         this._commands.call(this.hass, domain, service, data),
       this.paletteSensor,
       colors,
-      this.entity,
+      this._primaryEntity(),
       name,
     ).catch((err) => this._reportFailure(err, "Failed to save the palette."));
   }
@@ -991,7 +810,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     );
     if (latestOnly) return sent;
     // Also call update_entity for lamp entity or palette sensor
-    await this._refreshEntity(this.entity || this.paletteSensor);
+    await this._refreshEntity(this._primaryEntity() || this.paletteSensor);
     // Fire pixelart-saved event for consistency
     window.dispatchEvent(new Event("pixelart-saved"));
   }

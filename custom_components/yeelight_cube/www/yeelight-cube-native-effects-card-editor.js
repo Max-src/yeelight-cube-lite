@@ -2,30 +2,22 @@ import { LitElement, html } from "./lib/lit-all.js";
 import "./preview-appearance-editor.js";
 import { normalizePreviewAppearance } from "./preview-appearance.js";
 import {
+  VISIBILITY_KEYS,
+  withAllItems,
+  withVisibleItems,
+} from "./visible-items.js";
+import {
   sharedEditorStyles,
   YeelightEditorMixin,
-  renderModeSettingsSection,
-  renderMatrixAppearanceSettings,
+  renderSettingsBox,
   renderExperimentalAvailability,
 } from "./editor_ui_utils.js";
-import {
-  entitySelectorStyles,
-} from "./entity-selector-utils.js";
 import { createToggleRow, createSliderRow } from "./form-row-utils.js";
 import { createButtonGroup, buttonGroupStyles } from "./button-group-utils.js";
-import {
-  renderOrderableList,
-  orderableListStyles,
-} from "./orderable-list-utils.js";
+import { orderableListStyles } from "./orderable-list-utils.js";
 import { renderActionButtonSettings } from "./action-button-ui.js";
 import { independentActionConfig } from "./action-button-utils.js";
 import "./clock-preset-manager.js";
-import { CLOCK_COLOR_MODES } from "./clock-preview-utils.js";
-import {
-  clockPresetLibrary,
-  clockColorModeOptions,
-  clockColorModeVisibilityConfig,
-} from "./clock-preset-utils.js";
 import { getTargetEntities } from "./service-call-utils.js";
 import {
   sharedRotationInterval,
@@ -33,6 +25,7 @@ import {
 } from "./shared-lamp-settings.js";
 import {
   nativeEffectItems,
+  isEffectName,
   nativeEffectPreviewConfig,
   nativeEffectFrame,
 } from "./native-effect-card-utils.js";
@@ -41,6 +34,7 @@ import { renderStyleSelectorSettings } from "./style-selector-ui.js";
 import {
   renderModeControlSettings,
   renderColorModeSettings,
+  renderVisibleColorModes,
 } from "./mode-controls-settings.js";
 import { defineOnce } from "./card-registration.js";
 
@@ -50,10 +44,8 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
     hass: { attribute: false },
     _open: { state: true },
   };
-  constructor() {
-    super();
-    this._open = { general: true };
-  }
+  // The first section, Global Settings, opens with the editor.
+  static openSection = "general";
   setConfig(config) {
     this._config = normalizePreviewAppearance(
       independentActionConfig(config),
@@ -68,18 +60,7 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
       this._change(key, event.target.checked),
     );
   }
-  _renderAppearance(section) {
-    return html`<yeelight-preview-appearance-editor
-      profile="native"
-      section=${section}
-      .owner=${this}
-      .config=${this._config}
-      @appearance-changed=${(event) => {
-        this._config = event.detail.config;
-        this._fireConfigChanged();
-      }}
-    ></yeelight-preview-appearance-editor>`;
-  }
+  static appearanceProfile = "native";
   _choices(label, key, choices, fallback) {
     return html`<div class="form-row">
       <label>${label}</label>${createButtonGroup(
@@ -89,36 +70,7 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
       )}
     </div>`;
   }
-  _renderVisibleColorModeList() {
-    const presets = clockPresetLibrary(this.hass);
-    const all = clockColorModeOptions(CLOCK_COLOR_MODES, presets);
-    const visible = clockColorModeOptions(
-      CLOCK_COLOR_MODES,
-      presets,
-      this._config,
-    ).map((mode) => mode.value);
-    const labels = new Map(all.map((mode) => [mode.value, mode.label]));
-    return renderOrderableList({
-      labelFor: (key) => labels.get(key) || key,
-      items: visible,
-      available: all
-        .map((mode) => mode.value)
-        .filter((key) => !visible.includes(key)),
-      onUpdate: (items) => {
-        this._config = clockColorModeVisibilityConfig(this._config, all, items);
-        this._fireConfigChanged();
-      },
-      onReset: () => {
-        const config = { ...this._config };
-        delete config.visible_color_modes;
-        delete config.hidden_color_modes;
-        this._config = config;
-        this._fireConfigChanged();
-      },
-      addPlaceholder: "Show a color mode...",
-      resetLabel: "Reset to all color modes",
-    });
-  }
+
 
   render() {
     if (!this._config) return "";
@@ -129,15 +81,11 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
       ...config,
       show_experimental: !!attrs.extended_effects_enabled,
       visible_effects: undefined,
+      hidden_effects: undefined,
     });
     const names = effects.map((item) => item.name);
     const visible = Array.isArray(config.visible_effects)
-      ? [...new Set(config.visible_effects)].filter(
-          (name) =>
-            typeof name === "string" &&
-            name.trim() &&
-            !/^\d+$/.test(name.trim()),
-        )
+      ? [...new Set(config.visible_effects)].filter(isEffectName)
       : names;
     const change = (key, value) => this._change(key, value);
     return html`<div class="editor-root">
@@ -163,7 +111,7 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
         html`
           ${this._toggle("Show Lamp Preview", "show_preview")}
           ${config.show_preview !== false
-            ? renderModeSettingsSection(
+            ? renderSettingsBox(
                 "Preview Settings",
                 html`
                   ${createSliderRow(
@@ -212,21 +160,18 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
         "Color Modes & Controls",
         html`${this._toggle("Show Color Modes", "show_color_modes", false)}
         ${config.show_color_modes
-          ? renderModeSettingsSection(
+          ? renderSettingsBox(
               "Color Mode Style",
               html`${renderColorModeSettings(config, change)}
               ${this._toggle(
                 "Show 'save color mode' button",
                 "show_save_color_mode_button",
               )}
-              ${renderModeSettingsSection(
-                "Visible color modes",
-                this._renderVisibleColorModeList(),
-              )}`,
+              ${renderVisibleColorModes(this)}`,
             )
           : ""}
         ${config.show_color_modes
-          ? renderModeSettingsSection(
+          ? renderSettingsBox(
               "Control buttons",
               renderActionButtonSettings(config, change),
             )
@@ -263,7 +208,7 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
         html`
           ${this._toggle("Show Effect Browser", "show_gallery")}
           ${config.show_gallery !== false
-            ? renderModeSettingsSection(
+            ? renderSettingsBox(
                 "Browser Settings",
                 html`
                   ${this._galleryItemsSettings({
@@ -274,13 +219,15 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
                       names.includes(name)
                         ? name
                         : `${name} (currently unavailable)`,
-                    onList: (items) => {
-                      this._config = { ...this._config, visible_effects: items };
-                    },
-                    onReset: () => {
-                      this._config = { ...this._config };
-                      delete this._config.visible_effects;
-                    },
+                    onList: (items) =>
+                      withVisibleItems(
+                        this._config,
+                        VISIBILITY_KEYS.effects,
+                        names,
+                        items,
+                      ),
+                    onReset: () =>
+                      withAllItems(this._config, VISIBILITY_KEYS.effects),
                   })}
                   ${renderStyleSelectorSettings(
                     config,
@@ -339,7 +286,6 @@ class YeelightCubeNativeEffectsCardEditor extends YeelightEditorMixin(LitElement
   }
   static styles = [
     sharedEditorStyles,
-    entitySelectorStyles,
     buttonGroupStyles,
     orderableListStyles,
   ];

@@ -11,7 +11,6 @@
  *                                       //   editable?}]
  *     .active=${key}                    // the item the lamp shows (or null)
  *     .model=${this._controls}          // mode-controls model: favourites
- *     .disabled=${busy}                 // inert while a command runs
  *     .revealKey=${key}                 // turn to this item once (optional)
  *     heading="Clock style"             // title above the items (optional)
  *     searchLabel="Search clock modes"
@@ -32,6 +31,9 @@
  *     @gallery-updated=${() => paint()} // the items' DOM changed: repaint
  *   ></yc-collection-gallery>`
  *
+ * The layouts are Lit templates (gallery-layouts.js): every item binds its
+ * click, keyboard role and name, outline, pulse and star.
+ *
  * Items: `dataMode` is the key, `name` is searched and listed (dropdown),
  * and the card's `item_labels` rename items for display (itemLabel; search
  * matches the label and the built-in name),
@@ -39,7 +41,7 @@
  * (filled, chips), `swatch` a CSS background shown by chips, `colorData` the
  * 100-pixel preview frame. Items that are not matrices bring their own
  * preview markup instead (`previewHtml`, trusted: the card escapes it; see
- * renderItemPreview), and `meta` is a short plain-text line under the
+ * itemPreviewTemplate), and `meta` is a short plain-text line under the
  * preview (list, grid, carousel, album: a palette's color count).
  *
  * Layouts (`style_selector_style`):
@@ -77,14 +79,15 @@
  *
  * Pass the same `items` array (and config) while nothing changed: the
  * gallery then does not re-render at all. Cards whose own updates are
- * frequent (Draw: every stroke) memoize their items.
+ * frequent (Draw: every stroke) memoize their items. New colors only update
+ * the preview cells that changed.
  *
  * It renders in the card's light DOM, so the card includes
  * collectionGalleryStyles in its static styles. Cards that animate their
  * previews paint them on gallery-updated: every item preview is a
  * `[data-mode]` element holding a `.gallery-matrix-preview` grid of 100 cells.
  */
-import { LitElement, html, unsafeHTML } from "./lib/lit-all.js";
+import { LitElement, html, nothing } from "./lib/lit-all.js";
 import { renderActionButton } from "./action-button-ui.js";
 import {
   deleteButtonStyles,
@@ -92,46 +95,34 @@ import {
   getDeleteButtonConfig,
 } from "./delete-button-styles.js";
 import {
-  renderTextStyleSelector,
-  renderPreviewStyleSelector,
-  bindStyleSelectorEvents,
   selectorPagination,
   selectorPageSize,
   styleSelectorStyles,
   gallerySelectorStyle,
 } from "./style-selector-utils.js";
+import { favouriteKeys } from "./gallery-display-utils.js";
 import {
-  renderOriginalGallery,
-  bindOriginalGallery,
-  renderItemPreview,
-  paintMatrixPreview,
-  markFavouriteModes,
-} from "./gallery-display-utils.js";
-import {
-  attachPaginationListeners,
-  requestedPage,
-  paginationStyles,
-} from "./pagination-utils.js";
-import {
-  albumStyles,
-  renderAlbumView,
-  setupAlbumNavigation,
-} from "./album-view-coverflow.js";
-import { initializeWheelNavigation } from "./wheel-navigation-utils.js";
+  textLayout,
+  previewLayout,
+  wheelLayout,
+  albumLayout,
+  originalLayout,
+} from "./gallery-layouts.js";
+import { requestedPage, paginationStyles } from "./pagination-utils.js";
+import { albumStyles } from "./album-view-coverflow.js";
 import {
   resolveSelectorButtonShape,
   selectorItemRadius,
   selectorShapeToCarouselButtonShape,
 } from "./selector-shared-styles.js";
 import { isActivationKey } from "./card-shell.js";
-import { escapeHtml } from "./html-escape-utils.js";
 import { defineOnce } from "./card-registration.js";
 import { actionButtonStyles } from "./action-button-utils.js";
 import { itemLabel, itemMatchesQuery, sortGalleryItems } from "./card-config.js";
 
 // Class prefix of the album markup (album-view-coverflow.js).
 const ALBUM = "collection";
-// The generated items made keyboard buttons (_syncKeyboard).
+// The items that are keyboard buttons (role="button" divs: gallery-layouts.js).
 const ITEM_NODES =
   ".gallery-item[data-mode], .wheel-item[data-mode], .collection-album-entry[data-mode]";
 
@@ -307,7 +298,7 @@ export const collectionGalleryStyles = `
     padding: 8px 0;
     color: var(--secondary-text-color, #888);
   }
-  /* Keyboard focus on the generated items (_syncKeyboard). */
+  /* Keyboard focus on the items (role="button": gallery-layouts.js). */
   yc-collection-gallery [role="button"][data-mode]:focus-visible {
     outline: 2px solid var(--primary-color, #03a9f4) !important;
     outline-offset: -2px;
@@ -326,7 +317,6 @@ class YcCollectionGallery extends LitElement {
     items: { attribute: false },
     active: {},
     model: { attribute: false },
-    disabled: { type: Boolean },
     revealKey: { attribute: false },
     heading: {},
     searchLabel: {},
@@ -354,7 +344,7 @@ class YcCollectionGallery extends LitElement {
     this.page = 0;
     this.index = null;
     this.navigateSelects = true;
-    // Enter / Space activate the generated items (_syncKeyboard); native
+    // Enter / Space activate the role="button" items; native
     // buttons and the item controls handle their own keys.
     this.addEventListener("keydown", (event) => {
       const target = event.target;
@@ -383,12 +373,6 @@ class YcCollectionGallery extends LitElement {
     super.disconnectedCallback();
     this._subscribed?.listeners.delete(this._refresh);
     this._subscribed = null;
-    this._wheel?.destroy();
-    this._wheel = null;
-    this._wheelNode = null;
-    this._albumState?._coverflowCleanup?.();
-    this._album = null;
-    this._albumNode = null;
   }
 
   get selectorStyle() {
@@ -401,8 +385,6 @@ class YcCollectionGallery extends LitElement {
     const shown = this.items
       .map((item) => {
         const label = itemLabel(this.config, item.dataMode, null);
-        // meta is plain text; the layouts insert `metadata` as markup.
-        if (item.meta != null) item = { ...item, metadata: escapeHtml(item.meta) };
         return label
           ? { ...item, name: label, title: label, label, builtinName: item.name }
           : item;
@@ -428,7 +410,6 @@ class YcCollectionGallery extends LitElement {
     if (index < 0) return;
     this.index = index;
     this.page = this._pageOf(index);
-    this._album?.goTo(index);
     this.requestUpdate();
   }
 
@@ -458,33 +439,22 @@ class YcCollectionGallery extends LitElement {
   }
 
   async _select(key) {
-    if (this.disabled || key == null) return false;
+    if (key == null) return false;
+    // The picked item pulses until its selection resolves; picks stay live
+    // meanwhile (the cards send only the latest of quick picks).
     this._pendingKey = key;
-    this._markPending();
+    this.requestUpdate();
     try {
       return await this.onSelect?.(key);
     } finally {
       if (this._pendingKey === key) this._pendingKey = null;
-      this._markPending();
       this.requestUpdate();
     }
   }
 
-  // The picked item pulses until its selection resolves (not in the
-  // carousel, where navigating is selecting).
-  _markPending() {
-    const pending =
-      this.selectorStyle === "preview-carousel" && this.navigateSelects
-        ? null
-        : this._pendingKey;
-    this.querySelectorAll("[data-mode]").forEach((node) =>
-      node.classList.toggle("gc-pending", node.dataset.mode === pending),
-    );
-  }
-
   _navigate(delta, index) {
     const items = this.visibleItems;
-    if (!items.length || this.disabled) return;
+    if (!items.length) return;
     const current =
       this.index ??
       Math.max(
@@ -500,83 +470,6 @@ class YcCollectionGallery extends LitElement {
     // lamps' colors): the item shown changes; a click on it picks it.
     if (this.navigateSelects) this._select(items[this.index].dataMode);
     else this.requestUpdate();
-  }
-
-  // One item's preview (live matrix or the card's markup), in the gallery_*
-  // appearance.
-  _matrix(item) {
-    return renderItemPreview(item, {
-      ...browserPreviewAppearance(this.config),
-      rows: 5,
-      cols: 20,
-      forceAspectRatio: true,
-    });
-  }
-
-  _originalPreview(item) {
-    if (item.preview === false)
-      return '<div class="unmodelled">Preview unavailable</div>';
-    const appearance = browserPreviewAppearance(this.config);
-    return `<div class="original-item-preview" data-preview="${escapeHtml(item.dataMode)}" style="width:${appearance.width}%;margin-inline:auto;">${this._matrix(item)}</div>`;
-  }
-
-  // Album: a 3D coverflow of the items; the centred card is picked on click.
-  _albumMarkup(items) {
-    const showTitles = this.config.preview_show_titles !== false;
-    return `<div class="gc-preview-shell">${renderAlbumView(
-      items,
-      (item) => `<div class="collection-album-entry" data-mode="${escapeHtml(item.dataMode)}">
-          ${showTitles ? `<div class="gallery-item-title">${escapeHtml(item.title)}</div>` : ""}
-          ${this._matrix(item)}
-          ${item.metadata ? `<div class="gallery-item-metadata">${item.metadata}</div>` : ""}
-        </div>`,
-      {
-        // The album card follows the preview size (55% = the 240px card),
-        // within the Size range of every layout.
-        card_size: Math.round(
-          (browserPreviewAppearance(this.config).width / 55) * 100,
-        ),
-        album_3d_effect: this.config.album_3d_effect,
-        rounded_cards: selectorItemRadius(this.config),
-        album_nav_shape: selectorShapeToCarouselButtonShape(
-          resolveSelectorButtonShape(this.config),
-        ),
-      },
-      ALBUM,
-    )}</div>`;
-  }
-
-  // The markup of `items` in the current layout.
-  _markup(items, style, active, pagination) {
-    if (style === "original")
-      return (
-        renderOriginalGallery(
-          pagination.items.map((item) => ({
-            ...item,
-            previewHtml: this._originalPreview(item),
-          })),
-          {
-            view: this.config.effect_view === "list" ? "list" : "grid",
-            showBadges: this.config.show_badges !== false,
-            highlight: this.config.highlight_active_mode !== false,
-            current: active,
-          },
-        ) + pagination.html
-      );
-    if (style === "preview-album") return this._albumMarkup(items);
-    if (style.startsWith("preview-")) {
-      const state = { page: this.page, index: this.index };
-      const markup = renderPreviewStyleSelector(
-        this.config,
-        items,
-        style,
-        active,
-        state,
-      );
-      this._renderedIndex = state.index;
-      return markup;
-    }
-    return renderTextStyleSelector(this.config, items, style, active);
   }
 
   render() {
@@ -598,33 +491,9 @@ class YcCollectionGallery extends LitElement {
         this.page = this._pageOf(index);
       }
     }
-    const active = this.activeKey;
     const style = this.selectorStyle;
     const pagination = selectorPagination(this.config, items, style, this.page);
     this.page = pagination.currentPage;
-    // Everything the markup shows but the preview colors: unchanged, only
-    // colors changed (live previews, an angle being dragged), which are
-    // repainted in place (updated) without building any markup.
-    const structure = JSON.stringify([
-      style,
-      active,
-      this.page,
-      this.index,
-      this.config,
-      items.map(({ colorData, ...item }) => [item, colorData?.length ?? -1]),
-    ]);
-    let markup = this._shownMarkup;
-    if (markup !== undefined && structure === this._shownStructure) {
-      if (items !== this._shownItems) this._repaint = items;
-    } else {
-      // The carousel layout settles its index while rendering.
-      this._renderedIndex = undefined;
-      markup = this._markup(items, style, active, pagination);
-      if (this._renderedIndex !== undefined) this.index = this._renderedIndex;
-      this._shownStructure = structure;
-      this._shownMarkup = markup;
-    }
-    this._shownItems = items;
     const label = this.searchLabel || "Search";
     return html`${this.config.show_search !== false
         ? html`<input
@@ -652,10 +521,9 @@ class YcCollectionGallery extends LitElement {
           class=${style === "original"
             ? "original-browser yc-stack yc-controls"
             : "reference-selector yc-stack yc-controls"}
-          ?inert=${this.disabled}
         >
           ${items.length
-            ? unsafeHTML(markup)
+            ? this._layout(items, style, pagination)
             : this.query.trim()
               ? html`<div class="empty" role="status">No matching items.</div>`
               : this.emptyLabel && !this.items.length
@@ -667,8 +535,58 @@ class YcCollectionGallery extends LitElement {
       </div>`;
   }
 
-  firstUpdated() {
-    attachPaginationListeners(this, (value) => this._changePage(value));
+  // What every layout reads (gallery-layouts.js).
+  _view(items, style, pagination) {
+    const actions = this._itemActions;
+    const model = this.model;
+    const appearance = browserPreviewAppearance(this.config);
+    return {
+      config: this.config,
+      items,
+      active: this.activeKey,
+      // The carousel's only visible item is the active one: no outline.
+      highlight:
+        this.config.highlight_active_mode !== false && style !== "preview-carousel",
+      // Not in the carousel when navigating picks (the shown item is it).
+      pending:
+        style === "preview-carousel" && this.navigateSelects ? null : this._pendingKey,
+      favourites: model
+        ? favouriteKeys(
+            model.favourites,
+            model.adapter.currentColorMode?.(),
+            model.adapter.currentColor?.(),
+          )
+        : null,
+      actionLabel: this.actionLabel,
+      navigateSelects: this.navigateSelects,
+      pagination,
+      index:
+        this.index ??
+        Math.max(0, items.findIndex((item) => item.dataMode === this.activeKey)),
+      matrix: { ...appearance, rows: 5, cols: 20, forceAspectRatio: true },
+      matrixWidth: appearance.width,
+      select: (key) => this._select(key),
+      navigate: (delta) => this._navigate(delta),
+      setIndex: (index) => this._navigate(0, index),
+      setPage: (value) => this._changePage(value),
+      itemControls: (item) => this._itemControls(item, actions),
+    };
+  }
+
+  _layout(items, style, pagination) {
+    const view = this._view(items, style, pagination);
+    if (style === "original") return originalLayout(view);
+    if (style === "preview-wheel") return wheelLayout(view);
+    if (style === "preview-album")
+      return albumLayout(view, ALBUM, {
+        width: view.matrixWidth,
+        radius: selectorItemRadius(this.config),
+        buttonShape: selectorShapeToCarouselButtonShape(
+          resolveSelectorButtonShape(this.config),
+        ),
+      });
+    if (style.startsWith("preview-")) return previewLayout(view, style);
+    return textLayout(view, style);
   }
 
   updated() {
@@ -678,67 +596,12 @@ class YcCollectionGallery extends LitElement {
       this._subscribed = this.model;
       this._subscribed?.listeners.add(this._refresh);
     }
-    bindStyleSelectorEvents(this, {
-      select: (key) => this._select(key),
-      navigate: (delta) => this._navigate(delta),
-      setIndex: (index) => this._navigate(0, index),
-      style: this.selectorStyle,
-    });
-    bindOriginalGallery(this, { select: (key) => this._select(key) });
-    // Browsing wheel (navigateSelects false): its moves only browse, a click
-    // on an item picks it.
-    if (!this.navigateSelects)
-      this.querySelectorAll(".wheel-item[data-mode]").forEach((node) => {
-        node.onclick = () => this._select(node.dataset.mode);
-      });
-    this._paintInPlace();
-    this._syncItemActions();
-    this._syncKeyboard();
     this._syncLook();
-    this._syncWheel();
-    this._syncAlbum();
     // The wheel outlines its centred item from this (gallery-display-utils).
     this.dataset.highlightActive = String(
       this.config.highlight_active_mode !== false,
     );
-    const highlight =
-      this.config.highlight_active_mode !== false &&
-      this.selectorStyle !== "preview-carousel";
-    this.querySelectorAll(".reference-selector [data-mode]").forEach((node) => {
-      if (highlight && node.dataset.mode === this.activeKey)
-        node.setAttribute("data-active-mode", "true");
-      else node.removeAttribute("data-active-mode");
-    });
-    this._markPending();
-    if (this.model)
-      markFavouriteModes(
-        this,
-        this.model.favourites,
-        this.model.adapter.currentColorMode?.(),
-        this.model.adapter.currentColor?.(),
-      );
     this.dispatchEvent(new CustomEvent("gallery-updated", { bubbles: true }));
-  }
-
-  // Every generated item is a keyboard button, named after its item (the
-  // layouts' markup is HTML strings, without these semantics).
-  _syncKeyboard() {
-    const names = new Map(
-      this.visibleItems.map((item) => [item.dataMode, item.name]),
-    );
-    this.querySelectorAll(ITEM_NODES).forEach((node) => {
-      const name = names.get(node.dataset.mode) || "";
-      const label = this.actionLabel ? `${name}: ${this.actionLabel}` : name;
-      if (node.getAttribute("aria-label") === label) return;
-      node.setAttribute("role", "button");
-      node.tabIndex = 0;
-      node.setAttribute("aria-label", label);
-      if (this.actionLabel) node.title = label;
-    });
-    // Icon-only buttons (arrows) are named after their tooltip.
-    this.querySelectorAll("button[title]:not([aria-label])").forEach((button) =>
-      button.setAttribute("aria-label", button.title),
-    );
   }
 
   // The item radius (custom shape) and border, as attributes the shared CSS
@@ -768,77 +631,52 @@ class YcCollectionGallery extends LitElement {
     };
   }
 
-  // Add the delete / rename controls to the editable items of the card
-  // layouts (not the wheel, whose items move, nor the text layouts, whose
-  // items are buttons). Idempotent: an item is only rebuilt when the
-  // controls it should show change.
-  _syncItemActions() {
-    const { button, remove, rename } = this._itemActions;
-    const editable = new Map(
-      this.visibleItems
-        .filter((item) => item.editable)
-        .map((item) => [item.dataMode, item]),
-    );
-    const nodes = this.querySelectorAll(
-      ".gallery-item[data-mode], .collection-album-entry[data-mode], .original-item[data-mode]",
-    );
-    for (const node of nodes) {
-      const item = editable.get(node.dataset.mode);
-      const signature = item
-        ? `${remove ? button.classes + button.posClass + button.sideClass : ""}|${rename}`
-        : "";
-      if ((node.dataset.ycActions || "") === signature) continue;
-      node.querySelectorAll(":scope > .yc-item-action").forEach((el) => el.remove());
-      node.classList.toggle("yc-editable", !!signature && (remove || rename));
-      node.dataset.ycActions = signature;
-      if (!item) continue;
-      const name = item.name;
-      if (remove)
-        node.append(
-          this._actionControl(
-            `${button.classes} ${button.posClass} ${button.sideClass} yc-item-delete`,
-            `Delete ${name}`,
-            "",
-            () => this._openManage("delete", item),
-          ),
-        );
-      if (rename)
-        node.append(
-          this._actionControl(
-            // Opposite the delete button.
-            `yc-item-rename${button.left ? " yc-right" : ""}`,
-            `Rename ${name}`,
-            "✎",
-            () => this._openManage("rename", item),
-          ),
-        );
-    }
+  // The delete / rename controls of an editable item in the card layouts
+  // (list, grid, strip, carousel, album, Original; not the wheel, whose
+  // items move, nor the text layouts, whose items are buttons).
+  _itemControls(item, { button, remove, rename }) {
+    if (!item.editable || !(remove || rename)) return nothing;
+    return html`${remove
+      ? this._actionControl(
+          `${button.classes} ${button.posClass} ${button.sideClass} yc-item-delete`,
+          `Delete ${item.name}`,
+          "",
+          () => this._openManage("delete", item),
+        )
+      : nothing}${rename
+      ? this._actionControl(
+          // Opposite the delete button.
+          `yc-item-rename${button.left ? " yc-right" : ""}`,
+          `Rename ${item.name}`,
+          "✎",
+          () => this._openManage("rename", item),
+        )
+      : nothing}`;
   }
 
   // A control inside an item: a focusable span (an item can itself be a
   // button), whose activation never reaches the item (which would select it).
+  // Swipes and drags on it never move a carousel or an album.
   _actionControl(className, label, text, activate) {
-    const control = document.createElement("span");
-    control.className = `${className} yc-item-action`;
-    control.setAttribute("role", "button");
-    control.tabIndex = 0;
-    control.title = label;
-    control.setAttribute("aria-label", label);
-    control.textContent = text;
     const run = (event) => {
       event.preventDefault();
       event.stopPropagation();
-      if (!this.disabled) activate();
+      activate();
     };
-    control.addEventListener("click", run);
-    control.addEventListener("keydown", (event) => {
-      if (event.key === "Enter" || event.key === " ") run(event);
-      else event.stopPropagation();
-    });
-    // Swipes and drags on the control never move a carousel or an album.
-    for (const type of ["touchstart", "mousedown", "pointerdown"])
-      control.addEventListener(type, (event) => event.stopPropagation());
-    return control;
+    const stop = (event) => event.stopPropagation();
+    return html`<span
+      class="${className} yc-item-action"
+      role="button"
+      tabindex="0"
+      title=${label}
+      aria-label=${label}
+      @click=${run}
+      @keydown=${(event) =>
+        event.key === "Enter" || event.key === " " ? run(event) : stop(event)}
+      @touchstart=${stop}
+      @mousedown=${stop}
+      @pointerdown=${stop}
+    >${text}</span>`;
   }
 
   _openManage(action, item) {
@@ -949,82 +787,7 @@ class YcCollectionGallery extends LitElement {
     </form>`;
   }
 
-  // New preview colors on unchanged items: repaint their matrices in place.
-  _paintInPlace() {
-    const items = this._repaint;
-    this._repaint = null;
-    if (!items) return;
-    const byKey = new Map(items.map((item) => [item.dataMode, item.colorData]));
-    const appearance = browserPreviewAppearance(this.config);
-    this.querySelectorAll("[data-mode]").forEach((node) => {
-      const colors = byKey.get(node.dataset.mode);
-      const matrix = node.querySelector(".gallery-matrix-preview");
-      if (colors && matrix) paintMatrixPreview(matrix, colors, appearance);
-    });
-  }
 
-  // The wheel's scroll controller, bound once per wheel node.
-  _syncWheel() {
-    const node = this.querySelector('[data-wheel-scroll="true"]');
-    if (node !== this._wheelNode) {
-      this._wheel?.destroy();
-      this._wheel = null;
-      this._wheelNode = node;
-    }
-    if (node && !this._wheel)
-      this._wheel = initializeWheelNavigation({
-        shadowRoot: this,
-        displayMode: "wheel",
-        immediate: true,
-        config: {
-          ...this.config,
-          wheel_display_style:
-            this.config.preview_show_titles === false ? "compact" : "default",
-        },
-        getCurrentMode: () => this.activeKey,
-        onModeSelect: async (key) =>
-          this.navigateSelects ? this._select(key) : undefined,
-      });
-    else this._wheel?.sync();
-  }
-
-  // The album's coverflow, bound once per album node; it turns to the
-  // active item whenever that changes (a pick, a rotation step).
-  _syncAlbum() {
-    const node = this.querySelector(`#${ALBUM}-album-container`);
-    const items = this.visibleItems;
-    const index = Math.max(
-      0,
-      items.findIndex((item) => item.dataMode === this.activeKey),
-    );
-    if (node !== this._albumNode) {
-      this._albumNode = node;
-      this._album = null;
-      this._albumActive = undefined;
-      if (!node) return;
-      this._albumState ||= {};
-      this._albumState._currentAlbumIndex = index;
-      this._albumActive = this.activeKey;
-      setupAlbumNavigation(
-        // Ids are looked up in the gallery's own subtree.
-        { getElementById: (id) => this.querySelector(`#${id}`) },
-        ALBUM,
-        (idx) => this._select(this.visibleItems[idx]?.dataMode),
-        this._albumState,
-        {
-          album_3d_effect: this.config.album_3d_effect,
-          wrap_navigation: this.config.gallery_wrap_navigation === true,
-        },
-      ).then((album) => {
-        if (this._albumNode === node) this._album = album;
-      });
-      return;
-    }
-    if (this._album && this.activeKey !== this._albumActive) {
-      this._albumActive = this.activeKey;
-      this._album.goTo(index);
-    }
-  }
 }
 
 // Whether a computed CSS color ("rgb(r, g, b)") is light.

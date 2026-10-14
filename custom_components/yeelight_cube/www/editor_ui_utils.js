@@ -5,7 +5,10 @@ import {
   getTargetEntities,
   withTargetEntities,
 } from "./service-call-utils.js";
-import { createYeelightCubeEntityPicker } from "./entity-selector-utils.js";
+import {
+  createYeelightCubeEntityPicker,
+  entitySelectorStyles,
+} from "./entity-selector-utils.js";
 import { html, css } from "./lib/lit-all.js";
 import {
   createButtonGroup,
@@ -131,7 +134,7 @@ export function renderMatrixAppearanceSettings(
       "black",
     )}
     ${(config[key("matrix_background")] || "black") !== "black"
-      ? renderModeSettingsSection(
+      ? renderSettingsBox(
           "Background Settings",
           createToggleRow(
             "Ignore Black Pixels",
@@ -260,10 +263,19 @@ export function renderEditorSection(id, title, open, onToggle, content) {
 
 /**
  * Collapsible sections for the card editors. The editor keeps which sections
- * are open in `this._open` ({sectionId: boolean}).
+ * are open in `this._open` ({sectionId: boolean}). An editor opens on its
+ * first section, Global Settings (the lamp, title and card frame: what a new
+ * card needs first); its id is the editor's static `openSection`.
  */
 export const EditorSectionsMixin = (Base) =>
   class extends Base {
+    static openSection = "global";
+
+    constructor() {
+      super();
+      this._open = { [this.constructor.openSection]: true };
+    }
+
     _section(id, title, content) {
       return renderEditorSection(
         id,
@@ -298,21 +310,43 @@ export const YeelightEditorMixin = (Base) =>
       fireEvent(this, "config-changed", { config });
     }
 
-    /** The lamp picker changed: the card now controls `value`. */
-    _setTargets(value) {
-      this._config = withTargetEntities(this._config, value);
+    /** The edited config is now `config`: shown and reported. */
+    _commitConfig(config) {
+      this._config = config;
       this.requestUpdate();
       this._fireConfigChanged();
     }
 
+    /** The lamp picker changed: the card now controls `value`. */
+    _setTargets(value) {
+      this._commitConfig(withTargetEntities(this._config, value));
+    }
+
     /** Set one option (undefined removes it) and report the config. */
     _setOption(key, value) {
+      this._setOptions({ [key]: value });
+    }
+
+    /** Set several options at once (undefined removes one): one report. */
+    _setOptions(changes) {
       const config = { ...this._config };
-      if (value === undefined) delete config[key];
-      else config[key] = value;
-      this._config = config;
-      this.requestUpdate();
-      this._fireConfigChanged();
+      for (const [key, value] of Object.entries(changes)) {
+        if (value === undefined) delete config[key];
+        else config[key] = value;
+      }
+      this._commitConfig(config);
+    }
+
+    /** The card's preview appearance rows of `section` (its profile is the
+     * editor's static appearanceProfile). */
+    _renderAppearance(section) {
+      return html`<yeelight-preview-appearance-editor
+        profile=${this.constructor.appearanceProfile}
+        section=${section}
+        .owner=${this}
+        .config=${this._config}
+        @appearance-changed=${(event) => this._commitConfig(event.detail.config)}
+      ></yeelight-preview-appearance-editor>`;
     }
 
     /** A toggle row's change: `key` takes the switch's state. */
@@ -332,8 +366,9 @@ export const YeelightEditorMixin = (Base) =>
      * @param {string[]} options.items - the keys the card shows, in order
      * @param {string[]} options.all - every key the card could show
      * @param {Function} options.labelFor - (key) => its built-in label
-     * @param {Function} options.onList - (keys) => store the card's own list
-     * @param {Function} options.onReset - () => back to every item
+     * @param {Function} options.onList - (keys) => the config with the card's
+     *   own list
+     * @param {Function} options.onReset - () => the config showing every item
      */
     _galleryItemsSettings({
       noun,
@@ -343,7 +378,7 @@ export const YeelightEditorMixin = (Base) =>
       onList,
       onReset,
     }) {
-      return renderModeSettingsSection(
+      return renderSettingsBox(
         `${noun.charAt(0).toUpperCase()}${noun.slice(1)}s`,
         html`<div class="hint">
             Shown in this order. Edit a name to rename it on this card; Reset
@@ -354,21 +389,10 @@ export const YeelightEditorMixin = (Base) =>
             available: all.filter((key) => !items.includes(key)),
             labelFor,
             labels: this._config?.item_labels || {},
-            onRename: (key, label) => {
-              this._config = withItemLabel(this._config, key, label);
-              this.requestUpdate();
-              this._fireConfigChanged();
-            },
-            onUpdate: (keys) => {
-              onList(keys);
-              this.requestUpdate();
-              this._fireConfigChanged();
-            },
-            onReset: () => {
-              onReset();
-              this.requestUpdate();
-              this._fireConfigChanged();
-            },
+            onRename: (key, label) =>
+              this._commitConfig(withItemLabel(this._config, key, label)),
+            onUpdate: (keys) => this._commitConfig(onList(keys)),
+            onReset: () => this._commitConfig(onReset()),
             addPlaceholder: `Add a ${noun}…`,
             resetLabel: `Show all ${noun}s`,
           })}`,
@@ -396,7 +420,7 @@ export const YeelightEditorMixin = (Base) =>
       ));
       store.update(this._hass, this._config);
       const items = store.items(this._hass, this._config);
-      return renderModeSettingsSection(
+      return renderSettingsBox(
         `Arrange ${noun}s`,
         html`<div class="hint">
             The order of your ${noun}s on every card and lamp. Drag a ${noun},
@@ -498,6 +522,33 @@ export const YeelightEditorMixin = (Base) =>
  * All editors should import this for consistent appearance.
  */
 export const sharedEditorStyles = css`
+  ${entitySelectorStyles}
+  /* A framed group of settings (renderSettingsBox). */
+  .yc-settings-box {
+    margin: 16px 0;
+    padding: 16px;
+    background: color-mix(in srgb, var(--primary-color, #1976d2) 10%, var(--card-background-color, #fff));
+    border-radius: 8px;
+    border-left: 4px solid var(--primary-color, #0077cc);
+  }
+  .yc-settings-box-title {
+    font-weight: 600;
+    font-size: 1.05em;
+    margin-bottom: 12px;
+    color: var(--primary-color, #0077cc);
+  }
+  /* Inside another box: a titled group, without a second frame. */
+  .yc-settings-box .yc-settings-box {
+    margin: 12px 0 0;
+    padding: 0;
+    background: none;
+    border-radius: 0;
+    border-left: none;
+  }
+  .yc-settings-box .yc-settings-box > .yc-settings-box-title {
+    font-size: 0.95em;
+    margin-bottom: 8px;
+  }
   .experimental-availability {
     border-left: 3px solid var(--primary-color, #03a9f4);
     padding: 8px 12px;
@@ -639,33 +690,26 @@ export const sharedEditorStyles = css`
 `;
 
 /**
- * Renders a mode-specific settings section with consistent styling
- * Used for conditional settings that appear based on selected mode
+ * A framed box of settings (.yc-settings-box): the settings of a chosen
+ * mode, layout or option. Inside another box it shows as a titled group
+ * without a second frame.
  *
  * CONVENTION (read before adding any editor setting):
  * Any setting that is only meaningful when a parent toggle/mode is enabled MUST
  * be BOTH (1) gated by that condition (so it is hidden when inactive) AND
- * (2) wrapped in this blue section, so its dependency on the parent is visually
+ * (2) wrapped in this box, so its dependency on the parent is visually
  * obvious. Never render a dependent setting as a bare form-row next to its
  * parent toggle. This prevents the recurring "orphaned conditional setting" bug.
  *
  * @param {string} title - Section title (e.g., "Carousel Mode Settings")
  * @param {TemplateResult} content - LitElement html template with settings controls
- * @returns {TemplateResult} Styled settings section
+ * @returns {TemplateResult} The settings box
  */
-export function renderModeSettingsSection(title, content) {
-  return html`
-    <div
-      style="margin-top: 16px; margin-bottom: 16px; padding: 16px; background: color-mix(in srgb, var(--primary-color, #1976d2) 10%, var(--card-background-color, #fff)); border-radius: 8px; border-left: 4px solid var(--primary-color, #0077cc);"
-    >
-      <div
-        style="font-weight: 600; font-size: 1.05em; margin-bottom: 12px; color: var(--primary-color, #0077cc);"
-      >
-        ${title}
-      </div>
-      ${content}
-    </div>
-  `;
+export function renderSettingsBox(title, content) {
+  return html`<div class="yc-settings-box">
+    <div class="yc-settings-box-title">${title}</div>
+    ${content}
+  </div>`;
 }
 
 /**
@@ -769,7 +813,7 @@ export function renderDeleteButtonSettings(config, options) {
       )}
     </div>
     ${style !== "none"
-      ? renderModeSettingsSection(
+      ? renderSettingsBox(
           "Delete Button Settings",
           html`
             <div class="form-row">

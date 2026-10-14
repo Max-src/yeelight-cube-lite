@@ -34,7 +34,9 @@
 import { LitElement, css, html, nothing } from "./lib/lit-all.js";
 import { defineOnce } from "./card-registration.js";
 import {
+  BLINDS_DIRECTIONS,
   EXPAND_COLLAPSED_COUNT,
+  EXPAND_STYLES,
   blendBackground,
   blendColorAt,
   blindsHeight,
@@ -267,7 +269,7 @@ class YcSwatches extends LitElement {
     const shown = more && !this._expanded ? entries.slice(0, EXPAND_COLLAPSED_COUNT) : entries;
     if (!shown[this._tabStop]) this._tabStop = 0;
     const hidden = entries.length - EXPAND_COLLAPSED_COUNT;
-    const style = ["pill", "chevron", "dots"].includes(this.expandStyle) ? this.expandStyle : "pill";
+    const style = EXPAND_STYLES.includes(this.expandStyle) ? this.expandStyle : "pill";
     let button = nothing;
     if (more) {
       const label = this._expanded ? "Show fewer colors" : `Show ${hidden} more colors`;
@@ -291,7 +293,7 @@ class YcSwatches extends LitElement {
   }
 
   _blinds(entries) {
-    const direction = ["columns", "diagonal-right", "diagonal-left"].includes(this.direction)
+    const direction = BLINDS_DIRECTIONS.includes(this.direction)
       ? this.direction
       : "rows";
     return html`<div class="blinds" style="--h:calc(var(--_size) * ${blindsHeight(entries.length, direction)})">

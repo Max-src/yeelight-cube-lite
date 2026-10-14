@@ -17,7 +17,6 @@ import {
   actionButtonOrder,
   ACTION_BUTTON_KEYS,
   ACTION_BUTTON_LABELS,
-  rotationIntervalParts,
   ROTATION_INTERVAL_UNITS,
   rotationIntervalRows,
   intervalPartsSeconds,
@@ -34,14 +33,12 @@ const CardBase = YeelightCardMixin(class { connectedCallback() {} });
 const asCard = (fake) => Object.setPrototypeOf(fake, CardBase.prototype);
 import {
   nativeEffectItems,
+  isEffectName,
   nativePreviewCatalogue,
   nativeEffectDirection,
   nativeEffectFrame,
   nativeEffectAction,
   nativeEffectPreviewConfig,
-  effectCollectionKey,
-  readEffectCollections,
-  sanitizeEffectCollections,
   nextRotationEffect,
   rotationIntervalMs,
 } from "../custom_components/yeelight_cube/www/native-effect-card-utils.js";
@@ -372,20 +369,13 @@ test("shared slider conversions agree across cards and fix the speed 20/19 misma
     sourceFor("yeelight-cube-lamp-preview-card.js"),
     /lightSliderConfig\(this\.config, "brightness", sliderKeys\("slider"\),/,
   );
-  assert.doesNotMatch(
-    sourceFor("yeelight-cube-lamp-preview-card-editor.js"),
-    /BRIGHTNESS_SLIDER_KEYS|keys: /,
-  );
+  // Its editor uses the shared slider block, not a slider key map of its own.
+  const lampEditor = sourceFor("yeelight-cube-lamp-preview-card-editor.js");
+  assert.match(lampEditor, /renderLightSliderSettings\(/);
+  assert.doesNotMatch(lampEditor, /BRIGHTNESS_SLIDER_KEYS|SLIDER_KEYS\s*=/);
 });
 
-test("removed saved looks are ignored without losing favourites", () => {
-  assert.deepEqual(
-    sanitizeEffectCollections({
-      favourites: ["Rainbow"],
-      looks: [{ name: "Evening" }],
-    }),
-    { favourites: [{ key: "Rainbow", colorMode: "normal" }] },
-  );
+test("the removed saved looks left nothing in the card or its editor", () => {
   for (const file of [
     "yeelight-cube-native-effects-card.js",
     "yeelight-cube-native-effects-card-editor.js",
@@ -493,68 +483,33 @@ test("favourites allow direct removal without changing selection", () => {
   ]);
 });
 
-test("shared selectors bind text, preview and carousel navigation without duplicate callbacks", () => {
-  const body = sourceFor("style-selector-utils.js").match(
-    /export function bindStyleSelectorEvents\(\s*root,\s*\{ select, navigate, setIndex, style \},?\s*\) \{([\s\S]*?)\n\}/,
-  )[1];
+test("the shared carousel swipe steps on horizontal swipes, every card declares the gallery alike", () => {
   // The shared swipe (carousel-utils.js imports Lit, so it is read here).
   const carouselSwipe = new Function(
     `return ${sourceFor("carousel-utils.js").match(/export (function carouselSwipe[\s\S]*?\n\})/)[1]}`,
   )();
-  const bindStyleSelectorEvents = new Function(
-    "carouselSwipe",
-    "root",
-    "{ select, navigate, setIndex, style }",
-    body,
-  ).bind(null, carouselSwipe);
-  const item = { dataset: { mode: "Rainbow" } };
-  const arrow = { dataset: { direction: "-1" } };
-  const dot = { dataset: { index: "2" } };
-  const dropdown = {};
+  const calls = [];
   const listeners = {};
-  const shell = {
+  const surface = {
     addEventListener: (type, listener) => (listeners[type] = listener),
     removeEventListener: () => {},
   };
-  // A swipe through the shared carousel swipe (carouselSwipe).
+  const onTouchStart = carouselSwipe((direction) => calls.push(direction));
   const swipe = (toX, toY) => {
-    shell.ontouchstart({ touches: [{ clientX: 100, clientY: 0 }], currentTarget: shell });
+    onTouchStart({ touches: [{ clientX: 100, clientY: 0 }], currentTarget: surface });
     listeners.touchmove({ touches: [{ clientX: toX, clientY: toY }], preventDefault() {} });
     listeners.touchend({ type: "touchend", changedTouches: [{ clientX: toX }] });
   };
-  const root = {
-    querySelectorAll: (selector) =>
-      selector.includes('data-action="navigate"')
-        ? [arrow]
-        : selector.includes('data-action="set-index"')
-          ? [dot]
-          : [item],
-    querySelector: (selector) =>
-      selector.includes("mode-select") ? dropdown : shell,
-  };
-  const calls = [];
-  const options = {
-    style: "preview-carousel",
-    select: (name) => calls.push(name),
-    navigate: (delta) => calls.push(delta),
-    setIndex: (index) => calls.push(index),
-  };
-  bindStyleSelectorEvents(root, options);
-  bindStyleSelectorEvents(root, options);
-  item.onclick();
-  dropdown.onchange({ target: { value: "Streamer" } });
-  arrow.onclick({ stopPropagation() {} });
-  dot.onclick({ stopPropagation() {} });
   swipe(20, 0); // to the left: next
+  swipe(180, 0); // to the right: previous
   swipe(40, 90); // mostly vertical: the page scrolls, no step
-  assert.deepEqual(calls, ["Rainbow", "Streamer", -1, 2, 1]);
-  item.onclick = undefined;
-  bindStyleSelectorEvents(root, { ...options, style: "preview-wheel" });
-  assert.equal(item.onclick, undefined);
+  swipe(90, 0); // a tap
+  assert.deepEqual(calls, [1, -1]);
   // Every card declares the shared gallery the same way (collection-gallery.js):
   // the same core bindings; cards with favourites and animated previews also
-  // pass the mode-controls model and repaint on gallery-updated.
-  const core = [".config", ".items", ".active", ".disabled", "searchLabel", ".onSelect"];
+  // pass the mode-controls model and repaint on gallery-updated. Every
+  // gallery stays live while a pick is sent (quick picks: the latest wins).
+  const core = [".config", ".items", ".active", "searchLabel", ".onSelect"];
   for (const [file, extra] of [
     ["yeelight-cube-clock-card.js", [".model", "@gallery-updated"]],
     ["yeelight-cube-native-effects-card.js", [".model", "@gallery-updated"]],
@@ -568,6 +523,7 @@ test("shared selectors bind text, preview and carousel navigation without duplic
     for (const name of [...core, ...extra])
       assert.ok(bound.includes(name), `${file}: ${name}`);
     assert.doesNotMatch(source, /createElement\("yc-collection-gallery"\)/);
+    assert.ok(!bound.includes(".disabled"), `${file}: the gallery stays live`);
   }
 });
 
@@ -644,6 +600,7 @@ test("native editor sections follow the card and use shared conditional controls
     createButtonGroup: () => "",
     getTargetEntities,
     nativeEffectItems,
+    isEffectName,
     nativeEffectPreviewConfig,
     createYeelightCubeEntityPicker: (...args) => {
       records.picker = args;
@@ -651,7 +608,7 @@ test("native editor sections follow the card and use shared conditional controls
     renderMatrixAppearanceSettings: (...args) => {
       (records.matrices ||= []).push(args);
     },
-    renderModeSettingsSection: (title, content) => {
+    renderSettingsBox: (title, content) => {
       (records.settings ||= []).push(title);
       return { title, content };
     },
@@ -676,8 +633,7 @@ test("native editor sections follow the card and use shared conditional controls
     renderOrderableList: (options) => {
       records.list = options;
     },
-    rotationIntervalParts,
-    ROTATION_INTERVAL_UNITS,
+      ROTATION_INTERVAL_UNITS,
     rotationIntervalRows,
     intervalPartsSeconds,
     nextIntervalUnit,
@@ -751,7 +707,7 @@ test("native editor sections follow the card and use shared conditional controls
   assert.equal(records.list.noun, "effect");
   assert.equal(records.sliders, 1);
   assert.equal(records.matrices, undefined);
-  assert.match(source, /yeelight-preview-appearance-editor\s+profile="native"/);
+  assert.match(source, /static appearanceProfile = "native"/);
   assert.equal(records.selector, true);
   // The editor passes its config as is: the shared settings resolve the
   // default layout exactly like the gallery (gallerySelectorStyle).
@@ -846,8 +802,6 @@ test("multi-target configuration reads the first light and accepts legacy entity
   const body = source.match(/  setConfig\(config\) \{([\s\S]*?)\n  \}/)[1];
   const setConfig = new Function(
     "getTargetEntities",
-    "effectCollectionKey",
-    "readEffectCollections",
     "nativeEffectPreviewConfig",
     "window",
     "closeColorPicker",
@@ -855,8 +809,6 @@ test("multi-target configuration reads the first light and accepts legacy entity
     `return function(config) {${body}}`,
   )(
     getTargetEntities,
-    effectCollectionKey,
-    readEffectCollections,
     nativeEffectPreviewConfig,
     {
       localStorage: { getItem: () => null },
@@ -1036,64 +988,6 @@ test("preview selection applies immediately and includes a supported speed draft
   assert.equal(card._speedDraft, 30);
 });
 
-test("collections sanitize favourites, discard legacy history and isolate target sets", () => {
-  const names = [
-    " Rainbow ",
-    "Rainbow",
-    "63",
-    " 64 ",
-    "",
-    null,
-    12,
-    "Streamer",
-  ];
-  assert.deepEqual(
-    sanitizeEffectCollections({ favourites: names, recent: names }),
-    {
-      favourites: [
-        { key: "Rainbow", colorMode: "normal" },
-        { key: "Streamer", colorMode: "normal" },
-      ],
-    },
-  );
-  const many = Array.from({ length: 120 }, (_, index) => `Effect ${index}`);
-  const cleaned = sanitizeEffectCollections({ favourites: many, recent: many });
-  assert.equal(cleaned.favourites.length, 100);
-  assert.equal(cleaned.recent, undefined);
-  assert.equal(
-    effectCollectionKey(["light.second", "light.first", "light.first"]),
-    effectCollectionKey(["light.first", "light.second"]),
-  );
-  assert.notEqual(
-    effectCollectionKey(["light.first"]),
-    effectCollectionKey(["light.second"]),
-  );
-  const saved = new Map([
-    [
-      effectCollectionKey(["light.first"]),
-      JSON.stringify({ favourites: names }),
-    ],
-  ]);
-  const storage = { getItem: (key) => saved.get(key) };
-  assert.deepEqual(
-    readEffectCollections(storage, effectCollectionKey(["light.first"]))
-      .favourites,
-    [
-      { key: "Rainbow", colorMode: "normal" },
-      { key: "Streamer", colorMode: "normal" },
-    ],
-  );
-  assert.deepEqual(
-    readEffectCollections(storage, effectCollectionKey(["light.second"]))
-      .favourites,
-    [],
-  );
-  for (const value of ["null", "broken json", "[]"])
-    assert.deepEqual(readEffectCollections({ getItem: () => value }, "key"), {
-      favourites: [],
-    });
-});
-
 test("collection storage tolerates a blocked localStorage getter on reads and writes", () => {
   const descriptor = Object.getOwnPropertyDescriptor(
     globalThis,
@@ -1106,9 +1000,6 @@ test("collection storage tolerates a blocked localStorage getter on reads and wr
     },
   });
   try {
-    assert.deepEqual(readEffectCollections(undefined, "key"), {
-      favourites: [],
-    });
     const controls = new ModeControlsController({});
     controls.save(["Rainbow", "Rainbow"]);
     assert.deepEqual(controls.favourites, [

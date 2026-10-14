@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
-import { renderPagination } from "../custom_components/yeelight_cube/www/pagination-utils.js";
+import { paginate } from "../custom_components/yeelight_cube/www/pagination-utils.js";
 import {
   getClockStyles,
   clockStyleColorModeState,
@@ -114,19 +114,19 @@ test("clock pagination supports 16 items per page and zero disables pagination",
   );
   const items = Array.from({ length: 35 }, (_, index) => index);
   assert.deepEqual(
-    renderPagination({ items, currentPage: 0, itemsPerPage: 16 }).items,
+    paginate({ items, currentPage: 0, itemsPerPage: 16 }).items,
     items.slice(0, 16),
   );
   assert.deepEqual(
-    renderPagination({ items, currentPage: 1, itemsPerPage: 16 }).items,
+    paginate({ items, currentPage: 1, itemsPerPage: 16 }).items,
     items.slice(16, 32),
   );
   assert.deepEqual(
-    renderPagination({ items, currentPage: 2, itemsPerPage: 16 }).items,
+    paginate({ items, currentPage: 2, itemsPerPage: 16 }).items,
     items.slice(32),
   );
   assert.deepEqual(
-    renderPagination({ items, currentPage: 0, itemsPerPage: 0 }).items,
+    paginate({ items, currentPage: 0, itemsPerPage: 0 }).items,
     items,
   );
 });

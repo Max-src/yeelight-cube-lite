@@ -56,36 +56,6 @@ ignore_yeelight_discovery:
       example: "192.168.4.139"
       required: true
 
-force_rediscovery:
-  name: Force Rediscovery
-  description: Clear discovery caches and force rediscovery of a device
-  fields:
-    ip_address:
-      description: IP address to force rediscovery for
-      example: "192.168.4.139"
-      required: true
-
-trigger_manual_discovery:
-  name: Trigger Manual Discovery
-  description: Manually trigger discovery for both integrations to test interception
-  fields:
-    ip_address:
-      description: IP address to discover
-      example: "192.168.4.139"
-      required: true
-    device_name:
-      description: Device name to use
-      example: "CubeLite Test"
-      required: false
-    device_model:
-      description: Device model to use
-      example: "cubelite"
-      required: false
-    device_id:
-      description: Device ID to use
-      example: "0x12345678"
-      required: false
-
 create_cube_discovery:
   name: Create Cube Discovery
   description: Create a discovery flow specifically for the Yeelight Cube Lite component
@@ -1470,8 +1440,8 @@ restore_state:
   description: >
     Restore the display state previously captured with save_state and
     re-render it on the lamp. A rotation that was running when it was saved
-    starts again, in step with the lamps still running it. Does nothing if no
-    state was saved.
+    starts again, in step with the lamps still running it. Never turns the
+    lamp on or off. Does nothing if no state was saved.
   fields:
     entity_id:
       description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.

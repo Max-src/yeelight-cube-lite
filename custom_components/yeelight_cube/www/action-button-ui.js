@@ -101,11 +101,15 @@ export function renderActionButtonContent(
   }
 }
 
+// options.extraClass / activeMode / favourite: the shared gallery's marks
+// (gc-pending, the active outline, the favourite star).
 export function renderActionButton(options = {}) {
   const model = actionButtonModel(options);
   return html`<button
     type=${model.type}
-    class=${model.className}
+    class=${options.extraClass ? `${model.className} ${options.extraClass}` : model.className}
+    data-active-mode=${options.activeMode ? "true" : nothing}
+    data-favourite=${options.favourite ? "true" : nothing}
     title=${model.title}
     aria-label=${model.title}
     aria-busy=${String(model.busy)}

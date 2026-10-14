@@ -404,8 +404,6 @@ def async_register_native_services(hass: HomeAssistant) -> None:
                 raise HomeAssistantError("color must be [r, g, b] or 'clear'")
 
         async def _apply_one(target):
-            if not target._is_on and not target._should_auto_turn_on():
-                return
             if style_id is not None:
                 # Experimental styles need the extended catalogue on; enabling
                 # it here keeps the select entity and this action consistent.
@@ -431,9 +429,8 @@ def async_register_native_services(hass: HomeAssistant) -> None:
             if activate:
                 target._mode = MODE_CLOCK
                 target._custom_draw_active = False
-            if target._mode == MODE_CLOCK and (
-                target._is_on or target._should_auto_turn_on()
-            ):
+            if target._mode == MODE_CLOCK:
+                # Drawn now, or when an off lamp is turned on.
                 await target.async_apply_display_mode(update_type="color_change")
             target._refresh_linked_entities()
             if speed is not None and target._native_effect_speed_entity:

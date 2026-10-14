@@ -41,7 +41,7 @@ const STATE_PERCENT = {
 
 export class LampSliders {
   /**
-   * @param {HTMLElement} host - the card (requestUpdate(), _anySliderDragging)
+   * @param {HTMLElement} host - the card (requestUpdate(), _gate)
    * @param {Object} sliders - per namespace: config() -> slider render config,
    *   commit(pct) sends the value, optional live(pct) on every movement and
    *   beforeCommit() run before the draft records the value
@@ -55,7 +55,7 @@ export class LampSliders {
     this.drafts = {};
     for (const [ns, slider] of Object.entries(sliders)) {
       const draft = createSliderDraft({
-        isDragging: () => host._anySliderDragging,
+        isDragging: () => host._gate.held("slider"),
         onExpire: refresh,
       });
       this.drafts[ns] = draft;

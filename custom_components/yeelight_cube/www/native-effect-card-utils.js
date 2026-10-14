@@ -1,7 +1,6 @@
 import { renderNativeEffectOriented } from "./native-effect-preview.js";
+import { VISIBILITY_KEYS, visibleItems } from "./visible-items.js";
 import { flipMatrixVertical } from "./clock-preview-utils.js";
-import { modeCollectionKey } from "./mode-controls-controller.js";
-import { sanitizeFavourites } from "./mode-selection.js";
 export {
   nextRotationMode as nextRotationEffect,
   rotationIntervalMs,
@@ -30,6 +29,12 @@ export function nativeEffectPreviewConfig(config = {}) {
   };
 }
 
+/** Whether `name` names an effect the cards list: text, not a bare number
+ * (the firmware's unnamed effect ids). */
+export function isEffectName(name) {
+  return typeof name === "string" && name.trim() !== "" && !/^\d+$/.test(name.trim());
+}
+
 export function nativeEffectItems(attrs = {}, config = {}) {
   const catalogue = Array.isArray(attrs.native_effect_catalog)
     ? attrs.native_effect_catalog
@@ -37,17 +42,17 @@ export function nativeEffectItems(attrs = {}, config = {}) {
   const items = catalogue.filter(
     (item) =>
       item &&
-      typeof item.name === "string" &&
-      item.name.trim() !== "" &&
-      !/^\d+$/.test(item.name.trim()) &&
+      isEffectName(item.name) &&
       (!item.extended ||
         config.show_experimental === true ||
         item.name === attrs.native_effect),
   );
-  if (!Array.isArray(config.visible_effects)) return items;
-  return [...new Set(config.visible_effects)]
-    .map((name) => items.find((item) => item.name === name))
-    .filter(Boolean);
+  return visibleItems(
+    items,
+    (item) => item.name,
+    config,
+    VISIBILITY_KEYS.effects,
+  );
 }
 
 const previewDirections = ["Up", "Down", "Left", "Right"];
@@ -152,23 +157,3 @@ export function nativeEffectAction(name) {
   return { effect: name, activate: true };
 }
 
-export function effectCollectionKey(targets) {
-  return modeCollectionKey("native", targets);
-}
-
-export function sanitizeEffectCollections(saved) {
-  return {
-    favourites: sanitizeFavourites(saved?.favourites),
-  };
-}
-
-export function readEffectCollections(storage, key) {
-  try {
-    const saved = JSON.parse(
-      (storage ?? globalThis.localStorage).getItem(key) || "{}",
-    );
-    return sanitizeEffectCollections(saved);
-  } catch {
-    return sanitizeEffectCollections({});
-  }
-}

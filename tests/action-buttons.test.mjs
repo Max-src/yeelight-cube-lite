@@ -5,7 +5,6 @@ import {
   actionButtonModel,
   actionButtonStyleChoices,
   actionButtonContentChoices,
-  renderActionButtonHTML,
   getActionRowClass,
   actionButtonGroupModel,
   handleActionButtonGroupEvent,
@@ -15,18 +14,18 @@ import {
   getExportImportButtonClass,
 } from "../custom_components/yeelight_cube/www/action-button-utils.js";
 
+// The button's model (actionButtonModel); action-button-ui.js renders it
+// with Lit, checked in a real browser (tests/browser/events/12-action-buttons.cjs).
 test("all styles and content modes share normalized rendering", () => {
   for (const { value: buttonStyle } of actionButtonStyleChoices) {
     for (const { value: contentMode } of actionButtonContentChoices) {
       const model = actionButtonModel({ buttonStyle, contentMode });
-      const markup = renderActionButtonHTML({ buttonStyle, contentMode });
       assert.equal(
         model.contentMode,
         buttonStyle === "icon" ? "icon" : contentMode,
       );
-      assert.equal(markup.includes("<ha-icon"), model.contentMode !== "text");
-      assert.match(markup, /aria-label="Save"/);
-      assert.ok(markup.includes(`btn-style-${buttonStyle}`));
+      assert.equal(model.title, "Save");
+      assert.ok(model.className.includes(`btn-style-${buttonStyle}`));
     }
   }
 });
@@ -49,54 +48,31 @@ test("actions normalize icon alignment and preserve independent migrated setting
   );
 });
 
-test("color swatches replace the icon across styles and content modes", () => {
-  for (const { value: buttonStyle } of actionButtonStyleChoices) {
-    for (const { value: contentMode } of actionButtonContentChoices) {
-      const markup = renderActionButtonHTML({
-        buttonStyle,
-        contentMode,
-        label: "Amber",
-        swatch: "#ff8800",
-      });
-      const resolved = buttonStyle === "icon" ? "icon" : contentMode;
-      // The swatch stands in for the icon; no ha-icon is emitted.
-      assert.ok(!markup.includes("<ha-icon"));
-      assert.equal(markup.includes("background:#ff8800"), resolved !== "text");
-      assert.equal(markup.includes("btn-swatch"), resolved !== "text");
-      assert.equal(
-        markup.includes('class="btn-text">Amber'),
-        resolved === "icon_text",
-      );
-    }
-  }
-  // A busy swatch button shows the spinner icon instead of the swatch.
-  const busy = renderActionButtonHTML({ swatch: "#ff8800", busy: true });
-  assert.ok(busy.includes("mdi:loading") && !busy.includes("btn-swatch"));
+test("color swatches replace the icon; a busy button shows the spinner", () => {
+  const swatch = actionButtonModel({ label: "Amber", swatch: "#ff8800" });
+  assert.equal(swatch.swatch, "#ff8800");
+  assert.equal(swatch.label, "Amber");
+  const busy = actionButtonModel({ swatch: "#ff8800", busy: true });
+  assert.equal(busy.icon, "mdi:loading");
+  assert.equal(busy.swatch, null);
   assert.ok(actionButtonStyles.includes(".btn-swatch"));
 });
 
 test("filled buttons and round swatches expose reusable color styling", () => {
-  const filled = renderActionButtonHTML({
+  const filled = actionButtonModel({
     label: "Amber",
     contentMode: "text",
     fill: "#ffffff",
   });
   // Light fill -> dark ink; dark fill -> light ink.
-  assert.ok(filled.includes("btn-fill"));
-  assert.ok(filled.includes("--btn-fill:#ffffff"));
-  assert.ok(filled.includes("--btn-ink:#111"));
-  assert.ok(
-    renderActionButtonHTML({ fill: "#101010", label: "x" }).includes(
-      "--btn-ink:#fff",
-    ),
+  assert.ok(filled.className.includes("btn-fill"));
+  assert.equal(filled.fill, "#ffffff");
+  assert.equal(filled.ink, "#111");
+  assert.equal(actionButtonModel({ fill: "#101010", label: "x" }).ink, "#fff");
+  assert.equal(
+    actionButtonModel({ swatch: "#ff8800", swatchShape: "round" }).swatchShape,
+    "round",
   );
-  const round = renderActionButtonHTML({
-    label: "Amber",
-    contentMode: "icon",
-    swatch: "#ff8800",
-    swatchShape: "round",
-  });
-  assert.ok(round.includes("btn-swatch-round"));
   assert.ok(actionButtonStyles.includes(".btn-fill"));
   assert.ok(actionButtonStyles.includes(".btn-swatch-round"));
 });
@@ -146,7 +122,6 @@ test("current-value buttons change label and icon without misleading pressed sem
   assert.equal(model.selected, undefined);
   // Current-value toggles always read as the active setting (prominent look).
   assert.ok(model.className.includes("tool-active"));
-  assert.ok(!renderActionButtonHTML(options).includes("aria-pressed"));
   assert.equal(
     actionButtonModel({ ...options, selected: true }).label,
     "12-hour",
@@ -182,9 +157,7 @@ test("choice groups have one tab stop and toggles expose independent pressed sta
     items: items.map((item) => ({ ...item, selected: true })),
   });
   assert.ok(toggles.every((button) => !button.role && button.selected === true));
-  assert.ok(
-    !renderActionButtonHTML({ label: "Save" }).includes("aria-pressed"),
-  );
+  assert.equal(actionButtonModel({ label: "Save" }).selected, undefined);
 });
 
 test("group navigation wraps and never changes confirmed state locally", () => {
@@ -254,7 +227,7 @@ test("action rows center both icon style and icon-only content", () => {
   assert.equal(getActionRowClass(), "action-row");
 });
 
-test("buttons sanitize labels and handle loading, invalid settings and submit semantics", () => {
+test("buttons handle loading, invalid settings and submit semantics", () => {
   const model = actionButtonModel({
     busy: true,
     type: "submit",
@@ -266,12 +239,4 @@ test("buttons sanitize labels and handle loading, invalid settings and submit se
   assert.equal(model.disabled, true);
   assert.equal(model.type, "submit");
   assert.equal(model.icon, "mdi:loading");
-  const markup = renderActionButtonHTML({
-    label: '<img src=x>"',
-    icon: 'mdi:save" onclick="bad',
-    disabled: true,
-  });
-  assert.ok(!markup.includes("<img"));
-  assert.ok(!markup.includes('icon="mdi:save" onclick='));
-  assert.match(markup, /disabled/);
 });

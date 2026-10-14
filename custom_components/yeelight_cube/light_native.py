@@ -26,6 +26,7 @@ from .const import (
     clock_style_default_color,
     DEFAULT_NATIVE_CLOCK_STYLE,
     DEFAULT_NATIVE_EFFECT,
+    DEVICE_ORIENTATION_TO_EFFECT_DIR,
     DOMAIN,
     MUSIC_FLOW_DEFAULT_PALETTE,
     MUSIC_FLOW_EFFECTS,
@@ -280,9 +281,6 @@ class NativeModesMixin:
 
     async def _activate_native_effect(self) -> None:
         """Activate one of the Cube Lite firmware's built-in animations."""
-        # Imported lazily to avoid a circular import at module load: light.py
-        # imports this mixin, and this map lives in light.py's module scope.
-        from .light import _DEVICE_ORIENTATION_TO_EFFECT_DIR
         spec = ALL_NATIVE_EFFECTS.get(
             self._native_effect, ALL_NATIVE_EFFECTS[DEFAULT_NATIVE_EFFECT]
         )
@@ -299,7 +297,7 @@ class NativeModesMixin:
             # reboot/restore) always honors the orientation arrows -- instead of
             # using a stale _native_effect_direction that only got synced when
             # the orientation was changed while already in Native Effect mode.
-            desired = _DEVICE_ORIENTATION_TO_EFFECT_DIR.get(self._device_orientation)
+            desired = DEVICE_ORIENTATION_TO_EFFECT_DIR.get(self._device_orientation)
             if desired in directions and desired != self._native_effect_direction:
                 self._native_effect_direction = desired
                 if self._native_effect_direction_select_entity:
@@ -411,9 +409,7 @@ class NativeModesMixin:
                         self._is_on = False
                     else:
                         self._is_on = True
-                        await self._apply_display_mode_internal(
-                            skip_post_delay=True
-                        )
+                        await self._apply_display_mode_internal()
                 else:
                     self._music_flow_restore_power = None
                     self._in_native_fw_mode = False

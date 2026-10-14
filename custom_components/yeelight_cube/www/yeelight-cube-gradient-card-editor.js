@@ -5,12 +5,10 @@ import {
   createButtonGroupChangeHandler,
   buttonGroupStyles,
 } from "./button-group-utils.js";
-import { entitySelectorStyles } from "./entity-selector-utils.js";
 import {
-  fireEvent,
   sharedEditorStyles,
   YeelightEditorMixin,
-  renderModeSettingsSection,
+  renderSettingsBox,
 } from "./editor_ui_utils.js";
 import { normalizeCardOptions } from "./card-config.js";
 import { renderStyleSelectorSettings } from "./style-selector-ui.js";
@@ -23,6 +21,12 @@ import {
   orderableListStyles,
 } from "./orderable-list-utils.js";
 import { GRADIENT_MODES } from "./yeelight-cube-gradient-card.js";
+import {
+  VISIBILITY_KEYS,
+  visibleItems,
+  withAllItems,
+  withVisibleItems,
+} from "./visible-items.js";
 import { defineOnce } from "./card-registration.js";
 
 const ALIGNMENTS = [
@@ -93,7 +97,6 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
   constructor() {
     super();
     this._config = {};
-    this._open = {};
   }
 
   // Older configs arrive in today's names (normalizeCardOptions); unset
@@ -103,15 +106,14 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
     this.requestUpdate();
   }
 
-  // The modes the card shows, in order (the card's own rule, see
-  // YeelightCubeGradientCard._orderedModes: its list only when customised).
+  // The modes the card shows, in order (as the card: visible-items.js).
   _visibleModeList() {
-    const list = this._config?.visible_modes;
-    return this._config?.custom_visible_modes === true &&
-      Array.isArray(list) &&
-      list.length
-      ? list.filter((mode) => GRADIENT_MODES.includes(mode))
-      : [...GRADIENT_MODES];
+    return visibleItems(
+      GRADIENT_MODES,
+      (mode) => mode,
+      this._config,
+      VISIBILITY_KEYS.gradientModes,
+    );
   }
 
   _renderVisibleModeList() {
@@ -120,49 +122,33 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
       items: this._visibleModeList(),
       all: [...GRADIENT_MODES],
       labelFor: (mode) => mode,
-      onList: (modes) => {
-        this._config = {
-          ...this._config,
-          custom_visible_modes: true,
-          visible_modes: modes,
-        };
-      },
-      onReset: () => {
-        this._config = { ...this._config };
-        delete this._config.custom_visible_modes;
-        delete this._config.visible_modes;
-      },
+      onList: (modes) =>
+        withVisibleItems(
+          this._config,
+          VISIBILITY_KEYS.gradientModes,
+          GRADIENT_MODES,
+          modes,
+        ),
+      onReset: () => withAllItems(this._config, VISIBILITY_KEYS.gradientModes),
     });
   }
 
-  getConfig() {
-    return this._config;
-  }
-
   _fireConfigChanged() {
-    const config = {
+    super._fireConfigChanged({
       type: "custom:yeelight-cube-gradient-card",
       ...this._config,
-    };
-    fireEvent(this, "config-changed", { config });
+    });
   }
 
-  // The angle control's style (the oldest configs named it
-  // angle_rotary_style: wheel / rect, else a compass).
+  // The angle control's style (older formats arrive in today's names).
   _angleStyle() {
-    const cfg = this._config;
-    return (
-      cfg.rotary_unified_style ||
-      { wheel: "wheel", rect: "rectangle" }[cfg.angle_rotary_style] ||
-      "compass"
-    );
+    return this._config.rotary_unified_style || "compass";
   }
 
   static get styles() {
     return [
       sharedEditorStyles,
       buttonGroupStyles,
-      entitySelectorStyles,
       orderableListStyles,
     ];
   }
@@ -197,35 +183,24 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
     );
   }
 
-  _renderAppearance(section) {
-    return html`<yeelight-preview-appearance-editor
-      profile="gradient"
-      section=${section}
-      .owner=${this}
-      .config=${this._config}
-      @appearance-changed=${(event) => {
-        this._config = event.detail.config;
-        this._fireConfigChanged();
-      }}
-    ></yeelight-preview-appearance-editor>`;
-  }
+  static appearanceProfile = "gradient";
 
   render() {
     const cfg = this._config || {};
     const panelStyle = cfg.panel_toggle_style || "minimal";
     return html`
       <div class="editor-root">
-        ${this._section(
-          "preview_appearance",
-          "Preview Appearance",
-          this._renderAppearance("shared"),
-        )}
         ${this._section("global", "Global Settings", html`
           ${this._cardFrameSettings({
             placeholder: "Gradient",
             lamps: "multiple",
           })}
         `)}
+        ${this._section(
+          "preview_appearance",
+          "Preview Appearance",
+          this._renderAppearance("shared"),
+        )}
         ${this._section("label", "Active Mode Label", html`
           ${this._toggle(
             "Show Active Mode Label",
@@ -307,26 +282,26 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
       );
     switch (style) {
       case "rectangle":
-        return renderModeSettingsSection("Rectangle Settings", html`
+        return renderSettingsBox("Rectangle Settings", html`
           ${size()} ${dot()}
           ${this._choice("Shape", "rectangle_shape", RECTANGLE_SHAPES, "rectangle")}
           ${snap()}
         `);
       case "wheel":
-        return renderModeSettingsSection("Wheel Settings", html`
+        return renderSettingsBox("Wheel Settings", html`
           ${size()} ${dot()}
           ${this._toggle("Show Arrow Mask", "wheel_show_mask", cfg.wheel_show_mask === true)}
           ${snap()}
         `);
       case "compass":
-        return renderModeSettingsSection("Compass Settings", html`
+        return renderSettingsBox("Compass Settings", html`
           ${size()} ${dot()}
           ${this._choice("Overlay Shape", "compass_shape", COMPASS_SHAPES, "none")}
           ${this._choice("Coordinates", "compass_labels_mode", COMPASS_LABELS, "under")}
           ${snap()}
         `);
       case "matrix_preview":
-        return renderModeSettingsSection("Matrix Preview Settings", html`
+        return renderSettingsBox("Matrix Preview Settings", html`
           ${size()} ${this._renderAppearance("rotary")}
           ${this._toggle(
             "Show Text Preview",
@@ -335,7 +310,7 @@ class YeelightCubeGradientCardEditor extends YeelightEditorMixin(LitElement) {
           )}
         `);
       case "capsule":
-        return renderModeSettingsSection("Capsule Settings", html`
+        return renderSettingsBox("Capsule Settings", html`
           ${this._choice("Theme", "capsule_theme", CAPSULE_THEMES, "subtle")}
           ${this._range("Thickness", "capsule_thickness", 6, { min: 2, max: 10, step: 1 }, "px")}
           ${snap()}

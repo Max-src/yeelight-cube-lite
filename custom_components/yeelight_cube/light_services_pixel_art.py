@@ -235,9 +235,6 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
             if not (isinstance(art, dict) and "pixels" in art and isinstance(art["pixels"], list) and len(art["pixels"]) > 0):
                 _LOGGER.error("[pixelart-backend] apply_pixel_art: No valid pixels for idx %s.", idx)
                 return
-            if not target_entity._is_on and not target_entity._should_auto_turn_on():
-                _LOGGER.debug("[AUTO-TURN-ON] apply_pixel_art command ignored - lamp is off and auto-turn-on is disabled")
-                return
             target_entity._custom_pixels = expand_pixels(art["pixels"])
             target_entity._mode = "Custom Draw"
             target_entity._matrix_mode = "Custom Draw"
@@ -273,9 +270,6 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
             return
 
         async def _apply_one(target_entity):
-            if not target_entity._is_on and not target_entity._should_auto_turn_on():
-                _LOGGER.debug("[AUTO-TURN-ON] apply_custom_pixels command ignored - lamp is off and auto-turn-on is disabled")
-                return
             target_entity._custom_pixels = expand_pixels(pixels)
             target_entity._mode = "Custom Draw"
             target_entity._matrix_mode = "Custom Draw"
