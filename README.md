@@ -25,7 +25,7 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a
 | **Native clock** | 10 firmware clock styles (more via Experimental Features) with time / date / alternating content, 12/24-hour, and colon blink options |
 | **Native animations** | 18 LAN-compatible firmware effects with speed and direction controls where supported |
 | **Music Flow** | 6 device-microphone reactive effects with display and power-state restoration |
-| **Official pixel art** | 68 locally bundled, read-only drawings from the Yeelight Station app; personal drawings stay separate |
+| **Official pixel art** | 68 locally bundled, read-only drawings from the official Yeelight app; personal drawings stay separate |
 | **Device settings** | Power-on behavior, text scrolling, and physical-button preset list |
 | **Colors & gradients** | Gradient support across multiple modes |
 | **Color effects** | Hue shift, saturation, vibrance, tint, glow, contrast, invert, grayscale |
@@ -108,18 +108,41 @@ dashboard card does not update after the restart, perform a hard browser refresh
 
 ## Setup
 
-### Prerequisites: Yeelight Station App
+### Prerequisites: the Yeelight App
 
-Before adding the lamp to Home Assistant, you must first set it up using the **Yeelight Station app** (not the standard Yeelight app).
+Before adding the lamp to Home Assistant, you must first set it up using the official **Yeelight** app by Qingdao Yeelink ([App Store](https://apps.apple.com/us/app/yeelight/id6443416826) · [Google Play](https://play.google.com/store/apps/details?id=com.yeelight.yeelight_fluid)).
+
+> [!IMPORTANT]
+> Yeelight publishes three apps, and two of them changed names. The Cube Lite works with the one called **Yeelight** (formerly *Yeelight Station*), the app with the RGB products: Cube, Beam, Obsid.
+>
+> | App | Formerly | For the Cube Lite? |
+> | --- | --- | --- |
+> | **Yeelight** | Yeelight Station | ✅ Yes |
+> | Yeelight Classic | Yeelight | ❌ No (bulbs, strips, ceiling lights) |
+> | Yeelight Pro | — | ❌ No (Yeelight Pro smart lighting solutions) |
+
+<!-- 📸 SCREENSHOT (optional): the app in the App Store or Google Play, so users recognise the right one
+     (its icon and the name "Yeelight", next to Yeelight Classic / Yeelight Pro if a search shows them).
+     Suggested file: images/App_Store_Yeelight.jpg, shown here at width="250". -->
 
 <details>
 <summary>View setup steps</summary>
 
-1. **Download the Yeelight Station app** from the App Store (iOS) or Google Play (Android)
+1. **Download the Yeelight app** from the [App Store](https://apps.apple.com/us/app/yeelight/id6443416826) (iOS) or [Google Play](https://play.google.com/store/apps/details?id=com.yeelight.yeelight_fluid) (Android). Not *Yeelight Classic* or *Yeelight Pro*
 2. **Power on the lamp**
 3. **Add the lamp to the app**: follow the in-app instructions to connect the lamp to your **2.4 GHz Wi-Fi network**
+
+<!-- 📸 SCREENSHOT (optional): adding the Cube Lite in the app (the "add device" screen or the lamp
+     found during pairing). Suggested file: images/App_Add_Device.jpg; it can join the table below
+     as its first cell. -->
+
 4. **Enable LAN Control**: in the app, go to your lamp's **Device Settings** and activate **LAN Control**. This is required for the integration to communicate with the lamp over your local network
 5. **Find the lamp's IP address**: in Device Settings → **Device info**, find the IP address assigned to the lamp (e.g. `192.168.4.139`)
+
+<!-- 📸 SCREENSHOTS TO CHECK: the three images below were taken in the app when it was still called
+     Yeelight Station. If the current app's screens look different (titles, layout, the LAN Control
+     switch, Device info), replace them, keeping the same file names:
+     images/App_Device_Settings.jpg, images/App_LAN_Control.jpg, images/App_Device_Info.jpg -->
 
 <table>
   <tr>
@@ -178,7 +201,7 @@ If the lamp is not discovered automatically (e.g. different subnet or mDNS is bl
 
    <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Add-Entry.png" alt="Integration Detail Page - Add entry">
 
-5. Enter the **IP address** from the Yeelight Station app (e.g. `192.168.4.139`)
+5. Enter the **IP address** from the Yeelight app (e.g. `192.168.4.139`)
 
    <img src="https://raw.githubusercontent.com/Max-src/yeelight-cube-lite/main/images/Home-Assistant-Integrations-Add-Entry-Device-IP.png" alt="Add entry - Device IP">
 
@@ -1032,7 +1055,7 @@ When Matrix content is active, the **Display Mode** entity or Gradient Card sele
 
 ### Built-in Pixel Art
 
-The integration includes 68 official drawings from the Yeelight Station app as
+The integration includes 68 official drawings from the Yeelight app as
 local, read-only presets. They appear alongside personal drawings in the Pixel
 Art entity, but they are not imported into, written to, or allowed to overwrite
 the personal gallery. Personal drawings can still be created, renamed, and
@@ -1048,7 +1071,7 @@ previews remain available while Clock mode is active.
 The clock command uses the Cube Lite's private LAN protocol. The firmware does
 not report the active clock configuration back to Home Assistant, so entity
 states represent the last settings requested by this integration. Changes made
-from the Station app or physical button may therefore not appear immediately in
+from the Yeelight app or physical button may therefore not appear immediately in
 Home Assistant. Camera previews approximate the firmware palettes and may
 differ slightly from the physical LEDs.
 
@@ -1058,7 +1081,7 @@ Native Effect mode exposes the 18 presets that the Cube Lite accepts directly
 through its private LAN protocol. Speed and direction entities are available
 only when the selected effect supports them. **Hacking** supports only **Up**
 and **Down**; other directional effects may also offer **Left** and **Right**.
-Winter, Dream, Halloween, and Moonlight are not exposed because the Station app
+Winter, Dream, Halloween, and Moonlight are not exposed because the Yeelight app
 uploads a GIF through a Matter-only vendor command before activation; the
 private LAN protocol cannot reproduce that transaction. Both Matrix Preview
 cameras render animated local approximations while a native effect is active
@@ -1314,7 +1337,7 @@ drawn by the lamp itself, so lower their brightness instead.
 | Problem | Solution |
 | :-- | :-- |
 | **Cards not showing** | Clear browser cache with `Ctrl+F5` after installing or updating |
-| **Device not found** | Ensure the lamp is on the same network. Check IP in the Yeelight Station app. Auto-discovery via Zeroconf is also available |
+| **Device not found** | Ensure the lamp is on the same network and **LAN Control** is on in the Yeelight app (not Yeelight Classic). Check its IP in the app. Auto-discovery via Zeroconf is also available |
 | **Conflicts with Yeelight integration** | This integration automatically suppresses built-in Yeelight discovery for Cube devices |
 | **Lamp stuck / unresponsive** | Press the **Force Refresh** button entity, or use the refresh button on the Preview card |
 | **Lamp freezes on a bright picture or drops off the network** | The power supply is too weak, especially with two lamps on one port. Use a stronger supply or set the **Power limit**. See [Power Supply](#power-supply) |

@@ -59,7 +59,7 @@ module.exports = async (t) => {
       shown.drawRenamed = [names(), card.config.pixelart_sensor];
 
       // The Palette card, configured with a sensor since renamed.
-      hass = withSensors("sensor.saved_drawings", "sensor.my_colours");
+      hass = withSensors("sensor.saved_drawings", "sensor.my_colors");
       await mount("yeelight-cube-palette-card", {
         entity: "light.a",
         palette_sensor: "sensor.color_palettes",
@@ -77,6 +77,6 @@ module.exports = async (t) => {
     arts: result.arts,
     drawFresh: [result.arts, "sensor.saved_drawings"],
     drawRenamed: [result.arts, "sensor.my_drawings"],
-    paletteRenamed: [["Warm", "Sea"], "sensor.my_colours"],
+    paletteRenamed: [["Warm", "Sea"], "sensor.my_colors"],
   });
 };

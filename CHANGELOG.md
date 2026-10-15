@@ -5,6 +5,13 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Documentation
+- Setup: the app the Cube Lite needs is now called **Yeelight** (formerly
+  *Yeelight Station*; the older app formerly called *Yeelight* is now
+  *Yeelight Classic*). The README names the right app, links it on the
+  App Store and Google Play, and explains the three Yeelight apps
+  ([#5](https://github.com/Max-src/yeelight-cube-lite/issues/5)).
+
 ### Fixed
 - **Renamed entity ids** (Home Assistant 2026.11 renames entities in place;
   [#4](https://github.com/Max-src/yeelight-cube-lite/issues/4)): the

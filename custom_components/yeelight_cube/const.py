@@ -6,11 +6,12 @@ CONF_DEVICE_ID = "device_id"
 CONF_MANAGED_DEVICES = "managed_devices"
 CONF_PREVENT_DISCOVERY = "prevent_discovery"
 
-# Native clock definitions recovered from the Yeelight Station app.
+# Native clock definitions recovered from the Yeelight app (formerly Yeelight
+# Station).
 # Each entry maps the app's clock style ID to the effect segment parameters
 # used by the Cube Lite firmware.
 NATIVE_CLOCK_EFFECT_ID = 40
-# The Station app uses apply=2 for the clock renderer. apply=4 is reserved for
+# The Yeelight app uses apply=2 for the clock renderer. apply=4 is reserved for
 # regular preset animations and leaves mode 40 selected without activating it.
 NATIVE_CLOCK_APPLY = 2
 # Clock styles. Entries with ``mixer`` use a firmware gradient/palette;
@@ -57,7 +58,7 @@ NATIVE_CLOCK_CONTENT_LABELS = {
     "date": "Date",
 }
 
-# Native animation definitions recovered from the Yeelight Station app's
+# Native animation definitions recovered from the Yeelight app's
 # Cube Lite device configuration. ``mode`` is the firmware renderer while
 # ``effect_id`` selects the effect family. The four app-level GIF effects
 # (Winter, Dream, Halloween, and Moonlight) are intentionally omitted: they
