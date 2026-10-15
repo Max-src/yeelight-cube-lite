@@ -3,31 +3,103 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.3.4] - 2026-10-15
+
+### Added
+- **Power limit, Estimated power and Estimated energy**: each lamp gets an
+  **Estimated power** sensor (W, from a model measured on real lamps,
+  including Clock, Native Effects and Music Flow through their simulated
+  previews), an **Estimated energy** sensor (kWh, usable in the Energy
+  dashboard) and a **Power limit** number (0.4–7 W, 7 W = off) that dims
+  bright pictures just enough to stay under it. Useful for lamps sharing a
+  weak power supply. See the README's new Power Supply section.
+- The Draw card's canvas is saved per lamp and survives a Home Assistant
+  restart.
+- **Rename gallery items per card** (`item_labels`): the Clock, Native
+  Effects and Gradient editors can rename, reorder and hide the items their
+  gallery shows. A label only changes what the card shows; favourites,
+  rotations and lamp commands are unaffected.
+- The Palettes and Draw galleries use the same gallery as the Clock, Native
+  Effects and Gradient cards (list, grid, strip, carousel, wheel or album
+  previews, or text buttons, dropdown or chips, with search), and their
+  editors can reorder saved palettes and pixel arts (new `move_palette`
+  service, like `move_pixel_art`).
+- Shared color swatches for the Draw and Palettes cards (keyboard
+  navigation, the active color marked) and one drag-to-reorder for the
+  Colors card and the editors' lists, with mouse and touch.
+- Draw card: **Open as overlay** for the preview-hover color sections
+  (`colors_preview_overlay`), so an opened section floats over the content
+  instead of pushing it down.
+- Every card shares the same frame options: title, lamp status and card
+  background. Older option names keep working.
+- `save_state` / `restore_state` also save and restart a running effect or
+  clock rotation, in step with the lamps still running it.
+
+### Changed
+- A text sent while the lamp shows its firmware clock or a native effect is
+  kept for when it shows text again, instead of taking the clock over and
+  stopping its rotation. Between `save_state` and `restore_state` it is
+  shown as a one-time overlay (save_state, set_custom_text, restore_state).
+- `save_state` / `restore_state` no longer touch the lamp's power: restoring
+  never turns a lamp on or off.
+- **Auto Turn On** disabled: a pixel art, text, custom pixels or clock
+  change sent to an off lamp is now kept and shown when the lamp is turned
+  on (it used to be dropped).
+- A clock or native-effect command the lamp refuses (its rate limit, *client
+  quota exceeded*) is now detected instead of Home Assistant assuming it
+  took effect. A rotation step the lamp refuses is retried with a growing
+  back-off (30 s up to 5 min) instead of being dropped, and a lamp started
+  alone joins the lamps already running the same rotation.
+- The Lovelace cards are registered as soon as the integration loads, so a
+  dashboard opened while the lamps are still reconnecting after a restart
+  finds them.
+- The Native Effects card's Previous/Next step through the current search
+  results.
+- Manual setup validates the IP address properly.
+- Every entity supports Home Assistant 2026.11's in-place entity id renames
+  (`async_entity_id_changed`): renaming one no longer redraws the lamp,
+  restarts its rotation or restores its last state
+  ([#4](https://github.com/Max-src/yeelight-cube-lite/issues/4)).
+
+### Removed
+- The `force_rediscovery` and `trigger_manual_discovery` services (testing
+  helpers). Remove them from any automation or script that calls them;
+  rediscovery after an IP change still happens automatically.
+
+### Fixed
+- **Renamed entity ids**
+  ([#4](https://github.com/Max-src/yeelight-cube-lite/issues/4), reported by
+  @emontnemery): services now find a lamp by its current entity id only, so
+  an old id can no longer reach a renamed lamp, and two lamps whose names
+  were swapped are never mixed up. A rotation started on several lamps
+  records them by unique id, so a rename never separates them after a
+  restart.
+- The cards find the palette and pixel-art sensors by their contents instead
+  of their entity id: a fresh installation's `sensor.saved_drawings` is now
+  found without configuring it, and a card configured with a sensor that was
+  renamed since finds it again. A card controlling several lamps names any of
+  them that no longer exists instead of silently controlling fewer lamps.
+- Old pixel art, text or colors no longer flash on the lamp after leaving the
+  clock, a native effect or Music Flow.
+- `set_colors` with `save_as_palette` now actually saves the palette.
 
 ### Documentation
 - Setup: the app the Cube Lite needs is now called **Yeelight** (formerly
   *Yeelight Station*; the older app formerly called *Yeelight* is now
   *Yeelight Classic*). The README names the right app, links it on the
   App Store and Google Play, and explains the three Yeelight apps
-  ([#5](https://github.com/Max-src/yeelight-cube-lite/issues/5)).
+  ([#5](https://github.com/Max-src/yeelight-cube-lite/issues/5), reported by
+  @codebykat).
+- New Power Supply section in the README.
 
-### Fixed
-- **Renamed entity ids** (Home Assistant 2026.11 renames entities in place;
-  [#4](https://github.com/Max-src/yeelight-cube-lite/issues/4)): the
-  integration's services now find a lamp by its current entity id only, so
-  an old id can no longer reach a renamed lamp, and two lamps whose names
-  were swapped are never mixed up. Every entity opts in to in-place renames
-  (`async_entity_id_changed`): renaming one no longer redraws the lamp,
-  restarts its rotation, or restores another entity's last state.
-- A rotation started on several lamps now records them by unique id, so a
-  rename never separates them after a restart.
-- The cards find the palette and pixel-art sensors by their contents
-  instead of their entity id: a fresh installation's
-  `sensor.saved_drawings` is now found without configuring it, and a card
-  configured with a sensor that was renamed since finds it again.
-- A card controlling several lamps now names any of them that no longer
-  exists (renamed or removed) instead of silently controlling fewer lamps.
+### Internal
+- Large backend and card files split into focused modules and shared card
+  components (about 15,000 fewer lines); the Lit bundle is built
+  reproducibly from the official package.
+- A Tests workflow runs the Python, JavaScript and browser tests on every
+  push, and `npm run check` runs the same checks locally (including on Linux
+  through WSL). The documentation screenshots refresh automatically and one
+  failing image no longer fails the run.
 
 ## [1.3.3] - 2026-09-30
 
