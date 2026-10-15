@@ -63,6 +63,12 @@ class CubeNumber(CubeControlEntity, NumberEntity):
             setattr(self._light_entity, self._slot, self)
         self.async_update_from_light()
 
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        # Renamed in place (Home Assistant 2026.11+): nothing here is keyed on
+        # the entity id, so it keeps running as it is.
+        super().async_entity_id_changed(old_entity_id)
+
 
 async def _restart_scroll(light) -> None:
     """A new interval takes effect at once while the text scrolls."""
@@ -192,6 +198,12 @@ class CubeSettingNumber(CubeNumber):
         if self._spec in PREVIEW_ADJUSTMENTS:
             # The adjustments service updates them all at once.
             self._light_entity._preview_number_entities[self._spec.unique_suffix] = self
+
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        # Renamed in place (Home Assistant 2026.11+): nothing here is keyed on
+        # the entity id, so it keeps running as it is.
+        super().async_entity_id_changed(old_entity_id)
 
 
 async def async_setup_entry(

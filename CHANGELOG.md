@@ -3,6 +3,25 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **Renamed entity ids** (Home Assistant 2026.11 renames entities in place;
+  [#4](https://github.com/Max-src/yeelight-cube-lite/issues/4)): the
+  integration's services now find a lamp by its current entity id only, so
+  an old id can no longer reach a renamed lamp, and two lamps whose names
+  were swapped are never mixed up. Every entity opts in to in-place renames
+  (`async_entity_id_changed`): renaming one no longer redraws the lamp,
+  restarts its rotation, or restores another entity's last state.
+- A rotation started on several lamps now records them by unique id, so a
+  rename never separates them after a restart.
+- The cards find the palette and pixel-art sensors by their contents
+  instead of their entity id: a fresh installation's
+  `sensor.saved_drawings` is now found without configuring it, and a card
+  configured with a sensor that was renamed since finds it again.
+- A card controlling several lamps now names any of them that no longer
+  exists (renamed or removed) instead of silently controlling fewer lamps.
+
 ## [1.3.3] - 2026-09-30
 
 ### Added

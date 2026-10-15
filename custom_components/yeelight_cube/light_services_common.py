@@ -100,12 +100,19 @@ def _check_collection_size(current, added, limit, label):
         )
 
 
-def _resolve_entity(service_call, service_name: str):
-    """Resolve the target entity from a service call's entity_id.
+def _lamp_for(entity_id):
+    """The lamp whose current entity_id is ``entity_id``, or None. Matched
+    on the live id (never a stored one): a renamed lamp answers to its new
+    id only (see light._ENTITY_REGISTRY)."""
+    for lamp in _ENTITY_REGISTRY.values():
+        if getattr(lamp, "entity_id", None) == entity_id:
+            return lamp
+    return None
 
-    Looks up entity_id in _ENTITY_REGISTRY (keyed by entity_id after
-    async_added_to_hass runs).  Falls back to searching by entity_id
-    attribute if the direct lookup fails.
+
+def _resolve_entity(service_call, service_name: str):
+    """Resolve the target entity from a service call's entity_id
+    (_lamp_for).
 
     Returns None and logs an error if entity_id is not provided or
     not found -- callers must handle the None case and abort.
@@ -122,18 +129,10 @@ def _resolve_entity(service_call, service_name: str):
         if not entity_id:
             return None
 
-    # Direct lookup (fast path -- registry is keyed by entity_id)
-    target = _ENTITY_REGISTRY.get(entity_id)
-    if target:
-        return target
-
-    # Fallback: search by entity_id attribute (handles edge cases)
-    for key, entity_obj in _ENTITY_REGISTRY.items():
-        if hasattr(entity_obj, 'entity_id') and entity_obj.entity_id == entity_id:
-            return entity_obj
-
-    _LOGGER.warning("[%s] Entity %s not found in registry (keys: %s)", service_name, entity_id, list(_ENTITY_REGISTRY.keys()))
-    return None
+    target = _lamp_for(entity_id)
+    if target is None:
+        _LOGGER.warning("[%s] Entity %s not found among the lamps", service_name, entity_id)
+    return target
 
 
 def _resolve_entities(service_call, service_name: str):
@@ -151,17 +150,11 @@ def _resolve_entities(service_call, service_name: str):
     ids = entity_id if isinstance(entity_id, list) else [entity_id]
     results = []
     for eid in ids:
-        target = _ENTITY_REGISTRY.get(eid)
-        if not target:
-            # Fallback: search by entity_id attribute
-            for key, entity_obj in _ENTITY_REGISTRY.items():
-                if hasattr(entity_obj, 'entity_id') and entity_obj.entity_id == eid:
-                    target = entity_obj
-                    break
-        if target:
+        target = _lamp_for(eid)
+        if target is not None:
             results.append(target)
         else:
-            _LOGGER.warning("[%s] Entity %s not found in registry", service_name, eid)
+            _LOGGER.warning("[%s] Entity %s not found among the lamps", service_name, eid)
     return results
 
 

@@ -45,6 +45,12 @@ class ClockPresetSensor(YeelightCubeBaseSensor):
             f"{DOMAIN}_clock_presets_updated", self._handle_update,
         ))
 
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        # Renamed in place (Home Assistant 2026.11+): nothing here is keyed on
+        # the entity id, so it keeps running as it is.
+        super().async_entity_id_changed(old_entity_id)
+
     async def _handle_update(self, event):
         self.async_write_ha_state()
 
@@ -77,6 +83,12 @@ class PaletteSensor(YeelightCubeBaseSensor):
         self.async_on_remove(
             self.hass.bus.async_listen(f"{DOMAIN}_palettes_updated", self._handle_update)
         )
+
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        # Renamed in place (Home Assistant 2026.11+): nothing here is keyed on
+        # the entity id, so it keeps running as it is.
+        super().async_entity_id_changed(old_entity_id)
     
     async def _handle_update(self, event):
         """Force state update when palettes change."""
@@ -194,6 +206,12 @@ class PixelArtSensor(YeelightCubeBaseSensor):
         self.async_on_remove(
             self.hass.bus.async_listen(f"{DOMAIN}_pixel_arts_updated", self._handle_update)
         )
+
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        # Renamed in place (Home Assistant 2026.11+): nothing here is keyed on
+        # the entity id, so it keeps running as it is.
+        super().async_entity_id_changed(old_entity_id)
     
     async def _handle_update(self, event):
         """Force state update when pixel arts change."""
@@ -330,6 +348,12 @@ class YeelightCubePowerSensor(CubeDeviceEntity, SensorEntity):
             self._light_entity._power_sensor = None
         await super().async_will_remove_from_hass()
 
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        # Renamed in place (Home Assistant 2026.11+): nothing here is keyed on
+        # the entity id, so it keeps running as it is.
+        super().async_entity_id_changed(old_entity_id)
+
 
 class YeelightCubeEnergySensor(CubeDeviceEntity, RestoreSensor):
     """Estimated energy used by the lamp, in kWh: the Estimated power sensor
@@ -377,6 +401,12 @@ class YeelightCubeEnergySensor(CubeDeviceEntity, RestoreSensor):
         if self._light_entity._energy_sensor is self:
             self._light_entity._energy_sensor = None
         await super().async_will_remove_from_hass()
+
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        # Renamed in place (Home Assistant 2026.11+): nothing here is keyed on
+        # the entity id, so it keeps running as it is.
+        super().async_entity_id_changed(old_entity_id)
 
     @callback
     def power_changed(self, power) -> None:

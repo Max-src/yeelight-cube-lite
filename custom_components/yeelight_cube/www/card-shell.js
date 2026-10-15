@@ -14,6 +14,9 @@
  *   border or shadow) with the same header and body;
  * - show_lamp_status: the first lamp's state in the header (its mode while
  *   on: "Clock", "Native Effect", …), on cards that control lamps.
+ * And a line naming the card's lamps Home Assistant no longer knows
+ * (renamed or removed) while others still work; when none is left the card
+ * shows lampNotFoundNotice instead.
  *
  * The body is padded by the frame (.yc-card-body, the same on every card)
  * and keeps its own layout. The CSS lives in cardLayoutStyles
@@ -74,6 +77,21 @@ function cardHeader(card, onTitleClick) {
   </div>`;
 }
 
+// The card's lamps Home Assistant no longer knows (renamed or removed),
+// named while the others still work: the card is not silently controlling
+// fewer lamps than it shows.
+function missingLampsLine(card) {
+  const states = card._hass?.states;
+  const targets = card._targets || [];
+  if (!states || targets.length < 2) return nothing;
+  const missing = targets.filter((id) => !states[id]);
+  if (!missing.length || missing.length === targets.length) return nothing;
+  return html`<div class="yc-card-muted yc-card-missing" role="status">
+    ${missing.length > 1 ? "Lamps" : "Lamp"} not found: ${missing.join(", ")}.
+    Renamed or removed? Update this card's lamps.
+  </div>`;
+}
+
 /**
  * The card frame around `body`.
  * @param {HTMLElement} card - the rendering card
@@ -85,7 +103,7 @@ function cardHeader(card, onTitleClick) {
 export function cardShell(card, body, { onTitleClick } = {}) {
   return html`<ha-card
     class=${card._showCardBackground ? "yc-card" : "yc-card yc-card-plain"}
-    >${cardHeader(card, onTitleClick)}<div class="yc-card-body">${body}</div></ha-card
+    >${cardHeader(card, onTitleClick)}<div class="yc-card-body">${missingLampsLine(card)}${body}</div></ha-card
   >`;
 }
 

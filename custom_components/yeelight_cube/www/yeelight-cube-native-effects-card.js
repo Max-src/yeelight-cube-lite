@@ -203,14 +203,18 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
     }
     this._controls.update();
     // The rotation, the color modes and the header read more than the lamp
-    // state (followed by _state below).
+    // state (followed by _state below), and the frame names a lamp of the
+    // card that is gone (renamed or removed).
+    const lamps = this._targets.map((id) => (hass?.states?.[id] ? 1 : 0)).join("");
     if (
       this._hassChanged(hass) &&
       (this.config?.show_rotation ||
         this.config?.show_color_modes ||
-        this.config?.show_lamp_status)
+        this.config?.show_lamp_status ||
+        lamps !== this._lampsShown)
     )
       this.requestUpdate();
+    this._lampsShown = lamps;
     const state = hass?.states?.[this._primaryEntity(hass)];
     if (state !== this._state) {
       if (

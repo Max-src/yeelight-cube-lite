@@ -77,7 +77,7 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
     this.config = normalizeCardOptions(config, "color-list-editor");
 
     // Auto-resolve palette_sensor if not explicitly configured
-    this._autoResolveSensor("palette_sensor", "color_palettes", this._hass);
+    this._autoResolveSensor("palette_sensor", "palettes", this._hass);
     this.requestUpdate();
   }
 
@@ -100,7 +100,7 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
     this._hass = hass;
 
     // Auto-resolve palette_sensor on first hass set (setConfig may run before hass is available)
-    this._autoResolveSensor("palette_sensor", "color_palettes", hass, this);
+    this._autoResolveSensor("palette_sensor", "palettes", hass, this);
 
     // If this is the first time hass is set, flush any pending service calls
     if (!oldHass && hass && this._pendingServiceCalls.length > 0) {

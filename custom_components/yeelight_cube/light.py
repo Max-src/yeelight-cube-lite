@@ -76,7 +76,12 @@ FIRMWARE_POWER_SAMPLES = 6
 # timeout -> retry storm -> lamp stuck for 20-30s.
 # JS 300ms debounce provides sufficient rate limiting.
 
-# Global registry to store entity instances for service calls
+# The lamps, for the services: keyed by IP (fixed for a lamp's lifetime: an
+# IP change reloads its entry). A service finds a lamp by its *live*
+# entity_id (light_services_common._lamp_for), never by a stored id, so a
+# renamed lamp (in place from Home Assistant 2026.11) is found under its new
+# id only, and its old id can never reach it -- even once another lamp takes
+# that id (two lamps' names swapped). Rules: docs/ENTITY_IDS.md.
 _ENTITY_REGISTRY = {}
 
 
@@ -101,15 +106,7 @@ def cleanup_module_state(ip: str) -> None:
     Called from __init__.async_unload_entry to prevent stale references
     from persisting across integration reloads.
     """
-    # Remove IP-keyed entry (set during initial setup)
     _ENTITY_REGISTRY.pop(ip, None)
-    # Remove entity_id-keyed entries whose entity references this IP
-    stale_keys = [
-        key for key, entity in _ENTITY_REGISTRY.items()
-        if hasattr(entity, "_ip") and entity._ip == ip
-    ]
-    for key in stale_keys:
-        del _ENTITY_REGISTRY[key]
     # Remove per-device lock
     _DEVICE_LOCKS.pop(ip, None)
     _DEVICE_LOCK_HOLDERS.pop(ip, None)
@@ -1082,13 +1079,6 @@ class YeelightCubeLight(
             timedelta(seconds=FIRMWARE_POWER_INTERVAL),
         )
         
-        # Register entity by entity_id now that it's available
-        # Remove the temporary IP-based registration first to avoid duplicates
-        if self._ip in _ENTITY_REGISTRY:
-            del _ENTITY_REGISTRY[self._ip]
-        _ENTITY_REGISTRY[self.entity_id] = self
-        _LOGGER.debug("[SETUP] Registered entity %s in registry. Registry now contains: %s", self.entity_id, list(_ENTITY_REGISTRY.keys()))
-        
         _LOGGER.debug("[INIT] Initial state - custom_text: '%s', mode: '%s', is_on: %s, brightness: %s", self._custom_text, self._mode, self._is_on, self._brightness)
         old_state = await self.async_get_last_state()
         self._restore_extended_effects(old_state)
@@ -1167,6 +1157,14 @@ class YeelightCubeLight(
             self._background_tasks.clear()
         
         _LOGGER.debug("[CLEANUP] Stopped scroll timer and background tasks on entity removal")
+
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        # Renamed in place (Home Assistant 2026.11+): the lamp keeps running
+        # as it is (display, rotation, timers); the services find it by its
+        # live entity id (light_services_common._lamp_for), so nothing is
+        # re-keyed here.
+        super().async_entity_id_changed(old_entity_id)
 
     # Entity-facing service handlers are registered once from component setup.
 
@@ -1717,9 +1715,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     
     light_entity = YeelightCubeLight(cube_matrix, ip, entry)
     
-    # Register the entity in our global registry using IP as key
+    # Register the lamp for the services (by IP: see _ENTITY_REGISTRY).
     _ENTITY_REGISTRY[ip] = light_entity
-    _LOGGER.debug("[SETUP] Registered entity by IP %s in registry. Registry now contains: %s", ip, list(_ENTITY_REGISTRY.keys()))
+    _LOGGER.debug("[SETUP] Registered lamp %s for the services (lamps: %s)", ip, list(_ENTITY_REGISTRY))
     
     async_add_entities([light_entity], update_before_add=True)
     

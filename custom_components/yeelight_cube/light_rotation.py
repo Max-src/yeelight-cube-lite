@@ -361,7 +361,8 @@ class RotationMixin:
         self._rotation_kind = kind if kind in ("native", "clock") else "native"
         self._rotation_items = items
         # The lamps started together (one service call), saved so a restart
-        # resumes them on one schedule.
+        # resumes them on one schedule: only compared, never resolved (a
+        # group saved with entity ids still matches itself).
         self._rotation_group = sorted(group) if group else None
         self._rotation_interval = max(
             MIN_ROTATION_INTERVAL, min(MAX_ROTATION_INTERVAL, int(interval))
@@ -375,11 +376,10 @@ class RotationMixin:
             peer = _rotation_peer(self, self._rotation_kind, self._rotation_interval, items)
             if peer is not None:
                 timeline = dict(peer._rotation_timeline)
-                me = getattr(self, "entity_id", None)
-                joined = sorted(
-                    (set(peer._rotation_group or [getattr(peer, "entity_id", None)]) | {me})
-                    - {None}
-                )
+                # The lamps by their unique id (an entity id can be renamed).
+                me = getattr(self, "unique_id", None) or getattr(self, "entity_id", None)
+                first = getattr(peer, "unique_id", None) or getattr(peer, "entity_id", None)
+                joined = sorted((set(peer._rotation_group or [first]) | {me}) - {None})
                 if len(joined) > 1:
                     self._rotation_group = joined
                     peer._rotation_group = joined

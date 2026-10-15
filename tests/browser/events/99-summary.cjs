@@ -18,6 +18,9 @@ module.exports = async (t) => {
     "PASS quick picks on Clock, Native and Gradient (like Palette): the gallery and sliders stay live, the latest pick is highlighted at once and wins, the ones in between are never sent",
   );
   console.log(
+    "PASS collection sensors found by their attributes: a fresh installation's ids with none configured, and a sensor renamed while the card is open (Draw, Palette)",
+  );
+  console.log(
     "PASS shared card frame on all 7 cards and editors: title, lamp status, plain background, no-lamp / not-found notices, same editor settings",
   );
   console.log(

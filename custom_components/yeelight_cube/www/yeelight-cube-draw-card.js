@@ -215,13 +215,12 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
   set hass(hass) {
     const oldHass = this._hass;
 
-    // Auto-resolve sensors on first hass set (setConfig may run before hass is available)
+    // The collection sensors: found on the first hass (setConfig may run
+    // before it), and again if renamed.
     if (this.config && hass) {
-      this._autoResolveSensor("pixelart_sensor", "pixel_art", hass, this);
-      if (!this.config.palette_sensor) {
-        this._autoResolveSensor("palette_sensor", "color_palettes", hass, this);
-        if (this.config.palette_sensor) this.paletteSensor = this.config.palette_sensor;
-      }
+      this._autoResolveSensor("pixelart_sensor", "pixel_arts", hass, this);
+      this._autoResolveSensor("palette_sensor", "palettes", hass, this);
+      this.paletteSensor = this.config.palette_sensor || null;
     }
 
     this._hass = hass;
@@ -286,8 +285,8 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     this.config = { ...config };
 
     // Auto-resolve the sensors when not configured explicitly.
-    this._autoResolveSensor("pixelart_sensor", "pixel_art", this._hass);
-    this._autoResolveSensor("palette_sensor", "color_palettes", this._hass);
+    this._autoResolveSensor("pixelart_sensor", "pixel_arts", this._hass);
+    this._autoResolveSensor("palette_sensor", "palettes", this._hass);
 
     // The tools' and actions' order and visibility are read where they are
     // shown (draw_card_tools.js: toolsOrder, actionsOrder, hidden*).

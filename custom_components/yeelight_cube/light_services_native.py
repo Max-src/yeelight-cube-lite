@@ -72,10 +72,14 @@ def async_register_native_services(hass: HomeAssistant) -> None:
         # Retry, an automation) joins the lamps already running this rotation
         # (start_effect_rotation with no timeline).
         timeline = {} if len(targets) > 1 else None
+        # The lamps by their unique id (an entity id can be renamed).
         group = sorted(
-            entity_id
-            for entity_id in (getattr(target, "entity_id", None) for target in targets)
-            if entity_id
+            member
+            for member in (
+                getattr(target, "unique_id", None) or getattr(target, "entity_id", None)
+                for target in targets
+            )
+            if member
         )
 
         async def _start_one(target):

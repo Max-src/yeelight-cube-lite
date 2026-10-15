@@ -53,7 +53,7 @@ class YeelightCubePaletteCard extends YeelightCardMixin(LitElement) {
     this.config = { ...normalizeCardOptions(config, "palette") };
 
     // Auto-resolve palette_sensor if not explicitly configured
-    this._autoResolveSensor("palette_sensor", "color_palettes", this._hass);
+    this._autoResolveSensor("palette_sensor", "palettes", this._hass);
     this.requestUpdate();
   }
 
@@ -92,7 +92,7 @@ class YeelightCubePaletteCard extends YeelightCardMixin(LitElement) {
   set hass(hass) {
     this._hass = hass;
     // Auto-resolve palette_sensor on first hass set (setConfig may run before hass is available)
-    this._autoResolveSensor("palette_sensor", "color_palettes", hass, this);
+    this._autoResolveSensor("palette_sensor", "palettes", hass, this);
     if (!hass || !this._hassChanged(hass)) return;
     this._store.update(hass, this.config);
     this.requestUpdate();

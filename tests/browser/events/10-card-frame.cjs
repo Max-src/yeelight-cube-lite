@@ -123,6 +123,38 @@ module.exports = async (t) => {
         `${name}: the line follows the lamp going offline`,
       );
 
+    // A lamp of the card renamed (or removed) while another still works:
+    // the frame names it, also when it goes while the card is open.
+    assert.deepEqual(
+      await page.evaluate(
+        async ({ tag, extra }) => {
+          const missing = () =>
+            card.shadowRoot.querySelector(".yc-card-missing")?.textContent.replace(/\s+/g, " ").trim() ?? null;
+          const light = hass.states["light.a"];
+          const withB = { ...hass, states: { ...hass.states, "light.b": light } };
+          const saved = hass;
+          hass = withB;
+          await mount(tag, { ...extra, entity: "light.a", target_entities: ["light.a", "light.b"] });
+          hass = saved;
+          const both = missing();
+          // light.b renamed in place: its state is gone.
+          card.hass = saved;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          await card.updateComplete;
+          const renamed = missing();
+          await mount(tag, { ...extra, entity: "light.a", target_entities: ["light.a"] });
+          return [both, renamed, missing()];
+        },
+        { tag, extra },
+      ),
+      [
+        null,
+        "Lamp not found: light.b. Renamed or removed? Update this card's lamps.",
+        null,
+      ],
+      `${name}: a renamed lamp among the card's lamps is named`,
+    );
+
     // Its editor: the same settings, in the same order, reporting the
     // same option names.
     const editor = await page.evaluate(

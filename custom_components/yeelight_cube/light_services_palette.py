@@ -223,7 +223,7 @@ def async_register_palette_services(hass: HomeAssistant) -> None:
             _LOGGER.debug("[SAVE_PALETTE] Last 3 palette names in storage: %s", [p.get('name', 'unnamed') for p in palettes[-3:]])
             
             # Trigger state update for all entities that are ready
-            for ip, entity in _ENTITY_REGISTRY.items():
+            for entity in _ENTITY_REGISTRY.values():
                 if entity.hass is not None:  # Only update entities that are fully initialized
                     entity.async_write_ha_state()
             
@@ -347,7 +347,7 @@ def async_register_palette_services(hass: HomeAssistant) -> None:
         _LOGGER.debug("[PALETTE-DELETE] Removed palette at idx %s: '%s'", idx, removed.get('name', 'Unnamed'))
         
         # Trigger state update for all entities that are ready
-        for entity_id, entity in _ENTITY_REGISTRY.items():
+        for entity in _ENTITY_REGISTRY.values():
             if entity.hass is not None:
                 entity.async_write_ha_state()
         

@@ -1076,6 +1076,28 @@ class EffectRotationServiceTests(unittest.IsolatedAsyncioTestCase):
         # rotation (see test_a_lamp_restarted_alone_joins_the_running_rotation).
         target.start_effect_rotation.assert_awaited_once_with(["A", "B"], 45, "clock", timeline=None, group=None)
 
+    async def test_the_group_records_the_lamps_by_unique_id(self):
+        # Renaming a lamp (its entity id) never changes the group it saved.
+        targets = [
+            SimpleNamespace(
+                entity_id=entity, unique_id=f"yeelight_cube_{entity[6:]}",
+                start_effect_rotation=AsyncMock(),
+            )
+            for entity in ("light.top", "light.bottom")
+        ]
+        queued = []
+        handlers = self._handlers(lambda *args: targets, lambda *c: queued.extend(c))
+        await handlers["handle_start_effect_rotation"](
+            SimpleNamespace(data={"items": ["A", "B"], "interval": 45, "kind": "clock"})
+        )
+        for coro in queued:
+            await coro
+        for target in targets:
+            self.assertEqual(
+                target.start_effect_rotation.await_args.kwargs["group"],
+                ["yeelight_cube_bottom", "yeelight_cube_top"],
+            )
+
     async def test_one_start_on_several_lamps_records_their_group(self):
         targets = [
             SimpleNamespace(entity_id=entity, start_effect_rotation=AsyncMock())

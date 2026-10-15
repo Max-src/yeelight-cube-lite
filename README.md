@@ -817,7 +817,8 @@ These sensor entities are created **once per integration install** and shared ac
 > `sensor.yeelight_cube_saved_pixel_arts`, `sensor.yeelight_cube_color_palettes`
 > and `sensor.yeelight_cube_font_letter_map`. Check **Settings → Devices &
 > services → Entities** and adjust the examples below. The cards find these
-> sensors by their attributes, not by ID.
+> sensors by their attributes, not by ID, so you can rename them: a card
+> configured with the old ID finds the renamed sensor on its own.
 
 <details>
 <summary>View global entities details</summary>

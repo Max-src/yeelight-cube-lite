@@ -21,8 +21,9 @@
  *   config and its lamps' states; a card reading less or more overrides
  *   it), plus the header's lamp status when shown. Every card's `set hass`
  *   starts with it.
- * - _autoResolveSensor(key, fragment, hass): fills a missing collection-sensor
- *   option (palette_sensor, pixelart_sensor) from the entities.
+ * - _autoResolveSensor(key, kind, hass): fills a collection-sensor option
+ *   (palette_sensor, pixelart_sensor) left unset, or naming a sensor that no
+ *   longer exists (renamed), with the one found (sensor-lookup.js).
  * - connectedCallback(): binds delegated data-on-* handlers when the card
  *   declares `static hostEvents` (host-events.js).
  */
@@ -161,8 +162,9 @@ export const YeelightCardMixin = (Base) =>
 
     /**
      * Whether this `hass` changes anything the card shows: its _hassInputs,
-     * and the header's lamp status (card-shell.js) when shown. It records
-     * the inputs: call it once per `set hass`.
+     * and the frame's (card-shell.js): the header's lamp status when shown,
+     * and which of the card's lamps exist (a renamed one is named). It
+     * records the inputs: call it once per `set hass`.
      */
     _hassChanged(hass) {
       const lamp =
@@ -173,6 +175,7 @@ export const YeelightCardMixin = (Base) =>
         ...this._hassInputs(hass),
         lamp?.state,
         lamp?.attributes?.content_mode,
+        this._targets.map((id) => (hass?.states?.[id] ? 1 : 0)).join(""),
       ];
       const last = this._lastHassInputs;
       this._lastHassInputs = inputs;
@@ -183,13 +186,17 @@ export const YeelightCardMixin = (Base) =>
       );
     }
 
-    /** Fill config[key] from the first sensor whose id contains `fragment`
-     * when the user left it unset. Pass the card as memo owner from `set
-     * hass` (throttles retries), omit it from setConfig. */
-    _autoResolveSensor(key, fragment, hass, memoOwner = null) {
-      if (!this.config || this.config[key] || !hass) return;
-      const sensor = findCollectionSensor(hass, fragment, memoOwner);
-      if (sensor) this.config = { ...this.config, [key]: sensor };
+    /** Fill config[key] with the `kind` collection's sensor ("palettes",
+     * "pixel_arts"; sensor-lookup.js) when the user left it unset or it
+     * names a sensor that no longer exists (renamed). Pass the card as memo
+     * owner from `set hass` (throttles retries), omit it from setConfig. */
+    _autoResolveSensor(key, kind, hass, memoOwner = null) {
+      if (!this.config || !hass?.states) return;
+      const current = this.config[key];
+      if (current && hass.states[current]) return;
+      const sensor = findCollectionSensor(hass, kind, memoOwner);
+      if (sensor && sensor !== current)
+        this.config = { ...this.config, [key]: sensor };
     }
 
     connectedCallback() {

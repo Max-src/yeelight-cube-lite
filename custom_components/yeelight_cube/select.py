@@ -79,6 +79,12 @@ class CubeSelect(CubeControlEntity, SelectEntity):
             setattr(self._light_entity, self._slot, self)
         self.async_update_from_light()
 
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        # Renamed in place (Home Assistant 2026.11+): nothing here is keyed on
+        # the entity id, so it keeps running as it is.
+        super().async_entity_id_changed(old_entity_id)
+
 
 @dataclass(frozen=True)
 class SettingSelect:
@@ -329,6 +335,12 @@ class YeelightCubePaletteSelect(CubeSelect):
         )
         _LOGGER.debug("[PALETTE SELECT] Registered for palette update events")
 
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        # Renamed in place (Home Assistant 2026.11+): nothing here is keyed on
+        # the entity id, so it keeps running as it is.
+        super().async_entity_id_changed(old_entity_id)
+
     async def _handle_palette_update(self, event):
         """Handle palette update events."""
         _LOGGER.debug("[PALETTE SELECT] Received palette update event")
@@ -455,6 +467,12 @@ class YeelightCubePixelArtSelect(CubeSelect):
             self.hass.bus.async_listen(f"{DOMAIN}_pixel_arts_updated", self._handle_pixel_arts_update)
         )
         _LOGGER.debug("[PIXEL ART SELECT] Registered for pixel art update events, linked to %s", self._ip)
+
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        # Renamed in place (Home Assistant 2026.11+): nothing here is keyed on
+        # the entity id, so it keeps running as it is.
+        super().async_entity_id_changed(old_entity_id)
 
     async def _handle_pixel_arts_update(self, event):
         """Handle pixel art update events (fired when arts are saved/deleted/imported)."""

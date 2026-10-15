@@ -3,7 +3,7 @@ import logging
 
 from homeassistant.components.switch import SwitchEntity # type: ignore
 from homeassistant.config_entries import ConfigEntry # type: ignore
-from homeassistant.core import HomeAssistant # type: ignore
+from homeassistant.core import HomeAssistant, callback # type: ignore
 from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 
@@ -131,6 +131,12 @@ class YeelightCubeExtendedEffectsSwitch(CubeDeviceEntity, SwitchEntity):
         self._light_entity._extended_effects_switch_entity = self
         self.async_update_from_light()
 
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        # Renamed in place (Home Assistant 2026.11+): nothing here is keyed on
+        # the entity id, so it keeps running as it is.
+        super().async_entity_id_changed(old_entity_id)
+
 
 class _YeelightCubeClockOptionSwitch(CubeControlEntity, SwitchEntity):
     """Base switch for a native clock option."""
@@ -212,6 +218,12 @@ class YeelightCubeClockShowDateSwitch(_YeelightCubeClockOptionSwitch):
         self._light_entity._clock_show_date_switch_entity = self
         self.async_update_from_light()
 
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        # Renamed in place (Home Assistant 2026.11+): nothing here is keyed on
+        # the entity id, so it keeps running as it is.
+        super().async_entity_id_changed(old_entity_id)
+
 
 class YeelightCubeClock12HourSwitch(_YeelightCubeClockOptionSwitch):
     """Use 12-hour time in the native clock."""
@@ -225,6 +237,12 @@ class YeelightCubeClock12HourSwitch(_YeelightCubeClockOptionSwitch):
         self._light_entity._clock_12_hour_switch_entity = self
         self.async_update_from_light()
 
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        # Renamed in place (Home Assistant 2026.11+): nothing here is keyed on
+        # the entity id, so it keeps running as it is.
+        super().async_entity_id_changed(old_entity_id)
+
 
 class YeelightCubeClockColonBlinkSwitch(_YeelightCubeClockOptionSwitch):
     """Blink the separator in the native clock."""
@@ -237,6 +255,12 @@ class YeelightCubeClockColonBlinkSwitch(_YeelightCubeClockOptionSwitch):
         await super().async_added_to_hass()
         self._light_entity._clock_colon_blink_switch_entity = self
         self.async_update_from_light()
+
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        # Renamed in place (Home Assistant 2026.11+): nothing here is keyed on
+        # the entity id, so it keeps running as it is.
+        super().async_entity_id_changed(old_entity_id)
 
 
 class YeelightCubeScrollSwitch(CubeControlEntity, SwitchEntity):
@@ -274,6 +298,12 @@ class YeelightCubeScrollSwitch(CubeControlEntity, SwitchEntity):
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
         self._light_entity._scroll_enabled_switch_entity = self
+
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        # Renamed in place (Home Assistant 2026.11+): nothing here is keyed on
+        # the entity id, so it keeps running as it is.
+        super().async_entity_id_changed(old_entity_id)
 
     def async_update_from_light(self):
         self._attr_is_on = self._light_entity._scroll_enabled

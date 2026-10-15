@@ -15,7 +15,7 @@
  * them for every kind, so a new user collection only needs a descriptor
  * here and a move_<kind> service in the backend.
  */
-import { findCollectionSensor } from "./sensor-lookup.js";
+import { COLLECTION_ATTRIBUTES, findCollectionSensor } from "./sensor-lookup.js";
 import { CollectionState } from "./collection-state.js";
 import { paletteGradient } from "./palette-preview.js";
 import { pixelArtColorData } from "./pixel-art-utils.js";
@@ -25,26 +25,23 @@ export const USER_COLLECTIONS = Object.freeze({
   palettes: {
     noun: "palette",
     sensorOption: "palette_sensor",
-    sensorFragment: "color_palettes",
-    attributes: ["palettes_v2", "palettes"],
+    attributes: COLLECTION_ATTRIBUTES.palettes,
     moveService: "move_palette",
   },
   pixel_arts: {
     noun: "pixel art",
     sensorOption: "pixelart_sensor",
-    sensorFragment: "pixel_art",
-    attributes: ["pixel_arts"],
+    attributes: COLLECTION_ATTRIBUTES.pixel_arts,
     moveService: "move_pixel_art",
   },
 });
 
-/** The sensor holding a collection: the config's, else the one found. */
+/** The sensor holding a collection: the config's while it exists, else
+ * the one found (sensor-lookup.js; a renamed sensor is found again). */
 export function collectionSensor(hass, config, kind) {
-  const collection = USER_COLLECTIONS[kind];
-  return (
-    config?.[collection.sensorOption] ||
-    findCollectionSensor(hass, collection.sensorFragment)
-  );
+  const configured = config?.[USER_COLLECTIONS[kind].sensorOption];
+  if (configured && hass?.states?.[configured]) return configured;
+  return findCollectionSensor(hass, kind) ?? configured;
 }
 
 /**
