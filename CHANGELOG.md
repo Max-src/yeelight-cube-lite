@@ -3,7 +3,7 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.3.5] - 2026-10-15
 
 ### Changed
 - Releases now ship `yeelight_cube.zip`, attached automatically when a release
