@@ -3,6 +3,15 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+- Releases now ship `yeelight_cube.zip`, attached automatically when a release
+  is published, and HACS installs the integration from it
+  (`zip_release` in hacs.json). HACS counts installs from that file's
+  downloads, so its **Downloads** figure appears starting with the first
+  release that has the zip; installs of earlier releases are not counted.
+
 ## [1.3.4] - 2026-10-15
 
 ### Added

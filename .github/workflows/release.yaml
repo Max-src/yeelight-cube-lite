@@ -1,0 +1,54 @@
+name: Release Asset
+
+# HACS installs this integration from yeelight_cube.zip attached to each
+# release (hacs.json: zip_release + filename), and shows that file's GitHub
+# download count as Downloads. Publishing a release attaches it here.
+# See docs/RELEASING.md.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-asset-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  zip:
+    name: Attach yeelight_cube.zip
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - name: Check out the release tag
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name }}
+          persist-credentials: false
+
+      # Fails (and attaches nothing) if the zip does not hold exactly the
+      # tracked integration files at its root, or if manifest.json's version
+      # is not the tag without its leading "v".
+      - name: Build and check yeelight_cube.zip
+        run: python3 scripts/release-zip.py --tag "$TAG"
+
+      - name: Attach yeelight_cube.zip to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" yeelight_cube.zip --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: Check the release has yeelight_cube.zip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          size=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+            --jq '.assets[] | select(.name == "yeelight_cube.zip") | .size')
+          expected=$(stat -c %s yeelight_cube.zip)
+          if [ "$size" != "$expected" ]; then
+            echo "::error::yeelight_cube.zip on release $TAG is '${size:-missing}', expected $expected bytes"
+            exit 1
+          fi
+          echo "yeelight_cube.zip attached to $TAG ($size bytes)" >> "$GITHUB_STEP_SUMMARY"

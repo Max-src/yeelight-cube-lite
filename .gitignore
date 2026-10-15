@@ -61,3 +61,6 @@ yeelight-cube-control-card-poc.js
 
 # Screenshot-run diagnostics (tests/card-docs.cjs)
 test-results/
+
+# Release asset built by scripts/release-zip.py (attached by the release workflow)
+/yeelight_cube.zip
