@@ -8,13 +8,18 @@ const assert = require("node:assert/strict");
 module.exports = async (t) => {
   const { page, draw } = t;
   const result = await page.evaluate(async (draw) => {
-    const { clearSensorLookups } = await import(
-      "/custom_components/yeelight_cube/www/sensor-lookup.js"
-    );
+    const { clearSensorLookups } =
+      await import("/custom_components/yeelight_cube/www/sensor-lookup.js");
     const saved = hass;
     const pixelArts = saved.states["sensor.pixel"].attributes.pixel_arts;
     const palettes = [
-      { name: "Warm", colors: [[255, 0, 0], [255, 160, 0]] },
+      {
+        name: "Warm",
+        colors: [
+          [255, 0, 0],
+          [255, 160, 0],
+        ],
+      },
       { name: "Sea", colors: [[0, 0, 255]] },
     ];
     // The collection sensors under the given ids only (one of each, as
@@ -32,8 +37,14 @@ module.exports = async (t) => {
         ...saved,
         states: {
           ...states,
-          [artId]: { state: "2", attributes: { pixel_arts: pixelArts, count: 2 } },
-          [paletteId]: { state: "2", attributes: { palettes_v2: palettes, count: 2 } },
+          [artId]: {
+            state: "2",
+            attributes: { pixel_arts: pixelArts, count: 2 },
+          },
+          [paletteId]: {
+            state: "2",
+            attributes: { palettes_v2: palettes, count: 2 },
+          },
         },
       };
     };
