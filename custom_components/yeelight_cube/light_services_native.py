@@ -5,6 +5,7 @@ Registered by :func:`light_services.async_setup_light_services`.
 """
 import asyncio
 import logging
+import time
 
 import voluptuous as vol  # type: ignore
 from homeassistant.core import HomeAssistant  # type: ignore
@@ -33,10 +34,11 @@ from .light_rotation import (
     MAX_ROTATION_INTERVAL,
     MIN_ROTATION_INTERVAL,
 )
+from .command_errors import note_command_result
 from .light_services_common import (
     FAVOURITE_LIST_SCHEMA,
     _resolve_entities,
-    make_fire_and_forget,
+    make_lamp_runner,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -44,7 +46,7 @@ _LOGGER = logging.getLogger(__name__)
 
 def async_register_native_services(hass: HomeAssistant) -> None:
     """Register the native actions."""
-    _fire_and_forget = make_fire_and_forget(hass)
+    run_on_lamps = make_lamp_runner(hass)
 
     async def handle_start_effect_rotation(service_call):
         """Start a server-side effect/clock rotation on the target lamps.
@@ -97,7 +99,7 @@ def async_register_native_services(hass: HomeAssistant) -> None:
                     exc,
                 )
 
-        _fire_and_forget(*[_start_one(target) for target in targets])
+        run_on_lamps("START_EFFECT_ROTATION", targets, _start_one)
 
     async def handle_stop_effect_rotation(service_call):
         """Stop the server-side rotation on the target lamps."""
@@ -278,28 +280,42 @@ def async_register_native_services(hass: HomeAssistant) -> None:
             # will apply the latest ones itself: skip this redundant update.
             if getattr(target, "_native_effect_generation", generation) != generation:
                 return
+            started = time.time()
             try:
                 # The hardware wrapper reports failures by returning False
                 # (timeouts, offline lamp, circuit breaker) rather than raising.
                 ok = await target.async_apply_display_mode(update_type="color_change")
-            except Exception:  # noqa: BLE001 -- background task, nobody awaits it
+            except Exception as err:  # noqa: BLE001 -- background task, nobody awaits it
                 _LOGGER.exception(
                     "[SET_NATIVE_EFFECT] Failed to apply %s on %s",
                     target._native_effect,
                     getattr(target, "entity_id", target),
                 )
+                note_command_result(target, "SET_NATIVE_EFFECT", err)  # for the cards
                 ok = False
-            else:
-                if ok is False:
-                    _LOGGER.warning(
-                        "[SET_NATIVE_EFFECT] Lamp did not accept %s on %s",
-                        target._native_effect,
-                        getattr(target, "entity_id", target),
-                    )
+            # Refused (the lamp answered with an error, or applying it failed:
+            # named in last_command_error since this call started) or not
+            # reached. Not reached, the settings stand, like every other
+            # service's: the lamp shows them once it is back (its whole
+            # requested state is redrawn on reconnecting).
+            failed = getattr(target, "_last_command_error", None)
+            refused = ok is False and bool(failed) and failed.get("at", 0) >= started
+            if refused:
+                _LOGGER.warning(
+                    "[SET_NATIVE_EFFECT] Lamp did not accept %s on %s",
+                    target._native_effect,
+                    getattr(target, "entity_id", target),
+                )
+            elif ok is False:
+                _LOGGER.debug(
+                    "[SET_NATIVE_EFFECT] %s kept for %s, not reached (shown once it is back)",
+                    target._native_effect,
+                    getattr(target, "entity_id", target),
+                )
             latest = (
                 getattr(target, "_native_effect_generation", generation) == generation
             )
-            if ok is False and latest:
+            if refused and latest:
                 # The lamp did not take the change: publish what it last
                 # accepted (an older call may have succeeded since this one
                 # started). Only fields still holding this call's values are
@@ -325,14 +341,14 @@ def async_register_native_services(hass: HomeAssistant) -> None:
         # Like set_clock_style: validation errors are raised above, then the
         # new settings are published at once and the lamp is updated in the
         # background, so cards are not held up by the hardware round trip.
-        # Hardware failures are logged and the previous settings republished,
-        # rather than returned to the caller.
-        undo = [update_one(target) for target in targets]
-        _fire_and_forget(
-            *(
-                apply_one(target, snapshot, applied, generation)
-                for target, (snapshot, applied, generation) in zip(targets, undo)
-            )
+        # A change the lamp refused is logged and the previous settings
+        # republished, rather than returned to the caller; a lamp not reached
+        # keeps them, like every other service.
+        undo = {id(target): update_one(target) for target in targets}
+        run_on_lamps(
+            "SET_NATIVE_EFFECT",
+            targets,
+            lambda target: apply_one(target, *undo[id(target)]),
         )
 
     hass.services.async_register(
@@ -441,7 +457,7 @@ def async_register_native_services(hass: HomeAssistant) -> None:
                 target._native_effect_speed_entity.async_write_ha_state()
             target.async_write_ha_state()
 
-        _fire_and_forget(*[_apply_one(t) for t in targets])
+        run_on_lamps("SET_CLOCK_STYLE", targets, _apply_one)
 
     hass.services.async_register(
         DOMAIN,

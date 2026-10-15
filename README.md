@@ -425,8 +425,8 @@ rotation_interval: 30
 
 **Shared behaviour:** favourites store the style/effect together with its color
 mode and custom RGB, separately for Clock and Native Effects. They are saved on
-the lamp in Home Assistant (a card with several lamps shows the first lamp's list
-and saves it to all of them), so every dashboard, browser and device shows the
+the lamp in Home Assistant (a card with several lamps shows the list of its first
+available lamp and saves it to all of them), so every dashboard, browser and device shows the
 same favourites, rotation interval and rotation status. A running rotation is
 resumed after a Home Assistant restart. Add at least two available
 favourites to start rotation. For multiple lamps, use `target_entities` with a
@@ -437,6 +437,10 @@ the last known favourites stay shown (they are edited again once the lamp is
 back), even if the entity temporarily disappears. Hardware
 controls are gated. Reconnection discards local preview drafts without sending
 them to the lamps. Unknown rotation status is not treated as an active rotation.
+With several lamps this only happens once **none** of them is available: while
+one is, every card keeps controlling the lamps (each change also reaches the
+offline lamp once it is back), shows the first available lamp and names the
+offline ones (*Lamp unavailable: Bedroom. The other lamps are controlled.*).
 
 See [configuration and storage details](SERVICES.md#clock-and-native-effects-cards),
 [service calls](SERVICES.md#-clock-native-effects-and-rotation).
@@ -1126,7 +1130,7 @@ the favourites highlight on your own selection too. Rotation is driven **server-
 `start_effect_rotation` / `stop_effect_rotation` / `skip_effect_rotation`
 services, so it keeps rotating after the dashboard tab is closed or refreshed —
 the lamp(s) hold the loop, not the browser. It only uses effects available on
-every target and starts only on explicit Play. Start is fire-and-forget: every
+every available target and starts only on explicit Play. Start is fire-and-forget: every
 lamp's loop is scheduled concurrently, so several lamps advance in parallel.
 Stop and manual card commands stop rotation. Retryable failures use bounded
 per-lamp recovery; an unreachable lamp can retain rotation intent and rejoin
@@ -1346,6 +1350,7 @@ drawn by the lamp itself, so lower their brightness instead.
 | **Changing content stops Music Flow** | This is expected. Selecting Matrix, Clock, Native Effect, text, or pixel art exits Music Flow and applies the requested content |
 | **Music Flow turns off but the old display does not return** | The stop command has already been recorded. Press **Force Refresh** or reselect Matrix, Clock, or Native Effect to retry the display render |
 | **Music Flow preview is not animated** | This is expected. The camera shows a locally generated static identifier because the lamp does not expose live microphone-animation frames |
+| **A card says "the last change was not applied (…)"** | The lamp refused the change or failed while applying it (the message says why; it is also in the Home Assistant log, and in the lamp's `last_command_error` attribute). Pick it again, or press **Force Refresh**; the line goes once a change works. A lamp that is only out of reach shows as unavailable instead, and gets the change once it is back |
 | **Lamp changed IP** | Auto-rediscovery updates the stored IP automatically; the **IP Address** diagnostic sensor shows the current value. If the lamp stays unreachable, remove the device and add it again with the new IP |
 
 ---

@@ -10,6 +10,7 @@ import {
 } from "./action-button-utils.js";
 import { SUPERSEDED } from "./card-command-controller.js";
 import { CollectionState } from "./collection-state.js";
+import { createPendingValue } from "./pending-value.js";
 import { favouriteToItem } from "./shared-lamp-settings.js";
 export {
   normalizeFavourite,
@@ -211,7 +212,18 @@ export class ModeControlsController {
     this.token = 0;
     this.context = 0;
     // A just-saved favourites list, shown until the lamp publishes it.
-    this._sharedFavourites = new CollectionState();
+    this._sharedFavourites = new CollectionState(undefined, {
+      // Never confirmed: the lamp's list is shown again.
+      onExpire: () => {
+        this.syncFavourites();
+        this.notify();
+      },
+    });
+    // A frozen state and an interval this card set, shown until the lamp
+    // reports them, or for FROZEN_ECHO_MS; a new value from the lamp (another
+    // dashboard, an automation) wins at once.
+    this._frozenPending = createPendingValue({ timeoutMs: FROZEN_ECHO_MS, yieldToLamp: true });
+    this._intervalPending = createPendingValue({ timeoutMs: FROZEN_ECHO_MS, yieldToLamp: true });
   }
 
   configure(config, targets) {
@@ -233,8 +245,8 @@ export class ModeControlsController {
     this.targets = targets;
     this.key = modeCollectionKey(this.adapter.kind, targets);
     this._sharedFavourites.reset();
-    this._frozenExpected = null;
-    this._intervalExpected = null;
+    this._frozenPending.clear();
+    this._intervalPending.clear();
     this.syncInterval();
     this._migrating = false;
     // Browser-stored favourites: what older versions kept, and the list used
@@ -298,12 +310,8 @@ export class ModeControlsController {
   syncFrozen() {
     const remote = this.adapter.frozen?.();
     if (typeof remote !== "boolean" || this._freezing) return;
-    const expected = this._frozenExpected;
-    if (expected) {
-      if (remote !== expected.value && Date.now() < expected.until) return;
-      this._frozenExpected = null;
-    }
-    this.frozen = remote;
+    this._frozenPending.settle(remote);
+    this.frozen = this._frozenPending.value ?? remote;
   }
 
   // What a list shows for `slot`: the live value, or, while a rotation runs
@@ -331,14 +339,10 @@ export class ModeControlsController {
   // reports it.
   syncInterval() {
     const remote = this.adapter.rotationInterval?.();
-    const expected = this._intervalExpected;
-    if (expected) {
-      if (remote !== expected.value && Date.now() < expected.until) return;
-      this._intervalExpected = null;
-    }
-    this.interval = Number.isFinite(remote)
-      ? remote
-      : rotationIntervalSeconds(this.config);
+    this._intervalPending.settle(remote);
+    this.interval =
+      this._intervalPending.value ??
+      (Number.isFinite(remote) ? remote : rotationIntervalSeconds(this.config));
   }
 
   async setRotationInterval(seconds) {
@@ -349,7 +353,7 @@ export class ModeControlsController {
     if (!this.sharesInterval() || this.adapter.disabled()) return false;
     const context = this.context;
     this.interval = value;
-    this._intervalExpected = { value, until: Date.now() + FROZEN_ECHO_MS };
+    this._intervalPending.set(value);
     this.error = "";
     this.notify();
     let ok;
@@ -359,7 +363,7 @@ export class ModeControlsController {
       ok = false;
     }
     if (!ok && context === this.context) {
-      this._intervalExpected = null;
+      this._intervalPending.clear();
       this.syncInterval();
       this.error = "The rotation interval could not be saved.";
       this.notify();
@@ -369,7 +373,7 @@ export class ModeControlsController {
 
   expectFrozen(value) {
     this.frozen = value;
-    this._frozenExpected = { value, until: Date.now() + FROZEN_ECHO_MS };
+    this._frozenPending.set(value);
   }
 
   sanitize(names) {
@@ -704,6 +708,23 @@ export class ModeControlsController {
       );
       return true;
     });
+  }
+
+  /**
+   * Send one of the card's commands through its queue (adapter.execute). A
+   * manual command (not `managed` by a rotation) first waits for a rotation
+   * start in flight, so the stop that follows really cancels it and it
+   * cannot overwrite this command afterwards, then stops the rotation.
+   */
+  async send(service, data, { domain = "yeelight_cube", managed = false, ...options } = {}) {
+    // No lamp available: nothing to send (the controls show it disabled).
+    if (this.adapter.disabled()) return false;
+    if (!managed) {
+      const pendingStart = this.whenIdle();
+      if (pendingStart) await pendingStart;
+      this.stop();
+    }
+    return this.adapter.execute(service, data, domain, options);
   }
 
   // Picking a style/effect in the browser is a card-level selection, not a

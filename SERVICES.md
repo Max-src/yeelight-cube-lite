@@ -62,17 +62,20 @@ by the lamp's **Experimental Features** setting, not a card-only toggle.
   lamp's `favourites` attribute, so every dashboard and device shows the same
   list. Each entry stores a style/effect key, color mode and optional RGB.
   Reordering or shuffling favourites changes the list used by the next rotation
-  Start. A card targeting several lamps shows the first lamp's list and saves to
-  all of them. Lists that older versions kept in browser storage move to the lamp
+  Start. A card targeting several lamps shows the list of its first available
+  lamp and saves to all of them. Lists that older versions kept in browser storage move to the lamp
   the first time that browser opens the card (only while the lamp has none).
 - **Saved clock styles / reusable colors** use `save_clock_preset` and live in
   Home Assistant. These are distinct from favourites and require a working HA
   connection, though the lamp itself need not be reachable to save a preset.
 - **Appearance presets** live in card YAML. They change previews, not lamp output.
-- If any configured lamp entity is missing, unknown or unavailable, style and
-  color selections become local preview edits. Built-in catalogues and
-  favourite previews remain available. Hardware actions stay gated; returning
-  live state discards preview drafts without automatically applying them.
+- If none of the configured lamps is available (missing, unknown or
+  unavailable), style and color selections become local preview edits.
+  Built-in catalogues and favourite previews remain available. Hardware actions
+  stay gated; returning live state discards preview drafts without
+  automatically applying them. While at least one lamp is available the card
+  keeps controlling its lamps and names the offline ones (see
+  [Multi-Entity Operations](#-multi-entity-operations)).
 - Missing rotation attributes show **Status unavailable**, not a fabricated
   running/stopped result. A previously observed matching active/waiting rotation
   can retain Stop; an unrelated card or a cold card with no known rotation does
@@ -1670,6 +1673,25 @@ a mode Home Assistant does not know about; use **Force Refresh** afterwards.
 ## 🔗 Multi-Entity Operations
 
 All services that accept `entity_id` support targeting multiple lamps in a single call by passing a list. All targets receive the command simultaneously.
+
+**Each lamp on its own.** A service checks its data, records the new settings on
+every target and returns; each lamp is then updated in the background, so one
+slow or unreachable lamp never holds up the others or the call.
+
+- A lamp **not reached** keeps the requested settings (its card shows it
+  unavailable) and shows them once it is back: the integration redraws its whole
+  requested state on reconnecting. This holds for every service, including
+  `set_native_effect`.
+- A lamp that **refuses** a change (the lamp answers with an error, such as
+  too many commands in a short time) or fails while applying it publishes the
+  reason in its `last_command_error` attribute, `{service, message, at}`:
+  `service` is the service, or the lamp operation that failed (such as
+  `display:clock`), and `at` is in seconds since 1970. It stays until a redraw
+  of the lamp works (or it reconnects). The cards name it: *the last change was
+  not applied (…)*. It is also in the log. A native effect the lamp refuses is
+  also put back: the lamp publishes the effect it last accepted.
+- The cards with several lamps send to all of them while at least one is
+  available, show the first available lamp and name the offline ones.
 
 <details>
 <summary>View examples</summary>

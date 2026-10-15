@@ -6,6 +6,7 @@ import {
   DEFAULT_BUTTON_CONTENT_MODE,
 } from "./action-button-utils.js";
 import { renderActionButton } from "./action-button-ui.js";
+import { openRgbColorPicker } from "./color-picker-utils.js";
 import "./clock-preset-manager.js";
 import { defineOnce } from "./card-registration.js";
 
@@ -125,6 +126,22 @@ class YeelightColorMode extends LitElement {
             : renderActionButton(button),
       )}
     </div>`;
+  }
+
+  /**
+   * "Add": the RGB picker at this row's Add button, or at its dropdown (put
+   * back on the mode shown, the picked "Add" is not a mode). `owner` is the
+   * card (it closes the picker when it leaves the page). False when the row
+   * has no Add.
+   */
+  openAddPicker(owner, rgb, onColor) {
+    const anchor = this.querySelector(".color-add button, .colormode-select");
+    if (!anchor) return false;
+    if (anchor.tagName === "SELECT")
+      anchor.value =
+        [...anchor.options].find((option) => option.defaultSelected)?.value || "";
+    openRgbColorPicker(owner, anchor, rgb, onColor);
+    return true;
   }
 
   async getUpdateComplete() {

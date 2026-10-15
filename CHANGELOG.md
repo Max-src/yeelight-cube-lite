@@ -3,6 +3,65 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **A change a lamp failed to apply is shown on the cards**: when a lamp
+  refuses a change or fails while applying it, every card controlling it shows
+  *the last change was not applied (…)* with the reason, until a later change
+  works. The lamp publishes it in a new `last_command_error` attribute
+  (`service`, `message`, `at`). A lamp that is only out of reach shows as
+  unavailable instead, as before.
+- The Clock card highlights a picked color mode at once, like the Native
+  Effects card, until the lamp reports it.
+
+### Changed
+- **Several lamps, one offline**: every card keeps controlling its lamps while
+  at least one is available. Before, one unavailable lamp switched the Clock
+  and Native Effects cards to their offline preview (nothing was sent to the
+  others) and every card to "Lamp unavailable". The card now shows the first
+  available lamp (also its favourites and rotation interval), names the
+  offline ones (*Lamp unavailable: Bedroom. The other lamps are controlled.*),
+  and its effect, color and rotation checks are about the available lamps. The
+  offline preview and the disabled controls are kept for when none is
+  available. A Stop still reaches a rotation waiting for its lamps.
+- A native effect picked while a lamp is out of reach is kept and shown once
+  the lamp is back, like every other change; before, the lamp went back to
+  its previous effect. An effect the lamp refuses is still put back (and now
+  named on the cards).
+- Renaming, recoloring or deleting a saved clock style or color (Clock
+  gallery, preset manager on the Clock and Native Effects cards) shows at once
+  on every card and is put back if Home Assistant refuses it, like palettes
+  and pixel arts.
+- A Lamp Preview adjustment, a color mode (Clock, Native Effects), the
+  rotation interval or a frozen display just set on a card now gives way at
+  once when another dashboard or an automation sets a different one.
+- A list just changed on a card (favourites, palettes, pixel arts, the Colors
+  card's colors) that Home Assistant never confirms is dropped after its grace
+  period on its own, even when no other update arrives.
+- Text on color-filled buttons follows one contrast rule (WCAG), the one the
+  Colors card already used: dark text on lighter fills such as red, orange or
+  green.
+- "Auto" borders (gallery items, the Draw card's color sections, the Lamp
+  Preview's adjustments) follow the theme actually shown, also a custom dark
+  theme Home Assistant does not mark as dark, and update when the theme
+  changes.
+- An unreachable lamp is logged once as a warning when it goes and once when
+  it is back ("Lamp back online after …"); the retries in between are logged
+  at debug level instead of filling the log.
+
+### Fixed
+- The Lamp Preview card's adjustment sliders and reset buttons did nothing
+  (errors in the browser console) in every adjustments layout since 1.3.4.
+- The Lamp Preview card kept showing its own value of an adjustment it had
+  changed, ignoring later changes made elsewhere for that adjustment.
+- A Lamp Preview card configured with several lamps sent its adjustments to the
+  first one even when it was unavailable.
+- Image import (`display_image`) no longer uses a call that Pillow 14 removes.
+- A palette, pixel art or clock preset change that Home Assistant never
+  answers no longer holds up the next ones: it fails after 20 s, like the
+  cards' other commands.
+
 ## [1.3.5] - 2026-10-15
 
 ### Changed

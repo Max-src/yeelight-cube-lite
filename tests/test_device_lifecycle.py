@@ -72,7 +72,7 @@ class DeviceLifecycleTests(unittest.IsolatedAsyncioTestCase):
             SERVICES_SOURCE,
             {"handle_set_clock_style"},
             {**CONSTANTS, "_resolve_entities": lambda *args: [light],
-             "HomeAssistantError": ValueError, "_fire_and_forget": lambda *tasks: pending.extend(tasks)},
+             "HomeAssistantError": ValueError, "run_on_lamps": lambda label, lamps, apply, _schedule=(lambda *tasks: pending.extend(tasks)): _schedule(*(apply(lamp) for lamp in lamps))},
         )["handle_set_clock_style"]
         await handler(SimpleNamespace(data={"style": "Twinkle"}))
         for task in pending:

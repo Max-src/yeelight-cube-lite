@@ -24,7 +24,7 @@ from .light_services_common import (
     _resolve_entities,
     _locate_item,
     _move_item,
-    make_fire_and_forget,
+    make_lamp_runner,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -32,7 +32,7 @@ _LOGGER = logging.getLogger(__name__)
 
 def async_register_pixel_art_services(hass: HomeAssistant) -> None:
     """Register the pixel art actions."""
-    _fire_and_forget = make_fire_and_forget(hass)
+    run_on_lamps = make_lamp_runner(hass)
 
     async def handle_update_pixel_arts(service_call):
         """Update the pixel art collection — append (default) or fully replace."""
@@ -255,7 +255,7 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
                 target_entity._content_mode_select_entity.async_update_from_light()
             _LOGGER.debug("[pixelart-backend] Applied pixel art idx %s to %s.", idx, target_entity._ip)
 
-        _fire_and_forget(*[_apply_one(t) for t in targets])
+        run_on_lamps("APPLY_PIXEL_ART", targets, _apply_one)
 
     async def handle_apply_custom_pixels(service_call):
         pixels = service_call.data.get("pixels")
@@ -288,7 +288,7 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
             if target_entity._content_mode_select_entity:
                 target_entity._content_mode_select_entity.async_update_from_light()
 
-        _fire_and_forget(*[_apply_one(t) for t in targets])
+        run_on_lamps("APPLY_CUSTOM_PIXELS", targets, _apply_one)
 
     async def handle_get_pixel_art(service_call):
         idx = service_call.data.get("idx")

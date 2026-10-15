@@ -22,6 +22,7 @@
  * @returns {string} CSS class string
  */
 import { cardSpacing } from "./card-layout-utils.js";
+import { contrastInk } from "./color-utils.js";
 
 export function getActionButtonClass(type, style = "modern") {
   const TYPE_TO_CLASS = {
@@ -43,17 +44,6 @@ export function getActionButtonClass(type, style = "modern") {
 }
 
 export const getExportImportButtonClass = getActionButtonClass;
-
-// Perceived-luminance ink so text/glyphs stay legible on any fill color.
-export function contrastInk(color) {
-  const match = /^#?([0-9a-f]{6})$/i.exec(color || "");
-  if (!match) return "#111";
-  const value = parseInt(match[1], 16);
-  const r = (value >> 16) & 255;
-  const g = (value >> 8) & 255;
-  const b = value & 255;
-  return (r * 299 + g * 587 + b * 114) / 1000 > 150 ? "#111" : "#fff";
-}
 
 // Defaults for a card whose config leaves the key unset. They must match what
 // the card editors display for that unset key.
@@ -180,7 +170,7 @@ export function actionButtonModel({
     // A color swatch stands in for the icon (e.g. saved-color buttons).
     swatch: busy ? null : swatch,
     swatchShape,
-    // A whole-button fill color with matching contrast ink.
+    // A whole-button fill color with matching contrast ink (color-utils.js).
     fill: busy ? null : fill,
     ink: fill ? contrastInk(fill) : undefined,
     dataMode,

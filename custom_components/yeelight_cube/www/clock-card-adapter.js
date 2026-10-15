@@ -2,7 +2,11 @@ import { clockColorToRgb } from "./clock-preset-utils.js";
 import { previewOnly } from "./offline-preview-state.js";
 
 import { clockPresetKey } from "./clock-preset-utils.js";
-import { getTargetEntities } from "./service-call-utils.js";
+import {
+  availableTargets,
+  everyAvailable,
+  getTargetEntities,
+} from "./service-call-utils.js";
 import { rotationTargets, retryFailedRotations } from "./rotation-status.js";
 import {
   sharedFavourites,
@@ -42,28 +46,20 @@ export function createClockCardAdapter(card) {
     available: (name) =>
       previewOnly(card)
         ? card._controlStyles().some((style) => clockPresetKey(style) === name)
-        : getTargetEntities(card.config).every((entity) => {
-            const state = card._hass?.states[entity];
-            return (
-              state &&
-              !["unknown", "unavailable"].includes(state.state) &&
-              card
-                ._controlStyles(state.attributes)
-                .some((style) => clockPresetKey(style) === name)
-            );
-          }),
+        : everyAvailable(card._hass, card.config, (entity, state) =>
+            card
+              ._controlStyles(state.attributes)
+              .some((style) => clockPresetKey(style) === name),
+          ),
     ready: () =>
-      getTargetEntities(card.config).every(
-        (entity) => card._hass?.states[entity]?.state === "on",
-      ),
+      everyAvailable(card._hass, card.config, (entity, state) => state.state === "on"),
     // Only lamp availability: a running card request must not disable the
     // shared controls (requests are queued by the card's command controller).
-    disabled: () =>
-      getTargetEntities(card.config).some(
-        (entity) =>
-          !card._hass?.states[entity] ||
-          ["unknown", "unavailable"].includes(card._hass.states[entity].state),
-      ),
+    // The card's command queue (CardCommandController.execute).
+    execute: (service, data, domain, options) =>
+      card._commands.execute(card._hass, card.config, service, data, domain, options),
+    // Only when none of the card's lamps is available (like Native's).
+    disabled: () => !availableTargets(card._hass, card.config).length,
     on: () => card._stateObj()?.state === "on",
     orientation: () => card._attrs().device_orientation || "right",
     apply: (name) => card._applyStyle(name, true),
@@ -102,17 +98,20 @@ export function createClockCardAdapter(card) {
         "yeelight_cube",
         true,
       ),
+    // Straight to the queue (not the mode controller's send, which refuses
+    // while no lamp is available): a rotation waiting for its lamps to
+    // reconnect must still be stoppable.
     stopRotation: () =>
-      card._command("stop_effect_rotation", {}, "yeelight_cube", true),
+      card._commands.execute(card._hass, card.config, "stop_effect_rotation"),
     skipRotation: () =>
       card._command("skip_effect_rotation", {}, "yeelight_cube", true),
     rotationActive: () =>
-      getTargetEntities(card.config).every(
-        (entity) =>
-          card._hass?.states[entity]?.attributes?.effect_rotation?.active ===
-            true &&
-          card._hass?.states[entity]?.attributes?.effect_rotation?.kind ===
-            "clock",
+      everyAvailable(
+        card._hass,
+        card.config,
+        (entity, state) =>
+          state.attributes?.effect_rotation?.active === true &&
+          state.attributes?.effect_rotation?.kind === "clock",
       ),
     rotationTargets: () =>
       rotationTargets(card._hass, card.config, "clock", rotationSnapshots),
@@ -128,9 +127,10 @@ export function createClockCardAdapter(card) {
     // The `effect_rotation` attribute only exists in the backend version that
     // ships the rotation services; its presence is our capability probe.
     rotationSupported: () =>
-      getTargetEntities(card.config).every(
-        (entity) =>
-          card._hass?.states[entity]?.attributes?.effect_rotation !== undefined,
+      everyAvailable(
+        card._hass,
+        card.config,
+        (entity, state) => state.attributes?.effect_rotation !== undefined,
       ),
     frame: (name, phase, colorMode, color) => {
       const style = card

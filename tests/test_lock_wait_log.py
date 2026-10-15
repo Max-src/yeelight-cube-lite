@@ -7,6 +7,7 @@ from unittest.mock import Mock
 from tests.test_native_features import ROOT, LIGHT_SOURCE, _load_standalone_functions
 
 CUBE_MATRIX_SOURCE = (ROOT / "cube_matrix.py").read_text(encoding="utf-8")
+ERRORS_SOURCE = (ROOT / "command_errors.py").read_text(encoding="utf-8")
 
 
 class LampTestCase(unittest.IsolatedAsyncioTestCase):
@@ -32,9 +33,12 @@ class LampTestCase(unittest.IsolatedAsyncioTestCase):
                 CUBE_MATRIX_SOURCE, {"is_quota_error"}, {"BulbException": bulb_exception}
             )
         )
+        self.namespace.update(
+            _load_standalone_functions(ERRORS_SOURCE, {"note_command_result"}, {"time": time})
+        )
         fns = _load_standalone_functions(
             LIGHT_SOURCE,
-            {"_execute_hardware_op", "_get_device_lock"},
+            {"_execute_hardware_op", "_get_device_lock", "_init_connection_state"},
             self.namespace,
         )
         # The loaded functions share one globals dict: tests tweak that one.
@@ -42,13 +46,13 @@ class LampTestCase(unittest.IsolatedAsyncioTestCase):
 
         class Lamp:
             _execute_hardware_op = fns["_execute_hardware_op"]
+            _init_connection_state = fns["_init_connection_state"]
 
         self.lamp = Lamp()
+        # The queue's own state, as the lamp starts with it.
+        self.lamp._init_connection_state()
         self.lamp.__dict__.update(
             _ip="192.168.4.104", _is_on=True, _fx_mode_is_direct=True,
-            _hard_timeout_times=[], _hardware_failure_retryable=False,
-            _connection_error=False, _display_retry_count=0,
-            _retry_display_task=None, _coalesced_op_generation=0,
             _cube_matrix=SimpleNamespace(
                 state_summary=lambda: "", summary="", record_success=Mock(), record_failure=Mock(),
                 close_fast_socket=Mock(),
@@ -207,6 +211,49 @@ class RefusedCommandTests(LampTestCase):
         self.assertFalse(await self.lamp._execute_hardware_op(send, "rotation:clock"))
         self.assertFalse(self.lamp._hardware_failure_retryable)
         self.assertEqual("BulbException: general error", self.lamp._last_connection_error)
+
+    async def test_a_refused_change_is_named_on_the_cards_until_a_redraw_works(self):
+        refused = self.namespace["BulbException"](
+            {"code": -5000, "message": "invalid params"}
+        )
+        self.lamp.hass = object()
+        self.lamp.async_write_ha_state = Mock()
+
+        async def send():
+            raise refused
+
+        async def works():
+            return None
+
+        self.assertFalse(await self.lamp._execute_hardware_op(send, "display:clock"))
+        self.assertEqual("display:clock", self.lamp._last_command_error["service"])
+        self.assertEqual(
+            "the lamp refused it: invalid params", self.lamp._last_command_error["message"]
+        )
+        # Another kind of operation working says nothing about that change.
+        self.assertTrue(await self.lamp._execute_hardware_op(works, "brightness"))
+        self.assertIsNotNone(self.lamp._last_command_error)
+        # A redraw shows the whole requested state again: cleared.
+        self.assertTrue(await self.lamp._execute_hardware_op(works, "display:clock"))
+        self.assertIsNone(self.lamp._last_command_error)
+        self.assertEqual(2, self.lamp.async_write_ha_state.call_count)
+
+    async def test_an_unexpected_error_is_named_too(self):
+        async def broken():
+            raise ValueError("bad frame")
+
+        self.assertFalse(await self.lamp._execute_hardware_op(broken, "display:pixel_art"))
+        self.assertEqual("bad frame", self.lamp._last_command_error["message"])
+
+    async def test_a_lamp_not_reached_is_not_named(self):
+        lost = self.namespace["CubeConnectionError"]("unreachable")
+        lost.message = "unreachable"  # like cube_matrix's
+
+        async def offline():
+            raise lost
+
+        self.assertFalse(await self.lamp._execute_hardware_op(offline, "display:clock"))
+        self.assertIsNone(getattr(self.lamp, "_last_command_error", None))
 
 
 class RawReplyTests(unittest.TestCase):

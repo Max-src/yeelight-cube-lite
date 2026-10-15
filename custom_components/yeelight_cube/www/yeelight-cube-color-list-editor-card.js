@@ -10,6 +10,7 @@ import {
 import { getDeleteButtonClass, getButtonPositionStyles } from "./delete-button-styles.js";
 
 import { YeelightCardMixin, cubeLampEntities, valueKey } from "./card-base.js";
+import { createPendingMap } from "./pending-value.js";
 import {
   cardNotice,
   cardShell,
@@ -25,14 +26,25 @@ import { ColorListDragMixin } from "./color-list-drag.js";
 import { ColorInfoMixin } from "./color-list-color-info.js";
 import { COLOR_LIST_EDITOR_STYLES } from "./color-list-editor-styles.js";
 
-// Global storage for pending (optimistic) colors per entity (shared across all
-// card instances).  Entries are { colors, ts }.  The cache only exists to
-// bridge the short gap until the backend echoes our own set_text_colors call
-// back; if it still disagrees with the backend after PENDING_COLORS_GRACE_MS
-// it is dropped (see `set hass`), so it can never permanently mask changes
-// made elsewhere (palette card, select entity, automations).
-const PENDING_COLORS_STORE = {};
+// The colors just set on a lamp, shown until it reports them back
+// (pending-value.js): one per lamp, shared by every Color List card on it.
+// Dropped once the lamp reports them, or after PENDING_COLORS_GRACE_MS, so a
+// failed or mismatched echo never masks changes made elsewhere (palette card,
+// select entity, automations). Older echoes never drop them (no yieldToLamp):
+// a picker drag saves at every move, and the echo of each earlier move comes
+// back while the latest is on its way.
 const PENDING_COLORS_GRACE_MS = 2000;
+const LIVE_CARDS = new Set();
+const PENDING_COLORS = createPendingMap({
+  timeoutMs: PENDING_COLORS_GRACE_MS,
+  // By value: every lamp push brings a new array.
+  matches: (actual, colors) => valueKey(actual) === valueKey(colors),
+  // Expired: every card showing that lamp shows the lamp's colors again.
+  onExpire: (entityId) => {
+    for (const card of LIVE_CARDS)
+      if (card.config && card._primaryEntity() === entityId) card._gate.request();
+  },
+});
 
 // Elements that open the color picker when clicked (resolved by delegation).
 const PICKER_TRIGGERS =
@@ -105,37 +117,16 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
     // If this is the first time hass is set, flush any pending service calls
     if (!oldHass && hass && this._pendingServiceCalls.length > 0) {
       this._pendingServiceCalls.forEach((call) => {
-        this._commitColors(call.entityId, call.entry, call.config);
+        this._commitColors(call.entityId, call.colors, call.config);
       });
       this._pendingServiceCalls = [];
     }
 
-    // PENDING-CACHE EXPIRY: if the optimistic cache is older than the
-    // expected service-echo window, drop it.  Without this, one failed or
-    // mismatched echo left the cache stale forever and the card ignored all
-    // external color changes (e.g. selecting a palette on another card).
-    let staleCacheCleared = false;
-    if (this.config) {
-      const entityId = this._primaryEntity();
-      const entry = entityId ? PENDING_COLORS_STORE[entityId] : null;
-      if (entry && Date.now() - entry.ts > PENDING_COLORS_GRACE_MS) {
-        const backendColors =
-          hass.states?.[entityId]?.attributes?.text_colors || null;
-        delete PENDING_COLORS_STORE[entityId];
-        if (
-          backendColors &&
-          JSON.stringify(backendColors) !== JSON.stringify(entry.colors)
-        ) {
-          // Displayed colors were masking newer backend state — must render
-          staleCacheCleared = true;
-        }
-      }
-    }
-
     // Only render when something the card shows changed (card-base
     // _hassChanged): not on the lamp's other attributes (matrix_colors
-    // changes every second during a clock or an effect).
-    if (!this._hassChanged(hass) && !staleCacheCleared && oldHass && this.config) return;
+    // changes every second during a clock or an effect). Colors just set
+    // expire on their own (PENDING_COLORS).
+    if (!this._hassChanged(hass) && oldHass && this.config) return;
 
     this._gate.request();
   }
@@ -178,17 +169,9 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
     // Get colors from sensor
     const sensorColors = stateObj.attributes.text_colors || [[255, 255, 255]];
 
-    // Clear pending colors if sensor has caught up
-    const pendingEntry = PENDING_COLORS_STORE[entityId];
-    if (
-      pendingEntry &&
-      JSON.stringify(pendingEntry.colors) === JSON.stringify(sensorColors)
-    ) {
-      delete PENDING_COLORS_STORE[entityId];
-    }
-
-    // Use pending colors for instant feedback, fall back to sensor
-    const textColors = PENDING_COLORS_STORE[entityId]?.colors || sensorColors;
+    // Colors just set show until the lamp reports them (PENDING_COLORS).
+    PENDING_COLORS.settle(entityId, sensorColors);
+    const textColors = PENDING_COLORS.value(entityId) || sensorColors;
     this._renderedColors = textColors;
 
     const config = this.config;
@@ -485,8 +468,8 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
     }
     const hass = this._hass;
 
-    // Get the current colors from global pending state or entity state
-    const pendingColors = PENDING_COLORS_STORE[entityId]?.colors;
+    // The colors just set (PENDING_COLORS), else the lamp's.
+    const pendingColors = PENDING_COLORS.value(entityId);
     if (pendingColors) {
       return pendingColors.slice(); // Return a copy
     }
@@ -537,31 +520,26 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
       return;
     }
 
-    // Store pending colors in global store (shared across all card instances).
-    // Timestamped so `set hass` can expire the entry if the backend echo
-    // never matches (see PENDING_COLORS_GRACE_MS).
-    const entry = {
-      colors: structuredClone(textColors),
-      ts: Date.now(),
-    };
-    PENDING_COLORS_STORE[entityId] = entry;
+    // Shown at once by every Color List card on this lamp (PENDING_COLORS).
+    const colors = structuredClone(textColors);
+    PENDING_COLORS.set(entityId, colors);
     this.requestUpdate();
 
     // If hass not ready yet, queue the service call for later
     if (!this._hass) {
       this._pendingServiceCalls.push({
         entityId,
-        entry,
+        colors,
         config: structuredClone(this.config),
       });
       return;
     }
 
     // Use multi-entity service call - updates ALL target entities with the same colors
-    return this._commitColors(entityId, entry, this.config);
+    return this._commitColors(entityId, colors, this.config);
   }
 
-  async _commitColors(entityId, entry, config) {
+  async _commitColors(entityId, colors, config) {
     const commands = this._commands;
     const context = commands.context;
     const success = await commands.execute(
@@ -569,12 +547,13 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
       config,
       "set_text_colors",
       {
-        text_colors: entry.colors,
+        text_colors: colors,
       },
     );
     if (context !== commands.context || success) return success;
-    if (PENDING_COLORS_STORE[entityId] !== entry) return false;
-    delete PENDING_COLORS_STORE[entityId];
+    // Only these colors: a newer save keeps its own.
+    if (PENDING_COLORS.value(entityId) !== colors) return false;
+    PENDING_COLORS.clear(entityId);
     this.requestUpdate?.();
     this.dispatchEvent(
       new CustomEvent("hass-notification", {
@@ -598,8 +577,14 @@ class YeelightCubeColorListEditorCard extends ColorInfoMixin(
     return `remove-btn btn-style-${style}`;
   }
 
+  connectedCallback() {
+    super.connectedCallback();
+    LIVE_CARDS.add(this);
+  }
+
   disconnectedCallback() {
     super.disconnectedCallback();
+    LIVE_CARDS.delete(this);
     this._commands?.reset();
     this._pendingServiceCalls = [];
 

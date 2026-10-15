@@ -1,4 +1,9 @@
-import { getTargetEntities } from "./service-call-utils.js";
+import { availableTargets, getTargetEntities } from "./service-call-utils.js";
+
+// The lamp the settings are read from: the first available one (an
+// offline lamp publishes none), else the first.
+const shownLamp = (hass, config) =>
+  availableTargets(hass, config || {})[0] ?? getTargetEntities(config || {})[0];
 import { normalizeFavourite, sanitizeFavourites } from "./mode-selection.js";
 
 /**
@@ -29,7 +34,7 @@ export function favouriteToItem(favourite) {
  * - otherwise the list, in the cards' favourite format.
  */
 export function sharedFavourites(hass, config, kind) {
-  const entity = getTargetEntities(config || {})[0];
+  const entity = shownLamp(hass, config);
   const all = hass?.states?.[entity]?.attributes?.favourites;
   if (!all || typeof all !== "object") return undefined;
   const items = all[kind];
@@ -62,7 +67,7 @@ export function saveSharedFavourites(card, kind, favourites) {
  * is unavailable), null when none was set yet for this kind.
  */
 export function sharedRotationInterval(hass, config, kind) {
-  const entity = getTargetEntities(config || {})[0];
+  const entity = shownLamp(hass, config);
   const all = hass?.states?.[entity]?.attributes?.rotation_intervals;
   if (!all || typeof all !== "object") return undefined;
   const seconds = Number(all[kind]);

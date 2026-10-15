@@ -11,17 +11,49 @@ import {
   EFFECTS_REGISTRY,
 } from "./lamp-preview-effects.js";
 import { html, nothing } from "./lib/lit-all.js";
+import { createPendingMap } from "./pending-value.js";
+import { isDarkTheme } from "./color-utils.js";
 
 export const AdjustmentControlsMixin = (Base) => class extends Base {
+  // The adjustments shown before the lamp reports them (a moved slider, a
+  // reset), one pending value each (pending-value.js): held while a slider
+  // moves, then dropped once the lamp reports it -- or reports another value
+  // (another dashboard wins) -- or after 5 s.
+  get _pendingEffects() {
+    return (this.__pendingEffects ||= createPendingMap({
+      matches: (actual, value) => Math.abs(Number(actual) - value) < 0.5,
+      yieldToLamp: true,
+      onExpire: () => this.isConnected && this._refresh(),
+    }));
+  }
+
+  // An adjustment's value: shown before the lamp has it, else the lamp's,
+  // else its default.
+  _effectValue(name, stateObj) {
+    return (
+      this._pendingEffects.value(name) ??
+      stateObj?.attributes?.[EFFECT_ATTR_MAP[name]] ??
+      EFFECT_DEFAULTS[name] ??
+      0
+    );
+  }
+
+  // Each value just sent is kept until the lamp reports it (a newer move
+  // keeps its own).
+  _sentEffects(effects) {
+    for (const [name, value] of Object.entries(effects))
+      if (this._pendingEffects.value(name) === value)
+        this._pendingEffects.set(name, value);
+  }
+
   async handleEffectChange(effectName, event) {
     const newValue = parseInt(event.target.value);
     if (!this._hass || !this.config || !this._primaryEntity() || isNaN(newValue)) {
       return;
     }
 
-    // Optimistic update: store locally and update label only
-    this._localEffects[effectName] = newValue;
-    this._resetPending?.delete(effectName);
+    // Shown at once (the label and the change dot follow on render).
+    this._pendingEffects.hold(effectName, newValue);
 
     // Auto-enable tint: changing Tint Hue without Tint Strength does nothing
     // visually, which feels broken. Auto-set Tint Strength to 50% when the
@@ -29,15 +61,9 @@ export const AdjustmentControlsMixin = (Base) => class extends Base {
     if (effectName === "tint_hue" && newValue !== 0) {
       const stateObj = this._hass?.states?.[this._primaryEntity()];
       if (!stateObj) return;
-      const currentStrength =
-        this._localEffects.tint_strength ??
-        stateObj?.attributes?.preview_tint_strength ??
-        0;
-      if (currentStrength === 0) {
-        const autoStrength = 50;
-        // The tint_strength slider and label follow _localEffects on render.
-        this._localEffects.tint_strength = autoStrength;
-        this._resetPending?.delete("tint_strength");
+      if (this._effectValue("tint_strength", stateObj) === 0) {
+        // The tint_strength slider and label follow on render.
+        this._pendingEffects.hold("tint_strength", 50);
       }
     }
 
@@ -62,14 +88,10 @@ export const AdjustmentControlsMixin = (Base) => class extends Base {
         if (!stateObj) return;
         const _tSvc = performance.now();
         const effects = {};
-        for (const name of EFFECT_NAMES) {
-          effects[name] =
-            this._localEffects[name] ??
-            stateObj?.attributes?.[EFFECT_ATTR_MAP[name]] ??
-            EFFECT_DEFAULTS[name];
-        }
+        for (const name of EFFECT_NAMES)
+          effects[name] = this._effectValue(name, stateObj);
 
-        await this._commands.call(
+        const sent = await this._commands.call(
           hass,
           "yeelight_cube",
           "set_preview_adjustments",
@@ -79,32 +101,27 @@ export const AdjustmentControlsMixin = (Base) => class extends Base {
           { coalesce: "adjustments" },
         );
 
-        // Don't clear local state on a timer - let the entity state update handle it
-        // The set hass() method will trigger a render when entity updates
-        // At that point, if entity state matches local state, we can safely clear it
+        // Kept until the lamp reports them (_settleEffects).
+        if (sent === true && context === this._effectContext)
+          this._sentEffects(effects);
       } catch (error) {
         if (context !== this._effectContext) return;
         // Revert to entity state on error
-        delete this._localEffects[effectName];
+        this._pendingEffects.clear(effectName);
         this._refresh();
         console.error("Error setting effect:", error);
       }
     }, 300); // Faster response for effects
   }
 
-  // Drop the local override of effects that were reset to their default once
-  // the entity reports that value (or reports nothing, which reads as default).
-  _pruneResetEffects(stateObj) {
-    if (!this._resetPending?.size) return;
-    for (const name of [...this._resetPending]) {
-      const local = this._localEffects[name];
-      const shown =
-        stateObj?.attributes?.[EFFECT_ATTR_MAP[name]] ?? EFFECT_DEFAULTS[name];
-      if (local === undefined || shown === local) {
-        if (local !== undefined) delete this._localEffects[name];
-        this._resetPending.delete(name);
-      }
-    }
+  // The lamp's state arrived: drop the values it now reports (no value
+  // reported reads as the default).
+  _settleEffects(stateObj) {
+    for (const name of this._pendingEffects.keys())
+      this._pendingEffects.settle(
+        name,
+        stateObj?.attributes?.[EFFECT_ATTR_MAP[name]] ?? EFFECT_DEFAULTS[name],
+      );
   }
 
   async resetSection(sectionId) {
@@ -123,38 +140,21 @@ export const AdjustmentControlsMixin = (Base) => class extends Base {
     const stateObj = this._hass?.states?.[this._primaryEntity()];
     if (!stateObj) return;
 
-    // Build the effects object: Start with current values from entity state OR local changes
-    const getCurrentValue = (effectName) => {
-      // Priority: 1) Local changes (if user is dragging), 2) Entity state, 3) Default
-      return (
-        this._localEffects[effectName] ??
-        stateObj.attributes?.[EFFECT_ATTR_MAP[effectName]] ??
-        EFFECT_DEFAULTS[effectName] ??
-        0
-      );
-    };
-
+    // Every effect as shown, this section's at their defaults (the sliders
+    // move at once).
     const allEffects = {};
-    for (const name of EFFECT_NAMES) {
-      allEffects[name] = getCurrentValue(name);
+    for (const name of EFFECT_NAMES) allEffects[name] = this._effectValue(name, stateObj);
+    for (const [effectName, value] of Object.entries(defaultValues)) {
+      allEffects[effectName] = value;
+      this._pendingEffects.hold(effectName, value);
     }
-
-    // Override ONLY the effects in this section with their defaults
-    Object.keys(defaultValues).forEach((effectName) => {
-      allEffects[effectName] = defaultValues[effectName];
-      // Also update local state so sliders move immediately
-      this._localEffects[effectName] = defaultValues[effectName];
-    });
     this.requestUpdate();
 
-    // Send everything to the lamp (only this section's values changed)
+    // Send everything to the lamp (only this section's values changed); the
+    // defaults show until the lamp reports them (_settleEffects).
     if (await this._sendReset(defaultValues, allEffects)) {
-      // Sliders and labels keep showing the defaults until the entity echoes
-      // them; the local overrides are then dropped (see _pruneResetEffects).
-      Object.keys(defaultValues).forEach((effectName) =>
-        this._resetPending.add(effectName),
-      );
-      this._pruneResetEffects(this._hass?.states?.[this._primaryEntity()]);
+      this._sentEffects(defaultValues);
+      this._settleEffects(this._hass?.states?.[this._primaryEntity()]);
     }
 
     // The change dots and reset buttons follow on render.
@@ -177,7 +177,7 @@ export const AdjustmentControlsMixin = (Base) => class extends Base {
     } catch (error) {
       if (context !== this._effectContext) return false;
       for (const [name, value] of Object.entries(defaults))
-        if (this._localEffects[name] === value) delete this._localEffects[name];
+        if (this._pendingEffects.value(name) === value) this._pendingEffects.clear(name);
       this._refresh();
       console.error("[lamp-preview] Reset failed:", error);
       return false;
@@ -198,13 +198,13 @@ export const AdjustmentControlsMixin = (Base) => class extends Base {
       const attrName = EFFECT_ATTR_MAP[effect];
       if (attrName && stateObj.attributes[attrName] !== undefined) {
         allEffects[effect] =
-          this._localEffects[effect] ?? stateObj.attributes[attrName];
+          this._pendingEffects.value(effect) ?? stateObj.attributes[attrName];
       }
     });
 
     // Update only this effect to default
     allEffects[effectName] = defaultValue;
-    this._localEffects[effectName] = defaultValue;
+    this._pendingEffects.hold(effectName, defaultValue);
     this.requestUpdate();
 
     // Send to the lamp
@@ -212,8 +212,8 @@ export const AdjustmentControlsMixin = (Base) => class extends Base {
       await this._sendReset({ [effectName]: defaultValue }, allEffects)
     ) {
       // Keep showing the default until the entity echoes it.
-      this._resetPending.add(effectName);
-      this._pruneResetEffects(this._hass?.states?.[this._primaryEntity()]);
+      this._sentEffects({ [effectName]: defaultValue });
+      this._settleEffects(this._hass?.states?.[this._primaryEntity()]);
     }
 
     // The change dots and reset buttons follow on render.
@@ -226,11 +226,7 @@ export const AdjustmentControlsMixin = (Base) => class extends Base {
     const stateObj = this._hass?.states?.[this._primaryEntity()];
     if (!stateObj) return false;
     const defaultValue = EFFECT_DEFAULTS[effectName] ?? 0;
-    const current =
-      this._localEffects[effectName] ??
-      stateObj.attributes[EFFECT_ATTR_MAP[effectName]] ??
-      defaultValue;
-    return Math.abs(current - defaultValue) > 0.1;
+    return Math.abs(this._effectValue(effectName, stateObj) - defaultValue) > 0.1;
   }
 
   // Whether any effect of the category changed.
@@ -243,12 +239,7 @@ export const AdjustmentControlsMixin = (Base) => class extends Base {
   // attribute, then the registry default.
   _currentEffects(stateObj) {
     const effects = {};
-    for (const name of EFFECT_NAMES) {
-      effects[name] =
-        this._localEffects[name] ??
-        stateObj?.attributes?.[EFFECT_ATTR_MAP[name]] ??
-        EFFECT_DEFAULTS[name];
-    }
+    for (const name of EFFECT_NAMES) effects[name] = this._effectValue(name, stateObj);
     return effects;
   }
 
@@ -282,10 +273,7 @@ export const AdjustmentControlsMixin = (Base) => class extends Base {
     const layout = cfg.adjustments_layout || "grouped";
     const showIndicators = cfg.show_change_indicators ?? true;
     const border = cfg.adjustments_card_border || "none";
-    const dark =
-      this._hass?.themes?.darkMode ??
-      window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ??
-      false;
+    const dark = isDarkTheme(this, this._hass);
     return html`<yc-sections
       layout=${layout}
       .sections=${sections.map((section) => ({
@@ -382,7 +370,7 @@ export const AdjustmentControlsMixin = (Base) => class extends Base {
     const button = (className, label, display = "block") => html`<button
       class=${className}
       data-section-id=${section.id}
-      @click=${this._onResetSection}
+      @click=${this._on.resetSection}
       title="Reset ${section.title}"
       style="display: ${display};"
     >
@@ -430,15 +418,30 @@ export const AdjustmentControlsMixin = (Base) => class extends Base {
       class=${className}
       data-effect=${effect.name}
       data-default=${effect.default}
-      @mousedown=${this._startDrag}
-      @touchstart=${this._startDrag}
-      @mouseup=${this._endDrag}
-      @touchend=${this._endDrag}
-      @input=${this._onEffectInput}
+      @mousedown=${this._on.startDrag}
+      @touchstart=${this._on.startDrag}
+      @mouseup=${this._on.endDrag}
+      @touchend=${this._on.endDrag}
+      @input=${this._on.effectInput}
       @click=${className.includes("radial-effect-slider")
         ? this._stopPropagation
         : nothing}
     />`;
+  }
+
+  // The handlers of the adjustment rows and their resets. Those are rendered
+  // by <yc-sections> (section-layouts.js), and Lit calls a template's event
+  // handler with the element that renders it as `this`: a card method given
+  // as is would run on <yc-sections>. Bound to the card once (stable, so Lit
+  // keeps its listeners across renders).
+  get _on() {
+    return (this.__on ||= {
+      startDrag: () => this._startDrag(),
+      endDrag: () => this._endDrag(),
+      effectInput: (event) => this._onEffectInput(event),
+      resetSection: (event) => this._onResetSection(event),
+      resetEffect: (event) => this._onResetEffect(event),
+    });
   }
 
   _onEffectInput(event) {
@@ -490,7 +493,7 @@ export const AdjustmentControlsMixin = (Base) => class extends Base {
         <button
           class="compact-reset-button"
           data-effect=${effect.name}
-          @click=${this._onResetEffect}
+          @click=${this._on.resetEffect}
           title="Reset ${effect.label}"
           style="display: ${resetButtonVisible ? "flex" : "none"};"
         >

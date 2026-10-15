@@ -4,6 +4,7 @@
 import { html } from "./lib/lit-all.js";
 import "./yc-swatches.js";
 import "./section-layouts.js";
+import { isDarkTheme } from "./color-utils.js";
 
 export const PaletteCardsMixin = (Base) => class extends Base {
   _renderPaletteCards(
@@ -56,10 +57,7 @@ export const PaletteCardsMixin = (Base) => class extends Base {
 
     // The sections' border: always, never, or in a dark theme (auto).
     const border = cfg.colors_card_border || "auto";
-    const dark =
-      this.hass?.themes?.darkMode ??
-      window.matchMedia?.("(prefers-color-scheme: dark)")?.matches ??
-      false;
+    const dark = isDarkTheme(this, this.hass);
     return html`<yc-sections
       layout=${cfg.palette_card_mode || "side"}
       .sections=${sections}

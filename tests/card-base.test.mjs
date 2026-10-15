@@ -7,9 +7,13 @@ import {
   YeelightCardMixin,
 } from "../custom_components/yeelight_cube/www/card-base.js";
 import {
+  availableTargets,
+  everyAvailable,
   getTargetEntities,
+  lampAvailable,
   withTargetEntities,
 } from "../custom_components/yeelight_cube/www/service-call-utils.js";
+import { previewOnly } from "../custom_components/yeelight_cube/www/offline-preview-state.js";
 
 test("cube lamps are found by the integration's marker, renamed or not", () => {
   const hass = {
@@ -365,4 +369,37 @@ test("dashboard sizes come from the card base", () => {
     ["preview-list", "preview-grid", "preview-wheel", "preview-carousel", "filled"].map(galleryCardSize),
     [8, 8, 5, 4, 4],
   );
+});
+
+test("several lamps, one offline: the card works with the available ones", () => {
+  const config = { target_entities: ["light.gone", "light.off", "light.a", "light.b"] };
+  const hass = {
+    states: {
+      "light.off": { state: "unavailable", attributes: {} },
+      "light.a": { state: "on", attributes: { effect_rotation: {} } },
+      "light.b": { state: "off", attributes: { effect_rotation: {} } },
+    },
+  };
+  assert.equal(lampAvailable(hass.states["light.a"]), true);
+  assert.equal(lampAvailable({ state: "unknown" }), false);
+  assert.equal(lampAvailable(undefined), false);
+  assert.deepEqual(availableTargets(hass, config), ["light.a", "light.b"]);
+  // About the available lamps only; never true with none.
+  assert.equal(everyAvailable(hass, config, (id, state) => "effect_rotation" in state.attributes), true);
+  assert.equal(everyAvailable(hass, config, (id, state) => state.state === "on"), false);
+  assert.equal(everyAvailable({ states: {} }, config, () => true), false);
+  // The offline preview only once none is available.
+  assert.equal(previewOnly({ config, _hass: hass }), false);
+  assert.equal(previewOnly({ config, _hass: { states: { "light.off": hass.states["light.off"] } } }), true);
+  assert.equal(previewOnly({ config: {}, _hass: hass }), true);
+
+  // The card shows the first available lamp, else the first one known; the
+  // lamps key follows both (0 missing, 1 unavailable, 2 available).
+  const Card = YeelightCardMixin(class { connectedCallback() {} });
+  const card = Object.assign(new Card(), { config, _hass: hass });
+  assert.equal(card._primaryEntity(), "light.a");
+  assert.equal(card._lampsKey(), "0122");
+  card._hass = { states: { "light.off": hass.states["light.off"] } };
+  assert.equal(card._primaryEntity(), "light.off");
+  assert.equal(card._lampsKey(), "0100");
 });

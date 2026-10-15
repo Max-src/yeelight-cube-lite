@@ -523,25 +523,27 @@ module.exports = async (t) => {
   );
   const mine =
     'yeelight-cube-clock-card yc-collection-gallery .gallery-item[data-mode="custom:mine"]';
-  // Delete asks first and never selects the item.
-  await page.locator(`${mine} .yc-item-delete`).click();
-  await page.waitForTimeout(100);
-  assert.equal(
-    await page.evaluate(() => calls.length),
-    0,
-    "delete: nothing before confirming",
-  );
-  const bar = page.locator("yeelight-cube-clock-card .yc-item-manage");
-  assert.match(await bar.innerText(), /Delete .Mine.\?/);
-  await bar.locator('button:has-text("Delete")').click();
-  assert.deepEqual(
-    await waitForCall("delete_clock_preset", "confirmed delete"),
-    { preset_id: "mine" },
-  );
-  await page.waitForTimeout(100);
-  assert.equal(await bar.count(), 0, "the bar closes once deleted");
-  // Rename through the same bar.
-  await page.evaluate(() => (calls.length = 0));
+  // Home Assistant publishing the library (what the backend stores).
+  const publish = (presets) =>
+    page.evaluate(async (presets) => {
+      hass.states = {
+        ...hass.states,
+        "sensor.presets": { state: String(presets.length), attributes: { clock_presets: presets } },
+      };
+      card.hass = { ...hass };
+      await card.updateComplete;
+    }, presets);
+  const label = () =>
+    page.evaluate(
+      () =>
+        card.shadowRoot
+          .querySelector('yc-collection-gallery .gallery-item[data-mode="custom:mine"]')
+          ?.textContent.replace(/\s+/g, " ")
+          .trim() ?? null,
+    );
+  // Rename through the item's bar: the new name shows at once (shared clock
+  // preset library, clock-preset-utils editClockPreset), before Home
+  // Assistant publishes it.
   await page.locator(`${mine} .yc-item-rename`).click();
   const field = page.locator(
     "yeelight-cube-clock-card .yc-item-manage input",
@@ -555,6 +557,9 @@ module.exports = async (t) => {
     color: [10, 200, 30],
     kind: "style",
   });
+  await page.waitForTimeout(50);
+  assert.match(await label(), /Ours/, "rename: the new name shows at once");
+  await publish([{ id: "mine", name: "Ours", color: [10, 200, 30], kind: "style" }]);
   assert.equal(
     await page.evaluate(() =>
       calls.some((call) => call.service === "set_clock_style"),
@@ -562,6 +567,29 @@ module.exports = async (t) => {
     false,
     "managing an item never applies it",
   );
+  // Delete asks first and never selects the item; once confirmed the item
+  // goes at once.
+  await page.evaluate(() => (calls.length = 0));
+  await page.locator(`${mine} .yc-item-delete`).click();
+  await page.waitForTimeout(100);
+  assert.equal(
+    await page.evaluate(() => calls.length),
+    0,
+    "delete: nothing before confirming",
+  );
+  const bar = page.locator("yeelight-cube-clock-card .yc-item-manage");
+  assert.match(await bar.innerText(), /Delete .Ours.\?/);
+  await bar.locator('button:has-text("Delete")').click();
+  assert.deepEqual(
+    await waitForCall("delete_clock_preset", "confirmed delete"),
+    { preset_id: "mine" },
+  );
+  await page.waitForTimeout(100);
+  assert.equal(await bar.count(), 0, "the bar closes once deleted");
+  assert.equal(await label(), null, "delete: the item goes at once");
+  await publish([]);
+  // The library back for the next checks.
+  await publish([{ id: "mine", name: "Mine", kind: "style", color: [10, 200, 30] }]);
   // The shared delete-button settings: "none" hides it; rename stays off by default.
   await clockGrid({ remove_button_style: "none" });
   assert.deepEqual(

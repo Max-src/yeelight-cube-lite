@@ -1,3 +1,4 @@
+import { CollectionState } from "./collection-state.js";
 import {
   VISIBILITY_KEYS,
   visibleItems,
@@ -17,7 +18,8 @@ const EMPTY_PRESETS = Object.freeze([]);
 const presetLibraryCache = new WeakMap();
 let presetEntityId = null;
 
-export function clockPresetLibrary(hass) {
+// The library as Home Assistant publishes it (cached per states object).
+function publishedClockPresets(hass) {
   const states = hass?.states;
   if (!states || typeof states !== "object") return EMPTY_PRESETS;
   const cached = presetLibraryCache.get(states);
@@ -39,6 +41,66 @@ export function clockPresetLibrary(hass) {
   }
   presetLibraryCache.set(states, presets);
   return presets;
+}
+
+// The library just changed here (a rename, a new color, a delete): shown at
+// once by every card that reads it (Clock, Native Effects, the preset
+// manager), kept until Home Assistant publishes it, put back if the call is
+// refused (collection-state.js, like the palettes and pixel arts). Every
+// preset call goes through its one queue, in order.
+const presetListeners = new Set();
+const notifyPresets = () => presetListeners.forEach((listener) => listener());
+const presetEdits = new CollectionState(undefined, { onExpire: notifyPresets });
+
+/** The shared clock preset library: the one just changed here, else the
+ * published one. */
+export function clockPresetLibrary(hass) {
+  const published = publishedClockPresets(hass);
+  return presetEdits.pending ? presetEdits.observe(published) : published;
+}
+
+/** Re-render `host` (requestUpdate) when the library shown changes without a
+ * state update (refused or expired); returns the unsubscribe function. */
+export function watchClockPresets(host) {
+  const listener = () => host.requestUpdate?.();
+  presetListeners.add(listener);
+  return () => presetListeners.delete(listener);
+}
+
+/**
+ * Save (`save_clock_preset`) or delete (`delete_clock_preset`) a clock
+ * preset. An existing one changes at once on every card; a new one appears
+ * once Home Assistant publishes it (its id comes from there). Resolves once
+ * sent, rejects with the refusal (the library is then put back).
+ */
+export async function editClockPreset(hass, service, data) {
+  const current = presetEdits.pending?.items ?? publishedClockPresets(hass);
+  let operation = null;
+  if (service === "delete_clock_preset")
+    operation = presetEdits.record(current.filter((preset) => preset.id !== data.preset_id));
+  else if (data.preset_id)
+    // As the backend stores it (clock_presets.py save_clock_preset).
+    operation = presetEdits.record(
+      current.map((preset) =>
+        preset.id === data.preset_id
+          ? {
+              id: preset.id,
+              name: String(data.name).trim().replace(/\s+/g, " "),
+              color: [...data.color],
+              kind: data.kind ?? preset.kind ?? "style",
+            }
+          : preset,
+      ),
+    );
+  if (operation) notifyPresets();
+  try {
+    if (!(await presetEdits.execute(hass, service, data)))
+      throw new Error("The clock presets changed. Please retry.");
+    return true;
+  } catch (error) {
+    if (presetEdits.rollback(operation)) notifyPresets();
+    throw error;
+  }
 }
 
 export function clockPresetKey(style) {

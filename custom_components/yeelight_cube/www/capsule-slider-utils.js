@@ -292,5 +292,31 @@ export function getCapsuleCSS() {
       border-radius: 0;
       padding: 5px 0;
     }
+    /* Snap ticks on the track and the value under it (every capsule:
+       brightness, speed, the Gradient angle). */
+    .capsule-snap-ticks {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 1;
+    }
+    .capsule-snap-tick {
+      position: absolute;
+      top: 50%;
+      width: 5px;
+      height: 5px;
+      transform: translate(-50%, -50%);
+      background: var(--primary-text-color, #333);
+      border-radius: 50%;
+      opacity: 0.35;
+    }
+    .capsule-value-under {
+      display: flex;
+      justify-content: center;
+      padding: 8px 0;
+    }
   `;
 }

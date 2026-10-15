@@ -42,6 +42,17 @@ MUSIC_FLOW_EXIT_UPDATE_TYPES = {
 class DisplayMixin:
     """The display queue, the frame sender and the text scroll timer."""
 
+    def _init_scroll_state(self):
+        """The text scroll timer's state (scroll_text). Called by YeelightCubeLight.__init__."""
+        # Text scrolling functionality
+        self._scroll_speed = 0.2  # Scroll speed in seconds per step
+        self._scroll_enabled = True  # Whether to enable auto-scroll for long text
+        self._scroll_offset = 0  # Current scroll position
+        self._scroll_direction = 1  # 1 for right, -1 for left
+        self._scroll_timer = None  # Timer for auto-scrolling
+        self._max_scroll_offset = 0  # Maximum scroll offset for current text
+        self._is_scrolling = False  # Flag to indicate if currently in scroll animation
+
     async def erase_all(self):
         background_color_hex = rgb_to_hex(self._background_color)
         for module in self._layout.device_layout:
@@ -224,7 +235,8 @@ class DisplayMixin:
             # treated as success -- cancelling the retry chain and leaving the lamp
             # dark forever.
             if not self._cube_matrix.is_connected():
-                _LOGGER.warning(
+                _LOGGER.log(
+                    self._cube_matrix.outage_log_level(),
                     "[APPLY] [%s] SKIP -- cooldown active, raising to trigger retry "
                     "(fx_direct=%s, is_on=%s, "
                     "retry_count=%s/%s) "
@@ -238,7 +250,7 @@ class DisplayMixin:
             # Check if the lamp just reconnected (socket was reset).
             # If so, we need to re-send FX mode and brightness before pixel data.
             if self._cube_matrix.consume_reconnected_flag():
-                _LOGGER.warning(
+                _LOGGER.info(
                     "[APPLY] [%s] Reconnection detected -- will restore FX mode + brightness "
                     "(fx_direct was %s, forcing to False)",
                     self._ip, self._fx_mode_is_direct
@@ -251,7 +263,7 @@ class DisplayMixin:
                 fx_age = time.time() - self._last_fx_mode_time
                 if fx_age > FX_MODE_STALENESS_TIMEOUT:
                     idle_seconds = time.time() - self._cube_matrix.last_command_time if self._cube_matrix.last_command_time > 0 else 999
-                    _LOGGER.warning(
+                    _LOGGER.debug(
                         "[APPLY] [%s] FX mode stale -- fx_age=%.0fs > "
                         "%.0fs threshold (idle=%.1fs), "
                         "forcing re-activation via raw TCP",
@@ -456,7 +468,7 @@ class DisplayMixin:
             # ignored.  Mark FX as not active so the next update re-activates.
             if self._cube_matrix.consume_reconnected_flag():
                 self._fx_mode_is_direct = False
-                _LOGGER.warning(
+                _LOGGER.debug(
                     "[APPLY] [%s] Socket reconnected during update_leds -- "
                     "FX mode lost, will re-activate on next update",
                     self._ip
@@ -480,7 +492,7 @@ class DisplayMixin:
                 self._last_fx_mode_time = time.time()
                 if self._cube_matrix.consume_reconnected_flag():
                     self._fx_mode_is_direct = False
-                    _LOGGER.warning(
+                    _LOGGER.debug(
                         "[APPLY] [%s] Socket reconnected during native-exit "
                         "re-send -- FX mode lost, will re-activate on next update",
                         self._ip
@@ -527,14 +539,11 @@ class DisplayMixin:
                     (_t_done - _apply_t0)*1000, _t_done
                 )
             
-            # Clear any previous connection error flag
-            self._connection_error = False
         except BulbException as e:
             error_dict = e.args[0] if e.args and isinstance(e.args[0], dict) else {}
             error_code = error_dict.get('code', 0)
             error_message = error_dict.get('message', str(e))
             
-            self._connection_error = True
             self._last_connection_error = f"BulbException: {error_message}"
             connection_lost = isinstance(e, CubeConnectionError)
             if connection_lost:
@@ -557,7 +566,6 @@ class DisplayMixin:
             
         except Exception as e:
             msg = str(e)
-            self._connection_error = True
             self._last_connection_error = msg
             connection_lost = is_connection_error(e)
             if connection_lost:

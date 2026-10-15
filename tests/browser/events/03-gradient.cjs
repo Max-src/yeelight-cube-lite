@@ -84,6 +84,22 @@ module.exports = async (t) => {
     false,
     "gradient wheel: the waiting render runs when the drag ends",
   );
+  // The release sends the dragged angle at once (no debounce wait) and
+  // detaches the drag's document listeners: moving on does nothing.
+  assert.equal(
+    await page.evaluate(
+      () => calls.filter((c) => c.service === "set_angle").at(-1)?.data.angle,
+    ),
+    90,
+    "gradient wheel: the release sends the final angle",
+  );
+  assert.equal(
+    await page.evaluate(() => card._rotaryDocListeners),
+    null,
+    "gradient wheel: the drag's listeners are removed",
+  );
+  await page.mouse.move(wheel.x + 4, wheel.y + wheel.height / 2, { steps: 2 });
+  assert.equal(await angleText(), "90°", "gradient wheel: moving after the release does nothing");
   // The lamp reports the dragged angle, then another one (an automation):
   // plain updates show it.
   await lampUpdate(90);

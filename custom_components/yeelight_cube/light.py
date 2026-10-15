@@ -1,6 +1,7 @@
 import logging
 import asyncio
 import base64
+import functools
 import time
 from collections import deque
 from datetime import timedelta
@@ -83,6 +84,20 @@ FIRMWARE_POWER_SAMPLES = 6
 # id only, and its old id can never reach it -- even once another lamp takes
 # that id (two lamps' names swapped). Rules: docs/ENTITY_IDS.md.
 _ENTITY_REGISTRY = {}
+
+
+@functools.lru_cache(maxsize=8)
+def _native_effect_catalog(extended_enabled: bool, playing_extended: str | None) -> list:
+    """The native effects the cards list (11 KB): built once per
+    combination instead of on every state write. Shared, never modified."""
+    return [
+        {"name": name, "speed": bool(spec.get("speed")),
+         "directions": list(spec.get("directions", ())),
+         "extended": bool(spec.get("extended")),
+         "preview": not name.isdecimal()}
+        for name, spec in ALL_NATIVE_EFFECTS.items()
+        if not spec.get("extended") or extended_enabled or name == playing_extended
+    ]
 
 
 def _entity_id_or_list(value):
@@ -298,19 +313,16 @@ class YeelightCubeLight(
         # first read avoids adding another TCP connection to that burst.
         self._last_native_state_poll = time.monotonic()
         
-        # Text scrolling functionality
-        self._scroll_speed = 0.2  # Scroll speed in seconds per step
-        self._scroll_enabled = True  # Whether to enable auto-scroll for long text
-        self._scroll_offset = 0  # Current scroll position
-        self._scroll_direction = 1  # 1 for right, -1 for left
-        self._scroll_timer = None  # Timer for auto-scrolling
-        self._max_scroll_offset = 0  # Maximum scroll offset for current text
-        self._is_scrolling = False  # Flag to indicate if currently in scroll animation
-        
-        # Connection error tracking for reconnect button
-        self._connection_error = False
-        self._last_connection_error = None
-        
+        # Each mixin's own state (light_*.py, _init_*_state). __init__ reads
+        # no instance attribute, so their order changes nothing.
+        self._init_scroll_state()
+        self._init_connection_state()
+        self._init_rotation_state()
+        self._init_brightness_state()
+        self._init_color_state()
+        self._init_transition_state()
+        self._init_saved_state()
+
         # FX mode tracking to avoid redundant mode changes
         self._fx_mode_is_direct = False  # Track if we're already in direct/music mode
         self._last_fx_mode_time = 0.0    # When activate_fx_mode last succeeded
@@ -327,135 +339,11 @@ class YeelightCubeLight(
         # background phase at exactly this moment, not at the next render.
         self._display_frozen_at = None
 
-        # -- Favourites -----------------------------------------------------
-        # Favourite native effects / clock styles per kind ("native", "clock"),
-        # stored with the integration data (not in a browser) and published in
-        # the `favourites` attribute so every dashboard shows the same list.
-        # A kind is absent until it is first saved (cards then migrate the
-        # list they kept in browser storage before this existed).
-        self._favourites: dict = {}
-
-        # -- Effect / clock mode rotation -----------------------------------
-        # A server-side timed loop that advances the lamp through a list of
-        # native effect or clock style names on its own timer, independently of
-        # any dashboard client (so it survives a page refresh). Started and
-        # stopped via the start/stop/skip_effect_rotation services.
-        self._rotation_active = False
-        self._rotation_kind = "native"       # "native" | "clock"
-        self._rotation_items: list = []
-        self._rotation_interval = 60          # whole seconds between steps
-        # The interval every dashboard uses per kind, once set (by a Start or
-        # set_rotation_interval); published in `rotation_intervals`.
-        self._rotation_intervals: dict = {}
-        # A rotation saved before a restart, resumed once the lamp is set up.
-        self._rotation_restore = None
-        # Set when the interval changed while the loop sleeps: re-time the
-        # wait instead of advancing to the next item.
-        self._rotation_retime = False
-        self._rotation_index = -1
-        self._rotation_task = None
-        self._rotation_wake = None
-        self._rotation_started = None
-        self._rotation_error = None
-        self._rotation_resume_pending = False
-        self._rotation_waiting_for_reconnect = False
-        # Shared time grid {"tick", "index"} the loop advances on.
-        self._rotation_timeline = None
-        # Lamps started together, saved so a restart resumes them together.
-        self._rotation_group = None
-        self._rotation_retry_attempt = 0
-        self._rotation_retry_at = None
-        # Failed resumes in a row (back-off of a lamp that refuses steps).
-        self._rotation_resume_failures = 0
-
         # Apply timing (for queue processor stats, not cooldown-gating)
         self._last_apply_time = 0
         
-        # Hardware brightness tracking to avoid redundant brightness commands
-        self._last_hardware_brightness = None  # Track last hardware brightness sent to lamp
-        self._last_applied_darken = None       # Track last darken% actually rendered to lamp pixels
-        
-        # Color effect settings (organized by category)
-        # Note: _preview_darken and _preview_brighten kept internally for brightness control logic
-        # but removed from UI - use light brightness slider instead
-        self._preview_darken = 0        # 0-100: used internally by brightness control
-        self._preview_brighten = 0      # 0-100: reserved for future use
-        # Color Adjustments
-        self._preview_hue_shift = 0     # -180 to +180: rotate hue
-        self._preview_temperature = 0   # -100 to +100: cool to warm
-        # Saturation & Intensity
-        self._preview_saturation = 100  # 0-200: 0=gray, 100=normal, 200=hyper
-        self._preview_vibrance = 100    # 0-200: smart saturation
-        # Tone & Contrast
-        self._preview_contrast = 100    # 0-200: 0=flat, 100=normal, 200=high
-        self._preview_glow = 0          # 0-100: boost bright pixels
-        # Special Effects
-        self._preview_grayscale = 0     # 0-100: convert to black & white
-        self._preview_invert = 0        # 0-100: blend with inverted
-        self._preview_tint_hue = 0      # 0-360: tint color hue
-        self._preview_tint_strength = 0 # 0-100: tint blend amount
-        # Hardware color correction is always active (see _apply_color_correction)
-        # Hardware color accuracy -- always-on by default (see _apply_color_accuracy).
-        # Compensates for LED color rendering differences vs. a computer monitor
-        # by applying per-channel gain that fades with brightness.  The service
-        # set_color_accuracy still exists to toggle at runtime but the default is ON.
-        self._color_accuracy_enabled = True  # Per-channel gain to match monitor colors
-        
-        # Calibration lock: when True the lamp ignores display/brightness commands
-        # from automations so the calibration wizard can drive it exclusively.
-        # Wizard calls carry bypass_lock=True to override this. A safety timer
-        # auto-releases the lock if the wizard is abandoned (browser closed).
-        self._calibration_lock = False
-        self._calibration_lock_unsub = None
-        
-        # Calibration overrides (runtime-tunable via set_color_calibration)
-        # System 1: Low-brightness gamma correction
-        self._calib_gamma_r = 0.85
-        self._calib_gamma_g = 0.75
-        self._calib_gamma_b = 0.62
-        self._calib_hw_threshold = 50  # hw% above which correction is OFF
-        self._calib_hw_full = 10       # hw% at/below which correction is 100%
-        self._calib_channel_balance = 0.7  # 0=pure uniform (hue-safe), 1=per-channel (blue fix)
-        # System 2: Monitor-matching per-channel gain
-        self._calib_gain_r = 1.00
-        self._calib_gain_g = 1.00
-        self._calib_gain_b = 1.00
-        # System 3: Unified brightness curve parameters (override class constants)
-        self._calib_hw_floor = self.HW_FLOOR_PERCENT
-        self._calib_darken_floor = self.DARKEN_FLOOR_PERCENT
-        self._calib_hw_curve = self.HW_CURVE_EXPONENT
-        self._calib_darken_curve = self.DARKEN_CURVE_EXPONENT
-        # Per-channel minimum lit value (lowest value a channel renders cleanly).
-        # 1 = LED can go fully low (e.g. red); raise for channels that need more.
-        self._calib_floor_r = 1
-        self._calib_floor_g = 1
-        self._calib_floor_b = 1
-        
-        # Retry task: schedules a display retry after connection errors
-        # so the lamp eventually recovers when the device becomes reachable.
-        self._retry_display_task = None
-        self._display_retry_count = 0  # Track consecutive retries for logging
-        
-        # Circuit breaker: tracks recent hard timeouts to reject new ops early
-        # instead of queueing them behind the lock for APPLY_HARD_TIMEOUT each.
-        self._hard_timeout_times = []  # List of timestamps of recent hard timeouts
-        # Set by _execute_hardware_op: whether the last failure was a
-        # connection problem worth retrying, and the operation holding the lock.
-        self._hardware_failure_retryable = False
-        self._hardware_operation_phase = None
-        
         # Track background tasks (fire-and-forget brightness commands)
         self._background_tasks = set()
-        
-        # Track last successful brightness change (timestamp, user_brightness)
-        # Used to prevent retry queue from overwriting newer brightness values
-        # This is CRITICAL for unified brightness system (hardware + darkness)
-        self._last_successful_brightness = None  # (timestamp, user_brightness_0_255)
-        
-        # Brightness retry queue - stores failed brightness values to retry when connection recovers
-        # Unlike generic retry queue, this stores COMPLETE user brightness (not hardware commands)
-        self._pending_brightness = None  # (user_brightness_0_255, timestamp) or None
-        self._brightness_retry_task = None  # Background task for brightness retries
         
         # Reference to text input entity for bidirectional updates
         self._text_input_entity = None
@@ -493,27 +381,12 @@ class YeelightCubeLight(
         # Track the name of the currently active pixel art (for dropdown preselection)
         self._active_pixel_art_name = None
         
-        # Periodic health check: detects when an unreachable device comes back online.
-        # Runs in parallel with the retry system, probing at 10s intervals during
-        # active failures.  After MAX_DISPLAY_RETRIES, retries stop but the
-        # health check continues probing until the device recovers.
-        self._health_check_task = None
-        # Health check interval is adaptive (computed dynamically):
-        # 10s during active failures, 15s when recently online, 60s when long-dead
-        # Throttle runtime SSDP rediscovery (lamp may have changed IP via DHCP).
-        self._last_rediscovery_attempt = 0.0
-        
         # Base (un-darkened) matrix colors for immediate brightness preview.
         # Snapshotted in apply() right before brightness darkening.  Used by
         # extra_state_attributes to return correctly brightness-adjusted colors
         # without double-darkening (module.data may already be darkened after apply).
         self._base_matrix_colors = None
         
-        # -- Transition settings ------------------------------------------
-        self._transition_type = "none"           # Transition effect key (see const.TRANSITION_TYPES)
-        self._transition_steps = 5               # Number of intermediate frames (1-10)
-        self._transition_duration = 1.0          # Total transition time in seconds (0.2-10.0)
-        self._transition_active = False          # Re-entrancy guard
         # Power limit in W (NO_LIMIT_W = off): frames sent to the lamp are
         # dimmed so its estimated draw stays under it, for weak or shared
         # power supplies (lamp_power.py).
@@ -530,24 +403,7 @@ class YeelightCubeLight(
         self._firmware_power_samples = deque(maxlen=FIRMWARE_POWER_SAMPLES)
         self._firmware_power_key = None
         self._firmware_power_unsub = None
-        # Bumped by each queued redraw; an older one still waiting for the
-        # lamp is skipped (_execute_hardware_op, coalesce=True).
-        self._coalesced_op_generation = 0
 
-        # -- Saved display state (save_state / restore_state services) ----
-        # Holds a single snapshot of the full display state so an automation
-        # can save what the lamp is showing, display something else briefly,
-        # then restore the original.  Overwritten each time save_state runs.
-        # In-memory only -- does not survive a Home Assistant restart.
-        self._saved_display_state = None
-        # The rotation running when it was saved (restarted by restore_state).
-        self._saved_display_rotation = None
-        # Between save_state and restore_state: what an automation shows is
-        # deliberate (a text is shown even over the firmware clock).
-        self._display_overlay = False
-        self._last_sent_colors = None            # List of 100 RGB tuples last sent to lamp
-        self._current_update_type = 'display_update'  # Tracks current operation type for transition logic
-        
         # Entity references for transition controls
         self._transition_select_entity = None
         self._transition_steps_entity = None
@@ -908,6 +764,10 @@ class YeelightCubeLight(
                 "retry_attempt": self._rotation_retry_attempt,
                 "retry_at": self._rotation_retry_at,
             },
+            # {"service", "message", "at"} of the last change this lamp failed
+            # to apply, until one succeeds (light_services_common
+            # note_command_result); the cards name it.
+            "last_command_error": self._last_command_error,
             "text_colors": self._text_colors,
             "custom_text": self._custom_text,
             "clock_style": NATIVE_CLOCK_STYLES.get(
@@ -926,14 +786,13 @@ class YeelightCubeLight(
             "native_effect_color_mode": self._native_effect_color_mode,
             "native_effect_color": self._native_effect_color,
             "native_effect_direction": self._native_effect_direction,
-            "native_effect_catalog": [
-                {"name": name, "speed": bool(spec.get("speed")),
-                 "directions": list(spec.get("directions", ())),
-                 "extended": bool(spec.get("extended")),
-                 "preview": not name.isdecimal()}
-                for name, spec in ALL_NATIVE_EFFECTS.items()
-                if not spec.get("extended") or self._extended_effects_enabled or name == self._native_effect
-            ],
+            "native_effect_catalog": _native_effect_catalog(
+                self._extended_effects_enabled,
+                # An experimental effect still listed while it plays.
+                self._native_effect
+                if ALL_NATIVE_EFFECTS.get(self._native_effect, {}).get("extended")
+                else None,
+            ),
             "extended_effects_enabled": self._extended_effects_enabled,
             "music_flow_enabled": self._music_flow_enabled,
             "music_flow_effect": self._music_flow_effect,

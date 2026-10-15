@@ -131,7 +131,8 @@ export class CollectionStore {
   constructor(kind, { onChange } = {}) {
     this.kind = kind;
     this.onChange = onChange;
-    this.pending = new CollectionState();
+    // Never confirmed: the card shows the published list again.
+    this.pending = new CollectionState(undefined, { onExpire: () => this.onChange?.() });
     this.context = 0;
     this.fresh = null;
     this.lastHash = undefined;

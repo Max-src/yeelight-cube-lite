@@ -25,11 +25,12 @@ import {
 } from "../custom_components/yeelight_cube/www/mode-controls-controller.js";
 import { readFileSync } from "node:fs";
 import { YeelightCardMixin } from "../custom_components/yeelight_cube/www/card-base.js";
-import { withTargetEntities } from "../custom_components/yeelight_cube/www/service-call-utils.js";
+import { everyAvailable, withTargetEntities } from "../custom_components/yeelight_cube/www/service-call-utils.js";
 
 // Fake cards built from object literals get the shared card-base helpers
 // (_targets, _inputsChanged, ...) like the real card.
 const CardBase = YeelightCardMixin(class { connectedCallback() {} });
+import { createPendingValue } from "../custom_components/yeelight_cube/www/pending-value.js";
 const asCard = (fake) => Object.setPrototypeOf(fake, CardBase.prototype);
 import {
   nativeEffectItems,
@@ -145,7 +146,13 @@ test("native color choices retain configured order while effects respond to the 
     },
     _context: 1,
     _page: 5,
+    _pendingColor: createPendingValue({ yieldToLamp: true }),
+    requestUpdate() {},
   };
+  card._lampColorSelection = cardMethod("_lampColorSelection", {
+    clockPresetsByKind,
+    clockPresetLibrary,
+  });
   card._respondsToColor = cardMethod("_respondsToColor", {
     effectSupportsColorMode,
     effectSupportsColorOverride,
@@ -405,6 +412,7 @@ test("rotation retains only effects available on every target", () => {
       },
     },
     _effectAvailable: cardMethod("_effectAvailable", {
+      everyAvailable,
       getTargetEntities,
       nativeEffectItems,
       nativePreviewCatalogue,

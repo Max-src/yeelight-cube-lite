@@ -15,6 +15,7 @@ import time
 from homeassistant.core import callback  # type: ignore
 from yeelight import BulbException  # type: ignore
 
+from .command_errors import note_command_result
 from .const import FIRMWARE_MODES
 from .cube_matrix import (
     CubeConnectionError,
@@ -24,6 +25,17 @@ from .cube_matrix import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _duration_text(seconds: float) -> str:
+    """A duration for the log: "45s", "12 min", "3 h 05 min"."""
+    seconds = int(seconds)
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes = seconds // 60
+    if minutes < 60:
+        return f"{minutes} min"
+    return f"{minutes // 60} h {minutes % 60:02d} min"
 
 
 APPLY_HARD_TIMEOUT = 12.0      # Seconds -- safety timeout for one hardware operation under the
@@ -62,6 +74,48 @@ def _get_device_lock(ip: str) -> asyncio.Lock:
 
 class ConnectionMixin:
     """Hardware-operation serialisation, retries and connection health."""
+
+    def _init_connection_state(self):
+        """The hardware queue, retry, circuit breaker, health check and calibration lock state. Called by YeelightCubeLight.__init__."""
+        # The last hardware failure, in words (a rotation step reports it).
+        self._last_connection_error = None
+        # The last change this lamp failed to apply (a refusal or an error,
+        # not "not reached"), for the cards (note_command_result).
+        self._last_command_error = None
+
+        # Calibration lock: when True the lamp ignores display/brightness commands
+        # from automations so the calibration wizard can drive it exclusively.
+        # Wizard calls carry bypass_lock=True to override this. A safety timer
+        # auto-releases the lock if the wizard is abandoned (browser closed).
+        self._calibration_lock = False
+        self._calibration_lock_unsub = None
+
+        # Retry task: schedules a display retry after connection errors
+        # so the lamp eventually recovers when the device becomes reachable.
+        self._retry_display_task = None
+        self._display_retry_count = 0  # Track consecutive retries for logging
+        
+        # Circuit breaker: tracks recent hard timeouts to reject new ops early
+        # instead of queueing them behind the lock for APPLY_HARD_TIMEOUT each.
+        self._hard_timeout_times = []  # List of timestamps of recent hard timeouts
+        # Set by _execute_hardware_op: whether the last failure was a
+        # connection problem worth retrying, and the operation holding the lock.
+        self._hardware_failure_retryable = False
+        self._hardware_operation_phase = None
+
+        # Periodic health check: detects when an unreachable device comes back online.
+        # Runs in parallel with the retry system, probing at 10s intervals during
+        # active failures.  After MAX_DISPLAY_RETRIES, retries stop but the
+        # health check continues probing until the device recovers.
+        self._health_check_task = None
+        # Health check interval is adaptive (computed dynamically):
+        # 10s during active failures, 15s when recently online, 60s when long-dead
+        # Throttle runtime SSDP rediscovery (lamp may have changed IP via DHCP).
+        self._last_rediscovery_attempt = 0.0
+
+        # Bumped by each queued redraw; an older one still waiting for the
+        # lamp is skipped (_execute_hardware_op, coalesce=True).
+        self._coalesced_op_generation = 0
 
     async def _execute_hardware_op(
         self, func, op_name: str, timeout_override: float = None, coalesce: bool = False
@@ -104,7 +158,6 @@ class ConnectionMixin:
                 op_id, self._ip, op_name, len(self._hard_timeout_times),
                 CIRCUIT_BREAKER_WINDOW
             )
-            self._connection_error = True
             # Only schedule display retries for display operations
             if op_name.startswith('display:'):
                 self._maybe_schedule_retry()
@@ -176,7 +229,6 @@ class ConnectionMixin:
                     )
                     self._fx_mode_is_direct = False
                     self._cube_matrix.close_fast_socket()
-                    self._connection_error = True
                     self._last_connection_error = f"Hard timeout: {op_name}"
                     self._hard_timeout_times.append(time.time())
                     self._cube_matrix.record_failure()
@@ -193,7 +245,12 @@ class ConnectionMixin:
                 self._display_retry_count = 0
                 if self._retry_display_task and not self._retry_display_task.done():
                     self._retry_display_task.cancel()
-            self._connection_error = False
+            # A redraw shows the lamp's whole requested state, so a change it
+            # refused before is no longer missing; another operation clears
+            # only its own (command_errors).
+            failed = self._last_command_error
+            if is_display_op or (failed and failed.get("service") == op_name.lower()):
+                note_command_result(self, op_name)
             self._cube_matrix.record_success()
             # Clear circuit breaker on any success
             self._hard_timeout_times.clear()
@@ -202,7 +259,6 @@ class ConnectionMixin:
             # The command did not reach the lamp (unreachable, cooldown, dead
             # socket, FX mode lost while sending): retry once it answers.
             self._hardware_failure_retryable = True
-            self._connection_error = True
             self._last_connection_error = e.message
             _LOGGER.warning(
                 "[OP #%s] [%s] Connection error: %s", op_id, self._ip, e.message
@@ -215,7 +271,6 @@ class ConnectionMixin:
                 "[OP #%s] [%s] %s: the lamp did not accept a connection in time",
                 op_id, self._ip, op_name,
             )
-            self._connection_error = True
             self._last_connection_error = "Device timeout"
             self._cube_matrix.record_failure()
             if is_display_op:
@@ -223,7 +278,6 @@ class ConnectionMixin:
         except OSError as e:
             # A raw socket failure (fresh-connection commands, probes).
             self._hardware_failure_retryable = True
-            self._connection_error = True
             self._last_connection_error = str(e)
             _LOGGER.warning(
                 "[OP #%s] [%s] Connection error: %s", op_id, self._ip, e
@@ -236,7 +290,6 @@ class ConnectionMixin:
             # request, ...): not a connection problem.
             error_dict = e.args[0] if e.args and isinstance(e.args[0], dict) else {}
             error_message = error_dict.get('message', str(e))
-            self._connection_error = True
             if is_quota_error(e):
                 # Its rate limit passes after a moment: retry (a rotation
                 # step waits and tries the same item again).
@@ -244,18 +297,26 @@ class ConnectionMixin:
                 self._last_connection_error = (
                     "The lamp refused the command: too many commands in a short time"
                 )
+                refused = "the lamp refused it: too many commands in a short time"
             else:
                 self._last_connection_error = f"BulbException: {error_message}"
+                refused = f"the lamp refused it: {error_message}"
             _LOGGER.warning(
                 "[OP #%s] [%s] BulbException: %s", op_id, self._ip, error_message
             )
+            # Answered, not applied: named on the cards until a change works.
+            note_command_result(self, op_name, refused)
         except Exception as e:
             _LOGGER.error(
                 "[OP #%s] [%s] Unexpected error in %s: %s", op_id, self._ip, op_name, e
             )
+            note_command_result(self, op_name, e)
         return False
 
     MAX_DISPLAY_RETRIES = 3  # 3 retries ~= 20s total, then health check takes over
+    # When the current outage was first logged (time.time()), or None: an
+    # outage is logged once when it starts and once when it ends.
+    _outage_since = None
 
     # Calibration lock auto-release: if the wizard is abandoned (browser closed
     # without exiting), the lamp would stay frozen forever. The lock auto-releases
@@ -533,8 +594,17 @@ class ConnectionMixin:
                     ):
                         # Publishes the light and its controls as unavailable.
                         self.async_write_ha_state()
-                    # Log at WARNING so the user can see probes are happening
-                    _LOGGER.warning(
+                    # The outage is logged once (WARNING); every later probe
+                    # at DEBUG, until the lamp is back (INFO, below).
+                    if self._outage_since is None:
+                        self._outage_since = time.time()
+                        _LOGGER.warning(
+                            "[HEALTH] [%s] Lamp unreachable (switched off or "
+                            "disconnected?) -- probing it every %ss until it "
+                            "answers; further failures are logged at debug level",
+                            self._ip, interval,
+                        )
+                    _LOGGER.debug(
                         "[HEALTH] [%s] Probe failed -- still unreachable "
                         "(retries=%s/%s, "
                         "failures=%s, "
@@ -553,13 +623,18 @@ class ConnectionMixin:
                     continue
                 
                 # Device is back! Reset everything and trigger a fresh display.
-                # (Only a paused rotation due again, on a lamp that never
-                # stopped answering: said so instead.)
-                (_LOGGER.info if not (
-                    self._cube_matrix.is_unreachable
-                    or self._cube_matrix.consecutive_failures
-                    or self._display_retry_count
-                ) else _LOGGER.warning)(
+                outage = (
+                    time.time() - self._outage_since
+                    if self._outage_since is not None
+                    else None
+                )
+                self._outage_since = None
+                if outage is not None:
+                    _LOGGER.info(
+                        "[HEALTH] [%s] Lamp back online after %s",
+                        self._ip, _duration_text(outage),
+                    )
+                _LOGGER.debug(
                     "[HEALTH] [%s] [OK] Device is BACK ONLINE! "
                     "Resetting failures (%s -> 0), "
                     "retries (%s -> 0), "
@@ -571,8 +646,9 @@ class ConnectionMixin:
                 self._cube_matrix.mark_recovered()  # Fresh socket, backoff reset
                 self._display_retry_count = 0
                 self._fx_mode_is_direct = False  # Force FX mode re-send
-                self._connection_error = False
                 self._hard_timeout_times.clear()  # Clear circuit breaker
+                # Its whole requested state is applied again below.
+                self._last_command_error = None
                 if self.hass is not None:
                     # Publishes the light and its controls as available again.
                     self.async_write_ha_state()

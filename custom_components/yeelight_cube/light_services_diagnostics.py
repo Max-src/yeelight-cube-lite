@@ -28,16 +28,145 @@ from .light_services_common import (
     _resolve_entity,
     _resolve_entities,
     make_admin_only,
-    make_fire_and_forget,
+    make_lamp_runner,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 
+def _fx_params(data, target) -> list:
+    """The raw ``set_fx_effect`` params [effect id, style, apply, config] of
+    a send_fx_effect call: its own ``params``, else built from its fields."""
+    if data.get("params") is not None:
+        return data["params"]
+    mode = int(data.get("mode", NATIVE_CLOCK_EFFECT_ID))
+    style_id = int(data.get("style_id", 0))
+    apply = int(data.get("apply", NATIVE_CLOCK_APPLY))
+    mixer = int(data.get("mixer", 0))
+    config = {"mode": mode, "mixer": mixer}
+    data_b64 = data.get("data")
+    data_bytes = data.get("data_bytes")
+    if data_b64 is not None:
+        config["data"] = data_b64
+    elif data_bytes is not None:
+        config["data"] = base64.b64encode(
+            bytes(int(b) & 0xFF for b in data_bytes)
+        ).decode("ascii")
+    # The firmware clock effect (mode 40) REQUIRES a data payload
+    # (date/timezone/12h/colon). If none was supplied explicitly, build it
+    # from the lamp's current clock settings -- exactly like
+    # _activate_native_clock -- otherwise the clock renders blank.
+    if mode == NATIVE_CLOCK_EFFECT_ID and "data" not in config:
+        config["data"] = base64.b64encode(
+            target._native_clock_data_bytes()
+        ).decode("ascii")
+    color = data.get("color")
+    if color is not None:
+        config["color"] = color if isinstance(color, list) else [int(color)]
+    # Optional animation speed. The firmware clock effect (mode 40) accepts a
+    # `rate` field just like native effects.
+    rate = data.get("rate")
+    if rate is not None:
+        try:
+            config["rate"] = int(rate)
+        except (TypeError, ValueError):
+            pass
+    # The first array element (command/effect id) usually equals the config
+    # mode, but some renderers only unlock their full output under a different
+    # command id (e.g. Fireworks needs 71 while the clock config keeps mode
+    # 40). Allow overriding it independently.
+    command_id = data.get("effect_id")
+    command_id = int(command_id) if command_id is not None else mode
+    return [command_id, style_id, apply, config]
+
+
+def _fx_effect_parts(params):
+    """(effect mode, style, config) of raw fx params [mode, style_id, apply,
+    config]; None for a part that is missing or invalid."""
+    effect_mode = effect_style = effect_config = None
+    try:
+        if isinstance(params, list) and len(params) >= 2:
+            effect_mode = int(params[0])
+            effect_style = int(params[1])
+        if isinstance(params, list) and len(params) >= 4 and isinstance(params[3], dict):
+            effect_config = params[3]
+    except (TypeError, ValueError):
+        pass
+    return effect_mode, effect_style, effect_config
+
+
+def _direction_name(value):
+    """The native-effect direction name of a firmware direction number."""
+    for name, number in NATIVE_EFFECT_DIRECTION_VALUES.items():
+        if number == value:
+            return name
+    return None
+
+
+def _apply_clock_data(target, encoded) -> None:
+    """The clock options of a firmware clock data payload (base64 of
+    [content, tz_offset, 12h, colon_steady]; the colon byte is inverted:
+    0 blinks, 1 is steady)."""
+    try:
+        data = base64.b64decode(encoded)
+    except Exception as err:  # noqa: BLE001 -- best-effort reflection
+        _LOGGER.debug("[SEND_FX] Could not decode clock data bytes: %s", err)
+        return
+    if len(data) >= 1:
+        target._native_clock_content = {
+            1: "time", 2: "time_date", 3: "date",
+        }.get(data[0], target._native_clock_content)
+        target._native_clock_show_date = data[0] == 2
+    if len(data) >= 3:
+        target._native_clock_12_hour = data[2] == 1
+    if len(data) >= 4:
+        target._native_clock_colon_blink = data[3] == 0
+
+
+def _reflect_fx_effect(target, is_clock, style, config, native_effect_name) -> None:
+    """The lamp's state for a raw firmware command, as selecting the same
+    clock style (style, color, options, direction) or native effect (speed,
+    direction) from the device page would set it: the cards and the camera
+    preview then show what the lamp shows."""
+    config = config if isinstance(config, dict) else None
+    if is_clock:
+        target._mode = MODE_CLOCK
+        if style in NATIVE_CLOCK_STYLES:
+            target._native_clock_style = style
+        if config is None:
+            return
+        if "color" in config:
+            color = config["color"]
+            target._native_clock_color = (
+                int(color[0]) if isinstance(color, list) and color else int(color)
+            )
+        else:
+            target._native_clock_color = None
+        if "data" in config:
+            _apply_clock_data(target, config["data"])
+    elif native_effect_name is not None:
+        target._mode = MODE_NATIVE_EFFECT
+        target._native_effect = native_effect_name
+        if config is None:
+            return
+        if "rate" in config:
+            try:
+                target._native_effect_speed = max(1, min(255, int(config["rate"])))
+            except (TypeError, ValueError):
+                pass
+    else:
+        return
+    # The mixer flow direction (clock and native effects alike).
+    if config is not None and "direction" in config:
+        name = _direction_name(config["direction"])
+        if name is not None:
+            target._native_effect_direction = name
+
+
 def async_register_diagnostics_services(hass: HomeAssistant) -> None:
     """Register the diagnostics actions."""
     _admin_only = make_admin_only(hass)
-    _fire_and_forget = make_fire_and_forget(hass)
+    run_on_lamps = make_lamp_runner(hass)
 
     async def handle_send_fx_effect(service_call):
         """DEBUG: send a raw LAN command (default ``set_fx_effect``).
@@ -51,7 +180,6 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
             [mode, style_id, apply, {mode, mixer, [color], [data]}]
         """
         method = service_call.data.get("method") or "set_fx_effect"
-        raw_params = service_call.data.get("params")
         close_socket = bool(service_call.data.get("close_socket", True))
         persist = bool(service_call.data.get("persist", False))
 
@@ -59,64 +187,8 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         if target is None:
             return {"ok": False, "error": "entity not found"}
 
-        if raw_params is not None:
-            params = raw_params
-        else:
-            mode = int(service_call.data.get("mode", NATIVE_CLOCK_EFFECT_ID))
-            style_id = int(service_call.data.get("style_id", 0))
-            apply = int(service_call.data.get("apply", NATIVE_CLOCK_APPLY))
-            mixer = int(service_call.data.get("mixer", 0))
-            config = {"mode": mode, "mixer": mixer}
-            data_b64 = service_call.data.get("data")
-            data_bytes = service_call.data.get("data_bytes")
-            if data_b64 is not None:
-                config["data"] = data_b64
-            elif data_bytes is not None:
-                config["data"] = base64.b64encode(
-                    bytes(int(b) & 0xFF for b in data_bytes)
-                ).decode("ascii")
-            # The firmware clock effect (mode 40) REQUIRES a data payload
-            # (date/timezone/12h/colon). If none was supplied explicitly, build
-            # it from the lamp's current clock settings -- exactly like
-            # _activate_native_clock -- otherwise the clock renders blank.
-            if mode == NATIVE_CLOCK_EFFECT_ID and "data" not in config:
-                config["data"] = base64.b64encode(
-                    target._native_clock_data_bytes()
-                ).decode("ascii")
-            color = service_call.data.get("color")
-            if color is not None:
-                config["color"] = color if isinstance(color, list) else [int(color)]
-            # Optional animation speed. The firmware clock effect (mode 40)
-            # accepts a `rate` field just like native effects.
-            rate = service_call.data.get("rate")
-            if rate is not None:
-                try:
-                    config["rate"] = int(rate)
-                except (TypeError, ValueError):
-                    pass
-            # The first array element (command/effect id) usually equals the
-            # config mode, but some renderers only unlock their full output
-            # under a different command id (e.g. Fireworks needs 71 while the
-            # clock config keeps mode 40). Allow overriding it independently.
-            command_id = service_call.data.get("effect_id")
-            command_id = int(command_id) if command_id is not None else mode
-            params = [command_id, style_id, apply, config]
-
-        # Derive effect mode/style for optional persistence (from whichever
-        # branch built params). params = [mode, style_id, apply, config].
-        effect_mode = None
-        effect_style = None
-        effect_config = None
-        try:
-            if isinstance(params, list) and len(params) >= 2:
-                effect_mode = int(params[0])
-                effect_style = int(params[1])
-            if isinstance(params, list) and len(params) >= 4 and isinstance(
-                params[3], dict
-            ):
-                effect_config = params[3]
-        except (TypeError, ValueError):
-            pass
+        params = _fx_params(service_call.data, target)
+        effect_mode, effect_style, effect_config = _fx_effect_parts(params)
 
         # Treat as a clock command when the effect CONFIG selects the clock
         # renderer (mode 40), even if the outer command id was overridden (e.g.
@@ -192,66 +264,11 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
                 # Always reflect the current firmware command in the entity
                 # state so the lamp-preview card matches exactly what selecting
                 # the same clock style / effect from the device settings page
-                # would show -- not just the mode, but the specific style,
-                # color and options (so clock_style_id, and thus the masked
-                # effect / color the card renders, are correct even when
-                # persist is unchecked).
-                if is_clock_command:
-                    target._mode = MODE_CLOCK
-                    if effect_style in NATIVE_CLOCK_STYLES:
-                        target._native_clock_style = effect_style
-                    if isinstance(effect_config, dict):
-                        if "color" in effect_config:
-                            _color = effect_config["color"]
-                            target._native_clock_color = (
-                                int(_color[0])
-                                if isinstance(_color, list) and _color
-                                else int(_color)
-                            )
-                        else:
-                            target._native_clock_color = None
-                        if "data" in effect_config:
-                            try:
-                                _cb = base64.b64decode(effect_config["data"])
-                                if len(_cb) >= 1:
-                                    target._native_clock_content = {
-                                        1: "time",
-                                        2: "time_date",
-                                        3: "date",
-                                    }.get(_cb[0], target._native_clock_content)
-                                    target._native_clock_show_date = _cb[0] == 2
-                                if len(_cb) >= 3:
-                                    target._native_clock_12_hour = _cb[2] == 1
-                                if len(_cb) >= 4:
-                                    # Firmware byte is inverted: 0 blinks, 1 steady.
-                                    target._native_clock_colon_blink = _cb[3] == 0
-                            except Exception as err:  # noqa: BLE001 -- best-effort reflection
-                                _LOGGER.debug(
-                                    "[SEND_FX] Could not decode clock data bytes: %s", err
-                                )
-                        # Reflect the mixer flow direction so the preview matches
-                        # the direction applied to the clock on the lamp.
-                        if "direction" in effect_config:
-                            for _dn, _dv in NATIVE_EFFECT_DIRECTION_VALUES.items():
-                                if _dv == effect_config["direction"]:
-                                    target._native_effect_direction = _dn
-                                    break
-                elif native_effect_name is not None:
-                    target._mode = MODE_NATIVE_EFFECT
-                    target._native_effect = native_effect_name
-                    if isinstance(effect_config, dict):
-                        if "rate" in effect_config:
-                            try:
-                                target._native_effect_speed = max(
-                                    1, min(255, int(effect_config["rate"]))
-                                )
-                            except (TypeError, ValueError):
-                                pass
-                        if "direction" in effect_config:
-                            for _dn, _dv in NATIVE_EFFECT_DIRECTION_VALUES.items():
-                                if _dv == effect_config["direction"]:
-                                    target._native_effect_direction = _dn
-                                    break
+                # would show (also when persist is unchecked).
+                _reflect_fx_effect(
+                    target, is_clock_command, effect_style, effect_config,
+                    native_effect_name,
+                )
                 if target.hass is not None:
                     if (
                         is_clock_command
@@ -272,85 +289,32 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
             # animation effect, so a Force Refresh / state update re-applies it
             # instead of reverting. Arbitrary/unknown raw values can't be
             # persisted through the state model and are left as live-only.
-            if (
-                persist
-                and is_clock_command
-                and effect_style in NATIVE_CLOCK_STYLES
-            ):
-                target._native_clock_style = effect_style
-                target._mode = MODE_CLOCK
-                target._is_on = True
-                # Persist the color if the raw call supplied one, so subsequent
-                # activations keep the same custom color.
-                if isinstance(effect_config, dict) and "color" in effect_config:
-                    color_value = effect_config["color"]
-                    if isinstance(color_value, list) and color_value:
-                        target._native_clock_color = int(color_value[0])
-                    else:
-                        target._native_clock_color = int(color_value)
-                elif isinstance(effect_config, dict) and "color" not in effect_config:
-                    target._native_clock_color = None
-                # Decode the 4-byte data payload to persist clock settings so
-                # subsequent activations (brightness change, refresh, etc.) use
-                # the values the caller explicitly sent rather than reverting to
-                # the old entity state.  Format (matches _native_clock_data_bytes):
-                #   [show_date(1/2), tz_offset, 12h(0/1), colon_steady(0=blink)]
-                if isinstance(effect_config, dict) and "data" in effect_config:
-                    try:
-                        clock_bytes = base64.b64decode(effect_config["data"])
-                        if len(clock_bytes) >= 1:
-                            target._native_clock_show_date = clock_bytes[0] == 2
-                        if len(clock_bytes) >= 3:
-                            target._native_clock_12_hour = clock_bytes[2] == 1
-                        if len(clock_bytes) >= 4:
-                            # Firmware byte is inverted: 0 = blink, 1 = steady
-                            target._native_clock_colon_blink = clock_bytes[3] == 0
-                    except Exception as err:  # noqa: BLE001 -- best-effort reflection
-                        _LOGGER.debug(
-                            "[SEND_FX] Could not decode clock data bytes: %s", err
-                        )
-                # Record the current UTC offset so the periodic ``async_update``
-                # timezone check does not immediately fire a SECOND clock
-                # activation (which races this one for the hardware lock and
-                # visibly resets the panel). ``_activate_native_clock`` sets this
-                # on the normal path; the raw FX path must do the same.
-                target._native_clock_timezone_offset = (
-                    target._native_clock_timezone_hours()
-                )
-                if target.hass is not None:
-                    target.async_schedule_update_ha_state()
-                    target._refresh_linked_entities()
-                persisted = True
-                _LOGGER.warning(
-                    "[FX-EXPLORER] persisted clock style=%s on %s",
-                    effect_style,
-                    target.entity_id,
-                )
-            elif persist and native_effect_name is not None:
-                target._native_effect = native_effect_name
-                target._mode = MODE_NATIVE_EFFECT
-                target._is_on = True
-                if isinstance(effect_config, dict):
-                    if "rate" in effect_config:
-                        try:
-                            target._native_effect_speed = max(
-                                1, min(255, int(effect_config["rate"]))
-                            )
-                        except (TypeError, ValueError):
-                            pass
-                    if "direction" in effect_config:
-                        # Reverse-map the numeric direction to its name.
-                        for _dname, _dval in NATIVE_EFFECT_DIRECTION_VALUES.items():
-                            if _dval == effect_config["direction"]:
-                                target._native_effect_direction = _dname
-                                break
-                if target.hass is not None:
-                    target.async_schedule_update_ha_state()
-                    target._refresh_linked_entities()
-                persisted = True
-                _LOGGER.warning(
-                    "[FX-EXPLORER] persisted native effect=%s on %s",
+            persist_clock = is_clock_command and effect_style in NATIVE_CLOCK_STYLES
+            if persist and (persist_clock or native_effect_name is not None):
+                _reflect_fx_effect(
+                    target, persist_clock, effect_style, effect_config,
                     native_effect_name,
+                )
+                target._is_on = True
+                if persist_clock:
+                    # Record the current UTC offset so the periodic
+                    # ``async_update`` timezone check does not immediately fire
+                    # a SECOND clock activation (which races this one for the
+                    # hardware lock and visibly resets the panel).
+                    # ``_activate_native_clock`` sets this on the normal path;
+                    # the raw FX path must do the same.
+                    target._native_clock_timezone_offset = (
+                        target._native_clock_timezone_hours()
+                    )
+                if target.hass is not None:
+                    target.async_schedule_update_ha_state()
+                    target._refresh_linked_entities()
+                persisted = True
+                _LOGGER.warning(
+                    "[FX-EXPLORER] persisted %s on %s",
+                    f"clock style={effect_style}"
+                    if persist_clock
+                    else f"native effect={native_effect_name}",
                     target.entity_id,
                 )
             return {
@@ -692,7 +656,7 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         _LOGGER.debug("[TEST] Display mode applied")
         
         # Report final connection status
-        _LOGGER.debug("[TEST] After apply - connection_error: %s", getattr(target_entity, '_connection_error', False))
+        _LOGGER.debug("[TEST] After apply - last connection error: %s", getattr(target_entity, '_last_connection_error', None))
 
     hass.services.async_register(
         DOMAIN,
@@ -728,7 +692,7 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
                 name=f"yeelight_cube_apply_color_accuracy_{target_entity._ip}"
             )
 
-        _fire_and_forget(*[_apply_one(t) for t in targets])
+        run_on_lamps("SET_COLOR_ACCURACY", targets, _apply_one)
 
     hass.services.async_register(
         DOMAIN,
@@ -789,7 +753,7 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
                     name=f"yeelight_cube_apply_calibration_{target_entity._ip}"
                 )
 
-        _fire_and_forget(*[_apply_one(t) for t in targets])
+        run_on_lamps("SET_COLOR_CALIBRATION", targets, _apply_one)
 
     hass.services.async_register(
         DOMAIN,
@@ -830,7 +794,7 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         async def _apply_one(target_entity):
             target_entity._set_calibration_lock(enabled)
 
-        _fire_and_forget(*[_apply_one(t) for t in targets])
+        run_on_lamps("SET_CALIBRATION_LOCK", targets, _apply_one)
 
     hass.services.async_register(
         DOMAIN,

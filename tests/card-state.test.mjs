@@ -4,10 +4,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { GradientPreviewStore } from "../custom_components/yeelight_cube/www/gradient-preview-store.js";
 import {
+  CALL_TIMEOUT_MS,
   CardCommandController,
   SUPERSEDED,
 } from "../custom_components/yeelight_cube/www/card-command-controller.js";
 import { CollectionState } from "../custom_components/yeelight_cube/www/collection-state.js";
+import { createPendingMap } from "../custom_components/yeelight_cube/www/pending-value.js";
 import { CollectionStore } from "../custom_components/yeelight_cube/www/user-collections.js";
 import { YeelightCardMixin } from "../custom_components/yeelight_cube/www/card-base.js";
 import { normalizeCardOptions } from "../custom_components/yeelight_cube/www/card-config.js";
@@ -52,21 +54,27 @@ test("angle commands coalesce unsent values and preserve target snapshots", asyn
   assert.equal(angles.schedule(hass, config, Infinity), false);
 });
 
-test("collection reconciliation requires content confirmation and isolates rollbacks", () => {
-  const collection = new CollectionState();
+test("collection reconciliation requires content confirmation and isolates rollbacks", (context) => {
+  context.mock.timers.enable({ apis: ["Date", "setTimeout"] });
+  let expired = 0;
+  const collection = new CollectionState(5000, { onExpire: () => expired++ });
   const original = [{ name: "A" }, { name: "B" }];
-  const first = collection.record(original.toReversed(), 100);
-  assert.deepEqual(collection.observe(original, 2, 200), original.toReversed());
-  const second = collection.record([{ name: "B" }], 300);
+  const first = collection.record(original.toReversed());
+  assert.deepEqual(collection.observe(original, 2), original.toReversed());
+  const second = collection.record([{ name: "B" }]);
   assert.equal(collection.rollback(first), false);
-  assert.deepEqual(collection.observe([{ name: "A" }], 1, 400), [
-    { name: "B" },
-  ]);
-  collection.observe([{ name: "B" }], 1, 500);
+  assert.deepEqual(collection.observe([{ name: "A" }], 1), [{ name: "B" }]);
+  // A partial list (count says 2) never confirms it.
+  assert.deepEqual(collection.observe([{ name: "B" }], 2), [{ name: "B" }]);
+  collection.observe([{ name: "B" }], 1);
   assert.equal(collection.pending, null);
   assert.equal(collection.rollback(second), false);
-  collection.record(original, 600);
-  assert.deepEqual(collection.observe([], 0, 6000), []);
+  // Never confirmed: dropped after the grace period, and the owner told.
+  collection.record(original);
+  context.mock.timers.tick(5001);
+  assert.equal(expired, 1);
+  assert.equal(collection.pending, null);
+  assert.deepEqual(collection.observe([], 0), []);
 });
 
 test("Palette rename completion never mutates an HA item at a stale index", async () => {
@@ -107,12 +115,12 @@ test("Palette rename completion never mutates an HA item at a stale index", asyn
 
 test("color-save failures roll back only their own pending edit", async (context) => {
   context.mock.method(console, "error", () => {});
-  const pending = {};
+  const pending = createPendingMap();
   const commit = cardMethod(
     "yeelight-cube-color-list-editor-card",
     "_commitColors",
     {
-      PENDING_COLORS_STORE: pending,
+      PENDING_COLORS: pending,
       CardCommandController,
       CustomEvent: class {
         constructor(type, options) {
@@ -136,21 +144,21 @@ test("color-save failures roll back only their own pending edit", async (context
       notices.push(event);
     },
   };
-  const older = { colors: [[1, 2, 3]] };
-  const newer = { colors: [[4, 5, 6]] };
-  pending["light.a"] = older;
+  const older = [[1, 2, 3]];
+  const newer = [[4, 5, 6]];
+  pending.set("light.a", older);
   const first = commit.call(card, "light.a", older, { entity: "light.a" });
   await Promise.resolve();
-  pending["light.a"] = newer;
+  pending.set("light.a", newer);
   fail(Error("offline"));
   assert.equal(await first, false);
-  assert.equal(pending["light.a"], newer);
+  assert.equal(pending.value("light.a"), newer);
   assert.equal(notices.length, 0);
   const second = commit.call(card, "light.a", newer, { entity: "light.a" });
   await Promise.resolve();
   fail(Error("offline again"));
   assert.equal(await second, false);
-  assert.equal(pending["light.a"], undefined);
+  assert.equal(pending.value("light.a"), null);
   assert.equal(notices[0].detail.message, "offline again");
 });
 
@@ -322,6 +330,9 @@ test("lamp adjustment timers and stale failures cannot cross configuration conte
   let refreshes = 0;
   const card = asCard({
     shadowRoot: {},
+    _pendingEffects: createPendingMap(),
+    _effectValue: cardMethod("lamp-preview-adjustments", "_effectValue", scope),
+    _sentEffects: cardMethod("lamp-preview-adjustments", "_sentEffects", scope),
     _actionCommands: { reset() {} },
     _commands: new CardCommandController(),
     _actions: { configure() {} },
@@ -347,16 +358,16 @@ test("lamp adjustment timers and stale failures cannot cross configuration conte
   assert.equal(timers.size, 0);
   await obsolete();
   assert.equal(calls.length, 0);
-  assert.deepEqual(card._localEffects, {});
+  assert.equal(card._pendingEffects.size, 0);
   await change.call(card, "contrast", { target: { value: "80" } });
   const running = timers.get(card._effectDebounceTimer)();
   await new Promise((resolve) => setImmediate(resolve)); // sent from the queue
   assert.equal(calls[0][2].entity_id, "light.b");
   configure.call(card, { entity: "light.a" });
-  card._localEffects.contrast = 90;
+  card._pendingEffects.hold("contrast", 90);
   reject(Error("offline"));
   await running;
-  assert.equal(card._localEffects.contrast, 90);
+  assert.equal(card._pendingEffects.value("contrast"), 90);
   assert.equal(refreshes, 3);
 });
 
@@ -391,6 +402,28 @@ test("collection commands serialize snapshots and cancel dependent work after fa
     { idx: 0 },
   );
   assert.equal(await third, true);
+});
+
+test("a collection call never answered fails after the call timeout, freeing the queue", async (context) => {
+  context.mock.method(console, "warn", () => {});
+  context.mock.timers.enable({ apis: ["setTimeout"] });
+  const collection = new CollectionState();
+  const calls = [];
+  const hass = {
+    callService(domain, service) {
+      calls.push(service);
+      // The first one is never answered.
+      return service === "remove_palette" ? new Promise(() => {}) : Promise.resolve();
+    },
+  };
+  const stuck = collection.execute(hass, "remove_palette", { idx: 0 });
+  await Promise.resolve();
+  context.mock.timers.tick(CALL_TIMEOUT_MS);
+  await assert.rejects(stuck, /no answer from Home Assistant/);
+  // The next edit goes out (after a failure the collection context moves on,
+  // so it starts a fresh one).
+  assert.equal(await collection.execute(hass, "rename_palette", { idx: 0, name: "B" }), true);
+  assert.deepEqual(calls, ["remove_palette", "rename_palette"]);
 });
 
 test("a collection fetch completed after reconfiguration is dropped", async () => {
@@ -465,10 +498,13 @@ test("a refused lamp-preview reset drops the defaults it showed", async (context
   const sendReset = cardMethod("lamp-preview-adjustments", "_sendReset");
   let fail;
   let refreshed = 0;
+  const pending = createPendingMap();
+  pending.hold("contrast", 100);
+  pending.hold("saturation", 100);
   const card = asCard({
     config: { entity: "light.a" },
     _effectContext: 1,
-    _localEffects: { contrast: 100, saturation: 100 },
+    _pendingEffects: pending,
     _hass: {
       callService: () =>
         new Promise((resolve, reject) => {
@@ -486,10 +522,11 @@ test("a refused lamp-preview reset drops the defaults it showed", async (context
     { contrast: 100, saturation: 100 },
   );
   await new Promise((resolve) => setImmediate(resolve));
-  card._localEffects.saturation = 40; // moved while the reset was pending
+  pending.hold("saturation", 40); // moved while the reset was pending
   fail(Error("offline"));
   assert.equal(await result, false);
-  assert.deepEqual(card._localEffects, { saturation: 40 });
+  assert.deepEqual(pending.keys(), ["saturation"]);
+  assert.equal(pending.value("saturation"), 40);
   assert.equal(refreshed, 1);
 });
 

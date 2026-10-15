@@ -28,6 +28,8 @@ import {
   clockStyleVisibilityConfig,
   clockColorModeOptions,
   clockColorModeVisibilityConfig,
+  editClockPreset,
+  watchClockPresets,
 } from "../custom_components/yeelight_cube/www/clock-preset-utils.js";
 import {
   clockStyleByName,
@@ -377,25 +379,17 @@ test("custom mode styles support name-only and migrate legacy swatches to Filled
 });
 
 test("Add opens the picker without sending a color-mode command", () => {
-  const anchor = { tagName: "BUTTON" };
-  const opened = [];
+  // The picker itself (at the Add button, or the dropdown put back on the
+  // mode shown) is the shared color-mode row's (color-mode-ui.js
+  // openAddPicker, tests/browser/events/15-color-add.cjs).
+  let opened = 0;
   const card = {
-    shadowRoot: { querySelector: () => anchor },
-    _openCustomPicker: (element) => opened.push(element),
+    _openCustomPicker: () => opened++,
     _callSetClock: () => assert.fail("Add must not apply a mode"),
     ...cardMethods(["_applyColorMode"], {}),
   };
   card._applyColorMode("__pick__");
-  assert.deepEqual(opened, [anchor]);
-  anchor.tagName = "SELECT";
-  anchor.value = "__pick__";
-  anchor.options = [
-    { value: "normal", defaultSelected: true },
-    { value: "__pick__" },
-  ];
-  card._applyColorMode("__pick__");
-  assert.equal(anchor.value, "normal");
-  assert.equal(opened.length, 2);
+  assert.equal(opened, 1);
 });
 
 test("the wheel places its items from its geometry, never measuring the page", () => {
@@ -423,15 +417,20 @@ test("the wheel places its items from its geometry, never measuring the page", (
 });
 
 test("preview style lists reuse snapshots and invalidate on library/config changes", () => {
+  // Like clockPresetLibrary: one library per states object (cached).
   let scans = 0;
+  const libraries = new WeakMap();
   const card = {
     config: {},
     _hass: { states: {} },
     _attrs: () => ({}),
     ...cardMethods(["_styleList"], {
-      clockPresetLibrary: () => {
-        scans++;
-        return [];
+      clockPresetLibrary: (hass) => {
+        if (!libraries.has(hass.states)) {
+          scans++;
+          libraries.set(hass.states, []);
+        }
+        return libraries.get(hass.states);
       },
       getClockStyles,
       clockStylesWithPresets,
@@ -442,11 +441,13 @@ test("preview style lists reuse snapshots and invalidate on library/config chang
   for (let index = 0; index < 1000; index++)
     assert.equal(card._styleList(), first);
   assert.equal(scans, 1);
+  // A new library (a state update, or a preset just renamed here).
   card._hass = { states: {} };
   assert.notEqual(card._styleList(), first);
+  // A new config: rebuilt from the same library.
   card.config = { custom_visible_styles: true, visible_styles: ["White"] };
   assert.deepEqual(card._styleList().map(clockPresetKey), ["White"]);
-  assert.equal(scans, 3);
+  assert.equal(scans, 2);
 });
 
 test("re-renders keep one observer: unchanged tiles keep their visibility", () => {
@@ -614,11 +615,14 @@ test("Custom stays selectable and built-in selections respect the active color m
     // Like the card's (async): resolves once sent.
     _callSetClock: async (data) => calls.push(data),
     _pendingStyle: createPendingValue(),
+    _pendingColorMode: createPendingValue({ yieldToLamp: true }),
     requestUpdate: () => renders++,
     ...cardMethods(
       [
         "_applyStyle",
         "_applyColorMode",
+        "_showColorPick",
+        "_dropColorPick",
         "_currentColorMode",
         "_activeStylePreset",
         "_currentStyle",
@@ -915,10 +919,13 @@ test("card color actions leave Custom empty until a pick and ignore deleted pres
     // Like the card's (async): resolves once sent.
     _callSetClock: async (data) => calls.push(data),
     _pendingStyle: createPendingValue(),
+    _pendingColorMode: createPendingValue({ yieldToLamp: true }),
     requestUpdate() {},
   };
   for (const name of [
     "_applyColorMode",
+    "_showColorPick",
+    "_dropColorPick",
     "_applyColor",
     "_applyColorPreset",
     "_currentColorMode",
@@ -991,10 +998,13 @@ test("saving a custom color as a clock style forgets it as the Custom color", ()
     // Like the card's (async): resolves once sent.
     _callSetClock: async (data) => calls.push(data),
     _pendingStyle: createPendingValue(),
+    _pendingColorMode: createPendingValue({ yieldToLamp: true }),
     requestUpdate() {},
     ...cardMethods(
       [
         "_applyColorMode",
+        "_showColorPick",
+        "_dropColorPick",
         "_applyColor",
         "_currentColorMode",
         "_activeStylePreset",
@@ -1065,11 +1075,14 @@ test("a just-saved style reads as Normal before the library echoes it back", () 
     // Like the card's (async): resolves once sent.
     _callSetClock: async (data) => calls.push(data),
     _pendingStyle: createPendingValue(),
+    _pendingColorMode: createPendingValue({ yieldToLamp: true }),
     requestUpdate() {},
     ...cardMethods(
       [
         "_applyStyle",
         "_applyColorMode",
+        "_showColorPick",
+        "_dropColorPick",
         "_currentColorMode",
         "_activeStylePreset",
         "_onPresetSaved",
@@ -1149,4 +1162,49 @@ test("renderClockFrame decodes the lamp's clock_color so every card shares one o
   );
   const litBw = bw.filter((p) => p[0] | p[1] | p[2]);
   assert.ok(litBw.every((p) => p[0] === 255 && p[1] === 255 && p[2] === 255));
+});
+
+test("clock preset renames and deletes show at once on every card and are put back if refused", async () => {
+  const amber = { id: "a", name: "Amber", color: [255, 120, 0], kind: "style" };
+  const teal = { id: "t", name: "Teal", color: [0, 128, 128], kind: "color_mode" };
+  const calls = [];
+  const answers = [];
+  const hassWith = (presets) => ({
+    states: { "sensor.yeelight_cube_clock_presets": { attributes: { clock_presets: presets } } },
+    callService: (domain, service, data) => {
+      calls.push({ service, data });
+      return new Promise((resolve, reject) => answers.push({ resolve, reject }));
+    },
+  });
+  const hass = hassWith([amber, teal]);
+  let renders = 0;
+  const off = watchClockPresets({ requestUpdate: () => renders++ });
+  try {
+    // Renamed: shown at once (as the backend stores it), every card told.
+    const rename = editClockPreset(hass, "save_clock_preset", {
+      preset_id: "a", name: "  Warm   amber ", color: [255, 120, 0], kind: "style",
+    });
+    assert.deepEqual(clockPresetLibrary(hass).map((p) => p.name), ["Warm amber", "Teal"]);
+    assert.equal(renders, 1);
+    await Promise.resolve();
+    answers.shift().resolve();
+    assert.equal(await rename, true);
+    // Published: the library is Home Assistant's again.
+    const published = hassWith([{ ...amber, name: "Warm amber" }, teal]);
+    assert.equal(
+      clockPresetLibrary(published),
+      published.states["sensor.yeelight_cube_clock_presets"].attributes.clock_presets,
+    );
+    // A refused delete: gone at once, then back, with the refusal reported.
+    const remove = editClockPreset(published, "delete_clock_preset", { preset_id: "t" });
+    assert.deepEqual(clockPresetLibrary(published).map((p) => p.id), ["a"]);
+    await Promise.resolve();
+    answers.shift().reject(new Error("This preset no longer exists"));
+    await assert.rejects(remove, /no longer exists/);
+    assert.deepEqual(clockPresetLibrary(published).map((p) => p.id), ["a", "t"]);
+    assert.equal(renders, 3);
+    assert.deepEqual(calls.map((call) => call.service), ["save_clock_preset", "delete_clock_preset"]);
+  } finally {
+    off();
+  }
 });

@@ -9,6 +9,11 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from tests.test_native_features import ROOT, CONSTANTS, LIGHT_SOURCE, NATIVE_PREVIEW, _load_standalone_functions, SERVICES_SOURCE
 
+# command_errors.note_command_result, for the real hardware queue.
+NOTE_COMMAND_RESULT = _load_standalone_functions(
+    (ROOT / "command_errors.py").read_text(encoding="utf-8"), {"note_command_result"}, {"time": time}
+)["note_command_result"]
+
 NATIVE_CLOCK_STYLES = CONSTANTS["NATIVE_CLOCK_STYLES"]
 ALL_NATIVE_EFFECTS = CONSTANTS["ALL_NATIVE_EFFECTS"]
 DOMAIN = CONSTANTS["DOMAIN"]
@@ -60,6 +65,11 @@ def _rotation_helpers():
             "_save_display_state",
             "_async_resume_display_rotation",
             "_text_waits_for_matrix",
+            "_duration_text",
+            # The lamp's own state, as each mixin starts it (make_light).
+            "_init_rotation_state",
+            "_init_connection_state",
+            "_init_saved_state",
         },
         {
             "asyncio": asyncio,
@@ -134,38 +144,16 @@ def make_light(helpers, kind="native", is_on=True, extended=False):
         _music_flow_runtime_storage_key=lambda: "entry-1",
         # Saving to disk is stubbed.
         _schedule_integration_save=Mock(),
-        _rotation_intervals={},
-        _rotation_retime=False,
-        _rotation_restore=None,
         _is_on=is_on,
         _extended_effects_enabled=extended,
-        _rotation_kind=kind,
         _native_effect="Rainbow",
         _native_clock_style=1,
         _native_clock_color=None,
         _mode="Native Effect",
         _custom_draw_active=False,
-        _rotation_active=False,
-        _rotation_items=[],
-        _rotation_interval=60,
-        _rotation_index=-1,
-        _rotation_task=None,
-        _rotation_wake=None,
-        _rotation_started=None,
-        _rotation_error=None,
-        _rotation_resume_pending=False,
-        _rotation_waiting_for_reconnect=False,
-        _rotation_timeline=None,
-        _rotation_group=None,
-        _rotation_retry_attempt=0,
-        _rotation_retry_at=None,
-        _hardware_failure_retryable=False,
-        _last_connection_error=None,
-        _hard_timeout_times=[],
+        _outage_since=None,  # a ConnectionMixin class attribute
         _cube_matrix=FakeCubeMatrix(),
-        _calibration_lock=False,
         _music_flow_enabled=False,
-        _display_overlay=False,
         stop_scroll_timer=Mock(),
         _execute_hardware_op=AsyncMock(return_value=True),
         _activate_native_clock=AsyncMock(),
@@ -175,6 +163,11 @@ def make_light(helpers, kind="native", is_on=True, extended=False):
         async_write_ha_state=Mock(),
         _create_tracked_task=Mock(side_effect=lambda coro, name=None: asyncio.create_task(coro)),
     )
+    # The rotation's, the hardware queue's and the saved display state, as
+    # the real lamp starts with them (no field list to keep in step).
+    for init in ("_init_rotation_state", "_init_connection_state", "_init_saved_state"):
+        helpers[init](light)
+    light._rotation_kind = kind
     _bind(light, helpers, "start_effect_rotation", "stop_effect_rotation",
           "skip_effect_rotation", "_normalize_rotation_items", "_rotation_loop",
           "_apply_rotation_step", "_wait_rotation_retry", "_resume_rotation_after_reconnect", "_rotation_scheduled_index",
@@ -331,6 +324,28 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         await self.health_cycle(light)
         self.assertTrue(await light._rotation_started)
         light.stop_effect_rotation()
+
+    async def test_an_outage_is_logged_once_when_it_starts_and_once_when_it_ends(self):
+        # A lamp switched off for hours: one warning, not one per probe.
+        namespace = self.helpers["_periodic_health_check"].__globals__
+        logger, namespace["_LOGGER"] = namespace["_LOGGER"], Mock()
+        try:
+            light = make_light(self.helpers, kind="clock")
+            light._mode = "Clock"  # a firmware mode: probed even when healthy
+            for _ in range(3):
+                await self.health_cycle(light, reachable=False)
+            light._rotation_waiting_for_reconnect = True  # it was unreachable
+            await self.health_cycle(light)
+            log = namespace["_LOGGER"]
+            warnings = [c.args[0] for c in log.warning.call_args_list]
+            infos = [c.args[0] for c in log.info.call_args_list]
+            self.assertEqual(sum("Lamp unreachable" in w for w in warnings), 1)
+            self.assertFalse(any("Probe failed" in w for w in warnings))
+            self.assertEqual(sum("back online after" in i for i in infos), 1)
+            self.assertIsNone(light._outage_since)
+        finally:
+            namespace["_LOGGER"] = logger
+            light.stop_effect_rotation()
 
     async def test_reconnect_cannot_override_stop_off_lock_or_new_mode(self):
         for action in ("stop", "off", "lock", "mode", "music"):
@@ -593,7 +608,7 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
                 "_LOGGER": Mock(),
                 "TEXT_RENDER_MODES": CONSTANTS["TEXT_RENDER_MODES"],
                 "_resolve_entities": lambda call, label: [light],
-                "_fire_and_forget": lambda *coros: queued.extend(coros),
+                "run_on_lamps": lambda label, lamps, apply, _schedule=(lambda *coros: queued.extend(coros)): _schedule(*(apply(lamp) for lamp in lamps)),
             },
         )["handle_set_custom_text"]
         queued = []
@@ -1058,7 +1073,7 @@ class EffectRotationServiceTests(unittest.IsolatedAsyncioTestCase):
                 "HomeAssistantError": ValueError,
                 "_LOGGER": Mock(),
                 "_resolve_entities": resolve,
-                "_fire_and_forget": fire,
+                "run_on_lamps": lambda label, lamps, apply, _schedule=(fire): _schedule(*(apply(lamp) for lamp in lamps)),
             },
         )
 
@@ -1196,12 +1211,14 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
             "_resolve_native_clock_color", "_set_native_mode_brightness",
             "_native_clock_data_bytes", "stop_scroll_timer",
             "_activate_native_effect", "_leave_direct_mode",
+            "_init_transition_state", "_init_scroll_state",
         }
         source = "\n".join(
             (ROOT / filename).read_text(encoding="utf-8")
             for filename in (
                 "light.py", "light_display.py", "light_render.py",
                 "light_native.py", "light_connection.py", "light_rotation.py",
+                "light_transitions.py",
             )
         )
         helpers = _load_standalone_functions(source, names, {
@@ -1213,20 +1230,18 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
             "CubeConnectionError": CUBE_CONNECTION_ERROR,
             "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
             "effect_supports_color_override": NATIVE_PREVIEW["effect_supports_color_override"],
+            "note_command_result": NOTE_COMMAND_RESULT,
         })
         _bind(light, helpers, *names)
-        light._calibration_lock = False
+        # The transition and scroll state as the lamp starts (the rotation's,
+        # the hardware queue's and the saved display state come from make_light).
+        light._init_transition_state()
+        light._init_scroll_state()
         light._music_flow_enabled = False
         light._in_native_fw_mode = True
         light._fx_mode_is_direct = False
-        light._display_retry_count = 0
         light.MAX_DISPLAY_RETRIES = 3
-        light._retry_display_task = None
-        light._hard_timeout_times = []
-        light._coalesced_op_generation = 0
         light._custom_text = ""
-        light._transition_type = "none"
-        light._scroll_timer = None
         light._native_clock_timezone_hours = lambda: 0
         light._native_clock_content = "time"
         light._native_clock_12_hour = False
@@ -1361,15 +1376,13 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
             "_DEVICE_LOCKS": {},
             "_DEVICE_LOCK_HOLDERS": {},
             "is_quota_error": lambda err: err is quota_error,
+            "note_command_result": NOTE_COMMAND_RESULT,
         }
         fns = _load_standalone_functions(
-            LIGHT_SOURCE, {"_execute_hardware_op", "_get_device_lock"}, namespace
+            LIGHT_SOURCE,
+            {"_execute_hardware_op", "_get_device_lock"},
+            namespace,
         )
-        light._coalesced_op_generation = 0
-        light._display_retry_count = 0
-        light._retry_display_task = None
-        light._connection_error = False
-        light._hardware_operation_phase = None
         return lambda func, name, **kw: fns["_execute_hardware_op"](light, func, name, **kw)
 
     async def test_native_start_reaches_protocol_transport(self):

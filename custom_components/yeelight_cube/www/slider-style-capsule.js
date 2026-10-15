@@ -177,25 +177,6 @@ export default {
   .brightness-capsule-host {
     width: 100%;
   }
-  .capsule-snap-ticks {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-    z-index: 1;
-  }
-  .capsule-snap-tick {
-    position: absolute;
-    top: 50%;
-    width: 5px;
-    height: 5px;
-    transform: translate(-50%, -50%);
-    background: var(--primary-text-color, #333);
-    border-radius: 50%;
-    opacity: 0.35;
-  }
   .brightness-capsule-slot {
     flex-shrink: 0;
     display: flex;
@@ -225,11 +206,6 @@ export default {
   }
   .brightness-capsule-input[readonly] {
     cursor: default;
-  }
-  .capsule-value-under {
-    display: flex;
-    justify-content: center;
-    padding: 8px 0;
   }
 `,
 };

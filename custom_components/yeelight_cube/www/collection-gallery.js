@@ -117,6 +117,7 @@ import {
 } from "./selector-shared-styles.js";
 import { isActivationKey } from "./card-shell.js";
 import { defineOnce } from "./card-registration.js";
+import { isDarkTheme } from "./color-utils.js";
 import { actionButtonStyles } from "./action-button-utils.js";
 import { itemLabel, itemMatchesQuery, sortGalleryItems } from "./card-config.js";
 
@@ -615,7 +616,7 @@ class YcCollectionGallery extends LitElement {
     const border = this.config.item_card_border;
     this.dataset.itemBorder = String(
       border === "always" ||
-        (border === "auto" && isLightColor(getComputedStyle(this).color)),
+        (border === "auto" && isDarkTheme(this)),
     );
   }
 
@@ -788,12 +789,6 @@ class YcCollectionGallery extends LitElement {
   }
 
 
-}
-
-// Whether a computed CSS color ("rgb(r, g, b)") is light.
-function isLightColor(color) {
-  const [r, g, b] = (String(color).match(/\d+(\.\d+)?/g) || []).map(Number);
-  return r != null && 0.2126 * r + 0.7152 * g + 0.0722 * b > 140;
 }
 
 /** The gallery_* matrix appearance shared by every preview layout. */

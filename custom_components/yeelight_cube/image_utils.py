@@ -49,11 +49,7 @@ def image_to_matrix(image_b64: str, width: int = 20, height: int = 5):
     except AttributeError:
         resample = Image.LANCZOS
     image = image.resize((width, height), resample)
-    pixels = list(image.getdata())
-    matrix = []
-    for row in range(height):
-        for col in range(width):
-            pos = row * width + col
-            r, g, b = pixels[pos]
-            matrix.append((r, g, b))
-    return matrix
+    # Row by row, 3 bytes (R, G, B) per pixel. tobytes() is in every Pillow
+    # (getdata() is deprecated: removed in Pillow 14).
+    data = image.tobytes()
+    return [tuple(data[pos : pos + 3]) for pos in range(0, width * height * 3, 3)]

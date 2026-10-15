@@ -148,18 +148,12 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     this._onScreen = true;
     this._lampDots = null;
 
-    // Local state for optimistic UI updates
-    this._localEffects = {}; // Store all effect values locally
-
     // What the last lamp update showed (see set hass).
     this._seen = {};
 
     // The matrix dots are recreated when the generation changes (a new
     // configuration: their look changes, see _matrixTemplate).
     this._dotGeneration = 0;
-    // Effects just reset to their default: the default is shown locally until
-    // the entity reports it, then the local override is dropped.
-    this._resetPending = new Set();
 
     // The brightness slider, through the shared lamp-slider controller like
     // the Clock and Native Effects sliders (lamp-sliders.js); its updates go
@@ -234,8 +228,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     this._effectContext = (this._effectContext || 0) + 1;
     clearTimeout(this._effectDebounceTimer);
     this._effectDebounceTimer = null;
-    this._localEffects = {};
-    this._resetPending = new Set();
+    this._pendingEffects.clear();
     this._orientationContext = (this._orientationContext || 0) + 1;
     this._orientationPending = null;
     this._orientationError = null;
@@ -273,9 +266,6 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     }
     this._refreshOrientationControls();
 
-    // Note: _localEffects are NOT cleared when the entity state matches; they
-    // keep tracking values that differ from defaults for the change indicator
-    // system. _localEffects should only be cleared by explicit reset actions.
     const entity = hass.states[this._primaryEntity(hass)];
     const attrs = entity?.attributes;
     const seen = this._seen;
@@ -298,10 +288,15 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
       }, 250);
       return;
     }
-    // While adjustments wait for the lamp's echo, only the lamp's own changes
-    // (power, matrix, content mode) update the card.
+    // Adjustments the lamp now reports (or replaced: another dashboard) are
+    // no longer shown locally. While others wait for the lamp's echo, only
+    // the lamp's own changes (power, matrix, content mode) and a settled
+    // adjustment update the card.
+    const waiting = this._pendingEffects.size;
+    this._settleEffects(entity);
     if (
-      !Object.keys(this._localEffects).length ||
+      !this._pendingEffects.size ||
+      this._pendingEffects.size !== waiting ||
       this._seen.state !== seen.state ||
       this._seen.matrix !== seen.matrix ||
       this._seen.contentMode !== seen.contentMode
@@ -341,7 +336,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     }
     const stateObj = this._hass?.states?.[this._primaryEntity()];
     if (stateObj) {
-      this._pruneResetEffects(stateObj);
+      this._settleEffects(stateObj);
       // Drop the dragged brightness once the lamp reports it.
       this._lampSliders.settle(stateObj.attributes);
     }
@@ -640,8 +635,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
       [this._primaryEntity()].filter(Boolean),
     );
     this._effectContext = (this._effectContext || 0) + 1;
-    this._localEffects = {};
-    this._resetPending = new Set();
+    this._pendingEffects.clear();
     this._orientationContext = (this._orientationContext || 0) + 1;
     this._orientationPending = null;
     clearTimeout(this._orientationTimer);

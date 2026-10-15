@@ -240,11 +240,6 @@ export const GRADIENT_CARD_CSS = `
         .capsule-angle-input[readonly] {
           cursor: default;
         }
-        .capsule-value-under {
-          display: flex;
-          justify-content: center;
-          padding: 8px 0;
-        }
         .snap-tick {
           position: absolute;
           background: var(--secondary-text-color, #999);
@@ -270,25 +265,6 @@ export const GRADIENT_CARD_CSS = `
           height: 5px;
           border-radius: 50%;
         }
-        .capsule-snap-ticks {
-          position: absolute;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          pointer-events: none;
-          z-index: 1;
-        }
-        .capsule-snap-tick {
-          position: absolute;
-          top: 50%;
-          width: 5px;
-          height: 5px;
-          transform: translate(-50%, -50%);
-          background: var(--primary-text-color, #333);
-          border-radius: 50%;
-          opacity: 0.35;
-        }
         .angle-preview {
           width: 64px;
           height: 64px;
@@ -296,18 +272,55 @@ export const GRADIENT_CARD_CSS = `
           user-select: none;
         }
         
-        /* Wheel Style */
+        /* Wheel Style (and the compass dial) */
         .wheel-container {
+          width: 100%;
           display: flex;
           flex-direction: column;
           align-items: center;
           gap: 8px;
         }
 
+        .compass-container {
+          width: 100%;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+        }
+
         .color-wheel {
           cursor: pointer;
           border-radius: 50%;
           overflow: visible;
+          max-width: 200px;
+          max-height: 200px;
+        }
+
+        /* The transparent circle that takes the wheel's and dial's clicks. */
+        .angle-hit {
+          cursor: pointer;
+        }
+
+        /* Matrix preview style */
+        .matrix-preview-container {
+          width: 100%;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          cursor: pointer;
+          position: relative;
+        }
+
+        .matrix-preview-frame {
+          container-type: inline-size;
+          max-width: 100%;
+        }
+
+        .matrix-preview-grid {
+          display: grid;
+          width: 100%;
+          margin: 0 auto;
+          box-sizing: border-box;
         }
 
         .wheel-selector {
@@ -328,12 +341,37 @@ export const GRADIENT_CARD_CSS = `
           -ms-user-select: none;
         }
 
-        /* Rectangle Style */
+        /* Rectangle and square styles (one perimeter renderer) */
+        .rect-container,
+        .square-container {
+          width: 100%;
+          position: relative;
+        }
+
         .rect-container {
           display: flex;
           flex-direction: column;
           align-items: center;
           gap: 8px;
+        }
+
+        .color-perimeter {
+          box-shadow: inset 0 0 0 1px var(--divider-color, #ddd);
+          border-radius: 6px;
+          margin: 0 auto;
+          position: relative;
+          cursor: pointer;
+        }
+
+        .perimeter-selector {
+          position: absolute;
+          width: 12px;
+          height: 12px;
+          background: var(--card-background-color, #fff);
+          border: 2px solid var(--primary-text-color, #333);
+          border-radius: 50%;
+          transform: translate(-50%, -50%);
+          cursor: pointer;
         }
 
         .color-rect {
@@ -600,8 +638,20 @@ export const GRADIENT_CARD_CSS = `
         }
 
 
+        /* The angle control in the header row (rotary_in_header). */
+        .gc-header-rotary-row {
+          display: flex;
+          justify-content: flex-end;
+          align-items: center;
+        }
+
         /* ── Active-mode label chip ──────────────────────────── */
+        .gc-active-mode-row {
+          display: flex;
+          width: 100%;
+        }
         .gc-active-mode-label {
+          margin: 0;
           display: inline-flex;
           align-items: center;
           gap: 6px;
@@ -632,6 +682,7 @@ export const GRADIENT_CARD_CSS = `
           width: 100%;
           flex: 1 1 auto;
           min-width: 160px;
+          margin: 0 auto;
         }
 
 `;

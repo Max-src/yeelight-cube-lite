@@ -25,6 +25,57 @@ class ColorPipelineMixin:
     knobs, so this class is only ever used as a mixin.
     """
 
+    def _init_color_state(self):
+        """The preview adjustments, color accuracy and calibration knobs. Called by YeelightCubeLight.__init__."""
+        # Color effect settings (organized by category)
+        # Note: _preview_darken and _preview_brighten kept internally for brightness control logic
+        # but removed from UI - use light brightness slider instead
+        self._preview_darken = 0        # 0-100: used internally by brightness control
+        self._preview_brighten = 0      # 0-100: reserved for future use
+        # Color Adjustments
+        self._preview_hue_shift = 0     # -180 to +180: rotate hue
+        self._preview_temperature = 0   # -100 to +100: cool to warm
+        # Saturation & Intensity
+        self._preview_saturation = 100  # 0-200: 0=gray, 100=normal, 200=hyper
+        self._preview_vibrance = 100    # 0-200: smart saturation
+        # Tone & Contrast
+        self._preview_contrast = 100    # 0-200: 0=flat, 100=normal, 200=high
+        self._preview_glow = 0          # 0-100: boost bright pixels
+        # Special Effects
+        self._preview_grayscale = 0     # 0-100: convert to black & white
+        self._preview_invert = 0        # 0-100: blend with inverted
+        self._preview_tint_hue = 0      # 0-360: tint color hue
+        self._preview_tint_strength = 0 # 0-100: tint blend amount
+        # Hardware color correction is always active (see _apply_color_correction)
+        # Hardware color accuracy -- always-on by default (see _apply_color_accuracy).
+        # Compensates for LED color rendering differences vs. a computer monitor
+        # by applying per-channel gain that fades with brightness.  The service
+        # set_color_accuracy still exists to toggle at runtime but the default is ON.
+        self._color_accuracy_enabled = True  # Per-channel gain to match monitor colors
+
+        # Calibration overrides (runtime-tunable via set_color_calibration)
+        # System 1: Low-brightness gamma correction
+        self._calib_gamma_r = 0.85
+        self._calib_gamma_g = 0.75
+        self._calib_gamma_b = 0.62
+        self._calib_hw_threshold = 50  # hw% above which correction is OFF
+        self._calib_hw_full = 10       # hw% at/below which correction is 100%
+        self._calib_channel_balance = 0.7  # 0=pure uniform (hue-safe), 1=per-channel (blue fix)
+        # System 2: Monitor-matching per-channel gain
+        self._calib_gain_r = 1.00
+        self._calib_gain_g = 1.00
+        self._calib_gain_b = 1.00
+        # System 3: Unified brightness curve parameters (override class constants)
+        self._calib_hw_floor = self.HW_FLOOR_PERCENT
+        self._calib_darken_floor = self.DARKEN_FLOOR_PERCENT
+        self._calib_hw_curve = self.HW_CURVE_EXPONENT
+        self._calib_darken_curve = self.DARKEN_CURVE_EXPONENT
+        # Per-channel minimum lit value (lowest value a channel renders cleanly).
+        # 1 = LED can go fully low (e.g. red); raise for channels that need more.
+        self._calib_floor_r = 1
+        self._calib_floor_g = 1
+        self._calib_floor_b = 1
+
     def _angle_gradient_projection_for_bottom_center(self, col, dx, dy):
         # Always use a 3-column, full-height box centered at col
         min_row, max_row = 0, TOTAL_ROWS - 1

@@ -19,6 +19,17 @@ _LOGGER = logging.getLogger(__name__)
 class TransitionMixin:
     """Frame-by-frame software transitions between two matrix color states."""
 
+    def _init_transition_state(self):
+        """The transition settings and the frame the next one starts from. Called by YeelightCubeLight.__init__."""
+        # -- Transition settings ------------------------------------------
+        self._transition_type = "none"           # Transition effect key (see const.TRANSITION_TYPES)
+        self._transition_steps = 5               # Number of intermediate frames (1-10)
+        self._transition_duration = 1.0          # Total transition time in seconds (0.2-10.0)
+        self._transition_active = False          # Re-entrancy guard
+
+        self._last_sent_colors = None            # List of 100 RGB tuples last sent to lamp
+        self._current_update_type = 'display_update'  # Tracks current operation type for transition logic
+
     async def _send_transition_frame(self, frame):
         """Push a single 100-pixel frame to the lamp.
 

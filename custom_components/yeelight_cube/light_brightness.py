@@ -23,6 +23,22 @@ _LOGGER = logging.getLogger(__name__)
 class BrightnessMixin:
     """The brightness service, its hardware / per-pixel split and fast path."""
 
+    def _init_brightness_state(self):
+        """What the brightness path last sent, and its retry. Called by YeelightCubeLight.__init__."""
+        # Hardware brightness tracking to avoid redundant brightness commands
+        self._last_hardware_brightness = None  # Track last hardware brightness sent to lamp
+        self._last_applied_darken = None       # Track last darken% actually rendered to lamp pixels
+
+        # Track last successful brightness change (timestamp, user_brightness)
+        # Used to prevent retry queue from overwriting newer brightness values
+        # This is CRITICAL for unified brightness system (hardware + darkness)
+        self._last_successful_brightness = None  # (timestamp, user_brightness_0_255)
+        
+        # Brightness retry queue - stores failed brightness values to retry when connection recovers
+        # Unlike generic retry queue, this stores COMPLETE user brightness (not hardware commands)
+        self._pending_brightness = None  # (user_brightness_0_255, timestamp) or None
+        self._brightness_retry_task = None  # Background task for brightness retries
+
     async def set_brightness(self, brightness: int, **kwargs):
         """
         Unified brightness control using BOTH hardware brightness and RGB darkening.
@@ -298,7 +314,10 @@ class BrightnessMixin:
         """
         try:
             if not self._cube_matrix.is_connected():
-                _LOGGER.warning("[BRIGHTNESS_FAST] [%s] SKIP -- cooldown active", self._ip)
+                _LOGGER.log(
+                    self._cube_matrix.outage_log_level(),
+                    "[BRIGHTNESS_FAST] [%s] SKIP -- cooldown active", self._ip,
+                )
                 raise CubeConnectionError("Cooldown active -- device not yet reachable")
             
             # If we don't have base colors yet, fall back to the full path
@@ -313,7 +332,7 @@ class BrightnessMixin:
             if self._fx_mode_is_direct and self._last_fx_mode_time > 0:
                 fx_age = time.time() - self._last_fx_mode_time
                 if fx_age > FX_MODE_STALENESS_TIMEOUT:
-                    _LOGGER.warning(
+                    _LOGGER.debug(
                         "[BRIGHTNESS_FAST] [%s] FX mode stale -- fx_age=%.0fs > "
                         "%.0fs, falling back to full apply (raw TCP recovery)",
                         self._ip, fx_age, FX_MODE_STALENESS_TIMEOUT
@@ -377,7 +396,7 @@ class BrightnessMixin:
             # socket reconnected during send, pixels were silently ignored.
             if self._cube_matrix.consume_reconnected_flag():
                 self._fx_mode_is_direct = False
-                _LOGGER.warning(
+                _LOGGER.debug(
                     "[BRIGHTNESS_FAST] [%s] Socket reconnected during update_leds -- "
                     "falling back to full apply for FX re-activation",
                     self._ip
@@ -387,7 +406,6 @@ class BrightnessMixin:
             
             # Track successful rendering
             self._last_applied_darken = self._preview_darken
-            self._connection_error = False
             
             # Update _last_sent_colors for future transitions
             self._last_sent_colors = frame
@@ -401,7 +419,6 @@ class BrightnessMixin:
         except Exception as e:
             if is_connection_error(e):
                 self._fx_mode_is_direct = False
-                self._connection_error = True
                 self._last_connection_error = str(e)
                 _LOGGER.debug("[BRIGHTNESS_FAST] Connection issue: %s -- re-raising for retry", e)
             else:

@@ -35,7 +35,7 @@ from .light_services_common import (
     COLOR_LIST_SCHEMA,
     _resolve_entity,
     _resolve_entities,
-    make_fire_and_forget,
+    make_lamp_runner,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ _LOGGER = logging.getLogger(__name__)
 
 def async_register_display_services(hass: HomeAssistant) -> None:
     """Register the display actions."""
-    _fire_and_forget = make_fire_and_forget(hass)
+    run_on_lamps = make_lamp_runner(hass)
 
     def generate_preview_for_mode(light_entity, mode: str, apply_brightness: bool = True):
         """The lamp's 100 colors in ``mode`` from its current text, colors,
@@ -325,7 +325,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             await target_entity.async_apply_display_mode(update_type='text_change')
             _LOGGER.debug("[SET_TEXT] Display mode applied successfully for entity %s", target_entity.entity_id)
 
-        _fire_and_forget(*[_apply_one(t) for t in targets])
+        run_on_lamps("SET_CUSTOM_TEXT", targets, _apply_one)
 
     hass.services.async_register(
         DOMAIN,
@@ -362,7 +362,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             if target_entity._angle_number_entity:
                 target_entity._angle_number_entity.async_update_from_light()
 
-        _fire_and_forget(*[_apply_one(t) for t in targets])
+        run_on_lamps("SET_ANGLE", targets, _apply_one)
 
     hass.services.async_register(
         DOMAIN,
@@ -471,7 +471,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             if target_entity._content_mode_select_entity:
                 target_entity._content_mode_select_entity.async_update_from_light()
 
-        _fire_and_forget(*[_apply_one(t) for t in targets])
+        run_on_lamps("DISPLAY_IMAGE", targets, _apply_one)
 
     hass.services.async_register(
         DOMAIN,
@@ -542,7 +542,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
                 if target_entity._native_effect_speed_entity:
                     target_entity._native_effect_speed_entity.async_write_ha_state()
 
-        _fire_and_forget(*[_apply_one(t) for t in targets])
+        run_on_lamps("SET_MODE", targets, _apply_one)
 
     hass.services.async_register(
         DOMAIN,
@@ -589,7 +589,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             if target_entity.hass is not None:
                 target_entity.async_schedule_update_ha_state()
 
-        _fire_and_forget(*[_apply_one(t) for t in targets])
+        run_on_lamps("SET_SOLID_COLOR", targets, _apply_one)
 
     hass.services.async_register(
         DOMAIN,
@@ -608,7 +608,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         # Supports multi-entity parallel dispatch
         full_panel = service_call.data.get("full_panel", False)
 
-        targets = _resolve_entities(service_call, "set_full_panel")
+        targets = _resolve_entities(service_call, "SET_FULL_PANEL")
         if not targets:
             return
 
@@ -630,7 +630,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             target_entity.async_schedule_update_ha_state()
             await target_entity.async_apply_display_mode(update_type='color_change')
 
-        _fire_and_forget(*[_apply_one(t) for t in targets])
+        run_on_lamps("SET_FULL_PANEL", targets, _apply_one)
 
     hass.services.async_register(
         DOMAIN,
@@ -693,7 +693,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
                 name=f"yeelight_cube_apply_preview_adjustments_{target_entity._ip}"
             )
 
-        _fire_and_forget(*[_apply_one(t) for t in targets])
+        run_on_lamps("SET_PREVIEW_ADJUSTMENTS", targets, _apply_one)
 
     hass.services.async_register(
         DOMAIN,
@@ -723,7 +723,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         if not targets:
             return
 
-        _fire_and_forget(*[t.async_force_refresh() for t in targets])
+        run_on_lamps("FORCE_REFRESH", targets, lambda lamp: lamp.async_force_refresh())
 
     hass.services.async_register(
         DOMAIN,
@@ -787,7 +787,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             if notify:
                 notify()
 
-        _fire_and_forget(*[_freeze_one(t) for t in targets])
+        run_on_lamps("FREEZE_DISPLAY", targets, _freeze_one)
 
     hass.services.async_register(
         DOMAIN,
@@ -811,7 +811,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             target_entity._save_display_state()
             _LOGGER.debug("[SAVE_STATE] Saved display state for %s", target_entity.entity_id)
 
-        _fire_and_forget(*[_apply_one(t) for t in targets])
+        run_on_lamps("SAVE_STATE", targets, _apply_one)
 
     hass.services.async_register(
         DOMAIN,
@@ -845,7 +845,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             await target_entity._async_resume_display_rotation()
             _LOGGER.debug("[RESTORE_STATE] Restored display state for %s", target_entity.entity_id)
 
-        _fire_and_forget(*[_apply_one(t) for t in targets])
+        run_on_lamps("RESTORE_STATE", targets, _apply_one)
 
     hass.services.async_register(
         DOMAIN,

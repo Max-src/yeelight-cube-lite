@@ -23,7 +23,7 @@ from .light_services_common import (
     _resolve_entities,
     _locate_item,
     _move_item,
-    make_fire_and_forget,
+    make_lamp_runner,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ _LOGGER = logging.getLogger(__name__)
 
 def async_register_palette_services(hass: HomeAssistant) -> None:
     """Register the palette actions."""
-    _fire_and_forget = make_fire_and_forget(hass)
+    run_on_lamps = make_lamp_runner(hass)
     # The last palette saved, so a save repeated for every target of a
     # multi-lamp card is only stored once.
     _deletion_tracker = {"last_palette_save": None}
@@ -89,7 +89,7 @@ def async_register_palette_services(hass: HomeAssistant) -> None:
                 target_entity.async_schedule_update_ha_state()
             _LOGGER.debug("[palette-backend] Applied palette idx %s to %s", idx, target_entity._ip)
 
-        _fire_and_forget(*[_apply_one(t) for t in targets])
+        run_on_lamps("LOAD_PALETTE", targets, _apply_one)
 
     hass.services.async_register(
         DOMAIN,

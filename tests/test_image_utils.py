@@ -1,6 +1,7 @@
 import base64
 import io
 import unittest
+import warnings
 
 from PIL import Image
 
@@ -30,6 +31,19 @@ class ImageToMatrixTests(unittest.TestCase):
             self.assertEqual(100, len(matrix), fmt)
             self.assertTrue(all(r > 200 and g < 40 for r, g, _ in matrix), fmt)
 
+    def test_pixels_are_read_row_by_row_without_deprecated_calls(self):
+        # Every pixel distinct, at the target size (no resampling blur), in
+        # modes that need converting: row-major (r, g, b) int tuples.
+        source = Image.new("RGB", (20, 5))
+        source.putdata([(x * 12, y * 50, x + y) for y in range(5) for x in range(20)])
+        for mode in ("RGB", "RGBA", "P"):
+            image = source.convert(mode)
+            expected = [image.convert("RGB").getpixel((x, y)) for y in range(5) for x in range(20)]
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", DeprecationWarning)
+                matrix = image_utils.image_to_matrix(_encode(image))
+            self.assertEqual(expected, matrix, mode)
+
     def test_oversized_or_invalid_data_is_refused_before_decoding(self):
         too_many_pixels = _encode(Image.new("1", (5000, 5000)))  # small file
         cases = {
@@ -56,7 +70,7 @@ class DisplayImageServiceTests(unittest.IsolatedAsyncioTestCase):
                 "_resolve_entities": lambda *args: targets,
                 "image_to_matrix": decode,
                 "hass": SimpleNamespace(async_add_executor_job=run_in_executor),
-                "_fire_and_forget": lambda *coros: [c.close() for c in coros],
+                "run_on_lamps": lambda label, lamps, apply, _schedule=(lambda *coros: [c.close() for c in coros]): _schedule(*(apply(lamp) for lamp in lamps)),
                 "_LOGGER": Mock(),
             },
         )["handle_display_image"]

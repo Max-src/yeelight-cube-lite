@@ -89,11 +89,6 @@ export const LAMP_PREVIEW_CSS = `
         flex-direction: column;
         gap: 10px;
       }
-      .brightness-value {
-        font-size: 12px;
-        color: var(--secondary-text-color);
-        margin-top: 4px;
-      }
 
       /* === COMPACT LAYOUT RESET BUTTON === */
       .compact-reset-button {
@@ -137,25 +132,38 @@ export const LAMP_PREVIEW_CSS = `
       .compact-slider-row.no-reset {
         grid-template-columns: 30px 100px 1fr 60px;
       }
-      /* Compact: Flat */
-      .ys-compact.style-flat .compact-slider-row {
+      /* The adjustment rows in each section style (every layout with its
+         own rows: compact, tabs, radial, categories). */
+      .ys-compact.style-flat .compact-slider-row,
+      .ys-tabs.style-flat .tabbed-slider-row,
+      .ys-radial.style-flat .radial-effect-row,
+      .ys-categories.style-flat .categories-effect-row,
+      .ys-compact.style-flat .compact-slider-row:hover,
+      .ys-tabs.style-flat .tabbed-slider-row:hover,
+      .ys-radial.style-flat .radial-effect-row:hover,
+      .ys-categories.style-flat .categories-effect-row:hover {
         background: transparent;
       }
-      .ys-compact.style-flat .compact-slider-row:hover {
-        background: transparent;
-      }
-      /* Compact: Subtle */
-      .ys-compact.style-subtle .compact-slider-row {
+      .ys-compact.style-subtle .compact-slider-row,
+      .ys-tabs.style-subtle .tabbed-slider-row,
+      .ys-radial.style-subtle .radial-effect-row,
+      .ys-categories.style-subtle .categories-effect-row {
         background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 40%, var(--card-background-color, #fff) 60%);
       }
-      .ys-compact.style-subtle .compact-slider-row:hover {
+      .ys-compact.style-subtle .compact-slider-row:hover,
+      .ys-tabs.style-subtle .tabbed-slider-row:hover,
+      .ys-radial.style-subtle .radial-effect-row:hover,
+      .ys-categories.style-subtle .categories-effect-row:hover {
         background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 60%, var(--card-background-color, #fff) 40%);
       }
-      /* Compact: Filled */
-      .ys-compact.style-filled .compact-slider-row {
-        background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
-      }
-      .ys-compact.style-filled .compact-slider-row:hover {
+      .ys-compact.style-filled .compact-slider-row,
+      .ys-tabs.style-filled .tabbed-slider-row,
+      .ys-radial.style-filled .radial-effect-row,
+      .ys-categories.style-filled .categories-effect-row,
+      .ys-compact.style-filled .compact-slider-row:hover,
+      .ys-tabs.style-filled .tabbed-slider-row:hover,
+      .ys-radial.style-filled .radial-effect-row:hover,
+      .ys-categories.style-filled .categories-effect-row:hover {
         background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
       }
       .compact-icon {
@@ -260,18 +268,6 @@ export const LAMP_PREVIEW_CSS = `
         gap: 8px;
         padding: 10px;
         border-radius: 6px;
-      }
-      /* Tabbed: Flat */
-      .ys-tabs.style-flat .tabbed-slider-row {
-        background: transparent;
-      }
-      /* Tabbed: Subtle */
-      .ys-tabs.style-subtle .tabbed-slider-row {
-        background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 40%, var(--card-background-color, #fff) 60%);
-      }
-      /* Tabbed: Filled */
-      .ys-tabs.style-filled .tabbed-slider-row {
-        background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
       }
       .tabbed-label-row {
         display: flex;
@@ -458,27 +454,6 @@ export const LAMP_PREVIEW_CSS = `
         transition: all 0.2s ease;
         cursor: default;
       }
-      /* Radial: Flat */
-      .ys-radial.style-flat .radial-effect-row {
-        background: transparent;
-      }
-      .ys-radial.style-flat .radial-effect-row:hover {
-        background: transparent;
-      }
-      /* Radial: Subtle */
-      .ys-radial.style-subtle .radial-effect-row {
-        background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 40%, var(--card-background-color, #fff) 60%);
-      }
-      .ys-radial.style-subtle .radial-effect-row:hover {
-        background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 60%, var(--card-background-color, #fff) 40%);
-      }
-      /* Radial: Filled */
-      .ys-radial.style-filled .radial-effect-row {
-        background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
-      }
-      .ys-radial.style-filled .radial-effect-row:hover {
-        background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
-      }
 
       .radial-effect-row-header {
         display: flex;
@@ -579,27 +554,6 @@ export const LAMP_PREVIEW_CSS = `
         border-radius: 6px;
         border: none;
         transition: all 0.2s ease;
-      }
-      /* Categories: Flat */
-      .ys-categories.style-flat .categories-effect-row {
-        background: transparent;
-      }
-      .ys-categories.style-flat .categories-effect-row:hover {
-        background: transparent;
-      }
-      /* Categories: Subtle */
-      .ys-categories.style-subtle .categories-effect-row {
-        background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 40%, var(--card-background-color, #fff) 60%);
-      }
-      .ys-categories.style-subtle .categories-effect-row:hover {
-        background: color-mix(in srgb, var(--secondary-background-color, #f5f5f5) 60%, var(--card-background-color, #fff) 40%);
-      }
-      /* Categories: Filled */
-      .ys-categories.style-filled .categories-effect-row {
-        background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
-      }
-      .ys-categories.style-filled .categories-effect-row:hover {
-        background: var(--secondary-background-color, rgba(0, 0, 0, 0.04));
       }
 
       .categories-effect-row-header {

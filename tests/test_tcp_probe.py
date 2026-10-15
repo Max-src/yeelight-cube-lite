@@ -46,5 +46,17 @@ class TcpProbeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("await check_tcp(self._ip, self._port, timeout)", CUBE_MATRIX_SOURCE)
 
 
+class OutageLogLevelTests(unittest.TestCase):
+    def test_the_first_failure_warns_then_the_outage_is_quiet(self):
+        import logging
+        from types import SimpleNamespace
+
+        level = _load_standalone_functions(
+            CUBE_MATRIX_SOURCE, {"outage_log_level"}, {"logging": logging}
+        )["outage_log_level"]
+        self.assertEqual(level(SimpleNamespace(_device_unreachable=False)), logging.WARNING)
+        self.assertEqual(level(SimpleNamespace(_device_unreachable=True)), logging.DEBUG)
+
+
 if __name__ == "__main__":
     unittest.main()

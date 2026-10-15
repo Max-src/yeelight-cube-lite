@@ -6,6 +6,7 @@ Used by the ``light_services_<area>`` modules, which register the actions
 import asyncio
 import functools
 import logging
+import time
 
 import voluptuous as vol  # type: ignore
 from homeassistant.core import HomeAssistant  # type: ignore
@@ -16,6 +17,8 @@ from homeassistant.exceptions import (  # type: ignore
 )
 from homeassistant.helpers import config_validation as cv  # type: ignore
 
+from .command_errors import note_command_result
+from .cube_matrix import is_connection_error
 from .name_utils import normalize_display_name
 from .light import _ENTITY_REGISTRY
 from .light_rotation import MAX_FAVOURITE_NAME, MAX_FAVOURITES
@@ -231,19 +234,44 @@ def make_admin_only(hass: HomeAssistant):
     return _admin_only
 
 
-def make_fire_and_forget(hass: HomeAssistant):
-    """Build the ``_fire_and_forget`` helper for ``hass``."""
+def make_lamp_runner(hass: HomeAssistant):
+    """Build ``run_on_lamps(label, lamps, apply)`` for ``hass``: the services'
+    way to do their per-lamp work (transitions, TCP commands) in the
+    background, so the service returns at once and every lamp is updated in
+    parallel.
 
-    def _fire_and_forget(*coros):
-        """Schedule coroutines to run concurrently in the background.
+    A lamp's failure never stops the others and is logged with the service
+    and the lamp: "not reached" as a warning for the first failure of an
+    outage (then at debug level, like the connection layer), anything else
+    as an error with its traceback, and published on the lamp for the
+    cards (command_errors.note_command_result).
+    """
 
-        hass.async_create_task requires a coroutine, but asyncio.gather
-        returns a Future.  This helper wraps the gather in a coroutine so
-        the service handler can return immediately while the heavy work
-        (transitions, TCP commands) runs in the background.
-        """
+    def run_on_lamps(label, lamps, apply):
+        async def _one(lamp):
+            started = time.time()
+            try:
+                await apply(lamp)
+            except Exception as err:  # noqa: BLE001 -- one lamp never stops the others
+                name = getattr(lamp, "entity_id", None) or getattr(lamp, "_ip", lamp)
+                if is_connection_error(err):
+                    cube = getattr(lamp, "_cube_matrix", None)
+                    level = (
+                        cube.outage_log_level()
+                        if hasattr(cube, "outage_log_level")
+                        else logging.WARNING
+                    )
+                    _LOGGER.log(level, "[%s] [%s] Lamp not reached: %s", label, name, err)
+                else:
+                    _LOGGER.exception("[%s] [%s] Failed: %s", label, name, err)
+                    note_command_result(lamp, label, err)
+            else:
+                # Not an error its own redraw recorded meanwhile (refused).
+                note_command_result(lamp, label, since=started)
+
         async def _run():
-            await asyncio.gather(*coros)
-        hass.async_create_task(_run())
+            await asyncio.gather(*(_one(lamp) for lamp in lamps))
 
-    return _fire_and_forget
+        hass.async_create_task(_run(), name=f"yeelight_cube {label}")
+
+    return run_on_lamps

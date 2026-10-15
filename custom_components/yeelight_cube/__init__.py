@@ -181,20 +181,9 @@ def _is_cubelite_model(model: str) -> bool:
     return "cubelite" in m or "cube_lite" in m or "cube-lite" in m or "clt" in m
 
 
-async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up the Yeelight Cube Lite component."""
-    _LOGGER.debug("Yeelight Cube Lite async_setup() called")
-
-    hass.data.setdefault(DOMAIN, {})
-    get_conflict_prevention(hass)
-    _schedule_dismiss_yeelight_discoveries(hass)
-    async_setup_services(hass)
-    # Entity-facing actions resolve their target from the runtime registry, so
-    # they can be registered before any individual config entry is loaded.
-    from .light import async_setup_light_services
-
-    async_setup_light_services(hass)
-
+async def _async_serve_card_files(hass: HomeAssistant) -> None:
+    """Serve the cards' files (www/) at FRONTEND_URL_BASE, with their
+    caching rules."""
     # Register static HTTP path to serve frontend JS card files.
     # Done here in async_setup (component level) so it runs exactly once on
     # every HA startup, regardless of how many entries exist or whether any
@@ -315,8 +304,10 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
             www_path,
         )
 
-    await _async_register_frontend_cards(hass)
 
+def _schedule_device_discovery(hass: HomeAssistant) -> None:
+    """Look for Cube Lite lamps on the network once Home Assistant has
+    started, then every 10 minutes, until it stops."""
     # Schedule an SSDP scan for CubeLite devices after HA is fully started.
     # This creates discovery flows so CubeLite devices show up in the
     # "Discovered" section of the Integrations page under our integration.
@@ -355,6 +346,27 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 cancel()
 
     hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _cancel_discovery_timers)
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Set up the Yeelight Cube Lite component."""
+    _LOGGER.debug("Yeelight Cube Lite async_setup() called")
+
+    hass.data.setdefault(DOMAIN, {})
+    get_conflict_prevention(hass)
+    _schedule_dismiss_yeelight_discoveries(hass)
+    async_setup_services(hass)
+    # Entity-facing actions resolve their target from the runtime registry, so
+    # they can be registered before any individual config entry is loaded.
+    from .light import async_setup_light_services
+
+    async_setup_light_services(hass)
+
+    await _async_serve_card_files(hass)
+
+    await _async_register_frontend_cards(hass)
+
+    _schedule_device_discovery(hass)
 
     return True
 
@@ -486,22 +498,9 @@ def _migrate_pixel_arts(raw_pixel_arts: list) -> tuple[list, bool]:
     return migrated, changed
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Yeelight Cube Lite from a config entry."""
-    _LOGGER.debug("[SETUP-ENTRY] async_setup_entry() called for entry: %s", entry.entry_id)
-    
-    # Initialize domain data dict immediately (synchronous, no yield point)
-    # This prevents the race condition where two entries both pass the guard
-    # before either finishes the async storage load.
-    if DOMAIN not in hass.data:
-        hass.data[DOMAIN] = {}
-
-    # Refresh currently imported handlers on entry setup. This registration
-    # does not reimport changed Python code; backend updates require a restart.
-    from .light import async_setup_light_services
-
-    async_setup_light_services(hass)
-    
+async def _async_init_shared_storage(hass: HomeAssistant) -> None:
+    """Load the shared storage (palettes, pixel arts, presets, runtime
+    state) on the first config entry; other entries wait for it."""
     # Initialize storage on the first config entry. Other entries must wait for
     # shared data before their entities restore runtime state.
     is_storage_initializer = "storage" not in hass.data[DOMAIN]
@@ -592,26 +591,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             await async_save_data(hass)
         
         _LOGGER.debug("Yeelight Cube Lite: Storage, conflict prevention, and services initialized")
-    
-    # Register this device as managed by our component (for all entries)
-    ip_address = entry.data[CONF_IP]
-    port = entry.data.get('port', 55443)
-    conflict_prevention = get_conflict_prevention(hass)
-    conflict_prevention.add_managed_device(ip_address)
-    
-    # Listen for config entry updates (e.g. IP change from zeroconf rediscovery)
-    entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
-    
-    # Initialize entry data storage for sharing between platforms
-    if entry.entry_id not in hass.data[DOMAIN]:
-        hass.data[DOMAIN][entry.entry_id] = {}
-    
-    # Remember which IP this setup is connected to.  _async_entry_updated uses
-    # this to reload ONLY on a genuine IP change — options toggles (auto_turn_on,
-    # flip_orientation) and device_id acquisition also fire the update listener
-    # but must NOT tear down the whole entry.
-    hass.data[DOMAIN][entry.entry_id]["active_ip"] = ip_address
 
+
+def _resync_entry_title(hass: HomeAssistant, entry: ConfigEntry, ip_address: str) -> None:
+    """Keep an auto-generated entry title on the lamp's current IP."""
     # Resync a stale auto-generated title: some IP-update paths (e.g. HA's
     # _abort_if_unique_id_configured) can only update entry data, so the
     # title keeps showing the IP from creation time. Only rewrite titles
@@ -628,7 +611,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.config_entries.async_update_entry(
             entry, title=f"Yeelight Cube ({ip_address})"
         )
-    
+
+
+async def _async_require_reachable(
+    hass: HomeAssistant, entry: ConfigEntry, ip_address: str, port: int
+) -> None:
+    """Raise ConfigEntryNotReady unless the lamp answers (after looking
+    for it at a new IP)."""
     # Quick TCP probe to verify the device is reachable before proceeding.
     # ConfigEntryNotReady MUST be raised here (component-level setup) for
     # HA's automatic retry with exponential back-off to work.
@@ -657,6 +646,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             f"Yeelight Cube Lite at {ip_address} is not reachable — will retry automatically"
         ) from err
 
+
+async def _async_store_device_id(
+    hass: HomeAssistant, entry: ConfigEntry, ip_address: str, port: int
+) -> None:
+    """Store the lamp's hardware id (SSDP capabilities) in a manually
+    set-up entry that has none yet."""
     # --- Acquire device_id if not stored yet (manual setup entries) ---
     # The device_id is the hardware serial from SSDP capabilities.  We need it
     # for stable entity naming and precise rediscovery with multiple lamps.
@@ -679,6 +674,50 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     )
         except Exception as exc:
             _LOGGER.debug("[SETUP] Could not fetch device_id for %s: %s", ip_address, exc)
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up Yeelight Cube Lite from a config entry."""
+    _LOGGER.debug("[SETUP-ENTRY] async_setup_entry() called for entry: %s", entry.entry_id)
+    
+    # Initialize domain data dict immediately (synchronous, no yield point)
+    # This prevents the race condition where two entries both pass the guard
+    # before either finishes the async storage load.
+    if DOMAIN not in hass.data:
+        hass.data[DOMAIN] = {}
+
+    # Refresh currently imported handlers on entry setup. This registration
+    # does not reimport changed Python code; backend updates require a restart.
+    from .light import async_setup_light_services
+
+    async_setup_light_services(hass)
+    
+    await _async_init_shared_storage(hass)
+
+    # Register this device as managed by our component (for all entries)
+    ip_address = entry.data[CONF_IP]
+    port = entry.data.get('port', 55443)
+    conflict_prevention = get_conflict_prevention(hass)
+    conflict_prevention.add_managed_device(ip_address)
+    
+    # Listen for config entry updates (e.g. IP change from zeroconf rediscovery)
+    entry.async_on_unload(entry.add_update_listener(_async_entry_updated))
+    
+    # Initialize entry data storage for sharing between platforms
+    if entry.entry_id not in hass.data[DOMAIN]:
+        hass.data[DOMAIN][entry.entry_id] = {}
+    
+    # Remember which IP this setup is connected to.  _async_entry_updated uses
+    # this to reload ONLY on a genuine IP change — options toggles (auto_turn_on,
+    # flip_orientation) and device_id acquisition also fire the update listener
+    # but must NOT tear down the whole entry.
+    hass.data[DOMAIN][entry.entry_id]["active_ip"] = ip_address
+
+    _resync_entry_title(hass, entry, ip_address)
+
+    await _async_require_reachable(hass, entry, ip_address, port)
+
+    await _async_store_device_id(hass, entry, ip_address, port)
 
     # --- Migrate entity unique_ids from IP-based to entry_id-based ---
     # Old format: yeelight_cube_192_168_4_139{suffix}

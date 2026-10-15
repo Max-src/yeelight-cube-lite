@@ -465,7 +465,7 @@ class CubeMatrix:
                 _LOGGER.debug("[RECONNECT] Connection already recovered, skipping [%s]", self.summary)
                 return True
 
-            _LOGGER.warning("[RECONNECT] [%s] Starting socket reset [%s]", self._ip, self.summary)
+            _LOGGER.log(self.outage_log_level(), "[RECONNECT] [%s] Starting socket reset [%s]", self._ip, self.summary)
             self._last_reconnect_attempt = time.time()
 
             # Close existing sockets (both library and fast socket); abortive
@@ -482,7 +482,8 @@ class CubeMatrix:
                     "[RECONNECT] [%s] TCP probe succeeded — device is reachable", self._ip
                 )
             else:
-                _LOGGER.warning(
+                _LOGGER.log(
+                    self.outage_log_level(),
                     "[RECONNECT] [%s] TCP probe FAILED — "
                     "device is NOT reachable, skipping reconnect",
                     self._ip
@@ -506,8 +507,14 @@ class CubeMatrix:
             # after the lock is released.
             self._just_reconnected = True
             
-            _LOGGER.warning("[RECONNECT] [%s] Complete — fresh connection on next command [%s]", self._ip, self.summary)
+            _LOGGER.info("[RECONNECT] [%s] Complete — fresh connection on next command [%s]", self._ip, self.summary)
             return True
+
+    def outage_log_level(self) -> int:
+        """WARNING for a lamp's first connection failure, DEBUG while it is
+        already known to be unreachable: an outage (a lamp switched off) is
+        logged once, not on every retry (the health check logs its end)."""
+        return logging.DEBUG if self._device_unreachable else logging.WARNING
 
     def is_connected(self) -> bool:
         """
@@ -1103,7 +1110,8 @@ class CubeMatrix:
                     # Only do the full _graceful_reconnect (with its 0.5s wait) when
                     # there were actual errors.
                     if self._consecutive_failures > 0 or not self._connection_healthy:
-                        _LOGGER.warning(
+                        _LOGGER.log(
+                            self.outage_log_level(),
                             "[COMMAND #%s] [%s] Socket=None, cooldown expired — "
                             "attempting reconnect (was %.1fs ago, "
                             "cooldown=%.0fs, "
@@ -1118,7 +1126,8 @@ class CubeMatrix:
                             # it like any other connection failure (retry scheduling,
                             # backoff, etc.) instead of silently returning None which
                             # the queue treats as "success" and resets the retry counter.
-                            _LOGGER.warning(
+                            _LOGGER.log(
+                                self.outage_log_level(),
                                 "[COMMAND #%s] [%s] Reconnect failed — "
                                 "device unreachable (TCP probe failed)",
                                 cmd_id, self._ip
@@ -1217,12 +1226,14 @@ class CubeMatrix:
                     if not isinstance(e, CubeConnectionError):
                         e = CubeConnectionError(error_message)
                     failures = self._consecutive_failures + 1
+                    level = self.outage_log_level()
                     # Starts the cooldown from now; doubles it every
                     # MAX_CONSECUTIVE_FAILURES failures.
                     old_cooldown = self._connection_failed()
                     if old_cooldown is not None:
                         if self._reconnect_cooldown != old_cooldown:
-                            _LOGGER.warning(
+                            _LOGGER.log(
+                                level,
                                 "[COMMAND #%s] ✗ SOCKET ERROR (%s) [%s] — "
                                 "backoff increased: %.0fs → %.0fs "
                                 "(failures=%s, unreachable=True)",
@@ -1230,7 +1241,8 @@ class CubeMatrix:
                                 self._reconnect_cooldown, failures
                             )
                         else:
-                            _LOGGER.warning(
+                            _LOGGER.log(
+                                level,
                                 "[COMMAND #%s] ✗ SOCKET ERROR (%s) [%s] — "
                                 "backoff CAPPED at %.0fs "
                                 "(failures=%s, unreachable=True)",
@@ -1242,7 +1254,8 @@ class CubeMatrix:
                             (self._consecutive_failures // MAX_CONSECUTIVE_FAILURES + 1)
                             * MAX_CONSECUTIVE_FAILURES
                         )
-                        _LOGGER.warning(
+                        _LOGGER.log(
+                            level,
                             "[COMMAND #%s] ✗ SOCKET ERROR (%s) [%s] — "
                             "failure %s/%s "
                             "(cooldown=%.0fs, "

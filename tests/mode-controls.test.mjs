@@ -693,6 +693,51 @@ test("an observing card cannot stop backend rotation from local favourites or re
   assert.deepEqual(calls, []);
 });
 
+test("a card command waits for a rotation start, stops the rotation, then is sent", async () => {
+  // The Clock and Native cards' commands (controller.send).
+  const order = [];
+  const controller = new ModeControlsController({
+    kind: "clock",
+    current: () => "A",
+    available: () => true,
+    ready: () => true,
+    disabled: () => false,
+    apply: async () => true,
+    execute: async (service, data, domain, options) => {
+      order.push(["execute", service, data, domain, options]);
+      return true;
+    },
+  });
+  controller.configure({}, ["light.a"]);
+  const stop = controller.stop.bind(controller);
+  controller.stop = (...args) => {
+    order.push(["stop"]);
+    return stop(...args);
+  };
+  let finishStart;
+  controller._startPending = new Promise((resolve) => {
+    finishStart = () => {
+      order.push(["started"]);
+      resolve();
+    };
+  });
+  const sent = controller.send("turn_on", { brightness: 9 }, { domain: "light", coalesce: "x" });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(order, []); // waits for the start in flight
+  finishStart();
+  assert.equal(await sent, true);
+  assert.deepEqual(order, [
+    ["started"],
+    ["stop"],
+    ["execute", "turn_on", { brightness: 9 }, "light", { coalesce: "x" }],
+  ]);
+  // A rotation's own command (managed) neither waits nor stops it.
+  order.length = 0;
+  controller._startPending = new Promise(() => {});
+  await controller.send("set_clock_style", {}, { managed: true });
+  assert.deepEqual(order.map(([step]) => step), ["execute"]);
+});
+
 test("backend rotation start failures roll back and surface an error", async () => {
   const returnsFalse = new ModeControlsController({
     kind: "clock",

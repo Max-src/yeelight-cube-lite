@@ -177,6 +177,37 @@ test("a sent pick yields to a new lamp value (yieldToLamp), never to an older on
   strict.clear();
 });
 
+test("a pending map keeps one pending value per key (the Lamp Preview's adjustments)", async () => {
+  const { createPendingMap } = await import(
+    "../custom_components/yeelight_cube/www/pending-value.js"
+  );
+  const expired = [];
+  const pending = createPendingMap({
+    timeoutMs: 20,
+    yieldToLamp: true,
+    matches: (actual, value) => Math.abs(actual - value) < 0.5,
+    onExpire: (key) => expired.push(key),
+  });
+  pending.settle("contrast", 100); // nothing waits: nothing to drop
+  pending.hold("contrast", 80);
+  pending.hold("saturation", 40);
+  assert.deepEqual(pending.keys(), ["contrast", "saturation"]);
+  assert.equal(pending.size, 2);
+  assert.equal(pending.settle("contrast", 80.2), true); // confirmed
+  assert.equal(pending.value("contrast"), null);
+  pending.settle("saturation", 100); // the lamp's value when sent
+  pending.set("saturation", 40);
+  assert.equal(pending.settle("saturation", 100), false); // older: kept
+  assert.equal(pending.settle("saturation", 70), true); // another dashboard's: wins
+  pending.set("tint", 50);
+  await wait(50);
+  assert.deepEqual(expired, ["tint"]);
+  assert.equal(pending.size, 0);
+  pending.hold("contrast", 1);
+  pending.clear();
+  assert.deepEqual(pending.keys(), []);
+});
+
 test("slider markup is kept unchanged while a drag is held", () => {
   const host = { _gate: new RenderGate(() => {}) };
   assert.equal(stableSliderMarkup(host, "s", "<a value=1>"), "<a value=1>");

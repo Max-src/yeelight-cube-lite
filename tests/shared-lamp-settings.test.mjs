@@ -355,3 +355,30 @@ test("with following off, the style list keeps its selection; favourites still h
   controller.active = true;
   assert.equal(controller.displayed("key", "Aurora"), "Aurora");
 });
+
+test("a saved interval shows until the lamp reports it; another dashboard's wins", async () => {
+  const { controller, lamp, finishSave } = setup({
+    lamp: { favourites: [A, B], interval: 120 },
+  });
+  const change = controller.setRotationInterval(600);
+  finishSave(true);
+  assert.equal(await change, true);
+  controller.syncInterval(); // the lamp still reports the old interval
+  assert.equal(controller.interval, 600);
+  lamp.interval = 300; // set elsewhere meanwhile
+  controller.syncInterval();
+  assert.equal(controller.interval, 300);
+});
+
+test("a frozen display shows until the lamp reports it, then follows the lamp", () => {
+  const { controller, lamp } = setup({ lamp: { favourites: [A], frozen: false } });
+  controller.syncFrozen();
+  controller.expectFrozen(true);
+  controller.syncFrozen(); // the lamp's older state
+  assert.equal(controller.frozen, true);
+  lamp.frozen = true; // confirmed
+  controller.syncFrozen();
+  lamp.frozen = false; // resumed elsewhere
+  controller.syncFrozen();
+  assert.equal(controller.frozen, false);
+});

@@ -132,37 +132,6 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
       isDragging: () => this._angleBusy(),
       onExpire: () => this._renderCard(),
     });
-    // Document-level drag handlers (attached only for an active rotary drag,
-    // tracked in _rotaryDocListeners so they can never leak or stack).
-    this._onDocMouseMove = (e) => {
-      if (this._gate.held("angle-drag")) {
-        e.preventDefault(); // Prevent text selection during drag
-        this._handleRotaryDrag(e);
-      }
-    };
-    this._onDocTouchMove = (e) => {
-      if (this._gate.held("angle-drag")) {
-        e.preventDefault(); // Prevent text selection
-        this._handleRotaryDrag(e.touches[0]);
-      }
-    };
-    this._onDocDragEnd = (e) => {
-      // Always detach the document listeners, even if the drag was ended
-      // elsewhere (e.g. setConfig mid-drag) — otherwise they leak.
-      this._removeRotaryDocListeners();
-      if (this._gate.held("angle-drag")) {
-        e.preventDefault(); // Prevent text selection
-
-        // Cancel pending debounce and apply the final angle immediately
-        if (this._pendingAngle !== null && this._pendingAngle !== undefined) {
-          this._applyAngle(this._pendingAngle);
-          this._lastAngleSent = this._pendingAngle;
-        }
-
-        this._pendingAngle = null;
-        this._gate.release("angle-drag");
-      }
-    };
     // --- UI/interaction state ---
     this._pendingAngle = null;
     this._angleCommands = new AngleCommandController(
@@ -453,7 +422,7 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
         ${
           rotaryInHeader && showAngleSection
             ? html`
-          <div class="card-header" style="display: flex; justify-content: flex-end; align-items: center;">
+          <div class="card-header gc-header-rotary-row">
             <div class="header-rotary"
               @mousedown=${this._onAngleAreaMouseDown}
               @touchstart=${this._onAngleAreaTouchStart}
@@ -478,8 +447,8 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
           <div class="control-section yc-stack yc-controls">
             ${
               showActiveModeLabel
-                ? html`<div style="display:flex;justify-content:${_alignToJustify(labelAlign)};width:100%;">
-                     <div class="gc-active-mode-label" id="gc-active-mode-label" title="Currently active mode" style="margin:0;">
+                ? html`<div class="gc-active-mode-row" style="justify-content:${_alignToJustify(labelAlign)}">
+                     <div class="gc-active-mode-label" id="gc-active-mode-label" title="Currently active mode">
                        <span class="gc-aml-dot"></span>
                        <span class="gc-aml-text">${itemLabel(this.config, colorMode, colorMode)}</span>
                      </div>
@@ -489,7 +458,6 @@ class YeelightCubeGradientCard extends ModeSelectorMixin(
           </div>
         </div>
         ${showModeSelector ? this._galleryTemplate() : nothing}
-        <div id="preview-anchor" style="display:none;"></div>
         ${
           showPanelToggle
             ? html`

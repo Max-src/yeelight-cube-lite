@@ -85,3 +85,38 @@ export function createPendingValue({
     clear,
   };
 }
+
+/**
+ * One pending value per key (each a createPendingValue with `options`): a
+ * card's several controls of one lamp command, e.g. the Lamp Preview's
+ * adjustments. `onExpire(key)` when one expires.
+ */
+export function createPendingMap({ onExpire, ...options } = {}) {
+  const values = new Map();
+  const entry = (key) => {
+    let pending = values.get(key);
+    if (!pending) {
+      pending = createPendingValue({ ...options, onExpire: () => onExpire?.(key) });
+      values.set(key, pending);
+    }
+    return pending;
+  };
+  return {
+    /** The key's value shown, or null when none waits. */
+    value: (key) => values.get(key)?.value ?? null,
+    /** The keys with a value waiting. */
+    keys: () => [...values.keys()].filter((key) => values.get(key).value != null),
+    get size() {
+      return [...values.values()].filter((pending) => pending.value != null).length;
+    },
+    hold: (key, next) => entry(key).hold(next),
+    set: (key, next) => entry(key).set(next),
+    settle: (key, actual) => values.get(key)?.settle(actual) ?? false,
+    /** Drop the key's value, or every value (no key). */
+    clear(key) {
+      if (key !== undefined) return values.get(key)?.clear();
+      for (const pending of values.values()) pending.clear();
+      values.clear();
+    },
+  };
+}

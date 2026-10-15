@@ -138,6 +138,20 @@ _RESTORED_ATTRIBUTES = (
 class StateRestoreMixin:
     """Restore after a restart, and the save_state / restore_state snapshot."""
 
+    def _init_saved_state(self):
+        """The save_state / restore_state snapshot. Called by YeelightCubeLight.__init__."""
+        # -- Saved display state (save_state / restore_state services) ----
+        # Holds a single snapshot of the full display state so an automation
+        # can save what the lamp is showing, display something else briefly,
+        # then restore the original.  Overwritten each time save_state runs.
+        # In-memory only -- does not survive a Home Assistant restart.
+        self._saved_display_state = None
+        # The rotation running when it was saved (restarted by restore_state).
+        self._saved_display_rotation = None
+        # Between save_state and restore_state: what an automation shows is
+        # deliberate (a text is shown even over the firmware clock).
+        self._display_overlay = False
+
     # -- The drawing shown in Custom Draw (pixel art, draw card) -------------
     # Kept per lamp in the integration's storage ("drawing") rather than in the
     # state attributes: without it a restart finds Custom Draw with no pixels

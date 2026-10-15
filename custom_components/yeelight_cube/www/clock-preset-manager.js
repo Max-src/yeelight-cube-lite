@@ -5,6 +5,8 @@ import { handleColorPickerClick } from "./color-picker-utils.js";
 import {
   clockPresetLibrary,
   clockPresetsByKind,
+  editClockPreset,
+  watchClockPresets,
 } from "./clock-preset-utils.js";
 import { renderClockFrame, flipMatrixVertical } from "./clock-preview-utils.js";
 import { defineOnce } from "./card-registration.js";
@@ -16,6 +18,17 @@ const SAVE_TRIGGERS = {
 };
 
 class ClockPresetManager extends LitElement {
+  connectedCallback() {
+    super.connectedCallback();
+    // The shared preset library changed here (clock-preset-utils.js).
+    this._presetsOff = watchClockPresets(this);
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    this._presetsOff?.();
+  }
+
   static properties = {
     hass: { attribute: false },
     initialColor: { attribute: false },
@@ -274,7 +287,7 @@ class ClockPresetManager extends LitElement {
         kind: this.kind,
       };
       if (!isNew) data.preset_id = this.editing;
-      await this.hass.callService("yeelight_cube", "save_clock_preset", data);
+      await editClockPreset(this.hass, "save_clock_preset", data);
       this.editing = false;
       this.libraryKind = this.kind;
       if (isNew)
@@ -297,7 +310,7 @@ class ClockPresetManager extends LitElement {
     this.busy = true;
     this.error = "";
     try {
-      await this.hass.callService("yeelight_cube", "delete_clock_preset", {
+      await editClockPreset(this.hass, "delete_clock_preset", {
         preset_id: preset.id,
       });
       this.deleting = null;

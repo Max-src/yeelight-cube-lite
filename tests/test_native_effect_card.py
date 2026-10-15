@@ -1,8 +1,13 @@
 import asyncio
+import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 from tests.test_native_features import ROOT, CONSTANTS, NATIVE_PREVIEW, _load_standalone_functions, SERVICES_SOURCE
+
+NOTE_COMMAND_RESULT = _load_standalone_functions(
+    (ROOT / "command_errors.py").read_text(encoding="utf-8"), {"note_command_result"}, {"time": time}
+)["note_command_result"]
 
 
 class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
@@ -51,7 +56,8 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
              "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
              "effect_supports_color_override": NATIVE_PREVIEW["effect_supports_color_override"],
              "HomeAssistantError": ValueError, "_resolve_entities": lambda *args: self.targets,
-             "_fire_and_forget": lambda *coros: self.scheduled.extend(coros),
+             "run_on_lamps": lambda label, lamps, apply, _schedule=(lambda *coros: self.scheduled.extend(coros)): _schedule(*(apply(lamp) for lamp in lamps)),
+             "time": time, "note_command_result": NOTE_COMMAND_RESULT,
              "_LOGGER": self.logger},
         )["handle_set_native_effect"]
 
@@ -61,6 +67,12 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.gather(*pending)
 
         self.handle = handle
+
+    def refuse(self, **_kwargs):
+        """The lamp answered with an error: the hardware queue publishes it
+        (command_errors) and the redraw reports False."""
+        NOTE_COMMAND_RESULT(self.target, "display:native", "the lamp refused it: invalid params")
+        return False
 
     async def test_apply_selects_and_activates_through_existing_display_path(self):
         await self.handle(SimpleNamespace(data={"effect": "Rainbow", "speed": 120}))
@@ -164,24 +176,44 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         await self.handle(SimpleNamespace(data={"effect": "Rainbow"}))
         self.logger.exception.assert_called_once()
         # The lamp did not take the change: the previous settings are
-        # republished so cards show what the lamp actually runs.
+        # republished so cards show what the lamp actually runs, and the
+        # cards name why (last_command_error).
         self.assertEqual(self.target._native_effect, "Streamer")
         self.assertEqual(self.target._mode, "Clock")
         self.target.async_write_ha_state.assert_called()
+        self.assertEqual(self.target._last_command_error["message"], "Offline")
 
     async def test_lamp_rejection_reported_as_false_also_rolls_back(self):
-        # The hardware wrapper reports failures by returning False, not raising.
-        self.target.async_apply_display_mode = AsyncMock(return_value=False)
+        # The hardware wrapper reports failures by returning False, not raising;
+        # a refusal is named in last_command_error.
+        self.target.async_apply_display_mode = AsyncMock(side_effect=self.refuse)
         await self.handle(SimpleNamespace(data={"effect": "Rainbow"}))
         self.assertEqual(self.target._native_effect, "Streamer")
         self.assertEqual(self.target._mode, "Clock")
         self.logger.warning.assert_called_once()
 
+    async def test_a_lamp_not_reached_keeps_the_effect_like_every_other_service(self):
+        # Not reached (no refusal named): the effect stands, and the lamp shows
+        # it once it is back (its requested state is redrawn on reconnecting).
+        self.target.async_apply_display_mode = AsyncMock(return_value=False)
+        await self.handle(SimpleNamespace(data={"effect": "Rainbow"}))
+        self.assertEqual(self.target._native_effect, "Rainbow")
+        self.assertEqual(self.target._mode, "Native Effect")
+        self.logger.warning.assert_not_called()
+        self.assertIsNone(getattr(self.target, "_native_effect_baseline", None))
+
+    async def test_an_older_refusal_does_not_count_as_this_one(self):
+        # Named before this call started: this call was not reached, not refused.
+        self.target._last_command_error = {"service": "display:native", "message": "x", "at": 1.0}
+        self.target.async_apply_display_mode = AsyncMock(return_value=False)
+        await self.handle(SimpleNamespace(data={"effect": "Rainbow"}))
+        self.assertEqual(self.target._native_effect, "Rainbow")
+
     async def test_rollback_keeps_a_newer_change_from_another_path(self):
         async def fail_after_other_path_changed_mode(**_kwargs):
             # e.g. set_mode / rotation switched to the clock meanwhile
             self.target._mode = "Clock"
-            return False
+            return self.refuse()
 
         self.target.async_apply_display_mode = AsyncMock(
             side_effect=fail_after_other_path_changed_mode
@@ -195,7 +227,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
     async def test_rollback_ignores_values_of_a_skipped_call(self):
         # X is replaced by Y before X reaches the lamp; Y then fails. The lamp
         # still shows the original effect, never X's, so that is restored.
-        self.target.async_apply_display_mode = AsyncMock(return_value=False)
+        self.target.async_apply_display_mode = AsyncMock(side_effect=self.refuse)
         await self.raw_handle(SimpleNamespace(data={"effect": "Rainbow"}))
         await self.raw_handle(SimpleNamespace(data={"effect": "Ocean Waves"}))
         pending, self.scheduled[:] = list(self.scheduled), []
@@ -211,7 +243,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
             outcome = next(results)
             if outcome:
                 await release_first.wait()
-            return outcome
+            return outcome or self.refuse()
 
         self.target.async_apply_display_mode = AsyncMock(side_effect=apply)
         await self.raw_handle(SimpleNamespace(data={"effect": "Rainbow"}))
@@ -235,7 +267,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
             outcome = next(results)
             if not release_first.is_set() and self.target._native_effect == "Rainbow":
                 await release_first.wait()
-            return outcome
+            return outcome or self.refuse()
 
         self.target.async_apply_display_mode = AsyncMock(side_effect=apply)
         await self.raw_handle(SimpleNamespace(data={"effect": "Rainbow"}))
@@ -253,7 +285,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
         await self.handle(SimpleNamespace(data={"speed": 80, "activate": False}))
         self.assertIsNone(getattr(self.target, "_native_effect_baseline", None))
         # ...so a later failed call rolls back to the state before *it*.
-        self.target.async_apply_display_mode = AsyncMock(return_value=False)
+        self.target.async_apply_display_mode = AsyncMock(side_effect=self.refuse)
         await self.handle(SimpleNamespace(data={"effect": "Rainbow"}))
         self.assertEqual(self.target._native_effect_speed, 80)
         self.assertEqual(self.target._native_effect, "Streamer")
@@ -315,7 +347,7 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
              "_resolve_entities": lambda call, _name: (
                  [native, clock] if call.data.get("entity_id") else []
              ),
-             "_fire_and_forget": lambda *coros: scheduled.extend(coros)},
+             "run_on_lamps": lambda label, lamps, apply, _schedule=(lambda *coros: scheduled.extend(coros)): _schedule(*(apply(lamp) for lamp in lamps))},
         )["handle_freeze_display"]
 
         await handler(SimpleNamespace(data={"entity_id": ["light.a", "light.b"]}))

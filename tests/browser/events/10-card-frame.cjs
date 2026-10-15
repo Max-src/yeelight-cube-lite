@@ -155,6 +155,97 @@ module.exports = async (t) => {
       `${name}: a renamed lamp among the card's lamps is named`,
     );
 
+    // One of the card's lamps offline: the card keeps controlling the other
+    // (no offline preview, controls enabled) and names the offline one.
+    assert.deepEqual(
+      await page.evaluate(
+        async ({ tag, extra }) => {
+          const text = (selector) =>
+            [...card.shadowRoot.querySelectorAll(selector)].map((node) =>
+              node.textContent.replace(/\s+/g, " ").trim(),
+            );
+          const light = hass.states["light.a"];
+          const saved = hass;
+          hass = {
+            ...hass,
+            states: {
+              ...hass.states,
+              "light.b": { state: "unavailable", attributes: { friendly_name: "Bedroom" } },
+            },
+          };
+          try {
+            await mount(tag, { ...extra, entity: "light.a", target_entities: ["light.b", "light.a"] });
+            const adapter = card._controls?.adapter;
+            return {
+              offline: text(".yc-card-offline"),
+              unavailableLine: text(".yc-card-muted:not(.yc-card-offline):not(.yc-card-missing)").filter(
+                (line) => line === "Lamp unavailable",
+              ),
+              shown: card._primaryEntity(),
+              controls: adapter ? { preview: adapter.previewOnly(), disabled: adapter.disabled() } : null,
+              light: light.state,
+            };
+          } finally {
+            hass = saved;
+          }
+        },
+        { tag, extra },
+      ),
+      {
+        offline: ["Lamp unavailable: Bedroom. The other lamps are controlled."],
+        unavailableLine: [],
+        shown: "light.a",
+        controls: ["yeelight-cube-clock-card", "yeelight-cube-native-effects-card"].includes(tag)
+          ? { preview: false, disabled: false }
+          : null,
+        light: "on",
+      },
+      `${name}: one lamp offline, the card controls the other and names it`,
+    );
+
+    // A change the lamp failed to apply (last_command_error), reported while
+    // the card is open, is named; it goes once a later change works.
+    assert.deepEqual(
+      await page.evaluate(
+        async ({ tag, extra }) => {
+          const failed = () =>
+            [...card.shadowRoot.querySelectorAll(".yc-card-failed")].map((node) =>
+              node.textContent.replace(/\s+/g, " ").trim(),
+            );
+          const saved = hass;
+          const light = saved.states["light.a"];
+          const withError = (error) => ({
+            ...saved,
+            states: {
+              ...saved.states,
+              "light.a": { ...light, attributes: { ...light.attributes, last_command_error: error } },
+            },
+          });
+          try {
+            await mount(tag, { ...extra, entity: "light.a" });
+            const before = failed();
+            card.hass = withError({ service: "set_mode", message: "Lamp refused the mode", at: 1 });
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            await card.updateComplete;
+            const shown = failed();
+            card.hass = withError(null);
+            await new Promise((resolve) => setTimeout(resolve, 100));
+            await card.updateComplete;
+            return { before, shown, after: failed() };
+          } finally {
+            hass = saved;
+          }
+        },
+        { tag, extra },
+      ),
+      {
+        before: [],
+        shown: ["the last change was not applied (Lamp refused the mode)."],
+        after: [],
+      },
+      `${name}: a change the lamp failed to apply is named until one works`,
+    );
+
     // Its editor: the same settings, in the same order, reporting the
     // same option names.
     const editor = await page.evaluate(

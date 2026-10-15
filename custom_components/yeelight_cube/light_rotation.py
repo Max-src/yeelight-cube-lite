@@ -95,6 +95,49 @@ def _rotation_peer(light, kind, interval, items):
 class RotationMixin:
     """Server-side effect / clock rotation, favourites and their persistence."""
 
+    def _init_rotation_state(self):
+        """Favourites and the server-side rotation's state. Called by YeelightCubeLight.__init__."""
+        # -- Favourites -----------------------------------------------------
+        # Favourite native effects / clock styles per kind ("native", "clock"),
+        # stored with the integration data (not in a browser) and published in
+        # the `favourites` attribute so every dashboard shows the same list.
+        # A kind is absent until it is first saved (cards then migrate the
+        # list they kept in browser storage before this existed).
+        self._favourites: dict = {}
+
+        # -- Effect / clock mode rotation -----------------------------------
+        # A server-side timed loop that advances the lamp through a list of
+        # native effect or clock style names on its own timer, independently of
+        # any dashboard client (so it survives a page refresh). Started and
+        # stopped via the start/stop/skip_effect_rotation services.
+        self._rotation_active = False
+        self._rotation_kind = "native"       # "native" | "clock"
+        self._rotation_items: list = []
+        self._rotation_interval = 60          # whole seconds between steps
+        # The interval every dashboard uses per kind, once set (by a Start or
+        # set_rotation_interval); published in `rotation_intervals`.
+        self._rotation_intervals: dict = {}
+        # A rotation saved before a restart, resumed once the lamp is set up.
+        self._rotation_restore = None
+        # Set when the interval changed while the loop sleeps: re-time the
+        # wait instead of advancing to the next item.
+        self._rotation_retime = False
+        self._rotation_index = -1
+        self._rotation_task = None
+        self._rotation_wake = None
+        self._rotation_started = None
+        self._rotation_error = None
+        self._rotation_resume_pending = False
+        self._rotation_waiting_for_reconnect = False
+        # Shared time grid {"tick", "index"} the loop advances on.
+        self._rotation_timeline = None
+        # Lamps started together, saved so a restart resumes them together.
+        self._rotation_group = None
+        self._rotation_retry_attempt = 0
+        self._rotation_retry_at = None
+        # Failed resumes in a row (back-off of a lamp that refuses steps).
+        self._rotation_resume_failures = 0
+
     def _rotation_current_name(self) -> str | None:
         """Return the key of the mode the lamp is currently showing.
 

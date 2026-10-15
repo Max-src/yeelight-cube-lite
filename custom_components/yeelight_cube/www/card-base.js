@@ -10,7 +10,8 @@
  * - callServiceOnTargetEntities(service, data, options): one call of a
  *   yeelight_cube service for all the card's lamps, through that queue.
  * - this._targets: the lamps the card controls (target_entities, else entity);
- *   _primaryEntity(): its main lamp (the first Home Assistant knows).
+ *   _primaryEntity(): its main lamp: the first available one, else the
+ *   first Home Assistant knows (lampAvailable, service-call-utils.js).
  * - this._gate: holds the card's renders while the user interacts
  *   (render-gate.js); a held render is made by _renderHeld() (default: a Lit
  *   update).
@@ -28,7 +29,8 @@
  *   declares `static hostEvents` (host-events.js).
  */
 import { CardCommandController } from "./card-command-controller.js";
-import { getTargetEntities } from "./service-call-utils.js";
+import { getTargetEntities, lampAvailable } from "./service-call-utils.js";
+import { noteThemes } from "./color-utils.js";
 import { bindHostEvents } from "./host-events.js";
 import { findCollectionSensor } from "./sensor-lookup.js";
 import { RenderGate } from "./render-gate.js";
@@ -126,7 +128,12 @@ export const YeelightCardMixin = (Base) =>
      * else "". */
     _primaryEntity(hass = this._hass) {
       const targets = this._targets;
-      return targets.find((id) => hass?.states?.[id]) ?? targets[0] ?? "";
+      return (
+        targets.find((id) => lampAvailable(hass?.states?.[id])) ??
+        targets.find((id) => hass?.states?.[id]) ??
+        targets[0] ??
+        ""
+      );
     }
 
     /** Height in masonry dashboards, in 50 px rows (static cardSize). */
@@ -160,13 +167,28 @@ export const YeelightCardMixin = (Base) =>
       return [this.config, ...this._targets.map((id) => hass?.states?.[id])];
     }
 
+    /** Which of the card's lamps exist and are available, as one string
+     * (per lamp: 0 missing, 1 unavailable, 2 available, then the time of its
+     * last failed change if any): the frame names the missing and offline
+     * ones and those failed changes, and the card shows the first available. */
+    _lampsKey(hass = this._hass) {
+      return this._targets
+        .map((id) => {
+          const state = hass?.states?.[id];
+          const failed = state?.attributes?.last_command_error?.at;
+          return (state ? (lampAvailable(state) ? 2 : 1) : 0) + (failed ? `@${failed}` : "");
+        })
+        .join("");
+    }
+
     /**
      * Whether this `hass` changes anything the card shows: its _hassInputs,
      * and the frame's (card-shell.js): the header's lamp status when shown,
-     * and which of the card's lamps exist (a renamed one is named). It
+     * and which of the card's lamps exist and are available (_lampsKey). It
      * records the inputs: call it once per `set hass`.
      */
     _hassChanged(hass) {
+      noteThemes(hass?.themes); // the dark-theme answers follow it
       const lamp =
         this.config?.show_lamp_status === true
           ? hass?.states?.[this._primaryEntity(hass)]
@@ -175,7 +197,7 @@ export const YeelightCardMixin = (Base) =>
         ...this._hassInputs(hass),
         lamp?.state,
         lamp?.attributes?.content_mode,
-        this._targets.map((id) => (hass?.states?.[id] ? 1 : 0)).join(""),
+        this._lampsKey(hass),
       ];
       const last = this._lastHassInputs;
       this._lastHassInputs = inputs;

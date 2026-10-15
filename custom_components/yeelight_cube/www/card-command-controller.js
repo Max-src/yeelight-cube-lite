@@ -23,6 +23,24 @@ export const SUPERSEDED = "superseded";
  * the card until the page is reloaded. */
 export const CALL_TIMEOUT_MS = 20000;
 
+/** Resolve with `sending`, or reject once the call has gone unanswered for
+ * `timeoutMs` (the call itself cannot be cancelled and may still complete),
+ * so one call Home Assistant never answers cannot hold up a queue. */
+export function withCallTimeout(sending, label, timeoutMs = CALL_TIMEOUT_MS) {
+  let timer;
+  const expired = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      console.warn(
+        `[Yeelight Cube] ${label} got no answer from Home Assistant after ${
+          timeoutMs / 1000
+        }s; continuing with the next command.`,
+      );
+      reject(new Error(`${label}: no answer from Home Assistant.`));
+    }, timeoutMs);
+  });
+  return Promise.race([sending, expired]).finally(() => clearTimeout(timer));
+}
+
 export class CardCommandController {
   constructor(
     notify = () => {},
@@ -111,21 +129,9 @@ export class CardCommandController {
     );
   }
 
-  /** Resolve with ``send``, or reject once the call has gone unanswered for
-   * timeoutMs (the call itself cannot be cancelled and may still complete). */
+  /** withCallTimeout with this queue's timeoutMs. */
   _withTimeout(sending, label) {
-    let timer;
-    const expired = new Promise((_, reject) => {
-      timer = setTimeout(() => {
-        console.warn(
-          `[Yeelight Cube] ${label} got no answer from Home Assistant after ${
-            this.timeoutMs / 1000
-          }s; continuing with the next command.`,
-        );
-        reject(new Error(`${label}: no answer from Home Assistant.`));
-      }, this.timeoutMs);
-    });
-    return Promise.race([sending, expired]).finally(() => clearTimeout(timer));
+    return withCallTimeout(sending, label, this.timeoutMs);
   }
 
   async _enqueue(send, data, { coalesce, label = "Service call" } = {}) {

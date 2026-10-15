@@ -13,6 +13,7 @@ import subprocess
 import time
 import types
 import unittest
+from unittest.mock import Mock
 
 
 ROOT = Path(__file__).parents[1] / "custom_components" / "yeelight_cube"
@@ -759,7 +760,12 @@ class NativeFeatureTests(unittest.TestCase):
         restore = _function_source(LIGHT_SOURCE, "async_added_to_hass")
         # Everything saved (immediate or batched) comes from _storage_data.
         save = _function_source(INIT_SOURCE, "_storage_data")
-        setup = _function_source(INIT_SOURCE, "async_setup_entry")
+        # Every entry's setup loads (or waits for) the shared storage first.
+        self.assertIn(
+            "await _async_init_shared_storage(hass)",
+            _function_source(INIT_SOURCE, "async_setup_entry"),
+        )
+        setup = _function_source(INIT_SOURCE, "_async_init_shared_storage")
         self.assertIn('"music_flow_restore_power"', attributes)
         self.assertIn("_restore_music_flow_runtime_state()", restore)
         self.assertIn('"device_runtime_state"', save)
@@ -2596,8 +2602,10 @@ class NativeFeatureTests(unittest.TestCase):
 
         # The fx-explorer reflects a clock command's direction byte so the
         # preview tracks whatever direction was applied on the lamp.
-        reflect = _function_source(LIGHT_SOURCE, "handle_send_fx_effect")
-        self.assertIn("target._native_effect_direction = _dn", reflect)
+        lamp = _reflected_fx_lamp(
+            True, 2, {"mode": 40, "direction": CONSTANTS["NATIVE_EFFECT_DIRECTION_VALUES"]["Down"]}
+        )
+        self.assertEqual(lamp._native_effect_direction, "Down")
 
         # Both previews draw the clock background in the effect's calibrated
         # clock direction (not the lamp's native-effect direction, which is
@@ -2623,15 +2631,28 @@ class NativeFeatureTests(unittest.TestCase):
     def test_fx_explorer_reflects_clock_style_for_live_preview(self):
         handler = _function_source(LIGHT_SOURCE, "handle_send_fx_effect")
         # Everything before the persist blocks is the always-reflect path that
-        # runs even when persist is unchecked (the fx-explorer card default).
+        # runs even when persist is unchecked (the fx-explorer card default),
+        # and refreshes the linked settings controls.
         reflect = handler.split("persisted = False")[0]
-        # Selecting a clock style must update the style itself (not just the
-        # mode) so the preview card renders the correct masked effect / color,
-        # and must refresh the linked settings controls -- matching a normal
-        # clock-style selection from the device page.
-        self.assertIn('target._mode = MODE_CLOCK', reflect)
-        self.assertIn("target._native_clock_style = effect_style", reflect)
+        self.assertIn("_reflect_fx_effect(", reflect)
         self.assertIn("target._refresh_linked_entities()", reflect)
+        # Selecting a clock style updates the style itself (not just the
+        # mode), its color and options, so the preview card renders the
+        # correct masked effect / color -- as a normal clock-style selection
+        # from the device page.
+        style = next(iter(CONSTANTS["NATIVE_CLOCK_STYLES"]))
+        data = base64.b64encode(bytes([3, 8, 1, 1])).decode("ascii")
+        lamp = _reflected_fx_lamp(True, style, {"mode": 40, "color": [0x123456], "data": data})
+        self.assertEqual(lamp._mode, CONSTANTS["MODE_CLOCK"])
+        self.assertEqual(lamp._native_clock_style, style)
+        self.assertEqual(lamp._native_clock_color, 0x123456)
+        self.assertEqual(lamp._native_clock_content, "date")
+        self.assertTrue(lamp._native_clock_12_hour)
+        self.assertFalse(lamp._native_clock_colon_blink)
+        # A native effect: its speed (clamped) and direction.
+        lamp = _reflected_fx_lamp(False, 0, {"rate": 999, "direction": 0}, "Rainbow")
+        self.assertEqual((lamp._mode, lamp._native_effect), (CONSTANTS["MODE_NATIVE_EFFECT"], "Rainbow"))
+        self.assertEqual(lamp._native_effect_speed, 255)
         # The card derives the effect from clock_style_id, so it must be the
         # attribute that gets updated.
         self.assertIn("clock_style_id", CLOCK_CARD_SOURCE)
@@ -2793,6 +2814,47 @@ class NativeFeatureTests(unittest.TestCase):
         ]
         self.assertIn("not leaving_native_fw_mode", condition)
 
+
+
+def _reflected_fx_lamp(is_clock, style, config, native_effect_name=None):
+    """A lamp after the fx-explorer reflected a raw command on it
+    (light_services_diagnostics._reflect_fx_effect)."""
+    import base64 as _base64
+    names = {"_reflect_fx_effect", "_apply_clock_data", "_direction_name"}
+    reflect = _load_standalone_functions(
+        LIGHT_SOURCE, names,
+        {**CONSTANTS, "base64": _base64, "_LOGGER": Mock()},
+    )["_reflect_fx_effect"]
+    lamp = types.SimpleNamespace(
+        _mode=None, _native_clock_style=None, _native_clock_color=None,
+        _native_clock_content="time", _native_clock_show_date=False,
+        _native_clock_12_hour=False, _native_clock_colon_blink=True,
+        _native_effect=None, _native_effect_speed=50, _native_effect_direction=None,
+    )
+    reflect(lamp, is_clock, style, config, native_effect_name)
+    return lamp
+
+
+class NativeEffectCatalogTests(unittest.TestCase):
+    """The light's native_effect_catalog attribute: built once per
+    combination (it is published on every state write)."""
+
+    def test_the_catalog_lists_the_same_effects_and_is_reused(self):
+        import functools
+
+        effects = CONSTANTS["ALL_NATIVE_EFFECTS"]
+        catalog = _load_standalone_functions(
+            LIGHT_SOURCE, {"_native_effect_catalog"},
+            {"functools": functools, "ALL_NATIVE_EFFECTS": effects},
+        )["_native_effect_catalog"]
+        extended = [name for name, spec in effects.items() if spec.get("extended")]
+        self.assertTrue(extended)
+        names = lambda items: [item["name"] for item in items]
+        self.assertFalse(set(extended) & set(names(catalog(False, None))))
+        self.assertTrue(set(extended) <= set(names(catalog(True, None))))
+        # An experimental effect playing while they are hidden stays listed.
+        self.assertIn(extended[0], names(catalog(False, extended[0])))
+        self.assertIs(catalog(False, None), catalog(False, None))
 
 if __name__ == "__main__":
     unittest.main()

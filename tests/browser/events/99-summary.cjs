@@ -21,6 +21,24 @@ module.exports = async (t) => {
     "PASS collection sensors found by their attributes: a fresh installation's ids with none configured, and a sensor renamed while the card is open (Draw, Palette)",
   );
   console.log(
+    "PASS Add in the shared color modes (Clock, Native; buttons and dropdown): the picker opens at Add, the dropdown shows a mode again, the chosen color is sent",
+  );
+  console.log(
+    "PASS a picked color mode (Clock, Native) shows at once, while sent and until the lamp reports it; the lamp's older mode never takes it back, a new one or a custom color replaces it",
+  );
+  console.log(
+    "PASS Color List colors just set: shown at once on every Color List card of the lamp, kept through older echoes, dropped when confirmed or after the grace period (renders without a lamp update)",
+  );
+  console.log(
+    "PASS several lamps, one offline (all 7 cards): the card controls the available lamps (no offline preview, controls enabled), shows the first available one and names the offline one",
+  );
+  console.log(
+    "PASS one lamp offline, commands still sent: Gradient, Draw, Palette and Color List to all their lamps, the single-lamp Lamp Preview to the available one",
+  );
+  console.log(
+    "PASS Lamp Preview adjustment sliders and resets in all 9 section layouts: sent, with no page error (their handlers run on the card, not on <yc-sections>)",
+  );
+  console.log(
     "PASS shared card frame on all 7 cards and editors: title, lamp status, plain background, no-lamp / not-found notices, same editor settings",
   );
   console.log(

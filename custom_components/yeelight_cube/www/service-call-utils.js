@@ -20,6 +20,35 @@ export function getTargetEntities(config = {}) {
   return config?.entity ? [config.entity] : [];
 }
 
+/** Whether `state` is a lamp Home Assistant shows as working (known, not
+ * unknown or unavailable). */
+export function lampAvailable(state) {
+  return !!state && !["unknown", "unavailable"].includes(state.state);
+}
+
+/**
+ * The card's lamps that are available. While some others are offline the
+ * card works with these: what it shows and checks is about them. Commands
+ * still go to every lamp (the backend runs each lamp on its own and only
+ * logs the one not reached), so an offline lamp also gets a stop, its
+ * favourites and its interval.
+ */
+export function availableTargets(hass, config) {
+  return getTargetEntities(config).filter((entity) =>
+    lampAvailable(hass?.states?.[entity]),
+  );
+}
+
+/** Whether `test(entity, state)` holds for every available lamp of the card
+ * (false when none is available). */
+export function everyAvailable(hass, config, test) {
+  const targets = availableTargets(hass, config);
+  return (
+    targets.length > 0 &&
+    targets.every((entity) => test(entity, hass.states[entity]))
+  );
+}
+
 /**
  * `config` controlling the lamps in `value` (one id or a list): sets
  * target_entities and keeps `entity` on the first lamp for single-lamp code
