@@ -10,6 +10,9 @@ from unittest.mock import AsyncMock, Mock, patch
 from tests.test_native_features import ROOT, CONSTANTS, LIGHT_SOURCE, NATIVE_PREVIEW, _load_standalone_functions, SERVICES_SOURCE
 
 # command_errors.note_command_result, for the real hardware queue.
+HARDWARE_BRIGHTNESS_FOR = _load_standalone_functions(
+    (ROOT / "light_color.py").read_text(encoding="utf-8"), {"hardware_brightness_for"}
+)["hardware_brightness_for"]
 NOTE_COMMAND_RESULT = _load_standalone_functions(
     (ROOT / "command_errors.py").read_text(encoding="utf-8"), {"note_command_result"}, {"time": time}
 )["note_command_result"]
@@ -264,8 +267,6 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
     async def health_cycle(self, light, reachable=True):
         light._brightness = 255
         light._last_hardware_brightness = 100
-        light._preview_darken = 0
-        light._last_applied_darken = 0
         light._fx_mode_is_direct = False
         light._display_retry_count = 0
         light.MAX_DISPLAY_RETRIES = 3
@@ -571,7 +572,6 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
                 light._display_retry_count = 0
                 light.MAX_DISPLAY_RETRIES = 3
                 light._custom_text = "86"
-                light._transition_type = "none"
                 await self.helpers["async_apply_display_mode"](
                     light, update_type="text_change"
                 )
@@ -589,7 +589,6 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
                 light._display_retry_count = 0
                 light.MAX_DISPLAY_RETRIES = 3
                 light._custom_text = "21.5"
-                light._transition_type = "none"
                 await self.helpers["async_apply_display_mode"](
                     light, update_type="text_change"
                 )
@@ -658,7 +657,6 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         light._display_retry_count = 0
         light.MAX_DISPLAY_RETRIES = 3
         light._custom_text = ""
-        light._transition_type = "none"
         await self.helpers["async_apply_display_mode"](light, update_type="color_change")
         self.assertFalse(light._rotation_resume_pending)
         self.assertFalse(light._resume_rotation_after_reconnect())
@@ -705,7 +703,6 @@ class EffectRotationEntityTests(unittest.IsolatedAsyncioTestCase):
         light._display_retry_count = 0
         light.MAX_DISPLAY_RETRIES = 3
         light._custom_text = ""
-        light._transition_type = "none"
         light._execute_hardware_op = AsyncMock(return_value=False)
         result = await self.helpers["async_apply_display_mode"](
             light, update_type="color_change"
@@ -1211,14 +1208,13 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
             "_resolve_native_clock_color", "_set_native_mode_brightness",
             "_native_clock_data_bytes", "stop_scroll_timer",
             "_activate_native_effect", "_leave_direct_mode",
-            "_init_transition_state", "_init_scroll_state",
+            "_init_scroll_state",
         }
         source = "\n".join(
             (ROOT / filename).read_text(encoding="utf-8")
             for filename in (
                 "light.py", "light_display.py", "light_render.py",
                 "light_native.py", "light_connection.py", "light_rotation.py",
-                "light_transitions.py",
             )
         )
         helpers = _load_standalone_functions(source, names, {
@@ -1231,11 +1227,11 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
             "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
             "effect_supports_color_override": NATIVE_PREVIEW["effect_supports_color_override"],
             "note_command_result": NOTE_COMMAND_RESULT,
+            "hardware_brightness_for": HARDWARE_BRIGHTNESS_FOR,
         })
         _bind(light, helpers, *names)
-        # The transition and scroll state as the lamp starts (the rotation's,
+        # The scroll state as the lamp starts (the rotation's,
         # the hardware queue's and the saved display state come from make_light).
-        light._init_transition_state()
         light._init_scroll_state()
         light._music_flow_enabled = False
         light._in_native_fw_mode = True

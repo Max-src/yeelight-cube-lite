@@ -286,10 +286,6 @@
                 "entity_id": {
                     "name": "Entity",
                     "description": "Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls."
-                },
-                "apply_brightness": {
-                    "name": "Apply brightness",
-                    "description": "Include the current lamp brightness in the preview matrices."
                 }
             }
         },
@@ -1067,37 +1063,9 @@
                     "name": "Gain (blue)",
                     "description": "System 2 — Blue channel gain multiplier. Default: 1.00"
                 },
-                "hw_floor": {
-                    "name": "Hardware floor",
-                    "description": "System 3 — Hardware brightness % at 0% user brightness (sets dimmest LED drive). Default: 1"
-                },
-                "darken_floor": {
-                    "name": "Darken floor",
-                    "description": "System 3 — RGB darkening % at 0% user brightness (sets dimmest per-pixel math). Default: 97"
-                },
-                "hw_curve": {
-                    "name": "Hardware curve",
-                    "description": "System 3 — Hardware curve exponent. <1 rises fast then flattens near 100%. Default: 0.5"
-                },
-                "darken_curve": {
-                    "name": "Darken curve",
-                    "description": "System 3 — Darken curve exponent. >1 keeps colors rich until you dim well down. Default: 2.0"
-                },
                 "channel_balance": {
                     "name": "Channel balance",
                     "description": "System 1 — Blend between uniform (0=hue-safe) and per-channel (1=blue fix) correction. Default: 0.7"
-                },
-                "floor_r": {
-                    "name": "Floor (red)",
-                    "description": "Per-channel minimum lit value for red (lowest value the red LED renders cleanly). Default: 1"
-                },
-                "floor_g": {
-                    "name": "Floor (green)",
-                    "description": "Per-channel minimum lit value for green. Default: 1"
-                },
-                "floor_b": {
-                    "name": "Floor (blue)",
-                    "description": "Per-channel minimum lit value for blue (blue LEDs often need a higher floor). Default: 1"
                 },
                 "entity_id": {
                     "name": "Entity",

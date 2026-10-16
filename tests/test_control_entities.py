@@ -111,7 +111,6 @@ class ControlEntityTests(unittest.TestCase):
             "cube1_power_on_state": "power_on_state",
             "cube1_alignment_select": "Cube Matrix: Text Alignment",
             "cube1_font_select": "Cube Matrix: Font",
-            "cube1_transition_select": "Cube Matrix: Transition Effect",
             "cube1_device_orientation_select": "Cube Device Orientation",
         })
         # Translated names only where a translation key is set.
@@ -124,16 +123,12 @@ class ControlEntityTests(unittest.TestCase):
 
     def test_a_setting_dropdown_reads_and_sets_the_lamp(self):
         spec = {s.unique_suffix: s for s in SELECT["SETTING_SELECTS"]}
-        light = make_light(_font="fat", set_font=AsyncMock(), _transition_type="none")
+        light = make_light(_font="fat", set_font=AsyncMock())
         font = SELECT["CubeSettingSelect"](light, None, spec["font_select"])
         self.assertEqual(font.options, ["Basic", "Fat", "Italic", "Native"])
         self.assertEqual(font.current_option, "Fat")
         asyncio.run(font.async_select_option("Italic"))
         light.set_font.assert_awaited_once_with("italic")
-        # No setter: the value is stored on the lamp.
-        transition = SELECT["CubeSettingSelect"](light, None, spec["transition_select"])
-        asyncio.run(transition.async_select_option("Wipe Left"))
-        self.assertEqual(light._transition_type, "wipe_left")
         # An unknown value shows the default; an unknown option is refused.
         light._font = "gone"
         self.assertEqual(font.current_option, "Basic")
@@ -172,8 +167,6 @@ class ControlEntityTests(unittest.TestCase):
         self.assertEqual(named, {
             "cube1_gradient_angle": "Cube Matrix: Gradient Angle",
             "cube1_native_effect_speed": "native_effect_speed",
-            "cube1_transition_steps": "Cube Transition Steps",
-            "cube1_transition_duration": "Cube Transition Duration",
             "cube1_scroll_speed": "scroll_speed",
             "cube1_power_limit": "power_limit",
             "cube1_hue_shift": "Cube Color: Hue Shift",
@@ -197,15 +190,12 @@ class ControlEntityTests(unittest.TestCase):
     def test_a_setting_slider_keeps_its_range_and_reacts(self):
         spec = {s.unique_suffix: s for s in (*NUMBER["SETTING_NUMBERS"], *NUMBER["PREVIEW_ADJUSTMENTS"])}
         light = make_light(
-            _transition_steps=5, _scroll_speed=0.2, _is_scrolling=True,
+            _scroll_speed=0.2, _is_scrolling=True,
             start_scroll_timer=Mock(), _preview_contrast=100,
             async_apply_display_mode=AsyncMock(),
         )
         light.hass = types.SimpleNamespace(async_create_task=lambda coroutine: asyncio.ensure_future(coroutine))
         light.async_write_ha_state = Mock()
-        steps = NUMBER["CubeSettingNumber"](light, None, spec["transition_steps"])
-        asyncio.run(steps.async_set_native_value(42.9))
-        self.assertEqual(light._transition_steps, 10)  # whole, within 1..10
         scroll = NUMBER["CubeSettingNumber"](light, None, spec["scroll_speed"])
         asyncio.run(scroll.async_set_native_value(0.333))
         self.assertEqual(light._scroll_speed, 0.33)
@@ -219,7 +209,7 @@ class ControlEntityTests(unittest.TestCase):
         asyncio.run(contrast_change())
         self.assertEqual(light._preview_contrast, 0)
         light.async_apply_display_mode.assert_awaited_once_with()
-        self.assertEqual(light.async_write_ha_state.call_count, 3)
+        self.assertEqual(light.async_write_ha_state.call_count, 2)  # scroll, contrast
 
 
 if __name__ == "__main__":

@@ -88,11 +88,8 @@ _RECTS_FLIPPED = [r for row in _PIXEL_RECTS_FLIPPED for r in row]
 # LCD screens look dimmer than real LEDs at the same RGB value.
 # The JS lamp-preview card applies a boost curve to compensate.
 # We replicate the exact same formula here so both previews match.
-_PREVIEW_MIN_BRIGHTNESS_BOOST = 8.0
-_PREVIEW_MAX_DARKEN_PERCENT = 94
+_FLOOR = 0.48  # boost at 0% brightness (PREVIEW_BRIGHTNESS_FLOOR)
 _PREVIEW_BRIGHTNESS_GAMMA = 1.35
-_MIN_FACTOR = 1 - _PREVIEW_MAX_DARKEN_PERCENT / 100       # 0.06
-_FLOOR = _PREVIEW_MIN_BRIGHTNESS_BOOST * _MIN_FACTOR       # 0.48
 
 
 # ── Platform setup ─────────────────────────────────────────────────────
@@ -221,20 +218,9 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         return bool(getattr(self._light_entity, "firmware_draws_matrix", False))
 
     def _get_matrix_colors(self) -> list[tuple]:
-        """Get brightness-corrected matrix colors with perceptual boost.
-
-        The JS lamp-preview card receives *darkened* pixel values (via
-        ``matrix_colors`` in state attributes) and applies:
-
-            boost = effective / darkenFactor
-
-        This effectively cancels the darken and replaces it with the
-        perceptual curve, so the net result on the *original* base color is:
-
-            final = base_pixel × effective
-
-        Since we read ``_base_matrix_colors`` directly (NOT darkened), we
-        skip the ``/ darkenFactor`` and just multiply by ``effective``.
+        """The matrix colors scaled by a perceptual brightness curve, like
+        the JS lamp-preview card does with ``matrix_colors`` (the lamp dims
+        in hardware, so the published colors are never darkened):
 
             effective = FLOOR + (1 - FLOOR) × (brightness/255)^GAMMA
             pixel     = min(255, round(v × effective))

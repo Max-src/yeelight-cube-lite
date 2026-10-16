@@ -13,7 +13,7 @@ from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: ignore
 
 from .const import DOMAIN, ALL_NATIVE_EFFECTS, MODE_CLOCK, MODE_NATIVE_EFFECT
-from .entity import CubeControlEntity
+from .entity import CubeControlEntity, remove_retired_entities
 from .lamp_power import BASE_W, NO_LIMIT_W
 
 _LOGGER = logging.getLogger(__name__)
@@ -114,16 +114,6 @@ class SettingNumber:
 
 SETTING_NUMBERS = (
     SettingNumber(
-        "transition_steps", "mdi:animation", "_transition_steps", 1, 10, 1, 5,
-        unit="steps", name="Transition Steps", category=EntityCategory.CONFIG,
-        slot="_transition_steps_entity",
-    ),
-    SettingNumber(
-        "transition_duration", "mdi:timer-outline", "_transition_duration", 0.2, 10.0, 0.1, 1.0,
-        unit="s", digits=1, name="Transition Duration", category=EntityCategory.CONFIG,
-        slot="_transition_duration_entity",
-    ),
-    SettingNumber(
         "scroll_speed", "mdi:timer-play-outline", "_scroll_speed", 0.05, 2.0, 0.05, 0.2,
         unit="s", digits=2, translation_key="scroll_speed", category=EntityCategory.CONFIG,
         slot="_scroll_speed_entity", after=_restart_scroll,
@@ -217,6 +207,10 @@ async def async_setup_entry(
     if not light_entity:
         return False
 
+    # The matrix transition settings of an earlier version (transitions removed).
+    remove_retired_entities(hass, "number", [
+        f"{light_entity._attr_unique_id}_{key}" for key in ("transition_steps", "transition_duration")
+    ])
     async_add_entities([
         YeelightCubeGradientAngleNumber(light_entity, entry),
         YeelightCubeNativeEffectSpeedNumber(light_entity, entry),

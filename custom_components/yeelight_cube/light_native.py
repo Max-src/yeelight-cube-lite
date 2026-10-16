@@ -9,9 +9,9 @@ import asyncio
 import base64
 import json
 import logging
-import time
 from .native_effect_preview import effect_supports_color_mode, effect_supports_color_override
 from .color_utils import rgb_to_argb
+from .light_color import hardware_brightness_for
 from .cube_matrix import CubeConnectionError, encode_rgb_frame
 
 from homeassistant.exceptions import HomeAssistantError  # type: ignore
@@ -59,39 +59,6 @@ def _build_music_flow_payload(enabled: bool, effect_name: str) -> str:
     return json.dumps(payload, separators=(",", ":"))
 
 
-def _parse_music_flow_config(value) -> tuple[bool | None, int | None]:
-    """Parse a ``mic_music_mode`` property returned by Cube Lite firmware."""
-    if isinstance(value, str):
-        if not value.strip():
-            return None, None
-        try:
-            value = json.loads(value)
-        except (TypeError, ValueError):
-            return None, None
-    if not isinstance(value, dict):
-        return None, None
-
-    raw_enabled = value.get("on")
-    if isinstance(raw_enabled, str):
-        normalized = raw_enabled.strip().lower()
-        if normalized in ("1", "on", "true"):
-            enabled = True
-        elif normalized in ("0", "off", "false"):
-            enabled = False
-        else:
-            enabled = None
-    elif isinstance(raw_enabled, (bool, int)):
-        enabled = bool(raw_enabled)
-    else:
-        enabled = None
-
-    try:
-        effect_id = int(value["effect_id"]) if "effect_id" in value else None
-    except (TypeError, ValueError):
-        effect_id = None
-    return enabled, effect_id
-
-
 class NativeModesMixin:
     """Activate and configure the firmware Clock and native animations."""
 
@@ -103,8 +70,7 @@ class NativeModesMixin:
         moment direct mode is re-activated, about 200 ms before the next frame
         can arrive (activate_fx_mode needs its settle time). Without this,
         going back from a clock or effect to a drawing briefly shows the
-        previous drawing. A black frame makes that moment dark instead, and
-        transitions start from it.
+        previous drawing. A black frame makes that moment dark instead.
         """
         if self._fx_mode_is_direct:
             blank = [(0, 0, 0)] * len(self._layout.device_layout)
@@ -112,19 +78,13 @@ class NativeModesMixin:
                 await self._cube_matrix.draw_matrices_fast(encode_rgb_frame(blank))
             except Exception as err:  # noqa: BLE001 -- best effort, the switch goes on
                 _LOGGER.debug("[%s] Could not blank the direct-mode frame: %s", self._ip, err)
-            self._last_sent_colors = blank
         self._cube_matrix.close_fast_socket()
 
     async def _set_native_mode_brightness(self) -> None:
         """Apply HA brightness directly while a firmware-native mode is active."""
-        hardware_brightness = max(1, min(100, round(self._brightness * 100 / 255)))
-        await self._cube_matrix.send_raw_command(
-            "set_bright",
-            [hardware_brightness],
-        )
-        self._last_hardware_brightness = hardware_brightness
-        self._preview_darken = 0
-        self._last_applied_darken = 0
+        level = hardware_brightness_for(self._brightness)
+        await self._cube_matrix.send_raw_command("set_bright", [level])
+        self._last_hardware_brightness = level
 
     @staticmethod
     def _native_clock_timezone_hours() -> int:
@@ -378,7 +338,6 @@ class NativeModesMixin:
                 self._cube_matrix.close_command_socket()
 
             self._music_flow_enabled = enabled
-            self._last_native_state_poll = time.monotonic()
             try:
                 if enabled:
                     if not was_music_flow_enabled:

@@ -380,8 +380,6 @@ _ENTITY_SUFFIXES_BY_PLATFORM: list[tuple[str, str]] = [
     ("light", ""),
     ("button", "_force_refresh"),
     ("number", "_gradient_angle"),
-    ("number", "_transition_steps"),
-    ("number", "_transition_duration"),
     ("number", "_native_effect_speed"),
     ("number", "_scroll_speed"),
     # Preview adjustment numbers (keys from number.PREVIEW_ADJUSTMENTS)
@@ -406,7 +404,6 @@ _ENTITY_SUFFIXES_BY_PLATFORM: list[tuple[str, str]] = [
     ("select", "_power_on_state"),
     ("select", "_alignment_select"),
     ("select", "_font_select"),
-    ("select", "_transition_select"),
     # Native clock and text behavior switches
     ("switch", "_clock_show_date"),
     ("switch", "_clock_12_hour"),

@@ -1,9 +1,20 @@
 """Shared device grouping and availability for the entities of one lamp."""
 from __future__ import annotations
 
-from homeassistant.core import callback  # type: ignore
+from homeassistant.core import HomeAssistant, callback  # type: ignore
+from homeassistant.helpers import entity_registry as er  # type: ignore
 
 from .const import DOMAIN
+
+
+def remove_retired_entities(hass: HomeAssistant, platform: str, unique_ids) -> None:
+    """Remove the entities an earlier version created and this one no longer
+    does, so they do not stay behind as unavailable."""
+    registry = er.async_get(hass)
+    for unique_id in unique_ids:
+        entity_id = registry.async_get_entity_id(platform, DOMAIN, unique_id)
+        if entity_id is not None:
+            registry.async_remove(entity_id)
 
 
 def cube_device_info(light_entity) -> dict:

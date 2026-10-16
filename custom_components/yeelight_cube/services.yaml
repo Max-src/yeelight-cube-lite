@@ -252,13 +252,6 @@ preview_gradient_modes:
       selector:
         entity:
           domain: light
-    apply_brightness:
-      description: Include the current lamp brightness in the preview matrices.
-      example: false
-      required: false
-      default: false
-      selector:
-        boolean:
 
 set_custom_text:
   name: Set Custom Text
@@ -1584,46 +1577,6 @@ set_color_calibration:
           max: 1.5
           step: 0.01
           mode: slider
-    hw_floor:
-      description: "System 3 — Hardware brightness % at 0% user brightness (sets dimmest LED drive). Default: 1"
-      example: 1
-      required: false
-      selector:
-        number:
-          min: 1
-          max: 100
-          step: 1
-          mode: slider
-    darken_floor:
-      description: "System 3 — RGB darkening % at 0% user brightness (sets dimmest per-pixel math). Default: 97"
-      example: 97
-      required: false
-      selector:
-        number:
-          min: 0
-          max: 100
-          step: 1
-          mode: slider
-    hw_curve:
-      description: "System 3 — Hardware curve exponent. <1 rises fast then flattens near 100%. Default: 0.5"
-      example: 0.5
-      required: false
-      selector:
-        number:
-          min: 0.1
-          max: 3.0
-          step: 0.05
-          mode: slider
-    darken_curve:
-      description: "System 3 — Darken curve exponent. >1 keeps colors rich until you dim well down. Default: 2.0"
-      example: 2.0
-      required: false
-      selector:
-        number:
-          min: 0.1
-          max: 4.0
-          step: 0.05
-          mode: slider
     channel_balance:
       description: "System 1 — Blend between uniform (0=hue-safe) and per-channel (1=blue fix) correction. Default: 0.7"
       example: 0.7
@@ -1633,36 +1586,6 @@ set_color_calibration:
           min: 0.0
           max: 1.0
           step: 0.05
-          mode: slider
-    floor_r:
-      description: "Per-channel minimum lit value for red (lowest value the red LED renders cleanly). Default: 1"
-      example: 1
-      required: false
-      selector:
-        number:
-          min: 1
-          max: 32
-          step: 1
-          mode: slider
-    floor_g:
-      description: "Per-channel minimum lit value for green. Default: 1"
-      example: 1
-      required: false
-      selector:
-        number:
-          min: 1
-          max: 32
-          step: 1
-          mode: slider
-    floor_b:
-      description: "Per-channel minimum lit value for blue (blue LEDs often need a higher floor). Default: 1"
-      example: 1
-      required: false
-      selector:
-        number:
-          min: 1
-          max: 32
-          step: 1
           mode: slider
     entity_id:
       description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.

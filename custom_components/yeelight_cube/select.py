@@ -13,7 +13,6 @@ from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 
 from .const import (
-    TRANSITION_TYPES,
     FIRMWARE_MODES,
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
@@ -35,9 +34,10 @@ from .const import (
     NATIVE_CLOCK_STYLES,
     NATIVE_EFFECT_DIRECTIONS,
     NATIVE_EFFECTS,
+    DEFAULT_POWER_ON_STATE,
     POWER_ON_STATES,
 )
-from .entity import CubeControlEntity
+from .entity import CubeControlEntity, remove_retired_entities
 from .builtin_pixel_art import get_builtin_pixel_art_map
 from .layout import FONT_MAPS
 
@@ -119,7 +119,7 @@ SETTING_SELECTS = (
     ),
     SettingSelect(
         "power_on_state", "mdi:power-settings", "_power_on_state",
-        {state: state for state in POWER_ON_STATES}, "On",
+        {state: state for state in POWER_ON_STATES}, DEFAULT_POWER_ON_STATE,
         "async_set_power_on_state", "_power_on_state_select_entity",
         translation_key="power_on_state", category=EntityCategory.CONFIG,
     ),
@@ -132,12 +132,6 @@ SETTING_SELECTS = (
         "font_select", "mdi:format-font", "_font",
         {key: key.capitalize() for key in FONT_MAPS}, "basic",
         "set_font", "_font_select_entity", name="Matrix: Font",
-    ),
-    # Read by the transitions on each frame change: stored, nothing to send.
-    SettingSelect(
-        "transition_select", "mdi:animation-play", "_transition_type",
-        TRANSITION_TYPES, "none", None, "_transition_select_entity",
-        name="Matrix: Transition Effect", category=EntityCategory.CONFIG,
     ),
     # The 4-way physical mount (the official app's picker and the lamp
     # preview card's rotation); it replaced the "Flip Orientation" switch.
@@ -199,6 +193,8 @@ async def async_setup_entry(
     if not light_entity:
         return False
 
+    # The matrix transition effect of an earlier version (transitions removed).
+    remove_retired_entities(hass, "select", [f"{light_entity._attr_unique_id}_transition_select"])
     async_add_entities([
         YeelightCubePaletteSelect(light_entity, ip, entry, hass),
         YeelightCubePixelArtSelect(light_entity, ip, entry, hass),

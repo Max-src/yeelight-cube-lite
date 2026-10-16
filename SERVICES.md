@@ -732,17 +732,15 @@ Generate preview matrix data for the ten text/gradient modes (every Matrix mode 
 | Field | Required | Description |
 | :-- | :-- | :-- |
 | `entity_id` | Yes | Target lamp entity |
-| `apply_brightness` | No | Include current brightness in the preview matrices (default: `false`) |
 
 ```yaml
 action: yeelight_cube.preview_gradient_modes
 data:
   entity_id: light.cubelite_192_168_4_102
-  apply_brightness: false
 ```
 
 > [!NOTE]
-> Results are delivered via the **`yeelight_cube_gradient_preview_response`** event on the HA event bus, not as a direct return value. The event payload includes `entity_id`, `previews` (a dict of mode name → 100-pixel color list), `rows`, `cols`, `text`, `angle`, `brightness`, `darken_percent`, `apply_brightness` and `full_panel`.
+> Results are delivered via the **`yeelight_cube_gradient_preview_response`** event on the HA event bus, not as a direct return value. The event payload includes `entity_id`, `previews` (a dict of mode name → 100-pixel color list), `rows`, `cols`, `text`, `angle`, `brightness` and `full_panel`.
 
 ---
 

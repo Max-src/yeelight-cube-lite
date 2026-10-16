@@ -21,11 +21,7 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
   // native-effect animation loop renders identically to the normal path.
   _matrixColorsToGridColors(matrixColors, stateObj) {
     const entityBrightness = stateObj?.attributes?.brightness ?? 255;
-    const darkenPercent = stateObj?.attributes?.preview_darken ?? 0;
-    const previewBoost = previewBrightnessScale(
-      entityBrightness,
-      darkenPercent,
-    );
+    const previewBoost = previewBrightnessScale(entityBrightness);
     return matrixColors.map((c) => {
       let px = c;
       if (!Array.isArray(px) || px.length !== 3) px = [0, 0, 0];

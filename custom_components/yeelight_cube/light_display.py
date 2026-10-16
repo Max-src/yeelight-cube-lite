@@ -15,13 +15,15 @@ from yeelight import BulbException  # type: ignore
 from .color_utils import rgb_to_hex
 from .const import FIRMWARE_MODES, MODE_NATIVE_EFFECT, ROTATION_KIND_MODES
 from .cube_matrix import (
+    FRAMES,
+    frame_id,
     CubeConnectionError,
     CubeFxModeLost,
     encode_rgb_frame,
     is_connection_error,
 )
 from .lamp_power import estimated_power
-from .light_connection import APPLY_HARD_TIMEOUT
+from .light_color import hardware_brightness_for
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -205,25 +207,10 @@ class DisplayMixin:
         log_level = _LOGGER.info if is_retry else _LOGGER.debug
         log_level(f"[DISPLAY] async_apply_display_mode called - mode: '{self._mode}', text: '{self._custom_text}', type: '{update_type}', is_on: {self._is_on}")
         
-        # Track which type of update is running so the transition block in
-        # apply() can skip animations on retries / recovery / periodic
-        # refreshes.  Only genuine user-initiated content changes animate.
-        self._current_update_type = update_type
-
-        # Compute dynamic timeout: when a transition is enabled, the operation
-        # needs transition_duration + overhead for FX activation + final send.
-        # Without transition, use the default APPLY_HARD_TIMEOUT.
-        op_timeout = None
-        if (self._transition_type != "none"
-                and self._last_sent_colors is not None
-                and not self._transition_active):
-            op_timeout = self._transition_duration + APPLY_HARD_TIMEOUT
-        
         # Execute the display update under the global lock with error handling
         return await self._execute_hardware_op(
             lambda: self._apply_display_mode_internal(),
             f"display:{update_type}",
-            timeout_override=op_timeout,
             coalesce=True,
         )
 
@@ -248,10 +235,10 @@ class DisplayMixin:
                 raise CubeConnectionError("Cooldown active -- device not yet reachable")
             
             # Check if the lamp just reconnected (socket was reset).
-            # If so, we need to re-send FX mode and brightness before pixel data.
+            # If so, direct mode is activated again before pixel data.
             if self._cube_matrix.consume_reconnected_flag():
                 _LOGGER.info(
-                    "[APPLY] [%s] Reconnection detected -- will restore FX mode + brightness "
+                    "[APPLY] [%s] Reconnection detected -- activating direct mode again "
                     "(fx_direct was %s, forcing to False)",
                     self._ip, self._fx_mode_is_direct
                 )
@@ -271,12 +258,11 @@ class DisplayMixin:
                     )
                     self._fx_mode_is_direct = False
 
-            # Ensure lamp is in direct FX mode before sending pixel data.
-            # Uses raw TCP (fresh connection per command) -- the proven-reliable
-            # approach.  The Cube always processes activate_fx_mode correctly
-            # on a fresh TCP connection but sometimes silently ignores it on
-            # a reused persistent socket.
-            hardware_brightness, darken_percent = self._calculate_brightness_values(self._brightness)
+            # Ensure lamp is in direct FX mode before sending pixel data
+            # (ensure_fx_ready: in the UDP session, else on a fresh TCP
+            # connection -- the Cube sometimes ignores activate_fx_mode on a
+            # reused persistent TCP socket).
+            hardware_brightness = hardware_brightness_for(self._brightness)
             # Capture whether this apply is LEAVING a firmware-native renderer
             # (clock / native animation / color flow) BEFORE ensure_fx_ready()
             # clears the flag.  The firmware needs time to tear down the native
@@ -284,147 +270,51 @@ class DisplayMixin:
             # silently dropped during that window (accepted at TCP level, zero
             # visual effect) -- which is why a single send left the panel stuck
             # and a manual second send fixed it.  We re-send one frame below to
-            # make the transition deterministic.
+            # make the switch deterministic.
             leaving_native_fw_mode = self._in_native_fw_mode and not self._fx_mode_is_direct
             if not self._fx_mode_is_direct:
                 await self.ensure_fx_ready()
-                # Send set_bright on the PERSISTENT socket right after activation.
-                # This avoids the extra RST connection that was disrupting direct
-                # mode when set_bright was sent on a second fresh TCP in
-                # ensure_fx_ready.  set_bright and the subsequent update_leds
-                # now travel on the same persistent TCP connection.
-                await self._cube_matrix.send_command_fast("set_bright", [hardware_brightness])
-                self._last_hardware_brightness = hardware_brightness
+            # The lamp's hardware brightness, before any frame of this update
+            # and only when it differs (or is unknown): in direct mode a
+            # set_bright after frames can make the lamp show an older picture
+            # again (cube_matrix.FRAME_SETTLE_DELAY). Over TCP it goes on the
+            # persistent socket, with the frames.
+            if hardware_brightness != self._last_hardware_brightness:
+                _LOGGER.debug(
+                    "[BRIGHTNESS_DIAG] [%s] APPLY -- sending set_bright: "
+                    "user=%s/255, hardware=%s%%, prev_hw=%s, mode='%s'",
+                    self._ip, self._brightness, hardware_brightness,
+                    self._last_hardware_brightness, self._mode
+                )
+                try:
+                    await self._cube_matrix.send_command_fast("set_bright", [hardware_brightness])
+                    self._last_hardware_brightness = hardware_brightness
+                except Exception as e:
+                    if is_connection_error(e):
+                        raise
+                    _LOGGER.debug(
+                        "[BRIGHTNESS_DIAG] [%s] APPLY -- set_bright FAILED: %s", self._ip, e
+                    )
             else:
-                # FX mode already active -- only send set_bright when value changed.
-                # _last_hardware_brightness == 0 (sentinel from ensure_fx_ready called
-                # indirectly, e.g. force_refresh path) will also trigger this branch.
-                if hardware_brightness != self._last_hardware_brightness:
-                    _LOGGER.debug(
-                        "[BRIGHTNESS_DIAG] [%s] APPLY -- sending set_bright: "
-                        "user=%s/255, hardware=%s%%, "
-                        "darken=%s%%, prev_hw=%s, "
-                        "fx_direct=%s, mode='%s'",
-                        self._ip, self._brightness, hardware_brightness,
-                        darken_percent, self._last_hardware_brightness,
-                        self._fx_mode_is_direct, self._mode
-                    )
-                    try:
-                        await self._cube_matrix.send_command_fast("set_bright", [hardware_brightness])
-                        self._last_hardware_brightness = hardware_brightness
-                        _LOGGER.debug(
-                            "[BRIGHTNESS_DIAG] [%s] APPLY -- set_bright SUCCESS: "
-                            "hardware=%s%%",
-                            self._ip, hardware_brightness
-                        )
-                    except Exception as e:
-                        _LOGGER.debug(
-                            "[BRIGHTNESS_DIAG] [%s] APPLY -- set_bright FAILED: %s", self._ip, e
-                        )
-                else:
-                    _LOGGER.debug(
-                        "[BRIGHTNESS_DIAG] [%s] APPLY -- set_bright SKIPPED "
-                        "(unchanged at %s%%)",
-                        self._ip, hardware_brightness
-                    )
-
-            # SINGLE-PASS: Apply color effects + brightness in one loop
-            # Previously this was two separate loops (color then brightness), each
-            # doing hex -> RGB -> process -> RGB -> hex. Now merged into one pass to halve
-            # the conversion overhead (100 pixels x 2 conversions saved per frame).
-            
-            # CRITICAL: Sync _preview_darken from the authoritative _brightness value.
-            # _preview_darken can become stale (e.g., stuck at 94% while user=255/255)
-            # when certain code paths (health recovery, reconnection) update _brightness
-            # but don't recalculate _preview_darken.  By always deriving it here from
-            # _brightness, we guarantee the rendered pixels match the user's intent.
-            old_darken = self._preview_darken
-            self._preview_darken = darken_percent
-            self._last_applied_darken = darken_percent
-            if old_darken != darken_percent:
-                _LOGGER.warning(
-                    "[BRIGHTNESS_DIAG] [%s] APPLY -- fixed stale _preview_darken: "
-                    "%s%% -> %s%% (user=%s/255)",
-                    self._ip, old_darken, darken_percent, self._brightness
+                _LOGGER.debug(
+                    "[BRIGHTNESS_DIAG] [%s] APPLY -- set_bright SKIPPED "
+                    "(unchanged at %s%%)",
+                    self._ip, hardware_brightness
                 )
 
-            has_color_effect = self._has_color_effects
-            has_brightness_effect = (self._preview_darken != 0 or self._preview_brighten != 0)
-            
-            # SNAPSHOT: Capture base colors for _apply_brightness_only (fast path).
-            # The JS card also uses these (with _preview_darken applied on-the-fly)
-            # for instant brightness preview without lamp roundtrip.
-            #
-            # The snapshot is taken AFTER color effects but BEFORE brightness
-            # darkening, so _base_matrix_colors always contains:
-            #   [OK] Original pixel colors (text/drawing)
-            #   [OK] Color adjustments (hue_shift, saturation, etc.) already baked in
-            #   [X] No brightness darkening
-            #   [X] No color correction (gamma)
-            #   [X] No color accuracy (per-channel gain)
-            #
-            # The brightness fast path (_apply_brightness_only) therefore
-            # must NOT re-apply color adjustments -- only brightness pipeline.
-            # The frame is read from the layout once and processed as RGB
-            # tuples; it is written back and encoded for the lamp only once.
+            # SNAPSHOT for _apply_brightness_only (fast path) and the published
+            # colors (cards, camera): the frame with its color effects, but
+            # without the brightness-dependent stages (low-brightness
+            # correction, per-channel accuracy). The fast path therefore must
+            # NOT apply the color effects again. The frame is read from the
+            # layout once, processed as RGB tuples, written back once.
             frame = self._layout_colors()
-            if has_color_effect:
+            if self._has_color_effects:
                 frame = [self.apply_color_adjustments(rgb) for rgb in frame]
             self._base_matrix_colors = frame
-            if has_brightness_effect or has_color_effect or self._color_accuracy_enabled:
-                if has_brightness_effect:
-                    frame = [
-                        self._apply_color_correction(self._apply_final_brightness(rgb))
-                        for rgb in frame
-                    ]
-                # Color accuracy is applied ALWAYS (independent of brightness);
-                # it returns the color unchanged while disabled.
-                frame = [self._apply_color_accuracy(rgb) for rgb in frame]
-                self._write_layout_colors(frame)
-            
-            # TRANSITION ANIMATION: If enabled, animate from previous -> new state
-            # before sending the final frame.  Runs intermediate frames through
-            # draw_matrices_fast directly (FX mode already active above).
-            # Only animate transitions for user-initiated content changes.
-            # Retries, periodic refreshes, and health-recovery turn_on calls
-            # skip the animation to avoid re-triggering long transitions that
-            # previously caused hard-timeout cascades.
-            _TRANSITION_ANIMATE_TYPES = {
-                'text_change', 'color_change', 'pixel_art',
-            }
-            # _last_sent_colors is whatever direct-mode frame was on the panel
-            # BEFORE it last left for a firmware renderer (clock / native
-            # effect / Music Flow) -- the firmware draws those itself, so it
-            # was never updated in the meantime and does NOT reflect what the
-            # lamp is actually showing now.  Animating from it would morph
-            # from that stale, no-longer-true frame instead of cutting
-            # straight to the new one -- visible as the previous direct-mode
-            # content (e.g. an old pixel art) briefly reappearing.
-            if (self._transition_type != "none"
-                    and self._last_sent_colors is not None
-                    and not self._transition_active
-                    and not leaving_native_fw_mode
-                    and self._current_update_type in _TRANSITION_ANIMATE_TYPES):
-                target_colors = frame
-                # Only animate when content actually changed
-                if target_colors != self._last_sent_colors:
-                    try:
-                        await self._run_transition(self._last_sent_colors, target_colors)
-                    except Exception as e:
-                        _LOGGER.warning("[TRANSITION] [%s] Transition aborted: %s", self._ip, e)
-                    # The transition drew its frames into the layout: put the
-                    # target frame back.
-                    self._write_layout_colors(frame)
-                    # Clean TCP for final frame: close the persistent socket used
-                    # for transition frames and re-activate FX on fresh TCP so the
-                    # final authoritative frame goes on a pristine connection.
-                    try:
-                        await self.ensure_fx_ready()
-                    except Exception as e:
-                        _LOGGER.warning(
-                            "[TRANSITION] [%s] Post-transition FX re-activation failed: %s", self._ip, e
-                        )
-            
+            frame = self._brightness_stages(frame)
+            self._write_layout_colors(frame)
+
             lamp_frame = self._lamp_frame(frame)
             raw_rgb_data = encode_rgb_frame(lamp_frame)
 
@@ -439,7 +329,7 @@ class DisplayMixin:
                 "%s lit / %s dark pixels, power=%.1fW%s "
                 "text='%s' mode='%s' "
                 "idle=%.1fs fx_age=%.0fs "
-                "bright=%s/255 hw=%s%% darken=%s%%",
+                "bright=%s/255 hw=%s%%",
                 self._ip, lit, 100 - lit,
                 # estimated draw of the frame sent (see lamp_power.py)
                 self._last_frame_power,
@@ -447,11 +337,12 @@ class DisplayMixin:
                 f" (limited from {estimated_power(frame, hardware_brightness or 100):.1f}W)",
                 (self._custom_text or '')[:10], self._mode,
                 idle_since_last_cmd, time.time() - self._last_fx_mode_time,
-                self._brightness, hardware_brightness, darken_percent
+                self._brightness, hardware_brightness
             )
             
             _t_before_send = time.time()
-            await self._cube_matrix.draw_matrices_fast(raw_rgb_data)
+            FRAMES.debug("[%s] frame %s", self._ip, frame_id(raw_rgb_data))
+            await self._draw_direct(raw_rgb_data)
             _t_after_send = time.time()
             # Refresh the FX mode timestamp on every successful draw.  Without
             # this the staleness clock keeps running from the last
@@ -461,26 +352,14 @@ class DisplayMixin:
             # before the pixel data arrives.
             self._last_fx_mode_time = _t_after_send
             _LOGGER.debug(
-                "[TIMING] [%s] TCP draw_matrices_fast: %.1fms", self._ip, (_t_after_send - _t_before_send)*1000)
-            
-            # POST-SEND RECONNECTION CHECK: If the socket reconnected during
-            # draw_matrices, pixels were sent on a non-FX socket -- silently
-            # ignored.  Mark FX as not active so the next update re-activates.
-            if self._cube_matrix.consume_reconnected_flag():
-                self._fx_mode_is_direct = False
-                _LOGGER.debug(
-                    "[APPLY] [%s] Socket reconnected during update_leds -- "
-                    "FX mode lost, will re-activate on next update",
-                    self._ip
-                )
-                raise CubeFxModeLost("Socket reconnected during pixel send -- FX re-activation needed")
+                "[TIMING] [%s] draw_matrices_fast: %.1fms", self._ip, (_t_after_send - _t_before_send)*1000)
 
             # NATIVE-EXIT RE-SEND: When leaving a firmware-native renderer, the
             # first update_leds above can be dropped while the firmware finishes
-            # switching into direct mode.  The socket is now healthy and in
-            # direct mode (the reconnect check above passed), so re-send the same
-            # frame once -- this is the deterministic equivalent of the manual
-            # second send that was previously needed.
+            # switching into direct mode.  The lamp is now in direct mode
+            # (_draw_direct made sure of it), so re-send the same frame once --
+            # this is the deterministic equivalent of the manual second send
+            # that was previously needed.
             if leaving_native_fw_mode:
                 await asyncio.sleep(0.12)
                 _LOGGER.debug(
@@ -488,28 +367,10 @@ class DisplayMixin:
                     "(firmware just left clock/native mode)",
                     self._ip
                 )
-                await self._cube_matrix.draw_matrices_fast(raw_rgb_data)
+                FRAMES.debug("[%s] native-exit re-send: frame %s", self._ip, frame_id(raw_rgb_data))
+                await self._draw_direct(raw_rgb_data)
                 self._last_fx_mode_time = time.time()
-                if self._cube_matrix.consume_reconnected_flag():
-                    self._fx_mode_is_direct = False
-                    _LOGGER.debug(
-                        "[APPLY] [%s] Socket reconnected during native-exit "
-                        "re-send -- FX mode lost, will re-activate on next update",
-                        self._ip
-                    )
-                    raise CubeFxModeLost("Socket reconnected during native-exit re-send")
-            
-            # Track that this darken% was successfully rendered to lamp pixels.
-            # This keeps _last_applied_darken accurate even when apply() is called
-            # by display-mode changes (draw pixel, text update, etc.) rather than
-            # by _internal_set_brightness.  Without this, the next brightness
-            # slider drag could see a stale _last_applied_darken and trigger a
-            # redundant display update for a darken that was already rendered.
-            self._last_applied_darken = self._preview_darken
-            
-            # Store the final colors that were sent to the lamp for future transitions
-            self._last_sent_colors = list(frame)
-            
+
             # IMPORTANT: When we send pixel data, the lamp automatically turns on
             # So we must update our internal state to match the hardware state
             if not self._is_on:
@@ -582,6 +443,26 @@ class DisplayMixin:
         finally:
                 if self.hass is not None:
                     self.async_schedule_update_ha_state()
+
+    async def _draw_direct(self, raw_rgb_data: str) -> None:
+        """Draw a frame in direct mode. When the connection changed under it
+        (TCP took over from UDP, or a new TCP socket), the frame went where
+        direct mode is not on: it is activated there and the frame drawn
+        again, at once -- without a retry, and without sending the
+        brightness again (unchanged; a set_bright after frames can bring an
+        older picture back). Raises CubeFxModeLost if it changes again."""
+        await self._cube_matrix.draw_matrices_fast(raw_rgb_data)
+        if not self._cube_matrix.consume_reconnected_flag():
+            return
+        _LOGGER.debug(
+            "[APPLY] [%s] Connection changed during update_leds -- "
+            "direct mode again, frame again", self._ip,
+        )
+        await self.ensure_fx_ready()
+        await self._cube_matrix.draw_matrices_fast(raw_rgb_data)
+        if self._cube_matrix.consume_reconnected_flag():
+            self._fx_mode_is_direct = False
+            raise CubeFxModeLost("Connection changed again during update_leds -- FX re-activation needed")
 
     # Text scrolling functionality
     def start_scroll_timer(self, delay=None):

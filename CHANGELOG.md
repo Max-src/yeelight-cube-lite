@@ -6,6 +6,16 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Faster connection (UDP)**: commands and pictures now go over the lamp's
+  UDP session (port 55444) instead of a TCP connection per command: no
+  per-minute command quota (the rotation and quick picks no longer run into
+  "client quota exceeded"), and every command confirmed by the lamp. TCP
+  (port 55443) takes over
+  by itself when UDP does not answer (a network that blocks it, a firmware
+  without the session), and UDP is tried again after 5 minutes or once the
+  lamp is back online. The light's new `connection` attribute shows `udp` or
+  `tcp`. Frames are never answered, so the last frame of a change is sent
+  once more right after it, in case one was lost.
 - **A change a lamp failed to apply is shown on the cards**: when a lamp
   refuses a change or fails while applying it, every card controlling it shows
   *the last change was not applied (…)* with the reason, until a later change
@@ -16,6 +26,15 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   Effects card, until the lamp reports it.
 
 ### Changed
+- **Brightness works like the lamp's own modes**: pictures, text and
+  drawings are now dimmed by the lamp itself (its brightness = the slider, as
+  for the clock and native effects) instead of partly darkening the pixels,
+  so all modes are equally bright at the same setting. Very low settings are
+  brighter than before and keep their full colors. Removed with it: the
+  brightness-curve and per-channel floor values of `set_color_calibration`
+  (`hw_floor`, `darken_floor`, `hw_curve`, `darken_curve`, `floor_r/g/b`), the
+  `apply_brightness` option of `preview_gradient_modes`, and the unused
+  `darken` / `brighten` fields of `set_preview_adjustments`.
 - **Several lamps, one offline**: every card keeps controlling its lamps while
   at least one is available. Before, one unavailable lamp switched the Clock
   and Native Effects cards to their offline preview (nothing was sent to the
@@ -50,7 +69,35 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   it is back ("Lamp back online after …"); the retries in between are logged
   at debug level instead of filling the log.
 
+### Removed
+- **Matrix transition effects**: the animated transitions between two
+  pictures (Fade Through Black, Wipe, Slide, Pixel Migration…) and their
+  **Matrix: Transition Effect**, **Transition Steps** and **Transition
+  Duration** entities, which are removed from existing installations. The
+  lamp could show another picture during or after them (it sometimes redraws
+  an older frame of a fast series); pictures now change at once, and turning
+  the lamp off or on no longer fades. The lamp's own animations replace them.
+
 ### Fixed
+- An older picture (for example the one shown before turning off) could come
+  back on its own after a change. In pixel mode, the lamp
+  sometimes shows an older picture again when it receives a brightness
+  command after a series of frames (watched tests). Brightness is now sent
+  only when it changes, before the pictures of an update. Turning a lamp off
+  and on no longer sends it, and neither does putting the lamp back in pixel
+  mode. When the lamp starts a new UDP session, pixel mode is restored in it
+  directly: before, this looked like a lost connection and triggered a retry
+  and a recovery that sent the brightness again after the frames. A
+  brightness change right after several quick picture changes can still show
+  it briefly: the lamp needs that brightness command, and no order of
+  commands avoids it.
+- **Power-on behavior** did the opposite of its labels: "Off" restored the
+  previous state and "Toggle" kept the lamp off. Its options are now
+  **Restore**, **Always on** and **Always off** (as the lamp's firmware reads
+  them); a choice saved before keeps what the lamp actually did ("Off" becomes
+  Restore, "Toggle" becomes Always off, "On" stays Always on).
+- The lamp is no longer asked for its state every minute: it never answers
+  (`get_prop`), and each try opened a connection and waited for a timeout.
 - The Lamp Preview card's adjustment sliders and reset buttons did nothing
   (errors in the browser console) in every adjustments layout since 1.3.4.
 - The Lamp Preview card kept showing its own value of an adjustment it had

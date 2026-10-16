@@ -127,7 +127,7 @@ def preview_frame(**state):
     """The gallery preview of the lamp's mode, as hex colors."""
     lamp = Lamp(**state)
     random.seed(7)
-    colors = PREVIEW(lamp, lamp._mode, apply_brightness=False)
+    colors = PREVIEW(lamp, lamp._mode)
     return [COLOR_UTILS["rgb_to_hex"](tuple(color)) for color in colors]
 
 

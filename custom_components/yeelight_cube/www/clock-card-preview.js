@@ -255,7 +255,7 @@ export const ClockPreviewMixin = (Base) => class extends Base {
         ? brightnessPctToRaw(this._brightnessPreview)
         : Number(this._attrs().brightness) || 255;
     const brightnessScale = isCurrent
-      ? previewBrightnessScale(brightnessRaw, this._attrs().preview_darken)
+      ? previewBrightnessScale(brightnessRaw)
       : 1;
     for (let i = 0; i < cells.length; i++) {
       const source = frame[i] || [0, 0, 0];

@@ -15,8 +15,7 @@ export const OFF_COLOR = "#000000";
 // re-exported here so Draw card modules keep a single import.
 export {
   BLACK_THRESHOLD,
-  PREVIEW_MIN_BRIGHTNESS_BOOST,
-  PREVIEW_MAX_DARKEN_PERCENT,
+  PREVIEW_BRIGHTNESS_FLOOR,
   PREVIEW_BRIGHTNESS_GAMMA,
   previewBrightnessScale,
 } from "./matrix-const.js";

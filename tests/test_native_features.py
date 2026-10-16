@@ -413,10 +413,37 @@ class NativeFeatureTests(unittest.TestCase):
             self.assertIsInstance(effect["mode"], int)
 
     def test_power_on_values_match_private_protocol(self):
+        # cfg_init_power: 0 restores the previous state, 1 always on, 2
+        # always off (verified on the lamp after a power cut).
         self.assertEqual(
-            {"Off": 0, "On": 1, "Toggle": 2},
+            {"Restore": 0, "Always on": 1, "Always off": 2},
             CONSTANTS["POWER_ON_STATES"],
         )
+        # A label saved by an older version keeps the value it sent.
+        for old, new in CONSTANTS["LEGACY_POWER_ON_STATES"].items():
+            self.assertEqual(
+                {"Off": 0, "On": 1, "Toggle": 2}[old], CONSTANTS["POWER_ON_STATES"][new]
+            )
+
+    def test_a_saved_power_on_behavior_keeps_what_the_lamp_does(self):
+        invalid = object()
+        convert = _load_standalone_functions(
+            (ROOT / "light_restore.py").read_text(encoding="utf-8"),
+            {"_power_on_state"},
+            {
+                "LEGACY_POWER_ON_STATES": CONSTANTS["LEGACY_POWER_ON_STATES"],
+                "POWER_ON_STATES": CONSTANTS["POWER_ON_STATES"],
+                "_INVALID": invalid,
+            },
+        )["_power_on_state"]
+        # Saved by 1.3.5 and earlier: read by the value the lamp received.
+        self.assertEqual("Restore", convert("Off"))
+        self.assertEqual("Always on", convert("On"))
+        self.assertEqual("Always off", convert("Toggle"))
+        # Today's labels as they are; anything else is ignored.
+        for label in CONSTANTS["POWER_ON_STATES"]:
+            self.assertEqual(label, convert(label))
+        self.assertIs(invalid, convert("Sometimes"))
 
     def test_music_flow_effect_ids_match_official_app(self):
         self.assertEqual(
@@ -449,15 +476,6 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertEqual(16, len(enabled["palatte"]))
         self.assertNotIn("palette", enabled)
         self.assertEqual({"on": 0}, json.loads(build(False, "Blossom")))
-
-    def test_music_flow_property_parser_handles_device_values(self):
-        parse = _load_standalone_functions(
-            LIGHT_SOURCE,
-            {"_parse_music_flow_config"},
-        )["_parse_music_flow_config"]
-        self.assertEqual((True, 84), parse('{"on":1,"effect_id":84}'))
-        self.assertEqual((False, 88), parse({"on": "0", "effect_id": "88"}))
-        self.assertEqual((None, None), parse("not-json"))
 
     def test_music_flow_command_uses_private_property_and_restores_content(self):
         function = _function_source(LIGHT_SOURCE, "async_set_music_flow")
@@ -639,7 +657,6 @@ class NativeFeatureTests(unittest.TestCase):
             _music_flow_restore_power=True,
             _is_on=True,
             _cube_matrix=FakeCube(),
-            _last_native_state_poll=0.0,
             _in_native_fw_mode=True,
             hass=None,
             _refresh_music_flow_entities=lambda: None,
@@ -717,7 +734,6 @@ class NativeFeatureTests(unittest.TestCase):
             _music_flow_restore_power=True,
             _is_on=True,
             _cube_matrix=FakeCube(),
-            _last_native_state_poll=0.0,
             _in_native_fw_mode=True,
             hass=None,
             _refresh_music_flow_entities=lambda: calls.__setitem__(
@@ -773,11 +789,18 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertIn("await storage_ready.wait()", setup)
         self.assertIn("storage_ready.set()", setup)
 
-    def test_music_flow_skips_property_polling_while_active(self):
+    def test_the_lamp_state_is_never_polled(self):
+        # Cube Lite answers no get_prop (TCP or UDP): HA's update only
+        # refreshes the clock's UTC offset, and never while Music Flow runs.
         update = _function_source(LIGHT_SOURCE, "async_update")
+        # Never sent by the lamp or its transport (the diagnostics query
+        # service still lets a user try it).
+        for name in ("light.py", "cube_matrix.py"):
+            self.assertNotIn('"get_prop"', (ROOT / name).read_text(encoding="utf-8"), name)
+        self.assertNotIn("read_properties", update)
         self.assertLess(
             update.index("if self._music_flow_enabled:"),
-            update.index("read_properties("),
+            update.index("_native_clock_timezone_hours()"),
         )
 
     def test_all_native_effect_previews_are_valid_and_animated(self):
@@ -2397,12 +2420,12 @@ class NativeFeatureTests(unittest.TestCase):
 
         lamp = Lamp()
         lamp._layout = types.SimpleNamespace(device_layout=[object()] * 100)
-        lamp._apply_final_brightness = lambda rgb: tuple(v // 2 for v in rgb)
         # The last pixel art the plugin drew, kept after switching away.
         lamp._base_matrix_colors = [(200, 100, 50)] * 100
         lamp._music_flow_enabled = False
         lamp._is_on, lamp._mode = True, "Custom Draw"
-        self.assertEqual([(100, 50, 25)] * 100, lamp._published_matrix_colors())
+        # Never darkened: the lamp dims in hardware (the cards scale them).
+        self.assertEqual([(200, 100, 50)] * 100, lamp._published_matrix_colors())
         for mode in ("Clock", "Native Effect"):
             lamp._mode = mode
             self.assertEqual([], lamp._published_matrix_colors(), mode)
@@ -2795,24 +2818,6 @@ class NativeFeatureTests(unittest.TestCase):
                 self.assertIn(pixel["position"], range(100))
                 self.assertEqual(3, len(pixel["color"]))
                 self.assertTrue(all(channel in range(256) for channel in pixel["color"]))
-
-    def test_transition_is_skipped_when_leaving_a_firmware_native_mode(self):
-        # _last_sent_colors is the direct-mode frame shown BEFORE the panel
-        # last left for the firmware clock/native effect/Music Flow renderer,
-        # which draws itself without updating it. Animating a transition from
-        # it after returning to direct mode would morph from that stale,
-        # no-longer-true frame -- visibly re-showing old content (e.g. a
-        # previous pixel art) before the real target frame takes over.
-        apply_source = _function_source(LIGHT_SOURCE, "apply")
-        leaving_index = apply_source.index("leaving_native_fw_mode = ")
-        transition_if_index = apply_source.index(
-            "if (self._transition_type != \"none\""
-        )
-        self.assertLess(leaving_index, transition_if_index)
-        condition = apply_source[
-            transition_if_index: apply_source.index(":", transition_if_index)
-        ]
-        self.assertIn("not leaving_native_fw_mode", condition)
 
 
 

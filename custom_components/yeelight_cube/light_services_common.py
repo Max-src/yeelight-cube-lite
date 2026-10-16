@@ -236,7 +236,7 @@ def make_admin_only(hass: HomeAssistant):
 
 def make_lamp_runner(hass: HomeAssistant):
     """Build ``run_on_lamps(label, lamps, apply)`` for ``hass``: the services'
-    way to do their per-lamp work (transitions, TCP commands) in the
+    way to do their per-lamp work (lamp commands) in the
     background, so the service returns at once and every lamp is updated in
     parallel.
 

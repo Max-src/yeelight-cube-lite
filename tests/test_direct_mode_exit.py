@@ -38,7 +38,7 @@ class DirectModeExitTests(unittest.IsolatedAsyncioTestCase):
             self.calls.append((command, params))
 
         self.light = SimpleNamespace(
-            _ip="test", _fx_mode_is_direct=True, _last_sent_colors=[(255, 0, 0)] * 100,
+            _ip="test", _fx_mode_is_direct=True,
             _layout=SimpleNamespace(device_layout=[None] * 100),
             _cube_matrix=SimpleNamespace(
                 draw_matrices_fast=draw, close_fast_socket=record("close"),
@@ -58,14 +58,11 @@ class DirectModeExitTests(unittest.IsolatedAsyncioTestCase):
         names = [name for name, _ in self.calls]
         self.assertEqual(["update_leds", "close", "set_fx_effect"], names)
         self.assertEqual(encode([(0, 0, 0)] * 100), self.calls[0][1])
-        # a later transition starts from what the lamp will show: black
-        self.assertEqual([(0, 0, 0)] * 100, self.light._last_sent_colors)
 
     async def test_switching_between_firmware_modes_sends_nothing_extra(self):
         self.light._fx_mode_is_direct = False
         await self.light._activate_native_effect()
         self.assertEqual(["close", "set_fx_effect"], [name for name, _ in self.calls])
-        self.assertEqual([(255, 0, 0)] * 100, self.light._last_sent_colors)
 
     async def test_a_failed_blank_does_not_stop_the_switch(self):
         async def broken(data):

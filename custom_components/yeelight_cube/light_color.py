@@ -8,8 +8,6 @@ Mixed into ``YeelightCubeLight``; not usable on its own.
 """
 import colorsys
 import logging
-import math
-from typing import Tuple
 
 from .layout import TOTAL_COLUMNS, TOTAL_ROWS
 from .lamp_power import estimated_power, limit_frame_power
@@ -17,8 +15,16 @@ from .lamp_power import estimated_power, limit_frame_power
 _LOGGER = logging.getLogger(__name__)
 
 
+def hardware_brightness_for(brightness: int) -> int:
+    """The lamp's hardware brightness (set_bright, 1-100 %) for a Home
+    Assistant brightness (1-255): proportional, the same in every mode --
+    pixel content, clock, native effects -- so they are equally bright at
+    the same setting. Pixels are never darkened for brightness."""
+    return max(1, min(100, round(brightness * 100 / 255)))
+
+
 class ColorPipelineMixin:
-    """Color adjustment, LED correction/accuracy and the brightness curve.
+    """Color adjustment, LED correction/accuracy and the brightness mapping.
 
     All state is read from ``self`` (the concrete :class:`YeelightCubeLight`),
     e.g. ``self._preview_*`` adjustment values and ``self._calib_*`` calibration
@@ -28,10 +34,6 @@ class ColorPipelineMixin:
     def _init_color_state(self):
         """The preview adjustments, color accuracy and calibration knobs. Called by YeelightCubeLight.__init__."""
         # Color effect settings (organized by category)
-        # Note: _preview_darken and _preview_brighten kept internally for brightness control logic
-        # but removed from UI - use light brightness slider instead
-        self._preview_darken = 0        # 0-100: used internally by brightness control
-        self._preview_brighten = 0      # 0-100: reserved for future use
         # Color Adjustments
         self._preview_hue_shift = 0     # -180 to +180: rotate hue
         self._preview_temperature = 0   # -100 to +100: cool to warm
@@ -65,16 +67,6 @@ class ColorPipelineMixin:
         self._calib_gain_r = 1.00
         self._calib_gain_g = 1.00
         self._calib_gain_b = 1.00
-        # System 3: Unified brightness curve parameters (override class constants)
-        self._calib_hw_floor = self.HW_FLOOR_PERCENT
-        self._calib_darken_floor = self.DARKEN_FLOOR_PERCENT
-        self._calib_hw_curve = self.HW_CURVE_EXPONENT
-        self._calib_darken_curve = self.DARKEN_CURVE_EXPONENT
-        # Per-channel minimum lit value (lowest value a channel renders cleanly).
-        # 1 = LED can go fully low (e.g. red); raise for channels that need more.
-        self._calib_floor_r = 1
-        self._calib_floor_g = 1
-        self._calib_floor_b = 1
 
     def _angle_gradient_projection_for_bottom_center(self, col, dx, dy):
         # Always use a 3-column, full-height box centered at col
@@ -294,59 +286,12 @@ class ColorPipelineMixin:
         b = round(b * (1 - factor) + tint_b * factor)
         return r, g, b
 
-    def _apply_final_brightness(self, rgb_color):
-        """
-        Apply brightness/darkness as the FINAL step before encoding.
-        This is separated from apply_color_adjustments() to preserve color precision.
-        
-        WHY THIS IS LAST:
-        - Gradients are calculated at full color precision
-        - Color effects work with accurate color values
-        - No rounding errors accumulate during effect processing
-        - Darkness is applied only to the final output values
-        
-        This approach prevents color shifts and precision loss that would occur
-        if darkness was applied earlier in the pipeline.
-        """
-        r, g, b = rgb_color
-        original_rgb = (r, g, b)  # Store for logging
-        
-        # Skip brightness adjustment for black pixels (background)
-        if r == 0 and g == 0 and b == 0:
-            return (0, 0, 0)
-        
-        # === BRIGHTNESS CONTROL ===
-        # Darken (0-100: interpolate towards black) - Used by brightness system for 0-50% range
-        # Uses floor() + max(1) to preserve color ratios and prevent channel loss
-        if self._preview_darken > 0:
-            darken_factor = 1 - (self._preview_darken / 100)
-            # Use floor() to avoid rounding up, then ensure non-zero channels stay alive.
-            # Each channel has its own minimum lit value (calibrated): a channel that
-            # is intended to be on never drops below its floor, so dim colors keep
-            # their hue instead of crushing channels that the LED can't render low.
-            floor_r = max(1, int(self._calib_floor_r))
-            floor_g = max(1, int(self._calib_floor_g))
-            floor_b = max(1, int(self._calib_floor_b))
-            r = max(floor_r, math.floor(r * darken_factor)) if r > 0 else 0
-            g = max(floor_g, math.floor(g * darken_factor)) if g > 0 else 0
-            b = max(floor_b, math.floor(b * darken_factor)) if b > 0 else 0
-            
-            # Log darken effect for debugging (reduced to debug level to avoid spam)
-            _LOGGER.debug("[FINAL BRIGHTNESS] RGB%s -> darken %s%% -> RGB(%s, %s, %s)", original_rgb, self._preview_darken, r, g, b)
-        
-        # Brighten (0-100: interpolate towards white) - Kept for future use
-        if self._preview_brighten > 0:
-            brighten_factor = self._preview_brighten / 100
-            r = round(r + (255 - r) * brighten_factor)
-            g = round(g + (255 - g) * brighten_factor)
-            b = round(b + (255 - b) * brighten_factor)
-        
-        # Clamp to valid range
-        r = max(0, min(255, r))
-        g = max(0, min(255, g))
-        b = max(0, min(255, b))
-        
-        return (r, g, b)
+    def _brightness_stages(self, colors):
+        """The stages that depend on the lamp's brightness, last before
+        sending: the low-brightness correction (_apply_color_correction) and
+        the per-channel accuracy (_apply_color_accuracy, unchanged while
+        disabled)."""
+        return [self._apply_color_accuracy(self._apply_color_correction(rgb)) for rgb in colors]
 
     def _apply_color_correction(self, rgb_color):
         """
@@ -368,12 +313,8 @@ class ColorPipelineMixin:
         3. Only affects hardware-bound values; the preview card always shows
            the original intended colors.
 
-        IMPORTANT: The strength must be driven by the actual hardware
-        brightness (PWM duty cycle), NOT the software darken%.  In the
-        dual-brightness system, mid-range user brightness (e.g. 59%) has
-        hardware=100% but darken=72%: the LEDs are at full power so there
-        is NO non-linearity to compensate for.  Using darken% here would
-        over-correct and desaturate colors ("faded / merged with white").
+        The strength is driven by the lamp's hardware brightness (the PWM
+        duty cycle the LEDs run at), which is what the brightness sets.
         
         TUNING PARAMETERS - adjust these if colors still look off:
         -------------------------------------------------------------------
@@ -409,15 +350,9 @@ class ColorPipelineMixin:
         GAMMA_G             = self._calib_gamma_g
         GAMMA_B             = self._calib_gamma_b
 
-        # Compute EFFECTIVE brightness that accounts for both dimming mechanisms:
-        #   1. Hardware brightness (global LED current/PWM)
-        #   2. RGB darkening (per-pixel value crushing via _preview_darken)
-        #
-        # The LED sees: pixel_value/255 * hw_bright/100 as its actual duty cycle.
-        # Both low pixel values AND low hw contribute to non-linearity.
-        hw_bright = self._last_hardware_brightness
-        darken = self._preview_darken
-        effective_bright = hw_bright * (100 - darken) / 100
+        # The LEDs' duty cycle: the hardware brightness. Unknown (None, not
+        # sent yet): full brightness, as in _lamp_frame.
+        effective_bright = hw_bright = self._last_hardware_brightness or 100
 
         if effective_bright >= HW_BRIGHT_THRESHOLD:
             return rgb_color  # Pixels at sufficient brightness, no non-linearity
@@ -508,7 +443,7 @@ class ColorPipelineMixin:
         over the power limit (lamp_power.py). Records that estimate for the
         Estimated power sensor. The layout and previews keep the unscaled
         frame."""
-        # Unknown hardware brightness (None, or the 0 re-confirm sentinel):
+        # Unknown hardware brightness (None):
         # assume full brightness, the worst case.
         hardware = self._last_hardware_brightness or 100
         sent = limit_frame_power(frame, self._power_limit, hardware)
@@ -542,7 +477,7 @@ class ColorPipelineMixin:
         brightness.  The blend factor is derived from self._brightness
         (1--255, HA brightness).
 
-        Pipeline order:  color effects -> brightness darken ->
+        Pipeline order:  color effects ->
                          _apply_color_correction (low-brightness gamma) ->
                          * _apply_color_accuracy (this, channel gain) * ->
                          encode & send to lamp
@@ -598,54 +533,3 @@ class ColorPipelineMixin:
         b_out = min(255, round(b * GAIN_B))
 
         return (r_out, g_out, b_out)
-
-    def _calculate_brightness_values(self, user_brightness: int) -> Tuple[int, int]:
-        """
-        Calculate hardware brightness and darkness percentage from user brightness.
-
-        UNIFIED CURVE MODEL (no transition / breaking point):
-        Both hardware dimming and per-pixel RGB darkening move together across the
-        whole slider. With p = user% / 100:
-
-            hardware_keep = hw_floor + (1 - hw_floor) * p ** hw_curve
-            rgb_keep      = (1 - darken_floor) + darken_floor * p ** darken_curve
-            darken_percent = 100 * (1 - rgb_keep) = darken_floor*100 * (1 - p**darken_curve)
-
-        At p=0 the lamp sits at (hw_floor, darken_floor) -> dimmest night level;
-        at p=1 it reaches (100%, 0% darken) -> full output. The product of the two
-        smooth monotonic curves gives a regular brightness ramp with no mid-range
-        irregularity.
-
-        Args:
-            user_brightness: Home Assistant brightness value (1-255)
-
-        Returns:
-            tuple: (hardware_brightness_percent, darken_percent)
-                - hardware_brightness_percent: 1-100 (Yeelight hardware brightness)
-                - darken_percent: 0-100 (RGB darkening amount)
-        """
-        # Clamp to valid range, convert HA brightness (1-255) to fraction p (0-1)
-        user_brightness = max(1, min(255, user_brightness))
-        p = user_brightness / 255.0
-
-        # Tuning knobs (runtime-tunable). Convert percents to 0-1 fractions.
-        hw_floor = max(0.0, min(1.0, self._calib_hw_floor / 100.0))
-        darken_floor = max(0.0, min(1.0, self._calib_darken_floor / 100.0))
-        hw_curve = max(0.05, self._calib_hw_curve)
-        darken_curve = max(0.05, self._calib_darken_curve)
-
-        # Hardware brightness: floor -> 100%, shaped so it rises fast then flattens.
-        hardware_keep = hw_floor + (1.0 - hw_floor) * (p ** hw_curve)
-        hardware_brightness = int(round(max(1, min(100, hardware_keep * 100.0))))
-
-        # RGB darkening: darken_floor at p=0 down to 0 at p=1.
-        darken_percent = darken_floor * 100.0 * (1.0 - (p ** darken_curve))
-        darken_percent = int(round(max(0, min(100, darken_percent))))
-
-        _LOGGER.debug(
-            "[BRIGHTNESS] unified: user=%.1f%% -> "
-            "hardware=%s%%, darkness=%s%%",
-            p*100, hardware_brightness, darken_percent
-        )
-
-        return (hardware_brightness, darken_percent)

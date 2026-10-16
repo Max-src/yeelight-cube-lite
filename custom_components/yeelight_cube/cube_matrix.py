@@ -6,9 +6,23 @@ import select
 import socket
 import struct
 import time
+import zlib
 from yeelight import Bulb, BulbException # type: ignore
 
+from .udp_session import UdpSession, UdpTooLarge, UdpUnavailable
+
 _LOGGER = logging.getLogger(__name__)
+# A trace of what is sent to the lamps over UDP, at debug level, on its own
+# logger so it can be turned on alone (logger.set_level
+# custom_components.yeelight_cube.frames: debug): every command, every frame
+# with a fingerprint (frame_id), and where the frame came from (a display
+# update, the re-send after a burst).
+FRAMES = logging.getLogger(__name__.rpartition(".")[0] + ".frames")
+
+
+def frame_id(rgb_data: str) -> str:
+    """A short fingerprint of an update_leds frame (the frame trace)."""
+    return f"{zlib.crc32(rgb_data.encode('ascii')):08x}"
 
 # Rate limit constants based on validated testing (0.90 FPS = safe sustained rate)
 SAFE_SUSTAINED_INTERVAL = 0.1  # 100 milliseconds between commands
@@ -24,6 +38,25 @@ CONNECT_TIMEOUT = 0.5           # TCP connect timeout — LAN connects take <10m
 RECOVERY_CONNECT_TIMEOUT = 1.5  # Longer timeout when recovering — LAN still connects in <50ms after reboot
 
 _RST_LINGER = struct.pack("ii", 1, 0)  # SO_LINGER value for an abortive close (RST)
+
+# A lamp whose UDP session failed (none on that firmware or network, or it
+# stopped answering) is sent TCP; UDP is tried again after this long, or as
+# soon as the lamp is back online.
+UDP_RETRY_AFTER = 300.0
+# Returned by CubeMatrix._udp_request: send this command over TCP instead.
+_USE_TCP = object()
+# Frames are never answered, so a lost one cannot be noticed: the last frame of
+# a burst is sent again this long after it, once. Any other command but
+# brightness cancels that. Nothing else is sent with it: in direct mode a
+# set_bright after a series of frames sometimes makes the lamp show an older
+# picture again (watched tests, 6 times out of 13; frames alone never did, 0
+# of 6), so it must never be used as a no-op there.
+FRAME_SETTLE_DELAY = 0.3
+# Commands that leave the picture as it is (the re-send still applies) and
+# direct mode on: any other may end it, so a new UDP session is no longer
+# put in direct mode (UdpSession.session_setup).
+_KEEPS_FRAME = frozenset({"update_leds", "set_bright"})
+_DIRECT_MODE = [{"mode": "direct"}]
 
 
 async def check_tcp(ip: str, port: int, timeout: float) -> None:
@@ -143,7 +176,13 @@ def _raw_reply_error(sock: socket.socket) -> dict | None:
 
 
 class CubeMatrix:
-    """Handles communication with the Yeelight Cube Lite device."""
+    """Handles communication with the Yeelight Cube Lite device.
+
+    Commands and frames go over the lamp's UDP command session when it works
+    (udp_session.py), else over TCP as before: a fresh connection per
+    command, a persistent socket for frames and brightness, with their
+    cooldown and backoff.
+    """
     def __init__(self, ip: str, port: int):
         _LOGGER.debug("Connecting to Yeelight Cube Lite at %s:%s", ip, port)
         self.device = Bulb(ip, port)
@@ -188,6 +227,18 @@ class CubeMatrix:
         self._total_commands_sent = 0
 
         self.device_id = None  # Yeelight device ID (hex) — used for discovery suppression
+
+        # The UDP command session, and when UDP may be tried again after it
+        # failed (time.monotonic()).
+        self._udp = UdpSession(ip)
+        self._udp_retry_at = 0.0
+        # Sessions already seen: a new one does not carry direct mode.
+        self._udp_sessions_seen = 0
+        # Whether a UDP failure was logged since UDP last worked: a network
+        # that blocks it is reported once, not at every retry.
+        self._udp_failure_logged = False
+        # The pending re-send of the last frame (FRAME_SETTLE_DELAY).
+        self._frame_settle = None
         
         _LOGGER.debug(
             "[INIT] CubeMatrix initialized: ip=%s, port=%s, timeout=%ss, "
@@ -222,6 +273,120 @@ class CubeMatrix:
 
     def get_bulb(self):
         return self.device
+
+    # ── UDP command session (udp_session.py) ───────────────────────────
+    # Every command goes over the lamp's UDP session when it works: no TCP
+    # connection per command, no per-connection quota, an answer to every
+    # command. TCP (below) stays the fallback: UDP turned off, no session on
+    # this lamp or network, a datagram too large for the lamp, or the session
+    # stopped answering (UDP is tried again after UDP_RETRY_AFTER, or once
+    # the lamp is back online).
+    @property
+    def transport(self) -> str:
+        """"udp" while commands go over the UDP session, else "tcp"."""
+        return "udp" if self._udp_usable() and self._udp.is_open else "tcp"
+
+    def _udp_usable(self) -> bool:
+        return time.monotonic() >= self._udp_retry_at
+
+    def _cancel_frame_settle(self) -> None:
+        if self._frame_settle is not None:
+            if not self._frame_settle.done():
+                FRAMES.debug("[%s] re-send cancelled", self._ip)
+            self._frame_settle.cancel()
+            self._frame_settle = None
+
+    def _settle_frame(self, command: str, params: list) -> None:
+        """After a frame: make sure the lamp ends on it once the burst is over
+        (FRAME_SETTLE_DELAY). Any other command (brightness aside) cancels
+        it, also while it runs, so it never overwrites what came next."""
+        if command not in _KEEPS_FRAME:
+            self._cancel_frame_settle()
+        if command != "update_leds" or not self._udp_usable():
+            return
+        self._cancel_frame_settle()
+
+        async def _settle():
+            try:
+                await asyncio.sleep(FRAME_SETTLE_DELAY)
+                if not self._udp_usable():
+                    return  # UDP failed meanwhile: TCP took over
+                await self._udp.request("update_leds", params)
+                FRAMES.debug("[%s] re-sent frame %s", self._ip, frame_id(params[0]))
+            except UdpUnavailable:
+                pass  # the next command finds out and falls back
+            finally:
+                if self._frame_settle is task:
+                    self._frame_settle = None
+
+        task = asyncio.get_running_loop().create_task(_settle())
+        self._frame_settle = task
+
+    async def _udp_request(self, command: str, params: list):
+        """The lamp's answer over the UDP session (a dict, None for a frame),
+        or _USE_TCP: send over TCP instead."""
+        # First, whatever the transport: a command cancels a pending re-send,
+        # and one that may end direct mode stops new sessions from getting
+        # it (activating it sets it again below, once the session took it).
+        self._settle_frame(command, params)
+        if command not in _KEEPS_FRAME:
+            self._udp.session_setup = []
+        if not self._udp_usable():
+            return _USE_TCP
+        try:
+            answer = await self._udp.request(command, params)
+        except UdpTooLarge:
+            return _USE_TCP
+        except UdpUnavailable as err:
+            self._udp_retry_at = time.monotonic() + UDP_RETRY_AFTER
+            _LOGGER.log(
+                logging.DEBUG if self._udp_failure_logged else logging.INFO,
+                "[UDP] [%s] %s: sending over TCP (UDP tried again in %.0f min, "
+                "or once the lamp is back online)",
+                self._ip, err, UDP_RETRY_AFTER / 60,
+            )
+            self._udp_failure_logged = True
+            # Direct mode activated in the session does not carry to TCP.
+            self._just_reconnected = True
+            return _USE_TCP
+        if FRAMES.isEnabledFor(logging.DEBUG):
+            FRAMES.debug(
+                "[%s] sent %s", self._ip,
+                f"frame {frame_id(params[0])}" if command == "update_leds" and params
+                else f"{command} {str(params)[:80]}",
+            )
+        if command == "activate_fx_mode" and list(params) == _DIRECT_MODE and not (answer or {}).get("error"):
+            # Direct mode only applies to the session it was sent in: every
+            # new session (the lamp dropped this one) is put in it first, so
+            # the frames carry on as if nothing happened -- no reconnection
+            # to recover from (which re-activated and re-sent the brightness
+            # after frames: an older picture came back, see FRAME_SETTLE_DELAY).
+            self._udp.session_setup = [(command, list(params))]
+        if self._udp.sessions_opened != self._udp_sessions_seen:
+            # A new session (the first, after TCP, or after the lamp lost the
+            # previous one): direct mode activated elsewhere (over TCP) is not
+            # in it, unless the session was put in it (session_setup).
+            self._udp_sessions_seen = self._udp.sessions_opened
+            if command != "activate_fx_mode" and not self._udp.session_setup:
+                self._just_reconnected = True
+        if self._udp_failure_logged:
+            _LOGGER.info("[UDP] [%s] UDP session working again", self._ip)
+            self._udp_failure_logged = False
+        prev_failures, _, was_unreachable = self._reset_backoff()
+        if was_unreachable:
+            _LOGGER.debug("[UDP] [%s] ✓ answering again after %s failures", self._ip, prev_failures)
+        self._last_success_time = self._last_command_time = time.time()
+        self._connection_healthy = True
+        self._last_reconnect_attempt = 0
+        self._total_commands_sent += 1
+        return answer
+
+    def close(self) -> None:
+        """Close every socket to the lamp (the light is being removed)."""
+        self._cancel_frame_settle()
+        self.close_fast_socket()
+        self._drop_library_socket(abortive=True)
+        self._udp.close()
 
     # ── python-yeelight request socket ─────────────────────────────────
     # The library keeps its request socket in the private, name-mangled
@@ -291,9 +456,10 @@ class CubeMatrix:
         return was_reachable
 
     def mark_recovered(self) -> None:
-        """The lamp answers again: drop the persistent socket and reset the
-        failure count, backoff and unreachable flag."""
+        """The lamp answers again: drop the persistent socket, reset the
+        failure count, backoff and unreachable flag, and try UDP again."""
         self.close_fast_socket()
+        self._udp_retry_at = 0.0
         self._reset_backoff()
         self._connection_healthy = True
         self._last_reconnect_attempt = 0
@@ -344,38 +510,15 @@ class CubeMatrix:
         return previous
 
     async def probe(self, timeout: float = CONNECT_TIMEOUT) -> bool:
-        """Whether the lamp accepts a TCP connection within ``timeout``."""
+        """Whether the lamp answers: in its UDP session, else by accepting a
+        TCP connection within ``timeout``."""
+        if self._udp_usable() and await self._udp.ping():
+            return True
         try:
             await check_tcp(self._ip, self._port, timeout)
         except OSError:
             return False
         return True
-
-    async def read_properties(self, properties: list[str]) -> dict[str, object]:
-        """Read Yeelight properties and normalize the library response."""
-        try:
-            result = await self.send_command_with_recovery("get_prop", properties)
-        finally:
-            self.close_command_socket()
-        if not result:
-            return {}
-        if isinstance(result, dict):
-            values = result.get("result")
-        else:
-            values = result
-        if not isinstance(values, list):
-            return {}
-        return dict(zip(properties, values))
-
-    async def read_effect(self):
-        """Return the firmware-native effect payload when supported."""
-        try:
-            result = await self.send_command_with_recovery("get_fx_effect", [])
-        finally:
-            self.close_command_socket()
-        if isinstance(result, dict):
-            return result.get("result")
-        return result
 
     def consume_reconnected_flag(self) -> bool:
         """
@@ -383,11 +526,11 @@ class CubeMatrix:
         
         Returns True if a reconnection just happened, then clears the flag.
         Called by light.py after successful commands to know when to
-        re-send FX mode and brightness.
+        activate direct mode again.
         """
         if self._just_reconnected:
             self._just_reconnected = False
-            _LOGGER.debug("[FLAG] consume_reconnected_flag → True (will restore FX mode + brightness)")
+            _LOGGER.debug("[FLAG] consume_reconnected_flag → True (direct mode again)")
             return True
         return False
 
@@ -413,7 +556,7 @@ class CubeMatrix:
             f"healthy={self._connection_healthy}, reconnected_flag={self._just_reconnected}, "
             f"time_since_attempt={time_since_attempt:.1f}s, "
             f"time_since_success={time_since_success:.1f}s, "
-            f"total_cmds={self._total_commands_sent}"
+            f"total_cmds={self._total_commands_sent}, transport={self.transport}"
         )
 
     async def _check_connection_health(self):
@@ -582,22 +725,6 @@ class CubeMatrix:
                 await asyncio.sleep(2)
         _LOGGER.error("Could not connect to Yeelight Cube Lite after retries.")
 
-    async def draw_matrices(self, rgb_data: str):
-        """Send matrix draw command (awaitable, serialized).
-        
-        This is the preferred method — it waits for the command to complete
-        so the caller (display queue) doesn't pile up concurrent commands.
-        """
-        await self._draw_with_recovery(rgb_data)
-
-    async def _draw_with_recovery(self, rgb_data: str):
-        """Internal method to draw with recovery handling.
-        
-        Lets errors propagate to the caller. The queue processor in light.py
-        has its own error handling for BulbException, AttributeError, etc.
-        """
-        await self.send_command_with_recovery("update_leds", [rgb_data])
-
     def close_fast_socket(self):
         """Close the persistent fast socket if open.
         
@@ -644,9 +771,20 @@ class CubeMatrix:
         it a refused command looks sent and the caller believes the lamp
         changed. No answer or a closed connection still counts as sent: the
         Cube often closes without replying.
+
+        Over the UDP session every command is answered, so ``check_reply``
+        always has the lamp's answer there.
         """
         if params is None:
             params = []
+        answer = await self._udp_request(command, params)
+        if answer is not _USE_TCP:
+            error = answer.get("error") if answer else None
+            if error is not None:
+                if check_reply:
+                    raise BulbException(error)
+                _LOGGER.debug("[UDP] [%s] %s answered %s", self._ip, command, error)
+            return
         command_dict = {"id": 1, "method": command, "params": params}
         request = (json.dumps(command_dict, separators=(",", ":")) + "\r\n").encode("utf8")
 
@@ -780,7 +918,19 @@ class CubeMatrix:
             
         Returns:
             True if send() succeeded, False otherwise
+
+        Over the UDP session: the same command there (frames unanswered).
         """
+        answer = await self._udp_request(command, list(params or []))
+        if answer is not _USE_TCP:
+            if answer and "error" in answer:
+                # Like an error drained from the TCP socket: direct mode is
+                # most likely lost, the next frame activates it again.
+                _LOGGER.warning(
+                    "[UDP] [%s] %s refused: %s", self._ip, command, answer["error"]
+                )
+                self._just_reconnected = True
+            return True
         cmd_id = int(time.time() * 1000) % 100000
         
         async with self._command_lock:
@@ -1030,8 +1180,8 @@ class CubeMatrix:
     async def draw_matrices_fast(self, rgb_data: str):
         """Send pixel data using fire-and-forget (no recv).
         
-        Much faster than draw_matrices() because it doesn't wait for the
-        Cube's response (which is always "Bulb closed the connection" anyway).
+        Fire-and-forget: it doesn't wait for the Cube's response (which is
+        always "Bulb closed the connection" anyway).
         """
         # Build JSON to log exact byte count sent to Cube
         cmd_dict = {"id": 1, "method": "update_leds", "params": [rgb_data]}
@@ -1063,7 +1213,15 @@ class CubeMatrix:
             
         Returns:
             Command result dict (or {'result': 'ok'} for closed connections)
+
+        Over the UDP session: the lamp's answer; a refusal raises
+        BulbException, like the library does.
         """
+        answer = await self._udp_request(command, list(params or []))
+        if answer is not _USE_TCP:
+            if answer and "error" in answer:
+                raise BulbException(answer["error"])
+            return answer
         cmd_id = int(time.time() * 1000) % 100000
         _LOGGER.debug("[COMMAND #%s] Queued: %s [%s]", cmd_id, command, self.summary)
         

@@ -24,8 +24,8 @@ from .const import (
     NATIVE_EFFECT_RENAMES,
     ORIENTATION_FLIPPED,
     ORIENTATION_NORMAL,
+    LEGACY_POWER_ON_STATES,
     POWER_ON_STATES,
-    TRANSITION_TYPES,
 )
 from .layout import FONT_MAPS
 from .pixel_art_storage import expand_pixels, group_pixels
@@ -40,6 +40,13 @@ _INVALID = object()
 
 def _member_of(options):
     return lambda value: value if value in options else _INVALID
+
+
+def _power_on_state(value):
+    """A saved power-on behavior; an older version's label is read by the
+    value it sent (const.LEGACY_POWER_ON_STATES)."""
+    value = LEGACY_POWER_ON_STATES.get(value, value)
+    return value if value in POWER_ON_STATES else _INVALID
 
 
 def _clamped(convert, low, high):
@@ -88,8 +95,7 @@ def _bool_only(value):
 # rejects. Values that depend on each other (brightness, text colors, mode,
 # clock content, orientation) are restored in YeelightCubeLight._restore_state.
 _RESTORED_ATTRIBUTES = (
-    # Preview adjustments (preview_darken is derived from brightness instead)
-    ("preview_brighten", "_preview_brighten", int),
+    # Preview adjustments
     ("preview_hue_shift", "_preview_hue_shift", int),
     ("preview_temperature", "_preview_temperature", int),
     ("preview_saturation", "_preview_saturation", int),
@@ -116,7 +122,7 @@ _RESTORED_ATTRIBUTES = (
     ("music_flow_enabled", "_music_flow_enabled", bool),
     ("music_flow_effect", "_music_flow_effect", _member_of(MUSIC_FLOW_EFFECTS)),
     ("music_flow_restore_power", "_music_flow_restore_power", _bool_only),
-    ("power_on_state", "_power_on_state", _member_of(POWER_ON_STATES)),
+    ("power_on_state", "_power_on_state", _power_on_state),
     ("button_effects", "_button_effects", _button_effect_names),
     # Text and layout
     ("custom_text", "_custom_text", lambda v: v),
@@ -124,10 +130,7 @@ _RESTORED_ATTRIBUTES = (
     ("alignment", "_alignment", _member_of(("left", "center", "right"))),
     ("font", "_font", _member_of(FONT_MAPS)),
     ("angle", "_angle", float),
-    # Transitions and scrolling
-    ("transition_type", "_transition_type", _member_of(TRANSITION_TYPES)),
-    ("transition_steps", "_transition_steps", _clamped(int, 1, 10)),
-    ("transition_duration", "_transition_duration", _clamped(float, 0.2, 10.0)),
+    # Scrolling
     ("scroll_speed", "_scroll_speed", float),
     ("scroll_enabled", "_scroll_enabled", bool),
     # Power
@@ -222,14 +225,12 @@ class StateRestoreMixin:
             restored_brightness = int(attributes["brightness"])
             # Ensure brightness is at least 1 (Home Assistant minimum for ON lights)
             self._brightness = max(1, min(255, restored_brightness))
-            # Recalculate hardware brightness and darken from user brightness
-            hardware_brightness, darken_percent = self._calculate_brightness_values(self._brightness)
-            self._preview_darken = darken_percent
-            self._last_hardware_brightness = hardware_brightness
-            self._last_applied_darken = darken_percent
+            # The lamp's own brightness is not known after a restart: the
+            # first update sends it (right after direct mode, before frames).
+            self._last_hardware_brightness = None
             _LOGGER.debug(
-                "[BRIGHTNESS_DIAG] [%s] RESTORE -- raw=%s -> user=%s/255, hardware=%s%%, darken=%s%%",
-                self._ip, restored_brightness, self._brightness, hardware_brightness, darken_percent,
+                "[BRIGHTNESS_DIAG] [%s] RESTORE -- raw=%s -> user=%s/255",
+                self._ip, restored_brightness, self._brightness,
             )
 
         if attributes.get("text_colors") is not None:
@@ -309,7 +310,7 @@ class StateRestoreMixin:
         "_preview_hue_shift", "_preview_temperature", "_preview_saturation",
         "_preview_vibrance", "_preview_contrast", "_preview_glow",
         "_preview_grayscale", "_preview_invert", "_preview_tint_hue",
-        "_preview_tint_strength", "_preview_darken", "_preview_brighten",
+        "_preview_tint_strength",
     )
 
     def _save_display_state(self):

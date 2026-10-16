@@ -89,11 +89,10 @@ class LampPowerTests(unittest.TestCase):
         light._power_limit = 3.0
         lamp_frame(light, PIGLET)
         self.assertLessEqual(light._last_frame_power, 3.0)
-        # unknown hardware brightness (None / 0 sentinel) counts as 100 %
-        for unknown in (None, 0):
-            light._last_hardware_brightness = unknown
-            lamp_frame(light, PIGLET)
-            self.assertLessEqual(light._last_frame_power, 3.0)
+        # unknown hardware brightness (None, not sent yet) counts as 100 %
+        light._last_hardware_brightness = None
+        lamp_frame(light, PIGLET)
+        self.assertLessEqual(light._last_frame_power, 3.0)
 
     def test_the_lowest_limit_leaves_only_the_electronics(self):
         dark = lamp_power.limit_frame_power(PIGLET, lamp_power.BASE_W)

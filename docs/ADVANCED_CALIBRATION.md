@@ -28,15 +28,14 @@ The Cube Lite's LEDs do not behave like an sRGB computer monitor:
 - **Non-linearity at low duty cycle.** At very low effective brightness (low PWM
   duty), the LEDs become non-linear and hues drift — dim colors lose saturation
   or shift toward a different hue.
-- **Coarse hardware dimming.** The lamp's own brightness register is relatively
-  coarse, so dimming purely in hardware feels steppy.
-
-The pipeline addresses these with three independent stages, applied in this
-order after color effects:
+Brightness itself is the lamp's hardware brightness (`set_bright`, 1–100 %,
+proportional to the slider), as in the firmware's own modes (clock, native
+effects): pixels are never darkened for brightness, so a picture and a native
+effect at the same setting are equally bright. The pipeline corrects colors with
+two independent stages, applied in this order after color effects:
 
 ```
-color effects → brightness darken (+ per-channel floors)
-              → System 1 (low-bright gamma)
+color effects → System 1 (low-bright gamma)
               → System 2 (per-channel gain) → encode & send
 ```
 
@@ -48,8 +47,8 @@ colors. Only the data sent to the physical lamp is corrected.
 ## System 1 — Low-brightness gamma correction
 
 Implemented in `_apply_color_correction()`. Applies a per-channel inverse-gamma
-boost that fades in only at low **effective** brightness (where effective =
-`hardware_brightness × (100 − darken) / 100`). Above `hw_threshold` it is fully
+boost that fades in only at low **hardware** brightness (the LEDs' duty
+cycle). Above `hw_threshold` it is fully
 off; at/below `hw_full` it is fully on, blending linearly in between. It also
 blends between a hue-preserving uniform scale and a per-channel scale via
 `channel_balance`.
@@ -89,63 +88,6 @@ brightness 1, so it never fights System 1 at the dim end.
 
 ---
 
-## System 3 — Unified brightness curve
-
-Implemented in `_calculate_brightness_values()`. The single user brightness
-slider (1–100%) drives **two smooth power curves at once**, each spanning the
-whole range, so there is no breaking point where the dimming behaviour switches
-character. With `p = user_brightness / 255` (0 → 1):
-
-- **Hardware brightness** follows
-  `hardware_keep = hw_floor + (1 − hw_floor) · p^hw_curve`. With `hw_curve < 1`
-  the hardware rises quickly at the bottom then flattens near 100%, keeping the
-  bright end smooth (the Yeelight hardware register is coarse near the top).
-- **RGB darkening** follows `darken% = darken_floor · (1 − p^darken_curve)`.
-  With `darken_curve > 1` most of the darkening happens in the upper range, so
-  colors stay rich until the slider is dimmed well down.
-
-At `p = 0` the lamp sits at `hw_floor%` hardware with `darken_floor%` darkening
-(the dim night level); at `p = 1` it is `100%` hardware with `0%` darkening
-(full output). The perceived output is the product of the two curves —
-`hardware_keep × (1 − darken%/100)` — which is smooth and monotonic end to end.
-
-| Field | Default | Range | Description |
-| :-- | :-- | :-- | :-- |
-| `hw_floor` | `1` | 1–100 | Hardware brightness % at the very bottom of the slider (0% user brightness) |
-| `darken_floor` | `97` | 0–100 | RGB darkening % at the bottom of the slider. `97` means pixels are multiplied by `0.03` at minimum. Lower retains more per-pixel color precision when very dim |
-| `hw_curve` | `0.5` | 0.1–3.0 | Exponent shaping the hardware-brightness rise. `< 1` lifts the low end and flattens the top; `> 1` does the opposite |
-| `darken_curve` | `2.0` | 0.1–4.0 | Exponent shaping the darkening. `> 1` keeps colors rich high up and concentrates dimming low down; `< 1` darkens earlier |
-
-### Per-channel floors
-
-The darken stage (`_apply_final_brightness()`) never drives a lit channel all
-the way to `0` — it clamps each non-zero channel to a minimum value so very dim
-colors stay lit and the right hue instead of dropping out. Because the red,
-green and blue LEDs reach their reliable minimum at different drive levels
-(blue typically needs the highest floor), the minimum is **per channel**.
-
-| Field | Default | Range | Description |
-| :-- | :-- | :-- | :-- |
-| `floor_r` | `1` | 1–32 | Lowest value a lit **red** channel is clamped to after darkening |
-| `floor_g` | `1` | 1–32 | Lowest value a lit **green** channel is clamped to |
-| `floor_b` | `1` | 1–32 | Lowest value a lit **blue** channel is clamped to. Often the highest, so dim blues don't disappear |
-
-> [!NOTE]
-> Floors apply only to channels that are already non-zero — a channel set to
-> `0` stays off. They are published as `calib_floor_r/g/b` attributes and set
-> via the `floor_r/g/b` keys of `set_color_calibration`.
-
-### Shaping the low end
-
-Because the eye responds non-linearly, a large part of the bottom of the slider
-can look almost identically dim, so small slider moves near the bottom appear to
-do little. Unlike the old dual-range model there is no transition point to
-cross — both curves are continuous — so the levers are smooth: lower
-`darken_floor` (brighter minimum), lower `hw_curve` (lifts the low range), or
-lower `darken_curve` (darkens earlier so the mid feels brighter).
-
----
-
 ## Tuning workflow
 
 1. Call `set_color_calibration` against your lamp entity to adjust one or more
@@ -158,10 +100,6 @@ lower `darken_curve` (darkens earlier so the mid feels brighter).
    in [`light.py`](../light.py) so they survive a restart:
    - System 1 → `self._calib_gamma_*`, `_calib_hw_*`, `_calib_channel_balance`
    - System 2 → `self._calib_gain_*`
-   - System 3 → the `HW_FLOOR_PERCENT`, `DARKEN_FLOOR_PERCENT`,
-     `HW_CURVE_EXPONENT`, and `DARKEN_CURVE_EXPONENT` class constants (and the
-     matching `_calib_*` initializers).
-   - Per-channel floors → `self._calib_floor_r/g/b`.
 
 ### Example service call
 
@@ -179,15 +117,6 @@ data:
   gain_r: 1.00
   gain_g: 1.00
   gain_b: 1.00
-  # System 3 — unified brightness curve
-  hw_floor: 1
-  darken_floor: 97
-  hw_curve: 0.5
-  darken_curve: 2.0
-  # Per-channel darken floors
-  floor_r: 1
-  floor_g: 1
-  floor_b: 1
   entity_id: light.cubelite_192_168_4_102
 ```
 

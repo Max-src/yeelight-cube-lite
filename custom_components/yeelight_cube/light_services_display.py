@@ -45,11 +45,11 @@ def async_register_display_services(hass: HomeAssistant) -> None:
     """Register the display actions."""
     run_on_lamps = make_lamp_runner(hass)
 
-    def generate_preview_for_mode(light_entity, mode: str, apply_brightness: bool = True):
+    def generate_preview_for_mode(light_entity, mode: str):
         """The lamp's 100 colors in ``mode`` from its current text, colors,
         angle and background: the lamp's own text-mode frame
         (_text_mode_frame), without the orientation flip (the cards apply
-        it). With ``apply_brightness`` the final brightness/darken too."""
+        it)."""
         # The full panel: one virtual character covering every pixel, as on
         # the lamp.
         if light_entity._full_panel:
@@ -68,15 +68,11 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         else:
             frame = [None] * (TOTAL_COLUMNS * TOTAL_ROWS)
         background = light_entity._background_color
-        colors = [background if color is None else color for color in frame]
-        if apply_brightness:
-            return [light_entity._apply_final_brightness(color) for color in colors]
-        return colors
+        return [background if color is None else color for color in frame]
 
     async def handle_preview_gradient_modes(service_call):
         """Generate full 5x20 preview matrices for all gradient modes using entity's current state."""
-        apply_brightness = service_call.data.get("apply_brightness", False)
-        
+
         target_entity = _resolve_entity(service_call, "PREVIEW_GRADIENT_MODES")
         if not target_entity:
             return {}
@@ -97,7 +93,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         
         previews = {}
         for mode in modes:
-            preview_colors = generate_preview_for_mode(target_entity, mode, apply_brightness)
+            preview_colors = generate_preview_for_mode(target_entity, mode)
             # Convert to list of lists for JSON serialization
             previews[mode] = [list(color) for color in preview_colors]
         
@@ -112,8 +108,6 @@ def async_register_display_services(hass: HomeAssistant) -> None:
                 "text": target_entity._custom_text,
                 "angle": target_entity._angle,
                 "brightness": target_entity._brightness,
-                "darken_percent": target_entity._preview_darken,
-                "apply_brightness": apply_brightness,
                 "full_panel": target_entity._full_panel,
             }
         )
@@ -126,7 +120,6 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         handle_preview_gradient_modes,
         schema=vol.Schema({
             vol.Required("entity_id"): _entity_id_or_list,
-            vol.Optional("apply_brightness"): bool
         })
     )
 
@@ -700,8 +693,6 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         "set_preview_adjustments",
         handle_set_preview_adjustments,
         schema=vol.Schema({
-            vol.Optional("darken", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
-            vol.Optional("brighten", default=0): vol.All(vol.Coerce(int), vol.Range(min=0, max=100)),
             vol.Optional("saturation", default=100): vol.All(vol.Coerce(int), vol.Range(min=0, max=200)),
             vol.Optional("hue_shift", default=0): vol.All(vol.Coerce(int), vol.Range(min=-180, max=180)),
             vol.Optional("contrast", default=100): vol.All(vol.Coerce(int), vol.Range(min=0, max=200)),

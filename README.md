@@ -2,7 +2,7 @@
 
 ![Yeelight Cube Smart Lamp Lite](images/yeelight-cube-light.png)
 
-A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a lamp with a **20×5 RGB LED matrix** (100 individually addressable pixels). Get full pixel-level control from your HA dashboard: draw pixel art, display scrolling text, apply gradients, color effects, transitions, and more.
+A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a lamp with a **20×5 RGB LED matrix** (100 individually addressable pixels). Get full pixel-level control from your HA dashboard: draw pixel art, display scrolling text, apply gradients, color effects, and more.
 
 [![Home Assistant][ha_badge]][ha_link] [![HACS][hacs_badge]][hacs_link] [![GitHub Release][release_badge]][release] [![Buy Me a Coffee][bmac_badge]][bmac]
 
@@ -10,7 +10,7 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a
 
 ## Table of Contents
 
-**[`Features`](#features)** · **[`Installation`](#installation-via-hacs)** · **[`Setup`](#setup)** · **[`Lovelace Cards`](#lovelace-cards)** · **[`Entities`](#entities-created)** · **[`Automations`](#automations--node-red)** · **[`Display Modes`](#display-modes)** · **[`Transition Effects`](#transition-effects)** · **[`Power Supply`](#power-supply)** · **[`Troubleshooting`](#troubleshooting)** · **[`License`](#license)**
+**[`Features`](#features)** · **[`Installation`](#installation-via-hacs)** · **[`Setup`](#setup)** · **[`Lovelace Cards`](#lovelace-cards)** · **[`Entities`](#entities-created)** · **[`Automations`](#automations--node-red)** · **[`Display Modes`](#display-modes)** · **[`Power Supply`](#power-supply)** · **[`Troubleshooting`](#troubleshooting)** · **[`License`](#license)**
 
 ---
 
@@ -29,7 +29,6 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a
 | **Device settings** | Power-on behavior, text scrolling, and physical-button preset list |
 | **Colors & gradients** | Gradient support across multiple modes |
 | **Color effects** | Hue shift, saturation, vibrance, tint, glow, contrast, invert, grayscale |
-| **Transitions** | 23 animated transition effects |
 | **Multi-lamp** | Control multiple lamps together or independently |
 | **Auto-discovery** | Zeroconf (mDNS) auto-detection on your network |
 | **Local-only** | All communication stays on your LAN, no cloud dependency |
@@ -807,7 +806,7 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Clock: 12-hour format** | Switch | Use 12-hour time instead of 24-hour time |
 | **Clock: Blink colon** | Switch | Blink the time separator in Clock mode |
 | **Native effect: Direction** | Select | Direction for effects that support movement (Up / Down / Left / Right; Hacking offers Up / Down only) |
-| **Power-on behavior** | Select | Choose Off, On, or Toggle after mains power is restored |
+| **Power-on behavior** | Select | What the lamp does when mains power comes back: **Restore** (its previous state), **Always on** or **Always off** |
 | **Text scroll** | Switch | Enable scrolling for text wider than the matrix |
 | **Text scroll: Interval** | Number | Delay between scroll steps (0.05–2 seconds) |
 | **Color: Hue Shift** | Number | Shift colors around the wheel (−180° to +180°) |
@@ -820,9 +819,6 @@ Each lamp creates its own set of per-device entities, plus the integration creat
 | **Intensity: Vibrance** | Number | Adaptive saturation (0–200%) |
 | **Tone: Contrast** | Number | Contrast level (0–200%) |
 | **Tone: Glow** | Number | Bloom / glow effect (0–100%) |
-| **Matrix: Transition Effect** | Select | None or one of the 23 [transition animations](#transition-effects) |
-| **Transition Steps** | Number | Animation steps (1–10) |
-| **Transition Duration** | Number | Transition time (0.2–10 s) |
 | **Power limit** | Number | Dim bright pictures to keep the lamp under this many watts (7 W = off). See [Power Supply](#power-supply) |
 
 #### Diagnostic
@@ -1280,28 +1276,13 @@ switch: Music Flow starts and stops through Content mode.
 
 ---
 
-## Transition Effects
-
-When switching between display modes or pixel art, animated transitions can be applied:
-
-| Effect | | Effect |
-| :-- | :-- | :-- |
-| Fade Through Black | | Slide Left / Right / Up / Down |
-| Direct Crossfade | | Card From Right / Left / Top / Bottom |
-| Random Dissolve | | Explode & Reform |
-| Wipe Right / Left / Down / Up | | Snake / Wave Wipe / Iris |
-| Vertical Flip | | Curtain / Gravity Drop / Pixel Migration |
-
-Configure via the **Transition Effect**, **Transition Steps**, and **Transition Duration** entities.
-
----
-
 ## Requirements
 
 | Requirement | Details |
 | :-- | :-- |
 | **Home Assistant** | 2024.12.0 or newer |
 | **Hardware** | Yeelight Cube Smart Lamp Lite (or compatible matrix device) on the same LAN |
+| **Network** | Home Assistant reaches the lamp on **UDP 55444** (its fast connection) and **TCP 55443** (setup, and the fallback). If UDP is blocked, commands go over TCP on their own; the light's `connection` attribute shows which one is in use (`udp` or `tcp`) |
 | **Python packages** | `yeelight` (installed automatically by HA); `Pillow` is provided by Home Assistant core |
 
 ---
@@ -1351,6 +1332,7 @@ drawn by the lamp itself, so lower their brightness instead.
 | **Music Flow turns off but the old display does not return** | The stop command has already been recorded. Press **Force Refresh** or reselect Matrix, Clock, or Native Effect to retry the display render |
 | **Music Flow preview is not animated** | This is expected. The camera shows a locally generated static identifier because the lamp does not expose live microphone-animation frames |
 | **A card says "the last change was not applied (…)"** | The lamp refused the change or failed while applying it (the message says why; it is also in the Home Assistant log, and in the lamp's `last_command_error` attribute). Pick it again, or press **Force Refresh**; the line goes once a change works. A lamp that is only out of reach shows as unavailable instead, and gets the change once it is back |
+| **The light's `connection` attribute shows `tcp`** | The lamp did not answer its UDP session (port 55444): the network blocks UDP between Home Assistant and the lamp, or its firmware has no session. Everything still works over TCP; UDP is tried again after 5 minutes, and whenever the lamp comes back online |
 | **Lamp changed IP** | Auto-rediscovery updates the stored IP automatically; the **IP Address** diagnostic sensor shows the current value. If the lamp stays unreachable, remove the device and add it again with the new IP |
 
 ---

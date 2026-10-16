@@ -31,7 +31,6 @@ from .const import (
     DEVICE_ORIENTATION_TO_EFFECT_DIR,
     DOMAIN,
     ALL_NATIVE_EFFECTS,
-    MUSIC_FLOW_EFFECT_IDS,
     NATIVE_CLOCK_CONTENT_BYTE,
     NATIVE_CLOCK_EFFECT_ID,
     NATIVE_CLOCK_STYLES,
@@ -39,6 +38,7 @@ from .const import (
     NATIVE_EFFECTS,
     ORIENTATION_FLIPPED,
     ORIENTATION_NORMAL,
+    DEFAULT_POWER_ON_STATE,
     POWER_ON_STATES,
 )
 from .lamp_power import BASE_W, NO_LIMIT_W, estimated_power
@@ -52,10 +52,9 @@ from .layout import Layout, Module, FONT_MAPS
 
 from .color_utils import hex_to_rgb, rgb_to_hex
 from .light_color import ColorPipelineMixin
-from .light_transitions import TransitionMixin
-from .light_native import NativeModesMixin, _parse_music_flow_config
+from .light_native import NativeModesMixin
 from .light_render import MatrixRenderMixin
-from .light_connection import ConnectionMixin, _DEVICE_LOCKS, _DEVICE_LOCK_HOLDERS, _get_device_lock
+from .light_connection import ConnectionMixin, _DEVICE_LOCKS, _DEVICE_LOCK_HOLDERS
 from .light_restore import StateRestoreMixin
 from .light_rotation import RotationMixin
 from .light_brightness import BrightnessMixin
@@ -142,11 +141,10 @@ def cleanup_module_state(ip: str) -> None:
 #   light_display.py    (DisplayMixin)        — the display queue
 #                        (async_apply_display_mode and its central rules), the
 #                        frame sender (apply()) and the text scroll timer.
-#   light_brightness.py (BrightnessMixin)     — set_brightness, the hardware /
-#                        per-pixel split and the brightness fast path.
+#   light_brightness.py (BrightnessMixin)     — set_brightness (the lamp's
+#                        hardware brightness) and the brightness fast path.
 #   light_color.py      (ColorPipelineMixin)  — color adjustment/correction/
-#                        accuracy maths + the brightness curve.
-#   light_transitions.py(TransitionMixin)     — frame-by-frame transition anims.
+#                        accuracy maths + the brightness mapping.
 #   light_native.py     (NativeModesMixin)    — firmware Clock + native-effect
 #                        activation (set_fx_effect payloads), Music Flow.
 #   light_render.py     (MatrixRenderMixin)   — mode router
@@ -172,7 +170,6 @@ class YeelightCubeLight(
     DisplayMixin,
     BrightnessMixin,
     ColorPipelineMixin,
-    TransitionMixin,
     NativeModesMixin,
     MatrixRenderMixin,
     ConnectionMixin,
@@ -197,8 +194,6 @@ class YeelightCubeLight(
         "calib_gamma_r", "calib_gamma_g", "calib_gamma_b",
         "calib_hw_threshold", "calib_hw_full", "calib_channel_balance",
         "calib_gain_r", "calib_gain_g", "calib_gain_b",
-        "calib_hw_floor", "calib_darken_floor", "calib_hw_curve", "calib_darken_curve",
-        "calib_floor_r", "calib_floor_g", "calib_floor_b",
     })
 
     @property
@@ -216,35 +211,6 @@ class YeelightCubeLight(
     @property
     def device_info(self):
         return cube_device_info(self)
-
-    # UNIFIED BRIGHTNESS CONTROL CONFIGURATION
-    # ----------------------------------------
-    # The single user brightness slider (1-100%) drives BOTH mechanisms together
-    # across the WHOLE range -- there is no mode switch / breaking point:
-    #
-    #   perceived = hardware_keep(p) * rgb_keep(p)        where p = user% / 100
-    #
-    #   hardware_keep(p) = hw_floor + (1 - hw_floor) * p ** hw_curve   (LED dimming)
-    #   rgb_keep(p)      = (1 - darken_floor) + darken_floor * p ** darken_curve
-    #                      (per-pixel math; reported as darken% = 100*(1-rgb_keep))
-    #
-    # Both curves rise smoothly from their floor (at p=0) to 1.0 (at p=100%), so:
-    #   - p=0   : hardware=hw_floor%, darken=darken_floor%  -> very dim night level
-    #   - p=100 : hardware=100%,      darken=0%             -> full color output
-    # The product of two monotonic curves is itself smooth and monotonic, which
-    # removes the irregularity that the old hard transition point produced.
-    #
-    # Tuning knobs (all runtime-tunable via set_color_calibration / wizard):
-    #   HW_FLOOR_PERCENT  - hardware brightness % at slider 0 (sets dimmest LED drive)
-    #   DARKEN_FLOOR_PERCENT - darken % at slider 0 (sets dimmest per-pixel math)
-    #   HW_CURVE_EXPONENT - <1 makes hardware rise fast then flatten near 100%
-    #                       (keeps the bright end smooth as hardware barely moves)
-    #   DARKEN_CURVE_EXPONENT - >1 makes darken do most of its work in the upper
-    #                       range (so colors stay rich until you dim well down)
-    HW_FLOOR_PERCENT = 1        # Hardware brightness % at 0% user brightness (1-100)
-    DARKEN_FLOOR_PERCENT = 97   # Darken % at 0% user brightness (0-100, safe <=97)
-    HW_CURVE_EXPONENT = 0.5     # Shaping exponent for the hardware curve (0.1-3.0)
-    DARKEN_CURVE_EXPONENT = 2.0 # Shaping exponent for the darken curve (0.1-4.0)
 
     def __init__(self, cube_matrix: CubeMatrix, ip: str, config_entry: ConfigEntry):
         # _palettes and _pixel_arts are now @property methods accessing global storage
@@ -306,12 +272,8 @@ class YeelightCubeLight(
         self._music_flow_enabled = False
         self._music_flow_effect = DEFAULT_MUSIC_FLOW_EFFECT
         self._music_flow_restore_power = None
-        self._power_on_state = "On"
+        self._power_on_state = DEFAULT_POWER_ON_STATE
         self._button_effects = []
-        # Skip property polling during entity construction. Startup already
-        # restores the display and several helper entities at once; delaying the
-        # first read avoids adding another TCP connection to that burst.
-        self._last_native_state_poll = time.monotonic()
         
         # Each mixin's own state (light_*.py, _init_*_state). __init__ reads
         # no instance attribute, so their order changes nothing.
@@ -320,7 +282,6 @@ class YeelightCubeLight(
         self._init_rotation_state()
         self._init_brightness_state()
         self._init_color_state()
-        self._init_transition_state()
         self._init_saved_state()
 
         # FX mode tracking to avoid redundant mode changes
@@ -381,10 +342,10 @@ class YeelightCubeLight(
         # Track the name of the currently active pixel art (for dropdown preselection)
         self._active_pixel_art_name = None
         
-        # Base (un-darkened) matrix colors for immediate brightness preview.
-        # Snapshotted in apply() right before brightness darkening.  Used by
-        # extra_state_attributes to return correctly brightness-adjusted colors
-        # without double-darkening (module.data may already be darkened after apply).
+        # The frame with its color effects, before the lamp-only stages
+        # (low-brightness correction, per-channel accuracy): snapshotted in
+        # apply(), published as matrix_colors and re-sent by the brightness
+        # fast path.
         self._base_matrix_colors = None
         
         # Power limit in W (NO_LIMIT_W = off): frames sent to the lamp are
@@ -404,10 +365,6 @@ class YeelightCubeLight(
         self._firmware_power_key = None
         self._firmware_power_unsub = None
 
-        # Entity references for transition controls
-        self._transition_select_entity = None
-        self._transition_steps_entity = None
-        self._transition_duration_entity = None
 
         # Entity references for native firmware controls.
         self._native_effect_select_entity = None
@@ -798,6 +755,8 @@ class YeelightCubeLight(
             "music_flow_effect": self._music_flow_effect,
             "music_flow_restore_power": self._music_flow_restore_power,
             "power_on_state": self._power_on_state,
+            # How commands reach the lamp: "udp" (its UDP session) or "tcp".
+            "connection": self._cube_matrix.transport,
             "button_effects": list(self._button_effects),
             "background_color": self._background_color,
             "alignment": self._alignment,
@@ -818,7 +777,6 @@ class YeelightCubeLight(
             "preview_invert": self._preview_invert,
             "preview_tint_hue": self._preview_tint_hue,
             "preview_tint_strength": self._preview_tint_strength,
-            "preview_darken": self._preview_darken,
             "color_accuracy_enabled": self._color_accuracy_enabled,
             # Calibration values (for debug calibration card)
             "calib_gamma_r": self._calib_gamma_r,
@@ -830,19 +788,7 @@ class YeelightCubeLight(
             "calib_gain_r": self._calib_gain_r,
             "calib_gain_g": self._calib_gain_g,
             "calib_gain_b": self._calib_gain_b,
-            # Brightness curve calibration (unified model)
-            "calib_hw_floor": self._calib_hw_floor,
-            "calib_darken_floor": self._calib_darken_floor,
-            "calib_hw_curve": self._calib_hw_curve,
-            "calib_darken_curve": self._calib_darken_curve,
-            "calib_floor_r": self._calib_floor_r,
-            "calib_floor_g": self._calib_floor_g,
-            "calib_floor_b": self._calib_floor_b,
             "last_hardware_brightness": self._last_hardware_brightness,
-            # Transition settings
-            "transition_type": self._transition_type,
-            "transition_steps": self._transition_steps,
-            "transition_duration": self._transition_duration,
             "scroll_speed": self._scroll_speed,
             "scroll_enabled": self._scroll_enabled,
             "power_limit": self._power_limit,
@@ -856,12 +802,12 @@ class YeelightCubeLight(
         Not simply the last frame the plugin drew: _base_matrix_colors is only
         refreshed when the plugin draws, so it still holds old content (e.g.
         the last pixel art) while the lamp is off or the firmware draws the
-        matrix. Published colors are brightness-adjusted so the cards preview
-        a brightness drag at once, before the lamp round trip:
-        set_brightness() updates _preview_darken and writes the state first.
-        _base_matrix_colors is un-darkened (module.data may already be
-        darkened after apply()), so _apply_final_brightness() (the full
-        two-range darken/brighten system) is applied here exactly once.
+        matrix. The colors are not scaled by the brightness: the lamp dims in
+        hardware, and the cards scale them by the published brightness
+        themselves (set_brightness() writes the state first, so they preview
+        a brightness drag at once, before the lamp round trip).
+        _base_matrix_colors has the color effects but not the lamp-only
+        stages (low-brightness correction, per-channel accuracy).
         """
         try:
             count = len(self._layout.device_layout)
@@ -874,8 +820,8 @@ class YeelightCubeLight(
                 return []
             base_colors = self._base_matrix_colors
             if base_colors and len(base_colors) == count:
-                return [self._apply_final_brightness(rgb) for rgb in base_colors]
-            # Fallback: read directly from module data (may be darkened or not)
+                return list(base_colors)
+            # Fallback: read directly from module data
             return self._layout_colors()
         except Exception:  # noqa: BLE001 -- attributes must always build
             return []
@@ -1014,7 +960,9 @@ class YeelightCubeLight(
             except asyncio.TimeoutError:
                 pass
             self._background_tasks.clear()
-        
+
+        # Every socket to the lamp, the UDP session's too.
+        self._cube_matrix.close()
         _LOGGER.debug("[CLEANUP] Stopped scroll timer and background tasks on entity removal")
 
     @callback
@@ -1028,22 +976,25 @@ class YeelightCubeLight(
     # Entity-facing service handlers are registered once from component setup.
 
     async def ensure_fx_ready(self):
-        """Ensure FX mode is active using raw TCP (one fresh connection for activate_fx_mode).
+        """Ensure FX mode is active: activate_fx_mode in the lamp's UDP session
+        (where the frames then go too: direct mode applies to the session it
+        was activated in), else on one fresh TCP connection.
 
         Steps:
-          1. Close any existing persistent socket (clean slate)
+          1. Close any existing persistent TCP socket (clean slate)
           2. Optional 300ms settle when leaving a firmware-native mode
-          3. Send activate_fx_mode on a fresh TCP connection (RST-closed)
+          3. Send activate_fx_mode (UDP session, else a fresh TCP connection, RST-closed)
           4. Sleep 150ms -- firmware settle time before opening the persistent socket
-          5. Reset state flags (_last_hardware_brightness = 0 forces brightness
-             re-send on the next apply call)
+          5. Update state flags
 
-        The caller is responsible for sending set_bright AFTER this returns.
-        In apply(), set_bright is sent on the persistent socket (via
-        send_command_fast) immediately after ensure_fx_ready, so both
-        set_bright and update_leds travel on the same TCP connection.  This
-        avoids the extra RST connection that was causing the firmware to exit
-        direct mode before update_leds arrived ("illegal request" errors).
+        The lamp's hardware brightness is left as it is (and as known):
+        apply() sends set_bright before its frames only when it differs (or
+        is unknown). A set_bright after frames in direct mode can make the
+        lamp show an older picture again (see cube_matrix.FRAME_SETTLE_DELAY),
+        so activating direct mode again never forces one. Over TCP, apply()
+        sends it on the persistent socket, with the frames: an extra RST
+        connection made the firmware exit direct mode before update_leds
+        arrived ("illegal request" errors).
 
         Why no TCP probe:
         A probe RST before activate_fx_mode was a third rapid RST connection
@@ -1086,19 +1037,17 @@ class YeelightCubeLight(
         # direct mode before update_leds arrived.  150ms is reliable on LAN.
         await asyncio.sleep(0.15)
 
-        # Step 5: Update state.
-        # _last_hardware_brightness is reset to 0 (sentinel) so apply()
-        # unconditionally re-sends set_bright on the persistent socket -- both
-        # the direct path (if not _fx_mode_is_direct) and the indirect path
-        # (force_refresh → _apply_display_mode_internal → apply() else-branch
-        # sees hardware_brightness != 0 and sends set_bright).
+        # Step 5: Update state (the hardware brightness is unchanged).
         self._fx_mode_is_direct = True
         self._in_native_fw_mode = False
         self._last_fx_mode_time = time.time()
-        self._last_hardware_brightness = 0  # Sentinel: force brightness re-confirm
+        # Direct mode is active again on the transport in use: a reconnection
+        # noticed before this (e.g. UDP falling back to TCP) is settled, and
+        # must not make the next frame report direct mode as lost.
+        cm.consume_reconnected_flag()
 
         _LOGGER.debug(
-            "[ENSURE_FX] [%s] [OK] FX activated -- set_bright will follow on persistent socket", self._ip
+            "[ENSURE_FX] [%s] [OK] FX activated", self._ip
         )
 
     async def _force_refresh_impl(self):
@@ -1106,28 +1055,23 @@ class YeelightCubeLight(
         
         Reconnects the active renderer and re-renders its current display.
         
-        IMPORTANT: We must NOT read raw pixel data from self._layout and
-        send it directly, because apply() applies software brightness
-        darkening IN PLACE to module.data.  Sending those already-darkened
-        pixels while also setting hardware brightness via set_bright would
-        result in double-darkening (dimmer than intended).
-        
-        Instead, we re-render through _apply_display_mode_internal() which:
-          1. Fills the layout with fresh un-darkened colors (text/drawing)
-          2. Calls apply() which applies color effects + brightness
-             darkening correctly, then sends the final pixel data.
-        Since ensure_fx_ready() already set _fx_mode_is_direct=True,
-        apply() will skip redundant FX activation.
+        It re-renders through _apply_display_mode_internal() rather than
+        re-sending self._layout: apply() writes the lamp-only stages (color
+        effects, low-brightness correction) into the layout, so they would
+        be applied twice. Since ensure_fx_ready() already set
+        _fx_mode_is_direct=True, apply() skips a second activation.
         """
         if not self._is_on or self._music_flow_enabled:
             return
         if self._mode in FIRMWARE_MODES:
             self._cube_matrix.close_fast_socket()
         else:
+            # Its brightness is confirmed too (sent right after direct mode,
+            # before any frame): something else may have changed it.
+            self._last_hardware_brightness = None
             await self.ensure_fx_ready()
         
-        # Step 4: Re-render through the full display pipeline so brightness
-        # darkening is applied once (not double-applied on stale pixel data).
+        # Re-render through the full display pipeline (see the docstring).
         await self._apply_display_mode_internal()
         _LOGGER.info(
             "[FORCE REFRESH] [%s] Complete - "
@@ -1240,8 +1184,8 @@ class YeelightCubeLight(
                 self.async_schedule_update_ha_state()
             return
         
-        # Ensure FX mode is active using raw TCP (proven reliable).
-        # ensure_fx_ready() handles activate_fx_mode + set_bright atomically.
+        # Direct mode first (apply() then sends the brightness, if it differs,
+        # before the frames).
         if not self._fx_mode_is_direct:
             _LOGGER.debug("[TURN_ON] Activating FX mode via raw TCP")
             await self.ensure_fx_ready()
@@ -1264,20 +1208,13 @@ class YeelightCubeLight(
         
         try:
             if "brightness" in kwargs:
-                new_brightness = kwargs["brightness"]
-                _LOGGER.debug("[TURN_ON] Setting brightness to %s", new_brightness)
-                # Call internal directly -- we're already under the global lock
-                call_id = int(time.time() * 1000) % 100000
-                await self._internal_set_brightness(new_brightness, call_id)
-            else:
-                # Ensure brightness is at least 1
-                if self._brightness < 1:
-                    self._brightness = 1
-                
-                # Apply display with current brightness
-                # _apply_display_mode_internal handles FX staleness, set_bright if needed,
-                # and sends pixel data all in one pass.
-                await self._apply_display_mode_internal()
+                _LOGGER.debug("[TURN_ON] Setting brightness to %s", kwargs["brightness"])
+                self._brightness = kwargs["brightness"]
+            self._brightness = max(1, min(255, self._brightness))
+            # The full display in one pass: direct mode if needed, the
+            # brightness if it changed (before any frame), then the frame --
+            # also when only the brightness is new (the lamp was showing black).
+            await self._apply_display_mode_internal()
         except Exception as e:
             if is_quota_error(e):
                 _LOGGER.debug("Rate limit exceeded during turn_on")
@@ -1319,6 +1256,8 @@ class YeelightCubeLight(
         if was_music_flow_enabled or self._mode in FIRMWARE_MODES:
             self._cube_matrix.close_fast_socket()
             await self._cube_matrix.send_raw_command("set_power", ["off"])
+            # Powered off: its brightness is set again on the way back.
+            self._last_hardware_brightness = None
         else:
             await self.erase_all()
             await self.apply()
@@ -1338,15 +1277,16 @@ class YeelightCubeLight(
         # Previously this was set to False, which forced EVERY turn_on to
         # close the socket, wait 300ms, and open a new one for
         # activate_fx_mode -- a cycle that timed out ~50% of the time.
-        self._last_hardware_brightness = None  # Reset hardware brightness tracking
-        self._last_applied_darken = None        # Reset darken tracking
+        # In direct mode "off" is a black picture: the lamp's hardware
+        # brightness is unchanged, so it is not sent again when it comes back
+        # on (a set_bright after frames can bring an older picture back).
         self._last_apply_time = 0  # Reset cooldown timer to ensure turn_on will work immediately
         if self.hass is not None:
             self.async_schedule_update_ha_state()
         _LOGGER.debug("[TURN_OFF] Turn off complete")
 
     async def async_update(self, *args, **kwargs):
-        """Refresh timezone and best-effort native device properties."""
+        """Refresh the clock's UTC offset (daylight saving time)."""
         # Opening a standard LAN-control connection can stop the Cube's
         # microphone renderer. Preserve Music Flow until a user command exits it.
         if self._music_flow_enabled:
@@ -1372,75 +1312,9 @@ class YeelightCubeLight(
                 )
                 await self.async_apply_display_mode(update_type="display_update")
 
-        # Cube Lite does not answer get_prop while a firmware-native renderer
-        # is active. Opening that standard LAN-control connection can also make
-        # the firmware leave the clock/effect and restore an older mode.
-        if self._mode in FIRMWARE_MODES:
-            return
-
-        now = time.monotonic()
-        if now - self._last_native_state_poll < 60:
-            return
-        # Matrix rendering owns a persistent direct-FX socket. A second polling
-        # connection can make the Cube's small TCP stack drop animation frames.
-        if self._fx_mode_is_direct:
-            return
-        # Never open the polling connection while a command is talking to the
-        # lamp: the Cube copes badly with two connections at once. Poll on the
-        # next update instead.
-        if _get_device_lock(self._ip).locked():
-            return
-        self._last_native_state_poll = now
-        try:
-            props = await self._cube_matrix.read_properties(
-                ["power", "bright", "init_power_opt", "mic_music_mode"]
-            )
-            music_state_changed = False
-            power = str(props.get("power", "")).lower()
-            if power in ("on", "off"):
-                self._is_on = power == "on"
-                if power == "off" and self._music_flow_enabled:
-                    self._music_flow_enabled = False
-                    self._music_flow_restore_power = None
-                    music_state_changed = True
-            brightness = props.get("bright")
-            if brightness not in (None, ""):
-                self._brightness = max(
-                    1, min(255, round(int(brightness) * 255 / 100))
-                )
-            power_value = props.get("init_power_opt")
-            for label, value in POWER_ON_STATES.items():
-                if str(power_value) == str(value):
-                    self._power_on_state = label
-                    break
-            music_enabled, music_effect_id = _parse_music_flow_config(
-                props.get("mic_music_mode")
-            )
-            if music_enabled is not None:
-                music_state_changed = (
-                    music_state_changed
-                    or music_enabled != self._music_flow_enabled
-                )
-                self._music_flow_enabled = music_enabled
-                if music_enabled:
-                    self._is_on = True
-                    self._fx_mode_is_direct = False
-                    self._in_native_fw_mode = True
-            music_effect = MUSIC_FLOW_EFFECT_IDS.get(music_effect_id)
-            if music_effect is not None:
-                music_state_changed = (
-                    music_state_changed
-                    or music_effect != self._music_flow_effect
-                )
-                self._music_flow_effect = music_effect
-            if music_state_changed:
-                await self._persist_music_flow_runtime_state()
-                self._refresh_music_flow_entities()
-                self._notify_camera_preview()
-                if self.hass is not None:
-                    self.async_write_ha_state()
-        except Exception as err:
-            _LOGGER.debug("[%s] Native property polling unavailable: %s", self._ip, err)
+        # The lamp's state is never read back: Cube Lite answers no get_prop,
+        # over TCP or UDP, for any property. The component's own state is the
+        # only source of truth.
 
     async def async_set_power_on_state(self, option: str) -> None:
         """Set the Cube Lite's power recovery behavior."""

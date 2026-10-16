@@ -43,10 +43,9 @@ APPLY_HARD_TIMEOUT = 12.0      # Seconds -- safety timeout for one hardware oper
                                # releases the lock so queued operations can proceed. Long enough
                                # for activate_fx_mode + draw_matrices on slow Wi-Fi: releasing the
                                # lock between the two shows the default ribbon on the lamp.
-                               # Transitions add their duration on top (async_apply_display_mode).
 LOCK_WAIT_WARNING_MS = 3000   # Waiting for the lamp longer than this is logged as a
                               # warning (commands piling up); shorter waits are normal
-                              # queueing behind a redraw/transition and logged at debug.
+                              # queueing behind a redraw and logged at debug.
 CIRCUIT_BREAKER_WINDOW = 30.0 # Seconds -- if 2+ hard timeouts occur within this window,
                               # reject new operations immediately instead of queueing them
                               # behind the lock for another APPLY_HARD_TIMEOUT each.
@@ -127,17 +126,15 @@ class ConnectionMixin:
         socket operations from blocking the lock indefinitely.
 
         Args:
-            timeout_override: Optional custom timeout (seconds).  Used when a
-                              display transition needs more time than the default
-                              APPLY_HARD_TIMEOUT.
+            timeout_override: Optional custom timeout (seconds), for an
+                              operation that needs more time than the default
+                              APPLY_HARD_TIMEOUT (Music Flow).
             coalesce: For full redraws, which render the entity's state as it
                       is when they run. Skipped (returning True) if a newer
                       coalesced operation was queued while this one waited for
                       the lamp: the newer one draws the latest state anyway.
                       Rapid changes (clicking through pixel arts) then cost
-                      the lamp one redraw instead of one transition and two
-                      fresh TCP connections each, which can crash the Cube's
-                      network stack.
+                      the lamp one redraw instead of one each.
         """
         op_id = int(time.time() * 1000) % 100000
         effective_timeout = timeout_override or APPLY_HARD_TIMEOUT
@@ -193,9 +190,8 @@ class ConnectionMixin:
                 self._hardware_operation_phase = op_name
                 lock_wait_ms = (time.time() - lock_wait_start) * 1000
                 if lock_wait_ms > 5:
-                    # Waiting for the lamp to finish its previous operation (a
-                    # redraw with a transition takes 1-2 s) is normal. Only a
-                    # long wait suggests commands are piling up.
+                    # Waiting for the lamp to finish its previous operation is
+                    # normal. Only a long wait suggests commands are piling up.
                     log = (
                         _LOGGER.warning
                         if lock_wait_ms >= LOCK_WAIT_WARNING_MS
@@ -526,14 +522,11 @@ class ConnectionMixin:
                     "[BRIGHTNESS_DIAG] [%s] SNAPSHOT -- "
                     "user=%s/255, "
                     "last_hw=%s, "
-                    "darken=%s%%, "
-                    "last_applied_darken=%s, "
                     "is_on=%s, fx_direct=%s, "
                     "unreachable=%s, "
                     "failures=%s, "
                     "interval=%ss",
-                    self._ip, self._brightness, self._last_hardware_brightness,
-                    self._preview_darken, self._last_applied_darken, self._is_on,
+                    self._ip, self._brightness, self._last_hardware_brightness, self._is_on,
                     self._fx_mode_is_direct, self._cube_matrix.is_unreachable,
                     self._cube_matrix.consecutive_failures, interval
                 )
@@ -646,6 +639,10 @@ class ConnectionMixin:
                 self._cube_matrix.mark_recovered()  # Fresh socket, backoff reset
                 self._display_retry_count = 0
                 self._fx_mode_is_direct = False  # Force FX mode re-send
+                if outage is not None:
+                    # It was unreachable (maybe restarted): its brightness is
+                    # sent again, right after direct mode, before any frame.
+                    self._last_hardware_brightness = None
                 self._hard_timeout_times.clear()  # Clear circuit breaker
                 # Its whole requested state is applied again below.
                 self._last_command_error = None
@@ -669,10 +666,9 @@ class ConnectionMixin:
                     # Trigger a full display update (turn_on type so it isn't blocked)
                     _LOGGER.debug(
                         "[BRIGHTNESS_DIAG] [%s] HEALTH RECOVERY -- will apply display mode. "
-                        "user=%s/255, last_hw=%s, "
-                        "darken=%s%%, fx_direct=%s",
+                        "user=%s/255, last_hw=%s, fx_direct=%s",
                         self._ip, self._brightness, self._last_hardware_brightness,
-                        self._preview_darken, self._fx_mode_is_direct
+                        self._fx_mode_is_direct
                     )
                     await self.async_apply_display_mode(update_type='turn_on')
                 

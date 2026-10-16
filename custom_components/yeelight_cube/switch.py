@@ -8,7 +8,7 @@ from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 
 from .const import DOMAIN, MODE_CLOCK
-from .entity import CubeControlEntity, CubeDeviceEntity
+from .entity import CubeControlEntity, CubeDeviceEntity, remove_retired_entities
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -37,6 +37,10 @@ async def async_setup_entry(
     ]
     
     async_add_entities(switches)
+
+    # The UDP Connection switch of an earlier version: UDP is always used now
+    # (TCP is the fallback).
+    remove_retired_entities(hass, "switch", [f"{config_entry.entry_id}_udp_connection"])
     _LOGGER.debug("Added %s switch entities for Yeelight Cube Lite", len(switches))
 
 

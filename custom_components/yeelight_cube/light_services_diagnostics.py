@@ -257,6 +257,9 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
                 target._is_on = True
                 target._fx_mode_is_direct = False
                 target._in_native_fw_mode = True   # Lamp in firmware-native mode (FX Explorer)
+                # A raw command may have set its brightness: sent again with
+                # direct mode, before any frame.
+                target._last_hardware_brightness = None
                 target._last_fx_mode_time = 0.0
                 notify = getattr(target, "_notify_camera_preview", None)
                 if notify:
@@ -282,6 +285,7 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
                 target._is_on = True
                 target._fx_mode_is_direct = False
                 target._in_native_fw_mode = True   # Lamp in color-flow mode (FX Explorer)
+                target._last_hardware_brightness = None
                 target._last_fx_mode_time = 0.0
 
             persisted = False
@@ -723,14 +727,6 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
             "gain_r": "_calib_gain_r",
             "gain_g": "_calib_gain_g",
             "gain_b": "_calib_gain_b",
-            # System 3: Unified brightness curve
-            "hw_floor": "_calib_hw_floor",
-            "darken_floor": "_calib_darken_floor",
-            "hw_curve": "_calib_hw_curve",
-            "darken_curve": "_calib_darken_curve",
-            "floor_r": "_calib_floor_r",
-            "floor_g": "_calib_floor_g",
-            "floor_b": "_calib_floor_b",
         }
 
         async def _apply_one(target_entity):
@@ -769,14 +765,6 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
             vol.Optional("gain_r"): vol.Coerce(float),
             vol.Optional("gain_g"): vol.Coerce(float),
             vol.Optional("gain_b"): vol.Coerce(float),
-            # System 3: Unified brightness curve
-            vol.Optional("hw_floor"): vol.Coerce(int),
-            vol.Optional("darken_floor"): vol.Coerce(int),
-            vol.Optional("hw_curve"): vol.Coerce(float),
-            vol.Optional("darken_curve"): vol.Coerce(float),
-            vol.Optional("floor_r"): vol.Coerce(int),
-            vol.Optional("floor_g"): vol.Coerce(int),
-            vol.Optional("floor_b"): vol.Coerce(int),
             vol.Required("entity_id"): _entity_id_or_list,
         })
     )

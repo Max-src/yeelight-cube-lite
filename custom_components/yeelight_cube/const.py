@@ -335,7 +335,15 @@ NATIVE_EFFECT_RENAMES = {
     "Color Snakes": "Color Trails",
 }
 
-POWER_ON_STATES = {"Off": 0, "On": 1, "Toggle": 2}
+# What the lamp does when its power comes back (set_ps cfg_init_power): the
+# firmware reads 0 as "restore the previous state", 1 as "always on" and 2 as
+# "always off" (verified after a power cut).
+POWER_ON_STATES = {"Restore": 0, "Always on": 1, "Always off": 2}
+DEFAULT_POWER_ON_STATE = "Always on"
+# Labels saved by 1.3.5 and earlier, which named these values wrongly ("Off"
+# sent 0, "Toggle" sent 2): read by the value the lamp actually received, so
+# a lamp keeps doing what it did.
+LEGACY_POWER_ON_STATES = {"Off": "Restore", "On": "Always on", "Toggle": "Always off"}
 
 # Content sources and matrix render modes are intentionally separate. Clock is
 # a native firmware experience; the remaining modes render the plugin's 20x5
@@ -422,30 +430,3 @@ CUBE_NAME_PATTERNS = [
     "panel",
 ]
 
-# Transition animations between two matrix frames: key -> select label.
-TRANSITION_TYPES = {
-    "none": "None",
-    "fade_through_black": "Fade Through Black",
-    "direct_crossfade": "Direct Crossfade",
-    "random_dissolve": "Random Dissolve",
-    "wipe_right": "Wipe Right",
-    "wipe_left": "Wipe Left",
-    "wipe_down": "Wipe Down",
-    "wipe_up": "Wipe Up",
-    "slide_left": "Slide Left",
-    "slide_right": "Slide Right",
-    "slide_up": "Slide Up",
-    "slide_down": "Slide Down",
-    "card_from_right": "Card From Right",
-    "card_from_left": "Card From Left",
-    "card_from_top": "Card From Top",
-    "card_from_bottom": "Card From Bottom",
-    "explode_reform": "Explode & Reform",
-    "snake": "Snake",
-    "wave_wipe": "Wave Wipe",
-    "iris": "Iris (Circle Wipe)",
-    "vertical_flip": "Vertical Flip",
-    "curtain": "Curtain",
-    "gravity_drop": "Gravity Drop",
-    "pixel_migration": "Pixel Migration",
-}
