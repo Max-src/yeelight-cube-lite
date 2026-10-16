@@ -2,6 +2,7 @@
 // effect animations, painting the dots and the oriented matrix geometry.
 // Mixed into YeelightCubeLampPreviewCard.
 import { previewBrightnessScale, BLACK_THRESHOLD } from "./matrix-const.js";
+import { brightnessPctToRaw } from "./slider-control-utils.js";
 import { rgbToCss } from "./yeelight-cube-dotmatrix.js";
 import { createVisibilityTracker, createRafLoop } from "./matrix-animator.js";
 import {
@@ -19,8 +20,14 @@ export const MatrixPreviewMixin = (Base) => class extends Base {
   // Convert a 100-entry matrix_colors array (RGB tuples) to CSS colors using
   // the same brightness-boost pipeline as the static preview. Extracted so the
   // native-effect animation loop renders identically to the normal path.
+  // A brightness slider being dragged (or not yet confirmed by the lamp)
+  // wins over the lamp's reported value, so the preview follows the slider.
   _matrixColorsToGridColors(matrixColors, stateObj) {
-    const entityBrightness = stateObj?.attributes?.brightness ?? 255;
+    const dragged = this._lampSliders?.value("brightness");
+    const entityBrightness =
+      dragged != null
+        ? brightnessPctToRaw(dragged)
+        : (stateObj?.attributes?.brightness ?? 255);
     const previewBoost = previewBrightnessScale(entityBrightness);
     return matrixColors.map((c) => {
       let px = c;

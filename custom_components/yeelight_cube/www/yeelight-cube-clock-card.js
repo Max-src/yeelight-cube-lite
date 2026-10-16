@@ -131,6 +131,7 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
       },
       brightness: {
         config: () => this._brightnessGc(),
+        live: () => this._paintVisible(),
         commit: (pct) => this._applyBrightness(brightnessPctToRaw(pct)),
       },
     });

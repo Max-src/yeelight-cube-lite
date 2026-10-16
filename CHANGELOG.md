@@ -3,6 +3,13 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- The **Lamp Preview** card's preview follows the brightness slider while it
+  is dragged, like the lamp does; it used to change only on release. The
+  Clock and Native Effects previews do the same.
+
 ## [1.3.6] - 2026-10-16
 
 ### Added

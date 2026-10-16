@@ -161,6 +161,61 @@ module.exports = async (t) => {
   }
   assert.deepEqual(fade, [20, 30, 50, 70, 90], "preview: every step of a fade shows");
 
+  // --- Lamp Preview: the preview follows a held brightness drag ------------
+  // The lamp dims as the drag goes (each commit is sent): the preview must
+  // too, before the release and before the lamp reports anything.
+  await page.evaluate(
+    (tag) => {
+      const light = hass.states["light.a"];
+      hass = {
+        ...hass,
+        states: {
+          ...hass.states,
+          "light.a": {
+            ...light,
+            attributes: {
+              ...light.attributes,
+              brightness: 255,
+              matrix_colors: new Array(100).fill([255, 255, 255]),
+            },
+          },
+        },
+      };
+      mount(tag, {
+        entity: "light.a",
+        show_brightness: true,
+        slider_style: "slider",
+        show_device_orientation: false,
+      });
+    },
+    lamp,
+  );
+  const dot = () =>
+    page.evaluate(() => card._getLampDots()[0].style.backgroundColor);
+  // The card's first paint (after its render).
+  await page.waitForFunction(() => {
+    const color = card._getLampDots?.()[0]?.style.backgroundColor;
+    return !!color && color !== "rgb(0, 0, 0)";
+  });
+  const bright = await dot();
+  const track = await page
+    .locator(`${lamp} input.brightness-slider`)
+    .first()
+    .boundingBox();
+  const y = track.y + track.height / 2;
+  await page.mouse.move(track.x + track.width - 2, y);
+  await page.mouse.down();
+  await page.mouse.move(track.x + track.width * 0.6, y, { steps: 4 });
+  const middle = await dot();
+  await page.mouse.move(track.x + track.width * 0.2, y, { steps: 4 });
+  const dim = await dot();
+  assert.equal(await page.evaluate(() => card._gate.held("slider")), true);
+  assert.notEqual(middle, bright, "preview: dims while the slider is held");
+  assert.notEqual(dim, middle, "preview: keeps following the drag");
+  await page.mouse.up();
+  await waitForCall("turn_on", "preview live drag");
+  await reset();
+
   // --- Orientation: Lamp Preview and Native (inside the mode controls) -----
   await page.evaluate(
     (tag) => mount(tag, { entity: "light.a", show_device_orientation: true }),
@@ -213,5 +268,57 @@ module.exports = async (t) => {
       .first();
     await step.click();
     await waitForCall("turn_on", `${tag} brightness step`);
+    await reset();
+
+    // Its current preview follows a held brightness drag, like the lamp.
+    await page.evaluate(
+      (tag) =>
+        mount(tag, {
+          entity: "light.a",
+          show_brightness: true,
+          slider_style: "slider",
+          preview_brightness: true,
+        }),
+      tag,
+    );
+    const light = () =>
+      page.evaluate(() => {
+        const preview = card.shadowRoot.querySelector(
+          '[data-clock-preview][data-current="1"], .current-matrix',
+        );
+        const cells = preview?._cells || Array.from(
+          preview?.querySelectorAll("[style*='background']") || [],
+        );
+        // Total light of the preview: the sum of its cells' channels.
+        return cells.reduce((sum, cell) => {
+          const rgb = (cell.style.backgroundColor.match(/\d+/g) || []).slice(0, 3);
+          return sum + rgb.reduce((a, v) => a + +v, 0);
+        }, 0);
+      });
+    const track = await page
+      .locator(`${tag} input.brightness-slider`)
+      .first()
+      .boundingBox();
+    const y = track.y + track.height / 2;
+    // The card's first paint (after its render).
+    await page.waitForFunction(() => {
+      const preview = card.shadowRoot.querySelector(
+        '[data-clock-preview][data-current="1"], .current-matrix',
+      );
+      const cells = preview?._cells || Array.from(
+        preview?.querySelectorAll("[style*='background']") || [],
+      );
+      return cells.some((cell) => /[1-9]/.test(cell.style.backgroundColor));
+    });
+    const before = await light();
+    await page.mouse.move(track.x + track.width - 2, y);
+    await page.mouse.down();
+    await page.mouse.move(track.x + track.width * 0.1, y, { steps: 6 });
+    const during = await light();
+    assert.equal(await page.evaluate(() => card._gate.held("slider")), true);
+    assert.ok(before > 0, `${tag}: preview painted`);
+    assert.ok(during < before, `${tag}: preview dims while the slider is held`);
+    await page.mouse.up();
+    await waitForCall("turn_on", `${tag} live drag`);
   }
 };

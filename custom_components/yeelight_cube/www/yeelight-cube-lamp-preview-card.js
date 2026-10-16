@@ -137,7 +137,6 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
       refresh: () => command("force_refresh"),
     });
     this._effectDebounceTimer = null;
-    this._renderDebounceTimer = null; // Debounce rendering to avoid flicker
     this._nativeAnimKey = null;
     this._nativeAnimStartedAt = null;
     // Animation loops + visibility (shared matrix-animator): pause when the tab
@@ -163,6 +162,10 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
       {
         brightness: {
           config: () => this._brightnessGc(),
+          // Every movement repaints the preview at once: the card's render
+          // waits for the drag to end, the dots do not (the animation loops
+          // read the dragged value themselves).
+          live: () => this._paintStaticPreview(),
           commit: (pct) => this._sendBrightness(pct),
         },
       },
@@ -278,16 +281,6 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
       // switch must update the preview even when nothing else changed.
       contentMode: attrs?.content_mode ?? seen.contentMode,
     };
-    // A brightness change and the matching matrix colors arrive in separate
-    // updates: one update 250 ms later shows both (no flicker).
-    if (this._seen.brightness !== seen.brightness && attrs?.brightness != null) {
-      clearTimeout(this._renderDebounceTimer);
-      this._renderDebounceTimer = setTimeout(() => {
-        this._renderDebounceTimer = null;
-        this._refresh();
-      }, 250);
-      return;
-    }
     // Adjustments the lamp now reports (or replaced: another dashboard) are
     // no longer shown locally. While others wait for the lamp's echo, only
     // the lamp's own changes (power, matrix, content mode) and a settled
@@ -298,6 +291,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
       !this._pendingEffects.size ||
       this._pendingEffects.size !== waiting ||
       this._seen.state !== seen.state ||
+      this._seen.brightness !== seen.brightness ||
       this._seen.matrix !== seen.matrix ||
       this._seen.contentMode !== seen.contentMode
     )
@@ -388,19 +382,35 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     const isClockAnimating = preview && on && mode === "Clock";
     this._lastPreviewOrientation =
       stateObj.attributes.device_orientation || "right";
-    if (preview && !isNativeAnimating && !isClockAnimating) {
-      // Blank matrix: no data yet, or the firmware draws the matrix (Music
-      // Flow), whose frames the backend can't read back.
-      const matrixColors = stateObj.attributes.matrix_colors?.length
-        ? stateObj.attributes.matrix_colors
-        : Array(100).fill(null);
-      const gridColors = this._matrixColorsToGridColors(matrixColors, stateObj);
-      const dots = this._getLampDots();
-      if (dots.length === gridColors.length)
-        this._paintDots(gridColors, this._lastPreviewOrientation, dots);
-    }
+    if (preview && !isNativeAnimating && !isClockAnimating)
+      this._paintStaticPreview(stateObj);
     this._syncActions();
     this._syncAnimations(isNativeAnimating, isClockAnimating, freshDots);
+  }
+
+  // Paint the lamp's matrix_colors on the dots (change-only), at the dragged
+  // brightness while a slider is held. Clock and Native Effect previews are
+  // painted by their animation loops instead.
+  _paintStaticPreview(stateObj = this._hass?.states?.[this._primaryEntity()]) {
+    if (!stateObj || this.config?.show_lamp_preview === false) return;
+    const mode = stateObj.attributes.content_mode;
+    if (stateObj.state === "on" && (mode === "Native Effect" || mode === "Clock"))
+      return;
+    // Blank matrix: no data yet, or the firmware draws the matrix (Music
+    // Flow), whose frames the backend can't read back.
+    const matrixColors = stateObj.attributes.matrix_colors?.length
+      ? stateObj.attributes.matrix_colors
+      : Array(100).fill(null);
+    const gridColors = this._matrixColorsToGridColors(matrixColors, stateObj);
+    const dots = this._getLampDots();
+    if (dots.length === gridColors.length)
+      this._paintDots(
+        gridColors,
+        this._lastPreviewOrientation ||
+          stateObj.attributes.device_orientation ||
+          "right",
+        dots,
+      );
   }
 
   // HTML-string rendering of the same preview with its colors inline, for
@@ -641,7 +651,6 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     clearTimeout(this._orientationTimer);
     // Clear all stored debounce/timeout timers
     clearTimeout(this._effectDebounceTimer);
-    clearTimeout(this._renderDebounceTimer);
 
     // Stop the client-side animation loops if running.
     this._stopNativeAnimation();
@@ -654,7 +663,6 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
     this._lampDots = null;
 
     this._effectDebounceTimer = null;
-    this._renderDebounceTimer = null;
 
     // Detach a slider drag still in progress (and its timers).
     this._lampSliders.destroy();
