@@ -3,7 +3,7 @@
 All notable changes to this project are documented here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.3.6] - 2026-10-16
 
 ### Added
 - **Faster connection (UDP)**: commands and pictures now go over the lamp's
