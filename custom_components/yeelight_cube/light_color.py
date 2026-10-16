@@ -289,8 +289,15 @@ class ColorPipelineMixin:
     def _brightness_stages(self, colors):
         """The stages that depend on the lamp's brightness, last before
         sending: the low-brightness correction (_apply_color_correction) and
-        the per-channel accuracy (_apply_color_accuracy, unchanged while
-        disabled)."""
+        the per-channel accuracy (_apply_color_accuracy). ``colors`` itself
+        when both would leave every pixel as it is (the usual case: bright
+        enough, neutral gains), without a pass over the pixels."""
+        corrects = (self._last_hardware_brightness or 100) < self._calib_hw_threshold
+        adjusts = self._color_accuracy_enabled and (
+            self._calib_gain_r, self._calib_gain_g, self._calib_gain_b
+        ) != (1.0, 1.0, 1.0)
+        if not (corrects or adjusts):
+            return colors
         return [self._apply_color_accuracy(self._apply_color_correction(rgb)) for rgb in colors]
 
     def _apply_color_correction(self, rgb_color):

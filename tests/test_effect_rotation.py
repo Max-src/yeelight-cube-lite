@@ -7,7 +7,10 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
-from tests.test_native_features import ROOT, CONSTANTS, LIGHT_SOURCE, NATIVE_PREVIEW, _load_standalone_functions, SERVICES_SOURCE
+from tests.test_native_features import (
+    ROOT, CONSTANTS, LIGHT_SOURCE, NATIVE_ACTIVATION, NATIVE_ACTIVATION_METHODS,
+    NATIVE_PREVIEW, _load_standalone_functions, SERVICES_SOURCE,
+)
 
 # command_errors.note_command_result, for the real hardware queue.
 HARDWARE_BRIGHTNESS_FOR = _load_standalone_functions(
@@ -1202,13 +1205,13 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
     def make_transport_light(self):
         light = make_light(_rotation_helpers(), kind="clock")
         lock = asyncio.Lock()
-        names = {
+        methods = {
             "async_apply_display_mode", "_execute_hardware_op",
-            "_apply_display_mode_internal", "_activate_native_clock",
+            "_apply_display_mode_internal",
             "_resolve_native_clock_color", "_set_native_mode_brightness",
             "_native_clock_data_bytes", "stop_scroll_timer",
-            "_activate_native_effect", "_leave_direct_mode",
-            "_init_scroll_state",
+            "_leave_direct_mode", "_init_scroll_state",
+            *NATIVE_ACTIVATION_METHODS,
         }
         source = "\n".join(
             (ROOT / filename).read_text(encoding="utf-8")
@@ -1217,7 +1220,7 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
                 "light_native.py", "light_connection.py", "light_rotation.py",
             )
         )
-        helpers = _load_standalone_functions(source, names, {
+        helpers = _load_standalone_functions(source, methods | NATIVE_ACTIVATION, {
             **CONSTANTS, "asyncio": asyncio, "time": time, "base64": base64,
             "_LOGGER": Mock(), "_get_device_lock": lambda ip: lock,
             "APPLY_HARD_TIMEOUT": 8, "CIRCUIT_BREAKER_WINDOW": 30,
@@ -1229,7 +1232,7 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
             "note_command_result": NOTE_COMMAND_RESULT,
             "hardware_brightness_for": HARDWARE_BRIGHTNESS_FOR,
         })
-        _bind(light, helpers, *names)
+        _bind(light, helpers, *methods)
         # The scroll state as the lamp starts (the rotation's,
         # the hardware queue's and the saved display state come from make_light).
         light._init_scroll_state()
@@ -1253,7 +1256,7 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
         light._cube_matrix = SimpleNamespace(
             state_summary=lambda: "test transport", summary="test transport", close_fast_socket=Mock(),
             record_success=Mock(), record_failure=Mock(), is_unreachable=False,
-            send_raw_command=AsyncMock(),
+            send_raw_command=AsyncMock(), running_effect=None, note_running_effect=Mock(),
         )
         self.addCleanup(light.stop_effect_rotation)
         return light

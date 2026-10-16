@@ -16,7 +16,6 @@ from .cube_matrix import (
     is_quota_error,
 )
 from .light_color import hardware_brightness_for
-from .light_display import FX_MODE_STALENESS_TIMEOUT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -154,10 +153,10 @@ class BrightnessMixin:
         retry does send it).
 
         _fx_mode_is_direct is NOT reset here: set_bright does not knock the
-        Cube out of direct mode, and resetting it would make apply() re-send
-        activate_fx_mode + set_bright (~300ms) on every brightness change. The
-        FX_MODE_STALENESS_TIMEOUT check in apply() is the safety net if the
-        Cube silently leaves direct mode after an idle period.
+        Cube out of direct mode, and resetting it would make apply() send
+        activate_fx_mode again on every brightness change.
+        _direct_mode_trusted() is the safety net if the Cube silently leaves
+        direct mode after an idle period.
         """
         if not self._cube_matrix.is_connected():
             _LOGGER.debug(
@@ -205,28 +204,10 @@ class BrightnessMixin:
                 await self._apply_display_mode_internal()
                 return
             
-            # STALENESS CHECK: Same as in apply() -- check fx_age, not idle.
-            # Falls through to full apply path which uses ensure_fx_ready() (raw TCP).
-            if self._fx_mode_is_direct and self._last_fx_mode_time > 0:
-                fx_age = time.time() - self._last_fx_mode_time
-                if fx_age > FX_MODE_STALENESS_TIMEOUT:
-                    _LOGGER.debug(
-                        "[BRIGHTNESS_FAST] [%s] FX mode stale -- fx_age=%.0fs > "
-                        "%.0fs, falling back to full apply (raw TCP recovery)",
-                        self._ip, fx_age, FX_MODE_STALENESS_TIMEOUT
-                    )
-                    self._fx_mode_is_direct = False
-
-            # If FX mode isn't set, fall back to the full path which handles activation
-            if not self._fx_mode_is_direct:
-                _LOGGER.debug("[BRIGHTNESS_FAST] FX mode not set -- falling back to full apply")
-                await self._apply_display_mode_internal()
-                return
-            
-            # Check if reconnection happened
-            if self._cube_matrix.consume_reconnected_flag():
-                _LOGGER.debug("[BRIGHTNESS_FAST] Reconnection detected -- falling back to full apply")
-                self._fx_mode_is_direct = False
+            # Direct mode not on (or no longer trusted): the full path, which
+            # activates it.
+            if not self._direct_mode_trusted():
+                _LOGGER.debug("[BRIGHTNESS_FAST] Direct mode not on -- falling back to full apply")
                 await self._apply_display_mode_internal()
                 return
             

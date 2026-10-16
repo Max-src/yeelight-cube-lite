@@ -20,6 +20,16 @@ ROOT = Path(__file__).parents[1] / "custom_components" / "yeelight_cube"
 CONSTANTS = runpy.run_path(ROOT / "const.py")
 PIXEL_ART = runpy.run_path(ROOT / "builtin_pixel_art.py")
 NATIVE_PREVIEW = runpy.run_path(ROOT / "native_effect_preview.py")
+# The firmware effect / clock activation (light_native.py) as tests load it on
+# its own: the activations and the helpers they call. live_effect_changes is a
+# module function; the others are methods (NATIVE_ACTIVATION_METHODS).
+NATIVE_ACTIVATION = frozenset({
+    "_activate_native_effect", "_native_effect_params",
+    "_activate_native_clock", "_native_clock_params",
+    "_send_native", "_update_running_effect", "_native_renderer_shown",
+    "live_effect_changes",
+})
+NATIVE_ACTIVATION_METHODS = NATIVE_ACTIVATION - {"live_effect_changes"}
 COLOR_UTILS = runpy.run_path(ROOT / "color_utils.py")
 # Shared module-level names every loaded helper may reference.
 _DEFAULT_NAMESPACE = {
@@ -292,11 +302,12 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertEqual(2, CONSTANTS["NATIVE_CLOCK_APPLY"])
 
     def test_clock_applies_brightness_after_activation(self):
-        function = _function_source(LIGHT_SOURCE, "_activate_native_clock")
-        self.assertLess(
-            function.index('"set_fx_effect"'),
-            function.index("await self._set_native_mode_brightness()"),
-        )
+        # The shared send path sets the brightness after set_fx_effect for
+        # the clock only (it can drop the activation otherwise).
+        function = _function_source(LIGHT_SOURCE, "_send_native")
+        after = function[function.index('"set_fx_effect", params'):]
+        self.assertIn('"clock:brightness"', after)
+        self.assertIn("await self._set_native_mode_brightness()", after)
 
     def test_clock_color_override_cleared_for_any_active_palette_mode(self):
         # A custom color override must not linger once a palette mode (B&W,
@@ -305,8 +316,10 @@ class NativeFeatureTests(unittest.TestCase):
         # have no mixer effect to protect and stay unaffected (except B&W).
         helpers = _load_standalone_functions(
             LIGHT_SOURCE,
-            {"_activate_native_clock", "_resolve_native_clock_color", "_leave_direct_mode"},
+            {"_resolve_native_clock_color", "_leave_direct_mode", *NATIVE_ACTIVATION},
             {
+                "LIVE_EFFECT_KEYS": CONSTANTS["LIVE_EFFECT_KEYS"],
+                "effect_direction_value": CONSTANTS["effect_direction_value"],
                 "asyncio": asyncio,
                 "base64": base64,
                 "NATIVE_CLOCK_STYLES": CONSTANTS["NATIVE_CLOCK_STYLES"],
@@ -327,9 +340,13 @@ class NativeFeatureTests(unittest.TestCase):
         class FakeCube:
             def __init__(self):
                 self.params = None
+                self.running_effect = None
 
             def close_fast_socket(self):
                 return None
+
+            def note_running_effect(self, params):
+                self.running_effect = params
 
             async def send_raw_command(
                 self, command, params, abortive_close=False, check_reply=False
@@ -356,7 +373,8 @@ class NativeFeatureTests(unittest.TestCase):
                 hass=None,
                 _ip="test",
             )
-            device._leave_direct_mode = types.MethodType(helpers["_leave_direct_mode"], device)
+            for name in ("_leave_direct_mode", *NATIVE_ACTIVATION_METHODS):
+                setattr(device, name, types.MethodType(helpers[name], device))
             return device
 
         activate = helpers["_activate_native_clock"]
@@ -1594,7 +1612,7 @@ class NativeFeatureTests(unittest.TestCase):
         # The colored confetti only unlocks when the clock command id (1st array
         # element) is overridden to 71; the clock config still uses mode 40.
         self.assertEqual(71, CONSTANTS["CLOCK_MIXER_COMMAND_IDS"][10])
-        activate = _function_source(LIGHT_SOURCE, "_activate_native_clock")
+        activate = _function_source(LIGHT_SOURCE, "_native_clock_params")
         self.assertIn("CLOCK_MIXER_COMMAND_IDS", activate)
         style = next(
             style
@@ -2559,7 +2577,7 @@ class NativeFeatureTests(unittest.TestCase):
         # helper so none of them can silently drop the mixer effect's color.
         resolve = _function_source(LIGHT_SOURCE, "_resolve_native_clock_color")
         self.assertIn("clock_style_default_color", resolve)
-        activate = _function_source(LIGHT_SOURCE, "_activate_native_clock")
+        activate = _function_source(LIGHT_SOURCE, "_native_clock_params")
         self.assertIn("_resolve_native_clock_color", activate)
         persist = _function_source(LIGHT_SOURCE, "_effect_persist_item")
         self.assertIn("clock_style_default_color", persist)
@@ -2617,11 +2635,10 @@ class NativeFeatureTests(unittest.TestCase):
 
         # The clock activation command carries a firmware direction byte taken
         # from the selected native-effect direction, remapped per effect.
-        activate = _function_source(LIGHT_SOURCE, "_activate_native_clock")
+        activate = _function_source(LIGHT_SOURCE, "_native_clock_params")
         self.assertIn("resolve_clock_mixer_direction(", activate)
         self.assertIn("self._native_effect_direction", activate)
-        self.assertIn('effect_config["direction"]', activate)
-        self.assertIn("direction_remap", activate)
+        self.assertIn('effect_config["direction"] = effect_direction_value(', activate)
 
         # The fx-explorer reflects a clock command's direction byte so the
         # preview tracks whatever direction was applied on the lamp.
@@ -2647,9 +2664,15 @@ class NativeFeatureTests(unittest.TestCase):
         # lamp's up/down for _SWAP_UP_DOWN effects (Ocean Waves, Rainbow, ...),
         # which inverts every calibrated preview. Do NOT delete this remap when
         # adjusting previews — correct the preview table instead.
-        activate = _function_source(LIGHT_SOURCE, "_activate_native_effect")
-        self.assertIn("direction_remap", activate)
-        self.assertIn("NATIVE_EFFECT_DIRECTION_VALUES[", activate)
+        activate = _function_source(LIGHT_SOURCE, "_native_effect_params")
+        self.assertIn("effect_direction_value(", activate)
+        # The shared helper applies the remap: Rainbow's "Up" is sent as the
+        # firmware's down value; an effect without a remap sends the label.
+        direction = CONSTANTS["effect_direction_value"]
+        effects = CONSTANTS["ALL_NATIVE_EFFECTS"]
+        values = CONSTANTS["NATIVE_EFFECT_DIRECTION_VALUES"]
+        self.assertEqual(values["Down"], direction(effects["Rainbow"], "Up"))
+        self.assertEqual(values["Up"], direction(effects["Aurora"], "Up"))
 
     def test_fx_explorer_reflects_clock_style_for_live_preview(self):
         handler = _function_source(LIGHT_SOURCE, "handle_send_fx_effect")

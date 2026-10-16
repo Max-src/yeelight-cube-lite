@@ -24,6 +24,13 @@ def frame_id(rgb_data: str) -> str:
     """A short fingerprint of an update_leds frame (the frame trace)."""
     return f"{zlib.crc32(rgb_data.encode('ascii')):08x}"
 
+
+def trace_frame(ip: str, what: str, rgb_data: str) -> None:
+    """Log a frame on the trace (``[ip] <what> <fingerprint>``); nothing is
+    computed while the trace is off."""
+    if FRAMES.isEnabledFor(logging.DEBUG):
+        FRAMES.debug("[%s] %s %s", ip, what, frame_id(rgb_data))
+
 # Rate limit constants based on validated testing (0.90 FPS = safe sustained rate)
 SAFE_SUSTAINED_INTERVAL = 0.1  # 100 milliseconds between commands
 FAST_SEQUENTIAL_INTERVAL = 0.02 # 20ms between commands within a single apply() burst
@@ -56,6 +63,9 @@ FRAME_SETTLE_DELAY = 0.3
 # direct mode on: any other may end it, so a new UDP session is no longer
 # put in direct mode (UdpSession.session_setup).
 _KEEPS_FRAME = frozenset({"update_leds", "set_bright"})
+# Commands that leave a running native effect as it is (running_effect): any
+# other may replace or stop it.
+_KEEPS_EFFECT = frozenset({"set_bright", "update_fx_effect"})
 _DIRECT_MODE = [{"mode": "direct"}]
 
 
@@ -239,6 +249,9 @@ class CubeMatrix:
         self._udp_failure_logged = False
         # The pending re-send of the last frame (FRAME_SETTLE_DELAY).
         self._frame_settle = None
+        # The set_fx_effect params of the native effect the lamp runs, while
+        # nothing else was sent since (running_effect).
+        self._running_effect = None
         
         _LOGGER.debug(
             "[INIT] CubeMatrix initialized: ip=%s, port=%s, timeout=%ss, "
@@ -312,7 +325,7 @@ class CubeMatrix:
                 if not self._udp_usable():
                     return  # UDP failed meanwhile: TCP took over
                 await self._udp.request("update_leds", params)
-                FRAMES.debug("[%s] re-sent frame %s", self._ip, frame_id(params[0]))
+                trace_frame(self._ip, "re-sent frame", params[0])
             except UdpUnavailable:
                 pass  # the next command finds out and falls back
             finally:
@@ -331,6 +344,8 @@ class CubeMatrix:
         self._settle_frame(command, params)
         if command not in _KEEPS_FRAME:
             self._udp.session_setup = []
+        if command not in _KEEPS_EFFECT:
+            self._running_effect = None
         if not self._udp_usable():
             return _USE_TCP
         try:
@@ -369,6 +384,8 @@ class CubeMatrix:
             self._udp_sessions_seen = self._udp.sessions_opened
             if command != "activate_fx_mode" and not self._udp.session_setup:
                 self._just_reconnected = True
+            # The lamp may have restarted: its effect is not known any more.
+            self._running_effect = None
         if self._udp_failure_logged:
             _LOGGER.info("[UDP] [%s] UDP session working again", self._ip)
             self._udp_failure_logged = False
@@ -380,6 +397,18 @@ class CubeMatrix:
         self._last_reconnect_attempt = 0
         self._total_commands_sent += 1
         return answer
+
+    @property
+    def running_effect(self) -> list | None:
+        """The set_fx_effect params of the native effect the lamp runs, or
+        None when not known: any command but brightness or an effect update
+        (_KEEPS_EFFECT), a new UDP session (the lamp may have restarted) or
+        an outage forgets it."""
+        return self._running_effect
+
+    def note_running_effect(self, params: list) -> None:
+        """The lamp took this set_fx_effect (or update_fx_effect to it)."""
+        self._running_effect = [dict(p) if isinstance(p, dict) else p for p in params]
 
     def close(self) -> None:
         """Close every socket to the lamp (the light is being removed)."""
@@ -453,6 +482,7 @@ class CubeMatrix:
         """Flag the lamp as unreachable. Returns True if it was reachable."""
         was_reachable = not self._device_unreachable
         self._device_unreachable = True
+        self._running_effect = None
         return was_reachable
 
     def mark_recovered(self) -> None:
@@ -460,6 +490,7 @@ class CubeMatrix:
         failure count, backoff and unreachable flag, and try UDP again."""
         self.close_fast_socket()
         self._udp_retry_at = 0.0
+        self._running_effect = None
         self._reset_backoff()
         self._connection_healthy = True
         self._last_reconnect_attempt = 0

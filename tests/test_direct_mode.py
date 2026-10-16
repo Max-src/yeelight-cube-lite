@@ -178,6 +178,47 @@ class BrightnessRetryTests(unittest.IsolatedAsyncioTestCase):
         self.lamp._apply_brightness_only.assert_not_awaited()
 
 
+class SharedChecksTests(unittest.TestCase):
+    """The checks the frame paths share: the color stages and whether
+    direct mode can still be trusted."""
+
+    def test_the_color_stages_skip_a_frame_they_leave_unchanged(self):
+        stages = _load_standalone_functions(
+            (ROOT / "light_color.py").read_text(encoding="utf-8"), {"_brightness_stages"}
+        )["_brightness_stages"]
+        lamp = types.SimpleNamespace(
+            _last_hardware_brightness=100, _calib_hw_threshold=50,
+            _color_accuracy_enabled=True,
+            _calib_gain_r=1.0, _calib_gain_g=1.0, _calib_gain_b=1.0,
+            _apply_color_correction=lambda rgb: (1, 1, 1),
+            _apply_color_accuracy=lambda rgb: rgb,
+        )
+        frame = [(200, 100, 50)] * 3
+        self.assertIs(frame, stages(lamp, frame))  # bright, neutral gains
+        lamp._last_hardware_brightness = 10  # dim: the correction runs
+        self.assertEqual([(1, 1, 1)] * 3, stages(lamp, frame))
+        lamp._last_hardware_brightness, lamp._calib_gain_g = 100, 0.9
+        self.assertIsNot(frame, stages(lamp, frame))  # gains: accuracy runs
+
+    def test_direct_mode_is_not_trusted_after_a_reconnection_or_when_stale(self):
+        trusted = _load_standalone_functions(
+            (ROOT / "light_display.py").read_text(encoding="utf-8"),
+            {"_direct_mode_trusted"},
+            {"_LOGGER": logging.getLogger("t"), "time": time, "FX_MODE_STALENESS_TIMEOUT": 90.0},
+        )["_direct_mode_trusted"]
+        flags = []
+        lamp = types.SimpleNamespace(
+            _ip="t", _fx_mode_is_direct=True, _last_fx_mode_time=time.time(),
+            _cube_matrix=types.SimpleNamespace(consume_reconnected_flag=lambda: flags.pop() if flags else False),
+        )
+        self.assertTrue(trusted(lamp))
+        flags.append(True)  # the connection changed
+        self.assertFalse(trusted(lamp))
+        self.assertFalse(lamp._fx_mode_is_direct)
+        lamp._fx_mode_is_direct, lamp._last_fx_mode_time = True, time.time() - 120
+        self.assertFalse(trusted(lamp))  # idle too long
+
+
 class HardwareBrightnessTests(unittest.TestCase):
     """Brightness is the lamp's hardware brightness in every mode, as for
     its native modes; pixels are never darkened for it."""

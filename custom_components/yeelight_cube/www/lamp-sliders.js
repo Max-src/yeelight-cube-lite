@@ -12,8 +12,9 @@
  * Each slider is a namespace of the slider markup (renderSliderGroup's /
  * renderSliderControl's `ns`); its handlers are assigned onto the card as
  * _sl<Ns>* and named by the markup's data-on-* attributes. The card reads
- * value(ns) for the value to show, calls settle(attributes) when the lamp
- * state arrives and destroy() on disconnect.
+ * value(ns) for the value to show and previewScale(attributes) for the
+ * brightness its lamp previews are drawn at, calls settle(attributes) when
+ * the lamp state arrives and destroy() on disconnect.
  *
  * Used the same way by every card with lamp sliders (Clock, Native Effects,
  * Lamp Preview); store it as `this._lampSliders`.
@@ -25,7 +26,9 @@
  * means updating those tests too -- otherwise the screenshot CI breaks with
  * "Missing slider: <card>/<ns>".
  */
+import { previewBrightnessScale } from "./matrix-const.js";
 import {
+  brightnessPctToRaw,
   brightnessRawToPct,
   createSliderDraft,
   createSliderHandlers,
@@ -83,6 +86,19 @@ export class LampSliders {
   /** The dragged value of a slider in slider %, or null when none. */
   value(ns) {
     return this.drafts[ns]?.value ?? null;
+  }
+
+  /**
+   * The color scale the card's lamp previews are drawn at
+   * (previewBrightnessScale): from the dragged brightness while its slider
+   * is held or the lamp has not confirmed it, else from the lamp's (full
+   * when it reports none). Every card's preview follows a drag the same way.
+   */
+  previewScale(attrs = {}) {
+    const pct = this.value("brightness");
+    return previewBrightnessScale(
+      pct == null ? Number(attrs.brightness) || 255 : brightnessPctToRaw(pct),
+    );
   }
 
   /** Set (pct) or drop (null) a slider's draft value. */

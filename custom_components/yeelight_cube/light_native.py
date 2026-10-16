@@ -36,7 +36,8 @@ from .const import (
     NATIVE_CLOCK_EFFECT_ID,
     NATIVE_CLOCK_STYLES,
     NATIVE_EFFECT_APPLY,
-    NATIVE_EFFECT_DIRECTION_VALUES,
+    LIVE_EFFECT_KEYS,
+    effect_direction_value,
     resolve_clock_mixer_direction,
 )
 
@@ -57,6 +58,28 @@ def _build_music_flow_payload(enabled: bool, effect_name: str) -> str:
         # The misspelling is part of the device's private protocol.
         payload["palatte"] = list(MUSIC_FLOW_DEFAULT_PALETTE)
     return json.dumps(payload, separators=(",", ":"))
+
+
+def live_effect_changes(running: list | None, params: list) -> dict | None:
+    """The update_fx_effect settings (LIVE_EFFECT_KEYS) that turn the running
+    effect (``running``, its set_fx_effect params) into ``params``. None when
+    that takes a full set_fx_effect: a color set (see LIVE_EFFECT_KEYS),
+    another effect, palette or setting, a live setting added or removed, or
+    nothing changed (a full activation then re-asserts it, as before)."""
+    if not running or len(running) != len(params):
+        return None
+    *old_head, old = running
+    *new_head, new = params
+    if old_head != new_head or not isinstance(old, dict) or not isinstance(new, dict):
+        return None
+    if set(old) != set(new) or "color" in new:
+        return None
+    if any(old[key] != new[key] for key in new if key not in LIVE_EFFECT_KEYS):
+        return None
+    changes = {
+        key: new[key] for key in LIVE_EFFECT_KEYS if key in new and old[key] != new[key]
+    }
+    return changes or None
 
 
 class NativeModesMixin:
@@ -144,8 +167,21 @@ class NativeModesMixin:
         return clock_style_default_color(style)
 
     async def _activate_native_clock(self) -> None:
-        """Activate the Cube Lite firmware clock through Yeelight LAN control."""
+        """Activate the Cube Lite firmware clock through Yeelight LAN control,
+        always in full (no live update: it left the clock dark)."""
         timezone_hours = self._native_clock_timezone_hours()
+        await self._send_native(self._native_clock_params(), clock=True)
+        self._native_clock_timezone_offset = timezone_hours
+        _LOGGER.debug(
+            "[CLOCK] [%s] Native clock style=%s timezone=%+d",
+            self._ip,
+            self._native_clock_style,
+            timezone_hours,
+        )
+
+    def _native_clock_params(self) -> list:
+        """The set_fx_effect params of the selected clock style (mixer,
+        speed, setting bytes, color or palette, mixer direction)."""
         style_id = self._native_clock_style
         style = NATIVE_CLOCK_STYLES.get(
             style_id,
@@ -183,11 +219,9 @@ class NativeModesMixin:
             self._native_effect_direction, effect_name
         )
         if direction is not None:
-            remap = ALL_NATIVE_EFFECTS[effect_name].get("direction_remap")
-            sent_direction = remap.get(direction, direction) if remap else direction
-            effect_config["direction"] = NATIVE_EFFECT_DIRECTION_VALUES[
-                sent_direction
-            ]
+            effect_config["direction"] = effect_direction_value(
+                ALL_NATIVE_EFFECTS[effect_name], direction
+            )
 
         # A few mixers only render in full color when the outer command id
         # (first array element) is overridden; otherwise the default clock id is
@@ -201,46 +235,84 @@ class NativeModesMixin:
         mode_override = CLOCK_COLOR_MODES.get(clock_color_mode)
         if mode_override is not None and effect_name is not None:
             command_id = mode_override
-        params = [
+        return [
             command_id,
             style_id,
             NATIVE_CLOCK_APPLY,
             effect_config,
         ]
 
+    async def _activate_native_effect(self) -> None:
+        """Activate one of the Cube Lite firmware's built-in animations (live
+        when only its speed or direction changed: _send_native)."""
+        await self._send_native(self._native_effect_params())
+
+    async def _send_native(self, params: list, *, clock: bool = False) -> None:
+        """Show a firmware renderer: a native effect, or the clock.
+
+        When the lamp still runs the same effect and only its speed or
+        direction changed, those are updated live (update_fx_effect,
+        LIVE_EFFECT_KEYS): the animation goes on instead of restarting from
+        its first frame. The clock, and anything else (or a refused update),
+        is set in full, as before, with the brightness:
+        before set_fx_effect for an effect, after it for the clock (Cube Lite
+        can drop the clock activation when set_bright resets a socket just
+        before it; it takes the brightness once the clock runs)."""
+        if not clock and await self._update_running_effect(params):
+            return
         await self._leave_direct_mode()
-        # Keep this as the first fresh-socket command. Cube Lite can drop the
-        # clock activation when set_bright opens and resets a socket just before
-        # set_fx_effect; brightness remains adjustable after activation.
-        self._hardware_operation_phase = "clock:set_fx_effect"
+        if clock:
+            self._hardware_operation_phase = "clock:set_fx_effect"
+        else:
+            await self._set_native_mode_brightness()
         await asyncio.sleep(0.1)
         # The lamp's answer is checked: a refused activation (rate limit)
-        # fails here instead of leaving HA believing the clock changed.
+        # fails here instead of leaving HA believing it changed.
         await self._cube_matrix.send_raw_command(
-            "set_fx_effect", params, abortive_close=False, check_reply=True
+            "set_fx_effect", params, abortive_close=not clock, check_reply=True
         )
-        # Applying brightness before set_fx_effect can cancel clock activation,
-        # but the firmware accepts it once the native renderer is running.
-        self._hardware_operation_phase = "clock:brightness"
-        await asyncio.sleep(0.1)
-        await self._set_native_mode_brightness()
+        self._cube_matrix.note_running_effect(params)
+        if clock:
+            self._hardware_operation_phase = "clock:brightness"
+            await asyncio.sleep(0.1)
+            await self._set_native_mode_brightness()
+        self._native_renderer_shown()
+
+    async def _update_running_effect(self, params: list) -> bool:
+        """Change the running effect live (live_effect_changes); False when
+        that does not apply or the lamp refused it (then it is set in full)."""
+        changes = live_effect_changes(self._cube_matrix.running_effect, params)
+        if changes is None or not self._is_on or not self._in_native_fw_mode:
+            return False
+        try:
+            await self._cube_matrix.send_raw_command(
+                "update_fx_effect", [changes], check_reply=True
+            )
+        except Exception as err:  # noqa: BLE001 -- a full activation follows
+            _LOGGER.debug(
+                "[NATIVE] [%s] Live update %s refused (%s): activating in full",
+                self._ip, changes, err,
+            )
+            return False
+        self._cube_matrix.note_running_effect(params)
+        _LOGGER.debug("[NATIVE] [%s] Running effect updated live: %s", self._ip, changes)
+        self._native_renderer_shown()
+        return True
+
+    def _native_renderer_shown(self) -> None:
+        """The lamp shows a firmware renderer (effect or clock): state and
+        previews follow."""
         self._is_on = True
         self._fx_mode_is_direct = False
-        self._in_native_fw_mode = True   # Lamp is now in firmware-native clock mode
+        self._in_native_fw_mode = True
         self._last_fx_mode_time = 0.0
-        self._native_clock_timezone_offset = timezone_hours
         self._notify_camera_preview()
         if self.hass is not None:
             self.async_schedule_update_ha_state()
-        _LOGGER.debug(
-            "[CLOCK] [%s] Activated native clock style=%s timezone=%+d",
-            self._ip,
-            style_id,
-            timezone_hours,
-        )
 
-    async def _activate_native_effect(self) -> None:
-        """Activate one of the Cube Lite firmware's built-in animations."""
+    def _native_effect_params(self) -> list:
+        """The set_fx_effect params of the selected native effect (speed,
+        direction from the mount, palette, color)."""
         spec = ALL_NATIVE_EFFECTS.get(
             self._native_effect, ALL_NATIVE_EFFECTS[DEFAULT_NATIVE_EFFECT]
         )
@@ -264,16 +336,9 @@ class NativeModesMixin:
                     self._native_effect_direction_select_entity.async_update_from_light()
             if self._native_effect_direction not in directions:
                 self._native_effect_direction = directions[0]
-            # Some effects render a direction differently than the firmware's
-            # nominal value; remap the selected label to the value that makes
-            # the physical animation match the on-screen arrow (verified on HW).
-            sent_direction = self._native_effect_direction
-            remap = spec.get("direction_remap")
-            if remap:
-                sent_direction = remap.get(sent_direction, sent_direction)
-            effect_config["direction"] = NATIVE_EFFECT_DIRECTION_VALUES[
-                sent_direction
-            ]
+            effect_config["direction"] = effect_direction_value(
+                spec, self._native_effect_direction
+            )
         elif spec.get("direction_fixed") is not None:
             effect_config["direction"] = spec["direction_fixed"]
         color_mode = self._native_effect_color_mode
@@ -286,26 +351,12 @@ class NativeModesMixin:
         if color is not None and color_mode == "normal" and effect_supports_color_override(self._native_effect):
             effect_config["color"] = [rgb_to_argb(color)]
 
-        params = [
+        return [
             spec["effect_id"] if palette_id is None else palette_id,
             0,
             NATIVE_EFFECT_APPLY,
             effect_config,
         ]
-        await self._leave_direct_mode()
-        await self._set_native_mode_brightness()
-        await asyncio.sleep(0.1)
-        # Checked like the clock activation (see _activate_native_clock).
-        await self._cube_matrix.send_raw_command(
-            "set_fx_effect", params, check_reply=True
-        )
-        self._is_on = True
-        self._fx_mode_is_direct = False
-        self._in_native_fw_mode = True   # Lamp is now in firmware-native animation mode
-        self._last_fx_mode_time = 0.0
-        self._notify_camera_preview()
-        if self.hass is not None:
-            self.async_schedule_update_ha_state()
 
     async def async_set_music_flow(
         self,

@@ -5,10 +5,20 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **Native effects change live**: a new speed or direction on the running
+  effect is sent as a live update (`update_fx_effect`, as the Yeelight app
+  does), so the animation goes on instead of restarting from its first frame
+  on every slider move. The clock, an effect with a custom color, a color
+  change, another effect or palette still start it in full, as before, and
+  so does any change the lamp refuses (a live update left the clock dark).
+
 ### Fixed
 - The **Lamp Preview** card's preview follows the brightness slider while it
   is dragged, like the lamp does; it used to change only on release. The
-  Clock and Native Effects previews do the same.
+  Clock and Native Effects previews do the same, and all three now draw the
+  same brightness the same way (the Native Effects preview used a plain
+  linear scale, so a dim lamp looked almost black there only).
 
 ## [1.3.6] - 2026-10-16
 

@@ -3,7 +3,10 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
-from tests.test_native_features import CONSTANTS, NATIVE_PREVIEW, ROOT, _load_standalone_functions
+from tests.test_native_features import (
+    CONSTANTS, NATIVE_ACTIVATION, NATIVE_ACTIVATION_METHODS, NATIVE_PREVIEW, ROOT,
+    _load_standalone_functions,
+)
 
 SOURCE = (ROOT / "light_native.py").read_text(encoding="utf-8")
 
@@ -19,7 +22,7 @@ class DirectModeExitTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.calls = []
         fns = _load_standalone_functions(
-            SOURCE, {"_leave_direct_mode", "_activate_native_effect"}, {
+            SOURCE, {"_leave_direct_mode", *NATIVE_ACTIVATION}, {
                 **CONSTANTS,
                 "encode_rgb_frame": encode,
                 "_LOGGER": Mock(),
@@ -42,7 +45,7 @@ class DirectModeExitTests(unittest.IsolatedAsyncioTestCase):
             _layout=SimpleNamespace(device_layout=[None] * 100),
             _cube_matrix=SimpleNamespace(
                 draw_matrices_fast=draw, close_fast_socket=record("close"),
-                send_raw_command=raw,
+                send_raw_command=raw, running_effect=None, note_running_effect=Mock(),
             ),
             _native_effect="Rainbow", _native_effect_speed=50,
             _native_effect_direction="Right", _device_orientation="right",
@@ -50,7 +53,7 @@ class DirectModeExitTests(unittest.IsolatedAsyncioTestCase):
             _native_effect_color_mode="normal", _native_effect_color=None, hass=None,
             _set_native_mode_brightness=AsyncMock(), _notify_camera_preview=Mock(),
         )
-        for name in ("_leave_direct_mode", "_activate_native_effect"):
+        for name in ("_leave_direct_mode", *NATIVE_ACTIVATION_METHODS):
             setattr(self.light, name, fns[name].__get__(self.light))
 
     async def test_a_drawing_is_blanked_before_the_effect_starts(self):

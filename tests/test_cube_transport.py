@@ -142,6 +142,27 @@ class CubeTransportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(1, self.udp_methods().count("activate_fx_mode"))
         self.assertTrue(self.cube.consume_reconnected_flag())
 
+    async def test_the_running_effect_is_forgotten_by_any_other_command(self):
+        effect = [39, 0, 4, {"mode": 39, "onoff": 1, "rate": 50}]
+        await self.cube.send_raw_command("set_fx_effect", effect, check_reply=True)
+        self.cube.note_running_effect(effect)
+        # Brightness and live updates leave it running.
+        await self.cube.send_command_fast("set_bright", [40])
+        await self.cube.send_raw_command("update_fx_effect", [{"rate": 80}], check_reply=True)
+        self.assertEqual(effect, self.cube.running_effect)
+        # Anything else may replace or stop it.
+        await self.cube.send_raw_command("set_power", ["off"])
+        self.assertIsNone(self.cube.running_effect)
+        # So may a lamp restart (a new session) or an outage.
+        self.cube.note_running_effect(effect)
+        self.lamp.forget()
+        await self.cube.send_command_fast("set_bright", [40])
+        self.assertIsNone(self.cube.running_effect)
+        for mark in (self.cube.mark_unreachable, self.cube.mark_recovered):
+            self.cube.note_running_effect(effect)
+            mark()
+            self.assertIsNone(self.cube.running_effect)
+
     def frames(self):
         return [m["params"][0] for m in self.lamp.received if m["method"] == "update_leds"]
 

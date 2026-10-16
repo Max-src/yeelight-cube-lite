@@ -3,7 +3,10 @@ import time
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
-from tests.test_native_features import ROOT, CONSTANTS, NATIVE_PREVIEW, _load_standalone_functions, SERVICES_SOURCE
+from tests.test_native_features import (
+    ROOT, CONSTANTS, NATIVE_ACTIVATION, NATIVE_ACTIVATION_METHODS, NATIVE_PREVIEW,
+    _load_standalone_functions, SERVICES_SOURCE,
+)
 
 NOTE_COMMAND_RESULT = _load_standalone_functions(
     (ROOT / "command_errors.py").read_text(encoding="utf-8"), {"note_command_result"}, {"time": time}
@@ -97,22 +100,28 @@ class NativeEffectCardTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_native_palette_payload_preserves_effect_and_omits_default_color(self):
         source = (ROOT / "light_native.py").read_text(encoding="utf-8")
-        activate = _load_standalone_functions(source, {"_activate_native_effect"}, {
+        fns = _load_standalone_functions(source, NATIVE_ACTIVATION, {
             **CONSTANTS,
             "asyncio": SimpleNamespace(sleep=AsyncMock()),
             "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
             "effect_supports_color_override": NATIVE_PREVIEW["effect_supports_color_override"],
             "DEVICE_ORIENTATION_TO_EFFECT_DIR": {"right": "Right"},
-        })["_activate_native_effect"]
+        })
+        activate = fns["_activate_native_effect"]
         target = SimpleNamespace(
             _native_effect="Starry sky", _native_effect_speed=50,
             _native_effect_direction="Right", _device_orientation="right",
             _native_effect_direction_select_entity=None,
             _native_effect_color_mode="bw", _native_effect_color=None, hass=None,
-            _cube_matrix=SimpleNamespace(close_fast_socket=Mock(), send_raw_command=AsyncMock()),
+            _cube_matrix=SimpleNamespace(
+                close_fast_socket=Mock(), send_raw_command=AsyncMock(),
+                running_effect=None, note_running_effect=Mock(),
+            ),
             _set_native_mode_brightness=AsyncMock(), _notify_camera_preview=Mock(),
             _leave_direct_mode=AsyncMock(),
         )
+        for name in NATIVE_ACTIVATION_METHODS - {"_activate_native_effect"}:
+            setattr(target, name, fns[name].__get__(target))
         for effect, mode in (("Starry sky", "bw"), ("Rainbow", "red_blue"), ("Ocean Waves", "red_blue"), ("Starry sky", "normal")):
             target._native_effect = effect
             target._native_effect_color_mode = mode

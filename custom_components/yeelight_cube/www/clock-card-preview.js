@@ -14,8 +14,6 @@ import {
 import { PreviewVisibility } from "./preview-visibility.js";
 import { previewLength } from "./preview-appearance.js";
 import { clockPresetKey } from "./clock-preset-utils.js";
-import { brightnessPctToRaw } from "./slider-control-utils.js";
-import { previewBrightnessScale } from "./matrix-const.js";
 
 export const ClockPreviewMixin = (Base) => class extends Base {
   // ── Animation ─────────────────────────────────────────────────────────────
@@ -250,12 +248,8 @@ export const ClockPreviewMixin = (Base) => class extends Base {
     const frame = flipMatrixVertical(
       renderClockFrame(attrs, fontMap, metrics, phase),
     );
-    const brightnessRaw =
-      this._brightnessPreview != null
-        ? brightnessPctToRaw(this._brightnessPreview)
-        : Number(this._attrs().brightness) || 255;
     const brightnessScale = isCurrent
-      ? previewBrightnessScale(brightnessRaw)
+      ? this._lampSliders.previewScale(this._attrs())
       : 1;
     for (let i = 0; i < cells.length; i++) {
       const source = frame[i] || [0, 0, 0];

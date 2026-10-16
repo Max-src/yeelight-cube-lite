@@ -926,10 +926,10 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
           : speedPctToRaw(this._speedDraft),
     };
     const cache = new Map();
+    // The same preview brightness as the other cards (LampSliders).
     const brightness =
       this.config.preview_brightness === true
-        ? (this._brightnessDraft ?? brightnessRawToPct(attrs.brightness || 255)) /
-          100
+        ? this._lampSliders.previewScale(attrs)
         : 1;
     const off = this._state?.state === "off";
     for (const frame of this._frames) {

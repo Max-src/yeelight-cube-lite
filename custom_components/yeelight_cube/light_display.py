@@ -15,8 +15,7 @@ from yeelight import BulbException  # type: ignore
 from .color_utils import rgb_to_hex
 from .const import FIRMWARE_MODES, MODE_NATIVE_EFFECT, ROTATION_KIND_MODES
 from .cube_matrix import (
-    FRAMES,
-    frame_id,
+    trace_frame,
     CubeConnectionError,
     CubeFxModeLost,
     encode_rgb_frame,
@@ -234,29 +233,9 @@ class DisplayMixin:
                 )
                 raise CubeConnectionError("Cooldown active -- device not yet reachable")
             
-            # Check if the lamp just reconnected (socket was reset).
-            # If so, direct mode is activated again before pixel data.
-            if self._cube_matrix.consume_reconnected_flag():
-                _LOGGER.info(
-                    "[APPLY] [%s] Reconnection detected -- activating direct mode again "
-                    "(fx_direct was %s, forcing to False)",
-                    self._ip, self._fx_mode_is_direct
-                )
-                self._fx_mode_is_direct = False  # Force re-send
-            
-            # STALENESS CHECK: an idle Cube can silently leave direct FX mode
-            # (see FX_MODE_STALENESS_TIMEOUT).  Check fx_age.
-            if self._fx_mode_is_direct and self._last_fx_mode_time > 0:
-                fx_age = time.time() - self._last_fx_mode_time
-                if fx_age > FX_MODE_STALENESS_TIMEOUT:
-                    idle_seconds = time.time() - self._cube_matrix.last_command_time if self._cube_matrix.last_command_time > 0 else 999
-                    _LOGGER.debug(
-                        "[APPLY] [%s] FX mode stale -- fx_age=%.0fs > "
-                        "%.0fs threshold (idle=%.1fs), "
-                        "forcing re-activation via raw TCP",
-                        self._ip, fx_age, FX_MODE_STALENESS_TIMEOUT, idle_seconds
-                    )
-                    self._fx_mode_is_direct = False
+            # Direct mode is activated again below when it can no longer be
+            # trusted (a reconnection, or idle too long).
+            self._direct_mode_trusted()
 
             # Ensure lamp is in direct FX mode before sending pixel data
             # (ensure_fx_ready: in the UDP session, else on a fresh TCP
@@ -309,11 +288,14 @@ class DisplayMixin:
             # NOT apply the color effects again. The frame is read from the
             # layout once, processed as RGB tuples, written back once.
             frame = self._layout_colors()
-            if self._has_color_effects:
+            effects = self._has_color_effects
+            if effects:
                 frame = [self.apply_color_adjustments(rgb) for rgb in frame]
             self._base_matrix_colors = frame
-            frame = self._brightness_stages(frame)
-            self._write_layout_colors(frame)
+            staged = self._brightness_stages(frame)
+            if effects or staged is not frame:
+                self._write_layout_colors(staged)
+            frame = staged
 
             lamp_frame = self._lamp_frame(frame)
             raw_rgb_data = encode_rgb_frame(lamp_frame)
@@ -341,7 +323,7 @@ class DisplayMixin:
             )
             
             _t_before_send = time.time()
-            FRAMES.debug("[%s] frame %s", self._ip, frame_id(raw_rgb_data))
+            trace_frame(self._ip, "frame", raw_rgb_data)
             await self._draw_direct(raw_rgb_data)
             _t_after_send = time.time()
             # Refresh the FX mode timestamp on every successful draw.  Without
@@ -367,7 +349,7 @@ class DisplayMixin:
                     "(firmware just left clock/native mode)",
                     self._ip
                 )
-                FRAMES.debug("[%s] native-exit re-send: frame %s", self._ip, frame_id(raw_rgb_data))
+                trace_frame(self._ip, "native-exit re-send: frame", raw_rgb_data)
                 await self._draw_direct(raw_rgb_data)
                 self._last_fx_mode_time = time.time()
 
@@ -443,6 +425,28 @@ class DisplayMixin:
         finally:
                 if self.hass is not None:
                     self.async_schedule_update_ha_state()
+
+    def _direct_mode_trusted(self) -> bool:
+        """Whether the lamp can still be trusted to be in direct mode; when
+        not, _fx_mode_is_direct is cleared so it is activated again: the
+        connection changed (TCP took over, a new TCP socket) or it was idle
+        longer than FX_MODE_STALENESS_TIMEOUT (an idle Cube can leave direct
+        mode silently)."""
+        if self._cube_matrix.consume_reconnected_flag():
+            _LOGGER.info(
+                "[APPLY] [%s] Reconnection detected -- activating direct mode again "
+                "(fx_direct was %s)", self._ip, self._fx_mode_is_direct,
+            )
+            self._fx_mode_is_direct = False
+        elif self._fx_mode_is_direct and self._last_fx_mode_time > 0:
+            fx_age = time.time() - self._last_fx_mode_time
+            if fx_age > FX_MODE_STALENESS_TIMEOUT:
+                _LOGGER.debug(
+                    "[APPLY] [%s] Direct mode stale -- fx_age=%.0fs > %.0fs: activating it again",
+                    self._ip, fx_age, FX_MODE_STALENESS_TIMEOUT,
+                )
+                self._fx_mode_is_direct = False
+        return self._fx_mode_is_direct
 
     async def _draw_direct(self, raw_rgb_data: str) -> None:
         """Draw a frame in direct mode. When the connection changed under it

@@ -249,6 +249,29 @@ CLOCK_MIXER_FIXED_DIRECTION = {
 }
 
 
+def effect_direction_value(spec, direction):
+    """The firmware ``direction`` value (0-3) for a direction label on a native
+    effect, through its ``direction_remap`` (some effects render a direction
+    differently than the firmware's nominal value; verified on the lamp)."""
+    remap = spec.get("direction_remap")
+    if remap:
+        direction = remap.get(direction, direction)
+    return NATIVE_EFFECT_DIRECTION_VALUES[direction]
+
+
+# What update_fx_effect changes on a running native effect, live and without
+# restarting it: its rate and direction, exactly as filmed frame by frame on
+# the lamp (PROTOCOL V1, an effect without a color). Everything else takes a
+# full set_fx_effect (light_native.live_effect_changes):
+# - the clock: any live update (its speed alone too) left it dark on the lamp;
+# - an effect with a color: the update is not a single-field edit, the lamp
+#   parses the whole segment again (a missing color is reset to its default,
+#   firmware parser 0x01e30ddc), and a custom color sent live (0x01RRGGBB)
+#   left the clock dark: not verified on an effect either;
+# - a color change, another effect or palette.
+LIVE_EFFECT_KEYS = ("rate", "direction")
+
+
 def resolve_clock_mixer_direction(direction, effect_name):
     """Return the direction label for a clock style's mixer effect, or None.
 

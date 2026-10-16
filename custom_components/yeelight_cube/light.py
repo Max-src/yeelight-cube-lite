@@ -31,7 +31,6 @@ from .const import (
     DEVICE_ORIENTATION_TO_EFFECT_DIR,
     DOMAIN,
     ALL_NATIVE_EFFECTS,
-    NATIVE_CLOCK_CONTENT_BYTE,
     NATIVE_CLOCK_EFFECT_ID,
     NATIVE_CLOCK_STYLES,
     NATIVE_EFFECT_DIRECTION_VALUES,
@@ -1345,15 +1344,9 @@ class YeelightCubeLight(
                     color = clock_style_default_color(style)
                     if color is not None:
                         config["color"] = [int(color)]
-                    clock_data = bytes(
-                        (
-                            NATIVE_CLOCK_CONTENT_BYTE.get(self._native_clock_content, 1),
-                            self._native_clock_timezone_hours() & 0xFF,
-                            1 if self._native_clock_12_hour else 0,
-                            0 if self._native_clock_colon_blink else 1,
-                        )
-                    )
-                    config["data"] = base64.b64encode(clock_data).decode("ascii")
+                    config["data"] = base64.b64encode(
+                        self._native_clock_data_bytes()
+                    ).decode("ascii")
                     return {
                         "effect_id": NATIVE_CLOCK_EFFECT_ID,
                         "custom_id": style_id,
