@@ -48,6 +48,7 @@ from .cube_matrix import (
 )
 from .entity import cube_device_info
 from .layout import Layout, Module, FONT_MAPS
+from .pixel_art_storage import expand_pixels
 
 from .color_utils import hex_to_rgb, rgb_to_hex
 from .light_color import ColorPipelineMixin
@@ -522,6 +523,31 @@ class YeelightCubeLight(
         if "pixel_arts" not in self.hass.data[DOMAIN]:
             self.hass.data[DOMAIN]["pixel_arts"] = []
         return self.hass.data[DOMAIN]["pixel_arts"]
+
+    async def show_pixel_art(self, name: str, pixels: list) -> None:
+        """Show a pixel art (saved, stored grouped, or built-in, flat) as the
+        lamp's drawing, named ``name``; the pixel art and mode selects
+        follow. Used by the apply_pixel_art action and the Pixel Art select."""
+        self._custom_pixels = expand_pixels(pixels)
+        self._mode = "Custom Draw"
+        self._matrix_mode = "Custom Draw"
+        self._custom_draw_active = True
+        self._active_pixel_art_name = name
+        if not self._custom_text:
+            self._custom_text = "HELLO"
+        # A drawing does not scroll.
+        self._scroll_offset = 0
+        self._scroll_direction = 1
+        self.stop_scroll_timer()
+        self._is_scrolling = False
+        await self.async_apply_display_mode(update_type="pixel_art")
+        for entity in (
+            self._pixel_art_select_entity,
+            self._mode_select_entity,
+            self._content_mode_select_entity,
+        ):
+            if entity:
+                entity.async_update_from_light()
     
     def _sync_rgb_color(self):
         """Synchronize _rgb_color with the first color in _text_colors"""

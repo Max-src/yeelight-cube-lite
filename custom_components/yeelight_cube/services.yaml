@@ -728,8 +728,18 @@ save_pixel_art:
 
 apply_pixel_art:
   name: Apply Pixel Art
-  description: Apply a saved pixel art by index to the cube.
+  description: >-
+    Show a pixel art on the cube: a saved one by index, or a saved or built-in
+    (official app) one by name. Give either the index or the name.
   fields:
+    name:
+      description: >-
+        Name of a saved pixel art, or of a built-in one (as in the Pixel Art
+        select, e.g. "Built-in: Horizontal 01"). Instead of the index.
+      example: "Built-in: Horizontal 01"
+      required: false
+      selector:
+        text:
     expected_name:
       description: >-
         Name of the pixel art you expect at this index. When set, the call is
@@ -740,9 +750,9 @@ apply_pixel_art:
       selector:
         text:
     idx:
-      description: Index of the saved pixel art to apply (0-based)
+      description: Index of the saved pixel art to apply (0-based). Instead of the name.
       example: 0
-      required: true
+      required: false
       selector:
         number:
           min: 0

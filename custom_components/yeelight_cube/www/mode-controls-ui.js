@@ -495,6 +495,8 @@ class YeelightModeControls extends LitElement {
                 labelFor: (id) => favouriteLabel(byId.get(id), title),
                 onUpdate: (ids) => model.save(ids.map((id) => byId.get(id))),
                 addPlaceholder: "Add favourite",
+                // In the card: a long list scrolls instead of growing it.
+                maxHeight: 320,
               })
             : ""}
           ${!model.favourites.length

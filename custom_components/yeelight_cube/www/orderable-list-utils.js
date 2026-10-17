@@ -26,20 +26,19 @@ export const orderableListStyles = css`
   .orderable-list-content .orderable-list-name {
     display: block;
   }
+  /* Every row shown: in an editor the editor scrolls, never the list (a
+     scroll box of its own inside a foldable section looked cut off). A list
+     with maxHeight (inside a card) scrolls past that height instead. */
   .orderable-list {
     display: flex;
     flex-direction: column;
     gap: 6px;
     margin: 10px 0;
-    max-height: 320px;
+  }
+  .orderable-list.orderable-list-capped {
     overflow-y: auto;
     overflow-x: hidden;
     padding-right: 4px;
-  }
-  /* fullHeight: every row shown (the editor scrolls, not the list). */
-  .orderable-list.orderable-list-full {
-    max-height: none;
-    overflow-y: visible;
   }
   .orderable-list-row {
     display: flex;
@@ -167,8 +166,9 @@ export const orderableListStyles = css`
  * @param {boolean} [opts.removable=true] - show each row's remove button
  * @param {Function} [opts.thumbFor] - (name) => a small preview (trusted
  *   HTML) shown before the row's name
- * @param {boolean} [opts.fullHeight=false] - show every row instead of a
- *   scrolling box (lists whose whole order matters: Arrange)
+ * @param {number} [opts.maxHeight] - scroll past this height (px): only for
+ *   a list inside a card, which must not grow without bound. By default
+ *   every row is shown (in an editor, the editor scrolls).
  */
 export function renderOrderableList({
   items,
@@ -186,7 +186,7 @@ export function renderOrderableList({
   addable = true,
   removable = true,
   thumbFor,
-  fullHeight = false,
+  maxHeight,
 }) {
   canReorder =
     canReorder &&
@@ -308,7 +308,10 @@ export function renderOrderableList({
   });
 
   return html`
-    <div class="orderable-list${fullHeight ? " orderable-list-full" : ""}">
+    <div
+      class="orderable-list${maxHeight ? " orderable-list-capped" : ""}"
+      style=${maxHeight ? `max-height:${maxHeight}px` : ""}
+    >
       ${rows}
     </div>
     ${addable || onReset

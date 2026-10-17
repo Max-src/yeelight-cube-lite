@@ -1056,10 +1056,23 @@ When Matrix content is active, the **Display Mode** entity or Gradient Card sele
 ### Built-in Pixel Art
 
 The integration includes 68 official drawings from the Yeelight app as
-local, read-only presets. They appear alongside personal drawings in the Pixel
-Art entity, but they are not imported into, written to, or allowed to overwrite
-the personal gallery. Personal drawings can still be created, renamed, and
-removed independently.
+local, read-only presets, in two collections: **Nature** and **Geometry** (35
+drawn for a lamp lying flat, 33 for a lamp stood on its end). They are never
+imported into, written to, or allowed to overwrite your own drawings.
+
+- **Pixel Art entity:** your drawings first, then the official ones.
+- **Draw card:** the drawings in groups, **All · My drawings · Nature ·
+  Geometry**, shown as tabs by default; the editor offers the same layouts as
+  the color sections (dropdown, carousel, side by side, categories…). Picking
+  an official drawing loads it into the canvas like one of yours (and sends it
+  to the lamp with *Apply to lamp automatically*); save it to make your own
+  editable copy.
+- **On each card**, the editor's **Official pixel arts** settings choose
+  which official drawings show: the horizontal ones by default, the vertical
+  ones too with *Include vertical official pixel arts*, or exactly the ones
+  listed (with their order and names on that card). Your own drawings are
+  still renamed and deleted in the gallery.
+- **`apply_pixel_art`** shows one by name (e.g. `Built-in: Horizontal 01`).
 
 ### Native Clock
 

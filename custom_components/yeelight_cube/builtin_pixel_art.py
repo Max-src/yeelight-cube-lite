@@ -18,6 +18,12 @@ def _argb_to_rgb(value: int) -> list[int]:
 _COLS = 20
 _ROWS = 5
 
+# The app's two collections of each gallery (groups "0" and "1" of its
+# recommendation files). The app's own labels are translated strings not in
+# the extracted assets: these names follow the pictures (objects, plants and
+# animals; stripes, zigzags and fills).
+COLLECTIONS = {"0": "Nature", "1": "Geometry"}
+
 
 def _official_pos_to_lamp_pos(position: int) -> int:
     """Convert an official-app pixel index to a lamp position.
@@ -44,7 +50,10 @@ def _official_pos_to_lamp_pos(position: int) -> int:
 
 @lru_cache(maxsize=1)
 def get_builtin_pixel_arts() -> tuple[dict, ...]:
-    """Load the official horizontal and vertical recommendation galleries."""
+    """Load the official horizontal and vertical recommendation galleries:
+    ``name`` (read-only), ``collection`` (COLLECTIONS), ``orientation``
+    ("horizontal", or "vertical": drawn for a lamp stood on its end) and flat
+    ``pixels``."""
     result = []
     for orientation, filename in (
         ("Horizontal", "horizontal.json"),
@@ -68,6 +77,8 @@ def get_builtin_pixel_arts() -> tuple[dict, ...]:
                 result.append(
                     {
                         "name": f"Built-in: {orientation} {index:02d}",
+                        "collection": COLLECTIONS.get(group_key, "Official"),
+                        "orientation": orientation.lower(),
                         "pixels": pixels,
                     }
                 )
@@ -79,3 +90,12 @@ def get_builtin_pixel_arts() -> tuple[dict, ...]:
 def get_builtin_pixel_art_map() -> dict[str, dict]:
     """Return built-in drawings keyed by their read-only display name."""
     return {art["name"]: art for art in get_builtin_pixel_arts()}
+
+
+def find_pixel_art(saved: list, name: str) -> dict | None:
+    """The pixel art called ``name``: a saved one (``saved``, the user's
+    collection) first, else a built-in one; None when there is none."""
+    for index, art in enumerate(saved):
+        if isinstance(art, dict) and art.get("name", f"Pixel Art {index + 1}") == name:
+            return art
+    return get_builtin_pixel_art_map().get(name)

@@ -199,4 +199,81 @@ module.exports = async (t) => {
     { updates: 0, called: ["art:0"] },
     "gallery callbacks: no re-render, the latest called",
   );
+
+  // Official pixel arts: the groups (All, My drawings, each collection) in
+  // the shared section layouts (tabs by default), a gallery each; the
+  // horizontal ones by default, the vertical ones with their toggle; an
+  // official one loads into the drawing like a saved one.
+  const officialView = (config) =>
+    page.evaluate(async (config) => {
+      const official = (name, collection, orientation, position) => ({
+        name, collection, orientation, pixels: [{ position, color: [255, 0, 0] }],
+      });
+      const previous = hass;
+      hass = {
+        ...hass,
+        connection: {}, // a new connection: the official ones fetched again
+        callWS: async ({ type }) =>
+          type === "yeelight_cube/builtin_pixel_arts"
+            ? {
+                pixel_arts: [
+                  official("Built-in: Horizontal 01", "Nature", "horizontal", 0),
+                  official("Built-in: Horizontal 24", "Geometry", "horizontal", 21),
+                  official("Built-in: Vertical 01", "Nature", "vertical", 5),
+                ],
+              }
+            : {},
+      };
+      await mount("yeelight-cube-draw-card", {
+        entity: "light.a",
+        pixelart_sensor: "sensor.pixel",
+        style_selector_style: "preview-grid",
+        ...config,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      const sections = [...card.shadowRoot.querySelectorAll("yc-sections")].find((node) =>
+        node.querySelector("yc-collection-gallery"),
+      );
+      const modes = () =>
+        [...sections.querySelectorAll("yc-collection-gallery .gallery-item[data-mode]")].map(
+          (node) => node.dataset.mode,
+        );
+      const tabs = () => [...sections.querySelectorAll('[role="tab"]')];
+      const labels = tabs().map((tab) => tab.textContent.trim());
+      const all = modes();
+      tabs()[2].click(); // Nature
+      await sections.updateComplete;
+      await sections.querySelector("yc-collection-gallery").updateComplete;
+      const nature = modes();
+      sections.querySelector('[data-mode="builtin:Built-in: Horizontal 01"]').click();
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      const drawn = card.matrix.filter((color) => color && color.toLowerCase() !== "#000000").length;
+      // The canvas is saved in the browser: leave it blank for later tests.
+      card.matrix = card.matrix.map(() => "#000000");
+      card.constructor.getStorageUtils().saveMatrix(card.matrix);
+      hass = previous;
+      return { layout: sections.layout, labels, all, nature, drawn };
+    }, config);
+  assert.deepEqual(
+    await officialView({}),
+    {
+      layout: "tabs",
+      labels: ["All", "My drawings", "Nature", "Geometry"],
+      all: [
+        "art:0",
+        "art:1",
+        "builtin:Built-in: Horizontal 01",
+        "builtin:Built-in: Horizontal 24",
+      ],
+      nature: ["builtin:Built-in: Horizontal 01"],
+      drawn: 1,
+    },
+    "draw: official pixel arts in their sections, horizontal by default, loaded on a pick",
+  );
+  const vertical = await officialView({ pixel_art_show_vertical: true });
+  assert.deepEqual(
+    [vertical.all.includes("builtin:Built-in: Vertical 01"), vertical.nature],
+    [true, ["builtin:Built-in: Horizontal 01", "builtin:Built-in: Vertical 01"]],
+    "draw: the vertical official pixel arts with their toggle",
+  );
 };

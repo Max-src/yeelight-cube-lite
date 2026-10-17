@@ -414,11 +414,13 @@ data:
 
 ### `apply_pixel_art`
 
-Load a saved pixel art by index and display it on the lamp.
+Display a pixel art on the lamp: a saved one by index, or a saved or official
+(built-in) one by name. Give either `idx` or `name`.
 
 | Field | Required | Description |
 | :-- | :-- | :-- |
-| `idx` | Yes | 0-based index of the pixel art |
+| `idx` | One of the two | 0-based index of a saved pixel art |
+| `name` | One of the two | Name of a saved pixel art, or of an official one as listed in the Pixel Art select (e.g. `Built-in: Horizontal 01`) |
 | `expected_name` | No | Name of the pixel art you expect at `idx`. If the list changed (another browser deleted or reordered items), the call fails instead of acting on the wrong pixel art |
 | `entity_id` | Yes | Target lamp entity (single or list) |
 
@@ -434,6 +436,13 @@ Load a saved pixel art by index and display it on the lamp.
 action: yeelight_cube.apply_pixel_art
 data:
   idx: 0
+  entity_id: light.cubelite_192_168_4_102
+```
+
+```yaml
+action: yeelight_cube.apply_pixel_art
+data:
+  name: "Built-in: Horizontal 01"
   entity_id: light.cubelite_192_168_4_102
 ```
 

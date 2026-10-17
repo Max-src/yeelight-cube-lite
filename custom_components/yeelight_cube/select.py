@@ -38,7 +38,7 @@ from .const import (
     POWER_ON_STATES,
 )
 from .entity import CubeControlEntity, remove_retired_entities
-from .builtin_pixel_art import get_builtin_pixel_art_map
+from .builtin_pixel_art import find_pixel_art, get_builtin_pixel_art_map
 from .layout import FONT_MAPS
 
 _LOGGER = logging.getLogger(__name__)
@@ -374,46 +374,12 @@ class YeelightCubePixelArtSelect(CubeSelect):
         """Handle pixel art selection — apply the chosen pixel art to the lamp."""
         _LOGGER.debug("[PIXEL ART SELECT] User selected: '%s' for entity %s", option, self.entity_id)
 
-        pixel_arts = self._hass.data.get(DOMAIN, {}).get("pixel_arts", [])
-
-        # Find the pixel art by name
-        art_idx = None
-        for idx, art in enumerate(pixel_arts):
-            if art.get("name", f"Pixel Art {idx + 1}") == option:
-                art_idx = idx
-                break
-
-        if art_idx is None:
-            art = get_builtin_pixel_art_map().get(option)
-            if art is None:
-                _LOGGER.error("[PIXEL ART SELECT] Pixel art '%s' not found", option)
-                return
-        else:
-            art = pixel_arts[art_idx]
-        if "pixels" not in art or not isinstance(art["pixels"], list) or len(art["pixels"]) == 0:
-            _LOGGER.error("[PIXEL ART SELECT] Invalid pixel art format for '%s'", option)
+        art = find_pixel_art(self._hass.data.get(DOMAIN, {}).get("pixel_arts", []), option)
+        if not art or not isinstance(art.get("pixels"), list) or not art["pixels"]:
+            _LOGGER.error("[PIXEL ART SELECT] Pixel art '%s' not found or empty", option)
             return
-
-        # Apply pixel art to the light entity (same logic as handle_apply_pixel_art)
-        self._light_entity._custom_pixels = art["pixels"]
-        self._light_entity._mode = "Custom Draw"
-        self._light_entity._matrix_mode = "Custom Draw"
-        self._light_entity._custom_draw_active = True
-        self._light_entity._active_pixel_art_name = option
-        # Stop scroll timer — pixel art mode doesn't scroll
-        self._light_entity.stop_scroll_timer()
-        self._light_entity._is_scrolling = False
-
-        await self._light_entity.async_apply_display_mode(update_type='pixel_art')
+        await self._light_entity.show_pixel_art(option, art["pixels"])
         _LOGGER.debug("[PIXEL ART SELECT] Applied pixel art '%s' to %s", option, self._ip)
-
-        # Update the current selection
-        self._attr_current_option = option
-        self._write_states()
-        if self._light_entity._mode_select_entity:
-            self._light_entity._mode_select_entity.async_update_from_light()
-        if self._light_entity._content_mode_select_entity:
-            self._light_entity._content_mode_select_entity.async_update_from_light()
 
     @callback
     def async_update_from_light(self):

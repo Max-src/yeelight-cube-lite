@@ -277,6 +277,7 @@ test("Draw shows only its pending edit and accepts unrelated HA updates", () => 
     entity: "light.a",
     _pixelArtStore: new CollectionStore("pixel_arts"),
     _schedulePixelArtRender: () => renders.push("pixel arts"),
+    _loadBuiltinPixelArts: () => {}, // the official ones: not this test's
     _pixelArts: cardMethod("yeelight-cube-draw-card", "_pixelArts"),
     _hassInputs: cardMethod("yeelight-cube-draw-card", "_hassInputs", { previewOnly }),
   });

@@ -255,7 +255,7 @@ export function renderEditorSection(id, title, open, onToggle, content) {
         ></ha-icon>
       </div>
       <div class="editor-card-content" id=${`section-${id}`} ?inert=${!open}>
-        ${content}
+        <div class="editor-card-body">${content}</div>
       </div>
     </div>
   `;
@@ -369,6 +369,10 @@ export const YeelightEditorMixin = (Base) =>
      * @param {Function} options.onList - (keys) => the config with the card's
      *   own list
      * @param {Function} options.onReset - () => the config showing every item
+     *   (or the default ones: `resetLabel`)
+     * @param {string} [options.title] - the box's title (default: the noun's plural)
+     * @param {string} [options.resetLabel] - what Reset shows (default:
+     *   every item)
      */
     _galleryItemsSettings({
       noun,
@@ -377,12 +381,14 @@ export const YeelightEditorMixin = (Base) =>
       labelFor,
       onList,
       onReset,
+      title,
+      resetLabel = `Show all ${noun}s`,
     }) {
       return renderSettingsBox(
-        `${noun.charAt(0).toUpperCase()}${noun.slice(1)}s`,
+        title || `${noun.charAt(0).toUpperCase()}${noun.slice(1)}s`,
         html`<div class="hint">
-            Shown in this order. Edit a name to rename it on this card; Reset
-            shows every ${noun} again.
+            Shown in this order. Edit a name to rename it on this card;
+            "${resetLabel}" brings the list back.
           </div>
           ${renderOrderableList({
             items,
@@ -394,7 +400,7 @@ export const YeelightEditorMixin = (Base) =>
             onUpdate: (keys) => this._commitConfig(onList(keys)),
             onReset: () => this._commitConfig(onReset()),
             addPlaceholder: `Add a ${noun}…`,
-            resetLabel: `Show all ${noun}s`,
+            resetLabel,
           })}`,
       );
     }
@@ -433,7 +439,6 @@ export const YeelightEditorMixin = (Base) =>
                 available: [],
                 addable: false,
                 removable: false,
-                fullHeight: true,
                 labelFor: (key) => items[key]?.name || `${noun} ${+key + 1}`,
                 thumbFor: (key) => collectionThumbnail(kind, items[key]),
                 onUpdate: (keys) =>
@@ -596,19 +601,25 @@ export const sharedEditorStyles = css`
     cursor: pointer;
     user-select: none;
   }
+  /* Opening / closing animates the content's grid row (0fr <-> 1fr): any
+     height, never cut (a max-height cap clipped long sections). */
   .editor-card-content {
+    display: grid;
+    grid-template-rows: 1fr;
     transition:
-      max-height 0.3s,
+      grid-template-rows 0.3s,
       opacity 0.3s;
+  }
+  .editor-card-body {
+    min-height: 0;
     overflow: hidden;
   }
   .editor-card-collapsed .editor-card-content {
-    max-height: 0;
+    grid-template-rows: 0fr;
     opacity: 0;
     pointer-events: none;
   }
   .editor-card:not(.editor-card-collapsed) .editor-card-content {
-    max-height: 2000px;
     opacity: 1;
     pointer-events: auto;
   }

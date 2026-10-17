@@ -1,7 +1,8 @@
 /**
  * Which of a card's items it shows, and in which order: one rule for every
  * card with a gallery (Clock styles and color modes, Gradient modes, Native
- * effects), set in the editor's ordered list (_galleryItemsSettings).
+ * effects, official pixel arts), set in the editor's ordered list
+ * (_galleryItemsSettings).
  *
  * Each kind of item keeps two lists in the card's config:
  *   visible_<items>  the items shown, in this order (none stored: all items)
@@ -16,6 +17,7 @@ export const VISIBILITY_KEYS = Object.freeze({
   colorModes: { visible: "visible_color_modes", hidden: "hidden_color_modes" },
   gradientModes: { visible: "visible_modes", hidden: "hidden_modes" },
   effects: { visible: "visible_effects", hidden: "hidden_effects" },
+  pixelArts: { visible: "visible_pixel_arts", hidden: "hidden_pixel_arts" },
 });
 
 /**

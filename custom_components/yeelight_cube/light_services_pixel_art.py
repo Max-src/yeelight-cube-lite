@@ -1,5 +1,6 @@
 """Pixel-art actions: get, save, rename, move, remove, apply, bulk update and
-the ``yeelight_cube/ws_get_pixel_art_v2`` websocket command.
+the ``yeelight_cube/ws_get_pixel_art_v2`` and ``yeelight_cube/builtin_pixel_arts``
+websocket commands.
 
 Registered by :func:`light_services.async_setup_light_services`.
 """
@@ -7,10 +8,12 @@ import logging
 
 import voluptuous as vol  # type: ignore
 from homeassistant.components import websocket_api  # type: ignore
-from homeassistant.core import HomeAssistant, SupportsResponse  # type: ignore
+from homeassistant.core import HomeAssistant, SupportsResponse, callback  # type: ignore
+from homeassistant.exceptions import HomeAssistantError  # type: ignore
 from homeassistant.helpers import config_validation as cv  # type: ignore
 
 from . import async_save_data
+from .builtin_pixel_art import find_pixel_art, get_builtin_pixel_arts
 from .const import DOMAIN
 from .name_utils import normalize_display_name
 from .pixel_art_storage import expand_pixels, group_pixels
@@ -105,6 +108,15 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
             _LOGGER.error("[pixelart-debug] Exception in ws_get_pixel_art_v2: %s", e)
 
     websocket_api.async_register_command(hass, ws_get_pixel_art_v2)
+
+    @websocket_api.websocket_command({"type": "yeelight_cube/builtin_pixel_arts"})
+    @callback
+    def ws_builtin_pixel_arts(hass, connection, msg):
+        """The official app's pixel arts (read-only, never change while the
+        integration runs): fetched once by the cards, not carried by a state."""
+        connection.send_result(msg["id"], {"pixel_arts": list(get_builtin_pixel_arts())})
+
+    websocket_api.async_register_command(hass, ws_builtin_pixel_arts)
 
     # NOTE: Entity is already created and registered at the top of this function.
     # Do NOT create a second CubeMatrix/YeelightCubeLight here.
@@ -215,45 +227,30 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
             _LOGGER.debug("[PIXELART-RENAME] Renamed idx %s to '%s'", idx, new_name)
 
     async def handle_apply_pixel_art(service_call):
-        # Only accept idx, apply saved pixel art -- supports multi-entity parallel dispatch
+        """Show a pixel art on the lamps: a saved one by ``idx`` (with its
+        ``expected_name`` check), or a saved or built-in one by ``name``."""
         idx = service_call.data.get("idx")
+        name = service_call.data.get("name")
+        if (idx is None) == (name is None):
+            raise HomeAssistantError("Give either idx (a saved pixel art) or name")
         targets = _resolve_entities(service_call, "APPLY_PIXEL_ART")
         if not targets:
             return
-        _locate_item(
-            hass.data.get(DOMAIN, {}).get("pixel_arts", []),
-            idx,
-            service_call.data.get("expected_name"),
-            "Pixel art",
-        )
+        saved = hass.data.get(DOMAIN, {}).get("pixel_arts", [])
+        if name is None:
+            art = _locate_item(saved, idx, service_call.data.get("expected_name"), "Pixel art")
+            name = art.get("name", f"Pixel Art {idx + 1}")
+        else:
+            art = find_pixel_art(saved, name)
+            if art is None:
+                raise HomeAssistantError(f"No pixel art called '{name}'")
+        if not (isinstance(art, dict) and isinstance(art.get("pixels"), list) and art["pixels"]):
+            raise HomeAssistantError(f"Pixel art '{name}' has no pixels")
+        pixels = art["pixels"]
 
         async def _apply_one(target_entity):
-            if not (isinstance(idx, int) and 0 <= idx < len(target_entity._pixel_arts)):
-                _LOGGER.error("[pixelart-backend] apply_pixel_art: Invalid idx %s.", idx)
-                return
-            art = target_entity._pixel_arts[idx]
-            if not (isinstance(art, dict) and "pixels" in art and isinstance(art["pixels"], list) and len(art["pixels"]) > 0):
-                _LOGGER.error("[pixelart-backend] apply_pixel_art: No valid pixels for idx %s.", idx)
-                return
-            target_entity._custom_pixels = expand_pixels(art["pixels"])
-            target_entity._mode = "Custom Draw"
-            target_entity._matrix_mode = "Custom Draw"
-            target_entity._custom_draw_active = True
-            target_entity._active_pixel_art_name = art.get("name", f"Pixel Art {idx + 1}")
-            if not target_entity._custom_text:
-                target_entity._custom_text = "HELLO"
-            target_entity._scroll_offset = 0
-            target_entity._scroll_direction = 1
-            target_entity.stop_scroll_timer()
-            target_entity._is_scrolling = False
-            await target_entity.async_apply_display_mode(update_type='pixel_art')
-            if target_entity._pixel_art_select_entity:
-                target_entity._pixel_art_select_entity.async_update_from_light()
-            if target_entity._mode_select_entity:
-                target_entity._mode_select_entity.async_update_from_light()
-            if target_entity._content_mode_select_entity:
-                target_entity._content_mode_select_entity.async_update_from_light()
-            _LOGGER.debug("[pixelart-backend] Applied pixel art idx %s to %s.", idx, target_entity._ip)
+            await target_entity.show_pixel_art(name, pixels)
+            _LOGGER.debug("[pixelart-backend] Applied pixel art '%s' to %s.", name, target_entity._ip)
 
         run_on_lamps("APPLY_PIXEL_ART", targets, _apply_one)
 
@@ -355,7 +352,8 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
         "apply_pixel_art",
         handle_apply_pixel_art,
         schema=vol.Schema({
-            vol.Required("idx"): vol.All(int, vol.Range(min=0)),
+            vol.Optional("idx"): vol.All(int, vol.Range(min=0)),
+            vol.Optional("name"): cv.string,
             vol.Optional("expected_name"): vol.Any(None, cv.string),
             vol.Required("entity_id"): _entity_id_or_list,
         }, extra=vol.ALLOW_EXTRA)

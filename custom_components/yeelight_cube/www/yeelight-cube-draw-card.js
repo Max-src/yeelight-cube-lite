@@ -25,7 +25,7 @@ import {
   onMatrixMouseLeave,
 } from "./draw_card_events.js";
 import { normalizeHex, extractDiversePaletteWithWeights } from "./draw_utils.js";
-import { rgbToHex } from "./color-utils.js";
+import { isDarkTheme, rgbToHex } from "./color-utils.js";
 import {
   GRID_COLS,
   GRID_ROWS,
@@ -42,7 +42,14 @@ import { normalizeCardOptions } from "./card-config.js";
 import { defineOnce, registerCustomCard } from "./card-registration.js";
 import { PaletteCardsMixin } from "./draw-card-palette-cards.js";
 import { PixelArtActionsMixin } from "./draw-card-pixel-art-actions.js";
-import { pixelArtColorData } from "./pixel-art-utils.js";
+import {
+  MY_DRAWINGS,
+  builtinArtKey,
+  loadBuiltinPixelArts,
+  pixelArtColorData,
+  pixelArtSections,
+  shownBuiltinPixelArts,
+} from "./pixel-art-utils.js";
 import { CollectionStore } from "./user-collections.js";
 import "./collection-gallery.js";
 
@@ -225,6 +232,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
 
     this._hass = hass;
     if (!hass) return;
+    this._loadBuiltinPixelArts(hass);
     // The pixel arts (a new content, a fetch, a confirmed edit): the store
     // compares the sensor's hash and refreshes the gallery only.
     if (this.config?.pixelart_sensor && this._pixelArtStore.update(hass, this.config))
@@ -270,6 +278,21 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
       clearTimeout(this._applyPixelArtTimer);
       this._applyPixelArtTimer = null;
     }
+  }
+
+  // The official pixel arts, once (pixel-art-utils loadBuiltinPixelArts):
+  // the gallery shows them when they arrive.
+  _loadBuiltinPixelArts(hass) {
+    if (this._builtinPixelArts || this._builtinPixelArtsLoading) return;
+    this._builtinPixelArtsLoading = loadBuiltinPixelArts(hass)
+      .then((arts) => {
+        this._builtinPixelArts = arts;
+        this._schedulePixelArtRender();
+      })
+      .catch((error) => console.warn("[draw-card] Official pixel arts unavailable:", error))
+      .finally(() => {
+        this._builtinPixelArtsLoading = null;
+      });
   }
 
   _matrixColorCount() {
@@ -351,9 +374,12 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
 
   /**
    * The pixel-art gallery: the shared gallery (collection-gallery.js) with
-   * the stored pixel arts (with this card's pending edits). Picking one
-   * loads it into the drawing, and sends it to the lamp too with "Apply to
-   * lamp automatically".
+   * the stored pixel arts (with this card's pending edits) and the official
+   * ones. Picking one loads it into the drawing, and sends it to the lamp
+   * too with "Apply to lamp automatically". With official ones, the groups
+   * (All, My drawings, each collection) are the shared section layouts
+   * (<yc-sections>, the same choices as the color sections), one gallery
+   * each; only the sections shown are rendered.
    */
   _renderPixelArtGallery() {
     const cfg = this.config || {};
@@ -361,36 +387,93 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
       return html`<div class="pixelart-gallery-message">
         Pixel art sensor not found or not configured.
       </div>`;
+    const items = this._pixelArtGalleryItems(this._pixelArts());
+    const sections = this._pixelArtSectionsCache;
+    if (!sections.length) return this._pixelArtGallery(items);
+    const border = cfg.pixel_art_groups_border || "auto";
+    return html`<yc-sections
+      layout=${cfg.pixel_art_groups_layout || "tabs"}
+      .sections=${sections.map((section) => ({
+        key: section.key,
+        title: section.title,
+        icon: section.icon,
+        empty: !section.items.length,
+        content: () => this._pixelArtGallery(section.items),
+      }))}
+      .options=${{
+        style: cfg.pixel_art_groups_style || "subtle",
+        bordered: border === "always" || (border === "auto" && isDarkTheme(this, this.hass)),
+        width: cfg.pixel_art_groups_width || 100,
+        zoom: cfg.pixel_art_groups_zoom === "on",
+        radius: cfg.pixel_art_groups_radius,
+        buttonShape: cfg.pixel_art_groups_button_shape || "rounded",
+        wrap: cfg.pixel_art_groups_wrap === true,
+        overlay: cfg.pixel_art_groups_overlay === true,
+        // Preview Hover renders the galleries in its own shadow root.
+        contentStyles: this.constructor.styles,
+        tabIcons: cfg.pixel_art_groups_tab_icons === true,
+        headers: cfg.pixel_art_groups_headers !== false,
+        label: "Pixel art collections",
+        emptyLabel: "No pixel art",
+      }}
+    ></yc-sections>`;
+  }
+
+  // One gallery of pixel arts (`items`: all of them, or a section's).
+  _pixelArtGallery(items) {
+    const cfg = this.config || {};
     const autoApply = cfg.pixel_art_auto_apply_to_lamp === true;
     return html`<yc-collection-gallery
       .config=${cfg}
-      .items=${this._pixelArtGalleryItems(this._pixelArts())}
+      .items=${items}
       .active=${this._activePixelArtKey()}
       searchLabel="Search pixel arts"
       emptyLabel="No pixel art saved yet."
       .navigateSelects=${false}
       actionLabel=${autoApply ? "Load into the drawing and the lamp" : "Load into the drawing"}
       .onSelect=${(key) =>
-        this._handlePixelArtCanvasClick(artIndex(key), autoApply)}
+        String(key).startsWith("builtin:")
+          ? this._handleBuiltinPixelArtClick(key, autoApply)
+          : this._handlePixelArtCanvasClick(artIndex(key), autoApply)}
       .onRename=${(key, name) => this._renamePixelArt(artIndex(key), name)}
       .onDelete=${(key) => this._deletePixelArt(artIndex(key))}
     ></yc-collection-gallery>`;
   }
 
-  // The pixel arts as gallery items, memoized by the list shown: the card
-  // re-renders on every stroke, the gallery only when the arts change.
+  // The pixel arts as gallery items: the user's own ("My drawings", renamed
+  // and deleted in the gallery), then the official ones the card shows
+  // (shownBuiltinPixelArts; in their collections' sections, named and hidden
+  // in the editor), and their sections (pixelArtSections). Memoized by what
+  // they come from: the card re-renders on every stroke, the galleries only
+  // when they change.
   _pixelArtGalleryItems(arts) {
-    if (this._galleryItemsSource !== arts) {
-      this._galleryItemsSource = arts;
-      // Each art's picture as a key, to find the one on the canvas.
+    const builtins = this._builtinPixelArts || null;
+    const source = this._galleryItemsSource;
+    if (
+      source?.arts !== arts ||
+      source?.builtins !== builtins ||
+      source?.config !== this.config
+    ) {
+      this._galleryItemsSource = { arts, builtins, config: this.config };
+      // Each art's picture as a key, to find the one on the canvas (the
+      // user's own first).
       this._artByPicture = new Map();
-      this._galleryItemsCache = arts.map((art, idx) => {
+      const item = (art, key, extra) => {
         const name = art?.name || "Unnamed";
         const colorData = pixelArtColorData(art);
         const picture = colorData.map((color) => rgbToHex(color)).join(",");
-        if (!this._artByPicture.has(picture)) this._artByPicture.set(picture, artKey(idx));
-        return { dataMode: artKey(idx), name, title: name, colorData, editable: true };
-      });
+        if (!this._artByPicture.has(picture)) this._artByPicture.set(picture, key);
+        return { dataMode: key, name, title: name, colorData, ...extra };
+      };
+      this._galleryItemsCache = [
+        ...arts.map((art, idx) =>
+          item(art, artKey(idx), { editable: true, group: MY_DRAWINGS }),
+        ),
+        ...shownBuiltinPixelArts(builtins || [], this.config).map((art) =>
+          item(art, builtinArtKey(art), { group: art.collection }),
+        ),
+      ];
+      this._pixelArtSectionsCache = pixelArtSections(this._galleryItemsCache);
     }
     return this._galleryItemsCache;
   }

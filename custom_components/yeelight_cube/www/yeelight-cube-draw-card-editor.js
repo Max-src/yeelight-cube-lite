@@ -22,8 +22,62 @@ import {
 import { createToggleRow, createSliderRow } from "./form-row-utils.js";
 import { TOOL_CONFIG } from "./draw_card_const.js";
 import { defineOnce } from "./card-registration.js";
+import {
+  builtinArtKey,
+  loadBuiltinPixelArts,
+  shownBuiltinPixelArts,
+} from "./pixel-art-utils.js";
+import { VISIBILITY_KEYS, withAllItems, withVisibleItems } from "./visible-items.js";
 
 class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
+  // The official pixel arts this card shows (the shared item list: order,
+  // names, hidden ones); the horizontal ones by default.
+  _officialPixelArtSettings() {
+    if (!this._builtinPixelArts) {
+      if (this._hass && !this._builtinPixelArtsLoading)
+        this._builtinPixelArtsLoading = loadBuiltinPixelArts(this._hass)
+          .then((arts) => {
+            this._builtinPixelArts = arts;
+            this.requestUpdate();
+          })
+          .catch(() => {})
+          .finally(() => (this._builtinPixelArtsLoading = null));
+      return "";
+    }
+    const arts = this._builtinPixelArts;
+    if (!arts.length) return "";
+    const byKey = new Map(arts.map((art) => [builtinArtKey(art), art]));
+    return html`${createToggleRow(
+        "Include vertical official pixel arts",
+        "pixel_art_show_vertical",
+        this._config.pixel_art_show_vertical === true,
+        (e) => this._onSwitchChange(e, "pixel_art_show_vertical"),
+      )}
+      <div class="hint">
+        Drawn for a lamp stood on its end: on a lamp lying flat they show
+        sideways. (A list below, once edited, decides instead.)
+      </div>
+      ${this._galleryItemsSettings({
+      noun: "official pixel art",
+      title: "Official pixel arts",
+      items: shownBuiltinPixelArts(arts, this._config).map(builtinArtKey),
+      all: arts.map(builtinArtKey),
+      labelFor: (key) => {
+        const art = byKey.get(key);
+        return art ? `${art.name} (${art.collection})` : key;
+      },
+      onList: (keys) =>
+        withVisibleItems(
+          this._config,
+          VISIBILITY_KEYS.pixelArts,
+          arts.map(builtinArtKey),
+          keys,
+        ),
+      onReset: () => withAllItems(this._config, VISIBILITY_KEYS.pixelArts),
+      resetLabel: "Show the default ones",
+    })}`;
+  }
+
   static get properties() {
     return {
       hass: { type: Object },
@@ -436,6 +490,28 @@ class YeelightCubeDrawCardEditor extends YeelightEditorMixin(LitElement) {
               },
             )}
             ${this._arrangeSettings("pixel_arts")}
+            ${this._officialPixelArtSettings()}
+            <!-- The groups (All, My drawings, each official collection):
+                 the shared section layouts, as for the color sections. -->
+            ${renderSectionLayoutSettings({
+              config: this._config,
+              set: (key, value) => this._setOption(key, value),
+              keys: {
+                layout: "pixel_art_groups_layout",
+                style: "pixel_art_groups_style",
+                border: "pixel_art_groups_border",
+                width: "pixel_art_groups_width",
+                zoom: "pixel_art_groups_zoom",
+                radius: "pixel_art_groups_radius",
+                buttonShape: "pixel_art_groups_button_shape",
+                wrap: "pixel_art_groups_wrap",
+                overlay: "pixel_art_groups_overlay",
+                tabIcons: "pixel_art_groups_tab_icons",
+                headers: "pixel_art_groups_headers",
+              },
+              defaults: { layout: "tabs", border: "auto", tabIcons: false, headers: true },
+              styled: ["grouped", "compact"],
+            })}
         `)}
 
         <!-- Import/Export Actions Section -->

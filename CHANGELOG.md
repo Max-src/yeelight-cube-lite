@@ -5,6 +5,18 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Official pixel arts in the Draw card**: the 68 drawings of the Yeelight
+  app show in the Draw card, in groups **All · My drawings · Nature ·
+  Geometry** with the same layouts as the color sections (tabs by default;
+  dropdown, carousel, categories…). The horizontal ones show by default, the
+  vertical ones with a toggle. Picking one loads it into the drawing like
+  your own. They are read-only: each card's editor chooses which ones show,
+  their order and their names (**Official pixel arts**), and saving one makes
+  your own editable copy.
+- `apply_pixel_art` also takes a pixel art by **name**, a saved or an
+  official one, instead of its index.
+
 ### Changed
 - **Native effects change live**: a new speed or direction on the running
   effect is sent as a live update (`update_fx_effect`, as the Yeelight app

@@ -10,11 +10,31 @@ import { MATRIX_SIZE } from "./draw_card_const.js";
 import { StorageUtils } from "./draw_card_storage.js";
 
 export const PixelArtActionsMixin = (Base) => class extends Base {
+  // A saved pixel art picked in the gallery: loaded, and sent to the lamp
+  // with "Apply to lamp automatically".
   async _handlePixelArtCanvasClick(idx, autoApplyToLamp) {
+    return this._pickPixelArt(() => this._applyPixelArtToMatrix(idx), autoApplyToLamp);
+  }
+
+  // An official pixel art picked in the gallery (its key, builtinArtKey):
+  // the same, from the read-only list (a copy: drawing on it never changes
+  // it; saving it makes it one of the user's own).
+  async _handleBuiltinPixelArtClick(key, autoApplyToLamp) {
+    const art = (this._builtinPixelArts || []).find(
+      (item) => `builtin:${item.name}` === key,
+    );
+    return this._pickPixelArt(
+      () => (art ? this._loadPixelArt(art) : false),
+      autoApplyToLamp,
+    );
+  }
+
+  async _pickPixelArt(load, autoApplyToLamp) {
+    this._pixelArtProblem = null;
     try {
       // Always apply to matrix; send it to the lamp only if that worked
       // (otherwise the lamp would just get the previous drawing again).
-      const applied = await this._applyPixelArtToMatrix(idx);
+      const applied = await load();
       if (!applied) {
         throw new Error(
           this._pixelArtProblem || "This pixel art could not be loaded.",
@@ -63,36 +83,41 @@ export const PixelArtActionsMixin = (Base) => class extends Base {
     return true;
   }
 
-  /** Load pixel art ``idx`` into the drawing matrix. Returns true if it was
-   * loaded; otherwise false, with the reason in ``_pixelArtProblem``. */
+  _pixelArtFailed(problem, detail) {
+    this._pixelArtProblem = problem;
+    console.error(`[draw-card] ${problem}`, detail ?? "");
+    return false;
+  }
+
+  /** Load saved pixel art ``idx`` into the drawing matrix. Returns true if it
+   * was loaded; otherwise false, with the reason in ``_pixelArtProblem``. */
   async _applyPixelArtToMatrix(idx) {
     const cfg = this.config || {};
-    const pixelartSensor = cfg.pixelart_sensor;
     this._pixelArtProblem = null;
-    const fail = (problem, detail) => {
-      this._pixelArtProblem = problem;
-      console.error(`[draw-card] ${problem}`, detail ?? "");
-      return false;
-    };
-
-    if (!this.hass || !pixelartSensor || !this._pixelArtSensorState()) {
-      return fail(
+    if (!this.hass || !cfg.pixelart_sensor || !this._pixelArtSensorState()) {
+      return this._pixelArtFailed(
         "Cannot apply pixel art to matrix: missing hass or pixelart_sensor",
       );
     }
+    // The list the gallery shows (including a pending edit), so the index
+    // clicked is the art the user saw.
+    const pixelArts = this._pixelArts();
+    const pixelArt = pixelArts[idx];
+    if (!pixelArt || !pixelArt.pixels) {
+      return this._pixelArtFailed(
+        `Pixel art ${idx} not found or has no pixels (the card has ${pixelArts.length} pixel arts).`,
+        pixelArt,
+      );
+    }
+    return this._loadPixelArt(pixelArt);
+  }
 
+  /** Load a pixel art (saved or official, stored or flat pixels) into the
+   * drawing matrix. Returns true if it was loaded; otherwise false, with the
+   * reason in ``_pixelArtProblem``. */
+  _loadPixelArt(pixelArt) {
+    const fail = (problem, detail) => this._pixelArtFailed(problem, detail);
     try {
-      // The list the gallery shows (including a pending edit), so the index
-      // clicked is the art the user saw.
-      const pixelArts = this._pixelArts();
-      const pixelArt = pixelArts[idx];
-
-      if (!pixelArt || !pixelArt.pixels) {
-        return fail(
-          `Pixel art ${idx} not found or has no pixels (the card has ${pixelArts.length} pixel arts).`,
-          pixelArt,
-        );
-      }
       let placed = 0;
 
       const previous = this.matrix;
@@ -144,7 +169,10 @@ export const PixelArtActionsMixin = (Base) => class extends Base {
       this.requestUpdate();
       return true;
     } catch (err) {
-      return fail(`Error applying pixel art ${idx} to matrix: ${err?.message || err}`, err);
+      return fail(
+        `Error applying pixel art "${pixelArt?.name}" to matrix: ${err?.message || err}`,
+        err,
+      );
     }
   }
 
