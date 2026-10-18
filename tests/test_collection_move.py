@@ -1,18 +1,13 @@
 import re
 import unittest
 
-from tests.test_native_features import ROOT, _load_standalone_functions
-
-
-class _Error(Exception):
-    pass
+from tests.test_native_features import ROOT, TranslatedError, _load_standalone_functions
 
 
 COMMON = _load_standalone_functions(
     (ROOT / "light_services_common.py").read_text(encoding="utf-8"),
     {"_locate_item", "_move_item"},
     {
-        "HomeAssistantError": _Error,
         "normalize_display_name": lambda name, default: (name or default).strip(),
     },
 )
@@ -30,21 +25,21 @@ class CollectionMoveTests(unittest.TestCase):
 
     def test_moves_one_item_both_ways(self):
         items = self.items()
-        self.assertTrue(move(items, 3, 0, "D", "Palette"))
+        self.assertTrue(move(items, 3, 0, "D", "palette"))
         self.assertEqual(self.names(items), ["D", "A", "B", "C"])
-        self.assertTrue(move(items, 0, 2, "D", "Palette"))
+        self.assertTrue(move(items, 0, 2, "D", "palette"))
         self.assertEqual(self.names(items), ["A", "B", "D", "C"])
 
     def test_same_position_changes_nothing(self):
         items = self.items()
-        self.assertFalse(move(items, 1, 1, "B", "Palette"))
+        self.assertFalse(move(items, 1, 1, "B", "palette"))
         self.assertEqual(self.names(items), ["A", "B", "C", "D"])
 
     def test_stale_or_out_of_range_moves_are_refused(self):
         items = self.items()
         for args in ((1, 0, "C"), (9, 0, None), (0, 4, "A"), (0, -1, "A")):
-            with self.subTest(args=args), self.assertRaises(_Error):
-                move(items, *args, "Palette")
+            with self.subTest(args=args), self.assertRaises(TranslatedError):
+                move(items, *args, "palette")
         self.assertEqual(self.names(items), ["A", "B", "C", "D"])
 
     def test_both_collections_use_it(self):
@@ -75,6 +70,7 @@ class SaveAsPaletteTests(unittest.IsolatedAsyncioTestCase):
             async_create_task=lambda coro: coro.close(),
         )
         lamp = SimpleNamespace(entity_id="light.a")
+        self.runs = []
         handler = _load_standalone_functions(
             (ROOT / "light_services_display.py").read_text(encoding="utf-8"),
             {"handle_set_text_colors"},
@@ -84,7 +80,8 @@ class SaveAsPaletteTests(unittest.IsolatedAsyncioTestCase):
                 "asyncio": asyncio,
                 "_LOGGER": Mock(),
                 "_resolve_entities": lambda call, name: [lamp],
-                "async_save_data": AsyncMock(),
+                # The shared multi-lamp runner (light_services_common).
+                "run_on_lamps": lambda label, lamps, apply: self.runs.append((label, lamps)),
             },
         )["handle_set_text_colors"]
         await handler(SimpleNamespace(data=data))
@@ -104,3 +101,12 @@ class SaveAsPaletteTests(unittest.IsolatedAsyncioTestCase):
     async def test_saves_nothing_by_default(self):
         call = await self.run_set_text_colors({"text_colors": [[255, 0, 0]]})
         call.assert_not_awaited()
+
+    async def test_the_lamps_are_updated_like_every_multi_lamp_action(self):
+        # Through run_on_lamps: a lamp's failure is logged and shown on the
+        # cards, like every other action that updates several lamps.
+        await self.run_set_text_colors({"text_colors": [[255, 0, 0]]})
+        self.assertEqual(
+            [("SET_TEXT_COLORS", ["light.a"])],
+            [(label, [lamp.entity_id for lamp in lamps]) for label, lamps in self.runs],
+        )

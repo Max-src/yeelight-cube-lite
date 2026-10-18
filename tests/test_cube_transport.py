@@ -48,6 +48,11 @@ cube_matrix = _load_cube_matrix()
 class CubeTransportTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         _Bulb.sent.clear()
+        # The TCP gate's pace (the lamp's quota, about 1 s), short here; its
+        # own tests below set it.
+        self.interval = cube_matrix.TCP_COMMAND_INTERVAL
+        cube_matrix.TCP_COMMAND_INTERVAL = 0.0
+        self.addCleanup(setattr, cube_matrix, "TCP_COMMAND_INTERVAL", self.interval)
         loop = asyncio.get_running_loop()
         self.lamp = FakeLamp()
         self.server, _ = await loop.create_datagram_endpoint(
@@ -204,6 +209,164 @@ class CubeTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_the_probe_asks_the_session(self):
         self.assertTrue(await self.cube.probe(0.2))
         self.assertEqual(["udp_sess_new"], self.udp_methods())
+
+    async def test_tcp_on_demand_then_udp_again(self):
+        # diagnostics force_tcp: every command over TCP for a while, as when
+        # UDP fails (direct mode activated again over TCP), then UDP again.
+        await self.cube.send_command_with_recovery("set_bright", [50])
+        self.cube.force_tcp(60)
+        self.assertEqual("tcp", self.cube.transport)
+        self.assertTrue(self.cube.consume_reconnected_flag())
+        self.assertAlmostEqual(60, self.cube.connection_state()["tcp_forced_for"], delta=1)
+        received = len(self.lamp.received)
+        await self.cube.send_command_with_recovery("set_bright", [60])
+        self.assertEqual([("set_bright", [60])], _Bulb.sent)
+        self.assertEqual(received, len(self.lamp.received))  # nothing over UDP
+        # A lamp coming back online does not end it early.
+        self.cube.mark_recovered()
+        self.assertEqual("tcp", self.cube.transport)
+        self.cube.force_tcp(0)
+        self.assertEqual("udp", self.cube.transport)
+        self.assertIsNone(self.cube.connection_state()["tcp_forced_for"])
+        await self.cube.send_command_with_recovery("set_bright", [70])
+        self.assertEqual("set_bright", self.udp_methods()[-1])
+        self.assertEqual(1, len(_Bulb.sent))
+
+    async def test_tcp_commands_wait_their_turn_and_only_the_latest_frame_goes(self):
+        # Over TCP the lamp takes about one command a second (watched tests:
+        # faster, it refused them, "client quota exceeded"). A frame still
+        # waiting when a newer one comes is dropped: only the latest is drawn.
+        cube_matrix.TCP_COMMAND_INTERVAL = 0.2
+        loop = asyncio.get_running_loop()
+        turns = []
+
+        async def turn(command, label):
+            ok = await self.cube._tcp_turn(command)
+            turns.append((label, ok, round(loop.time() - started, 1)))
+
+        started = loop.time()
+        await asyncio.gather(
+            turn("set_bright", "brightness"),
+            turn("update_leds", "frame 1"),
+            turn("update_leds", "frame 2"),
+            turn("update_leds", "frame 3"),
+            turn("set_fx_effect", "effect"),
+        )
+        self.assertEqual([
+            ("brightness", True, 0.0),
+            ("frame 1", False, 0.2),  # replaced while waiting
+            ("frame 2", False, 0.2),
+            ("frame 3", True, 0.2),   # the latest
+            ("effect", True, 0.4),
+        ], turns)
+
+    async def test_a_quota_refusal_pauses_the_tcp_commands(self):
+        cube_matrix.TCP_COMMAND_INTERVAL = 0.0
+        original = cube_matrix.TCP_QUOTA_PAUSE
+        cube_matrix.TCP_QUOTA_PAUSE = 0.3
+        self.addCleanup(setattr, cube_matrix, "TCP_QUOTA_PAUSE", original)
+        loop = asyncio.get_running_loop()
+        self.cube._note_quota_refusal({"code": -1, "message": "client quota exceeded"})
+        self.cube._note_quota_refusal({"code": 6, "message": "illegal request"})  # not the quota
+        started = loop.time()
+        self.assertTrue(await self.cube._tcp_turn("set_bright"))
+        self.assertAlmostEqual(0.3, loop.time() - started, delta=0.1)
+        started = loop.time()
+        self.assertTrue(await self.cube._tcp_turn("set_bright"))
+        self.assertLess(loop.time() - started, 0.1)  # once
+
+    async def test_every_tcp_send_goes_through_the_gate(self):
+        import ast
+
+        source = (ROOT / "cube_matrix.py").read_text(encoding="utf-8")
+        cube = next(n for n in ast.parse(source).body if getattr(n, "name", "") == "CubeMatrix")
+        methods = {n.name: ast.unparse(n) for n in cube.body if isinstance(n, ast.AsyncFunctionDef)}
+        for method in ("send_raw_command", "query_raw_command", "send_command_fast", "send_command_with_recovery"):
+            self.assertIn("self._tcp_turn(command)", methods[method], method)
+        for gone in ("FAST_SEQUENTIAL_INTERVAL", "SAFE_SUSTAINED_INTERVAL", "_min_command_interval"):
+            self.assertNotIn(gone, source)
+
+    async def test_the_light_hears_of_each_switch(self):
+        # UDP failing and answering again change the connection without a
+        # state change: on_transport_change lets the light publish it.
+        original = cube_matrix.UDP_RECOVERY_PING
+        cube_matrix.UDP_RECOVERY_PING = 0.05
+        self.addCleanup(setattr, cube_matrix, "UDP_RECOVERY_PING", original)
+        seen = []
+        self.cube.on_transport_change = lambda: seen.append(self.cube.transport)
+        await self.cube.send_command_with_recovery("set_bright", [50])
+        self.assertEqual([], seen)  # UDP works: nothing switched
+        self.lamp.silent = True
+        await self.cube.send_command_with_recovery("set_bright", [60])
+        self.assertEqual(["tcp"], seen)
+        self.lamp.silent = False
+        for _ in range(40):
+            if len(seen) > 1:
+                break
+            await asyncio.sleep(0.05)
+        self.assertEqual(["tcp", "udp"], seen)
+
+    async def test_udp_comes_back_as_soon_as_the_lamp_answers(self):
+        # A lamp silent for a moment: TCP meanwhile, then UDP again within a
+        # ping (not after UDP_RETRY_AFTER), without a command waiting for it.
+        original = cube_matrix.UDP_RECOVERY_PING
+        cube_matrix.UDP_RECOVERY_PING = 0.05
+        self.addCleanup(setattr, cube_matrix, "UDP_RECOVERY_PING", original)
+        self.lamp.silent = True
+        await self.cube.send_command_with_recovery("set_bright", [50])
+        self.assertEqual("tcp", self.cube.transport)
+        tcp = types.SimpleNamespace(setsockopt=lambda *args: None, closed=False)
+        tcp.close = lambda: setattr(tcp, "closed", True)
+        self.cube._fast_socket, self.cube._fast_socket_time = tcp, 1.0  # the TCP connection meanwhile
+        await asyncio.sleep(0.15)  # still silent: still TCP
+        self.assertEqual("tcp", self.cube.transport)
+        self.lamp.silent = False
+        for _ in range(40):
+            if self.cube.transport == "udp":
+                break
+            await asyncio.sleep(0.05)
+        self.assertEqual("udp", self.cube.transport)
+        # No longer failing, even before a command (no Repair for a quiet lamp).
+        self.assertIsNone(self.cube.connection_state()["udp_failing_for"])
+        self.assertTrue(tcp.closed)
+        await self.cube.send_command_with_recovery("set_bright", [60])
+        self.assertEqual("set_bright", self.udp_methods()[-1])
+        self.assertEqual([("set_bright", [50])], _Bulb.sent)  # only the one during the silence
+
+    async def test_the_recovery_stops_with_the_lamp(self):
+        self.lamp.silent = True
+        await self.cube.send_command_with_recovery("set_bright", [50])
+        recovery = self.cube._udp_recovery
+        self.assertFalse(recovery.done())
+        self.cube.close()
+        await asyncio.sleep(0)
+        self.assertTrue(recovery.cancelled() or recovery.done())
+
+    async def test_an_idle_closed_session_is_still_udp(self):
+        # The lamp drops an idle session; the next command opens a new one.
+        # The connection label is not "tcp" meanwhile (it means UDP failed).
+        await self.cube.send_command_with_recovery("set_bright", [50])
+        self.cube._udp.close()
+        self.assertEqual("udp", self.cube.transport)
+        await self.cube.send_command_with_recovery("set_bright", [60])
+        self.assertEqual("udp", self.cube.transport)
+        self.assertEqual([], _Bulb.sent)
+
+    async def test_the_tcp_connection_is_closed_once_udp_works_again(self):
+        # UDP failed while the lamp answered over TCP; once UDP works again
+        # (its retry), the TCP connection opened meanwhile is closed.
+        self.lamp.silent = True
+        await self.cube.send_command_with_recovery("set_bright", [50])
+        self.assertEqual("tcp", self.cube.transport)
+        tcp = types.SimpleNamespace(setsockopt=lambda *args: None, closed=False)
+        tcp.close = lambda: setattr(tcp, "closed", True)
+        self.cube._fast_socket, self.cube._fast_socket_time = tcp, 1.0
+        self.lamp.silent = False
+        self.cube._udp_retry_at = 0.0  # UDP_RETRY_AFTER has passed
+        await self.cube.send_command_with_recovery("set_bright", [60])
+        self.assertEqual("udp", self.cube.transport)
+        self.assertTrue(tcp.closed)
+        self.assertIsNone(self.cube._fast_socket)
 
 
 if __name__ == "__main__":

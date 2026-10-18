@@ -23,21 +23,13 @@ from .layout import FONT_MAPS, Module, TOTAL_COLUMNS, TOTAL_ROWS, char_advance
 
 _LOGGER = logging.getLogger(__name__)
 
+# (font, character) pairs already reported as having no glyph.
+_MISSING_GLYPHS: set = set()
+
 
 class MatrixRenderMixin:
     """Render text / gradients / pixel-art into the 5x20 matrix."""
 
-    def calculate_gradient_color(self, start_color, end_color, position, total_positions):
-        def interpolate(start, end, factor):
-            factor = max(0, min(1, factor))
-            return min(255, max(0, round(start + (end - start) * factor)))
-        if total_positions <= 1:
-            return start_color
-        factor = position / (total_positions - 1)
-        return tuple(
-            interpolate(start, end, factor)
-            for start, end in zip(start_color, end_color)
-        )
 
     def calculate_text_offset(self, total_text_width: int, total_columns: int = TOTAL_COLUMNS) -> int:
         # Check if text needs scrolling - always scroll when text is too long
@@ -458,7 +450,11 @@ class MatrixRenderMixin:
         if letter == PANEL_FULL_CHAR:
             return list(range(TOTAL_COLUMNS * TOTAL_ROWS))
         font_map = FONT_MAPS.get(self._font, FONT_MAPS.get("basic", {}))
-        positions = font_map.get(letter, [])
-        if not positions:
-            _LOGGER.warning("[GET_POSITIONS] No positions found for letter '%s' in font '%s'", letter, self._font)
-        return positions
+        if letter not in font_map:
+            # A character the font has no glyph for (a space is one, empty):
+            # drawn as nothing, reported once (not at every redraw).
+            if (self._font, letter) not in _MISSING_GLYPHS:
+                _MISSING_GLYPHS.add((self._font, letter))
+                _LOGGER.warning("[GET_POSITIONS] No glyph for '%s' in font '%s': not drawn", letter, self._font)
+            return []
+        return font_map[letter]

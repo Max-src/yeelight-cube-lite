@@ -6,6 +6,11 @@ from unittest.mock import Mock
 
 from tests.test_native_features import LIGHT_SOURCE, ROOT, _load_standalone_functions
 
+# The shared brightness mapping (light_color.hardware_brightness_for).
+HARDWARE_BRIGHTNESS_FOR = _load_standalone_functions(
+    (ROOT / "light_color.py").read_text(encoding="utf-8"), {"hardware_brightness_for"}
+)["hardware_brightness_for"]
+
 _spec = importlib.util.spec_from_file_location("lamp_power", ROOT / "lamp_power.py")
 lamp_power = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(lamp_power)
@@ -120,7 +125,10 @@ class LampPowerTests(unittest.TestCase):
     def test_firmware_modes_average_the_simulated_preview(self):
         sample = _load_standalone_functions(
             LIGHT_SOURCE, {"_sample_firmware_power"},
-            {"estimated_power": lamp_power.estimated_power, "callback": lambda f: f},
+            {
+                "estimated_power": lamp_power.estimated_power, "callback": lambda f: f,
+                "hardware_brightness_for": HARDWARE_BRIGHTNESS_FOR,
+            },
         )["_sample_firmware_power"]
         frames = iter([frame(50, WHITE), frame(0, WHITE), frame(50, RED)])
         camera = SimpleNamespace(hass=object(), simulated_firmware_frame=lambda: next(frames))
@@ -151,7 +159,10 @@ class LampPowerTests(unittest.TestCase):
     def test_firmware_samples_use_the_native_mode_brightness(self):
         sample = _load_standalone_functions(
             LIGHT_SOURCE, {"_sample_firmware_power"},
-            {"estimated_power": lamp_power.estimated_power, "callback": lambda f: f},
+            {
+                "estimated_power": lamp_power.estimated_power, "callback": lambda f: f,
+                "hardware_brightness_for": HARDWARE_BRIGHTNESS_FOR,
+            },
         )["_sample_firmware_power"]
         camera = SimpleNamespace(hass=object(), simulated_firmware_frame=lambda: frame(100, WHITE))
         light = SimpleNamespace(

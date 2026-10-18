@@ -166,15 +166,16 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
           // waits for the drag to end, the dots do not (the animation loops
           // read the dragged value themselves).
           live: () => this._paintStaticPreview(),
-          commit: (pct) => this._sendBrightness(pct),
+          commit: (pct, options) => this._sendBrightness(pct, options),
         },
       },
       { refresh: () => this._refresh() },
     );
   }
 
-  // Send a brightness (slider %) to the lamp on the shared 3-255 curve.
-  _sendBrightness(pct) {
+  // Send a brightness (slider %) to the lamp on the shared 3-255 curve
+  // (options: the slider's, LampSliders).
+  _sendBrightness(pct, options) {
     if (!this._hass || !this.config || !this._primaryEntity()) return;
     this._commands
       .call(
@@ -182,9 +183,7 @@ class YeelightCubeLampPreviewCard extends MatrixPreviewMixin(
         "light",
         "turn_on",
         { entity_id: this._primaryEntity(), brightness: brightnessPctToRaw(pct) },
-        // A drag commits every few hundred ms and each call waits for the
-        // lamp: while one is sent, only the latest value waits.
-        { coalesce: "brightness" },
+        options,
       )
       .catch((error) => {
         // Show the lamp's real value again.

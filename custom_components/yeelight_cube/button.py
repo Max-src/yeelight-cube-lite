@@ -7,21 +7,22 @@ from homeassistant.core import HomeAssistant  # type: ignore
 from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: ignore
 
-from .const import DOMAIN
+from .runtime_data import lamp_of
 from .entity import CubeDeviceEntity
 
 _LOGGER = logging.getLogger(__name__)
+
+# No limit per platform: every command to the lamp already waits for the
+# previous one (the device lock, light_connection._execute_hardware_op).
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> bool:
     """Set up Yeelight Cube Lite button entities from a config entry."""
-    if DOMAIN not in hass.data or entry.entry_id not in hass.data[DOMAIN]:
-        return False
-
-    light_entity = hass.data[DOMAIN][entry.entry_id].get("light")
-    if not light_entity:
+    light_entity = lamp_of(entry)
+    if light_entity is None:
         return False
 
     entities = [
@@ -42,9 +43,8 @@ class YeelightCubeForceRefreshButton(CubeDeviceEntity, ButtonEntity):
         """Initialize the force refresh button entity."""
         self._light_entity = light_entity
         self._config_entry = config_entry
-        self._attr_name = f"{light_entity._attr_name} Force Refresh"
+        self._attr_translation_key = "force_refresh"
         self._attr_unique_id = f"{light_entity._attr_unique_id}_force_refresh"
-        self._attr_icon = "mdi:refresh"
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
     async def async_press(self) -> None:

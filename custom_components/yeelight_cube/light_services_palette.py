@@ -2,17 +2,17 @@
 
 Registered by :func:`light_services.async_setup_light_services`.
 """
-import asyncio
 import logging
+import time
 
 import voluptuous as vol  # type: ignore
 from homeassistant.core import HomeAssistant  # type: ignore
 from homeassistant.helpers import config_validation as cv  # type: ignore
 
-from . import async_save_data
 from .const import DOMAIN
 from .name_utils import normalize_display_name
-from .light import _ENTITY_REGISTRY, _entity_id_or_list
+from .storage import async_collection_changed, collection
+from .light import _entity_id_or_list
 from .light_services_common import (
     MAX_PALETTES,
     COLOR_LIST_SCHEMA,
@@ -28,49 +28,26 @@ from .light_services_common import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Seconds within which the same palette saved again is a repeated click.
+DUPLICATE_SAVE_WINDOW = 2.0
+
 
 def async_register_palette_services(hass: HomeAssistant) -> None:
     """Register the palette actions."""
     run_on_lamps = make_lamp_runner(hass)
-    # The last palette saved, so a save repeated for every target of a
-    # multi-lamp card is only stored once.
-    _deletion_tracker = {"last_palette_save": None}
+    # The last palette saved (its name and colors) and when: the same save
+    # again within DUPLICATE_SAVE_WINDOW (a double click on a card's Save) is
+    # not stored twice. Another palette, or the same one later, always is.
+    last_save = {"key": None, "at": 0.0}
 
     async def handle_load_palette(service_call):
-        try:
-            if service_call is None:
-                _LOGGER.error("[LOAD_PALETTE] service_call is None!")
-                return
-            
-            if not hasattr(service_call, 'data'):
-                _LOGGER.error("[LOAD_PALETTE] service_call has no 'data' attribute! Type: %s", type(service_call))
-                return
-            
-            idx = service_call.data.get("idx")
-            entity_id = service_call.data.get("entity_id")
-            
-            _LOGGER.debug("[LOAD_PALETTE] Called: idx=%s, entity_id=%s", idx, entity_id)
-        except Exception as e:
-            _LOGGER.error("[LOAD_PALETTE] Error at start: %s", e, exc_info=True)
-            return
-        
-        # Access palettes from global storage (not entity property) to avoid hass.data issues
-        if DOMAIN not in hass.data or "palettes_v2" not in hass.data[DOMAIN]:
-            _LOGGER.error("[LOAD_PALETTE] No palettes storage found in hass.data")
-            return
-        
-        palettes = hass.data[DOMAIN]["palettes_v2"]
+        idx = service_call.data.get("idx")
+        _LOGGER.debug("[LOAD_PALETTE] Called: idx=%s, entity_id=%s", idx, service_call.data.get("entity_id"))
         palette = _locate_item(
-            palettes, idx, service_call.data.get("expected_name"), "Palette"
+            collection(hass, "palettes_v2"), idx, service_call.data.get("expected_name"), "palette"
         )
 
-        if not (isinstance(palette, dict) and "colors" in palette and isinstance(palette["colors"], list)):
-            _LOGGER.error("[LOAD_PALETTE] No valid colors for idx %s", idx)
-            return
-
         targets = _resolve_entities(service_call, "LOAD_PALETTE")
-        if not targets:
-            return
 
         async def _apply_one(target_entity):
             # Copy as tuples (like every other color setter): sharing the
@@ -126,9 +103,7 @@ def async_register_palette_services(hass: HomeAssistant) -> None:
 
     async def handle_add_palettes(service_call):
         """Append palettes without resending (and so overwriting) the whole list."""
-        if DOMAIN not in hass.data:
-            hass.data[DOMAIN] = {}
-        palettes = hass.data[DOMAIN].setdefault("palettes_v2", [])
+        palettes = collection(hass, "palettes_v2")
         _check_collection_size(
             len(palettes), len(service_call.data["palettes"]), MAX_PALETTES, "palette"
         )
@@ -136,26 +111,14 @@ def async_register_palette_services(hass: HomeAssistant) -> None:
         if not added:
             return
         palettes.extend(added)
-        for entity_obj in _ENTITY_REGISTRY.values():
-            if getattr(entity_obj, "hass", None) is not None:
-                entity_obj.async_schedule_update_ha_state()
-        hass.bus.async_fire(f"{DOMAIN}_palettes_updated", {"count": len(palettes)})
-        await async_save_data(hass)
+        await async_collection_changed(hass, "palettes_v2")
 
     async def handle_set_palettes(service_call):
-        palettes = service_call.data.get("palettes_v2") or service_call.data.get("palettes")
-        if palettes and isinstance(palettes, list):
-            valid_palettes = _clean_palettes(palettes)
-# Store palettes globally
-            if DOMAIN not in hass.data:
-                hass.data[DOMAIN] = {}
-            hass.data[DOMAIN]["palettes_v2"] = valid_palettes
-            # Trigger state update on ALL entities (palettes are exposed as state attributes)
-            for entity_obj in _ENTITY_REGISTRY.values():
-                if hasattr(entity_obj, 'hass') and entity_obj.hass is not None:
-                    entity_obj.async_schedule_update_ha_state()
-            # Save to persistent storage
-            await async_save_data(hass)
+        """Replace the whole palette list (an import). Replaced in place: the
+        list stays the one the storage and sensors hold."""
+        palettes = collection(hass, "palettes_v2")
+        palettes[:] = _clean_palettes(service_call.data["palettes"])
+        await async_collection_changed(hass, "palettes_v2")
 
     hass.services.async_register(
         DOMAIN,
@@ -176,64 +139,23 @@ def async_register_palette_services(hass: HomeAssistant) -> None:
     )
 
     async def handle_save_palette(service_call):
-        palette = service_call.data.get("palette")
-        entity_id = service_call.data.get("entity_id")
-        name = service_call.data.get("name")
-        
-        # Access palettes from global storage directly (not through entity property)
-        # to avoid issues if entity.hass is not yet initialized
-        if DOMAIN not in hass.data:
-            hass.data[DOMAIN] = {}
-        if "palettes_v2" not in hass.data[DOMAIN]:
-            hass.data[DOMAIN]["palettes_v2"] = []
-        palettes = hass.data[DOMAIN]["palettes_v2"]
+        # Saved for a lamp's call only (refused otherwise).
+        _resolve_entity(service_call, "SAVE_PALETTE")
+        palettes = collection(hass, "palettes_v2")
         _check_collection_size(len(palettes), 1, MAX_PALETTES, "palette")
-
-        # Generate default name if not provided
-        if not name:
-            name = f"Palette {len(palettes)+1}"
-        name = normalize_display_name(name, f"Palette {len(palettes) + 1}")
-        
-        # Create a deduplication key based on palette colors and name
-        palette_key = f"save_{name}_{len(palette) if palette else 0}"
-        if _deletion_tracker["last_palette_save"] == palette_key:
-            _LOGGER.debug("[SAVE_PALETTE] DUPLICATE CALL DETECTED - skipping save of '%s' (already saved)", name)
+        name = normalize_display_name(
+            service_call.data.get("name") or "", f"Palette {len(palettes) + 1}"
+        )
+        colors = [tuple(c) for c in service_call.data["palette"]]
+        key, now = (name, tuple(colors)), time.monotonic()
+        if last_save["key"] == key and now - last_save["at"] < DUPLICATE_SAVE_WINDOW:
+            _LOGGER.debug("[SAVE_PALETTE] '%s' just saved: not stored twice", name)
             return
-        
-        _LOGGER.debug("[SAVE_PALETTE] Received entity_id: %s, palette length: %s, name: %s", entity_id, len(palette) if palette else 0, name)
-        
-        target_entity = _resolve_entity(service_call, "SAVE_PALETTE")
-        if not target_entity:
-            return
-            
-        if palette and isinstance(palette, list):
-            # Track this save to prevent duplicates
-            _deletion_tracker["last_palette_save"] = palette_key
-            
-            # Clear tracker after 2 seconds to allow future operations with same name
-            async def clear_tracker():
-                await asyncio.sleep(2)
-                if _deletion_tracker["last_palette_save"] == palette_key:
-                    _deletion_tracker["last_palette_save"] = None
-            hass.async_create_task(clear_tracker())
-            
-            # Allow saving palettes with duplicate color lists (different names)
-            palettes.append({"name": name, "colors": [tuple(c) for c in palette]})
-            _LOGGER.debug("[SAVE_PALETTE] Palette appended to storage. New count: %s", len(palettes))
-            _LOGGER.debug("[SAVE_PALETTE] Last 3 palette names in storage: %s", [p.get('name', 'unnamed') for p in palettes[-3:]])
-            
-            # Trigger state update for all entities that are ready
-            for entity in _ENTITY_REGISTRY.values():
-                if entity.hass is not None:  # Only update entities that are fully initialized
-                    entity.async_write_ha_state()
-            
-            # Fire event for sensor updates
-            _LOGGER.debug("[SAVE_PALETTE] Firing palettes_updated event with count=%s", len(palettes))
-            hass.bus.async_fire(f"{DOMAIN}_palettes_updated", {"count": len(palettes)})
-            
-            # Save to persistent storage
-            await async_save_data(hass)
-            _LOGGER.debug("[SAVE_PALETTE] Palette '%s' saved. Total palettes: %s", name, len(palettes))
+        last_save.update(key=key, at=now)
+        # Duplicate colors under another name are allowed.
+        palettes.append({"name": name, "colors": colors})
+        await async_collection_changed(hass, "palettes_v2")
+        _LOGGER.debug("[SAVE_PALETTE] Palette '%s' saved. Total palettes: %s", name, len(palettes))
 
     hass.services.async_register(
         DOMAIN,
@@ -249,29 +171,13 @@ def async_register_palette_services(hass: HomeAssistant) -> None:
     async def handle_rename_palette(service_call):
         idx = service_call.data.get("idx")
         new_name = service_call.data.get("name")
-        # Access global palette storage directly
-        palettes = hass.data.get(DOMAIN, {}).get("palettes_v2", [])
+        palettes = collection(hass, "palettes_v2")
         _locate_item(
-            palettes, idx, service_call.data.get("expected_name"), "Palette"
+            palettes, idx, service_call.data.get("expected_name"), "palette"
         )
-        if isinstance(new_name, str):
-            new_name = normalize_display_name(new_name, f"Palette {idx + 1}")
-            palettes[idx]["name"] = new_name
-            # Update ALL entities' HA state (palettes are exposed as state attributes)
-            for entity_obj in _ENTITY_REGISTRY.values():
-                if hasattr(entity_obj, 'hass') and entity_obj.hass is not None:
-                    entity_obj.async_schedule_update_ha_state()
-            # Note: No need to update hass.data - palettes list is already a shared reference
-            # Save to persistent storage
-            await async_save_data(hass)
-            # Force PaletteSensor to update its state for instant frontend refresh
-            palette_sensor = hass.data.get(DOMAIN, {}).get("palette_sensor_entity")
-            if palette_sensor:
-                write_state = getattr(palette_sensor, "async_write_ha_state", None)
-                if write_state:
-                    result = write_state()
-                    if asyncio.iscoroutine(result):
-                        await result
+        palettes[idx]["name"] = normalize_display_name(new_name, f"Palette {idx + 1}")
+        # The sensor and the palette selects (which show the names) follow.
+        await async_collection_changed(hass, "palettes_v2")
 
     hass.services.async_register(
         DOMAIN,
@@ -286,22 +192,17 @@ def async_register_palette_services(hass: HomeAssistant) -> None:
 
     async def handle_move_palette(service_call):
         """Move one saved palette, keeping palettes other clients added meanwhile."""
-        palettes = hass.data.get(DOMAIN, {}).get("palettes_v2", [])
+        palettes = collection(hass, "palettes_v2")
         if not _move_item(
             palettes,
             service_call.data["from_idx"],
             service_call.data["to_idx"],
             service_call.data.get("expected_name"),
-            "Palette",
+            "palette",
         ):
             return
-        # The same refresh as a removal: lamp states, the palette sensor
-        # and the palette select follow the new order.
-        for entity in _ENTITY_REGISTRY.values():
-            if entity.hass is not None:
-                entity.async_write_ha_state()
-        hass.bus.async_fire(f"{DOMAIN}_palettes_updated", {"count": len(palettes)})
-        await async_save_data(hass)
+        # The palette sensor and the palette selects follow the new order.
+        await async_collection_changed(hass, "palettes_v2")
 
     hass.services.async_register(
         DOMAIN,
@@ -315,47 +216,20 @@ def async_register_palette_services(hass: HomeAssistant) -> None:
     )
 
     async def handle_remove_palette(service_call):
-        try:
-            if service_call is None:
-                _LOGGER.error("[PALETTE-DELETE] service_call is None!")
-                return
-            
-            if not hasattr(service_call, 'data'):
-                _LOGGER.error("[PALETTE-DELETE] service_call has no 'data' attribute! Type: %s", type(service_call))
-                return
-            
-            idx = service_call.data.get("idx")
-        except Exception as e:
-            _LOGGER.error("[PALETTE-DELETE] Error accessing service_call data: %s", e, exc_info=True)
-            return
-        
-        # Access palettes from global storage directly (not through entity property)
-        if DOMAIN not in hass.data or "palettes_v2" not in hass.data[DOMAIN]:
-            _LOGGER.error("[PALETTE-DELETE] No palettes storage found in hass.data")
-            return
-        
-        palettes = hass.data[DOMAIN]["palettes_v2"]
+        idx = service_call.data.get("idx")
+        palettes = collection(hass, "palettes_v2")
         _LOGGER.debug("[PALETTE-DELETE] idx=%s (type: %s), palette count=%s", idx, type(idx), len(palettes))
         
         # No duplicate detection - rapid successive deletions are valid
         # (indices shift after each deletion, so same idx can refer to different palettes)
         
         _locate_item(
-            palettes, idx, service_call.data.get("expected_name"), "Palette"
+            palettes, idx, service_call.data.get("expected_name"), "palette"
         )
         removed = palettes.pop(idx)
         _LOGGER.debug("[PALETTE-DELETE] Removed palette at idx %s: '%s'", idx, removed.get('name', 'Unnamed'))
         
-        # Trigger state update for all entities that are ready
-        for entity in _ENTITY_REGISTRY.values():
-            if entity.hass is not None:
-                entity.async_write_ha_state()
-        
-        # Fire event for sensor updates
-        hass.bus.async_fire(f"{DOMAIN}_palettes_updated", {"count": len(palettes)})
-        
-        # Save to persistent storage
-        await async_save_data(hass)
+        await async_collection_changed(hass, "palettes_v2")
         _LOGGER.debug("[PALETTE-DELETE] Palette '%s' deleted. Remaining: %s", removed.get('name', 'Unnamed'), len(palettes))
 
     hass.services.async_register(

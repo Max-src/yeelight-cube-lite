@@ -1250,6 +1250,7 @@ class EffectRotationTransportTests(unittest.IsolatedAsyncioTestCase):
         light._device_orientation = "right"
         light._native_effect_direction_select_entity = None
         light._brightness = 255
+        light._last_hardware_brightness = None  # not known yet: sent once
         light._notify_camera_preview = Mock()
         light.async_schedule_update_ha_state = Mock()
         light._maybe_schedule_retry = Mock()

@@ -10,7 +10,7 @@ A Home Assistant custom integration for the **Yeelight Cube Smart Lamp Lite**, a
 
 ## Table of Contents
 
-**[`Features`](#features)** · **[`Installation`](#installation-via-hacs)** · **[`Setup`](#setup)** · **[`Lovelace Cards`](#lovelace-cards)** · **[`Entities`](#entities-created)** · **[`Automations`](#automations--node-red)** · **[`Display Modes`](#display-modes)** · **[`Power Supply`](#power-supply)** · **[`Troubleshooting`](#troubleshooting)** · **[`License`](#license)**
+**[`Features`](#features)** · **[`Installation`](#installation-via-hacs)** · **[`Setup`](#setup)** · **[`Lovelace Cards`](#lovelace-cards)** · **[`Entities`](#entities-created)** · **[`Automations`](#automations--node-red)** · **[`Display Modes`](#display-modes)** · **[`Devices`](#supported-devices)** · **[`Limitations`](#known-limitations)** · **[`Power Supply`](#power-supply)** · **[`Troubleshooting`](#troubleshooting)** · **[`License`](#license)**
 
 ---
 
@@ -102,6 +102,24 @@ Home Assistant so the updated Python code and new entities are loaded. Existing
 device entries, settings, palettes, and personal pixel art are preserved. If a
 dashboard card does not update after the restart, perform a hard browser refresh
 (`Ctrl+F5`).
+
+### Removing the integration
+
+1. Remove the cards from your dashboards (they show an error once the
+   integration is gone).
+2. In **Settings → Devices & services → Yeelight Cube Lite**, open each lamp's
+   **⋮** menu and choose **Delete**. Its devices and entities are removed with
+   it; the lamp itself keeps working with the Yeelight app.
+3. In **HACS**, open **Yeelight Cube Lite** and choose **Remove** (for a manual
+   installation, delete `custom_components/yeelight_cube/`), then restart
+   Home Assistant.
+4. The cards were added as dashboard resources: remove the ones starting with
+   `/yeelight_cube/` in **Settings → Dashboards → ⋮ → Resources** (shown with
+   *Advanced mode* on in your user profile).
+
+Your saved palettes, drawings and clock presets stay in
+`.storage/yeelight_cube.storage` in the configuration folder, so a later
+reinstallation finds them; delete that file to remove them too.
 
 ---
 
@@ -1300,6 +1318,67 @@ switch: Music Flow starts and stops through Content mode.
 
 ---
 
+## Supported Devices
+
+- **Yeelight Cube Smart Lamp Lite** (the 20 × 5 matrix lamp, model `cubelite`),
+  with **LAN Control** on in the Yeelight app. Several lamps can be set up,
+  each as its own device; the cards can drive several at once.
+- Other Yeelight lamps are left to Home Assistant's own **Yeelight**
+  integration (this one keeps its discovery away from the Cube Lite lamps
+  only). Other Cube models (the modular Yeelight Cube) are not tested.
+
+---
+
+## How the State Updates
+
+- **The lamp's state is never read back:** the Cube Lite answers no state
+  query. Home Assistant shows what it last sent: a change takes effect at once
+  in Home Assistant and the cards, and is sent to the lamp right after.
+- **Changes made elsewhere are not seen:** the Yeelight app or the lamp's own
+  button change the lamp without Home Assistant knowing; the next change from
+  Home Assistant (or **Force Refresh**) shows its state on the lamp again.
+- **Reachability** is checked in the background (more often while the lamp is
+  out of reach): the light becomes unavailable while the lamp does not answer,
+  and its last state is sent again when it is back.
+- **Clock:** its UTC offset is checked on the hour, so daylight saving changes
+  reach the lamp's clock within seconds.
+- **Estimated power and energy** come from what is shown (frames sent, or the
+  simulated preview of the clock and effects), not from a lamp measurement.
+
+---
+
+## Known Limitations
+
+- **Local network only:** Home Assistant and the lamp must reach each other
+  (UDP 55444 and TCP 55443); there is no cloud connection.
+- **No read-back:** see [How the State Updates](#how-the-state-updates).
+- **Brightness right after quick picture changes:** the lamp can briefly show
+  an earlier picture again; it settles on the right one by itself.
+- **Music Flow** uses the microphone inside the lamp; its preview in the cards
+  is a static picture (the lamp sends no frames back).
+- **Physical button presets** (`set_button_effects`) are written as the
+  Yeelight app does, but have not been confirmed to work over the local
+  network.
+- **A weak power supply** makes the lamp freeze or drop off the network on
+  bright pictures; see [Power Supply](#power-supply).
+
+---
+
+## Use Cases
+
+- **A status display:** show a text or a pixel art from an automation (a
+  doorbell, a phone's battery level, a timer), then come back to the previous
+  display with `save_state` / `restore_state`.
+- **A desk clock:** the lamp's own clock styles, with your colors and favourites,
+  rotating on a schedule.
+- **Ambient light:** native effects, gradients and palettes, following scenes or
+  the time of day.
+- **Pixel art:** your own drawings and the official ones, picked from a
+  dashboard or an automation.
+- **Music:** Music Flow reacts to the sound in the room.
+
+---
+
 ## Power Supply
 
 A lamp draws about **0.4 W** with a dark panel and up to about **6 W** with a
@@ -1346,7 +1425,16 @@ drawn by the lamp itself, so lower their brightness instead.
 | **Music Flow preview is not animated** | This is expected. The camera shows a locally generated static identifier because the lamp does not expose live microphone-animation frames |
 | **A card says "the last change was not applied (…)"** | The lamp refused the change or failed while applying it (the message says why; it is also in the Home Assistant log, and in the lamp's `last_command_error` attribute). Pick it again, or press **Force Refresh**; the line goes once a change works. A lamp that is only out of reach shows as unavailable instead, and gets the change once it is back |
 | **The light's `connection` attribute shows `tcp`** | The lamp did not answer its UDP session (port 55444): the network blocks UDP between Home Assistant and the lamp, or its firmware has no session. Everything still works over TCP; UDP is tried again after 5 minutes, and whenever the lamp comes back online |
-| **Lamp changed IP** | Auto-rediscovery updates the stored IP automatically; the **IP Address** diagnostic sensor shows the current value. If the lamp stays unreachable, remove the device and add it again with the new IP |
+| **Lamp changed IP** | Auto-rediscovery updates the stored IP automatically; the **IP Address** diagnostic sensor shows the current value. If the lamp stays unreachable, choose **Reconfigure** in its entry's ⋮ menu (Settings → Devices & services → Yeelight Cube Lite) and enter its new IP: it is checked before it is used |
+| **A Repair says a lamp is unreachable, or uses its slower connection** | Shown in **Settings → System → Repairs** after 30 minutes without an answer, or after 15 minutes with UDP blocked while TCP works; each says what to check, and goes away by itself once the problem is gone |
+
+**Reporting a problem:** attach the lamp's diagnostics to the
+[issue](https://github.com/Max-src/yeelight-cube-lite/issues). In
+**Settings → Devices & services → Yeelight Cube Lite**, open the lamp's ⋮ menu
+(or its device page) and choose **Download diagnostics**. The file holds the
+lamp's model and firmware, its connection (UDP or TCP, failures, the last
+errors) and its current state. The lamp's IP address, its identifier, its name
+in the Yeelight app and the text it shows are replaced by `**REDACTED**`.
 
 ---
 

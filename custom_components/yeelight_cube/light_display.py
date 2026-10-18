@@ -26,11 +26,33 @@ from .light_color import hardware_brightness_for
 
 _LOGGER = logging.getLogger(__name__)
 
-FX_MODE_STALENESS_TIMEOUT = 90.0  # Seconds -- re-send activate_fx_mode when _last_fx_mode_time
-                                  # (set by activate_fx_mode and by every full frame drawn in
-                                  # apply()) is older than this. An idle Cube can leave direct
-                                  # FX mode silently: it keeps the TCP connection open and ignores
-                                  # update_leds without an error.
+# The waits around direct mode, in seconds, by the connection in use
+# (cube_matrix.transport), read where each one happens:
+# - native_exit_settle: leaving a firmware mode (clock, effect), before
+#   activate_fx_mode, so the native renderer settles (light.ensure_fx_ready);
+# - direct_mode_settle: after activate_fx_mode, before the first frame;
+# - native_exit_resend: leaving a firmware mode, before the first frame is
+#   sent once more (it can be dropped while the firmware switches; apply());
+# - staleness: direct mode is activated again before a frame when none was
+#   drawn for this long (an idle Cube could leave it silently, ignoring
+#   update_leds without an error); None: never;
+# - blank_repeat: leaving a drawing for a firmware mode, the black frame is
+#   sent again this long after the first (None: once). Over UDP a frame is
+#   not acknowledged: a dropped one left the drawing in the lamp, shown again
+#   for a moment when the drawing came back (seen twice in 22 effect exits,
+#   18 Oct 2026). Over TCP it arrives (and a second one would wait ~1 s).
+# UDP: tested on both lamps with them watched (18 Oct 2026): clock and effect
+# to a drawing at these waits, 3 rounds, no flash and no lost first frame
+# (0.3 / 0.15 / 0.12 too); a drawing shown after 150 s without a frame, at
+# once (a session the lamp dropped while idle is put in direct mode again
+# when it opens: cube_matrix _udp_request). TCP: the waits tuned in the TCP
+# days, kept (not tested again).
+ACTIVATION_TIMING = {
+    "udp": {"native_exit_settle": 0.0, "direct_mode_settle": 0.05, "native_exit_resend": 0.03,
+            "staleness": None, "blank_repeat": 0.05},
+    "tcp": {"native_exit_settle": 0.3, "direct_mode_settle": 0.15, "native_exit_resend": 0.12,
+            "staleness": 90.0, "blank_repeat": None},
+}
 MUSIC_FLOW_EXIT_UPDATE_TYPES = {
     "turn_off",
     "brightness_change",
@@ -158,10 +180,10 @@ class DisplayMixin:
                 return
         # NOTE: _apply_cooldown removed. It was silently DROPPING updates
         # when they arrived within 100ms of each other (e.g., rapid pixel
-        # drawing or fast slider changes). The queue's coalescing logic
-        # already handles deduplication properly -- if two identical updates
-        # are queued, the queue processor coalesces them. Dropping here
-        # caused lost pixel art frames and missed state changes.
+        # drawing or fast slider changes). Redraws queued for the lamp are
+        # coalesced instead (_execute_hardware_op, coalesce="display": only
+        # the newest waiting one runs, and it draws the latest state).
+        # Dropping here caused lost pixel art frames and missed state changes.
         is_retry = update_type == 'display_retry'
         
         # Only reset the retry counter when it has actually HIT the limit
@@ -210,7 +232,7 @@ class DisplayMixin:
         return await self._execute_hardware_op(
             lambda: self._apply_display_mode_internal(),
             f"display:{update_type}",
-            coalesce=True,
+            coalesce="display",
         )
 
     async def apply(self):
@@ -343,7 +365,7 @@ class DisplayMixin:
             # this is the deterministic equivalent of the manual second send
             # that was previously needed.
             if leaving_native_fw_mode:
-                await asyncio.sleep(0.12)
+                await asyncio.sleep(ACTIVATION_TIMING[self._cube_matrix.transport]["native_exit_resend"])
                 _LOGGER.debug(
                     "[APPLY] [%s] Native-exit re-send of first frame "
                     "(firmware just left clock/native mode)",
@@ -430,7 +452,7 @@ class DisplayMixin:
         """Whether the lamp can still be trusted to be in direct mode; when
         not, _fx_mode_is_direct is cleared so it is activated again: the
         connection changed (TCP took over, a new TCP socket) or it was idle
-        longer than FX_MODE_STALENESS_TIMEOUT (an idle Cube can leave direct
+        longer than its connection's staleness (ACTIVATION_TIMING; an idle Cube can leave direct
         mode silently)."""
         if self._cube_matrix.consume_reconnected_flag():
             _LOGGER.info(
@@ -440,10 +462,11 @@ class DisplayMixin:
             self._fx_mode_is_direct = False
         elif self._fx_mode_is_direct and self._last_fx_mode_time > 0:
             fx_age = time.time() - self._last_fx_mode_time
-            if fx_age > FX_MODE_STALENESS_TIMEOUT:
+            staleness = ACTIVATION_TIMING[self._cube_matrix.transport]["staleness"]
+            if staleness is not None and fx_age > staleness:
                 _LOGGER.debug(
                     "[APPLY] [%s] Direct mode stale -- fx_age=%.0fs > %.0fs: activating it again",
-                    self._ip, fx_age, FX_MODE_STALENESS_TIMEOUT,
+                    self._ip, fx_age, staleness,
                 )
                 self._fx_mode_is_direct = False
         return self._fx_mode_is_direct

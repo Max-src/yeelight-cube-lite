@@ -81,7 +81,8 @@ class BrightnessMixin:
         
         await self._execute_hardware_op(
             lambda: self._internal_set_brightness(brightness, call_id, **kwargs),
-            f"brightness:{brightness}"
+            f"brightness:{brightness}",
+            coalesce="brightness",
         )
     
     async def _internal_set_brightness(self, brightness: int, call_id: int, **kwargs):
@@ -222,7 +223,10 @@ class BrightnessMixin:
             self._write_layout_colors(frame)
 
             # Send pixel data using fire-and-forget (no recv wait); direct
-            # mode again at once if the connection changed under it.
+            # mode again at once if the connection changed under it. Sent
+            # even when it is the frame already shown: the set_bright just
+            # before can make the lamp show an older picture again
+            # (cube_matrix.FRAME_SETTLE_DELAY), and this frame puts it back.
             await self._draw_direct(encode_rgb_frame(self._lamp_frame(frame)))
 
             if self.hass is not None:

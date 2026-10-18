@@ -24,7 +24,7 @@ class LampLookupTests(unittest.TestCase):
         self.registry = {}
         self.functions = _load_standalone_functions(
             COMMON_SOURCE,
-            {"_lamp_for", "_resolve_entity", "_resolve_entities"},
+            {"_lamp_for", "_target_ids", "_resolve_entity", "_resolve_entities"},
             {"_ENTITY_REGISTRY": self.registry, "_LOGGER": Mock()},
         )
 
@@ -40,7 +40,9 @@ class LampLookupTests(unittest.TestCase):
         lamp = self.lamp("10.0.0.1", "light.cube")
         lamp.entity_id = "light.desk"  # renamed in place
         self.assertIs(self.functions["_resolve_entity"](self.call("light.desk"), "T"), lamp)
-        self.assertIsNone(self.functions["_resolve_entity"](self.call("light.cube"), "T"))
+        # The old id is refused, never sent to the renamed lamp.
+        with self.assertRaisesRegex(ValueError, "No matching .*light.cube"):
+            self.functions["_resolve_entity"](self.call("light.cube"), "T")
 
     def test_two_lamps_swapping_names_never_reach_the_wrong_lamp(self):
         top = self.lamp("10.0.0.1", "light.top")
@@ -52,7 +54,8 @@ class LampLookupTests(unittest.TestCase):
         resolve = self.functions["_resolve_entities"]
         self.assertEqual(resolve(self.call(["light.top"]), "T"), [bottom])
         self.assertEqual(resolve(self.call(["light.bottom", "light.top"]), "T"), [top, bottom])
-        self.assertEqual(resolve(self.call("light.tmp"), "T"), [])
+        with self.assertRaisesRegex(ValueError, "No matching .*light.tmp"):
+            resolve(self.call("light.tmp"), "T")
 
     def test_the_lamps_are_registered_by_ip_never_by_entity_id(self):
         light = (ROOT / "light.py").read_text(encoding="utf-8")
@@ -92,8 +95,9 @@ class InPlaceRenameOptInTests(unittest.TestCase):
                         "super().async_entity_id_changed(old_entity_id)",
                         ast.unparse(hook),
                     )
-        # The light, the shared control base and every helper with hooks.
-        self.assertGreaterEqual(len(checked), 19, checked)
+        # The light, the shared control base and every helper with hooks (the
+        # palette and pixel art sensors share sensor._CollectionSensor).
+        self.assertGreaterEqual(len(checked), 18, checked)
 
 
 if __name__ == "__main__":

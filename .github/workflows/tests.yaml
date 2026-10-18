@@ -27,7 +27,7 @@ jobs:
         with:
           python-version: "3.13"
       - run: npm ci
-      - run: python -m pip install pillow
+      - run: python -m pip install pillow pyyaml
 
       # The committed Lit bundle must be what `npm run build:lit` produces.
       - name: Lit bundle is up to date
@@ -39,6 +39,13 @@ jobs:
       # tests compare the Python and JS previews through Node.
       - name: Python tests
         run: python -m unittest discover -s tests -p "test_*.py"
+
+      # The config flow inside Home Assistant (tests/ha), its coverage
+      # enforced (quality scale: config-flow-test-coverage).
+      - name: Home Assistant tests
+        run: |
+          python -m pip install pytest-homeassistant-custom-component yeelight
+          bash scripts/ha-tests.sh
 
       # Frontend: unit tests of the card modules.
       - name: JS tests

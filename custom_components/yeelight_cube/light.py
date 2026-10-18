@@ -9,7 +9,7 @@ import voluptuous as vol # type: ignore
 from homeassistant.components.light import LightEntity, ColorMode # type: ignore
 from homeassistant.helpers.restore_state import RestoreEntity # type: ignore
 from homeassistant.core import HomeAssistant, callback # type: ignore
-from homeassistant.helpers.event import async_track_time_interval # type: ignore
+from homeassistant.helpers.event import async_track_time_change, async_track_time_interval # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 from homeassistant.config_entries import ConfigEntry # type: ignore
 from homeassistant.helpers import config_validation as cv # type: ignore
@@ -22,6 +22,7 @@ from .const import (
     MODE_NATIVE_EFFECT,
     CONF_DEVICE_ID,
     CONF_IP,
+    LAN_PORT,
     clock_style_default_color,
     DEFAULT_MATRIX_DISPLAY_MODE,
     DEFAULT_MUSIC_FLOW_EFFECT,
@@ -51,16 +52,21 @@ from .layout import Layout, Module, FONT_MAPS
 from .pixel_art_storage import expand_pixels
 
 from .color_utils import hex_to_rgb, rgb_to_hex
-from .light_color import ColorPipelineMixin
+from .light_color import ColorPipelineMixin, hardware_brightness_for
+from .issues import lamp_problems, report_problems
 from .light_native import NativeModesMixin
 from .light_render import MatrixRenderMixin
 from .light_connection import ConnectionMixin, _DEVICE_LOCKS, _DEVICE_LOCK_HOLDERS
 from .light_restore import StateRestoreMixin
 from .light_rotation import RotationMixin
 from .light_brightness import BrightnessMixin
-from .light_display import DisplayMixin
+from .light_display import ACTIVATION_TIMING, DisplayMixin
 
 _LOGGER = logging.getLogger(__name__)
+
+# No limit per platform: every command to the lamp already waits for the
+# previous one (the device lock, light_connection._execute_hardware_op).
+PARALLEL_UPDATES = 0
 _LOGGER.debug("Yeelight Cube Lite light.py module loaded")
 
 # Estimated power in firmware modes (clock, native effects, Music Flow): the
@@ -180,6 +186,10 @@ class YeelightCubeLight(
 ):
     """Home Assistant LightEntity for the Yeelight Cube Lite."""
 
+    # Never polled: the lamp's state cannot be read back (async_update), and
+    # the clock's UTC offset is checked on the hour (async_added_to_hass).
+    _attr_should_poll = False
+
     # Published for the cards but not stored in the recorder's history: large
     # (the 100 matrix colors, the effect catalogue), frequently changing
     # (rotation status), or configuration with no use as history (calibration).
@@ -227,7 +237,12 @@ class YeelightCubeLight(
             short_id = device_id[-4:]  # e.g. "9bc6" from "0x00000000172b9bc6"
         else:
             short_id = config_entry.entry_id[:6]
-        self._attr_name = f"{cube_matrix.device_name} {short_id}"
+        # The lamp's name, its device's (entity.cube_device_info): the light
+        # is the device's main entity, so it has no name of its own and Home
+        # Assistant shows the device's; the other entities add theirs to it.
+        self._lamp_name = f"{cube_matrix.device_name} {short_id}"
+        self._attr_has_entity_name = True
+        self._attr_name = None
 
         # --- Stable unique_id (entry_id-based, never changes across IP changes) ---
         # The config entry's entry_id is assigned once and stays constant even when
@@ -386,9 +401,12 @@ class YeelightCubeLight(
         # the published availability changes.
         self._control_entities: set = set()
         self._published_available = None
+        # The connection in the published state (its "connection" attribute).
+        self._published_transport = None
 
     @callback
     def async_write_ha_state(self) -> None:
+        self._published_transport = self._cube_matrix.transport
         super().async_write_ha_state()
         available = self.available
         if available != self._published_available:
@@ -461,8 +479,8 @@ class YeelightCubeLight(
         frame = camera.simulated_firmware_frame() if camera is not None else None
         if not frame:
             return
-        # The firmware modes send the brightness as is (_set_native_mode_brightness).
-        hardware = max(1, min(100, round(self._brightness * 100 / 255)))
+        # The firmware modes' brightness (_set_native_mode_brightness).
+        hardware = hardware_brightness_for(self._brightness)
         self._firmware_power_samples.append(estimated_power(frame, hardware))
         self._publish_power()
 
@@ -506,28 +524,14 @@ class YeelightCubeLight(
         task.add_done_callback(self._background_tasks.discard)
         return task
 
-    @property
-    def _palettes(self):
-        """Access global palette storage - all lights share the same palette list"""
-        if DOMAIN not in self.hass.data:
-            self.hass.data[DOMAIN] = {}
-        if "palettes_v2" not in self.hass.data[DOMAIN]:
-            self.hass.data[DOMAIN]["palettes_v2"] = []
-        return self.hass.data[DOMAIN]["palettes_v2"]
     
-    @property
-    def _pixel_arts(self):
-        """Access global pixel art storage - all lights share the same pixel art list"""
-        if DOMAIN not in self.hass.data:
-            self.hass.data[DOMAIN] = {}
-        if "pixel_arts" not in self.hass.data[DOMAIN]:
-            self.hass.data[DOMAIN]["pixel_arts"] = []
-        return self.hass.data[DOMAIN]["pixel_arts"]
 
-    async def show_pixel_art(self, name: str, pixels: list) -> None:
+    async def show_pixel_art(self, name: str | None, pixels: list, bypass_lock: bool = False) -> None:
         """Show a pixel art (saved, stored grouped, or built-in, flat) as the
-        lamp's drawing, named ``name``; the pixel art and mode selects
-        follow. Used by the apply_pixel_art action and the Pixel Art select."""
+        lamp's drawing, named ``name`` (None: a drawing that is not one of
+        the pixel arts); the pixel art and mode selects follow. Used by the
+        apply_pixel_art and apply_custom_pixels actions and the Pixel Art
+        select."""
         self._custom_pixels = expand_pixels(pixels)
         self._mode = "Custom Draw"
         self._matrix_mode = "Custom Draw"
@@ -540,7 +544,11 @@ class YeelightCubeLight(
         self._scroll_direction = 1
         self.stop_scroll_timer()
         self._is_scrolling = False
-        await self.async_apply_display_mode(update_type="pixel_art")
+        # Written now: a lamp that is off keeps the drawing for when it is
+        # turned on, without drawing (so without writing its state).
+        if self.hass is not None:
+            self.async_schedule_update_ha_state()
+        await self.async_apply_display_mode(update_type="pixel_art", bypass_lock=bypass_lock)
         for entity in (
             self._pixel_art_select_entity,
             self._mode_select_entity,
@@ -675,11 +683,6 @@ class YeelightCubeLight(
             return self._text_colors[0]
         return self._rgb_color  # Fallback to stored rgb_color if no text colors
 
-    @property 
-    def rgb_color_list(self):
-        # Extended property that could be used by custom cards for gradient display
-        # Returns all text colors for gradient representation
-        return self._text_colors if self._text_colors else [self._rgb_color]
 
     @property
     def custom_text(self):
@@ -699,7 +702,7 @@ class YeelightCubeLight(
         # Get from options, default to True
         return self._config_entry.options.get("auto_turn_on", True)
 
-    # Use self._attr_name and self._attr_unique_id (set in __init__) for Home Assistant entity name and unique_id
+    # The name is the device's (_lamp_name) and the unique id is set in __init__.
 
     @property
     def is_on(self):
@@ -893,10 +896,22 @@ class YeelightCubeLight(
 
 
     async def async_added_to_hass(self):
-        _LOGGER.debug("[INIT] async_added_to_hass called for %s", self._attr_name)
+        _LOGGER.debug("[INIT] async_added_to_hass called for %s", self._lamp_name)
         await super().async_added_to_hass()
-        # async_update (clock time-zone refresh, native property polling) runs
-        # on Home Assistant's regular light polling interval.
+        # The clock's UTC offset changes on the hour (daylight saving time):
+        # async_update checks it then, a few seconds past, instead of a poll
+        # every 30 s.
+        self.async_on_remove(async_track_time_change(
+            self.hass, self._async_hourly_update, minute=0, second=5
+        ))
+        # Repairs for problems a user can fix (issues.py), every minute.
+        self._added_at = time.monotonic()
+        self._reported_problems = None
+        self.async_on_remove(async_track_time_interval(
+            self.hass, self._async_check_problems, timedelta(minutes=1)
+        ))
+        self._cube_matrix.on_transport_change = self._async_publish_transport
+        self.async_on_remove(lambda: setattr(self._cube_matrix, "on_transport_change", None))
 
         # Start periodic health check to detect devices coming back online
         self._health_check_task = self._create_tracked_task(
@@ -919,10 +934,8 @@ class YeelightCubeLight(
         self._restore_favourites()
         self._restore_rotation_settings()
         self._restore_drawing()
-        # Palettes and pixel arts are accessed via @property from global storage
-        # No restoration needed - __init__.py loads from Store into hass.data[DOMAIN]
-        _LOGGER.debug("[RESTORE] Entity initialized. Palettes: %s, Pixel Arts: %s", len(self._palettes), len(self._pixel_arts))
-            # Note: No need to copy back to hass.data - we're using shared references now
+        # Palettes and pixel arts are shared: __init__.py loads them into
+        # hass.data[DOMAIN] (the palette and pixel art sensors publish them).
         self.async_schedule_update_ha_state()
         # Push freshly restored values to every linked helper entity. On a
         # reload (e.g. a DHCP IP change) a helper may have been added before
@@ -1051,16 +1064,15 @@ class YeelightCubeLight(
                 "activate_fx_mode",
                 self._ip,
             )
-            await asyncio.sleep(0.3)  # Let native renderer + Cube TCP stack settle
+            await asyncio.sleep(ACTIVATION_TIMING[cm.transport]["native_exit_settle"])
 
         # Step 3: activate_fx_mode on a SINGLE fresh TCP (RST close)
         await cm.send_raw_command("activate_fx_mode", [{"mode": "direct"}])
 
-        # Step 4: Let the firmware fully enter direct mode before anything else
-        # connects.  50ms was too tight -- the subsequent set_bright RST was
-        # arriving while the lamp was still transitioning, causing it to exit
-        # direct mode before update_leds arrived.  150ms is reliable on LAN.
-        await asyncio.sleep(0.15)
+        # Step 4: Let the firmware fully enter direct mode before the first
+        # frame (ACTIVATION_TIMING, by connection: 50ms was too tight over TCP,
+        # where the lamp left direct mode before update_leds arrived).
+        await asyncio.sleep(ACTIVATION_TIMING[cm.transport]["direct_mode_settle"])
 
         # Step 5: Update state (the hardware brightness is unchanged).
         self._fx_mode_is_direct = True
@@ -1162,9 +1174,14 @@ class YeelightCubeLight(
         if self.hass is not None:
             self.async_schedule_update_ha_state()
         
+        # A brightness change on a lamp that is on (a slider drag): only the
+        # newest waiting one runs, like set_brightness's. One that turns the
+        # lamp on, or changes anything else, always runs.
+        brightness_only = was_on and set(kwargs) == {"brightness"}
         await self._execute_hardware_op(
             lambda: self._internal_turn_on(_was_on=was_on, **kwargs),
-            "turn_on"
+            "turn_on",
+            coalesce="brightness" if brightness_only else None,
         )
     
     async def _internal_turn_on(self, **kwargs):
@@ -1310,8 +1327,34 @@ class YeelightCubeLight(
             self.async_schedule_update_ha_state()
         _LOGGER.debug("[TURN_OFF] Turn off complete")
 
+    async def _async_hourly_update(self, _now) -> None:
+        await self.async_update()
+
+    @callback
+    def _async_publish_transport(self) -> None:
+        """Write the state when its "connection" attribute is out of date:
+        commands switched between UDP and TCP without a state change (UDP
+        failed or answers again: CubeMatrix.on_transport_change; the TCP
+        fallback or force_tcp ran out: the minute check)."""
+        if self.hass is not None and self._cube_matrix.transport != self._published_transport:
+            self.async_write_ha_state()
+
+    @callback
+    def _async_check_problems(self, _now=None) -> None:
+        """Show or clear the lamp's Repairs (issues.py), and publish a
+        connection that changed with time (_async_publish_transport)."""
+        self._async_publish_transport()
+        problems = lamp_problems(
+            self._cube_matrix.connection_state(), self.available,
+            time.monotonic() - self._added_at,
+        )
+        self._reported_problems = report_problems(
+            self.hass, self, problems, self._reported_problems
+        )
+
     async def async_update(self, *args, **kwargs):
-        """Refresh the clock's UTC offset (daylight saving time)."""
+        """Refresh the clock's UTC offset (daylight saving time): once when
+        the light is added, then on the hour (_async_hourly_update)."""
         # Opening a standard LAN-control connection can stop the Cube's
         # microphone renderer. Preserve Music Flow until a user command exits it.
         if self._music_flow_enabled:
@@ -1436,7 +1479,7 @@ class YeelightCubeLight(
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback) -> bool:
     # Create and register the light entity FIRST (this happens for EVERY device)
     ip = entry.data[CONF_IP]
-    port = entry.data.get('port', 55443)
+    port = entry.data.get('port', LAN_PORT)
     
     # Diagnostic: log all config entries to detect duplicates
     all_entries = hass.config_entries.async_entries(DOMAIN)
@@ -1473,15 +1516,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     
     async_add_entities([light_entity], update_before_add=True)
     
-    # Store reference for instant update and for switch platform
-    if DOMAIN not in hass.data:
-        hass.data[DOMAIN] = {}
-    
-    # Store light entity reference for the switch platform to access
-    if entry.entry_id not in hass.data[DOMAIN]:
-        hass.data[DOMAIN][entry.entry_id] = {}
-    
-    hass.data[DOMAIN][entry.entry_id]["light"] = light_entity
+    # For the other platforms, set up after this one (runtime_data.lamp_of).
+    entry.runtime_data.light = light_entity
     return True
 
 

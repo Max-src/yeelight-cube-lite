@@ -9,7 +9,6 @@ import time
 
 import voluptuous as vol  # type: ignore
 from homeassistant.core import HomeAssistant  # type: ignore
-from homeassistant.exceptions import HomeAssistantError  # type: ignore
 from homeassistant.helpers import config_validation as cv  # type: ignore
 
 from .native_effect_preview import (
@@ -35,6 +34,7 @@ from .light_rotation import (
     MIN_ROTATION_INTERVAL,
 )
 from .command_errors import note_command_result
+from .errors import failed, invalid
 from .light_services_common import (
     FAVOURITE_LIST_SCHEMA,
     _resolve_entities,
@@ -61,13 +61,11 @@ def async_register_native_services(hass: HomeAssistant) -> None:
         each lamp advances on its own timer instead.
         """
         targets = _resolve_entities(service_call, "START_EFFECT_ROTATION")
-        if not targets:
-            raise HomeAssistantError("No matching Yeelight Cube lamps")
         items = service_call.data.get("items") or []
         interval = service_call.data.get("interval", 60)
         kind = service_call.data.get("kind", "native")
         if not isinstance(items, (list, tuple)) or len(items) < 2:
-            raise HomeAssistantError("Provide at least two modes in 'items'")
+            raise invalid("rotation_too_few")
 
         # Lamps started by one call share a schedule; the group is saved so a
         # restart resumes them together. A lamp started alone (the card's
@@ -141,8 +139,6 @@ def async_register_native_services(hass: HomeAssistant) -> None:
         """Replace a lamp's favourite effects or clock styles (all dashboards
         show them; rotation plays them in this order)."""
         targets = _resolve_entities(service_call, "SET_FAVOURITES")
-        if not targets:
-            raise HomeAssistantError("No matching Yeelight Cube lamps")
         kind = service_call.data["kind"]
         items = service_call.data["favourites"]
         for target in targets:
@@ -152,8 +148,6 @@ def async_register_native_services(hass: HomeAssistant) -> None:
         """Set the rotation interval every dashboard uses (applied at once to
         a running rotation of that kind)."""
         targets = _resolve_entities(service_call, "SET_ROTATION_INTERVAL")
-        if not targets:
-            raise HomeAssistantError("No matching Yeelight Cube lamps")
         for target in targets:
             target.set_rotation_interval(
                 service_call.data["kind"], service_call.data["interval"]
@@ -191,8 +185,6 @@ def async_register_native_services(hass: HomeAssistant) -> None:
 
     async def handle_set_native_effect(service_call):
         targets = _resolve_entities(service_call, "SET_NATIVE_EFFECT")
-        if not targets:
-            raise HomeAssistantError("No matching Yeelight Cube lamps")
         effect = service_call.data.get("effect")
         speed = service_call.data.get("speed")
         color_mode = service_call.data.get("color_mode")
@@ -203,26 +195,26 @@ def async_register_native_services(hass: HomeAssistant) -> None:
             not isinstance(color, (list, tuple)) or len(color) != 3
             or any(type(channel) is not int or not 0 <= channel <= 255 for channel in color)
         ):
-            raise HomeAssistantError("color must be [r, g, b] or 'clear'")
+            raise invalid("color_invalid")
         activate = service_call.data.get("activate", True)
         for target in targets:
             name = effect if effect is not None else target._native_effect
             spec = ALL_NATIVE_EFFECTS.get(name)
             if spec is None:
-                raise HomeAssistantError(f"Unknown native effect: {name}")
+                raise invalid("unknown_effect", effect=name)
             if spec.get("extended") and not target._extended_effects_enabled:
-                raise HomeAssistantError("Enable Experimental Features before applying this effect")
+                raise invalid("experimental_required", name=name)
             if speed is not None and not spec.get("speed"):
-                raise HomeAssistantError(f"{name} does not support animation speed")
+                raise invalid("no_speed", effect=name)
             if has_color and not clear_color and not effect_supports_color_override(name):
-                raise HomeAssistantError(f"{name} does not support custom colors")
+                raise invalid("no_custom_color", effect=name)
             if color_mode is not None and (
                 color_mode not in CLOCK_COLOR_MODES
                 or (color_mode != "normal" and not effect_supports_color_mode(name, color_mode))
             ):
-                raise HomeAssistantError(f"{name} does not support color mode {color_mode}")
+                raise invalid("color_mode_unsupported", effect=name, color_mode=color_mode)
             if not target._is_on and not target._should_auto_turn_on():
-                raise HomeAssistantError("Lamp is off and auto-turn-on is disabled")
+                raise invalid("lamp_off")
 
         def update_one(target):
             """Record the requested settings and publish them immediately.
@@ -376,8 +368,6 @@ def async_register_native_services(hass: HomeAssistant) -> None:
         (``activate``) so the change is visible immediately.
         """
         targets = _resolve_entities(service_call, "SET_CLOCK_STYLE")
-        if not targets:
-            return
         data = service_call.data
         style = data.get("style")
         has_color = "color" in data
@@ -408,7 +398,7 @@ def async_register_native_services(hass: HomeAssistant) -> None:
                     None,
                 )
             if style_id is None:
-                raise HomeAssistantError(f"Unknown clock style: {style}")
+                raise invalid("unknown_clock_style", style=style)
 
         # Encode an [r, g, b] override into the firmware's 0x01RRGGBB clock
         # color integer (high byte 0x01 = custom color, matching the built-in
@@ -421,7 +411,7 @@ def async_register_native_services(hass: HomeAssistant) -> None:
             elif isinstance(color, (list, tuple)) and len(color) >= 3:
                 clock_color = rgb_to_argb(color)
             else:
-                raise HomeAssistantError("color must be [r, g, b] or 'clear'")
+                raise invalid("color_invalid")
 
         async def _apply_one(target):
             if style_id is not None:
@@ -486,8 +476,6 @@ def async_register_native_services(hass: HomeAssistant) -> None:
     async def handle_set_button_effects(service_call):
         """Set the ordered native-effect list cycled by the physical button."""
         targets = _resolve_entities(service_call, "SET_BUTTON_EFFECTS")
-        if not targets:
-            return
         effect_names = service_call.data["effects"]
         results = await asyncio.gather(
             *(
@@ -501,9 +489,7 @@ def async_register_native_services(hass: HomeAssistant) -> None:
             )
         )
         if not all(results):
-            raise HomeAssistantError(
-                "One or more Cube Lite devices did not accept the button presets"
-            )
+            raise failed("button_effects_refused")
 
     button_effect_options = list(NATIVE_EFFECTS) + [
         f"Clock: {style['name']}" for style in NATIVE_CLOCK_STYLES.values()

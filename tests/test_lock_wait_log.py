@@ -94,7 +94,8 @@ class LockWaitLogTests(LampTestCase):
 
 
 class CoalescedRedrawTests(LampTestCase):
-    """Queued full redraws: only the newest waiting one reaches the lamp."""
+    """Queued operations with a coalesce key (full redraws, brightness
+    changes): only the newest waiting one of each key reaches the lamp."""
 
     async def _queue_behind_running(self, ops):
         """Start a running redraw, then queue ``ops`` (name, coalesce) behind it.
@@ -108,7 +109,7 @@ class CoalescedRedrawTests(LampTestCase):
             return run
 
         running = asyncio.ensure_future(self.lamp._execute_hardware_op(
-            record("running", 0.05), "display:running", coalesce=True))
+            record("running", 0.05), "display:running", coalesce="display"))
         await asyncio.sleep(0)  # it now holds the lamp
         queued = []
         for name, coalesce in ops:
@@ -121,7 +122,7 @@ class CoalescedRedrawTests(LampTestCase):
 
     async def test_only_the_newest_queued_redraw_runs(self):
         ran, results = await self._queue_behind_running(
-            [("first", True), ("second", True), ("third", True)])
+            [("first", "display"), ("second", "display"), ("third", "display")])
         self.assertEqual(["running", "third"], ran)
         # skipped redraws report success: the newest one draws the same state
         self.assertEqual([True, True, True], results)
@@ -130,8 +131,19 @@ class CoalescedRedrawTests(LampTestCase):
 
     async def test_other_operations_are_never_skipped(self):
         ran, _ = await self._queue_behind_running(
-            [("brightness", False), ("redraw", True), ("turn_off", False)])
-        self.assertEqual(["running", "brightness", "redraw", "turn_off"], ran)
+            [("color", None), ("redraw", "display"), ("turn_off", None)])
+        self.assertEqual(["running", "color", "redraw", "turn_off"], ran)
+
+    async def test_only_the_newest_brightness_runs_and_redraws_still_do(self):
+        # A slider drag queues brightness changes: the newest one runs. A
+        # redraw queued among them is another key: it is never skipped for
+        # a brightness, nor a brightness for it.
+        ran, results = await self._queue_behind_running([
+            ("brightness 40", "brightness"), ("redraw", "display"),
+            ("brightness 60", "brightness"), ("brightness 80", "brightness"),
+        ])
+        self.assertEqual(["running", "redraw", "brightness 80"], ran)
+        self.assertEqual([True] * 4, results)
 
     async def test_a_rejected_newer_redraw_does_not_drop_the_waiting_one(self):
         ran = []
@@ -143,15 +155,15 @@ class CoalescedRedrawTests(LampTestCase):
             ran.append("waiting")
 
         running = asyncio.ensure_future(
-            self.lamp._execute_hardware_op(hold, "display:running", coalesce=True))
+            self.lamp._execute_hardware_op(hold, "display:running", coalesce="display"))
         await asyncio.sleep(0)
         queued = asyncio.ensure_future(
-            self.lamp._execute_hardware_op(waiting, "display:waiting", coalesce=True))
+            self.lamp._execute_hardware_op(waiting, "display:waiting", coalesce="display"))
         await asyncio.sleep(0)
         # The circuit breaker rejects the next redraw before it is queued.
         self.lamp._hard_timeout_times = [time.time(), time.time()]
         self.assertFalse(await self.lamp._execute_hardware_op(
-            Mock(), "display:rejected", coalesce=True))
+            Mock(), "display:rejected", coalesce="display"))
         self.lamp._hard_timeout_times = []
         await asyncio.gather(running, queued)
         self.assertEqual(["waiting"], ran)

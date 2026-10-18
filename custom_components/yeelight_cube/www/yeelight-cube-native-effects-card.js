@@ -120,18 +120,23 @@ class YeelightCubeNativeEffectsCard extends YeelightCardMixin(LitElement) {
       commit,
     });
     this._lampSliders = new LampSliders(this, {
-      speed: slider("speed", (value) =>
-        this._command("set_native_effect", {
-          speed: speedPctToRaw(value),
-          activate: false,
-        }),
+      speed: slider("speed", (value, options) =>
+        this._command(
+          "set_native_effect",
+          { speed: speedPctToRaw(value), activate: false },
+          "yeelight_cube",
+          false,
+          options,
+        ),
       ),
       // Raw brightness on the shared curve, like the other cards.
-      brightness: slider("brightness", (value) =>
+      brightness: slider("brightness", (value, options) =>
         this._command(
           "turn_on",
           { brightness: brightnessPctToRaw(value) },
           "light",
+          false,
+          options,
         ),
       ),
     });

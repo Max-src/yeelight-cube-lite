@@ -2,9 +2,11 @@ DOMAIN = "yeelight_cube"
 CONF_IP = "Light IP Address"
 CONF_DEVICE_ID = "device_id"
 
-# Configuration for preventing conflicts with built-in yeelight integration
-CONF_MANAGED_DEVICES = "managed_devices"
-CONF_PREVENT_DISCOVERY = "prevent_discovery"
+# The lamp's LAN Control port (TCP; its UDP session: udp_session.UDP_PORT).
+LAN_PORT = 55443
+# How long a reachability probe waits for the lamp (adding it, setting it
+# up): generous, it may still be booting.
+PROBE_TIMEOUT = 3.0
 
 # Native clock definitions recovered from the Yeelight app (formerly Yeelight
 # Station).

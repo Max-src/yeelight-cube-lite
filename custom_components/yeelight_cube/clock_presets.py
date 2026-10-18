@@ -2,31 +2,33 @@
 
 from uuid import uuid4
 
+from .input_error import InputError
+
 
 def save_clock_preset(presets, name, color, builtin_names, preset_id=None, kind=None):
     existing = next((item for item in presets if item["id"] == preset_id), None)
     if kind is None:
         kind = existing.get("kind", "style") if existing else "style"
     if kind not in {"style", "color_mode"}:
-        raise ValueError("Preset kind must be style or color_mode")
+        raise InputError("preset_kind")
     name = " ".join(str(name).split())
     if not name or len(name) > 40:
-        raise ValueError("Name must contain 1 to 40 characters")
+        raise InputError("preset_name_length")
     if any(ord(char) < 32 or char in "<>" for char in name):
-        raise ValueError("Name contains unsupported characters")
+        raise InputError("preset_name_characters")
     if kind == "style" and name.casefold() in {item.casefold() for item in builtin_names}:
-        raise ValueError("Choose a name different from a built-in clock style")
+        raise InputError("preset_name_builtin")
     if not isinstance(color, (list, tuple)) or len(color) != 3 or any(
         type(channel) is not int or not 0 <= channel <= 255 for channel in color
     ):
-        raise ValueError("Color must contain three integers between 0 and 255")
+        raise InputError("preset_color")
     if preset_id and not any(item["id"] == preset_id for item in presets):
-        raise ValueError("This preset no longer exists")
+        raise InputError("preset_gone")
     same_kind = [item for item in presets if item.get("kind", "style") == kind]
     if any(item["id"] != preset_id and item["name"].casefold() == name.casefold() for item in same_kind):
-        raise ValueError("A clock preset already uses this name")
+        raise InputError("preset_name_taken")
     if not preset_id and len(presets) >= 100:
-        raise ValueError("The clock library is limited to 100 presets")
+        raise InputError("preset_limit")
     item = {"id": preset_id or uuid4().hex, "name": name, "color": list(color), "kind": kind}
     if preset_id:
         return [item if existing["id"] == preset_id else existing for existing in presets]
@@ -35,5 +37,5 @@ def save_clock_preset(presets, name, color, builtin_names, preset_id=None, kind=
 
 def delete_clock_preset(presets, preset_id):
     if not any(item["id"] == preset_id for item in presets):
-        raise ValueError("This preset no longer exists")
+        raise InputError("preset_gone")
     return [item for item in presets if item["id"] != preset_id]

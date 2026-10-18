@@ -7,10 +7,15 @@ from homeassistant.core import HomeAssistant, callback # type: ignore
 from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 
-from .const import DOMAIN, MODE_CLOCK
+from .const import MODE_CLOCK
+from .runtime_data import lamp_of
 from .entity import CubeControlEntity, CubeDeviceEntity, remove_retired_entities
 
 _LOGGER = logging.getLogger(__name__)
+
+# No limit per platform: every command to the lamp already waits for the
+# previous one (the device lock, light_connection._execute_hardware_op).
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
@@ -19,21 +24,19 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Yeelight Cube Lite switch entities from a config entry."""
-    # Get the light entity data
-    light_data = hass.data[DOMAIN].get(config_entry.entry_id)
-    
-    if not light_data:
-        _LOGGER.error("No light data found for config entry")
+    light_entity = lamp_of(config_entry)
+    if light_entity is None:
+        _LOGGER.error("No light entity found for config entry")
         return
     
     # Create the switches
     switches = [
-        YeelightCubeAutoTurnOnSwitch(config_entry, light_data),
-        YeelightCubeClockShowDateSwitch(config_entry, light_data),
-        YeelightCubeClock12HourSwitch(config_entry, light_data),
-        YeelightCubeClockColonBlinkSwitch(config_entry, light_data),
-        YeelightCubeScrollSwitch(config_entry, light_data),
-        YeelightCubeExtendedEffectsSwitch(config_entry, light_data),
+        YeelightCubeAutoTurnOnSwitch(config_entry, light_entity),
+        YeelightCubeClockShowDateSwitch(config_entry, light_entity),
+        YeelightCubeClock12HourSwitch(config_entry, light_entity),
+        YeelightCubeClockColonBlinkSwitch(config_entry, light_entity),
+        YeelightCubeScrollSwitch(config_entry, light_entity),
+        YeelightCubeExtendedEffectsSwitch(config_entry, light_entity),
     ]
     
     async_add_entities(switches)
@@ -48,19 +51,15 @@ class YeelightCubeAutoTurnOnSwitch(CubeDeviceEntity, SwitchEntity):
     """Whether a command sent while the lamp is off turns it on (stored in
     the config entry's options; light._should_auto_turn_on reads it)."""
 
-    _attr_has_entity_name = True
     _attr_should_poll = False
 
-    def __init__(self, config_entry: ConfigEntry, light_data):
+    def __init__(self, config_entry: ConfigEntry, light_entity):
         """Initialize the switch."""
         self._config_entry = config_entry
-        self._light_data = light_data
-        self._attr_name = "Auto Turn On"
+        self._attr_translation_key = "auto_turn_on"
         self._attr_unique_id = f"{config_entry.entry_id}_auto_turn_on"
-        self._attr_icon = "mdi:lightbulb-auto"
 
-        # Get the light entity to access its state
-        self._light_entity = light_data.get("light")
+        self._light_entity = light_entity
 
         # Load saved state or default to True (current behavior)
         self._attr_is_on = config_entry.options.get("auto_turn_on", True)
@@ -88,17 +87,15 @@ class YeelightCubeExtendedEffectsSwitch(CubeDeviceEntity, SwitchEntity):
     firmware modes. Off by default.
     """
 
-    _attr_has_entity_name = True
     _attr_should_poll = False
 
-    def __init__(self, config_entry: ConfigEntry, light_data):
+    def __init__(self, config_entry: ConfigEntry, light_entity):
         self._config_entry = config_entry
-        self._light_entity = light_data.get("light")
-        self._attr_name = "Experimental Features"
+        self._light_entity = light_entity
+        self._attr_translation_key = "extended_effects"
         self._attr_unique_id = (
             f"{self._light_entity._attr_unique_id}_extended_effects"
         )
-        self._attr_icon = "mdi:flask-outline"
 
     @property
     def is_on(self) -> bool:
@@ -132,7 +129,7 @@ class YeelightCubeExtendedEffectsSwitch(CubeDeviceEntity, SwitchEntity):
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
-        self._light_entity._extended_effects_switch_entity = self
+        self._register_on_light("_extended_effects_switch_entity")
         self.async_update_from_light()
 
     @callback
@@ -146,20 +143,17 @@ class _YeelightCubeClockOptionSwitch(CubeControlEntity, SwitchEntity):
     """Base switch for a native clock option."""
 
     _attr_entity_category = EntityCategory.CONFIG
-    _attr_has_entity_name = True
     _attr_should_poll = False
     option_attr = ""
     option_key = ""
-    option_icon = "mdi:clock-digital"
 
-    def __init__(self, config_entry: ConfigEntry, light_data):
+    def __init__(self, config_entry: ConfigEntry, light_entity):
         self._config_entry = config_entry
-        self._light_entity = light_data.get("light")
+        self._light_entity = light_entity
         self._attr_translation_key = self.option_key
         self._attr_unique_id = (
             f"{self._light_entity._attr_unique_id}_{self.option_key}"
         )
-        self._attr_icon = self.option_icon
         self._attr_is_on = bool(getattr(self._light_entity, self.option_attr))
 
     async def _set_option(self, enabled: bool) -> None:
@@ -198,7 +192,6 @@ class YeelightCubeClockShowDateSwitch(_YeelightCubeClockOptionSwitch):
 
     option_attr = "_native_clock_show_date"
     option_key = "clock_show_date"
-    option_icon = "mdi:calendar-clock"
 
     async def _set_option(self, enabled: bool) -> None:
         # Route through the 3-way content setter so the Clock Content select
@@ -219,7 +212,7 @@ class YeelightCubeClockShowDateSwitch(_YeelightCubeClockOptionSwitch):
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
-        self._light_entity._clock_show_date_switch_entity = self
+        self._register_on_light("_clock_show_date_switch_entity")
         self.async_update_from_light()
 
     @callback
@@ -234,11 +227,10 @@ class YeelightCubeClock12HourSwitch(_YeelightCubeClockOptionSwitch):
 
     option_attr = "_native_clock_12_hour"
     option_key = "clock_12_hour"
-    option_icon = "mdi:clock-outline"
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
-        self._light_entity._clock_12_hour_switch_entity = self
+        self._register_on_light("_clock_12_hour_switch_entity")
         self.async_update_from_light()
 
     @callback
@@ -253,11 +245,10 @@ class YeelightCubeClockColonBlinkSwitch(_YeelightCubeClockOptionSwitch):
 
     option_attr = "_native_clock_colon_blink"
     option_key = "clock_colon_blink"
-    option_icon = "mdi:dots-vertical"
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
-        self._light_entity._clock_colon_blink_switch_entity = self
+        self._register_on_light("_clock_colon_blink_switch_entity")
         self.async_update_from_light()
 
     @callback
@@ -270,16 +261,14 @@ class YeelightCubeClockColonBlinkSwitch(_YeelightCubeClockOptionSwitch):
 class YeelightCubeScrollSwitch(CubeControlEntity, SwitchEntity):
     """Enable automatic ping-pong scrolling for text wider than the matrix."""
 
-    _attr_has_entity_name = True
     _attr_should_poll = False
     _attr_translation_key = "scroll_enabled"
     _attr_entity_category = EntityCategory.CONFIG
 
-    def __init__(self, config_entry: ConfigEntry, light_data):
+    def __init__(self, config_entry: ConfigEntry, light_entity):
         self._config_entry = config_entry
-        self._light_entity = light_data.get("light")
+        self._light_entity = light_entity
         self._attr_unique_id = f"{self._light_entity._attr_unique_id}_scroll_enabled"
-        self._attr_icon = "mdi:format-text-rotation-none"
         self._attr_is_on = self._light_entity._scroll_enabled
 
     async def async_turn_on(self, **kwargs):
@@ -301,7 +290,7 @@ class YeelightCubeScrollSwitch(CubeControlEntity, SwitchEntity):
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
-        self._light_entity._scroll_enabled_switch_entity = self
+        self._register_on_light("_scroll_enabled_switch_entity")
 
     @callback
     def async_entity_id_changed(self, old_entity_id: str) -> None:

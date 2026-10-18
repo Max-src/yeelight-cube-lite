@@ -130,6 +130,27 @@ module.exports = async (t) => {
     { loaded: ["art:1"], drawn: [] },
     "draw: the pixel art on the canvas is active",
   );
+  // A pixel art picked and sent is named (the lamp's Pixel Art select shows
+  // it); the drawing sent as such is the user's own (no name).
+  assert.deepEqual(
+    await page.evaluate(async () => {
+      await mount("yeelight-cube-draw-card", { entity: "light.a", pixelart_sensor: "sensor.pixel" });
+      const sent = async (send) => {
+        calls.length = 0;
+        await send();
+        for (let wait = 0; wait < 40 && !calls.some((c) => c.service === "apply_custom_pixels"); wait++)
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        return calls.find((c) => c.service === "apply_custom_pixels")?.data.name ?? null;
+      };
+      const picked = await sent(() => card._handlePixelArtCanvasClick(1, true));
+      const own = await sent(() => card._sendToLamp());
+      card.matrix = card.matrix.map(() => "#000000");
+      card.constructor.getStorageUtils().saveMatrix(card.matrix);
+      return { picked, own };
+    }),
+    { picked: "Star", own: null },
+    "draw: a picked pixel art is sent with its name",
+  );
   // Browsing never replaces the drawing: carousel and wheel moves only
   // browse (navigateSelects false), a click on the item loads it.
   for (const style of ["preview-carousel", "preview-wheel"]) {

@@ -14,7 +14,6 @@ from homeassistant.core import HomeAssistant  # type: ignore
 from homeassistant.exceptions import HomeAssistantError  # type: ignore
 from homeassistant.helpers import config_validation as cv  # type: ignore
 
-from . import async_save_data
 from .color_utils import hex_to_rgb
 from .const import (
     DEVICE_ORIENTATIONS,
@@ -28,7 +27,9 @@ from .const import (
     PANEL_FULL_CHAR,
     TEXT_RENDER_MODES,
 )
+from .errors import failed, invalid, invalid_input
 from .image_utils import MAX_IMAGE_B64_LENGTH, image_to_matrix
+from .input_error import InputError
 from .layout import FONT_MAPS, TOTAL_COLUMNS, TOTAL_ROWS
 from .light import _entity_id_or_list
 from .light_services_common import (
@@ -74,8 +75,6 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         """Generate full 5x20 preview matrices for all gradient modes using entity's current state."""
 
         target_entity = _resolve_entity(service_call, "PREVIEW_GRADIENT_MODES")
-        if not target_entity:
-            return {}
         
         # Generate previews for all modes using entity's actual state
         modes = [
@@ -132,8 +131,6 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         brightness_pct = max(1, min(100, brightness_pct))
         
         target_entity = _resolve_entity(service_call, "SET_BRIGHTNESS")
-        if not target_entity:
-            return
         
         # Map 1-100 slider to Home Assistant brightness (1-255)
         # Formula: map 1-100 to 3-255 (same as lamp preview card)
@@ -159,8 +156,10 @@ def async_register_display_services(hass: HomeAssistant) -> None:
                     blocking=True
                 )
             _LOGGER.debug("[SET_BRIGHTNESS] Successfully set brightness to %s%%", brightness_pct)
-        except Exception as e:
-            _LOGGER.error("[SET_BRIGHTNESS] Failed to set brightness: %s", e)
+        except HomeAssistantError:
+            raise
+        except Exception as err:  # noqa: BLE001 -- the lamp's own errors, told to the caller
+            raise failed("command_failed", error=err) from err
 
     hass.services.async_register(
         DOMAIN,
@@ -177,8 +176,6 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         orientation = service_call.data.get("orientation")
         
         target_entity = _resolve_entity(service_call, "SET_ORIENTATION")
-        if not target_entity:
-            return
 
         await target_entity.set_orientation(orientation)
 
@@ -198,7 +195,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         targets = _resolve_entities(service_call, "SET_DEVICE_ORIENTATION")
         for target in targets:
             if not target._is_on and not target._should_auto_turn_on():
-                raise HomeAssistantError("Lamp is off and auto-turn-on is disabled.")
+                raise invalid("lamp_off")
         await asyncio.gather(*(target.set_device_orientation(orientation) for target in targets))
 
     hass.services.async_register(
@@ -213,14 +210,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
 
     async def handle_set_font(service_call):
         font = service_call.data.get("font")
-        from .layout import FONT_MAPS
-        if font not in FONT_MAPS:
-            _LOGGER.error("Invalid font for set_font: %s", font)
-            return
-        
         target_entity = _resolve_entity(service_call, "SET_FONT")
-        if not target_entity:
-            return
 
         await target_entity.set_font(font)
         if target_entity._font_select_entity:
@@ -238,13 +228,7 @@ def async_register_display_services(hass: HomeAssistant) -> None:
 
     async def handle_set_alignment(service_call):
         alignment = service_call.data.get("alignment")
-        if alignment not in ("left", "center", "right"):
-            _LOGGER.error("Invalid alignment value for set_alignment: %s", alignment)
-            return
-        
         target_entity = _resolve_entity(service_call, "SET_ALIGNMENT")
-        if not target_entity:
-            return
 
         await target_entity.set_alignment(alignment)
         # Notify alignment select entity of the change
@@ -264,19 +248,12 @@ def async_register_display_services(hass: HomeAssistant) -> None:
     async def handle_set_custom_text(service_call):
         # Supports multi-entity parallel dispatch
         text = service_call.data.get("text")
-        
-        if not isinstance(text, str):
-            _LOGGER.error("set_custom_text received non-string: %s", text)
-            return
-        
         # Prevent empty text -- the Yeelight firmware misbehaves when given
         # an empty string.  Use a single space instead (renders as blank).
         if text == "":
             text = " "
 
         targets = _resolve_entities(service_call, "SET_CUSTOM_TEXT")
-        if not targets:
-            return
 
         async def _apply_one(target_entity):
             _LOGGER.debug("[SET_TEXT] Setting custom text to: '%s' for entity %s", text, target_entity.entity_id)
@@ -333,16 +310,8 @@ def async_register_display_services(hass: HomeAssistant) -> None:
     async def handle_set_angle(service_call):
         # Supports multi-entity parallel dispatch
         angle = service_call.data.get("angle")
-        
-        try:
-            angle = float(angle)
-        except (TypeError, ValueError):
-            _LOGGER.error("Invalid angle value for set_angle: %s", angle)
-            return
 
         targets = _resolve_entities(service_call, "SET_ANGLE")
-        if not targets:
-            return
 
         async def _apply_one(target_entity):
             target_entity._angle = angle
@@ -372,14 +341,9 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         text_colors = service_call.data.get("text_colors")
         save_as_palette = service_call.data.get("save_as_palette", False)
 
-        if not text_colors or not isinstance(text_colors, list):
-            return
-
         converted_colors = [tuple(c) for c in text_colors]
 
         targets = _resolve_entities(service_call, "SET_TEXT_COLORS")
-        if not targets:
-            return
 
         if save_as_palette:
             # The documented option: also keep these colors as a saved
@@ -401,10 +365,9 @@ def async_register_display_services(hass: HomeAssistant) -> None:
             await target_entity.async_apply_display_mode(update_type='color_change')
             target_entity.async_schedule_update_ha_state()
 
-        async def _apply_all():
-            await asyncio.gather(*[_apply_one(t) for t in targets])
-            await async_save_data(hass)
-        hass.async_create_task(_apply_all())
+        # The colors are kept with the lamp's state (restored by Home
+        # Assistant), not in the integration's storage.
+        run_on_lamps("SET_TEXT_COLORS", targets, _apply_one)
 
     hass.services.async_register(
         DOMAIN,
@@ -424,12 +387,8 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         """Accepts a base64-encoded image, resizes/crops to 20x5, and displays it on the lamp(s).
         Supports multi-entity parallel dispatch."""
         image_b64 = service_call.data.get("image_b64")
-        if not image_b64:
-            raise HomeAssistantError("image_b64 is required")
         # Resolved before decoding: no work for a call that targets no lamp.
         targets = _resolve_entities(service_call, "DISPLAY_IMAGE")
-        if not targets:
-            raise HomeAssistantError("No matching Yeelight Cube lamps")
 
         # Process image once (shared across all targets). PIL decode/resize is
         # CPU-bound, so run it off the event loop.
@@ -446,12 +405,12 @@ def async_register_display_services(hass: HomeAssistant) -> None:
                 {"position": pos, "color": color}
                 for pos, color in enumerate(flipped_matrix)
             ]
-        except ValueError as err:
+        except InputError as err:
             # Too large, not base64 or not an image: tell the caller.
-            raise HomeAssistantError(str(err)) from err
+            raise invalid_input(err) from err
         except Exception as err:  # noqa: BLE001 -- unexpected decoder failure
             _LOGGER.exception("Error processing image")
-            raise HomeAssistantError(f"The image could not be processed: {err}") from err
+            raise failed("image_failed", error=err) from err
 
         async def _apply_one(target_entity):
             target_entity._custom_pixels = custom_pixels
@@ -483,28 +442,8 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         mode = service_call.data.get("mode")
         full_panel = service_call.data.get("full_panel")
         
-        text_modes = [
-            MODE_CLOCK,
-            MODE_NATIVE_EFFECT,
-            "Solid Color",
-            "Letter Gradient",
-            "Column Gradient",
-            "Row Gradient",
-            "Angle Gradient",
-            "Radial Gradient",
-            "Letter Vertical Gradient",
-            "Letter Angle Gradient",
-            "Text Color Sequence",
-            "Panel Color Sequence",
-        ]
-
-        if mode not in text_modes + ["Custom Draw"]:
-            _LOGGER.error("[set_mode] Invalid mode: %s", mode)
-            return
 
         targets = _resolve_entities(service_call, "SET_MODE")
-        if not targets:
-            return
 
         async def _apply_one(target_entity):
             if full_panel is not None:
@@ -570,8 +509,6 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         rgb_color = tuple(rgb_color)
 
         targets = _resolve_entities(service_call, "SET_SOLID_COLOR")
-        if not targets:
-            return
 
         async def _apply_one(target_entity):
             # Rendering reads colors from _text_colors, not _rgb_color — set
@@ -602,8 +539,6 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         full_panel = service_call.data.get("full_panel", False)
 
         targets = _resolve_entities(service_call, "SET_FULL_PANEL")
-        if not targets:
-            return
 
         async def _apply_one(target_entity):
             _LOGGER.debug(
@@ -638,8 +573,6 @@ def async_register_display_services(hass: HomeAssistant) -> None:
     async def handle_set_preview_adjustments(service_call):
         """Set color adjustment values for the lamp (all effects). Supports multi-entity parallel dispatch."""
         targets = _resolve_entities(service_call, "SET_PREVIEW_ADJUSTMENTS")
-        if not targets:
-            return
 
         # Extract raw data once (defaults are per-entity, applied inside _apply_one)
         data = service_call.data
@@ -711,8 +644,6 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         """Force refresh using raw TCP connections (bypasses persistent socket).
         Supports multi-entity parallel dispatch."""
         targets = _resolve_entities(service_call, "FORCE_REFRESH")
-        if not targets:
-            return
 
         run_on_lamps("FORCE_REFRESH", targets, lambda lamp: lamp.async_force_refresh())
 
@@ -736,8 +667,6 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         resend the last command). Supports multi-entity parallel dispatch.
         """
         targets = _resolve_entities(service_call, "FREEZE_DISPLAY")
-        if not targets:
-            return
 
         def _freeze_params(target):
             if getattr(target, "_mode", None) == MODE_CLOCK:
@@ -795,8 +724,6 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         Only ONE snapshot is kept per entity -- calling again overwrites it.
         Supports multi-entity parallel dispatch."""
         targets = _resolve_entities(service_call, "SAVE_STATE")
-        if not targets:
-            return
 
         async def _apply_one(target_entity):
             target_entity._save_display_state()
@@ -818,8 +745,6 @@ def async_register_display_services(hass: HomeAssistant) -> None:
         re-render it on the lamp.  Does nothing (logs a warning) if no state
         was saved.  Supports multi-entity parallel dispatch."""
         targets = _resolve_entities(service_call, "RESTORE_STATE")
-        if not targets:
-            return
 
         async def _apply_one(target_entity):
             if not target_entity._restore_display_state():

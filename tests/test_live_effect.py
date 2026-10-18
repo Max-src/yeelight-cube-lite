@@ -14,9 +14,15 @@ from tests.test_native_features import (
     _load_standalone_functions,
 )
 
+HARDWARE_BRIGHTNESS_FOR = _load_standalone_functions(
+    (ROOT / "light_color.py").read_text(encoding="utf-8"), {"hardware_brightness_for"}
+)["hardware_brightness_for"]
 FNS = _load_standalone_functions(
-    (ROOT / "light_native.py").read_text(encoding="utf-8"), NATIVE_ACTIVATION, {
+    (ROOT / "light_native.py").read_text(encoding="utf-8"),
+    NATIVE_ACTIVATION | {"_set_native_mode_brightness"},
+    {
         **CONSTANTS,
+        "hardware_brightness_for": HARDWARE_BRIGHTNESS_FOR,
         "base64": base64,
         "_LOGGER": Mock(),
         "asyncio": SimpleNamespace(sleep=AsyncMock()),
@@ -92,8 +98,9 @@ class ActivationTests(unittest.IsolatedAsyncioTestCase):
             _native_effect_direction_select_entity=None,
             _native_effect_color_mode="normal", _native_effect_color=None,
             hass=None, _last_fx_mode_time=1.0, _cube_matrix=cube,
-            _leave_direct_mode=AsyncMock(), _set_native_mode_brightness=AsyncMock(),
-            _notify_camera_preview=Mock(),
+            _leave_direct_mode=AsyncMock(), _notify_camera_preview=Mock(),
+            # Its brightness: not known yet (sent with the first activation).
+            _brightness=255, _last_hardware_brightness=None,
             # The clock's settings (Rainbow clock: mixer 39, a direction).
             _native_clock_style=next(
                 key for key, style in CONSTANTS["NATIVE_CLOCK_STYLES"].items()
@@ -104,12 +111,7 @@ class ActivationTests(unittest.IsolatedAsyncioTestCase):
             _native_clock_data_bytes=lambda: bytes((1, 2, 0, 0)),
             _resolve_native_clock_color=lambda style: None,
         )
-        # Records the brightness among the commands (its order matters).
-        async def brightness():
-            self.sent.append(("set_bright", None))
-
-        self.lamp._set_native_mode_brightness = AsyncMock(side_effect=brightness)
-        for name in NATIVE_ACTIVATION_METHODS:
+        for name in NATIVE_ACTIVATION_METHODS | {"_set_native_mode_brightness"}:
             setattr(self.lamp, name, FNS[name].__get__(self.lamp))
 
     def commands(self, brightness=False):
@@ -124,13 +126,14 @@ class ActivationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(["set_fx_effect"], self.commands())
         self.assertTrue(self.lamp._in_native_fw_mode)
         self.lamp._leave_direct_mode.reset_mock()
-        self.lamp._set_native_mode_brightness.reset_mock()
         self.lamp._native_effect_speed = 90
         await self.lamp._activate_native_effect()
         self.assertEqual(("update_fx_effect", [{"rate": 90}]), self.sent[-1])
         # Nothing else around it: no blank frame, no brightness.
         self.lamp._leave_direct_mode.assert_not_awaited()
-        self.lamp._set_native_mode_brightness.assert_not_awaited()
+        self.assertEqual(
+            ["set_bright", "set_fx_effect", "update_fx_effect"], self.commands(brightness=True)
+        )
         self.assertEqual(90, self.lamp._cube_matrix.running_effect[3]["rate"])
 
     async def test_a_refused_update_activates_in_full(self):
@@ -164,13 +167,16 @@ class ActivationTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_the_clock_is_always_set_in_full(self):
         # A live speed update left the clock dark on the lamp: every clock
-        # change restarts it in full, its brightness after set_fx_effect.
+        # change restarts it in full; its brightness after set_fx_effect, and
+        # only while it differs.
         await self.lamp._activate_native_clock()
         self.assertEqual(2, self.lamp._native_clock_timezone_offset)
         self.lamp._native_effect_speed = 90
         await self.lamp._activate_native_clock()
-        self.assertEqual(["set_fx_effect", "set_bright"] * 2, self.commands(brightness=True))
-        self.assertEqual(90, self.sent[-2][1][3]["rate"])
+        self.assertEqual(
+            ["set_fx_effect", "set_bright", "set_fx_effect"], self.commands(brightness=True)
+        )
+        self.assertEqual(90, self.sent[-1][1][3]["rate"])
         self.assertNotIn("update_fx_effect", self.commands())
 
     async def test_other_clock_changes_set_it_in_full(self):
@@ -184,7 +190,26 @@ class ActivationTests(unittest.IsolatedAsyncioTestCase):
             if style["mixer"] == 42
         )
         await self.lamp._activate_native_clock()
-        self.assertEqual(["set_fx_effect", "set_bright"] * 3, self.commands(brightness=True))
+        self.assertEqual(
+            ["set_fx_effect", "set_bright", "set_fx_effect", "set_fx_effect"],
+            self.commands(brightness=True),
+        )
+
+    async def test_the_brightness_goes_only_when_it_changes(self):
+        # Switching effects keeps the lamp's brightness (an effect's settings
+        # carry none): set_bright with the first one, not again until it
+        # changes, then before set_fx_effect (an effect's order).
+        await self.lamp._activate_native_effect()
+        self.lamp._native_effect = "Ocean Waves"
+        await self.lamp._activate_native_effect()
+        self.lamp._brightness = 128
+        self.lamp._native_effect = "Aurora"
+        await self.lamp._activate_native_effect()
+        self.assertEqual(
+            ["set_bright", "set_fx_effect", "set_fx_effect", "set_bright", "set_fx_effect"],
+            self.commands(brightness=True),
+        )
+        self.assertEqual(("set_bright", [50]), self.sent[3])
 
     async def test_a_clock_color_change_sets_it_in_full(self):
         # The case that left the clock dark: a saved custom color picked
@@ -193,8 +218,10 @@ class ActivationTests(unittest.IsolatedAsyncioTestCase):
         await self.lamp._activate_native_clock()
         self.lamp._resolve_native_clock_color = lambda style: 0x01330000
         await self.lamp._activate_native_clock()
-        self.assertEqual(["set_fx_effect", "set_bright"] * 2, self.commands(brightness=True))
-        self.assertEqual([0x01330000], self.sent[-2][1][3]["color"])
+        self.assertEqual(
+            ["set_fx_effect", "set_bright", "set_fx_effect"], self.commands(brightness=True)
+        )
+        self.assertEqual([0x01330000], self.sent[-1][1][3]["color"])
 
 
 if __name__ == "__main__":

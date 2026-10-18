@@ -5,15 +5,11 @@ import warnings
 
 from PIL import Image
 
-from tests.test_native_features import ROOT, _load_standalone_functions, SERVICES_SOURCE
-import asyncio
-import importlib.util
+from tests.test_native_features import SERVICES_SOURCE, TranslatedError, _load_standalone_functions, import_pure_module
 from types import SimpleNamespace
 from unittest.mock import Mock
 
-_spec = importlib.util.spec_from_file_location("image_utils", ROOT / "image_utils.py")
-image_utils = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(image_utils)
+image_utils = import_pure_module("image_utils")
 
 
 def _encode(image, fmt="PNG"):
@@ -77,8 +73,14 @@ class DisplayImageServiceTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_no_matching_lamp_is_an_error_and_nothing_is_decoded(self):
         decode = Mock()
+
+        def no_lamp(*args):
+            raise TranslatedError("lamp_not_found", entity_id="light.gone")
+
+        handler = self.handler([], decode)
+        handler.__globals__["_resolve_entities"] = no_lamp
         with self.assertRaisesRegex(RuntimeError, "No matching"):
-            await self.handler([], decode)(SimpleNamespace(data={"image_b64": "x"}))
+            await handler(SimpleNamespace(data={"image_b64": "x"}))
         decode.assert_not_called()
 
     async def test_an_unusable_image_is_reported_to_the_caller(self):

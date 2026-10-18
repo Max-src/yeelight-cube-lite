@@ -1,5 +1,4 @@
 from typing import List, Any, Dict
-from .cube_matrix import CubeMatrix
 
 TOTAL_COLUMNS = 20
 TOTAL_ROWS = 5
@@ -376,8 +375,6 @@ class Layout:
         if self.layout_orientation == "vertical":return 180 if self.base == "bottom" else 0
         return 270 if self.base == "left" else 90
 
-    def get_raw_rgb_data(self) -> str:
-        return "".join(module.get_rgb_data() for module in self.device_layout)
 
 class Module:
     def __init__(self, type: str, data: List[str] = None):
@@ -387,6 +384,3 @@ class Module:
     def set_colors(self, colors: List[str]) -> None:
         if (self.type == "1x1" and len(colors) != 1) or (self.type.startswith("5x5") and len(colors) != 25):raise ValueError(f"Incompatible colors: {len(colors)} for module: {self.type}")
         self.data = colors
-
-    def get_rgb_data(self) -> str:
-        return "".join(CubeMatrix.encode_hex_color(color) for color in self.data)

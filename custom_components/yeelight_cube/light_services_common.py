@@ -10,14 +10,11 @@ import time
 
 import voluptuous as vol  # type: ignore
 from homeassistant.core import HomeAssistant  # type: ignore
-from homeassistant.exceptions import (  # type: ignore
-    HomeAssistantError,
-    Unauthorized,
-    UnknownUser,
-)
+from homeassistant.exceptions import Unauthorized, UnknownUser  # type: ignore
 from homeassistant.helpers import config_validation as cv  # type: ignore
 
 from .command_errors import note_command_result
+from .errors import invalid
 from .cube_matrix import is_connection_error
 from .name_utils import normalize_display_name
 from .light import _ENTITY_REGISTRY
@@ -94,13 +91,11 @@ PIXEL_ART_SCHEMA = vol.Schema(
 PIXEL_ART_LIST_SCHEMA = vol.All([PIXEL_ART_SCHEMA], vol.Length(max=MAX_PIXEL_ARTS))
 
 
-def _check_collection_size(current, added, limit, label):
-    """Refuse an append that would grow a shared collection past ``limit``."""
+def _check_collection_size(current, added, limit, kind):
+    """Refuse an append that would grow a shared collection (``kind``:
+    "palette" or "pixel_art") past ``limit``."""
     if current + added > limit:
-        raise HomeAssistantError(
-            f"The {label} collection is limited to {limit} items "
-            f"({current} saved, {added} to add)."
-        )
+        raise invalid(f"{kind}s_full", limit=limit, current=current, added=added)
 
 
 def _lamp_for(entity_id):
@@ -113,44 +108,32 @@ def _lamp_for(entity_id):
     return None
 
 
-def _resolve_entity(service_call, service_name: str):
-    """Resolve the target entity from a service call's entity_id
-    (_lamp_for).
-
-    Returns None and logs an error if entity_id is not provided or
-    not found -- callers must handle the None case and abort.
-    Never silently falls back to light_entity.
-    """
+def _target_ids(service_call) -> list:
+    """The entity ids a service call targets; raises when it names none."""
     entity_id = service_call.data.get("entity_id")
-    if not entity_id:
-        _LOGGER.warning("[%s] No entity_id provided -- cannot determine target", service_name)
-        return None
+    ids = [eid for eid in (entity_id if isinstance(entity_id, list) else [entity_id]) if eid]
+    if not ids:
+        raise invalid("no_target")
+    return ids
 
-    # If a list was provided, return only the first one (legacy compat)
-    if isinstance(entity_id, list):
-        entity_id = entity_id[0] if entity_id else None
-        if not entity_id:
-            return None
 
+def _resolve_entity(service_call, service_name: str):
+    """The lamp a service call targets (its entity_id; the first one of a
+    list). Raises a clear error when it names no lamp that is set up: the
+    call is refused, never sent to another lamp."""
+    entity_id = _target_ids(service_call)[0]
     target = _lamp_for(entity_id)
     if target is None:
-        _LOGGER.warning("[%s] Entity %s not found among the lamps", service_name, entity_id)
+        raise invalid("lamp_not_found", entity_id=entity_id)
     return target
 
 
 def _resolve_entities(service_call, service_name: str):
-    """Resolve ALL target entities from a service call's entity_id.
-
-    Handles both a single entity_id string and a list of entity_ids.
-    Returns a list of resolved entity objects (may be empty).
-    Used by handlers that support parallel multi-entity dispatch.
-    """
-    entity_id = service_call.data.get("entity_id")
-    if not entity_id:
-        _LOGGER.warning("[%s] No entity_id provided -- cannot determine target", service_name)
-        return []
-
-    ids = entity_id if isinstance(entity_id, list) else [entity_id]
+    """Every lamp a service call targets (one entity_id or a list), for the
+    handlers that update them in parallel. One that is not set up (still
+    starting, or removed) is skipped and logged; the call is refused when
+    none is."""
+    ids = _target_ids(service_call)
     results = []
     for eid in ids:
         target = _lamp_for(eid)
@@ -158,21 +141,22 @@ def _resolve_entities(service_call, service_name: str):
             results.append(target)
         else:
             _LOGGER.warning("[%s] Entity %s not found among the lamps", service_name, eid)
+    if not results:
+        raise invalid("lamp_not_found", entity_id=", ".join(map(str, ids)))
     return results
 
 
-def _locate_item(items, idx, expected_name, label):
+def _locate_item(items, idx, expected_name, kind):
     """Return ``items[idx]``, refusing an index that no longer matches.
 
     Collections are shared by every browser, so an index sent by a card may
     point at a different item once another client deleted or reordered
     entries. When the caller passes ``expected_name`` (the name it saw at
     that index), a mismatch is rejected instead of acting on the wrong item.
+    ``kind``: "palette" or "pixel_art" (its messages).
     """
     if not (isinstance(idx, int) and 0 <= idx < len(items)):
-        raise HomeAssistantError(
-            f"{label} {idx} no longer exists. Refresh and try again."
-        )
+        raise invalid(f"{kind}_gone", index=idx)
     item = items[idx]
     # Compare as stored: names are normalised on save (e.g. "<"/">" are
     # stripped), while a card may still hold the raw name it just sent.
@@ -181,25 +165,20 @@ def _locate_item(items, idx, expected_name, label):
         or normalize_display_name(item.get("name"), "")
         != normalize_display_name(expected_name, "")
     ):
-        raise HomeAssistantError(
-            f"The {label.lower()} list changed: '{expected_name}' is no "
-            f"longer at position {idx}. Refresh and try again."
-        )
+        raise invalid(f"{kind}_list_changed", name=expected_name, index=idx)
     return item
 
 
-def _move_item(items, from_idx, to_idx, expected_name, label):
+def _move_item(items, from_idx, to_idx, expected_name, kind):
     """Move ``items[from_idx]`` to ``to_idx`` in place; False when already there.
 
     The one reorder of the user collections (palettes, pixel arts): a card
     moves a single item, so items other clients added meanwhile are kept,
     and ``expected_name`` refuses a move whose index went stale.
     """
-    _locate_item(items, from_idx, expected_name, label)
+    _locate_item(items, from_idx, expected_name, kind)
     if not (isinstance(to_idx, int) and 0 <= to_idx < len(items)):
-        raise HomeAssistantError(
-            f"{label} position {to_idx} is out of range. Refresh and try again."
-        )
+        raise invalid(f"{kind}_position", index=to_idx)
     if from_idx == to_idx:
         return False
     items.insert(to_idx, items.pop(from_idx))

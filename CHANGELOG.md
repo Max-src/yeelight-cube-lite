@@ -6,6 +6,8 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- An administrators' diagnostics action, **DEBUG: Use TCP** (`force_tcp`),
+  sends a lamp's commands over its TCP fallback for some minutes, to test it.
 - **Official pixel arts in the Draw card**: the 68 drawings of the Yeelight
   app show in the Draw card, in groups **All · My drawings · Nature ·
   Geometry** with the same layouts as the color sections (tabs by default;
@@ -16,8 +18,70 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   your own editable copy.
 - `apply_pixel_art` also takes a pixel art by **name**, a saved or an
   official one, instead of its index.
+- `apply_custom_pixels` takes an optional **name**: the pixel art the pixels
+  are, which the lamp's **Pixel Art** select then shows. The Draw card sends
+  the one picked in its gallery.
+- `tools/lamp-session.mjs`: scripted lamp sessions to watch (the TCP
+  fallback, switches from the clock or an effect to a drawing, a long pause),
+  each step announced with what the lamps should show.
+- **Reconfigure** in a lamp's entry menu changes its IP address, after checking
+  that the lamp answers there (a discovered lamp still follows a new IP on its
+  own).
+- **Repairs** (Settings → System → Repairs) for a lamp unreachable for over 30
+  minutes, and for one stuck on its slower TCP connection because the network
+  blocks UDP for over 15 minutes; each says what to check and goes away by
+  itself.
+- **Download diagnostics** for each lamp (its integration entry or its device
+  page), to attach to a bug report: the lamp's model and firmware, its
+  connection (UDP or TCP, failures, the last errors), its settings and current
+  state. Its IP address, identifier, Yeelight app name and displayed text are
+  redacted.
 
 ### Changed
+- **Faster switch from the clock or an effect to a drawing or text** (about
+  half a second less) over the lamp's UDP connection, and no more
+  re-activation of the picture mode after 90 seconds without a change: both
+  tested on the lamps (no flash, no lost first picture; a drawing shown at
+  once after a long pause). Over TCP the waits are as before. The black
+  frame that clears the drawing before the clock or an effect starts is sent
+  twice over UDP (frames are not acknowledged there): coming back to a
+  drawing could, rarely, flash the previous drawing for a moment.
+- A lamp's entry no longer shows an empty **Configure** dialog (its settings
+  are its entities).
+- The **Color Palettes** sensor's state is its palette count ("68 palettes"),
+  like the Saved Drawings sensor's; it was unknown.
+- Every action has its icon in the action picker.
+- **Actions report their errors clearly**: a call naming no lamp (or a lamp
+  that is not set up), invalid input, or a lamp that is off with Auto Turn On
+  off is refused with a message saying why, shown by Home Assistant (automations
+  stop there). Several of these used to be logged only, and the call seemed to
+  succeed. The messages are translatable. Lamp failures of actions that update
+  several lamps in the background are still shown on the cards.
+- The lamp is **no longer polled every 30 seconds**: it cannot be read back,
+  and the clock's daylight saving check now runs on the hour.
+- The entity icons are defined with their names (translatable icons).
+- **Entity names follow the lamp's device name**: every entity of a lamp is
+  named after its device, then its own name (Home Assistant's standard
+  naming), so renaming the device renames its entities' displayed names too.
+  The names shown and the entity ids stay as they were, except the **IP
+  Address** sensor, now named after the device like the others (it used
+  "Yeelight Cube Lite <id>"). The names are translatable.
+- **Adding a lamp by its IP address checks that it answers** before adding
+  it: an address with a typo, or a lamp that is off, now shows "No Yeelight
+  Cube Lite answers at this address" on the form instead of adding a lamp that
+  keeps retrying in the background.
+- **Fewer commands when switching effects or clock styles**: the lamp's
+  brightness is sent only when it changed (an effect's settings carry none),
+  instead of with every effect, clock style and rotation step. An effect now
+  takes one command instead of two, without the 0.1 s pause between them, and
+  leaving a drawing for an effect no longer sends a brightness right after
+  its last frame (which could briefly bring the drawing back).
+- **Sliders follow a drag without lagging behind**: while the lamp takes one
+  value, only the latest waits; the values in between are no longer played
+  one by one. This now applies to every lamp slider (the Clock and Native
+  Effects brightness and speed, as the Lamp Preview brightness already did),
+  and in Home Assistant itself to brightness changes from any source (other
+  cards, several browsers, automations) for a lamp that is on.
 - **Native effects change live**: a new speed or direction on the running
   effect is sent as a live update (`update_fx_effect`, as the Yeelight app
   does), so the animation goes on instead of restarting from its first frame
@@ -26,6 +90,48 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   so does any change the lamp refuses (a live update left the clock dark).
 
 ### Fixed
+- The **Pixel Art** select stayed on the previous pixel art after a drawing
+  was sent from the Draw card or `apply_custom_pixels` (and `save_state` /
+  `restore_state` kept that wrong name); it now shows the pixel art picked in
+  the Draw card's gallery, and is cleared for a drawing of your own.
+- The light's `connection` attribute (UDP or TCP) only changed with the next
+  state change; it now follows the connection within a minute, at once when
+  UDP fails or answers again.
+- A lamp whose UDP connection stopped answering for a moment stayed on its
+  slower TCP connection for 5 minutes; it is now checked in the background
+  every 15 seconds and goes back to UDP as soon as it answers.
+- **Over TCP** (when the lamp's UDP connection fails), a scrolling text could
+  freeze both lamps and make them refuse the next changes (the clock, an
+  effect): they take about one command a second there. Every TCP command now
+  waits its turn and only the latest picture of a burst is sent, so the text
+  scrolls more slowly instead and the other changes go through. A lamp's
+  refusal for its limit now pauses the commands instead of reconnecting.
+- A text with spaces no longer fills the log with "No positions found for
+  letter ' '" warnings (a space is drawn as nothing); a character a font has
+  no glyph for is reported once.
+- The light's `connection` attribute (and the diagnostics) said `tcp` for a
+  lamp whose UDP session had only closed after a quiet while; it says `tcp`
+  only while UDP has failed. Once UDP works again, the TCP connection used
+  meanwhile is closed instead of staying open.
+- A setup error that is not a network or lamp problem (a bug) now fails the
+  lamp's setup visibly instead of being retried forever as if the lamp were
+  out of reach.
+- Pixel art changes made while Home Assistant was still loading the saved
+  collections are refused with a message instead of being lost.
+- **Saving a palette** could be dropped silently: a second palette with the
+  same name and number of colors, saved within 2 seconds (e.g. the Draw card's
+  "Drawing Colors" after a change), was taken for a repeated click. Only the
+  very same palette is now ignored that way. A palette saved while Home
+  Assistant was still loading the saved collections is refused with a message
+  instead of being lost.
+- **Renaming a palette** now updates the palette dropdowns at once, and
+  replacing all palettes (`set_palettes`) updates the cards and dropdowns.
+- Palette changes no longer rewrite every lamp's state, and the palette and
+  pixel art sensors compute their change marker once per change instead of on
+  every update.
+- An entity that is disabled, or whose lamp was reloaded, is no longer
+  updated by its lamp afterwards: each entity stops receiving the lamp's
+  changes when it is removed.
 - The **Lamp Preview** card's preview follows the brightness slider while it
   is dragged, like the lamp does; it used to change only on release. The
   Clock and Native Effects previews do the same, and all three now draw the

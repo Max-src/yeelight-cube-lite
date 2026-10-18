@@ -8,24 +8,26 @@
                     "Light IP Address": "IP Address"
                 }
             },
+            "reconfigure": {
+                "title": "Change the lamp's IP address",
+                "description": "Enter the lamp's new IP address (shown in the Yeelight app). Home Assistant checks that the lamp answers there before using it.",
+                "data": {
+                    "Light IP Address": "IP Address"
+                }
+            },
             "discovery_confirm": {
                 "title": "Yeelight Cube Lite Discovered",
                 "description": "A Yeelight Cube Lite was found at **{host}** ({name}).\n\nDo you want to set it up?"
             }
         },
         "error": {
-            "invalid_ip": "Invalid IP address format"
+            "invalid_ip": "Invalid IP address format",
+            "cannot_connect": "No Yeelight Cube Lite answers at this address. Check that the lamp is on, on the same network as Home Assistant, and that LAN Control is on in the Yeelight app."
         },
         "abort": {
             "already_configured": "This device is already configured",
-            "not_cube_device": "This device is not a Yeelight Cube Lite"
-        }
-    },
-    "options": {
-        "step": {
-            "init": {
-                "title": "Yeelight Cube Lite Options"
-            }
+            "not_cube_device": "This device is not a Yeelight Cube Lite",
+            "reconfigure_successful": "The lamp's IP address was changed."
         }
     },
     "entity": {
@@ -50,6 +52,24 @@
             },
             "power_on_state": {
                 "name": "Power-on behavior"
+            },
+            "palette": {
+                "name": "Matrix: Palette"
+            },
+            "pixel_art": {
+                "name": "Matrix: Pixel Art"
+            },
+            "display_mode": {
+                "name": "Matrix: Display Mode"
+            },
+            "text_alignment": {
+                "name": "Matrix: Text Alignment"
+            },
+            "font": {
+                "name": "Matrix: Font"
+            },
+            "device_orientation": {
+                "name": "Device Orientation"
             }
         },
         "number": {
@@ -61,6 +81,39 @@
             },
             "power_limit": {
                 "name": "Power limit"
+            },
+            "gradient_angle": {
+                "name": "Matrix: Gradient Angle"
+            },
+            "hue_shift": {
+                "name": "Color: Hue Shift"
+            },
+            "temperature": {
+                "name": "Color: Temperature"
+            },
+            "saturation": {
+                "name": "Intensity: Saturation"
+            },
+            "vibrance": {
+                "name": "Intensity: Vibrance"
+            },
+            "contrast": {
+                "name": "Tone: Contrast"
+            },
+            "glow": {
+                "name": "Tone: Glow"
+            },
+            "grayscale": {
+                "name": "Effects: Grayscale"
+            },
+            "invert": {
+                "name": "Effects: Invert"
+            },
+            "tint_hue": {
+                "name": "Effects: Tint Hue"
+            },
+            "tint_strength": {
+                "name": "Effects: Tint Strength"
             }
         },
         "switch": {
@@ -75,6 +128,12 @@
             },
             "scroll_enabled": {
                 "name": "Text scroll"
+            },
+            "auto_turn_on": {
+                "name": "Auto Turn On"
+            },
+            "extended_effects": {
+                "name": "Experimental Features"
             }
         },
         "sensor": {
@@ -83,7 +142,181 @@
             },
             "estimated_energy": {
                 "name": "Estimated energy"
+            },
+            "ip_address": {
+                "name": "IP Address"
+            },
+            "clock_presets": {
+                "name": "Clock Color Presets"
+            },
+            "palettes": {
+                "name": "Color Palettes"
+            },
+            "font_characters": {
+                "name": "Font Characters"
+            },
+            "pixel_arts": {
+                "name": "Saved Drawings"
             }
+        },
+        "button": {
+            "force_refresh": {
+                "name": "Force Refresh"
+            }
+        },
+        "text": {
+            "display_text": {
+                "name": "Matrix: Display Text"
+            }
+        },
+        "camera": {
+            "matrix_preview_square": {
+                "name": "Matrix Preview (Square)"
+            },
+            "matrix_preview_round": {
+                "name": "Matrix Preview (Round)"
+            }
+        }
+    },
+    "issues": {
+        "lamp_unreachable": {
+            "title": "{name} is unreachable",
+            "description": "{name} ({ip}) has not answered for over 30 minutes. Check that it is plugged in, on the same network as Home Assistant, and that LAN Control is on in the Yeelight app. If its IP address changed, choose **Reconfigure** in its entry's menu (Settings → Devices & services → Yeelight Cube Lite).\n\nThis message goes away by itself once the lamp answers again."
+        },
+        "udp_blocked": {
+            "title": "{name} uses its slower connection",
+            "description": "Home Assistant has not reached {name} ({ip}) over UDP (port 55444) for over 15 minutes, while the lamp answers over TCP (port 55443): something on the network blocks UDP between them (a firewall, a VLAN rule, a container network). Everything still works, with more delay between changes.\n\nAllow UDP port 55444 between Home Assistant and the lamp. This message goes away by itself once UDP works again."
+        }
+    },
+    "exceptions": {
+        "no_target": {
+            "message": "Choose a Yeelight Cube Lite lamp: this action needs an entity_id."
+        },
+        "lamp_not_found": {
+            "message": "No matching Yeelight Cube Lite lamp for {entity_id}: it is not one, or it is not set up (still starting, or unreachable since Home Assistant started)."
+        },
+        "lamp_off": {
+            "message": "The lamp is off and auto-turn-on is disabled (its Auto Turn On switch): turn the lamp on first."
+        },
+        "command_failed": {
+            "message": "The lamp could not complete this action: {error}"
+        },
+        "storage_not_ready": {
+            "message": "The saved collections are not loaded yet. Try again in a moment."
+        },
+        "palettes_full": {
+            "message": "The palette collection is limited to {limit} items ({current} saved, {added} to add)."
+        },
+        "pixel_arts_full": {
+            "message": "The pixel art collection is limited to {limit} items ({current} saved, {added} to add)."
+        },
+        "palette_gone": {
+            "message": "Palette {index} no longer exists. Refresh and try again."
+        },
+        "pixel_art_gone": {
+            "message": "Pixel art {index} no longer exists. Refresh and try again."
+        },
+        "palette_list_changed": {
+            "message": "The palette list changed: \"{name}\" is no longer at position {index}. Refresh and try again."
+        },
+        "pixel_art_list_changed": {
+            "message": "The pixel art list changed: \"{name}\" is no longer at position {index}. Refresh and try again."
+        },
+        "palette_position": {
+            "message": "Palette position {index} is out of range. Refresh and try again."
+        },
+        "pixel_art_position": {
+            "message": "Pixel art position {index} is out of range. Refresh and try again."
+        },
+        "pixel_art_idx_or_name": {
+            "message": "Give either idx (a saved pixel art) or name."
+        },
+        "pixel_art_not_found": {
+            "message": "No pixel art called \"{name}\"."
+        },
+        "pixel_art_empty": {
+            "message": "The pixel art \"{name}\" has no pixels."
+        },
+        "pixels_required": {
+            "message": "Give at least one pixel to show."
+        },
+        "preset_kind": {
+            "message": "A clock preset is a style or a color_mode."
+        },
+        "preset_name_length": {
+            "message": "A clock preset name must contain 1 to 40 characters."
+        },
+        "preset_name_characters": {
+            "message": "The clock preset name contains unsupported characters (< or > or control characters)."
+        },
+        "preset_name_builtin": {
+            "message": "Choose a name different from a built-in clock style."
+        },
+        "preset_color": {
+            "message": "A clock preset color must contain three integers between 0 and 255."
+        },
+        "preset_gone": {
+            "message": "This clock preset no longer exists. Refresh and try again."
+        },
+        "preset_name_taken": {
+            "message": "A clock preset already uses this name."
+        },
+        "preset_limit": {
+            "message": "The clock library is limited to 100 presets."
+        },
+        "image_too_long": {
+            "message": "The image is too large (limit {limit} base64 characters)."
+        },
+        "image_not_base64": {
+            "message": "image_b64 is not valid base64."
+        },
+        "image_too_many_pixels": {
+            "message": "The image has too many pixels."
+        },
+        "image_not_supported": {
+            "message": "image_b64 is not a supported image."
+        },
+        "image_too_large": {
+            "message": "The image is too large ({width}x{height}; limit {limit} pixels)."
+        },
+        "image_failed": {
+            "message": "The image could not be processed: {error}"
+        },
+        "rotation_too_few": {
+            "message": "Provide at least two different modes to rotate through."
+        },
+        "rotation_stopped": {
+            "message": "The rotation stopped before showing its first item: {error}"
+        },
+        "unknown_kind": {
+            "message": "Unknown kind: {kind}"
+        },
+        "color_invalid": {
+            "message": "color must be [r, g, b] or \"clear\"."
+        },
+        "unknown_effect": {
+            "message": "Unknown native effect: {effect}"
+        },
+        "experimental_required": {
+            "message": "Turn on the Experimental Features switch before applying {name}."
+        },
+        "no_speed": {
+            "message": "{effect} does not support animation speed."
+        },
+        "no_custom_color": {
+            "message": "{effect} does not support custom colors."
+        },
+        "color_mode_unsupported": {
+            "message": "{effect} does not support color mode {color_mode}."
+        },
+        "unknown_clock_style": {
+            "message": "Unknown clock style: {style}"
+        },
+        "music_flow_failed": {
+            "message": "The lamp could not complete the Music Flow change."
+        },
+        "button_effects_refused": {
+            "message": "One or more lamps did not accept the button presets."
         }
     },
     "services": {
@@ -329,6 +562,10 @@
                     "name": "Pixels",
                     "description": "Array of entries with position and color. position is a single index (0-99) or a list of indexes; color is [R, G, B]."
                 },
+                "name": {
+                    "name": "Name",
+                    "description": "The name of the pixel art these pixels are, if any, so the Pixel Art select shows it. Without it the select is cleared."
+                },
                 "entity_id": {
                     "name": "Entity",
                     "description": "Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls."
@@ -436,6 +673,20 @@
                 "kwargs": {
                     "name": "Keyword arguments",
                     "description": "Optional keyword args for write methods, e.g. light_type 0=Main 1=Ambient."
+                }
+            }
+        },
+        "force_tcp": {
+            "name": "DEBUG: Use TCP",
+            "description": "LOCAL DEBUG ONLY (administrators). Sends the lamps' commands over TCP (their fallback) for some minutes instead of their UDP session, to test it on demand. 0 minutes: UDP again at once.",
+            "fields": {
+                "entity_id": {
+                    "name": "Entity",
+                    "description": "Target lamp entity ID(s)."
+                },
+                "minutes": {
+                    "name": "Minutes",
+                    "description": "How long (0 to 60 minutes; 0 = UDP again)."
                 }
             }
         },

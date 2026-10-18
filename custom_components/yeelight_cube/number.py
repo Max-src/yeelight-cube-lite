@@ -12,18 +12,22 @@ from homeassistant.core import HomeAssistant, callback  # type: ignore
 from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback  # type: ignore
 
-from .const import DOMAIN, ALL_NATIVE_EFFECTS, MODE_CLOCK, MODE_NATIVE_EFFECT
+from .const import ALL_NATIVE_EFFECTS, MODE_CLOCK, MODE_NATIVE_EFFECT
+from .runtime_data import lamp_of
 from .entity import CubeControlEntity, remove_retired_entities
 from .lamp_power import BASE_W, NO_LIMIT_W
 
 _LOGGER = logging.getLogger(__name__)
 
+# No limit per platform: every command to the lamp already waits for the
+# previous one (the device lock, light_connection._execute_hardware_op).
+PARALLEL_UPDATES = 0
+
 
 class CubeNumber(CubeControlEntity, NumberEntity):
     """A slider of one lamp. The light keeps it in ``_slot`` and pushes every
     change made elsewhere through async_update_from_light, so it never
-    polls. ``name`` (the older entities) is shown after the lamp's name; the
-    others name themselves with a translation key."""
+    polls. Named by its translation key, after the lamp's name."""
 
     _attr_should_poll = False
     _attr_mode = NumberMode.SLIDER
@@ -31,19 +35,18 @@ class CubeNumber(CubeControlEntity, NumberEntity):
 
     def __init__(
         self, light_entity, config_entry: ConfigEntry, unique_suffix: str,
-        icon: str, low: float, high: float, step: float,
-        unit: str | None = None, name: str | None = None,
+        low: float, high: float, step: float,
+        unit: str | None = None, translation_key: str | None = None,
     ):
         self._light_entity = light_entity
         self._config_entry = config_entry
         self._attr_unique_id = f"{light_entity._attr_unique_id}_{unique_suffix}"
-        self._attr_icon = icon
         self._attr_native_min_value = float(low)
         self._attr_native_max_value = float(high)
         self._attr_native_step = float(step)
         self._attr_native_unit_of_measurement = unit
-        if name:
-            self._attr_name = f"{light_entity._attr_name} {name}"
+        if translation_key:
+            self._attr_translation_key = translation_key
 
     @callback
     def async_update_from_light(self):
@@ -60,7 +63,7 @@ class CubeNumber(CubeControlEntity, NumberEntity):
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
         if self._slot:
-            setattr(self._light_entity, self._slot, self)
+            self._register_on_light(self._slot)
         self.async_update_from_light()
 
     @callback
@@ -87,7 +90,9 @@ async def _redraw_with_power_limit(light) -> None:
 
 async def _redraw_in_background(light) -> None:
     """Re-render (the lamp's adjustments) without holding up the slider."""
-    light.hass.async_create_task(light.async_apply_display_mode())
+    light._create_tracked_task(
+        light.async_apply_display_mode(), name=f"yeelight_cube_adjustments_{light._ip}"
+    )
 
 
 @dataclass(frozen=True)
@@ -97,7 +102,6 @@ class SettingNumber:
     (light) runs once it changed."""
 
     unique_suffix: str
-    icon: str
     attr: str
     low: float
     high: float
@@ -105,7 +109,6 @@ class SettingNumber:
     default: float
     unit: str | None = None
     digits: int | None = None
-    name: str | None = None
     translation_key: str | None = None
     category: EntityCategory | None = None
     slot: str | None = None
@@ -114,7 +117,7 @@ class SettingNumber:
 
 SETTING_NUMBERS = (
     SettingNumber(
-        "scroll_speed", "mdi:timer-play-outline", "_scroll_speed", 0.05, 2.0, 0.05, 0.2,
+        "scroll_speed", "_scroll_speed", 0.05, 2.0, 0.05, 0.2,
         unit="s", digits=2, translation_key="scroll_speed", category=EntityCategory.CONFIG,
         slot="_scroll_speed_entity", after=_restart_scroll,
     ),
@@ -124,33 +127,34 @@ SETTING_NUMBERS = (
     # every frame is black. For lamps on a weak or shared power supply; see
     # "Power Supply" in the README.
     SettingNumber(
-        "power_limit", "mdi:flash-alert-outline", "_power_limit", BASE_W, NO_LIMIT_W, 0.1, NO_LIMIT_W,
+        "power_limit", "_power_limit", BASE_W, NO_LIMIT_W, 0.1, NO_LIMIT_W,
         unit="W", digits=1, translation_key="power_limit", category=EntityCategory.CONFIG,
         after=_redraw_with_power_limit,
     ),
 )
 
 
-def _preview_adjustment(key, name, icon, low, high, default, unit):
-    """One of the lamp's color adjustments (light._preview_<key>)."""
+def _preview_adjustment(key, low, high, default, unit):
+    """One of the lamp's color adjustments (light._preview_<key>); ``key`` is
+    also its translation key."""
     return SettingNumber(
-        key, icon, f"_preview_{key}", low, high, 1, default, unit=unit, name=name,
+        key, f"_preview_{key}", low, high, 1, default, unit=unit, translation_key=key,
         category=EntityCategory.CONFIG, after=_redraw_in_background,
     )
 
 
 # The lamp's color adjustments (their keys are also the unique id suffixes).
 PREVIEW_ADJUSTMENTS = (
-    _preview_adjustment("hue_shift", "Color: Hue Shift", "mdi:palette-outline", -180, 180, 0, "°"),
-    _preview_adjustment("temperature", "Color: Temperature", "mdi:thermometer", -100, 100, 0, None),
-    _preview_adjustment("saturation", "Intensity: Saturation", "mdi:invert-colors", 0, 200, 100, "%"),
-    _preview_adjustment("vibrance", "Intensity: Vibrance", "mdi:auto-fix", 0, 200, 100, "%"),
-    _preview_adjustment("contrast", "Tone: Contrast", "mdi:contrast-circle", 0, 200, 100, "%"),
-    _preview_adjustment("glow", "Tone: Glow", "mdi:white-balance-sunny", 0, 100, 0, "%"),
-    _preview_adjustment("grayscale", "Effects: Grayscale", "mdi:image-filter-black-white", 0, 100, 0, "%"),
-    _preview_adjustment("invert", "Effects: Invert", "mdi:invert-colors-off", 0, 100, 0, "%"),
-    _preview_adjustment("tint_hue", "Effects: Tint Hue", "mdi:format-color-fill", 0, 360, 0, "°"),
-    _preview_adjustment("tint_strength", "Effects: Tint Strength", "mdi:opacity", 0, 100, 0, "%"),
+    _preview_adjustment("hue_shift", -180, 180, 0, "°"),
+    _preview_adjustment("temperature", -100, 100, 0, None),
+    _preview_adjustment("saturation", 0, 200, 100, "%"),
+    _preview_adjustment("vibrance", 0, 200, 100, "%"),
+    _preview_adjustment("contrast", 0, 200, 100, "%"),
+    _preview_adjustment("glow", 0, 100, 0, "%"),
+    _preview_adjustment("grayscale", 0, 100, 0, "%"),
+    _preview_adjustment("invert", 0, 100, 0, "%"),
+    _preview_adjustment("tint_hue", 0, 360, 0, "°"),
+    _preview_adjustment("tint_strength", 0, 100, 0, "%"),
 )
 
 
@@ -159,14 +163,11 @@ class CubeSettingNumber(CubeNumber):
 
     def __init__(self, light_entity, config_entry: ConfigEntry, spec: SettingNumber):
         super().__init__(
-            light_entity, config_entry, spec.unique_suffix, spec.icon,
-            spec.low, spec.high, spec.step, spec.unit, spec.name,
+            light_entity, config_entry, spec.unique_suffix,
+            spec.low, spec.high, spec.step, spec.unit, spec.translation_key,
         )
         self._spec = spec
         self._slot = spec.slot
-        if spec.translation_key:
-            self._attr_has_entity_name = True
-            self._attr_translation_key = spec.translation_key
         if spec.category:
             self._attr_entity_category = spec.category
 
@@ -186,8 +187,11 @@ class CubeSettingNumber(CubeNumber):
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
         if self._spec in PREVIEW_ADJUSTMENTS:
-            # The adjustments service updates them all at once.
-            self._light_entity._preview_number_entities[self._spec.unique_suffix] = self
+            # The adjustments service updates them all at once (until removed).
+            entities = self._light_entity._preview_number_entities
+            key = self._spec.unique_suffix
+            entities[key] = self
+            self.async_on_remove(lambda: entities.get(key) is self and entities.pop(key))
 
     @callback
     def async_entity_id_changed(self, old_entity_id: str) -> None:
@@ -200,11 +204,8 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> bool:
     """Set up Yeelight Cube Lite number entities from a config entry."""
-    if DOMAIN not in hass.data or entry.entry_id not in hass.data[DOMAIN]:
-        return False
-
-    light_entity = hass.data[DOMAIN][entry.entry_id].get("light")
-    if not light_entity:
+    light_entity = lamp_of(entry)
+    if light_entity is None:
         return False
 
     # The matrix transition settings of an earlier version (transitions removed).
@@ -230,8 +231,8 @@ class YeelightCubeGradientAngleNumber(CubeNumber):
     def __init__(self, light_entity, config_entry: ConfigEntry):
         """Initialize the gradient angle number entity."""
         super().__init__(
-            light_entity, config_entry, "gradient_angle", "mdi:angle-acute",
-            0, 360, 1, "°", "Matrix: Gradient Angle",
+            light_entity, config_entry, "gradient_angle",
+            0, 360, 1, "°", "gradient_angle",
         )
 
     @property
@@ -258,12 +259,11 @@ class YeelightCubeGradientAngleNumber(CubeNumber):
 class YeelightCubeNativeEffectSpeedNumber(CubeNumber):
     """Control the rate used by firmware-native animations."""
 
-    _attr_has_entity_name = True
     _attr_translation_key = "native_effect_speed"
     _slot = "_native_effect_speed_entity"
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
-        super().__init__(light_entity, config_entry, "native_effect_speed", "mdi:speedometer", 1, 255, 1)
+        super().__init__(light_entity, config_entry, "native_effect_speed", 1, 255, 1)
 
     @property
     def available(self) -> bool:

@@ -12,6 +12,9 @@ import time
 
 from homeassistant.exceptions import HomeAssistantError  # type: ignore
 
+from .errors import failed, invalid
+from .storage import async_schedule_save
+
 from .color_utils import argb_to_rgb, rgb_to_argb
 from .const import (
     ALL_NATIVE_EFFECTS,
@@ -244,7 +247,7 @@ class RotationMixin:
     async def async_set_favourites(self, kind: str, items) -> None:
         """Replace the favourites of ``kind``, publish them, then persist."""
         if kind not in FAVOURITE_KINDS:
-            raise HomeAssistantError(f"Unknown favourites kind: {kind}")
+            raise invalid("unknown_kind", kind=kind)
         self._favourites = {**self._favourites, kind: self._normalize_favourites(items)}
         # Publish first: every open dashboard updates without waiting for disk.
         if self.hass is not None:
@@ -261,8 +264,6 @@ class RotationMixin:
     def _schedule_integration_save(self) -> None:
         """Save hass.data[DOMAIN] (palettes, favourites, rotation, ...) to
         disk shortly: a burst of changes becomes one write."""
-        from . import async_schedule_save
-
         async_schedule_save(self.hass)
 
     def _restore_rotation_settings(self) -> None:
@@ -356,7 +357,7 @@ class RotationMixin:
         rotation of that kind switches to it at once, keeping its current item
         until the next step on the new time grid."""
         if kind not in FAVOURITE_KINDS:
-            raise HomeAssistantError(f"Unknown rotation kind: {kind}")
+            raise invalid("unknown_kind", kind=kind)
         interval = max(MIN_ROTATION_INTERVAL, min(MAX_ROTATION_INTERVAL, int(interval)))
         self._rotation_intervals = {**self._rotation_intervals, kind: interval}
         if (
@@ -395,7 +396,7 @@ class RotationMixin:
         """
         items = self._normalize_rotation_items(items)
         if len(items) < 2:
-            raise HomeAssistantError("Provide at least two different rotation modes")
+            raise invalid("rotation_too_few")
         # Replacing a running loop: its saved state is rewritten below.
         self.stop_effect_rotation(persist=False)
         self._rotation_error = None
@@ -450,9 +451,7 @@ class RotationMixin:
             self._rotation_loop(), name=f"yeelight_cube_rotation_{self._ip}"
         )
         if not await asyncio.shield(started):
-            raise HomeAssistantError(
-                self._rotation_error or "Rotation stopped before its first display update"
-            )
+            raise failed("rotation_stopped", error=self._rotation_error or "-")
 
     def stop_effect_rotation(self, persist: bool = True) -> None:
         """Stop the server-side rotation loop.

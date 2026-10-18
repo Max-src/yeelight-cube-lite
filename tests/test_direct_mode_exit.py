@@ -3,6 +3,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+from tests.test_activation_timing import _table as activation_timing
 from tests.test_native_features import (
     CONSTANTS, NATIVE_ACTIVATION, NATIVE_ACTIVATION_METHODS, NATIVE_PREVIEW, ROOT,
     _load_standalone_functions,
@@ -30,6 +31,7 @@ class DirectModeExitTests(unittest.IsolatedAsyncioTestCase):
                 "effect_supports_color_mode": NATIVE_PREVIEW["effect_supports_color_mode"],
                 "effect_supports_color_override": NATIVE_PREVIEW["effect_supports_color_override"],
                 "DEVICE_ORIENTATION_TO_EFFECT_DIR": {"right": "Right"},
+                "ACTIVATION_TIMING": activation_timing(),
             },
         )
         record = lambda name: (lambda *args, **kwargs: self.calls.append((name, args)))
@@ -46,6 +48,7 @@ class DirectModeExitTests(unittest.IsolatedAsyncioTestCase):
             _cube_matrix=SimpleNamespace(
                 draw_matrices_fast=draw, close_fast_socket=record("close"),
                 send_raw_command=raw, running_effect=None, note_running_effect=Mock(),
+                transport="tcp",
             ),
             _native_effect="Rainbow", _native_effect_speed=50,
             _native_effect_direction="Right", _device_orientation="right",
@@ -61,6 +64,15 @@ class DirectModeExitTests(unittest.IsolatedAsyncioTestCase):
         names = [name for name, _ in self.calls]
         self.assertEqual(["update_leds", "close", "set_fx_effect"], names)
         self.assertEqual(encode([(0, 0, 0)] * 100), self.calls[0][1])
+
+    async def test_over_udp_the_black_frame_is_sent_twice(self):
+        # A frame is not acknowledged over UDP: a dropped black frame left
+        # the drawing in the lamp (it flashed back when the drawing returned).
+        self.light._cube_matrix.transport = "udp"
+        await self.light._activate_native_effect()
+        names = [name for name, _ in self.calls]
+        self.assertEqual(["update_leds", "update_leds", "close", "set_fx_effect"], names)
+        self.assertEqual(self.calls[0], self.calls[1])
 
     async def test_switching_between_firmware_modes_sends_nothing_extra(self):
         self.light._fx_mode_is_direct = False

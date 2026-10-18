@@ -2,6 +2,8 @@
 
 import __future__
 import ast
+import importlib
+import sys
 import asyncio
 import base64
 import colorsys
@@ -27,16 +29,50 @@ NATIVE_ACTIVATION = frozenset({
     "_activate_native_effect", "_native_effect_params",
     "_activate_native_clock", "_native_clock_params",
     "_send_native", "_update_running_effect", "_native_renderer_shown",
-    "live_effect_changes",
+    "_native_brightness_due", "live_effect_changes",
 })
 NATIVE_ACTIVATION_METHODS = NATIVE_ACTIVATION - {"live_effect_changes"}
 COLOR_UTILS = runpy.run_path(ROOT / "color_utils.py")
 # Shared module-level names every loaded helper may reference.
+def import_pure_module(name: str) -> types.ModuleType:
+    """One of the integration's modules that imports no Home Assistant, with
+    its own relative imports working (the package is registered without
+    running its __init__)."""
+    if "yeelight_cube" not in sys.modules:
+        package = types.ModuleType("yeelight_cube")
+        package.__path__ = [str(ROOT)]
+        sys.modules["yeelight_cube"] = package
+    return importlib.import_module(f"yeelight_cube.{name}")
+
+
+STRINGS = json.loads((ROOT / "strings.json").read_text(encoding="utf-8"))
+
+
+class TranslatedError(ValueError, RuntimeError):
+    """Home Assistant's ServiceValidationError and HomeAssistantError, as
+    errors.invalid() / failed() raise them, in the tests: with the message
+    Home Assistant shows (strings.json "exceptions")."""
+
+    def __init__(self, key: str, **placeholders):
+        self.translation_key = key
+        self.translation_placeholders = placeholders
+        super().__init__(STRINGS["exceptions"][key]["message"].format(**placeholders))
+
+
+# errors.py's helpers, for the functions the tests load on their own.
+ERRORS = {
+    "invalid": TranslatedError,
+    "failed": TranslatedError,
+    "invalid_input": lambda err: TranslatedError(err.key, **err.placeholders),
+    "InputError": import_pure_module("input_error").InputError,
+}
+
 _DEFAULT_NAMESPACE = {
     **{name: CONSTANTS[name] for name in (
         "MODE_CLOCK", "MODE_NATIVE_EFFECT", "FIRMWARE_MODES", "ROTATION_KIND_MODES",
     )},
     **{name: COLOR_UTILS[name] for name in ("rgb_to_argb", "argb_to_rgb")},
+    **ERRORS,
 }
 # The light entity is split across light.py and its light_*.py mixins. Join them
 # so source-level invariant checks below still find methods wherever they live.
@@ -319,6 +355,7 @@ class NativeFeatureTests(unittest.TestCase):
             {"_resolve_native_clock_color", "_leave_direct_mode", *NATIVE_ACTIVATION},
             {
                 "LIVE_EFFECT_KEYS": CONSTANTS["LIVE_EFFECT_KEYS"],
+                "hardware_brightness_for": lambda brightness: max(1, min(100, round(brightness * 100 / 255))),
                 "effect_direction_value": CONSTANTS["effect_direction_value"],
                 "asyncio": asyncio,
                 "base64": base64,
@@ -364,6 +401,8 @@ class NativeFeatureTests(unittest.TestCase):
                 _native_effect_direction="Up",
                 _cube_matrix=FakeCube(),
                 _set_native_mode_brightness=lambda: asyncio.sleep(0),
+                _brightness=255,
+                _last_hardware_brightness=100,
                 _is_on=False,
                 _fx_mode_is_direct=False,
                 _in_native_fw_mode=False,
@@ -415,9 +454,13 @@ class NativeFeatureTests(unittest.TestCase):
         self.assertIn("if result is None", buttons)
 
     def test_light_services_are_registered_at_component_setup(self):
+        # Once, for the whole session: registering them again at each lamp
+        # setup replaced their handlers and their state (locks, trackers).
         component_setup = _function_source(INIT_SOURCE, "async_setup")
+        entry_setup = _function_source(INIT_SOURCE, "async_setup_entry")
         platform_setup = _function_source(LIGHT_SOURCE, "async_setup_entry")
         self.assertIn("async_setup_light_services(hass)", component_setup)
+        self.assertNotIn("async_setup_light_services", entry_setup)
         self.assertNotIn("services.async_register", platform_setup)
 
     def test_all_lan_supported_native_effects_are_defined(self):
@@ -537,8 +580,8 @@ class NativeFeatureTests(unittest.TestCase):
         async def internal_turn_on(**kwargs):
             events.append(("turn_on", kwargs))
 
-        async def execute(func, op_name):
-            events.append(("execute", op_name))
+        async def execute(func, op_name, coalesce=None):
+            events.append(("execute", op_name, coalesce))
             await func()
             return True
 
@@ -553,7 +596,8 @@ class NativeFeatureTests(unittest.TestCase):
             ("music_flow", False, False),
             events[0],
         )
-        self.assertEqual(("execute", "turn_on"), events[1])
+        # Not only a brightness: never skipped for a newer one.
+        self.assertEqual(("execute", "turn_on", None), events[1])
         self.assertEqual(
             ("turn_on", {"rgb_color": (12, 34, 56), "brightness": 128, "_was_on": True}),
             events[2],
@@ -587,7 +631,8 @@ class NativeFeatureTests(unittest.TestCase):
         async def internal_turn_on(**kwargs):
             events.append(("turn_on", kwargs))
 
-        async def execute(func, op_name):
+        async def execute(func, op_name, coalesce=None):
+            events.append(("execute", coalesce))
             await func()
             return True
 
@@ -599,7 +644,16 @@ class NativeFeatureTests(unittest.TestCase):
         asyncio.run(turn_on(brightness=96))
 
         self.assertFalse(any(event[0] == "music_flow" for event in events))
-        self.assertEqual([("turn_on", {"brightness": 96, "_was_on": True})], events)
+        # A brightness on a lamp that is on: a newer one queued replaces it.
+        self.assertEqual(
+            [("execute", "brightness"), ("turn_on", {"brightness": 96, "_was_on": True})],
+            events,
+        )
+        # One that turns the lamp on always runs.
+        events.clear()
+        device._is_on = False
+        asyncio.run(turn_on(brightness=96))
+        self.assertEqual(("execute", None), events[0])
 
     def test_palette_selection_uses_guarded_display_state_machine(self):
         palette_class = SELECT_SOURCE[
@@ -792,14 +846,15 @@ class NativeFeatureTests(unittest.TestCase):
     def test_music_flow_runtime_state_is_persisted_after_storage_ready(self):
         attributes = _function_source(LIGHT_SOURCE, "extra_state_attributes")
         restore = _function_source(LIGHT_SOURCE, "async_added_to_hass")
-        # Everything saved (immediate or batched) comes from _storage_data.
-        save = _function_source(INIT_SOURCE, "_storage_data")
+        storage = (ROOT / "storage.py").read_text(encoding="utf-8")
+        # Everything saved (immediate or batched) comes from storage_data.
+        save = _function_source(storage, "storage_data")
         # Every entry's setup loads (or waits for) the shared storage first.
         self.assertIn(
-            "await _async_init_shared_storage(hass)",
+            "await async_load_storage(hass)",
             _function_source(INIT_SOURCE, "async_setup_entry"),
         )
-        setup = _function_source(INIT_SOURCE, "_async_init_shared_storage")
+        setup = _function_source(storage, "async_load_storage")
         self.assertIn('"music_flow_restore_power"', attributes)
         self.assertIn("_restore_music_flow_runtime_state()", restore)
         self.assertIn('"device_runtime_state"', save)
@@ -810,6 +865,14 @@ class NativeFeatureTests(unittest.TestCase):
     def test_the_lamp_state_is_never_polled(self):
         # Cube Lite answers no get_prop (TCP or UDP): HA's update only
         # refreshes the clock's UTC offset, and never while Music Flow runs.
+        # It runs when the light is added, then on the hour (daylight saving
+        # changes happen on the hour), not on a 30 s poll.
+        self.assertIn("_attr_should_poll = False", LIGHT_SOURCE)
+        self.assertIn(
+            "self.hass, self._async_hourly_update, minute=0, second=5",
+            LIGHT_SOURCE,
+        )
+        self.assertIn("await self.async_update()", _function_source(LIGHT_SOURCE, "_async_hourly_update"))
         update = _function_source(LIGHT_SOURCE, "async_update")
         # Never sent by the lamp or its transport (the diagnostics query
         # service still lets a user try it).
@@ -2765,11 +2828,11 @@ class NativeFeatureTests(unittest.TestCase):
         # refuses to select one while the switch is off.
         self.assertIn("EXTENDED_NATIVE_EFFECTS", SELECT_SOURCE)
         self.assertIn("_extended_effects_enabled", SELECT_SOURCE)
-        self.assertIn("requires the Experimental Features switch", SELECT_SOURCE)
+        self.assertIn('invalid("experimental_required", name=option)', SELECT_SOURCE)
         # A dedicated switch toggles the feature and refreshes the dropdown.
         self.assertIn("class YeelightCubeExtendedEffectsSwitch", SWITCH_SOURCE)
         self.assertIn(
-            "YeelightCubeExtendedEffectsSwitch(config_entry, light_data)",
+            "YeelightCubeExtendedEffectsSwitch(config_entry, light_entity)",
             SWITCH_SOURCE,
         )
         self.assertIn("_native_effect_select_entity", SWITCH_SOURCE)

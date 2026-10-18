@@ -13,10 +13,12 @@ from .native_effect_preview import effect_supports_color_mode, effect_supports_c
 from .color_utils import rgb_to_argb
 from .light_color import hardware_brightness_for
 from .cube_matrix import CubeConnectionError, encode_rgb_frame
+from .light_display import ACTIVATION_TIMING
 
-from homeassistant.exceptions import HomeAssistantError  # type: ignore
 from homeassistant.util import dt as dt_util  # type: ignore
 
+from .errors import failed
+from .storage import async_save_data
 from .const import (
     MODE_CLOCK,
     ALL_NATIVE_EFFECTS,
@@ -93,21 +95,38 @@ class NativeModesMixin:
         moment direct mode is re-activated, about 200 ms before the next frame
         can arrive (activate_fx_mode needs its settle time). Without this,
         going back from a clock or effect to a drawing briefly shows the
-        previous drawing. A black frame makes that moment dark instead.
+        previous drawing. A black frame makes that moment dark instead; over
+        UDP it is sent twice (ACTIVATION_TIMING blank_repeat), as a frame
+        there is not acknowledged.
         """
         if self._fx_mode_is_direct:
-            blank = [(0, 0, 0)] * len(self._layout.device_layout)
+            blank = encode_rgb_frame([(0, 0, 0)] * len(self._layout.device_layout))
+            repeat = ACTIVATION_TIMING[self._cube_matrix.transport]["blank_repeat"]
             try:
-                await self._cube_matrix.draw_matrices_fast(encode_rgb_frame(blank))
+                await self._cube_matrix.draw_matrices_fast(blank)
+                if repeat is not None:
+                    await asyncio.sleep(repeat)
+                    await self._cube_matrix.draw_matrices_fast(blank)
             except Exception as err:  # noqa: BLE001 -- best effort, the switch goes on
                 _LOGGER.debug("[%s] Could not blank the direct-mode frame: %s", self._ip, err)
         self._cube_matrix.close_fast_socket()
 
-    async def _set_native_mode_brightness(self) -> None:
-        """Apply HA brightness directly while a firmware-native mode is active."""
+    def _native_brightness_due(self) -> bool:
+        """Whether the lamp's brightness differs from the one set (or is not
+        known): only then is it sent. Switching effects or clock styles keeps
+        it (an effect's settings carry no brightness), so it is not sent
+        again with each one."""
+        return hardware_brightness_for(self._brightness) != self._last_hardware_brightness
+
+    async def _set_native_mode_brightness(self) -> bool:
+        """Send the brightness while a firmware mode is active, when it is
+        due (_native_brightness_due). Returns whether it was sent."""
+        if not self._native_brightness_due():
+            return False
         level = hardware_brightness_for(self._brightness)
         await self._cube_matrix.send_raw_command("set_bright", [level])
         self._last_hardware_brightness = level
+        return True
 
     @staticmethod
     def _native_clock_timezone_hours() -> int:
@@ -254,25 +273,27 @@ class NativeModesMixin:
         direction changed, those are updated live (update_fx_effect,
         LIVE_EFFECT_KEYS): the animation goes on instead of restarting from
         its first frame. The clock, and anything else (or a refused update),
-        is set in full, as before, with the brightness:
-        before set_fx_effect for an effect, after it for the clock (Cube Lite
-        can drop the clock activation when set_bright resets a socket just
-        before it; it takes the brightness once the clock runs)."""
+        is set in full, as before, with the brightness when it changed
+        (_set_native_mode_brightness): before set_fx_effect for an effect,
+        after it for the clock (Cube Lite can drop the clock activation when
+        set_bright resets a socket just before it; it takes the brightness
+        once the clock runs). Each brightness has its pause (0.1 s) between
+        it and set_fx_effect, and the clock its pause before it."""
         if not clock and await self._update_running_effect(params):
             return
         await self._leave_direct_mode()
         if clock:
             self._hardware_operation_phase = "clock:set_fx_effect"
-        else:
-            await self._set_native_mode_brightness()
-        await asyncio.sleep(0.1)
+            await asyncio.sleep(0.1)
+        elif await self._set_native_mode_brightness():
+            await asyncio.sleep(0.1)
         # The lamp's answer is checked: a refused activation (rate limit)
         # fails here instead of leaving HA believing it changed.
         await self._cube_matrix.send_raw_command(
             "set_fx_effect", params, abortive_close=not clock, check_reply=True
         )
         self._cube_matrix.note_running_effect(params)
-        if clock:
+        if clock and self._native_brightness_due():
             self._hardware_operation_phase = "clock:brightness"
             await asyncio.sleep(0.1)
             await self._set_native_mode_brightness()
@@ -438,9 +459,7 @@ class NativeModesMixin:
             timeout_override=MUSIC_FLOW_HARD_TIMEOUT,
         )
         if not success:
-            raise HomeAssistantError(
-                "Cube Lite could not complete the music flow operation"
-            )
+            raise failed("music_flow_failed")
 
     async def async_set_music_flow_effect(self, option: str) -> None:
         """Select a device-microphone music flow effect."""
@@ -530,8 +549,6 @@ class NativeModesMixin:
         else:
             runtime_states.pop(key, None)
         try:
-            from . import async_save_data
-
             await async_save_data(self.hass)
         except Exception as err:
             _LOGGER.warning(

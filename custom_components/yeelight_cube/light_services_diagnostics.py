@@ -184,8 +184,6 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         persist = bool(service_call.data.get("persist", False))
 
         target = _resolve_entity(service_call, "SEND_FX_EFFECT")
-        if target is None:
-            return {"ok": False, "error": "entity not found"}
 
         params = _fx_params(service_call.data, target)
         effect_mode, effect_style, effect_config = _fx_effect_parts(params)
@@ -247,7 +245,7 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
             # the persistent socket / background loop (prevents the command from
             # being clobbered mid-flight).
             await target._execute_hardware_op(_do_send, "fx_explorer_send")
-            _LOGGER.warning(
+            _LOGGER.info(
                 "[FX-EXPLORER] %s -> %s params=%s", target.entity_id, method, params
             )
 
@@ -301,8 +299,8 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
                 )
                 target._is_on = True
                 if persist_clock:
-                    # Record the current UTC offset so the periodic
-                    # ``async_update`` timezone check does not immediately fire
+                    # Record the current UTC offset so the hourly
+                    # ``async_update`` timezone check does not fire
                     # a SECOND clock activation (which races this one for the
                     # hardware lock and visibly resets the panel).
                     # ``_activate_native_clock`` sets this on the normal path;
@@ -314,7 +312,7 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
                     target.async_schedule_update_ha_state()
                     target._refresh_linked_entities()
                 persisted = True
-                _LOGGER.warning(
+                _LOGGER.info(
                     "[FX-EXPLORER] persisted %s on %s",
                     f"clock style={effect_style}"
                     if persist_clock
@@ -343,11 +341,9 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         if params is None:
             params = []
         target = _resolve_entity(service_call, "QUERY_RAW")
-        if target is None:
-            return {"ok": False, "error": "entity not found"}
         try:
             reply = await target._cube_matrix.query_raw_command(method, params)
-            _LOGGER.warning(
+            _LOGGER.info(
                 "[FX-QUERY] %s -> %s params=%s reply=%r",
                 target.entity_id,
                 method,
@@ -380,13 +376,11 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         the active content mode. Not a stable API.
         """
         target = _resolve_entity(service_call, "GET_CAPABILITIES")
-        if target is None:
-            return {"ok": False, "error": "entity not found"}
         try:
             caps = await hass.async_add_executor_job(
                 target._cube_matrix.device.get_capabilities
             )
-            _LOGGER.warning(
+            _LOGGER.info(
                 "[FX-CAPS] %s -> %r", target.entity_id, caps
             )
             if not caps:
@@ -485,8 +479,6 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         raw_kwargs = service_call.data.get("kwargs")
         kwargs = dict(raw_kwargs) if isinstance(raw_kwargs, dict) else {}
         target = _resolve_entity(service_call, "BULB_CALL")
-        if target is None:
-            return {"ok": False, "error": "entity not found"}
         is_action = member in _BULB_ACTION_MEMBERS
         if member not in _BULB_INFO_MEMBERS and not is_action:
             return {
@@ -519,7 +511,7 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
             # Normalize enums/sets/other non-JSON types to strings.
             safe = json.loads(json.dumps(value, default=str))
             safe_args = json.loads(json.dumps(args, default=str))
-            _LOGGER.warning(
+            _LOGGER.info(
                 "[FX-BULB] %s .%s(args=%s kwargs=%s) -> %r",
                 target.entity_id,
                 member,
@@ -550,16 +542,36 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         the Cube restores whatever it is showing right now. Not a stable API.
         """
         target = _resolve_entity(service_call, "SET_DEFAULT")
-        if target is None:
-            return {"ok": False, "error": "entity not found"}
         try:
             target._cube_matrix.close_fast_socket()
             await target._cube_matrix.send_raw_command("set_default", [])
-            _LOGGER.warning("[SET-DEFAULT] %s saved current state as default", target.entity_id)
+            _LOGGER.info("[SET-DEFAULT] %s saved current state as default", target.entity_id)
             return {"ok": True}
         except Exception as e:  # noqa: BLE001 -- debug tool
             _LOGGER.error("[SET-DEFAULT] failed: %s", e, exc_info=True)
             return {"ok": False, "error": str(e)}
+
+    async def handle_force_tcp(service_call):
+        """DEBUG: send the lamps' commands over TCP for some minutes (0: UDP
+        again), to test the TCP fallback on demand."""
+        seconds = service_call.data["minutes"] * 60
+        targets = _resolve_entities(service_call, "FORCE_TCP")
+        for target in targets:
+            target._cube_matrix.force_tcp(seconds)
+            target.async_write_ha_state()  # its connection attribute
+            _LOGGER.info("[FORCE-TCP] %s over %s for %ss", target.entity_id, target._cube_matrix.transport, seconds)
+        return {target.entity_id: target._cube_matrix.transport for target in targets}
+
+    hass.services.async_register(
+        DOMAIN,
+        "force_tcp",
+        _admin_only(handle_force_tcp),
+        schema=vol.Schema({
+            vol.Required("entity_id"): _entity_id_or_list,
+            vol.Required("minutes"): vol.All(vol.Coerce(float), vol.Range(min=0, max=60)),
+        }),
+        supports_response=SupportsResponse.OPTIONAL,
+    )
 
     # DEBUG: raw firmware command explorer (used by the FX Explorer card).
     # Local reverse-engineering tool -- not a stable API.
@@ -637,11 +649,9 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
     async def handle_test_display(service_call):
         """Test service to manually trigger display mode application for debugging."""
         target_entity = _resolve_entity(service_call, "TEST_DISPLAY")
-        if not target_entity:
-            return
         
         _LOGGER.debug("[TEST] handle_test_display called")
-        _LOGGER.debug("[TEST] Testing entity: %s", target_entity._attr_name)
+        _LOGGER.debug("[TEST] Testing entity: %s", target_entity._lamp_name)
         _LOGGER.debug("[TEST] Current state - text: '%s', mode: '%s', is_on: %s", target_entity._custom_text, target_entity._mode, target_entity._is_on)
         _LOGGER.debug("[TEST] Text colors: %s", target_entity._text_colors)
         _LOGGER.debug("[TEST] Background color: %s", target_entity._background_color)
@@ -676,8 +686,6 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         """Toggle hardware color accuracy correction (per-channel gain).
         Supports multi-entity parallel dispatch."""
         targets = _resolve_entities(service_call, "SET_COLOR_ACCURACY")
-        if not targets:
-            return
 
         enabled = bool(service_call.data.get("enabled", False))
 
@@ -713,8 +721,6 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         """Set color correction / accuracy calibration values at runtime.
         All fields are optional -- only provided values are updated."""
         targets = _resolve_entities(service_call, "SET_COLOR_CALIBRATION")
-        if not targets:
-            return
 
         data = service_call.data
         mapping = {
@@ -775,8 +781,6 @@ def async_register_diagnostics_services(hass: HomeAssistant) -> None:
         don't carry bypass_lock=True (i.e. everything except the wizard itself),
         so automations can't disturb the calibration session."""
         targets = _resolve_entities(service_call, "SET_CALIBRATION_LOCK")
-        if not targets:
-            return
         enabled = bool(service_call.data.get("enabled", False))
 
         async def _apply_one(target_entity):

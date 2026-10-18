@@ -24,7 +24,7 @@ def cube_device_info(light_entity) -> dict:
     cube_matrix = light_entity._cube_matrix
     info = {
         "identifiers": {(DOMAIN, light_entity._config_entry.entry_id)},
-        "name": light_entity._attr_name,
+        "name": light_entity._lamp_name,
         "manufacturer": "Yeelight",
         "model": cube_matrix.device_model or "Cube Lite",
     }
@@ -36,11 +36,29 @@ def cube_device_info(light_entity) -> dict:
 class CubeDeviceEntity:
     """An entity grouped under its lamp's device. Stays available while the
     lamp is unreachable (integration settings, the reconnect button, the
-    preview). Subclasses set ``self._light_entity``."""
+    preview). Subclasses set ``self._light_entity``.
+
+    Named after the device: Home Assistant shows the lamp's name, then the
+    entity's own, from its translation key (strings.json)."""
+
+    _attr_has_entity_name = True
 
     @property
     def device_info(self) -> dict:
         return cube_device_info(self._light_entity)
+
+    def _register_on_light(self, slot: str) -> None:
+        """Have the light push its changes to this entity (``light.<slot>``)
+        until the entity is removed (disabled, or its lamp unloaded): the
+        light then stops writing the state of an entity that is gone."""
+        light = self._light_entity
+        setattr(light, slot, self)
+
+        def unregister() -> None:
+            if getattr(light, slot, None) is self:
+                setattr(light, slot, None)
+
+        self.async_on_remove(unregister)
 
 
 class CubeControlEntity(CubeDeviceEntity):

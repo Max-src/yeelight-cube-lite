@@ -29,6 +29,7 @@ from .const import (
 )
 from .layout import FONT_MAPS
 from .pixel_art_storage import expand_pixels, group_pixels
+from .storage import async_schedule_save
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -174,8 +175,6 @@ class StateRestoreMixin:
         if store.get(key) == entry:
             return
         store[key] = entry
-        from . import async_schedule_save
-
         async_schedule_save(self.hass, 2.0)
 
     def _restore_drawing(self) -> None:

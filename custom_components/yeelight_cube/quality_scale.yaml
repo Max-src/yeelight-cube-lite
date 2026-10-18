@@ -1,0 +1,202 @@
+# Home Assistant integration quality scale: where this integration stands,
+# rule by rule (https://developers.home-assistant.io/docs/core/integration-quality-scale/).
+# The same format as a core integration's file. Home Assistant grades only
+# core integrations, so this is a self-assessment: scripts/quality_scale.py
+# checks this file (every rule listed, valid statuses), verifies the rules
+# marked done that a script can verify, and prints the tier reached.
+#   python scripts/quality_scale.py
+# Status: done, todo, or exempt (with the reason); a comment says where or why.
+rules:
+  # Bronze
+  action-setup:
+    status: done
+    comment: Actions are registered in async_setup (__init__.py), not per entry.
+  appropriate-polling:
+    status: done
+    comment: >-
+      Nothing is polled (the lamp's state cannot be read back): the light
+      checks the clock's UTC offset on the hour, for daylight saving changes.
+  brands:
+    status: done
+    comment: brand/icon.png in the integration (core integrations use the brands repository).
+  common-modules:
+    status: done
+    comment: The shared device entity is entity.py (no data update coordinator, nothing polled).
+  config-flow: done
+  config-flow-test-coverage:
+    status: done
+    comment: >-
+      tests/ha/test_config_flow.py, through Home Assistant's flow manager;
+      scripts/ha-tests.sh fails below 100% of config_flow.py (npm run check, CI).
+  dependency-transparency:
+    status: done
+    comment: The only requirement, yeelight, is open source and published on PyPI.
+  docs-actions:
+    status: done
+    comment: SERVICES.md, and the actions' descriptions in services.yaml.
+  docs-conditions:
+    status: exempt
+    comment: The integration provides no conditions.
+  docs-high-level-description:
+    status: done
+    comment: README.md, Features.
+  docs-installation-instructions:
+    status: done
+    comment: README.md, Installation via HACS and Setup.
+  docs-removal-instructions:
+    status: done
+    comment: README.md, Removing the integration.
+  docs-triggers:
+    status: exempt
+    comment: The integration provides no triggers.
+  entity-event-setup:
+    status: done
+    comment: >-
+      Listeners and timers are stopped with async_on_remove or
+      async_will_remove_from_hass; an entity registers on its light through
+      entity.CubeDeviceEntity._register_on_light, which unregisters it when it
+      is removed.
+  entity-unique-id:
+    status: done
+    comment: Every entity sets a unique id derived from its config entry.
+  has-entity-name:
+    status: done
+    comment: >-
+      Set once for every lamp entity (entity.CubeDeviceEntity); the light is
+      the device's main entity (no name of its own).
+  runtime-data:
+    status: done
+    comment: >-
+      entry.runtime_data (runtime_data.CubeRuntimeData); what all lamps share
+      (storage, global sensors) stays in hass.data[DOMAIN].
+  test-before-configure:
+    status: done
+    comment: >-
+      Manual setup probes the lamp (LAN Control port) before creating the
+      entry; discovered lamps answered the discovery.
+  test-before-setup:
+    status: done
+    comment: async_setup_entry raises ConfigEntryNotReady while the lamp does not answer.
+  unique-config-entry:
+    status: done
+    comment: The lamp's hardware id (or its IP, until discovered) is the entry's unique id.
+
+  # Silver
+  action-exceptions:
+    status: done
+    comment: >-
+      Through errors.py: a call naming no lamp, invalid input or a refused
+      request raises ServiceValidationError, a failure HomeAssistantError.
+      Actions that update several lamps return at once and update them in
+      the background: a lamp's failure there is logged and shown on the
+      cards (last_command_error). The admin-only diagnostics actions report
+      a lamp's failure in their response.
+  config-entry-unloading:
+    status: done
+    comment: async_unload_entry unloads the platforms and the lamp's state.
+  docs-configuration-parameters:
+    status: exempt
+    comment: >-
+      The options flow has no options: a lamp's settings are its entities,
+      documented in README.md (Entities Created).
+  docs-installation-parameters:
+    status: done
+    comment: README.md, Adding to Home Assistant (the lamp's IP address).
+  entity-unavailable:
+    status: done
+    comment: >-
+      The light is unavailable while the lamp does not answer; its settings
+      entities stay available on purpose (they need no lamp).
+  integration-owner:
+    status: done
+    comment: codeowners in manifest.json.
+  log-when-unavailable:
+    status: done
+    comment: >-
+      A warning when the lamp stops answering, then debug level until it
+      answers again (cube_matrix.outage_log_level).
+  parallel-updates: done
+  reauthentication-flow:
+    status: exempt
+    comment: The lamp needs no authentication.
+  test-coverage:
+    status: todo
+    comment: >-
+      Measured for the config flow only (tests/ha); the other tests load the
+      modules without Home Assistant, which coverage tools cannot follow.
+
+  # Gold
+  devices:
+    status: done
+    comment: One device per lamp, with its model and firmware (entity.cube_device_info).
+  diagnostics: done
+  discovery:
+    status: done
+    comment: Zeroconf (manifest.json) and Yeelight's own discovery (discovery.py).
+  discovery-update-info:
+    status: done
+    comment: A lamp discovered at a new IP updates its entry (config_flow.async_step_discovery).
+  docs-data-update:
+    status: done
+    comment: README.md, How the State Updates.
+  docs-examples:
+    status: done
+    comment: README.md, Automations & Node-RED.
+  docs-known-limitations:
+    status: done
+    comment: README.md, Known Limitations.
+  docs-supported-devices:
+    status: done
+    comment: README.md, Supported Devices.
+  docs-supported-functions:
+    status: done
+    comment: README.md, Entities Created, Display Modes and SERVICES.md.
+  docs-troubleshooting:
+    status: done
+    comment: README.md, Troubleshooting.
+  docs-use-cases:
+    status: done
+    comment: README.md, Use Cases.
+  dynamic-devices:
+    status: exempt
+    comment: One lamp per config entry; a new lamp is a new entry (discovered).
+  entity-category:
+    status: done
+    comment: Settings and diagnostic entities have their category.
+  entity-device-class:
+    status: done
+    comment: The power and energy sensors have their device class.
+  entity-disabled-by-default:
+    status: done
+    comment: Rarely used diagnostic sensors are disabled by default.
+  entity-translations:
+    status: done
+    comment: Every entity is named by its translation key (strings.json).
+  exception-translations:
+    status: done
+    comment: Every error is raised through errors.py with its message in strings.json.
+  icon-translations:
+    status: done
+    comment: Every entity's icon is in icons.json (by translation key).
+  reconfiguration-flow:
+    status: done
+    comment: Reconfigure changes a lamp's IP, checked like adding one.
+  repair-issues:
+    status: done
+    comment: >-
+      issues.py: a lamp unreachable for 30 minutes, UDP blocked for 15 while
+      TCP works; each goes away by itself.
+  stale-devices:
+    status: exempt
+    comment: One lamp per config entry; removing the entry removes its device.
+
+  # Platinum
+  async-dependency:
+    status: todo
+    comment: The yeelight library is synchronous (run in the executor).
+  inject-websession:
+    status: exempt
+    comment: The integration makes no HTTP requests.
+  strict-typing:
+    status: todo
+    comment: The code is not fully typed.

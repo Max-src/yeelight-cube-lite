@@ -112,12 +112,12 @@ class ConnectionMixin:
         # Throttle runtime SSDP rediscovery (lamp may have changed IP via DHCP).
         self._last_rediscovery_attempt = 0.0
 
-        # Bumped by each queued redraw; an older one still waiting for the
-        # lamp is skipped (_execute_hardware_op, coalesce=True).
-        self._coalesced_op_generation = 0
+        # Per coalesce key, bumped by each operation queued with it; an older
+        # one still waiting for the lamp is skipped (_execute_hardware_op).
+        self._coalesce_generations = {}
 
     async def _execute_hardware_op(
-        self, func, op_name: str, timeout_override: float = None, coalesce: bool = False
+        self, func, op_name: str, timeout_override: float = None, coalesce: str | None = None
     ):
         """Execute a hardware operation under the global lock with timeout and error handling.
 
@@ -129,12 +129,16 @@ class ConnectionMixin:
             timeout_override: Optional custom timeout (seconds), for an
                               operation that needs more time than the default
                               APPLY_HARD_TIMEOUT (Music Flow).
-            coalesce: For full redraws, which render the entity's state as it
-                      is when they run. Skipped (returning True) if a newer
-                      coalesced operation was queued while this one waited for
-                      the lamp: the newer one draws the latest state anyway.
-                      Rapid changes (clicking through pixel arts) then cost
-                      the lamp one redraw instead of one each.
+            coalesce: A key for operations that each bring the lamp to the
+                      entity's latest state, so only the newest waiting one
+                      needs to run: skipped (returning True) if a newer one
+                      with the same key was queued while this one waited for
+                      the lamp. "display": full redraws (clicking through
+                      pixel arts costs one redraw, not one each).
+                      "brightness": brightness changes (a slider drag, or
+                      several clients, cost the latest value, not every one
+                      in between). Operations with another key, or none,
+                      never skip each other.
         """
         op_id = int(time.time() * 1000) % 100000
         effective_timeout = timeout_override or APPLY_HARD_TIMEOUT
@@ -161,8 +165,8 @@ class ConnectionMixin:
             return False
 
         if coalesce:
-            self._coalesced_op_generation += 1
-            generation = self._coalesced_op_generation
+            generation = self._coalesce_generations.get(coalesce, 0) + 1
+            self._coalesce_generations[coalesce] = generation
 
         _LOGGER.debug(
             "[OP #%s] [%s] > %s "
@@ -180,10 +184,10 @@ class ConnectionMixin:
                 _DEVICE_LOCK_HOLDERS.get(self._ip) if device_lock.locked() else None
             )
             async with device_lock:
-                if coalesce and generation != self._coalesced_op_generation:
+                if coalesce and generation != self._coalesce_generations[coalesce]:
                     _LOGGER.debug(
-                        "[OP #%s] [%s] %s skipped -- a newer redraw is queued",
-                        op_id, self._ip, op_name,
+                        "[OP #%s] [%s] %s skipped -- a newer '%s' operation is queued",
+                        op_id, self._ip, op_name, coalesce,
                     )
                     return True
                 _DEVICE_LOCK_HOLDERS[self._ip] = op_name

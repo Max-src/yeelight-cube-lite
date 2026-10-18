@@ -1,0 +1,335 @@
+{
+    "entity": {
+        "button": {
+            "force_refresh": {
+                "default": "mdi:refresh"
+            }
+        },
+        "camera": {
+            "matrix_preview_square": {
+                "default": "mdi:led-strip-variant"
+            },
+            "matrix_preview_round": {
+                "default": "mdi:led-strip-variant"
+            }
+        },
+        "number": {
+            "gradient_angle": {
+                "default": "mdi:angle-acute"
+            },
+            "native_effect_speed": {
+                "default": "mdi:speedometer"
+            },
+            "scroll_speed": {
+                "default": "mdi:timer-play-outline"
+            },
+            "power_limit": {
+                "default": "mdi:flash-alert-outline"
+            },
+            "hue_shift": {
+                "default": "mdi:palette-outline"
+            },
+            "temperature": {
+                "default": "mdi:thermometer"
+            },
+            "saturation": {
+                "default": "mdi:invert-colors"
+            },
+            "vibrance": {
+                "default": "mdi:auto-fix"
+            },
+            "contrast": {
+                "default": "mdi:contrast-circle"
+            },
+            "glow": {
+                "default": "mdi:white-balance-sunny"
+            },
+            "grayscale": {
+                "default": "mdi:image-filter-black-white"
+            },
+            "invert": {
+                "default": "mdi:invert-colors-off"
+            },
+            "tint_hue": {
+                "default": "mdi:format-color-fill"
+            },
+            "tint_strength": {
+                "default": "mdi:opacity"
+            }
+        },
+        "select": {
+            "clock_content": {
+                "default": "mdi:calendar-clock"
+            },
+            "music_flow_effect": {
+                "default": "mdi:waveform"
+            },
+            "power_on_state": {
+                "default": "mdi:power-settings"
+            },
+            "text_alignment": {
+                "default": "mdi:format-align-center"
+            },
+            "font": {
+                "default": "mdi:format-font"
+            },
+            "device_orientation": {
+                "default": "mdi:screen-rotation"
+            },
+            "palette": {
+                "default": "mdi:palette"
+            },
+            "pixel_art": {
+                "default": "mdi:image"
+            },
+            "content_mode": {
+                "default": "mdi:layers-triple"
+            },
+            "display_mode": {
+                "default": "mdi:view-dashboard-variant"
+            },
+            "clock_style": {
+                "default": "mdi:clock-digital"
+            },
+            "native_effect": {
+                "default": "mdi:creation"
+            },
+            "native_effect_direction": {
+                "default": "mdi:arrow-all"
+            }
+        },
+        "sensor": {
+            "clock_presets": {
+                "default": "mdi:clock-outline"
+            },
+            "palettes": {
+                "default": "mdi:palette"
+            },
+            "font_characters": {
+                "default": "mdi:alphabetical-variant"
+            },
+            "pixel_arts": {
+                "default": "mdi:image-multiple"
+            },
+            "ip_address": {
+                "default": "mdi:ip-network"
+            },
+            "estimated_power": {
+                "default": "mdi:flash-outline"
+            },
+            "estimated_energy": {
+                "default": "mdi:lightning-bolt-outline"
+            }
+        },
+        "switch": {
+            "auto_turn_on": {
+                "default": "mdi:lightbulb-auto"
+            },
+            "extended_effects": {
+                "default": "mdi:flask-outline"
+            },
+            "clock_show_date": {
+                "default": "mdi:calendar-clock"
+            },
+            "clock_12_hour": {
+                "default": "mdi:clock-outline"
+            },
+            "clock_colon_blink": {
+                "default": "mdi:dots-vertical"
+            },
+            "scroll_enabled": {
+                "default": "mdi:format-text-rotation-none"
+            }
+        },
+        "text": {
+            "display_text": {
+                "default": "mdi:format-text"
+            }
+        }
+    },
+    "services": {
+        "add_managed_device": {
+            "service": "mdi:plus-network"
+        },
+        "remove_managed_device": {
+            "service": "mdi:minus-network"
+        },
+        "is_device_managed": {
+            "service": "mdi:help-network"
+        },
+        "list_managed_devices": {
+            "service": "mdi:format-list-bulleted"
+        },
+        "test_device_detection": {
+            "service": "mdi:radar"
+        },
+        "ignore_yeelight_discovery": {
+            "service": "mdi:eye-off"
+        },
+        "create_cube_discovery": {
+            "service": "mdi:magnify-plus"
+        },
+        "ignore_specific_yeelight": {
+            "service": "mdi:eye-off-outline"
+        },
+        "load_palette": {
+            "service": "mdi:palette"
+        },
+        "set_button_effects": {
+            "service": "mdi:gesture-tap-button"
+        },
+        "save_clock_preset": {
+            "service": "mdi:clock-plus"
+        },
+        "delete_clock_preset": {
+            "service": "mdi:clock-remove"
+        },
+        "set_clock_style": {
+            "service": "mdi:clock-digital"
+        },
+        "preview_gradient_modes": {
+            "service": "mdi:gradient-horizontal"
+        },
+        "set_custom_text": {
+            "service": "mdi:format-text"
+        },
+        "set_text_colors": {
+            "service": "mdi:format-color-text"
+        },
+        "apply_custom_pixels": {
+            "service": "mdi:draw"
+        },
+        "send_fx_effect": {
+            "service": "mdi:console"
+        },
+        "query_raw": {
+            "service": "mdi:console-line"
+        },
+        "get_capabilities": {
+            "service": "mdi:information"
+        },
+        "bulb_call": {
+            "service": "mdi:code-braces"
+        },
+        "set_default": {
+            "service": "mdi:content-save-cog"
+        },
+        "set_native_effect": {
+            "service": "mdi:creation"
+        },
+        "set_mode": {
+            "service": "mdi:view-dashboard-variant"
+        },
+        "set_angle": {
+            "service": "mdi:angle-acute"
+        },
+        "set_full_panel": {
+            "service": "mdi:fullscreen"
+        },
+        "set_solid_color": {
+            "service": "mdi:format-color-fill"
+        },
+        "set_brightness": {
+            "service": "mdi:brightness-6"
+        },
+        "save_pixel_art": {
+            "service": "mdi:content-save-edit"
+        },
+        "apply_pixel_art": {
+            "service": "mdi:image-frame"
+        },
+        "remove_pixel_art": {
+            "service": "mdi:delete"
+        },
+        "rename_pixel_art": {
+            "service": "mdi:rename"
+        },
+        "get_pixel_art": {
+            "service": "mdi:image-search"
+        },
+        "move_pixel_art": {
+            "service": "mdi:swap-vertical"
+        },
+        "update_pixel_arts": {
+            "service": "mdi:image-multiple"
+        },
+        "save_palette": {
+            "service": "mdi:palette-swatch"
+        },
+        "remove_palette": {
+            "service": "mdi:delete"
+        },
+        "move_palette": {
+            "service": "mdi:swap-vertical"
+        },
+        "rename_palette": {
+            "service": "mdi:rename"
+        },
+        "add_palettes": {
+            "service": "mdi:playlist-plus"
+        },
+        "set_palettes": {
+            "service": "mdi:playlist-edit"
+        },
+        "set_orientation": {
+            "service": "mdi:flip-vertical"
+        },
+        "set_device_orientation": {
+            "service": "mdi:screen-rotation"
+        },
+        "set_font": {
+            "service": "mdi:format-font"
+        },
+        "set_alignment": {
+            "service": "mdi:format-align-center"
+        },
+        "display_image": {
+            "service": "mdi:image"
+        },
+        "test_display": {
+            "service": "mdi:monitor-eye"
+        },
+        "set_preview_adjustments": {
+            "service": "mdi:tune-variant"
+        },
+        "force_refresh": {
+            "service": "mdi:refresh"
+        },
+        "freeze_display": {
+            "service": "mdi:snowflake"
+        },
+        "start_effect_rotation": {
+            "service": "mdi:rotate-right"
+        },
+        "set_favourites": {
+            "service": "mdi:star"
+        },
+        "set_rotation_interval": {
+            "service": "mdi:timer-outline"
+        },
+        "stop_effect_rotation": {
+            "service": "mdi:stop"
+        },
+        "skip_effect_rotation": {
+            "service": "mdi:skip-next"
+        },
+        "save_state": {
+            "service": "mdi:content-save"
+        },
+        "restore_state": {
+            "service": "mdi:restore"
+        },
+        "set_color_accuracy": {
+            "service": "mdi:palette-advanced"
+        },
+        "set_calibration_lock": {
+            "service": "mdi:lock"
+        },
+        "set_color_calibration": {
+            "service": "mdi:eyedropper-variant"
+        },
+        "force_tcp": {
+            "service": "mdi:lan-connect"
+        }
+    }
+}

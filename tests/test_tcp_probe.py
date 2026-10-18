@@ -39,10 +39,12 @@ class TcpProbeTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(OSError):
             await self.check_tcp("127.0.0.1", port, 1.0)
 
-    def test_setup_and_recovery_share_it(self):
+    def test_adding_setup_and_recovery_share_it(self):
         init = (ROOT / "__init__.py").read_text(encoding="utf-8")
-        self.assertIn("await check_tcp(ip_address, port, probe_timeout)", init)
-        self.assertNotIn("socket.socket(", init)
+        flow = (ROOT / "config_flow.py").read_text(encoding="utf-8")
+        self.assertIn("await check_tcp(ip_address, port, PROBE_TIMEOUT)", init)
+        self.assertIn("await check_tcp(ip_address, LAN_PORT, PROBE_TIMEOUT)", flow)
+        self.assertNotIn("socket.socket(", init + flow)
         self.assertIn("await check_tcp(self._ip, self._port, timeout)", CUBE_MATRIX_SOURCE)
 
 

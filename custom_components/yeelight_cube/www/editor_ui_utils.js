@@ -724,23 +724,6 @@ export function renderSettingsBox(title, content) {
 }
 
 /**
- * Renders a simple info message in a mode settings section
- * Used when a mode has no additional settings to configure
- *
- * @param {string} message - Message to display
- * @returns {TemplateResult} Styled info message
- */
-export function renderModeInfoMessage(message) {
-  return html`
-    <div
-      style="padding: 12px; background: var(--secondary-background-color, #f0f8ff); border-radius: 6px; color: var(--secondary-text-color, #666);"
-    >
-      ${message}
-    </div>
-  `;
-}
-
-/**
  * Render the shared carousel navigation settings (button shape + wrap toggle)
  * used inside the "Carousel Mode Settings" block of the palette and draw
  * editors. Centralizes the canonical shape options so all carousels stay in

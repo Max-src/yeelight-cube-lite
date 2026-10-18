@@ -5,9 +5,14 @@
  * in-between state update never jumps the slider back.
  *
  *   this._sliders = new LampSliders(this, {
- *     brightness: { config: () => gc, commit: (pct) => send(pct) },
+ *     brightness: { config: () => gc, commit: (pct, options) => send(pct, options) },
  *     speed: { config: () => gc, commit: ..., live: (pct) => repaint() },
  *   });
+ *
+ * A drag commits every few hundred ms and each command waits for the lamp:
+ * commit's `options` ({ coalesce }, the slider's key in the card's command
+ * queue, CardCommandController) go with the command it sends, so while one is
+ * sent only the slider's latest value waits, not every value in between.
  *
  * Each slider is a namespace of the slider markup (renderSliderGroup's /
  * renderSliderControl's `ns`); its handlers are assigned onto the card as
@@ -46,8 +51,9 @@ export class LampSliders {
   /**
    * @param {HTMLElement} host - the card (requestUpdate(), _gate)
    * @param {Object} sliders - per namespace: config() -> slider render config,
-   *   commit(pct) sends the value, optional live(pct) on every movement and
-   *   beforeCommit() run before the draft records the value
+   *   commit(pct, options) sends the value with options ({ coalesce }) in its
+   *   command, optional live(pct) on every movement and beforeCommit() run
+   *   before the draft records the value
    * @param {Object} [options]
    * @param {Function} [options.refresh] - shows the sliders' current values
    *   again after a drag ends or a draft expires; defaults to a Lit update
@@ -57,6 +63,7 @@ export class LampSliders {
     this.host = host;
     this.drafts = {};
     for (const [ns, slider] of Object.entries(sliders)) {
+      const commandOptions = { coalesce: `slider-${ns}` };
       const draft = createSliderDraft({
         isDragging: () => host._gate.held("slider"),
         onExpire: refresh,
@@ -75,7 +82,7 @@ export class LampSliders {
           onCommit: (pct) => {
             slider.beforeCommit?.();
             draft.commit(pct);
-            slider.commit(pct);
+            slider.commit(pct, commandOptions);
           },
           onDragEnd: refresh,
         }),

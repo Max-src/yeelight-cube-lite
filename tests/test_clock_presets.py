@@ -1,16 +1,14 @@
 import runpy
 import unittest
-from pathlib import Path
 import asyncio
 import json
 import logging
-import sys
-from types import ModuleType, SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, Mock
 from datetime import datetime
-from tests.test_native_features import _load_standalone_functions, ROOT, CONSTANTS, NATIVE_PREVIEW
+from tests.test_native_features import _load_standalone_functions, ROOT, CONSTANTS, NATIVE_PREVIEW, import_pure_module
 
-MODULE = runpy.run_path(str(Path(__file__).parents[1] / "custom_components/yeelight_cube/clock_presets.py"))
+MODULE = vars(import_pure_module("clock_presets"))
 save = MODULE["save_clock_preset"]
 delete = MODULE["delete_clock_preset"]
 
@@ -149,14 +147,9 @@ class ClockPresetServiceTests(unittest.IsolatedAsyncioTestCase):
         self.data = {"storage": self.store, "clock_presets": [], "palettes_v2": [{"name": "Existing"}]}
         self.hass = SimpleNamespace(data={"yeelight_cube": self.data}, bus=SimpleNamespace(async_fire=Mock()))
         namespace = {"DOMAIN": "yeelight_cube", "_LOGGER": logging.getLogger(__name__)}
-        save_data = _load_standalone_functions((ROOT / "__init__.py").read_text(encoding="utf-8"), {"async_save_data", "_storage_data"}, namespace)["async_save_data"]
-        module = ModuleType("_clock_preset_test")
-        module.async_save_data = save_data
-        self.modules = patch.dict(sys.modules, {module.__name__: module})
-        self.modules.start()
-        self.addCleanup(self.modules.stop)
+        save_data = _load_standalone_functions((ROOT / "storage.py").read_text(encoding="utf-8"), {"async_save_data", "storage_data"}, namespace)["async_save_data"]
         namespace.update({
-            "__package__": module.__name__, "hass": self.hass,
+            "async_save_data": save_data, "hass": self.hass,
             "preset_lock": asyncio.Lock(), "HomeAssistantError": ValueError,
             "save_clock_preset": save, "delete_clock_preset": delete,
             "NATIVE_CLOCK_STYLES": CONSTANTS["NATIVE_CLOCK_STYLES"],
@@ -183,7 +176,7 @@ class ClockPresetServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.data["clock_presets"], [])
         self.hass.bus.async_fire.assert_not_called()
         self.data["storage_init_error"] = "Failed"
-        with self.assertRaisesRegex(ValueError, "not ready"):
+        with self.assertRaisesRegex(ValueError, "not loaded yet"):
             await self.update(SimpleNamespace(service="save_clock_preset", data={"name": "Amber", "color": [255, 120, 0]}))
 
     async def test_concurrent_edits_wait_for_persistence(self):

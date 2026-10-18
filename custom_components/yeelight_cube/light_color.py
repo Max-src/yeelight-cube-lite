@@ -9,7 +9,6 @@ Mixed into ``YeelightCubeLight``; not usable on its own.
 import colorsys
 import logging
 
-from .layout import TOTAL_COLUMNS, TOTAL_ROWS
 from .lamp_power import estimated_power, limit_frame_power
 
 _LOGGER = logging.getLogger(__name__)
@@ -68,30 +67,6 @@ class ColorPipelineMixin:
         self._calib_gain_g = 1.00
         self._calib_gain_b = 1.00
 
-    def _angle_gradient_projection_for_bottom_center(self, col, dx, dy):
-        # Always use a 3-column, full-height box centered at col
-        min_row, max_row = 0, TOTAL_ROWS - 1
-        min_col = max(0, col - 1)
-        max_col = min(TOTAL_COLUMNS - 1, col + 1)
-        center_col = (min_col + max_col) / 2
-        center_row = (min_row + max_row) / 2
-        # Projection for the bottom-center dot
-        dot_col = center_col
-        dot_row = max_row
-        projection = (dot_col - center_col) * dx + (dot_row - center_row) * dy
-        # Projections for normalization (corners of the box)
-        corners = [
-            (min_col, min_row),
-            (max_col, min_row),
-            (min_col, max_row),
-            (max_col, max_row)
-        ]
-        projections = [(c - center_col) * dx + (r - center_row) * dy for c, r in corners]
-        min_proj = min(projections)
-        max_proj = max(projections)
-        proj_range = max_proj - min_proj if max_proj != min_proj else 1
-        normalized_projection = (projection - min_proj) / proj_range
-        return normalized_projection
 
     def calculate_multi_gradient_color(self, colors, position, total_positions):
         """

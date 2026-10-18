@@ -11,9 +11,14 @@ import { StorageUtils } from "./draw_card_storage.js";
 
 export const PixelArtActionsMixin = (Base) => class extends Base {
   // A saved pixel art picked in the gallery: loaded, and sent to the lamp
-  // with "Apply to lamp automatically".
+  // with "Apply to lamp automatically" (named, so the lamp's Pixel Art
+  // select shows it).
   async _handlePixelArtCanvasClick(idx, autoApplyToLamp) {
-    return this._pickPixelArt(() => this._applyPixelArtToMatrix(idx), autoApplyToLamp);
+    return this._pickPixelArt(
+      () => this._applyPixelArtToMatrix(idx),
+      autoApplyToLamp,
+      this._pixelArts()[idx]?.name,
+    );
   }
 
   // An official pixel art picked in the gallery (its key, builtinArtKey):
@@ -26,10 +31,11 @@ export const PixelArtActionsMixin = (Base) => class extends Base {
     return this._pickPixelArt(
       () => (art ? this._loadPixelArt(art) : false),
       autoApplyToLamp,
+      art?.name,
     );
   }
 
-  async _pickPixelArt(load, autoApplyToLamp) {
+  async _pickPixelArt(load, autoApplyToLamp, name) {
     this._pixelArtProblem = null;
     try {
       // Always apply to matrix; send it to the lamp only if that worked
@@ -43,7 +49,7 @@ export const PixelArtActionsMixin = (Base) => class extends Base {
 
       // If auto-apply is enabled, also send current matrix to lamp
       if (autoApplyToLamp) {
-        await this._sendToLamp({ latestOnly: true });
+        await this._sendToLamp({ latestOnly: true, name });
       }
     } catch (err) {
       this._reportFailure(err, "Failed to apply the pixel art to the lamp.");

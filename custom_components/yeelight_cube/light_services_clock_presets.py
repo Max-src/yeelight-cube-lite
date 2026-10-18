@@ -6,11 +6,13 @@ import asyncio
 
 import voluptuous as vol  # type: ignore
 from homeassistant.core import HomeAssistant  # type: ignore
-from homeassistant.exceptions import HomeAssistantError  # type: ignore
 from homeassistant.helpers import config_validation as cv  # type: ignore
 
 from .clock_presets import delete_clock_preset, save_clock_preset
 from .const import DOMAIN, NATIVE_CLOCK_STYLES
+from .errors import failed, invalid_input
+from .input_error import InputError
+from .storage import async_save_data
 
 
 def async_register_clock_preset_services(hass: HomeAssistant) -> None:
@@ -18,15 +20,13 @@ def async_register_clock_preset_services(hass: HomeAssistant) -> None:
     preset_lock = asyncio.Lock()
 
     async def update_clock_presets(call):
-        from . import async_save_data
-
         async with preset_lock:
             domain_data = hass.data.get(DOMAIN, {})
             ready = domain_data.get("storage_ready")
             if ready is not None:
                 await ready.wait()
             if not domain_data.get("storage") or domain_data.get("storage_init_error"):
-                raise HomeAssistantError("Clock preset storage is not ready")
+                raise failed("storage_not_ready")
             previous = domain_data.get("clock_presets", [])
             try:
                 if call.service == "delete_clock_preset":
@@ -38,8 +38,8 @@ def async_register_clock_preset_services(hass: HomeAssistant) -> None:
                         call.data.get("preset_id"),
                         kind=call.data.get("kind"),
                     )
-            except ValueError as error:
-                raise HomeAssistantError(str(error)) from error
+            except InputError as error:
+                raise invalid_input(error) from error
             domain_data["clock_presets"] = updated
             try:
                 await async_save_data(hass)

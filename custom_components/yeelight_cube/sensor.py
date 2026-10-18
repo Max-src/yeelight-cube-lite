@@ -1,3 +1,6 @@
+import hashlib
+import json
+import logging
 import time
 from datetime import timedelta
 
@@ -14,11 +17,22 @@ from homeassistant.helpers.entity import Entity # type: ignore
 from homeassistant.config_entries import ConfigEntry # type: ignore
 from .layout import FONT_MAPS, FONT_METRICS
 from .const import DOMAIN, CONF_IP, CONF_DEVICE_ID
+from .runtime_data import lamp_of
 from .entity import CubeDeviceEntity
 from .lamp_power import EnergyMeter
+from .storage import COLLECTION_EVENTS
+
+_LOGGER = logging.getLogger(__name__)
+
+# No limit per platform: every command to the lamp already waits for the
+# previous one (the device lock, light_connection._execute_hardware_op).
+PARALLEL_UPDATES = 0
 
 class YeelightCubeBaseSensor(Entity):
-    """Base class for Yeelight Cube Lite sensors."""
+    """Base class for Yeelight Cube Lite sensors (of the integration, not of a
+    lamp: no device; named by their translation key alone)."""
+
+    _attr_has_entity_name = True
     def __init__(self, hass):
         self.hass = hass
         self._attr_should_poll = False
@@ -36,8 +50,7 @@ class ClockPresetSensor(YeelightCubeBaseSensor):
     def __init__(self, hass):
         super().__init__(hass)
         self._attr_unique_id = "yeelight_cube_clock_presets"
-        self._attr_name = "Clock Color Presets"
-        self._attr_icon = "mdi:clock-outline"
+        self._attr_translation_key = "clock_presets"
 
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
@@ -63,25 +76,29 @@ class ClockPresetSensor(YeelightCubeBaseSensor):
         return {"clock_presets": self.hass.data[DOMAIN].get("clock_presets", [])}
 
 
-class PaletteSensor(YeelightCubeBaseSensor):
-    """Sensor exposing the current palettes_v2 list for the Yeelight Cube Lite."""
-    
-    # Keep the (potentially large) palette list out of the recorder database.
-    # Cards read it live from the state machine; history is useless for it.
-    _unrecorded_attributes = frozenset({"palettes_v2"})
-    
+class _CollectionSensor(YeelightCubeBaseSensor):
+    """A shared collection for the cards (palettes, pixel arts): the list,
+    its count and a hash of its content, which the cards compare to notice a
+    change (www/user-collections.js). Rewritten on the collection's event;
+    the hash is computed once per change, not on every state write."""
+
+    # Subclasses: the hass.data[DOMAIN] key and attribute, the event, the
+    # key the hash is computed under (as the cards have always received it)
+    # and what the state counts ("50 drawings").
+    _collection_key: str
+    _event: str
+    _hash_key: str
+    _counted: str
+
     def __init__(self, hass):
         super().__init__(hass)
-        self._attr_unique_id = "yeelight_cube_color_palettes"
-        self._attr_name = "Color Palettes"
-        self._attr_icon = "mdi:palette"
-    
+        self._content_hash = None
+
     async def async_added_to_hass(self):
-        """Register event listener when added to hass."""
         await super().async_added_to_hass()
-        # Listen for palette update events (unsubscribed automatically on removal)
+        # (Unsubscribed on removal.)
         self.async_on_remove(
-            self.hass.bus.async_listen(f"{DOMAIN}_palettes_updated", self._handle_update)
+            self.hass.bus.async_listen(f"{DOMAIN}_{self._event}", self._handle_update)
         )
 
     @callback
@@ -89,67 +106,47 @@ class PaletteSensor(YeelightCubeBaseSensor):
         # Renamed in place (Home Assistant 2026.11+): nothing here is keyed on
         # the entity id, so it keeps running as it is.
         super().async_entity_id_changed(old_entity_id)
-    
-    async def _handle_update(self, event):
-        """Force state update when palettes change."""
-        import logging
-        _LOGGER = logging.getLogger(__name__)
-        event_count = event.data.get('count', 'unknown') if hasattr(event, 'data') else 'no-data'
-        _LOGGER.debug("[PALETTE-SENSOR] Event received! Count from event: %s", event_count)
-        
-        # Get palette data BEFORE state update
-        palettes_before = self.hass.data.get(DOMAIN, {}).get("palettes_v2", [])
-        _LOGGER.debug("[PALETTE-SENSOR] Before state update - palette count: %s", len(palettes_before))
-        
-        # Clear any attribute cache (if exists)
-        if hasattr(self, '_attr_extra_state_attributes'):
-            delattr(self, '_attr_extra_state_attributes')
-        
-        # Force state update using schedule (which properly triggers websocket updates)
-        self.async_schedule_update_ha_state(force_refresh=True)
-        
-        # Force immediate write to ensure websocket gets it
+
+    @callback
+    def _handle_update(self, _event=None):
+        self._content_hash = None
         self.async_write_ha_state()
-        
-        # Get actual count from storage AFTER
-        palettes_after = self.hass.data.get(DOMAIN, {}).get("palettes_v2", [])
-        
-        # Calculate new hash
-        import json, hashlib
-        palettes_json = json.dumps(palettes_after, sort_keys=True)
-        new_hash = hashlib.md5(palettes_json.encode('utf-8')).hexdigest()
-        
-        _LOGGER.debug("[PALETTE-SENSOR] After schedule - count: %s, hash: %s...", len(palettes_after), new_hash[:8])
-        if len(palettes_after) > 0:
-            _LOGGER.debug("[PALETTE-SENSOR] Last 3 palette names: %s", [p.get('name', 'unnamed') for p in palettes_after[-3:]])
+
+    def _items(self) -> list:
+        return self.hass.data.get(DOMAIN, {}).get(self._collection_key, [])
+
+    @property
+    def state(self):
+        return f"{len(self._items())} {self._counted}"
 
     @property
     def extra_state_attributes(self):
-        """Expose palettes_v2 from hass.data[DOMAIN]['palettes_v2'] if available."""
-        try:
-            palettes = self.hass.data[DOMAIN].get("palettes_v2", [])
-        except Exception:
-            palettes = []
-        
-        # Calculate MD5 hash for cards to detect changes
-        import json, hashlib, logging
-        _LOGGER = logging.getLogger(__name__)
-        
-        # Create hash from palette content + count
-        hash_data = {
-            "palettes": palettes,
-            "count": len(palettes)
-        }
-        palettes_json = json.dumps(hash_data, sort_keys=True)
-        content_hash = hashlib.md5(palettes_json.encode('utf-8')).hexdigest()
-        
-        _LOGGER.debug("[PALETTE-SENSOR-ATTR] Returning attributes - count: %s, hash: %s...", len(palettes), content_hash[:8])
-        
+        items = self._items()
+        if self._content_hash is None:
+            content = json.dumps({self._hash_key: items, "count": len(items)}, sort_keys=True)
+            self._content_hash = hashlib.md5(content.encode("utf-8")).hexdigest()
         return {
-            "palettes_v2": palettes,
-            "content_hash": content_hash,
-            "count": len(palettes),
+            # A copy: Home Assistant compares it with the previous state's.
+            self._collection_key: list(items),
+            "content_hash": self._content_hash,
+            "count": len(items),
         }
+
+
+class PaletteSensor(_CollectionSensor):
+    """The saved palettes (palettes_v2), excluded from the recorder (cards
+    read them live; their history is of no use)."""
+
+    _unrecorded_attributes = frozenset({"palettes_v2"})
+    _collection_key = "palettes_v2"
+    _event = COLLECTION_EVENTS["palettes_v2"]
+    _hash_key = "palettes"
+    _counted = "palettes"
+
+    def __init__(self, hass):
+        super().__init__(hass)
+        self._attr_unique_id = "yeelight_cube_color_palettes"
+        self._attr_translation_key = "palettes"
 
 class LetterMapSensor(YeelightCubeBaseSensor):
     """Sensor exposing the static letter map for the Yeelight Cube Lite."""
@@ -160,8 +157,7 @@ class LetterMapSensor(YeelightCubeBaseSensor):
     def __init__(self, hass):
         super().__init__(hass)
         self._attr_unique_id = "yeelight_cube_font_letter_map"
-        self._attr_name = "Font Characters"
-        self._attr_icon = "mdi:alphabetical-variant"
+        self._attr_translation_key = "font_characters"
 
     @property
     def state(self):
@@ -174,93 +170,20 @@ class LetterMapSensor(YeelightCubeBaseSensor):
         # the exact same layout the lamp uses.
         return {"font_maps": FONT_MAPS, "font_metrics": FONT_METRICS}
 
-class PixelArtSensor(YeelightCubeBaseSensor):
-    """Sensor exposing the current pixel art list for the Yeelight Cube Lite."""
-    
-    # Keep the pixel art data (>16KB) out of the recorder database.
-    # This is the supported mechanism (HA 2023.6+); previously a
-    # capability_attributes override was used, which had no such effect.
+class PixelArtSensor(_CollectionSensor):
+    """The saved pixel arts, excluded from the recorder (over 16 KB)."""
+
     _unrecorded_attributes = frozenset({"pixel_arts"})
-    
+    _collection_key = "pixel_arts"
+    _event = COLLECTION_EVENTS["pixel_arts"]
+    _hash_key = "pixel_arts"
+    _counted = "drawings"
+
     def __init__(self, hass):
         super().__init__(hass)
         self._attr_unique_id = "yeelight_cube_saved_pixel_arts"
-        self._attr_name = "Saved Drawings"
-        self._attr_icon = "mdi:image-multiple"
+        self._attr_translation_key = "pixel_arts"
         self._attr_force_update = False
-        
-    @property
-    def should_poll(self):
-        """Disable polling."""
-        return False
-    
-    @property
-    def entity_registry_enabled_default(self):
-        """Keep entity enabled by default."""
-        return True
-        
-    async def async_added_to_hass(self):
-        """Register event listener when added to hass."""
-        await super().async_added_to_hass()
-        # Listen for pixel arts update events (unsubscribed automatically on removal)
-        self.async_on_remove(
-            self.hass.bus.async_listen(f"{DOMAIN}_pixel_arts_updated", self._handle_update)
-        )
-
-    @callback
-    def async_entity_id_changed(self, old_entity_id: str) -> None:
-        # Renamed in place (Home Assistant 2026.11+): nothing here is keyed on
-        # the entity id, so it keeps running as it is.
-        super().async_entity_id_changed(old_entity_id)
-    
-    async def _handle_update(self, event):
-        """Force state update when pixel arts change."""
-        import logging
-        _LOGGER = logging.getLogger(__name__)
-        _LOGGER.debug("[PIXELART-SENSOR] Event received, forcing state update")
-        
-        # Clear any attribute cache
-        if hasattr(self, '_attr_extra_state_attributes'):
-            delattr(self, '_attr_extra_state_attributes')
-        
-        self.async_schedule_update_ha_state(force_refresh=True)
-        self.async_write_ha_state()
-        _LOGGER.debug("[PIXELART-SENSOR] State update completed")
-
-    @property
-    def state(self):
-        pixel_arts = self.extra_state_attributes.get("pixel_arts", [])
-        return f"{len(pixel_arts)} drawings"
-
-    @property
-    def extra_state_attributes(self):
-        """
-        Expose pixel_arts from hass.data[DOMAIN]['pixel_arts']
-        
-        CRITICAL: Also expose 'count' attribute separately because Home Assistant's
-        websocket may not send the full pixel_arts array in state updates (only scalars).
-        The count attribute ensures frontends can detect changes even when array is stale.
-        """
-        try:
-            pixel_arts = self.hass.data[DOMAIN].get("pixel_arts", [])
-        except Exception:
-            pixel_arts = []
-        
-        # Calculate MD5 hash for cards to detect changes
-        import json, hashlib
-        hash_data = {
-            "pixel_arts": pixel_arts,
-            "count": len(pixel_arts)
-        }
-        pixel_arts_json = json.dumps(hash_data, sort_keys=True)
-        content_hash = hashlib.md5(pixel_arts_json.encode('utf-8')).hexdigest()
-        
-        # Return a COPY of pixel_arts to avoid Home Assistant caching issues
-        return {
-            "pixel_arts": list(pixel_arts),
-            "content_hash": content_hash,
-            "count": len(pixel_arts),
-        }
 
 class YeelightCubeIPSensor(Entity):
     """Per-device sensor exposing the current IP address.
@@ -274,15 +197,9 @@ class YeelightCubeIPSensor(Entity):
         self._config_entry = config_entry
         self._attr_should_poll = False
         self._attr_unique_id = f"{config_entry.entry_id}_ip_address"
-        self._attr_icon = "mdi:ip-network"
-
-        # Build a short, stable display name (same logic as light entity)
-        device_id = config_entry.data.get(CONF_DEVICE_ID, "")
-        if device_id:
-            short_id = device_id[-4:]
-        else:
-            short_id = config_entry.entry_id[:6]
-        self._attr_name = f"Yeelight Cube Lite {short_id} IP Address"
+        # Named after its lamp's device.
+        self._attr_has_entity_name = True
+        self._attr_translation_key = "ip_address"
 
     @property
     def device_info(self):
@@ -316,7 +233,6 @@ class YeelightCubePowerSensor(CubeDeviceEntity, SensorEntity):
     native effects, Music Flow). Stays available while the lamp is not
     reachable and reads 0 W then, so an energy total keeps counting."""
 
-    _attr_has_entity_name = True
     _attr_should_poll = False
     _attr_translation_key = "estimated_power"
     _attr_device_class = SensorDeviceClass.POWER
@@ -327,7 +243,6 @@ class YeelightCubePowerSensor(CubeDeviceEntity, SensorEntity):
     def __init__(self, light_entity):
         self._light_entity = light_entity
         self._attr_unique_id = f"{light_entity._attr_unique_id}_estimated_power"
-        self._attr_icon = "mdi:flash-outline"
 
     @property
     def native_value(self):
@@ -341,11 +256,7 @@ class YeelightCubePowerSensor(CubeDeviceEntity, SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        self._light_entity._power_sensor = self
-
-    async def async_will_remove_from_hass(self) -> None:
-        if self._light_entity._power_sensor is self:
-            self._light_entity._power_sensor = None
+        self._register_on_light("_power_sensor")
         await super().async_will_remove_from_hass()
 
     @callback
@@ -361,7 +272,6 @@ class YeelightCubeEnergySensor(CubeDeviceEntity, RestoreSensor):
     Energy dashboard as an individual device. The total survives restarts;
     like the power estimate, it is an estimate, not a measurement."""
 
-    _attr_has_entity_name = True
     _attr_should_poll = False
     _attr_translation_key = "estimated_energy"
     _attr_device_class = SensorDeviceClass.ENERGY
@@ -375,7 +285,6 @@ class YeelightCubeEnergySensor(CubeDeviceEntity, RestoreSensor):
     def __init__(self, light_entity):
         self._light_entity = light_entity
         self._attr_unique_id = f"{light_entity._attr_unique_id}_estimated_energy"
-        self._attr_icon = "mdi:lightning-bolt-outline"
         self._meter = EnergyMeter()
         self._unsub_interval = None
 
@@ -389,7 +298,7 @@ class YeelightCubeEnergySensor(CubeDeviceEntity, RestoreSensor):
         if last is not None and isinstance(last.native_value, (int, float)):
             self._meter.total_kwh = float(last.native_value)
         self._meter.update(time.monotonic(), self._light_entity.estimated_power)
-        self._light_entity._energy_sensor = self
+        self._register_on_light("_energy_sensor")
         self._unsub_interval = async_track_time_interval(
             self.hass, self._tick, self.UPDATE_INTERVAL
         )
@@ -398,8 +307,6 @@ class YeelightCubeEnergySensor(CubeDeviceEntity, RestoreSensor):
         if self._unsub_interval is not None:
             self._unsub_interval()
             self._unsub_interval = None
-        if self._light_entity._energy_sensor is self:
-            self._light_entity._energy_sensor = None
         await super().async_will_remove_from_hass()
 
     @callback
@@ -442,13 +349,6 @@ def _create_and_register_sensors(hass, async_add_entities, owner_entry_id):
     hass.data[DOMAIN]["sensors_created"] = True
     hass.data[DOMAIN]["_sensor_owner_entry"] = owner_entry_id
 
-    # Store references so the backend can force state-writes on sensors
-    for sensor in sensors:
-        if isinstance(sensor, PaletteSensor):
-            hass.data[DOMAIN]["palette_sensor_entity"] = sensor
-        elif isinstance(sensor, PixelArtSensor):
-            hass.data[DOMAIN]["pixelart_sensor_entity"] = sensor
-
     _LOGGER.debug(
         "Created Yeelight Cube Lite sensors (owner entry: %s): %s",
         owner_entry_id,
@@ -474,7 +374,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     async_add_entities([ip_sensor], update_before_add=True)
 
     # --- Per-device estimated power and energy ---
-    light_entity = hass.data[DOMAIN].get(entry.entry_id, {}).get("light")
+    light_entity = lamp_of(entry)
     if light_entity is not None:
         async_add_entities(
             [

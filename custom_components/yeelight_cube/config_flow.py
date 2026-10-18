@@ -2,12 +2,37 @@ import ipaddress
 import logging
 import voluptuous as vol # type: ignore
 from homeassistant import config_entries # type: ignore
-from homeassistant.core import callback # type: ignore
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo # type: ignore
-from .const import DOMAIN, CONF_IP, CONF_DEVICE_ID
+from .const import DOMAIN, CONF_IP, CONF_DEVICE_ID, LAN_PORT, PROBE_TIMEOUT
+from .cube_matrix import check_tcp
 from .discovery import is_cube_device, parse_service_name, normalize_device_id
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _parse_ip(raw: str) -> str | None:
+    """A typed IP address in its canonical form (spaces stripped, IPv6
+    compressed), so the same lamp always gets the same unique_id; None when
+    it cannot be a lamp's."""
+    try:
+        address = ipaddress.ip_address(raw.strip())
+    except ValueError:
+        return None
+    if address.is_unspecified or address.is_multicast:
+        return None
+    return str(address)
+
+
+async def _lamp_answers(ip_address: str) -> bool:
+    """Whether a lamp answers at this address (its LAN Control port): checked
+    before one is added or moved, as an address with a typo would otherwise
+    be set up and retried forever."""
+    try:
+        await check_tcp(ip_address, LAN_PORT, PROBE_TIMEOUT)
+    except OSError:
+        return False
+    return True
+
 
 class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Yeelight Cube Lite."""
@@ -23,26 +48,23 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         
         if user_input is not None:
-            try:
-                # Canonical form (spaces stripped, IPv6 compressed), so the
-                # same lamp always gets the same unique_id.
-                address = ipaddress.ip_address(user_input[CONF_IP].strip())
-            except ValueError:
-                address = None
-            if address is None or address.is_unspecified or address.is_multicast:
+            ip_address = _parse_ip(user_input[CONF_IP])
+            if ip_address is None:
                 errors[CONF_IP] = "invalid_ip"
             else:
-                ip_address = str(address)
                 self._async_abort_entries_match({CONF_IP: ip_address})
                 # For manual setup, use IP as unique_id (no device_id available
                 # yet). When the device is later discovered, the unique_id is
                 # migrated to the hardware device_id automatically.
                 await self.async_set_unique_id(ip_address)
                 self._abort_if_unique_id_configured()
-                return self.async_create_entry(
-                    title=f"Yeelight Cube ({ip_address})",
-                    data={CONF_IP: ip_address}
-                )
+                if not await _lamp_answers(ip_address):
+                    errors["base"] = "cannot_connect"
+                else:
+                    return self.async_create_entry(
+                        title=f"Yeelight Cube ({ip_address})",
+                        data={CONF_IP: ip_address}
+                    )
 
         return self.async_show_form(
             step_id="user", 
@@ -165,30 +187,45 @@ class YeelightCubeConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             }
         )
 
+    async def async_step_reconfigure(self, user_input=None):
+        """Change a lamp's IP address (Reconfigure, in its entry's menu),
+        with the same checks as adding it. The entry's update reloads it once
+        (__init__._async_entry_updated); a discovered lamp also follows a new
+        IP on its own."""
+        entry = self._get_reconfigure_entry()
+        errors = {}
+        if user_input is not None:
+            ip_address = _parse_ip(user_input[CONF_IP])
+            if ip_address is None:
+                errors[CONF_IP] = "invalid_ip"
+            elif any(
+                other.entry_id != entry.entry_id and other.data.get(CONF_IP) == ip_address
+                for other in self._async_current_entries(include_ignore=False)
+            ):
+                return self.async_abort(reason="already_configured")
+            elif not await _lamp_answers(ip_address):
+                errors["base"] = "cannot_connect"
+            else:
+                # A manually added lamp is identified by its IP until it is
+                # discovered: its unique_id follows the new one.
+                unique_id = (
+                    ip_address if entry.unique_id == entry.data.get(CONF_IP) else entry.unique_id
+                )
+                self.hass.config_entries.async_update_entry(
+                    entry, unique_id=unique_id, data={**entry.data, CONF_IP: ip_address}
+                )
+                return self.async_abort(reason="reconfigure_successful")
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=self._get_schema(user_input[CONF_IP] if user_input else entry.data.get(CONF_IP)),
+            errors=errors,
+        )
+
     @staticmethod
-    def _get_schema():
+    def _get_schema(ip_address: str | None = None):
+        """The IP address form, filled in with ``ip_address`` when given."""
+        if ip_address:
+            return vol.Schema({vol.Required(CONF_IP, default=ip_address): str})
         return vol.Schema({
             vol.Required(CONF_IP): str,
         })
-
-    @staticmethod
-    @callback
-    def async_get_options_flow(config_entry):
-        """Get the options flow for this handler."""
-        return YeelightCubeOptionsFlow()
-
-
-class YeelightCubeOptionsFlow(config_entries.OptionsFlow):
-    """Handle Yeelight Cube Lite options."""
-
-    async def async_step_init(self, user_input=None):
-        """Manage the options."""
-        if user_input is not None:
-            return self.async_create_entry(title="", data={**self.config_entry.options, **user_input})
-
-        return self.async_show_form(
-            step_id="init",
-            data_schema=vol.Schema({
-                # Add any options here in the future
-            })
-        )

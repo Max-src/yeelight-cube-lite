@@ -11,6 +11,7 @@ import types
 import unittest
 from unittest.mock import AsyncMock, Mock
 
+from tests.test_activation_timing import _table as activation_timing
 from tests.test_native_features import ROOT, _load_standalone_functions
 
 
@@ -22,7 +23,9 @@ FNS = {
     **_load_standalone_functions(
         (ROOT / "light.py").read_text(encoding="utf-8"),
         {"ensure_fx_ready"},
-        {"asyncio": asyncio, "time": time, "_LOGGER": logging.getLogger("t")},
+        # The real waits (light_display.ACTIVATION_TIMING).
+        {"asyncio": asyncio, "time": time, "_LOGGER": logging.getLogger("t"),
+         "ACTIVATION_TIMING": activation_timing()},
     ),
     **_load_standalone_functions(
         (ROOT / "light_display.py").read_text(encoding="utf-8"),
@@ -62,7 +65,7 @@ def make_lamp(reconnects=()):
 
     lamp._cube_matrix = types.SimpleNamespace(
         summary="", close_fast_socket=Mock(), send_raw_command=raw,
-        draw_matrices_fast=draw, consume_reconnected_flag=consume,
+        draw_matrices_fast=draw, consume_reconnected_flag=consume, transport="udp",
     )
     return lamp
 
@@ -204,19 +207,28 @@ class SharedChecksTests(unittest.TestCase):
         trusted = _load_standalone_functions(
             (ROOT / "light_display.py").read_text(encoding="utf-8"),
             {"_direct_mode_trusted"},
-            {"_LOGGER": logging.getLogger("t"), "time": time, "FX_MODE_STALENESS_TIMEOUT": 90.0},
+            {"_LOGGER": logging.getLogger("t"), "time": time, "ACTIVATION_TIMING": activation_timing()},
         )["_direct_mode_trusted"]
         flags = []
+        cube = types.SimpleNamespace(
+            consume_reconnected_flag=lambda: flags.pop() if flags else False, transport="tcp",
+        )
         lamp = types.SimpleNamespace(
-            _ip="t", _fx_mode_is_direct=True, _last_fx_mode_time=time.time(),
-            _cube_matrix=types.SimpleNamespace(consume_reconnected_flag=lambda: flags.pop() if flags else False),
+            _ip="t", _fx_mode_is_direct=True, _last_fx_mode_time=time.time(), _cube_matrix=cube,
         )
         self.assertTrue(trusted(lamp))
         flags.append(True)  # the connection changed
         self.assertFalse(trusted(lamp))
         self.assertFalse(lamp._fx_mode_is_direct)
+        # Over TCP, idle too long: activated again.
         lamp._fx_mode_is_direct, lamp._last_fx_mode_time = True, time.time() - 120
-        self.assertFalse(trusted(lamp))  # idle too long
+        self.assertFalse(trusted(lamp))
+        # Over UDP the lamp stays in direct mode while idle (watched test:
+        # a drawing shown at once after 150 s); a session it dropped is put
+        # in direct mode again when it opens.
+        cube.transport = "udp"
+        lamp._fx_mode_is_direct, lamp._last_fx_mode_time = True, time.time() - 3600
+        self.assertTrue(trusted(lamp))
 
 
 class HardwareBrightnessTests(unittest.TestCase):

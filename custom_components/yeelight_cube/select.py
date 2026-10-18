@@ -8,10 +8,10 @@ import logging
 from homeassistant.components.select import SelectEntity # type: ignore
 from homeassistant.config_entries import ConfigEntry # type: ignore
 from homeassistant.core import HomeAssistant, callback # type: ignore
-from homeassistant.exceptions import HomeAssistantError # type: ignore
 from homeassistant.helpers.entity import EntityCategory  # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 
+from .errors import invalid
 from .const import (
     FIRMWARE_MODES,
     MODE_CLOCK,
@@ -37,29 +37,32 @@ from .const import (
     DEFAULT_POWER_ON_STATE,
     POWER_ON_STATES,
 )
+from .runtime_data import lamp_of
 from .entity import CubeControlEntity, remove_retired_entities
 from .builtin_pixel_art import find_pixel_art, get_builtin_pixel_art_map
 from .layout import FONT_MAPS
 
 _LOGGER = logging.getLogger(__name__)
 
+# No limit per platform: every command to the lamp already waits for the
+# previous one (the device lock, light_connection._execute_hardware_op).
+PARALLEL_UPDATES = 0
+
 
 class CubeSelect(CubeControlEntity, SelectEntity):
     """A dropdown of one lamp. The light keeps it in ``_slot`` and pushes
     every change made elsewhere through async_update_from_light, so it never
-    polls. ``name`` (the older entities) is shown after the lamp's name; the
-    others name themselves with a translation key."""
+    polls. Named by its translation key, after the lamp's name."""
 
     _attr_should_poll = False
     _slot = None
 
-    def __init__(self, light_entity, config_entry: ConfigEntry, unique_suffix: str, icon: str, name: str | None = None):
+    def __init__(self, light_entity, config_entry: ConfigEntry, unique_suffix: str, translation_key: str | None = None):
         self._light_entity = light_entity
         self._config_entry = config_entry
         self._attr_unique_id = f"{light_entity._attr_unique_id}_{unique_suffix}"
-        self._attr_icon = icon
-        if name:
-            self._attr_name = f"{light_entity._attr_name} {name}"
+        if translation_key:
+            self._attr_translation_key = translation_key
 
     @callback
     def async_update_from_light(self):
@@ -76,7 +79,7 @@ class CubeSelect(CubeControlEntity, SelectEntity):
     async def async_added_to_hass(self):
         await super().async_added_to_hass()
         if self._slot:
-            setattr(self._light_entity, self._slot, self)
+            self._register_on_light(self._slot)
         self.async_update_from_light()
 
     @callback
@@ -93,53 +96,51 @@ class SettingSelect:
     (stored directly when there is none)."""
 
     unique_suffix: str
-    icon: str
     attr: str
     labels: dict
     default: str
     setter: str | None
     slot: str
-    name: str | None = None
     translation_key: str | None = None
     category: EntityCategory | None = None
 
 
 SETTING_SELECTS = (
     SettingSelect(
-        "clock_content_select", "mdi:calendar-clock", "_native_clock_content",
+        "clock_content_select", "_native_clock_content",
         {key: NATIVE_CLOCK_CONTENT_LABELS[key] for key in NATIVE_CLOCK_CONTENT_OPTIONS},
         DEFAULT_NATIVE_CLOCK_CONTENT, "async_set_native_clock_content",
         "_clock_content_select_entity", translation_key="clock_content",
     ),
     SettingSelect(
-        "music_flow_effect", "mdi:waveform", "_music_flow_effect",
+        "music_flow_effect", "_music_flow_effect",
         {effect: effect for effect in MUSIC_FLOW_EFFECTS},
         DEFAULT_MUSIC_FLOW_EFFECT, "async_set_music_flow_effect",
         "_music_flow_effect_select_entity", translation_key="music_flow_effect",
     ),
     SettingSelect(
-        "power_on_state", "mdi:power-settings", "_power_on_state",
+        "power_on_state", "_power_on_state",
         {state: state for state in POWER_ON_STATES}, DEFAULT_POWER_ON_STATE,
         "async_set_power_on_state", "_power_on_state_select_entity",
         translation_key="power_on_state", category=EntityCategory.CONFIG,
     ),
     SettingSelect(
-        "alignment_select", "mdi:format-align-center", "_alignment",
+        "alignment_select", "_alignment",
         {"left": "left", "center": "center", "right": "right"}, "center",
-        "set_alignment", "_alignment_select_entity", name="Matrix: Text Alignment",
+        "set_alignment", "_alignment_select_entity", translation_key="text_alignment",
     ),
     SettingSelect(
-        "font_select", "mdi:format-font", "_font",
+        "font_select", "_font",
         {key: key.capitalize() for key in FONT_MAPS}, "basic",
-        "set_font", "_font_select_entity", name="Matrix: Font",
+        "set_font", "_font_select_entity", translation_key="font",
     ),
     # The 4-way physical mount (the official app's picker and the lamp
     # preview card's rotation); it replaced the "Flip Orientation" switch.
     SettingSelect(
-        "device_orientation_select", "mdi:screen-rotation", "_device_orientation",
+        "device_orientation_select", "_device_orientation",
         {"right": "Right", "down": "Down", "left": "Left", "up": "Up"}, "right",
         "set_device_orientation", "_device_orientation_select_entity",
-        name="Device Orientation",
+        translation_key="device_orientation",
     ),
 )
 
@@ -148,14 +149,11 @@ class CubeSettingSelect(CubeSelect):
     """A dropdown of one lamp setting (SETTING_SELECTS)."""
 
     def __init__(self, light_entity, config_entry: ConfigEntry, spec: SettingSelect):
-        super().__init__(light_entity, config_entry, spec.unique_suffix, spec.icon, spec.name)
+        super().__init__(light_entity, config_entry, spec.unique_suffix, spec.translation_key)
         self._spec = spec
         self._slot = spec.slot
         self._attr_options = list(spec.labels.values())
         self._values = {label: value for value, label in spec.labels.items()}
-        if spec.translation_key:
-            self._attr_has_entity_name = True
-            self._attr_translation_key = spec.translation_key
         if spec.category:
             self._attr_entity_category = spec.category
 
@@ -186,11 +184,8 @@ async def async_setup_entry(
     ip = entry.data[CONF_IP]
 
     # Get the light entity that was set up earlier
-    if DOMAIN not in hass.data or entry.entry_id not in hass.data[DOMAIN]:
-        return False
-
-    light_entity = hass.data[DOMAIN][entry.entry_id].get("light")
-    if not light_entity:
+    light_entity = lamp_of(entry)
+    if light_entity is None:
         return False
 
     # The matrix transition effect of an earlier version (transitions removed).
@@ -214,7 +209,7 @@ class YeelightCubePaletteSelect(CubeSelect):
 
     def __init__(self, light_entity, ip: str, config_entry: ConfigEntry, hass: HomeAssistant):
         """Initialize the palette selector entity."""
-        super().__init__(light_entity, config_entry, "palette_select", "mdi:palette", "Matrix: Palette")
+        super().__init__(light_entity, config_entry, "palette_select", "palette")
         self._ip = ip
         self._hass = hass
         self._attr_current_option = None
@@ -350,7 +345,7 @@ class YeelightCubePixelArtSelect(CubeSelect):
 
     def __init__(self, light_entity, ip: str, config_entry: ConfigEntry, hass: HomeAssistant):
         """Initialize the pixel art selector entity."""
-        super().__init__(light_entity, config_entry, "pixel_art_select", "mdi:image", "Matrix: Pixel Art")
+        super().__init__(light_entity, config_entry, "pixel_art_select", "pixel_art")
         self._ip = ip
         self._hass = hass
         self._attr_current_option = None
@@ -445,12 +440,11 @@ class YeelightCubePixelArtSelect(CubeSelect):
 class YeelightCubeContentModeSelect(CubeSelect):
     """Select the active content source: matrix or clock."""
 
-    _attr_has_entity_name = True
     _attr_translation_key = "content_mode"
     _slot = "_content_mode_select_entity"
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
-        super().__init__(light_entity, config_entry, "content_mode_select", "mdi:layers-triple")
+        super().__init__(light_entity, config_entry, "content_mode_select")
         self._attr_options = list(CONTENT_MODES)
 
     @property
@@ -480,7 +474,7 @@ class YeelightCubeContentModeSelect(CubeSelect):
                 not self._light_entity._is_on
                 and not self._light_entity._should_auto_turn_on()
             ):
-                raise HomeAssistantError("Lamp is off and auto-turn-on is disabled")
+                raise invalid("lamp_off")
             await self._light_entity.async_set_music_flow(True)
             self.async_update_from_light()
             if self._light_entity._music_flow_effect_select_entity:
@@ -539,8 +533,7 @@ class YeelightCubeDisplayModeSelect(CubeSelect):
     def __init__(self, light_entity, config_entry: ConfigEntry):
         """Initialize the display mode selector entity."""
         super().__init__(
-            light_entity, config_entry, "display_mode_select",
-            "mdi:view-dashboard-variant", "Matrix: Display Mode",
+            light_entity, config_entry, "display_mode_select", "display_mode",
         )
         self._attr_options = list(MATRIX_DISPLAY_MODES)
 
@@ -607,12 +600,11 @@ _CLOCK_STYLE_TO_ID = {
 class YeelightCubeClockStyleSelect(CubeSelect):
     """Select a native firmware clock face."""
 
-    _attr_has_entity_name = True
     _attr_translation_key = "clock_style"
     _slot = "_clock_style_select_entity"
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
-        super().__init__(light_entity, config_entry, "clock_style_select", "mdi:clock-digital")
+        super().__init__(light_entity, config_entry, "clock_style_select")
 
     @property
     def options(self) -> list[str]:
@@ -652,9 +644,7 @@ class YeelightCubeClockStyleSelect(CubeSelect):
             style_id in EXPERIMENTAL_CLOCK_STYLE_IDS
             and not getattr(self._light_entity, "_extended_effects_enabled", False)
         ):
-            raise ValueError(
-                f"Clock style '{option}' requires the Experimental Features switch"
-            )
+            raise invalid("experimental_required", name=option)
 
         self._light_entity._native_clock_style = style_id
 
@@ -669,12 +659,11 @@ class YeelightCubeClockStyleSelect(CubeSelect):
 class YeelightCubeNativeEffectSelect(CubeSelect):
     """Select one of the firmware-native Cube Lite animations."""
 
-    _attr_has_entity_name = True
     _attr_translation_key = "native_effect"
     _slot = "_native_effect_select_entity"
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
-        super().__init__(light_entity, config_entry, "native_effect", "mdi:creation")
+        super().__init__(light_entity, config_entry, "native_effect")
 
     @property
     def options(self) -> list:
@@ -705,9 +694,7 @@ class YeelightCubeNativeEffectSelect(CubeSelect):
             option in EXTENDED_NATIVE_EFFECTS
             and not getattr(self._light_entity, "_extended_effects_enabled", False)
         ):
-            raise ValueError(
-                f"Extended effect '{option}' requires the Experimental Features switch"
-            )
+            raise invalid("experimental_required", name=option)
         self._light_entity._native_effect = option
         if self._light_entity._native_effect_direction_select_entity:
             self._light_entity._native_effect_direction_select_entity.async_update_from_light()
@@ -723,13 +710,12 @@ class YeelightCubeNativeEffectSelect(CubeSelect):
 class YeelightCubeNativeEffectDirectionSelect(CubeSelect):
     """Select the direction used by directional native animations."""
 
-    _attr_has_entity_name = True
     _attr_translation_key = "native_effect_direction"
     _attr_entity_category = EntityCategory.CONFIG
     _slot = "_native_effect_direction_select_entity"
 
     def __init__(self, light_entity, config_entry: ConfigEntry):
-        super().__init__(light_entity, config_entry, "native_effect_direction", "mdi:arrow-all")
+        super().__init__(light_entity, config_entry, "native_effect_direction")
         self._attr_options = list(NATIVE_EFFECT_DIRECTIONS)
 
     @property

@@ -34,13 +34,11 @@ _LOGGER = logging.getLogger(__name__)
 
 
 def async_setup_light_services(hass: HomeAssistant) -> bool:
-    """Register the entity-facing actions. They stay registered for the
-    whole Home Assistant session.
-
-    Setup and entry setup both call this function; re-registration replaces
-    the existing handlers. It does not reimport modified Python modules:
-    restart Home Assistant to load backend code changes.
-    """
+    """Register the entity-facing actions, once, at component setup
+    (__init__.async_setup): they stay registered for the whole Home
+    Assistant session and find their lamps when called (light_services_common
+    _resolve_entity), so no lamp needs to be set up first. Registering them
+    again would replace their handlers and their state (locks, trackers)."""
     _LOGGER.debug("[SERVICES] Registering Yeelight Cube Lite light services")
     async_register_display_services(hass)
     async_register_palette_services(hass)

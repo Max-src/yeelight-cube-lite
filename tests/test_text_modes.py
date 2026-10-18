@@ -60,6 +60,7 @@ NAMESPACE = {
     "_LOGGER": Mock(),
     "is_connection_error": lambda error: False,
     "is_quota_error": lambda error: False,
+    "_MISSING_GLYPHS": set(),
 }
 METHODS = {
     "_apply_display_mode_internal", "_text_mode_frame", "_place_frame",
@@ -216,6 +217,27 @@ class PanelColorSequenceTests(unittest.TestCase):
             lamp_frame(_mode="Panel Color Sequence", _text_colors=[(0, 0, 255), "bad"])[:2],
             ["#0000FF", "#FF0000"],
         )
+
+
+
+class GlyphTests(unittest.TestCase):
+    def test_a_space_is_drawn_as_nothing_without_a_warning(self):
+        # A space is an empty glyph in every font: it used to log a warning
+        # at every redraw (about 400 a minute for a scrolling text).
+        logger = Mock()
+        functions = _load_standalone_functions(
+            LIGHT_SOURCE, {"get_positions_for_letter"},
+            {**NAMESPACE, "_LOGGER": logger, "_MISSING_GLYPHS": set()},
+        )
+        lamp = types.SimpleNamespace(_font="basic")
+        positions = functions["get_positions_for_letter"]
+        self.assertEqual([], positions(lamp, " "))
+        logger.warning.assert_not_called()
+        self.assertTrue(positions(lamp, "A"))
+        # A character the font lacks: reported once, not at every redraw.
+        for _ in range(3):
+            self.assertEqual([], positions(lamp, "☃"))
+        self.assertEqual(1, logger.warning.call_count)
 
 
 if __name__ == "__main__":

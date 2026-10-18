@@ -6,10 +6,15 @@ from homeassistant.config_entries import ConfigEntry # type: ignore
 from homeassistant.core import HomeAssistant, callback # type: ignore
 from homeassistant.helpers.entity_platform import AddEntitiesCallback # type: ignore
 
-from .const import DOMAIN, CONF_IP
+from .const import CONF_IP
+from .runtime_data import lamp_of
 from .entity import CubeControlEntity
 
 _LOGGER = logging.getLogger(__name__)
+
+# No limit per platform: every command to the lamp already waits for the
+# previous one (the device lock, light_connection._execute_hardware_op).
+PARALLEL_UPDATES = 0
 
 
 async def async_setup_entry(
@@ -20,11 +25,8 @@ async def async_setup_entry(
     ip = entry.data[CONF_IP]
     
     # Get the light entity that was set up earlier
-    if DOMAIN not in hass.data or entry.entry_id not in hass.data[DOMAIN]:
-        return False
-    
-    light_entity = hass.data[DOMAIN][entry.entry_id].get("light")
-    if not light_entity:
+    light_entity = lamp_of(entry)
+    if light_entity is None:
         return False
     
     # Create text input entity
@@ -42,10 +44,9 @@ class YeelightCubeCustomTextInput(CubeControlEntity, TextEntity):
         self._light_entity = light_entity
         self._ip = ip
         self._config_entry = config_entry
-        self._attr_name = f"{light_entity._attr_name} Matrix: Display Text"
+        self._attr_translation_key = "display_text"
         self._attr_unique_id = f"{light_entity._attr_unique_id}_display_text"
         self._attr_native_value = light_entity._custom_text
-        self._attr_icon = "mdi:format-text"
         
         # Text input constraints
         self._attr_native_min = 0
@@ -120,8 +121,8 @@ class YeelightCubeCustomTextInput(CubeControlEntity, TextEntity):
         """Run when entity is added to hass."""
         await super().async_added_to_hass()
         
-        # Register this text entity with the light so it can notify us of changes
-        self._light_entity._text_input_entity = self
+        # The light notifies it of changes made elsewhere.
+        self._register_on_light("_text_input_entity")
 
     @callback
     def async_entity_id_changed(self, old_entity_id: str) -> None:

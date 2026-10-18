@@ -56,13 +56,3 @@ def get_conflict_prevention(hass: HomeAssistant) -> YeelightConflictPrevention:
     if _conflict_prevention is None:
         _conflict_prevention = YeelightConflictPrevention(hass)
     return _conflict_prevention
-
-@callback 
-def is_yeelight_cube_managed(hass: HomeAssistant, ip_address: str) -> bool:
-    """Check if an IP address is managed by Yeelight Cube Lite component.
-    
-    This function can be called by other integrations to check if they
-    should skip discovering a device.
-    """
-    conflict_prevention = get_conflict_prevention(hass)
-    return conflict_prevention.is_device_managed(ip_address)

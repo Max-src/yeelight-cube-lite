@@ -9,15 +9,15 @@ import logging
 import voluptuous as vol  # type: ignore
 from homeassistant.components import websocket_api  # type: ignore
 from homeassistant.core import HomeAssistant, SupportsResponse, callback  # type: ignore
-from homeassistant.exceptions import HomeAssistantError  # type: ignore
 from homeassistant.helpers import config_validation as cv  # type: ignore
 
-from . import async_save_data
 from .builtin_pixel_art import find_pixel_art, get_builtin_pixel_arts
 from .const import DOMAIN
 from .name_utils import normalize_display_name
 from .pixel_art_storage import expand_pixels, group_pixels
 from .light import _entity_id_or_list
+from .errors import invalid
+from .storage import async_collection_changed, collection
 from .light_services_common import (
     MAX_PIXEL_ARTS,
     NAME_SCHEMA,
@@ -41,15 +41,13 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
         """Update the pixel art collection — append (default) or fully replace."""
         pixel_arts = service_call.data.get("pixel_arts")
         replace = service_call.data.get("replace", False)
-        if not isinstance(pixel_arts, list):
-            _LOGGER.error("update_pixel_arts expects a list of pixel art dicts")
-            return
         
         # The schema has already validated every art, pixel and color.
-        existing_count = len(hass.data.get(DOMAIN, {}).get("pixel_arts", []))
+        pixel_arts_saved = collection(hass, "pixel_arts")
+        existing_count = len(pixel_arts_saved)
         if not replace:
             _check_collection_size(
-                existing_count, len(pixel_arts), MAX_PIXEL_ARTS, "pixel art"
+                existing_count, len(pixel_arts), MAX_PIXEL_ARTS, "pixel_art"
             )
         offset = 0 if replace else existing_count
         valid_pixel_arts = [
@@ -62,23 +60,15 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
             for index, art in enumerate(pixel_arts)
         ]
 
-        # Update global storage
-        if DOMAIN not in hass.data:
-            hass.data[DOMAIN] = {}
+        # In place: the list the storage and the sensor hold.
         if replace:
-            hass.data[DOMAIN]["pixel_arts"] = valid_pixel_arts
+            pixel_arts_saved[:] = valid_pixel_arts
         else:
-            existing = hass.data[DOMAIN].get("pixel_arts", [])
-            hass.data[DOMAIN]["pixel_arts"] = existing + valid_pixel_arts
-        
-        # Force sensor update by firing event
-        hass.bus.async_fire(f"{DOMAIN}_pixel_arts_updated", {"count": len(valid_pixel_arts)})
-        
-        # Save to persistent storage
-        await async_save_data(hass)
-        
+            pixel_arts_saved.extend(valid_pixel_arts)
+        await async_collection_changed(hass, "pixel_arts")
+
         mode = "replace" if replace else "append"
-        total = len(hass.data[DOMAIN]["pixel_arts"])
+        total = len(pixel_arts_saved)
         _LOGGER.debug("[pixelart-backend] update_pixel_arts (%s): %s items provided, %s total in collection.", mode, len(valid_pixel_arts), total)
 
     # Register the pixel-art websocket command ONCE at setup time.
@@ -125,33 +115,18 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
     async def handle_save_pixel_art(service_call):
         name = service_call.data.get("name")
         pixels = service_call.data.get("pixels")
-        if not isinstance(pixels, list):
-            _LOGGER.error("save_pixel_art expects a list of pixels")
-            return
         
         # Expand multi-position entries and strip black pixels before storing
         pixels = group_pixels(pixels)
         
-        # Get current pixel arts from global storage
-        if DOMAIN not in hass.data:
-            hass.data[DOMAIN] = {}
-        if "pixel_arts" not in hass.data[DOMAIN]:
-            hass.data[DOMAIN]["pixel_arts"] = []
-        
-        pixel_arts = hass.data[DOMAIN]["pixel_arts"]
-        _check_collection_size(len(pixel_arts), 1, MAX_PIXEL_ARTS, "pixel art")
+        pixel_arts = collection(hass, "pixel_arts")
+        _check_collection_size(len(pixel_arts), 1, MAX_PIXEL_ARTS, "pixel_art")
         if not name:
             name = f"Pixel Art {len(pixel_arts) + 1}"
         name = normalize_display_name(name, f"Pixel Art {len(pixel_arts) + 1}")
         
-        # Add to global storage
         pixel_arts.append({"name": name, "pixels": pixels})
-        
-        # Pixel arts are global - just fire event for sensor and save
-        hass.bus.async_fire(f"{DOMAIN}_pixel_arts_updated", {"count": len(pixel_arts)})
-        
-        # Save to persistent storage
-        await async_save_data(hass)
+        await async_collection_changed(hass, "pixel_arts")
         
         _LOGGER.debug("[PIXELART-SAVE] Saved '%s' with %s pixels, new count: %s", name, len(pixels), len(pixel_arts))
 
@@ -162,67 +137,43 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
         # No duplicate detection - rapid successive deletions are valid
         # (indices shift after each deletion, so same idx can refer to different pixel arts)
         
-        # Get current pixel arts from global storage
-        if DOMAIN not in hass.data or "pixel_arts" not in hass.data[DOMAIN]:
-            _LOGGER.error("[PIXELART-DELETE] No pixel arts storage found in hass.data")
-            return
-        
-        pixel_arts = hass.data[DOMAIN]["pixel_arts"]
+        pixel_arts = collection(hass, "pixel_arts")
         _LOGGER.debug("[PIXELART-DELETE] Current pixel art count=%s", len(pixel_arts))
         _locate_item(
-            pixel_arts, idx, service_call.data.get("expected_name"), "Pixel art"
+            pixel_arts, idx, service_call.data.get("expected_name"), "pixel_art"
         )
         removed = pixel_arts.pop(idx)
         _LOGGER.debug("[PIXELART-DELETE] Deleted pixel art at idx %s: %s", idx, removed.get('name', 'Unnamed'))
         
-        # Pixel arts are global (not per-light), only need to:
-        # 1. Fire event for sensor to pick up
-        # 2. Save to persistent storage
-        # No need to update light entities - pixel arts are independent
-        
-        hass.bus.async_fire(f"{DOMAIN}_pixel_arts_updated", {"count": len(pixel_arts)})
-        _LOGGER.debug("[PIXELART-DELETE] Fired event, new count: %s", len(pixel_arts))
-        
-        # Save to persistent storage
-        await async_save_data(hass)
-        _LOGGER.debug("[PIXELART-DELETE] Saved to storage. New pixel art count: %s", len(pixel_arts))
+        await async_collection_changed(hass, "pixel_arts")
+        _LOGGER.debug("[PIXELART-DELETE] Saved. New pixel art count: %s", len(pixel_arts))
 
     async def handle_move_pixel_art(service_call):
         """Move one saved pixel art, keeping items other clients added meanwhile."""
-        pixel_arts = hass.data.get(DOMAIN, {}).get("pixel_arts", [])
+        pixel_arts = collection(hass, "pixel_arts")
         if not _move_item(
             pixel_arts,
             service_call.data["from_idx"],
             service_call.data["to_idx"],
             service_call.data.get("expected_name"),
-            "Pixel art",
+            "pixel_art",
         ):
             return
-        hass.bus.async_fire(f"{DOMAIN}_pixel_arts_updated", {"count": len(pixel_arts)})
-        await async_save_data(hass)
+        await async_collection_changed(hass, "pixel_arts")
 
     async def handle_rename_pixel_art(service_call):
         idx = service_call.data.get("idx")
         new_name = service_call.data.get("name")
         
-        # Get current pixel arts from global storage
-        if DOMAIN not in hass.data or "pixel_arts" not in hass.data[DOMAIN]:
-            _LOGGER.error("[pixelart-backend] No pixel arts to rename")
-            return
-        
-        pixel_arts = hass.data[DOMAIN]["pixel_arts"]
+        pixel_arts = collection(hass, "pixel_arts")
         _locate_item(
-            pixel_arts, idx, service_call.data.get("expected_name"), "Pixel art"
+            pixel_arts, idx, service_call.data.get("expected_name"), "pixel_art"
         )
         if isinstance(new_name, str):
             new_name = normalize_display_name(new_name, f"Pixel Art {idx + 1}")
             pixel_arts[idx]["name"] = new_name
             
-            # Pixel arts are global - just fire event for sensor and save
-            hass.bus.async_fire(f"{DOMAIN}_pixel_arts_updated", {"count": len(pixel_arts)})
-            
-            # Save to persistent storage
-            await async_save_data(hass)
+            await async_collection_changed(hass, "pixel_arts")
             
             _LOGGER.debug("[PIXELART-RENAME] Renamed idx %s to '%s'", idx, new_name)
 
@@ -232,20 +183,18 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
         idx = service_call.data.get("idx")
         name = service_call.data.get("name")
         if (idx is None) == (name is None):
-            raise HomeAssistantError("Give either idx (a saved pixel art) or name")
+            raise invalid("pixel_art_idx_or_name")
         targets = _resolve_entities(service_call, "APPLY_PIXEL_ART")
-        if not targets:
-            return
         saved = hass.data.get(DOMAIN, {}).get("pixel_arts", [])
         if name is None:
-            art = _locate_item(saved, idx, service_call.data.get("expected_name"), "Pixel art")
+            art = _locate_item(saved, idx, service_call.data.get("expected_name"), "pixel_art")
             name = art.get("name", f"Pixel Art {idx + 1}")
         else:
             art = find_pixel_art(saved, name)
             if art is None:
-                raise HomeAssistantError(f"No pixel art called '{name}'")
+                raise invalid("pixel_art_not_found", name=name)
         if not (isinstance(art, dict) and isinstance(art.get("pixels"), list) and art["pixels"]):
-            raise HomeAssistantError(f"Pixel art '{name}' has no pixels")
+            raise invalid("pixel_art_empty", name=name)
         pixels = art["pixels"]
 
         async def _apply_one(target_entity):
@@ -258,43 +207,25 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
         pixels = service_call.data.get("pixels")
         bypass_lock = bool(service_call.data.get("bypass_lock", False))
         _LOGGER.debug("[pixelart-backend] apply_custom_pixels: pixels=%s", len(pixels) if pixels else 0)
-        if not pixels or not isinstance(pixels, list):
-            _LOGGER.error("[pixelart-backend] apply_custom_pixels: No valid pixels provided.")
-            return
+        if not pixels:
+            raise invalid("pixels_required")
 
         targets = _resolve_entities(service_call, "APPLY_CUSTOM_PIXELS")
-        if not targets:
-            return
+
+        # The pixel art these pixels are (the Draw card names the one picked
+        # in its gallery), so the Pixel Art select and save/restore_state
+        # follow; none: a drawing of its own, the select is cleared.
+        name = service_call.data.get("name") or None
 
         async def _apply_one(target_entity):
-            target_entity._custom_pixels = expand_pixels(pixels)
-            target_entity._mode = "Custom Draw"
-            target_entity._matrix_mode = "Custom Draw"
-            target_entity._custom_draw_active = True
-            if not target_entity._custom_text:
-                target_entity._custom_text = "HELLO"
-            target_entity._scroll_offset = 0
-            target_entity._scroll_direction = 1
-            target_entity.stop_scroll_timer()
-            target_entity._is_scrolling = False
-            if target_entity.hass is not None:
-                target_entity.async_schedule_update_ha_state()
-            await target_entity.async_apply_display_mode(update_type='pixel_art', bypass_lock=bypass_lock)
-            if target_entity._mode_select_entity:
-                target_entity._mode_select_entity.async_update_from_light()
-            if target_entity._content_mode_select_entity:
-                target_entity._content_mode_select_entity.async_update_from_light()
+            await target_entity.show_pixel_art(name, pixels, bypass_lock=bypass_lock)
 
         run_on_lamps("APPLY_CUSTOM_PIXELS", targets, _apply_one)
 
     async def handle_get_pixel_art(service_call):
         idx = service_call.data.get("idx")
         group_by_color = service_call.data.get("group_by_color", False)
-        pixel_arts = hass.data.get(DOMAIN, {}).get("pixel_arts", [])
-        if not (isinstance(idx, int) and 0 <= idx < len(pixel_arts)):
-            _LOGGER.error("[pixelart-backend] get_pixel_art: Invalid idx %s", idx)
-            return {"error": "Invalid index"}
-        art = pixel_arts[idx]
+        art = _locate_item(collection(hass, "pixel_arts"), idx, None, "pixel_art")
         if group_by_color:
             # Internal storage is already in grouped {color, positions} format
             return {"name": art.get("name", "Unnamed"), "pixels": art.get("pixels", [])}
@@ -365,6 +296,7 @@ def async_register_pixel_art_services(hass: HomeAssistant) -> None:
         handle_apply_custom_pixels,
         schema=vol.Schema({
             vol.Required("pixels", description="Array of {position, color} entries for the 20x5 matrix (position 0-99 or a list of positions, color [R, G, B]); missing positions stay black"): PIXEL_LIST_SCHEMA,
+            vol.Optional("name"): vol.Any(None, cv.string),
             vol.Required("entity_id", description="Target lamp entity (e.g. light.cubelite_192_168_4_102)"): _entity_id_or_list,
         }, extra=vol.ALLOW_EXTRA)
     )

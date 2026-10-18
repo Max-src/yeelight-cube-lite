@@ -32,8 +32,15 @@ def trace_frame(ip: str, what: str, rgb_data: str) -> None:
         FRAMES.debug("[%s] %s %s", ip, what, frame_id(rgb_data))
 
 # Rate limit constants based on validated testing (0.90 FPS = safe sustained rate)
-SAFE_SUSTAINED_INTERVAL = 0.1  # 100 milliseconds between commands
-FAST_SEQUENTIAL_INTERVAL = 0.02 # 20ms between commands within a single apply() burst
+# Over TCP the lamp takes about one command a second from a client, and
+# refuses more ("client quota exceeded"): in watched tests (18 Oct 2026) a
+# scrolling text over TCP froze both lamps, then the clock and an effect were
+# refused. Every TCP command waits its turn (_tcp_turn); a frame still
+# waiting when a newer one comes is dropped (only the latest picture counts).
+# UDP has no such limit.
+TCP_COMMAND_INTERVAL = 1.0
+# The extra pause after the lamp still refused a command for its quota.
+TCP_QUOTA_PAUSE = 3.0
 BURST_MODE_INTERVAL = 0.4       # 2.5 FPS for short animation bursts (5-10 frames)
 MAX_BURST_COMMANDS = 30         # Maximum burst capacity before cooldown required
 RECONNECT_COOLDOWN_INITIAL = 5.0  # Starting cooldown — Cube needs time to recover its TCP stack
@@ -50,6 +57,12 @@ _RST_LINGER = struct.pack("ii", 1, 0)  # SO_LINGER value for an abortive close (
 # stopped answering) is sent TCP; UDP is tried again after this long, or as
 # soon as the lamp is back online.
 UDP_RETRY_AFTER = 300.0
+# Meanwhile the lamp's session is pinged this often in the background, and
+# UDP is used again as soon as it answers (_recover_udp): a lamp silent for a
+# moment (seen on 18 Oct 2026: switching clock styles quickly) is back on UDP
+# within seconds, not after UDP_RETRY_AFTER on the slower, paced TCP. Commands
+# never wait for it; they go over TCP until it answers.
+UDP_RECOVERY_PING = 15.0
 # Returned by CubeMatrix._udp_request: send this command over TCP instead.
 _USE_TCP = object()
 # Frames are never answered, so a lost one cannot be noticed: the last frame of
@@ -125,8 +138,7 @@ class _LazyText:
 
 def encode_rgb_frame(colors) -> str:
     """update_leds payload for a frame of RGB colors: base64 of the R, G, B
-    bytes. Each 3-byte pixel maps to exactly 4 base64 characters, so this
-    equals concatenating CubeMatrix.encode_hex_color() per pixel."""
+    bytes."""
     return base64.b64encode(
         bytes(channel for rgb in colors for channel in rgb)
     ).decode("ascii")
@@ -204,7 +216,13 @@ class CubeMatrix:
         self.firmware_version = None
         self.device._timeout = CONNECT_TIMEOUT  # Keep low — LAN connects take <10ms, 0.5s is plenty
         self._last_command_time = 0
-        self._min_command_interval = SAFE_SUSTAINED_INTERVAL
+        # The TCP gate (_tcp_turn): when the next TCP command may go
+        # (time.monotonic()), the frames counted (a waiting frame a newer one
+        # replaced is dropped), and whether the lamp refused one for its quota.
+        self._tcp_turn_lock = asyncio.Lock()
+        self._tcp_next_at = 0.0
+        self._tcp_frames = 0
+        self._tcp_quota_hit = False
         self._consecutive_failures = 0
         self._last_reconnect_attempt = 0
         self._reconnect_cooldown = RECONNECT_COOLDOWN_INITIAL
@@ -247,6 +265,16 @@ class CubeMatrix:
         # Whether a UDP failure was logged since UDP last worked: a network
         # that blocks it is reported once, not at every retry.
         self._udp_failure_logged = False
+        # Since when UDP has been failing (time.time()), 0 while it works.
+        self._udp_failing_since = 0.0
+        # Until when commands go over TCP on request (force_tcp,
+        # time.monotonic()); 0: not forced.
+        self._tcp_forced_until = 0.0
+        # The background ping that brings UDP back after a failure.
+        self._udp_recovery = None
+        # Called when commands switch between UDP and TCP on their own (UDP
+        # failed, or answers again): the light publishes its connection.
+        self.on_transport_change = None
         # The pending re-send of the last frame (FRAME_SETTLE_DELAY).
         self._frame_settle = None
         # The set_fx_effect params of the native effect the lamp runs, while
@@ -284,8 +312,6 @@ class CubeMatrix:
         except Exception as e:
             _LOGGER.debug("Could not retrieve capabilities (expected for some devices): %s", e)
 
-    def get_bulb(self):
-        return self.device
 
     # ── UDP command session (udp_session.py) ───────────────────────────
     # Every command goes over the lamp's UDP session when it works: no TCP
@@ -296,11 +322,78 @@ class CubeMatrix:
     # the lamp is back online).
     @property
     def transport(self) -> str:
-        """"udp" while commands go over the UDP session, else "tcp"."""
-        return "udp" if self._udp_usable() and self._udp.is_open else "tcp"
+        """"tcp" while UDP has failed and waits to be tried again
+        (UDP_RETRY_AFTER), else "udp": an idle session closed by the lamp
+        opens again with the next command, it is not a fallback to TCP."""
+        return "udp" if self._udp_usable() else "tcp"
+
+    async def _tcp_turn(self, command: str) -> bool:
+        """Wait for this TCP command's turn: TCP_COMMAND_INTERVAL after the
+        previous one (TCP_QUOTA_PAUSE more after a quota refusal). False for
+        a frame a newer frame replaced while it waited: not sent, the newer
+        one draws the latest picture. Every TCP send goes through it."""
+        frame = command == "update_leds"
+        if frame:
+            self._tcp_frames += 1
+            mine = self._tcp_frames
+        async with self._tcp_turn_lock:
+            if self._tcp_quota_hit:
+                self._tcp_quota_hit = False
+                self._tcp_next_at = max(self._tcp_next_at, time.monotonic()) + TCP_QUOTA_PAUSE
+            wait = self._tcp_next_at - time.monotonic()
+            if wait > 0:
+                await asyncio.sleep(wait)
+            if frame and mine != self._tcp_frames:
+                return False
+            self._tcp_next_at = time.monotonic() + TCP_COMMAND_INTERVAL
+            return True
+
+    def _note_quota_refusal(self, message) -> None:
+        """A TCP command was refused for the lamp's quota: the gate pauses."""
+        if "quota" in str(message):
+            self._tcp_quota_hit = True
+
+    async def _recover_udp(self) -> None:
+        """While UDP waits to be tried again after a failure, ping the lamp's
+        session every UDP_RECOVERY_PING; as soon as it answers, UDP is used
+        again (the next command goes over it; a new session is put in direct
+        mode again before the next frame, as after any new session), UDP no
+        longer counts as failing (issues.py, the diagnostics), even on a lamp
+        that gets no command, the TCP connection used meanwhile is closed,
+        and the light publishes its connection (on_transport_change)."""
+        while self._udp_retry_at > time.monotonic():
+            await asyncio.sleep(UDP_RECOVERY_PING)
+            if self._udp_retry_at <= time.monotonic():
+                return  # tried again meanwhile (the lamp came back online)
+            if await self._udp.ping():
+                _LOGGER.info("[UDP] [%s] The lamp answers over UDP again", self._ip)
+                self._udp_retry_at = 0.0
+                self._udp_failing_since = 0.0
+                self._udp_failure_logged = False
+                self.close_fast_socket()
+                self._transport_changed()
+                return
+
+    def _transport_changed(self) -> None:
+        if self.on_transport_change is not None:
+            self.on_transport_change()
 
     def _udp_usable(self) -> bool:
-        return time.monotonic() >= self._udp_retry_at
+        now = time.monotonic()
+        return now >= self._udp_retry_at and now >= self._tcp_forced_until
+
+    def force_tcp(self, seconds: float) -> None:
+        """Send every command over TCP for ``seconds`` (0: UDP again at
+        once), to test the TCP fallback on demand (diagnostics force_tcp).
+        As when UDP fails: direct mode, activated in the UDP session, is
+        activated again over TCP before the next frame; afterwards a new
+        UDP session is opened (and put in direct mode) as after a failure."""
+        if seconds > 0:
+            self._tcp_forced_until = time.monotonic() + seconds
+            self._udp.close()
+            self._just_reconnected = True
+        else:
+            self._tcp_forced_until = 0.0
 
     def _cancel_frame_settle(self) -> None:
         if self._frame_settle is not None:
@@ -354,6 +447,10 @@ class CubeMatrix:
             return _USE_TCP
         except UdpUnavailable as err:
             self._udp_retry_at = time.monotonic() + UDP_RETRY_AFTER
+            if self._udp_recovery is None or self._udp_recovery.done():
+                self._udp_recovery = asyncio.get_running_loop().create_task(
+                    self._recover_udp(), name=f"yeelight_cube udp recovery {self._ip}"
+                )
             _LOGGER.log(
                 logging.DEBUG if self._udp_failure_logged else logging.INFO,
                 "[UDP] [%s] %s: sending over TCP (UDP tried again in %.0f min, "
@@ -361,8 +458,10 @@ class CubeMatrix:
                 self._ip, err, UDP_RETRY_AFTER / 60,
             )
             self._udp_failure_logged = True
+            self._udp_failing_since = self._udp_failing_since or time.time()
             # Direct mode activated in the session does not carry to TCP.
             self._just_reconnected = True
+            self._transport_changed()
             return _USE_TCP
         if FRAMES.isEnabledFor(logging.DEBUG):
             FRAMES.debug(
@@ -389,6 +488,10 @@ class CubeMatrix:
         if self._udp_failure_logged:
             _LOGGER.info("[UDP] [%s] UDP session working again", self._ip)
             self._udp_failure_logged = False
+            # The TCP connection opened meanwhile is no longer used: closed,
+            # so it does not hold one of the lamp's connections.
+            self.close_fast_socket()
+        self._udp_failing_since = 0.0
         prev_failures, _, was_unreachable = self._reset_backoff()
         if was_unreachable:
             _LOGGER.debug("[UDP] [%s] ✓ answering again after %s failures", self._ip, prev_failures)
@@ -412,6 +515,9 @@ class CubeMatrix:
 
     def close(self) -> None:
         """Close every socket to the lamp (the light is being removed)."""
+        if self._udp_recovery is not None:
+            self._udp_recovery.cancel()
+            self._udp_recovery = None
         self._cancel_frame_settle()
         self.close_fast_socket()
         self._drop_library_socket(abortive=True)
@@ -571,23 +677,39 @@ class CubeMatrix:
         actually emitted (debug logging is usually off)."""
         return _LazyText(self.state_summary)
 
+    def connection_state(self) -> dict:
+        """The connection's state (the logs' state_summary, the downloadable
+        diagnostics). Ages in seconds, None when it never happened; the
+        TCP socket's age while one is open (commands go over UDP otherwise)."""
+        now = time.time()
+
+        def age(since: float) -> float | None:
+            return round(now - since, 1) if since > 0 else None
+
+        return {
+            "transport": self.transport,
+            "udp_sessions_opened": self._udp.sessions_opened,
+            "tcp_socket_age": age(self._fast_socket_time) if self._fast_socket is not None else None,
+            "consecutive_failures": self._consecutive_failures,
+            "reconnect_cooldown": round(self._reconnect_cooldown, 1),
+            "unreachable": self._device_unreachable,
+            "healthy": self._connection_healthy,
+            "reconnected_flag": self._just_reconnected,
+            "since_reconnect_attempt": age(self._last_reconnect_attempt),
+            "since_success": age(self._last_success_time),
+            "commands_sent": self._total_commands_sent,
+            "udp_failing_for": age(self._udp_failing_since),
+            "tcp_forced_for": (
+                round(self._tcp_forced_until - time.monotonic(), 1)
+                if self._tcp_forced_until > time.monotonic() else None
+            ),
+        }
+
     def state_summary(self) -> str:
         """Return a compact summary of connection state for diagnostics."""
-        # Show fast socket status (the persistent socket actually used for commands)
-        if self._fast_socket is not None:
-            age = time.time() - self._fast_socket_time
-            fast_status = f"open({age:.0f}s)"
-        else:
-            fast_status = "None"
-        time_since_attempt = time.time() - self._last_reconnect_attempt if self._last_reconnect_attempt > 0 else -1
-        time_since_success = time.time() - self._last_success_time if self._last_success_time > 0 else -1
-        return (
-            f"ip={self._ip}, fast_sock={fast_status}, failures={self._consecutive_failures}, "
-            f"cooldown={self._reconnect_cooldown:.0f}s, unreachable={self._device_unreachable}, "
-            f"healthy={self._connection_healthy}, reconnected_flag={self._just_reconnected}, "
-            f"time_since_attempt={time_since_attempt:.1f}s, "
-            f"time_since_success={time_since_success:.1f}s, "
-            f"total_cmds={self._total_commands_sent}, transport={self.transport}"
+        state = self.connection_state()
+        return f"ip={self._ip}, " + ", ".join(
+            f"{key}={value}" for key, value in state.items()
         )
 
     async def _check_connection_health(self):
@@ -731,30 +853,6 @@ class CubeMatrix:
             )
         return True
 
-    async def test_connection(self):
-        """Test connection by sending turn_on command.
-        
-        'closed the connection' from the yeelight library means recv() failed
-        after send() succeeded — the command was sent, which counts as connected.
-        'socket error' means connect/send failed — the device is unreachable.
-        """
-        for attempt in range(3):
-            try:
-                await asyncio.to_thread(self.device.turn_on)
-                _LOGGER.debug("Successfully connected to %s!", self.device_name)
-                return
-            except BulbException as e:
-                error_msg = str(e)
-                if "closed the connection" in error_msg.lower():
-                    # recv() failed after send() succeeded — command was sent
-                    _LOGGER.debug("Connected to %s (device closed connection after command — expected)", self.device_name)
-                    return
-                _LOGGER.warning("Connection attempt %s failed: %s", attempt + 1, e)
-                await asyncio.sleep(2)
-            except Exception as e:
-                _LOGGER.warning("Connection attempt %s failed: %s", attempt + 1, e)
-                await asyncio.sleep(2)
-        _LOGGER.error("Could not connect to Yeelight Cube Lite after retries.")
 
     def close_fast_socket(self):
         """Close the persistent fast socket if open.
@@ -816,6 +914,8 @@ class CubeMatrix:
                     raise BulbException(error)
                 _LOGGER.debug("[UDP] [%s] %s answered %s", self._ip, command, error)
             return
+        if not await self._tcp_turn(command):
+            return
         command_dict = {"id": 1, "method": command, "params": params}
         request = (json.dumps(command_dict, separators=(",", ":")) + "\r\n").encode("utf8")
 
@@ -833,6 +933,7 @@ class CubeMatrix:
                 if check_reply:
                     error = _raw_reply_error(sock)
                     if error is not None:
+                        self._note_quota_refusal(error)
                         raise BulbException(error)
             finally:
                 try:
@@ -870,6 +971,7 @@ class CubeMatrix:
             json.dumps(command_dict, separators=(",", ":")) + "\r\n"
         ).encode("utf8")
 
+        await self._tcp_turn(command)
         # Close the persistent fast socket first. The Cube's firmware is
         # sensitive to concurrent TCP connections while native renderers are
         # running; leaving it open causes the lamp to drop the active effect
@@ -940,8 +1042,8 @@ class CubeMatrix:
             the immediate reconnect after RST often timed out.
           - Abortive close (SO_LINGER RST) — avoids TIME_WAIT socket exhaustion
         
-        Uses FAST_SEQUENTIAL_INTERVAL (20ms) instead of SAFE_SUSTAINED_INTERVAL
-        (100ms) for minimal delay between commands within a burst.
+        Paced by the TCP gate (_tcp_turn: the lamp's quota); a frame a newer
+        one replaced while it waited is not sent (True: the newer one draws).
         
         Args:
             command: Yeelight command name (e.g., 'set_bright', 'update_leds')
@@ -962,16 +1064,11 @@ class CubeMatrix:
                 )
                 self._just_reconnected = True
             return True
+        if not await self._tcp_turn(command):
+            return True
         cmd_id = int(time.time() * 1000) % 100000
-        
+
         async with self._command_lock:
-            # Fast rate limiting — just 20ms between burst commands
-            current_time = time.time()
-            time_since_last = current_time - self._last_command_time
-            if time_since_last < FAST_SEQUENTIAL_INTERVAL:
-                wait_time = FAST_SEQUENTIAL_INTERVAL - time_since_last
-                await asyncio.sleep(wait_time)
-            
             if params is None:
                 params = []
             
@@ -1015,7 +1112,16 @@ class CubeMatrix:
                         all_data += data
                     
                     if all_data:
-                        if b'"error"' in all_data:
+                        if b'"error"' in all_data and b"quota" in all_data:
+                            # Refused for the lamp's quota: the connection
+                            # and direct mode are fine; the gate pauses.
+                            _LOGGER.warning(
+                                "[FAST] [%s] The lamp refused a command for its quota "
+                                "(last_cmd=%s): pausing the TCP commands",
+                                self._ip, self._last_fast_command,
+                            )
+                            self._tcp_quota_hit = True
+                        elif b'"error"' in all_data:
                             _LOGGER.warning(
                                 "[FAST] [%s] Drained ERROR response from Cube "
                                 "(%s bytes, last_cmd=%s): "
@@ -1253,6 +1359,7 @@ class CubeMatrix:
             if answer and "error" in answer:
                 raise BulbException(answer["error"])
             return answer
+        await self._tcp_turn(command)
         cmd_id = int(time.time() * 1000) % 100000
         _LOGGER.debug("[COMMAND #%s] Queued: %s [%s]", cmd_id, command, self.summary)
         
@@ -1264,13 +1371,6 @@ class CubeMatrix:
             if not self._connection_healthy:
                 await self._check_connection_health()
             
-            # Rate limiting: ensure minimum interval between commands
-            current_time = time.time()
-            time_since_last = current_time - self._last_command_time
-            if time_since_last < self._min_command_interval:
-                wait_time = self._min_command_interval - time_since_last
-                _LOGGER.debug("[COMMAND #%s] Rate limiting: waiting %.3fs", cmd_id, wait_time)
-                await asyncio.sleep(wait_time)
             
             try:
                 # Check if socket is None — need to reconnect first
@@ -1367,6 +1467,7 @@ class CubeMatrix:
                 error_message = error_dict.get('message', str(e))
                 
                 if error_code == -1:  # Quota exceeded
+                    self._tcp_quota_hit = True
                     self._count_failure()
                     backoff_time = self._reconnect_cooldown * QUOTA_BACKOFF_MULTIPLIER
                     _LOGGER.warning("[COMMAND #%s] QUOTA EXCEEDED - backing off %.1fs", cmd_id, backoff_time)
@@ -1504,9 +1605,3 @@ class CubeMatrix:
                 raise e
 
 
-    @staticmethod
-    def encode_hex_color(hex_color: str) -> str:
-        hex_color = hex_color.lstrip("#")
-        rgb = tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
-        rgb_bytes = bytes(rgb)
-        return base64.b64encode(rgb_bytes).decode("ascii")

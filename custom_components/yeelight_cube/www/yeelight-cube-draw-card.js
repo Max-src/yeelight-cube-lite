@@ -864,8 +864,11 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
    *   this one, and the lamp entity is not polled afterwards (it pushes its
    *   new state itself). Each click otherwise queues two calls, and a fast
    *   run of clicks piles them up behind each other.
+   * @param {string} [options.name] - the pixel art the drawing is (one just
+   *   picked in the gallery), shown by the lamp's Pixel Art select; without
+   *   it the drawing is the user's own and the select is cleared.
    */
-  async _sendToLamp({ latestOnly = false } = {}) {
+  async _sendToLamp({ latestOnly = false, name } = {}) {
     if (!this.hass) return;
     const pixels = [];
     for (let row = 0; row < GRID_ROWS; row++) {
@@ -887,7 +890,7 @@ class YeelightCubeDrawCard extends PixelArtActionsMixin(
     }
     const sent = await this.callServiceOnTargetEntities(
       "apply_custom_pixels",
-      { pixels },
+      name ? { pixels, name } : { pixels },
       latestOnly ? { coalesce: "send-matrix" } : {},
     );
     if (latestOnly) return sent;

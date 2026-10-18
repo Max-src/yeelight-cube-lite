@@ -311,6 +311,7 @@ Display a pixel art frame on the lamp. The lamp has 100 pixels arranged in a 20Ã
 | Field | Required | Description |
 | :-- | :-- | :-- |
 | `pixels` | Yes | Array of `{ position, color }` entries |
+| `name` | No | The pixel art these pixels are, so the Pixel Art select shows it (the Draw card sends the one picked in its gallery). Without it the select is cleared |
 | `entity_id` | Yes | Target lamp entity |
 
 **Pixel entry rules:**
@@ -1671,6 +1672,7 @@ reverse-engineering cards, which are not shipped in the public repository.
 | `get_capabilities` | Run the yeelight library's SSDP capability probe and return the headers |
 | `bulb_call` | Read an allow-listed `yeelight.Bulb` member or call an allow-listed write method |
 | `set_default` | Send the documented `set_default` command so the lamp restores its current state after a power cut |
+| `force_tcp` | Send the lamps' commands over TCP (their fallback) for `minutes` (0â€“60; 0 = UDP again), to test it on demand; the `connection` attribute shows `tcp` meanwhile |
 
 Raw commands bypass the integration's state tracking and can leave the lamp in
 a mode Home Assistant does not know about; use **Force Refresh** afterwards.

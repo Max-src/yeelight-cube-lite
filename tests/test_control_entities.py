@@ -4,13 +4,14 @@ lamp."""
 
 import ast
 import asyncio
+import json
 import runpy
 import sys
 import types
 import unittest
 from unittest.mock import AsyncMock, Mock
 
-from tests.test_native_features import CONSTANTS, ROOT, SELECT_SOURCE
+from tests.test_native_features import CONSTANTS, ERRORS, ROOT, SELECT_SOURCE
 from tests.test_text_modes import LAYOUT
 
 
@@ -49,6 +50,7 @@ def _load_platform(name, source, extra):
         "HomeAssistantError": RuntimeError,
         "EntityCategory": type("EntityCategory", (), {"CONFIG": "config"}),
         "callback": lambda function: function,
+        **ERRORS,
         **extra,
     })
     exec(compile(tree, f"{name}.py", "exec"), namespace)
@@ -69,9 +71,25 @@ NUMBER = _load_platform("number", (ROOT / "number.py").read_text(encoding="utf-8
 })
 
 
+# The entities' names (strings.json), as Home Assistant shows them: after the
+# lamp's name (has_entity_name, set by their base entity.CubeDeviceEntity).
+ENTITY_NAMES = json.loads((ROOT / "strings.json").read_text(encoding="utf-8"))["entity"]
+
+
+def shown_names(entities, platform):
+    """{unique id: the name shown}. None sets a name by hand."""
+    for entity in entities:
+        assert not hasattr(entity, "_attr_name"), entity._attr_unique_id
+    return {
+        entity._attr_unique_id:
+            f"Cube {ENTITY_NAMES[platform][entity._attr_translation_key]['name']}"
+        for entity in entities
+    }
+
+
 def make_light(**state):
     light = types.SimpleNamespace(
-        _attr_unique_id="cube1", _attr_name="Cube", hass=None,
+        _attr_unique_id="cube1", _lamp_name="Cube", _ip="10.0.0.1", hass=None,
         _native_effect="Rainbow", _native_effect_direction="Right",
         _extended_effects_enabled=False, _native_clock_style=6, _mode="Solid Color",
         **state,
@@ -93,33 +111,22 @@ class ControlEntityTests(unittest.TestCase):
             SELECT["YeelightCubeNativeEffectDirectionSelect"](light, None),
             *(SELECT["CubeSettingSelect"](light, None, spec) for spec in SELECT["SETTING_SELECTS"]),
         ]
-        named = {
-            entity._attr_unique_id: getattr(entity, "_attr_name", None)
-            or entity._attr_translation_key
-            for entity in entities
-        }
-        self.assertEqual(named, {
+        # The ids and the names shown, as before they came from translations.
+        self.assertEqual(shown_names(entities, "select"), {
             "cube1_palette_select": "Cube Matrix: Palette",
             "cube1_pixel_art_select": "Cube Matrix: Pixel Art",
-            "cube1_content_mode_select": "content_mode",
+            "cube1_content_mode_select": "Cube Content mode",
             "cube1_display_mode_select": "Cube Matrix: Display Mode",
-            "cube1_clock_style_select": "clock_style",
-            "cube1_native_effect": "native_effect",
-            "cube1_native_effect_direction": "native_effect_direction",
-            "cube1_clock_content_select": "clock_content",
-            "cube1_music_flow_effect": "music_flow_effect",
-            "cube1_power_on_state": "power_on_state",
+            "cube1_clock_style_select": "Cube Clock: Style",
+            "cube1_native_effect": "Cube Native effect",
+            "cube1_native_effect_direction": "Cube Native effect: Direction",
+            "cube1_clock_content_select": "Cube Clock: Content",
+            "cube1_music_flow_effect": "Cube Music Flow effect",
+            "cube1_power_on_state": "Cube Power-on behavior",
             "cube1_alignment_select": "Cube Matrix: Text Alignment",
             "cube1_font_select": "Cube Matrix: Font",
             "cube1_device_orientation_select": "Cube Device Orientation",
         })
-        # Translated names only where a translation key is set.
-        for entity in entities:
-            self.assertEqual(
-                getattr(entity, "_attr_has_entity_name", False),
-                hasattr(entity, "_attr_translation_key"),
-                entity._attr_unique_id,
-            )
 
     def test_a_setting_dropdown_reads_and_sets_the_lamp(self):
         spec = {s.unique_suffix: s for s in SELECT["SETTING_SELECTS"]}
@@ -159,16 +166,11 @@ class ControlEntityTests(unittest.TestCase):
                 for spec in (*NUMBER["SETTING_NUMBERS"], *NUMBER["PREVIEW_ADJUSTMENTS"])
             ),
         ]
-        named = {
-            entity._attr_unique_id: getattr(entity, "_attr_name", None)
-            or entity._attr_translation_key
-            for entity in entities
-        }
-        self.assertEqual(named, {
+        self.assertEqual(shown_names(entities, "number"), {
             "cube1_gradient_angle": "Cube Matrix: Gradient Angle",
-            "cube1_native_effect_speed": "native_effect_speed",
-            "cube1_scroll_speed": "scroll_speed",
-            "cube1_power_limit": "power_limit",
+            "cube1_native_effect_speed": "Cube Animation speed",
+            "cube1_scroll_speed": "Cube Text scroll: Interval",
+            "cube1_power_limit": "Cube Power limit",
             "cube1_hue_shift": "Cube Color: Hue Shift",
             "cube1_temperature": "Cube Color: Temperature",
             "cube1_saturation": "Cube Intensity: Saturation",
@@ -180,12 +182,6 @@ class ControlEntityTests(unittest.TestCase):
             "cube1_tint_hue": "Cube Effects: Tint Hue",
             "cube1_tint_strength": "Cube Effects: Tint Strength",
         })
-        for entity in entities:
-            self.assertEqual(
-                getattr(entity, "_attr_has_entity_name", False),
-                hasattr(entity, "_attr_translation_key"),
-                entity._attr_unique_id,
-            )
 
     def test_a_setting_slider_keeps_its_range_and_reacts(self):
         spec = {s.unique_suffix: s for s in (*NUMBER["SETTING_NUMBERS"], *NUMBER["PREVIEW_ADJUSTMENTS"])}
@@ -194,7 +190,9 @@ class ControlEntityTests(unittest.TestCase):
             start_scroll_timer=Mock(), _preview_contrast=100,
             async_apply_display_mode=AsyncMock(),
         )
-        light.hass = types.SimpleNamespace(async_create_task=lambda coroutine: asyncio.ensure_future(coroutine))
+        light.hass = types.SimpleNamespace()  # added to Home Assistant
+        # The light's tracked task (cancelled with the lamp).
+        light._create_tracked_task = lambda coroutine, name=None: asyncio.ensure_future(coroutine)
         light.async_write_ha_state = Mock()
         scroll = NUMBER["CubeSettingNumber"](light, None, spec["scroll_speed"])
         asyncio.run(scroll.async_set_native_value(0.333))

@@ -22,6 +22,31 @@ class DeviceLifecycleTests(unittest.IsolatedAsyncioTestCase):
         light.restore = lambda state: methods["_restore_extended_effects"](light, state)
         return light
 
+    def test_a_removed_entity_unregisters_from_its_light(self):
+        # entity.CubeDeviceEntity._register_on_light: the light pushes changes
+        # to the entity until it is removed (disabled, or its lamp unloaded),
+        # not after; a newer entity in the same slot is left alone.
+        register = _load_standalone_functions(
+            (ROOT / "entity.py").read_text(encoding="utf-8"), {"_register_on_light"}
+        )["_register_on_light"]
+        light = SimpleNamespace(_text_input_entity=None)
+
+        def entity():
+            removals = []
+            item = SimpleNamespace(_light_entity=light, async_on_remove=removals.append)
+            item.remove = lambda: [callback() for callback in removals]
+            return item
+
+        first, second = entity(), entity()
+        register(first, "_text_input_entity")
+        self.assertIs(light._text_input_entity, first)
+        first.remove()
+        self.assertIsNone(light._text_input_entity)
+        register(first, "_text_input_entity")
+        register(second, "_text_input_entity")  # a reload's new entity
+        first.remove()
+        self.assertIs(light._text_input_entity, second)
+
     def test_experimental_options_survive_missing_and_stale_restore_states(self):
         for enabled in (True, False):
             for old_state in (None, SimpleNamespace(attributes={}), SimpleNamespace(
@@ -83,8 +108,9 @@ class DeviceLifecycleTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_manual_setup_checks_existing_ip_before_creating_entry(self):
         step = _load_standalone_functions(
-            (ROOT / "config_flow.py").read_text(encoding="utf-8"), {"async_step_user"},
-            {**CONSTANTS, "ipaddress": ipaddress})["async_step_user"]
+            (ROOT / "config_flow.py").read_text(encoding="utf-8"),
+            {"async_step_user", "_parse_ip", "_lamp_answers"},
+            {**CONSTANTS, "ipaddress": ipaddress, "check_tcp": AsyncMock()})["async_step_user"]
         flow = SimpleNamespace(_async_abort_entries_match=Mock(side_effect=ValueError("already_configured")),
                                async_set_unique_id=AsyncMock(), async_create_entry=Mock())
         with self.assertRaisesRegex(ValueError, "already_configured"):
@@ -153,18 +179,94 @@ class DeviceLifecycleTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotIn("options", changes)
         flow.async_step_discovery_confirm.assert_not_awaited()
 
-    async def test_manual_setup_validates_and_normalises_the_ip(self):
-        step = _load_standalone_functions(
+    def manual_step(self, check_tcp):
+        return _load_standalone_functions(
             (ROOT / "config_flow.py").read_text(encoding="utf-8"),
-            {"async_step_user"},
-            {**CONSTANTS, "ipaddress": ipaddress},
+            {"async_step_user", "_parse_ip", "_lamp_answers"},
+            {**CONSTANTS, "ipaddress": ipaddress, "check_tcp": check_tcp},
         )["async_step_user"]
-        flow = SimpleNamespace(
+
+    def manual_flow(self):
+        return SimpleNamespace(
             _async_abort_entries_match=Mock(), async_set_unique_id=AsyncMock(),
             _abort_if_unique_id_configured=Mock(), _get_schema=lambda: None,
             async_create_entry=lambda **kwargs: {"type": "entry", **kwargs},
             async_show_form=lambda **kwargs: {"type": "form", **kwargs},
         )
+
+    async def test_manual_setup_adds_only_a_lamp_that_answers(self):
+        # test-before-configure: the lamp is probed (LAN Control port) before
+        # the entry is created; one that does not answer stays on the form.
+        check_tcp = AsyncMock(side_effect=OSError("timed out"))
+        step, flow = self.manual_step(check_tcp), self.manual_flow()
+        ip_key = CONSTANTS["CONF_IP"]
+        result = await step(flow, {ip_key: "192.168.4.139"})
+        self.assertEqual(("form", {"base": "cannot_connect"}), (result["type"], result["errors"]))
+        check_tcp.assert_awaited_once_with(
+            "192.168.4.139", CONSTANTS["LAN_PORT"], CONSTANTS["PROBE_TIMEOUT"]
+        )
+        check_tcp.side_effect = None
+        result = await step(flow, {ip_key: "192.168.4.139"})
+        self.assertEqual("entry", result["type"])
+
+    def test_no_empty_options_dialog(self):
+        # The options are written by the lamp's entities (Auto Turn On,
+        # Experimental Features): no Configure dialog with nothing in it.
+        flow = (ROOT / "config_flow.py").read_text(encoding="utf-8")
+        self.assertNotIn("OptionsFlow", flow)
+        self.assertNotIn("async_get_options_flow", flow)
+        import json
+
+        self.assertNotIn("options", json.loads((ROOT / "strings.json").read_text(encoding="utf-8")))
+
+    def test_only_a_network_or_lamp_error_retries_the_setup(self):
+        # A bug fails the setup visibly instead of looking like an
+        # unreachable lamp retried forever.
+        import ast
+
+        tree = ast.parse((ROOT / "__init__.py").read_text(encoding="utf-8"))
+        setup = next(n for n in tree.body if getattr(n, "name", "") == "async_setup_entry")
+        source = ast.unparse(setup)
+        self.assertRegex(source, r"if not isinstance\(exc, \(OSError, BulbException\)\):\s+raise\b")
+
+    async def test_reconfigure_moves_a_lamp_to_an_ip_that_answers(self):
+        # The same checks as adding a lamp; the entry update reloads it once
+        # (_async_entry_updated), and an IP-identified lamp's id follows.
+        check_tcp = AsyncMock(side_effect=OSError("timed out"))
+        step = _load_standalone_functions(
+            (ROOT / "config_flow.py").read_text(encoding="utf-8"),
+            {"async_step_reconfigure", "_parse_ip", "_lamp_answers"},
+            {**CONSTANTS, "ipaddress": ipaddress, "check_tcp": check_tcp},
+        )["async_step_reconfigure"]
+        ip_key = CONSTANTS["CONF_IP"]
+        entry = SimpleNamespace(entry_id="mine", unique_id="10.0.0.5", data={ip_key: "10.0.0.5"})
+        other = SimpleNamespace(entry_id="other", unique_id="0xabc", data={ip_key: "10.0.0.9"})
+        update = Mock()
+        flow = SimpleNamespace(
+            _get_reconfigure_entry=lambda: entry,
+            _async_current_entries=lambda include_ignore=False: [entry, other],
+            hass=SimpleNamespace(config_entries=SimpleNamespace(async_update_entry=update)),
+            _get_schema=lambda ip=None: ip,
+            async_abort=lambda reason: {"type": "abort", "reason": reason},
+            async_show_form=lambda **kwargs: {"type": "form", **kwargs},
+        )
+        # The form, filled in with the current IP.
+        self.assertEqual("10.0.0.5", (await step(flow))["data_schema"])
+        self.assertEqual({ip_key: "invalid_ip"}, (await step(flow, {ip_key: "nope"}))["errors"])
+        self.assertEqual("already_configured", (await step(flow, {ip_key: "10.0.0.9"}))["reason"])
+        self.assertEqual({"base": "cannot_connect"}, (await step(flow, {ip_key: "10.0.0.7"}))["errors"])
+        update.assert_not_called()
+        check_tcp.side_effect = None
+        self.assertEqual("reconfigure_successful", (await step(flow, {ip_key: " 10.0.0.7 "}))["reason"])
+        update.assert_called_once_with(entry, unique_id="10.0.0.7", data={ip_key: "10.0.0.7"})
+        # A discovered lamp keeps its hardware id.
+        update.reset_mock()
+        entry.unique_id = "0xdef"
+        await step(flow, {ip_key: "10.0.0.8"})
+        self.assertEqual("0xdef", update.call_args.kwargs["unique_id"])
+
+    async def test_manual_setup_validates_and_normalises_the_ip(self):
+        step, flow = self.manual_step(AsyncMock()), self.manual_flow()
         ip_key = CONSTANTS["CONF_IP"]
         for bad in ("1.2", "::", "224.0.0.1", "abc", "256.1.1.1", ""):
             with self.subTest(ip=bad):
@@ -227,8 +329,9 @@ class DeviceLifecycleTests(unittest.IsolatedAsyncioTestCase):
             hass.config_entries.async_update_entry.reset_mock()
 
     async def test_setting_updates_do_not_reload_but_ip_updates_do(self):
-        entry = SimpleNamespace(entry_id="stable", title="Bottom", data={CONSTANTS["CONF_IP"]: "old-ip"})
-        hass = SimpleNamespace(data={CONSTANTS["DOMAIN"]: {"stable": {"active_ip": "old-ip"}}},
+        entry = SimpleNamespace(entry_id="stable", title="Bottom", data={CONSTANTS["CONF_IP"]: "old-ip"},
+                                runtime_data=SimpleNamespace(active_ip="old-ip"))
+        hass = SimpleNamespace(data={CONSTANTS["DOMAIN"]: {}},
                                config_entries=SimpleNamespace(async_reload=AsyncMock()))
         update = self.init_helpers({"_async_entry_updated"})["_async_entry_updated"]
         await update(hass, entry)

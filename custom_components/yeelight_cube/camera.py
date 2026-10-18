@@ -22,12 +22,12 @@ from .const import (
     FIRMWARE_MODES,
     MODE_CLOCK,
     MODE_NATIVE_EFFECT,
-    DOMAIN,
     CLOCK_MIXER_EFFECTS,
     CLOCK_MIXER_EFFECT_SPEED,
     DEFAULT_NATIVE_CLOCK_STYLE,
     NATIVE_CLOCK_STYLES,
 )
+from .runtime_data import lamp_of
 from .entity import CubeDeviceEntity
 from .effect_orientation import clock_effect_direction
 from .layout import FONT_MAPS, char_advance
@@ -38,6 +38,10 @@ from .native_effect_preview import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# No limit per platform: every command to the lamp already waits for the
+# previous one (the device lock, light_connection._execute_hardware_op).
+PARALLEL_UPDATES = 0
 
 # ── Matrix dimensions ──────────────────────────────────────────────────
 COLS = 20
@@ -99,9 +103,8 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up both matrix preview camera entities (square + round)."""
-    data = hass.data[DOMAIN].get(entry.entry_id, {})
-    light_entity = data.get("light")
-    if not light_entity:
+    light_entity = lamp_of(entry)
+    if light_entity is None:
         _LOGGER.warning(
             "Camera setup: no light entity found for entry %s", entry.entry_id
         )
@@ -113,7 +116,7 @@ async def async_setup_entry(
     async_add_entities([cam_square, cam_round])
     _LOGGER.debug(
         "Matrix preview cameras (square + round) created for %s",
-        light_entity._attr_name,
+        light_entity._lamp_name,
     )
 
 
@@ -125,16 +128,15 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
     """
 
     # Subclass MUST set these in __init__
-    _SUFFIX: str          # e.g. " (Square)"
+    _TRANSLATION_KEY: str  # e.g. "matrix_preview_square"
     _UID_SUFFIX: str      # e.g. "_matrix_preview_square"
 
     def __init__(self, light_entity, config_entry: ConfigEntry) -> None:
         super().__init__()
         self._light_entity = light_entity
         self._config_entry = config_entry
-        self._attr_name = f"{light_entity._attr_name} Matrix Preview{self._SUFFIX}"
+        self._attr_translation_key = self._TRANSLATION_KEY
         self._attr_unique_id = f"{light_entity._attr_unique_id}{self._UID_SUFFIX}"
-        self._attr_icon = "mdi:led-strip-variant"
         self._attr_is_streaming = False
         # MJPEG poll interval for the HA camera proxy -> ~3 fps preview refresh.
         self._attr_frame_interval = 0.3
@@ -151,6 +153,10 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
     # ── Lifecycle ──────────────────────────────────────────────────────
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
+        # The light pushes its frames to its cameras (light._camera_entities,
+        # set up with them) until this one is removed.
+        cameras = self._light_entity._camera_entities
+        self.async_on_remove(lambda: self in cameras and cameras.remove(self))
         await self._async_pre_render()
 
     @callback
@@ -164,7 +170,9 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
     def async_refresh_preview(self) -> None:
         # Render off-loop, then bump the token and write state so the frontend
         # never fetches a stale frame (render -> token -> state ordering).
-        self.hass.async_create_task(self._async_refresh_preview())
+        self._light_entity._create_tracked_task(
+            self._async_refresh_preview(), name=f"yeelight_cube_preview_{self.entity_id}"
+        )
 
     async def _async_refresh_preview(self) -> None:
         _t0 = _time.time()
@@ -173,10 +181,10 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
         self.async_update_token()
         self.async_write_ha_state()
         _LOGGER.debug(
-            "[TIMING] camera%s async_refresh_preview: "
+            "[TIMING] camera %s async_refresh_preview: "
             "render=%.1fms "
             "total=%.1fms",
-            self._SUFFIX, (_t1 - _t0)*1000, (_time.time() - _t0)*1000
+            self._TRANSLATION_KEY, (_t1 - _t0)*1000, (_time.time() - _t0)*1000
         )
 
     # ── Image serving ──────────────────────────────────────────────────
@@ -576,7 +584,7 @@ class _YeelightCubeMatrixCameraBase(CubeDeviceEntity, Camera):
 class YeelightCubeMatrixCameraSquare(_YeelightCubeMatrixCameraBase):
     """Fast preview using square (rectangle) pixels."""
 
-    _SUFFIX = " (Square)"
+    _TRANSLATION_KEY = "matrix_preview_square"
     _UID_SUFFIX = "_matrix_preview_square"
 
     def _draw_pixel(self, draw, rect, fill):
@@ -587,7 +595,7 @@ class YeelightCubeMatrixCameraSquare(_YeelightCubeMatrixCameraBase):
 class YeelightCubeMatrixCameraRound(_YeelightCubeMatrixCameraBase):
     """Prettier preview using round (ellipse) pixels resembling LEDs."""
 
-    _SUFFIX = " (Round)"
+    _TRANSLATION_KEY = "matrix_preview_round"
     _UID_SUFFIX = "_matrix_preview_round"
 
     def _draw_pixel(self, draw, rect, fill):

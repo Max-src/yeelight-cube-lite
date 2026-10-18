@@ -72,6 +72,17 @@ if (process.env.DOCS_HA_URL || process.env.DOCS_HA_ONBOARD === "1")
   steps.push(["Documentation screenshots", npm, ["run", "docs:screenshots"]]);
 const wsl =
   windows && spawnSync("wsl", ["-e", "true"], { stdio: "ignore" }).status === 0;
+// The tests inside Home Assistant (tests/ha: the config flow, its coverage
+// enforced). Home Assistant runs on Linux only: through WSL on Windows. The
+// first run sets up their dev-only environment (scripts/ha-tests.sh).
+if (!windows)
+  steps.push(["Home Assistant tests", "bash", ["scripts/ha-tests.sh"]]);
+else if (wsl)
+  steps.push([
+    "Home Assistant tests (WSL)",
+    "wsl",
+    ["-e", "bash", "scripts/ha-tests.sh"],
+  ]);
 if (wsl)
   steps.push([
     "Browser checks on Linux (WSL, like CI)",
@@ -104,6 +115,6 @@ if (!process.env.DOCS_HA_URL && process.env.DOCS_HA_ONBOARD !== "1")
   );
 if (windows && !wsl)
   console.log(
-    "SKIP  Browser checks on Linux (install WSL to catch CI-only failures before pushing)",
+    "SKIP  Browser checks on Linux and Home Assistant tests (install WSL to run them before pushing)",
   );
 process.exitCode = results.every(([, ok]) => ok) ? 0 : 1;

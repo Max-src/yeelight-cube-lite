@@ -48,6 +48,9 @@ module.exports = async (t) => {
     "PASS Draw card on the shared gallery: former options, previews as drawn, load (and lamp) / rename / confirmed delete, carousel and wheel moves only browse, memoized items, shared export / import row; narrow cards never overflow and arrows keep their tint",
   );
   console.log(
+    "PASS lamp sliders (Lamp Preview brightness, Clock and Native brightness and speed): while one value is sent, only the latest waits, the ones in between are never sent",
+  );
+  console.log(
     "PASS Arrange (Palette and Draw editors): stored order with thumbnails, order only, one guarded move per change (▲ ▼ ⤒ ⤓, drag) shown at once",
   );
   console.log(

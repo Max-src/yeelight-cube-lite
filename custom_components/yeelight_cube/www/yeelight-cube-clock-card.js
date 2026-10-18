@@ -127,12 +127,13 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     this._lampSliders = new LampSliders(this, {
       speed: {
         config: () => this._speedGc(),
-        commit: (pct) => this._applySpeed(speedPctToRaw(pct)),
+        commit: (pct, options) => this._applySpeed(speedPctToRaw(pct), options),
       },
       brightness: {
         config: () => this._brightnessGc(),
         live: () => this._paintVisible(),
-        commit: (pct) => this._applyBrightness(brightnessPctToRaw(pct)),
+        commit: (pct, options) =>
+          this._applyBrightness(brightnessPctToRaw(pct), options),
       },
     });
   }
@@ -871,13 +872,14 @@ class YeelightCubeClockCard extends ClockPreviewMixin(YeelightCardMixin(LitEleme
     return kinds;
   }
 
-  _applySpeed(value) {
-    this._callSetClock({ speed: Math.max(1, Math.min(255, value | 0)) });
+  // The sliders' commands (options: the slider's, LampSliders).
+  _applySpeed(value, options) {
+    this._callSetClock({ speed: Math.max(1, Math.min(255, value | 0)) }, false, options);
   }
 
-  _applyBrightness(bri) {
+  _applyBrightness(bri, options) {
     const brightness = Math.max(3, Math.min(255, bri | 0));
-    return this._command("turn_on", { brightness }, "light");
+    return this._command("turn_on", { brightness }, "light", false, options);
   }
 
   // ── Rendering ─────────────────────────────────────────────────────────────

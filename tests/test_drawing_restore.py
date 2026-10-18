@@ -2,7 +2,7 @@ import importlib.util
 import json
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import Mock
 
 from tests.test_native_features import LIGHT_SOURCE, ROOT, _load_standalone_functions
 
@@ -19,14 +19,11 @@ PIGLET = [
 class DrawingRestoreTests(unittest.TestCase):
     def setUp(self):
         self.save = Mock()
-        self.enterContext(patch.dict(
-            "sys.modules", {"drawing_test": SimpleNamespace(async_schedule_save=self.save)},
-        ))
         self.fns = _load_standalone_functions(
             LIGHT_SOURCE, {"_remember_drawing", "_restore_drawing"}, {
                 "group_pixels": pixel_art_storage.group_pixels,
                 "expand_pixels": pixel_art_storage.expand_pixels,
-                "_LOGGER": Mock(), "__package__": "drawing_test",
+                "async_schedule_save": self.save, "_LOGGER": Mock(),
             },
         )
         # hass.data[DOMAIN], as saved to and loaded from the storage file

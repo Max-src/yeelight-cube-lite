@@ -309,6 +309,12 @@ apply_custom_pixels:
       required: true
       selector:
         object:
+    name:
+      description: The name of the pixel art these pixels are, if any, so the Pixel Art select shows it. Without it the select is cleared.
+      example: "Cat"
+      required: false
+      selector:
+        text:
     entity_id:
       description: Target lamp entity ID (e.g. light.cubelite_192_168_4_102). Must be provided for direct service calls.
       example: "light.cubelite_192_168_4_139"
@@ -524,6 +530,32 @@ bulb_call:
       required: false
       selector:
         object:
+
+force_tcp:
+  name: "DEBUG: Use TCP"
+  description: >-
+    LOCAL DEBUG ONLY (administrators). Sends the lamps' commands over TCP
+    (their fallback) for some minutes instead of their UDP session, to test
+    it on demand. 0 minutes: UDP again at once.
+  fields:
+    entity_id:
+      description: Target lamp entity ID(s).
+      example: "light.cubelite_192_168_4_139"
+      required: true
+      selector:
+        entity:
+          integration: yeelight_cube
+          domain: light
+          multiple: true
+    minutes:
+      description: How long (0 to 60 minutes; 0 = UDP again).
+      example: 10
+      required: true
+      selector:
+        number:
+          min: 0
+          max: 60
+          unit_of_measurement: min
 
 set_default:
   name: "DEBUG: Save Current State As Default"

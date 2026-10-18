@@ -138,14 +138,16 @@ class FavouritesTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('"favourites": {', source)
         self.assertIn("self._restore_favourites()", source)
         init = (ROOT / "__init__.py").read_text(encoding="utf-8")
-        self.assertIn('"favourites": stored_data.get("favourites", {})', init)
-        self.assertIn('"favourites": data.get("favourites", {})', init)
+        storage = (ROOT / "storage.py").read_text(encoding="utf-8")
+        self.assertIn('"favourites": stored_data.get("favourites", {})', storage)
+        self.assertIn('"favourites": data.get("favourites", {})', storage)
         # Rotation (running state + shared intervals) is saved and restored too.
         self.assertIn('"rotation_intervals": dict(self._rotation_intervals)', source)
-        self.assertIn('"rotation": stored_data.get("rotation", {})', init)
-        self.assertIn('"rotation": data.get("rotation", {})', init)
+        self.assertIn('"rotation": stored_data.get("rotation", {})', storage)
+        self.assertIn('"rotation": data.get("rotation", {})', storage)
         # Saves are batched (one write per burst, flushed on shutdown).
-        self.assertIn("store.async_delay_save(lambda: _storage_data(hass), delay)", init)
+        self.assertIn("store.async_delay_save(lambda: storage_data(hass), delay)", storage)
+        # A deleted lamp's data is forgotten.
         self.assertIn('for key in ("favourites", "rotation", "device_runtime_state", "drawing")', init)
         self.assertIn("self.stop_effect_rotation(persist=False)", source)
 

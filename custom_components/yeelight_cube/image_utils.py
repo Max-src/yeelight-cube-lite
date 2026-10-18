@@ -3,6 +3,8 @@ import binascii
 import io
 from PIL import Image
 
+from .input_error import InputError
+
 # display_image limits. The image is decoded in full before being shrunk to
 # 20x5, so an oversized (or deliberately crafted) image could use a lot of
 # memory and CPU: refuse it before decoding.
@@ -16,29 +18,26 @@ def image_to_matrix(image_b64: str, width: int = 20, height: int = 5):
     """
     Convert a base64-encoded image to a list of RGB tuples for a 20x5 matrix.
 
-    Raises ValueError when the data is not a usable image: too long, not
+    Raises InputError (a ValueError) when the data is not a usable image: too long, not
     base64, an unknown format, or more than MAX_IMAGE_PIXELS pixels.
     """
     if len(image_b64) > MAX_IMAGE_B64_LENGTH:
-        raise ValueError(
-            f"The image is too large (limit {MAX_IMAGE_B64_LENGTH} base64 characters)"
-        )
+        raise InputError("image_too_long", limit=MAX_IMAGE_B64_LENGTH)
     try:
         image_data = base64.b64decode(image_b64)
     except (binascii.Error, ValueError) as err:
-        raise ValueError("image_b64 is not valid base64") from err
+        raise InputError("image_not_base64") from err
     try:
         # Only reads the header: the size is known before any pixel is decoded.
         image = Image.open(io.BytesIO(image_data))
     except Image.DecompressionBombError as err:
-        raise ValueError("The image has too many pixels") from err
+        raise InputError("image_too_many_pixels") from err
     except OSError as err:
-        raise ValueError("image_b64 is not a supported image") from err
+        raise InputError("image_not_supported") from err
     image_width, image_height = image.size
     if image_width * image_height > MAX_IMAGE_PIXELS:
-        raise ValueError(
-            f"The image is too large ({image_width}x{image_height}; "
-            f"limit {MAX_IMAGE_PIXELS} pixels)"
+        raise InputError(
+            "image_too_large", width=image_width, height=image_height, limit=MAX_IMAGE_PIXELS
         )
     # JPEG: let the decoder downscale while decoding (no-op for other formats).
     image.draft("RGB", (width, height))
