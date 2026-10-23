@@ -61,7 +61,8 @@ export function matrixPixelShadow(options) {
  *   "circle", "rounded"), pixelGap, previewSize (width in px, or 100% with
  *   forceAspectRatio), padding (default pixelGap x 2), radius (the frame's
  *   corners, default 4), matrixBoxShadow,
- *   proportionalSpacing (lengths follow the width); `vertical` shows the frame turned for a lamp standing on its
+ *   proportionalSpacing (lengths follow the width), cols (landscape
+ *   columns of a cropped frame, default 20); `vertical` shows the frame turned for a lamp standing on its
  *   end (matrix-view.js) with the landscape pixel size, as tall as the
  *   landscape preview is wide, or as tall as it is with `fitHeight` (fixed
  *   height layouts).
@@ -85,6 +86,7 @@ export function matrixPreviewLayout(colorData, options = {}) {
     width: options.forceAspectRatio ? "100%" : previewSize,
     vertical,
     fitHeight,
+    cols: options.cols,
     gap: pixelGap,
     padding,
     radius,
@@ -116,7 +118,9 @@ export function matrixPreviewLayout(colorData, options = {}) {
 export function matrixPreviewCells(grid) {
   if (!grid) return [];
   const cells = [...grid.children];
-  return grid.dataset?.vertical === "true" ? fromDisplayOrder(cells, true) : cells;
+  return grid.dataset?.vertical === "true"
+    ? fromDisplayOrder(cells, true)
+    : cells;
 }
 
 /**
@@ -174,7 +178,9 @@ export const matrixPreviewStyles = `
 /**
  * CSS styles for gallery display (to be imported into card styles)
  */
-export const galleryDisplayStyles = matrixPreviewStyles + `
+export const galleryDisplayStyles =
+  matrixPreviewStyles +
+  `
   /* List / grid (renderGalleryMode); the columns and per-render colors and
      font sizes are inline. */
   .gallery-display-grid {

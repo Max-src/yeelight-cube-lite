@@ -30,14 +30,18 @@ const { renderNativeEffectOriented } = await import(
 const frame = [...Array(MATRIX_SIZE).keys()];
 
 test("mounts: vertical and upside down", () => {
-  assert.deepEqual(
-    ["right", "down", "left", "up"].map(isVerticalMount),
-    [false, true, false, true],
-  );
-  assert.deepEqual(
-    ["right", "down", "left", "up"].map(isUpsideDownMount),
-    [false, false, true, true],
-  );
+  assert.deepEqual(["right", "down", "left", "up"].map(isVerticalMount), [
+    false,
+    true,
+    false,
+    true,
+  ]);
+  assert.deepEqual(["right", "down", "left", "up"].map(isUpsideDownMount), [
+    false,
+    false,
+    true,
+    true,
+  ]);
   assert.equal(deviceOrientation(undefined), "right");
   assert.equal(deviceOrientation({ device_orientation: "up" }), "up");
 });
@@ -48,10 +52,7 @@ test("the viewer's frame is top-first, turned for upside-down mounts", () => {
   assert.deepEqual(viewerFrame(frame, "down"), upright);
   assert.deepEqual(viewerFrame(frame, "left"), [...upright].reverse());
   assert.deepEqual(viewerFrame(frame, "up"), [...upright].reverse());
-  assert.deepEqual(
-    [0, 19, 20, 99].map(flipIndexVertical),
-    [80, 99, 60, 19],
-  );
+  assert.deepEqual([0, 19, 20, 99].map(flipIndexVertical), [80, 99, 60, 19]);
 });
 
 test("a vertical view stands the matrix on its left end", () => {
@@ -87,7 +88,10 @@ test("pixel arts: orientation and the drawing's pixels", () => {
 
 test("a vertical preview keeps the landscape pixel size", () => {
   const landscape = matrixPreviewLayout(frame, { previewSize: 200 });
-  const vertical = matrixPreviewLayout(frame, { previewSize: 200, vertical: true });
+  const vertical = matrixPreviewLayout(frame, {
+    previewSize: 200,
+    vertical: true,
+  });
   const fitted = matrixPreviewLayout(frame, {
     previewSize: 200,
     vertical: true,
@@ -110,7 +114,9 @@ test("a vertical preview keeps the landscape pixel size", () => {
 });
 
 test("painters index a vertical preview's cells like a frame", () => {
-  const cells = Array.from({ length: MATRIX_SIZE }, (_, display) => ({ display }));
+  const cells = Array.from({ length: MATRIX_SIZE }, (_, display) => ({
+    display,
+  }));
   const grid = (vertical) => ({
     children: cells,
     dataset: vertical ? { vertical: "true" } : {},
@@ -124,7 +130,10 @@ test("painters index a vertical preview's cells like a frame", () => {
 });
 
 test("native effect previews show an upside-down lamp turned", () => {
-  const effect = { name: "Rainbow", directions: ["Up", "Down", "Left", "Right"] };
+  const effect = {
+    name: "Rainbow",
+    directions: ["Up", "Down", "Left", "Right"],
+  };
   const attrs = { device_orientation: "left", native_effect_speed: 50 };
   assert.deepEqual(
     nativeEffectFrame(effect, attrs, 2),
@@ -136,13 +145,28 @@ test("native effect previews show an upside-down lamp turned", () => {
 });
 
 test("the pixel-art orientation filter: its default and what it shows", async () => {
-  const { defaultPixelArtOrientation, matchesPixelArtOrientation, shownBuiltinPixelArts } =
-    await import(`${www}pixel-art-utils.js`);
+  const {
+    defaultPixelArtOrientation,
+    matchesPixelArtOrientation,
+    shownBuiltinPixelArts,
+  } = await import(`${www}pixel-art-utils.js`);
   assert.equal(defaultPixelArtOrientation({}, false), "all");
-  assert.equal(defaultPixelArtOrientation({ pixel_art_orientation: "vertical" }, false), "vertical");
-  assert.equal(defaultPixelArtOrientation({ pixel_art_orientation: "lamp" }, true), "vertical");
-  assert.equal(defaultPixelArtOrientation({ pixel_art_orientation: "lamp" }, false), "horizontal");
-  assert.equal(defaultPixelArtOrientation({ pixel_art_orientation: "bogus" }, false), "all");
+  assert.equal(
+    defaultPixelArtOrientation({ pixel_art_orientation: "vertical" }, false),
+    "vertical",
+  );
+  assert.equal(
+    defaultPixelArtOrientation({ pixel_art_orientation: "lamp" }, true),
+    "vertical",
+  );
+  assert.equal(
+    defaultPixelArtOrientation({ pixel_art_orientation: "lamp" }, false),
+    "horizontal",
+  );
+  assert.equal(
+    defaultPixelArtOrientation({ pixel_art_orientation: "bogus" }, false),
+    "all",
+  );
   const flat = { vertical: false };
   const standing = { vertical: true };
   assert.deepEqual(
@@ -150,17 +174,37 @@ test("the pixel-art orientation filter: its default and what it shows", async ()
       matchesPixelArtOrientation(flat, value),
       matchesPixelArtOrientation(standing, value),
     ]),
-    [[true, true], [true, false], [false, true]],
+    [
+      [true, true],
+      [true, false],
+      [false, true],
+    ],
   );
   // The official ones: all of them (the filter picks), or the editor's list.
-  const arts = [{ name: "a", orientation: "horizontal" }, { name: "b", orientation: "vertical" }];
+  const arts = [
+    { name: "a", orientation: "horizontal" },
+    { name: "b", orientation: "vertical" },
+  ];
   assert.deepEqual(shownBuiltinPixelArts(arts, {}), arts);
 });
 
 test("every preview's frame: a vertical one keeps the landscape look", async () => {
   const { matrixFrame, frameLength } = await import(`${www}matrix-frame.js`);
-  const landscape = matrixFrame({ width: "80%", gap: 4, padding: 8, radius: 12, shadow: true });
-  const vertical = matrixFrame({ width: "80%", vertical: true, gap: 4, padding: 8, radius: 12, shadow: true });
+  const landscape = matrixFrame({
+    width: "80%",
+    gap: 4,
+    padding: 8,
+    radius: 12,
+    shadow: true,
+  });
+  const vertical = matrixFrame({
+    width: "80%",
+    vertical: true,
+    gap: 4,
+    padding: 8,
+    radius: 12,
+    shadow: true,
+  });
   assert.match(landscape.wrapperStyle, /width: 80%;/);
   assert.match(vertical.wrapperStyle, /width: calc\(80% \/ 4\);/);
   assert.match(landscape.gridStyle, /repeat\(20,1fr\)/);
@@ -169,25 +213,44 @@ test("every preview's frame: a vertical one keeps the landscape look", async () 
   assert.match(vertical.gridStyle, /padding:calc\(100cqw \* 32 \/ 350\)/);
   assert.match(landscape.gridStyle, /padding:calc\(100cqw \* 8 \/ 350\)/);
   assert.match(vertical.gridStyle, /border-radius:calc\(100cqw \* 48 \/ 350\)/);
-  assert.equal(matrixFrame({ width: 200, vertical: true, fitHeight: true }).width, "width: 12.5px;");
+  assert.equal(
+    matrixFrame({ width: 200, vertical: true, fitHeight: true }).width,
+    "width: 12.5px;",
+  );
   assert.equal(frameLength({ proportional: false })(3), "3px");
+  // A crop (the Preview Appearance presets' "10" digits) keeps its columns.
+  assert.match(matrixFrame({ cols: 8 }).gridStyle, /repeat\(8,1fr\)/);
+  assert.match(
+    matrixFrame({ cols: 8, vertical: true }).gridStyle,
+    /repeat\(5,1fr\)/,
+  );
 });
 
 test("firmware content as the lamp draws it: turned by its own direction setting", () => {
-  return import(`${www}matrix-view.js`).then(({ firmwareLampFrame, lampTurnsContent }) => {
-    assert.equal(lampTurnsContent({}), false); // no Matter: as drawn by default
-    assert.equal(lampTurnsContent({ matter: { rotation: 0 } }), true); // Left
-    assert.equal(lampTurnsContent({ matter: { rotation: 1 } }), true); // Up
-    assert.equal(lampTurnsContent({ matter: { rotation: 2 } }), false); // Right
-    assert.equal(lampTurnsContent({ matter: { rotation: 3 } }), false); // Down
-    assert.deepEqual(firmwareLampFrame([1, 2, 3], { matter: { rotation: 0 } }), [3, 2, 1]);
-    const frame = [1, 2, 3];
-    assert.equal(firmwareLampFrame(frame, { matter: { rotation: 2 } }), frame);
-  });
+  return import(`${www}matrix-view.js`).then(
+    ({ firmwareLampFrame, lampTurnsContent }) => {
+      assert.equal(lampTurnsContent({}), false); // no Matter: as drawn by default
+      assert.equal(lampTurnsContent({ matter: { rotation: 0 } }), true); // Left
+      assert.equal(lampTurnsContent({ matter: { rotation: 1 } }), true); // Up
+      assert.equal(lampTurnsContent({ matter: { rotation: 2 } }), false); // Right
+      assert.equal(lampTurnsContent({ matter: { rotation: 3 } }), false); // Down
+      assert.deepEqual(
+        firmwareLampFrame([1, 2, 3], { matter: { rotation: 0 } }),
+        [3, 2, 1],
+      );
+      const frame = [1, 2, 3];
+      assert.equal(
+        firmwareLampFrame(frame, { matter: { rotation: 2 } }),
+        frame,
+      );
+    },
+  );
 });
 
 test("native effect previews turn with the lamp's direction setting too", async () => {
-  const { nativeEffectFrame } = await import(`${www}native-effect-card-utils.js`);
+  const { nativeEffectFrame } = await import(
+    `${www}native-effect-card-utils.js`
+  );
   const effect = { name: "Waterfall" };
   const right = nativeEffectFrame(effect, { matter: { rotation: 2 } }, 1.5);
   const left = nativeEffectFrame(effect, { matter: { rotation: 0 } }, 1.5);

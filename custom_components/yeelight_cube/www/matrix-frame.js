@@ -22,7 +22,9 @@ export function frameLength({ vertical = false, proportional = true } = {}) {
 // A width divided for a vertical frame: numbers stay pixels.
 const narrowed = (width, by) =>
   by === 1
-    ? typeof width === "number" ? `${width}px` : width
+    ? typeof width === "number"
+      ? `${width}px`
+      : width
     : typeof width === "number"
       ? `${width / by}px`
       : `calc(${width} / ${by})`;
@@ -35,6 +37,7 @@ const narrowed = (width, by) =>
  *                at the same pixel size (VERTICAL_SCALE² with fitHeight: as
  *                tall as the landscape one, for fixed-height places)
  *   vertical, fitHeight
+ *   cols         landscape columns (default 20; fewer for a crop of the frame)
  *   gap, padding (default gap x 2), radius (corners, default 4): design px
  *   background, shadow (the frame's drop shadow)
  *   proportional lengths follow the preview's width (default), else px
@@ -47,6 +50,7 @@ export function matrixFrame({
   width = "100%",
   vertical = false,
   fitHeight = false,
+  cols,
   gap = 1,
   padding = gap * 2,
   radius = 4,
@@ -56,7 +60,11 @@ export function matrixFrame({
 } = {}) {
   const view = matrixView(vertical);
   const length = frameLength({ vertical: view.vertical, proportional });
-  const narrow = view.vertical ? (fitHeight ? VERTICAL_SCALE ** 2 : VERTICAL_SCALE) : 1;
+  const narrow = view.vertical
+    ? fitHeight
+      ? VERTICAL_SCALE ** 2
+      : VERTICAL_SCALE
+    : 1;
   const size = `width: ${narrowed(width, narrow)};`;
   return {
     view,
@@ -64,9 +72,11 @@ export function matrixFrame({
     width: size,
     wrapperStyle: `container-type:inline-size;max-width:100%;${size}`,
     gridStyle:
-      `grid-template-columns:repeat(${view.cols},1fr);gap:${length(gap)};` +
+      `grid-template-columns:repeat(${(!view.vertical && cols) || view.cols},1fr);gap:${length(gap)};` +
       `background:${background};padding:${length(padding)};border-radius:${length(radius)};` +
       `${proportional ? "width:100%;" : size}box-sizing:border-box;` +
-      (shadow ? `box-shadow: 0 ${length(2)} ${length(8)} rgba(0,0,0,0.5);` : ""),
+      (shadow
+        ? `box-shadow: 0 ${length(2)} ${length(8)} rgba(0,0,0,0.5);`
+        : ""),
   };
 }
